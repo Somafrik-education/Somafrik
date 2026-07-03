@@ -56,8 +56,8 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   logoBox: {
-    width: 112,
-    height: 112,
+    width: 148,
+    height: 148,
     borderRadius: 34,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  logoImage: { width: 104, height: 104, resizeMode: "contain" },
+  logoImage: { width: 136, height: 136, resizeMode: "contain" },
   brand: { color: "#0F172A", fontSize: 40, fontWeight: "900" },
   parentBrand: {
     color: "#0F766E",

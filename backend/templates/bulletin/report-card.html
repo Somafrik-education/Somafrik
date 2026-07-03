@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Bulletin scolaire — {{STUDENT_NAME}}</title>
+    <style>{{INLINE_CSS}}</style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div class="brand">
+          {{LOGO_HTML}}
+          <div>
+            <h1>{{SCHOOL_NAME}}</h1>
+            <p>Code établissement : {{SCHOOL_CODE}}</p>
+          </div>
+        </div>
+        <div class="meta">
+          <strong>{{PERIOD}}</strong>
+          <span class="status-badge {{STATUS_CLASS}}">{{STATUS}}</span>
+          <p>Document n° {{REPORT_ID}}</p>
+        </div>
+      </header>
+
+      <section class="title-block">
+        <h2>{{REPORT_TITLE}}</h2>
+        <p>{{REPORT_SUBTITLE}}</p>
+      </section>
+
+      <section class="student-grid">
+        <div>
+          <span>Élève</span>
+          {{STUDENT_NAME}}
+        </div>
+        <div>
+          <span>Matricule</span>
+          {{STUDENT_MATRICULE}}
+        </div>
+        <div>
+          <span>Classe</span>
+          {{STUDENT_CLASS}}
+        </div>
+        <div>
+          <span>Date de génération</span>
+          {{GENERATED_AT}}
+        </div>
+      </section>
+
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Matière</th>
+            <th style="width: 18%">Moyenne /20</th>
+            <th style="width: 12%">Coeff.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{SUBJECT_ROWS}}
+        </tbody>
+      </table>
+
+      <section class="summary">
+        <div class="summary-box">
+          <p><strong>Moyenne générale :</strong> <span class="average">{{AVERAGE}}</span></p>
+          {{RANK_BLOCK}}
+          {{APPRECIATION_BLOCK}}
+        </div>
+        {{QR_BLOCK}}
+      </section>
+
+      <footer class="footer">
+        <span>{{FOOTER_NOTE}}</span>
+        <span>{{VERIFICATION_HINT}}</span>
+      </footer>
+    </div>
+  </body>
+</html>

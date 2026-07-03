@@ -440,7 +440,7 @@ class AuthService {
     ) {
       throw new BusinessError(
         403,
-        "Ce compte est reserve au BackOffice Somafrik. Utilisez le portail PC/tablette/web."
+        "Ce compte est réservé à la plateforme Somafrik. Utilisez le portail PC/tablette/web."
       );
     }
   }

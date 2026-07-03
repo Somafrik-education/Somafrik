@@ -1,10 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { useData } from "../context/DataContext";
 import { Card, SectionHeader } from "../components/ui/Card";
-import { formatMetric } from "../lib/format";
-import { getEstablishmentMetrics } from "../lib/establishment";
 import {
   ENTITY_MODULE_GROUP_LABELS,
   ENTITY_MODULE_GROUP_ORDER,
@@ -12,7 +9,6 @@ import {
   SCHOOL_ENTITY_MODULES,
   SCHOOL_ENTITY_SIDEBAR_VIEWS,
 } from "../lib/entityModules";
-import { scopedUsers } from "../lib/scope";
 import { canReadView, hasBackOfficePermission, canAccessSchoolBackOffice } from "../lib/permissions";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -22,20 +18,14 @@ import { Field, Select } from "../components/ui/Field";
 
 export function EstablishmentPage() {
   const { session } = useAuth();
-  const { state } = useData();
   const ctx = usePermissionContext();
   const user = session?.user ?? null;
   const {
     activeSchoolCode: schoolCode,
-    activeSchool: school,
     availableSchools,
     requiresSelection,
-    scopedUser,
     setActiveSchoolCode,
   } = useActiveSchool();
-
-  const users = scopedUsers(scopedUser, state);
-  const metrics = getEstablishmentMetrics(scopedUser, state, users);
 
   const modules = useMemo(
     () =>
@@ -73,48 +63,17 @@ export function EstablishmentPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="bg-gradient-to-br from-teal to-brand p-6 text-white">
-        <p className="text-sm font-semibold text-white/75">Pilotage établissement</p>
-        {requiresSelection && availableSchools.length > 1 ? (
-          <div className="mt-3 max-w-md">
-            <Field label="Établissement">
-              <Select
-                value={schoolCode}
-                onChange={(e) => setActiveSchoolCode(e.target.value)}
-                options={availableSchools.map(formatSchoolOption)}
-              />
-            </Field>
-          </div>
-        ) : null}
-        <h2 className="mt-3 text-2xl font-black">{school?.name ?? "Mon établissement"}</h2>
-        <p className="mt-2 text-sm text-white/85">
-          {school
-            ? `${school.code} • ${school.city ?? "Ville non renseignée"} • ${school.type ?? "Établissement"}`
-            : "Code établissement : " + (schoolCode ?? "—")}
-        </p>
-        <p className="mt-3 max-w-3xl text-sm text-white/80">
-          Les modules ci-dessous sont visibles selon les autorisations de votre établissement.
-          Les rôles métier et leurs droits se configurent dans Configuration.
-        </p>
-      </Card>
-
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-5">
-        {[
-          ["Utilisateurs", metrics.activeUsers],
-          ["Examens", metrics.exams],
-          ["Bulletins", metrics.bulletins],
-          ["À valider", metrics.pendingBulletins],
-          ["Documents", metrics.documents],
-          ["Paiements", metrics.payments],
-          ["Présences", metrics.presences],
-          ["Notes", metrics.notes],
-        ].map(([label, value]) => (
-          <Card key={String(label)} className="p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
-            <p className="mt-2 text-2xl font-black text-ink">{formatMetric(Number(value))}</p>
-          </Card>
-        ))}
-      </div>
+      {requiresSelection && availableSchools.length > 1 ? (
+        <Card className="p-4">
+          <Field label="Établissement actif">
+            <Select
+              value={schoolCode}
+              onChange={(e) => setActiveSchoolCode(e.target.value)}
+              options={availableSchools.map(formatSchoolOption)}
+            />
+          </Field>
+        </Card>
+      ) : null}
 
       {modules.length ? (
         <section className="space-y-6">

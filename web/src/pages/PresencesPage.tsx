@@ -1,0 +1,279 @@
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import { useData } from "../context/DataContext";
+import { useActiveSchool } from "../context/ActiveSchoolContext";
+import { api } from "../api/client";
+import { Card, SectionHeader } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { useToast } from "../components/ui/Toast";
+import { useFeaturePermissions } from "../lib/usePermissionContext";
+import { scopedClasses, scopedStudents } from "../lib/establishment";
+import {
+  type AttendanceStatus,
+  formatAttendanceDate,
+  formatAttendanceHour,
+  normalizePresenceStatus,
+  presenceIsAttended,
+  sameAttendanceDay,
+} from "../lib/presenceMetrics";
+
+const STATUS_OPTIONS: AttendanceStatus[] = ["Présent", "Absent", "Retard", "Justifié"];
+
+const STATUS_STYLES: Record<AttendanceStatus, { active: string; idle: string }> = {
+  Présent: {
+    active: "bg-emerald-600 text-white border-emerald-600",
+    idle: "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50",
+  },
+  Absent: {
+    active: "bg-red-600 text-white border-red-600",
+    idle: "bg-white text-red-700 border-red-200 hover:bg-red-50",
+  },
+  Retard: {
+    active: "bg-amber-500 text-white border-amber-500",
+    idle: "bg-white text-amber-700 border-amber-200 hover:bg-amber-50",
+  },
+  Justifié: {
+    active: "bg-blue-600 text-white border-blue-600",
+    idle: "bg-white text-blue-700 border-blue-200 hover:bg-blue-50",
+  },
+};
+
+type StudentRow = Record<string, unknown>;
+type PresenceRow = Record<string, unknown>;
+
+function uniqueClassNames(classes: StudentRow[], fallback: string[]) {
+  const fromStudents = [...new Set(classes.map((student) => String(student.className ?? "").trim()).filter(Boolean))];
+  return fromStudents.length ? fromStudents.sort() : [...new Set(fallback.filter(Boolean))].sort();
+}
+
+function buildInitialAttendance(
+  students: StudentRow[],
+  presences: PresenceRow[],
+  todayLabel: string,
+): Record<string, AttendanceStatus> {
+  return Object.fromEntries(
+    students.map((student) => {
+      const studentId = String(student.id ?? "");
+      const latest = [...presences]
+        .reverse()
+        .find(
+          (presence) =>
+            String(presence.studentId ?? "") === studentId && sameAttendanceDay(String(presence.date ?? ""), todayLabel),
+        );
+      return [studentId, normalizePresenceStatus(latest as { present?: boolean; status?: string })];
+    }),
+  );
+}
+
+export function PresencesPage() {
+  const { session } = useAuth();
+  const { state, refresh } = useData();
+  const { scopedUser } = useActiveSchool();
+  const { showToast } = useToast();
+  const scopeUser = scopedUser ?? session?.user ?? null;
+  const { canRead, canUpdate } = useFeaturePermissions("Présences");
+
+  const students = scopedStudents(scopeUser, state) as StudentRow[];
+  const classes = scopedClasses(scopeUser, state, students) as StudentRow[];
+  const presences = (state.presences ?? []) as PresenceRow[];
+
+  const todayLabel = formatAttendanceDate(new Date());
+  const currentHour = formatAttendanceHour(new Date());
+
+  const classNames = useMemo(
+    () => uniqueClassNames(students, classes.map((row) => String(row.name ?? ""))),
+    [students, classes],
+  );
+
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>(() =>
+    buildInitialAttendance(students, presences, todayLabel),
+  );
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setAttendance(buildInitialAttendance(students, presences, todayLabel));
+  }, [students, presences, todayLabel]);
+
+  const classStudents = selectedClass
+    ? students.filter((student) => String(student.className ?? "") === selectedClass)
+    : [];
+
+  function setStudentStatus(studentId: string, status: AttendanceStatus) {
+    if (!canUpdate) return;
+    setAttendance((current) => ({ ...current, [studentId]: status }));
+  }
+
+  function markAllPresent() {
+    if (!canUpdate || !selectedClass) return;
+    setAttendance((current) => ({
+      ...current,
+      ...Object.fromEntries(classStudents.map((student) => [String(student.id ?? ""), "Présent" as const])),
+    }));
+  }
+
+  async function saveCall() {
+    if (!canUpdate || !selectedClass) return;
+    if (!classStudents.length) {
+      showToast("Aucun élève dans cette classe.", "error");
+      return;
+    }
+
+    const items = classStudents.map((student) => {
+      const studentId = String(student.id ?? "");
+      const status = attendance[studentId] ?? "Présent";
+      return {
+        id: `PRE-${todayLabel}-${studentId}`,
+        publicId: `PRE-${todayLabel}-${studentId}`,
+        schoolCode: String(student.schoolCode ?? scopeUser?.schoolCode ?? ""),
+        studentId,
+        className: String(student.className ?? selectedClass),
+        date: todayLabel,
+        present: presenceIsAttended(status),
+        status,
+        reason: status === "Justifié" ? "Justifié" : undefined,
+      };
+    });
+
+    setBusy(true);
+    try {
+      const saved = await api.post<PresenceRow[]>("/presences", {
+        className: selectedClass,
+        date: todayLabel,
+        hour: currentHour,
+        items,
+      });
+      if (!saved?.length) {
+        throw new Error("Aucune présence enregistrée.");
+      }
+      await refresh();
+      const absentCount = items.filter((item) => item.status === "Absent").length;
+      const lateCount = items.filter((item) => item.status === "Retard").length;
+      const justifiedCount = items.filter((item) => item.status === "Justifié").length;
+      showToast(
+        `Appel enregistré — ${classStudents.length} élève(s), ${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} justifié(s).`,
+        "success",
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Impossible d'enregistrer l'appel.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canRead) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm font-semibold text-muted">Vous n&apos;avez pas l&apos;autorisation de consulter les présences.</p>
+      </Card>
+    );
+  }
+
+  if (!selectedClass) {
+    return (
+      <div className="space-y-6">
+        <SectionHeader
+          title="Présences"
+          description={`Sélectionnez une classe pour faire l'appel — ${todayLabel} à ${currentHour}`}
+        />
+        <div className="grid gap-3 md:grid-cols-2">{classNames.map((className) => {
+            const rows = students.filter((student) => String(student.className ?? "") === className);
+            const savedToday = presences.filter(
+              (presence) =>
+                sameAttendanceDay(String(presence.date ?? ""), todayLabel) &&
+                rows.some((student) => String(student.id ?? "") === String(presence.studentId ?? "")),
+            ).length;
+
+            return (
+              <button
+                key={className}
+                type="button"
+                onClick={() => setSelectedClass(className)}
+                className="rounded-2xl border border-line bg-white p-5 text-left transition hover:border-brand/40 hover:shadow-sm"
+              >
+                <p className="text-lg font-black text-ink">{className}</p>
+                <p className="mt-1 text-sm font-semibold text-muted">{rows.length} élève(s)</p>
+                <p className="mt-1 text-xs text-muted">{savedToday} enregistrement(s) aujourd&apos;hui</p>
+              </button>
+            );
+          })}
+        </div>
+        {!classNames.length ? (
+          <Card className="p-6">
+            <p className="text-sm text-muted">Aucune classe avec des élèves dans votre périmètre.</p>
+          </Card>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <SectionHeader
+            title={`Appel — ${selectedClass}`}
+            description={`${todayLabel} à ${currentHour} · Cliquez sur Présent, Absent, Retard ou Justifié pour chaque élève.`}
+          />
+        </div>
+        <Button variant="secondary" onClick={() => setSelectedClass(null)}>
+          Changer de classe
+        </Button>
+      </div>
+
+      {canUpdate ? (
+        <div className="flex flex-wrap gap-3">
+          <Button variant="secondary" onClick={markAllPresent}>
+            Tous présents
+          </Button>
+          <Button disabled={busy} onClick={() => void saveCall()}>
+            {busy ? "Enregistrement…" : "Enregistrer l'appel"}
+          </Button>
+        </div>
+      ) : null}
+
+      <Card className="overflow-hidden p-0">
+        <ul className="divide-y divide-line">
+          {classStudents.map((student) => {
+            const studentId = String(student.id ?? "");
+            const currentStatus = attendance[studentId] ?? "Présent";
+            const name = String(student.name ?? `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim());
+
+            return (
+              <li key={studentId} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-black text-ink">{name || "Élève"}</p>
+                  <p className="text-sm font-semibold text-muted">{String(student.matricule ?? student.publicId ?? "—")}</p>
+                </div>
+                {canUpdate ? (
+                  <div className="flex flex-wrap gap-2">
+                    {STATUS_OPTIONS.map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => setStudentStatus(studentId, status)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                          currentStatus === status ? STATUS_STYLES[status].active : STATUS_STYLES[status].idle
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-bold ${
+                      STATUS_STYLES[currentStatus]?.active ?? "bg-slate-100 text-slate-700"
+                    }`}
+                  >
+                    {currentStatus}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+    </div>
+  );
+}

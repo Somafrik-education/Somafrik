@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { PermissionRoute } from "./components/PermissionRoute";
 import { AppLayout } from "./components/layout/AppLayout";
 import { DataProvider } from "./context/DataContext";
 import { LandingPage } from "./pages/LandingPage";
@@ -11,10 +12,14 @@ import { SubscriptionsPage } from "./pages/SubscriptionsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { PermissionsPage } from "./pages/PermissionsPage";
+import { ChartSettingsPage } from "./pages/ChartSettingsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { EstablishmentPage } from "./pages/EstablishmentPage";
 import { ConfigurationPage } from "./pages/ConfigurationPage";
 import { EntityPage } from "./pages/EntityPage";
+import { CoursePlanningPage } from "./pages/CoursePlanningPage";
+import { BulletinDesignPage } from "./pages/BulletinDesignPage";
+import { PresencesPage } from "./pages/PresencesPage";
 import { ActiveSchoolProvider } from "./context/ActiveSchoolContext";
 
 export default function App() {
@@ -33,32 +38,224 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/tableau-de-bord" element={<DashboardEntryPage />} />
-        <Route path="/etablissement" element={<EstablishmentPage />} />
-        <Route path="/configuration" element={<ConfigurationPage />} />
-        <Route path="/configuration/eleves" element={<EntityPage entity="students" />} />
-        <Route path="/configuration/enseignants" element={<EntityPage entity="teachers" />} />
-        <Route path="/configuration/utilisateurs" element={<UsersPage />} />
+        <Route
+          path="/tableau-de-bord"
+          element={
+            <PermissionRoute view="overview">
+              <DashboardEntryPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/etablissement"
+          element={
+            <PermissionRoute view="establishment">
+              <EstablishmentPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/configuration"
+          element={
+            <PermissionRoute view="configuration">
+              <ConfigurationPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/configuration/eleves"
+          element={
+            <PermissionRoute view="students">
+              <EntityPage entity="students" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/configuration/enseignants"
+          element={
+            <PermissionRoute view="teachers">
+              <EntityPage entity="teachers" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/configuration/utilisateurs"
+          element={
+            <PermissionRoute view="users">
+              <UsersPage />
+            </PermissionRoute>
+          }
+        />
         <Route path="/eleves" element={<Navigate to="/configuration/eleves" replace />} />
         <Route path="/enseignants" element={<Navigate to="/configuration/enseignants" replace />} />
-        <Route path="/classes" element={<EntityPage entity="classes" />} />
-        <Route path="/matieres" element={<EntityPage entity="courses" />} />
-        <Route path="/affectations" element={<EntityPage entity="assignments" />} />
-        <Route path="/paiements" element={<EntityPage entity="payments" />} />
-        <Route path="/messages" element={<EntityPage entity="messages" />} />
-        <Route path="/presences" element={<EntityPage entity="presences" />} />
-        <Route path="/notes" element={<EntityPage entity="notes" />} />
-        <Route path="/examens" element={<EntityPage entity="exams" />} />
-        <Route path="/bulletins" element={<EntityPage entity="bulletins" />} />
-        <Route path="/documents" element={<EntityPage entity="documents" />} />
-        <Route path="/annonces" element={<EntityPage entity="announcements" />} />
-        <Route path="/pays" element={<CountriesPage />} />
-        <Route path="/etablissements" element={<SchoolsPage />} />
-        <Route path="/abonnements" element={<SubscriptionsPage />} />
-        <Route path="/notifications" element={<NotificationsPage />} />
-        <Route path="/utilisateurs" element={<UsersPage />} />
-        <Route path="/permissions" element={<PermissionsPage />} />
-        <Route path="/rapports" element={<ReportsPage />} />
+        <Route
+          path="/classes"
+          element={
+            <PermissionRoute view="classes">
+              <EntityPage entity="classes" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/matieres"
+          element={
+            <PermissionRoute view="courses">
+              <EntityPage entity="courses" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/affectations"
+          element={
+            <PermissionRoute view="assignments">
+              <EntityPage entity="assignments" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/planning"
+          element={
+            <PermissionRoute view="planning">
+              <CoursePlanningPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/paiements"
+          element={
+            <PermissionRoute view="payments">
+              <EntityPage entity="payments" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/messages"
+          element={
+            <PermissionRoute view="messages">
+              <EntityPage entity="messages" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/conception-bulletins"
+          element={
+            <PermissionRoute view="bulletinDesign">
+              <BulletinDesignPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/presences"
+          element={
+            <PermissionRoute view="presences">
+              <PresencesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/notes"
+          element={
+            <PermissionRoute view="notes">
+              <EntityPage entity="notes" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/examens"
+          element={
+            <PermissionRoute view="exams">
+              <EntityPage entity="exams" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/bulletins"
+          element={
+            <PermissionRoute view="bulletins">
+              <EntityPage entity="bulletins" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/documents"
+          element={
+            <PermissionRoute view="documents">
+              <EntityPage entity="documents" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/annonces"
+          element={
+            <PermissionRoute view="announcements">
+              <EntityPage entity="announcements" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/pays"
+          element={
+            <PermissionRoute view="countries">
+              <CountriesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/etablissements"
+          element={
+            <PermissionRoute view="schools">
+              <SchoolsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/abonnements"
+          element={
+            <PermissionRoute view="subscriptions">
+              <SubscriptionsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <PermissionRoute view="notifications">
+              <NotificationsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/utilisateurs"
+          element={
+            <PermissionRoute view="users">
+              <UsersPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/permissions"
+          element={
+            <PermissionRoute view="permissions">
+              <PermissionsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/parametres-graphiques"
+          element={
+            <PermissionRoute view="chartSettings">
+              <ChartSettingsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/rapports"
+          element={
+            <PermissionRoute view="reports">
+              <ReportsPage />
+            </PermissionRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/tableau-de-bord" replace />} />
     </Routes>

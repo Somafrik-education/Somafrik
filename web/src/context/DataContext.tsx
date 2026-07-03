@@ -19,7 +19,7 @@ interface DataContextValue {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  update: (patch: Partial<BackOfficeState>, options?: { sync?: boolean }) => Promise<void>;
+  update: (patch: Partial<BackOfficeState>, options?: { sync?: boolean; partial?: boolean }) => Promise<void>;
 }
 
 const EMPTY_STATE: BackOfficeState = {
@@ -33,6 +33,7 @@ const EMPTY_STATE: BackOfficeState = {
   classes: [],
   courses: [],
   assignments: [],
+  courseSchedules: [],
   payments: [],
   presences: [],
   notes: [],
@@ -44,6 +45,7 @@ const EMPTY_STATE: BackOfficeState = {
   paymentStatuses: [],
   rolePermissions: {},
   academicConfigs: {},
+  dashboardChartConfig: { platform: {}, establishment: {} },
 };
 
 function stateFromSession(session: Session): BackOfficeState {
@@ -128,7 +130,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [state.rolePermissions, session?.accessToken, session?.user?.role, setSession]);
 
   const update = useCallback(
-    async (patch: Partial<BackOfficeState>, options: { sync?: boolean } = {}) => {
+    async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
+      if (options.partial) {
+        setState((prev) => ({ ...prev, ...patch }));
+        if (options.sync === false) return;
+        try {
+          const saved = await api.put<Partial<BackOfficeState>>("/backoffice/state", patch);
+          setState((prev) => ({ ...prev, ...saved }));
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Erreur de synchronisation");
+          throw err;
+        }
+        return;
+      }
+
       const next = { ...stateRef.current, ...patch };
       setState(next);
       if (options.sync === false) return;

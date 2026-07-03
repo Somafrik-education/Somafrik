@@ -62,12 +62,18 @@ async function main() {
     },
   });
 
+  // Vérifie que le PUT accepte une mise à jour ciblée (matrice de droits) sans tronquer l'état.
   const synced = await request("/backoffice/state", {
     method: "PUT",
     token,
-    body: JSON.stringify(state),
+    body: JSON.stringify({
+      rolePermissions: state.rolePermissions ?? {},
+    }),
   });
-  checks.push({ name: "PUT /backoffice/state", detail: { schools: synced.schools?.length ?? 0, users: synced.users?.length ?? 0 } });
+  checks.push({
+    name: "PUT /backoffice/state (rolePermissions)",
+    detail: { schools: synced.schools?.length ?? 0, users: synced.users?.length ?? 0 },
+  });
 
   checks.push({ name: "GET /students", detail: (await request("/students", { token })).length });
   checks.push({ name: "GET /classes", detail: (await request("/classes", { token })).length });
@@ -98,6 +104,28 @@ async function main() {
   checks.push({ name: "DELETE /v2/subjects/:code", detail: deleted.deleted || deleted.code || code });
 
   report(checks);
+
+  const demoLogins = [
+    { label: "Super Admin", payload: { identifier: "superadmin", password: "1234" } },
+    { label: "Admin Pays RDC", payload: { identifier: "admin-rdc", password: "1234" } },
+    { label: "Admin Pays BI", payload: { identifier: "admin-bi", password: "1234" } },
+    { label: "Admin école", payload: { schoolCode: "CD-2026-0001", identifier: "admin", password: "1234" } },
+    { label: "Secrétaire", payload: { schoolCode: "CD-2026-0001", identifier: "secretaire", password: "1234" } },
+    { label: "Préfet", payload: { schoolCode: "CD-2026-0001", identifier: "prefet", password: "1234" } },
+    { label: "Enseignant", payload: { schoolCode: "CD-2026-0001", identifier: "ENS-0001", password: "1234" } },
+    { label: "Parent", payload: { schoolCode: "CD-2026-0001", identifier: "+243 820 000 001", password: "1234" } },
+    { label: "Élève", payload: { schoolCode: "CD-2026-0001", identifier: "ELE-0001", password: "1234" } },
+  ];
+
+  const loginChecks = [];
+  for (const demo of demoLogins) {
+    const result = await request("/backoffice/login", {
+      method: "POST",
+      body: JSON.stringify(demo.payload),
+    });
+    loginChecks.push({ name: `POST /backoffice/login (${demo.label})`, detail: result.user?.role ?? "ok" });
+  }
+  report(loginChecks);
 }
 
 main().catch((error) => {

@@ -78,7 +78,7 @@ docker @composeArgs
 Write-Host ""
 Write-Host "=== Somafrik (Docker) ==="
 Write-Host "  API sante   : http://localhost:5000/api/health"
-Write-Host "  BackOffice  : http://localhost:5000/backoffice/"
+Write-Host "  Plateforme  : http://localhost:5000/backoffice/"
 Write-Host "  Web (build) : http://localhost:5000/web/"
 if (-not $CoreOnly) {
   Write-Host "  Web (dev)   : http://localhost:5173/web/"

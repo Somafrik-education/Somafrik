@@ -105,9 +105,9 @@ select {
 }
 
 .landing-brand .brand-mark {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
 }
 
 .landing-nav {
@@ -260,16 +260,23 @@ select {
 }
 
 .hero-trust {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 22px 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
   margin-top: 34px;
   padding-top: 26px;
   border-top: 1px dashed #d6def0;
+  list-style: none;
+  padding-left: 0;
 }
 
-.hero-trust div {
-  min-width: 110px;
+.hero-trust li {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 30px -24px rgba(15, 23, 42, 0.45);
 }
 
 .hero-trust strong {
@@ -279,9 +286,20 @@ select {
   color: #0f172a;
 }
 
-.hero-trust span {
+.hero-trust-subtitle,
+.hero-trust span.hero-trust-subtitle {
+  display: block;
+  margin-top: 4px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
+  color: var(--brand);
+}
+
+.hero-trust p {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
   color: var(--muted);
 }
 
@@ -564,8 +582,8 @@ select {
 }
 
 .brand-mark {
-  width: 64px;
-  height: 64px;
+  width: 80px;
+  height: 80px;
   border-radius: 18px;
   background: #fff;
   color: var(--blue);
@@ -753,9 +771,9 @@ button {
 }
 
 .brand-mini .brand-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
 }
 
 .brand-mini span {

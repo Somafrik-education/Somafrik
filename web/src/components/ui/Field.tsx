@@ -24,10 +24,10 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
 }
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
-  options: { value: string; label: string }[];
+  options?: { value: string; label: string }[];
 }
 
-export function Select({ options, ...props }: SelectProps) {
+export function Select({ options = [], ...props }: SelectProps) {
   return (
     <select {...props} className={`input-base ${props.className ?? ""}`}>
       {options.map((opt) => (

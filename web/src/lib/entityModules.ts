@@ -389,7 +389,7 @@ export const CONFIGURATION_USER_ACCOUNTS = {
   path: "/configuration/utilisateurs",
   label: "Comptes utilisateurs",
   feature: "Utilisateurs",
-  description: "Comptes d'accès, rôles et habilitations BackOffice / mobile.",
+  description: "Comptes d'accès, rôles et habilitations plateforme / mobile.",
 } as const;
 
 export const CONFIGURATION_USER_MODULES = SCHOOL_ENTITY_MODULES.filter(

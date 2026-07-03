@@ -1,32 +1,66 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { BrandLogo } from "../components/BrandLogo";
+import { SOMAFRIK_LOGO_URL } from "../lib/brand";
+
+function formatFrenchList(items: string[]): string {
+  if (items.length === 0) return "";
+  if (items.length === 1) return `${items[0]}.`;
+  return `${items.slice(0, -1).join(", ")} et ${items[items.length - 1]}.`;
+}
 
 const MODULES = [
   {
     title: "Gestion multi-établissements",
+    shortLabel: "Établissements",
     description: "Création, validation, suspension et suivi des écoles ou universités par pays.",
   },
   {
     title: "Utilisateurs et rôles",
+    shortLabel: "Utilisateurs et rôles",
     description: "Droits CRUD, suspension, réinitialisation de mot de passe et périmètre par rôle.",
   },
   {
     title: "Scolarité",
+    shortLabel: "Scolarité",
     description: "Classes, élèves, enseignants, affectations, présences, notes, examens et bulletins.",
   },
   {
     title: "Finance scolaire",
+    shortLabel: "Finance",
     description: "Frais, paiements, reste à payer, impayés et historique détaillé.",
   },
   {
     title: "Communication",
+    shortLabel: "Communication",
     description: "Annonces, messages parents, notifications et suivi des statuts lu / non lu.",
   },
   {
     title: "Rapports",
+    shortLabel: "Rapports",
     description: "Indicateurs de pilotage par plateforme, pays, établissement et rôle métier.",
   },
-];
+] as const;
+
+const MODULE_SUMMARY = formatFrenchList(MODULES.map((module) => module.shortLabel));
+
+const HERO_HIGHLIGHTS = [
+  {
+    title: "Multi-pays",
+    subtitle: "Données séparées par pays",
+    detail: "Établissements, utilisateurs et indicateurs isolés par territoire national.",
+  },
+  {
+    title: `${MODULES.length} modules`,
+    subtitle: "Socle MVP opérationnel",
+    detail: MODULE_SUMMARY,
+  },
+  {
+    title: "Rôles & droits",
+    subtitle: "Permissions CRUD ajustables",
+    detail: "Matrice configurable par le Superadmin ou par établissement ; chaque profil accède à son périmètre.",
+  },
+] as const;
 
 const ROLES = [
   {
@@ -55,7 +89,7 @@ const SECURITY = [
   "Identification par code établissement et identifiant unique utilisateur.",
   "Données séparées par pays, établissement, rôle et périmètre opérationnel.",
   "Actions synchronisées avec le backend pour éviter les écarts mobile / web.",
-  "Permissions plateforme (Admin Pays, Admin School) ajustables par le Superadmin ; rôles métier établissement pilotés localement.",
+  "Matrice de permissions configurable par le Superadmin ou par établissement ; chaque profil accède à son périmètre.",
 ];
 
 const NAV_LINKS = [
@@ -130,15 +164,7 @@ export function LandingPage() {
 
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <header className="sticky top-3 z-30 mt-3 flex items-center justify-between gap-4 rounded-2xl border border-white/70 bg-white/75 px-4 py-3 shadow-card backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-gradient text-sm font-black text-white shadow-brand">
-                SF
-              </div>
-              <div className="leading-tight">
-                <p className="text-sm font-black">Somafrik</p>
-                <p className="text-xs text-muted">ERP scolaire SaaS</p>
-              </div>
-            </div>
+            <BrandLogo size="lg" />
 
             <nav className="hidden items-center gap-1 md:flex" aria-label="Navigation vitrine">
               {NAV_LINKS.map((link) => (
@@ -193,24 +219,37 @@ export function LandingPage() {
                   Voir les modules
                 </a>
               </div>
-              <dl className="mt-10 flex flex-wrap gap-x-10 gap-y-6 border-t border-dashed border-slate-200 pt-7">
-                {[
-                  ["Multi-pays", "Données séparées par pays"],
-                  ["6 modules", "Socle MVP opérationnel"],
-                  ["Rôles & droits", "Permissions CRUD ajustables"],
-                ].map(([value, label]) => (
-                  <div key={value}>
-                    <dt className="text-2xl font-black text-ink">{value}</dt>
-                    <dd className="text-sm font-semibold text-muted">{label}</dd>
-                  </div>
+              <ul
+                className="mt-10 grid gap-4 border-t border-dashed border-slate-200 pt-7 sm:grid-cols-3"
+                aria-label="Points forts de la plateforme"
+              >
+                {HERO_HIGHLIGHTS.map((item) => (
+                  <li
+                    key={item.title}
+                    className="rounded-2xl border border-line bg-white/80 p-4 shadow-card backdrop-blur"
+                    aria-label={`${item.title} : ${item.subtitle}. ${item.detail}`}
+                  >
+                    <p className="text-2xl font-black text-ink">{item.title}</p>
+                    <p className="mt-1 text-sm font-bold text-brand">{item.subtitle}</p>
+                    <p className="mt-2 text-sm font-semibold leading-relaxed text-muted">{item.detail}</p>
+                  </li>
                 ))}
-              </dl>
+              </ul>
             </Reveal>
 
             <Reveal delay={120} className="lg:justify-self-end">
               <div className="animate-float w-full rounded-3xl border border-brand-100 bg-white/90 p-6 shadow-lift backdrop-blur">
-                <p className="text-xs font-bold uppercase tracking-wide text-brand">Accès sécurisé</p>
-                <h2 className="mt-1 text-xl font-black">Connexion Somafrik</h2>
+                <div className="flex items-center gap-3">
+                <img
+                  src={SOMAFRIK_LOGO_URL}
+                  alt="Logo Somafrik"
+                  className="h-24 w-24 shrink-0 rounded-2xl bg-white object-contain p-1 shadow-sm ring-1 ring-black/5 sm:h-28 sm:w-28"
+                />
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-brand">Accès sécurisé</p>
+                    <h2 className="text-xl font-black">Connexion Somafrik</h2>
+                  </div>
+                </div>
                 <div className="mt-4 space-y-2">
                   {["Superadmin", "Admin pays", "Admin établissement"].map((profile) => (
                     <div
@@ -324,7 +363,11 @@ export function LandingPage() {
       <footer className="bg-[#0b1220] text-slate-300">
         <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           <div>
-            <strong className="mb-3 block text-white">Somafrik</strong>
+            <img
+              src={SOMAFRIK_LOGO_URL}
+              alt="Logo Somafrik"
+              className="mb-3 h-20 w-20 rounded-2xl bg-white/95 object-contain p-1 sm:h-24 sm:w-24"
+            />
             <p className="text-sm font-semibold text-slate-400">ERP scolaire et universitaire édité par Somafrik.</p>
             <small className="mt-3 block text-slate-500">
               © {new Date().getFullYear()} Somafrik. Tous droits réservés.
@@ -345,7 +388,7 @@ export function LandingPage() {
           <div>
             <strong className="mb-3 block text-white">Support</strong>
             <span className="mb-2 block text-sm">support@somafrik.app</span>
-            <span className="mb-2 block text-sm">BackOffice Somafrik</span>
+            <span className="mb-2 block text-sm">Plateforme Somafrik</span>
             <span className="mb-2 block text-sm">Plateforme interne sécurisée</span>
           </div>
         </div>

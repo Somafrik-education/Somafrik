@@ -61,7 +61,7 @@ export function NotificationsPage() {
       ...composing,
       id: newId(),
       date: new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
-      createdBy: session?.user?.identifier ?? session?.user?.email ?? "BackOffice",
+      createdBy: session?.user?.identifier ?? session?.user?.email ?? "Plateforme",
     };
     const next = [notification, ...state.notifications];
     try {

@@ -1,5 +1,9 @@
 // Types métier alignés sur l'API Express/PostgreSQL de Somafrik.
 
+import type { DashboardChartConfig } from "./lib/chartTypes";
+
+export type { DashboardChartConfig };
+
 export interface School {
   id?: string;
   publicId?: string;
@@ -139,6 +143,7 @@ export interface BackOfficeState {
   classes: unknown[];
   courses: unknown[];
   assignments: unknown[];
+  courseSchedules?: unknown[];
   payments: unknown[];
   presences: unknown[];
   notes: unknown[];
@@ -150,6 +155,7 @@ export interface BackOfficeState {
   paymentStatuses: unknown[];
   rolePermissions: Record<string, string[]>;
   academicConfigs: Record<string, unknown>;
+  dashboardChartConfig?: DashboardChartConfig;
 }
 
 export type LoginProfile = "superadmin" | "country" | "school";

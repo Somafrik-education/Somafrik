@@ -30,6 +30,7 @@ export const CRUD_PERMISSION_MODULES = [
   "Années Académiques",
   "Matières",
   "Examens",
+  "Planning de cours",
 ] as const;
 
 // view -> fonctionnalité requise (null = toujours accessible)
@@ -44,12 +45,15 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   users: "Utilisateurs",
   reports: "Rapports",
   permissions: "Droits par rôle",
+  chartSettings: "Paramètres graphiques",
   academicSettings: "Paramètres Établissement",
+  bulletinDesign: "Conception bulletins",
   students: "Élèves",
   teachers: "Enseignants",
   classes: "Classes",
   courses: "Matières",
   assignments: "Affectations",
+  planning: "Planning de cours",
   payments: "Paiements",
   announcements: "Notifications",
   messages: "Messages",
@@ -71,10 +75,11 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { view: "overview", path: "/tableau-de-bord", label: "Tableau de bord" },
   { view: "establishment", path: "/etablissement", label: "Pilotage établissement", schoolOnly: true },
-  { view: "configuration", path: "/configuration", label: "Configuration", schoolOnly: true },
+  { view: "configuration", path: "/configuration", label: "Configuration" },
   { view: "classes", path: "/classes", label: "Classes", schoolOnly: true },
   { view: "courses", path: "/matieres", label: "Matières", schoolOnly: true },
   { view: "assignments", path: "/affectations", label: "Affectations", schoolOnly: true },
+  { view: "planning", path: "/planning", label: "Planning de cours", schoolOnly: true },
   { view: "payments", path: "/paiements", label: "Paiements", schoolOnly: true },
   { view: "messages", path: "/messages", label: "Messages", schoolOnly: true },
   { view: "presences", path: "/presences", label: "Présences", schoolOnly: true },
@@ -89,13 +94,15 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "notifications", path: "/notifications", label: "Notifications" },
   { view: "users", path: "/utilisateurs", label: "Utilisateurs" },
   { view: "permissions", path: "/permissions", label: "Droits par rôle" },
+  { view: "chartSettings", path: "/parametres-graphiques", label: "Graphiques" },
+  { view: "bulletinDesign", path: "/conception-bulletins", label: "Conception bulletins" },
   { view: "reports", path: "/rapports", label: "Conformité MVP" },
 ];
 
 export const MVP_COVERAGE = [
   ["Authentification par établissement", "Web / Mobile", "Couvert", "P0"],
-  ["Établissements SaaS", "BackOffice", "Couvert", "P0"],
-  ["Utilisateurs et permissions", "BackOffice / Mobile", "Couvert", "P0"],
+  ["Établissements SaaS", "Plateforme", "Couvert", "P0"],
+  ["Utilisateurs et permissions", "Plateforme / Mobile", "Couvert", "P0"],
   ["Élèves", "Web / Mobile", "Couvert", "P0"],
   ["Classes et enseignants", "Web / Mobile", "Couvert", "P0"],
   ["Présences et appels", "Web / Mobile", "Couvert", "P0"],
@@ -103,6 +110,6 @@ export const MVP_COVERAGE = [
   ["Paiements scolaires", "Web / Mobile", "Couvert", "P0"],
   ["Notifications", "Web / Mobile", "Couvert", "P1"],
   ["Dashboards", "Web / Mobile", "Couvert", "P1"],
-  ["Super Admin / Admin Pays", "BackOffice", "Couvert", "P1"],
+  ["Super Admin / Admin Pays", "Plateforme", "Couvert", "P1"],
   ["Séparation de données", "SaaS", "Couvert", "P0"],
 ].map(([module, scope, status, priority]) => ({ module, scope, status, priority }));

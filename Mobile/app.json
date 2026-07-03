@@ -4,7 +4,7 @@
     "slug": "somafrik",
     "version": "1.2.1",
     "orientation": "portrait",
-    "icon": "./assets/somafrik-logo.png",
+    "icon": "./assets/somafrik-app-icon.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/somafrik-logo.png",
@@ -29,7 +29,7 @@
         "READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/somafrik-logo.png",
+        "foregroundImage": "./assets/somafrik-app-icon.png",
         "backgroundColor": "#FFFFFF"
       }
     },

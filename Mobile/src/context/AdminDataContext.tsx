@@ -524,7 +524,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 }
 
 function canSyncBackOfficeState(role?: string, accessToken?: string) {
-  return Boolean(accessToken) && ["super_admin", "country_admin", "school_admin"].includes(role ?? "");
+  if (!accessToken) return false;
+  return ["super_admin", "country_admin", "school_admin", "principal", "prefet", "secretary"].includes(role ?? "");
 }
 
 function applyArray<T>(value: unknown, setter: React.Dispatch<React.SetStateAction<T[]>>) {
@@ -544,7 +545,8 @@ function filterBySchool(value: unknown, schoolCode: string) {
 }
 
 function applyItemScope(entity: ScopedEntity, item: any, session: any, state: BackOfficeStatePayload) {
-  if (!item || session?.role !== "school_admin") {
+  const establishmentRoles = new Set(["school_admin", "principal", "prefet", "secretary"]);
+  if (!item || !establishmentRoles.has(String(session?.role ?? ""))) {
     return item;
   }
 
@@ -577,7 +579,8 @@ function applyItemScope(entity: ScopedEntity, item: any, session: any, state: Ba
 }
 
 function enforceEntityScope(entity: ScopedEntity, items: any[], session: any, state: BackOfficeStatePayload) {
-  if (session?.role !== "school_admin") {
+  const establishmentRoles = new Set(["school_admin", "principal", "prefet", "secretary"]);
+  if (!establishmentRoles.has(String(session?.role ?? ""))) {
     return items;
   }
 

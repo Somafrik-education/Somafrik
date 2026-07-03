@@ -103,16 +103,39 @@ export function isInternalSchoolRole(role?: string): boolean {
     "admin school",
     "administrateur ecole",
     "administrateur etablissement",
+    "school_admin",
     "secretaire",
+    "secretary",
     "prefet des etudes",
     "prefet des etude",
+    "prefet",
     "proviseur / directeur",
     "proviseur",
     "directeur",
+    "directeur adjoint",
+    "comptable",
+    "principal",
+    "enseignant",
+    "teacher",
+    "surveillant",
   ].includes(key);
 }
 
 export function isSchoolAdminRole(role?: string): boolean {
   const key = normalizeRoleKey(role);
   return ["admin school", "administrateur ecole", "administrateur etablissement"].includes(key);
+}
+
+export type EstablishmentChartProfile = "default" | "academic" | "finance" | "operations";
+
+export function getEstablishmentChartProfile(role?: string): EstablishmentChartProfile {
+  const key = normalizeRoleKey(role);
+  if (
+    ["prefet des etudes", "prefet", "proviseur", "directeur", "principal", "enseignant", "teacher"].includes(key)
+  ) {
+    return "academic";
+  }
+  if (key === "comptable") return "finance";
+  if (["secretaire", "secretary", "surveillant"].includes(key)) return "operations";
+  return "default";
 }

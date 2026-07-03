@@ -130,8 +130,8 @@ let selectedLoginProfile = "superadmin";
 
 const mvpCoverage = [
   ["Authentification par établissement", "Web / Mobile", "Couvert", "P0", "Code unique, logo/nom école, rôle détecté, mot de passe et blocage comptes suspendus."],
-  ["Établissements SaaS", "BackOffice", "Couvert", "P0", "Création, fiche, modification, suspension, paramètres, abonnement et code unique."],
-  ["Utilisateurs et permissions", "BackOffice / Mobile", "Couvert", "P0", "Rôles MVP, statuts, permissions automatiques et réinitialisation mot de passe."],
+  ["Établissements SaaS", "Plateforme", "Couvert", "P0", "Création, fiche, modification, suspension, paramètres, abonnement et code unique."],
+  ["Utilisateurs et permissions", "Plateforme / Mobile", "Couvert", "P0", "Rôles MVP, statuts, permissions automatiques et réinitialisation mot de passe."],
   ["Élèves", "Web / Mobile", "Couvert", "P0", "Matricule, parent associé, dossier élève, statut actif/archivé et séparation des dossiers."],
   ["Classes et enseignants", "Web / Mobile", "Couvert", "P0", "Effectifs calculés, affectation élèves/enseignants et vue limitée aux classes de l'enseignant."],
   ["Présences et appels", "Web / Mobile", "Couvert", "P0", "Présent par défaut, absent/retard/justifié, sauvegarde en une action, audit et notification parent."],
@@ -139,7 +139,7 @@ const mvpCoverage = [
   ["Paiements scolaires", "Web / Mobile", "Couvert", "P0", "Frais, encaissements, reste à payer, impayés, historique et notification paiement."],
   ["Notifications", "Web / Mobile", "Couvert", "P1", "Création, ciblage MVP, historique et notifications automatiques absence/paiement/note."],
   ["Dashboards", "Web / Mobile", "Couvert", "P1", "KPIs école, pays et plateforme avec filtrage par périmètre."],
-  ["Super Admin / Admin Pays", "BackOffice", "Couvert", "P1", "Pays, administrateurs pays, validation écoles, suspension et statistiques."],
+  ["Super Admin / Admin Pays", "Plateforme", "Couvert", "P1", "Pays, administrateurs pays, validation écoles, suspension et statistiques."],
   ["Séparation de données", "SaaS", "Couvert", "P0", "École, pays, parent, enseignant et élève restent dans leur périmètre."],
 ].map(([module, scope, status, priority, detail]) => ({ module, scope, status, priority, detail }));
 
@@ -607,7 +607,7 @@ async function request(path, options = {}) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message ?? "Erreur BackOffice");
+    throw new Error(data.message ?? "Erreur plateforme");
   }
 
   return data;
@@ -641,66 +641,17 @@ function renderApp() {
 }
 
 function renderKpis() {
-  const cards = getLiveKpis();
-
-  kpiGrid.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="kpi-card">
-          <span>${card.label}</span>
-          <strong>${formatMetric(card.value, card.suffix)}</strong>
-        </article>
-      `
-    )
-    .join("");
+  if (kpiGrid) {
+    kpiGrid.innerHTML = "";
+    kpiGrid.hidden = true;
+  }
   renderRoleDashboard();
 }
 
 function renderRoleDashboard() {
   if (!roleDashboard) return;
-
-  const dashboard = getRoleDashboard();
-  const dashboardCards = dashboard.cards?.length
-    ? `
-      <div class="role-dashboard-grid">
-        ${dashboard.cards
-          .map(
-            (card) => `
-              <article class="role-dashboard-card">
-                <span>${escapeHtml(card.label)}</span>
-                <strong>${formatMetric(card.value, card.suffix)}</strong>
-                <p>${escapeHtml(card.hint)}</p>
-              </article>
-            `
-          )
-          .join("")}
-      </div>
-    `
-    : "";
-
-  roleDashboard.innerHTML = `
-    <div class="role-dashboard-head">
-      <div>
-        <p class="eyebrow">${escapeHtml(dashboard.eyebrow)}</p>
-        <h3>${escapeHtml(dashboard.title)}</h3>
-        <p>${escapeHtml(dashboard.description)}</p>
-      </div>
-      <span class="status">${escapeHtml(dashboard.scope)}</span>
-    </div>
-    ${dashboardCards}
-    <div class="role-priority-list">
-      ${dashboard.priorities
-        .map(
-          (priority) => `
-            <article>
-              <strong>${escapeHtml(priority.title)}</strong>
-              <p>${escapeHtml(priority.detail)}</p>
-            </article>
-          `
-        )
-        .join("")}
-    </div>
-  `;
+  roleDashboard.innerHTML = "";
+  roleDashboard.hidden = true;
 }
 
 function renderMenus() {
@@ -820,7 +771,7 @@ function getBusinessControls() {
     controls.push({
       id: "notifications",
       title: "Notifications",
-      description: "Publier, lire et archiver les notifications BackOffice.",
+      description: "Publier, lire et archiver les notifications plateforme.",
       view: "notifications",
       cta: "Ouvrir les notifications",
     });
@@ -952,7 +903,7 @@ function getRoleDashboard() {
 
   return {
     ...base,
-    eyebrow: "BackOffice Somafrik",
+    eyebrow: "Plateforme Somafrik",
     title: user.role === "Admin Pays" ? "Tableau de bord Admin Pays" : "Tableau de bord plateforme",
     description: user.role === "Admin Pays"
       ? "Pilotage pays : établissements, validations, admins écoles, abonnements et support."
@@ -1126,7 +1077,23 @@ function getAccessibleViewNames() {
 }
 
 function isInternalSchoolRole(role) {
-  return ["admin school", "secretaire", "prefet des etudes"].includes(normalizeRoleKey(role));
+  return [
+    "admin school",
+    "administrateur ecole",
+    "administrateur etablissement",
+    "school_admin",
+    "secretaire",
+    "secretary",
+    "prefet des etudes",
+    "prefet des etude",
+    "prefet",
+    "proviseur / directeur",
+    "proviseur",
+    "directeur",
+    "directeur adjoint",
+    "comptable",
+    "principal",
+  ].includes(normalizeRoleKey(role));
 }
 
 function normalizeRoleKey(role) {
@@ -1917,7 +1884,7 @@ function showView(viewName) {
   closeSchoolForm();
   closeRoleForm();
   setActiveView(viewName);
-  pageTitle.textContent = titles[viewName] ?? "BackOffice";
+  pageTitle.textContent = titles[viewName] ?? "Plateforme";
   document.querySelectorAll(".view").forEach((view) => view.classList.add("hidden"));
   document.querySelector(`#${viewName}View`)?.classList.remove("hidden");
   refreshActionVisibility();
@@ -1959,7 +1926,7 @@ async function handleActionClick(event) {
     const targetView = button.dataset.view;
     if (!targetView) return;
     showView(targetView);
-    showToast(`Module ${button.dataset.label ?? "BackOffice"} ouvert.`);
+    showToast(`Module ${button.dataset.label ?? "Plateforme"} ouvert.`);
     return;
   }
 
@@ -2456,7 +2423,7 @@ async function refreshBackOfficeStateFromBackend() {
     persistSession({ sync: false });
     renderOperationalViews();
   } catch (error) {
-    console.warn("Synchronisation BackOffice indisponible.", error);
+    console.warn("Synchronisation plateforme indisponible.", error);
   }
 }
 
@@ -2515,7 +2482,7 @@ function scheduleBackOfficeSync() {
   clearTimeout(state.syncTimeoutId);
   state.syncTimeoutId = setTimeout(() => {
     syncBackOfficeState().catch((error) => {
-      console.warn("Échec de synchronisation BackOffice.", error);
+      console.warn("Échec de synchronisation plateforme.", error);
       showToast("Synchronisation backend indisponible.");
     });
   }, 350);
@@ -3075,7 +3042,7 @@ function openPermissionDetail(permission, context) {
       </div>
       <div class="detail-section">
         <strong>Utilisation attendue</strong>
-        <p>Cette permission ouvre les actions liées au module correspondant dans le BackOffice et limite les opérations au périmètre de votre compte.</p>
+        <p>Cette permission ouvre les actions liées au module correspondant sur la plateforme et limite les opérations au périmètre de votre compte.</p>
       </div>
     `
   );
@@ -3134,7 +3101,7 @@ function saveCountryForm() {
     administratorId: "",
     createdAt: formatDate(new Date()),
   });
-  addAudit("Création pays", payload.code, `${payload.name} ajouté au BackOffice`);
+  addAudit("Création pays", payload.code, `${payload.name} ajouté à la plateforme`);
   closeDetail();
   renderOperationalViews();
   persistSession();
@@ -3163,7 +3130,7 @@ function openNotificationForm() {
             <option>Basse</option>
           </select>
         </label>
-        <label>Audience <input id="notificationAudienceInput" value="${escapeHtml(state.session?.user?.role ?? "BackOffice")}" /></label>
+        <label>Audience <input id="notificationAudienceInput" value="${escapeHtml(state.session?.user?.role ?? "Plateforme")}" /></label>
         <label class="form-wide">Message <input id="notificationMessageInput" placeholder="Message à envoyer" /></label>
       </div>
       <p class="error" id="notificationFormError"></p>
@@ -3186,7 +3153,7 @@ function saveNotificationForm() {
 
   const notification = {
     id: `NOTIF-${Date.now()}`,
-    audience: document.querySelector("#notificationAudienceInput")?.value.trim() || "BackOffice",
+    audience: document.querySelector("#notificationAudienceInput")?.value.trim() || "Plateforme",
     countryCode: state.session?.user?.countryCode || "*",
     title,
     message,

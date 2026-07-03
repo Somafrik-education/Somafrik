@@ -48,3 +48,35 @@
     animation: none !important;
   }
 }
+
+.planning-calendar .fc-datagrid-cell-cushion {
+  white-space: normal;
+  line-height: 1.35;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.planning-calendar .fc-planning-event {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.125rem 0.25rem;
+  overflow: hidden;
+}
+
+.planning-calendar .fc-planning-event__subject {
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.planning-calendar .fc-planning-event__teacher {
+  font-size: 0.7rem;
+  line-height: 1.2;
+  opacity: 0.95;
+}
+
+.planning-calendar .fc-planning-event__room {
+  font-size: 0.65rem;
+  opacity: 0.85;
+}

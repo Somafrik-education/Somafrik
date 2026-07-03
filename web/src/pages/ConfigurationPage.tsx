@@ -27,7 +27,7 @@ import {
   type PeriodMode,
 } from "../lib/academicPeriods";
 import { getEstablishmentMetrics } from "../lib/establishment";
-import { isPlatformBackOfficeRole } from "../lib/orgHierarchy";
+import { isPlatformBackOfficeRole, isSuperAdminRole } from "../lib/orgHierarchy";
 import { CONFIGURATION_USER_ACCOUNTS, CONFIGURATION_USER_MODULES } from "../lib/entityModules";
 import { scopedUsers } from "../lib/scope";
 import { isAllSchoolsSelection, resolveTargetSchoolCodes } from "../lib/activeSchool";
@@ -120,6 +120,7 @@ export function ConfigurationPage() {
   const canConfigure = canManageEstablishmentSettings(ctx);
   const canReadSettings = settingsPermissions.canRead || canConfigure;
   const showRolePilotage = isSchoolAdminRole(user?.role);
+  const canDesignBulletins = isSuperAdminRole(user?.role);
   const configuredUserRoles = useMemo(
     () => getSchoolPilotageRoles(state, isBulkConfiguration ? undefined : configTarget).filter(
       (role) => !isPlatformBackOfficeRole(role),
@@ -143,7 +144,8 @@ export function ConfigurationPage() {
     [ctx],
   );
   const canManageAccounts = hasBackOfficePermission(ctx, CONFIGURATION_USER_ACCOUNTS.feature, "READ");
-  const showUserManagement = userManagementModules.length > 0 || canManageAccounts;
+  const showUserManagement =
+    !isSuperAdminRole(user?.role) && (userManagementModules.length > 0 || canManageAccounts);
 
   const resolvedPeriodRows = useMemo(() => applySystemActivePeriod(periodRows), [periodRows]);
   const classNamesForSubjects = useMemo(() => {
@@ -259,7 +261,9 @@ export function ConfigurationPage() {
         periodMode,
         periods,
         defaultScale: Number(form.get("defaultScale") ?? 20),
-        reportCardMode: String(form.get("reportMode") ?? "period"),
+        ...(canDesignBulletins
+          ? { reportCardMode: String(form.get("reportMode") ?? "period") }
+          : {}),
       },
       "Périodes et barème enregistrés",
     );
@@ -713,7 +717,11 @@ export function ConfigurationPage() {
           <Card key={`periods-${academicFormKey}`} className="p-6">
             <SectionHeader
               title="Périodes et barème"
-              description="Mode de période, sous-périodes, barème par défaut et mode de bulletin."
+              description={
+                canDesignBulletins
+                  ? "Mode de période, sous-périodes, barème par défaut et mode de bulletin."
+                  : "Mode de période, sous-périodes et barème par défaut."
+              }
             />
             <form onSubmit={handlePeriodsSubmit} className="mt-4 space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
@@ -736,17 +744,19 @@ export function ConfigurationPage() {
                     defaultValue={String(academicConfig.defaultScale ?? 20)}
                   />
                 </Field>
-                <Field label="Mode bulletin">
-                  <Select
-                    name="reportMode"
-                    defaultValue={String(academicConfig.reportCardMode ?? "period")}
-                    options={[
-                      { value: "period", label: "Par période" },
-                      { value: "annual", label: "Annuel" },
-                      { value: "custom", label: "Personnalisé" },
-                    ]}
-                  />
-                </Field>
+                {canDesignBulletins ? (
+                  <Field label="Mode bulletin">
+                    <Select
+                      name="reportMode"
+                      defaultValue={String(academicConfig.reportCardMode ?? "period")}
+                      options={[
+                        { value: "period", label: "Par période" },
+                        { value: "annual", label: "Annuel" },
+                        { value: "custom", label: "Personnalisé" },
+                      ]}
+                    />
+                  </Field>
+                ) : null}
               </div>
 
               <div className="rounded-xl border border-line bg-slate-50/60 p-4">

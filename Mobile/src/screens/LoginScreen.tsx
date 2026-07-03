@@ -274,8 +274,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   schoolLogo: {
-    width: 78,
-    height: 78,
+    width: 96,
+    height: 96,
     borderRadius: 26,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
@@ -285,9 +285,9 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
   },
   schoolLogoImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 26,
+    width: 88,
+    height: 88,
+    borderRadius: 22,
     resizeMode: "contain",
   },
   title: {

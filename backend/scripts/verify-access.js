@@ -5,11 +5,39 @@ const baseUrl = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
 const accounts = {
   superadmin: {
     loginPath: "/backoffice/login",
-    payload: { schoolCode: "CD-2026-0001", identifier: "superadmin", password: "1234" },
+    payload: { identifier: "superadmin", password: "1234" },
   },
   countryAdmin: {
     loginPath: "/backoffice/login",
-    payload: { schoolCode: "CD-2026-0001", identifier: "admin-rdc", password: "1234" },
+    payload: { identifier: "admin-rdc", password: "1234" },
+  },
+  countryAdminBi: {
+    loginPath: "/backoffice/login",
+    payload: { identifier: "admin-bi", password: "1234" },
+  },
+  schoolAdmin: {
+    loginPath: "/backoffice/login",
+    payload: { schoolCode: "CD-2026-0001", identifier: "admin", password: "1234" },
+  },
+  secretary: {
+    loginPath: "/backoffice/login",
+    payload: { schoolCode: "CD-2026-0001", identifier: "secretaire", password: "1234" },
+  },
+  prefet: {
+    loginPath: "/backoffice/login",
+    payload: { schoolCode: "CD-2026-0001", identifier: "prefet", password: "1234" },
+  },
+  teacherWeb: {
+    loginPath: "/backoffice/login",
+    payload: { schoolCode: "CD-2026-0001", identifier: "ENS-0001", password: "1234" },
+  },
+  parentWeb: {
+    loginPath: "/backoffice/login",
+    payload: { schoolCode: "CD-2026-0001", identifier: "+243 820 000 001", password: "1234" },
+  },
+  studentWeb: {
+    loginPath: "/backoffice/login",
+    payload: { schoolCode: "CD-2026-0001", identifier: "ELE-0001", password: "1234" },
   },
   teacher: {
     loginPath: "/login",
@@ -26,21 +54,22 @@ const accounts = {
 };
 
 const routes = [
-  { method: "GET", path: "/school", allow: ["superadmin", "countryAdmin", "teacher", "parent", "student"] },
-  { method: "GET", path: "/classes", allow: ["superadmin", "countryAdmin", "teacher", "parent", "student"] },
-  { method: "GET", path: "/students?page=1&limit=5", allow: ["superadmin", "countryAdmin", "teacher", "parent", "student"] },
-  { method: "GET", path: "/teachers?page=1&limit=5", allow: ["superadmin", "countryAdmin", "teacher"] },
-  { method: "GET", path: "/users?page=1&limit=5", allow: ["superadmin", "countryAdmin"] },
-  { method: "GET", path: "/payments?page=1&limit=5", allow: ["superadmin", "countryAdmin", "parent", "student"] },
-  { method: "GET", path: "/backoffice/countries", allow: ["superadmin", "countryAdmin"] },
-  { method: "GET", path: "/backoffice/subscriptions?page=1&limit=5", allow: ["superadmin", "countryAdmin"] },
-  { method: "GET", path: "/backoffice/notifications?page=1&limit=5", allow: ["superadmin", "countryAdmin"] },
-  { method: "GET", path: "/audit?page=1&limit=5", allow: ["superadmin", "countryAdmin"] },
-  { method: "GET", path: "/v2/subjects?page=1&limit=5", allow: ["superadmin", "countryAdmin", "teacher"] },
-  { method: "GET", path: "/v2/academic-years?page=1&limit=5", allow: ["superadmin", "countryAdmin", "teacher"] },
-  { method: "GET", path: "/v2/exams?page=1&limit=5", allow: ["superadmin", "countryAdmin", "teacher"] },
-  { method: "GET", path: "/v2/documents?page=1&limit=5", allow: ["superadmin", "countryAdmin", "teacher", "parent", "student"] },
-  { method: "GET", path: "/v2/reports/advanced", allow: ["superadmin", "countryAdmin", "teacher", "parent", "student"] },
+  { method: "GET", path: "/backoffice/state", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb"] },
+  { method: "GET", path: "/school", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb", "teacher", "parent", "student"] },
+  { method: "GET", path: "/classes", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb", "teacher", "parent", "student"] },
+  { method: "GET", path: "/students?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb", "teacher", "parent", "student"] },
+  { method: "GET", path: "/teachers?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet"] },
+  { method: "GET", path: "/users?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "prefet"] },
+  { method: "GET", path: "/payments?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "parentWeb", "studentWeb", "parent", "student"] },
+  { method: "GET", path: "/backoffice/countries", allow: ["superadmin", "countryAdmin", "countryAdminBi"] },
+  { method: "GET", path: "/backoffice/subscriptions?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi"] },
+  { method: "GET", path: "/backoffice/notifications?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi"] },
+  { method: "GET", path: "/audit?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi"] },
+  { method: "GET", path: "/v2/subjects?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "prefet", "teacherWeb", "teacher"] },
+  { method: "GET", path: "/v2/academic-years?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "prefet", "teacherWeb", "teacher"] },
+  { method: "GET", path: "/v2/exams?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "prefet", "teacherWeb", "teacher"] },
+  { method: "GET", path: "/v2/documents?page=1&limit=5", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb", "teacher", "parent", "student"] },
+  { method: "GET", path: "/v2/reports/advanced", allow: ["superadmin", "countryAdmin", "countryAdminBi", "schoolAdmin", "secretary", "prefet", "teacherWeb", "parentWeb", "studentWeb", "teacher", "parent", "student"] },
 ];
 
 async function request(path, { method = "GET", token, body } = {}) {

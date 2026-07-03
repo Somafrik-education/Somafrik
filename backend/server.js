@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const fs = require("fs");
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 require("dotenv").config({ path: path.join(__dirname, "..", ".env.local"), override: true });
@@ -19,6 +20,13 @@ const { RoleGovernanceService } = require("./services/roleGovernanceService");
 const { PedagogyGovernanceService } = require("./services/pedagogyGovernanceService");
 const { UserTeacherSyncService } = require("./services/userTeacherSyncService");
 const { AuditService } = require("./services/auditService");
+const { mergeAcademicConfigs } = require("./lib/bulletinDesignAccess");
+const { buildDesignPreviewReport } = require("./lib/bulletinDesignPreview");
+const {
+  applyBulletinDesignToReport,
+  resolveBulletinDesignForStudent,
+} = require("./lib/bulletinDesignResolver");
+const { renderReportCardPdf, renderReportCardPreviewHtml } = require("./services/bulletinPdfRenderer");
 
 const app = express();
 let repository = createPostgresRepository();
@@ -49,29 +57,63 @@ app.use(
   }),
 );
 
-const webDistPath = path.join(__dirname, "..", "web", "dist");
+const webDistPath = process.env.WEB_DIST_PATH || path.join(__dirname, "..", "web", "dist");
+
+function sendWebAppShell(res, next) {
+  const indexPath = path.join(webDistPath, "index.html");
+  if (!fs.existsSync(indexPath)) {
+    return res.status(503).json({
+      message:
+        "Application web indisponible. Reconstruisez le backend Docker ou exécutez « npm run build » dans le dossier web.",
+      webDistPath,
+    });
+  }
+
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.sendFile(indexPath, (error) => {
+    if (error) next(error);
+  });
+}
+
+app.get(/^\/web$/, (_req, res) => {
+  res.redirect(302, "/web/");
+});
+
+app.get("/web/", (req, res, next) => {
+  sendWebAppShell(res, next);
+});
+
 app.use(
   "/web",
   express.static(webDistPath, {
+    fallthrough: true,
+    redirect: false,
+    index: false,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith("index.html")) {
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
       }
     },
   }),
 );
 
-// SPA fallback: toute route cliente /web/* (hors fichiers statiques) renvoie l'app React.
+// SPA fallback: routes clientes /web/* (hors fichiers statiques) renvoient l'app React.
 app.get(/^\/web(\/.*)?$/, (req, res, next) => {
-  if (req.method !== "GET" || req.path.includes(".")) {
+  if (req.method !== "GET" || req.path.includes(".") || req.path === "/web/") {
     return next();
   }
-  res.sendFile(path.join(webDistPath, "index.html"), (error) => {
-    if (error) next();
-  });
+  sendWebAppShell(res, next);
 });
 
-app.get("/", asyncHandler(async (_req, res) => {
+app.get("/", asyncHandler(async (req, res) => {
+  if (req.accepts("html")) {
+    return res.redirect(302, "/web/");
+  }
+
   res.json({
     name: "Somafrik API",
     status: "ok",
@@ -115,6 +157,9 @@ app.get("/", asyncHandler(async (_req, res) => {
       "/api/v2/exams",
       "/api/v2/documents",
       "/api/v2/reports/advanced",
+      "/web/",
+      "/web/connexion",
+      "/web/tableau-de-bord",
     ],
   });
 }));
@@ -187,6 +232,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
     role: session.role,
     schoolCode: session.school_code ?? "*",
     countryCode: session.country_code ?? "",
+    authSource: payload.authSource ?? "mobile",
     sessionId: payload.sessionId,
     permissions,
   });
@@ -369,7 +415,8 @@ app.get("/api/students/:id/report", requireAuth, asyncHandler(async (req, res) =
 
 app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, res) => {
   const { gradeBookService, reportPdfService } = await getRuntime();
-  const { students } = await getAuthoritativeBackOfficeState();
+  const backOfficeState = await getAuthoritativeBackOfficeState();
+  const { students } = backOfficeState;
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
 
   if (!student) {
@@ -377,8 +424,10 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
   }
 
   const period = req.query.period ? String(req.query.period) : "Trimestre 1";
-  const report = gradeBookService.generateReport(student.id, period, "Publié");
-  const pdf = reportPdfService.generateReportCardPdf(report);
+  const design = resolveBulletinDesignForStudent(backOfficeState, student);
+  const baseReport = gradeBookService.generateReport(student.id, period, "Publié");
+  const report = applyBulletinDesignToReport(baseReport, design);
+  const pdf = await reportPdfService.generateReportCardPdf(report);
   const filename = `bulletin-${student.matricule}-${period.replace(/\s+/g, "-").toLowerCase()}.pdf`;
 
   res.setHeader("Content-Type", "application/pdf");
@@ -508,8 +557,17 @@ app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
 app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   assertBackOfficeManager(req.principal);
   const currentState = await getAuthoritativeBackOfficeState();
-  const requestedState = sanitizeBackOfficeState(req.body ?? {});
-  const nextState = mergeScopedBackOfficeState(currentState, requestedState, req.principal);
+  const rawBody = req.body ?? {};
+  const requestedState = sanitizeBackOfficeState(rawBody);
+  const touchedEntities = backOfficeDeletableEntities.filter((entity) =>
+    Object.prototype.hasOwnProperty.call(rawBody, entity),
+  );
+  const nextState = mergeScopedBackOfficeState(
+    currentState,
+    requestedState,
+    req.principal,
+    touchedEntities,
+  );
   const hydratedCourses = pedagogyGovernanceService.hydrateCoursesFromAssignments(
     nextState.courses ?? [],
     nextState.assignments ?? [],
@@ -542,6 +600,38 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     roles: Object.keys(saved.rolePermissions ?? {}).length,
   });
   res.json(scopeBackOfficeState(saved, req.principal));
+}));
+
+app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
+  if (!isSuperAdminPrincipal(req.principal)) {
+    throw new BusinessError(403, "Seul le Super Administrateur peut prévisualiser une conception de bulletin.");
+  }
+  const { schoolCode, className, design } = req.body ?? {};
+  if (!schoolCode || !className) {
+    throw new BusinessError(400, "schoolCode et className sont requis.");
+  }
+  const { platformSchools } = await getRuntime();
+  const school = (platformSchools ?? []).find(
+    (item) => String(item.code ?? "").trim().toLowerCase() === String(schoolCode).trim().toLowerCase(),
+  );
+  if (!school) {
+    throw new BusinessError(404, "Établissement introuvable.");
+  }
+  const report = buildDesignPreviewReport({ school, className, design });
+  const format = String(req.query.format ?? "html").trim().toLowerCase();
+  if (format === "pdf") {
+    const pdf = await renderReportCardPdf(report, school);
+    const safeClass = String(className).replace(/[^\w\-]+/g, "-").toLowerCase();
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="bulletin-apercu-${safeClass}.pdf"`);
+    res.setHeader("Content-Length", pdf.length);
+    return res.send(pdf);
+  }
+
+  const html = await renderReportCardPreviewHtml(report, school);
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.send(html);
 }));
 
 app.get("/api/audit", requireAuth, asyncHandler(async (req, res) => {
@@ -705,28 +795,68 @@ function applyStoredStatusOverlay(dataset, storedState) {
 // authentifiable, et son statut (Actif / Suspendu / En attente de validation)
 // reflété au login. Le mot de passe temporaire sert de secret tant qu'aucun
 // hash n'est défini.
+function isDbUserUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? ""));
+}
+
+function userOverlayKeys(user) {
+  const keys = [];
+  if (user?.id) keys.push(`id:${String(user.id)}`);
+  if (user?.publicId) keys.push(`public:${String(user.publicId).trim().toUpperCase()}`);
+  if (user?.identifier) {
+    const login = String(user.identifier).trim().toLowerCase();
+    const schoolCode = String(user.schoolCode ?? "").trim().toUpperCase();
+    if (schoolCode && schoolCode !== "*") {
+      keys.push(`login:${login}@${schoolCode}`);
+    } else {
+      keys.push(`login:${login}`);
+    }
+  }
+  return [...new Set(keys.filter(Boolean))];
+}
+
+function resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey) {
+  const keys = userOverlayKeys(user);
+  for (const alias of keys) {
+    const match = aliasToPrimaryKey.get(alias);
+    if (match) {
+      return match;
+    }
+  }
+
+  const schoolScopedLogin = keys.find((alias) => alias.startsWith("login:") && alias.includes("@"));
+  return schoolScopedLogin ?? keys[0] ?? null;
+}
+
 function applyStoredUserOverlay(dataset, storedState) {
   if (!dataset || !isPlainObject(storedState) || !Array.isArray(storedState.users)) {
     return;
   }
 
-  const keyOf = (user) => String(user?.id ?? user?.publicId ?? user?.identifier ?? "");
-  const byKey = new Map();
+  const byPrimaryKey = new Map();
+  const aliasToPrimaryKey = new Map();
+
+  const registerUser = (user, primaryKey) => {
+    if (!primaryKey || !user) {
+      return;
+    }
+    byPrimaryKey.set(primaryKey, user);
+    for (const alias of userOverlayKeys(user)) {
+      aliasToPrimaryKey.set(alias, primaryKey);
+    }
+  };
 
   for (const user of dataset.userAccounts ?? []) {
-    const key = keyOf(user);
-    if (key) {
-      byKey.set(key, user);
-    }
+    registerUser(user, resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey));
   }
 
   for (const stored of storedState.users) {
-    const key = keyOf(stored);
-    if (!key) {
+    const primaryKey = resolveUserOverlayPrimaryKey(stored, aliasToPrimaryKey);
+    if (!primaryKey) {
       continue;
     }
 
-    const base = byKey.get(key) ?? {};
+    const base = byPrimaryKey.get(primaryKey) ?? {};
     const merged = { ...base, ...stored };
 
     const baseLoginId = String(base.identifier ?? "").trim();
@@ -739,16 +869,37 @@ function applyStoredUserOverlay(dataset, storedState) {
       /^USR-/i.test(storedLoginId)
     ) {
       merged.identifier = baseLoginId;
+    } else if (
+      baseLoginId &&
+      storedLoginId &&
+      baseLoginId !== storedLoginId &&
+      storedLoginId.toUpperCase() === String(stored.publicId ?? base.publicId ?? "").trim().toUpperCase()
+    ) {
+      // Instantané BackOffice : l'identifiant de connexion démo (admin, prefet…) prime sur le code technique.
+      merged.identifier = baseLoginId;
+    }
+
+    if (isDbUserUuid(base.id)) {
+      merged.id = base.id;
+    }
+    if (base.publicId) {
+      merged.publicId = base.publicId;
+    }
+    if (base.passwordHash) {
+      merged.passwordHash = base.passwordHash;
+    }
+    if (base.pinHash) {
+      merged.pinHash = base.pinHash;
     }
 
     if (!merged.password && !merged.passwordHash && !merged.pinHash && merged.temporaryPassword) {
       merged.password = merged.temporaryPassword;
     }
 
-    byKey.set(key, merged);
+    registerUser(merged, primaryKey);
   }
 
-  dataset.userAccounts = [...byKey.values()];
+  dataset.userAccounts = [...byPrimaryKey.values()];
 }
 
 function handleBusinessResponse(res, action) {
@@ -776,20 +927,27 @@ function handleBusinessAction(action) {
 }
 
 function assertBackOfficeReader(principal) {
-  const allowedRoles = [
-    "Super Administrateur Somafrik",
-    "Admin Pays",
-    "Admin School",
-    "Secrétaire",
-    "Préfet des études",
-  ];
-  if (!principal || !allowedRoles.includes(principal.role)) {
-    throw new BusinessError(403, "Accès BackOffice non autorisé");
+  const { canAccessBackOfficeRole, canAccessWebPlatformRole } = require("./lib/establishmentRoles");
+  if (!principal) {
+    throw new BusinessError(403, "Accès plateforme non autorisé");
   }
+
+  if (canAccessBackOfficeRole(principal.role)) {
+    return;
+  }
+
+  if (principal.authSource === "backoffice" && canAccessWebPlatformRole(principal.role)) {
+    return;
+  }
+
+  throw new BusinessError(403, "Accès plateforme non autorisé");
 }
 
 function assertBackOfficeManager(principal) {
-  assertBackOfficeReader(principal);
+  const { canAccessBackOfficeRole } = require("./lib/establishmentRoles");
+  if (!principal || !canAccessBackOfficeRole(principal.role)) {
+    throw new BusinessError(403, "Accès plateforme non autorisé");
+  }
 }
 
 function assertCanManageNotes(principal) {
@@ -823,6 +981,17 @@ function assertCanManagePresences(principal) {
   throw new BusinessError(403, "Permission insuffisante pour enregistrer l'appel.");
 }
 
+function sanitizeDashboardChartConfig(config) {
+  if (!isPlainObject(config)) {
+    return { platform: {}, establishment: {} };
+  }
+
+  return {
+    platform: isPlainObject(config.platform) ? config.platform : {},
+    establishment: isPlainObject(config.establishment) ? config.establishment : {},
+  };
+}
+
 function sanitizeBackOfficeState(payload = {}) {
   const state = {
     schools: Array.isArray(payload.schools) ? payload.schools : [],
@@ -835,6 +1004,7 @@ function sanitizeBackOfficeState(payload = {}) {
     classes: Array.isArray(payload.classes) ? payload.classes : [],
     courses: Array.isArray(payload.courses) ? payload.courses : [],
     assignments: Array.isArray(payload.assignments) ? payload.assignments : [],
+    courseSchedules: Array.isArray(payload.courseSchedules) ? payload.courseSchedules : [],
     payments: Array.isArray(payload.payments) ? payload.payments : [],
     paymentStatuses: Array.isArray(payload.paymentStatuses) ? payload.paymentStatuses : [],
     presences: Array.isArray(payload.presences) ? payload.presences : [],
@@ -847,6 +1017,7 @@ function sanitizeBackOfficeState(payload = {}) {
     messages: Array.isArray(payload.messages) ? payload.messages : [],
     auditLog: Array.isArray(payload.auditLog) ? payload.auditLog.slice(0, 200) : [],
     rolePermissions: isPlainObject(payload.rolePermissions) ? payload.rolePermissions : {},
+    dashboardChartConfig: sanitizeDashboardChartConfig(payload.dashboardChartConfig),
     deletedRows: sanitizeDeletedRows(payload.deletedRows),
     updatedAt: new Date().toISOString(),
   };
@@ -864,6 +1035,7 @@ const backOfficeDeletableEntities = [
   "classes",
   "courses",
   "assignments",
+  "courseSchedules",
   "payments",
   "paymentStatuses",
   "presences",
@@ -921,6 +1093,7 @@ function buildInitialBackOfficeState(runtime = {}) {
     classes: runtime.classes ?? [],
     courses: runtime.courses ?? [],
     assignments: runtime.teacherAssignments ?? [],
+    courseSchedules: runtime.courseSchedules ?? [],
     payments: runtime.payments ?? [],
     paymentStatuses: [],
     presences: runtime.presences ?? [],
@@ -928,7 +1101,7 @@ function buildInitialBackOfficeState(runtime = {}) {
     exams: runtime.exams ?? [],
     bulletins: runtime.bulletins ?? [],
     documents: runtime.documents ?? [],
-    academicConfigs: {},
+    academicConfigs: runtime.academicConfigs ?? {},
     announcements: runtime.announcements ?? [],
     messages: [],
     auditLog: [],
@@ -950,18 +1123,19 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     classes: runtime.classes ?? [],
     courses: runtime.courses ?? [],
     assignments: runtime.teacherAssignments ?? [],
+    courseSchedules: storedState.courseSchedules ?? runtime.courseSchedules ?? [],
     payments: runtime.payments ?? [],
-    paymentStatuses: storedState.paymentStatuses ?? [],
     presences: runtime.presences ?? [],
     notes: runtime.notes ?? [],
     exams: runtime.exams ?? [],
     bulletins: runtime.bulletins ?? [],
     documents: runtime.documents ?? [],
-    academicConfigs: storedState.academicConfigs ?? {},
+    academicConfigs: storedState.academicConfigs ?? runtime.academicConfigs ?? {},
     announcements: runtime.announcements ?? [],
     messages: storedState.messages ?? [],
     auditLog: storedState.auditLog ?? [],
     rolePermissions: storedState.rolePermissions ?? {},
+    dashboardChartConfig: sanitizeDashboardChartConfig(storedState.dashboardChartConfig),
     deletedRows: storedDeletedRows,
   };
   const deletedRows = mergeDeletedRows(storedDeletedRows, inferDeletedRowsFromStoredSnapshot(runtimeState, storedState));
@@ -978,6 +1152,7 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     teachers: mergeRowsByIdentity(runtimeState.teachers, storedState.teachers),
     classes: mergeRowsByIdentity(runtimeState.classes, storedState.classes),
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
+    courseSchedules: mergeRowsByIdentity(runtimeState.courseSchedules ?? [], storedState.courseSchedules ?? []),
     payments: mergeRowsByIdentity(runtimeState.payments, storedState.payments),
     presences: mergeRowsByIdentity(runtimeState.presences, storedState.presences),
     notes: mergeRowsByIdentity(runtimeState.notes, storedState.notes),
@@ -993,6 +1168,9 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
       ...runtimeState.academicConfigs,
       ...(storedState.academicConfigs ?? {}),
     },
+    dashboardChartConfig: sanitizeDashboardChartConfig(
+      storedState.dashboardChartConfig ?? runtimeState.dashboardChartConfig,
+    ),
     deletedRows,
   };
 
@@ -1080,6 +1258,9 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
     classNames.has(item.className) ||
     teacherIds.has(item.teacherId)
   );
+  const courseSchedules = (state.courseSchedules ?? []).filter((item) =>
+    hasSchoolScope(item, schoolCodes) || classNames.has(item.className),
+  );
   const users = state.users.filter((item) => hasSchoolScope(item, schoolCodes));
   const schools = state.schools.filter((item) => schoolCodes.has(item.code));
   const subscriptions = state.subscriptions.filter((item) => hasSchoolScope(item, schoolCodes));
@@ -1107,6 +1288,7 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
     classes,
     courses,
     assignments,
+    courseSchedules,
     payments,
     paymentStatuses,
     subscriptions: overrides.subscriptions ?? subscriptions,
@@ -1272,19 +1454,65 @@ function finalizeSuperAdminUserValidation(users = [], currentUsers = [], princip
   });
 }
 
-function mergeScopedBackOfficeState(currentPayload = {}, requestedPayload = {}, principal) {
+function mergeScopedBackOfficeState(
+  currentPayload = {},
+  requestedPayload = {},
+  principal,
+  touchedEntities = backOfficeDeletableEntities,
+) {
   const current = sanitizeBackOfficeState(currentPayload);
   const requested = sanitizeBackOfficeState(requestedPayload);
+  const deletionScope = touchedEntities;
 
   if (!principal || isSuperAdminPrincipal(principal)) {
+    const mergeEntity = (entity, finalize) => {
+      if (!deletionScope.includes(entity)) {
+        return current[entity] ?? [];
+      }
+      const mergedRows = mergeRowsByIdentity(current[entity] ?? [], requested[entity] ?? []);
+      return finalize ? finalize(mergedRows, current[entity] ?? [], principal) : mergedRows;
+    };
+
     return applyDeletedRows({
+      ...current,
       ...requested,
-      schools: finalizeSuperAdminSchoolValidation(requested.schools, current.schools, principal),
-      users: finalizeSuperAdminUserValidation(requested.users, current.users, principal),
+      schools: mergeEntity("schools", finalizeSuperAdminSchoolValidation),
+      users: mergeEntity("users", finalizeSuperAdminUserValidation),
+      countries: mergeEntity("countries"),
+      subscriptions: mergeEntity("subscriptions"),
+      notifications: mergeEntity("notifications"),
+      students: mergeEntity("students"),
+      teachers: mergeEntity("teachers"),
+      classes: mergeEntity("classes"),
+      courses: mergeEntity("courses"),
+      assignments: mergeEntity("assignments"),
+      courseSchedules: mergeEntity("courseSchedules"),
+      payments: mergeEntity("payments"),
+      paymentStatuses: mergeEntity("paymentStatuses"),
+      presences: mergeEntity("presences"),
+      notes: mergeEntity("notes"),
+      exams: mergeEntity("exams"),
+      bulletins: mergeEntity("bulletins"),
+      documents: mergeEntity("documents"),
+      announcements: mergeEntity("announcements"),
+      messages: mergeEntity("messages"),
+      rolePermissions: {
+        ...current.rolePermissions,
+        ...(requested.rolePermissions ?? {}),
+      },
+      academicConfigs: mergeAcademicConfigs(
+        current.academicConfigs,
+        requested.academicConfigs ?? {},
+        true,
+      ),
+      dashboardChartConfig: sanitizeDashboardChartConfig(
+        requested.dashboardChartConfig ?? current.dashboardChartConfig,
+      ),
       deletedRows: mergeDeletedRows(
         current.deletedRows,
-        detectDeletedRows(current, requested, backOfficeDeletableEntities)
+        detectDeletedRows(current, requested, deletionScope),
       ),
+      updatedAt: new Date().toISOString(),
     });
   }
 
@@ -1364,6 +1592,7 @@ function mergeScopedBackOfficeState(currentPayload = {}, requestedPayload = {}, 
       scopedCurrent.courses,
     ),
     assignments: mergeScopedRows(current.assignments, scopedRequested.assignments, scopedCurrent.assignments),
+    courseSchedules: mergeScopedRows(current.courseSchedules ?? [], scopedRequested.courseSchedules ?? [], scopedCurrent.courseSchedules ?? []),
     payments: mergeScopedRows(current.payments, scopedRequested.payments, scopedCurrent.payments),
     paymentStatuses: mergeScopedRows(current.paymentStatuses, scopedRequested.paymentStatuses, scopedCurrent.paymentStatuses),
     presences: mergeScopedRows(current.presences, scopedRequested.presences, scopedCurrent.presences),
@@ -1374,10 +1603,11 @@ function mergeScopedBackOfficeState(currentPayload = {}, requestedPayload = {}, 
     announcements: mergeScopedRows(current.announcements, scopedRequested.announcements, scopedCurrent.announcements),
     messages: mergeScopedRows(current.messages, scopedRequested.messages, scopedCurrent.messages),
     rolePermissions: mergeScopedRolePermissions(current.rolePermissions, requested.rolePermissions, principal),
-    academicConfigs: {
-      ...current.academicConfigs,
-      ...scopedRequested.academicConfigs,
-    },
+    academicConfigs: mergeAcademicConfigs(
+      current.academicConfigs,
+      scopedRequested.academicConfigs ?? {},
+      isSuperAdminPrincipal(principal),
+    ),
     auditLog: current.auditLog,
     deletedRows,
     updatedAt: new Date().toISOString(),
@@ -1515,6 +1745,7 @@ function getEditableEntitiesForPrincipal(principal) {
     "classes",
     "courses",
     "assignments",
+    "courseSchedules",
     "payments",
     "paymentStatuses",
     "presences",
@@ -1633,8 +1864,8 @@ function deriveSchoolScope(principal, state = {}) {
 }
 
 function belongsToScopedStudentOrSchool(row = {}, schoolCodes, studentIds) {
-  if (row.studentId) {
-    return studentIds.has(row.studentId);
+  if (row.studentId && studentIds.has(row.studentId)) {
+    return true;
   }
 
   return hasSchoolScope(row, schoolCodes);
@@ -1651,9 +1882,13 @@ async function sendAuthenticatedResponse(req, res, response, action) {
     const auditRows = await repository.getAuditLogs({ limit: 100 });
     response.auditLog = tenantScopeService.filterRows(auditRows, principal);
   }
-  const refreshSession = tokenService.createRefreshToken(principal);
+  const refreshSession = tokenService.createRefreshToken({
+    ...principal,
+    authSource: action === "backoffice_login" ? "backoffice" : "mobile",
+  });
   const accessToken = tokenService.createAccessToken({
     ...principal,
+    authSource: action === "backoffice_login" ? "backoffice" : "mobile",
     sessionId: refreshSession.sessionId,
   });
 
@@ -1958,6 +2193,10 @@ initRepository()
     app.listen(PORT, HOST, () => {
       console.log(`Serveur lancé sur http://${HOST}:${PORT}`);
       console.log(`Base active: ${repository.engine ?? "postgresql"}`);
+      console.log(`Web SPA: http://localhost:${PORT}/web/ (connexion: /web/connexion)`);
+      if (!fs.existsSync(path.join(webDistPath, "index.html"))) {
+        console.warn(`Attention: build web introuvable dans ${webDistPath}`);
+      }
     });
   })
   .catch((error) => {

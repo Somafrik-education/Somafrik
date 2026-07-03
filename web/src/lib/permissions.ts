@@ -3,18 +3,27 @@ import { VIEW_PERMISSION_FEATURES } from "./constants";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
 import { isInternalSchoolRole, normalize, isSchoolAdminRole } from "./format";
 import { canSchoolAdminMutateTeachers } from "./pedagogyGovernance";
-import { isSuperAdminRole, COUNTRY_ADMIN_ROLE, SUPERADMIN_MANAGED_ROLES } from "./orgHierarchy";
+import {
+  isSuperAdminRole,
+  COUNTRY_ADMIN_ROLE,
+  SUPERADMIN_MANAGED_ROLES,
+} from "./orgHierarchy";
 import {
   isEstablishmentOperationalRole,
   COUNTRY_SCOPE_MODULES,
   normalizeManagedRolePermissions,
 } from "./roleGovernance";
 import { SCHOOL_ENTITY_SIDEBAR_VIEWS } from "./entityModules";
+import {
+  isSuperAdminAllowedFeature,
+  isSuperAdminAllowedView,
+} from "./superAdminAccess";
 
 const SCHOOL_ADMIN_FORBIDDEN_FEATURES = new Set(["Établissements", "Abonnements"]);
 
 export function canAccessSchoolBackOffice(role?: string): boolean {
-  return isSuperAdminRole(role) || isInternalSchoolRole(role);
+  if (isSuperAdminRole(role)) return false;
+  return isInternalSchoolRole(role);
 }
 
 export interface PermissionContext {
@@ -140,9 +149,20 @@ function hasPermissionForFeature(
   return false;
 }
 
+export function canDesignBulletins(ctx: PermissionContext): boolean {
+  return isSuperAdminRole(ctx.user?.role);
+}
+
 export function canManageRolePermissions(ctx: PermissionContext): boolean {
   if (isSuperAdminRole(ctx.user?.role)) return true;
   return getCurrentRolePermissions(ctx).includes("ALL_PRIVILEGES");
+}
+
+function superAdminAllowsFeature(features: string | (string | null)[] | null, action: string): boolean {
+  const featureList = Array.isArray(features) ? features : [features];
+  if (featureList.includes("Droits par rôle")) return action === "READ" || action === "UPDATE";
+  if (featureList.includes("Paramètres graphiques")) return true;
+  return featureList.every((feature) => isSuperAdminAllowedFeature(feature));
 }
 
 /** Configuration académique établissement (niveaux, classes, matières…). */
@@ -168,7 +188,9 @@ export function hasBackOfficePermission(
   action: string = "READ",
 ): boolean {
   if (!ctx.user) return false;
-  if (isSuperAdminRole(ctx.user.role)) return true;
+  if (isSuperAdminRole(ctx.user.role)) {
+    return superAdminAllowsFeature(features, action);
+  }
 
   const normalizedAction = action === "R" ? "READ" : action;
   const featureList = Array.isArray(features) ? features : [features];
@@ -189,6 +211,10 @@ export function hasBackOfficePermission(
   }
 
   if (featureList.includes("Droits par rôle")) return canManageRolePermissions(ctx);
+  if (featureList.includes("Paramètres graphiques")) return canManageRolePermissions(ctx);
+  if (featureList.some((feature) => feature === "Conception bulletins")) {
+    return false;
+  }
 
   return featureList.some((feature) => {
     if (!feature) return true;
@@ -197,8 +223,19 @@ export function hasBackOfficePermission(
 }
 
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
-  if (isSuperAdminRole(ctx.user?.role)) return true;
+  if (isSuperAdminRole(ctx.user?.role)) {
+    return isSuperAdminAllowedView(viewName);
+  }
   if (viewName === "overview") return true;
+  if (viewName === "permissions") {
+    return canManageRolePermissions(ctx);
+  }
+  if (viewName === "chartSettings") {
+    return canManageRolePermissions(ctx);
+  }
+  if (viewName === "bulletinDesign") {
+    return canDesignBulletins(ctx);
+  }
   if (ctx.user?.role === COUNTRY_ADMIN_ROLE) {
     if (SCHOOL_ENTITY_SIDEBAR_VIEWS.has(viewName) || viewName === "establishment" || viewName === "configuration") {
       return false;
@@ -226,7 +263,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
 }
 
 export function hasSchoolPilotageAccess(ctx: PermissionContext): boolean {
-  if (isSuperAdminRole(ctx.user?.role)) return true;
+  if (isSuperAdminRole(ctx.user?.role)) return false;
   const schoolFeatures = [
     "Utilisateurs",
     "Classes",

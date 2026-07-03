@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "BackOffice web Somafrik (React + Tailwind CSS) consommant l'API Express/PostgreSQL.",
+  "description": "Plateforme web Somafrik (React + Tailwind CSS) consommant l'API Express/PostgreSQL.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -12,9 +12,18 @@
     "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
+    "grapesjs": "^0.22.6",
+    "@fullcalendar/core": "^6.1.15",
+    "@fullcalendar/react": "^6.1.15",
+    "@fullcalendar/daygrid": "^6.1.15",
+    "@fullcalendar/timegrid": "^6.1.15",
+    "@fullcalendar/interaction": "^6.1.15",
+    "@fullcalendar/resource": "^6.1.15",
+    "@fullcalendar/resource-timegrid": "^6.1.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2"
+    "react-router-dom": "^6.26.2",
+    "recharts": "^3.9.1"
   },
   "devDependencies": {
     "@types/node": "^20.16.10",

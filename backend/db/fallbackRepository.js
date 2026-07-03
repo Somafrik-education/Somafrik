@@ -1,5 +1,7 @@
 const seedData = require("../data");
+const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
 const { applySystemActivePeriod } = require("../lib/academicPeriods");
+const { buildEmptyBackOfficeState } = require("../lib/emptyBackOfficeState");
 const { hashSecret } = require("../services/credentialService");
 
 function clone(value) {
@@ -46,6 +48,30 @@ class FallbackRepository {
 
   async getDataset() {
     await this.init();
+    if (!shouldSeedDemoData()) {
+      return clone({
+        school: null,
+        platformSchools: [],
+        countries: [],
+        subscriptions: [],
+        userAccounts: [],
+        teachers: [],
+        classes: [],
+        courses: [],
+        students: [],
+        notes: [],
+        presences: [],
+        payments: [],
+        announcements: [],
+        exams: [],
+        bulletins: [],
+        documents: [],
+        courseSchedules: [],
+        academicConfigs: {},
+        teacherAssignments: [],
+        platformNotifications: [],
+      });
+    }
     return clone({
       school: seedData.school,
       platformSchools: seedData.platformSchools,
@@ -63,6 +89,8 @@ class FallbackRepository {
       exams: seedData.exams,
       bulletins: seedData.bulletins,
       documents: seedData.documents,
+      courseSchedules: seedData.courseSchedules ?? [],
+      academicConfigs: seedData.academicConfigs ?? {},
       teacherAssignments: seedData.teacherAssignments,
       platformNotifications: seedData.platformNotifications,
     });

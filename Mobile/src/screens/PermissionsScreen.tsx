@@ -99,7 +99,7 @@ export default function PermissionsScreen() {
 
       <TouchableOpacity
         style={styles.secondaryBtn}
-        onPress={() => Alert.alert("Synchronise", "Les droits sont enregistres dans le backoffice partage.")}
+        onPress={() => Alert.alert("Synchronise", "Les droits sont enregistrés dans la plateforme partagée.")}
       >
         <Text style={styles.secondaryBtnText}>Les changements sont synchronises automatiquement</Text>
       </TouchableOpacity>

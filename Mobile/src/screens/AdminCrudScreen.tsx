@@ -219,7 +219,7 @@ const configs: Record<
       { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
       { key: "role", label: "Rôle", placeholder: "Choisir le rôle", type: "select" },
       { key: "schoolCode", label: "Établissement", placeholder: "Choisir l'établissement", type: "select" },
-      { key: "accessChannel", label: "Canal d'accès", placeholder: "BackOffice ou Application", type: "select" },
+      { key: "accessChannel", label: "Canal d'accès", placeholder: "Plateforme ou Application", type: "select" },
       { key: "identifier", label: "Identifiant unique", placeholder: "Généré par le système" },
       { key: "status", label: "Statut", placeholder: "Choisir le statut", type: "select" },
       { key: "photoUrl", label: "Photo", placeholder: "Ajouter une photo", type: "photo" },
@@ -1249,7 +1249,7 @@ export default function AdminCrudScreen({ route }: Props) {
                     setSelectField(null);
                   }}
                 >
-                  <Text style={styles.selectorOptionText}>{option}</Text>
+                  <Text style={styles.selectorOptionText}>{formatSelectOptionLabel(selectField?.key ?? "", option)}</Text>
                   {form[selectField?.key ?? ""] === option && (
                     <Ionicons name="checkmark-circle" size={20} color="#2563EB" />
                   )}
@@ -2249,6 +2249,11 @@ function schoolCodeFromContext(context?: any) {
   return context?.session
     ? getDefaultSchoolCode(context?.schoolsData ?? [], context.session)
     : context?.schoolsData?.[0]?.code ?? "CD-2026-0001";
+}
+
+function formatSelectOptionLabel(key: string, option: string): string {
+  if (key === "accessChannel" && option === "BackOffice") return "Plateforme";
+  return option;
 }
 
 function getSelectOptions(

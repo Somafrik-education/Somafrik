@@ -32,6 +32,28 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Examens:READ", "Examens:CREATE", "Examens:UPDATE", "Rapports:READ",
     "Paramètres Établissement:READ",
   ],
+  Proviseur: [
+    "Utilisateurs:READ", "Classes:READ", "Élèves:READ", "Enseignants:READ",
+    "Affectations:READ", "Présences:READ", "Notes:READ", "Bulletins:READ",
+    "Paiements:READ", "Messages:READ", "Documents:READ", "Rapports:READ",
+    "Paramètres Établissement:READ",
+  ],
+  Directeur: [
+    "Utilisateurs:READ", "Classes:READ", "Classes:CREATE", "Classes:UPDATE",
+    "Élèves:READ", "Élèves:UPDATE", "Enseignants:READ",
+    "Affectations:READ", "Affectations:CREATE", "Affectations:UPDATE",
+    "Présences:READ", "Notes:READ", "Bulletins:READ", "Paiements:READ",
+    "Messages:READ", "Documents:READ", "Rapports:READ", "Paramètres Établissement:READ",
+  ],
+  "Directeur adjoint": [
+    "Utilisateurs:READ", "Classes:READ", "Élèves:READ", "Enseignants:READ",
+    "Affectations:READ", "Présences:READ", "Notes:READ", "Bulletins:READ",
+    "Messages:READ", "Documents:READ", "Rapports:READ",
+  ],
+  Comptable: [
+    "Élèves:READ", "Paiements:READ", "Paiements:CREATE", "Paiements:UPDATE",
+    "Documents:READ", "Rapports:READ", "Messages:READ",
+  ],
   Enseignant: [
     "Classes:READ", "Élèves:READ", "Affectations:READ",
     "Présences:READ", "Présences:CREATE", "Présences:UPDATE",

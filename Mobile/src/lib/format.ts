@@ -72,6 +72,8 @@ export function isInternalSchoolRole(role?: string): boolean {
     "proviseur / directeur",
     "proviseur",
     "directeur",
+    "directeur adjoint",
+    "comptable",
     "school_admin",
     "principal",
     "prefet",

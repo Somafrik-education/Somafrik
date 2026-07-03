@@ -46,17 +46,51 @@ export async function request<T = unknown>(
     const message =
       (data && typeof data === "object" && "message" in data
         ? String((data as { message: unknown }).message)
-        : null) ?? "Erreur BackOffice";
+        : null) ?? "Erreur plateforme";
     throw new ApiError(message, response.status);
   }
 
   return data as T;
 }
 
+export async function requestBlob(path: string, options: RequestInit = {}): Promise<Blob> {
+  const token = accessTokenProvider();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let message = "Erreur plateforme";
+    if (text) {
+      try {
+        const data = JSON.parse(text) as { message?: unknown };
+        if (data.message) message = String(data.message);
+      } catch {
+        const cannotRoute = text.match(/Cannot (GET|POST|PUT|DELETE) ([^\s<]+)/i);
+        if (cannotRoute) {
+          message = `Service indisponible (${cannotRoute[2]}). Redémarrez ou reconstruisez le backend.`;
+        } else if (text.length <= 200) {
+          message = text;
+        }
+      }
+    }
+    throw new ApiError(message, response.status);
+  }
+
+  return response.blob();
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  postBlob: (path: string, body?: unknown) => requestBlob(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),

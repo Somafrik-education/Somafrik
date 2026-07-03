@@ -1040,18 +1040,20 @@ const styles = StyleSheet.create({
   },
 
   schoolIconBox: {
-    width: 58,
-    height: 58,
+    width: 76,
+    height: 76,
     borderRadius: 20,
     backgroundColor: "#EFF6FF",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
+    padding: 4,
   },
   schoolLogoImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 20,
+    borderRadius: 16,
+    resizeMode: "contain",
   },
 
   schoolInfo: {

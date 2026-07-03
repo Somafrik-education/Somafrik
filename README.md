@@ -1,6 +1,6 @@
 # Somafrik — Plateforme de gouvernance scolaire
 
-Somafrik unifie la gestion éducative, du pays à la classe. Stack Docker : PostgreSQL, API backend, BackOffice web (Vite) et Expo mobile.
+Somafrik unifie la gestion éducative, du pays à la classe. Stack Docker : PostgreSQL, API backend, plateforme web (Vite) et Expo mobile.
 
 ## Prérequis
 
@@ -27,7 +27,7 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 | Service | URL |
 |---------|-----|
 | API santé | http://localhost:5000/api/health |
-| BackOffice legacy | http://localhost:5000/backoffice/ |
+| Plateforme legacy | http://localhost:5000/backoffice/ |
 | Web React (build intégré) | http://localhost:5000/web/ |
 | Web React (dev, hot reload) | http://localhost:5173/web/ |
 | PostgreSQL (hôte) | localhost:5433 |
@@ -66,18 +66,26 @@ npm run docker:up:core
 
 ## Comptes de démonstration
 
-BackOffice web (`http://localhost:5173/web/`) :
+Plateforme web (`http://localhost:5173/web/` ou `http://localhost:5000/web/`) — mot de passe **`1234`** :
 
-| Profil | Identifiant | Mot de passe | Code établissement |
-|--------|-------------|--------------|-------------------|
-| Super Admin | `superadmin` | `1234` | — |
-| Admin école | `admin` | `1234` | `CD-2026-0001` |
+| Groupe | Profil | Identifiant | Code établissement |
+|--------|--------|-------------|-------------------|
+| Plateforme | Super Admin | `superadmin` | — |
+| Plateforme | Admin Pays RDC | `admin-rdc` | — |
+| Plateforme | Admin Pays BI | `admin-bi` | — |
+| Établissement | Admin école | `admin` | `CD-2026-0001` |
+| Établissement | Secrétaire | `secretaire` | `CD-2026-0001` |
+| Établissement | Préfet | `prefet` | `CD-2026-0001` |
+| Métier | Enseignant | `ENS-0001` | `CD-2026-0001` |
+| Métier | Parent | `+243 820 000 001` | `CD-2026-0001` |
+| Métier | Élève | `ELE-0001` | `CD-2026-0001` |
 
-Mobile :
+Mobile (API `/api/login`) :
 
 ```text
 Code établissement : CD-2026-0001
 Enseignant : ENS-0001 / PIN 1234
+Parent : +243 820 000 001 / PIN 1234
 Élève : ELE-0001 / PIN 1234
 ```
 

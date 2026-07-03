@@ -22,6 +22,12 @@ import { resolveEffectivePermissions } from "./permissions";
 
 const PLATFORM_ROLES = new Set([SUPER_ADMIN_ROLE, COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE]);
 
+export function formatAccessChannelLabel(channel?: string): string {
+  if (!channel) return "";
+  if (channel === "BackOffice") return "Plateforme";
+  return channel;
+}
+
 export function isPlatformUserRole(role?: string): boolean {
   if (!role) return false;
   return PLATFORM_ROLES.has(normalizePlatformRole(role));

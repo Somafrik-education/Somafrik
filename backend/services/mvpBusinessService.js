@@ -279,7 +279,7 @@ class MvpBusinessService {
       status: "MVP opérationnel démo",
       modules: [
         this.module("Authentification", "Couvert", ["Code établissement", "Détection rôle", "Blocage comptes suspendus", "Redirection par rôle"]),
-        this.module("Établissements", "Couvert", ["Création backoffice", "Modification", "Suspension", "Logo", "Paramètres SaaS"]),
+        this.module("Établissements", "Couvert", ["Création plateforme", "Modification", "Suspension", "Logo", "Paramètres SaaS"]),
         this.module("Utilisateurs", "Couvert", ["Rôles MVP", "Permissions automatiques", "Statuts", "Réinitialisation mot de passe"]),
         this.module("Élèves", "Couvert", ["Matricule", "Parent associé", "Archivage", "Dossier élève"]),
         this.module("Classes", "Couvert", ["Identifiant classe", "Affectations", "Effectifs calculés"]),
@@ -292,7 +292,7 @@ class MvpBusinessService {
         this.module("Super Admin / Admin Pays", "Couvert", ["Pays", "Admin pays", "Établissements", "Suspension", "Statistiques"]),
         this.module("Séparation SaaS", "Couvert", ["Établissement", "Parent-enfant", "Classes enseignant", "Dossier élève", "Pays"]),
         this.module("Mobile / tablette", "Couvert", ["Admin", "Enseignant", "Parent", "Élève", "Menus par rôle"]),
-        this.module("Audit simple", "Couvert", ["Connexions", "Modifications d'appel", "Modifications notes", "Actions backoffice"]),
+        this.module("Audit simple", "Couvert", ["Connexions", "Modifications d'appel", "Modifications notes", "Actions plateforme"]),
       ],
     };
   }

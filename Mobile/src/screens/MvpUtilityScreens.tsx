@@ -151,7 +151,7 @@ export function AuditScreen() {
         icon="shield-checkmark-outline"
         title="Controle des acces"
         value={`${usersData.length} compte(s)`}
-        detail="Les roles, statuts et permissions sont geres depuis le backoffice et synchronises avec le mobile."
+        detail="Les rôles, statuts et permissions sont gérés depuis la plateforme et synchronisés avec le mobile."
       />
       <InfoCard
         icon="calendar-outline"
@@ -243,12 +243,12 @@ export function SynchronizationScreen() {
   const { syncStatus, studentsData, usersData, schoolsData } = useAdminData();
 
   return (
-    <ScreenShell title="Synchronisation" subtitle="Etat des donnees mobile, backoffice et backend.">
+    <ScreenShell title="Synchronisation" subtitle="État des données mobile, plateforme et backend.">
       <InfoCard
         icon="cloud-done-outline"
         title="Etat actuel"
         value={labelForSync(syncStatus)}
-        detail="Les actions mobile et backoffice utilisent le backend centralise pour garder les donnees coherentes."
+        detail="Les actions mobile et plateforme utilisent le backend centralisé pour garder les données cohérentes."
       />
       <View style={styles.grid}>
         <Metric label="Ecoles" value={schoolsData.length} />

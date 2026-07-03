@@ -36,7 +36,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-somafrik-dev-secret-change-me}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       SOMAFRIK_DB_REQUIRED: ${SOMAFRIK_DB_REQUIRED:-true}
+      SOMAFRIK_SKIP_DEMO_SEED: ${SOMAFRIK_SKIP_DEMO_SEED:-false}
       JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-1mb}
+      WEB_DIST_PATH: /web/dist
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1 || exit 1"]
       interval: 15s

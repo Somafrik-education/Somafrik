@@ -1,3 +1,6 @@
+const { buildSchoolBulletinBundle } = require("./lib/bulletinSeedData");
+const { buildSchoolPlanningSlots, buildAcademicConfigForSchool } = require("./lib/planningSeedData");
+
 const school = {
   id: "550e8400-e29b-41d4-a716-446655440001",
   publicId: "CD-2026-0001",
@@ -771,14 +774,21 @@ const classes = [
 ];
 
 const courses = [
-  { id: "COURSE1", publicId: "COU-2026-000001", className: "6ème A", name: "Mathématiques", coefficient: 2 },
-  { id: "COURSE2", publicId: "COU-2026-000002", className: "6ème A", name: "Français", coefficient: 1 },
-  { id: "COURSE3", publicId: "COU-2026-000003", className: "6ème B", name: "Mathématiques", coefficient: 2 },
-  { id: "COURSE4", publicId: "COU-2026-000004", className: "6ème B", name: "Sciences", coefficient: 2 },
-  { id: "COURSE5", publicId: "COU-2026-000005", className: "5ème A", name: "Physique", coefficient: 2 },
-  { id: "COURSE6", publicId: "COU-2026-000006", className: "5ème A", name: "Histoire", coefficient: 1 },
-  { id: "COURSE7", publicId: "COU-2026-000007", className: "5ème B", name: "Français", coefficient: 1 },
-  { id: "COURSE8", publicId: "COU-2026-000008", className: "5ème B", name: "Histoire", coefficient: 1 },
+  { id: "COURSE1", publicId: "COU-2026-000001", schoolCode: "CD-2026-0001", className: "6ème A", name: "Mathématiques", coefficient: 3 },
+  { id: "COURSE2", publicId: "COU-2026-000002", schoolCode: "CD-2026-0001", className: "6ème A", name: "Français", coefficient: 3 },
+  { id: "COURSE3", publicId: "COU-2026-000003", schoolCode: "CD-2026-0001", className: "6ème A", name: "Sciences", coefficient: 2 },
+  { id: "COURSE4", publicId: "COU-2026-000004", schoolCode: "CD-2026-0001", className: "6ème A", name: "Anglais", coefficient: 2 },
+  { id: "COURSE5", publicId: "COU-2026-000005", schoolCode: "CD-2026-0001", className: "6ème A", name: "Histoire", coefficient: 1 },
+  { id: "COURSE6", publicId: "COU-2026-000006", schoolCode: "CD-2026-0001", className: "6ème B", name: "Mathématiques", coefficient: 3 },
+  { id: "COURSE7", publicId: "COU-2026-000007", schoolCode: "CD-2026-0001", className: "6ème B", name: "Français", coefficient: 3 },
+  { id: "COURSE8", publicId: "COU-2026-000008", schoolCode: "CD-2026-0001", className: "6ème B", name: "Sciences", coefficient: 2 },
+  { id: "COURSE9", publicId: "COU-2026-000009", schoolCode: "CD-2026-0001", className: "6ème B", name: "Anglais", coefficient: 2 },
+  { id: "COURSE10", publicId: "COU-2026-000010", schoolCode: "CD-2026-0001", className: "5ème A", name: "Physique", coefficient: 2 },
+  { id: "COURSE11", publicId: "COU-2026-000011", schoolCode: "CD-2026-0001", className: "5ème A", name: "Histoire", coefficient: 1 },
+  { id: "COURSE12", publicId: "COU-2026-000012", schoolCode: "CD-2026-0001", className: "5ème A", name: "Mathématiques", coefficient: 3 },
+  { id: "COURSE13", publicId: "COU-2026-000013", schoolCode: "CD-2026-0001", className: "5ème B", name: "Français", coefficient: 3 },
+  { id: "COURSE14", publicId: "COU-2026-000014", schoolCode: "CD-2026-0001", className: "5ème B", name: "Histoire", coefficient: 1 },
+  { id: "COURSE15", publicId: "COU-2026-000015", schoolCode: "CD-2026-0001", className: "5ème B", name: "Sciences", coefficient: 2 },
 ];
 
 const students = [
@@ -786,13 +796,6 @@ const students = [
   { id: "2", publicId: "ELE-0002", name: "Marie Martin", firstName: "Marie", matricule: "ELE-0002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
   { id: "3", publicId: "ELE-0003", name: "Paul Bernard", firstName: "Paul", matricule: "ELE-0003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
   { id: "4", publicId: "ELE-0004", name: "Sarah Mbala", firstName: "Sarah", matricule: "ELE-0004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
-];
-
-const notes = [
-  { id: "N1", studentId: "1", subject: "Mathématiques", value: 15, coefficient: 2, date: "2026-05-20", evaluationId: "EVAL1", scale: 20, evaluationCoefficient: 1, authorId: "T1", enteredAt: "20-05-2026 09:00", audit: [{ authorId: "T1", newValue: 15, date: "20-05-2026 09:00" }] },
-  { id: "N2", studentId: "1", subject: "Français", value: 13, coefficient: 1, date: "2026-05-22", evaluationId: "EVAL2", scale: 20, evaluationCoefficient: 1, authorId: "T2", enteredAt: "22-05-2026 10:00", audit: [{ authorId: "T2", newValue: 13, date: "22-05-2026 10:00" }] },
-  { id: "N3", studentId: "2", subject: "Mathématiques", value: 16, coefficient: 2, date: "2026-05-21", evaluationId: "EVAL1", scale: 20, evaluationCoefficient: 1, authorId: "T1", enteredAt: "21-05-2026 09:00", audit: [{ authorId: "T1", newValue: 16, date: "21-05-2026 09:00" }] },
-  { id: "N4", studentId: "3", subject: "Sciences", value: 12, coefficient: 2, date: "2026-05-23", evaluationId: "EVAL3", scale: 20, evaluationCoefficient: 1, authorId: "T3", enteredAt: "23-05-2026 11:00", audit: [{ authorId: "T3", newValue: 12, date: "23-05-2026 11:00" }] },
 ];
 
 const presences = [
@@ -819,13 +822,6 @@ const exams = [
   { id: "EX2", schoolCode: "CD-2026-0001", name: "Devoir T1 — Français", className: "6ème A", subject: "Français", examType: "Devoir", date: "2026-06-12", period: "Trimestre 1", status: "Programmé" },
   { id: "EX3", schoolCode: "CD-2026-0001", name: "Examen T1 — Sciences", className: "6ème B", subject: "Sciences", examType: "Examen", date: "2026-06-15", period: "Trimestre 1", status: "En cours" },
   { id: "EX4", schoolCode: "CD-2026-0001", name: "Interrogation — Physique", className: "5ème A", subject: "Physique", examType: "Interrogation", date: "2026-05-28", period: "Trimestre 1", status: "Publié" },
-];
-
-const bulletins = [
-  { id: "BUL1", schoolCode: "CD-2026-0001", studentId: "1", studentName: "Jean Dupont", className: "6ème A", period: "Trimestre 1", average: "14.0", rank: "2/28", status: "Publié", publishedAt: "01-06-2026" },
-  { id: "BUL2", schoolCode: "CD-2026-0001", studentId: "2", studentName: "Marie Martin", className: "6ème A", period: "Trimestre 1", average: "15.5", rank: "1/28", status: "Publié", publishedAt: "01-06-2026" },
-  { id: "BUL3", schoolCode: "CD-2026-0001", studentId: "3", studentName: "Paul Bernard", className: "6ème B", period: "Trimestre 1", average: "12.0", rank: "8/26", status: "En validation", publishedAt: "" },
-  { id: "BUL4", schoolCode: "CD-2026-0001", studentId: "4", studentName: "Sarah Mbala", className: "5ème A", period: "Trimestre 1", average: "13.8", rank: "3/24", status: "Brouillon", publishedAt: "" },
 ];
 
 const documents = [
@@ -1056,27 +1052,6 @@ while (students.length < 50) {
   });
 }
 
-while (notes.length < 50) {
-  const index = notes.length + 1;
-  const student = students[index % students.length];
-  const subject = demoSubjects[index % demoSubjects.length];
-  const value = 8 + (index % 13);
-  notes.push({
-    id: `N${index}`,
-    studentId: student.id,
-    subject,
-    value,
-    coefficient: (index % 3) + 1,
-    date: `2026-05-${String((index % 27) + 1).padStart(2, "0")}`,
-    evaluationId: `EVAL${index}`,
-    scale: 20,
-    evaluationCoefficient: (index % 2) + 1,
-    authorId: teachers[index % teachers.length].id,
-    enteredAt: `${String((index % 27) + 1).padStart(2, "0")}-05-2026 09:00`,
-    audit: [{ authorId: teachers[index % teachers.length].id, newValue: value, date: `${String((index % 27) + 1).padStart(2, "0")}-05-2026 09:00` }],
-  });
-}
-
 while (presences.length < 50) {
   const index = presences.length + 1;
   const student = students[index % students.length];
@@ -1202,6 +1177,24 @@ while (userAccounts.length < 50) {
   });
 }
 
+const demoBulletinBundle = buildSchoolBulletinBundle({
+  schoolCode: school.code,
+  students,
+  courses,
+  teachers,
+  periods: ["Trimestre 1", "Trimestre 2"],
+});
+const notes = demoBulletinBundle.notes;
+const bulletins = demoBulletinBundle.bulletins;
+const courseSchedules = buildSchoolPlanningSlots({
+  schoolCode: school.code,
+  courses,
+  classes,
+});
+const academicConfigs = {
+  [school.code]: buildAcademicConfigForSchool(school.code, courses, classes),
+};
+
 module.exports = {
   school,
   platformSchools,
@@ -1215,6 +1208,8 @@ module.exports = {
   announcements,
   exams,
   bulletins,
+  courseSchedules,
+  academicConfigs,
   documents,
   teacherAssignments,
   rolePermissions,

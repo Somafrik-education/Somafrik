@@ -1,6 +1,7 @@
 const { BusinessError } = require("./authService");
 const { CommunicationService } = require("./communicationService");
 const { verifySecret } = require("./credentialService");
+const { canAccessBackOfficeRole, canAccessWebPlatformRole, isEstablishmentBackOfficeRole } = require("../lib/establishmentRoles");
 
 const SUPER_ADMIN_ROLE = "Super Administrateur Somafrik";
 const LEGACY_SUPER_ADMIN_ROLE = "Super Administrateur OKAFRIK";
@@ -26,15 +27,10 @@ class BackOfficeAccessService {
       throw new BusinessError(400, "Identifiant et mot de passe obligatoires");
     }
 
-    const normalizedIdentifier = String(identifier).trim().toLowerCase();
-    const user = this.userAccounts.find((account) =>
-      [account.identifier, account.email, account.phone, account.publicId].some(
-        (value) => String(value ?? "").trim().toLowerCase() === normalizedIdentifier
-      )
-    );
+    const user = this.findUserAccount(identifier, schoolCode);
 
     if (!user || !this.verifyPassword(user, password)) {
-      throw new BusinessError(401, "Identifiants BackOffice incorrects");
+      throw new BusinessError(401, "Identifiants plateforme incorrects");
     }
 
     if (this.isPendingValidation(user)) {
@@ -48,8 +44,8 @@ class BackOfficeAccessService {
       throw new BusinessError(403, "Compte suspendu ou desactive");
     }
 
-    if (user.accessChannel !== "BackOffice" && !this.isBackOfficeRole(user)) {
-      throw new BusinessError(403, "Ce compte n'a pas accès au BackOffice");
+    if (!canAccessWebPlatformRole(user.role) && user.accessChannel !== "BackOffice") {
+      throw new BusinessError(403, "Ce compte n'a pas accès à la plateforme");
     }
 
     if (user.role === "Admin Pays" && this.isCountrySuspended(this.getCountryCode(user.countryScope))) {
@@ -81,6 +77,38 @@ class BackOfficeAccessService {
     };
   }
 
+  findUserAccount(identifier, schoolCode) {
+    const normalizedIdentifier = String(identifier).trim().toLowerCase();
+    const normalizedSchoolCode = String(schoolCode ?? "").trim().toUpperCase();
+    const matches = this.userAccounts.filter((account) =>
+      [account.identifier, account.email, account.phone, account.publicId].some(
+        (value) => String(value ?? "").trim().toLowerCase() === normalizedIdentifier
+      )
+    );
+
+    if (!matches.length) {
+      return undefined;
+    }
+
+    if (normalizedSchoolCode) {
+      const exact = matches.find(
+        (account) => String(account.schoolCode ?? "").trim().toUpperCase() === normalizedSchoolCode
+      );
+      if (exact) {
+        return exact;
+      }
+
+      const platform = matches.find((account) => account.schoolCode === "*");
+      if (platform) {
+        return platform;
+      }
+
+      return undefined;
+    }
+
+    return matches[0];
+  }
+
   isPendingValidation(user) {
     return (
       user?.validationStatus === PENDING_VALIDATION_STATUS ||
@@ -105,15 +133,7 @@ class BackOfficeAccessService {
   }
 
   isBackOfficeRole(user) {
-    return [
-      SUPER_ADMIN_ROLE,
-      LEGACY_SUPER_ADMIN_ROLE,
-      "Admin Pays",
-      "Admin School",
-      "Secrétaire",
-      "Sécretaire",
-      "Préfet des études",
-    ].includes(user.role);
+    return canAccessBackOfficeRole(user.role);
   }
 
   resolveSchoolContext(schoolCode) {
@@ -265,15 +285,15 @@ class BackOfficeAccessService {
   getMenus(user) {
     if (isSuperAdminRole(user.role)) {
       return [
-        "Dashboard",
         "Pays",
-        "Administrateurs Pays",
         "Établissements",
         "Abonnements",
-        "Paiements",
-        "Support",
-        "Rapports",
+        "Utilisateurs",
+        "Notifications",
         "Paramètres",
+        "Droits par rôle",
+        "Graphiques",
+        "Conception bulletins",
       ];
     }
 
@@ -289,8 +309,28 @@ class BackOfficeAccessService {
       return ["Dashboard", "Utilisateurs", "Support", "Rapports"];
     }
 
-    if (user.role === "Préfet des études") {
+    if (user.role === "Préfet des études" || user.role === "Proviseur" || user.role === "Directeur") {
       return ["Dashboard", "Utilisateurs", "Rapports", "Années Académiques", "Support"];
+    }
+
+    if (user.role === "Comptable") {
+      return ["Dashboard", "Paiements", "Rapports", "Support"];
+    }
+
+    if (user.role === "Enseignant") {
+      return ["Dashboard", "Classes", "Notes", "Présences", "Rapports", "Support"];
+    }
+
+    if (user.role === "Parent") {
+      return ["Dashboard", "Notes", "Paiements", "Messages", "Support"];
+    }
+
+    if (["Élève / Étudiant", "Élève", "Étudiant"].includes(user.role)) {
+      return ["Dashboard", "Notes", "Bulletins", "Documents", "Support"];
+    }
+
+    if (isEstablishmentBackOfficeRole(user.role)) {
+      return ["Dashboard", "Support", "Rapports"];
     }
 
     return ["Dashboard"];

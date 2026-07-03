@@ -214,8 +214,8 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   mark: {
-    width: 58,
-    height: 58,
+    width: 72,
+    height: 72,
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  markLogo: { width: 52, height: 52, resizeMode: "contain" },
+  markLogo: { width: 64, height: 64, resizeMode: "contain" },
   headerText: {
     flex: 1,
   },
@@ -346,9 +346,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   logo: {
-    width: 52,
-    height: 52,
-    borderRadius: 8,
+    width: 72,
+    height: 72,
+    borderRadius: 12,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D1FAE5",
   },
-  schoolLogoImage: { width: 48, height: 48, resizeMode: "contain" },
+  schoolLogoImage: { width: 64, height: 64, resizeMode: "contain" },
   schoolCopy: {
     flex: 1,
     minWidth: 0,

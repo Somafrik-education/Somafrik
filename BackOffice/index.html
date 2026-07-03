@@ -16,7 +16,7 @@
     <meta property="og:title" content="Somafrik — La plateforme qui simplifie la gestion de votre établissement scolaire" />
     <meta
       property="og:description"
-      content="Pilotez établissements, utilisateurs, scolarité, finance, communication et rapports depuis un BackOffice unique et sécurisé."
+      content="Pilotez établissements, utilisateurs, scolarité, finance, communication et rapports depuis une plateforme unique et sécurisée."
     />
     <meta property="og:image" content="./assets/somafrik-logo.png" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -26,7 +26,8 @@
       content="ERP scolaire SaaS multi-pays et multi-établissements."
     />
     <meta name="twitter:image" content="./assets/somafrik-logo.png" />
-    <link rel="icon" type="image/png" href="./assets/somafrik-logo.png" />
+    <link rel="icon" type="image/png" href="./assets/somafrik-icon.png" />
+    <link rel="apple-touch-icon" href="./assets/somafrik-icon.png" />
     <link rel="stylesheet" href="./styles.css?v=20260620-1" />
   </head>
   <body>
@@ -63,20 +64,23 @@
               <button class="primary-landing-action" type="button" id="heroLoginButton">Connexion</button>
               <a class="secondary-landing-action" href="#modules">Voir les modules</a>
             </div>
-            <div class="hero-trust" role="list" aria-label="Indicateurs clés">
-              <div role="listitem">
+            <ul class="hero-trust" aria-label="Points forts de la plateforme">
+              <li aria-label="Multi-pays : données séparées par pays. Établissements, utilisateurs et indicateurs isolés par territoire national.">
                 <strong>Multi-pays</strong>
-                <span>Données séparées par pays</span>
-              </div>
-              <div role="listitem">
+                <span class="hero-trust-subtitle">Données séparées par pays</span>
+                <p>Établissements, utilisateurs et indicateurs isolés par territoire national.</p>
+              </li>
+              <li aria-label="6 modules : socle MVP opérationnel. Établissements, utilisateurs et rôles, scolarité, finance, communication et rapports.">
                 <strong>6 modules</strong>
-                <span>Socle MVP opérationnel</span>
-              </div>
-              <div role="listitem">
+                <span class="hero-trust-subtitle">Socle MVP opérationnel</span>
+                <p>Établissements, utilisateurs et rôles, scolarité, finance, communication et rapports.</p>
+              </li>
+              <li aria-label="Rôles et droits : permissions CRUD ajustables. Matrice configurable par le Superadmin ou par établissement ; chaque profil accède à son périmètre.">
                 <strong>Rôles &amp; droits</strong>
-                <span>Permissions CRUD ajustables</span>
-              </div>
-            </div>
+                <span class="hero-trust-subtitle">Permissions CRUD ajustables</span>
+                <p>Matrice configurable par le Superadmin ou par établissement ; chaque profil accède à son périmètre.</p>
+              </li>
+            </ul>
           </div>
 
           <form class="login-card landing-login-card hidden" id="loginForm">
@@ -162,7 +166,7 @@
             <li>Identification par code établissement et identifiant unique utilisateur.</li>
             <li>Données séparées par pays, établissement, rôle et périmètre opérationnel.</li>
             <li>Actions synchronisées avec le backend pour éviter les écarts mobile / web.</li>
-            <li>Permissions ajustables par le Superadmin selon la règle métier.</li>
+            <li>Matrice de permissions configurable par le Superadmin ou par établissement ; chaque profil accède à son périmètre.</li>
           </ul>
         </section>
 
@@ -187,7 +191,7 @@
           <div>
             <strong>Support</strong>
             <span>support@somafrik.app</span>
-            <span>BackOffice Somafrik</span>
+            <span>Plateforme Somafrik</span>
             <span>Plateforme interne sécurisée</span>
           </div>
         </footer>

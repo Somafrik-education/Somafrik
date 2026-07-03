@@ -15,8 +15,19 @@ RUN npx vite build
 # --- Étape 2: image backend (Node.js + Express) ---
 FROM node:22-alpine
 
-# Healthcheck docker compose (wget)
-RUN apk add --no-cache wget
+# Healthcheck docker compose (wget) + Chromium pour Puppeteer (bulletins PDF)
+RUN apk add --no-cache \
+    wget \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    && rm -rf /var/cache/apk/*
+
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 

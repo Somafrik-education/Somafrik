@@ -9,6 +9,7 @@ import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissio
 import {
   applyRoleChangeToUser,
   buildNewUserDraft,
+  formatAccessChannelLabel,
   getCountryScopeOptions,
   getCreatableUserRoles,
   getUserEstablishmentLabel,
@@ -414,7 +415,7 @@ export function UsersPage() {
               <Row label="Périmètre" value={detail.scopeLevel} />
               <Row label="Pays" value={detail.countryScope} />
               <Row label="Établissement" value={getUserEstablishmentLabel(detail, state.schools)} />
-              <Row label="Canal" value={detail.accessChannel} />
+              <Row label="Canal" value={formatAccessChannelLabel(detail.accessChannel)} />
               <Row label="Statut" value={detail.status} />
               <Row label="Validation" value={detail.validationStatus ?? "—"} />
             </dl>
@@ -566,7 +567,7 @@ export function UsersPage() {
                     onChange={(e) => setEditing({ ...editing, accessChannel: e.target.value })}
                     options={[
                       { value: "Application", label: "Application" },
-                      { value: "BackOffice", label: "BackOffice" },
+                      { value: "BackOffice", label: "Plateforme" },
                     ]}
                   />
                 ) : (

@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
+const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
 
 const roleToDb = {
@@ -18,12 +19,14 @@ const roleToDb = {
   Comptable: "ACCOUNTANT",
   Parent: "PARENT",
   "Élève / Étudiant": "STUDENT",
+  Surveillant: "SUPERVISOR",
 };
 
 const roleFromDb = Object.fromEntries(
   Object.entries(roleToDb).map(([label, code]) => [code, label]),
 );
 roleFromDb.SUPER_ADMIN = "Super Administrateur Somafrik";
+roleFromDb.SUPERVISOR = "Surveillant";
 
 class PostgresRepository {
   constructor(databaseConfig) {
@@ -41,10 +44,13 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.pool.query(schema);
-    await this.seedIfEmpty();
-    await this.ensurePlatformReferenceData();
-    await this.ensureStudentUsers();
-    await this.ensureV2Data();
+    if (shouldSeedDemoData()) {
+      await this.seedIfEmpty();
+      await this.ensurePlatformReferenceData();
+      await this.ensureStudentUsers();
+      await this.ensureDemoWebAccounts();
+      await this.ensureV2Data();
+    }
     this.ready = true;
   }
 
@@ -193,10 +199,12 @@ class PostgresRepository {
     const notes = gradeRows.map((grade) => this.mapGrade(grade));
     const payments = paymentRows.map((payment) => this.mapPayment(payment));
     const primarySchoolRow = schoolRows.find((row) => row.school_code === seedData.school.code) ?? schoolRows[0];
-    const school = this.mapSchool(
-      primarySchoolRow,
-      subscriptionRows.find((sub) => sub.school_code === primarySchoolRow?.school_code)
-    );
+    const school = primarySchoolRow
+      ? this.mapSchool(
+          primarySchoolRow,
+          subscriptionRows.find((sub) => sub.school_code === primarySchoolRow.school_code)
+        )
+      : null;
 
     this.cachedDataset = {
       school,
@@ -235,14 +243,27 @@ class PostgresRepository {
   async createSession({ sessionId, refreshTokenHash, userId, schoolCode, role, expiresAt, ipAddress, userAgent }) {
     await this.init();
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
-    const dbUserId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId ?? ""))
-      ? userId
-      : null;
+    const dbUserId = await this.resolveDbUserId(userId);
     await this.pool.query(
       `INSERT INTO sessions (session_code, refresh_token_hash, user_id, school_id, role, expires_at, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [sessionId, refreshTokenHash, dbUserId, school?.id ?? null, role, expiresAt, ipAddress ?? "", userAgent ?? ""]
     );
+  }
+
+  async resolveDbUserId(userId) {
+    const normalized = String(userId ?? "").trim();
+    if (!normalized) {
+      return null;
+    }
+
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)) {
+      const row = await this.one("SELECT id FROM users WHERE id = $1::uuid", [normalized]);
+      return row?.id ?? null;
+    }
+
+    const byCode = await this.one("SELECT id FROM users WHERE user_code = $1", [normalized]);
+    return byCode?.id ?? null;
   }
 
   async findActiveSession(sessionId, refreshTokenHash) {
@@ -272,9 +293,7 @@ class PostgresRepository {
   async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
     await this.init();
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
-    const dbUserId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId ?? ""))
-      ? userId
-      : null;
+    const dbUserId = await this.resolveDbUserId(userId);
     await this.pool.query(
       `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -710,6 +729,9 @@ class PostgresRepository {
   }
 
   async seedIfEmpty() {
+    if (!shouldSeedDemoData()) {
+      return;
+    }
     const existing = await this.one("SELECT COUNT(*)::int AS count FROM countries");
 
     if (existing.count > 0) {
@@ -1028,6 +1050,9 @@ class PostgresRepository {
   }
 
   async ensurePlatformReferenceData() {
+    if (!shouldSeedDemoData()) {
+      return;
+    }
     for (const country of seedData.countries) {
       await this.pool.query(
         `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
@@ -1088,6 +1113,9 @@ class PostgresRepository {
   }
 
   async ensureStudentUsers() {
+    if (!shouldSeedDemoData()) {
+      return;
+    }
     await this.pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
        SELECT st.school_id, st.student_code, st.first_name, st.last_name, st.parent_email, st.parent_phone,
@@ -1100,7 +1128,76 @@ class PostgresRepository {
     );
   }
 
+  async ensureDemoWebAccounts() {
+    if (!shouldSeedDemoData()) {
+      return;
+    }
+
+    const demoSchoolCode = seedData.school.code;
+    const demoPasswordHash = hashSecret("1234");
+    const schoolRows = await this.all("SELECT school_code, id FROM schools");
+    const schoolIds = new Map(schoolRows.map((school) => [school.school_code, school.id]));
+    const demoRoles = new Set(["Enseignant", "Parent", "Élève / Étudiant"]);
+
+    for (const user of seedData.userAccounts.filter((item) => demoRoles.has(item.role))) {
+      const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
+      if (!schoolId && user.schoolCode !== "*") {
+        continue;
+      }
+
+      try {
+        await this.pool.query(
+          `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (user_code) DO UPDATE SET
+             school_id = EXCLUDED.school_id,
+             first_name = EXCLUDED.first_name,
+             last_name = EXCLUDED.last_name,
+             email = EXCLUDED.email,
+             phone = EXCLUDED.phone,
+             password_hash = EXCLUDED.password_hash,
+             pin_hash = EXCLUDED.pin_hash,
+             role = EXCLUDED.role,
+             status = EXCLUDED.status`,
+          [
+            schoolId,
+            user.publicId,
+            user.firstName,
+            user.lastName,
+            user.email ?? "",
+            user.phone ?? "",
+            hashSecret(user.password),
+            hashSecret(user.temporaryPassword || user.password || "1234"),
+            roleToDb[user.role] ?? user.role,
+            this.toDbStatus(user.status),
+            this.parseDate(user.lastLoginAt),
+          ]
+        );
+      } catch (error) {
+        console.error(`ensureDemoWebAccounts: ${user.publicId} (${user.role})`, error.message);
+      }
+    }
+
+    const demoSchoolId = schoolIds.get(demoSchoolCode);
+    if (demoSchoolId) {
+      await this.pool.query(
+        `UPDATE users
+         SET password_hash = COALESCE(password_hash, $1),
+             pin_hash = COALESCE(pin_hash, $1)
+         WHERE school_id = $2
+           AND role IN ('TEACHER', 'PARENT', 'STUDENT')
+           AND (password_hash IS NULL OR pin_hash IS NULL)`,
+        [demoPasswordHash, demoSchoolId]
+      );
+    }
+
+    this.cachedDataset = null;
+  }
+
   async ensureV2Data() {
+    if (!shouldSeedDemoData()) {
+      return;
+    }
     const school = await this.one("SELECT id FROM schools WHERE school_code = $1", [seedData.school.code]);
     if (!school) return;
 
@@ -1650,6 +1747,10 @@ class PostgresRepository {
       "ADM-CD-2026-0001": "admin-rdc",
       "USR-PREFET-0001": "prefet",
       "USR-SECRETARY-0001": "secretaire",
+      // Jeu bulk : comptes démo de CD-2026-0001 (voir bulkPlatformSeed.buildSchoolRoleUser)
+      "ADMIN-CD-2026-0001-01": "admin",
+      "SECRETAIRE-CD-2026-0001-01": "secretaire",
+      "PREFET-CD-2026-0001-01": "prefet",
     };
 
     if (aliases[user.user_code]) {
@@ -1672,6 +1773,20 @@ class PostgresRepository {
       }
 
       if (/^ENS-\d+$/i.test(String(user.user_code))) {
+        return String(user.user_code).toUpperCase();
+      }
+    }
+
+    if (role === "Parent" && user.phone) {
+      return user.phone;
+    }
+
+    if (["Élève / Étudiant", "Élève", "Étudiant"].includes(role)) {
+      const match = String(user.user_code ?? "").match(/(ELE-\d+)$/i);
+      if (match) {
+        return match[1].toUpperCase();
+      }
+      if (/^ELE-\d+$/i.test(String(user.user_code))) {
         return String(user.user_code).toUpperCase();
       }
     }

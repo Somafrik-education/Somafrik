@@ -262,10 +262,12 @@ export function canReadView(session: any, viewName: string): boolean {
 
   if (viewName === "Configuration") {
     if (isSuperAdminSessionRole(session?.role)) return true;
-    if (!isInternalSchoolRole(session?.role)) return false;
+    const platformRole = sessionRoleToPlatformRole(session?.role);
+    if (!isInternalSchoolRole(session?.role) && !isInternalSchoolRole(platformRole)) return false;
     return (
       hasSecurityPermission(session, "Paramètres Établissement", "READ") ||
       session?.role === "school_admin" ||
+      isSchoolAdminRole(platformRole) ||
       hasSecurityPermission(session, "Élèves", "READ") ||
       hasSecurityPermission(session, "Enseignants", "READ") ||
       hasSecurityPermission(session, "Utilisateurs", "READ")
