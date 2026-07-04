@@ -369,6 +369,7 @@ export function CoursePlanningPage() {
             <CoursePlanningCalendar
               className={selectedClassName}
               events={events}
+              legendSubjects={subjectOptions}
               editable={editable}
               onSelectSlot={handleSelectSlot}
               onEventClick={handleEventClick}

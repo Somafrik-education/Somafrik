@@ -26,12 +26,67 @@ export interface PlanningCalendarEvent {
   borderColor?: string;
 }
 
-const RESOURCE_COLORS = ["#0d9488", "#2563eb", "#7c3aed", "#db2777", "#ea580c", "#0891b2"];
+/** Couleur fixe par matière (stable dans tout l'établissement). */
+const SUBJECT_COLOR_MAP: Record<string, string> = {
+  mathematiques: "#2563eb",
+  francais: "#dc2626",
+  sciences: "#16a34a",
+  histoire: "#b45309",
+  geographie: "#ca8a04",
+  anglais: "#7c3aed",
+  physique: "#0891b2",
+  chimie: "#db2777",
+  svt: "#059669",
+  informatique: "#4f46e5",
+  eps: "#ea580c",
+  philosophie: "#6366f1",
+  economie: "#0d9488",
+  comptabilite: "#be185d",
+  dessin: "#9333ea",
+  musique: "#c026d3",
+  religion: "#64748b",
+  langue: "#0284c7",
+};
 
-function colorForKey(key: string): string {
+const FALLBACK_SUBJECT_COLORS = [
+  "#2563eb",
+  "#dc2626",
+  "#16a34a",
+  "#7c3aed",
+  "#0891b2",
+  "#db2777",
+  "#ea580c",
+  "#0d9488",
+  "#4f46e5",
+  "#b45309",
+  "#059669",
+  "#be185d",
+];
+
+export function getCourseColor(subject: string): string {
+  const key = normalize(subject);
+  if (!key) return FALLBACK_SUBJECT_COLORS[0];
+  if (SUBJECT_COLOR_MAP[key]) return SUBJECT_COLOR_MAP[key];
+
   let hash = 0;
-  for (let i = 0; i < key.length; i += 1) hash = (hash + key.charCodeAt(i) * (i + 1)) % RESOURCE_COLORS.length;
-  return RESOURCE_COLORS[hash] ?? RESOURCE_COLORS[0];
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash + key.charCodeAt(i) * (i + 1)) % FALLBACK_SUBJECT_COLORS.length;
+  }
+  return FALLBACK_SUBJECT_COLORS[hash] ?? FALLBACK_SUBJECT_COLORS[0];
+}
+
+export function buildSubjectColorLegend(subjects: Iterable<string>): { subject: string; color: string }[] {
+  const seen = new Set<string>();
+  const legend: { subject: string; color: string }[] = [];
+  for (const raw of subjects) {
+    const subject = String(raw ?? "").trim();
+    if (!subject) continue;
+    const key = normalize(subject);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    legend.push({ subject, color: getCourseColor(subject) });
+  }
+  return legend.sort((a, b) => a.subject.localeCompare(b.subject, "fr"));
 }
 
 export function uniqueSortedSubjects(values: Iterable<string>): string[] {
@@ -182,7 +237,7 @@ export function slotsToClassCalendarEvents(
 ): PlanningCalendarEvent[] {
   return filterSlotsByClass(slots, className).map((slot) => {
     const subject = slot.subject.trim();
-    const color = colorForKey(subject);
+    const color = getCourseColor(subject);
     const teacher = slot.teacherName || "Non assigné";
     const room = slot.room ? ` · ${slot.room}` : "";
 
