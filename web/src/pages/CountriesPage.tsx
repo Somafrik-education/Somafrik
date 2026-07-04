@@ -11,11 +11,13 @@ import {
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { PrintButton } from "../components/ui/PrintButton";
 import { StatusBadge } from "../components/ui/Badge";
 import { Table, type Column } from "../components/ui/Table";
 import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
+import { useConfirm } from "../components/ui/ConfirmDialog";
 import type { BackOfficeState, Country } from "../types";
 
 const EMPTY_COUNTRY: Country = {
@@ -71,6 +73,7 @@ export function CountriesPage() {
   const { session } = useAuth();
   const { state, update } = useData();
   const { showToast } = useToast();
+  const { confirm } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<Country | null>(null);
   const [editing, setEditing] = useState<Country | null>(null);
@@ -119,9 +122,12 @@ export function CountriesPage() {
       );
       return;
     }
-    const confirmed = window.confirm(
-      `Supprimer définitivement le pays « ${country.name} » (${country.code}) ? Cette action est irréversible.`,
-    );
+    const confirmed = await confirm({
+      title: "Supprimer ce pays ?",
+      description: `Supprimer définitivement le pays « ${country.name} » (${country.code}) ? Cette action est irréversible.`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+    });
     if (!confirmed) return;
 
     const next = state.countries.filter((item) => item.code !== country.code);
@@ -206,11 +212,14 @@ export function CountriesPage() {
           title="Pays"
           description={`${rows.length} pays dans votre périmètre.`}
           actions={
-            canCreate ? (
-              <Button size="sm" onClick={openCreate}>
-                Nouveau pays
-              </Button>
-            ) : undefined
+            <>
+              <PrintButton documentTitle="Pays — Somafrik" />
+              {canCreate ? (
+                <Button size="sm" onClick={openCreate}>
+                  Nouveau pays
+                </Button>
+              ) : null}
+            </>
           }
         />
         <div className="mt-4">

@@ -15,6 +15,7 @@ import {
 } from "../lib/orgHierarchy";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { PrintButton } from "../components/ui/PrintButton";
 import { StatusBadge } from "../components/ui/Badge";
 import { Table, type Column } from "../components/ui/Table";
 import { Modal } from "../components/ui/Modal";
@@ -195,15 +196,18 @@ export function SchoolsPage() {
           title="Établissements"
           description={`${filtered.length} établissement(s) dans votre périmètre.`}
           actions={
-            canCreate ? (
-              <Button onClick={openCreateFlow}>
-                Nouvel établissement
-              </Button>
-            ) : undefined
+            <>
+              <PrintButton documentTitle="Établissements — Somafrik" />
+              {canCreate ? (
+                <Button onClick={openCreateFlow}>
+                  Nouvel établissement
+                </Button>
+              ) : null}
+            </>
           }
         />
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="no-print mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Input
             placeholder="Rechercher…"
             value={search}

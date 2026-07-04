@@ -1,7 +1,14 @@
 import { MVP_COVERAGE } from "../lib/constants";
-import { Card, SectionHeader } from "../components/ui/Card";
 import { Badge, StatusBadge } from "../components/ui/Badge";
+import { PrintButton } from "../components/ui/PrintButton";
 import { Table, type Column } from "../components/ui/Table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/shadcn/card";
 
 interface CoverageRow {
   module: string;
@@ -26,14 +33,19 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="p-6">
-        <SectionHeader
-          title="Conformité MVP"
-          description="Couverture fonctionnelle de référence de la plateforme Somafrik."
-        />
-        <div className="mt-4">
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+          <div className="space-y-1.5">
+            <CardTitle className="text-lg">Conformité MVP</CardTitle>
+            <CardDescription>
+              Couverture fonctionnelle de référence de la plateforme Somafrik.
+            </CardDescription>
+          </div>
+          <PrintButton documentTitle="Conformité MVP — Somafrik" />
+        </CardHeader>
+        <CardContent>
           <Table columns={columns} rows={rows} rowKey={(r) => r.module} />
-        </div>
+        </CardContent>
       </Card>
     </div>
   );

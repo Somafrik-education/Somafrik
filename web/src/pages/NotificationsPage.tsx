@@ -7,6 +7,7 @@ import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge, StatusBadge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
+import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import type { PlatformNotification } from "../types";
@@ -124,6 +125,7 @@ export function NotificationsPage() {
         description={`${rows.length} notification(s) dans votre périmètre.`}
         actions={
           <div className="flex gap-2">
+            <PrintButton documentTitle="Notifications — Somafrik" />
             {canUpdate ? (
               <Button variant="secondary" size="sm" disabled={busy} onClick={() => void markAllRead()}>
                 Tout marquer comme lu
@@ -158,7 +160,7 @@ export function NotificationsPage() {
                   {notification.audience} · {notification.date}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="no-print flex gap-2">
                 {canUpdate && notification.status !== "Lu" ? (
                   <Button variant="secondary" size="sm" disabled={busy} onClick={() => void markRead(notification)}>
                     Marquer lu

@@ -1,12 +1,20 @@
+import tailwindcssAnimate from "tailwindcss-animate";
+
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
         // Design tokens repris du BackOffice historique
         ink: "#0f172a",
-        muted: "#64748b",
+        // `muted` conserve la couleur de texte historique (text-muted) tout en
+        // exposant `muted-foreground` pour les composants shadcn/ui.
+        muted: {
+          DEFAULT: "#64748b",
+          foreground: "hsl(var(--muted-foreground))",
+        },
         line: "#e2e8f0",
         brand: {
           DEFAULT: "#1d4ed8",
@@ -19,6 +27,41 @@ export default {
         amber: "#b45309",
         danger: "#dc2626",
         canvas: "#f7f9fc",
+        // Tokens shadcn/ui (pilotés par variables CSS, voir index.css)
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+      },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
         sans: [
@@ -55,5 +98,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 };

@@ -35,7 +35,7 @@ export function Table<T>({
         <thead>
           <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
             {columns.map((col) => (
-              <th key={col.key} className={`px-4 py-3 font-semibold ${alignClass(col.align)}`}>
+              <th key={col.key} className={`px-4 py-3 font-semibold ${alignClass(col.align)} ${col.className ?? ""}`}>
                 {col.header}
               </th>
             ))}

@@ -23,6 +23,7 @@ import { scopedCountries, scopedSchools } from "../lib/scope";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 
@@ -179,16 +180,19 @@ export function PermissionsPage() {
             : "Consultation des droits plateforme (Admin Pays, Admin School)."
         }
         actions={
-          canManage ? (
-            <>
-              <Button variant="secondary" size="sm" onClick={reset} disabled={busy}>
-                Réinitialiser
-              </Button>
-              <Button size="sm" onClick={() => void save()} disabled={busy}>
-                Enregistrer
-              </Button>
-            </>
-          ) : undefined
+          <>
+            <PrintButton documentTitle="Droits par rôle — Somafrik" />
+            {canManage ? (
+              <>
+                <Button variant="secondary" size="sm" onClick={reset} disabled={busy}>
+                  Réinitialiser
+                </Button>
+                <Button size="sm" onClick={() => void save()} disabled={busy}>
+                  Enregistrer
+                </Button>
+              </>
+            ) : null}
+          </>
         }
       />
 

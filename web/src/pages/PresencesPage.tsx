@@ -5,6 +5,7 @@ import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { api } from "../api/client";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { PrintButton } from "../components/ui/PrintButton";
 import { useToast } from "../components/ui/Toast";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { scopedClasses, scopedStudents } from "../lib/establishment";
@@ -216,9 +217,12 @@ export function PresencesPage() {
             description={`${todayLabel} à ${currentHour} · Cliquez sur Présent, Absent, Retard ou Justifié pour chaque élève.`}
           />
         </div>
-        <Button variant="secondary" onClick={() => setSelectedClass(null)}>
-          Changer de classe
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <PrintButton documentTitle={`Feuille d'appel — ${selectedClass} — ${todayLabel}`} />
+          <Button variant="secondary" onClick={() => setSelectedClass(null)}>
+            Changer de classe
+          </Button>
+        </div>
       </div>
 
       {canUpdate ? (
@@ -269,6 +273,13 @@ export function PresencesPage() {
                     {currentStatus}
                   </span>
                 )}
+                <span
+                  className={`print-only rounded-full px-3 py-1 text-xs font-bold ${
+                    STATUS_STYLES[currentStatus]?.active ?? "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {currentStatus}
+                </span>
               </li>
             );
           })}

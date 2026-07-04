@@ -12,6 +12,29 @@
   body {
     @apply bg-canvas text-ink font-sans antialiased;
   }
+
+  /* Tokens shadcn/ui (thème clair calé sur la marque Somafrik). */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 224 76% 48%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 224 76% 48%;
+    --radius: 0.5rem;
+  }
 }
 
 @layer components {
@@ -31,6 +54,74 @@
 
   .reveal.is-visible {
     transform: none;
+  }
+}
+
+/* Visible uniquement lors de l'impression (ex. statut d'appel en lecture seule). */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Masque toute la navigation, les contrôles et les éléments explicitement exclus. */
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+
+  .print-only {
+    display: inline-flex !important;
+  }
+
+  /* Les boutons (actions de ligne, éditions…) n'ont pas leur place sur papier. */
+  button {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto !important;
+    background: #fff !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Cartes en aplat pour l'impression papier / PDF. */
+  .shadow-card,
+  [class*="shadow-"] {
+    box-shadow: none !important;
+  }
+
+  .rounded-2xl,
+  .rounded-xl {
+    border-radius: 0 !important;
+  }
+
+  a[href]::after {
+    content: "";
+  }
+
+  /* Le calendrier de planning doit s'étendre entièrement (pas de scroll) et garder ses couleurs. */
+  .planning-calendar__viewport {
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .planning-event,
+  .planning-month-grid__event,
+  .planning-time-grid__day-label.is-today,
+  .planning-time-grid__column.is-today,
+  .planning-month-grid__cell.is-today {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page {
+    margin: 1.5cm;
   }
 }
 
@@ -90,23 +181,29 @@
   display: grid;
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 10;
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
 }
 
-.planning-time-grid__corner {
-  border-right: 1px solid #e2e8f0;
-}
-
 .planning-time-grid__day-label {
   @apply px-2 py-2 text-center text-xs font-bold uppercase tracking-wide text-muted;
+  position: relative;
+  z-index: 10;
+  background: inherit;
   border-right: 1px solid #e2e8f0;
 }
 
 .planning-time-grid__day-label.is-today {
   @apply text-brand;
   background: rgba(37, 99, 235, 0.06);
+}
+
+.planning-time-grid__corner {
+  position: relative;
+  z-index: 10;
+  background: #fff;
+  border-right: 1px solid #e2e8f0;
 }
 
 .planning-time-grid__body {
@@ -161,7 +258,7 @@
   position: absolute;
   left: 3px;
   right: 3px;
-  z-index: 2;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
@@ -175,16 +272,34 @@
 }
 
 .planning-event.is-editable {
-  cursor: grab;
+  cursor: pointer;
 }
 
-.planning-event.is-editable:active {
+.planning-event.is-editable.is-dragging {
   cursor: grabbing;
 }
 
 .planning-event:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.45);
   outline-offset: 1px;
+}
+
+.planning-event.is-exam {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.12) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.planning-event__time {
+  font-size: 0.65rem;
+  font-weight: 600;
+  opacity: 0.95;
+  letter-spacing: 0.01em;
 }
 
 .planning-event__subject {
@@ -201,6 +316,20 @@
 .planning-event__room {
   font-size: 0.65rem;
   opacity: 0.85;
+}
+
+.planning-event.is-compact {
+  justify-content: center;
+  padding: 0.1rem 0.3rem;
+}
+
+.planning-event__compact {
+  font-weight: 700;
+  font-size: 0.68rem;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .planning-event__resize {
@@ -228,6 +357,7 @@
 }
 
 .planning-month-grid__cell {
+  position: relative;
   min-height: 6.5rem;
   border-right: 1px solid #e2e8f0;
   border-bottom: 1px solid #e2e8f0;
@@ -247,9 +377,13 @@
 
 .planning-month-grid__day {
   @apply text-xs font-bold text-ink;
+  position: relative;
+  z-index: 2;
 }
 
 .planning-month-grid__events {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;

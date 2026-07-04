@@ -169,7 +169,8 @@ function superAdminAllowsFeature(features: string | (string | null)[] | null, ac
 export function canManageEstablishmentSettings(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
   if (isSuperAdminRole(ctx.user.role)) return true;
-  return hasBackOfficePermission(ctx, "Paramètres Établissement", "UPDATE");
+  // Parmi les rôles de l'établissement, seul l'Admin School peut paramétrer.
+  return isSchoolAdminRole(ctx.user.role) && hasBackOfficePermission(ctx, "Paramètres Établissement", "UPDATE");
 }
 
 export function getFeaturePermissions(ctx: PermissionContext, feature: string): FeaturePermissions {
@@ -249,15 +250,10 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     return isInternalSchoolRole(ctx.user?.role);
   }
   if (viewName === "configuration") {
+    // Le paramétrage d'un établissement est réservé au Super Admin (plateforme)
+    // et, parmi les rôles internes, au seul Admin School.
     if (isSuperAdminRole(ctx.user?.role)) return true;
-    if (!isInternalSchoolRole(ctx.user?.role)) return false;
-    return (
-      hasBackOfficePermission(ctx, "Paramètres Établissement", "READ") ||
-      isSchoolAdminRole(ctx.user?.role) ||
-      hasBackOfficePermission(ctx, "Élèves", "READ") ||
-      hasBackOfficePermission(ctx, "Enseignants", "READ") ||
-      hasBackOfficePermission(ctx, "Utilisateurs", "READ")
-    );
+    return isSchoolAdminRole(ctx.user?.role);
   }
   return hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ");
 }

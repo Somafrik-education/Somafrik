@@ -1,14 +1,16 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { PrintButton } from "../components/ui/PrintButton";
 import { Table, type Column } from "../components/ui/Table";
 import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
+import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import {
   applySchoolScopeToItem,
@@ -96,6 +98,7 @@ export function EntityPage({ entity }: EntityPageProps) {
   const { session } = useAuth();
   const { state, update } = useData();
   const { showToast } = useToast();
+  const { confirm } = useConfirm();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
   const scopeUser = scopedUser ?? session?.user ?? null;
 
@@ -104,6 +107,8 @@ export function EntityPage({ entity }: EntityPageProps) {
   const [busy, setBusy] = useState(false);
 
   const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions(module?.feature ?? "Élèves");
+  const allowCreate = canCreate && !module?.planningManaged;
+  const allowDelete = canDelete && !module?.planningManaged;
   const academicLists = useMemo(
     () => getSchoolAcademicLists(state, schoolCode),
     [state, schoolCode],
@@ -276,10 +281,30 @@ export function EntityPage({ entity }: EntityPageProps) {
     event.preventDefault();
     if (!editing || !module) return;
 
+    if (module.planningManaged && !editing.id) {
+      showToast("La planification se fait uniquement depuis Planning de cours.", "error");
+      return;
+    }
+
     let workingItem = { ...editing };
 
+    if (module.planningManaged && editing.id) {
+      const currentRows = getScopedEntityRows(module.key, scopeUser, state);
+      const original = currentRows.find((row) => String(row.id) === String(editing.id));
+      if (!original) {
+        showToast("Élément introuvable.", "error");
+        return;
+      }
+      workingItem = { ...original };
+      for (const field of module.fields) {
+        if (!field.readOnly) {
+          workingItem[field.key] = editing[field.key];
+        }
+      }
+    }
+
     const missingRequired = module.fields.find(
-      (field) => field.required && !String(workingItem[field.key] ?? "").trim(),
+      (field) => field.required && !field.readOnly && !String(workingItem[field.key] ?? "").trim(),
     );
     if (missingRequired) {
       showToast(`${missingRequired.label} est obligatoire`, "error");
@@ -406,7 +431,17 @@ export function EntityPage({ entity }: EntityPageProps) {
 
   async function handleDelete(row: Record<string, unknown>) {
     if (!module || !row.id) return;
-    if (!window.confirm(`Supprimer cet élément de ${module.label.toLowerCase()} ?`)) return;
+    if (module.planningManaged) {
+      showToast("Supprimez la session depuis Planning de cours.", "error");
+      return;
+    }
+    const confirmed = await confirm({
+      title: `Supprimer cet élément ?`,
+      description: `Retirer définitivement cet enregistrement de ${module.label.toLowerCase()} ?`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+    });
+    if (!confirmed) return;
 
     if (module.key === "classes") {
       const result = removeSchoolClassFromState(state, row, schoolCode);
@@ -455,6 +490,7 @@ export function EntityPage({ entity }: EntityPageProps) {
     {
       key: "actions",
       header: "Actions",
+      className: "no-print",
       render: (row) => (
         <div className="flex gap-2">
           {canUpdate ? (
@@ -475,7 +511,7 @@ export function EntityPage({ entity }: EntityPageProps) {
               Modifier
             </Button>
           ) : null}
-          {canDelete ? (
+          {allowDelete ? (
             <Button variant="danger" size="sm" disabled={busy} onClick={() => void handleDelete(row)}>
               Supprimer
             </Button>
@@ -496,38 +532,52 @@ export function EntityPage({ entity }: EntityPageProps) {
               : module.description
           }
           actions={
-            canCreate ? (
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (module.key === "assignments") {
-                    setEditing({ className: "", subject: "", teacherId: "" });
-                    return;
-                  }
-                  if (module.key === "courses") {
-                    setEditing({ className: "", name: "", teacherName: "" });
-                    return;
-                  }
-                  if (module.key === "teachers") {
-                    const code = schoolCode;
-                    if (!code || code === "*") {
-                      showToast("Code établissement requis pour générer l'identifiant", "error");
+            <>
+              <PrintButton
+                documentTitle={school ? `${module.label} — ${school.name}` : module.label}
+              />
+              {allowCreate ? (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (module.key === "assignments") {
+                      setEditing({ className: "", subject: "", teacherId: "" });
                       return;
                     }
-                    setEditing(
-                      generateTeacherIdentifiers(code, (state.teachers ?? []) as Record<string, unknown>[]),
-                    );
-                    return;
-                  }
-                  setEditing({});
-                }}
-              >
-                Ajouter
-              </Button>
-            ) : null
+                    if (module.key === "courses") {
+                      setEditing({ className: "", name: "", teacherName: "" });
+                      return;
+                    }
+                    if (module.key === "teachers") {
+                      const code = schoolCode;
+                      if (!code || code === "*") {
+                        showToast("Code établissement requis pour générer l'identifiant", "error");
+                        return;
+                      }
+                      setEditing(
+                        generateTeacherIdentifiers(code, (state.teachers ?? []) as Record<string, unknown>[]),
+                      );
+                      return;
+                    }
+                    setEditing({});
+                  }}
+                >
+                  Ajouter
+                </Button>
+              ) : null}
+            </>
           }
         />
-        <div className="mt-4">
+        {module.planningManaged ? (
+          <p className="mt-3 rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-sm text-ink">
+            Les dates, horaires et classes se planifient dans{" "}
+            <Link to="/planning" className="font-semibold text-brand underline">
+              Planning de cours
+            </Link>
+            . Cet écran sert au suivi des statuts et à la publication des résultats.
+          </p>
+        ) : null}
+        <div className="no-print mt-4">
           <Input
             placeholder={`Rechercher dans ${module.label.toLowerCase()}…`}
             value={search}
@@ -559,7 +609,7 @@ export function EntityPage({ entity }: EntityPageProps) {
             <Button
               form={`entity-form-${entity}`}
               type="submit"
-              disabled={busy || (editing?.id ? !canUpdate : !canCreate)}
+              disabled={busy || (editing?.id ? !canUpdate : !allowCreate)}
             >
               Enregistrer
             </Button>

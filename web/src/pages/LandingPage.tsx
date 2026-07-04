@@ -1,7 +1,11 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, type ReactNode } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion, useReducedMotion, type HTMLMotionProps } from "framer-motion";
+import { useAuth } from "../context/AuthContext";
 import { BrandLogo } from "../components/BrandLogo";
+import { Button } from "../components/ui/shadcn/button";
 import { SOMAFRIK_LOGO_URL } from "../lib/brand";
+import { getDefaultAppPath } from "../lib/superAdminAccess";
 
 function formatFrenchList(items: string[]): string {
   if (items.length === 0) return "";
@@ -98,54 +102,51 @@ const NAV_LINKS = [
   { href: "#securite", label: "Sécurité" },
 ];
 
+const MOTION_TAGS = {
+  div: motion.div,
+  article: motion.article,
+  li: motion.li,
+  section: motion.section,
+} as const;
+
+/** Révélation au défilement, propulsée par Framer Motion (respecte prefers-reduced-motion). */
 function Reveal({
   children,
   className = "",
   delay = 0,
-  as: Tag = "div",
+  as = "div",
 }: {
   children: ReactNode;
   className?: string;
   delay?: number;
-  as?: "div" | "article" | "li" | "section";
+  as?: keyof typeof MOTION_TAGS;
 }) {
-  const ref = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || !("IntersectionObserver" in window)) {
-      el.classList.add("is-visible");
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const reduce = useReducedMotion();
+  const MotionTag = MOTION_TAGS[as] as (props: HTMLMotionProps<"div">) => JSX.Element;
 
   return (
-    <Tag
-      ref={ref as never}
-      className={`reveal ${className}`}
-      style={delay ? ({ "--reveal-delay": `${delay}ms` } as CSSProperties) : undefined}
+    <MotionTag
+      className={className}
+      initial={reduce ? false : { opacity: 0, y: 18 }}
+      whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.15, margin: "0px 0px -8% 0px" }}
+      transition={{ duration: 0.55, delay: delay / 1000, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
-    </Tag>
+    </MotionTag>
   );
 }
 
 export function LandingPage() {
+  const { session, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAuthenticated && session?.accessToken && !session.user?.mustChangePassword) {
+      navigate(getDefaultAppPath(session.user?.role), { replace: true });
+    }
+  }, [isAuthenticated, session, navigate]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-brand-50 text-ink">
       <a
@@ -206,18 +207,19 @@ export function LandingPage() {
                 utilisateurs, droits, élèves, enseignants, présences, notes, paiements, communications et rapports.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link
-                  to="/connexion"
-                  className="rounded-xl bg-brand-gradient px-6 py-3 font-bold text-white shadow-brand transition hover:-translate-y-0.5"
+                <Button
+                  asChild
+                  className="h-auto rounded-xl bg-brand-gradient px-6 py-3 text-base font-bold text-white shadow-brand transition hover:-translate-y-0.5 hover:bg-brand-gradient hover:opacity-95"
                 >
-                  Connexion
-                </Link>
-                <a
-                  href="#modules"
-                  className="rounded-xl border border-brand-100 bg-white px-6 py-3 font-bold text-brand shadow-card transition hover:-translate-y-0.5 hover:bg-brand-50"
+                  <Link to="/connexion">Connexion</Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="h-auto rounded-xl border-brand-100 bg-white px-6 py-3 text-base font-bold text-brand shadow-card transition hover:-translate-y-0.5 hover:bg-brand-50 hover:text-brand"
                 >
-                  Voir les modules
-                </a>
+                  <a href="#modules">Voir les modules</a>
+                </Button>
               </div>
               <ul
                 className="mt-10 grid gap-4 border-t border-dashed border-slate-200 pt-7 sm:grid-cols-3"
@@ -264,12 +266,12 @@ export function LandingPage() {
                   Les autres rôles entrent selon les accès configurés par le Superadmin : secrétaire, préfet,
                   enseignants, parents et élèves.
                 </p>
-                <Link
-                  to="/connexion"
-                  className="mt-5 block rounded-xl bg-brand-gradient px-4 py-3 text-center font-bold text-white shadow-brand transition hover:-translate-y-0.5"
+                <Button
+                  asChild
+                  className="mt-5 h-auto w-full rounded-xl bg-brand-gradient px-4 py-3 text-base font-bold text-white shadow-brand transition hover:-translate-y-0.5 hover:bg-brand-gradient hover:opacity-95"
                 >
-                  Se connecter
-                </Link>
+                  <Link to="/connexion">Se connecter</Link>
+                </Button>
               </div>
             </Reveal>
           </section>

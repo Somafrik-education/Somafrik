@@ -6,6 +6,7 @@ import { formatMetric } from "../lib/format";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { PrintButton } from "../components/ui/PrintButton";
 import { StatusBadge } from "../components/ui/Badge";
 import { Table, type Column } from "../components/ui/Table";
 import { useToast } from "../components/ui/Toast";
@@ -70,6 +71,7 @@ export function SubscriptionsPage() {
       <SectionHeader
         title="Abonnements"
         description={`${rows.length} abonnement(s) suivis dans votre périmètre.`}
+        actions={<PrintButton documentTitle="Abonnements — Somafrik" />}
       />
       <div className="mt-4">
         <Table columns={columns} rows={rows} rowKey={(s) => s.id ?? s.schoolCode} />

@@ -28,11 +28,13 @@ import {
 import { api } from "../api/client";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
+import { PrintButton } from "../components/ui/PrintButton";
 import { StatusBadge } from "../components/ui/Badge";
 import { Table, type Column } from "../components/ui/Table";
 import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
+import { usePrompt } from "../components/ui/PromptDialog";
 import type { School, UserAccount } from "../types";
 
 function newId(): string {
@@ -56,6 +58,7 @@ export function UsersPage() {
   const { state, update } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
+  const { prompt } = usePrompt();
 
   const allUsers = scopedUsers(session?.user ?? null, state);
   const isSuperadminView = isSuperAdminRole(session?.user?.role);
@@ -161,14 +164,16 @@ export function UsersPage() {
   }
 
   async function resetPassword(user: UserAccount) {
-    const temporaryPassword = window.prompt(
-      "Mot de passe temporaire (minimum 6 caractères) :",
-      "Soma1234",
-    );
-    if (!temporaryPassword || temporaryPassword.trim().length < 6) {
-      showToast("Mot de passe temporaire trop court", "error");
-      return;
-    }
+    const temporaryPassword = await prompt({
+      title: "Mot de passe temporaire",
+      description: `Définir un mot de passe temporaire pour ${user.firstName ?? user.identifier}.`,
+      defaultValue: "Soma1234",
+      placeholder: "Mot de passe (min. 6 caractères)",
+      inputType: "password",
+      confirmLabel: "Réinitialiser",
+      validate: (value) => (value.length < 6 ? "Minimum 6 caractères." : null),
+    });
+    if (!temporaryPassword) return;
     setBusy(true);
     try {
       await api.post(`/users/${user.id ?? user.identifier}/reset-password`, {
@@ -307,6 +312,7 @@ export function UsersPage() {
           }
           actions={
             <div className="flex gap-2">
+              <PrintButton documentTitle="Utilisateurs — Somafrik" />
               <Button variant="secondary" size="sm" onClick={exportCsv} disabled={!filtered.length}>
                 Exporter CSV
               </Button>
@@ -318,7 +324,7 @@ export function UsersPage() {
             </div>
           }
         />
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="no-print mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Input
             placeholder="Rechercher un utilisateur…"
             value={search}

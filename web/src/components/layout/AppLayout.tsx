@@ -17,16 +17,18 @@ const PAGE_NAV_ITEMS = [
     path: CONFIGURATION_USER_ACCOUNTS.path,
     label: CONFIGURATION_USER_ACCOUNTS.label,
   },
+  // Notifications retirées du menu latéral (accès via la cloche du Topbar) mais gardent leur titre de page.
+  { view: "notifications", path: "/notifications", label: "Notifications" },
 ];
 
 export function AppLayout() {
   const location = useLocation();
   const title = useMemo(() => {
-    const match = PAGE_NAV_ITEMS.find(
+    const match = PAGE_NAV_ITEMS.filter(
       (item) =>
         item.path === location.pathname ||
         (item.path !== "/tableau-de-bord" && location.pathname.startsWith(item.path)),
-    );
+    ).sort((a, b) => b.path.length - a.path.length)[0];
     return match?.label ?? "Tableau de bord";
   }, [location.pathname]);
 
