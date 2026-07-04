@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -11,10 +11,8 @@ import { scopedClasses, scopedTeachers } from "../lib/establishment";
 import { normalize } from "../lib/format";
 import { CoursePlanningCalendar } from "../components/planning/CoursePlanningCalendar";
 import {
-  buildClassSubjectResources,
   createScheduleId,
   detectScheduleConflicts,
-  findCourseAssignment,
   formatSlotLabel,
   getClassSubjectNames,
   mergeCourseSchedules,
@@ -81,15 +79,18 @@ export function CoursePlanningPage() {
     [scopeUser, state],
   );
 
+  const classNamesKey = useMemo(() => classes.join("\u0000"), [classes]);
+
   useEffect(() => {
     if (!classes.length) {
       setSelectedClassName("");
       return;
     }
-    if (!selectedClassName || !classes.includes(selectedClassName)) {
-      setSelectedClassName(classes[0]);
-    }
-  }, [classes, selectedClassName]);
+    setSelectedClassName((current) => {
+      if (current && classes.includes(current)) return current;
+      return classes[0];
+    });
+  }, [classNamesKey, classes.length]);
 
   const teachers = useMemo(() => scopedTeachers(scopeUser, state), [scopeUser, state]);
 
@@ -108,11 +109,6 @@ export function CoursePlanningPage() {
     [schoolSlots, selectedClassName],
   );
 
-  const resources = useMemo(
-    () => buildClassSubjectResources(selectedClassName, scopeUser, state, schoolCode),
-    [selectedClassName, scopeUser, state, schoolCode],
-  );
-
   const events = useMemo(
     () => slotsToClassCalendarEvents(schoolSlots, selectedClassName),
     [schoolSlots, selectedClassName],
@@ -120,7 +116,7 @@ export function CoursePlanningPage() {
 
   const editable = canCreate || canUpdate;
 
-  function openCreate(start: string, end: string, subject: string) {
+  function openCreate(start: string, end: string, subject = "") {
     if (!canCreate) {
       showToast("Vous n'avez pas le droit de créer un créneau.", "error");
       return;
@@ -129,8 +125,19 @@ export function CoursePlanningPage() {
       showToast("Sélectionnez une classe.", "error");
       return;
     }
-    const base = { ...EMPTY_FORM(selectedClassName), start, end, subject };
-    const { teacherId, teacherName } = resolveCourseTeacher(state, scopeUser, selectedClassName, subject);
+    const defaultSubject = subject || subjectOptions[0] || "";
+    const base = {
+      ...EMPTY_FORM(selectedClassName),
+      start,
+      end,
+      subject: defaultSubject,
+    };
+    const { teacherId, teacherName } = resolveCourseTeacher(
+      state,
+      scopeUser,
+      selectedClassName,
+      defaultSubject,
+    );
     base.teacherId = teacherId;
     base.teacherName = teacherName;
     setForm(base);
@@ -138,19 +145,24 @@ export function CoursePlanningPage() {
 
   function openEdit(slot: CourseScheduleSlot) {
     if (!canUpdate && !canRead) return;
+    const resolved = resolveCourseTeacher(state, scopeUser, slot.className, slot.subject);
     setForm({
       id: slot.id,
       className: slot.className,
       subject: slot.subject,
-      teacherId: slot.teacherId ?? "",
-      teacherName: slot.teacherName ?? "",
+      teacherId: resolved.fromCourse ? resolved.teacherId : slot.teacherId ?? resolved.teacherId,
+      teacherName: resolved.fromCourse ? resolved.teacherName : slot.teacherName ?? resolved.teacherName,
       start: slot.start,
       end: slot.end,
       room: slot.room ?? "",
     });
   }
 
-  async function persistSlots(nextSchoolSlots: CourseScheduleSlot[], message: string) {
+  async function persistSlots(
+    nextSchoolSlots: CourseScheduleSlot[],
+    message: string,
+    options: { keepForm?: boolean } = {},
+  ) {
     if (!schoolCode) {
       showToast("Sélectionnez un établissement actif.", "error");
       return;
@@ -162,7 +174,9 @@ export function CoursePlanningPage() {
         { partial: true },
       );
       showToast(message, "success");
-      setForm(null);
+      if (!options.keepForm) {
+        setForm(null);
+      }
     } catch {
       showToast("Échec de l'enregistrement du planning.", "error");
     } finally {
@@ -172,19 +186,16 @@ export function CoursePlanningPage() {
 
   function buildSlotFromForm(): CourseScheduleSlot | null {
     if (!form || !schoolCode) return null;
-    const assignment = findCourseAssignment(state, scopeUser, form.className, form.subject);
-    const teacherFromForm = teachers.find((row) => String(row.id) === form.teacherId);
-    const teacherName =
-      form.teacherName ||
-      String(teacherFromForm?.name ?? `${teacherFromForm?.firstName ?? ""} ${teacherFromForm?.lastName ?? ""}`.trim()) ||
-      String(assignment?.teacherName ?? "");
+    const resolved = resolveCourseTeacher(state, scopeUser, form.className, form.subject);
+    const teacherId = resolved.fromCourse ? resolved.teacherId : form.teacherId || resolved.teacherId;
+    const teacherName = resolved.fromCourse ? resolved.teacherName : form.teacherName || resolved.teacherName;
 
     return {
       id: form.id || createScheduleId(),
       schoolCode,
       className: form.className.trim(),
       subject: form.subject.trim(),
-      teacherId: form.teacherId || String(assignment?.teacherId ?? teacherFromForm?.id ?? ""),
+      teacherId,
       teacherName,
       start: form.start,
       end: form.end,
@@ -218,7 +229,7 @@ export function CoursePlanningPage() {
     await persistSlots(next, "Créneau supprimé");
   }
 
-  async function handleEventDrop(eventId: string, start: string, end: string, subject: string) {
+  async function persistSlotChange(eventId: string, start: string, end: string, message: string) {
     if (!canUpdate) return;
     const current = schoolSlots.find((row) => row.id === eventId);
     if (!current) return;
@@ -228,13 +239,12 @@ export function CoursePlanningPage() {
       start,
       end,
       className: selectedClassName,
-      subject: subject || current.subject,
     };
 
-    const assignment = findCourseAssignment(state, scopeUser, patch.className, patch.subject);
-    if (assignment) {
-      patch.teacherId = String(assignment.teacherId ?? patch.teacherId ?? "");
-      patch.teacherName = String(assignment.teacherName ?? patch.teacherName ?? "");
+    const resolved = resolveCourseTeacher(state, scopeUser, patch.className, patch.subject);
+    if (resolved.fromCourse) {
+      patch.teacherId = resolved.teacherId;
+      patch.teacherName = resolved.teacherName;
     }
 
     const conflicts = detectScheduleConflicts(schoolSlots, patch, eventId);
@@ -244,23 +254,60 @@ export function CoursePlanningPage() {
     }
 
     const next = schoolSlots.map((row) => (row.id === eventId ? patch : row));
-    await persistSlots(next, "Créneau déplacé");
+    await persistSlots(next, message, { keepForm: true });
   }
 
+  const handleSelectSlot = useCallback(
+    (start: string, end: string) => openCreate(start, end),
+    // openCreate lit state / subjectOptions au moment du clic
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedClassName, canCreate, subjectOptions.join("\u0000"), schoolCode],
+  );
+
+  const handleEventClick = useCallback(
+    (eventId: string) => {
+      const slot = schoolSlots.find((row) => row.id === eventId);
+      if (slot) openEdit(slot);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schoolSlots, canRead, canUpdate],
+  );
+
+  const handleEventMoveStable = useCallback(
+    (eventId: string, start: string, end: string) => {
+      void persistSlotChange(eventId, start, end, "Créneau déplacé");
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schoolSlots, selectedClassName, canUpdate, state, scopeUser],
+  );
+
+  const handleEventResizeStable = useCallback(
+    (eventId: string, start: string, end: string) => {
+      void persistSlotChange(eventId, start, end, "Créneau redimensionné");
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schoolSlots, selectedClassName, canUpdate, state, scopeUser],
+  );
+
   function applySubjectDefaults(subject: string) {
-    const { teacherId, teacherName } = resolveCourseTeacher(state, scopeUser, selectedClassName, subject);
+    const resolved = resolveCourseTeacher(state, scopeUser, selectedClassName, subject);
     setForm((current) =>
       current
         ? {
             ...current,
             className: selectedClassName,
-            subject,
-            teacherId: teacherId || current.teacherId,
-            teacherName: teacherName || current.teacherName,
+            subject: subject.trim(),
+            teacherId: resolved.teacherId,
+            teacherName: resolved.teacherName,
           }
         : current,
     );
   }
+
+  const resolvedFormTeacher = useMemo(() => {
+    if (!form?.subject.trim()) return null;
+    return resolveCourseTeacher(state, scopeUser, form.className || selectedClassName, form.subject);
+  }, [form?.className, form?.subject, selectedClassName, scopeUser, state]);
 
   if (!canRead) {
     return (
@@ -276,8 +323,8 @@ export function CoursePlanningPage() {
         <p className="text-sm font-semibold text-white/75">Pédagogie</p>
         <h2 className="mt-2 text-2xl font-black">Planning de cours</h2>
         <p className="mt-2 max-w-3xl text-sm text-white/85">
-          Emploi du temps par classe : choisissez une classe, puis organisez les créneaux de chaque
-          matière sur la semaine. Les affectations matière / enseignant pré-remplissent les cours.
+          Emploi du temps par classe : vues jour, semaine, mois et planning horaire. Matière dans chaque
+          créneau — glisser-déposer et redimensionnement des plages horaires.
         </p>
       </Card>
 
@@ -286,7 +333,7 @@ export function CoursePlanningPage() {
           title={selectedClassName ? `Classe ${selectedClassName}` : "Calendrier"}
           description={
             selectedClassName
-              ? `${classSlots.length} créneau(x) · ${resources.length} matière(s)`
+              ? `${classSlots.length} créneau(x) · ${subjectOptions.length} matière(s) disponible(s)`
               : "Sélectionnez une classe pour afficher son emploi du temps."
           }
         />
@@ -304,13 +351,10 @@ export function CoursePlanningPage() {
           {canCreate && selectedClassName ? (
             <div className="flex items-end">
               <Button
-                onClick={() =>
-                  openCreate(
-                    new Date().toISOString(),
-                    new Date(Date.now() + 3600000).toISOString(),
-                    resources[0]?.id ?? "",
-                  )
-                }
+                onClick={() => {
+                  const now = new Date();
+                  openCreate(now.toISOString(), new Date(now.getTime() + 3600000).toISOString());
+                }}
               >
                 Nouveau créneau
               </Button>
@@ -321,24 +365,16 @@ export function CoursePlanningPage() {
         <div className="mt-4">
           {!selectedClassName ? (
             <p className="text-sm font-semibold text-muted">Aucune classe disponible pour cet établissement.</p>
-          ) : resources.length ? (
+          ) : (
             <CoursePlanningCalendar
               className={selectedClassName}
               events={events}
-              resources={resources}
               editable={editable}
-              onSelectSlot={openCreate}
-              onEventClick={(eventId) => {
-                const slot = schoolSlots.find((row) => row.id === eventId);
-                if (slot) openEdit(slot);
-              }}
-              onEventDrop={handleEventDrop}
+              onSelectSlot={handleSelectSlot}
+              onEventClick={handleEventClick}
+              onEventMove={handleEventMoveStable}
+              onEventResize={handleEventResizeStable}
             />
-          ) : (
-            <p className="text-sm font-semibold text-muted">
-              Aucune matière configurée pour {selectedClassName}. Ajoutez des cours ou des affectations
-              pour cette classe.
-            </p>
           )}
         </div>
       </Card>
@@ -356,32 +392,42 @@ export function CoursePlanningPage() {
             <Field label="Matière">
               <Select
                 value={form.subject}
-                onChange={(event) => {
-                  const subject = event.target.value;
-                  setForm({ ...form, subject, className: selectedClassName });
-                  applySubjectDefaults(subject);
-                }}
+                onChange={(event) => applySubjectDefaults(event.target.value)}
                 options={subjectOptions.map((name) => ({ value: name, label: name }))}
               />
             </Field>
-            <Field label="Enseignant">
-              <Select
-                value={form.teacherId}
-                onChange={(event) => {
-                  const teacher = teachers.find((row) => String(row.id) === event.target.value);
-                  setForm({
-                    ...form,
-                    teacherId: event.target.value,
-                    teacherName: String(
-                      teacher?.name ?? `${teacher?.firstName ?? ""} ${teacher?.lastName ?? ""}`.trim(),
-                    ),
-                  });
-                }}
-                options={teachers.map((row) => ({
-                  value: String(row.id ?? ""),
-                  label: String((row.name ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()) || row.id),
-                }))}
-              />
+            <Field
+              label="Enseignant"
+              hint={
+                resolvedFormTeacher?.fromCourse
+                  ? "Professeur affecté automatiquement à ce cours pour cette classe."
+                  : undefined
+              }
+            >
+              {resolvedFormTeacher?.fromCourse ? (
+                <Input value={resolvedFormTeacher.teacherName} readOnly />
+              ) : (
+                <Select
+                  value={form.teacherId}
+                  onChange={(event) => {
+                    const teacher = teachers.find((row) => String(row.id) === event.target.value);
+                    setForm({
+                      ...form,
+                      teacherId: event.target.value,
+                      teacherName: String(
+                        teacher?.name ?? `${teacher?.firstName ?? ""} ${teacher?.lastName ?? ""}`.trim(),
+                      ),
+                    });
+                  }}
+                  options={[
+                    { value: "", label: "— Sélectionner —" },
+                    ...teachers.map((row) => ({
+                      value: String(row.id ?? ""),
+                      label: String((row.name ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()) || row.id),
+                    })),
+                  ]}
+                />
+              )}
             </Field>
             <Field label="Salle">
               <Input value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} />

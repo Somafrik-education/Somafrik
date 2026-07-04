@@ -69,11 +69,15 @@ class PedagogyGovernanceService {
 
       const className = String(course.className ?? "").trim();
       const subject = String(course.name ?? course.subject ?? "").trim();
+      const schoolCode = normalize(String(course.schoolCode ?? ""));
       const match = assignments.find((assignment) => {
-        return (
-          String(assignment.className ?? "").trim() === className
-          && normalize(String(assignment.course ?? assignment.subject ?? "")) === normalize(subject)
-        );
+        const sameClass = String(assignment.className ?? "").trim() === className;
+        const sameSubject =
+          normalize(String(assignment.course ?? assignment.subject ?? "")) === normalize(subject);
+        if (!sameClass || !sameSubject) return false;
+        const assignmentSchool = normalize(String(assignment.schoolCode ?? ""));
+        if (!schoolCode || !assignmentSchool) return true;
+        return assignmentSchool === schoolCode;
       });
 
       if (!match) return course;
@@ -84,6 +88,88 @@ class PedagogyGovernanceService {
         teacherName: match.teacherName ?? course.teacherName,
       };
     });
+  }
+
+  pedagogyScopeKey(row = {}) {
+    const school = normalize(row.schoolCode ?? "");
+    const className = normalize(row.className ?? "");
+    const subject = normalize(row.subject ?? row.course ?? row.name ?? "");
+    return `${school}|${className}|${subject}`;
+  }
+
+  isEphemeralCourseId(id) {
+    return /^COURSE-/i.test(String(id ?? ""));
+  }
+
+  pickPreferredCourse(existing = {}, candidate = {}) {
+    const existingEphemeral = this.isEphemeralCourseId(existing.id);
+    const candidateEphemeral = this.isEphemeralCourseId(candidate.id);
+    const preferred =
+      existingEphemeral && !candidateEphemeral
+        ? candidate
+        : !existingEphemeral && candidateEphemeral
+          ? existing
+          : candidate;
+    const other = preferred === existing ? candidate : existing;
+
+    return {
+      ...preferred,
+      ...other,
+      id: preferred.id,
+      schoolCode: preferred.schoolCode ?? other.schoolCode,
+      className: preferred.className ?? other.className,
+      name: preferred.name ?? other.name,
+      teacherId: preferred.teacherId || other.teacherId,
+      teacherName: preferred.teacherName || other.teacherName,
+      coefficient: preferred.coefficient ?? other.coefficient ?? 1,
+    };
+  }
+
+  dedupeCoursesBySchoolClassSubject(courses = []) {
+    const byKey = new Map();
+    const unscoped = [];
+    for (const course of courses) {
+      const className = normalize(course.className ?? "");
+      const subject = normalize(course.name ?? course.subject ?? "");
+      if (!className || !subject) {
+        unscoped.push(course);
+        continue;
+      }
+      const key = this.pedagogyScopeKey(course);
+      const existing = byKey.get(key);
+      byKey.set(key, existing ? this.pickPreferredCourse(existing, course) : course);
+    }
+    return [...unscoped, ...byKey.values()];
+  }
+
+  dedupeAssignmentsBySchoolClassSubject(assignments = []) {
+    const byKey = new Map();
+    const unscoped = [];
+    for (const assignment of assignments) {
+      const className = normalize(assignment.className ?? "");
+      const subject = normalize(assignment.subject ?? assignment.course ?? "");
+      if (!className || !subject) {
+        unscoped.push(assignment);
+        continue;
+      }
+      const key = this.pedagogyScopeKey(assignment);
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, assignment);
+        continue;
+      }
+      const preferred = String(existing.id ?? "").startsWith("ASSIGN") ? existing : assignment;
+      const other = preferred === existing ? assignment : existing;
+      byKey.set(key, {
+        ...preferred,
+        ...other,
+        id: preferred.id ?? other.id,
+        schoolCode: preferred.schoolCode ?? other.schoolCode,
+        teacherId: preferred.teacherId || other.teacherId,
+        teacherName: preferred.teacherName || other.teacherName,
+      });
+    }
+    return [...unscoped, ...byKey.values()];
   }
 
   /** Cours créés ou modifiés depuis l'état courant (évite de bloquer toute la sync). */

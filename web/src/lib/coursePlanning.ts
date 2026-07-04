@@ -1,7 +1,8 @@
 import type { BackOfficeState, SessionUser } from "../types";
-import { getSubjectsForClass } from "./academicConfig";
+import { getSubjectsForClass, DEFAULT_SUBJECTS } from "./academicConfig";
 import { normalize } from "./format";
-import { scopedCourses, scopedTeachers } from "./establishment";
+import { findTeacherByName, getTeacherDisplayName } from "./pedagogySync";
+import { scopedAssignments, scopedCourses, scopedTeachers } from "./establishment";
 
 export interface CourseScheduleSlot {
   id: string;
@@ -15,20 +16,11 @@ export interface CourseScheduleSlot {
   room?: string;
 }
 
-export interface PlanningResource {
-  id: string;
-  title: string;
-  subject: string;
-  teacherName: string;
-  teacherId?: string;
-}
-
 export interface PlanningCalendarEvent {
   id: string;
   title: string;
   start: string;
   end: string;
-  resourceId: string;
   extendedProps: CourseScheduleSlot;
   backgroundColor?: string;
   borderColor?: string;
@@ -40,6 +32,20 @@ function colorForKey(key: string): string {
   let hash = 0;
   for (let i = 0; i < key.length; i += 1) hash = (hash + key.charCodeAt(i) * (i + 1)) % RESOURCE_COLORS.length;
   return RESOURCE_COLORS[hash] ?? RESOURCE_COLORS[0];
+}
+
+export function uniqueSortedSubjects(values: Iterable<string>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const subject = String(raw ?? "").trim();
+    if (!subject) continue;
+    const key = normalize(subject);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(subject);
+  }
+  return result.sort((a, b) => a.localeCompare(b, "fr"));
 }
 
 export function scopedCourseSchedules(user: SessionUser | null, state: BackOfficeState): CourseScheduleSlot[] {
@@ -62,12 +68,17 @@ export function getClassSubjectNames(
     .map((row) => String(row.name ?? row.subject ?? "").trim())
     .filter(Boolean);
 
-  const unique = [...new Set(fromCourses)];
-  if (unique.length) {
-    return unique.sort((a, b) => a.localeCompare(b, "fr"));
-  }
+  const fromSlots = scopedCourseSchedules(user, state)
+    .filter((slot) => normalize(slot.className) === normalize(className))
+    .map((slot) => slot.subject.trim())
+    .filter(Boolean);
 
-  return getSubjectsForClass(state, schoolCode, className);
+  const fromConfig = getSubjectsForClass(state, schoolCode, className);
+
+  const merged = uniqueSortedSubjects([...fromCourses, ...fromSlots, ...fromConfig]);
+  if (merged.length) return merged;
+
+  return [...DEFAULT_SUBJECTS];
 }
 
 export function filterSlotsByClass(slots: CourseScheduleSlot[], className: string): CourseScheduleSlot[] {
@@ -77,8 +88,62 @@ export function filterSlotsByClass(slots: CourseScheduleSlot[], className: strin
 
 function teacherDisplayName(row: Record<string, unknown> | undefined): string {
   if (!row) return "Non assigné";
-  const label = String(row.name ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim());
-  return label || "Non assigné";
+  return getTeacherDisplayName(row) || "Non assigné";
+}
+
+export interface ResolvedCourseTeacher {
+  teacherId: string;
+  teacherName: string;
+  /** Professeur issu de l'affectation cours / matière pour cette classe. */
+  fromCourse: boolean;
+}
+
+function matchesClassSubject(
+  row: Record<string, unknown>,
+  className: string,
+  subject: string,
+): boolean {
+  const classNorm = normalize(className);
+  const subjectNorm = normalize(subject);
+  const rowClass = normalize(String(row.className ?? ""));
+  const rowSubject = normalize(String(row.name ?? row.subject ?? row.course ?? ""));
+  return rowClass === classNorm && rowSubject === subjectNorm;
+}
+
+export function findCourseAssignment(
+  state: BackOfficeState,
+  user: SessionUser | null,
+  className: string,
+  subject: string,
+): Record<string, unknown> | undefined {
+  if (!className.trim() || !subject.trim()) return undefined;
+
+  const course = scopedCourses(user, state).find((row) => matchesClassSubject(row, className, subject));
+  if (course) return course;
+
+  const assignment = scopedAssignments(user, state).find((row) => matchesClassSubject(row, className, subject));
+  if (assignment) return assignment;
+
+  const teachers = scopedTeachers(user, state);
+  for (const teacher of teachers) {
+    const assignments = Array.isArray(teacher.assignments) ? (teacher.assignments as Record<string, unknown>[]) : [];
+    const linked = assignments.some((entry) => matchesClassSubject(entry, className, subject));
+    const mainSubjectMatch =
+      normalize(String(teacher.mainSubject ?? "")) === normalize(subject) &&
+      assignments.some((entry) => normalize(String(entry.className ?? "")) === normalize(className));
+
+    if (linked || mainSubjectMatch) {
+      return {
+        teacherId: teacher.id,
+        teacherName: getTeacherDisplayName(teacher),
+        className,
+        name: subject,
+        subject,
+      };
+    }
+  }
+
+  return undefined;
 }
 
 export function resolveCourseTeacher(
@@ -86,34 +151,29 @@ export function resolveCourseTeacher(
   user: SessionUser | null,
   className: string,
   subject: string,
-): { teacherId: string; teacherName: string } {
-  const course = findCourseAssignment(state, user, className, subject);
+): ResolvedCourseTeacher {
+  const assignment = findCourseAssignment(state, user, className, subject);
   const teachers = scopedTeachers(user, state);
-  const teacherId = String(course?.teacherId ?? "");
-  let teacherName = String(course?.teacherName ?? "").trim();
-  if (!teacherName && teacherId) {
+
+  let teacherId = String(assignment?.teacherId ?? "");
+  let teacherName = String(assignment?.teacherName ?? "").trim();
+
+  if (!teacherId && teacherName) {
+    const teacher = findTeacherByName(teachers, teacherName);
+    teacherId = String(teacher?.id ?? "");
+    if (teacher) teacherName = getTeacherDisplayName(teacher);
+  }
+  if (teacherId && !teacherName) {
     teacherName = teacherDisplayName(teachers.find((row) => String(row.id) === teacherId) as Record<string, unknown>);
   }
-  return { teacherId, teacherName: teacherName || "Non assigné" };
-}
 
-/** Ressources du calendrier = une ligne par matière avec enseignant assigné. */
-export function buildClassSubjectResources(
-  className: string,
-  user: SessionUser | null,
-  state: BackOfficeState,
-  schoolCode?: string,
-): PlanningResource[] {
-  return getClassSubjectNames(user, state, className, schoolCode).map((subject) => {
-    const { teacherId, teacherName } = resolveCourseTeacher(state, user, className, subject);
-    return {
-      id: subject,
-      title: subject,
-      subject,
-      teacherName,
-      teacherId,
-    };
-  });
+  const fromCourse = Boolean(assignment && (teacherId || (teacherName && teacherName !== "Non assigné")));
+
+  return {
+    teacherId,
+    teacherName: teacherName || "Non assigné",
+    fromCourse,
+  };
 }
 
 export function slotsToClassCalendarEvents(
@@ -121,18 +181,17 @@ export function slotsToClassCalendarEvents(
   className: string,
 ): PlanningCalendarEvent[] {
   return filterSlotsByClass(slots, className).map((slot) => {
-    const resourceId = slot.subject;
-    const color = colorForKey(resourceId);
+    const subject = slot.subject.trim();
+    const color = colorForKey(subject);
     const teacher = slot.teacherName || "Non assigné";
     const room = slot.room ? ` · ${slot.room}` : "";
 
     return {
       id: slot.id,
-      title: `${slot.subject} — ${teacher}${room}`,
+      title: `${subject} — ${teacher}${room}`,
       start: slot.start,
       end: slot.end,
-      resourceId,
-      extendedProps: slot,
+      extendedProps: { ...slot, subject },
       backgroundColor: color,
       borderColor: color,
     };
@@ -188,15 +247,3 @@ export function mergeCourseSchedules(
   return [...others, ...nextSchoolSlots];
 }
 
-export function findCourseAssignment(
-  state: BackOfficeState,
-  user: SessionUser | null,
-  className: string,
-  subject: string,
-) {
-  return scopedCourses(user, state).find(
-    (row) =>
-      normalize(String(row.className ?? "")) === normalize(className) &&
-      normalize(String(row.name ?? row.subject ?? "")) === normalize(subject),
-  );
-}

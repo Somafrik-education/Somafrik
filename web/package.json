@@ -12,15 +12,10 @@
     "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
+    "date-fns": "^3.6.0",
     "grapesjs": "^0.22.6",
-    "@fullcalendar/core": "^6.1.15",
-    "@fullcalendar/react": "^6.1.15",
-    "@fullcalendar/daygrid": "^6.1.15",
-    "@fullcalendar/timegrid": "^6.1.15",
-    "@fullcalendar/interaction": "^6.1.15",
-    "@fullcalendar/resource": "^6.1.15",
-    "@fullcalendar/resource-timegrid": "^6.1.15",
     "react": "^18.3.1",
+    "react-big-calendar": "^1.20.0",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
     "recharts": "^3.9.1"
@@ -28,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^20.16.10",
     "@types/react": "^18.3.10",
+    "@types/react-big-calendar": "^1.16.3",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",

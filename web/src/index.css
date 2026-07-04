@@ -24,14 +24,12 @@
 
 @layer utilities {
   .reveal {
-    opacity: 0;
-    transform: translateY(22px);
-    transition: opacity 0.6s ease, transform 0.6s ease;
+    transform: translateY(12px);
+    transition: transform 0.6s ease, opacity 0.6s ease;
     transition-delay: var(--reveal-delay, 0ms);
   }
 
   .reveal.is-visible {
-    opacity: 1;
     transform: none;
   }
 }
@@ -49,34 +47,82 @@
   }
 }
 
-.planning-calendar .fc-datagrid-cell-cushion {
-  white-space: normal;
-  line-height: 1.35;
-  padding-top: 0.45rem;
-  padding-bottom: 0.45rem;
+.planning-calendar {
+  --rbc-brand: #2563eb;
 }
 
-.planning-calendar .fc-planning-event {
+.planning-calendar .rbc-calendar {
+  font-size: 0.875rem;
+}
+
+.planning-calendar .rbc-toolbar-label {
+  display: none;
+}
+
+.planning-calendar .rbc-planning-toolbar__btn,
+.planning-calendar .rbc-planning-toolbar__view {
+  @apply rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-brand/40 hover:text-brand;
+}
+
+.planning-calendar .rbc-planning-toolbar__view.is-active {
+  @apply border-brand bg-brand text-white shadow-sm;
+}
+
+.planning-calendar .rbc-header {
+  @apply border-line py-2 text-xs font-bold uppercase tracking-wide text-muted;
+}
+
+.planning-calendar .rbc-time-content,
+.planning-calendar .rbc-time-header-content,
+.planning-calendar .rbc-time-gutter,
+.planning-calendar .rbc-day-bg,
+.planning-calendar .rbc-month-row,
+.planning-calendar .rbc-month-view,
+.planning-calendar .rbc-time-view {
+  border-color: #e2e8f0;
+}
+
+.planning-calendar .rbc-today {
+  background-color: rgba(37, 99, 235, 0.06);
+}
+
+.planning-calendar .rbc-event {
+  border-radius: 0.5rem;
+  border: none;
+  padding: 0.125rem 0.25rem;
+}
+
+.planning-calendar .rbc-event:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+}
+
+.planning-calendar .rbc-addons-dnd-resizable {
+  position: relative;
+}
+
+.planning-calendar .rbc-addons-dnd-resize-ns-anchor {
+  cursor: ns-resize;
+}
+
+.planning-calendar .rbc-planning-event {
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
-  padding: 0.125rem 0.25rem;
   overflow: hidden;
+  line-height: 1.2;
 }
 
-.planning-calendar .fc-planning-event__subject {
+.planning-calendar .rbc-planning-event__subject {
   font-weight: 700;
   font-size: 0.75rem;
-  line-height: 1.2;
 }
 
-.planning-calendar .fc-planning-event__teacher {
+.planning-calendar .rbc-planning-event__teacher {
   font-size: 0.7rem;
-  line-height: 1.2;
   opacity: 0.95;
 }
 
-.planning-calendar .fc-planning-event__room {
+.planning-calendar .rbc-planning-event__room {
   font-size: 0.65rem;
   opacity: 0.85;
 }

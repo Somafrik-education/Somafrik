@@ -1021,7 +1021,17 @@ function sanitizeBackOfficeState(payload = {}) {
     deletedRows: sanitizeDeletedRows(payload.deletedRows),
     updatedAt: new Date().toISOString(),
   };
-  return applyDeletedRows(state, state.deletedRows);
+  const reconciledDeletedRows = reconcileStaleDeletedRowsWithStoredEntities(
+    state.deletedRows,
+    state,
+  );
+  const deduped = {
+    ...state,
+    deletedRows: reconciledDeletedRows,
+    courses: pedagogyGovernanceService.dedupeCoursesBySchoolClassSubject(state.courses ?? []),
+    assignments: pedagogyGovernanceService.dedupeAssignmentsBySchoolClassSubject(state.assignments ?? []),
+  };
+  return applyDeletedRows(deduped, reconciledDeletedRows);
 }
 
 const backOfficeDeletableEntities = [
@@ -1138,7 +1148,14 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     dashboardChartConfig: sanitizeDashboardChartConfig(storedState.dashboardChartConfig),
     deletedRows: storedDeletedRows,
   };
-  const deletedRows = mergeDeletedRows(storedDeletedRows, inferDeletedRowsFromStoredSnapshot(runtimeState, storedState));
+  // Ne pas inférer des suppressions depuis un instantané JSON incomplet : PostgreSQL
+  // reste la source de vérité pour les entités relationnelles. On purge seulement les
+  // deletedRows obsolètes lorsque la ligne existe encore en base.
+  const deletedRows = reconcileStaleDeletedRowsWithRuntime(storedDeletedRows, runtimeState);
+  const mergedDeletedRows = reconcileStaleDeletedRowsWithStoredEntities(deletedRows, {
+    ...runtimeState,
+    ...storedState,
+  });
 
   const merged = {
     ...runtimeState,
@@ -1171,10 +1188,10 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     dashboardChartConfig: sanitizeDashboardChartConfig(
       storedState.dashboardChartConfig ?? runtimeState.dashboardChartConfig,
     ),
-    deletedRows,
+    deletedRows: mergedDeletedRows,
   };
 
-  return applyDeletedRows(merged, merged.deletedRows);
+  return applyDeletedRows(merged, mergedDeletedRows);
 }
 
 function mergeRowsByIdentity(primaryRows = [], secondaryRows = []) {
@@ -1519,9 +1536,12 @@ function mergeScopedBackOfficeState(
   if (principal.role === "Admin Pays") {
     const scopedCurrent = scopeBackOfficeState(current, principal);
     const scopedRequested = scopeBackOfficeState(requested, principal);
+    const countryDeletionScope = roleGovernanceService
+      .editableEntitiesForCountryAdmin()
+      .filter((entity) => touchedEntities.includes(entity));
     const deletedRows = mergeDeletedRows(
       current.deletedRows,
-      detectDeletedRows(scopedCurrent, scopedRequested, roleGovernanceService.editableEntitiesForCountryAdmin()),
+      detectDeletedRows(scopedCurrent, scopedRequested, countryDeletionScope),
     );
 
     return applyDeletedRows({
@@ -1550,11 +1570,13 @@ function mergeScopedBackOfficeState(
 
   const scopedCurrent = scopeBackOfficeState(current, principal);
   const scopedRequested = scopeBackOfficeState(requested, principal);
-  const editableEntities = getEditableEntitiesForPrincipal(principal);
+  const schoolDeletionScope = getEditableEntitiesForPrincipal(principal).filter((entity) =>
+    touchedEntities.includes(entity),
+  );
   const deletedRows = pedagogyGovernanceService.filterSchoolAdminDeletedRows(
     mergeDeletedRows(
       current.deletedRows,
-      detectDeletedRows(scopedCurrent, scopedRequested, editableEntities),
+      detectDeletedRows(scopedCurrent, scopedRequested, schoolDeletionScope),
     ),
     principal,
   );
@@ -1784,6 +1806,52 @@ function mergeDeletedRows(...sources) {
     });
   });
   return merged;
+}
+
+function reconcileStaleDeletedRowsWithStoredEntities(deletedRows = {}, state = {}) {
+  const normalized = sanitizeDeletedRows(deletedRows);
+  const next = {};
+  let changed = false;
+
+  backOfficeDeletableEntities.forEach((entity) => {
+    const keys = normalized[entity];
+    if (!Array.isArray(keys) || !keys.length) {
+      return;
+    }
+    const liveKeys = new Set((state[entity] ?? []).map(rowKey));
+    const kept = keys.filter((key) => !liveKeys.has(String(key)));
+    if (kept.length !== keys.length) {
+      changed = true;
+    }
+    if (kept.length) {
+      next[entity] = kept;
+    }
+  });
+
+  return changed ? next : normalized;
+}
+
+function reconcileStaleDeletedRowsWithRuntime(deletedRows = {}, runtimeState = {}) {
+  const normalized = sanitizeDeletedRows(deletedRows);
+  const next = {};
+  let changed = false;
+
+  backOfficeDeletableEntities.forEach((entity) => {
+    const keys = normalized[entity];
+    if (!Array.isArray(keys) || !keys.length) {
+      return;
+    }
+    const runtimeKeys = new Set((runtimeState[entity] ?? []).map(rowKey));
+    const kept = keys.filter((key) => !runtimeKeys.has(String(key)));
+    if (kept.length !== keys.length) {
+      changed = true;
+    }
+    if (kept.length) {
+      next[entity] = kept;
+    }
+  });
+
+  return changed ? next : normalized;
 }
 
 function inferDeletedRowsFromStoredSnapshot(runtimeState = {}, storedState = {}) {

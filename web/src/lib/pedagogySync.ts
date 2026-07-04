@@ -109,6 +109,48 @@ export function formatTeacherClasses(
   return list.length ? list.join(", ") : "—";
 }
 
+function sameSchoolScope(row: Row, schoolCode?: string): boolean {
+  if (!schoolCode || schoolCode === "*") return true;
+  const rowSchool = normalize(String(row.schoolCode ?? ""));
+  if (!rowSchool) return true;
+  return rowSchool === normalize(schoolCode);
+}
+
+function matchesSubjectLink(row: Row, link: SubjectLink, schoolCode?: string): boolean {
+  if (!sameSchoolScope(row, schoolCode)) return false;
+  const subject = normalize(String(row.subject ?? row.course ?? row.name ?? ""));
+  const className = normalize(String(row.className ?? ""));
+  return subject === normalize(link.subject) && className === normalize(link.className);
+}
+
+function isEphemeralCourseId(id: unknown): boolean {
+  return /^COURSE-/i.test(String(id ?? ""));
+}
+
+function pickPreferredCourse(existing: Row, candidate: Row): Row {
+  const existingEphemeral = isEphemeralCourseId(existing.id);
+  const candidateEphemeral = isEphemeralCourseId(candidate.id);
+  const preferred =
+    existingEphemeral && !candidateEphemeral
+      ? candidate
+      : !existingEphemeral && candidateEphemeral
+        ? existing
+        : candidate;
+  const other = preferred === existing ? candidate : existing;
+
+  return {
+    ...preferred,
+    ...other,
+    id: preferred.id,
+    schoolCode: preferred.schoolCode ?? other.schoolCode,
+    className: preferred.className ?? other.className,
+    name: preferred.name ?? other.name,
+    teacherId: preferred.teacherId ?? other.teacherId,
+    teacherName: preferred.teacherName ?? other.teacherName,
+    coefficient: preferred.coefficient ?? other.coefficient ?? 1,
+  };
+}
+
 function upsertCourse(
   courses: Row[],
   link: SubjectLink,
@@ -116,11 +158,17 @@ function upsertCourse(
   teacherName: string,
   schoolCode?: string,
 ): Row[] {
-  const idx = courses.findIndex(
-    (course) =>
-      normalize(course.name) === normalize(link.subject) &&
-      normalize(String(course.className ?? "")) === normalize(link.className),
-  );
+  const matches = courses
+    .map((course, index) => ({ course, index }))
+    .filter(({ course }) => matchesSubjectLink(course, link, schoolCode));
+
+  if (matches.length > 1) {
+    const merged = matches.slice(1).reduce((base, item) => pickPreferredCourse(base, item.course), matches[0].course);
+    const withoutDupes = courses.filter((course) => !matches.some(({ course: row }) => row === course));
+    return upsertCourse([merged, ...withoutDupes], link, teacherId, teacherName, schoolCode);
+  }
+
+  const idx = matches[0]?.index ?? -1;
 
   if (idx >= 0) {
     const existing = courses[idx];
@@ -170,12 +218,9 @@ function upsertAssignment(
   teacherId: string,
   teacherName: string,
   schoolCode?: string,
+  preserveId?: string,
 ): Row[] {
-  const idx = assignments.findIndex(
-    (assignment) =>
-      normalize(assignment.subject ?? assignment.course) === normalize(link.subject) &&
-      normalize(String(assignment.className ?? "")) === normalize(link.className),
-  );
+  const idx = assignments.findIndex((assignment) => matchesSubjectLink(assignment, link, schoolCode));
 
   if (idx >= 0) {
     const existing = assignments[idx];
@@ -195,7 +240,9 @@ function upsertAssignment(
       index === idx
         ? {
             ...assignment,
+            id: preserveId ?? assignment.id,
             subject: link.subject,
+            course: link.subject,
             className: link.className,
             teacherName,
             teacherId,
@@ -207,8 +254,9 @@ function upsertAssignment(
 
   return [
     {
-      id: newId("ASSIGN"),
+      id: preserveId ?? newId("ASSIGN"),
       subject: link.subject,
+      course: link.subject,
       className: link.className,
       teacherName,
       teacherId,
@@ -324,7 +372,7 @@ export function syncCoursePedagogy(
   return { courses, assignments, teachers };
 }
 
-/** Enregistrement affectation → matière (+ enseignant si trouvé). */
+/** Enregistrement affectation → mise à jour du cours existant (sans doublon inter-établissements). */
 export function syncAssignmentPedagogy(
   state: BackOfficeState,
   assignment: Row,
@@ -335,6 +383,7 @@ export function syncAssignmentPedagogy(
   const className = String(scopedAssignment.className ?? "").trim();
   const teacherName = String(scopedAssignment.teacherName ?? "").trim();
   const teacherId = String(scopedAssignment.teacherId ?? "");
+  const assignmentId = String(scopedAssignment.id ?? "");
 
   let courses = [...((state.courses ?? []) as Row[])];
   let assignments = [...((state.assignments ?? []) as Row[])];
@@ -352,18 +401,30 @@ export function syncAssignmentPedagogy(
   const link: SubjectLink = { subject, className };
 
   courses = upsertCourse(courses, link, resolvedTeacherId, resolvedTeacherName, schoolCode);
-  if (resolvedTeacherName) {
-    assignments = upsertAssignment(assignments, link, resolvedTeacherId, resolvedTeacherName, schoolCode);
-    const idx = assignments.findIndex(
-      (row) =>
-        normalize(row.subject ?? row.course) === normalize(subject) &&
-        normalize(String(row.className ?? "")) === normalize(className) &&
-        (String(row.teacherId ?? "") === resolvedTeacherId ||
-          normalize(row.teacherName) === normalize(resolvedTeacherName)),
-    );
-    if (idx >= 0) {
-      assignments[idx] = { ...assignments[idx], ...scopedAssignment };
+
+  if (assignmentId) {
+    const existingIdx = assignments.findIndex((row) => String(row.id) === assignmentId);
+    if (existingIdx >= 0) {
+      assignments[existingIdx] = {
+        ...assignments[existingIdx],
+        ...scopedAssignment,
+        subject,
+        course: subject,
+        teacherId: resolvedTeacherId,
+        teacherName: resolvedTeacherName,
+      };
+    } else {
+      assignments = upsertAssignment(
+        assignments,
+        link,
+        resolvedTeacherId,
+        resolvedTeacherName,
+        schoolCode,
+        assignmentId,
+      );
     }
+  } else if (resolvedTeacherName) {
+    assignments = upsertAssignment(assignments, link, resolvedTeacherId, resolvedTeacherName, schoolCode);
   }
 
   if (teacher) {

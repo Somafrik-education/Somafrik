@@ -85,7 +85,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
-      setState((prev) => ({ ...prev, ...remote }));
+      setState((prev) => ({
+        ...prev,
+        ...remote,
+        courseSchedules: remote.courseSchedules ?? prev.courseSchedules,
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de chargement");
     } finally {
