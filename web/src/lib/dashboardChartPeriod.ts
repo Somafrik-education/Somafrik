@@ -5,6 +5,7 @@ import {
   filterRowsByPeriod,
   formatPeriodRangeDescription,
   isRowWithinPeriod,
+  extractRowDate,
   type ChartPeriod,
 } from "./chartPeriod";
 import type { EstablishmentChart, PlatformChart } from "./dashboardCharts";
@@ -62,7 +63,7 @@ function withPeriodDescription(chart: DashboardChart, period: ChartPeriod): Dash
   };
 }
 
-function schoolsActiveInPeriod(
+function schoolsVisibleInPeriod(
   schools: Row[],
   subscriptions: Row[],
   period: ChartPeriod,
@@ -78,7 +79,13 @@ function schoolsActiveInPeriod(
     if (isRowWithinPeriod(school, period, now, ["createdAt", "validationRequestedAt", "validatedAt"])) {
       return true;
     }
-    return subscriptionSchoolCodes.has(normalize(String(school.code ?? "")));
+    if (!extractRowDate(school, ["createdAt", "validationRequestedAt", "validatedAt"])) {
+      return true;
+    }
+    if (subscriptionSchoolCodes.has(normalize(String(school.code ?? "")))) {
+      return true;
+    }
+    return String(school.status ?? "Actif") !== "Suspendu";
   });
 }
 
@@ -118,21 +125,13 @@ function applyPlatformChartPeriod(
   const allCountries = scopedCountries(user, state) as unknown as Row[];
   const allSubscriptions = scopedSubscriptions(user, state) as unknown as Row[];
 
-  const schools = schoolsActiveInPeriod(allSchools, allSubscriptions, period);
+  const schools = schoolsVisibleInPeriod(allSchools, allSubscriptions, period);
   const users = usersActiveInPeriod(allUsers, period);
   const subscriptions = filterRowsByPeriod(allSubscriptions, period, undefined, [
     "lastPaymentDate",
     "startDate",
     "endDate",
   ]);
-  const countries = allCountries.filter((country) => {
-    if (isRowWithinPeriod(country, period, undefined, ["createdAt"])) return true;
-    return schools.some(
-      (school) =>
-        normalize(String(school.country ?? "")) === normalize(String(country.name ?? "")) ||
-        normalize(String(school.countryCode ?? "")) === normalize(String(country.code ?? "")),
-    );
-  });
   const notifications = filterRowsByPeriod(scopedNotifications(user, state) as unknown as Row[], period);
 
   switch (chart.id) {
@@ -141,7 +140,7 @@ function applyPlatformChartPeriod(
         {
           ...chart,
           data: [
-            { name: "Pays", value: countries.length, fill: CHART_COLORS.brand },
+            { name: "Pays", value: allCountries.length, fill: CHART_COLORS.brand },
             { name: "Établissements", value: schools.length, fill: CHART_COLORS.teal },
             {
               name: "Utilisateurs",
@@ -172,7 +171,7 @@ function applyPlatformChartPeriod(
               { name: "Notifications", value: notifications.length },
             ]
           : [
-              { name: "Pays", value: countries.length },
+              { name: "Pays", value: allCountries.length },
               { name: "Établissements", value: schools.length },
               { name: "Utilisateurs actifs", value: activeUsers },
               { name: "Revenus mensuels", value: monthlyRevenue },
@@ -203,7 +202,7 @@ function applyPlatformChartPeriod(
       );
 
     case "schools-country": {
-      const filtered = schoolsActiveInPeriod(allSchools, allSubscriptions, period);
+      const filtered = schoolsVisibleInPeriod(allSchools, allSubscriptions, period);
       const data =
         user.role === COUNTRY_ADMIN_ROLE
           ? countByField(filtered, "city").slice(0, 8)

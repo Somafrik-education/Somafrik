@@ -10,6 +10,7 @@ import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissio
 import {
   COUNTRY_ADMIN_ROLE,
   isSchoolAwaitingSuperadminValidation,
+  isSuperAdminRole,
   PENDING_VALIDATION_STATUS,
   VALIDATED_STATUS,
 } from "../lib/orgHierarchy";
@@ -22,8 +23,11 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import type { School } from "../types";
+import { syncSubscriptionsFromSchools, resolveSchoolSubscription } from "../lib/subscriptions";
 
 const PAGE_SIZE = 10;
+/** Cycle de vie d'un compte établissement (COMPTE-004). */
+const ACCOUNT_STATUSES = ["Brouillon", "Actif", "Suspendu", "Désactivé"] as const;
 const EMPTY_SCHOOL: School = {
   code: "",
   name: "",
@@ -46,10 +50,12 @@ export function SchoolsPage() {
   const allSchools = scopedSchools(session?.user ?? null, state);
   const canValidateSchool = canManageRolePermissions(ctx);
   const isCountryAdminView = session?.user?.role === COUNTRY_ADMIN_ROLE;
+  const isSuperAdmin = isSuperAdminRole(session?.user?.role);
   const { canCreate, canUpdate, canSuspend } = useFeaturePermissions("Établissements");
 
   const [search, setSearch] = useState("");
   const [country, setCountry] = useState("");
+  const [city, setCity] = useState("");
   const [type, setType] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
@@ -65,6 +71,10 @@ export function SchoolsPage() {
     () => [...new Set(allSchools.map((s) => s.type).filter(Boolean))] as string[],
     [allSchools],
   );
+  const cities = useMemo(
+    () => [...new Set(allSchools.map((s) => s.city).filter(Boolean))] as string[],
+    [allSchools],
+  );
 
   const filtered = useMemo(() => {
     const q = normalize(search);
@@ -73,11 +83,12 @@ export function SchoolsPage() {
         !q ||
         [school.name, school.code, school.city, school.email].some((v) => normalize(v).includes(q));
       const matchesCountry = !country || school.country === country;
+      const matchesCity = !city || school.city === city;
       const matchesType = !type || school.type === type;
       const matchesStatus = !status || school.status === status;
-      return matchesQuery && matchesCountry && matchesType && matchesStatus;
+      return matchesQuery && matchesCountry && matchesCity && matchesType && matchesStatus;
     });
-  }, [allSchools, search, country, type, status]);
+  }, [allSchools, search, country, city, type, status]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -90,7 +101,10 @@ export function SchoolsPage() {
   async function persistSchools(nextSchools: School[], message = "Établissements synchronisés") {
     setBusy(true);
     try {
-      await update({ schools: nextSchools });
+      await update({
+        schools: nextSchools,
+        subscriptions: syncSubscriptionsFromSchools(nextSchools, state.subscriptions, state.countries),
+      });
       showToast(message, "success");
     } catch {
       showToast("Échec de la synchronisation", "error");
@@ -153,11 +167,14 @@ export function SchoolsPage() {
       name: editing.name.trim(),
     };
 
-    if (!exists && isCountryAdminView) {
-      payload.validationStatus = PENDING_VALIDATION_STATUS;
-      payload.validationRequestedBy =
-        session?.user?.identifier ?? session?.user?.firstName ?? "Admin Pays";
-      payload.validationRequestedAt = new Date().toISOString();
+    if (!exists) {
+      payload.createdAt = new Date().toISOString();
+      if (isCountryAdminView) {
+        payload.validationStatus = PENDING_VALIDATION_STATUS;
+        payload.validationRequestedBy =
+          session?.user?.identifier ?? session?.user?.firstName ?? "Admin Pays";
+        payload.validationRequestedAt = payload.createdAt;
+      }
     }
 
     const next = exists
@@ -207,7 +224,7 @@ export function SchoolsPage() {
           }
         />
 
-        <div className="no-print mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="no-print mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Input
             placeholder="Rechercher…"
             value={search}
@@ -225,6 +242,14 @@ export function SchoolsPage() {
             options={[{ value: "", label: "Tous les pays" }, ...countries.map((c) => ({ value: c, label: c }))]}
           />
           <Select
+            value={city}
+            onChange={(e) => {
+              setCity(e.target.value);
+              resetPage();
+            }}
+            options={[{ value: "", label: "Toutes les villes" }, ...cities.map((c) => ({ value: c, label: c }))]}
+          />
+          <Select
             value={type}
             onChange={(e) => {
               setType(e.target.value);
@@ -240,8 +265,7 @@ export function SchoolsPage() {
             }}
             options={[
               { value: "", label: "Tous les statuts" },
-              { value: "Actif", label: "Actif" },
-              { value: "Suspendu", label: "Suspendu" },
+              ...ACCOUNT_STATUSES.map((s) => ({ value: s, label: s })),
             ]}
           />
         </div>
@@ -343,17 +367,25 @@ export function SchoolsPage() {
                 </p>
               </div>
             ) : null}
+            {(() => {
+              const subscriptionInfo = resolveSchoolSubscription(detail, state);
+              return (
             <dl className="grid grid-cols-2 gap-4 text-sm">
             <DetailRow label="Type" value={detail.type} />
             <DetailRow label="Pays" value={detail.country} />
             <DetailRow label="Ville" value={detail.city} />
             <DetailRow label="Téléphone" value={detail.phone} />
             <DetailRow label="Email" value={detail.email} />
-            <DetailRow label="Plan" value={detail.subscriptionPlan} />
-            <DetailRow label="Abonnement" value={detail.subscriptionStatus} />
+            <DetailRow label="Plan" value={subscriptionInfo.plan} />
+            <DetailRow
+              label="Abonnement"
+              value={[subscriptionInfo.status, subscriptionInfo.plan].filter(Boolean).join(" · ")}
+            />
             <DetailRow label="Validation" value={detail.validationStatus} />
             <DetailRow label="Statut" value={detail.status} />
           </dl>
+              );
+            })()}
           </>
         ) : null}
       </Modal>
@@ -379,8 +411,20 @@ export function SchoolsPage() {
             <Field label="Nom">
               <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
             </Field>
-            <Field label="Code établissement">
-              <Input value={editing.code} onChange={(e) => setEditing({ ...editing, code: e.target.value.toUpperCase() })} required />
+            <Field
+              label="Code établissement"
+              hint={
+                state.schools.some((s) => s.code === editing.code) && !isSuperAdmin
+                  ? "Le code compte n'est modifiable que par un Super Administrateur."
+                  : undefined
+              }
+            >
+              <Input
+                value={editing.code}
+                onChange={(e) => setEditing({ ...editing, code: e.target.value.toUpperCase() })}
+                required
+                readOnly={state.schools.some((s) => s.code === editing.code) && !isSuperAdmin}
+              />
             </Field>
             <Field label="Type">
               <Select
@@ -389,8 +433,19 @@ export function SchoolsPage() {
                 options={["École primaire", "Collège", "Lycée", "Université", "Institut"].map((t) => ({ value: t, label: t }))}
               />
             </Field>
-            <Field label="Pays">
-              <Input value={editing.country ?? ""} onChange={(e) => setEditing({ ...editing, country: e.target.value })} />
+            <Field
+              label="Pays"
+              hint={
+                state.schools.some((s) => s.code === editing.code) && !isSuperAdmin
+                  ? "Le pays n'est modifiable que par un Super Administrateur."
+                  : undefined
+              }
+            >
+              <Input
+                value={editing.country ?? ""}
+                onChange={(e) => setEditing({ ...editing, country: e.target.value })}
+                readOnly={state.schools.some((s) => s.code === editing.code) && !isSuperAdmin}
+              />
             </Field>
             <Field label="Ville">
               <Input value={editing.city ?? ""} onChange={(e) => setEditing({ ...editing, city: e.target.value })} />
@@ -412,7 +467,7 @@ export function SchoolsPage() {
               <Select
                 value={editing.status ?? "Actif"}
                 onChange={(e) => setEditing({ ...editing, status: e.target.value })}
-                options={["Actif", "Suspendu"].map((s) => ({ value: s, label: s }))}
+                options={ACCOUNT_STATUSES.map((s) => ({ value: s, label: s }))}
               />
             </Field>
           </form>

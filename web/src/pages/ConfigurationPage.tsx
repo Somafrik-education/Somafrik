@@ -59,7 +59,10 @@ type SavingSection =
   | "subjects"
   | null;
 
-export function ConfigurationPage() {
+/** Domaine de configuration affiché (hub Paramètres). Non défini = tout afficher. */
+export type ConfigurationSection = "annee-scolaire" | "structure" | "utilisateurs";
+
+export function ConfigurationPage({ section }: { section?: ConfigurationSection } = {}) {
   const { session } = useAuth();
   const { state, update } = useData();
   const ctx = usePermissionContext();
@@ -525,6 +528,7 @@ export function ConfigurationPage() {
   }
 
   const showAcademicConfig = canConfigure || canReadSettings;
+  const inSection = (target: ConfigurationSection) => !section || section === target;
 
   if (!showAcademicConfig && !showUserManagement && !showRolePilotage) {
     return (
@@ -570,7 +574,7 @@ export function ConfigurationPage() {
         </p>
       </Card>
 
-      {showUserManagement ? (
+      {showUserManagement && inSection("utilisateurs") ? (
         <Card className="p-6">
           <SectionHeader
             title="Gestion des utilisateurs"
@@ -616,7 +620,7 @@ export function ConfigurationPage() {
         </Card>
       ) : null}
 
-      {canConfigure ? (
+      {canConfigure && inSection("utilisateurs") ? (
         <Card key={`userRoles-${academicFormKey}`} className="p-6">
           <SectionHeader
             title="Rôles"
@@ -638,7 +642,7 @@ export function ConfigurationPage() {
         </Card>
       ) : null}
 
-      {showRolePilotage && delegableFeatures.length && configuredUserRoles.length ? (
+      {showRolePilotage && delegableFeatures.length && configuredUserRoles.length && inSection("utilisateurs") ? (
         <Card className="p-6">
           <SectionHeader
             title="Pilotage des rôles de l'établissement"
@@ -712,7 +716,7 @@ export function ConfigurationPage() {
         </Card>
       ) : null}
 
-      {showAcademicConfig ? (
+      {showAcademicConfig && inSection("annee-scolaire") ? (
         <>
           <Card key={`periods-${academicFormKey}`} className="p-6">
             <SectionHeader
@@ -856,7 +860,11 @@ export function ConfigurationPage() {
               </Button>
             </form>
           </Card>
+        </>
+      ) : null}
 
+      {showAcademicConfig && inSection("structure") ? (
+        <>
           <Card key={`levels-${academicFormKey}`} className="p-6">
             <SectionHeader
               title="Niveaux"

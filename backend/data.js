@@ -509,7 +509,7 @@ const userAccounts = [
     password: "1234",
     status: "Actif",
     permissions: rolePermissions["Super Administrateur Somafrik"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "01-06-2026",

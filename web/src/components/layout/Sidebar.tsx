@@ -55,6 +55,15 @@ export function Sidebar() {
         {NAV_GROUP_ORDER.map(({ group, label }) => {
           const items = visible.filter((item) => item.group === group);
           if (!items.length) return null;
+          // Groupe réduit à un seul module (ex. Finances, Communication) :
+          // on affiche directement le lien, sans en-tête de section redondant.
+          if (items.length === 1) {
+            return (
+              <div key={group} className="space-y-1">
+                <NavLinks items={items} />
+              </div>
+            );
+          }
           return (
             <div key={group}>
               <p className="px-3 pb-2 text-[11px] font-black uppercase tracking-wide text-brand">

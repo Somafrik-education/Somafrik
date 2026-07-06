@@ -21,6 +21,33 @@ function resolveAssignmentSchoolCode(
   return state.schools[0]?.code;
 }
 
+/**
+ * Code établissement à attacher à une affectation. On privilégie l'établissement
+ * de la classe choisie afin que la clé de déduplication backend
+ * (schoolCode|classe|matière) coïncide avec la version dérivée des enseignants et
+ * évite les doublons après synchronisation.
+ */
+function resolveAssignmentSchoolCodeForClass(
+  className: string,
+  user: SessionUser | null,
+  state: BackOfficeState | undefined,
+  schoolCode?: string,
+): string | undefined {
+  if (state && className) {
+    const classSchool = state.classes.find(
+      (schoolClass) =>
+        normalize(String((schoolClass as Row).name ?? "")) === normalize(className) &&
+        String((schoolClass as Row).schoolCode ?? "").trim(),
+    );
+    const code = String((classSchool as Row | undefined)?.schoolCode ?? "").trim();
+    if (code && code !== "*") return code;
+  }
+  if (!state) {
+    return schoolCode && schoolCode !== "*" ? schoolCode : undefined;
+  }
+  return resolveAssignmentSchoolCode(user, state, schoolCode);
+}
+
 function isKnownClassName(
   className: string,
   classes: Row[],
@@ -74,19 +101,26 @@ export function prepareAssignmentForSave(
   form: Row,
   teachers: Row[],
   schoolCode?: string,
+  state?: BackOfficeState,
+  user: SessionUser | null = null,
 ): Row {
   const teacherId = String(form.teacherId ?? "");
   const teacher = teachers.find((item) => String(item.id) === teacherId);
   const teacherName = teacher ? getTeacherDisplayName(teacher) : String(form.teacherName ?? "").trim();
   const subject = String(form.subject ?? form.course ?? "").trim();
+  const className = String(form.className ?? "").trim();
+  const existingSchoolCode = String(form.schoolCode ?? "").trim();
+  const resolvedSchoolCode =
+    resolveAssignmentSchoolCodeForClass(className, user, state, schoolCode) ??
+    (existingSchoolCode && existingSchoolCode !== "*" ? existingSchoolCode : undefined);
   return {
     ...form,
     teacherId,
     teacherName,
     subject,
     course: subject,
-    className: String(form.className ?? "").trim(),
-    ...(schoolCode && schoolCode !== "*" ? { schoolCode } : {}),
+    className,
+    ...(resolvedSchoolCode && resolvedSchoolCode !== "*" ? { schoolCode: resolvedSchoolCode } : {}),
   };
 }
 

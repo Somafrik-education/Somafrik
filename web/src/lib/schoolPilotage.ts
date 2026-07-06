@@ -10,7 +10,7 @@ export const DELEGABLE_SCHOOL_FEATURES = [
   "Classes",
   "Élèves",
   "Enseignants",
-  "Affectations",
+  "Planning de cours",
   "Présences",
   "Notes",
   "Bulletins",

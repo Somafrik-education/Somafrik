@@ -76,6 +76,10 @@ function buildSchoolPlanningSlots({
         start,
         end,
         room: `Salle ${(index % 8) + 1}`,
+        periodName: "Trimestre 1",
+        periodStart: "01-09-2025",
+        periodEnd: "31-12-2025",
+        kind: "course",
       });
     });
   });
@@ -122,6 +126,35 @@ function buildAcademicConfigForSchool(schoolCode, courses = [], classes = []) {
     defaultGradeScale: 20,
     classNames,
     subjectsByClass,
+    periods: [
+      {
+        id: "trimestre-1",
+        name: "Trimestre 1",
+        type: "Trimestre",
+        order: 1,
+        startDate: "01-09-2025",
+        endDate: "31-12-2025",
+        active: true,
+      },
+      {
+        id: "trimestre-2",
+        name: "Trimestre 2",
+        type: "Trimestre",
+        order: 2,
+        startDate: "01-01-2026",
+        endDate: "31-03-2026",
+        active: false,
+      },
+      {
+        id: "trimestre-3",
+        name: "Trimestre 3",
+        type: "Trimestre",
+        order: 3,
+        startDate: "01-04-2026",
+        endDate: "30-06-2026",
+        active: false,
+      },
+    ],
   };
 }
 

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { scopedCountries } from "../lib/scope";
@@ -19,6 +20,10 @@ import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import type { BackOfficeState, Country } from "../types";
+import {
+  SUBSCRIPTION_PLAN_NAMES,
+  resolveCountrySubscriptionPolicy,
+} from "../lib/subscriptionPolicy";
 
 const EMPTY_COUNTRY: Country = {
   name: "",
@@ -259,13 +264,39 @@ export function CountriesPage() {
         }
       >
         {detail ? (
-          <dl className="grid grid-cols-2 gap-4 text-sm">
-            <DetailRow label="Indicatif" value={detail.phonePrefix} />
-            <DetailRow label="Devise" value={detail.currency} />
-            <DetailRow label="Fuseau horaire" value={detail.timezone} />
-            <DetailRow label="Statut" value={detail.status} />
-            <DetailRow label="Créé le" value={detail.createdAt} />
-          </dl>
+          <>
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <DetailRow label="Indicatif" value={detail.phonePrefix} />
+              <DetailRow label="Devise" value={detail.currency} />
+              <DetailRow label="Fuseau horaire" value={detail.timezone} />
+              <DetailRow label="Statut" value={detail.status} />
+              <DetailRow label="Créé le" value={detail.createdAt} />
+            </dl>
+            <div className="mt-5 border-t border-line pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Politique d'abonnement</p>
+                <Link to="/parametres/abonnements" className="text-xs font-semibold text-brand hover:underline">
+                  Modifier dans Paramètres →
+                </Link>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {SUBSCRIPTION_PLAN_NAMES.map((plan) => {
+                  const policy = resolveCountrySubscriptionPolicy(detail);
+                  return (
+                    <div key={plan} className="rounded-lg border border-line/70 p-3 text-sm">
+                      <p className="font-semibold text-ink">{plan}</p>
+                      <p className="mt-1 text-muted">
+                        {policy.plans[plan].monthlyPrice} {policy.currency}/mois
+                      </p>
+                      <p className="text-xs text-muted">
+                        {policy.plans[plan].annualPrice} {policy.currency}/an
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         ) : null}
       </Modal>
 

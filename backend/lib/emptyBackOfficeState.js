@@ -4,6 +4,8 @@ function buildEmptyBackOfficeState() {
     schools: [],
     users: [],
     countries: [],
+    contacts: [],
+    relations: [],
     subscriptions: [],
     notifications: [],
     students: [],

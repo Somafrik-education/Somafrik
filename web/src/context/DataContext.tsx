@@ -11,6 +11,7 @@ import {
 import { api } from "../api/client";
 import { useAuth } from "./AuthContext";
 import { SYNC_INTERVAL_MS } from "../lib/constants";
+import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import type { BackOfficeState, Session } from "../types";
 
@@ -26,6 +27,8 @@ const EMPTY_STATE: BackOfficeState = {
   schools: [],
   users: [],
   countries: [],
+  contacts: [],
+  relations: [],
   subscriptions: [],
   notifications: [],
   students: [],
@@ -46,6 +49,7 @@ const EMPTY_STATE: BackOfficeState = {
   rolePermissions: {},
   academicConfigs: {},
   dashboardChartConfig: { platform: {}, establishment: {} },
+  auditLog: [],
 };
 
 function stateFromSession(session: Session): BackOfficeState {
@@ -58,6 +62,7 @@ function stateFromSession(session: Session): BackOfficeState {
     notifications: session.notifications ?? [],
     rolePermissions: session.rolePermissions ?? {},
     academicConfigs: (session.academicConfigs as Record<string, unknown>) ?? {},
+    auditLog: session.auditLog ?? [],
   };
 }
 
@@ -76,20 +81,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
   const stateRef = useRef(state);
   stateRef.current = state;
+  const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!session) return;
+    if (!session || syncPausedRef.current) return;
     setLoading(true);
     setError(null);
     try {
       const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
-      setState((prev) => ({
-        ...prev,
-        ...remote,
-        courseSchedules: remote.courseSchedules ?? prev.courseSchedules,
-      }));
+      setState((prev) => mergeRemoteSnapshot(prev, remote));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de chargement");
     } finally {
@@ -135,28 +137,45 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const update = useCallback(
     async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
+      syncPausedRef.current = true;
       if (options.partial) {
         setState((prev) => ({ ...prev, ...patch }));
-        if (options.sync === false) return;
+        if (options.sync === false) {
+          syncPausedRef.current = false;
+          return;
+        }
         try {
           const saved = await api.put<Partial<BackOfficeState>>("/backoffice/state", patch);
-          setState((prev) => ({ ...prev, ...saved }));
+          setState((prev) => applyPartialSave(prev, saved, patch));
         } catch (err) {
           setError(err instanceof Error ? err.message : "Erreur de synchronisation");
+          syncPausedRef.current = false;
           throw err;
+        } finally {
+          window.setTimeout(() => {
+            syncPausedRef.current = false;
+          }, 1500);
         }
         return;
       }
 
       const next = { ...stateRef.current, ...patch };
       setState(next);
-      if (options.sync === false) return;
+      if (options.sync === false) {
+        syncPausedRef.current = false;
+        return;
+      }
       try {
         const saved = await api.put<Partial<BackOfficeState>>("/backoffice/state", next);
-        setState((prev) => ({ ...prev, ...saved }));
+        setState((prev) => mergeRemoteSnapshot(prev, saved));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erreur de synchronisation");
+        syncPausedRef.current = false;
         throw err;
+      } finally {
+        window.setTimeout(() => {
+          syncPausedRef.current = false;
+        }, 1500);
       }
     },
     [],

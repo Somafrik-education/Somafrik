@@ -13,6 +13,8 @@ export const CRUD_PERMISSION_MODULES = [
   "Pays",
   "Établissements",
   "Abonnements",
+  "Contacts",
+  "Relations",
   "Utilisateurs",
   "Classes",
   "Élèves",
@@ -42,6 +44,8 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   schools: "Établissements",
   subscriptions: "Abonnements",
   notifications: "Notifications",
+  contacts: "Contacts",
+  relations: "Relations",
   users: "Utilisateurs",
   reports: "Rapports",
   permissions: "Droits par rôle",
@@ -71,8 +75,8 @@ export type NavGroup =
   | "etablissement"
   | "pedagogie"
   | "finances"
-  | "communication"
-  | "administration";
+  | "administration"
+  | "parametres";
 
 export interface NavItem {
   view: string;
@@ -89,8 +93,8 @@ export const NAV_GROUP_ORDER: { group: NavGroup; label: string }[] = [
   { group: "etablissement", label: "Établissement" },
   { group: "pedagogie", label: "Pédagogie" },
   { group: "finances", label: "Finances" },
-  { group: "communication", label: "Communication" },
   { group: "administration", label: "Administration" },
+  { group: "parametres", label: "Paramètres" },
 ];
 
 export const NAV_ITEMS: NavItem[] = [
@@ -102,13 +106,8 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "schools", path: "/etablissements", label: "Établissements", group: "plateforme" },
   { view: "subscriptions", path: "/abonnements", label: "Abonnements", group: "plateforme" },
 
-  // Établissement : configurer puis organiser
-  { view: "establishment", path: "/etablissement", label: "Pilotage", group: "etablissement", schoolOnly: true },
-  { view: "configuration", path: "/configuration", label: "Paramètres", group: "etablissement" },
-  { view: "classes", path: "/classes", label: "Classes", group: "etablissement", schoolOnly: true },
-  { view: "courses", path: "/matieres", label: "Matières", group: "etablissement", schoolOnly: true },
-  { view: "students", path: "/configuration/eleves", label: "Élèves / Étudiants", group: "etablissement", schoolOnly: true },
-  { view: "teachers", path: "/configuration/enseignants", label: "Enseignants", group: "etablissement", schoolOnly: true },
+  // Mon établissement (Classes, Matières, Élèves, Enseignants, Contacts, Parents & élèves)
+  { view: "establishment", path: "/etablissement", label: "Mon établissement", group: "etablissement", schoolOnly: true },
 
   // Pédagogie : enseigner puis évaluer
   { view: "planning", path: "/planning", label: "Planning de cours", group: "pedagogie", schoolOnly: true },
@@ -117,21 +116,17 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "exams", path: "/examens", label: "Examens", group: "pedagogie", schoolOnly: true },
   { view: "bulletins", path: "/bulletins", label: "Bulletins", group: "pedagogie", schoolOnly: true },
 
-  // Finances
-  { view: "payments", path: "/paiements", label: "Paiements", group: "finances", schoolOnly: true },
+  // Finances (module à onglets : Paiements, Frais, Impayés)
+  { view: "payments", path: "/finances", label: "Finances", group: "finances", schoolOnly: true },
 
-  // Communication
-  { view: "messages", path: "/messages", label: "Messages", group: "communication", schoolOnly: true },
-  { view: "announcements", path: "/annonces", label: "Annonces", group: "communication", schoolOnly: true },
-  // Notifications : accessibles via la cloche en haut à droite (voir Topbar), pas dans le menu latéral.
+  // Communication : Messages, Annonces et Notifications sont accessibles via les icônes
+  // en haut à droite (voir Topbar), pas dans le menu latéral.
 
-  // Administration : gouvernance, sécurité, conformité
-  { view: "users", path: "/utilisateurs", label: "Utilisateurs", group: "administration" },
-  { view: "permissions", path: "/permissions", label: "Rôles & permissions", group: "administration" },
-  { view: "documents", path: "/documents", label: "Documents", group: "administration", schoolOnly: true },
-  { view: "chartSettings", path: "/parametres-graphiques", label: "Graphiques", group: "administration" },
-  { view: "bulletinDesign", path: "/conception-bulletins", label: "Conception bulletins", group: "administration" },
-  { view: "reports", path: "/rapports", label: "Conformité", group: "administration" },
+  // Administration (module à onglets : Utilisateurs, Rôles & permissions, Documents, Conformité)
+  { view: "users", path: "/administration", label: "Administration", group: "administration" },
+
+  // Paramètres (module à onglets : Établissement, Graphiques, Conception bulletins)
+  { view: "configuration", path: "/parametres", label: "Paramètres", group: "parametres" },
 ];
 
 export const MVP_COVERAGE = [

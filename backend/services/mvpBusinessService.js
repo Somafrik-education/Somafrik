@@ -241,19 +241,19 @@ class MobileRolePolicyService {
 
 class MvpBusinessService {
   constructor({ school, students, classes, courses, notes, payments }) {
-    this.school = school;
-    this.rawStudents = students;
-    this.rawClasses = classes;
-    this.rawCourses = courses;
-    this.rawNotes = notes;
-    this.rawPayments = payments;
+    this.school = school ?? null;
+    this.rawStudents = students ?? [];
+    this.rawClasses = classes ?? [];
+    this.rawCourses = courses ?? [];
+    this.rawNotes = notes ?? [];
+    this.rawPayments = payments ?? [];
     this.auditTrail = new AuditTrailService([
       {
         id: "AUD-SEED-001",
         action: "Création données MVP",
         actorId: "SYSTEM",
         entity: "School",
-        entityId: school.code,
+        entityId: school?.code ?? "PLATFORM",
         details: { modules: "Socle Somafrik MVP" },
         createdAt: "2026-06-01T08:00:00.000Z",
       },
@@ -275,7 +275,7 @@ class MvpBusinessService {
 
   getReadiness() {
     return {
-      schoolCode: this.school.code,
+      schoolCode: this.school?.code ?? "",
       status: "MVP opérationnel démo",
       modules: [
         this.module("Authentification", "Couvert", ["Code établissement", "Détection rôle", "Blocage comptes suspendus", "Redirection par rôle"]),
@@ -325,8 +325,8 @@ class MvpBusinessService {
       .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
     return {
-      schoolCode: this.school.code,
-      schoolName: this.school.name,
+      schoolCode: this.school?.code ?? "",
+      schoolName: this.school?.name ?? "",
       date: today,
       students: activeStudents.length,
       teachers: new Set(this.rawClasses.map((schoolClass) => schoolClass.teacherId)).size,

@@ -27,6 +27,7 @@ const {
   resolveBulletinDesignForStudent,
 } = require("./lib/bulletinDesignResolver");
 const { renderReportCardPdf, renderReportCardPreviewHtml } = require("./services/bulletinPdfRenderer");
+const { dedupeBackOfficeState } = require("./lib/backofficeDedupe");
 
 const app = express();
 let repository = createPostgresRepository();
@@ -267,7 +268,12 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
     throw new BusinessError(400, "Le nouveau mot de passe doit contenir au moins 6 caractères.");
   }
 
-  const updatedUser = await repository.changeUserPassword(req.principal.sub, newPassword);
+  const lookupKeys = await resolveUserPasswordLookupKeys(req.principal);
+  if (!lookupKeys.length) {
+    throw new BusinessError(404, "Utilisateur introuvable");
+  }
+
+  const updatedUser = await repository.changeUserPassword(lookupKeys, newPassword);
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
   });
@@ -496,7 +502,10 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     throw new BusinessError(400, "Le mot de passe temporaire doit contenir au moins 6 caractères.");
   }
 
-  const updatedUser = await repository.resetUserPassword(target.id, temporaryPassword);
+  const updatedUser = await repository.resetUserPassword(
+    [target.id, target.publicId, target.identifier].filter(Boolean),
+    temporaryPassword,
+  );
   await auditService.record(req, "reset_user_password", "user", target.id, {
     user: target.identifier,
     oldPasswordInvalidated: true,
@@ -711,6 +720,7 @@ async function getRuntime() {
   const dataset = await repository.getDataset();
   const storedState = await repository.getBackOfficeState();
   applyStoredStatusOverlay(dataset, storedState);
+  applyStoredSchoolOverlay(dataset, storedState);
   applyStoredUserOverlay(dataset, storedState);
   const authService = new AuthService({
     school: dataset.school,
@@ -756,6 +766,42 @@ async function getRuntime() {
 // Superpose le statut (Actif/Suspendu) du state BackOffice persistant (JSON) sur le
 // dataset issu des tables, afin que la connexion reflète les suspensions pays/établissement
 // effectuées dans le BackOffice (pays suspendu => admin pays et établissements bloqués).
+function normalizeSchoolRuntimeKey(row = {}) {
+  const code = String(row.code ?? row.publicId ?? row.schoolCode ?? "").trim().toUpperCase();
+  return code || String(row.id ?? row.publicId ?? "");
+}
+
+function applyStoredSchoolOverlay(dataset, storedState) {
+  if (!dataset || !isPlainObject(storedState) || !Array.isArray(storedState.schools)) {
+    return;
+  }
+
+  const byCode = new Map();
+  for (const school of dataset.platformSchools ?? []) {
+    const key = normalizeSchoolRuntimeKey(school);
+    if (key) {
+      byCode.set(key, { ...school });
+    }
+  }
+
+  for (const stored of storedState.schools) {
+    const key = normalizeSchoolRuntimeKey(stored);
+    if (!key) {
+      continue;
+    }
+    const existing = byCode.get(key);
+    byCode.set(key, existing ? { ...existing, ...stored } : { ...stored });
+  }
+
+  dataset.platformSchools = [...byCode.values()];
+  if (dataset.school) {
+    const key = normalizeSchoolRuntimeKey(dataset.school);
+    if (key && byCode.has(key)) {
+      dataset.school = byCode.get(key);
+    }
+  }
+}
+
 function applyStoredStatusOverlay(dataset, storedState) {
   if (!dataset || !isPlainObject(storedState)) {
     return;
@@ -771,22 +817,6 @@ function applyStoredStatusOverlay(dataset, storedState) {
       const status = statusByCode.get(String(country.code ?? "").trim().toUpperCase());
       return status ? { ...country, status } : country;
     });
-  }
-
-  if (Array.isArray(storedState.schools)) {
-    const statusByCode = new Map(
-      storedState.schools
-        .filter((school) => school && school.code)
-        .map((school) => [String(school.code).trim().toUpperCase(), school.status])
-    );
-    const overlaySchoolStatus = (school) => {
-      const status = statusByCode.get(String(school.code ?? "").trim().toUpperCase());
-      return status ? { ...school, status } : school;
-    };
-    dataset.platformSchools = (dataset.platformSchools ?? []).map(overlaySchoolStatus);
-    if (dataset.school) {
-      dataset.school = overlaySchoolStatus(dataset.school);
-    }
   }
 }
 
@@ -892,8 +922,16 @@ function applyStoredUserOverlay(dataset, storedState) {
       merged.pinHash = base.pinHash;
     }
 
-    if (!merged.password && !merged.passwordHash && !merged.pinHash && merged.temporaryPassword) {
+    if (base.passwordHash || base.pinHash) {
+      merged.mustChangePassword = Boolean(base.mustChangePassword);
+      if (!merged.mustChangePassword) {
+        merged.temporaryPassword = "";
+        delete merged.password;
+        delete merged.pin;
+      }
+    } else if (!merged.password && !merged.passwordHash && !merged.pinHash && merged.temporaryPassword) {
       merged.password = merged.temporaryPassword;
+      merged.mustChangePassword = merged.mustChangePassword ?? true;
     }
 
     registerUser(merged, primaryKey);
@@ -997,6 +1035,8 @@ function sanitizeBackOfficeState(payload = {}) {
     schools: Array.isArray(payload.schools) ? payload.schools : [],
     users: Array.isArray(payload.users) ? payload.users : [],
     countries: Array.isArray(payload.countries) ? payload.countries : [],
+    contacts: Array.isArray(payload.contacts) ? payload.contacts : [],
+    relations: Array.isArray(payload.relations) ? payload.relations : [],
     subscriptions: Array.isArray(payload.subscriptions) ? payload.subscriptions : [],
     notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
     students: Array.isArray(payload.students) ? payload.students : [],
@@ -1025,19 +1065,19 @@ function sanitizeBackOfficeState(payload = {}) {
     state.deletedRows,
     state,
   );
-  const deduped = {
+  const { state: deduped } = dedupeBackOfficeState({
     ...state,
     deletedRows: reconciledDeletedRows,
-    courses: pedagogyGovernanceService.dedupeCoursesBySchoolClassSubject(state.courses ?? []),
-    assignments: pedagogyGovernanceService.dedupeAssignmentsBySchoolClassSubject(state.assignments ?? []),
-  };
-  return applyDeletedRows(deduped, reconciledDeletedRows);
+  });
+  return applyDeletedRows(deduped, deduped.deletedRows);
 }
 
 const backOfficeDeletableEntities = [
   "schools",
   "users",
   "countries",
+  "contacts",
+  "relations",
   "subscriptions",
   "notifications",
   "students",
@@ -1096,6 +1136,8 @@ function buildInitialBackOfficeState(runtime = {}) {
     schools: runtime.platformSchools ?? [],
     users: runtime.userAccounts ?? [],
     countries: runtime.countries ?? [],
+    contacts: [],
+    relations: [],
     subscriptions: runtime.subscriptions ?? [],
     notifications: runtime.platformNotifications ?? [],
     students: runtime.students ?? [],
@@ -1126,6 +1168,8 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     schools: runtime.platformSchools ?? [],
     users: runtime.userAccounts ?? [],
     countries: runtime.countries ?? [],
+    contacts: storedState.contacts ?? [],
+    relations: storedState.relations ?? [],
     subscriptions: runtime.subscriptions ?? [],
     notifications: runtime.platformNotifications ?? [],
     students: runtime.students ?? [],
@@ -1163,6 +1207,8 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     schools: mergeSchoolRows(runtimeState.schools, storedState.schools),
     users: mergeRowsByIdentity(runtimeState.users, storedState.users),
     countries: mergeRowsByIdentity(runtimeState.countries, storedState.countries),
+    contacts: mergeRowsByIdentity(runtimeState.contacts, storedState.contacts),
+    relations: mergeRowsByIdentity(runtimeState.relations, storedState.relations),
     subscriptions: mergeRowsByIdentity(runtimeState.subscriptions, storedState.subscriptions),
     notifications: mergeRowsByIdentity(runtimeState.notifications, storedState.notifications),
     students: mergeRowsByIdentity(runtimeState.students, storedState.students),
@@ -1191,7 +1237,150 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     deletedRows: mergedDeletedRows,
   };
 
-  return applyDeletedRows(merged, mergedDeletedRows);
+  return hydrateSubscriptionsFromSchools(applyDeletedRows(merged, mergedDeletedRows));
+}
+
+function normalizeSchoolCodeKey(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function hydrateSubscriptionsFromSchools(state = {}) {
+  const schools = Array.isArray(state.schools) ? state.schools : [];
+  const subscriptions = Array.isArray(state.subscriptions) ? [...state.subscriptions] : [];
+  const schoolByCode = new Map(
+    schools.map((school) => [normalizeSchoolCodeKey(school.code ?? school.publicId), school]),
+  );
+  const subscriptionBySchool = new Map(
+    subscriptions.map((subscription) => [
+      normalizeSchoolCodeKey(subscription.schoolCode),
+      subscription,
+    ]),
+  );
+
+  for (const school of schools) {
+    const schoolCode = normalizeSchoolCodeKey(school.code ?? school.publicId);
+    if (!schoolCode) continue;
+
+    const existing = subscriptionBySchool.get(schoolCode);
+    if (existing) {
+      if (!String(existing.plan ?? "").trim() && String(school.subscriptionPlan ?? "").trim()) {
+        existing.plan = school.subscriptionPlan;
+      }
+      if (
+        !String(existing.paymentStatus ?? "").trim() &&
+        String(school.subscriptionStatus ?? "").trim()
+      ) {
+        existing.paymentStatus = school.subscriptionStatus;
+      }
+      continue;
+    }
+
+    if (!String(school.subscriptionPlan ?? "").trim() && !String(school.subscriptionStatus ?? "").trim()) {
+      continue;
+    }
+
+    const created = {
+      id: `SUB-${school.code ?? school.publicId ?? schoolCode}`,
+      schoolCode: school.code ?? school.publicId ?? schoolCode,
+      country: school.country ?? "",
+      countryCode: school.countryCode ?? "",
+      plan: school.subscriptionPlan ?? "Standard",
+      paymentStatus: school.subscriptionStatus ?? "À jour",
+      status: "Actif",
+    };
+    subscriptions.push(created);
+    subscriptionBySchool.set(schoolCode, created);
+  }
+
+  return applySubscriptionPolicyToState({ ...state, subscriptions });
+}
+
+const GLOBAL_SUBSCRIPTION_PLAN_PRICING = {
+  Essentiel: { monthlyPrice: 60, annualPrice: 600 },
+  Standard: { monthlyPrice: 90, annualPrice: 900 },
+  Premium: { monthlyPrice: 120, annualPrice: 1200 },
+};
+
+function normalizeSubscriptionPlanName(plan) {
+  const value = String(plan ?? "").trim();
+  if (value === "Premium") return "Premium";
+  if (value === "Essentiel") return "Essentiel";
+  return "Standard";
+}
+
+function resolveSchoolCountryCodeFromRow(school = {}) {
+  const explicit = String(school.countryCode ?? "").trim().toUpperCase();
+  if (explicit) return explicit;
+  const fromCode = String(school.code ?? "").match(/^([A-Z]{2})-/i)?.[1];
+  return fromCode ? fromCode.toUpperCase() : "";
+}
+
+function resolveCountrySubscriptionPolicy(country = {}) {
+  const custom = country.subscriptionPolicy ?? {};
+  const currency =
+    String(custom.currency ?? country.currency ?? "USD").trim() || "USD";
+  const plans = { ...GLOBAL_SUBSCRIPTION_PLAN_PRICING };
+
+  for (const planName of Object.keys(GLOBAL_SUBSCRIPTION_PLAN_PRICING)) {
+    const override = custom.plans?.[planName];
+    if (!override) continue;
+    plans[planName] = {
+      monthlyPrice: Number(override.monthlyPrice ?? plans[planName].monthlyPrice),
+      annualPrice: Number(override.annualPrice ?? plans[planName].annualPrice),
+    };
+  }
+
+  return { currency, plans };
+}
+
+function findCountryForSubscription(countries = [], school = {}, subscription = {}) {
+  const code =
+    String(subscription.countryCode ?? "").trim().toUpperCase() ||
+    resolveSchoolCountryCodeFromRow(school);
+  if (code) {
+    const match = countries.find(
+      (country) => String(country.code ?? "").trim().toUpperCase() === code,
+    );
+    if (match) return match;
+  }
+  const countryName = String(school.country ?? subscription.country ?? "").trim();
+  if (!countryName) return undefined;
+  return countries.find(
+    (country) =>
+      String(country.name ?? "").trim().toLowerCase() === countryName.toLowerCase() ||
+      String(country.code ?? "").trim().toUpperCase() === countryName.toUpperCase(),
+  );
+}
+
+function applySubscriptionPolicyToState(state = {}) {
+  const countries = Array.isArray(state.countries) ? state.countries : [];
+  const schools = Array.isArray(state.schools) ? state.schools : [];
+  const schoolByCode = new Map(
+    schools.map((school) => [normalizeSchoolCodeKey(school.code ?? school.publicId), school]),
+  );
+
+  const subscriptions = (Array.isArray(state.subscriptions) ? state.subscriptions : []).map(
+    (subscription) => {
+      const school = schoolByCode.get(normalizeSchoolCodeKey(subscription.schoolCode));
+      const country = findCountryForSubscription(countries, school, subscription);
+      const policy = resolveCountrySubscriptionPolicy(country);
+      const plan = normalizeSubscriptionPlanName(subscription.plan ?? school?.subscriptionPlan);
+      const pricing = policy.plans[plan] ?? policy.plans.Standard;
+
+      return {
+        ...subscription,
+        plan,
+        monthlyPrice: pricing.monthlyPrice,
+        annualPrice: pricing.annualPrice,
+        currency: policy.currency,
+        country: subscription.country || school?.country || country?.name || subscription.country,
+        countryCode:
+          subscription.countryCode || country?.code || resolveSchoolCountryCodeFromRow(school),
+      };
+    },
+  );
+
+  return { ...state, subscriptions };
 }
 
 function mergeRowsByIdentity(primaryRows = [], secondaryRows = []) {
@@ -1251,7 +1440,7 @@ function scopeBackOfficeState(payload = {}, principal) {
   }
 
   const schoolCodes = new Set([principal.schoolCode].filter(Boolean));
-  return scopeStateWithSchools(state, schoolCodes, { subscriptions: [] });
+  return scopeStateWithSchools(state, schoolCodes);
 }
 
 function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
@@ -1279,6 +1468,8 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
     hasSchoolScope(item, schoolCodes) || classNames.has(item.className),
   );
   const users = state.users.filter((item) => hasSchoolScope(item, schoolCodes));
+  const contacts = (state.contacts ?? []).filter((item) => hasSchoolScope(item, schoolCodes));
+  const relations = (state.relations ?? []).filter((item) => hasSchoolScope(item, schoolCodes));
   const schools = state.schools.filter((item) => schoolCodes.has(item.code));
   const subscriptions = state.subscriptions.filter((item) => hasSchoolScope(item, schoolCodes));
   const payments = state.payments.filter((item) => belongsToScopedStudentOrSchool(item, schoolCodes, studentIds));
@@ -1300,6 +1491,8 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
     ...state,
     schools,
     users,
+    contacts,
+    relations,
     students,
     teachers,
     classes,
@@ -1496,6 +1689,8 @@ function mergeScopedBackOfficeState(
       schools: mergeEntity("schools", finalizeSuperAdminSchoolValidation),
       users: mergeEntity("users", finalizeSuperAdminUserValidation),
       countries: mergeEntity("countries"),
+      contacts: mergeEntity("contacts"),
+      relations: mergeEntity("relations"),
       subscriptions: mergeEntity("subscriptions"),
       notifications: mergeEntity("notifications"),
       students: mergeEntity("students"),
@@ -1557,6 +1752,8 @@ function mergeScopedBackOfficeState(
         principal,
       ),
       countries: mergeScopedRows(current.countries, scopedRequested.countries, scopedCurrent.countries),
+      contacts: mergeScopedRows(current.contacts, scopedRequested.contacts, scopedCurrent.contacts),
+      relations: mergeScopedRows(current.relations, scopedRequested.relations, scopedCurrent.relations),
       subscriptions: mergeScopedRows(
         current.subscriptions,
         scopedRequested.subscriptions,
@@ -1597,6 +1794,8 @@ function mergeScopedBackOfficeState(
       ? mergeScopedRows(current.countries, scopedRequested.countries, scopedCurrent.countries)
       : current.countries,
     subscriptions: principal.role === "Admin School" ? current.subscriptions : mergeScopedRows(current.subscriptions, scopedRequested.subscriptions, scopedCurrent.subscriptions),
+    contacts: mergeScopedRows(current.contacts ?? [], scopedRequested.contacts ?? [], scopedCurrent.contacts ?? []),
+    relations: mergeScopedRows(current.relations ?? [], scopedRequested.relations ?? [], scopedCurrent.relations ?? []),
     notifications: current.notifications,
     students: mergeScopedRows(current.students, scopedRequested.students, scopedCurrent.students),
     teachers:
@@ -1630,10 +1829,26 @@ function mergeScopedBackOfficeState(
       scopedRequested.academicConfigs ?? {},
       isSuperAdminPrincipal(principal),
     ),
-    auditLog: current.auditLog,
+    auditLog: mergeAuditLog(current.auditLog, requested.auditLog),
     deletedRows,
     updatedAt: new Date().toISOString(),
   });
+}
+
+/** Fusionne le journal d'audit (SEC-004) client + serveur, dédupliqué par id, plafonné à 200. */
+function mergeAuditLog(currentLog, requestedLog) {
+  const currentRows = Array.isArray(currentLog) ? currentLog : [];
+  const requestedRows = Array.isArray(requestedLog) ? requestedLog : [];
+  const seen = new Set();
+  const merged = [];
+  for (const entry of [...requestedRows, ...currentRows]) {
+    if (!entry || typeof entry !== "object") continue;
+    const id = entry.id;
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    merged.push(entry);
+  }
+  return merged.slice(0, 200);
 }
 
 function mergeScopedRows(currentRows, requestedScopedRows, currentScopedRows) {
@@ -1761,6 +1976,8 @@ function getEditableEntitiesForPrincipal(principal) {
   }
 
   return [
+    "contacts",
+    "relations",
     "users",
     "students",
     "teachers",
@@ -1780,12 +1997,72 @@ function getEditableEntitiesForPrincipal(principal) {
   ];
 }
 
+const SCHOOL_SCOPED_DELETABLE_ENTITIES = new Set([
+  "contacts",
+  "relations",
+  "students",
+  "teachers",
+  "classes",
+  "courses",
+  "assignments",
+  "courseSchedules",
+  "payments",
+  "paymentStatuses",
+  "presences",
+  "notes",
+  "exams",
+  "bulletins",
+  "documents",
+  "announcements",
+  "messages",
+]);
+
+function schoolCodesFromRows(rows = []) {
+  return new Set(
+    rows
+      .map((row) => String(row?.schoolCode ?? "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+}
+
+function repairMassEntityDeletion(state = {}, entity) {
+  const rows = Array.isArray(state[entity]) ? state[entity] : [];
+  const deleted = state.deletedRows?.[entity];
+  if (!Array.isArray(deleted) || deleted.length <= rows.length || deleted.length < 20) {
+    return state;
+  }
+
+  const nextDeletedRows = { ...(state.deletedRows ?? {}) };
+  delete nextDeletedRows[entity];
+  return { ...state, deletedRows: nextDeletedRows };
+}
+
+function repairCorruptedBackOfficeState(state = {}) {
+  let next = state;
+  for (const entity of SCHOOL_SCOPED_DELETABLE_ENTITIES) {
+    next = repairMassEntityDeletion(next, entity);
+  }
+  return next;
+}
+
 function detectDeletedRows(currentState = {}, requestedState = {}, entities = []) {
   return entities.reduce((deletedRows, entity) => {
     const currentRows = Array.isArray(currentState[entity]) ? currentState[entity] : [];
     const requestedRows = Array.isArray(requestedState[entity]) ? requestedState[entity] : [];
     const requestedKeys = new Set(requestedRows.map(rowKey));
-    const deletedKeys = currentRows
+
+    let rowsToCheck = currentRows;
+    if (SCHOOL_SCOPED_DELETABLE_ENTITIES.has(entity)) {
+      const touchedSchools = schoolCodesFromRows(requestedRows);
+      if (touchedSchools.size) {
+        rowsToCheck = currentRows.filter((row) => {
+          const code = String(row?.schoolCode ?? "").trim().toUpperCase();
+          return code && touchedSchools.has(code);
+        });
+      }
+    }
+
+    const deletedKeys = rowsToCheck
       .map(rowKey)
       .filter((key) => key && !requestedKeys.has(key));
 
@@ -2010,6 +2287,8 @@ function buildPrincipal(response, rolePermissionsMap = null) {
 
   return {
     sub: user.id ?? user.publicId ?? user.matricule ?? "anonymous",
+    identifier: user.identifier,
+    publicId: user.publicId,
     role,
     schoolCode,
     countryCode,
@@ -2017,6 +2296,54 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     studentIds: getPrincipalStudentIds(response),
     classNames: user.assignedClasses ?? [],
   };
+}
+
+/** Résout toutes les clés possibles d'un compte (id, publicId, identifiant de connexion). */
+async function resolveUserPasswordLookupKeys(principal) {
+  const keys = new Set();
+  const add = (value) => {
+    const normalized = String(value ?? "").trim();
+    if (normalized) {
+      keys.add(normalized);
+    }
+  };
+
+  add(principal?.sub);
+  add(principal?.identifier);
+  add(principal?.publicId);
+
+  const collectAliases = (user) => {
+    add(user?.id);
+    add(user?.publicId);
+    add(user?.identifier);
+  };
+
+  const matchesAny = (user) =>
+    [user?.id, user?.publicId, user?.identifier].some((value) => {
+      const alias = String(value ?? "").trim();
+      return alias && keys.has(alias);
+    });
+
+  const { users } = await getAuthoritativeBackOfficeState();
+  const runtime = await getRuntime();
+  const allAccounts = [...users, ...(runtime.userAccounts ?? [])];
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const user of allAccounts) {
+      if (!matchesAny(user)) {
+        continue;
+      }
+      const before = keys.size;
+      collectAliases(user);
+      if (keys.size > before) {
+        changed = true;
+      }
+    }
+  }
+
+  return [...keys];
 }
 
 // Récupère la matrice de droits par rôle (configurée par le Super Admin dans le BackOffice).

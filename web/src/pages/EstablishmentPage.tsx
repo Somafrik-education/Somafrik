@@ -11,21 +11,12 @@ import {
 } from "../lib/entityModules";
 import { canReadView, hasBackOfficePermission, canAccessSchoolBackOffice } from "../lib/permissions";
 import { usePermissionContext } from "../lib/usePermissionContext";
-import { useActiveSchool } from "../context/ActiveSchoolContext";
-import { formatSchoolOption } from "../lib/superadminCrudPath";
 import { NAV_ITEMS } from "../lib/constants";
-import { Field, Select } from "../components/ui/Field";
 
 export function EstablishmentPage() {
   const { session } = useAuth();
   const ctx = usePermissionContext();
   const user = session?.user ?? null;
-  const {
-    activeSchoolCode: schoolCode,
-    availableSchools,
-    requiresSelection,
-    setActiveSchoolCode,
-  } = useActiveSchool();
 
   const modules = useMemo(
     () =>
@@ -63,18 +54,6 @@ export function EstablishmentPage() {
 
   return (
     <div className="space-y-6">
-      {requiresSelection && availableSchools.length > 1 ? (
-        <Card className="p-4">
-          <Field label="Établissement actif">
-            <Select
-              value={schoolCode}
-              onChange={(e) => setActiveSchoolCode(e.target.value)}
-              options={availableSchools.map(formatSchoolOption)}
-            />
-          </Field>
-        </Card>
-      ) : null}
-
       {modules.length ? (
         <section className="space-y-6">
           {ENTITY_MODULE_GROUP_ORDER.map((group) => {

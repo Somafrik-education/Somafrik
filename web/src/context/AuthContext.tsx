@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, setAccessTokenProvider } from "../api/client";
+import { api, ApiError, setAccessTokenProvider } from "../api/client";
 import { normalizePlatformRole } from "../lib/orgHierarchy";
 import type { LoginProfile, Session } from "../types";
 
@@ -57,6 +57,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
+  }, []);
+
+  useEffect(() => {
+    const token = sessionRef.current?.accessToken;
+    if (!token) return;
+    let cancelled = false;
+    void api.get("/backoffice/state").catch((err) => {
+      if (cancelled) return;
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        setSession(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = useCallback(

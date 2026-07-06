@@ -107,6 +107,24 @@ export function parsePeriodDate(value?: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/** JJ-MM-AAAA → YYYY-MM-DD (champ date HTML). */
+export function periodDateToInput(value?: string): string {
+  const date = parsePeriodDate(value);
+  if (!date) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** YYYY-MM-DD → JJ-MM-AAAA (stockage backoffice). */
+export function inputToPeriodDate(value?: string): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) return raw;
+  const pad = (part: string) => part.padStart(2, "0");
+  return `${pad(match[3])}-${pad(match[2])}-${match[1]}`;
+}
+
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 }

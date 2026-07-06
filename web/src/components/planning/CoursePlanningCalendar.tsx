@@ -1,7 +1,7 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSubjectColorLegend,
-  getCourseColor,
+  EXAM_PLANNING_COLOR,
   type PlanningCalendarEvent,
 } from "../../lib/coursePlanning";
 import {
@@ -21,6 +21,7 @@ interface CoursePlanningCalendarProps {
   className: string;
   events: PlanningCalendarEvent[];
   legendSubjects?: string[];
+  initialAnchorDate?: Date;
   editable: boolean;
   onSelectSlot: (start: string, end: string) => void;
   onEventClick: (eventId: string) => void;
@@ -50,6 +51,7 @@ function CoursePlanningCalendarInner({
   className,
   events,
   legendSubjects = [],
+  initialAnchorDate,
   editable,
   onSelectSlot,
   onEventClick,
@@ -57,7 +59,13 @@ function CoursePlanningCalendarInner({
   onEventResize,
 }: CoursePlanningCalendarProps) {
   const [view, setView] = useState<PlanningCalendarView>("work_week");
-  const [date, setDate] = useState(() => new Date());
+  const [date, setDate] = useState(() => initialAnchorDate ?? new Date());
+
+  useEffect(() => {
+    if (initialAnchorDate) {
+      setDate(initialAnchorDate);
+    }
+  }, [initialAnchorDate?.toDateString()]);
 
   const onSelectRef = useRef(onSelectSlot);
   onSelectRef.current = onSelectSlot;
@@ -69,16 +77,22 @@ function CoursePlanningCalendarInner({
   onEventResizeRef.current = onEventResize;
 
   const gridEvents = useMemo(
-    () => mapPlanningGridEvents(events, getCourseColor),
+    () => mapPlanningGridEvents(events),
     [eventsSignature(events)],
   );
 
   const colorLegend = useMemo(() => {
     const subjects = [
       ...legendSubjects,
-      ...events.map((event) => event.extendedProps.subject?.trim() || ""),
+      ...events
+        .filter((event) => event.extendedProps.kind !== "exam")
+        .map((event) => event.extendedProps.subject?.trim() || ""),
     ];
-    return buildSubjectColorLegend(subjects);
+    const legend = buildSubjectColorLegend(subjects);
+    if (events.some((event) => event.extendedProps.kind === "exam")) {
+      legend.push({ subject: "Examens", color: EXAM_PLANNING_COLOR });
+    }
+    return legend.sort((a, b) => a.subject.localeCompare(b.subject, "fr"));
   }, [legendSubjects, eventsSignature(events)]);
 
   const viewDays = useMemo(() => getViewDays(view, date), [view, date]);
@@ -181,7 +195,7 @@ function CoursePlanningCalendarInner({
       </div>
 
       <p className="mt-2 px-2 text-xs text-muted">
-        Emploi du temps — {className} · matière dans chaque créneau · glisser-déposer et redimensionnement{" "}
+        Emploi du temps — {className} · créneaux répétés sur la période · glisser-déposer et redimensionnement{" "}
         {editable ? "activés" : "désactivés"}
       </p>
     </div>

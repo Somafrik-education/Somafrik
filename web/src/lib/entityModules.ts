@@ -10,13 +10,24 @@ import {
   scopedMessages,
   scopedNotes,
   scopedPayments,
+  scopedContacts,
   scopedPresences,
+  scopedRelations,
   scopedStudents,
   scopedTeachers,
 } from "./establishment";
 import type { SessionUser } from "../types";
+import {
+  CONTACT_ACCESS_OPTIONS,
+  CONTACT_GENDER_OPTIONS,
+  CONTACT_STATUS_OPTIONS,
+  CONTACT_TYPE_OPTIONS,
+} from "./contacts";
+import { RELATION_STATUS_OPTIONS, RELATION_TYPE_OPTIONS } from "./relations";
 
 export type SchoolEntityKey =
+  | "contacts"
+  | "relations"
   | "students"
   | "teachers"
   | "classes"
@@ -50,7 +61,18 @@ export interface EntityField {
   required?: boolean;
   readOnly?: boolean;
   inputType?: "text" | "select";
-  optionsKey?: "levels" | "tracks" | "classNames" | "subjects" | "teachers" | "classes" | "assignmentSubjects";
+  optionsKey?:
+    | "levels"
+    | "tracks"
+    | "classNames"
+    | "subjects"
+    | "teachers"
+      | "classes"
+      | "assignmentSubjects"
+      | "accounts"
+      | "userRoles"
+      | "relationContacts"
+      | "relationStudents";
   selectOptions?: { value: string; label: string }[];
 }
 
@@ -66,13 +88,150 @@ export interface EntityModuleConfig {
   columns: string[];
   /** Libellés de colonnes hors formulaire (ex. classes calculées). */
   columnLabels?: Record<string, string>;
+  /** Calendrier / créneaux gérés uniquement depuis Planning de cours. */
+  planningManaged?: boolean;
 }
 
 export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
+    key: "contacts",
+    view: "contacts",
+    path: "/etablissement/contacts",
+    label: "Contacts",
+    feature: "Contacts",
+    group: "utilisateurs",
+    description:
+      "Répertoire des personnes (socle CRM). Un contact est rattaché à un compte ; il peut ensuite devenir utilisateur.",
+    fields: [
+      { key: "lastName", label: "Nom", placeholder: "Nom", required: true },
+      { key: "firstName", label: "Prénom", placeholder: "Prénom", required: true },
+      {
+        key: "contactType",
+        label: "Type de contact",
+        placeholder: "Choisir un type",
+        inputType: "select",
+        selectOptions: CONTACT_TYPE_OPTIONS,
+        required: true,
+      },
+      {
+        key: "schoolCode",
+        label: "Compte lié",
+        placeholder: "Choisir un compte",
+        inputType: "select",
+        optionsKey: "accounts",
+        required: true,
+        hint: "Établissement ou organisation auquel ce contact appartient.",
+      },
+      { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
+      { key: "email", label: "Email", placeholder: "nom@exemple.com" },
+      {
+        key: "gender",
+        label: "Sexe",
+        inputType: "select",
+        selectOptions: CONTACT_GENDER_OPTIONS,
+      },
+      { key: "birthDate", label: "Date de naissance", placeholder: "JJ-MM-AAAA" },
+      { key: "address", label: "Adresse", placeholder: "Adresse" },
+      {
+        key: "status",
+        label: "Statut",
+        inputType: "select",
+        selectOptions: CONTACT_STATUS_OPTIONS,
+        required: true,
+      },
+      {
+        key: "hasAccess",
+        label: "Accès application",
+        inputType: "select",
+        selectOptions: CONTACT_ACCESS_OPTIONS,
+        hint: "Transforme le contact en utilisateur pouvant se connecter (UTIL-001).",
+      },
+      {
+        key: "role",
+        label: "Rôle (accès)",
+        placeholder: "Choisir un rôle",
+        inputType: "select",
+        optionsKey: "userRoles",
+        hint: "Requis si un accès est créé.",
+      },
+      {
+        key: "secondaryRole",
+        label: "Rôle secondaire (optionnel)",
+        placeholder: "Aucun",
+        inputType: "select",
+        optionsKey: "userRoles",
+        hint: "Un contact peut cumuler plusieurs rôles (UTIL-003).",
+      },
+      {
+        key: "userIdentifier",
+        label: "Identifiant de connexion",
+        readOnly: true,
+        hint: "Généré automatiquement à la création de l'accès.",
+      },
+    ],
+    columns: ["lastName", "firstName", "contactType", "accountName", "phone", "status", "userIdentifier"],
+    columnLabels: { accountName: "Compte lié", userIdentifier: "Accès" },
+  },
+  {
+    key: "relations",
+    view: "relations",
+    path: "/administration/relations",
+    label: "Relations",
+    feature: "Relations",
+    group: "utilisateurs",
+    description:
+      "Liens entre personnes et structures : parent → élève et rattachement d'un contact à plusieurs comptes.",
+    fields: [
+      {
+        key: "relationType",
+        label: "Type de relation",
+        placeholder: "Choisir un type",
+        inputType: "select",
+        selectOptions: RELATION_TYPE_OPTIONS,
+        required: true,
+      },
+      {
+        key: "fromContactId",
+        label: "Contact",
+        placeholder: "Choisir un contact",
+        inputType: "select",
+        optionsKey: "relationContacts",
+        required: true,
+      },
+      {
+        key: "toStudentId",
+        label: "Élève associé",
+        placeholder: "Choisir un élève",
+        inputType: "select",
+        optionsKey: "relationStudents",
+        hint: "Requis pour une relation Parent → Élève.",
+      },
+      {
+        key: "accountCode",
+        label: "Compte associé",
+        placeholder: "Choisir un compte",
+        inputType: "select",
+        optionsKey: "accounts",
+        hint: "Requis pour rattacher un contact à un compte supplémentaire.",
+      },
+      {
+        key: "status",
+        label: "Statut",
+        inputType: "select",
+        selectOptions: RELATION_STATUS_OPTIONS,
+      },
+    ],
+    columns: ["relationType", "fromContactName", "toStudentName", "accountName", "status"],
+    columnLabels: {
+      fromContactName: "Contact",
+      toStudentName: "Élève",
+      accountName: "Compte",
+    },
+  },
+  {
     key: "students",
     view: "students",
-    path: "/configuration/eleves",
+    path: "/etablissement/eleves",
     label: "Élèves",
     feature: "Élèves",
     group: "utilisateurs",
@@ -95,7 +254,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "teachers",
     view: "teachers",
-    path: "/configuration/enseignants",
+    path: "/etablissement/enseignants",
     label: "Enseignants",
     feature: "Enseignants",
     group: "utilisateurs",
@@ -141,7 +300,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "classes",
     view: "classes",
-    path: "/classes",
+    path: "/etablissement/classes",
     label: "Classes",
     feature: "Classes",
     group: "pedagogie",
@@ -174,12 +333,12 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "courses",
     view: "courses",
-    path: "/matieres",
+    path: "/etablissement/matieres",
     label: "Matières",
     feature: "Matières",
     group: "pedagogie",
     description:
-      "Cours et matières enseignées. Chaque matière dans une classe est affectée à un seul enseignant.",
+      "Catalogue des matières par classe. L'enseignant et l'horaire se définissent dans Planning de cours.",
     fields: [
       {
         key: "className",
@@ -210,25 +369,28 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "assignments",
     view: "assignments",
-    path: "/affectations",
+    path: "/planning/affectations",
     label: "Affectations",
     feature: "Affectations",
     group: "pedagogie",
-    description: "Liens enseignant ↔ classe ↔ matière (sans doublon).",
+    description:
+      "Affectation enseignant ↔ classe ↔ matière. La classe et la matière proviennent de la configuration ; l'horaire se définit dans Emploi du temps.",
     fields: [
       {
         key: "className",
         label: "Classe",
         placeholder: "Choisir une classe",
         inputType: "select",
-        optionsKey: "classNames",
+        optionsKey: "classes",
+        required: true,
       },
       {
         key: "subject",
-        label: "Matière / Cours",
+        label: "Matière",
         placeholder: "Choisir une matière",
         inputType: "select",
-        optionsKey: "subjects",
+        optionsKey: "assignmentSubjects",
+        required: true,
       },
       {
         key: "teacherId",
@@ -236,9 +398,11 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         placeholder: "Choisir un enseignant",
         inputType: "select",
         optionsKey: "teachers",
+        required: true,
       },
     ],
-    columns: ["teacherName", "className", "subject"],
+    columns: ["className", "subject", "teacherName"],
+    columnLabels: { teacherName: "Enseignant" },
   },
   {
     key: "presences",
@@ -278,15 +442,27 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     label: "Examens",
     feature: "Examens",
     group: "pedagogie",
-    description: "Sessions d'évaluation, calendrier et publication des résultats.",
+    planningManaged: true,
+    description:
+      "Suivi des sessions d'évaluation. La planification (date, horaire, classe) se fait dans Planning de cours.",
     fields: [
-      { key: "name", label: "Intitulé", placeholder: "Contrôle T1 — Mathématiques" },
-      { key: "className", label: "Classe", placeholder: "6ème A" },
-      { key: "subject", label: "Matière", placeholder: "Mathématiques" },
-      { key: "examType", label: "Type", placeholder: "Contrôle / Devoir / Examen" },
-      { key: "date", label: "Date", placeholder: "JJ-MM-AAAA" },
-      { key: "period", label: "Période", placeholder: "Trimestre 1" },
-      { key: "status", label: "Statut", placeholder: "Programmé / Publié" },
+      { key: "name", label: "Intitulé", placeholder: "Contrôle T1 — Mathématiques", readOnly: true },
+      { key: "className", label: "Classe", placeholder: "6ème A", readOnly: true },
+      { key: "subject", label: "Matière", placeholder: "Mathématiques", readOnly: true },
+      { key: "examType", label: "Type", placeholder: "Contrôle / Devoir / Examen", readOnly: true },
+      { key: "date", label: "Date", placeholder: "JJ-MM-AAAA", readOnly: true },
+      { key: "period", label: "Période", placeholder: "Trimestre 1", readOnly: true },
+      {
+        key: "status",
+        label: "Statut",
+        inputType: "select",
+        selectOptions: [
+          { value: "Programmé", label: "Programmé" },
+          { value: "En cours", label: "En cours" },
+          { value: "Publié", label: "Publié" },
+          { value: "Validé", label: "Validé" },
+        ],
+      },
     ],
     columns: ["name", "className", "subject", "date", "status"],
   },
@@ -312,7 +488,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "documents",
     view: "documents",
-    path: "/documents",
+    path: "/administration/documents",
     label: "Documents",
     feature: "Documents",
     group: "administratif",
@@ -330,7 +506,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "payments",
     view: "payments",
-    path: "/paiements",
+    path: "/finances/paiements",
     label: "Paiements",
     feature: "Paiements",
     group: "finance",
@@ -393,7 +569,8 @@ export const CONFIGURATION_USER_ACCOUNTS = {
 } as const;
 
 export const CONFIGURATION_USER_MODULES = SCHOOL_ENTITY_MODULES.filter(
-  (module) => module.group === "utilisateurs",
+  (module) =>
+    module.group === "utilisateurs" && module.key !== "contacts" && module.key !== "relations",
 );
 
 export const ENTITY_MODULE_GROUP_ORDER: EntityModuleGroup[] = [
@@ -432,6 +609,10 @@ export function getScopedEntityRows(
   state: BackOfficeState,
 ): Record<string, unknown>[] {
   switch (key) {
+    case "contacts":
+      return scopedContacts(user, state);
+    case "relations":
+      return scopedRelations(user, state);
     case "students":
       return scopedStudents(user, state);
     case "teachers":
@@ -464,6 +645,8 @@ export function getScopedEntityRows(
 }
 
 const DIRECT_SCOPE_KEYS = new Set<SchoolEntityKey>([
+  "contacts",
+  "relations",
   "students",
   "teachers",
   "classes",

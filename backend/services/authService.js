@@ -238,7 +238,10 @@ class AuthService {
       countryCode: user.countryCode,
       schoolCode: user.role === "Admin Pays" ? "*" : user.schoolCode,
       permissions: user.permissions,
-      mustChangePassword: Boolean(user.temporaryPassword),
+      mustChangePassword:
+        user.mustChangePassword != null
+          ? Boolean(user.mustChangePassword)
+          : Boolean(user.temporaryPassword),
     };
 
     if (isTeacherRole(user.role)) {

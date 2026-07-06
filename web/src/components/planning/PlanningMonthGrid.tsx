@@ -1,8 +1,9 @@
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import type { PlanningGridEvent } from "./PlanningTimeGrid";
+import { formatPlanningEventLabel } from "../../lib/coursePlanning";
 import {
-  formatEventTime,
+  formatEventTimeRange,
   formatMonthDay,
   getMonthGridDays,
   isCurrentMonth,
@@ -59,8 +60,12 @@ export function PlanningMonthGrid({ anchor, events, onEventClick, onDayClick }: 
                       onEventClick(event.id);
                     }}
                   >
-                    <span className="planning-month-grid__event-time">{formatEventTime(event.start)}</span>
-                    <span className="planning-month-grid__event-subject">{event.slot.subject}</span>
+                    <span className="planning-month-grid__event-time">
+                      {formatEventTimeRange(event.start, event.end)}
+                    </span>
+                    <span className="planning-month-grid__event-subject">
+                      {formatPlanningEventLabel(event.slot)}
+                    </span>
                   </button>
                 ))}
                 {dayEvents.length > 3 ? (

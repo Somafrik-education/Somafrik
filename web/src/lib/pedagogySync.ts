@@ -271,6 +271,52 @@ function applySchoolCode(item: Row, schoolCode?: string): Row {
   return { ...item, schoolCode };
 }
 
+/** Clé métier d'une affectation : un cours (classe + matière) par établissement. */
+function assignmentScopeKey(row: Row): string {
+  const school = normalize(String(row.schoolCode ?? ""));
+  const className = normalize(String(row.className ?? ""));
+  const subject = normalize(String(row.subject ?? row.course ?? row.name ?? ""));
+  return `${school}|${className}|${subject}`;
+}
+
+/**
+ * Déduplique les affectations par (établissement, classe, matière) — miroir de la
+ * règle backend `dedupeAssignmentsBySchoolClassSubject`. Empêche l'apparition de
+ * doublons lorsqu'une même affectation existe sous deux identifiants (création
+ * locale + version régénérée par la synchronisation).
+ */
+export function dedupeAssignments(assignments: Row[] = []): Row[] {
+  const byKey = new Map<string, Row>();
+  const passthrough: Row[] = [];
+
+  for (const assignment of assignments) {
+    const className = normalize(String(assignment.className ?? ""));
+    const subject = normalize(String(assignment.subject ?? assignment.course ?? ""));
+    if (!className || !subject) {
+      passthrough.push(assignment);
+      continue;
+    }
+    const key = assignmentScopeKey(assignment);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, assignment);
+      continue;
+    }
+    // On conserve l'identifiant existant (stabilité des clés React) et on complète
+    // les informations manquantes avec la nouvelle occurrence.
+    byKey.set(key, {
+      ...existing,
+      ...assignment,
+      id: existing.id ?? assignment.id,
+      teacherId: existing.teacherId || assignment.teacherId,
+      teacherName: existing.teacherName || assignment.teacherName,
+      schoolCode: existing.schoolCode ?? assignment.schoolCode,
+    });
+  }
+
+  return [...byKey.values(), ...passthrough];
+}
+
 function appendTeacherAssignmentLink(teacher: Row, link: SubjectLink): Row {
   if (!link.subject.trim()) return teacher;
   const current = Array.isArray(teacher.assignments) ? [...(teacher.assignments as Row[])] : [];
@@ -316,7 +362,7 @@ export function syncTeacherPedagogy(
     assignments = upsertAssignment(assignments, link, teacherId, teacherName, schoolCode);
   }
 
-  return { courses, assignments, teacher: enrichedTeacher };
+  return { courses, assignments: dedupeAssignments(assignments), teacher: enrichedTeacher };
 }
 
 /** Enregistrement matière → affectation + lien enseignant. */
@@ -369,7 +415,7 @@ export function syncCoursePedagogy(
     assignments = synced.assignments;
   }
 
-  return { courses, assignments, teachers };
+  return { courses, assignments: dedupeAssignments(assignments), teachers };
 }
 
 /** Enregistrement affectation → mise à jour du cours existant (sans doublon inter-établissements). */
@@ -438,5 +484,5 @@ export function syncAssignmentPedagogy(
     assignments = synced.assignments;
   }
 
-  return { courses, assignments, teachers };
+  return { courses, assignments: dedupeAssignments(assignments), teachers };
 }

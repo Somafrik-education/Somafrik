@@ -11,11 +11,8 @@ import {
   filterEstablishmentDashboardCharts,
   filterPlatformDashboardCharts,
 } from "../lib/dashboardPermissions";
-import { Card } from "../components/ui/Card";
-import { Field, Select } from "../components/ui/Field";
 import { DashboardChartGrid } from "../components/charts/DashboardChartGrid";
 import { resolveChartOrderUserKey } from "../lib/chartOrder";
-import { formatSchoolOption } from "../lib/superadminCrudPath";
 
 export function OverviewPage() {
   const { session } = useAuth();
@@ -24,11 +21,7 @@ export function OverviewPage() {
   const user = session?.user ?? null;
   const internalSchool = isInternalSchoolRole(user?.role);
   const {
-    activeSchoolCode: schoolCode,
-    availableSchools,
-    requiresSelection,
     scopedUser,
-    setActiveSchoolCode,
   } = useActiveSchool();
 
   const users = scopedUsers(scopedUser, state);
@@ -66,18 +59,6 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      {internalSchool && requiresSelection && availableSchools.length > 1 ? (
-        <Card className="p-4">
-          <Field label="Établissement actif">
-            <Select
-              value={schoolCode}
-              onChange={(e) => setActiveSchoolCode(e.target.value)}
-              options={availableSchools.map(formatSchoolOption)}
-            />
-          </Field>
-        </Card>
-      ) : null}
-
       <DashboardChartGrid
         charts={charts}
         periodContext={periodContext}

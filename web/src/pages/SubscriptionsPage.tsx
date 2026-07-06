@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
-import { scopedSubscriptions } from "../lib/scope";
-import { formatMetric } from "../lib/format";
+import { scopedSchools, scopedSubscriptions } from "../lib/scope";
+import { mergeSubscriptionsWithSchools, resolveSubscriptionPlan } from "../lib/subscriptions";
+import { formatMetric, normalize } from "../lib/format";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -18,7 +19,21 @@ export function SubscriptionsPage() {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
 
-  const rows = scopedSubscriptions(session?.user ?? null, state);
+  const user = session?.user ?? null;
+  const schools = scopedSchools(user, state);
+  const rows = useMemo(
+    () =>
+      mergeSubscriptionsWithSchools(
+        schools,
+        scopedSubscriptions(user, state),
+        state.countries,
+      ),
+    [user, state.schools, state.subscriptions, state.countries, schools],
+  );
+  const schoolByCode = useMemo(
+    () => new Map(schools.map((school) => [normalize(school.code), school])),
+    [schools],
+  );
   const { canUpdate: canRenew } = useFeaturePermissions("Abonnements");
 
   async function renew(subscription: Subscription) {
@@ -26,11 +41,28 @@ export function SubscriptionsPage() {
     const nextYear = new Date();
     nextYear.setFullYear(nextYear.getFullYear() + 1);
     const endDate = nextYear.toLocaleDateString("fr-FR").replace(/\//g, "-");
-    const next = state.subscriptions.map((s) =>
-      s.id === subscription.id
-        ? { ...s, status: "Actif", paymentStatus: "À jour", endDate }
-        : s,
+    const mergedRow = rows.find(
+      (row) => normalize(String(row.schoolCode)) === normalize(String(subscription.schoolCode)),
     );
+    const next = state.subscriptions.map((item) => {
+      if (normalize(String(item.schoolCode)) !== normalize(String(subscription.schoolCode))) {
+        return item;
+      }
+      return {
+        ...(mergedRow ?? item),
+        status: "Actif",
+        paymentStatus: "À jour",
+        endDate,
+      };
+    });
+    if (!next.some((item) => normalize(String(item.schoolCode)) === normalize(String(subscription.schoolCode)))) {
+      next.push({
+        ...(mergedRow ?? subscription),
+        status: "Actif",
+        paymentStatus: "À jour",
+        endDate,
+      });
+    }
     try {
       await update({ subscriptions: next });
       showToast("Abonnement renouvelé", "success");
@@ -42,14 +74,28 @@ export function SubscriptionsPage() {
   }
 
   const columns: Column<Subscription>[] = [
-    { key: "schoolCode", header: "Établissement", render: (s) => <span className="font-semibold">{s.schoolCode}</span> },
+    {
+      key: "schoolCode",
+      header: "Établissement",
+      render: (s) => <span className="font-semibold">{s.schoolCode}</span>,
+    },
     { key: "country", header: "Pays" },
-    { key: "plan", header: "Plan" },
+    {
+      key: "plan",
+      header: "Plan",
+      render: (s) => resolveSubscriptionPlan(schoolByCode.get(normalize(s.schoolCode)), s) || "—",
+    },
     {
       key: "monthlyPrice",
       header: "Mensuel",
       align: "right",
       render: (s) => formatMetric(Number(s.monthlyPrice ?? 0), s.currency ?? "USD"),
+    },
+    {
+      key: "annualPrice",
+      header: "Annuel",
+      align: "right",
+      render: (s) => formatMetric(Number(s.annualPrice ?? 0), s.currency ?? "USD"),
     },
     { key: "paymentStatus", header: "Paiement", render: (s) => <StatusBadge status={s.paymentStatus} /> },
     { key: "endDate", header: "Échéance" },
@@ -70,7 +116,7 @@ export function SubscriptionsPage() {
     <Card className="p-6">
       <SectionHeader
         title="Abonnements"
-        description={`${rows.length} abonnement(s) suivis dans votre périmètre.`}
+        description={`${rows.length} abonnement(s) suivis dans votre périmètre. Tarifs définis dans Paramètres → Politique d'abonnement par pays.`}
         actions={<PrintButton documentTitle="Abonnements — Somafrik" />}
       />
       <div className="mt-4">

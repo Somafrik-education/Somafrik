@@ -155,3 +155,7 @@ export function formatMonthDay(date: Date): string {
 export function formatEventTime(date: Date): string {
   return format(date, "HH:mm", { locale: fr });
 }
+
+export function formatEventTimeRange(start: Date, end: Date): string {
+  return `${formatEventTime(start)} – ${formatEventTime(end)}`;
+}

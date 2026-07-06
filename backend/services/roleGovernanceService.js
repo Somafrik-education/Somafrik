@@ -70,7 +70,7 @@ class RoleGovernanceService {
 
   /** Entités backoffice modifiables par Admin Pays (pas la scolarité opérationnelle). */
   editableEntitiesForCountryAdmin() {
-    return ["schools", "users", "countries", "subscriptions"];
+    return ["schools", "users", "countries", "contacts", "relations", "subscriptions"];
   }
 
   normalizeManagedRolePermissions(role, permissions = []) {

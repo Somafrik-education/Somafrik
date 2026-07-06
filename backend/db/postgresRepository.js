@@ -28,6 +28,41 @@ const roleFromDb = Object.fromEntries(
 roleFromDb.SUPER_ADMIN = "Super Administrateur Somafrik";
 roleFromDb.SUPERVISOR = "Surveillant";
 
+function normalizeUserLookup(value) {
+  return String(value ?? "").trim();
+}
+
+function userMatchesLookup(account, lookups = []) {
+  const keys = new Set(
+    (Array.isArray(lookups) ? lookups : [lookups])
+      .map((value) => String(value ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (!keys.size) {
+    return false;
+  }
+  return [account?.id, account?.publicId, account?.identifier].some((value) =>
+    keys.has(String(value ?? "").trim().toLowerCase()),
+  );
+}
+
+function buildResetPasswordUser(account, secretHash, temporaryPassword) {
+  const next = {
+    ...account,
+    passwordHash: secretHash,
+    pinHash: secretHash,
+    temporaryPassword,
+    mustChangePassword: true,
+    history: [
+      ...(Array.isArray(account.history) ? account.history : []),
+      `Mot de passe temporaire régénéré le ${new Date().toLocaleDateString("fr-FR")}. Ancien mot de passe invalidé.`,
+    ],
+  };
+  delete next.password;
+  delete next.pin;
+  return next;
+}
+
 class PostgresRepository {
   constructor(databaseConfig) {
     const poolConfig =
@@ -463,67 +498,178 @@ class PostgresRepository {
     return savedConfig;
   }
 
-  async resetUserPassword(userId, temporaryPassword) {
-    await this.init();
-    const secretHash = hashSecret(temporaryPassword);
-    const updated = await this.one(
-      `UPDATE users
-       SET password_hash = $1, pin_hash = $1, must_change_password = TRUE, updated_at = NOW()
-       WHERE id::text = $2 OR user_code = $2
-       RETURNING *`,
-      [secretHash, String(userId)]
-    );
+  async findPasswordAccountTargets(lookupKeys) {
+    const state = (await this.getBackOfficeState()) ?? {};
+    const storedUsers = Array.isArray(state.users) ? state.users : [];
+    const dataset = await this.getDataset();
+    const runtimeUsers = dataset.userAccounts ?? [];
+    const targets = [];
+    const seen = new Set();
 
-    if (!updated) {
-      const error = new Error("Utilisateur introuvable");
-      error.statusCode = 404;
-      throw error;
+    const register = (account) => {
+      const key = [account?.id, account?.publicId, account?.identifier]
+        .map((value) => String(value ?? "").trim().toLowerCase())
+        .filter(Boolean)
+        .join("|");
+      if (!key || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      targets.push(account);
+    };
+
+    for (const account of [...storedUsers, ...runtimeUsers]) {
+      if (userMatchesLookup(account, lookupKeys)) {
+        register(account);
+      }
     }
-    this.cachedDataset = null;
 
-    const schoolRows = await this.all(`
-      SELECT s.*, c.name AS country_name, c.iso_code
-      FROM schools s
-      LEFT JOIN countries c ON c.id = s.country_id
-    `);
-    const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
-    const row = await this.one(
-      `SELECT u.*, s.school_code
-       FROM users u
-       LEFT JOIN schools s ON s.id = u.school_id
-       WHERE u.id = $1`,
-      [updated.id]
-    );
-
-    return this.mapUser(row, schoolByCode);
+    return { state, storedUsers, targets };
   }
 
-  async changeUserPassword(userId, newPassword) {
+  async persistBackOfficeUserPasswordUpdates(lookupKeys, transformAccount) {
+    const { state, storedUsers, targets } = await this.findPasswordAccountTargets(lookupKeys);
+    if (!targets.length) {
+      return null;
+    }
+
+    const users = [...storedUsers];
+    let updatedAccount = null;
+
+    for (const target of targets) {
+      const nextAccount = transformAccount(target);
+      updatedAccount = nextAccount;
+      const index = users.findIndex((account) =>
+        userMatchesLookup(account, [target.id, target.publicId, target.identifier]),
+      );
+      if (index >= 0) {
+        users[index] = nextAccount;
+      } else {
+        users.unshift(nextAccount);
+      }
+    }
+
+    await this.saveBackOfficeState({
+      ...state,
+      users,
+      updatedAt: new Date().toISOString(),
+    });
+    this.cachedDataset = null;
+    return updatedAccount;
+  }
+
+  async resetUserPassword(userRef, temporaryPassword) {
     await this.init();
-    const secretHash = hashSecret(newPassword);
-    const updated = await this.one(
-      `UPDATE users
-       SET password_hash = $1, pin_hash = $1, must_change_password = FALSE, updated_at = NOW()
-       WHERE id::text = $2 OR user_code = $2
-       RETURNING *`,
-      [secretHash, String(userId)]
+    const secretHash = hashSecret(temporaryPassword);
+    const lookupKeys = (Array.isArray(userRef) ? userRef : [userRef])
+      .map(normalizeUserLookup)
+      .filter(Boolean);
+
+    for (const key of lookupKeys) {
+      const updated = await this.one(
+        `UPDATE users
+         SET password_hash = $1, pin_hash = $1, must_change_password = TRUE, updated_at = NOW()
+         WHERE id::text = $2 OR user_code = $2
+         RETURNING *`,
+        [secretHash, key],
+      );
+      if (updated) {
+        this.cachedDataset = null;
+        const schoolRows = await this.all(`
+          SELECT s.*, c.name AS country_name, c.iso_code
+          FROM schools s
+          LEFT JOIN countries c ON c.id = s.country_id
+        `);
+        const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
+        const row = await this.one(
+          `SELECT u.*, s.school_code
+           FROM users u
+           LEFT JOIN schools s ON s.id = u.school_id
+           WHERE u.id = $1`,
+          [updated.id],
+        );
+        return this.mapUser(row, schoolByCode);
+      }
+    }
+
+    const updatedAccount = await this.persistBackOfficeUserPasswordUpdates(
+      lookupKeys,
+      (account) => buildResetPasswordUser(account, secretHash, temporaryPassword),
     );
 
-    if (!updated) {
+    if (!updatedAccount) {
       const error = new Error("Utilisateur introuvable");
       error.statusCode = 404;
       throw error;
     }
-    this.cachedDataset = null;
 
-    const row = await this.one(
-      `SELECT u.*, s.school_code
-       FROM users u
-       LEFT JOIN schools s ON s.id = u.school_id
-       WHERE u.id = $1`,
-      [updated.id]
+    return updatedAccount;
+  }
+
+  async changeUserPassword(userRef, newPassword) {
+    await this.init();
+    const secretHash = hashSecret(newPassword);
+    const lookupKeys = (Array.isArray(userRef) ? userRef : [userRef])
+      .map(normalizeUserLookup)
+      .filter(Boolean);
+
+    for (const key of lookupKeys) {
+      const updated = await this.one(
+        `UPDATE users
+         SET password_hash = $1, pin_hash = $1, must_change_password = FALSE, updated_at = NOW()
+         WHERE id::text = $2 OR user_code = $2
+         RETURNING *`,
+        [secretHash, key],
+      );
+      if (updated) {
+        this.cachedDataset = null;
+        await this.persistBackOfficeUserPasswordUpdates(lookupKeys, (account) => {
+          const next = {
+            ...account,
+            passwordHash: secretHash,
+            pinHash: secretHash,
+            temporaryPassword: "",
+            mustChangePassword: false,
+          };
+          delete next.password;
+          delete next.pin;
+          return next;
+        });
+
+        const row = await this.one(
+          `SELECT u.*, s.school_code
+           FROM users u
+           LEFT JOIN schools s ON s.id = u.school_id
+           WHERE u.id = $1`,
+          [updated.id],
+        );
+        return this.mapUser(row, new Map());
+      }
+    }
+
+    const updatedAccount = await this.persistBackOfficeUserPasswordUpdates(
+      lookupKeys,
+      (account) => {
+        const next = {
+          ...account,
+          passwordHash: secretHash,
+          pinHash: secretHash,
+          temporaryPassword: "",
+          mustChangePassword: false,
+        };
+        delete next.password;
+        delete next.pin;
+        return next;
+      },
     );
-    return this.mapUser(row, new Map());
+
+    if (!updatedAccount) {
+      const error = new Error("Utilisateur introuvable");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return updatedAccount;
   }
 
   async upsertGrade(payload, principal = {}) {

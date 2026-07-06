@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -26,6 +26,27 @@ import {
   prepareAssignmentForSave,
   validateAssignmentConflict,
 } from "../lib/assignments";
+import {
+  contactHasOperationalRecord,
+  type ContactLinkResult,
+  getContactAccountOptions,
+  getContactRoleOptions,
+  linkContactToOperationalRecord,
+  prepareContactForSave,
+  promoteContactToUser,
+  validateContactDuplicate,
+} from "../lib/contacts";
+import {
+  getRelationContactOptions,
+  getRelationParentContactOptions,
+  getRelationStudentOptions,
+  prepareRelationForSave,
+  RELATION_PARENT_CHILD,
+  validateRelation,
+} from "../lib/relations";
+import { csvToObjects, downloadCsv, rowsToCsv } from "../lib/csv";
+import { normalize } from "../lib/format";
+import { appendAuditLog, auditActor, makeAuditEntry, type AuditEntry } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import {
   getCurrentSchool,
@@ -91,9 +112,14 @@ function linkStudentFromName(
 
 interface EntityPageProps {
   entity: SchoolEntityKey;
+  /** Vue simplifiée : uniquement les liaisons parent → élève. */
+  mode?: "parentChildRelations";
 }
 
-export function EntityPage({ entity }: EntityPageProps) {
+const PARENT_CHILD_HIDDEN_FIELDS = new Set(["relationType", "accountCode"]);
+const PARENT_CHILD_COLUMNS = ["fromContactName", "toStudentName", "status"];
+
+export function EntityPage({ entity, mode }: EntityPageProps) {
   const module = getEntityModule(entity);
   const { session } = useAuth();
   const { state, update } = useData();
@@ -105,6 +131,7 @@ export function EntityPage({ entity }: EntityPageProps) {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions(module?.feature ?? "Élèves");
   const allowCreate = canCreate && !module?.planningManaged;
@@ -120,6 +147,8 @@ export function EntityPage({ entity }: EntityPageProps) {
         : null,
     [module?.key, scopeUser, state, editing?.className, schoolCode],
   );
+
+  const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
 
   function getSelectOptionsForField(field: NonNullable<typeof module>["fields"][number]) {
     if (field.selectOptions?.length) {
@@ -185,6 +214,21 @@ export function EntityPage({ entity }: EntityPageProps) {
     if (field.optionsKey === "assignmentSubjects") {
       return assignmentOptions?.subjects ?? [];
     }
+    if (field.optionsKey === "accounts") {
+      return getContactAccountOptions(scopeUser, state);
+    }
+    if (field.optionsKey === "userRoles") {
+      const accountCode = String(editing?.schoolCode ?? schoolCode ?? "");
+      return getContactRoleOptions(state, accountCode);
+    }
+    if (field.optionsKey === "relationContacts") {
+      return isParentChildMode
+        ? getRelationParentContactOptions(scopeUser, state)
+        : getRelationContactOptions(scopeUser, state);
+    }
+    if (field.optionsKey === "relationStudents") {
+      return getRelationStudentOptions(scopeUser, state);
+    }
     return [];
   }
 
@@ -192,13 +236,18 @@ export function EntityPage({ entity }: EntityPageProps) {
 
   const rows = useMemo(() => {
     if (!module) return [];
-    const scoped = getScopedEntityRows(module.key, scopeUser, state);
+    let scoped = getScopedEntityRows(module.key, scopeUser, state);
+    if (isParentChildMode) {
+      scoped = scoped.filter(
+        (row) => normalize(String(row.relationType ?? "")) === normalize(RELATION_PARENT_CHILD),
+      );
+    }
     const q = search.trim().toLowerCase();
     if (!q) return scoped;
     return scoped.filter((row) =>
       Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(q)),
     );
-  }, [module, search, scopeUser, state]);
+  }, [module, search, scopeUser, state, isParentChildMode]);
 
   if (!module) {
     return <Navigate to="/etablissement" replace />;
@@ -224,6 +273,100 @@ export function EntityPage({ entity }: EntityPageProps) {
       throw new Error("sync failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  function handleExportCsv() {
+    if (!module) return;
+    const exportColumns = module.columns.map((key) => ({
+      key,
+      header: module.columnLabels?.[key] ?? module.fields.find((f) => f.key === key)?.label ?? key,
+    }));
+    const csv = rowsToCsv(rows as Record<string, unknown>[], exportColumns);
+    downloadCsv(`${module.key}-${new Date().toISOString().slice(0, 10)}`, csv);
+  }
+
+  async function handleImportContactsFile(file: File) {
+    if (!module) return;
+    const headerMap: Record<string, string> = {};
+    module.fields.forEach((field) => {
+      headerMap[field.label.toLowerCase()] = field.key;
+      headerMap[field.key.toLowerCase()] = field.key;
+    });
+    headerMap["compte"] = "schoolCode";
+    headerMap["compte lié"] = "schoolCode";
+    headerMap["nom"] = "lastName";
+    headerMap["prénom"] = "firstName";
+    headerMap["prenom"] = "firstName";
+
+    let text = "";
+    try {
+      text = await file.text();
+    } catch {
+      showToast("Impossible de lire le fichier.", "error");
+      return;
+    }
+    const parsed = csvToObjects(text, headerMap);
+    if (!parsed.length) {
+      showToast("Fichier vide ou en-têtes non reconnues.", "error");
+      return;
+    }
+
+    const existing = (state.contacts as unknown as Record<string, unknown>[]).slice();
+    const toAdd: Record<string, unknown>[] = [];
+    const errors: string[] = [];
+    const fallbackSchool = schoolCode && schoolCode !== "*" ? schoolCode : "";
+
+    parsed.forEach((raw, index) => {
+      const line = index + 2;
+      const prepared = prepareContactForSave(
+        { ...raw, schoolCode: String(raw.schoolCode ?? "").trim() || fallbackSchool },
+        state,
+      );
+      if (!prepared.lastName || !prepared.firstName || !prepared.contactType) {
+        errors.push(`Ligne ${line} : nom, prénom ou type manquant.`);
+        return;
+      }
+      if (!prepared.schoolCode) {
+        errors.push(`Ligne ${line} : compte lié manquant.`);
+        return;
+      }
+      const duplicate = validateContactDuplicate(prepared, [...existing, ...toAdd]);
+      if (duplicate.block) {
+        errors.push(`Ligne ${line} : ${duplicate.block}`);
+        return;
+      }
+      toAdd.push({ ...prepared, id: newId("CONTACTS") });
+    });
+
+    if (!toAdd.length) {
+      showToast(`Aucun contact importé (${errors.length} ligne(s) en erreur).`, "error");
+      return;
+    }
+
+    try {
+      await persistPatch(
+        {
+          contacts: [...toAdd, ...existing] as unknown as BackOfficeState["contacts"],
+          auditLog: appendAuditLog(
+            state.auditLog,
+            makeAuditEntry({
+              ...auditActor(scopeUser),
+              action: "contact.import",
+              entityType: "contact",
+              schoolCode: fallbackSchool || undefined,
+              details: `${toAdd.length} importé(s)${
+                errors.length ? `, ${errors.length} ignoré(s)` : ""
+              }`,
+            }),
+          ),
+        },
+        `${toAdd.length} contact(s) importé(s)${
+          errors.length ? ` · ${errors.length} ignoré(s)` : ""
+        }`,
+      );
+    } catch {
+      /* toast déjà affiché */
     }
   }
 
@@ -315,6 +458,13 @@ export function EntityPage({ entity }: EntityPageProps) {
       const teachers = scopedTeachers(scopeUser, state);
       const teacherName = String(workingItem.teacherName ?? "").trim();
       const teacher = findTeacherByName(teachers, teacherName);
+      if (teacherName && !teacher && !String(workingItem.teacherId ?? "").trim()) {
+        showToast(
+          "Enseignant introuvable dans les fiches : créez d'abord la fiche enseignant pour relier la matière à sa classe.",
+          "error",
+        );
+        return;
+      }
       workingItem = {
         ...workingItem,
         teacherName: teacher ? getTeacherDisplayName(teacher) : teacherName,
@@ -334,7 +484,7 @@ export function EntityPage({ entity }: EntityPageProps) {
 
     if (module.key === "assignments") {
       const teachers = scopedTeachers(scopeUser, state);
-      workingItem = prepareAssignmentForSave(workingItem, teachers, schoolCode);
+      workingItem = prepareAssignmentForSave(workingItem, teachers, schoolCode, state, scopeUser);
       const scopedAssignments = getScopedEntityRows("assignments", scopeUser, state);
       const conflict = validateAssignmentConflict(
         workingItem,
@@ -360,6 +510,55 @@ export function EntityPage({ entity }: EntityPageProps) {
       );
       if (classConflict) {
         showToast(classConflict, "error");
+        return;
+      }
+    }
+
+    if (module.key === "contacts") {
+      workingItem = prepareContactForSave(workingItem, state);
+      if (!String(workingItem.schoolCode ?? "").trim()) {
+        showToast("Le compte lié est obligatoire : un contact ne peut pas être isolé.", "error");
+        return;
+      }
+      const allContacts = (state.contacts ?? []) as unknown as Record<string, unknown>[];
+      const duplicate = validateContactDuplicate(
+        workingItem,
+        allContacts,
+        editing.id ? String(editing.id) : undefined,
+      );
+      if (duplicate.block) {
+        showToast(duplicate.block, "error");
+        return;
+      }
+      if (duplicate.warn) {
+        const proceed = await confirm({
+          title: "Doublon potentiel",
+          description: duplicate.warn,
+          confirmLabel: "Créer quand même",
+        });
+        if (!proceed) return;
+      }
+      if (
+        String(workingItem.hasAccess ?? "") === "Oui" &&
+        !String(workingItem.role ?? "").trim()
+      ) {
+        showToast("Choisissez un rôle pour créer l'accès utilisateur.", "error");
+        return;
+      }
+    }
+
+    if (module.key === "relations") {
+      if (isParentChildMode) {
+        workingItem = { ...workingItem, relationType: RELATION_PARENT_CHILD };
+      }
+      workingItem = prepareRelationForSave(workingItem, state);
+      const relationError = validateRelation(
+        workingItem,
+        getScopedEntityRows("relations", scopeUser, state),
+        editing.id ? String(editing.id) : undefined,
+      );
+      if (relationError) {
+        showToast(relationError, "error");
         return;
       }
     }
@@ -421,8 +620,95 @@ export function EntityPage({ entity }: EntityPageProps) {
     const nextAllRows = mergeScopedEntityRows(module.key, scopeUser, state, nextItem);
     const patch = buildPedagogyPatch(module.key, nextItem, nextAllRows);
 
+    let successMessage = exists ? `${module.label} modifié` : `${module.label} créé`;
+    const nextContact = nextItem as Record<string, unknown>;
+    if (module.key === "contacts" && String(nextContact.hasAccess ?? "") === "Oui") {
+      const promotion = promoteContactToUser(nextContact, state, scopeUser);
+      patch.users = promotion.users;
+      const mergedContacts = (
+        (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows
+      ).map((row) => (String(row.id) === String(nextContact.id) ? promotion.contact : row));
+      patch.contacts = mergedContacts as unknown as BackOfficeState["contacts"];
+      successMessage = `Contact enregistré · accès ${promotion.contact.userIdentifier}`;
+    }
+
+    let ficheLink: ContactLinkResult | null = null;
+    if (
+      module.key === "contacts" &&
+      contactHasOperationalRecord(String(nextContact.contactType ?? ""))
+    ) {
+      const currentContacts =
+        (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
+      const sourceContact =
+        currentContacts.find((row) => String(row.id) === String(nextContact.id)) ?? nextContact;
+      ficheLink = linkContactToOperationalRecord(sourceContact, state, schoolCode);
+      if (ficheLink.students) {
+        patch.students = ficheLink.students as unknown as BackOfficeState["students"];
+      }
+      if (ficheLink.teachers) {
+        patch.teachers = ficheLink.teachers as unknown as BackOfficeState["teachers"];
+      }
+      patch.contacts = currentContacts.map((row) =>
+        String(row.id) === String(nextContact.id) ? ficheLink!.contact : row,
+      ) as unknown as BackOfficeState["contacts"];
+      if (ficheLink.linkedType) {
+        const ficheLabel = ficheLink.linkedType === "student" ? "fiche élève" : "fiche enseignant";
+        successMessage = ficheLink.created
+          ? `Contact enregistré · ${ficheLabel} créée et reliée`
+          : `Contact enregistré · ${ficheLabel} reliée`;
+      }
+    }
+
+    if (module.key === "contacts" || module.key === "relations") {
+      const isContact = module.key === "contacts";
+      const label = isContact
+        ? `${String(nextContact.lastName ?? "")} ${String(nextContact.firstName ?? "")}`.trim()
+        : `${String(nextContact.relationType ?? "")} · ${String(nextContact.fromContactName ?? "")}`.trim();
+      const entries: AuditEntry[] = [
+        makeAuditEntry({
+          ...auditActor(scopeUser),
+          action: `${isContact ? "contact" : "relation"}.${exists ? "update" : "create"}`,
+          entityType: isContact ? "contact" : "relation",
+          entityId: String(nextContact.id ?? ""),
+          entityLabel: label || undefined,
+          schoolCode: String(nextContact.schoolCode ?? "") || undefined,
+        }),
+      ];
+      if (isContact && String(nextContact.hasAccess ?? "") === "Oui") {
+        entries.push(
+          makeAuditEntry({
+            ...auditActor(scopeUser),
+            action: "user.role.assign",
+            entityType: "user",
+            entityId: String(nextContact.id ?? ""),
+            entityLabel: label || undefined,
+            schoolCode: String(nextContact.schoolCode ?? "") || undefined,
+            details: [String(nextContact.role ?? ""), String(nextContact.secondaryRole ?? "")]
+              .filter(Boolean)
+              .join(" + "),
+          }),
+        );
+      }
+      if (isContact && ficheLink?.linkedType) {
+        entries.push(
+          makeAuditEntry({
+            ...auditActor(scopeUser),
+            action: `${ficheLink.linkedType}.${ficheLink.created ? "create" : "link"}`,
+            entityType: ficheLink.linkedType,
+            entityId: ficheLink.linkedRecordId,
+            entityLabel: label || undefined,
+            schoolCode: String(nextContact.schoolCode ?? "") || undefined,
+            details: ficheLink.created
+              ? "Fiche créée et reliée au contact"
+              : "Fiche existante reliée au contact",
+          }),
+        );
+      }
+      patch.auditLog = appendAuditLog(state.auditLog, ...entries);
+    }
+
     try {
-      await persistPatch(patch, exists ? `${module.label} modifié` : `${module.label} créé`);
+      await persistPatch(patch, successMessage);
       setEditing(null);
     } catch {
       /* toast déjà affiché */
@@ -467,17 +753,43 @@ export function EntityPage({ entity }: EntityPageProps) {
       showToast("Suppression refusée : élément hors périmètre ou introuvable.", "error");
       return;
     }
+    const deletePatch: Partial<BackOfficeState> = { [module.key]: nextAllRows };
+    if (module.key === "contacts" || module.key === "relations") {
+      deletePatch.auditLog = appendAuditLog(
+        state.auditLog,
+        makeAuditEntry({
+          ...auditActor(scopeUser),
+          action: `${module.key === "contacts" ? "contact" : "relation"}.delete`,
+          entityType: module.key === "contacts" ? "contact" : "relation",
+          entityId: String(row.id ?? ""),
+          entityLabel:
+            module.key === "contacts"
+              ? `${String(row.lastName ?? "")} ${String(row.firstName ?? "")}`.trim() || undefined
+              : String(row.relationType ?? "") || undefined,
+          schoolCode: String(row.schoolCode ?? "") || undefined,
+        }),
+      );
+    }
     try {
-      await persistPatch({ [module.key]: nextAllRows }, "Élément supprimé");
+      await persistPatch(deletePatch, "Élément supprimé");
     } catch {
       /* toast déjà affiché */
     }
   }
 
+  const displayColumns = isParentChildMode ? PARENT_CHILD_COLUMNS : module.columns;
+  const displayFields = isParentChildMode
+    ? module.fields.filter((field) => !PARENT_CHILD_HIDDEN_FIELDS.has(field.key))
+    : module.fields;
+
   const columns: Column<Record<string, unknown>>[] = [
-    ...module.columns.map((key) => ({
+    ...displayColumns.map((key) => ({
       key,
-      header: module.columnLabels?.[key] ?? module.fields.find((field) => field.key === key)?.label ?? key,
+      header:
+        module.columnLabels?.[key] ??
+        (isParentChildMode && key === "fromContactName"
+          ? "Parent"
+          : module.fields.find((field) => field.key === key)?.label ?? key),
       render: (row: Record<string, unknown>) => {
         if (module.key === "teachers" && key === "publicId") {
           const publicId = String(row.publicId ?? "").trim();
@@ -525,21 +837,70 @@ export function EntityPage({ entity }: EntityPageProps) {
     <>
       <Card className="p-6">
         <SectionHeader
-          title={module.label}
+          title={isParentChildMode ? "Relations parent-enfant" : module.label}
           description={
-            school
-              ? `${module.description} · Périmètre : ${school.name} (${school.code})`
-              : module.description
+            isParentChildMode
+              ? school
+                ? `Associez un contact parent à un élève. Périmètre : ${school.name} (${school.code})`
+                : "Associez un contact parent à un élève de l'établissement."
+              : school
+                ? `${module.description} · Périmètre : ${school.name} (${school.code})`
+                : module.description
           }
           actions={
             <>
               <PrintButton
                 documentTitle={school ? `${module.label} — ${school.name}` : module.label}
               />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExportCsv}
+                disabled={rows.length === 0}
+              >
+                Exporter CSV
+              </Button>
+              {module.key === "contacts" && allowCreate ? (
+                <>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleImportContactsFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => importInputRef.current?.click()}
+                  >
+                    Importer CSV
+                  </Button>
+                </>
+              ) : null}
               {allowCreate ? (
                 <Button
                   size="sm"
                   onClick={() => {
+                    if (module.key === "contacts") {
+                      setEditing({
+                        status: "Actif",
+                        schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : "",
+                      });
+                      return;
+                    }
+                    if (module.key === "relations") {
+                      setEditing({
+                        relationType: isParentChildMode ? RELATION_PARENT_CHILD : "Parent → Élève",
+                        status: "Actif",
+                      });
+                      return;
+                    }
                     if (module.key === "assignments") {
                       setEditing({ className: "", subject: "", teacherId: "" });
                       return;
@@ -562,7 +923,7 @@ export function EntityPage({ entity }: EntityPageProps) {
                     setEditing({});
                   }}
                 >
-                  Ajouter
+                  {isParentChildMode ? "Lier parent et élève" : "Ajouter"}
                 </Button>
               ) : null}
             </>
@@ -598,8 +959,10 @@ export function EntityPage({ entity }: EntityPageProps) {
         onClose={() => setEditing(null)}
         title={
           editing?.id
-            ? `Modifier — ${module.label}`
-            : `Nouveau — ${module.label}`
+            ? `Modifier — ${isParentChildMode ? "relation parent-enfant" : module.label}`
+            : isParentChildMode
+              ? "Lier un parent à un élève"
+              : `Nouveau — ${module.label}`
         }
         footer={
           <>
@@ -618,8 +981,15 @@ export function EntityPage({ entity }: EntityPageProps) {
       >
         {editing ? (
           <form id={`entity-form-${entity}`} onSubmit={handleSubmit} className="grid gap-4">
-            {module.fields.map((field) => (
-              <Field key={field.key} label={field.label} htmlFor={field.key} hint={field.hint}>
+            {displayFields.map((field) => {
+              const fieldLabel =
+                isParentChildMode && field.key === "fromContactId"
+                  ? "Parent"
+                  : isParentChildMode && field.key === "toStudentId"
+                    ? "Élève"
+                    : field.label;
+              return (
+              <Field key={field.key} label={fieldLabel} htmlFor={field.key} hint={field.hint}>
                 {field.inputType === "select" ? (
                   <Select
                     id={field.key}
@@ -655,7 +1025,17 @@ export function EntityPage({ entity }: EntityPageProps) {
                   />
                 )}
               </Field>
-            ))}
+              );
+            })}
+            {isParentChildMode && getRelationParentContactOptions(scopeUser, state).length === 0 ? (
+              <p className="text-xs text-muted">
+                Aucun contact de type Parent. Créez d&apos;abord un parent dans{" "}
+                <Link to="/etablissement/contacts" className="font-semibold text-brand underline">
+                  Mon établissement → Contacts
+                </Link>
+                .
+              </p>
+            ) : null}
             {(module.key === "assignments" || module.key === "courses") &&
             !String(editing.className ?? "") ? (
               <p className="text-xs text-muted">

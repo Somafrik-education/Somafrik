@@ -56,14 +56,22 @@ class BackOfficeAccessService {
       throw new BusinessError(400, "Code établissement obligatoire pour ce compte");
     }
 
-    const schoolContext = this.resolveSchoolContext(schoolCode || this.getDefaultSchoolCodeForUser(user));
+    const resolvedSchoolCode =
+      String(schoolCode ?? "").trim() || this.getDefaultSchoolCodeForUser(user) || "";
+    let schoolContext = null;
+    if (resolvedSchoolCode) {
+      schoolContext = this.resolveSchoolContext(resolvedSchoolCode);
+    } else if (!this.isPlatformAdmin(user)) {
+      throw new BusinessError(400, "Code établissement obligatoire pour ce compte");
+    }
     this.assertScopeCanAccessSchool(user, schoolContext);
     this.assertSchoolCountryActive(user, schoolContext);
 
     const { password: _password, temporaryPassword: _temporaryPassword, ...safeUser } = user;
+    const mustChangePassword = Boolean(user.mustChangePassword) || Boolean(user.temporaryPassword);
 
     return {
-      user: safeUser,
+      user: { ...safeUser, mustChangePassword },
       schoolContext,
       scope: this.getScope(user),
       menus: this.getMenus(user),
@@ -152,6 +160,10 @@ class BackOfficeAccessService {
       throw new BusinessError(403, "Établissement suspendu. Connexion indisponible.");
     }
 
+    if (school.status === "Désactivé") {
+      throw new BusinessError(403, "Établissement désactivé. Connexion indisponible.");
+    }
+
     if (
       school.validationStatus === "En attente de validation" ||
       school.validationStatus === "En attente"
@@ -187,6 +199,13 @@ class BackOfficeAccessService {
   assertScopeCanAccessSchool(user, school) {
     if (isSuperAdminRole(user.role)) {
       return;
+    }
+
+    if (!school) {
+      if (this.isPlatformAdmin(user)) {
+        return;
+      }
+      throw new BusinessError(404, "Code établissement invalide");
     }
 
     if (user.role === "Admin Pays") {
@@ -356,8 +375,8 @@ class BackOfficeAccessService {
         kpis: [
           { label: "Pays", value: countryCount },
           { label: "Établissements", value: scopedSchools.length },
-          { label: "Élèves", value: this.school.maxStudents ?? 0 },
-          { label: "Enseignants", value: this.school.maxTeachers ?? 0 },
+          { label: "Élèves", value: this.school?.maxStudents ?? 0 },
+          { label: "Enseignants", value: this.school?.maxTeachers ?? 0 },
           { label: "Revenus mensuels", value: monthlyRevenue, suffix: "USD" },
           { label: "Revenus annuels", value: annualRevenue, suffix: "USD" },
           { label: "Établissements suspendus", value: suspendedSchools },
@@ -372,8 +391,8 @@ class BackOfficeAccessService {
         privilegeLevel: "COUNTRY_PRIVILEGES",
         kpis: [
           { label: "Établissements", value: scopedSchools.length },
-          { label: "Élèves", value: this.school.maxStudents ?? 0 },
-          { label: "Enseignants", value: this.school.maxTeachers ?? 0 },
+          { label: "Élèves", value: this.school?.maxStudents ?? 0 },
+          { label: "Enseignants", value: this.school?.maxTeachers ?? 0 },
           { label: "Taux de paiement", value: this.getPaymentRate(scopedSubscriptions), suffix: "%" },
           { label: "Nouveaux établissements", value: scopedSchools.filter((school) => school.validationStatus !== "Validé").length },
           { label: "Établissements suspendus", value: suspendedSchools },

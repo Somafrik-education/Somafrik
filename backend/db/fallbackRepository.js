@@ -234,8 +234,15 @@ class FallbackRepository {
   async resetUserPassword(userId, temporaryPassword) {
     const secretHash = hashSecret(temporaryPassword);
     const existingStateUsers = this.backOfficeState?.users ?? [];
-    const seedUserIndex = seedData.userAccounts.findIndex((user) => String(user.id) === String(userId) || user.publicId === userId);
-    const stateUser = existingStateUsers.find((user) => String(user.id) === String(userId) || user.publicId === userId);
+    const lookupKeys = (Array.isArray(userId) ? userId : [userId])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    const matchesLookup = (user) =>
+      lookupKeys.some((key) =>
+        [user.id, user.publicId, user.identifier].some((value) => String(value ?? "") === key),
+      );
+    const seedUserIndex = seedData.userAccounts.findIndex(matchesLookup);
+    const stateUser = existingStateUsers.find(matchesLookup);
 
     if (!stateUser && seedUserIndex === -1) {
       const error = new Error("Utilisateur introuvable");
@@ -265,7 +272,7 @@ class FallbackRepository {
     this.backOfficeState = {
       ...(this.backOfficeState ?? {}),
       users: stateUser
-        ? existingStateUsers.map((user) => (String(user.id) === String(userId) || user.publicId === userId ? updatedUser : user))
+        ? existingStateUsers.map((user) => (matchesLookup(user) ? updatedUser : user))
         : [updatedUser, ...existingStateUsers],
     };
 
@@ -275,8 +282,15 @@ class FallbackRepository {
   async changeUserPassword(userId, newPassword) {
     const secretHash = hashSecret(newPassword);
     const existingStateUsers = this.backOfficeState?.users ?? [];
-    const seedUserIndex = seedData.userAccounts.findIndex((user) => String(user.id) === String(userId) || user.publicId === userId);
-    const stateUser = existingStateUsers.find((user) => String(user.id) === String(userId) || user.publicId === userId);
+    const lookupKeys = (Array.isArray(userId) ? userId : [userId])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    const matchesLookup = (user) =>
+      lookupKeys.some((key) =>
+        [user.id, user.publicId, user.identifier].some((value) => String(value ?? "") === key),
+      );
+    const seedUserIndex = seedData.userAccounts.findIndex(matchesLookup);
+    const stateUser = existingStateUsers.find(matchesLookup);
 
     if (!stateUser && seedUserIndex === -1) {
       const error = new Error("Utilisateur introuvable");
@@ -306,7 +320,7 @@ class FallbackRepository {
     this.backOfficeState = {
       ...(this.backOfficeState ?? {}),
       users: stateUser
-        ? existingStateUsers.map((user) => (String(user.id) === String(userId) || user.publicId === userId ? updatedUser : user))
+        ? existingStateUsers.map((user) => (matchesLookup(user) ? updatedUser : user))
         : [updatedUser, ...existingStateUsers],
     };
 

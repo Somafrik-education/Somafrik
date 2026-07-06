@@ -4,15 +4,21 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
 import { ToastProvider } from "./components/ui/Toast";
+import { ConfirmProvider } from "./components/ui/ConfirmDialog";
+import { PromptProvider } from "./components/ui/PromptDialog";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter basename="/web">
       <ToastProvider>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <ConfirmProvider>
+          <PromptProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </PromptProvider>
+        </ConfirmProvider>
       </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>,

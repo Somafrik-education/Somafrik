@@ -42,11 +42,11 @@ export function validateClassDeletion(
     return `Suppression refusée : ${courses.length} cours lié(s) à cette classe. Retirez-les d'abord.`;
   }
 
-  const assignments = ((state.assignments ?? []) as Row[]).filter((assignment) =>
-    normalizeClassName(assignment.className) === target,
+  const courseSchedules = ((state.courseSchedules ?? []) as Row[]).filter((slot) =>
+    normalizeClassName(slot.className) === target,
   );
-  if (assignments.length) {
-    return `Suppression refusée : ${assignments.length} affectation(s) liée(s) à cette classe.`;
+  if (courseSchedules.length) {
+    return `Suppression refusée : ${courseSchedules.length} créneau(x) planning lié(s) à cette classe. Retirez-les dans Planning de cours.`;
   }
 
   return null;

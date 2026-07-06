@@ -21,9 +21,28 @@ import {
 
 const SCHOOL_ADMIN_FORBIDDEN_FEATURES = new Set(["Établissements", "Abonnements"]);
 
+/** Rôles habilités à gérer le répertoire de contacts (CRM). */
+const CONTACT_MANAGER_ROLES = new Set([
+  "admin school",
+  "directeur",
+  "directeur adjoint",
+  "proviseur",
+  "prefet des etudes",
+  "secretaire",
+]);
+
 export function canAccessSchoolBackOffice(role?: string): boolean {
   if (isSuperAdminRole(role)) return false;
   return isInternalSchoolRole(role);
+}
+
+/** Accès au module Contacts : Super Admin, Admin Pays et administration établissement. */
+export function canManageContacts(ctx: PermissionContext): boolean {
+  const role = ctx.user?.role;
+  if (!role) return false;
+  if (isSuperAdminRole(role)) return true;
+  if (role === COUNTRY_ADMIN_ROLE) return true;
+  return CONTACT_MANAGER_ROLES.has(normalize(role));
 }
 
 export interface PermissionContext {
@@ -196,6 +215,10 @@ export function hasBackOfficePermission(
   const normalizedAction = action === "R" ? "READ" : action;
   const featureList = Array.isArray(features) ? features : [features];
 
+  if (featureList.includes("Contacts") || featureList.includes("Relations")) {
+    return canManageContacts(ctx);
+  }
+
   if (
     isSchoolAdminRole(ctx.user.role) &&
     featureList.some((feature) => feature === "Enseignants") &&
@@ -236,6 +259,9 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   }
   if (viewName === "bulletinDesign") {
     return canDesignBulletins(ctx);
+  }
+  if (viewName === "contacts" || viewName === "relations") {
+    return canManageContacts(ctx);
   }
   if (ctx.user?.role === COUNTRY_ADMIN_ROLE) {
     if (SCHOOL_ENTITY_SIDEBAR_VIEWS.has(viewName) || viewName === "establishment" || viewName === "configuration") {

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CourseScheduleSlot } from "../../lib/coursePlanning";
+import {
+  formatPlanningEventLabel,
+  getScheduleColor,
+  isExamSchedule,
+  PLANNING_EVENT_COMPACT_HEIGHT,
+  type CourseScheduleSlot,
+} from "../../lib/coursePlanning";
 import {
   PLANNING_HOUR_END,
   PLANNING_HOUR_START,
@@ -7,6 +13,7 @@ import {
   PLANNING_SLOT_MINUTES,
   eventBlockStyle,
   formatDayHeader,
+  formatEventTimeRange,
   formatHourLabel,
   isToday,
   minutesFromMidnight,
@@ -38,13 +45,19 @@ interface PlanningTimeGridProps {
 
 type DragMode = "move" | "resize" | "select";
 
-interface ActiveDrag {
+const DRAG_ACTIVATION_PX = 8;
+
+interface PointerSession {
   mode: DragMode;
   eventId?: string;
   dayIndex: number;
   startMinutes: number;
   endMinutes: number;
   pointerId: number;
+  originX: number;
+  originY: number;
+  /** Vrai après dépassement du seuil — le pointerup déclenche alors l'action. */
+  activated: boolean;
 }
 
 function eventsForDay(events: PlanningGridEvent[], day: Date): PlanningGridEvent[] {
@@ -60,48 +73,60 @@ function eventsForDay(events: PlanningGridEvent[], day: Date): PlanningGridEvent
 function PlanningEventBlock({
   event,
   editable,
+  isDragging,
   onClick,
-  onMoveStart,
-  onResizeStart,
+  onMoveIntent,
+  onResizeIntent,
 }: {
   event: PlanningGridEvent;
   editable: boolean;
+  isDragging: boolean;
   onClick: () => void;
-  onMoveStart: (pointerId: number) => void;
-  onResizeStart: (pointerId: number) => void;
+  onMoveIntent: (pointerId: number, clientX: number, clientY: number) => void;
+  onResizeIntent: (pointerId: number, clientX: number, clientY: number) => void;
 }) {
   const { top, height } = eventBlockStyle(event.start, event.end);
   const subject = event.slot.subject || "Créneau";
   const teacher = event.slot.teacherName || "Non assigné";
   const room = event.slot.room;
+  const isCompact = height < PLANNING_EVENT_COMPACT_HEIGHT;
+  const compactLabel = formatPlanningEventLabel(event.slot);
+  const isExam = isExamSchedule(event.slot);
 
   return (
     <button
       type="button"
-      className={`planning-event ${editable ? "is-editable" : ""}`}
+      className={`planning-event ${editable ? "is-editable" : ""} ${isDragging ? "is-dragging" : ""} ${isCompact ? "is-compact" : ""} ${isExam ? "is-exam" : ""}`}
       style={{ top, height, backgroundColor: event.color, borderColor: event.color }}
+      title={isCompact ? `${formatEventTimeRange(event.start, event.end)} · ${compactLabel}${room ? ` · ${room}` : ""}` : undefined}
       onClick={(clickEvent) => {
         clickEvent.stopPropagation();
         onClick();
       }}
       onPointerDown={(pointerEvent) => {
         if (!editable || pointerEvent.button !== 0) return;
+        if ((pointerEvent.target as HTMLElement).closest(".planning-event__resize")) return;
         pointerEvent.stopPropagation();
-        pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
-        onMoveStart(pointerEvent.pointerId);
+        onMoveIntent(pointerEvent.pointerId, pointerEvent.clientX, pointerEvent.clientY);
       }}
     >
-      <span className="planning-event__subject">{subject}</span>
-      <span className="planning-event__teacher">{teacher}</span>
-      {room ? <span className="planning-event__room">{room}</span> : null}
+      {isCompact ? (
+        <span className="planning-event__compact">{compactLabel}</span>
+      ) : (
+        <>
+          <span className="planning-event__time">{formatEventTimeRange(event.start, event.end)}</span>
+          <span className="planning-event__subject">{subject}</span>
+          <span className="planning-event__teacher">{teacher}</span>
+          {room ? <span className="planning-event__room">{room}</span> : null}
+        </>
+      )}
       {editable ? (
         <span
           className="planning-event__resize"
           onPointerDown={(pointerEvent) => {
             pointerEvent.stopPropagation();
             pointerEvent.preventDefault();
-            pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
-            onResizeStart(pointerEvent.pointerId);
+            onResizeIntent(pointerEvent.pointerId, pointerEvent.clientX, pointerEvent.clientY);
           }}
         />
       ) : null}
@@ -120,11 +145,12 @@ export function PlanningTimeGrid({
 }: PlanningTimeGridProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
-  const activeDragRef = useRef<ActiveDrag | null>(null);
+  const [activeDrag, setActiveDrag] = useState<PointerSession | null>(null);
+  const activeDragRef = useRef<PointerSession | null>(null);
+  const suppressClickRef = useRef(false);
   const [preview, setPreview] = useState<{ dayIndex: number; start: number; end: number } | null>(null);
 
-  const setDragState = useCallback((next: ActiveDrag | null) => {
+  const setDragState = useCallback((next: PointerSession | null) => {
     activeDragRef.current = next;
     setActiveDrag(next);
   }, []);
@@ -135,12 +161,24 @@ export function PlanningTimeGrid({
   );
   const totalHeight = slotCount() * PLANNING_ROW_HEIGHT;
 
+  const eventsKey = useMemo(
+    () => events.map((event) => `${event.id}:${event.start.getTime()}:${event.end.getTime()}`).join("|"),
+    [events],
+  );
+
+  useEffect(() => {
+    setDragState(null);
+    setPreview(null);
+  }, [eventsKey, setDragState]);
+
   const getColumnRects = useCallback(() => {
     return columnRefs.current.filter(Boolean).map((node) => node!.getBoundingClientRect());
   }, []);
 
   const finishDrag = useCallback(
-    (drag: ActiveDrag) => {
+    (drag: PointerSession) => {
+      if (!drag.activated) return;
+
       const start = Math.min(drag.startMinutes, drag.endMinutes);
       const end = Math.max(drag.startMinutes, drag.endMinutes) + PLANNING_SLOT_MINUTES;
       const day = days[drag.dayIndex];
@@ -162,23 +200,66 @@ export function PlanningTimeGrid({
         const duration = minutesFromMidnight(event.end) - minutesFromMidnight(event.start);
         const nextStart = setMinutesFromMidnight(day, start);
         const nextEnd = new Date(nextStart.getTime() + duration * 60_000);
+        const sameDay = event.start.toDateString() === nextStart.toDateString();
+        const sameStart = minutesFromMidnight(event.start) === start;
+        if (sameDay && sameStart) return;
+        suppressClickRef.current = true;
         onEventMove(drag.eventId, nextStart.toISOString(), nextEnd.toISOString());
         return;
       }
 
+      const sameEnd = minutesFromMidnight(event.end) === end;
+      if (sameEnd) return;
+      suppressClickRef.current = true;
       onEventResize(drag.eventId, event.start.toISOString(), endDate.toISOString());
     },
     [days, events, onEventMove, onEventResize, onSelectSlot],
+  );
+
+  const beginPointerSession = useCallback(
+    (session: Omit<PointerSession, "originX" | "originY" | "activated">, clientX: number, clientY: number) => {
+      setDragState({
+        ...session,
+        originX: clientX,
+        originY: clientY,
+        activated: session.mode === "select",
+      });
+      if (session.mode === "select") {
+        setPreview({
+          dayIndex: session.dayIndex,
+          start: session.startMinutes,
+          end: session.endMinutes + PLANNING_SLOT_MINUTES,
+        });
+      }
+    },
+    [setDragState],
+  );
+
+  const activateDragIfNeeded = useCallback(
+    (nativeEvent: PointerEvent, drag: PointerSession): PointerSession => {
+      if (drag.activated) return drag;
+      const dx = nativeEvent.clientX - drag.originX;
+      const dy = nativeEvent.clientY - drag.originY;
+      if (Math.hypot(dx, dy) < DRAG_ACTIVATION_PX) return drag;
+      return { ...drag, activated: true };
+    },
+    [],
   );
 
   useEffect(() => {
     if (!activeDrag) return;
 
     const handleMove = (nativeEvent: PointerEvent) => {
-      const drag = activeDragRef.current;
+      let drag = activeDragRef.current;
       if (!drag || nativeEvent.pointerId !== drag.pointerId) return;
       const body = bodyRef.current;
       if (!body) return;
+
+      drag = activateDragIfNeeded(nativeEvent, drag);
+      if (drag !== activeDragRef.current) {
+        setDragState(drag);
+      }
+      if (!drag.activated) return;
 
       const columnRects = getColumnRects();
       const dayIndex = pointerToDayIndex(nativeEvent.clientX, columnRects);
@@ -233,20 +314,34 @@ export function PlanningTimeGrid({
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleUp);
     };
-  }, [activeDrag, events, finishDrag, getColumnRects, setDragState]);
+  }, [activeDrag, activateDragIfNeeded, events, finishDrag, getColumnRects, setDragState]);
 
-  const startSelect = (dayIndex: number, minutes: number, pointerId: number) => {
+  const startSelect = (dayIndex: number, minutes: number, pointerId: number, clientX: number, clientY: number) => {
     if (!editable) return;
     const snapped = snapMinutes(minutes);
-    setDragState({
-      mode: "select",
-      dayIndex,
-      startMinutes: snapped,
-      endMinutes: snapped,
-      pointerId,
-    });
-    setPreview({ dayIndex, start: snapped, end: snapped + PLANNING_SLOT_MINUTES });
+    beginPointerSession(
+      {
+        mode: "select",
+        dayIndex,
+        startMinutes: snapped,
+        endMinutes: snapped,
+        pointerId,
+      },
+      clientX,
+      clientY,
+    );
   };
+
+  const handleEventClick = useCallback(
+    (eventId: string) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
+      onEventClick(eventId);
+    },
+    [onEventClick],
+  );
 
   return (
     <div className="planning-time-grid">
@@ -291,7 +386,7 @@ export function PlanningTimeGrid({
                   body.scrollTop,
                 );
                 pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
-                startSelect(dayIndex, minutes, pointerEvent.pointerId);
+                startSelect(dayIndex, minutes, pointerEvent.pointerId, pointerEvent.clientX, pointerEvent.clientY);
               }}
             >
               {Array.from({ length: slotCount() }).map((_, slotIndex) => (
@@ -315,34 +410,43 @@ export function PlanningTimeGrid({
 
               {eventsForDay(events, day)
                 .filter((event) => {
-                  if (!preview || activeDrag?.eventId !== event.id) return true;
-                  return activeDrag.mode === "move" || activeDrag.mode === "resize" ? false : true;
+                  if (!activeDrag?.activated || activeDrag.eventId !== event.id) return true;
+                  return false;
                 })
                 .map((event) => (
                 <PlanningEventBlock
                   key={event.id}
                   event={event}
                   editable={editable}
-                  onClick={() => onEventClick(event.id)}
-                  onMoveStart={(pointerId) => {
-                    setDragState({
-                      mode: "move",
-                      eventId: event.id,
-                      dayIndex,
-                      startMinutes: minutesFromMidnight(event.start),
-                      endMinutes: minutesFromMidnight(event.end),
-                      pointerId,
-                    });
+                  isDragging={activeDrag?.activated === true && activeDrag.eventId === event.id}
+                  onClick={() => handleEventClick(event.id)}
+                  onMoveIntent={(pointerId, clientX, clientY) => {
+                    beginPointerSession(
+                      {
+                        mode: "move",
+                        eventId: event.id,
+                        dayIndex,
+                        startMinutes: minutesFromMidnight(event.start),
+                        endMinutes: minutesFromMidnight(event.end),
+                        pointerId,
+                      },
+                      clientX,
+                      clientY,
+                    );
                   }}
-                  onResizeStart={(pointerId) => {
-                    setDragState({
-                      mode: "resize",
-                      eventId: event.id,
-                      dayIndex,
-                      startMinutes: minutesFromMidnight(event.start),
-                      endMinutes: minutesFromMidnight(event.end),
-                      pointerId,
-                    });
+                  onResizeIntent={(pointerId, clientX, clientY) => {
+                    beginPointerSession(
+                      {
+                        mode: "resize",
+                        eventId: event.id,
+                        dayIndex,
+                        startMinutes: minutesFromMidnight(event.start),
+                        endMinutes: minutesFromMidnight(event.end),
+                        pointerId,
+                      },
+                      clientX,
+                      clientY,
+                    );
                   }}
                 />
               ))}
@@ -356,16 +460,12 @@ export function PlanningTimeGrid({
 
 export function mapPlanningGridEvents(
   events: { id: string; start: string; end: string; backgroundColor?: string; extendedProps: CourseScheduleSlot }[],
-  getColor: (subject: string) => string,
 ): PlanningGridEvent[] {
-  return events.map((event) => {
-    const subject = event.extendedProps.subject?.trim() || "";
-    return {
-      id: event.id,
-      start: toValidDate(event.start),
-      end: toValidDate(event.end),
-      color: event.backgroundColor ?? getColor(subject),
-      slot: event.extendedProps,
-    };
-  });
+  return events.map((event) => ({
+    id: event.id,
+    start: toValidDate(event.start),
+    end: toValidDate(event.end),
+    color: event.backgroundColor ?? getScheduleColor(event.extendedProps),
+    slot: event.extendedProps,
+  }));
 }

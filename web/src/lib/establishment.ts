@@ -18,6 +18,22 @@ export function scopedStudents(user: SessionUser | null, state: BackOfficeState)
   return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
 }
 
+/** Contacts CRM rattachés au compte (schoolCode). Portée plateforme si aucun code. */
+export function scopedContacts(user: SessionUser | null, state: BackOfficeState): Row[] {
+  const schoolCode = user?.schoolCode;
+  const rows = (state.contacts ?? []) as unknown as Row[];
+  if (!schoolCode || schoolCode === "*") return rows;
+  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+}
+
+/** Relations CRM rattachées au compte (schoolCode). Portée plateforme si aucun code. */
+export function scopedRelations(user: SessionUser | null, state: BackOfficeState): Row[] {
+  const schoolCode = user?.schoolCode;
+  const rows = (state.relations ?? []) as unknown as Row[];
+  if (!schoolCode || schoolCode === "*") return rows;
+  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+}
+
 export function scopedTeachers(user: SessionUser | null, state: BackOfficeState, students?: Row[]): Row[] {
   const schoolCode = user?.schoolCode;
   const scopedStudentsList = students ?? scopedStudents(user, state);
