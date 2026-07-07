@@ -333,12 +333,12 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "courses",
     view: "courses",
-    path: "/etablissement/matieres",
+    path: "/parametres/configuration",
     label: "Matières",
     feature: "Matières",
     group: "pedagogie",
     description:
-      "Catalogue des matières par classe. L'enseignant et l'horaire se définissent dans Planning de cours.",
+      "Catalogue des matières par classe (paramètres établissement). Les affectations enseignant se gèrent dans Mon établissement → Affectations.",
     fields: [
       {
         key: "className",
@@ -369,12 +369,12 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "assignments",
     view: "assignments",
-    path: "/planning/affectations",
+    path: "/etablissement/affectations",
     label: "Affectations",
     feature: "Affectations",
     group: "pedagogie",
     description:
-      "Affectation enseignant ↔ classe ↔ matière. La classe et la matière proviennent de la configuration ; l'horaire se définit dans Emploi du temps.",
+      "Affectation enseignant ↔ classe ↔ matière. Le catalogue des matières se configure dans Paramètres ; l'horaire se définit dans Emploi du temps.",
     fields: [
       {
         key: "className",

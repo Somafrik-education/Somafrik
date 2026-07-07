@@ -121,6 +121,11 @@ export function scopedUsers(user: ScopeUser | null, state: ScopeState) {
   return state.users.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
 }
 
+/** Diffusion système (Super Admin) : marquée explicitement, visible par tous les établissements. */
+function isSystemBroadcast(item: { systemBroadcast?: boolean; scope?: string }): boolean {
+  return item.systemBroadcast === true || normalize(item.scope ?? "") === "system";
+}
+
 function filterBySchoolCode<T extends { schoolCode?: string; code?: string }>(
   items: T[],
   schoolCode: string,
@@ -171,9 +176,14 @@ export function scopeSchoolEntityData<T extends Record<string, unknown>>(
     notes: ((payload.notes as any[]) ?? []).filter(
       (item) => normalize(item.schoolCode) === normalize(schoolCode) || ids.has(item.studentId),
     ),
-    announcements: filterBySchoolCode((payload.announcements as any[]) ?? [], schoolCode),
+    announcements: ((payload.announcements as any[]) ?? []).filter(
+      (item) => normalize(item.schoolCode) === normalize(schoolCode) || isSystemBroadcast(item),
+    ),
     messages: ((payload.messages as any[]) ?? []).filter(
-      (item) => normalize(item.schoolCode) === normalize(schoolCode) || ids.has(item.studentId),
+      (item) =>
+        normalize(item.schoolCode) === normalize(schoolCode) ||
+        ids.has(item.studentId) ||
+        isSystemBroadcast(item),
     ),
     paymentStatuses: filterBySchoolCode((payload.paymentStatuses as any[]) ?? [], schoolCode),
     subscriptions: filterBySchoolCode((payload.subscriptions as any[]) ?? [], schoolCode),

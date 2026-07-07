@@ -11,22 +11,21 @@ import { getPresenceRate } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
+import {
+  classNameMatches,
+  scopedClassesForSession,
+  scopedStudentsForSession,
+} from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
 export default function ClassesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const scrollContentStyle = [styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session } = useAuth();
-  const { classesData, studentsData, teachersData } = useAdminData();
-  const assignedClasses = session?.role === "teacher" ? session.user.assignedClasses ?? [] : [];
-  const visibleClasses =
-    session?.role === "teacher"
-      ? classesData.filter((item) => assignedClasses.includes(item.name))
-      : classesData;
-  const visibleStudents =
-    session?.role === "teacher"
-      ? studentsData.filter((student) => assignedClasses.includes(student.className))
-      : studentsData;
+  const { classesData, studentsData, teachersData, assignmentsData } = useAdminData();
+  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const visibleStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
   const totalStudents = visibleStudents.length;
   const canCreateClass = canMutateEntity(session, "classes", "CREATE");
   const canOpenStudents = canReadRoute(session, session?.role === "teacher" ? "TeacherStudents" : "Students");
@@ -84,7 +83,7 @@ export default function ClassesScreen({ navigation }: any) {
         <Text style={styles.sectionTitle}>Liste des classes</Text>
 
         {visibleClasses.map((item) => {
-          const classStudents = studentsData.filter((student) => student.className === item.name);
+          const classStudents = visibleStudents.filter((student) => classNameMatches(student.className, item.name));
           const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
           const presenceRate = getPresenceRate(classStudents.map((student) => student.id));
 

@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import { Card, SectionHeader } from "../ui/Card";
 import { Table, type Column } from "../ui/Table";
-import { buildGradeBook } from "../../lib/evaluations";
+import { buildGradeBook, scopedGrades } from "../../lib/evaluations";
+import { scopedStudents } from "../../lib/establishment";
 import { formatStudentName } from "../../lib/gradeBook";
 import type { BackOfficeState, SessionUser } from "../../types";
 import type { ClassRankingRow } from "../../lib/gradeBook";
+import { normalize } from "../../lib/format";
 
 interface ClassGradesOverviewProps {
   className: string;
@@ -25,6 +27,23 @@ export function ClassGradesOverview({
   const ranking = className ? gradeBook.getClassRanking(className, period) : [];
   const stats = className ? gradeBook.getClassStatistics(className, period) : null;
   const atRisk = className ? gradeBook.getStudentsAtRisk(className, difficultyThreshold, period) : [];
+  const classStudentCount = useMemo(() => {
+    const students = scopedStudents(user, state);
+    return students.filter((student) => normalize(String(student.className ?? "")) === normalize(className)).length;
+  }, [user, state, className]);
+  const gradedCount = useMemo(() => {
+    if (!className || !period) return 0;
+    const classStudentIds = new Set(
+      scopedStudents(user, state)
+        .filter((student) => normalize(String(student.className ?? "")) === normalize(className))
+        .map((student) => String(student.id ?? ""))
+        .filter(Boolean),
+    );
+    return scopedGrades(user, state).filter(
+      (grade) =>
+        normalize(grade.period) === normalize(period) && classStudentIds.has(grade.studentId),
+    ).length;
+  }, [user, state, className, period]);
 
   const columns: Column<ClassRankingRow>[] = [
     { key: "rank", header: "Rang", render: (row) => row.rank },
@@ -38,6 +57,18 @@ export function ClassGradesOverview({
 
   if (!className) {
     return <p className="text-sm text-muted">Sélectionnez une classe.</p>;
+  }
+
+  if (classStudentCount > 0 && gradedCount === 0) {
+    return (
+      <Card className="border-amber-200 bg-amber-50 p-4">
+        <p className="text-sm font-semibold text-ink">Aucune note pour cette période</p>
+        <p className="mt-1 text-sm text-muted">
+          La période « {period} » ne contient pas encore de notes pour {className}. Choisissez une autre
+          période ou saisissez des notes dans l&apos;onglet « Saisie des notes ».
+        </p>
+      </Card>
+    );
   }
 
   return (

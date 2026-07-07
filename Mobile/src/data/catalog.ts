@@ -144,6 +144,8 @@ export type Announcement = {
   title: string;
   message: string;
   date: string;
+  scope?: string;
+  systemBroadcast?: boolean;
 };
 
 export type TimetableItem = {

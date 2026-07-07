@@ -20,6 +20,7 @@ const routePermissions = {
     "COUNTRY_PRIVILEGES",
   ],
   "GET /api/teachers": ["Enseignants:READ", "Voir enseignants", "Gérer enseignants", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/assignments": ["Affectations:READ", "Gérer cours", "Voir classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "Voir rapports financiers", "Suivre abonnements pays", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/v2/subjects": ["Matières:READ", "Gérer cours", "Voir classes", "Modifier notes", "Organiser examens", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/v2/subjects": ["Matières:CREATE", "Gérer cours", "ALL_PRIVILEGES"],

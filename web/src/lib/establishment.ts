@@ -25,9 +25,11 @@ export function getCurrentSchool(user: SessionUser | null, state: BackOfficeStat
   return state.schools.find((school) => normalize(school.code) === normalize(user.schoolCode)) ?? null;
 }
 
+import { isTeacherUserRole } from "./userTeacherSync";
+
 /** Rôle enseignant : ne voit que ses classes/élèves affectés dans « Mon établissement ». */
 function isTeacherRole(role?: string): boolean {
-  return normalize(role) === "enseignant";
+  return isTeacherUserRole(role);
 }
 
 /** Retrouve la fiche enseignant liée au compte connecté (par userId puis identifiant). */
@@ -47,8 +49,10 @@ export function resolveTeacherRecordForUser(user: SessionUser | null, state: Bac
 
 /**
  * Ensemble des noms de classes affectées à l'enseignant connecté (normalisés).
- * Retourne `null` si l'utilisateur n'est pas un enseignant (aucune restriction).
- * Un enseignant sans affectation obtient un ensemble vide (ne voit rien).
+ * Retourne `null` si l'utilisateur n'est pas un enseignant OU si aucune classe
+ * ne peut lui être rattachée : dans ce dernier cas on n'applique pas de
+ * restriction (on retombe sur la portée établissement) pour ne pas verrouiller
+ * un enseignant non encore affecté hors de ses écrans (appel, etc.).
  */
 export function teacherScopedClassNames(
   user: SessionUser | null,
@@ -57,44 +61,57 @@ export function teacherScopedClassNames(
   if (!isTeacherRole(user?.role)) return null;
   const names = new Set<string>();
   const teacher = resolveTeacherRecordForUser(user, state);
-  if (!teacher) return names;
 
-  const teacherId = String(teacher.id ?? "").trim();
-  const teacherNameKeys = new Set<string>();
-  [teacher.name, teacher.firstName, teacher.lastName]
+  // Clés d'identité (id interne, publicId, identifiant) côté compte ET fiche.
+  // Les affectations peuvent référencer teacherId sous forme d'UUID ou de publicId.
+  const idKeys = new Set<string>();
+  [
+    teacher?.id,
+    teacher?.publicId,
+    teacher?.identifier,
+    user?.id,
+    user?.identifier,
+    user?.publicId,
+  ]
     .map((value) => normalize(value))
     .filter(Boolean)
-    .forEach((value) => teacherNameKeys.add(value));
-  const first = normalize(teacher.firstName);
-  const last = normalize(teacher.name ?? teacher.lastName);
-  if (first && last) teacherNameKeys.add(`${first} ${last}`.trim());
+    .forEach((value) => idKeys.add(value));
+
+  const nameKeys = new Set<string>();
+  [teacher?.name, teacher?.firstName, teacher?.lastName, user?.firstName, user?.lastName]
+    .map((value) => normalize(value))
+    .filter(Boolean)
+    .forEach((value) => nameKeys.add(value));
+  const first = normalize(teacher?.firstName ?? user?.firstName);
+  const last = normalize(teacher?.name ?? teacher?.lastName ?? user?.lastName);
+  if (first && last) {
+    nameKeys.add(`${first} ${last}`.trim());
+    nameKeys.add(`${last} ${first}`.trim());
+  }
 
   const addName = (value: unknown) => {
     const name = normalize(value);
     if (name) names.add(name);
   };
 
-  if (Array.isArray(teacher.assignedClasses)) {
+  if (teacher && Array.isArray(teacher.assignedClasses)) {
     (teacher.assignedClasses as unknown[]).forEach(addName);
   }
-  if (Array.isArray(teacher.assignments)) {
+  if (teacher && Array.isArray(teacher.assignments)) {
     (teacher.assignments as Row[]).forEach((assignment) => addName(assignment.className));
   }
 
   ((state.classes ?? []) as Row[]).forEach((cls) => {
-    if (teacherId && String(cls.teacherId ?? "") === teacherId) {
-      addName(cls.name ?? cls.className);
-    }
+    if (idKeys.has(normalize(cls.teacherId))) addName(cls.name ?? cls.className);
   });
 
   ((state.assignments ?? []) as Row[]).forEach((assignment) => {
-    const matchesId = teacherId && String(assignment.teacherId ?? "") === teacherId;
-    const matchesName =
-      teacherNameKeys.size > 0 && teacherNameKeys.has(normalize(assignment.teacherName));
+    const matchesId = idKeys.has(normalize(assignment.teacherId));
+    const matchesName = nameKeys.has(normalize(assignment.teacherName));
     if (matchesId || matchesName) addName(assignment.className);
   });
 
-  return names;
+  return names.size ? names : null;
 }
 
 export function scopedStudents(user: SessionUser | null, state: BackOfficeState): Row[] {

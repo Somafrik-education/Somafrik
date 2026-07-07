@@ -1,3 +1,5 @@
+import { normalize } from "./format";
+
 export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   "Admin School": [
     "Utilisateurs:READ", "Utilisateurs:CREATE", "Utilisateurs:UPDATE", "Utilisateurs:DELETE", "Utilisateurs:SUSPEND",
@@ -5,7 +7,7 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Élèves:READ", "Élèves:CREATE", "Élèves:UPDATE", "Élèves:DELETE", "Élèves:SUSPEND",
     "Enseignants:READ", "Enseignants:CREATE",
     "Affectations:READ", "Affectations:CREATE", "Affectations:UPDATE",
-    "Présences:READ", "Notes:READ", "Bulletins:READ", "Paiements:READ",
+    "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ", "Paiements:READ",
     "Notifications:READ", "Notifications:CREATE", "Notifications:UPDATE",
     "Messages:READ", "Messages:CREATE", "Messages:UPDATE",
     "Documents:READ", "Documents:CREATE", "Documents:UPDATE", "Rapports:READ",
@@ -36,7 +38,7 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   ],
   Proviseur: [
     "Utilisateurs:READ", "Classes:READ", "Élèves:READ", "Enseignants:READ",
-    "Affectations:READ", "Présences:READ", "Notes:READ", "Bulletins:READ",
+    "Affectations:READ", "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ",
     "Paiements:READ", "Messages:READ", "Notifications:READ", "Documents:READ", "Rapports:READ",
     "Paramètres Établissement:READ",
   ],
@@ -44,12 +46,12 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Utilisateurs:READ", "Classes:READ", "Classes:CREATE", "Classes:UPDATE",
     "Élèves:READ", "Élèves:UPDATE", "Enseignants:READ",
     "Affectations:READ", "Affectations:CREATE", "Affectations:UPDATE",
-    "Présences:READ", "Notes:READ", "Bulletins:READ", "Paiements:READ",
+    "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ", "Paiements:READ",
     "Messages:READ", "Notifications:READ", "Documents:READ", "Rapports:READ", "Paramètres Établissement:READ",
   ],
   "Directeur adjoint": [
     "Utilisateurs:READ", "Classes:READ", "Élèves:READ", "Enseignants:READ",
-    "Affectations:READ", "Présences:READ", "Notes:READ", "Bulletins:READ",
+    "Affectations:READ", "Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Notes:READ", "Bulletins:READ",
     "Messages:READ", "Notifications:READ", "Documents:READ", "Rapports:READ",
   ],
   Comptable: [
@@ -72,7 +74,27 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   ],
 };
 
+export function resolveInternalRoleKey(role?: string): string | undefined {
+  if (!role) return undefined;
+  if (INTERNAL_ROLE_DEFAULT_PERMISSIONS[role]) return role;
+
+  const key = normalize(role);
+  if (key === "enseignant" || key === "teacher" || key.includes("prof")) return "Enseignant";
+  if (key === "secretaire" || key === "secretary") return "Secrétaire";
+  if (key === "prefet des etudes" || key === "prefet") return "Préfet des études";
+  if (key === "comptable") return "Comptable";
+  if (key === "parent") return "Parent";
+  if (key.includes("eleve") || key.includes("etudiant") || key === "student") return "Élève / Étudiant";
+
+  for (const knownRole of Object.keys(INTERNAL_ROLE_DEFAULT_PERMISSIONS)) {
+    if (normalize(knownRole) === key) return knownRole;
+  }
+
+  return role;
+}
+
 export function getInternalRoleDefaults(role?: string): string[] {
-  if (!role) return [];
-  return INTERNAL_ROLE_DEFAULT_PERMISSIONS[role] ?? [];
+  const resolved = resolveInternalRoleKey(role);
+  if (!resolved) return [];
+  return INTERNAL_ROLE_DEFAULT_PERMISSIONS[resolved] ?? [];
 }

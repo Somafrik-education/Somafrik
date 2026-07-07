@@ -25,13 +25,15 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
 import CommunicationHeaderIcons from "../components/CommunicationHeaderIcons";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
+import { scopedStudentsForSession, teacherScopedClassLabels } from "../lib/establishment";
 
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const scrollContentStyle = [styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, paymentsData, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData } = useAdminData();
+  const { studentsData, paymentsData, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData, teachersData, assignmentsData, classesData } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
+  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
   const currentSchool =
     schoolsData.find((item) => item.code === session?.school.code || item.code === session?.user.schoolCode) ??
@@ -47,7 +49,7 @@ export default function HomeScreen({ navigation }: any) {
   const userName = session?.user.name ?? "Administrateur";
   const welcomeGreeting = buildTimeGreeting(currentSchool.timezone);
   const welcomeName = getGreetingName(userName, session?.role);
-  const unreadMessages = getUnreadMessagesCount(session, messagesData, studentsData);
+  const unreadMessages = getUnreadMessagesCount(session, messagesData, studentsData, teacherScopeState);
   const canReadStudents = canReadEntity(session, "students");
   const canReadUsers = canReadEntity(session, "users");
   const canReadPayments = canReadEntity(session, "payments");
@@ -60,9 +62,9 @@ export default function HomeScreen({ navigation }: any) {
     isSchoolAdmin ? navigation.navigate("Utilisateurs") : navigation.navigate("AdminCrud", { entity: "users" });
 
   if (session?.role === "teacher") {
-    const assignedClasses = session.user.assignedClasses ?? [];
+    const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+    const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
     const courses = session.user.courses ?? [];
-    const teacherStudents = studentsData.filter((student) => assignedClasses.includes(student.className));
     const teacherStudentIds = teacherStudents.map((student) => student.id);
     const teacherTodayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
     const teacherPresenceStats = getPresenceStats(teacherTodayPresenceRows, teacherStudentIds);
@@ -850,7 +852,12 @@ function getGreetingName(userName: string, role?: string) {
   return userName;
 }
 
-function getUnreadMessagesCount(session: any, messagesData: any[], studentsData: any[]) {
+function getUnreadMessagesCount(
+  session: any,
+  messagesData: any[],
+  studentsData: any[],
+  teacherScopeState?: { teachers?: any[]; assignments?: any[]; classes?: any[] },
+) {
   if (
     session?.role === "super_admin" ||
     session?.role === "school_admin" ||
@@ -865,10 +872,8 @@ function getUnreadMessagesCount(session: any, messagesData: any[], studentsData:
   }
 
   if (session?.role === "teacher") {
-    const assignedClasses = session.user.assignedClasses ?? [];
-    const teacherParents = studentsData
-      .filter((student) => assignedClasses.includes(student.className))
-      .map((student) => student.parentPhone);
+    const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+    const teacherParents = teacherStudents.map((student) => student.parentPhone);
 
     return messagesData.filter(
       (message) =>
@@ -956,7 +961,7 @@ function OverflowQuickActionsGrid({
   unreadMessages = 0,
   excludeTabNames = [],
 }: OverflowQuickActionsGridProps) {
-  const items = buildOverflowQuickActionItems(session, unreadMessages).filter(
+  const items = buildOverflowQuickActionItems(session).filter(
     (item) => !excludeTabNames.includes(item.tabName),
   );
 

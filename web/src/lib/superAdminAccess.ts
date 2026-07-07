@@ -14,6 +14,8 @@ export const SUPER_ADMIN_PLATFORM_VIEWS = [
   "permissions",
   "chartSettings",
   "notifications",
+  "messages",
+  "announcements",
 ] as const;
 
 export const SUPER_ADMIN_SCHOOL_SETTINGS_VIEWS = ["configuration"] as const;
@@ -35,6 +37,7 @@ export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
   "Relations",
   "Utilisateurs",
   "Notifications",
+  "Messages",
   "Paramètres Établissement",
   "Paramètres graphiques",
   "Droits par rôle",

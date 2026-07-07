@@ -29,7 +29,6 @@ export default function SchoolManagementScreen({
     { title: "🔁 Affectations", entity: "assignments" },
     { title: "💰 Paiements", entity: "payments" },
     { title: "⚙️ Statuts paiement", entity: "paymentStatuses" },
-    { title: "💬 Messages parents", route: "Messages" },
     { title: "📢 Annonces", entity: "announcements" },
   ] satisfies { title: string; entity?: AdminEntity; route?: string }[];
   const visibleItems = items.filter((item) =>

@@ -43,6 +43,86 @@ function isStudentRole(role) {
   return key.includes("eleve") || key.includes("etudiant");
 }
 
+function buildTeacherNameKeys(teacher = {}, user = {}) {
+  const keys = new Set();
+  const add = (value) => {
+    const normalized = normalizeText(value);
+    if (normalized) keys.add(normalized);
+  };
+
+  [teacher.name, teacher.firstName, teacher.lastName, user.firstName, user.lastName, user.name]
+    .forEach(add);
+
+  const first = normalizeText(teacher.firstName ?? user.firstName);
+  const last = normalizeText(teacher.name ?? teacher.lastName ?? user.lastName);
+  if (first && last) {
+    keys.add(`${first} ${last}`.trim());
+    keys.add(`${last} ${first}`.trim());
+  }
+
+  return keys;
+}
+
+function assignmentMatchesTeacher(assignment = {}, teacher = {}, user = {}) {
+  const teacherId = String(teacher.id ?? "").trim();
+  const teacherPublicId = String(teacher.publicId ?? "").trim();
+  const userId = String(user.id ?? "").trim();
+  const ref = String(assignment.teacherId ?? "").trim();
+
+  if (ref && (ref === teacherId || ref === teacherPublicId || (userId && ref === userId))) {
+    return true;
+  }
+
+  const nameKeys = buildTeacherNameKeys(teacher, user);
+  return nameKeys.size > 0 && nameKeys.has(normalizeText(assignment.teacherName));
+}
+
+function dedupeAssignments(assignments = []) {
+  const seen = new Set();
+  const rows = [];
+
+  for (const assignment of assignments) {
+    const className = String(assignment.className ?? "").trim();
+    const course = String(assignment.course ?? assignment.subject ?? "").trim();
+    const key = `${normalizeText(className)}|${normalizeText(course)}`;
+    if (!className || !course || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    rows.push({ className, course, ...assignment });
+  }
+
+  return rows;
+}
+
+function resolveTeacherAssignments(teacher, user, globalAssignments = []) {
+  const embedded = Array.isArray(teacher?.assignments) ? teacher.assignments : [];
+  const schoolCode = normalizeText(user?.schoolCode ?? teacher?.schoolCode);
+
+  const matchedGlobal = (globalAssignments ?? []).filter((assignment) => {
+    const assignmentSchool = normalizeText(assignment.schoolCode);
+    if (
+      schoolCode &&
+      assignmentSchool &&
+      schoolCode !== assignmentSchool &&
+      String(user?.schoolCode ?? "") !== "*"
+    ) {
+      return false;
+    }
+    return assignmentMatchesTeacher(assignment, teacher, user);
+  });
+
+  return dedupeAssignments([...embedded, ...matchedGlobal]);
+}
+
+function resolveTeacherAssignedClasses(teacher, user, globalAssignments = []) {
+  return [
+    ...new Set(
+      resolveTeacherAssignments(teacher, user, globalAssignments).map((item) => item.className).filter(Boolean),
+    ),
+  ];
+}
+
 class BusinessError extends Error {
   constructor(statusCode, message, details) {
     super(message);
@@ -52,7 +132,16 @@ class BusinessError extends Error {
 }
 
 class AuthService {
-  constructor({ school, schools = [school], teachers, students, userAccounts, countries = [], subscriptions = [] }) {
+  constructor({
+    school,
+    schools = [school],
+    teachers,
+    students,
+    userAccounts,
+    countries = [],
+    subscriptions = [],
+    assignments = [],
+  }) {
     this.school = school;
     this.schools = schools.filter(Boolean);
     this.teachers = teachers;
@@ -60,6 +149,7 @@ class AuthService {
     this.userAccounts = userAccounts;
     this.countries = countries;
     this.subscriptions = subscriptions;
+    this.assignments = assignments;
   }
 
   identify({ schoolCode, identifier }) {
@@ -259,12 +349,14 @@ class AuthService {
     if (isTeacherRole(user.role)) {
       const teacher = this.findLinkedTeacher(user);
       if (teacher) {
-        const assignedClasses = [...new Set((teacher.assignments ?? []).map((item) => item.className))];
-        const courses = [...new Set((teacher.assignments ?? []).map((item) => item.course))];
+        const assignments = resolveTeacherAssignments(teacher, user, this.assignments);
+        const assignedClasses = resolveTeacherAssignedClasses(teacher, user, this.assignments);
+        const courses = [...new Set(assignments.map((item) => item.course).filter(Boolean))];
         const { password: _password, passwordHash: _passwordHash, pinHash: _pinHash, ...safeTeacher } = teacher;
         return {
           ...base,
           ...safeTeacher,
+          assignments,
           assignedClasses,
           courses,
         };
@@ -435,4 +527,12 @@ class AuthService {
   }
 }
 
-module.exports = { AuthService, BusinessError };
+module.exports = {
+  AuthService,
+  BusinessError,
+  assignmentMatchesTeacher,
+  buildTeacherNameKeys,
+  dedupeAssignments,
+  resolveTeacherAssignments,
+  resolveTeacherAssignedClasses,
+};

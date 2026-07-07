@@ -16,7 +16,7 @@ function newTeacherId(): string {
 
 export function isTeacherUserRole(role?: string): boolean {
   const key = normalize(role ?? "");
-  return key === "enseignant" || key.includes("prof");
+  return key === "enseignant" || key === "teacher" || key.includes("prof");
 }
 
 function teacherMatchesUser(teacher: Row, user: UserAccount): boolean {

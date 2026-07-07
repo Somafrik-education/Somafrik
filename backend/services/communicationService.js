@@ -3,8 +3,31 @@ class CommunicationService {
     this.notifications = notifications;
   }
 
+  isUnreadStatus(status) {
+    const normalized = String(status ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    return normalized !== "lu" && normalized !== "read" && normalized !== "lu(e)";
+  }
+
   getUnreadCount(notifications) {
-    return notifications.filter((notification) => notification.status === "Non lu").length;
+    return notifications.filter((notification) => this.isUnreadStatus(notification.status)).length;
+  }
+
+  matchesSuperAdminAudience(audience) {
+    const normalized = String(audience ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    if (!normalized || normalized === "tous") return true;
+    return (
+      normalized.includes("super administrateur") ||
+      normalized.includes("super admin") ||
+      normalized.includes("superadmin")
+    );
   }
 
   enrichNotifications(notifications) {
@@ -31,11 +54,17 @@ class CommunicationService {
 
   filterByAudience(audience, countryCode) {
     const notifications = this.notifications.filter((notification) => {
-      if (audience === "Super Administrateur Somafrik" || audience === "Super Administrateur OKAFRIK") {
-        return (
-          notification.audience === "Super Administrateur Somafrik" ||
-          notification.audience === "Super Administrateur OKAFRIK"
-        );
+      if (this.matchesSuperAdminAudience(audience)) {
+        return this.matchesSuperAdminAudience(notification.audience);
+      }
+
+      const normalizedAudience = String(notification.audience ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+      if (normalizedAudience === "tous") {
+        return true;
       }
 
       return notification.audience === audience && notification.countryCode === countryCode;

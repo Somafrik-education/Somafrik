@@ -278,7 +278,7 @@ const securityMatrix = {
   },
   Notifications: {
     "Super Administrateur Somafrik": "CRUD",
-    "Admin Pays": "-",
+    "Admin Pays": "CRUD",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
     Enseignant: "R",
@@ -288,7 +288,7 @@ const securityMatrix = {
   },
   Messages: {
     "Super Administrateur Somafrik": "CRUD",
-    "Admin Pays": "-",
+    "Admin Pays": "CRUD",
     "Admin School": "CRUD",
     "Préfet des études": "CRUD",
     Enseignant: "CRUD",

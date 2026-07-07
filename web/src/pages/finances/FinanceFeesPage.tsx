@@ -358,9 +358,8 @@ export function FinanceFeesPage() {
           }
         />
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Kpi label="Grilles" value={grids.length} />
-          <Kpi label="Dettes élèves" value={summary.count} />
           <Kpi label="Reste à payer" value={summary.totalBalance.toLocaleString("fr-FR")} />
           <Kpi label="En retard" value={summary.overdue} />
         </div>

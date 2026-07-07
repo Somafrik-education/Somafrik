@@ -253,7 +253,8 @@ const configs: Record<
 export default function AdminCrudScreen({ route }: Props) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { entity, filter } = route.params;
+  const { entity, filter, className: scopedClassName } = route.params;
+  const lockedClassName = scopedClassName?.trim() ?? "";
   const { session } = useAuth();
   const {
     getItems,
@@ -413,6 +414,7 @@ export default function AdminCrudScreen({ route }: Props) {
       ...(entity === "courses" && selectedCourseClass
         ? { className: selectedCourseClass }
         : {}),
+      ...(entity === "students" && lockedClassName ? { className: lockedClassName } : {}),
     });
     setVisible(true);
   };
@@ -466,7 +468,12 @@ export default function AdminCrudScreen({ route }: Props) {
       return;
     }
 
-    const nextItem = formToItem(entity, form, editingItem?.id, {
+    const workingForm =
+      entity === "students" && lockedClassName
+        ? { ...form, className: lockedClassName }
+        : form;
+
+    const nextItem = formToItem(entity, workingForm, editingItem?.id, {
       studentsData,
       teachersData,
       classesData,
@@ -1103,21 +1110,28 @@ export default function AdminCrudScreen({ route }: Props) {
                 <View key={field.key} style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>{field.label}</Text>
                   {field.type === "select" ? (
-                    <TouchableOpacity
-                      style={styles.selectInput}
-                      activeOpacity={0.85}
-                      onPress={() => setSelectField(field)}
-                    >
-                      <Text
-                        style={[
-                          styles.selectText,
-                          !form[field.key] && styles.selectPlaceholder,
-                        ]}
+                    entity === "students" && lockedClassName && field.key === "className" ? (
+                      <View style={[styles.selectInput, styles.selectInputLocked]}>
+                        <Text style={styles.selectText}>{lockedClassName}</Text>
+                        <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" />
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.selectInput}
+                        activeOpacity={0.85}
+                        onPress={() => setSelectField(field)}
                       >
-                        {form[field.key] || field.placeholder}
-                      </Text>
-                      <Ionicons name="chevron-down" size={18} color="#64748B" />
-                    </TouchableOpacity>
+                        <Text
+                          style={[
+                            styles.selectText,
+                            !form[field.key] && styles.selectPlaceholder,
+                          ]}
+                        >
+                          {form[field.key] || field.placeholder}
+                        </Text>
+                        <Ionicons name="chevron-down" size={18} color="#64748B" />
+                      </TouchableOpacity>
+                    )
                   ) : field.type === "date" ? (
                     <TouchableOpacity
                       style={styles.selectInput}
@@ -3015,6 +3029,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  selectInputLocked: {
+    backgroundColor: "#F8FAFC",
+    borderColor: "#CBD5E1",
   },
   selectText: {
     color: "#0F172A",

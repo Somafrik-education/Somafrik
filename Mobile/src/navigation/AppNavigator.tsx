@@ -108,6 +108,7 @@ export type RootStackParamList = {
   AdminCrud: {
     entity: AdminEntity;
     filter?: "paid" | "pending";
+    className?: string;
   };
 };
 

@@ -111,7 +111,7 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "schools", path: "/etablissements", label: "Établissements", group: "plateforme" },
   { view: "subscriptions", path: "/abonnements", label: "Abonnements", group: "plateforme" },
 
-  // Mon établissement (Classes, Matières, Élèves, Enseignants, Contacts, Parents & élèves)
+  // Mon établissement (Classes, Affectations, Élèves, Enseignants, Contacts, Parents & élèves)
   { view: "establishment", path: "/etablissement", label: "Mon établissement", group: "etablissement", schoolOnly: true },
 
   // Pédagogie : enseigner puis évaluer
@@ -131,7 +131,7 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "users", path: "/administration", label: "Administration", group: "administration" },
 
   // Paramètres (module à onglets : Établissement, Graphiques, Conception bulletins)
-  { view: "configuration", path: "/parametres", label: "Paramètres", group: "parametres" },
+  { view: "settings", path: "/parametres", label: "Paramètres", group: "parametres" },
 ];
 
 export const MVP_COVERAGE = [

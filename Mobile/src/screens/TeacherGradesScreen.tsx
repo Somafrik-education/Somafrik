@@ -6,8 +6,17 @@ import { useAdminData } from "../context/AdminDataContext";
 import { AcademicGrade, GradeBookService } from "../domain/academics/GradeBookService";
 import { resolveActivePeriodName } from "../lib/academicPeriods";
 import { hasSecurityPermission } from "../domain/security/permissions";
+import {
+  classNameMatches,
+  filterStudentsByClassName,
+  resolveGradesPeriod,
+  resolveStudentApiId,
+  resolveTeacherAssignmentsForSession,
+  scopedStudentsForSession,
+} from "../lib/establishment";
 import { saveNote } from "../services/api";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 
 type Assignment = {
   className: string;
@@ -37,39 +46,72 @@ type SessionSummary = {
 
 export default function TeacherGradesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
-  const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
+  const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
+  const contentStyle = [
+    styles.content,
+    {
+      paddingBottom: scrollContentPaddingBottom,
+      paddingHorizontal: horizontalPadding,
+      maxWidth: contentMaxWidth,
+      alignSelf: "center" as const,
+      width: "100%",
+    },
+  ];
   const { session } = useAuth();
-  const { studentsData, coursesData, notesData, presencesData, academicConfigData, upsertNoteItem } = useAdminData();
+  const {
+    studentsData,
+    coursesData,
+    notesData,
+    presencesData,
+    teachersData,
+    assignmentsData,
+    classesData,
+    academicConfigData,
+    upsertNoteItem,
+  } = useAdminData();
   const [gradeSession, setGradeSession] = useState<GradeSession | null>(null);
   const canCreateNotes = hasSecurityPermission(session, "Notes", "CREATE");
   const canUpdateNotes = hasSecurityPermission(session, "Notes", "UPDATE");
-  const assignments: Assignment[] =
-    session?.role === "teacher"
-      ? session?.user.assignments ?? []
-      : coursesData.map((course) => ({ className: course.className, course: course.name }));
-  const gradeBook = new GradeBookService(studentsData, notesData, coursesData);
+  const scopeState = useMemo(
+    () => ({ teachers: teachersData, assignments: assignmentsData, classes: classesData }),
+    [teachersData, assignmentsData, classesData],
+  );
+  const scopedStudents = useMemo(
+    () => scopedStudentsForSession(session, studentsData, scopeState),
+    [session, studentsData, scopeState],
+  );
+  const assignments: Assignment[] = useMemo(() => {
+    if (session?.role !== "teacher") {
+      return coursesData.map((course) => ({ className: course.className, course: course.name }));
+    }
+    return resolveTeacherAssignmentsForSession(session, assignmentsData);
+  }, [session, assignmentsData, coursesData]);
+  const gradeBook = new GradeBookService(scopedStudents, notesData, coursesData);
   const todayLabel = formatDate(new Date());
   const todayIso = formatIsoDate(new Date());
   const evaluationTypes = academicConfigData.evaluationTypes.length ? academicConfigData.evaluationTypes : ["Interrogation", "Devoir", "Examen"];
   const periods = academicConfigData.periods.length
     ? academicConfigData.periods
     : [{ name: "Trimestre 1", type: "Trimestre", startDate: "", endDate: "", active: true }];
-  const activePeriod = resolveActivePeriodName(periods) ?? "Trimestre 1";
+  const calendarPeriod = resolveActivePeriodName(periods) ?? "Trimestre 1";
+  const activePeriod = resolveGradesPeriod(
+    notesData,
+    String(session?.user?.schoolCode ?? session?.school?.code ?? ""),
+    calendarPeriod,
+  );
 
   const sessions = useMemo(
-    () => buildSessionSummaries(notesData, assignments, studentsData),
-    [assignments, notesData, studentsData]
+    () => buildSessionSummaries(notesData, assignments, scopedStudents),
+    [assignments, notesData, scopedStudents],
   );
 
   const presentStudents = useMemo(() => {
     if (!gradeSession) return [];
-    return studentsData
-      .filter((student) => student.className === gradeSession.assignment.className)
-      .filter((student) => {
-        if (gradeSession.gradeIds[student.id]) return true;
-        return isPresentOnDate(student.id, presencesData, gradeSession.date, todayIso);
-      });
-  }, [gradeSession, presencesData, studentsData, todayIso]);
+    return filterStudentsByClassName(scopedStudents, gradeSession.assignment.className).filter((student) => {
+      if (gradeSession.gradeIds[student.id]) return true;
+      return isPresentOnDate(student.id, presencesData, gradeSession.date, todayIso);
+    });
+  }, [gradeSession, presencesData, scopedStudents, todayIso]);
 
   const startSession = (assignment: Assignment) => {
     if (!canCreateNotes) {
@@ -77,9 +119,9 @@ export default function TeacherGradesScreen({ navigation }: any) {
       return;
     }
 
-    const rows = studentsData
-      .filter((student) => student.className === assignment.className)
-      .filter((student) => isPresentOnDate(student.id, presencesData, todayLabel, todayIso));
+    const rows = filterStudentsByClassName(scopedStudents, assignment.className).filter((student) =>
+      isPresentOnDate(student.id, presencesData, todayLabel, todayIso),
+    );
 
     if (!rows.length) {
       Alert.alert(
@@ -109,7 +151,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
     }
 
     const gradeByStudent = Object.fromEntries(summary.grades.map((grade) => [grade.studentId, grade]));
-    const rows = studentsData.filter((student) => student.className === summary.assignment.className);
+    const rows = filterStudentsByClassName(scopedStudents, summary.assignment.className);
     setGradeSession({
       id: summary.id,
       type: summary.type,
@@ -132,9 +174,9 @@ export default function TeacherGradesScreen({ navigation }: any) {
     setGradeSession((current) => {
       if (!current) return current;
 
-      const allowedStudents = studentsData
-        .filter((student) => student.className === current.assignment.className)
-        .filter((student) => current.gradeIds[student.id] || isPresentOnDate(student.id, presencesData, date, todayIso));
+      const allowedStudents = filterStudentsByClassName(scopedStudents, current.assignment.className).filter(
+        (student) => current.gradeIds[student.id] || isPresentOnDate(student.id, presencesData, date, todayIso),
+      );
       const allowedIds = new Set(allowedStudents.map((student) => student.id));
 
       return {
@@ -161,7 +203,9 @@ export default function TeacherGradesScreen({ navigation }: any) {
     }
 
     const coefficient = coursesData.find(
-      (course) => course.className === gradeSession.assignment.className && course.name === gradeSession.assignment.course
+      (course) =>
+        classNameMatches(course.className, gradeSession.assignment.className) &&
+        course.name === gradeSession.assignment.course,
     )?.coefficient ?? 1;
     const authorId = session?.user.id ?? "teacher";
     const scale = Number(gradeSession.scale.replace(",", "."));
@@ -179,7 +223,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
           const baseGrade = existingGrade
             ? gradeBook.updateGrade(existingGrade, value, authorId)
             : gradeBook.createGrade({
-                studentId: student.id,
+                studentId: resolveStudentApiId(student),
                 subject: gradeSession.assignment.course,
                 value,
                 coefficient,
@@ -193,6 +237,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
 
           return saveNote({
             ...baseGrade,
+            studentId: resolveStudentApiId(student),
             evaluationTitle: gradeSession.type,
             evaluationType: gradeSession.type,
             period: gradeSession.period,
@@ -306,12 +351,12 @@ export default function TeacherGradesScreen({ navigation }: any) {
       <Text style={styles.subtitle}>Sessions classées par {academicConfigData.periodMode} selon la configuration de l'établissement.</Text>
 
       {assignments.map((assignment, index) => {
-        const classStudents = studentsData.filter((student) => student.className === assignment.className);
+        const classStudents = filterStudentsByClassName(scopedStudents, assignment.className);
         const presentCount = classStudents.filter((student) => isPresentOnDate(student.id, presencesData, todayLabel, todayIso)).length;
         const classStats = gradeBook.getClassStatistics(assignment.className);
 
         return (
-          <View key={`${assignment.className}-${assignment.course}-${index}`} style={styles.assignmentCard}>
+          <View key={`${assignment.className}-${assignment.course}-${index}`} style={[styles.assignmentCard, isTablet && styles.assignmentCardTablet]}>
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.assignmentHeader}
@@ -370,7 +415,13 @@ function StatPill({ label, value }: { label: string; value: string }) {
 
 function buildSessionSummaries(notes: AcademicGrade[], assignments: Assignment[], students: any[]) {
   const assignmentKeys = new Set(assignments.map((item) => `${item.className}-${item.course}`));
-  const studentClassById = new Map(students.map((student) => [student.id, student.className]));
+  const studentClassById = new Map<string, string>();
+  students.forEach((student) => {
+    const className = student.className;
+    if (student.id) studentClassById.set(String(student.id), className);
+    if (student.matricule) studentClassById.set(String(student.matricule), className);
+    if (student.publicId) studentClassById.set(String(student.publicId), className);
+  });
   const grouped = new Map<string, SessionSummary>();
 
   notes.forEach((note) => {
@@ -427,6 +478,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "900", color: "#0F172A" },
   subtitle: { marginTop: 6, marginBottom: 20, color: "#64748B", fontWeight: "700" },
   assignmentCard: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 16, marginBottom: 16 },
+  assignmentCardTablet: { maxWidth: 640, alignSelf: "center", width: "100%" },
   assignmentHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   assignmentTitle: { fontSize: 20, fontWeight: "900", color: "#0F172A" },
   statsRow: { flexDirection: "row", gap: 8, marginBottom: 12 },

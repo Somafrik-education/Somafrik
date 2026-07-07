@@ -12,7 +12,7 @@ import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
-import { scopedClasses, scopedStudents } from "../lib/establishment";
+import { scopedClasses, scopedStudents, teacherScopedClassNames } from "../lib/establishment";
 import {
   allGrades,
   appendGradeAuditLog,
@@ -24,7 +24,7 @@ import {
   ensureEvaluationsSynced,
   gradesToLegacyNotes,
   publishEvaluation,
-  resolveDefaultPeriod,
+  resolveGradesPeriod,
   scopedEvaluations,
   scopedGrades,
   syncBulletinsForClass,
@@ -71,9 +71,18 @@ export function GradesEvaluationsPage() {
 
   const students = scopedStudents(scopeUser, state) as Record<string, unknown>[];
   const classes = scopedClasses(scopeUser, state, students) as Record<string, unknown>[];
-  const classNames = useMemo(() => uniqueClassNames(students, classes), [students, classes]);
+  const classNames = useMemo(() => {
+    const teacherClasses = teacherScopedClassNames(scopeUser, state);
+    if (teacherClasses?.size) {
+      return [...teacherClasses].sort((left, right) => left.localeCompare(right, "fr"));
+    }
+    return uniqueClassNames(students, classes);
+  }, [scopeUser, state, students, classes]);
   const code = String(activeSchoolCode ?? scopeUser?.schoolCode ?? "").trim();
-  const defaultPeriod = resolveDefaultPeriod(state, code);
+  const defaultPeriod = useMemo(
+    () => resolveGradesPeriod(state, code, scopeUser),
+    [state, code, scopeUser],
+  );
 
   const evaluations = useMemo(() => {
     const synced = ensureEvaluationsSynced(state, code);
@@ -83,7 +92,7 @@ export function GradesEvaluationsPage() {
   const grades = scopedGrades(scopeUser, state);
 
   const [tab, setTab] = useState<TabKey>("evaluations");
-  const [period, setPeriod] = useState(defaultPeriod);
+  const [period, setPeriod] = useState("");
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? "");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [selectedEvaluationId, setSelectedEvaluationId] = useState("");
@@ -100,6 +109,17 @@ export function GradesEvaluationsPage() {
     if (!imported.length) return;
     void update({ evaluations: [...(state.evaluations ?? []), ...imported] });
   }, [code, state.exams?.length]);
+
+  useEffect(() => {
+    setPeriod(defaultPeriod);
+  }, [defaultPeriod]);
+
+  useEffect(() => {
+    if (!classNames.length) return;
+    setSelectedClass((current) =>
+      current && classNames.includes(current) ? current : classNames[0],
+    );
+  }, [classNames]);
 
   const filteredEvaluations = evaluations.filter(
     (evaluation) => !period || evaluation.period === period,

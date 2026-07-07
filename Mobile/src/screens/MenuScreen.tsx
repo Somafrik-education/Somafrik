@@ -9,6 +9,7 @@ import { canReadEntity, canReadRoute, canReadView } from "../domain/security/per
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
+import { scopedStudentsForSession, teacherScopedClassLabels } from "../lib/establishment";
 
 type MenuItem = {
   label: string;
@@ -33,7 +34,6 @@ const adminMenuItems: MenuItem[] = [
   { label: "🔁 Affectations", entity: "assignments", view: "assignments" },
   { label: "💰 Paiements", entity: "payments", view: "payments" },
   { label: "⚙️ Statuts paiement", entity: "paymentStatuses", view: "configuration" },
-  { label: "💬 Messages parents", route: "Messages", view: "messages" },
   { label: "📢 Annonces", entity: "announcements", view: "announcements" },
   { label: "🗓️ Emplois du temps", route: "Timetable", view: "Timetable" },
   { label: "📄 Bulletins", route: "ReportCards", view: "ReportCards" },
@@ -49,7 +49,6 @@ const parentMenuItems: MenuItem[] = [
   { label: "📄 Bulletins PDF", route: "ReportCards", view: "ReportCards" },
   { label: "💰 Situation des frais", route: "FraisEleve", view: "FraisEleve" },
   { label: "📱 Paiement mobile", route: "MobilePayment", view: "MobilePayment" },
-  { label: "💬 Messages école", route: "Messages", view: "Messages" },
   { label: "📢 Annonces de l'école", route: "Announcements", view: "Announcements" },
   { label: "🔄 Mode hors ligne", route: "OfflineMode", view: "OfflineMode" },
   { label: "🆘 Support", route: "Support", view: "Support" },
@@ -73,7 +72,6 @@ const teacherMenuItems: MenuItem[] = [
   { label: "📝 Gestion des notes", route: "TeacherGrades", view: "TeacherGrades" },
   { label: "📄 Bulletins", route: "ReportCards", view: "ReportCards" },
   { label: "🗓️ Mon emploi du temps", route: "Timetable", view: "Timetable" },
-  { label: "💬 Messages parents", route: "Messages", view: "Messages" },
   { label: "📢 Annonces de l'école", route: "Announcements", view: "Announcements" },
   { label: "🔄 Synchronisation", route: "Synchronization", view: "Synchronization" },
   { label: "🆘 Support", route: "Support", view: "Support" },
@@ -93,14 +91,14 @@ function filterMenuItemsByPermission(session: any, items: MenuItem[]) {
 export default function MenuScreen() {
   const navigation = useNavigation<any>();
   const { session, logout } = useAuth();
-  const { messagesData, studentsData } = useAdminData();
+  const { studentsData, teachersData, assignmentsData, classesData } = useAdminData();
+  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { isTablet, horizontalPadding, contentMaxWidth, columns } = useResponsiveLayout();
   const isParentStudent = session?.role === "parent_student";
   const isStudent = session?.role === "student";
   const isTeacher = session?.role === "teacher";
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
-  const unreadMessages = getUnreadMessagesCount(session, messagesData, studentsData);
   const menuItems = isStudent
     ? filterMenuItemsByPermission(session, studentMenuItems)
     : isParentStudent
@@ -142,7 +140,12 @@ export default function MenuScreen() {
 
       {isTeacher && (
         <Text style={styles.childrenCount}>
-          {(session?.user.courses ?? []).join(", ")} • {(session?.user.assignedClasses ?? []).join(", ")}
+          {(session?.user.courses ?? []).join(", ")} •{" "}
+          {teacherScopedClassLabels(
+            session,
+            scopedStudentsForSession(session, studentsData, teacherScopeState),
+            teacherScopeState,
+          ).join(", ") || "Classes non renseignées"}
         </Text>
       )}
 
@@ -171,9 +174,6 @@ export default function MenuScreen() {
           >
             <View style={styles.itemLabelBox}>
               <Text style={styles.itemText}>{item.label}</Text>
-              {(item.entity === "messages" || item.route === "Messages") && unreadMessages > 0 && (
-                <Text style={styles.badge}>{unreadMessages}</Text>
-              )}
             </View>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
@@ -185,44 +185,6 @@ export default function MenuScreen() {
       </TouchableOpacity>
     </ScrollView>
   );
-}
-
-function getUnreadMessagesCount(session: any, messagesData: any[], studentsData: any[]) {
-  if (
-    session?.role === "super_admin" ||
-    session?.role === "school_admin" ||
-    session?.role === "country_admin" ||
-    session?.role === "principal" ||
-    session?.role === "prefet" ||
-    session?.role === "secretary"
-  ) {
-    return messagesData.filter(
-      (message) => message.status === "Nouveau" && message.direction === "Parent vers école"
-    ).length;
-  }
-
-  if (session?.role === "teacher") {
-    const assignedClasses = session.user.assignedClasses ?? [];
-    const teacherParents = studentsData
-      .filter((student) => assignedClasses.includes(student.className))
-      .map((student) => student.parentPhone);
-
-    return messagesData.filter(
-      (message) =>
-        message.status === "Nouveau" &&
-        (message.teacherId === session.user.id || teacherParents.includes(message.parentPhone)) &&
-        message.direction === "Parent vers enseignant"
-    ).length;
-  }
-
-  const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone;
-
-  return messagesData.filter(
-    (message) =>
-      message.status === "Nouveau" &&
-      message.parentPhone === parentPhone &&
-      (message.direction === "École vers parent" || message.direction === "Enseignant vers parent")
-  ).length;
 }
 
 const styles = StyleSheet.create({

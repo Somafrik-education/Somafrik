@@ -48,14 +48,14 @@ $envMap = Read-DotEnv $envPath
 $requiredKeys = @(
   "NODE_ENV", "BACKEND_PORT", "POSTGRES_HOST_PORT", "POSTGRES_DB", "POSTGRES_USER",
   "POSTGRES_PASSWORD", "JWT_SECRET", "CORS_ORIGINS", "WEB_DEV_PORT", "SOMAFRIK_DB_REQUIRED",
-  "JSON_BODY_LIMIT", "EXPO_PORT", "REACT_NATIVE_PACKAGER_HOSTNAME",
-  "EXPO_PUBLIC_API_URL", "EXPO_PUBLIC_DEMO_MODE"
+  "JSON_BODY_LIMIT", "EXPO_PORT"
 )
 
-$apiUrl = if ($envMap["EXPO_PUBLIC_API_URL"]) { $envMap["EXPO_PUBLIC_API_URL"] } else { "http://${lanIp}:5000" }
-$packagerHost = if ($envMap["REACT_NATIVE_PACKAGER_HOSTNAME"]) { $envMap["REACT_NATIVE_PACKAGER_HOSTNAME"] } else { $lanIp }
-$expoPort = if ($envMap["EXPO_PORT"]) { $envMap["EXPO_PORT"] } else { "8083" }
-$demoMode = if ($envMap["EXPO_PUBLIC_DEMO_MODE"]) { $envMap["EXPO_PUBLIC_DEMO_MODE"] } else { "false" }
+$mobileEnvMap = Read-DotEnv $mobileEnvPath
+$apiUrl = if ($mobileEnvMap["EXPO_PUBLIC_API_URL"]) { $mobileEnvMap["EXPO_PUBLIC_API_URL"] } elseif ($envMap["EXPO_PUBLIC_API_URL"]) { $envMap["EXPO_PUBLIC_API_URL"] } else { "http://${lanIp}:5000" }
+$packagerHost = if ($mobileEnvMap["REACT_NATIVE_PACKAGER_HOSTNAME"]) { $mobileEnvMap["REACT_NATIVE_PACKAGER_HOSTNAME"] } elseif ($envMap["REACT_NATIVE_PACKAGER_HOSTNAME"]) { $envMap["REACT_NATIVE_PACKAGER_HOSTNAME"] } else { $lanIp }
+$expoPort = if ($mobileEnvMap["EXPO_PORT"]) { $mobileEnvMap["EXPO_PORT"] } elseif ($envMap["EXPO_PORT"]) { $envMap["EXPO_PORT"] } else { "8083" }
+$demoMode = if ($mobileEnvMap["EXPO_PUBLIC_DEMO_MODE"]) { $mobileEnvMap["EXPO_PUBLIC_DEMO_MODE"] } elseif ($envMap["EXPO_PUBLIC_DEMO_MODE"]) { $envMap["EXPO_PUBLIC_DEMO_MODE"] } else { "false" }
 
 $corsBase = "http://localhost:5000,http://127.0.0.1:5000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:${expoPort},http://127.0.0.1:${expoPort}"
 $corsLan = "http://${packagerHost}:5000,http://${packagerHost}:5173,http://${packagerHost}:${expoPort}"
@@ -74,16 +74,14 @@ WEB_DEV_PORT=5173
 SOMAFRIK_DB_REQUIRED=true
 JSON_BODY_LIMIT=1mb
 
-# --- Expo / Mobile (sync Mobile/.env.local + eas.json) ---
+# Port Metro pour Docker Compose (service mobile).
 EXPO_PORT=$expoPort
-REACT_NATIVE_PACKAGER_HOSTNAME=$packagerHost
-EXPO_PUBLIC_API_URL=$apiUrl
-EXPO_PUBLIC_DEMO_MODE=$demoMode
 "@
 
 Set-Content -Path $envPath -Value $mergedEnv.TrimEnd() -Encoding utf8
 
 $mobileEnv = @"
+# Variables Expo locales (machine / telephone). Ne pas mettre dans .env racine (Expo 57+).
 EXPO_PORT=$expoPort
 REACT_NATIVE_PACKAGER_HOSTNAME=$packagerHost
 EXPO_PUBLIC_API_URL=$apiUrl

@@ -1,3 +1,5 @@
+import { normalize } from "./format";
+
 /** Tokens CRUD par défaut pour les rôles internes établissement (aligné BackOffice). */
 export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   "Admin School": [
@@ -21,6 +23,8 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Affectations:CREATE",
     "Affectations:UPDATE",
     "Présences:READ",
+    "Présences:CREATE",
+    "Présences:UPDATE",
     "Notes:READ",
     "Bulletins:READ",
     "Paiements:READ",
@@ -136,6 +140,8 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Enseignants:READ",
     "Affectations:READ",
     "Présences:READ",
+    "Présences:CREATE",
+    "Présences:UPDATE",
     "Notes:READ",
     "Bulletins:READ",
     "Paiements:READ",
@@ -157,6 +163,8 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Affectations:CREATE",
     "Affectations:UPDATE",
     "Présences:READ",
+    "Présences:CREATE",
+    "Présences:UPDATE",
     "Notes:READ",
     "Bulletins:READ",
     "Paiements:READ",
@@ -174,6 +182,8 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Enseignants:READ",
     "Affectations:READ",
     "Présences:READ",
+    "Présences:CREATE",
+    "Présences:UPDATE",
     "Notes:READ",
     "Bulletins:READ",
     "Messages:READ",
@@ -235,7 +245,28 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   ],
 };
 
+/** Rôle canonique pour appliquer les droits internes (rôles renommés en configuration). */
+export function resolveInternalRoleKey(role?: string): string | undefined {
+  if (!role) return undefined;
+  if (INTERNAL_ROLE_DEFAULT_PERMISSIONS[role]) return role;
+
+  const key = normalize(role);
+  if (key === "enseignant" || key === "teacher" || key.includes("prof")) return "Enseignant";
+  if (key === "secretaire" || key === "secretary") return "Secrétaire";
+  if (key === "prefet des etudes" || key === "prefet") return "Préfet des études";
+  if (key === "comptable") return "Comptable";
+  if (key === "parent") return "Parent";
+  if (key.includes("eleve") || key.includes("etudiant") || key === "student") return "Élève / Étudiant";
+
+  for (const knownRole of Object.keys(INTERNAL_ROLE_DEFAULT_PERMISSIONS)) {
+    if (normalize(knownRole) === key) return knownRole;
+  }
+
+  return role;
+}
+
 export function getInternalRoleDefaults(role?: string): string[] {
-  if (!role) return [];
-  return INTERNAL_ROLE_DEFAULT_PERMISSIONS[role] ?? [];
+  const resolved = resolveInternalRoleKey(role);
+  if (!resolved) return [];
+  return INTERNAL_ROLE_DEFAULT_PERMISSIONS[resolved] ?? [];
 }

@@ -22,6 +22,16 @@ const schoolAdminForbiddenFeatures = new Set(["Établissements", "Abonnements"])
 
 const PARENT_STUDENT_SESSION_ROLES = new Set(["parent_student", "student"]);
 
+function isPlatformCommunicationSession(session: any): boolean {
+  const role = session?.role;
+  const platformRole = sessionRoleToPlatformRole(role);
+  return (
+    isSuperAdminSessionRole(role) ||
+    role === "country_admin" ||
+    platformRole === COUNTRY_ADMIN_ROLE
+  );
+}
+
 function isEstablishmentCommunicationSession(session: any): boolean {
   const schoolCode = String(session?.user?.schoolCode ?? session?.school?.code ?? "").trim();
   if (!schoolCode || schoolCode === "*") return false;
@@ -93,6 +103,13 @@ function countryPrivilegeAllows(normalizedFeature: string, action: SecurityActio
   return true;
 }
 
+function matchesPresenceLegacyPermission(normalizedPermission: string, action: SecurityAction): boolean {
+  if (!normalizedPermission.includes("appel")) return false;
+  if (action === "READ") return true;
+  if (normalizedPermission.includes("gerer")) return true;
+  return action === "CREATE" || action === "UPDATE";
+}
+
 function permissionMatchesFeature(
   normalizedPermission: string,
   normalizedFeature: string,
@@ -102,6 +119,12 @@ function permissionMatchesFeature(
     return countryPrivilegeAllows(normalizedFeature, action);
   }
   if (normalizedPermission === "all-privileges") return true;
+  if (
+    normalizedFeature === "presences" &&
+    matchesPresenceLegacyPermission(normalizedPermission, action)
+  ) {
+    return true;
+  }
   if (!normalizedPermission.includes(normalizedFeature)) return false;
   if (action === "READ") {
     return (
@@ -218,6 +241,12 @@ function hasSecurityPermissionInternal(
 export function hasSecurityPermission(session: any, feature: string | undefined, action: SecurityAction = "READ") {
   if (!feature) return true;
   if (isSuperAdminSessionRole(session?.role)) return true;
+  if (
+    isPlatformCommunicationSession(session) &&
+    (feature === "Messages" || feature === "Notifications")
+  ) {
+    return true;
+  }
 
   const platformRole = roleLabelFromSessionRole(session?.role);
   if (
@@ -250,6 +279,14 @@ export function hasSecurityPermission(session: any, feature: string | undefined,
   }
 
   return hasSecurityPermissionInternal(permissions, feature, action);
+}
+
+/** Faire l'appel = création ou mise à jour des présences (legacy « Faire appel » inclus). */
+export function canManagePresences(session: any): boolean {
+  return (
+    hasSecurityPermission(session, "Présences", "UPDATE") ||
+    hasSecurityPermission(session, "Présences", "CREATE")
+  );
 }
 
 export function canReadView(session: any, viewName: string): boolean {
@@ -299,7 +336,7 @@ export function canReadView(session: any, viewName: string): boolean {
   if (communicationViews.has(viewName)) {
     const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
     if (feature && hasSecurityPermission(session, feature, "READ")) return true;
-    return isEstablishmentCommunicationSession(session);
+    return isPlatformCommunicationSession(session) || isEstablishmentCommunicationSession(session);
   }
 
   const feature = VIEW_PERMISSION_FEATURES[viewName];
@@ -324,6 +361,12 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
     action !== "CREATE"
   ) {
     return false;
+  }
+  if (
+    isPlatformCommunicationSession(session) &&
+    (entity === "messages" || entity === "announcements")
+  ) {
+    return true;
   }
   return Boolean(feature) && hasSecurityPermission(session, feature, action);
 }

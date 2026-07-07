@@ -19,7 +19,7 @@ import type { PlatformNotification } from "../lib/scope";
 
 const TYPE_OPTIONS = ["Information", "Alerte", "Paiement", "Académique", "Système"];
 const PRIORITY_OPTIONS = ["Normale", "Haute", "Critique"];
-const AUDIENCE_OPTIONS = ["Tous", "Admin Pays", "Administrateurs Établissement", "Enseignants", "Parents", "Élèves"];
+const AUDIENCE_OPTIONS = ["Tous", "Super Administrateur Somafrik", "Admin Pays", "Administrateurs Établissement", "Enseignants", "Parents", "Élèves"];
 
 function newId() {
   return `ntf-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -36,7 +36,7 @@ export default function PlatformNotificationsScreen() {
   const canUpdate = hasSecurityPermission(session, "Notifications", "UPDATE");
 
   const unreadCount = useMemo(
-    () => notificationsData.filter((item) => item.status === "Non lu").length,
+    () => notificationsData.filter((item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read").length,
     [notificationsData],
   );
 

@@ -16,6 +16,7 @@ import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { MessagePriority, MessageService } from "../domain/communication/MessageService";
 import { canMutateEntity, canReadEntity } from "../domain/security/permissions";
+import { classNameMatches, scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
 const messageService = new MessageService();
@@ -25,7 +26,8 @@ export default function MessagesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { createItem, updateItem, messagesData, studentsData, teachersData } = useAdminData();
+  const { createItem, updateItem, messagesData, studentsData, teachersData, assignmentsData, classesData } =
+    useAdminData();
   const [theme, setTheme] = useState(messageThemes[0]);
   const [message, setMessage] = useState("");
   const [attachmentUrl, setAttachmentUrl] = useState("");
@@ -41,8 +43,8 @@ export default function MessagesScreen({ navigation }: any) {
     session?.user.parentPhone ??
     session?.user.children?.[0]?.parentPhone ??
     "";
-  const assignedClasses = session?.user.assignedClasses ?? [];
-  const teacherStudents = studentsData.filter((student) => assignedClasses.includes(student.className));
+  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
   const parentChildren = session?.user.children ?? [];
 
   const availableTeachers = useMemo(() => {
@@ -52,7 +54,9 @@ export default function MessagesScreen({ navigation }: any) {
 
     const childrenClasses = parentChildren.map((child) => child.className);
     return teachersData.filter((teacher) =>
-      (teacher.assignments ?? []).some((assignment) => childrenClasses.includes(assignment.className))
+      (teacher.assignments ?? []).some((assignment) =>
+        childrenClasses.some((className) => classNameMatches(assignment.className, className)),
+      ),
     );
   }, [parentChildren, role, teachersData]);
 
@@ -489,6 +493,9 @@ function MessageCard({
       <View style={styles.badgeRow}>
         <Text style={styles.priorityBadge}>{item.priority ?? "Moyenne"}</Text>
         {item.attachmentUrl ? <Text style={styles.attachmentBadge}>Pièce jointe</Text> : null}
+        {(item.systemBroadcast === true || String(item.scope ?? "").toLowerCase() === "system") ? (
+          <Text style={styles.systemBadge}>Diffusion système</Text>
+        ) : null}
       </View>
       <Text style={styles.messageBody} numberOfLines={2}>{item.message}</Text>
       {canArchive && item.status !== "Archivé" && (
@@ -728,6 +735,15 @@ const styles = StyleSheet.create({
   attachmentBadge: {
     color: "#0F766E",
     backgroundColor: "#ECFDF5",
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  systemBadge: {
+    color: "#1D4ED8",
+    backgroundColor: "#DBEAFE",
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 5,

@@ -21,6 +21,7 @@ class TenantScopeService {
 
     if (principal.role === "Admin Pays") {
       return roleScoped.filter((row) => {
+        if (this.isSystemBroadcast(row)) return true;
         const countryCode = row[countryField] ?? this.countryCodeFromCountry(row.country) ?? this.countryCodeFromSchool(row[schoolField]);
         return Boolean(countryCode) && countryCode === principal.countryCode;
       });
@@ -34,6 +35,9 @@ class TenantScopeService {
     const classNames = new Set([...(principal.classNames ?? []), ...(schoolClassNames ?? [])]);
 
     return roleScoped.filter((row) => {
+      // Diffusion système (Super Admin) : annonce/message destiné à tous les établissements.
+      if (this.isSystemBroadcast(row)) return true;
+
       const rowSchool = row[schoolField];
       if (rowSchool) {
         return rowSchool === principal.schoolCode;
@@ -106,6 +110,10 @@ class TenantScopeService {
     if (schoolCode && schoolCode !== principal.schoolCode) {
       throw new BusinessError(403, "Accès refusé: établissement hors périmètre.");
     }
+  }
+
+  isSystemBroadcast(row = {}) {
+    return row.systemBroadcast === true || String(row.scope ?? "").trim().toLowerCase() === "system";
   }
 
   countryCodeFromSchool(schoolCode) {

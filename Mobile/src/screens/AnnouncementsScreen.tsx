@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity } from "../domain/security/permissions";
+import { markAnnouncementsRead } from "../lib/announcementsRead";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
 export default function AnnouncementsScreen({ navigation }: any) {
@@ -14,6 +16,12 @@ export default function AnnouncementsScreen({ navigation }: any) {
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
   const canUpdate = canMutateEntity(session, "announcements", "UPDATE");
   const canDelete = canMutateEntity(session, "announcements", "DELETE");
+
+  useEffect(() => {
+    if (canRead) {
+      markAnnouncementsRead(session?.user?.id, announcementsData);
+    }
+  }, [canRead, session?.user?.id, announcementsData]);
 
   const confirmDelete = (announcement: any) => {
     if (!canDelete) {
@@ -67,7 +75,16 @@ export default function AnnouncementsScreen({ navigation }: any) {
             <Ionicons name="megaphone-outline" size={24} color="#7C3AED" />
           </View>
           <View style={styles.cardContent}>
-            <Text style={styles.cardTitle}>{announcement.title}</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{announcement.title}</Text>
+              {(announcement.systemBroadcast === true ||
+                String(announcement.scope ?? "").toLowerCase() === "system") && (
+                <View style={styles.systemBadge}>
+                  <Ionicons name="globe-outline" size={12} color="#1D4ED8" />
+                  <Text style={styles.systemBadgeText}>Diffusion système</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.message}>{announcement.message}</Text>
             <Text style={styles.date}>{announcement.date}</Text>
           </View>
@@ -160,6 +177,26 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "900",
     color: "#0F172A",
+  },
+  titleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
+  systemBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: "#DBEAFE",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  systemBadgeText: {
+    color: "#1D4ED8",
+    fontWeight: "800",
+    fontSize: 11,
   },
   message: {
     marginTop: 6,

@@ -138,12 +138,14 @@ interface EntityPageProps {
   entity: SchoolEntityKey;
   /** Vue simplifiée : uniquement les liaisons parent → élève. */
   mode?: "parentChildRelations";
+  /** Limite la liste et la création à une classe (gestion depuis Classes). */
+  classScope?: string;
 }
 
 const PARENT_CHILD_HIDDEN_FIELDS = new Set(["relationType", "accountCode"]);
 const PARENT_CHILD_COLUMNS = ["fromContactName", "toStudentName", "status"];
 
-export function EntityPage({ entity, mode }: EntityPageProps) {
+export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   const module = getEntityModule(entity);
   const { session } = useAuth();
   const { state, update } = useData();
@@ -184,6 +186,10 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
     [ctx, module?.key, module?.feature, editing?.contactType],
   );
   const { canRead, canCreate, canUpdate, canDelete } = entityPermissions;
+  const studentsPermissions = useMemo(
+    () => getEntityFeaturePermissions(ctx, "students", "Élèves"),
+    [ctx],
+  );
   const allowCreate = canCreate && !module?.planningManaged && module?.key !== "payments";
   const allowDelete = canDelete && !module?.planningManaged && module?.key !== "payments";
   const academicLists = useMemo(
@@ -287,6 +293,11 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
   const rows = useMemo(() => {
     if (!module) return [];
     let scoped = getScopedEntityRows(module.key, scopeUser, state);
+    if (classScope && module.key === "students") {
+      scoped = scoped.filter(
+        (row) => normalize(String(row.className ?? "")) === normalize(classScope),
+      );
+    }
     if (isParentChildMode) {
       scoped = scoped.filter(
         (row) => normalize(String(row.relationType ?? "")) === normalize(RELATION_PARENT_CHILD),
@@ -297,7 +308,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
     return scoped.filter((row) =>
       Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(q)),
     );
-  }, [module, search, scopeUser, state, isParentChildMode]);
+  }, [module, search, scopeUser, state, isParentChildMode, classScope]);
 
   useEffect(() => {
     if (module?.key === "announcements") {
@@ -528,6 +539,10 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
     }
 
     let workingItem = { ...editing };
+
+    if (classScope && module.key === "students") {
+      workingItem = { ...workingItem, className: classScope };
+    }
 
     if (module.planningManaged && editing.id) {
       const currentRows = getScopedEntityRows(module.key, scopeUser, state);
@@ -1038,24 +1053,43 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
   const displayFields = isParentChildMode
     ? module.fields.filter((field) => !PARENT_CHILD_HIDDEN_FIELDS.has(field.key))
     : module.fields;
+  const scopedStudentsList = useMemo(
+    () => scopedStudents(scopeUser, state),
+    [scopeUser, state],
+  );
+
+  const dataColumns: Column<Record<string, unknown>>[] = displayColumns.map((key) => ({
+    key,
+    header:
+      module.columnLabels?.[key] ??
+      (isParentChildMode && key === "fromContactName"
+        ? "Parent"
+        : module.fields.find((field) => field.key === key)?.label ?? key),
+    render: (row: Record<string, unknown>) => {
+      if (module.key === "teachers" && key === "publicId") {
+        const publicId = String(row.publicId ?? "").trim();
+        if (!publicId) return "—";
+        return `${publicId} · connexion : ${getTeacherLoginIdentifier(publicId)}`;
+      }
+      return String(row[key] ?? "—");
+    },
+  }));
+
+  if (module.key === "classes") {
+    dataColumns.push({
+      key: "studentCount",
+      header: "Effectif",
+      render: (row) => {
+        const count = scopedStudentsList.filter(
+          (student) => normalize(String(student.className ?? "")) === normalize(String(row.name ?? "")),
+        ).length;
+        return String(count);
+      },
+    });
+  }
 
   const columns: Column<Record<string, unknown>>[] = [
-    ...displayColumns.map((key) => ({
-      key,
-      header:
-        module.columnLabels?.[key] ??
-        (isParentChildMode && key === "fromContactName"
-          ? "Parent"
-          : module.fields.find((field) => field.key === key)?.label ?? key),
-      render: (row: Record<string, unknown>) => {
-        if (module.key === "teachers" && key === "publicId") {
-          const publicId = String(row.publicId ?? "").trim();
-          if (!publicId) return "—";
-          return `${publicId} · connexion : ${getTeacherLoginIdentifier(publicId)}`;
-        }
-        return String(row[key] ?? "—");
-      },
-    })),
+    ...dataColumns,
     {
       key: "actions",
       header: "Actions",
@@ -1080,6 +1114,16 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
             </>
           ) : (
             <>
+              {module.key === "classes" && studentsPermissions.canRead ? (
+                <Link
+                  to={`/etablissement/classes/${encodeURIComponent(String(row.name ?? ""))}/eleves`}
+                  className="inline-flex"
+                >
+                  <Button variant="secondary" size="sm" type="button">
+                    Élèves
+                  </Button>
+                </Link>
+              ) : null}
               {canUpdate ? (
                 <Button
                   variant="secondary"
@@ -1113,10 +1157,26 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
   return (
     <>
       <Card className="p-6">
+        {classScope ? (
+          <Link
+            to="/etablissement/classes"
+            className="mb-3 inline-flex text-sm font-semibold text-brand hover:underline"
+          >
+            ← Retour aux classes
+          </Link>
+        ) : null}
         <SectionHeader
-          title={isParentChildMode ? "Relations parent-enfant" : module.label}
+          title={
+            classScope
+              ? `Élèves — ${classScope}`
+              : isParentChildMode
+                ? "Relations parent-enfant"
+                : module.label
+          }
           description={
-            isParentChildMode
+            classScope
+              ? `Inscription et dossiers des élèves de la classe ${classScope}.`
+              : isParentChildMode
               ? school
                 ? `Associez un contact parent à un élève. Périmètre : ${school.name} (${school.code})`
                 : "Associez un contact parent à un élève de l'établissement."
@@ -1202,6 +1262,10 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
                       );
                       return;
                     }
+                    if (module.key === "students" && classScope) {
+                      setEditing({ className: classScope });
+                      return;
+                    }
                     setEditing({});
                   }}
                 >
@@ -1279,12 +1343,16 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
                   : isParentChildMode && field.key === "toStudentId"
                     ? "Élève"
                     : field.label;
+              const fieldLocked =
+                Boolean(field.readOnly) ||
+                (Boolean(classScope) && module.key === "students" && field.key === "className");
               return (
               <Field key={field.key} label={fieldLabel} htmlFor={field.key} hint={field.hint}>
                 {field.inputType === "select" ? (
                   <Select
                     id={field.key}
                     value={String(editing[field.key] ?? "")}
+                    disabled={fieldLocked}
                     onChange={(e) => {
                       const value = e.target.value;
                       if (
@@ -1310,8 +1378,8 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
                     id={field.key}
                     value={periodDateToInput(String(editing[field.key] ?? ""))}
                     required={field.required}
-                    readOnly={field.readOnly}
-                    disabled={field.readOnly}
+                    readOnly={fieldLocked}
+                    disabled={fieldLocked}
                     onChange={(v) =>
                       setEditing({ ...editing, [field.key]: inputToPeriodDate(v) })
                     }
@@ -1322,7 +1390,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
                     value={String(editing[field.key] ?? "")}
                     placeholder={field.placeholder}
                     required={field.required}
-                    readOnly={field.readOnly}
+                    readOnly={fieldLocked}
                     onChange={(e) => setEditing({ ...editing, [field.key]: e.target.value })}
                   />
                 )}

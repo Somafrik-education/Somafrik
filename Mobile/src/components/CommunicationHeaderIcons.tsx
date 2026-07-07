@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
+import { countUnreadAnnouncements, useAnnouncementsReadListener } from "../lib/announcementsRead";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -44,7 +45,8 @@ export default function CommunicationHeaderIcons({
   unreadMessages?: number;
 }) {
   const { session } = useAuth();
-  const { notificationsData } = useAdminData();
+  const { notificationsData, announcementsData } = useAdminData();
+  useAnnouncementsReadListener();
 
   const canMessages = canReadRoute(session, "Messages");
   const canAnnouncements = canReadRoute(session, "Announcements");
@@ -54,7 +56,10 @@ export default function CommunicationHeaderIcons({
     return null;
   }
 
-  const unreadNotifications = notificationsData.filter((item) => item.status === "Non lu").length;
+  const unreadNotifications = notificationsData.filter(
+    (item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read",
+  ).length;
+  const unreadAnnouncements = countUnreadAnnouncements(session?.user?.id, announcementsData);
 
   return (
     <View style={styles.row}>
@@ -70,6 +75,7 @@ export default function CommunicationHeaderIcons({
         <HeaderIconButton
           icon="megaphone-outline"
           label="Annonces"
+          count={unreadAnnouncements}
           onPress={() => navigation.navigate("Announcements")}
         />
       ) : null}

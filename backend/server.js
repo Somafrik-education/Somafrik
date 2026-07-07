@@ -143,6 +143,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/classes",
       "/api/courses",
       "/api/academic-config",
+      "/api/assignments",
       "/api/students",
       "/api/students/:id",
       "/api/students/:id/notes",
@@ -338,6 +339,46 @@ app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
   res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
 }));
 
+app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const scope = deriveSchoolScope(req.principal, state);
+  let rows = tenantScopeService.filterRows(state.assignments ?? [], req.principal, scope);
+
+  if (req.principal.role === "Enseignant") {
+    const { assignmentMatchesTeacher } = require("./services/authService");
+    const normalizeTeacherKey = (value) =>
+      String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+    const teacher = (state.teachers ?? []).find((item) => {
+      const userId = String(req.principal.sub ?? "").trim();
+      const identifier = normalizeTeacherKey(req.principal.identifier);
+      if (userId && String(item.userId ?? "") === userId) return true;
+      if (userId && String(item.id ?? "") === userId) return true;
+      if (identifier && normalizeTeacherKey(item.identifier) === identifier) return true;
+      return false;
+    });
+
+    if (teacher) {
+      rows = rows.filter((assignment) =>
+        assignmentMatchesTeacher(assignment, teacher, {
+          id: req.principal.sub,
+          firstName: req.principal.firstName,
+          lastName: req.principal.lastName,
+          name: req.principal.name,
+        }),
+      );
+    } else if ((req.principal.classNames ?? []).length) {
+      const classNames = new Set(req.principal.classNames);
+      rows = rows.filter((assignment) => classNames.has(assignment.className));
+    }
+  }
+
+  sendList(res, rows, req.query, ["className", "course", "teacherName", "teacherId"]);
+}));
+
 app.get("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
   const config = await repository.getAcademicConfig(req.principal.schoolCode);
   res.json(config);
@@ -377,14 +418,18 @@ app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
 app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
   const { notes, students } = await getAuthoritativeBackOfficeState();
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
-  res.json(student ? notes.filter((note) => note.studentId === student.id) : []);
+  if (!student) {
+    return res.json([]);
+  }
+  const studentIds = buildScopedStudentIdSet([student]);
+  res.json(notes.filter((note) => studentIds.has(String(note.studentId ?? ""))));
 }));
 
 app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
   const { notes, students } = await getAuthoritativeBackOfficeState();
   const scopedStudents = tenantScopeService.filterRows(students, req.principal);
-  const studentIds = new Set(scopedStudents.map((student) => student.id));
-  res.json(notes.filter((note) => studentIds.has(note.studentId)));
+  const studentIds = buildScopedStudentIdSet(scopedStudents);
+  res.json(notes.filter((note) => studentIds.has(String(note.studentId ?? ""))));
 }));
 
 app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
@@ -392,10 +437,10 @@ app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
   const { className, date } = req.query;
   const scopedStudents = tenantScopeService.filterRows(students, req.principal)
     .filter((student) => !className || student.className === className);
-  const studentIds = new Set(scopedStudents.map((student) => student.id));
+  const studentIds = buildScopedStudentIdSet(scopedStudents);
   res.json(
     presences.filter((presence) =>
-      studentIds.has(presence.studentId) &&
+      studentIds.has(String(presence.studentId ?? "")) &&
       (!date || String(presence.date) === String(date))
     )
   );
@@ -410,7 +455,19 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
 
 app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_presence"), asyncHandler(async (req, res) => {
   assertCanManagePresences(req.principal);
-  const saved = await repository.upsertAttendanceBatch(req.body ?? {}, req.principal);
+  const state = await getAuthoritativeBackOfficeState();
+  const body = req.body ?? {};
+  const batchClassName = String(body.className ?? "").trim();
+  const items = (Array.isArray(body.items) ? body.items : []).map((item) => {
+    const student = findStudent(state.students ?? [], item.studentId);
+    return {
+      ...item,
+      studentId: student?.matricule ?? student?.publicId ?? item.studentId,
+      className: String(item.className ?? batchClassName ?? student?.className ?? "").trim(),
+      schoolCode: item.schoolCode ?? student?.schoolCode ?? req.principal.schoolCode,
+    };
+  });
+  const saved = await repository.upsertAttendanceBatch({ ...body, items }, req.principal);
   await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
     count: saved.length,
     className: req.body?.className,
@@ -457,7 +514,11 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
 app.get("/api/students/:id/presences", requireAuth, asyncHandler(async (req, res) => {
   const { presences, students } = await getAuthoritativeBackOfficeState();
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
-  res.json(student ? presences.filter((presence) => presence.studentId === student.id) : []);
+  if (!student) {
+    return res.json([]);
+  }
+  const studentIds = buildScopedStudentIdSet([student]);
+  res.json(presences.filter((presence) => studentIds.has(String(presence.studentId ?? ""))));
 }));
 
 app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res) => {
@@ -877,6 +938,9 @@ async function getRuntime() {
     userAccounts: dataset.userAccounts,
     countries: dataset.countries,
     subscriptions: dataset.subscriptions ?? [],
+    assignments: storedState?.assignments?.length
+      ? storedState.assignments
+      : (dataset.teacherAssignments ?? []),
   });
   const gradeBookService = new GradeBookService({
     students: dataset.students,
@@ -1789,8 +1853,16 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
   );
   const bulletins = state.bulletins.filter((item) => belongsToScopedStudentOrSchool(item, schoolCodes, studentIds));
   const documents = state.documents.filter((item) => belongsToScopedStudentOrSchool(item, schoolCodes, studentIds));
-  const announcements = state.announcements.filter((item) => hasSchoolScope(item, schoolCodes));
-  const messages = state.messages.filter((item) => !item.studentId ? hasSchoolScope(item, schoolCodes) : belongsToScopedStudentOrSchool(item, schoolCodes, studentIds));
+  const announcements = state.announcements.filter(
+    (item) => isSystemBroadcastRow(item) || hasSchoolScope(item, schoolCodes),
+  );
+  const messages = state.messages.filter((item) =>
+    isSystemBroadcastRow(item)
+      ? true
+      : !item.studentId
+        ? hasSchoolScope(item, schoolCodes)
+        : belongsToScopedStudentOrSchool(item, schoolCodes, studentIds),
+  );
   const academicConfigs = Object.fromEntries(
     Object.entries(state.academicConfigs).filter(([schoolCode]) => schoolCodes.has(schoolCode))
   );
@@ -2109,6 +2181,7 @@ function mergeScopedBackOfficeState(
         scopedCurrent,
         touchedKeys,
       ),
+      notifications: mergeGlobalEntityIfTouched("notifications", current, requested, touchedKeys),
       rolePermissions: current.rolePermissions,
       deletedRows,
       updatedAt: new Date().toISOString(),
@@ -2172,7 +2245,7 @@ function mergeScopedBackOfficeState(
       : mergeScopedEntityIfTouched("subscriptions", current, scopedRequested, scopedCurrent, touchedKeys),
     contacts: mergeScopedEntityIfTouched("contacts", current, scopedRequested, scopedCurrent, touchedKeys),
     relations: mergeScopedEntityIfTouched("relations", current, scopedRequested, scopedCurrent, touchedKeys),
-    notifications: current.notifications,
+    notifications: mergeGlobalEntityIfTouched("notifications", current, requested, touchedKeys),
     students: mergeScopedEntityIfTouched("students", current, scopedRequested, scopedCurrent, touchedKeys),
     teachers:
       principal.role === "Admin School"
@@ -2286,6 +2359,14 @@ function mergeScopedRows(currentRows, requestedScopedRows, currentScopedRows) {
     ...requestedScopedRows,
     ...currentRows.filter((row) => !scopedKeys.has(rowKey(row)) && !requestedKeys.has(rowKey(row))),
   ];
+}
+
+/** Entités globales (non scopées établissement) : notifications plateforme, etc. */
+function mergeGlobalEntityIfTouched(entity, current, requested, touchedKeys) {
+  if (!touchedKeys.includes(entity)) {
+    return Array.isArray(current[entity]) ? current[entity] : [];
+  }
+  return mergeRowsByIdentity(current[entity] ?? [], requested[entity] ?? []);
 }
 
 /** Ne fusionne une entité scopée que si le client l'a incluse dans le PUT (évite d'effacer des données). */
@@ -2661,6 +2742,11 @@ function applyDeletedRows(state = {}, deletedRows = state.deletedRows ?? {}) {
   return nextState;
 }
 
+/** Diffusion système (Super Admin) : annonce/message visible par tous les établissements. */
+function isSystemBroadcastRow(row = {}) {
+  return row.systemBroadcast === true || String(row.scope ?? "").trim().toLowerCase() === "system";
+}
+
 function hasSchoolScope(row = {}, schoolCodes) {
   const rowCode = normalizeSchoolCodeKey(row.schoolCode ?? row.code ?? row.publicId);
   if (!rowCode) return false;
@@ -2806,7 +2892,12 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     countryScope: user.countryScope ?? "",
     permissions,
     studentIds: getPrincipalStudentIds(response),
-    classNames: user.assignedClasses ?? [],
+    classNames: [
+      ...new Set([
+        ...(user.assignedClasses ?? []),
+        ...((user.assignments ?? []).map((item) => item.className).filter(Boolean)),
+      ]),
+    ],
   };
 }
 
@@ -3012,17 +3103,31 @@ function sendList(res, rows, query, searchableFields) {
 }
 
 function findStudent(students, studentId) {
-  const direct = students.find((item) => item.id === studentId || item.publicId === studentId);
+  const key = String(studentId ?? "").trim();
+  const direct = students.find((item) =>
+    [item.id, item.publicId, item.matricule].some((value) => String(value ?? "").trim() === key),
+  );
 
   if (direct) {
     return direct;
   }
 
-  if (/^\d+$/.test(String(studentId))) {
-    return students[Number(studentId) - 1];
+  if (/^\d+$/.test(key)) {
+    return students[Number(key) - 1];
   }
 
   return undefined;
+}
+
+function buildScopedStudentIdSet(students = []) {
+  const ids = new Set();
+  for (const student of students) {
+    for (const value of [student.id, student.publicId, student.matricule]) {
+      const key = String(value ?? "").trim();
+      if (key) ids.add(key);
+    }
+  }
+  return ids;
 }
 
 function asyncHandler(handler) {

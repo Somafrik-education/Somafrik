@@ -392,8 +392,16 @@ class FallbackRepository {
       throw error;
     }
 
-    const student = seedData.students.find(
-      (item) => String(item.id) === String(payload.studentId) || item.matricule === payload.studentId
+    const state = (await this.getBackOfficeState()) ?? {};
+    const catalogStudents = [
+      ...(Array.isArray(state.students) ? state.students : []),
+      ...seedData.students,
+    ];
+    const student = catalogStudents.find(
+      (item) =>
+        String(item.id) === String(payload.studentId) ||
+        String(item.matricule) === String(payload.studentId) ||
+        String(item.publicId) === String(payload.studentId),
     );
     if (!student) {
       const error = new Error("Élève ou classe introuvable pour l'appel");
@@ -401,23 +409,44 @@ class FallbackRepository {
       throw error;
     }
 
-    if (principal.role === "Enseignant" && !(principal.classNames ?? []).includes(student.className)) {
-      const error = new Error("Accès refusé: élève hors classe affectée.");
-      error.statusCode = 403;
-      throw error;
+    const normalizeClassName = (value) =>
+      String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+
+    if (principal.role === "Enseignant") {
+      const classNames = principal.classNames ?? [];
+      const classAllowedByPrincipal =
+        classNames.length > 0 &&
+        classNames.some(
+          (className) => normalizeClassName(className) === normalizeClassName(student.className),
+        );
+      const classAllowedByBackOffice = this.teacherCanAccessClassFromBackOffice(principal, student, state);
+      if (!classAllowedByPrincipal && !classAllowedByBackOffice) {
+        const error = new Error("Accès refusé: élève hors classe affectée.");
+        error.statusCode = 403;
+        throw error;
+      }
     }
 
     const present = payload.present ?? !["Absent", "absent", "Excusé", "excused"].includes(payload.status);
     const status = payload.status ?? (present ? "Présent" : "Absent");
     const savedAt = new Date().toISOString();
+    const studentKeys = new Set(
+      [student.id, student.matricule, student.publicId, payload.studentId]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
     const existingIndex = this.presences.findIndex(
-      (item) => String(item.studentId) === String(student.id) && String(item.date) === String(payload.date)
+      (item) => studentKeys.has(String(item.studentId)) && String(item.date) === String(payload.date),
     );
 
     const next = {
       id: existingIndex >= 0 ? this.presences[existingIndex].id : `PRE-MEM-${Date.now()}`,
       publicId: existingIndex >= 0 ? this.presences[existingIndex].publicId : `PRE-MEM-${Date.now()}`,
-      studentId: String(student.id),
+      studentId: String(student.matricule ?? student.publicId ?? student.id),
       schoolCode: student.schoolCode,
       className: student.className,
       date: payload.date,
@@ -432,7 +461,57 @@ class FallbackRepository {
       this.presences.unshift(next);
     }
 
+    if (this.backOfficeState) {
+      this.backOfficeState = {
+        ...this.backOfficeState,
+        presences: clone(this.presences),
+      };
+    }
+
     return clone(next);
+  }
+
+  teacherCanAccessClassFromBackOffice(principal, student, state = {}) {
+    const normalizeClassName = (value) =>
+      String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+    const className = String(student.className ?? "").trim();
+    if (!className) return false;
+
+    const { assignmentMatchesTeacher } = require("../services/authService");
+    const principalSub = String(principal.sub ?? "").trim();
+    const principalIdentifier = normalizeClassName(principal.identifier);
+    const teacher =
+      (state.teachers ?? []).find((row) => {
+        if (principalSub && String(row.userId ?? "") === principalSub) return true;
+        if (principalSub && String(row.id ?? "") === principalSub) return true;
+        if (principalIdentifier && normalizeClassName(row.identifier) === principalIdentifier) return true;
+        return false;
+      }) ?? null;
+
+    const user = {
+      id: principalSub,
+      identifier: principal.identifier,
+      firstName: principal.firstName,
+      lastName: principal.lastName,
+      name: principal.name,
+    };
+
+    for (const assignment of state.assignments ?? []) {
+      if (normalizeClassName(assignment.className) !== normalizeClassName(className)) continue;
+      if (assignmentMatchesTeacher(assignment, teacher ?? {}, user)) return true;
+    }
+
+    for (const assignment of teacher?.assignments ?? []) {
+      if (normalizeClassName(assignment.className) === normalizeClassName(className)) return true;
+    }
+
+    return (principal.classNames ?? []).some(
+      (name) => normalizeClassName(name) === normalizeClassName(className),
+    );
   }
 
   async getSubjectsV2() {

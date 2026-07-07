@@ -3,9 +3,11 @@ import { NavLink } from "react-router-dom";
 import { Bell, Mail, Megaphone } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
+import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { displayRoleName, getInitials } from "../../lib/format";
 import { scopedNotifications } from "../../lib/scope";
 import { scopedMessages } from "../../lib/establishment";
+import { countUnreadAnnouncements, useAnnouncementsReadListener } from "../../lib/announcementsRead";
 import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { Button } from "../ui/Button";
@@ -47,9 +49,10 @@ function TopbarIcon({
 export function Topbar({ title }: { title: string }) {
   const { session, logout } = useAuth();
   const { state, loading, error, refresh } = useData();
+  const { scopedUser } = useActiveSchool();
   const ctx = usePermissionContext();
   const user = session?.user;
-  const scope = session?.scope;
+  const scopeUser = scopedUser ?? user ?? null;
 
   const canReadNotifications = canReadView(ctx, "notifications");
   const unreadCount = canReadNotifications
@@ -58,16 +61,20 @@ export function Topbar({ title }: { title: string }) {
 
   const canReadMessages = canReadView(ctx, "messages");
   const unreadMessages = canReadMessages
-    ? scopedMessages(user ?? null, state).filter((m) => String(m.status ?? "") !== "Lu").length
+    ? scopedMessages(scopeUser, state).filter((m) => String(m.status ?? "") !== "Lu").length
     : 0;
 
   const canReadAnnouncements = canReadView(ctx, "announcements");
+  useAnnouncementsReadListener();
+  const unreadAnnouncements = canReadAnnouncements
+    ? countUnreadAnnouncements(scopeUser, state)
+    : 0;
 
   return (
     <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-line bg-white/90 px-6 py-3 backdrop-blur">
       <div>
         <h1 className="text-lg font-bold text-ink">{title}</h1>
-        {scope?.label ? <p className="text-xs text-muted">{scope.label}</p> : null}
+        {session?.scope?.label ? <p className="text-xs text-muted">{session.scope.label}</p> : null}
       </div>
 
       <div className="flex items-center gap-3">
@@ -86,7 +93,7 @@ export function Topbar({ title }: { title: string }) {
           </TopbarIcon>
         ) : null}
         {canReadAnnouncements ? (
-          <TopbarIcon to="/annonces" label="Annonces">
+          <TopbarIcon to="/annonces" label="Annonces" count={unreadAnnouncements}>
             <Megaphone className="h-5 w-5" strokeWidth={1.8} />
           </TopbarIcon>
         ) : null}

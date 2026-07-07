@@ -790,6 +790,293 @@ class PostgresRepository {
     return this.getGradeById(inserted.id);
   }
 
+  normalizeComparableText(value) {
+    return String(value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  classNamesInclude(classNames, className) {
+    const target = this.normalizeComparableText(className);
+    if (!target) return false;
+    return (classNames ?? []).some((name) => this.normalizeComparableText(name) === target);
+  }
+
+  async findBackOfficeStudentRecord(studentKey) {
+    const state = (await this.getBackOfficeState()) ?? {};
+    const students = Array.isArray(state.students) ? state.students : [];
+    const key = String(studentKey ?? "").trim();
+    if (!key) return null;
+    return (
+      students.find((student) =>
+        [student.id, student.publicId, student.matricule].some(
+          (candidate) => String(candidate ?? "").trim() === key,
+        ),
+      ) ?? null
+    );
+  }
+
+  collectStudentLookupKeys(studentKey, backOfficeStudent) {
+    const keys = new Set();
+    const add = (value) => {
+      const text = String(value ?? "").trim();
+      if (text) keys.add(text);
+    };
+    add(studentKey);
+    if (backOfficeStudent) {
+      add(backOfficeStudent.id);
+      add(backOfficeStudent.publicId);
+      add(backOfficeStudent.matricule);
+    }
+    return [...keys];
+  }
+
+  async queryStudentWithClass(studentKey, schoolCode) {
+    const backOfficeStudent = await this.findBackOfficeStudentRecord(studentKey);
+    const lookupKeys = this.collectStudentLookupKeys(studentKey, backOfficeStudent);
+
+    for (const key of lookupKeys) {
+      const params = [key];
+      let sql = `
+        SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
+        FROM students st
+        JOIN schools s ON s.id = st.school_id
+        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+        LEFT JOIN classes cl ON cl.id = e.class_id
+        WHERE (st.student_code = $1 OR st.id::text = $1)`;
+      if (schoolCode && schoolCode !== "*") {
+        sql += ` AND s.school_code = $2`;
+        params.push(String(schoolCode).trim().toUpperCase());
+      }
+      sql += ` LIMIT 1`;
+      const row = await this.one(sql, params);
+      if (row) return { row, backOfficeStudent };
+    }
+
+    return { row: null, backOfficeStudent };
+  }
+
+  async getCurrentAcademicYear(schoolId) {
+    const current = await this.one(
+      `SELECT *
+       FROM academic_years
+       WHERE school_id = $1 AND status IN ('active', 'open')
+       ORDER BY is_current DESC, created_at DESC
+       LIMIT 1`,
+      [schoolId],
+    );
+    if (current) return current;
+
+    const year = new Date().getFullYear();
+    return this.one(
+      `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
+       VALUES ($1, $2, $3, $4, TRUE, 'open')
+       ON CONFLICT (school_id, name) DO UPDATE SET is_current = TRUE
+       RETURNING *`,
+      [schoolId, `${year}-${year + 1}`, `${year}-09-01`, `${year + 1}-08-31`],
+    );
+  }
+
+  async ensureClassForSchool(schoolId, className) {
+    const normalizedClassName = String(className ?? "").trim();
+    if (!normalizedClassName) return null;
+
+    const existing = await this.one(
+      `SELECT cl.id
+       FROM classes cl
+       WHERE cl.school_id = $1
+         AND LOWER(TRIM(cl.name)) = LOWER(TRIM($2))
+       ORDER BY cl.created_at DESC
+       LIMIT 1`,
+      [schoolId, normalizedClassName],
+    );
+    if (existing?.id) return existing.id;
+
+    const state = (await this.getBackOfficeState()) ?? {};
+    const backOfficeClass = (Array.isArray(state.classes) ? state.classes : []).find(
+      (row) => this.normalizeComparableText(row.name) === this.normalizeComparableText(normalizedClassName),
+    );
+    const academicYear = await this.getCurrentAcademicYear(schoolId);
+    if (!academicYear) return null;
+
+    const classCode = String(
+      backOfficeClass?.publicId ??
+        backOfficeClass?.id ??
+        `CLS-${normalizedClassName.replace(/\s+/g, "-").toUpperCase()}`,
+    ).trim();
+    const inserted = await this.one(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, level, section, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active')
+       ON CONFLICT (class_code) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+      [
+        schoolId,
+        academicYear.id,
+        classCode,
+        normalizedClassName,
+        backOfficeClass?.level ?? "",
+        backOfficeClass?.track ?? backOfficeClass?.section ?? "",
+      ],
+    );
+    return inserted?.id ?? null;
+  }
+
+  async ensureActiveEnrollment(schoolId, studentDbId, classId) {
+    if (!studentDbId || !classId) return;
+    const academicYear = await this.getCurrentAcademicYear(schoolId);
+    if (!academicYear) return;
+    await this.pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, enrollment_date, status)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
+       ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
+         class_id = EXCLUDED.class_id,
+         status = 'active'`,
+      [schoolId, studentDbId, classId, academicYear.id],
+    );
+  }
+
+  async materializeBackOfficeStudent(record) {
+    const schoolCode = String(record.schoolCode ?? "").trim().toUpperCase();
+    const school = await this.getSchoolByCode(schoolCode);
+    if (!school) return null;
+
+    const matricule = String(record.matricule ?? record.publicId ?? record.id ?? "").trim();
+    if (!matricule) return null;
+
+    const nameParts = String(record.name ?? "").trim().split(/\s+/).filter(Boolean);
+    const firstName = String(record.firstName ?? nameParts[0] ?? "Eleve").trim();
+    const lastName = String(record.lastName ?? nameParts.slice(1).join(" ") ?? "Somafrik").trim();
+
+    const row = await this.one(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
+       VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, $9)
+       ON CONFLICT (student_code) DO UPDATE SET
+         first_name = EXCLUDED.first_name,
+         last_name = EXCLUDED.last_name,
+         parent_phone = EXCLUDED.parent_phone,
+         parent_email = EXCLUDED.parent_email
+       RETURNING id, school_id`,
+      [
+        school.id,
+        matricule,
+        firstName,
+        lastName,
+        record.gender ?? "Non renseigné",
+        this.parseDate(record.birthDate),
+        record.parentPhone ?? "",
+        record.parentEmail ?? "",
+        record.archived ? "archived" : "active",
+      ],
+    );
+
+    const className = String(record.className ?? "").trim();
+    const classId = await this.ensureClassForSchool(school.id, className);
+    if (classId) {
+      await this.ensureActiveEnrollment(school.id, row.id, classId);
+    }
+    return row.id;
+  }
+
+  async resolveStudentForAttendance(payload, principal = {}) {
+    const schoolCode = String(payload.schoolCode ?? principal.schoolCode ?? "").trim().toUpperCase();
+    const className = String(payload.className ?? "").trim();
+    let { row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, schoolCode);
+
+    if (!student && backOfficeStudent) {
+      const materializedId = await this.materializeBackOfficeStudent(backOfficeStudent);
+      if (materializedId) {
+        ({ row: student } = await this.queryStudentWithClass(materializedId, schoolCode));
+      }
+    }
+
+    if (!student) return null;
+
+    if (!student.class_id) {
+      const targetClassName = className || backOfficeStudent?.className || student.class_name;
+      const classId = await this.ensureClassForSchool(student.school_id, targetClassName);
+      if (classId) {
+        await this.ensureActiveEnrollment(student.school_id, student.id, classId);
+        ({ row: student } = await this.queryStudentWithClass(student.student_code, schoolCode));
+      }
+    }
+
+    return student;
+  }
+
+  async teacherCanAccessClassFromBackOffice(principal, student) {
+    const state = (await this.getBackOfficeState()) ?? {};
+    const className = String(student.class_name ?? "").trim();
+    if (!className) return false;
+
+    const { assignmentMatchesTeacher } = require("../services/authService");
+    const principalSub = String(principal.sub ?? "").trim();
+    const principalIdentifier = this.normalizeComparableText(principal.identifier);
+    const teacher =
+      (state.teachers ?? []).find((row) => {
+        if (principalSub && String(row.userId ?? "") === principalSub) return true;
+        if (principalSub && String(row.id ?? "") === principalSub) return true;
+        if (principalIdentifier && this.normalizeComparableText(row.identifier) === principalIdentifier) {
+          return true;
+        }
+        return false;
+      }) ?? null;
+
+    const user = {
+      id: principalSub,
+      identifier: principal.identifier,
+      firstName: principal.firstName,
+      lastName: principal.lastName,
+      name: principal.name,
+    };
+
+    for (const assignment of state.assignments ?? []) {
+      if (!this.classNamesInclude([assignment.className], className)) continue;
+      if (assignmentMatchesTeacher(assignment, teacher ?? {}, user)) return true;
+    }
+
+    for (const assignment of teacher?.assignments ?? []) {
+      if (this.classNamesInclude([assignment.className], className)) return true;
+    }
+
+    return this.classNamesInclude(principal.classNames, className);
+  }
+
+  async teacherCanAccessStudentClass(principal, student) {
+    if (principal.role !== "Enseignant") return true;
+    if (this.classNamesInclude(principal.classNames, student.class_name)) return true;
+
+    const teacher = await this.one(
+      `SELECT t.id
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       WHERE t.school_id = $1
+         AND (
+           t.teacher_code = $2
+           OR u.user_code = $2
+           OR u.id::text = $2
+           OR t.id::text = $2
+         )
+       LIMIT 1`,
+      [student.school_id, String(principal.sub ?? principal.publicId ?? principal.identifier ?? "")],
+    );
+    if (teacher?.id && student.class_id) {
+      const assignment = await this.one(
+        `SELECT 1 AS ok
+         FROM teacher_assignments ta
+         WHERE ta.teacher_id = $1
+           AND ta.class_id = $2
+           AND ta.status = 'active'
+         LIMIT 1`,
+        [teacher.id, student.class_id],
+      );
+      if (assignment) return true;
+    }
+
+    return this.teacherCanAccessClassFromBackOffice(principal, student);
+  }
+
   async upsertAttendanceBatch(payload = {}, principal = {}) {
     await this.init();
     const items = Array.isArray(payload.items) ? payload.items : [];
@@ -814,22 +1101,14 @@ class PostgresRepository {
       throw error;
     }
 
-    const student = await this.one(
-      `SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
-       FROM students st
-       JOIN schools s ON s.id = st.school_id
-       LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
-       LEFT JOIN classes cl ON cl.id = e.class_id
-       WHERE st.student_code = $1 OR st.id::text = $1`,
-      [String(payload.studentId)]
-    );
+    const student = await this.resolveStudentForAttendance(payload, principal);
     if (!student || !student.class_id) {
       const error = new Error("Élève ou classe introuvable pour l'appel");
       error.statusCode = 404;
       throw error;
     }
 
-    if (principal.role === "Enseignant" && !(principal.classNames ?? []).includes(student.class_name)) {
+    if (!(await this.teacherCanAccessStudentClass(principal, student))) {
       const error = new Error("Accès refusé: élève hors classe affectée.");
       error.statusCode = 403;
       throw error;
@@ -2171,16 +2450,23 @@ class PostgresRepository {
   }
 
   async findTeacherForAttendance(schoolId, teacherCode, classId, principalRole) {
-    const assignedTeacher = teacherCode
+    const lookupCode = String(teacherCode ?? "").trim();
+    const assignedTeacher = lookupCode
       ? await this.one(
           `SELECT t.*
            FROM teachers t
-           JOIN teacher_assignments ta ON ta.teacher_id = t.id
+           LEFT JOIN users u ON u.id = t.user_id
+           LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.class_id = $3
            WHERE t.school_id = $1
-             AND t.teacher_code = $2
-             AND ta.class_id = $3
+             AND (
+               t.teacher_code = $2
+               OR u.user_code = $2
+               OR u.id::text = $2
+               OR t.id::text = $2
+             )
+           ORDER BY CASE WHEN ta.id IS NULL THEN 1 ELSE 0 END, t.created_at
            LIMIT 1`,
-          [schoolId, String(teacherCode), classId]
+          [schoolId, lookupCode, classId],
         )
       : null;
 

@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { getTeacherById, timetable } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import { classNameMatches, teacherScopedClassNames } from "../lib/establishment";
+import { normalize } from "../lib/format";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
@@ -12,20 +14,22 @@ export default function TimetableScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData } = useAdminData();
+  const { studentsData, teachersData, assignmentsData, classesData } = useAdminData();
+  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const rows = useMemo(() => {
     if (session?.role === "teacher") {
-      const assignedClasses = session.user.assignedClasses ?? [];
-      return timetable.filter((item) => assignedClasses.includes(item.className));
+      const scopedClasses = teacherScopedClassNames(session, teacherScopeState);
+      if (!scopedClasses) return timetable;
+      return timetable.filter((item) => scopedClasses.has(normalize(item.className)));
     }
 
     if ((session?.role === "parent_student" || session?.role === "student") && selectedStudentId) {
       const student = studentsData.find((item) => item.id === selectedStudentId);
-      return timetable.filter((item) => item.className === student?.className);
+      return timetable.filter((item) => classNameMatches(item.className, student?.className));
     }
 
     return timetable;
-  }, [selectedStudentId, session, studentsData]);
+  }, [assignmentsData, classesData, selectedStudentId, session, studentsData, teachersData]);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>

@@ -17,12 +17,16 @@ Write-Host "=== Somafrik Mobile (Expo sur PC) ===" -ForegroundColor Cyan
 & (Join-Path $root "scripts\open-firewall-dev.ps1")
 
 $envMap = @{}
-foreach ($line in Get-Content ".env") {
-  $t = $line.Trim()
-  if (-not $t -or $t.StartsWith("#")) { continue }
-  $eq = $t.IndexOf("=")
-  if ($eq -le 0) { continue }
-  $envMap[$t.Substring(0, $eq).Trim()] = $t.Substring($eq + 1).Trim()
+$mobileEnvPath = Join-Path $root "Mobile\.env.local"
+foreach ($path in @($mobileEnvPath, (Join-Path $root ".env"))) {
+  if (-not (Test-Path $path)) { continue }
+  foreach ($line in Get-Content $path) {
+    $t = $line.Trim()
+    if (-not $t -or $t.StartsWith("#")) { continue }
+    $eq = $t.IndexOf("=")
+    if ($eq -le 0) { continue }
+    $envMap[$t.Substring(0, $eq).Trim()] = $t.Substring($eq + 1).Trim()
+  }
 }
 
 $hostIp = $envMap["REACT_NATIVE_PACKAGER_HOSTNAME"]

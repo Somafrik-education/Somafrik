@@ -14,6 +14,7 @@ import type { PlatformNotification } from "../types";
 
 const AUDIENCE_OPTIONS = [
   "Tous",
+  "Super Administrateur Somafrik",
   "Admin Pays",
   "Administrateurs Établissement",
   "Enseignants",
@@ -63,6 +64,13 @@ export function NotificationsPage() {
       id: newId(),
       date: new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
       createdBy: session?.user?.identifier ?? session?.user?.email ?? "Plateforme",
+      countryCode:
+        composing.countryCode ??
+        (session?.user?.role === "Admin Pays" ? session.user.countryScope : undefined),
+      audience:
+        composing.type === "Système" && session?.user?.role === "Admin Pays"
+          ? "Super Administrateur Somafrik"
+          : composing.audience,
     };
     const next = [notification, ...state.notifications];
     try {

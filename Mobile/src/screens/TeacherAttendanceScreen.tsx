@@ -4,9 +4,18 @@ import { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
-import { canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
+import { canManagePresences, canReadRoute } from "../domain/security/permissions";
+import {
+  classNameMatches,
+  filterStudentsByClassName,
+  resolveStudentApiId,
+  resolveTeacherAssignmentsForSession,
+  scopedStudentsForSession,
+  teacherScopedClassLabels,
+} from "../lib/establishment";
 import { savePresences } from "../services/api";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 
 type AttendanceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
 
@@ -31,15 +40,36 @@ type SavedCall = {
 
 export default function TeacherAttendanceScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
-  const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
+  const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
+  const contentStyle = [
+    styles.content,
+    {
+      paddingBottom: scrollContentPaddingBottom,
+      paddingHorizontal: horizontalPadding,
+      maxWidth: contentMaxWidth,
+      alignSelf: "center" as const,
+      width: "100%",
+    },
+  ];
   const { session } = useAuth();
-  const { studentsData, classesData, presencesData, upsertPresenceItems } = useAdminData();
-  const assignedClasses =
-    session?.role === "teacher"
-      ? uniqueValues(session?.user.assignedClasses ?? [])
-      : uniqueValues(classesData.map((schoolClass) => schoolClass.name));
-  const assignments = session?.user.assignments ?? [];
-  const classStudents = studentsData.filter((student) => assignedClasses.includes(student.className));
+  const { studentsData, classesData, presencesData, teachersData, assignmentsData, upsertPresenceItems } =
+    useAdminData();
+  const scopeState = useMemo(
+    () => ({ teachers: teachersData, assignments: assignmentsData, classes: classesData }),
+    [teachersData, assignmentsData, classesData],
+  );
+  const classStudents = useMemo(
+    () => scopedStudentsForSession(session, studentsData, scopeState),
+    [session, studentsData, scopeState],
+  );
+  const assignedClasses = useMemo(
+    () => teacherScopedClassLabels(session, classStudents, scopeState),
+    [session, classStudents, scopeState],
+  );
+  const assignments = useMemo(
+    () => resolveTeacherAssignmentsForSession(session, assignmentsData),
+    [session, assignmentsData],
+  );
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
   const [auditLog, setAuditLog] = useState<string[]>([]);
@@ -48,7 +78,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       classStudents.map((student) => {
         const latest = [...presencesData]
           .reverse()
-          .find((presence) => presence.studentId === student.id);
+          .find((presence) => presenceMatchesStudent(presence, student));
         return [
           student.id,
           {
@@ -65,10 +95,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     presencesData.filter((presence) => sameDay(presence.date, todayLabel)),
     studentsData
   );
-  const selectedRows = selectedClass
-    ? classStudents.filter((student) => student.className === selectedClass)
-    : [];
-  const canUpdatePresences = hasSecurityPermission(session, "Présences", "UPDATE");
+  const selectedRows = selectedClass ? filterStudentsByClassName(classStudents, selectedClass) : [];
+  const canUpdatePresences = canManagePresences(session);
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
 
   const dailyStats = useMemo(() => {
@@ -110,7 +138,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return;
     }
 
-    const rows = classStudents.filter((student) => student.className === className);
+    const rows = filterStudentsByClassName(classStudents, className);
     setAttendance((current) => ({
       ...current,
       ...Object.fromEntries(
@@ -128,7 +156,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return;
     }
 
-    const rows = classStudents.filter((student) => student.className === className);
+    const rows = filterStudentsByClassName(classStudents, className);
     if (!rows.length) {
       Alert.alert(
         "Aucun élève chargé",
@@ -137,7 +165,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return;
     }
 
-    const classAssignments = assignments.filter((assignment) => assignment.className === className);
+    const classAssignments = assignments.filter((assignment) => classNameMatches(assignment.className, className));
     const entries = Object.fromEntries(
       rows.map((student) => [student.id, attendance[student.id] ?? { status: "Présent" }])
     );
@@ -147,12 +175,13 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
     const presencePayload = rows.map((student) => {
         const entry = entries[student.id] ?? { status: "Présent" };
+        const studentApiId = String(student.id ?? resolveStudentApiId(student));
         return {
-          id: `PRE-${todayLabel}-${student.id}`,
-          publicId: `PRE-${todayLabel}-${student.id}`,
+          id: `PRE-${todayLabel}-${studentApiId}`,
+          publicId: `PRE-${todayLabel}-${studentApiId}`,
           schoolCode: student.schoolCode,
-          studentId: student.id,
-          className: student.className,
+          studentId: studentApiId,
+          className: student.className ?? className,
           date: todayLabel,
           present: entry.status === "Présent" || entry.status === "Retard",
           status: entry.status,
@@ -207,18 +236,19 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       {!selectedClass && (
         <>
           <Text style={styles.sectionTitle}>Mes classes</Text>
+          <View style={isTablet ? styles.classGridTablet : undefined}>
           {assignedClasses.map((className, index) => {
-            const rows = classStudents.filter((student) => student.className === className);
+            const rows = filterStudentsByClassName(classStudents, className);
             const classCourses = assignments
-              .filter((assignment) => assignment.className === className)
+              .filter((assignment) => classNameMatches(assignment.className, className))
               .map((assignment) => assignment.course);
-            const savedCount = todayCallGroups.filter((call) => call.className === className).length;
+            const savedCount = todayCallGroups.filter((call) => classNameMatches(call.className, className)).length;
 
             return (
               <TouchableOpacity
                 key={`${className}-${index}`}
                 activeOpacity={0.85}
-                style={styles.selectClassCard}
+                style={[styles.selectClassCard, isTablet && styles.selectClassCardTablet]}
                 onPress={() => setSelectedClass(className)}
               >
                 <View style={styles.selectClassIcon}>
@@ -233,6 +263,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
               </TouchableOpacity>
             );
           })}
+          </View>
         </>
       )}
 
@@ -255,9 +286,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           </View>
 
       {[selectedClass].map((className, index) => {
-        const rows = classStudents.filter((student) => student.className === className);
+        const rows = filterStudentsByClassName(classStudents, className);
         const classCourses = assignments
-          .filter((assignment) => assignment.className === className)
+          .filter((assignment) => classNameMatches(assignment.className, className))
           .map((assignment) => assignment.course);
         const classStats = getPresenceStats(
           rows.map((student) => ({
@@ -335,10 +366,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         <View style={styles.reportCard}>
           <Text style={styles.reportTitle}>Historique synchronisé</Text>
           <Text style={styles.meta}>
-            {todayCallGroups.filter((call) => call.className === selectedClass).length} appel(s) enregistré(s) pour {selectedClass}
+            {todayCallGroups.filter((call) => classNameMatches(call.className, selectedClass)).length} appel(s) enregistré(s) pour {selectedClass}
           </Text>
           {todayCallGroups
-            .filter((call) => call.className === selectedClass)
+            .filter((call) => classNameMatches(call.className, selectedClass))
             .slice(0, 3)
             .map((call) => (
               <Text key={call.id} style={styles.auditRow}>
@@ -385,6 +416,17 @@ function getNextStatus(status: AttendanceStatus): AttendanceStatus {
   return "Présent";
 }
 
+function studentPresenceKeys(student: { id?: string; matricule?: string; publicId?: string }) {
+  return [student.id, student.matricule, student.publicId]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function presenceMatchesStudent(presence: { studentId?: string }, student: { id?: string; matricule?: string; publicId?: string }) {
+  const presenceId = String(presence.studentId ?? "").trim();
+  return studentPresenceKeys(student).includes(presenceId);
+}
+
 function formatDate(date: Date) {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -395,12 +437,13 @@ function formatHour(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-function uniqueValues(values: string[]) {
-  return [...new Set(values.filter(Boolean))];
-}
 
 function groupAttendanceCalls(presences: any[], students: any[]) {
-  const studentClassById = new Map(students.map((student) => [student.id, student.className]));
+  const studentClassById = new Map<string, string>();
+  students.forEach((student) => {
+    const className = String(student.className ?? "").trim();
+    studentPresenceKeys(student).forEach((key) => studentClassById.set(key, className));
+  });
   const groups = new Map<string, { id: string; date: string; className: string; total: number; attended: number }>();
 
   presences.forEach((presence) => {
@@ -451,6 +494,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
+  },
+  selectClassCardTablet: {
+    width: "48%",
+    marginHorizontal: "1%",
+  },
+  classGridTablet: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
   selectClassIcon: {
     width: 50,

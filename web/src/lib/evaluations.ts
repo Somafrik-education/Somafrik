@@ -11,7 +11,12 @@ import type {
 import { resolveActivePeriodName } from "./academicPeriods";
 import { appendAuditLog, auditActor, makeAuditEntry } from "./audit";
 import { todayPeriodDate } from "./dates";
-import { scopedCourses, scopedStudents, scopedTeachers } from "./establishment";
+import {
+  resolveTeacherRecordForUser,
+  scopedCourses,
+  scopedStudents,
+  teacherScopedClassNames,
+} from "./establishment";
 import { formatStudentName, GradeBookService } from "./gradeBook";
 import { normalize } from "./format";
 import { isSuperAdminRole } from "./orgHierarchy";
@@ -105,11 +110,41 @@ export function resolveDefaultPeriod(state: BackOfficeState, schoolCode: string)
   return active ?? "Trimestre 1";
 }
 
+/** Période affichée par défaut : privilégie une période qui contient déjà des notes. */
+export function resolveGradesPeriod(
+  state: BackOfficeState,
+  schoolCode: string,
+  user: SessionUser | null,
+): string {
+  const normalizedSchool = normalize(schoolCode);
+  const grades = scopedGrades(user, state).filter((grade) => {
+    if (!normalizedSchool) return true;
+    const gradeSchool = normalize(String(grade.schoolCode ?? ""));
+    return !gradeSchool || gradeSchool === normalizedSchool;
+  });
+  const periodCounts = new Map<string, number>();
+  for (const grade of grades) {
+    const periodName = String(grade.period ?? "").trim();
+    if (!periodName) continue;
+    periodCounts.set(periodName, (periodCounts.get(periodName) ?? 0) + 1);
+  }
+  if (periodCounts.size) {
+    return [...periodCounts.entries()].sort((left, right) => right[1] - left[1])[0][0];
+  }
+  return resolveDefaultPeriod(state, schoolCode);
+}
+
 export function scopedEvaluations(user: SessionUser | null, state: BackOfficeState): Evaluation[] {
   const schoolCode = String(user?.schoolCode ?? "").trim();
-  const rows = (state.evaluations ?? []).filter((row) => row.active !== false);
-  if (!schoolCode || schoolCode === "*") return rows;
-  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+  let rows = (state.evaluations ?? []).filter((row) => row.active !== false);
+  if (schoolCode && schoolCode !== "*") {
+    rows = rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+  }
+  const teacherClasses = teacherScopedClassNames(user, state);
+  if (teacherClasses) {
+    rows = rows.filter((row) => teacherClasses.has(normalize(row.className)));
+  }
+  return rows;
 }
 
 export function legacyNotesToGrades(notes: unknown[]): StudentGrade[] {
@@ -173,8 +208,19 @@ export function allGrades(state: BackOfficeState): StudentGrade[] {
 }
 
 export function scopedGrades(user: SessionUser | null, state: BackOfficeState): StudentGrade[] {
-  const studentIds = new Set(scopedStudents(user, state).map((row) => String(row.id ?? "")));
-  return allGrades(state).filter((grade) => studentIds.has(grade.studentId));
+  const students = scopedStudents(user, state);
+  const studentIds = new Set(students.map((row) => String(row.id ?? "")).filter(Boolean));
+  const studentIdByName = new Map(
+    students.map((row) => [normalize(String(row.name ?? "")), String(row.id ?? "")]),
+  );
+
+  return allGrades(state)
+    .map((grade) => {
+      if (grade.studentId) return grade;
+      const resolved = studentIdByName.get(normalize(grade.studentName));
+      return resolved ? { ...grade, studentId: resolved } : grade;
+    })
+    .filter((grade) => grade.studentId && studentIds.has(grade.studentId));
 }
 
 export function gradesForEvaluation(grades: StudentGrade[], evaluationId: string): StudentGrade[] {
@@ -226,8 +272,7 @@ export function teacherCanAccessEvaluation(
     return true;
   }
   if (role.includes("enseignant") || role.includes("teacher")) {
-    const teachers = scopedTeachers(user, state);
-    const teacher = teachers.find((row) => String(row.id) === String(user.id));
+    const teacher = resolveTeacherRecordForUser(user, state);
     if (!teacher) return false;
     const teacherName = `${String(teacher.firstName ?? "")} ${String(teacher.lastName ?? "")}`.trim();
     if (evaluation.teacherId && String(evaluation.teacherId) === String(teacher.id)) return true;

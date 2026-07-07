@@ -44,6 +44,7 @@ import { FinancesLayout } from "./pages/finances/FinancesLayout";
 import { FinanceFeesPage } from "./pages/finances/FinanceFeesPage";
 import { FinanceUnpaidPage } from "./pages/finances/FinanceUnpaidPage";
 import { MonEtablissementLayout } from "./pages/etablissement/MonEtablissementLayout";
+import { ClassStudentsPage } from "./pages/etablissement/ClassStudentsPage";
 import { ParentChildRelationsPage } from "./pages/etablissement/ParentChildRelationsPage";
 import { AdministrationLayout } from "./pages/administration/AdministrationLayout";
 import { ParametresLayout } from "./pages/parametres/ParametresLayout";
@@ -107,13 +108,22 @@ export default function App() {
             }
           />
           <Route
-            path="matieres"
+            path="classes/:className/eleves"
             element={
-              <PermissionRoute view="courses">
-                <EntityPage entity="courses" />
+              <PermissionRoute view="students">
+                <ClassStudentsPage />
               </PermissionRoute>
             }
           />
+          <Route
+            path="affectations"
+            element={
+              <PermissionRoute view="assignments">
+                <EntityPage entity="assignments" />
+              </PermissionRoute>
+            }
+          />
+          <Route path="matieres" element={<Navigate to="affectations" replace />} />
           <Route
             path="eleves"
             element={
@@ -149,7 +159,7 @@ export default function App() {
         </Route>
         {/* Anciennes URLs établissement -> onglets */}
         <Route path="/classes" element={<Navigate to="/etablissement/classes" replace />} />
-        <Route path="/matieres" element={<Navigate to="/etablissement/matieres" replace />} />
+        <Route path="/matieres" element={<Navigate to="/etablissement/affectations" replace />} />
         <Route path="/eleves" element={<Navigate to="/etablissement/eleves" replace />} />
         <Route path="/enseignants" element={<Navigate to="/etablissement/enseignants" replace />} />
         <Route path="/contacts" element={<Navigate to="/etablissement/contacts" replace />} />
@@ -168,7 +178,7 @@ export default function App() {
             </PermissionRoute>
           }
         />
-        <Route path="/affectations" element={<Navigate to="/etablissement/matieres" replace />} />
+        <Route path="/affectations" element={<Navigate to="/etablissement/affectations" replace />} />
         <Route
           path="/planning"
           element={
@@ -178,7 +188,7 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="emploi-du-temps" replace />} />
-          <Route path="affectations" element={<Navigate to="/etablissement/matieres" replace />} />
+          <Route path="affectations" element={<Navigate to="/etablissement/affectations" replace />} />
           <Route path="emploi-du-temps" element={<TimetableLayout />}>
             <Route index element={<Navigate to="calendrier" replace />} />
             <Route path="par-classe" element={<TimetableByClassPage />} />

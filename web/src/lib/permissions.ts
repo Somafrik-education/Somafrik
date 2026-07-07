@@ -21,7 +21,11 @@ import {
   isSuperAdminAllowedView,
 } from "./superAdminAccess";
 import { canManageFeeGrids, canViewFeeGrids, canViewStudentFees } from "./fees";
-import { isEstablishmentCommunicationUser } from "./establishmentCommunication";
+import {
+  isEstablishmentCommunicationUser,
+  isPlatformCommunicationFeature,
+  isPlatformCommunicationUser,
+} from "./establishmentCommunication";
 
 const SCHOOL_ADMIN_FORBIDDEN_FEATURES = new Set(["Établissements", "Abonnements"]);
 
@@ -142,6 +146,13 @@ function countryPrivilegeAllowsRead(normalizedFeature: string): boolean {
   return COUNTRY_PRIVILEGE_FEATURES.has(normalizedFeature);
 }
 
+function matchesPresenceLegacyPermission(normalizedPermission: string, action: string): boolean {
+  if (!normalizedPermission.includes("appel")) return false;
+  if (action === "READ") return true;
+  if (normalizedPermission.includes("gerer")) return true;
+  return action === "CREATE" || action === "UPDATE";
+}
+
 function permissionMatchesFeature(
   normalizedPermission: string,
   normalizedFeature: string,
@@ -151,6 +162,12 @@ function permissionMatchesFeature(
     return action === "READ" && countryPrivilegeAllowsRead(normalizedFeature);
   }
   if (normalizedPermission === "all-privileges") {
+    return true;
+  }
+  if (
+    normalizedFeature === "presences" &&
+    matchesPresenceLegacyPermission(normalizedPermission, action)
+  ) {
     return true;
   }
   if (!normalizedPermission.includes(normalizedFeature)) {
@@ -174,7 +191,8 @@ function permissionMatchesFeature(
       normalizedPermission.includes("modifier") ||
       normalizedPermission.includes("messages") ||
       normalizedPermission.includes("annonces") ||
-      normalizedPermission.includes("communications")
+      normalizedPermission.includes("communications") ||
+      normalizedPermission.includes("appel")
     );
   }
   return (
@@ -260,6 +278,14 @@ export function getFeaturePermissions(ctx: PermissionContext, feature: string): 
   };
 }
 
+/** Faire l'appel = création ou mise à jour des présences (legacy « Faire appel » inclus). */
+export function canManagePresences(ctx: PermissionContext): boolean {
+  return (
+    hasBackOfficePermission(ctx, "Présences", "UPDATE") ||
+    hasBackOfficePermission(ctx, "Présences", "CREATE")
+  );
+}
+
 /** Admin établissement et rôles habilités peuvent réinitialiser un mot de passe utilisateur. */
 export function canResetUserPassword(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
@@ -296,6 +322,13 @@ export function hasBackOfficePermission(
 
   const normalizedAction = action === "R" ? "READ" : action;
   const featureList = Array.isArray(features) ? features : [features];
+
+  if (
+    isPlatformCommunicationUser(ctx) &&
+    featureList.some((feature) => isPlatformCommunicationFeature(feature))
+  ) {
+    return true;
+  }
 
   if (featureList.includes("Contacts")) {
     return hasContactsModulePermission(ctx, "Contacts", normalizedAction);
@@ -351,6 +384,15 @@ export function hasBackOfficePermission(
 }
 
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
+  // Accès au hub Paramètres : Super Admin, Admin School (établissement) et Admin Pays.
+  // Le détail des cartes/pages reste filtré par les vues dédiées (configuration, subscriptions…).
+  if (viewName === "settings") {
+    return (
+      isSuperAdminRole(ctx.user?.role) ||
+      isSchoolAdminRole(ctx.user?.role) ||
+      ctx.user?.role === COUNTRY_ADMIN_ROLE
+    );
+  }
   if (isSuperAdminRole(ctx.user?.role)) {
     return isSuperAdminAllowedView(viewName);
   }
@@ -373,6 +415,12 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   }
   if (viewName === "relations") {
     return hasBackOfficePermission(ctx, "Relations", "READ");
+  }
+  if (
+    (viewName === "messages" || viewName === "notifications" || viewName === "announcements") &&
+    isPlatformCommunicationUser(ctx)
+  ) {
+    return true;
   }
   if (ctx.user?.role === COUNTRY_ADMIN_ROLE) {
     if (SCHOOL_ENTITY_SIDEBAR_VIEWS.has(viewName) || viewName === "establishment" || viewName === "configuration") {

@@ -29,6 +29,8 @@ export type StudentSummary = {
 export type TeacherAssignment = {
   className: string;
   course: string;
+  teacherId?: string;
+  teacherName?: string;
 };
 
 type LoginPayload = {
@@ -235,6 +237,10 @@ export function getClasses() {
 
 export function getCourses() {
   return request<unknown[]>("/courses");
+}
+
+export function getAssignments() {
+  return request<TeacherAssignment[]>("/assignments");
 }
 
 export function getAcademicConfig() {

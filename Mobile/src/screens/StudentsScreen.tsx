@@ -12,25 +12,26 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
+import {
+  filterStudentsByClassName,
+  scopedStudentsForSession,
+} from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
 export default function StudentsScreen({ route, navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const scrollContentStyle = [styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session } = useAuth();
-  const { studentsData, paymentsData, presencesData } = useAdminData();
+  const { studentsData, paymentsData, presencesData, teachersData, assignmentsData, classesData } = useAdminData();
   const className = route?.params?.className ?? "Toutes les classes";
   const [query, setQuery] = useState("");
-  const assignedClasses = session?.role === "teacher" ? session.user.assignedClasses ?? [] : [];
-  const availableStudents =
-    session?.role === "teacher"
-      ? studentsData.filter((student) => assignedClasses.includes(student.className))
-      : studentsData;
+  const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
+  const availableStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
 
   const classStudents =
     className === "Toutes les classes"
       ? availableStudents
-      : availableStudents.filter((student) => student.className === className);
+      : filterStudentsByClassName(availableStudents, className);
 
   const filteredStudents = classStudents.filter((student) => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -88,7 +89,12 @@ export default function StudentsScreen({ route, navigation }: any) {
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.addButton}
-              onPress={() => navigation.navigate("AdminCrud", { entity: "students" })}
+              onPress={() =>
+                navigation.navigate("AdminCrud", {
+                  entity: "students",
+                  ...(className !== "Toutes les classes" ? { className } : {}),
+                })
+              }
             >
               <Ionicons name="add" size={26} color="#FFFFFF" />
             </TouchableOpacity>

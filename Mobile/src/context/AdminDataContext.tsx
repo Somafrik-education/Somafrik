@@ -31,7 +31,7 @@ import {
 } from "../lib/activeSchool";
 import { normalize } from "../lib/format";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
-import { getAcademicConfig, getBackOfficeState, getClasses, getCourses, getNotes, getPresences, getStudents, saveBackOfficeState, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getNotes, getPresences, getStudents, saveBackOfficeState, BackOfficeStatePayload } from "../services/api";
 import { SYNC_INTERVAL_MS } from "../config/env";
 import { useAuth } from "./AuthContext";
 
@@ -254,14 +254,33 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     let mounted = true;
-    const refresh = () => Promise.all([getStudents(), getClasses(), getCourses(), getNotes(), getPresences(), getAcademicConfig()])
-      .then(([studentPayload, classPayload, coursePayload, notePayload, presencePayload, academicConfigPayload]) => {
+    const refresh = () =>
+      Promise.all([
+        getStudents(),
+        getClasses(),
+        getCourses(),
+        getNotes(),
+        getPresences(),
+        getAcademicConfig(),
+        getAssignments(),
+      ])
+        .then(
+          ([
+            studentPayload,
+            classPayload,
+            coursePayload,
+            notePayload,
+            presencePayload,
+            academicConfigPayload,
+            assignmentPayload,
+          ]) => {
         if (mounted) {
           applyArray(studentPayload, setStudentsData);
           applyArray(classPayload, setClassesData);
           applyArray(coursePayload, setCoursesData);
           applyArray(notePayload, setNotesData);
           applyArray(presencePayload, setPresencesData);
+          applyArray(assignmentPayload, setAssignmentsData);
           setAcademicConfigData(academicConfigPayload as AcademicManagementConfig);
           setSyncStatus("synced");
         }

@@ -5,7 +5,6 @@ import UsersScreen from "../screens/UsersScreen";
 import StudentsScreen from "../screens/StudentsScreen";
 import TeachersScreen from "../screens/TeachersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
-import MessagesScreen from "../screens/MessagesScreen";
 import StudentDetailScreen from "../screens/StudentDetailScreen";
 import StudentNotesScreen from "../screens/StudentNotesScreen";
 import StudentPresencesScreen from "../screens/StudentPresencesScreen";
@@ -38,16 +37,6 @@ const schoolAdminTabs: RoleTabDefinition[] = [
     focusedIcon: "grid",
     quickActionIcon: "grid-outline",
     quickActionLabel: "Classes",
-  },
-  {
-    tabName: "Messages",
-    route: "Messages",
-    component: MessagesScreen,
-    label: "Messages",
-    icon: "chatbubbles-outline",
-    focusedIcon: "chatbubbles",
-    quickActionIcon: "chatbubbles-outline",
-    quickActionLabel: "Messages",
   },
   {
     tabName: "Paiements",
@@ -218,16 +207,6 @@ const secretaryTabs: RoleTabDefinition[] = [
     quickActionIcon: "card-outline",
     quickActionLabel: "Paiements",
   },
-  {
-    tabName: "Messages",
-    route: "Messages",
-    component: MessagesScreen,
-    label: "Messages",
-    icon: "chatbubbles-outline",
-    focusedIcon: "chatbubbles",
-    quickActionIcon: "chatbubbles-outline",
-    quickActionLabel: "Messages",
-  },
 ];
 
 const globalAdminTabs: RoleTabDefinition[] = [
@@ -287,14 +266,11 @@ export type QuickActionItem = {
   tabName: string;
 };
 
-export function buildOverflowQuickActionItems(session: any, unreadMessages = 0): QuickActionItem[] {
+export function buildOverflowQuickActionItems(session: any): QuickActionItem[] {
   const { overflowTabs } = partitionRoleTabs(session);
   return overflowTabs.map((tab) => ({
     icon: tab.quickActionIcon,
-    label:
-      tab.route === "Messages" && unreadMessages > 0
-        ? `Messages (${unreadMessages})`
-        : tab.quickActionLabel,
+    label: tab.quickActionLabel,
     tabName: tab.tabName,
   }));
 }
