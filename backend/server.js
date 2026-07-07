@@ -7,6 +7,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env.local"), overr
 require("dotenv").config();
 const { AuthService, BusinessError } = require("./services/authService");
 const { BackOfficeAccessService } = require("./services/backOfficeAccessService");
+const { hashSecret } = require("./services/credentialService");
 const { GradeBookService } = require("./services/gradeBookService");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
@@ -21,6 +22,7 @@ const { PedagogyGovernanceService } = require("./services/pedagogyGovernanceServ
 const { UserTeacherSyncService } = require("./services/userTeacherSyncService");
 const { AuditService } = require("./services/auditService");
 const { mergeAcademicConfigs } = require("./lib/bulletinDesignAccess");
+const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("./lib/countryScope");
 const { buildDesignPreviewReport } = require("./lib/bulletinDesignPreview");
 const {
   applyBulletinDesignToReport,
@@ -28,6 +30,14 @@ const {
 } = require("./lib/bulletinDesignResolver");
 const { renderReportCardPdf, renderReportCardPreviewHtml } = require("./services/bulletinPdfRenderer");
 const { dedupeBackOfficeState } = require("./lib/backofficeDedupe");
+const { repairOrphanSchools } = require("./lib/repairOrphanSchools");
+const { ensureSubscriptionModuleState } = require("./services/subscriptionModuleService");
+const { EstablishmentService } = require("./services/establishmentService");
+const { UnpaidService } = require("./services/unpaidService");
+const schoolSubscriptionAccessService = require("./services/schoolSubscriptionAccessService");
+
+const establishmentService = new EstablishmentService();
+const unpaidService = new UnpaidService();
 
 const app = express();
 let repository = createPostgresRepository();
@@ -232,7 +242,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
     sub: session.user_id,
     role: session.role,
     schoolCode: session.school_code ?? "*",
-    countryCode: session.country_code ?? "",
+    countryCode: session.country_code ?? payload.countryCode ?? "",
     authSource: payload.authSource ?? "mobile",
     sessionId: payload.sessionId,
     permissions,
@@ -389,14 +399,14 @@ app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
   );
 }));
 
-app.post("/api/notes", requireAuth, asyncHandler(async (req, res) => {
+app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
   assertCanManageNotes(req.principal);
   const saved = await repository.upsertGrade(req.body ?? {}, req.principal);
   await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
   res.status(201).json(saved);
 }));
 
-app.post("/api/presences", requireAuth, asyncHandler(async (req, res) => {
+app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_presence"), asyncHandler(async (req, res) => {
   assertCanManagePresences(req.principal);
   const saved = await repository.upsertAttendanceBatch(req.body ?? {}, req.principal);
   await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
@@ -474,9 +484,18 @@ app.get("/api/users", requireAuth, requirePermission("GET /api/users"), asyncHan
   sendList(res, result, req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
 }));
 
+function canResetUserPassword(principal) {
+  const permissions = new Set(principal?.permissions ?? []);
+  return (
+    permissions.has("ALL_PRIVILEGES") ||
+    permissions.has("COUNTRY_PRIVILEGES") ||
+    permissions.has("Utilisateurs:UPDATE") ||
+    permissions.has("Gérer utilisateurs")
+  );
+}
+
 app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, res) => {
-  const permissions = new Set(req.principal.permissions ?? []);
-  if (!permissions.has("ALL_PRIVILEGES") && !permissions.has("COUNTRY_PRIVILEGES") && !permissions.has("Utilisateurs:UPDATE")) {
+  if (!canResetUserPassword(req.principal)) {
     throw new BusinessError(403, "Permission insuffisante pour réinitialiser le mot de passe.");
   }
 
@@ -490,7 +509,7 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     throw new BusinessError(404, "Utilisateur introuvable dans votre établissement.");
   }
 
-  if (isPendingValidationUser(target)) {
+  if (isPendingValidationUser(target) && !isSuperAdminPrincipal(req.principal)) {
     throw new BusinessError(
       409,
       "Compte en attente de validation par le Super Administrateur. Aucune action n'est possible avant validation."
@@ -557,6 +576,133 @@ app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /ap
   sendList(res, tenantScopeService.filterRows(platformNotifications, req.principal), req.query, ["title", "message", "type", "status"]);
 }));
 
+app.get("/api/backoffice/subscription-access", requireAuth, asyncHandler(async (req, res) => {
+  const schoolCode = req.query.schoolCode || req.principal?.schoolCode;
+  if (!schoolCode || schoolCode === "*") {
+    return res.json({ level: "full", message: "" });
+  }
+  const state = await getAuthoritativeBackOfficeState();
+  res.json(schoolSubscriptionAccessService.resolveSchoolAccess(schoolCode, state));
+}));
+
+app.get("/api/backoffice/establishments", requireAuth, requirePermission("GET /api/backoffice/establishments"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const rows = establishmentService.list(state, req.principal);
+  sendList(res, rows, req.query, ["name", "code", "country", "city", "type", "status", "principalName"]);
+}));
+
+app.get("/api/backoffice/establishments/:code/users", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  res.json(establishmentService.getUsers(req.params.code, state, req.principal));
+}));
+
+app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  res.json(establishmentService.getSubscription(req.params.code, state, req.principal));
+}));
+
+app.get("/api/backoffice/establishments/:code", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  res.json(establishmentService.get(req.params.code, state, req.principal));
+}));
+
+app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST /api/backoffice/establishments"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { school, state: nextState } = establishmentService.create(req.body ?? {}, state, req.principal, {
+    force: Boolean(req.body?.force),
+  });
+  const saved = await saveEstablishmentState(nextState);
+  await auditService.record(req, "create_establishment", "school", school.code, { name: school.name });
+  res.status(201).json({ school, state: scopeBackOfficeState(saved, req.principal) });
+}));
+
+app.post("/api/backoffice/establishments/import", requireAuth, requirePermission("POST /api/backoffice/establishments/import"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { created, errors, state: nextState } = establishmentService.importRows(
+    req.body?.rows ?? [],
+    state,
+    req.principal,
+    { force: Boolean(req.body?.force) },
+  );
+  const saved = await saveEstablishmentState(nextState);
+  await auditService.record(req, "import_establishments", "school", "bulk", {
+    created: created.length,
+    errors: errors.length,
+  });
+  res.status(201).json({ created, errors, count: created.length });
+}));
+
+app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { school, state: nextState } = establishmentService.update(req.params.code, req.body ?? {}, state, req.principal);
+  const saved = await saveEstablishmentState(nextState);
+  await auditService.record(req, "update_establishment", "school", school.code);
+  res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
+}));
+
+app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { school, state: nextState } = establishmentService.activate(req.params.code, state, req.principal);
+  const saved = await saveEstablishmentState(nextState);
+  await auditService.record(req, "activate_establishment", "school", school.code);
+  res.json({ school });
+}));
+
+app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { school, state: nextState } = establishmentService.suspend(req.params.code, state, req.principal);
+  const saved = await saveEstablishmentState(nextState);
+  await auditService.record(req, "suspend_establishment", "school", school.code);
+  res.json({ school });
+}));
+
+app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermission("DELETE /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { school, state: nextState } = establishmentService.softDelete(req.params.code, state, req.principal);
+  const saved = await saveEstablishmentState(nextState);
+  await auditService.record(req, "delete_establishment", "school", school.code);
+  res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
+}));
+
+app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  res.json(
+    unpaidService.list(state, req.principal, {
+      search: req.query.search,
+      className: req.query.className,
+      period: req.query.period,
+    }),
+  );
+}));
+
+app.get("/api/backoffice/finance/unpaid/:studentId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  res.json(unpaidService.detail(state, req.principal, req.params.studentId));
+}));
+
+app.get("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const detail = unpaidService.detail(state, req.principal, req.params.studentId);
+  res.json(detail.reminders);
+}));
+
+app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("POST /api/backoffice/finance/unpaid/reminders"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { reminder, state: nextState } = unpaidService.sendReminder(
+    state,
+    req.principal,
+    req.params.studentId,
+    req.body ?? {},
+    { force: Boolean(req.body?.force) },
+  );
+  const saved = await saveEstablishmentState(nextState);
+  await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
+    channel: reminder.channel,
+    summary: reminder.summary,
+  });
+  res.status(201).json({ reminder, state: scopeBackOfficeState(saved, req.principal) });
+}));
+
 app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   assertBackOfficeReader(req.principal);
   const state = await getAuthoritativeBackOfficeState();
@@ -568,14 +714,12 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   const currentState = await getAuthoritativeBackOfficeState();
   const rawBody = req.body ?? {};
   const requestedState = sanitizeBackOfficeState(rawBody);
-  const touchedEntities = backOfficeDeletableEntities.filter((entity) =>
-    Object.prototype.hasOwnProperty.call(rawBody, entity),
-  );
+  const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   const nextState = mergeScopedBackOfficeState(
     currentState,
     requestedState,
     req.principal,
-    touchedEntities,
+    touchedKeys,
   );
   const hydratedCourses = pedagogyGovernanceService.hydrateCoursesFromAssignments(
     nextState.courses ?? [],
@@ -729,6 +873,7 @@ async function getRuntime() {
     students: dataset.students,
     userAccounts: dataset.userAccounts,
     countries: dataset.countries,
+    subscriptions: dataset.subscriptions ?? [],
   });
   const gradeBookService = new GradeBookService({
     students: dataset.students,
@@ -858,6 +1003,66 @@ function resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey) {
   return schoolScopedLogin ?? keys[0] ?? null;
 }
 
+function applyStoredUserCredentials(base = {}, stored = {}, merged = {}) {
+  const storedHash = Boolean(stored.passwordHash || stored.pinHash);
+  const baseHash = Boolean(base.passwordHash || base.pinHash);
+
+  if (stored.passwordHash) {
+    merged.passwordHash = stored.passwordHash;
+  } else if (base.passwordHash) {
+    merged.passwordHash = base.passwordHash;
+  }
+
+  if (stored.pinHash) {
+    merged.pinHash = stored.pinHash;
+  } else if (base.pinHash) {
+    merged.pinHash = base.pinHash;
+  }
+
+  if (storedHash || String(stored.temporaryPassword ?? "").trim()) {
+    merged.mustChangePassword =
+      stored.mustChangePassword != null
+        ? Boolean(stored.mustChangePassword)
+        : Boolean(String(stored.temporaryPassword ?? "").trim());
+    if (String(stored.temporaryPassword ?? "").trim()) {
+      merged.temporaryPassword = stored.temporaryPassword;
+      merged.hasTemporaryPassword = stored.hasTemporaryPassword ?? true;
+    } else if (!merged.mustChangePassword) {
+      merged.temporaryPassword = "";
+      delete merged.password;
+      delete merged.pin;
+    }
+  } else if (baseHash) {
+    merged.mustChangePassword = Boolean(base.mustChangePassword);
+    if (!merged.mustChangePassword) {
+      merged.temporaryPassword = "";
+      delete merged.password;
+      delete merged.pin;
+    }
+  } else if (String(merged.temporaryPassword ?? "").trim()) {
+    merged.password = merged.temporaryPassword;
+    merged.mustChangePassword = merged.mustChangePassword ?? true;
+    merged.hasTemporaryPassword = merged.hasTemporaryPassword ?? true;
+  }
+
+  return merged;
+}
+
+function normalizeBackOfficeUserCredentials(user = {}) {
+  const next = { ...user };
+  const temporaryPassword = String(next.temporaryPassword ?? "").trim();
+
+  if (temporaryPassword && !next.passwordHash && !next.pinHash) {
+    const secretHash = hashSecret(temporaryPassword);
+    next.passwordHash = secretHash;
+    next.pinHash = secretHash;
+    next.mustChangePassword = next.mustChangePassword ?? true;
+    next.hasTemporaryPassword = true;
+  }
+
+  return next;
+}
+
 function applyStoredUserOverlay(dataset, storedState) {
   if (!dataset || !isPlainObject(storedState) || !Array.isArray(storedState.users)) {
     return;
@@ -915,24 +1120,8 @@ function applyStoredUserOverlay(dataset, storedState) {
     if (base.publicId) {
       merged.publicId = base.publicId;
     }
-    if (base.passwordHash) {
-      merged.passwordHash = base.passwordHash;
-    }
-    if (base.pinHash) {
-      merged.pinHash = base.pinHash;
-    }
 
-    if (base.passwordHash || base.pinHash) {
-      merged.mustChangePassword = Boolean(base.mustChangePassword);
-      if (!merged.mustChangePassword) {
-        merged.temporaryPassword = "";
-        delete merged.password;
-        delete merged.pin;
-      }
-    } else if (!merged.password && !merged.passwordHash && !merged.pinHash && merged.temporaryPassword) {
-      merged.password = merged.temporaryPassword;
-      merged.mustChangePassword = merged.mustChangePassword ?? true;
-    }
+    applyStoredUserCredentials(base, stored, merged);
 
     registerUser(merged, primaryKey);
   }
@@ -945,7 +1134,10 @@ function handleBusinessResponse(res, action) {
     return res.json(action());
   } catch (error) {
     if (error instanceof BusinessError) {
-      return res.status(error.statusCode).json({ message: error.message });
+      return res.status(error.statusCode).json({
+        message: error.message,
+        ...(error.details ? { details: error.details } : {}),
+      });
     }
 
     throw error;
@@ -1019,6 +1211,27 @@ function assertCanManagePresences(principal) {
   throw new BusinessError(403, "Permission insuffisante pour enregistrer l'appel.");
 }
 
+async function saveEstablishmentState(nextState) {
+  const sanitized = sanitizeBackOfficeState(nextState);
+  const hydrated = ensureSubscriptionModuleState(hydrateSubscriptionsFromSchools(sanitized));
+  return repository.saveBackOfficeState(hydrated);
+}
+
+function requireSchoolSubscriptionFeature(feature) {
+  return asyncHandler(async (req, _res, next) => {
+    if (isSuperAdminPrincipal(req.principal) || req.principal?.role === "Admin Pays") {
+      return next();
+    }
+    const schoolCode = req.principal?.schoolCode;
+    if (!schoolCode || schoolCode === "*") {
+      return next();
+    }
+    const state = await getAuthoritativeBackOfficeState();
+    schoolSubscriptionAccessService.assertSchoolFeature(schoolCode, state, feature);
+    return next();
+  });
+}
+
 function sanitizeDashboardChartConfig(config) {
   if (!isPlainObject(config)) {
     return { platform: {}, establishment: {} };
@@ -1033,11 +1246,20 @@ function sanitizeDashboardChartConfig(config) {
 function sanitizeBackOfficeState(payload = {}) {
   const state = {
     schools: Array.isArray(payload.schools) ? payload.schools : [],
-    users: Array.isArray(payload.users) ? payload.users : [],
+    users: Array.isArray(payload.users)
+      ? payload.users.map((user) => normalizeBackOfficeUserCredentials(user))
+      : [],
     countries: Array.isArray(payload.countries) ? payload.countries : [],
     contacts: Array.isArray(payload.contacts) ? payload.contacts : [],
     relations: Array.isArray(payload.relations) ? payload.relations : [],
     subscriptions: Array.isArray(payload.subscriptions) ? payload.subscriptions : [],
+    subscriptionOffers: Array.isArray(payload.subscriptionOffers) ? payload.subscriptionOffers : [],
+    subscriptionPayments: Array.isArray(payload.subscriptionPayments) ? payload.subscriptionPayments : [],
+    subscriptionInvoices: Array.isArray(payload.subscriptionInvoices) ? payload.subscriptionInvoices : [],
+    subscriptionDiscounts: Array.isArray(payload.subscriptionDiscounts) ? payload.subscriptionDiscounts : [],
+    subscriptionAuditLog: Array.isArray(payload.subscriptionAuditLog)
+      ? payload.subscriptionAuditLog.slice(0, 200)
+      : [],
     notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
     students: Array.isArray(payload.students) ? payload.students : [],
     teachers: Array.isArray(payload.teachers) ? payload.teachers : [],
@@ -1047,8 +1269,14 @@ function sanitizeBackOfficeState(payload = {}) {
     courseSchedules: Array.isArray(payload.courseSchedules) ? payload.courseSchedules : [],
     payments: Array.isArray(payload.payments) ? payload.payments : [],
     paymentStatuses: Array.isArray(payload.paymentStatuses) ? payload.paymentStatuses : [],
+    feeGrids: Array.isArray(payload.feeGrids) ? payload.feeGrids : [],
+    schoolFeeItems: Array.isArray(payload.schoolFeeItems) ? payload.schoolFeeItems : [],
+    studentFees: Array.isArray(payload.studentFees) ? payload.studentFees : [],
+    feeTariffHistory: Array.isArray(payload.feeTariffHistory) ? payload.feeTariffHistory.slice(0, 500) : [],
+    paymentReminders: Array.isArray(payload.paymentReminders) ? payload.paymentReminders.slice(0, 500) : [],
     presences: Array.isArray(payload.presences) ? payload.presences : [],
     notes: Array.isArray(payload.notes) ? payload.notes : [],
+    evaluations: Array.isArray(payload.evaluations) ? payload.evaluations : [],
     exams: Array.isArray(payload.exams) ? payload.exams : [],
     bulletins: Array.isArray(payload.bulletins) ? payload.bulletins : [],
     documents: Array.isArray(payload.documents) ? payload.documents : [],
@@ -1088,8 +1316,13 @@ const backOfficeDeletableEntities = [
   "courseSchedules",
   "payments",
   "paymentStatuses",
+  "feeGrids",
+  "schoolFeeItems",
+  "studentFees",
+  "feeTariffHistory",
   "presences",
   "notes",
+  "evaluations",
   "exams",
   "bulletins",
   "documents",
@@ -1107,7 +1340,12 @@ async function getAuthoritativeBackOfficeState() {
   }
 
   const merged = mergeBackOfficeRuntimeState(runtime, storedState);
-  const sanitized = sanitizeBackOfficeState(stripLegacyOrganizationFields(merged));
+  const { state: withSchools, repaired: repairedSchools } = repairOrphanSchools(merged);
+  if (repairedSchools.length) {
+    await repository.saveBackOfficeState(withSchools);
+    console.info(`[backoffice] Établissements rétablis depuis références orphelines : ${repairedSchools.join(", ")}`);
+  }
+  const sanitized = sanitizeBackOfficeState(stripLegacyOrganizationFields(withSchools));
   return {
     ...sanitized,
     courses: pedagogyGovernanceService.hydrateCoursesFromAssignments(
@@ -1148,8 +1386,14 @@ function buildInitialBackOfficeState(runtime = {}) {
     courseSchedules: runtime.courseSchedules ?? [],
     payments: runtime.payments ?? [],
     paymentStatuses: [],
+    feeGrids: [],
+    schoolFeeItems: [],
+    studentFees: [],
+    feeTariffHistory: [],
+    paymentReminders: [],
     presences: runtime.presences ?? [],
     notes: runtime.notes ?? [],
+    evaluations: runtime.evaluations ?? [],
     exams: runtime.exams ?? [],
     bulletins: runtime.bulletins ?? [],
     documents: runtime.documents ?? [],
@@ -1179,8 +1423,14 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     assignments: runtime.teacherAssignments ?? [],
     courseSchedules: storedState.courseSchedules ?? runtime.courseSchedules ?? [],
     payments: runtime.payments ?? [],
+    feeGrids: storedState.feeGrids ?? [],
+    schoolFeeItems: storedState.schoolFeeItems ?? [],
+    studentFees: storedState.studentFees ?? [],
+    feeTariffHistory: storedState.feeTariffHistory ?? [],
+    paymentReminders: storedState.paymentReminders ?? [],
     presences: runtime.presences ?? [],
     notes: runtime.notes ?? [],
+    evaluations: runtime.evaluations ?? [],
     exams: runtime.exams ?? [],
     bulletins: runtime.bulletins ?? [],
     documents: runtime.documents ?? [],
@@ -1205,7 +1455,7 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     ...runtimeState,
     ...storedState,
     schools: mergeSchoolRows(runtimeState.schools, storedState.schools),
-    users: mergeRowsByIdentity(runtimeState.users, storedState.users),
+    users: mergeUserRows(runtimeState.users, storedState.users),
     countries: mergeRowsByIdentity(runtimeState.countries, storedState.countries),
     contacts: mergeRowsByIdentity(runtimeState.contacts, storedState.contacts),
     relations: mergeRowsByIdentity(runtimeState.relations, storedState.relations),
@@ -1217,8 +1467,20 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
     courseSchedules: mergeRowsByIdentity(runtimeState.courseSchedules ?? [], storedState.courseSchedules ?? []),
     payments: mergeRowsByIdentity(runtimeState.payments, storedState.payments),
+    feeGrids: mergeRowsByIdentity(runtimeState.feeGrids ?? [], storedState.feeGrids ?? []),
+    schoolFeeItems: mergeRowsByIdentity(runtimeState.schoolFeeItems ?? [], storedState.schoolFeeItems ?? []),
+    studentFees: mergeRowsByIdentity(runtimeState.studentFees ?? [], storedState.studentFees ?? []),
+    feeTariffHistory: mergeRowsByIdentity(
+      runtimeState.feeTariffHistory ?? [],
+      storedState.feeTariffHistory ?? [],
+    ),
+    paymentReminders: mergeRowsByIdentity(
+      runtimeState.paymentReminders ?? [],
+      storedState.paymentReminders ?? [],
+    ),
     presences: mergeRowsByIdentity(runtimeState.presences, storedState.presences),
     notes: mergeRowsByIdentity(runtimeState.notes, storedState.notes),
+    evaluations: mergeRowsByIdentity(runtimeState.evaluations ?? [], storedState.evaluations ?? []),
     exams: mergeRowsByIdentity(runtimeState.exams ?? [], storedState.exams ?? []),
     bulletins: mergeRowsByIdentity(runtimeState.bulletins ?? [], storedState.bulletins ?? []),
     documents: mergeRowsByIdentity(runtimeState.documents ?? [], storedState.documents ?? []),
@@ -1237,7 +1499,9 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     deletedRows: mergedDeletedRows,
   };
 
-  return hydrateSubscriptionsFromSchools(applyDeletedRows(merged, mergedDeletedRows));
+  return ensureSubscriptionModuleState(
+    hydrateSubscriptionsFromSchools(applyDeletedRows(merged, mergedDeletedRows)),
+  );
 }
 
 function normalizeSchoolCodeKey(value) {
@@ -1392,6 +1656,30 @@ function mergeRowsByIdentity(primaryRows = [], secondaryRows = []) {
   return [...rows.values()];
 }
 
+function userRowKey(row = {}) {
+  return String(row.id ?? row.identifier ?? row.publicId ?? "").trim();
+}
+
+/** Fusionne les comptes en préservant passwordHash / temporaryPassword existants. */
+function mergeUserRows(primaryRows = [], secondaryRows = []) {
+  const rows = new Map();
+
+  primaryRows.forEach((row, index) => {
+    const key = userRowKey(row) || `primary-${index}`;
+    rows.set(key, { ...row });
+  });
+
+  secondaryRows.forEach((row, index) => {
+    const key = userRowKey(row) || `secondary-${index}`;
+    const existing = rows.get(key) ?? {};
+    const merged = { ...existing, ...row };
+    applyStoredUserCredentials(existing, row, merged);
+    rows.set(key, normalizeBackOfficeUserCredentials(merged));
+  });
+
+  return [...rows.values()];
+}
+
 function schoolRowKey(row = {}) {
   const code = String(row.code ?? row.publicId ?? row.schoolCode ?? "").trim().toUpperCase();
   return code || String(row.id ?? row.publicId ?? "");
@@ -1426,9 +1714,15 @@ function scopeBackOfficeState(payload = {}, principal) {
   }
 
   if (principal.role === "Admin Pays") {
-    const countryCode = principal.countryCode;
-    const schools = state.schools.filter((item) => countryCodeFromSchoolOrCountry(item.code, item.country) === countryCode);
-    const schoolCodes = new Set(schools.map((item) => item.code));
+    const countryScope = principal.countryScope ?? principal.countryCode ?? "";
+    const countryCode = principal.countryCode || getCountryCodeFromScope(countryScope);
+    if (!countryCode) {
+      return scopeStateWithSchools(state, new Set(), { countries: [] });
+    }
+    const schools = state.schools.filter((item) => schoolMatchesCountryScope(item, countryScope || countryCode));
+    const schoolCodes = new Set(
+      schools.map((item) => normalizeSchoolCodeKey(item.code ?? item.publicId)).filter(Boolean),
+    );
     const countries = state.countries.filter((item) => item.code === countryCode);
     const scopedState = scopeStateWithSchools(state, schoolCodes, {
       countries,
@@ -1439,7 +1733,9 @@ function scopeBackOfficeState(payload = {}, principal) {
     };
   }
 
-  const schoolCodes = new Set([principal.schoolCode].filter(Boolean));
+  const schoolCodes = new Set(
+    [principal.schoolCode].filter(Boolean).map((code) => normalizeSchoolCodeKey(code)),
+  );
   return scopeStateWithSchools(state, schoolCodes);
 }
 
@@ -1474,8 +1770,17 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
   const subscriptions = state.subscriptions.filter((item) => hasSchoolScope(item, schoolCodes));
   const payments = state.payments.filter((item) => belongsToScopedStudentOrSchool(item, schoolCodes, studentIds));
   const paymentStatuses = state.paymentStatuses.filter((item) => hasSchoolScope(item, schoolCodes));
+  const feeGrids = (state.feeGrids ?? []).filter((item) => hasSchoolScope(item, schoolCodes));
+  const schoolFeeItems = (state.schoolFeeItems ?? []).filter((item) => hasSchoolScope(item, schoolCodes));
+  const studentFees = (state.studentFees ?? []).filter((item) =>
+    belongsToScopedStudentOrSchool(item, schoolCodes, studentIds),
+  );
+  const feeTariffHistory = (state.feeTariffHistory ?? []).filter((item) => hasSchoolScope(item, schoolCodes));
   const presences = state.presences.filter((item) => belongsToScopedStudentOrSchool(item, schoolCodes, studentIds));
   const notes = state.notes.filter((item) => belongsToScopedStudentOrSchool(item, schoolCodes, studentIds));
+  const evaluations = (state.evaluations ?? []).filter((item) =>
+    hasSchoolScope(item, schoolCodes) || classNames.has(item.className),
+  );
   const exams = state.exams.filter((item) =>
     hasSchoolScope(item, schoolCodes) || classNames.has(item.className),
   );
@@ -1501,9 +1806,14 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
     courseSchedules,
     payments,
     paymentStatuses,
+    feeGrids,
+    schoolFeeItems,
+    studentFees,
+    feeTariffHistory,
     subscriptions: overrides.subscriptions ?? subscriptions,
     presences,
     notes,
+    evaluations,
     exams,
     bulletins,
     documents,
@@ -1664,22 +1974,35 @@ function finalizeSuperAdminUserValidation(users = [], currentUsers = [], princip
   });
 }
 
+function resolveTouchedBackOfficeKeys(rawBody = {}) {
+  const optionalKeys = ["rolePermissions", "academicConfigs", "dashboardChartConfig", "auditLog"];
+  return [
+    ...backOfficeDeletableEntities.filter((entity) =>
+      Object.prototype.hasOwnProperty.call(rawBody, entity),
+    ),
+    ...optionalKeys.filter((key) => Object.prototype.hasOwnProperty.call(rawBody, key)),
+  ];
+}
+
 function mergeScopedBackOfficeState(
   currentPayload = {},
   requestedPayload = {},
   principal,
-  touchedEntities = backOfficeDeletableEntities,
+  touchedKeys = backOfficeDeletableEntities,
 ) {
   const current = sanitizeBackOfficeState(currentPayload);
   const requested = sanitizeBackOfficeState(requestedPayload);
-  const deletionScope = touchedEntities;
+  const deletionScope = touchedKeys;
 
   if (!principal || isSuperAdminPrincipal(principal)) {
     const mergeEntity = (entity, finalize) => {
       if (!deletionScope.includes(entity)) {
         return current[entity] ?? [];
       }
-      const mergedRows = mergeRowsByIdentity(current[entity] ?? [], requested[entity] ?? []);
+      const mergedRows =
+        entity === "users"
+          ? mergeUserRows(current[entity] ?? [], requested[entity] ?? [])
+          : mergeRowsByIdentity(current[entity] ?? [], requested[entity] ?? []);
       return finalize ? finalize(mergedRows, current[entity] ?? [], principal) : mergedRows;
     };
 
@@ -1701,8 +2024,13 @@ function mergeScopedBackOfficeState(
       courseSchedules: mergeEntity("courseSchedules"),
       payments: mergeEntity("payments"),
       paymentStatuses: mergeEntity("paymentStatuses"),
+      feeGrids: mergeEntity("feeGrids"),
+      schoolFeeItems: mergeEntity("schoolFeeItems"),
+      studentFees: mergeEntity("studentFees"),
+      feeTariffHistory: mergeEntity("feeTariffHistory"),
       presences: mergeEntity("presences"),
       notes: mergeEntity("notes"),
+      evaluations: mergeEntity("evaluations"),
       exams: mergeEntity("exams"),
       bulletins: mergeEntity("bulletins"),
       documents: mergeEntity("documents"),
@@ -1733,7 +2061,7 @@ function mergeScopedBackOfficeState(
     const scopedRequested = scopeBackOfficeState(requested, principal);
     const countryDeletionScope = roleGovernanceService
       .editableEntitiesForCountryAdmin()
-      .filter((entity) => touchedEntities.includes(entity));
+      .filter((entity) => touchedKeys.includes(entity));
     const deletedRows = mergeDeletedRows(
       current.deletedRows,
       detectDeletedRows(scopedCurrent, scopedRequested, countryDeletionScope),
@@ -1742,22 +2070,41 @@ function mergeScopedBackOfficeState(
     return applyDeletedRows({
       ...current,
       schools: applyCountryAdminSchoolValidation(
-        mergeScopedRows(current.schools, scopedRequested.schools, scopedCurrent.schools),
+        mergeScopedEntityIfTouched("schools", current, scopedRequested, scopedCurrent, touchedKeys),
         current.schools,
         principal,
       ),
       users: applyCountryAdminUserValidation(
-        mergeScopedRows(current.users, scopedRequested.users, scopedCurrent.users),
+        mergeScopedEntityIfTouched("users", current, scopedRequested, scopedCurrent, touchedKeys),
         current.users,
         principal,
       ),
-      countries: mergeScopedRows(current.countries, scopedRequested.countries, scopedCurrent.countries),
-      contacts: mergeScopedRows(current.contacts, scopedRequested.contacts, scopedCurrent.contacts),
-      relations: mergeScopedRows(current.relations, scopedRequested.relations, scopedCurrent.relations),
-      subscriptions: mergeScopedRows(
-        current.subscriptions,
-        scopedRequested.subscriptions,
-        scopedCurrent.subscriptions,
+      countries: mergeCountryAdminCountries(
+        current.countries,
+        scopedRequested,
+        scopedCurrent,
+        touchedKeys,
+      ),
+      contacts: mergeScopedEntityIfTouched(
+        "contacts",
+        current,
+        scopedRequested,
+        scopedCurrent,
+        touchedKeys,
+      ),
+      relations: mergeScopedEntityIfTouched(
+        "relations",
+        current,
+        scopedRequested,
+        scopedCurrent,
+        touchedKeys,
+      ),
+      subscriptions: mergeScopedEntityIfTouched(
+        "subscriptions",
+        current,
+        scopedRequested,
+        scopedCurrent,
+        touchedKeys,
       ),
       rolePermissions: current.rolePermissions,
       deletedRows,
@@ -1768,7 +2115,7 @@ function mergeScopedBackOfficeState(
   const scopedCurrent = scopeBackOfficeState(current, principal);
   const scopedRequested = scopeBackOfficeState(requested, principal);
   const schoolDeletionScope = getEditableEntitiesForPrincipal(principal).filter((entity) =>
-    touchedEntities.includes(entity),
+    touchedKeys.includes(entity),
   );
   const deletedRows = pedagogyGovernanceService.filterSchoolAdminDeletedRows(
     mergeDeletedRows(
@@ -1778,58 +2125,136 @@ function mergeScopedBackOfficeState(
     principal,
   );
 
-  const mergedTeachers = mergeScopedRows(current.teachers, scopedRequested.teachers, scopedCurrent.teachers);
-  const mergedUsers = mergeScopedRows(current.users, scopedRequested.users, scopedCurrent.users);
-  const syncedTeachers = userTeacherSyncService.syncTeachersFromUserAccounts({
-    ...current,
-    users: mergedUsers,
-    teachers: mergedTeachers,
-  });
+  const usersTouched = touchedKeys.includes("users");
+  const teachersTouched = touchedKeys.includes("teachers");
+  const mergedUsers = mergeScopedEntityIfTouched(
+    "users",
+    current,
+    scopedRequested,
+    scopedCurrent,
+    touchedKeys,
+  );
+  const mergedTeachers = mergeScopedEntityIfTouched(
+    "teachers",
+    current,
+    scopedRequested,
+    scopedCurrent,
+    touchedKeys,
+  );
+  const syncedTeachers =
+    usersTouched || teachersTouched
+      ? userTeacherSyncService.syncTeachersFromUserAccounts({
+          ...current,
+          users: mergedUsers,
+          teachers: mergedTeachers,
+        })
+      : current.teachers;
+  const mergedCourses = mergeScopedEntityIfTouched(
+    "courses",
+    current,
+    scopedRequested,
+    scopedCurrent,
+    touchedKeys,
+  );
 
   return applyDeletedRows({
     ...current,
-    schools: mergeScopedRows(current.schools, scopedRequested.schools, scopedCurrent.schools),
+    schools: mergeScopedEntityIfTouched("schools", current, scopedRequested, scopedCurrent, touchedKeys),
     users: mergedUsers,
     countries: principal.role === "Admin Pays"
-      ? mergeScopedRows(current.countries, scopedRequested.countries, scopedCurrent.countries)
+      ? mergeScopedEntityIfTouched("countries", current, scopedRequested, scopedCurrent, touchedKeys)
       : current.countries,
-    subscriptions: principal.role === "Admin School" ? current.subscriptions : mergeScopedRows(current.subscriptions, scopedRequested.subscriptions, scopedCurrent.subscriptions),
-    contacts: mergeScopedRows(current.contacts ?? [], scopedRequested.contacts ?? [], scopedCurrent.contacts ?? []),
-    relations: mergeScopedRows(current.relations ?? [], scopedRequested.relations ?? [], scopedCurrent.relations ?? []),
+    subscriptions: principal.role === "Admin School"
+      ? current.subscriptions
+      : mergeScopedEntityIfTouched("subscriptions", current, scopedRequested, scopedCurrent, touchedKeys),
+    contacts: mergeScopedEntityIfTouched("contacts", current, scopedRequested, scopedCurrent, touchedKeys),
+    relations: mergeScopedEntityIfTouched("relations", current, scopedRequested, scopedCurrent, touchedKeys),
     notifications: current.notifications,
-    students: mergeScopedRows(current.students, scopedRequested.students, scopedCurrent.students),
+    students: mergeScopedEntityIfTouched("students", current, scopedRequested, scopedCurrent, touchedKeys),
     teachers:
       principal.role === "Admin School"
-        ? pedagogyGovernanceService.enforceSchoolAdminTeachers(
-            current.teachers,
-            syncedTeachers,
-            scopedCurrent.teachers,
-          )
+        ? usersTouched || teachersTouched
+          ? pedagogyGovernanceService.enforceSchoolAdminTeachers(
+              current.teachers,
+              syncedTeachers,
+              scopedCurrent.teachers,
+              principal,
+            )
+          : current.teachers
         : syncedTeachers,
-    classes: mergeScopedRows(current.classes, scopedRequested.classes, scopedCurrent.classes),
-    courses: pedagogyGovernanceService.enforceCourseTeacherUniqueness(
-      current.courses,
-      mergeScopedRows(current.courses, scopedRequested.courses, scopedCurrent.courses),
-      scopedCurrent.courses,
+    classes: mergeScopedEntityIfTouched("classes", current, scopedRequested, scopedCurrent, touchedKeys),
+    courses: teachersTouched || touchedKeys.includes("courses")
+      ? pedagogyGovernanceService.enforceCourseTeacherUniqueness(
+          current.courses,
+          mergedCourses,
+          scopedCurrent.courses,
+        )
+      : current.courses,
+    assignments: mergeScopedEntityIfTouched(
+      "assignments",
+      current,
+      scopedRequested,
+      scopedCurrent,
+      touchedKeys,
     ),
-    assignments: mergeScopedRows(current.assignments, scopedRequested.assignments, scopedCurrent.assignments),
-    courseSchedules: mergeScopedRows(current.courseSchedules ?? [], scopedRequested.courseSchedules ?? [], scopedCurrent.courseSchedules ?? []),
-    payments: mergeScopedRows(current.payments, scopedRequested.payments, scopedCurrent.payments),
-    paymentStatuses: mergeScopedRows(current.paymentStatuses, scopedRequested.paymentStatuses, scopedCurrent.paymentStatuses),
-    presences: mergeScopedRows(current.presences, scopedRequested.presences, scopedCurrent.presences),
-    notes: mergeScopedRows(current.notes, scopedRequested.notes, scopedCurrent.notes),
-    exams: mergeScopedRows(current.exams, scopedRequested.exams, scopedCurrent.exams),
-    bulletins: mergeScopedRows(current.bulletins, scopedRequested.bulletins, scopedCurrent.bulletins),
-    documents: mergeScopedRows(current.documents, scopedRequested.documents, scopedCurrent.documents),
-    announcements: mergeScopedRows(current.announcements, scopedRequested.announcements, scopedCurrent.announcements),
-    messages: mergeScopedRows(current.messages, scopedRequested.messages, scopedCurrent.messages),
-    rolePermissions: mergeScopedRolePermissions(current.rolePermissions, requested.rolePermissions, principal),
-    academicConfigs: mergeAcademicConfigs(
-      current.academicConfigs,
-      scopedRequested.academicConfigs ?? {},
-      isSuperAdminPrincipal(principal),
+    courseSchedules: mergeScopedEntityIfTouched(
+      "courseSchedules",
+      current,
+      scopedRequested,
+      scopedCurrent,
+      touchedKeys,
     ),
-    auditLog: mergeAuditLog(current.auditLog, requested.auditLog),
+    payments: mergeScopedEntityIfTouched("payments", current, scopedRequested, scopedCurrent, touchedKeys),
+    paymentStatuses: mergeScopedEntityIfTouched(
+      "paymentStatuses",
+      current,
+      scopedRequested,
+      scopedCurrent,
+      touchedKeys,
+    ),
+    feeGrids: mergeScopedEntityIfTouched("feeGrids", current, scopedRequested, scopedCurrent, touchedKeys),
+    schoolFeeItems: mergeScopedEntityIfTouched(
+      "schoolFeeItems",
+      current,
+      scopedRequested,
+      scopedCurrent,
+      touchedKeys,
+    ),
+    studentFees: mergeScopedEntityIfTouched("studentFees", current, scopedRequested, scopedCurrent, touchedKeys),
+    feeTariffHistory: mergeScopedEntityIfTouched(
+      "feeTariffHistory",
+      current,
+      scopedRequested,
+      scopedCurrent,
+      touchedKeys,
+    ),
+    presences: mergeScopedEntityIfTouched("presences", current, scopedRequested, scopedCurrent, touchedKeys),
+    notes: mergeScopedEntityIfTouched("notes", current, scopedRequested, scopedCurrent, touchedKeys),
+    evaluations: mergeScopedEntityIfTouched("evaluations", current, scopedRequested, scopedCurrent, touchedKeys),
+    exams: mergeScopedEntityIfTouched("exams", current, scopedRequested, scopedCurrent, touchedKeys),
+    bulletins: mergeScopedEntityIfTouched("bulletins", current, scopedRequested, scopedCurrent, touchedKeys),
+    documents: mergeScopedEntityIfTouched("documents", current, scopedRequested, scopedCurrent, touchedKeys),
+    announcements: mergeScopedEntityIfTouched(
+      "announcements",
+      current,
+      scopedRequested,
+      scopedCurrent,
+      touchedKeys,
+    ),
+    messages: mergeScopedEntityIfTouched("messages", current, scopedRequested, scopedCurrent, touchedKeys),
+    rolePermissions: touchedKeys.includes("rolePermissions")
+      ? mergeScopedRolePermissions(current.rolePermissions, requested.rolePermissions, principal)
+      : current.rolePermissions,
+    academicConfigs: touchedKeys.includes("academicConfigs")
+      ? mergeAcademicConfigs(
+          current.academicConfigs,
+          scopedRequested.academicConfigs ?? {},
+          isSuperAdminPrincipal(principal),
+        )
+      : current.academicConfigs,
+    auditLog: touchedKeys.includes("auditLog")
+      ? mergeAuditLog(current.auditLog, requested.auditLog)
+      : current.auditLog,
     deletedRows,
     updatedAt: new Date().toISOString(),
   });
@@ -1858,6 +2283,49 @@ function mergeScopedRows(currentRows, requestedScopedRows, currentScopedRows) {
     ...requestedScopedRows,
     ...currentRows.filter((row) => !scopedKeys.has(rowKey(row)) && !requestedKeys.has(rowKey(row))),
   ];
+}
+
+/** Ne fusionne une entité scopée que si le client l'a incluse dans le PUT (évite d'effacer des données). */
+/** Admin Pays : mise à jour uniquement des pays déjà dans son périmètre (pas de création). */
+function mergeCountryAdminCountries(currentCountries = [], scopedRequested = {}, scopedCurrent = {}, touchedKeys = []) {
+  if (!touchedKeys.includes("countries")) {
+    return currentCountries;
+  }
+  const scopedKeys = new Set((scopedCurrent.countries ?? []).map(rowKey));
+  const requestedByKey = new Map(
+    (scopedRequested.countries ?? []).map((row) => [rowKey(row), row]),
+  );
+  return currentCountries.map((country) => {
+    const key = rowKey(country);
+    if (scopedKeys.has(key) && requestedByKey.has(key)) {
+      return { ...country, ...requestedByKey.get(key) };
+    }
+    return country;
+  });
+}
+
+function mergeScopedEntityIfTouched(entity, current, scopedRequested, scopedCurrent, touchedKeys) {
+  if (!touchedKeys.includes(entity)) {
+    return Array.isArray(current[entity]) ? current[entity] : [];
+  }
+  let requestedScopedRows = scopedRequested[entity] ?? [];
+  const currentScopedRows = scopedCurrent[entity] ?? [];
+  if (!requestedScopedRows.length && !(current[entity] ?? []).length) {
+    return [];
+  }
+  if (entity === "users" && requestedScopedRows.length) {
+    const currentAllByKey = new Map(
+      (current.users ?? []).map((row) => [userRowKey(row), row]).filter(([key]) => key),
+    );
+    requestedScopedRows = requestedScopedRows.map((row) => {
+      const key = userRowKey(row);
+      const existing = key ? (currentAllByKey.get(key) ?? {}) : {};
+      const merged = { ...existing, ...row };
+      applyStoredUserCredentials(existing, row, merged);
+      return normalizeBackOfficeUserCredentials(merged);
+    });
+  }
+  return mergeScopedRows(current[entity] ?? [], requestedScopedRows, currentScopedRows);
 }
 
 const SUPERADMIN_MANAGED_ROLES = roleGovernanceService.superadminManagedRoles;
@@ -1987,6 +2455,10 @@ function getEditableEntitiesForPrincipal(principal) {
     "courseSchedules",
     "payments",
     "paymentStatuses",
+    "feeGrids",
+    "schoolFeeItems",
+    "studentFees",
+    "feeTariffHistory",
     "presences",
     "notes",
     "exams",
@@ -2008,8 +2480,13 @@ const SCHOOL_SCOPED_DELETABLE_ENTITIES = new Set([
   "courseSchedules",
   "payments",
   "paymentStatuses",
+  "feeGrids",
+  "schoolFeeItems",
+  "studentFees",
+  "feeTariffHistory",
   "presences",
   "notes",
+  "evaluations",
   "exams",
   "bulletins",
   "documents",
@@ -2049,6 +2526,9 @@ function detectDeletedRows(currentState = {}, requestedState = {}, entities = []
   return entities.reduce((deletedRows, entity) => {
     const currentRows = Array.isArray(currentState[entity]) ? currentState[entity] : [];
     const requestedRows = Array.isArray(requestedState[entity]) ? requestedState[entity] : [];
+    if (!requestedRows.length) {
+      return deletedRows;
+    }
     const requestedKeys = new Set(requestedRows.map(rowKey));
 
     let rowsToCheck = currentRows;
@@ -2179,11 +2659,13 @@ function applyDeletedRows(state = {}, deletedRows = state.deletedRows ?? {}) {
 }
 
 function hasSchoolScope(row = {}, schoolCodes) {
-  return (
-    schoolCodes.has(row.schoolCode) ||
-    schoolCodes.has(row.code) ||
-    schoolCodes.has(row.publicId)
-  );
+  const rowCode = normalizeSchoolCodeKey(row.schoolCode ?? row.code ?? row.publicId);
+  if (!rowCode) return false;
+  for (const code of schoolCodes) {
+    const normalized = normalizeSchoolCodeKey(code);
+    if (normalized && normalized === rowCode) return true;
+  }
+  return false;
 }
 
 // Contexte d'isolation établissement : identifiants d'élèves et noms de classes
@@ -2292,6 +2774,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     role,
     schoolCode,
     countryCode,
+    countryScope: user.countryScope ?? "",
     permissions,
     studentIds: getPrincipalStudentIds(response),
     classNames: user.assignedClasses ?? [],
@@ -2375,18 +2858,28 @@ function mergeRolePermissions(role, basePermissions = [], rolePermissionsMap = n
 }
 
 function enforceBusinessRolePermissions(role, permissions = []) {
+  let next = [...permissions];
+
+  if (role === "Admin Pays") {
+    next = next.filter((permission) => permission !== "Pays:CREATE" && permission !== "Pays:DELETE");
+  }
+
   if (role !== "Admin School") {
-    return permissions;
+    return next;
   }
 
   const forbiddenFeatures = ["Établissements", "Abonnements"];
   const forbiddenKeywords = ["abonnement", "etablissement", "établissement", "inscription", "tarif"];
-  return permissions.filter((permission) => {
+  return next.filter((permission) => {
     if (String(permission).startsWith("Paramètres Établissement:")) {
+      return true;
+    }
+    if (String(permission).startsWith("Frais & tarifs:")) {
       return true;
     }
 
     const normalizedPermission = normalizeBusinessPermission(permission);
+    if (normalizedPermission.startsWith("frais & tarifs")) return true;
     return (
       !forbiddenFeatures.some((feature) => String(permission).startsWith(feature)) &&
       !forbiddenKeywords.some((keyword) => normalizedPermission.includes(keyword))

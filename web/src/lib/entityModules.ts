@@ -60,7 +60,7 @@ export interface EntityField {
   hint?: string;
   required?: boolean;
   readOnly?: boolean;
-  inputType?: "text" | "select";
+  inputType?: "text" | "select" | "date";
   optionsKey?:
     | "levels"
     | "tracks"
@@ -130,7 +130,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         inputType: "select",
         selectOptions: CONTACT_GENDER_OPTIONS,
       },
-      { key: "birthDate", label: "Date de naissance", placeholder: "JJ-MM-AAAA" },
+      { key: "birthDate", label: "Date de naissance", inputType: "date" },
       { key: "address", label: "Adresse", placeholder: "Adresse" },
       {
         key: "status",
@@ -275,7 +275,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         readOnly: true,
         hint: "Utilisé pour l'authentification (ex. ENS-0001).",
       },
-      { key: "birthDate", label: "Date de naissance", placeholder: "JJ-MM-AAAA", required: true },
+      { key: "birthDate", label: "Date de naissance", inputType: "date", required: true },
       {
         key: "gender",
         label: "Sexe",
@@ -414,7 +414,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     description: "Appels et suivi de présence.",
     fields: [
       { key: "studentName", label: "Élève", placeholder: "Nom élève" },
-      { key: "date", label: "Date", placeholder: "JJ-MM-AAAA" },
+      { key: "date", label: "Date", inputType: "date" },
       { key: "status", label: "Statut", placeholder: "Présent / Absent" },
     ],
     columns: ["studentName", "date", "status"],
@@ -450,7 +450,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
       { key: "className", label: "Classe", placeholder: "6ème A", readOnly: true },
       { key: "subject", label: "Matière", placeholder: "Mathématiques", readOnly: true },
       { key: "examType", label: "Type", placeholder: "Contrôle / Devoir / Examen", readOnly: true },
-      { key: "date", label: "Date", placeholder: "JJ-MM-AAAA", readOnly: true },
+      { key: "date", label: "Date", inputType: "date", readOnly: true },
       { key: "period", label: "Période", placeholder: "Trimestre 1", readOnly: true },
       {
         key: "status",
@@ -481,7 +481,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
       { key: "average", label: "Moyenne", placeholder: "14.5" },
       { key: "rank", label: "Rang", placeholder: "2/28" },
       { key: "status", label: "Statut", placeholder: "Brouillon / En validation / Publié" },
-      { key: "publishedAt", label: "Publié le", placeholder: "JJ-MM-AAAA" },
+      { key: "publishedAt", label: "Publié le", inputType: "date" },
     ],
     columns: ["studentName", "className", "period", "average", "status"],
   },
@@ -499,7 +499,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
       { key: "title", label: "Titre", placeholder: "Attestation de scolarité" },
       { key: "format", label: "Format", placeholder: "PDF" },
       { key: "status", label: "Statut", placeholder: "Disponible / En génération" },
-      { key: "generatedAt", label: "Généré le", placeholder: "JJ-MM-AAAA" },
+      { key: "generatedAt", label: "Généré le", inputType: "date" },
     ],
     columns: ["studentName", "documentType", "title", "status", "generatedAt"],
   },
@@ -513,11 +513,25 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     description: "Frais scolaires et encaissements.",
     fields: [
       { key: "studentName", label: "Élève", placeholder: "Nom élève" },
-      { key: "label", label: "Libellé", placeholder: "Frais scolaires T1" },
-      { key: "amount", label: "Montant", placeholder: "150" },
-      { key: "status", label: "Statut", placeholder: "Payé / Impayé" },
+      { key: "feeType", label: "Type de frais", placeholder: "Scolarité" },
+      { key: "amount", label: "Montant", placeholder: "25000" },
+      { key: "method", label: "Mode de paiement", placeholder: "Espèces" },
+      { key: "date", label: "Date", inputType: "date" },
+      { key: "status", label: "Statut", placeholder: "Payé / Partiel / Annulé" },
+      { key: "reference", label: "Référence", placeholder: "CD-2026-PAY-0001", readOnly: true },
+      { key: "comment", label: "Commentaire", placeholder: "Facultatif" },
+      { key: "cancellationReason", label: "Motif d'annulation", placeholder: "Obligatoire si annulé" },
     ],
-    columns: ["studentName", "label", "amount", "status"],
+    columns: ["reference", "studentName", "feeType", "amount", "method", "date", "status"],
+    columnLabels: {
+      reference: "Référence",
+      studentName: "Élève",
+      feeType: "Type de frais",
+      amount: "Montant",
+      method: "Mode",
+      date: "Date",
+      status: "Statut",
+    },
   },
   {
     key: "announcements",
@@ -680,13 +694,18 @@ export function applySchoolScopeToItem(
   return { ...item, schoolCode };
 }
 
+export interface MergeScopedEntityRowsResult {
+  rows: Record<string, unknown>[];
+  applied: boolean;
+}
+
 /** Fusionne une création/modification dans le tableau global, limitée au périmètre établissement. */
 export function mergeScopedEntityRows(
   key: SchoolEntityKey,
   user: SessionUser | null,
   state: BackOfficeState,
   nextItem: Record<string, unknown>,
-): Record<string, unknown>[] {
+): MergeScopedEntityRowsResult {
   const allRows = (state[key] ?? []) as Record<string, unknown>[];
   const scopedRows = getScopedEntityRows(key, user, state);
   const scopedIds = new Set(scopedRows.map((row) => String(row.id ?? "")).filter(Boolean));
@@ -696,20 +715,23 @@ export function mergeScopedEntityRows(
     const existsGlobally = allRows.some((row) => String(row.id) === targetId);
     if (existsGlobally) {
       // Modification refusée : la ligne existe mais hors périmètre établissement.
-      return allRows;
+      return { rows: allRows, applied: false };
     }
     // Création : nouvel identifiant encore absent du périmètre courant.
-    return [nextItem, ...allRows];
+    return { rows: [nextItem, ...allRows], applied: true };
   }
 
   if (!targetId) {
-    return [nextItem, ...allRows];
+    return { rows: [nextItem, ...allRows], applied: true };
   }
 
   const exists = allRows.some((row) => String(row.id) === targetId);
-  return exists
-    ? allRows.map((row) => (String(row.id) === targetId ? nextItem : row))
-    : [nextItem, ...allRows];
+  return {
+    rows: exists
+      ? allRows.map((row) => (String(row.id) === targetId ? nextItem : row))
+      : [nextItem, ...allRows],
+    applied: true,
+  };
 }
 
 /** Supprime une ligne uniquement si elle appartient au périmètre établissement courant. */

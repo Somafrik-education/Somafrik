@@ -1,4 +1,6 @@
-import type { SessionUser } from "../types";
+import type { SessionUser, UserAccount } from "../types";
+import { canManageUserAccount } from "./userAccounts";
+import { isPendingValidationStatus } from "./orgHierarchy";
 import { VIEW_PERMISSION_FEATURES } from "./constants";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
 import { isInternalSchoolRole, normalize, isSchoolAdminRole } from "./format";
@@ -18,10 +20,12 @@ import {
   isSuperAdminAllowedFeature,
   isSuperAdminAllowedView,
 } from "./superAdminAccess";
+import { canManageFeeGrids, canViewFeeGrids, canViewStudentFees } from "./fees";
+import { isEstablishmentCommunicationUser } from "./establishmentCommunication";
 
 const SCHOOL_ADMIN_FORBIDDEN_FEATURES = new Set(["Établissements", "Abonnements"]);
 
-/** Rôles habilités à gérer le répertoire de contacts (CRM). */
+/** Rôles habilités à gérer le répertoire de contacts (CRM) sans entrée explicite dans la matrice. */
 const CONTACT_MANAGER_ROLES = new Set([
   "admin school",
   "directeur",
@@ -31,18 +35,67 @@ const CONTACT_MANAGER_ROLES = new Set([
   "secretaire",
 ]);
 
-export function canAccessSchoolBackOffice(role?: string): boolean {
-  if (isSuperAdminRole(role)) return false;
-  return isInternalSchoolRole(role);
-}
-
-/** Accès au module Contacts : Super Admin, Admin Pays et administration établissement. */
-export function canManageContacts(ctx: PermissionContext): boolean {
-  const role = ctx.user?.role;
+/** Accès CRM établissement (liste blanche legacy). */
+export function canManageContactsByRole(role?: string): boolean {
   if (!role) return false;
   if (isSuperAdminRole(role)) return true;
   if (role === COUNTRY_ADMIN_ROLE) return true;
+  if (isSchoolAdminRole(role)) return true;
   return CONTACT_MANAGER_ROLES.has(normalize(role));
+}
+
+/** Accès au module Contacts : matrice Superadmin + rôles CRM établissement. */
+export function canManageContacts(ctx: PermissionContext): boolean {
+  return (
+    hasPermissionForFeature(ctx, "Contacts", "READ") ||
+    hasPermissionForFeature(ctx, "Relations", "READ") ||
+    canManageContactsByRole(ctx.user?.role)
+  );
+}
+
+function hasContactsModulePermission(
+  ctx: PermissionContext,
+  feature: "Contacts" | "Relations",
+  action: string,
+): boolean {
+  if (hasPermissionForFeature(ctx, feature, action)) return true;
+  if (canManageContactsByRole(ctx.user?.role)) return true;
+  return false;
+}
+
+/** Droits effectifs d'une entité (ex. contact Enseignant = union Contacts + Enseignants). */
+export function getEntityFeaturePermissions(
+  ctx: PermissionContext,
+  moduleKey: string,
+  feature: string,
+  context: { contactType?: string } = {},
+): FeaturePermissions {
+  if (moduleKey === "contacts" && normalize(context.contactType) === "enseignant") {
+    return {
+      canRead:
+        hasBackOfficePermission(ctx, "Contacts", "READ") ||
+        hasBackOfficePermission(ctx, "Enseignants", "READ"),
+      canCreate:
+        hasBackOfficePermission(ctx, "Contacts", "CREATE") ||
+        hasBackOfficePermission(ctx, "Enseignants", "CREATE"),
+      canUpdate:
+        hasBackOfficePermission(ctx, "Contacts", "UPDATE") ||
+        hasBackOfficePermission(ctx, "Enseignants", "UPDATE"),
+      canDelete:
+        hasBackOfficePermission(ctx, "Contacts", "DELETE") ||
+        hasBackOfficePermission(ctx, "Enseignants", "DELETE"),
+      canSuspend:
+        hasBackOfficePermission(ctx, "Contacts", "SUSPEND") ||
+        hasBackOfficePermission(ctx, "Enseignants", "SUSPEND"),
+    };
+  }
+
+  return getFeaturePermissions(ctx, feature);
+}
+
+export function canAccessSchoolBackOffice(role?: string): boolean {
+  if (isSuperAdminRole(role)) return false;
+  return isInternalSchoolRole(role);
 }
 
 export interface PermissionContext {
@@ -70,6 +123,11 @@ export function resolveEffectivePermissions(
   const merged = [...new Set([...fromUser, ...fromRole, ...fromDefaults])];
   if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
     merged.push("ALL_PRIVILEGES");
+  }
+  if (role === COUNTRY_ADMIN_ROLE) {
+    return merged.filter(
+      (permission) => permission !== "Pays:CREATE" && permission !== "Pays:DELETE",
+    );
   }
   return merged;
 }
@@ -202,6 +260,30 @@ export function getFeaturePermissions(ctx: PermissionContext, feature: string): 
   };
 }
 
+/** Admin établissement et rôles habilités peuvent réinitialiser un mot de passe utilisateur. */
+export function canResetUserPassword(ctx: PermissionContext): boolean {
+  if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role)) return true;
+  if (hasBackOfficePermission(ctx, "Utilisateurs", "UPDATE")) return true;
+  return getCurrentRolePermissions(ctx).some(
+    (permission) => normalize(permission) === normalize("Gérer utilisateurs"),
+  );
+}
+
+export function canResetTargetUserPassword(
+  ctx: PermissionContext,
+  target: UserAccount,
+): boolean {
+  if (!canResetUserPassword(ctx)) return false;
+  if (isPendingValidationStatus(target.validationStatus ?? target.status)) {
+    return isSuperAdminRole(ctx.user?.role);
+  }
+  if (isSuperAdminRole(ctx.user?.role)) {
+    return canManageUserAccount(ctx.user, target, "UPDATE");
+  }
+  return canManageUserAccount(ctx.user, target, "UPDATE");
+}
+
 export function hasBackOfficePermission(
   ctx: PermissionContext,
   features: string | (string | null)[] | null,
@@ -215,14 +297,18 @@ export function hasBackOfficePermission(
   const normalizedAction = action === "R" ? "READ" : action;
   const featureList = Array.isArray(features) ? features : [features];
 
-  if (featureList.includes("Contacts") || featureList.includes("Relations")) {
-    return canManageContacts(ctx);
+  if (featureList.includes("Contacts")) {
+    return hasContactsModulePermission(ctx, "Contacts", normalizedAction);
+  }
+  if (featureList.includes("Relations")) {
+    return hasContactsModulePermission(ctx, "Relations", normalizedAction);
   }
 
   if (
     isSchoolAdminRole(ctx.user.role) &&
     featureList.some((feature) => feature === "Enseignants") &&
-    !canSchoolAdminMutateTeachers(normalizedAction)
+    !canSchoolAdminMutateTeachers(normalizedAction) &&
+    !hasPermissionForFeature(ctx, "Enseignants", normalizedAction)
   ) {
     return false;
   }
@@ -236,8 +322,26 @@ export function hasBackOfficePermission(
 
   if (featureList.includes("Droits par rôle")) return canManageRolePermissions(ctx);
   if (featureList.includes("Paramètres graphiques")) return canManageRolePermissions(ctx);
-  if (featureList.some((feature) => feature === "Conception bulletins")) {
+  if (featureList.includes("Conception bulletins")) {
     return false;
+  }
+
+  if (
+    ctx.user?.role === COUNTRY_ADMIN_ROLE &&
+    featureList.some((feature) => feature === "Pays") &&
+    (normalizedAction === "CREATE" || normalizedAction === "DELETE")
+  ) {
+    return false;
+  }
+
+  if (featureList.some((feature) => feature === "Frais & tarifs")) {
+    if (normalizedAction === "READ") {
+      return canViewFeeGrids(ctx.user) || canViewStudentFees(ctx.user);
+    }
+    return (
+      canManageFeeGrids(ctx.user) &&
+      hasPermissionForFeature(ctx, "Frais & tarifs", normalizedAction)
+    );
   }
 
   return featureList.some((feature) => {
@@ -257,11 +361,18 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   if (viewName === "chartSettings") {
     return canManageRolePermissions(ctx);
   }
+  if (viewName === "mySubscription") {
+    if (isSuperAdminRole(ctx.user?.role)) return false;
+    return isSchoolAdminRole(ctx.user?.role);
+  }
   if (viewName === "bulletinDesign") {
     return canDesignBulletins(ctx);
   }
-  if (viewName === "contacts" || viewName === "relations") {
-    return canManageContacts(ctx);
+  if (viewName === "contacts") {
+    return hasBackOfficePermission(ctx, "Contacts", "READ");
+  }
+  if (viewName === "relations") {
+    return hasBackOfficePermission(ctx, "Relations", "READ");
   }
   if (ctx.user?.role === COUNTRY_ADMIN_ROLE) {
     if (SCHOOL_ENTITY_SIDEBAR_VIEWS.has(viewName) || viewName === "establishment" || viewName === "configuration") {
@@ -280,6 +391,16 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     // et, parmi les rôles internes, au seul Admin School.
     if (isSuperAdminRole(ctx.user?.role)) return true;
     return isSchoolAdminRole(ctx.user?.role);
+  }
+  if (
+    viewName === "messages" ||
+    viewName === "notifications" ||
+    viewName === "announcements"
+  ) {
+    if (hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ")) {
+      return true;
+    }
+    return isEstablishmentCommunicationUser(ctx);
   }
   return hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ");
 }

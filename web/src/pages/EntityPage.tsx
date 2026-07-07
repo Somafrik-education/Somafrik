@@ -11,7 +11,9 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
-import { useFeaturePermissions } from "../lib/usePermissionContext";
+import { usePrompt } from "../components/ui/PromptDialog";
+import { usePermissionContext } from "../lib/usePermissionContext";
+import { getEntityFeaturePermissions, canResetTargetUserPassword } from "../lib/permissions";
 import {
   applySchoolScopeToItem,
   deleteScopedEntityRow,
@@ -20,6 +22,8 @@ import {
   mergeScopedEntityRows,
   type SchoolEntityKey,
 } from "../lib/entityModules";
+import { applyActiveGridsToStudent } from "../lib/fees";
+import { syncSingleUserToTeachers, promoteTeacherToUser } from "../lib/userTeacherSync";
 import {
   getAssignmentSelectOptions,
   normalizeAssignmentForm,
@@ -37,6 +41,10 @@ import {
   validateContactDuplicate,
 } from "../lib/contacts";
 import {
+  findUserAccountForContact,
+  resetUserAccountPassword,
+} from "../lib/userAccounts";
+import {
   getRelationContactOptions,
   getRelationParentContactOptions,
   getRelationStudentOptions,
@@ -45,9 +53,20 @@ import {
   validateRelation,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, rowsToCsv } from "../lib/csv";
-import { normalize } from "../lib/format";
+import { validateTeacherDeletion } from "../lib/teacherRules";
+import { normalize, isSchoolAdminRole } from "../lib/format";
+import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
+import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
 import { appendAuditLog, auditActor, makeAuditEntry, type AuditEntry } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
+import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
+import { PaymentReceipt } from "../components/payments/PaymentReceipt";
+import {
+  buildPaymentAuditEntry,
+  cancelPaymentRecord,
+  isPaymentCancelled,
+  type PaymentRecord,
+} from "../lib/quickPayment";
 import {
   getCurrentSchool,
   scopedClasses,
@@ -125,17 +144,35 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
   const { state, update } = useData();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const { prompt } = usePrompt();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
   const scopeUser = scopedUser ?? session?.user ?? null;
+  const effectiveSchoolCode = useMemo(() => {
+    const fromContext = String(schoolCode ?? "").trim();
+    if (fromContext && fromContext !== "*") return fromContext;
+    return String(scopeUser?.schoolCode ?? "").trim();
+  }, [schoolCode, scopeUser?.schoolCode]);
 
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const [quickPaymentOpen, setQuickPaymentOpen] = useState(false);
+  const [receiptPayment, setReceiptPayment] = useState<PaymentRecord | null>(null);
+  const [cancellingPayment, setCancellingPayment] = useState<PaymentRecord | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions(module?.feature ?? "Élèves");
-  const allowCreate = canCreate && !module?.planningManaged;
-  const allowDelete = canDelete && !module?.planningManaged;
+  const ctx = usePermissionContext();
+  const entityPermissions = useMemo(
+    () =>
+      getEntityFeaturePermissions(ctx, module?.key ?? "", module?.feature ?? "Élèves", {
+        contactType: String(editing?.contactType ?? ""),
+      }),
+    [ctx, module?.key, module?.feature, editing?.contactType],
+  );
+  const { canRead, canCreate, canUpdate, canDelete } = entityPermissions;
+  const allowCreate = canCreate && !module?.planningManaged && module?.key !== "payments";
+  const allowDelete = canDelete && !module?.planningManaged && module?.key !== "payments";
   const academicLists = useMemo(
     () => getSchoolAcademicLists(state, schoolCode),
     [state, schoolCode],
@@ -266,7 +303,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
   async function persistPatch(patch: Partial<BackOfficeState>, message: string) {
     setBusy(true);
     try {
-      await update(patch);
+      await update(patch, { partial: true });
       showToast(message, "success");
     } catch {
       showToast("Échec de la synchronisation", "error");
@@ -275,6 +312,48 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       setBusy(false);
     }
   }
+
+  async function handleResetContactPassword() {
+    if (!editing?.id || module?.key !== "contacts") return;
+    const linkedUser = findUserAccountForContact(editing, state.users);
+    if (!linkedUser) {
+      showToast("Aucun compte d'accès lié à ce contact.", "error");
+      return;
+    }
+    if (!canResetTargetUserPassword(ctx, linkedUser)) {
+      showToast("Réinitialisation non autorisée pour ce compte.", "error");
+      return;
+    }
+    const temporaryPassword = await prompt({
+      title: "Mot de passe temporaire",
+      description: `Définir un mot de passe temporaire pour ${linkedUser.identifier}.`,
+      defaultValue: "Soma1234",
+      placeholder: "Mot de passe (min. 6 caractères)",
+      inputType: "password",
+      confirmLabel: "Réinitialiser",
+      validate: (value) => (value.length < 6 ? "Minimum 6 caractères." : null),
+    });
+    if (!temporaryPassword) return;
+    setBusy(true);
+    try {
+      const issued = await resetUserAccountPassword(linkedUser, temporaryPassword);
+      showToast(`Mot de passe réinitialisé · ${linkedUser.identifier} · provisoire : ${issued}`, "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Échec de la réinitialisation", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const linkedContactUser =
+    module?.key === "contacts" && editing?.id
+      ? findUserAccountForContact(editing, state.users)
+      : undefined;
+  const canResetContactPassword = Boolean(
+    linkedContactUser &&
+      String(editing?.hasAccess ?? "") === "Oui" &&
+      canResetTargetUserPassword(ctx, linkedContactUser),
+  );
 
   function handleExportCsv() {
     if (!module) return;
@@ -381,7 +460,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
     };
 
     if (key === "teachers") {
-      const synced = syncTeacherPedagogy(baseState, nextItem, schoolCode);
+      const synced = syncTeacherPedagogy(baseState, nextItem, effectiveSchoolCode);
       return {
         teachers: nextEntityRows.map((row) =>
           String(row.id) === String(synced.teacher.id) ? synced.teacher : row,
@@ -395,7 +474,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       const synced = syncCoursePedagogy(
         { ...baseState, courses: nextEntityRows },
         nextItem,
-        schoolCode,
+        effectiveSchoolCode,
       );
       return {
         courses: synced.courses,
@@ -408,7 +487,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       const synced = syncAssignmentPedagogy(
         { ...baseState, assignments: nextEntityRows },
         nextItem,
-        schoolCode,
+        effectiveSchoolCode,
       );
       return {
         assignments: synced.assignments,
@@ -505,7 +584,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
     if (module.key === "classes") {
       const classConflict = validateUniqueClassName(
         String(workingItem.name ?? ""),
-        filterSchoolClassRecords((state.classes ?? []) as Record<string, unknown>[], schoolCode),
+        filterSchoolClassRecords((state.classes ?? []) as Record<string, unknown>[], effectiveSchoolCode),
         editing.id ? String(editing.id) : undefined,
       );
       if (classConflict) {
@@ -563,10 +642,18 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       }
     }
 
-    const scopedItem = applySchoolScopeToItem(module.key, workingItem, schoolCode, state);
+    for (const field of module.fields) {
+      if (field.inputType === "date" && !field.readOnly && workingItem[field.key]) {
+        workingItem[field.key] = normalizePeriodDate(String(workingItem[field.key]));
+      }
+    }
+
+    const scopedItem = applySchoolScopeToItem(module.key, workingItem, effectiveSchoolCode, state);
     const linkedItem = linkStudentFromName(module.key, scopedItem, scopeUser, state);
     const current = getScopedEntityRows(module.key, scopeUser, state);
-    const exists = Boolean(linkedItem.id) && current.some((row) => row.id === linkedItem.id);
+    const exists =
+      Boolean(linkedItem.id) &&
+      current.some((row) => String(row.id) === String(linkedItem.id));
 
     if (exists && !canUpdate) {
       showToast(
@@ -583,10 +670,26 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       return;
     }
 
+    if (!exists) {
+      const featureByModule: Partial<Record<string, SubscriptionFeature>> = {
+        students: "create_student",
+        teachers: "create_teacher",
+        announcements: "announcements",
+      };
+      const feature = featureByModule[module.key];
+      if (feature) {
+        const blocked = subscriptionFeatureBlocked(state, effectiveSchoolCode, feature);
+        if (blocked) {
+          showToast(blocked, "error");
+          return;
+        }
+      }
+    }
+
     let preparedItem = { ...linkedItem };
 
     if (module.key === "teachers") {
-      const code = String(schoolCode ?? preparedItem.schoolCode ?? "").trim();
+      const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
       if (!code || code === "*") {
         showToast("Code établissement requis pour générer l'identifiant enseignant", "error");
         return;
@@ -617,19 +720,59 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
           };
         })();
 
-    const nextAllRows = mergeScopedEntityRows(module.key, scopeUser, state, nextItem);
+    const mergeResult = mergeScopedEntityRows(module.key, scopeUser, state, nextItem);
+    if (!mergeResult.applied) {
+      showToast("Modification refusée : élément hors périmètre de l'établissement.", "error");
+      return;
+    }
+    const nextAllRows = mergeResult.rows;
     const patch = buildPedagogyPatch(module.key, nextItem, nextAllRows);
 
     let successMessage = exists ? `${module.label} modifié` : `${module.label} créé`;
+
+    if (module.key === "teachers" && !exists) {
+      const teacherPromotion = promoteTeacherToUser(
+        { ...(nextItem as Record<string, unknown>), schoolCode: effectiveSchoolCode ?? String((nextItem as Record<string, unknown>).schoolCode ?? "") },
+        state,
+        scopeUser,
+      );
+      if (teacherPromotion?.created && teacherPromotion.temporaryPassword) {
+        patch.users = teacherPromotion.users;
+        const teacherRows = ((patch.teachers as Record<string, unknown>[] | undefined) ??
+          nextAllRows) as Record<string, unknown>[];
+        patch.teachers = teacherRows.map((row) =>
+          String(row.id) === String(nextItem.id) ? teacherPromotion.teacher : row,
+        ) as BackOfficeState["teachers"];
+        successMessage = `Enseignant créé · identifiant ${String(teacherPromotion.teacher.identifier ?? "")} · mot de passe provisoire : ${teacherPromotion.temporaryPassword}`;
+      }
+    }
+
     const nextContact = nextItem as Record<string, unknown>;
+    let contactPromotion: ReturnType<typeof promoteContactToUser> | null = null;
     if (module.key === "contacts" && String(nextContact.hasAccess ?? "") === "Oui") {
-      const promotion = promoteContactToUser(nextContact, state, scopeUser);
-      patch.users = promotion.users;
+      contactPromotion = promoteContactToUser(nextContact, state, scopeUser);
+      patch.users = contactPromotion.users;
+      const promotedUser = contactPromotion.users.find(
+        (user) => normalize(String(user.contactId ?? "")) === normalize(String(nextContact.id ?? "")),
+      );
+      if (promotedUser) {
+        const teacherPatch = syncSingleUserToTeachers(
+          { ...state, users: contactPromotion.users },
+          promotedUser,
+        );
+        if (teacherPatch.teachers !== state.teachers) {
+          patch.teachers = teacherPatch.teachers;
+        }
+      }
       const mergedContacts = (
         (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows
-      ).map((row) => (String(row.id) === String(nextContact.id) ? promotion.contact : row));
+      ).map((row) => (String(row.id) === String(nextContact.id) ? contactPromotion!.contact : row));
       patch.contacts = mergedContacts as unknown as BackOfficeState["contacts"];
-      successMessage = `Contact enregistré · accès ${promotion.contact.userIdentifier}`;
+      if (contactPromotion.created && contactPromotion.temporaryPassword) {
+        successMessage = `Contact enregistré · accès ${contactPromotion.contact.userIdentifier} · mot de passe provisoire : ${contactPromotion.temporaryPassword}`;
+      } else {
+        successMessage = `Contact enregistré · accès ${contactPromotion.contact.userIdentifier}`;
+      }
     }
 
     let ficheLink: ContactLinkResult | null = null;
@@ -653,9 +796,14 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       ) as unknown as BackOfficeState["contacts"];
       if (ficheLink.linkedType) {
         const ficheLabel = ficheLink.linkedType === "student" ? "fiche élève" : "fiche enseignant";
-        successMessage = ficheLink.created
+        const baseMessage = ficheLink.created
           ? `Contact enregistré · ${ficheLabel} créée et reliée`
           : `Contact enregistré · ${ficheLabel} reliée`;
+        if (contactPromotion?.created && contactPromotion.temporaryPassword) {
+          successMessage = `${baseMessage} · mot de passe provisoire : ${contactPromotion.temporaryPassword}`;
+        } else {
+          successMessage = baseMessage;
+        }
       }
     }
 
@@ -683,9 +831,19 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
             entityId: String(nextContact.id ?? ""),
             entityLabel: label || undefined,
             schoolCode: String(nextContact.schoolCode ?? "") || undefined,
-            details: [String(nextContact.role ?? ""), String(nextContact.secondaryRole ?? "")]
-              .filter(Boolean)
-              .join(" + "),
+            details:
+              contactPromotion?.created && contactPromotion.temporaryPassword
+                ? [
+                    [String(nextContact.role ?? ""), String(nextContact.secondaryRole ?? "")]
+                      .filter(Boolean)
+                      .join(" + "),
+                    "Mot de passe provisoire généré",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : [String(nextContact.role ?? ""), String(nextContact.secondaryRole ?? "")]
+                    .filter(Boolean)
+                    .join(" + "),
           }),
         );
       }
@@ -707,9 +865,51 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       patch.auditLog = appendAuditLog(state.auditLog, ...entries);
     }
 
+    if (module.key === "students" && !exists) {
+      patch.studentFees = applyActiveGridsToStudent(
+        { ...state, ...patch, students: nextAllRows },
+        nextItem as Record<string, unknown>,
+      );
+    }
+
     try {
       await persistPatch(patch, successMessage);
       setEditing(null);
+    } catch {
+      /* toast déjà affiché */
+    }
+  }
+
+  async function handleCancelPayment(row: PaymentRecord) {
+    if (!module || module.key !== "payments") return;
+    setCancellingPayment(row);
+    setCancelReason("");
+  }
+
+  async function submitCancelPayment() {
+    if (!cancellingPayment || !cancelReason.trim()) {
+      showToast("Le motif d'annulation est obligatoire", "error");
+      return;
+    }
+    const cancelled = cancelPaymentRecord(cancellingPayment, cancelReason, scopeUser);
+    const mergeResult = mergeScopedEntityRows("payments", scopeUser, state, cancelled);
+    if (!mergeResult.applied) {
+      showToast("Annulation refusée : paiement hors périmètre de l'établissement.", "error");
+      return;
+    }
+    try {
+      await persistPatch(
+        {
+          payments: mergeResult.rows as BackOfficeState["payments"],
+          auditLog: appendAuditLog(
+            state.auditLog,
+            buildPaymentAuditEntry(cancelled, scopeUser, "payment.cancel", cancelReason.trim()),
+          ),
+        },
+        "Paiement annulé",
+      );
+      setCancellingPayment(null);
+      setCancelReason("");
     } catch {
       /* toast déjà affiché */
     }
@@ -721,6 +921,24 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       showToast("Supprimez la session depuis Planning de cours.", "error");
       return;
     }
+
+    if (module.key === "teachers") {
+      if (!canDelete) {
+        showToast(
+          isSchoolAdminRole(scopeUser?.role)
+            ? "Suppression réservée : accordez le droit « Enseignants — Supprimer » (Superadmin) ou confiez l'action au préfet des études."
+            : "Suppression non autorisée pour votre rôle.",
+          "error",
+        );
+        return;
+      }
+      const linkError = validateTeacherDeletion(state, row);
+      if (linkError) {
+        showToast(linkError, "error");
+        return;
+      }
+    }
+
     const confirmed = await confirm({
       title: `Supprimer cet élément ?`,
       description: `Retirer définitivement cet enregistrement de ${module.label.toLowerCase()} ?`,
@@ -804,30 +1022,50 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       header: "Actions",
       className: "no-print",
       render: (row) => (
-        <div className="flex gap-2">
-          {canUpdate ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                const next =
-                  module.key === "assignments"
-                    ? normalizeAssignmentForm(
-                        { ...row },
-                        scopedTeachers(scopeUser, state),
-                      )
-                    : { ...row };
-                setEditing(next);
-              }}
-            >
-              Modifier
-            </Button>
-          ) : null}
-          {allowDelete ? (
-            <Button variant="danger" size="sm" disabled={busy} onClick={() => void handleDelete(row)}>
-              Supprimer
-            </Button>
-          ) : null}
+        <div className="flex flex-wrap gap-2">
+          {module.key === "payments" ? (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setReceiptPayment(row as PaymentRecord)}>
+                Reçu
+              </Button>
+              {canUpdate && !isPaymentCancelled(row as PaymentRecord) ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void handleCancelPayment(row as PaymentRecord)}
+                >
+                  Annuler
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {canUpdate ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const next =
+                      module.key === "assignments"
+                        ? normalizeAssignmentForm(
+                            { ...row },
+                            scopedTeachers(scopeUser, state),
+                          )
+                        : { ...row };
+                    setEditing(next);
+                  }}
+                >
+                  Modifier
+                </Button>
+              ) : null}
+              {allowDelete ? (
+                <Button variant="danger" size="sm" disabled={busy} onClick={() => void handleDelete(row)}>
+                  Supprimer
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
       ),
     },
@@ -882,6 +1120,11 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
                     Importer CSV
                   </Button>
                 </>
+              ) : null}
+              {module.key === "payments" && canCreate ? (
+                <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
+                  Saisie rapide
+                </Button>
               ) : null}
               {allowCreate ? (
                 <Button
@@ -966,6 +1209,15 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
         }
         footer={
           <>
+            {canResetContactPassword ? (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => void handleResetContactPassword()}
+              >
+                Réinitialiser le mot de passe
+              </Button>
+            ) : null}
             <Button variant="secondary" onClick={() => setEditing(null)}>
               Annuler
             </Button>
@@ -1014,6 +1266,18 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
                       ...getSelectOptionsForField(field),
                     ]}
                   />
+                ) : field.inputType === "date" ? (
+                  <Input
+                    id={field.key}
+                    type="date"
+                    value={periodDateToInput(String(editing[field.key] ?? ""))}
+                    required={field.required}
+                    readOnly={field.readOnly}
+                    disabled={field.readOnly}
+                    onChange={(e) =>
+                      setEditing({ ...editing, [field.key]: inputToPeriodDate(e.target.value) })
+                    }
+                  />
                 ) : (
                   <Input
                     id={field.key}
@@ -1045,6 +1309,86 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
           </form>
         ) : null}
       </Modal>
+
+      {module.key === "payments" ? (
+        <>
+          <QuickPaymentModal open={quickPaymentOpen} onClose={() => setQuickPaymentOpen(false)} />
+          <Modal
+            open={Boolean(receiptPayment)}
+            title="Reçu de paiement"
+            onClose={() => setReceiptPayment(null)}
+            size="lg"
+            footer={
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setReceiptPayment(null)}>
+                  Fermer
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (receiptPayment) {
+                      void update({
+                        auditLog: appendAuditLog(
+                          state.auditLog,
+                          buildPaymentAuditEntry(receiptPayment, scopeUser, "payment.receipt.print"),
+                        ),
+                      });
+                    }
+                    window.print();
+                  }}
+                >
+                  Imprimer
+                </Button>
+              </div>
+            }
+          >
+            {receiptPayment ? (
+              <PaymentReceipt
+                payment={receiptPayment}
+                school={
+                  state.schools.find(
+                    (item) => item.code === String(receiptPayment.schoolCode ?? schoolCode ?? ""),
+                  ) ?? getCurrentSchool(scopeUser, state)
+                }
+              />
+            ) : null}
+          </Modal>
+          <Modal
+            open={Boolean(cancellingPayment)}
+            title="Annuler le paiement"
+            description="L'annulation conserve l'historique comptable. Le motif est obligatoire."
+            onClose={() => {
+              setCancellingPayment(null);
+              setCancelReason("");
+            }}
+            footer={
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setCancellingPayment(null);
+                    setCancelReason("");
+                  }}
+                >
+                  Retour
+                </Button>
+                <Button variant="danger" disabled={busy || !cancelReason.trim()} onClick={() => void submitCancelPayment()}>
+                  Confirmer l'annulation
+                </Button>
+              </>
+            }
+          >
+            <Field label="Motif d'annulation">
+              <textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                rows={3}
+                className="w-full rounded-xl border border-line bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                placeholder="Ex. Erreur de saisie, double encaissement..."
+              />
+            </Field>
+          </Modal>
+        </>
+      ) : null}
     </>
   );
 }

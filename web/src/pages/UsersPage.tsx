@@ -4,17 +4,21 @@ import { useData } from "../context/DataContext";
 import { scopedCountries, scopedSchools, scopedUsers } from "../lib/scope";
 import { getCurrentSchool } from "../lib/establishment";
 import { isInternalSchoolRole, normalize, getInitials, resolveCountryScopeFromSchool } from "../lib/format";
-import { canManageRolePermissions } from "../lib/permissions";
+import { canManageRolePermissions, canResetTargetUserPassword } from "../lib/permissions";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import {
   applyRoleChangeToUser,
   buildNewUserDraft,
+  canManageUserAccount,
+  canSuperadminManageUser,
   formatAccessChannelLabel,
   getCountryScopeOptions,
   getCreatableUserRoles,
   getUserEstablishmentLabel,
   getUserFormFieldPolicy,
+  isCountryAdminProvisionedUser,
   validateUserAccount,
+  resetUserAccountPassword,
 } from "../lib/userAccounts";
 import { applyUserTeacherSync, syncSingleUserToTeachers } from "../lib/userTeacherSync";
 import {
@@ -25,7 +29,6 @@ import {
   VALIDATED_STATUS,
 } from "../lib/orgHierarchy";
 
-import { api } from "../api/client";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { PrintButton } from "../components/ui/PrintButton";
@@ -61,6 +64,10 @@ export function UsersPage() {
   const { prompt } = usePrompt();
 
   const allUsers = scopedUsers(session?.user ?? null, state);
+  const schoolsForLabels = useMemo(
+    () => scopedSchools(session?.user ?? null, state),
+    [session?.user, state],
+  );
   const isSuperadminView = isSuperAdminRole(session?.user?.role);
   const canValidateAccount = canManageRolePermissions(ctx);
   const isCountryAdminView = session?.user?.role === COUNTRY_ADMIN_ROLE;
@@ -70,6 +77,7 @@ export function UsersPage() {
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+  const [pendingOnly, setPendingOnly] = useState(false);
   const [detail, setDetail] = useState<UserAccount | null>(null);
   const [editing, setEditing] = useState<UserAccount | null>(null);
   const [busy, setBusy] = useState(false);
@@ -111,9 +119,11 @@ export function UsersPage() {
           normalize(v).includes(q),
         );
       const matchesRole = !roleFilter || u.role === roleFilter;
-      return matchesQuery && matchesRole;
+      const matchesPending =
+        !pendingOnly || isPendingValidationStatus(u.validationStatus ?? u.status);
+      return matchesQuery && matchesRole && matchesPending;
     });
-  }, [allUsers, search, roleFilter]);
+  }, [allUsers, search, roleFilter, pendingOnly]);
 
   async function persistUsers(next: UserAccount[], message: string, syncedUser?: UserAccount) {
     setBusy(true);
@@ -137,6 +147,17 @@ export function UsersPage() {
     const next = state.users.map((u) => (u.id === user.id ? { ...u, status: nextStatus } : u));
     try {
       await persistUsers(next, `Compte ${nextStatus.toLowerCase()}`);
+      setDetail(null);
+    } catch {
+      /* toast déjà affiché */
+    }
+  }
+
+  async function rejectAccount(user: UserAccount) {
+    if (!isSuperadminView || !canSuperadminManageUser(user)) return;
+    const next = state.users.filter((u) => u.id !== user.id);
+    try {
+      await persistUsers(next, "Compte refusé et retiré");
       setDetail(null);
     } catch {
       /* toast déjà affiché */
@@ -176,10 +197,8 @@ export function UsersPage() {
     if (!temporaryPassword) return;
     setBusy(true);
     try {
-      await api.post(`/users/${user.id ?? user.identifier}/reset-password`, {
-        temporaryPassword: temporaryPassword.trim(),
-      });
-      showToast("Mot de passe réinitialisé", "success");
+      const issued = await resetUserAccountPassword(user, temporaryPassword);
+      showToast(`Mot de passe réinitialisé · provisoire : ${issued}`, "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Échec de la réinitialisation", "error");
     } finally {
@@ -253,7 +272,7 @@ export function UsersPage() {
   }
 
   function exportCsv() {
-    const blob = new Blob(["\uFEFF" + toCsv(filtered, state.schools)], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\uFEFF" + toCsv(filtered, schoolsForLabels)], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -282,8 +301,21 @@ export function UsersPage() {
       ),
     },
     { key: "role", header: "Rôle" },
-    { key: "schoolCode", header: "Établissement", render: (u) => getUserEstablishmentLabel(u, state.schools) },
+    { key: "schoolCode", header: "Établissement", render: (u) => getUserEstablishmentLabel(u, schoolsForLabels) },
     { key: "status", header: "Statut", render: (u) => <StatusBadge status={u.status} /> },
+    ...(isSuperadminView
+      ? [
+          {
+            key: "createdBy",
+            header: "Créé par",
+            render: (u: UserAccount) => (
+              <span className="text-xs text-muted">
+                {u.validationRequestedBy ?? u.createdBy ?? "—"}
+              </span>
+            ),
+          } as Column<UserAccount>,
+        ]
+      : []),
   ];
 
   const isEditingExisting = Boolean(editing?.id && state.users.some((u) => u.id === editing.id));
@@ -305,7 +337,7 @@ export function UsersPage() {
           title="Utilisateurs"
           description={
             isSuperadminView
-              ? `${filtered.length} compte(s) plateforme (Admin Pays, Admin School). Les comptes métier se gèrent dans Configuration établissement.`
+              ? `${filtered.length} compte(s) plateforme. Le Super Admin valide et gère les Admin École créés par les Admin Pays.`
               : isCountryAdminView
                 ? `${filtered.length} admin(s) école dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
                 : `${filtered.length} compte(s) accessibles.`
@@ -335,6 +367,16 @@ export function UsersPage() {
             onChange={(e) => setRoleFilter(e.target.value)}
             options={[{ value: "", label: "Tous les rôles" }, ...roleOptions.map((r) => ({ value: r, label: r }))]}
           />
+          {isSuperadminView ? (
+            <label className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={pendingOnly}
+                onChange={(e) => setPendingOnly(e.target.checked)}
+              />
+              En attente de validation uniquement
+            </label>
+          ) : null}
         </div>
         <div className="mt-4">
           <Table
@@ -355,22 +397,54 @@ export function UsersPage() {
           detail ? (
             (() => {
               const detailPending = isPendingValidationStatus(detail.validationStatus ?? detail.status);
-              // Tant que le compte est en attente de validation, aucune action n'est
-              // possible hormis sa validation par le Super Admin.
+              const superCanManage =
+                isSuperadminView &&
+                session?.user &&
+                canManageUserAccount(session.user, detail, "UPDATE");
+              const superCanValidate =
+                isSuperadminView &&
+                session?.user &&
+                canManageUserAccount(session.user, detail, "VALIDATE");
+              // Tant que le compte est en attente, seul le Super Admin peut agir.
               if (detailPending) {
-                return canValidateAccount ? (
-                  <Button variant="primary" disabled={busy} onClick={() => void validateAccount(detail)}>
-                    Valider le compte
-                  </Button>
-                ) : (
-                  <p className="text-sm text-muted">
-                    En attente de validation par le Super Administrateur.
-                  </p>
+                return (
+                  <>
+                    {superCanValidate || canValidateAccount ? (
+                      <Button variant="primary" disabled={busy} onClick={() => void validateAccount(detail)}>
+                        Valider le compte
+                      </Button>
+                    ) : null}
+                    {superCanManage ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setEditing(detail);
+                            setDetail(null);
+                          }}
+                        >
+                          Modifier
+                        </Button>
+                        <Button variant="danger" disabled={busy} onClick={() => void rejectAccount(detail)}>
+                          Refuser
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted">
+                        En attente de validation par le Super Administrateur.
+                      </p>
+                    )}
+                  </>
                 );
               }
+              const canEditTarget =
+                canUpdate && (isSuperadminView ? canManageUserAccount(session?.user, detail, "UPDATE") : true);
+              const canResetTarget = canResetTargetUserPassword(ctx, detail);
+              const canSuspendTarget =
+                canSuspend && (isSuperadminView ? canManageUserAccount(session?.user, detail, "SUSPEND") : true);
               return (
                 <>
-                  {canUpdate ? (
+                  {canEditTarget ? (
                     <Button
                       variant="secondary"
                       onClick={() => {
@@ -381,12 +455,12 @@ export function UsersPage() {
                       Modifier
                     </Button>
                   ) : null}
-                  {canUpdate ? (
+                  {canResetTarget ? (
                     <Button variant="secondary" disabled={busy} onClick={() => void resetPassword(detail)}>
                       Réinitialiser le mot de passe
                     </Button>
                   ) : null}
-                  {canSuspend ? (
+                  {canSuspendTarget ? (
                     <Button
                       variant={detail.status === "Suspendu" ? "primary" : "danger"}
                       disabled={busy}
@@ -403,14 +477,15 @@ export function UsersPage() {
       >
         {detail ? (
           <>
-            {isPendingValidationStatus(detail.validationStatus ?? detail.status) ? (
+            {isCountryAdminProvisionedUser(detail) || detail.validationRequestedBy ? (
               <div className="mb-4 rounded-xl border border-amber/30 bg-amber/10 p-4 text-sm text-ink">
-                <p className="font-bold text-amber">En attente de validation</p>
+                <p className="font-bold text-amber">Créé par un Admin Pays</p>
                 <p className="mt-1 text-muted">
                   Ce compte Admin École a été créé par un Admin Pays
-                  {detail.validationRequestedBy ? ` (${detail.validationRequestedBy})` : ""}. Aucune
-                  action n'est possible et le compte ne peut pas se connecter tant que le Super
-                  Administrateur ne l'a pas validé.
+                  {detail.validationRequestedBy ? ` (${detail.validationRequestedBy})` : ""}.
+                  {isPendingValidationStatus(detail.validationStatus ?? detail.status)
+                    ? " Le Super Administrateur doit le valider avant toute connexion."
+                    : " Le Super Administrateur conserve la gestion complète de ce compte."}
                 </p>
               </div>
             ) : null}
@@ -420,7 +495,7 @@ export function UsersPage() {
               <Row label="Téléphone" value={detail.phone} />
               <Row label="Périmètre" value={detail.scopeLevel} />
               <Row label="Pays" value={detail.countryScope} />
-              <Row label="Établissement" value={getUserEstablishmentLabel(detail, state.schools)} />
+              <Row label="Établissement" value={getUserEstablishmentLabel(detail, schoolsForLabels)} />
               <Row label="Canal" value={formatAccessChannelLabel(detail.accessChannel)} />
               <Row label="Statut" value={detail.status} />
               <Row label="Validation" value={detail.validationStatus ?? "—"} />
@@ -546,7 +621,7 @@ export function UsersPage() {
                     value={editing.schoolCode ?? ""}
                     onChange={(e) => {
                       const schoolCode = e.target.value;
-                      const selected = state.schools.find((item) => item.code === schoolCode);
+                      const selected = schoolsForLabels.find((item) => item.code === schoolCode);
                       setEditing({
                         ...editing,
                         schoolCode,
@@ -561,7 +636,7 @@ export function UsersPage() {
                     ]}
                   />
                 ) : (
-                  <Input value={getUserEstablishmentLabel(editing, state.schools)} readOnly />
+                  <Input value={getUserEstablishmentLabel(editing, schoolsForLabels)} readOnly />
                 )}
               </Field>
             ) : null}

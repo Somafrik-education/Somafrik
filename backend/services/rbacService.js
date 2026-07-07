@@ -13,6 +13,12 @@ const roleAliases = {
 
 const routePermissions = {
   "GET /api/users": ["Utilisateurs:READ", "Gérer utilisateurs", "Auditer utilisateurs pays", "ALL_PRIVILEGES"],
+  "POST /api/users/:id/reset-password": [
+    "Utilisateurs:UPDATE",
+    "Gérer utilisateurs",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
   "GET /api/teachers": ["Enseignants:READ", "Voir enseignants", "Gérer enseignants", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "Voir rapports financiers", "Suivre abonnements pays", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/v2/subjects": ["Matières:READ", "Gérer cours", "Voir classes", "Modifier notes", "Organiser examens", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
@@ -25,6 +31,15 @@ const routePermissions = {
   "GET /api/backoffice/countries": ["Contrôler tous les pays", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/subscriptions": ["Gérer abonnements", "Suivre abonnements pays", "ALL_PRIVILEGES"],
   "GET /api/backoffice/notifications": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "GET /api/backoffice/establishments": ["Établissements:READ", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/establishments/:code": ["Établissements:READ", "Paramètres Établissement:READ", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/establishments": ["Établissements:CREATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/establishments/:code": ["Établissements:UPDATE", "Paramètres Établissement:UPDATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "DELETE /api/backoffice/establishments/:code": ["Établissements:DELETE", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/establishments/import": ["Établissements:CREATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/subscription-access": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "GET /api/backoffice/finance/unpaid": ["Impayés:READ", "Paiements:READ", "Frais & tarifs:READ", "Gérer paiements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "POST /api/backoffice/finance/unpaid/reminders": ["Impayés:CREATE", "Paiements:UPDATE", "Gérer paiements", "ALL_PRIVILEGES"],
 };
 
 class RbacService {

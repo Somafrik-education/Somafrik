@@ -11,6 +11,7 @@ import {
 } from "./format";
 import {
   COUNTRY_ADMIN_ROLE,
+  isPendingValidationStatus,
   isSuperAdminRole,
   normalizePlatformRole,
   PENDING_VALIDATION_STATUS,
@@ -19,6 +20,7 @@ import {
 } from "./orgHierarchy";
 import { isTeacherUserRole } from "./userTeacherSync";
 import { resolveEffectivePermissions } from "./permissions";
+import { api } from "../api/client";
 
 const PLATFORM_ROLES = new Set([SUPER_ADMIN_ROLE, COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE]);
 
@@ -28,9 +30,83 @@ export function formatAccessChannelLabel(channel?: string): string {
   return channel;
 }
 
+function normalizedPlatformRoleKey(role?: string): string {
+  return normalize(normalizePlatformRole(role));
+}
+
 export function isPlatformUserRole(role?: string): boolean {
   if (!role) return false;
-  return PLATFORM_ROLES.has(normalizePlatformRole(role));
+  const key = normalizedPlatformRoleKey(role);
+  return [...PLATFORM_ROLES].some((platformRole) => normalizedPlatformRoleKey(platformRole) === key);
+}
+
+/** Comptes plateforme gérables par le Superadmin (dont ceux créés par un Admin Pays). */
+export function isSuperadminManagedUser(user: Pick<UserAccount, "role">): boolean {
+  const key = normalizedPlatformRoleKey(user.role);
+  return (
+    normalizedPlatformRoleKey(COUNTRY_ADMIN_ROLE) === key ||
+    normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) === key
+  );
+}
+
+export function isCountryAdminProvisionedUser(
+  user: Pick<UserAccount, "role" | "validationRequestedBy" | "validationStatus" | "status">,
+): boolean {
+  if (!isSuperadminManagedUser(user) || normalizedPlatformRoleKey(user.role) !== normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE)) {
+    return false;
+  }
+  return Boolean(user.validationRequestedBy) || isPendingValidationStatus(user.validationStatus ?? user.status);
+}
+
+export function canSuperadminManageUser(user: UserAccount): boolean {
+  return isSuperadminManagedUser(user);
+}
+
+export function canManageUserAccount(
+  actor: SessionUser | null | undefined,
+  target: UserAccount,
+  action: "READ" | "CREATE" | "UPDATE" | "DELETE" | "SUSPEND" | "VALIDATE" = "UPDATE",
+): boolean {
+  if (!actor) return false;
+  if (isSuperAdminRole(actor.role)) {
+    if (action === "VALIDATE") {
+      return isCountryAdminProvisionedUser(target) || isPendingValidationStatus(target.validationStatus ?? target.status);
+    }
+    return canSuperadminManageUser(target);
+  }
+  if (actor.role === COUNTRY_ADMIN_ROLE) {
+    return (
+      normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) &&
+      (action === "READ" || action === "CREATE" || action === "UPDATE" || action === "SUSPEND")
+    );
+  }
+  return normalize(actor.schoolCode) === normalize(target.schoolCode);
+}
+
+export function findUserAccountForContact(
+  contact: Record<string, unknown>,
+  users: UserAccount[],
+): UserAccount | undefined {
+  const contactId = String(contact.id ?? "").trim();
+  const userId = String(contact.userId ?? "").trim();
+  const userIdentifier = String(contact.userIdentifier ?? "").trim();
+  return users.find((user) => {
+    if (contactId && normalize(String(user.contactId ?? "")) === normalize(contactId)) return true;
+    if (userId && normalize(String(user.id ?? "")) === normalize(userId)) return true;
+    if (userIdentifier && normalize(user.identifier) === normalize(userIdentifier)) return true;
+    return false;
+  });
+}
+
+export async function resetUserAccountPassword(
+  user: Pick<UserAccount, "id" | "identifier">,
+  temporaryPassword: string,
+): Promise<string> {
+  const response = await api.post<{ temporaryPassword?: string }>(
+    `/users/${encodeURIComponent(String(user.id ?? user.identifier))}/reset-password`,
+    { temporaryPassword: temporaryPassword.trim() },
+  );
+  return String(response.temporaryPassword ?? temporaryPassword.trim());
 }
 
 /** Comptes plateforme créables / gérables directement par le Superadmin (page Utilisateurs). */
@@ -258,6 +334,7 @@ export function buildNewUserDraft(
     permissions: resolveEffectivePermissions(role, undefined, state.rolePermissions),
     temporaryPassword,
     hasTemporaryPassword: true,
+    mustChangePassword: true,
     createdBy: session.user.identifier ?? session.user.firstName ?? "Administrateur",
   };
 }
@@ -403,7 +480,7 @@ export function validateUserAccount(
     }
   }
 
-  if (isSuperAdminRole(creator?.role) && isSuperadminDirectUserRole(user.role)) {
+  if (isSuperAdminRole(creator?.role) && isSuperadminManagedUser(user)) {
     if (user.role === COUNTRY_ADMIN_ROLE && user.schoolCode !== "*") {
       return "Un admin pays doit avoir l'établissement « * ».";
     }
@@ -418,6 +495,7 @@ export function validateUserAccount(
         return "Cet établissement n'est pas disponible dans votre périmètre.";
       }
     }
+    return null;
   }
 
   return null;
