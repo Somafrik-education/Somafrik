@@ -237,11 +237,12 @@ function dedupeBackOfficeState(state = {}) {
       next.contacts ?? [],
       (row) => {
         const school = normalize(row.schoolCode);
+        const contactType = normalize(row.contactType);
         const phone = normalize(row.phone);
         const email = normalize(row.email);
-        if (phone) return `${school}|phone:${phone}`;
-        if (email) return `${school}|email:${email}`;
-        return `${school}|${normalize(row.lastName)}|${normalize(row.firstName)}|${normalize(row.contactType)}`;
+        if (phone) return `${school}|${contactType}|phone:${phone}`;
+        if (email) return `${school}|${contactType}|email:${email}`;
+        return `${school}|${normalize(row.lastName)}|${normalize(row.firstName)}|${contactType}`;
       },
       "contacts",
     ),

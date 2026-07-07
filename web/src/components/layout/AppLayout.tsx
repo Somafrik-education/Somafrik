@@ -4,9 +4,23 @@ import { NAV_ITEMS } from "../../lib/constants";
 import { CONFIGURATION_USER_ACCOUNTS, SCHOOL_ENTITY_MODULES } from "../../lib/entityModules";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { SubscriptionAccessBanner } from "../SubscriptionAccessBanner";
+
+const SUBSCRIPTION_NAV = [
+  { path: "/abonnements/offres", label: "Abonnements" },
+  { path: "/abonnements/etablissements", label: "Abonnements" },
+  { path: "/abonnements/paiements", label: "Abonnements" },
+  { path: "/abonnements/factures", label: "Abonnements" },
+  { path: "/abonnements/remises", label: "Abonnements" },
+  { path: "/abonnements/retards", label: "Abonnements" },
+  { path: "/abonnements/rapports", label: "Abonnements" },
+  { path: "/abonnements/tarifs-pays", label: "Abonnements" },
+  { path: "/parametres/mon-abonnement", label: "Mon abonnement" },
+];
 
 const PAGE_NAV_ITEMS = [
   ...NAV_ITEMS,
+  ...SUBSCRIPTION_NAV,
   ...SCHOOL_ENTITY_MODULES.map((module) => ({
     view: module.view,
     path: module.path,
@@ -39,6 +53,7 @@ export function AppLayout() {
         <Topbar title={title} />
         <main className="flex-1 px-4 py-6 sm:px-6">
           <div className="mx-auto w-full max-w-6xl space-y-6">
+            <SubscriptionAccessBanner />
             <Outlet />
           </div>
         </main>

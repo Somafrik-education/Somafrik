@@ -2,6 +2,7 @@ const { BusinessError } = require("./authService");
 const { CommunicationService } = require("./communicationService");
 const { verifySecret } = require("./credentialService");
 const { canAccessBackOfficeRole, canAccessWebPlatformRole, isEstablishmentBackOfficeRole } = require("../lib/establishmentRoles");
+const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("../lib/countryScope");
 
 const SUPER_ADMIN_ROLE = "Super Administrateur Somafrik";
 const LEGACY_SUPER_ADMIN_ROLE = "Super Administrateur OKAFRIK";
@@ -56,11 +57,17 @@ class BackOfficeAccessService {
       throw new BusinessError(400, "Code établissement obligatoire pour ce compte");
     }
 
-    const resolvedSchoolCode =
-      String(schoolCode ?? "").trim() || this.getDefaultSchoolCodeForUser(user) || "";
+    const explicitSchoolCode = String(schoolCode ?? "").trim().toUpperCase();
+    const resolvedSchoolCode = explicitSchoolCode
+      ? explicitSchoolCode
+      : this.isPlatformAdmin(user)
+        ? ""
+        : this.getDefaultSchoolCodeForUser(user) || "";
     let schoolContext = null;
     if (resolvedSchoolCode) {
-      schoolContext = this.resolveSchoolContext(resolvedSchoolCode);
+      schoolContext = this.resolveSchoolContext(resolvedSchoolCode, {
+        forPlatformAdmin: this.isPlatformAdmin(user),
+      });
     } else if (!this.isPlatformAdmin(user)) {
       throw new BusinessError(400, "Code établissement obligatoire pour ce compte");
     }
@@ -125,15 +132,22 @@ class BackOfficeAccessService {
   }
 
   verifyPassword(user, password) {
-    if (user.passwordHash) {
-      return verifySecret(password, user.passwordHash);
+    const normalizedPassword = String(password ?? "");
+
+    if (user.passwordHash && verifySecret(normalizedPassword, user.passwordHash)) {
+      return true;
     }
 
-    if (user.pinHash) {
-      return verifySecret(password, user.pinHash);
+    if (user.pinHash && verifySecret(normalizedPassword, user.pinHash)) {
+      return true;
     }
 
-    return user.password === password;
+    const temporaryPassword = String(user.temporaryPassword ?? "").trim();
+    if (temporaryPassword && temporaryPassword === normalizedPassword) {
+      return true;
+    }
+
+    return String(user.password ?? "") === normalizedPassword;
   }
 
   isPlatformAdmin(user) {
@@ -144,7 +158,7 @@ class BackOfficeAccessService {
     return canAccessBackOfficeRole(user.role);
   }
 
-  resolveSchoolContext(schoolCode) {
+  resolveSchoolContext(schoolCode, { forPlatformAdmin = false } = {}) {
     const normalizedCode = String(schoolCode).trim().toUpperCase();
     const school = this.schools.find((item) =>
       [item.code, item.publicId].some(
@@ -154,6 +168,10 @@ class BackOfficeAccessService {
 
     if (!school) {
       throw new BusinessError(404, "Code établissement invalide");
+    }
+
+    if (forPlatformAdmin) {
+      return school;
     }
 
     if (school.status === "Suspendu") {
@@ -174,10 +192,20 @@ class BackOfficeAccessService {
       );
     }
 
+    const { assertSchoolCanConnect } = require("./schoolSubscriptionAccessService");
+    assertSchoolCanConnect(school.code, {
+      schools: this.schools,
+      subscriptions: this.subscriptions,
+    });
+
     return school;
   }
 
   getDefaultSchoolCodeForUser(user) {
+    if (this.isPlatformAdmin(user) && (!user.schoolCode || user.schoolCode === "*")) {
+      return "";
+    }
+
     if (user.schoolCode && user.schoolCode !== "*") {
       return user.schoolCode;
     }
@@ -258,7 +286,11 @@ class BackOfficeAccessService {
     }
 
     if (user.role === "Admin Pays") {
-      return this.schools.filter((item) => item.country === user.countryScope || item.code.startsWith(this.getCountryCode(user.countryScope)));
+      const countryScope = String(user.countryScope ?? user.countryCode ?? "").trim();
+      if (!countryScope || !getCountryCodeFromScope(countryScope)) {
+        return [];
+      }
+      return this.schools.filter((item) => schoolMatchesCountryScope(item, countryScope));
     }
 
     return this.schools.filter((item) => item.code === user.schoolCode);
@@ -439,11 +471,14 @@ class BackOfficeAccessService {
     };
   }
 
+  isSuperadminManagedUser(account) {
+    const role = String(account?.role ?? "").trim().toLowerCase();
+    return role === "admin pays" || role === "admin school";
+  }
+
   getScopedUsers(user) {
     if (isSuperAdminRole(user.role)) {
-      return this.userAccounts.filter((account) =>
-        ["Admin Pays", "Admin School"].includes(account.role),
-      );
+      return this.userAccounts.filter((account) => this.isSuperadminManagedUser(account));
     }
 
     if (user.role === "Admin Pays") {

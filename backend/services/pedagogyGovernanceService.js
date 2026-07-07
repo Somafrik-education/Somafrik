@@ -190,8 +190,33 @@ class PedagogyGovernanceService {
     });
   }
 
-  /** Admin School : conserve les enseignants existants, autorise uniquement les créations. */
-  enforceSchoolAdminTeachers(currentTeachers = [], mergedTeachers = [], scopedCurrentTeachers = []) {
+  /** Admin School avec droit explicite Enseignants:DELETE. */
+  canPrincipalDeleteTeachers(principal) {
+    const permissions = Array.isArray(principal?.permissions) ? principal.permissions : [];
+    if (permissions.includes("ALL_PRIVILEGES")) return true;
+    return permissions.some((permission) => {
+      const normalized = String(permission ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+      return (
+        normalized === "enseignants:delete" ||
+        normalized.startsWith("enseignants:") && normalized.includes("delete")
+      );
+    });
+  }
+
+  /** Admin School : conserve les enseignants existants sauf si suppression autorisée. */
+  enforceSchoolAdminTeachers(
+    currentTeachers = [],
+    mergedTeachers = [],
+    scopedCurrentTeachers = [],
+    principal = null,
+  ) {
+    if (this.canPrincipalDeleteTeachers(principal)) {
+      return mergedTeachers;
+    }
+
     const currentByKey = new Map(
       scopedCurrentTeachers.map((row) => [rowKey(row), row]).filter(([key]) => key),
     );
@@ -222,9 +247,10 @@ class PedagogyGovernanceService {
     return nextTeachers;
   }
 
-  /** Bloque la suppression d'enseignants par Admin School. */
+  /** Bloque la suppression d'enseignants par Admin School sans droit explicite. */
   filterSchoolAdminDeletedRows(deletedRows = {}, principal) {
     if (!this.isSchoolAdmin(principal)) return deletedRows;
+    if (this.canPrincipalDeleteTeachers(principal)) return deletedRows;
     const next = { ...deletedRows };
     delete next.teachers;
     return next;

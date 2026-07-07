@@ -6,6 +6,8 @@ import { isPlatformBackOfficeRole } from "./orgHierarchy";
 import { hasBackOfficePermission, type PermissionContext } from "./permissions";
 
 export const DELEGABLE_SCHOOL_FEATURES = [
+  "Contacts",
+  "Relations",
   "Utilisateurs",
   "Classes",
   "Élèves",
@@ -176,7 +178,10 @@ export function isSchoolRolePermissionAllowed(permission: string): boolean {
     return false;
   }
   const normalizedPermission = normalize(permission);
-  return !["abonnement", "inscription", "tarif"].some((keyword) => normalizedPermission.includes(keyword));
+  const forbiddenKeywords = normalizedPermission.startsWith("frais & tarifs")
+    ? ["abonnement", "inscription"]
+    : ["abonnement", "inscription", "tarif"];
+  return !forbiddenKeywords.some((keyword) => normalizedPermission.includes(keyword));
 }
 
 /** Retire les droits non déléguables du pilotage établissement. */

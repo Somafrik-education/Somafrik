@@ -77,6 +77,7 @@ class FallbackRepository {
       platformSchools: seedData.platformSchools,
       countries: seedData.countries,
       subscriptions: seedData.subscriptions,
+      subscriptionOffers: seedData.subscriptionOffers ?? [],
       userAccounts: seedData.userAccounts,
       teachers: seedData.teachers,
       classes: seedData.classes,

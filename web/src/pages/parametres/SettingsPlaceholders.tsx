@@ -1,4 +1,4 @@
-import { BellRing, Building2, DatabaseBackup, Palette, PlugZap, Wallet } from "lucide-react";
+import { BellRing, DatabaseBackup, Palette, PlugZap, Wallet } from "lucide-react";
 import { PagePlaceholder } from "../../components/ui/PagePlaceholder";
 import { useData } from "../../context/DataContext";
 import { Card, SectionHeader } from "../../components/ui/Card";
@@ -6,15 +6,7 @@ import { Table, type Column } from "../../components/ui/Table";
 import { PrintButton } from "../../components/ui/PrintButton";
 import type { AuditEntry } from "../../lib/audit";
 
-export function SettingsProfilePage() {
-  return (
-    <PagePlaceholder
-      icon={Building2}
-      title="Profil établissement"
-      description="Identité de l'établissement : logo, adresse, contacts, type, code établissement et responsable légal."
-    />
-  );
-}
+export { EstablishmentProfilePage as SettingsProfilePage } from "./EstablishmentProfilePage";
 
 export function SettingsFinancePage() {
   return (

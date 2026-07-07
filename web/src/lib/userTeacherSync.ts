@@ -1,8 +1,23 @@
-import type { BackOfficeState, UserAccount } from "../types";
-import { normalize } from "./format";
+import type { BackOfficeState, SessionUser, UserAccount } from "../types";
+import { normalize, resolveCountryScopeFromSchool } from "./format";
 import { resolveTeacherIdentifiers } from "./entityIdentifiers";
+import {
+  generateTemporaryPassword,
+  generateUserIdentifier,
+  getRoleDefaults,
+} from "./userAccounts";
+import { resolveEffectivePermissions } from "./permissions";
 
 type Row = Record<string, unknown>;
+
+const TEACHER_USER_ROLE = "Enseignant";
+
+export interface TeacherPromotionResult {
+  users: UserAccount[];
+  teacher: Row;
+  created: boolean;
+  temporaryPassword?: string;
+}
 
 function newTeacherId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -60,6 +75,79 @@ function buildTeacherRow(user: UserAccount, existing?: Row): Row {
     password: user.temporaryPassword ?? user.password ?? existing?.password ?? "",
     assignments: Array.isArray(existing?.assignments) ? existing.assignments : [],
     assignedClasses: Array.isArray(existing?.assignedClasses) ? existing.assignedClasses : [],
+  };
+}
+
+/** Crée un compte utilisateur pour une fiche enseignant nouvellement créée. */
+export function promoteTeacherToUser(
+  teacher: Row,
+  state: BackOfficeState,
+  creator: SessionUser | null,
+): TeacherPromotionResult | null {
+  const schoolCode = String(teacher.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") return null;
+
+  const users = [...(state.users ?? [])];
+  const teacherUserId = String(teacher.userId ?? "").trim();
+  const teacherIdentifier = normalize(String(teacher.identifier ?? ""));
+
+  const existingIndex = users.findIndex((user) => {
+    if (teacherUserId && String(user.id ?? "") === teacherUserId) return true;
+    if (teacherIdentifier && normalize(String(user.identifier ?? "")) === teacherIdentifier) return true;
+    return false;
+  });
+
+  if (existingIndex >= 0) {
+    const linked = users[existingIndex];
+    return {
+      users,
+      teacher: { ...teacher, userId: linked.id, identifier: linked.identifier ?? teacher.identifier },
+      created: false,
+    };
+  }
+
+  const temporaryPassword = generateTemporaryPassword();
+  const role = TEACHER_USER_ROLE;
+  const identifier = String(teacher.identifier ?? generateUserIdentifier(state.users, role));
+  const defaults = getRoleDefaults(role, schoolCode);
+  const school = state.schools.find((item) => normalize(item.code) === normalize(schoolCode));
+
+  const nextUser: UserAccount = {
+    id: `USR-${Date.now()}`,
+    firstName: String(teacher.firstName ?? ""),
+    lastName: String(teacher.name ?? teacher.lastName ?? ""),
+    gender: String(teacher.gender ?? "Non renseigné"),
+    phone: String(teacher.phone ?? ""),
+    email: String(teacher.email ?? ""),
+    birthDate: String(teacher.birthDate ?? ""),
+    role,
+    schoolCode: defaults.schoolCode || schoolCode,
+    scopeLevel: defaults.scopeLevel,
+    accessChannel: defaults.accessChannel,
+    countryScope:
+      creator?.countryScope ?? resolveCountryScopeFromSchool(school ?? {}, ""),
+    identifier,
+    publicId: String(teacher.publicId ?? identifier),
+    status: "Actif",
+    permissions: resolveEffectivePermissions(role, undefined, state.rolePermissions),
+    temporaryPassword,
+    hasTemporaryPassword: true,
+    mustChangePassword: true,
+    createdAt: new Date().toISOString(),
+    createdBy: creator?.identifier ?? creator?.firstName ?? "Administrateur",
+  };
+
+  users.unshift(nextUser);
+  return {
+    users,
+    teacher: {
+      ...teacher,
+      userId: nextUser.id,
+      identifier,
+      password: temporaryPassword,
+    },
+    created: true,
+    temporaryPassword,
   };
 }
 

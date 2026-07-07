@@ -366,6 +366,51 @@ CREATE TABLE IF NOT EXISTS backoffice_state (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Module Finances — Impayés (IMP-002 à IMP-016)
+CREATE TABLE IF NOT EXISTS student_fee_obligations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  student_id UUID NOT NULL REFERENCES students(id),
+  class_id UUID REFERENCES classes(id),
+  fee_grid_id TEXT,
+  school_fee_item_id TEXT,
+  fee_type TEXT NOT NULL,
+  label TEXT NOT NULL,
+  currency VARCHAR(16) NOT NULL DEFAULT 'USD',
+  academic_year TEXT,
+  period_label TEXT,
+  initial_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  exemption NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  amount_due NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  amount_paid NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  balance NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  due_date DATE,
+  status TEXT NOT NULL DEFAULT 'À payer',
+  last_reminder_at TIMESTAMPTZ,
+  reminder_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  settled_at TIMESTAMPTZ,
+  archived_at TIMESTAMPTZ
+);
+
+-- Relances de paiement (IMP-011, IMP-012)
+CREATE TABLE IF NOT EXISTS payment_reminders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  student_id UUID NOT NULL REFERENCES students(id),
+  student_fee_obligation_id UUID REFERENCES student_fee_obligations(id),
+  recipient TEXT NOT NULL DEFAULT 'Parent',
+  channel TEXT NOT NULL DEFAULT 'notification',
+  message TEXT NOT NULL,
+  summary TEXT,
+  send_status TEXT NOT NULL DEFAULT 'Envoyée',
+  triggered_by UUID REFERENCES users(id),
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id),
@@ -390,6 +435,9 @@ CREATE INDEX IF NOT EXISTS idx_grades_school_id ON grades(school_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id, attendance_date);
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_school_id ON payments(school_id);
+CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_school_student ON student_fee_obligations(school_id, student_id);
+CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_status_due ON student_fee_obligations(school_id, status, due_date);
+CREATE INDEX IF NOT EXISTS idx_payment_reminders_student ON payment_reminders(school_id, student_id, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_subject_assignments_school_id ON subject_class_assignments(school_id);
 CREATE INDEX IF NOT EXISTS idx_exams_school_date ON exams(school_id, exam_date);
 CREATE INDEX IF NOT EXISTS idx_exam_results_exam_id ON exam_results(exam_id);

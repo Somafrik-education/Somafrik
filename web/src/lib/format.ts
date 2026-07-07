@@ -1,3 +1,5 @@
+import { parsePeriodDate } from "./dates";
+
 export function normalize(value: unknown): string {
   return String(value ?? "")
     .normalize("NFD")
@@ -21,15 +23,8 @@ export function displayRoleName(role?: string): string {
 
 export function isPastDate(value?: string): boolean {
   if (!value) return false;
-  // Formats attendus: "JJ-MM-AAAA" ou ISO.
-  const ddmmyyyy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value);
-  let date: Date;
-  if (ddmmyyyy) {
-    date = new Date(Number(ddmmyyyy[3]), Number(ddmmyyyy[2]) - 1, Number(ddmmyyyy[1]));
-  } else {
-    date = new Date(value);
-  }
-  if (Number.isNaN(date.getTime())) return false;
+  const date = parsePeriodDate(value);
+  if (!date) return false;
   return date.getTime() < Date.now();
 }
 
@@ -84,7 +79,7 @@ export function schoolMatchesCountryScope(
   school: { country?: string; countryCode?: string; code?: string },
   countryScope?: string,
 ): boolean {
-  if (!countryScope) return true;
+  if (!countryScope) return false;
   if (countryScopeMatches(school.country, countryScope)) return true;
   if (countryScopeMatches(school.countryCode, countryScope)) return true;
   const scopeCode = getCountryCodeFromScope(countryScope);

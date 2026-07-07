@@ -86,7 +86,7 @@ export function getPlanPricing(
     plan: planName,
     monthlyPrice: pricing.monthlyPrice,
     annualPrice: pricing.annualPrice,
-    currency: policy.currency,
+    currency: policy.currency ?? GLOBAL_SUBSCRIPTION_POLICY.currency ?? "USD",
   };
 }
 

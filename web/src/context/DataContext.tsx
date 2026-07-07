@@ -13,6 +13,7 @@ import { useAuth } from "./AuthContext";
 import { SYNC_INTERVAL_MS } from "../lib/constants";
 import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
 import { resolveEffectivePermissions } from "../lib/permissions";
+import { applyClientScopeToState } from "../lib/scope";
 import type { BackOfficeState, Session } from "../types";
 
 interface DataContextValue {
@@ -40,12 +41,17 @@ const EMPTY_STATE: BackOfficeState = {
   payments: [],
   presences: [],
   notes: [],
+  evaluations: [],
   exams: [],
   bulletins: [],
   documents: [],
   announcements: [],
   messages: [],
   paymentStatuses: [],
+  feeGrids: [],
+  schoolFeeItems: [],
+  studentFees: [],
+  feeTariffHistory: [],
   rolePermissions: {},
   academicConfigs: {},
   dashboardChartConfig: { platform: {}, establishment: {} },
@@ -53,7 +59,7 @@ const EMPTY_STATE: BackOfficeState = {
 };
 
 function stateFromSession(session: Session): BackOfficeState {
-  return {
+  const base: BackOfficeState = {
     ...EMPTY_STATE,
     schools: session.schools ?? [],
     users: session.users ?? [],
@@ -64,6 +70,7 @@ function stateFromSession(session: Session): BackOfficeState {
     academicConfigs: (session.academicConfigs as Record<string, unknown>) ?? {},
     auditLog: session.auditLog ?? [],
   };
+  return applyClientScopeToState(base, session.user);
 }
 
 function samePermissionSet(left: string[], right: string[]) {
@@ -81,6 +88,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
   const stateRef = useRef(state);
   stateRef.current = state;
+  const sessionUserRef = useRef(session?.user ?? null);
+  sessionUserRef.current = session?.user ?? null;
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +100,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
-      setState((prev) => mergeRemoteSnapshot(prev, remote));
+      setState((prev) => {
+        const merged = mergeRemoteSnapshot(prev, remote);
+        return session?.user ? applyClientScopeToState(merged, session.user) : merged;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de chargement");
     } finally {
@@ -138,36 +150,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const update = useCallback(
     async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
       syncPausedRef.current = true;
-      if (options.partial) {
-        setState((prev) => ({ ...prev, ...patch }));
-        if (options.sync === false) {
-          syncPausedRef.current = false;
-          return;
-        }
-        try {
-          const saved = await api.put<Partial<BackOfficeState>>("/backoffice/state", patch);
-          setState((prev) => applyPartialSave(prev, saved, patch));
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Erreur de synchronisation");
-          syncPausedRef.current = false;
-          throw err;
-        } finally {
-          window.setTimeout(() => {
-            syncPausedRef.current = false;
-          }, 1500);
-        }
-        return;
-      }
-
-      const next = { ...stateRef.current, ...patch };
-      setState(next);
+      const usePartial = options.partial !== false;
+      setState((prev) => ({ ...prev, ...patch }));
       if (options.sync === false) {
         syncPausedRef.current = false;
         return;
       }
       try {
-        const saved = await api.put<Partial<BackOfficeState>>("/backoffice/state", next);
-        setState((prev) => mergeRemoteSnapshot(prev, saved));
+        const payload = usePartial ? patch : { ...stateRef.current, ...patch };
+        const saved = await api.put<Partial<BackOfficeState>>("/backoffice/state", payload);
+        setState((prev) => {
+          const next = usePartial
+            ? applyPartialSave(prev, saved, patch)
+            : mergeRemoteSnapshot(prev, saved);
+          return sessionUserRef.current
+            ? applyClientScopeToState(next, sessionUserRef.current)
+            : next;
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erreur de synchronisation");
         syncPausedRef.current = false;

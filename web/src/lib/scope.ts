@@ -1,4 +1,5 @@
 import type {
+  BackOfficeState,
   Country,
   PlatformNotification,
   School,
@@ -21,7 +22,7 @@ import {
   scopedCountries as scopedCountriesForUser,
   SCHOOL_ADMIN_ROLE,
 } from "./orgHierarchy";
-import { isPlatformUserRole } from "./userAccounts";
+import { isSuperadminManagedUser } from "./userAccounts";
 
 interface ScopeState {
   schools: School[];
@@ -31,11 +32,26 @@ interface ScopeState {
   notifications: PlatformNotification[];
 }
 
+/** Réduit l'état BackOffice aux données visibles pour l'utilisateur courant. */
+export function applyClientScopeToState(state: BackOfficeState, user: SessionUser | null): BackOfficeState {
+  if (!user || isSuperAdminRole(user.role)) return state;
+  return {
+    ...state,
+    schools: scopedSchools(user, state),
+    countries: scopedCountries(user, state),
+    subscriptions: scopedSubscriptions(user, state),
+    notifications: scopedNotifications(user, state),
+    users: scopedUsers(user, state),
+  };
+}
+
 export function scopedSchools(user: SessionUser | null, state: ScopeState): School[] {
   if (!user) return [];
   if (isSuperAdminRole(user.role)) return state.schools;
   if (user.role === COUNTRY_ADMIN_ROLE) {
-    return state.schools.filter((school) => schoolMatchesCountryScope(school, user.countryScope));
+    const countryScope = String(user.countryScope ?? "").trim();
+    if (!countryScope || !getCountryCodeFromScope(countryScope)) return [];
+    return state.schools.filter((school) => schoolMatchesCountryScope(school, countryScope));
   }
   return state.schools.filter((school) => normalize(school.code) === normalize(user.schoolCode));
 }
@@ -85,7 +101,7 @@ export function scopedNotifications(
 export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
   if (!user) return [];
   if (isSuperAdminRole(user.role)) {
-    return state.users.filter((account) => isPlatformUserRole(account.role));
+    return state.users.filter((account) => isSuperadminManagedUser(account));
   }
   if (user.role === COUNTRY_ADMIN_ROLE) {
     const countrySchoolCodes = new Set(

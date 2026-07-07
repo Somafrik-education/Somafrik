@@ -53,6 +53,7 @@ function buildResetPasswordUser(account, secretHash, temporaryPassword) {
     pinHash: secretHash,
     temporaryPassword,
     mustChangePassword: true,
+    hasTemporaryPassword: true,
     history: [
       ...(Array.isArray(account.history) ? account.history : []),
       `Mot de passe temporaire régénéré le ${new Date().toLocaleDateString("fr-FR")}. Ancien mot de passe invalidé.`,
@@ -630,6 +631,7 @@ class PostgresRepository {
             pinHash: secretHash,
             temporaryPassword: "",
             mustChangePassword: false,
+            hasTemporaryPassword: false,
           };
           delete next.password;
           delete next.pin;
@@ -656,6 +658,7 @@ class PostgresRepository {
           pinHash: secretHash,
           temporaryPassword: "",
           mustChangePassword: false,
+          hasTemporaryPassword: false,
         };
         delete next.password;
         delete next.pin;

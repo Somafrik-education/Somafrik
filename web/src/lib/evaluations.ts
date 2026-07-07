@@ -1,0 +1,660 @@
+import type {
+  BackOfficeState,
+  Evaluation,
+  EvaluationStatus,
+  EvaluationType,
+  GradeAuditEntry,
+  GradeStatus,
+  SessionUser,
+  StudentGrade,
+} from "../types";
+import { resolveActivePeriodName } from "./academicPeriods";
+import { appendAuditLog, auditActor, makeAuditEntry } from "./audit";
+import { todayPeriodDate } from "./dates";
+import { scopedCourses, scopedStudents, scopedTeachers } from "./establishment";
+import { formatStudentName, GradeBookService } from "./gradeBook";
+import { normalize } from "./format";
+import { isSuperAdminRole } from "./orgHierarchy";
+
+export const EVALUATION_TYPES: EvaluationType[] = [
+  "Devoir",
+  "Interrogation",
+  "Composition",
+  "Examen",
+  "Rattrapage",
+  "Contrôle continu",
+];
+
+export const EVALUATION_STATUSES: EvaluationStatus[] = [
+  "Brouillon",
+  "Ouverte",
+  "Saisie terminée",
+  "Validée",
+  "Publiée",
+  "Annulée",
+];
+
+export const GRADE_STATUSES: GradeStatus[] = [
+  "Saisie",
+  "Absente",
+  "Justifiée",
+  "Non justifiée",
+  "Dispensée",
+  "Validée",
+  "Corrigée",
+  "En attente",
+];
+
+export const ABSENCE_GRADE_STATUSES: GradeStatus[] = [
+  "Absente",
+  "Justifiée",
+  "Non justifiée",
+  "Dispensée",
+  "En attente",
+];
+
+export const SCALE_OPTIONS = [10, 20, 100] as const;
+
+const LOCKED_EVALUATION_STATUSES = new Set<EvaluationStatus>(["Validée", "Publiée", "Annulée"]);
+
+let gradeIdCounter = 0;
+
+function authorDisplayName(user: SessionUser | null): string | undefined {
+  if (!user) return undefined;
+  const name = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+  return name || user.identifier;
+}
+
+export function newEvaluationId(): string {
+  return `EVAL-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+export function newGradeId(): string {
+  gradeIdCounter += 1;
+  return `NOTE-${Date.now()}-${gradeIdCounter}`;
+}
+
+export function formatGradeDateTime(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function getSchoolAcademicConfig(state: BackOfficeState, schoolCode: string): Record<string, unknown> {
+  const configs = state.academicConfigs ?? {};
+  return (configs[schoolCode] as Record<string, unknown>) ?? (configs["*"] as Record<string, unknown>) ?? {};
+}
+
+export function getEvaluationTypes(state: BackOfficeState, schoolCode: string): string[] {
+  const config = getSchoolAcademicConfig(state, schoolCode);
+  const raw = config.evaluationTypes;
+  if (Array.isArray(raw) && raw.length) {
+    return raw.map((item) => String(item).trim()).filter(Boolean);
+  }
+  return [...EVALUATION_TYPES];
+}
+
+export function resolveDefaultPeriod(state: BackOfficeState, schoolCode: string): string {
+  const config = getSchoolAcademicConfig(state, schoolCode);
+  const periods = Array.isArray(config.periods) ? config.periods : [];
+  const active = resolveActivePeriodName(
+    periods.map((item) => {
+      const row = item as Record<string, unknown>;
+      return { name: String(row.name ?? ""), startDate: String(row.startDate ?? ""), endDate: String(row.endDate ?? "") };
+    }),
+  );
+  return active ?? "Trimestre 1";
+}
+
+export function scopedEvaluations(user: SessionUser | null, state: BackOfficeState): Evaluation[] {
+  const schoolCode = String(user?.schoolCode ?? "").trim();
+  const rows = (state.evaluations ?? []).filter((row) => row.active !== false);
+  if (!schoolCode || schoolCode === "*") return rows;
+  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+}
+
+export function legacyNotesToGrades(notes: unknown[]): StudentGrade[] {
+  return (notes ?? []).map((raw) => {
+    const note = raw as Record<string, unknown>;
+    const value = note.value;
+    const numericValue = value === "" || value == null ? undefined : Number(value);
+    return {
+      id: String(note.id ?? newGradeId()),
+      schoolCode: String(note.schoolCode ?? ""),
+      studentId: String(note.studentId ?? ""),
+      studentName: String(note.studentName ?? ""),
+      evaluationId: String(note.evaluationId ?? note.id ?? ""),
+      subject: String(note.subject ?? ""),
+      className: String(note.className ?? ""),
+      period: String(note.period ?? ""),
+      value: Number.isFinite(numericValue) ? numericValue : undefined,
+      scale: Number(note.scale ?? 20),
+      evaluationCoefficient: Number(note.evaluationCoefficient ?? note.coefficient ?? 1),
+      coefficient: Number(note.coefficient ?? 1),
+      gradeStatus: (note.gradeStatus as GradeStatus) ?? (note.status as GradeStatus) ?? "Saisie",
+      comment: String(note.comment ?? ""),
+      authorId: String(note.authorId ?? ""),
+      enteredAt: String(note.enteredAt ?? ""),
+      validatedBy: String(note.validatedBy ?? ""),
+      validatedAt: String(note.validatedAt ?? ""),
+      date: String(note.date ?? ""),
+      audit: Array.isArray(note.audit) ? (note.audit as GradeAuditEntry[]) : [],
+    };
+  });
+}
+
+export function gradesToLegacyNotes(grades: StudentGrade[]): unknown[] {
+  return grades.map((grade) => ({
+    id: grade.id,
+    schoolCode: grade.schoolCode,
+    studentId: grade.studentId,
+    studentName: grade.studentName,
+    subject: grade.subject,
+    className: grade.className,
+    period: grade.period,
+    value: grade.value,
+    scale: grade.scale,
+    coefficient: grade.coefficient ?? grade.evaluationCoefficient ?? 1,
+    evaluationCoefficient: grade.evaluationCoefficient ?? 1,
+    evaluationId: grade.evaluationId,
+    gradeStatus: grade.gradeStatus,
+    status: grade.gradeStatus,
+    comment: grade.comment,
+    authorId: grade.authorId,
+    enteredAt: grade.enteredAt,
+    validatedBy: grade.validatedBy,
+    validatedAt: grade.validatedAt,
+    date: grade.date,
+    audit: grade.audit ?? [],
+  }));
+}
+
+export function allGrades(state: BackOfficeState): StudentGrade[] {
+  return legacyNotesToGrades(state.notes ?? []);
+}
+
+export function scopedGrades(user: SessionUser | null, state: BackOfficeState): StudentGrade[] {
+  const studentIds = new Set(scopedStudents(user, state).map((row) => String(row.id ?? "")));
+  return allGrades(state).filter((grade) => studentIds.has(grade.studentId));
+}
+
+export function gradesForEvaluation(grades: StudentGrade[], evaluationId: string): StudentGrade[] {
+  return grades.filter((grade) => grade.evaluationId === evaluationId);
+}
+
+export function evaluationHasBulletinUsage(evaluation: Evaluation, state: BackOfficeState): boolean {
+  const bulletins = (state.bulletins ?? []) as Record<string, unknown>[];
+  return bulletins.some(
+    (bulletin) =>
+      normalize(String(bulletin.period ?? "")) === normalize(evaluation.period) &&
+      normalize(String(bulletin.status ?? "")) === "publié" &&
+      normalize(String(bulletin.schoolCode ?? "")) === normalize(evaluation.schoolCode),
+  );
+}
+
+export function canEditEvaluation(evaluation: Evaluation, state: BackOfficeState): boolean {
+  if (!evaluation.active) return false;
+  if (evaluation.status === "Annulée") return false;
+  if (LOCKED_EVALUATION_STATUSES.has(evaluation.status) && evaluationHasBulletinUsage(evaluation, state)) {
+    return false;
+  }
+  return evaluation.status === "Brouillon" || evaluation.status === "Ouverte" || evaluation.status === "Saisie terminée";
+}
+
+export function canDeleteEvaluation(evaluation: Evaluation, grades: StudentGrade[]): boolean {
+  if (grades.some((grade) => grade.gradeStatus === "Validée" || grade.gradeStatus === "Corrigée")) {
+    return false;
+  }
+  return evaluation.status !== "Publiée";
+}
+
+export function validateGradeValue(value: number, scale: number): string | null {
+  if (!Number.isFinite(value)) return "La note doit être un nombre.";
+  if (value < 0) return "La note ne peut pas être négative.";
+  if (value > scale) return `La note ne peut pas dépasser le barème (${scale}).`;
+  return null;
+}
+
+export function teacherCanAccessEvaluation(
+  user: SessionUser | null,
+  evaluation: Evaluation,
+  state: BackOfficeState,
+): boolean {
+  if (!user) return false;
+  if (isSuperAdminRole(user.role) && user.schoolCode === "*") return true;
+  const role = normalize(user.role);
+  if (role.includes("admin") || role.includes("prefet") || role.includes("proviseur") || role.includes("directeur")) {
+    return true;
+  }
+  if (role.includes("enseignant") || role.includes("teacher")) {
+    const teachers = scopedTeachers(user, state);
+    const teacher = teachers.find((row) => String(row.id) === String(user.id));
+    if (!teacher) return false;
+    const teacherName = `${String(teacher.firstName ?? "")} ${String(teacher.lastName ?? "")}`.trim();
+    if (evaluation.teacherId && String(evaluation.teacherId) === String(teacher.id)) return true;
+    if (evaluation.teacherName && normalize(evaluation.teacherName) === normalize(teacherName)) return true;
+    const assignments = (state.assignments ?? []) as Record<string, unknown>[];
+    return assignments.some(
+      (assignment) =>
+        normalize(String(assignment.className ?? "")) === normalize(evaluation.className) &&
+        normalize(String(assignment.subject ?? assignment.course ?? "")) === normalize(evaluation.subject) &&
+        String(assignment.teacherId ?? "") === String(teacher.id),
+    );
+  }
+  return false;
+}
+
+export function buildEvaluationsFromExams(state: BackOfficeState, schoolCode: string): Evaluation[] {
+  const existing = state.evaluations ?? [];
+  const existingExamIds = new Set(existing.map((row) => row.linkedExamId).filter(Boolean));
+  const exams = (state.exams ?? []) as Record<string, unknown>[];
+  const created: Evaluation[] = [];
+
+  for (const exam of exams) {
+    if (normalize(String(exam.schoolCode ?? schoolCode)) !== normalize(schoolCode)) continue;
+    const examId = String(exam.id ?? "");
+    if (!examId || existingExamIds.has(examId)) continue;
+    created.push({
+      id: newEvaluationId(),
+      schoolCode,
+      className: String(exam.className ?? ""),
+      subject: String(exam.subject ?? ""),
+      period: String(exam.period ?? resolveDefaultPeriod(state, schoolCode)),
+      evaluationType: mapExamType(String(exam.examType ?? "Examen")),
+      title: String(exam.name ?? exam.title ?? "Évaluation"),
+      date: String(exam.date ?? ""),
+      scale: 20,
+      coefficient: 1,
+      status: mapExamStatus(String(exam.status ?? "Programmé")),
+      active: true,
+      linkedExamId: examId,
+      createdAt: formatGradeDateTime(),
+    });
+  }
+
+  return created;
+}
+
+function mapExamType(value: string): EvaluationType {
+  const normalized = normalize(value);
+  if (normalized.includes("devoir")) return "Devoir";
+  if (normalized.includes("interro")) return "Interrogation";
+  if (normalized.includes("compo")) return "Composition";
+  if (normalized.includes("rattrap")) return "Rattrapage";
+  if (normalized.includes("continu")) return "Contrôle continu";
+  return "Examen";
+}
+
+function mapExamStatus(value: string): EvaluationStatus {
+  const normalized = normalize(value);
+  if (normalized.includes("publi")) return "Publiée";
+  if (normalized.includes("valid")) return "Validée";
+  if (normalized.includes("cours")) return "Ouverte";
+  return "Brouillon";
+}
+
+export function createEvaluation(
+  input: Omit<Evaluation, "id" | "active" | "createdAt" | "status"> & { status?: EvaluationStatus },
+  author: SessionUser | null,
+): Evaluation {
+  const now = formatGradeDateTime();
+  return {
+    ...input,
+    id: newEvaluationId(),
+    status: input.status ?? "Ouverte",
+    active: true,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: author?.id,
+    history: [
+      {
+        authorId: author?.id ?? "SYSTEM",
+        authorName: authorDisplayName(author),
+        action: "evaluation.create",
+        newValue: input.title,
+        date: now,
+      },
+    ],
+  };
+}
+
+export function updateEvaluation(
+  evaluation: Evaluation,
+  patch: Partial<Evaluation>,
+  author: SessionUser | null,
+  state: BackOfficeState,
+): { evaluation: Evaluation; error?: string } {
+  if (!canEditEvaluation(evaluation, state)) {
+    return { evaluation, error: "Cette évaluation ne peut plus être modifiée librement." };
+  }
+  const now = formatGradeDateTime();
+  const history: GradeAuditEntry[] = [
+    ...(evaluation.history ?? []),
+    {
+      authorId: author?.id ?? "SYSTEM",
+      authorName: authorDisplayName(author),
+      action: "evaluation.update",
+      oldValue: evaluation.title,
+      newValue: patch.title ?? evaluation.title,
+      date: now,
+    },
+  ];
+  return {
+    evaluation: {
+      ...evaluation,
+      ...patch,
+      updatedAt: now,
+      history,
+    },
+  };
+}
+
+export function deactivateEvaluation(
+  evaluation: Evaluation,
+  author: SessionUser | null,
+  reason?: string,
+): Evaluation {
+  const now = formatGradeDateTime();
+  return {
+    ...evaluation,
+    active: false,
+    status: "Annulée",
+    updatedAt: now,
+    history: [
+      ...(evaluation.history ?? []),
+      {
+        authorId: author?.id ?? "SYSTEM",
+        authorName: authorDisplayName(author),
+        action: "evaluation.deactivate",
+        reason,
+        date: now,
+      },
+    ],
+  };
+}
+
+export function upsertStudentGrade(
+  grades: StudentGrade[],
+  evaluation: Evaluation,
+  student: Record<string, unknown>,
+  input: {
+    value?: number;
+    gradeStatus: GradeStatus;
+    comment?: string;
+    author: SessionUser | null;
+  },
+): { grades: StudentGrade[]; error?: string } {
+  if (LOCKED_EVALUATION_STATUSES.has(evaluation.status) && input.gradeStatus !== "Corrigée") {
+    const existing = grades.find(
+      (grade) => grade.evaluationId === evaluation.id && grade.studentId === String(student.id ?? ""),
+    );
+    if (existing && (existing.gradeStatus === "Validée" || existing.gradeStatus === "Corrigée")) {
+      return { grades, error: "Note validée : utilisez la correction autorisée." };
+    }
+  }
+
+  const studentId = String(student.id ?? "");
+  const now = formatGradeDateTime();
+  const existingIndex = grades.findIndex(
+    (grade) => grade.evaluationId === evaluation.id && grade.studentId === studentId,
+  );
+  const isAbsence = ABSENCE_GRADE_STATUSES.includes(input.gradeStatus);
+
+  if (!isAbsence && input.value != null) {
+    const validationError = validateGradeValue(input.value, evaluation.scale);
+    if (validationError) return { grades, error: validationError };
+  }
+
+  const base: StudentGrade = {
+    id: existingIndex >= 0 ? grades[existingIndex].id : newGradeId(),
+    schoolCode: evaluation.schoolCode,
+    studentId,
+    studentName: formatStudentName(student),
+    evaluationId: evaluation.id,
+    subject: evaluation.subject,
+    className: evaluation.className,
+    period: evaluation.period,
+    value: isAbsence ? undefined : input.value,
+    scale: evaluation.scale,
+    evaluationCoefficient: evaluation.coefficient,
+    gradeStatus: input.gradeStatus,
+    comment: input.comment,
+    authorId: input.author?.id,
+    authorName: authorDisplayName(input.author),
+    enteredAt: now,
+    date: evaluation.date ?? todayPeriodDate(),
+    audit: existingIndex >= 0 ? [...(grades[existingIndex].audit ?? [])] : [],
+  };
+
+  if (existingIndex >= 0) {
+    const previous = grades[existingIndex];
+    base.audit = [
+      ...(previous.audit ?? []),
+      {
+        authorId: input.author?.id ?? "SYSTEM",
+        authorName: authorDisplayName(input.author),
+        action: "grade.update",
+        oldValue: previous.value,
+        newValue: input.value,
+        date: now,
+      },
+    ];
+  } else {
+    base.audit = [
+      {
+        authorId: input.author?.id ?? "SYSTEM",
+        authorName: authorDisplayName(input.author),
+        action: "grade.create",
+        newValue: input.value,
+        date: now,
+      },
+    ];
+  }
+
+  const next = [...grades];
+  if (existingIndex >= 0) next[existingIndex] = base;
+  else next.push(base);
+  return { grades: next };
+}
+
+export function correctValidatedGrade(
+  grades: StudentGrade[],
+  gradeId: string,
+  newValue: number,
+  reason: string,
+  author: SessionUser | null,
+): { grades: StudentGrade[]; error?: string } {
+  const index = grades.findIndex((grade) => grade.id === gradeId);
+  if (index < 0) return { grades, error: "Note introuvable." };
+  if (!reason.trim()) return { grades, error: "Le motif de correction est obligatoire." };
+
+  const current = grades[index];
+  const validationError = validateGradeValue(newValue, current.scale);
+  if (validationError) return { grades, error: validationError };
+
+  const now = formatGradeDateTime();
+  const updated: StudentGrade = {
+    ...current,
+    value: newValue,
+    gradeStatus: "Corrigée",
+    audit: [
+      ...(current.audit ?? []),
+      {
+        authorId: author?.id ?? "SYSTEM",
+        authorName: authorDisplayName(author),
+        action: "grade.correct",
+        oldValue: current.value,
+        newValue,
+        reason,
+        date: now,
+      },
+    ],
+  };
+  const next = [...grades];
+  next[index] = updated;
+  return { grades: next };
+}
+
+export function validateEvaluationGrades(
+  evaluation: Evaluation,
+  grades: StudentGrade[],
+  author: SessionUser | null,
+): { evaluation: Evaluation; grades: StudentGrade[] } {
+  const now = formatGradeDateTime();
+  const nextGrades = grades.map((grade) => {
+    if (grade.evaluationId !== evaluation.id) return grade;
+    if (ABSENCE_GRADE_STATUSES.includes(grade.gradeStatus)) return grade;
+    if (grade.value == null) return grade;
+    return {
+      ...grade,
+      gradeStatus: "Validée" as GradeStatus,
+      validatedBy: author?.id,
+      validatedByName: authorDisplayName(author),
+      validatedAt: now,
+      audit: [
+        ...(grade.audit ?? []),
+        {
+          authorId: author?.id ?? "SYSTEM",
+          authorName: authorDisplayName(author),
+          action: "grade.validate",
+          date: now,
+        },
+      ],
+    };
+  });
+
+  const nextEvaluation: Evaluation = {
+    ...evaluation,
+    status: "Validée",
+    updatedAt: now,
+    history: [
+      ...(evaluation.history ?? []),
+      {
+        authorId: author?.id ?? "SYSTEM",
+        authorName: authorDisplayName(author),
+        action: "evaluation.validate",
+        date: now,
+      },
+    ],
+  };
+
+  return { evaluation: nextEvaluation, grades: nextGrades };
+}
+
+export function publishEvaluation(
+  evaluation: Evaluation,
+  author: SessionUser | null,
+): Evaluation {
+  const now = formatGradeDateTime();
+  return {
+    ...evaluation,
+    status: "Publiée",
+    updatedAt: now,
+    history: [
+      ...(evaluation.history ?? []),
+      {
+        authorId: author?.id ?? "SYSTEM",
+        authorName: authorDisplayName(author),
+        action: "evaluation.publish",
+        date: now,
+      },
+    ],
+  };
+}
+
+export function syncBulletinsForClass(
+  state: BackOfficeState,
+  schoolCode: string,
+  className: string,
+  period: string,
+  students: Record<string, unknown>[],
+  grades: StudentGrade[],
+): Record<string, unknown>[] {
+  const courses = scopedCourses(null, state) as Record<string, unknown>[];
+  const classStudents = students.filter(
+    (student) => normalize(String(student.className ?? "")) === normalize(className),
+  );
+  const gradeBook = new GradeBookService(classStudents, grades, courses);
+  const bulletins = [...((state.bulletins ?? []) as Record<string, unknown>[])];
+
+  for (const student of classStudents) {
+    const studentId = String(student.id ?? "");
+    const averages = gradeBook.getStudentAverage(studentId, period);
+    const bulletinId = `BUL-${schoolCode}-${studentId}-${period.replace(/\s+/g, "-").toUpperCase()}`;
+    const existingIndex = bulletins.findIndex((row) => String(row.id) === bulletinId);
+    const payload = {
+      id: bulletinId,
+      schoolCode,
+      studentId,
+      studentName: formatStudentName(student),
+      className,
+      period,
+      average: averages.average.toFixed(1),
+      rank: averages.rankLabel.replace(" / ", "/"),
+      status: "En validation",
+      teacherComment: GradeBookService.getAutomaticAppreciation(averages.average),
+      principalComment: "",
+    };
+    if (existingIndex >= 0) {
+      bulletins[existingIndex] = { ...bulletins[existingIndex], ...payload };
+    } else {
+      bulletins.push(payload);
+    }
+  }
+
+  return bulletins;
+}
+
+export function buildGradeBook(state: BackOfficeState, user: SessionUser | null, period?: string) {
+  const students = scopedStudents(user, state) as Record<string, unknown>[];
+  const grades = scopedGrades(user, state).filter(
+    (grade) => !period || normalize(grade.period) === normalize(period),
+  );
+  const courses = scopedCourses(user, state) as Record<string, unknown>[];
+  return new GradeBookService(students, grades, courses);
+}
+
+export function appendGradeAuditLog(
+  auditLog: unknown[] | undefined,
+  action: string,
+  user: SessionUser | null,
+  details?: Record<string, unknown>,
+) {
+  return appendAuditLog(
+    auditLog,
+    makeAuditEntry({
+      action,
+      entityType: "Notes",
+      schoolCode: user?.schoolCode,
+      details: details ? JSON.stringify(details) : undefined,
+      ...auditActor(user),
+    }),
+  );
+}
+
+export function subjectOptionsForClass(state: BackOfficeState, schoolCode: string, className: string): string[] {
+  const courses = (state.courses ?? []) as Record<string, unknown>[];
+  const fromCourses = courses
+    .filter(
+      (course) =>
+        normalize(String(course.schoolCode ?? schoolCode)) === normalize(schoolCode) &&
+        normalize(String(course.className ?? "")) === normalize(className),
+    )
+    .map((course) => String(course.name ?? "").trim())
+    .filter(Boolean);
+  if (fromCourses.length) return [...new Set(fromCourses)].sort();
+  const assignments = (state.assignments ?? []) as Record<string, unknown>[];
+  return [
+    ...new Set(
+      assignments
+        .filter((row) => normalize(String(row.className ?? "")) === normalize(className))
+        .map((row) => String(row.subject ?? row.course ?? "").trim())
+        .filter(Boolean),
+    ),
+  ].sort();
+}
+
+export function ensureEvaluationsSynced(state: BackOfficeState, schoolCode: string): Evaluation[] {
+  const current = state.evaluations ?? [];
+  const imported = buildEvaluationsFromExams(state, schoolCode);
+  return [...current, ...imported];
+}

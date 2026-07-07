@@ -20,6 +20,20 @@ export function isSuperAdminSessionRole(role?: string) {
 
 const schoolAdminForbiddenFeatures = new Set(["Établissements", "Abonnements"]);
 
+const PARENT_STUDENT_SESSION_ROLES = new Set(["parent_student", "student"]);
+
+function isEstablishmentCommunicationSession(session: any): boolean {
+  const schoolCode = String(session?.user?.schoolCode ?? session?.school?.code ?? "").trim();
+  if (!schoolCode || schoolCode === "*") return false;
+  const role = session?.role;
+  const platformRole = sessionRoleToPlatformRole(role);
+  return (
+    isInternalSchoolRole(role) ||
+    isInternalSchoolRole(platformRole) ||
+    PARENT_STUDENT_SESSION_ROLES.has(role)
+  );
+}
+
 export const entityFeatureMap: Record<string, string> = {
   schools: "Établissements",
   countries: "Pays",
@@ -272,6 +286,20 @@ export function canReadView(session: any, viewName: string): boolean {
       hasSecurityPermission(session, "Enseignants", "READ") ||
       hasSecurityPermission(session, "Utilisateurs", "READ")
     );
+  }
+
+  const communicationViews = new Set([
+    "messages",
+    "Messages",
+    "notifications",
+    "announcements",
+    "Announcements",
+    "PlatformNotifications",
+  ]);
+  if (communicationViews.has(viewName)) {
+    const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
+    if (feature && hasSecurityPermission(session, feature, "READ")) return true;
+    return isEstablishmentCommunicationSession(session);
   }
 
   const feature = VIEW_PERMISSION_FEATURES[viewName];

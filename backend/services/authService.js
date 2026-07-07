@@ -38,20 +38,22 @@ function isStudentRole(role) {
 }
 
 class BusinessError extends Error {
-  constructor(statusCode, message) {
+  constructor(statusCode, message, details) {
     super(message);
     this.statusCode = statusCode;
+    this.details = details;
   }
 }
 
 class AuthService {
-  constructor({ school, schools = [school], teachers, students, userAccounts, countries = [] }) {
+  constructor({ school, schools = [school], teachers, students, userAccounts, countries = [], subscriptions = [] }) {
     this.school = school;
     this.schools = schools.filter(Boolean);
     this.teachers = teachers;
     this.students = students;
     this.userAccounts = userAccounts;
     this.countries = countries;
+    this.subscriptions = subscriptions;
   }
 
   identify({ schoolCode, identifier }) {
@@ -319,6 +321,12 @@ class AuthService {
       throw new BusinessError(403, "Pays suspendu. Connexion indisponible pour ce pays.");
     }
 
+    const { assertSchoolCanConnect } = require("./schoolSubscriptionAccessService");
+    assertSchoolCanConnect(schoolCode, {
+      schools: this.schools,
+      subscriptions: this.subscriptions,
+    });
+
     return school;
   }
 
@@ -369,11 +377,22 @@ class AuthService {
       return false;
     }
 
-    if (user.passwordHash || user.pinHash) {
-      return verifySecret(secret, user.passwordHash) || verifySecret(secret, user.pinHash);
+    const normalizedSecret = String(secret ?? "");
+
+    if (user.passwordHash && verifySecret(normalizedSecret, user.passwordHash)) {
+      return true;
     }
 
-    return user.password === secret || user.pin === secret;
+    if (user.pinHash && verifySecret(normalizedSecret, user.pinHash)) {
+      return true;
+    }
+
+    const temporaryPassword = String(user.temporaryPassword ?? "").trim();
+    if (temporaryPassword && temporaryPassword === normalizedSecret) {
+      return true;
+    }
+
+    return String(user.password ?? "") === normalizedSecret || String(user.pin ?? "") === normalizedSecret;
   }
 
   getLoginAttemptKey(schoolCode, identifier) {

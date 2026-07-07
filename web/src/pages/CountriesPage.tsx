@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
-import { scopedCountries } from "../lib/scope";
+import { scopedCountries, scopedSchools } from "../lib/scope";
 import {
   canonicalCountryScope,
   countryScopeMatches,
@@ -19,7 +19,7 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
-import type { BackOfficeState, Country } from "../types";
+import type { BackOfficeState, Country, School } from "../types";
 import {
   SUBSCRIPTION_PLAN_NAMES,
   resolveCountrySubscriptionPolicy,
@@ -34,9 +34,9 @@ const EMPTY_COUNTRY: Country = {
   status: "Actif",
 };
 
-function countryDependencies(state: BackOfficeState, country: Country) {
+function countryDependencies(state: BackOfficeState, country: Country, visibleSchools: School[]) {
   const scope = canonicalCountryScope(country);
-  const schools = state.schools.filter(
+  const schools = visibleSchools.filter(
     (school) =>
       schoolMatchesCountryScope(school, scope) ||
       normalize(school.countryCode) === normalize(country.code),
@@ -85,6 +85,10 @@ export function CountriesPage() {
   const [originalCode, setOriginalCode] = useState("");
 
   const rows = scopedCountries(session?.user ?? null, state);
+  const visibleSchools = useMemo(
+    () => scopedSchools(session?.user ?? null, state),
+    [session?.user, state],
+  );
   const { canCreate, canUpdate, canDelete, canSuspend } = useFeaturePermissions("Pays");
 
   async function persistCountries(next: Country[], message: string) {
@@ -119,7 +123,7 @@ export function CountriesPage() {
   }
 
   async function handleDelete(country: Country) {
-    const deps = countryDependencies(state, country);
+    const deps = countryDependencies(state, country, visibleSchools);
     if (deps.schools > 0 || deps.users > 0 || deps.subscriptions > 0) {
       showToast(
         `Suppression impossible : ${deps.schools} établissement(s), ${deps.users} compte(s) et ${deps.subscriptions} abonnement(s) rattachés. Retirez-les ou suspendez le pays.`,
@@ -148,6 +152,12 @@ export function CountriesPage() {
     event.preventDefault();
     if (!editing) return;
 
+    const exists = state.countries.some((item) => normalize(item.code) === normalize(originalCode));
+    if (!exists && !canCreate) {
+      showToast("Création de pays réservée au Super Administrateur.", "error");
+      return;
+    }
+
     const payload: Country = {
       ...editing,
       name: editing.name.trim(),
@@ -163,7 +173,6 @@ export function CountriesPage() {
       return;
     }
 
-    const exists = state.countries.some((item) => normalize(item.code) === normalize(originalCode));
     const next = exists
       ? state.countries.map((item) =>
           normalize(item.code) === normalize(originalCode) ? { ...item, ...payload } : item,

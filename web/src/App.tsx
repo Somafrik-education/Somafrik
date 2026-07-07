@@ -8,7 +8,20 @@ import { LoginPage } from "./pages/LoginPage";
 import { DashboardEntryPage } from "./pages/DashboardEntryPage";
 import { CountriesPage } from "./pages/CountriesPage";
 import { SchoolsPage } from "./pages/SchoolsPage";
-import { SubscriptionsPage } from "./pages/SubscriptionsPage";
+import { SubscriptionsLayout } from "./pages/abonnements/SubscriptionsLayout";
+import { SubscriptionOffersPage } from "./pages/abonnements/SubscriptionOffersPage";
+import { SubscriptionSchoolsPage } from "./pages/abonnements/SubscriptionSchoolsPage";
+import { SubscriptionPaymentsPage } from "./pages/abonnements/SubscriptionPaymentsPage";
+import { SubscriptionInvoicesPage } from "./pages/abonnements/SubscriptionInvoicesPage";
+import { SubscriptionDiscountsPage } from "./pages/abonnements/SubscriptionDiscountsPage";
+import { SubscriptionDelinquencyPage } from "./pages/abonnements/SubscriptionDelinquencyPage";
+import { SubscriptionReportsPage } from "./pages/abonnements/SubscriptionReportsPage";
+import { MonAbonnementLayout } from "./pages/abonnements/MonAbonnementLayout";
+import { MonAbonnementPage } from "./pages/abonnements/MonAbonnementPage";
+import { MonAbonnementInvoicesPage } from "./pages/abonnements/MonAbonnementInvoicesPage";
+import { MonAbonnementPaymentsPage } from "./pages/abonnements/MonAbonnementPaymentsPage";
+import { ChangeOfferPage } from "./pages/abonnements/ChangeOfferPage";
+import { CancellationRequestPage } from "./pages/abonnements/CancellationRequestPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { PermissionsPage } from "./pages/PermissionsPage";
@@ -28,7 +41,8 @@ import {
 } from "./pages/planning/PlanningPlaceholders";
 import { PlanningConflictsPage } from "./pages/planning/PlanningConflictsPage";
 import { FinancesLayout } from "./pages/finances/FinancesLayout";
-import { FinanceFeesPage, FinanceUnpaidPage } from "./pages/finances/FinancePlaceholders";
+import { FinanceFeesPage } from "./pages/finances/FinanceFeesPage";
+import { FinanceUnpaidPage } from "./pages/finances/FinanceUnpaidPage";
 import { MonEtablissementLayout } from "./pages/etablissement/MonEtablissementLayout";
 import { ParentChildRelationsPage } from "./pages/etablissement/ParentChildRelationsPage";
 import { AdministrationLayout } from "./pages/administration/AdministrationLayout";
@@ -46,6 +60,7 @@ import {
 } from "./pages/parametres/SettingsPlaceholders";
 import { BulletinDesignPage } from "./pages/BulletinDesignPage";
 import { PresencesPage } from "./pages/PresencesPage";
+import { GradesEvaluationsPage } from "./pages/GradesEvaluationsPage";
 import { ActiveSchoolProvider } from "./context/ActiveSchoolContext";
 
 export default function App() {
@@ -223,7 +238,7 @@ export default function App() {
           path="/notes"
           element={
             <PermissionRoute view="notes">
-              <EntityPage entity="notes" />
+              <GradesEvaluationsPage />
             </PermissionRoute>
           }
         />
@@ -264,10 +279,27 @@ export default function App() {
           path="/abonnements"
           element={
             <PermissionRoute view="subscriptions">
-              <SubscriptionsPage />
+              <SubscriptionsLayout />
             </PermissionRoute>
           }
-        />
+        >
+          <Route index element={<Navigate to="etablissements" replace />} />
+          <Route path="offres" element={<SubscriptionOffersPage />} />
+          <Route path="etablissements" element={<SubscriptionSchoolsPage />} />
+          <Route path="paiements" element={<SubscriptionPaymentsPage />} />
+          <Route path="factures" element={<SubscriptionInvoicesPage />} />
+          <Route path="remises" element={<SubscriptionDiscountsPage />} />
+          <Route path="retards" element={<SubscriptionDelinquencyPage />} />
+          <Route path="rapports" element={<SubscriptionReportsPage />} />
+          <Route
+            path="tarifs-pays"
+            element={
+              <PermissionRoute view="subscriptions">
+                <SubscriptionPolicySettingsPage />
+              </PermissionRoute>
+            }
+          />
+        </Route>
         <Route
           path="/notifications"
           element={
@@ -371,6 +403,20 @@ export default function App() {
           <Route path="apparence" element={<SettingsAppearancePage />} />
           <Route path="integrations" element={<SettingsIntegrationsPage />} />
           <Route path="donnees" element={<SettingsDataPage />} />
+          <Route
+            path="mon-abonnement"
+            element={
+              <PermissionRoute view="mySubscription">
+                <MonAbonnementLayout />
+              </PermissionRoute>
+            }
+          >
+            <Route index element={<MonAbonnementPage />} />
+            <Route path="factures" element={<MonAbonnementInvoicesPage />} />
+            <Route path="paiements" element={<MonAbonnementPaymentsPage />} />
+            <Route path="changer-offre" element={<ChangeOfferPage />} />
+            <Route path="resiliation" element={<CancellationRequestPage />} />
+          </Route>
         </Route>
         {/* Anciennes URLs paramètres -> hub / pages dédiées */}
         <Route path="/configuration" element={<Navigate to="/parametres" replace />} />

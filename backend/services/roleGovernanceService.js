@@ -87,6 +87,9 @@ class RoleGovernanceService {
         continue;
       }
       if (/^[^:]+:[A-Z]+$/.test(String(permission))) {
+        if (role === COUNTRY_ADMIN_ROLE && (permission === "Pays:CREATE" || permission === "Pays:DELETE")) {
+          continue;
+        }
         normalized.add(String(permission));
       }
     }
@@ -115,7 +118,10 @@ class RoleGovernanceService {
     }
 
     const normalizedPermission = this.normalizeToken(permission);
-    return !["abonnement", "inscription", "tarif"].some((keyword) => normalizedPermission.includes(keyword));
+    const forbiddenKeywords = normalizedPermission.startsWith("frais & tarifs")
+      ? ["abonnement", "inscription"]
+      : ["abonnement", "inscription", "tarif"];
+    return !forbiddenKeywords.some((keyword) => normalizedPermission.includes(keyword));
   }
 
   normalizeToken(value) {

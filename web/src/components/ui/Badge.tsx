@@ -25,8 +25,8 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
 export function StatusBadge({ status }: { status?: string }) {
   const value = normalize(status);
   let tone: Tone = "neutral";
-  if (["actif", "a jour", "valide", "couvert", "paye", "lu"].includes(value)) tone = "success";
-  else if (["en attente", "en attente de validation", "non lu", "moyenne"].includes(value)) tone = "warning";
-  else if (["suspendu", "en retard", "refuse", "critique", "haute"].includes(value)) tone = "danger";
+  if (["actif", "a jour", "valide", "couvert", "paye", "lu", "active", "valide", "approuvee"].includes(value)) tone = "success";
+  else if (["en attente", "en attente de validation", "non lu", "moyenne", "essai", "brouillon", "emise"].includes(value)) tone = "warning";
+  else if (["suspendu", "en retard", "refuse", "critique", "haute", "expire", "annule", "resilie"].includes(value)) tone = "danger";
   return <Badge tone={tone}>{status ?? "—"}</Badge>;
 }

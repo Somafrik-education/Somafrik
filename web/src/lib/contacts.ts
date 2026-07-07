@@ -3,6 +3,7 @@ import { normalize } from "./format";
 import { scopedSchools } from "./scope";
 import { getSchoolAcademicLists } from "./academicConfig";
 import {
+  generateTemporaryPassword,
   generateUserIdentifier,
   getRoleDefaults,
 } from "./userAccounts";
@@ -174,6 +175,10 @@ function generateContactUserId(users: UserAccount[]): string {
 export interface ContactPromotionResult {
   users: UserAccount[];
   contact: Row;
+  /** Compte nouvellement créé (pas une mise à jour). */
+  created?: boolean;
+  /** Mot de passe provisoire communiqué une seule fois à la création. */
+  temporaryPassword?: string;
 }
 
 /**
@@ -197,6 +202,10 @@ export function promoteContactToUser(
       (contact.userId && normalize(String(user.id ?? "")) === normalize(String(contact.userId))),
   );
   const existing = existingIndex >= 0 ? users[existingIndex] : undefined;
+  const isNewUser = !existing;
+  const temporaryPassword = isNewUser
+    ? generateTemporaryPassword()
+    : String(existing?.temporaryPassword ?? "").trim() || undefined;
 
   const defaults = getRoleDefaults(role, schoolCode);
   const identifier = existing?.identifier ?? generateUserIdentifier(state.users, role);
@@ -237,6 +246,14 @@ export function promoteContactToUser(
       creator?.identifier ??
       creator?.firstName ??
       "Administrateur",
+    ...(isNewUser
+      ? {
+          temporaryPassword,
+          hasTemporaryPassword: true,
+          mustChangePassword: true,
+          createdAt: new Date().toISOString(),
+        }
+      : {}),
   };
 
   if (existingIndex >= 0) {
@@ -252,6 +269,8 @@ export function promoteContactToUser(
       userId: nextUser.id,
       userIdentifier: identifier,
     },
+    created: isNewUser,
+    temporaryPassword: isNewUser ? temporaryPassword : undefined,
   };
 }
 

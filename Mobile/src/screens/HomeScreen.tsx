@@ -23,6 +23,7 @@ import { canReadEntity, canReadRoute } from "../domain/security/permissions";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
+import CommunicationHeaderIcons from "../components/CommunicationHeaderIcons";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 
 export default function HomeScreen({ navigation }: any) {
@@ -91,6 +92,8 @@ export default function HomeScreen({ navigation }: any) {
               <Text style={styles.schoolTagline}>{assignedClasses.join(", ") || currentSchool.name}</Text>
             </View>
           </TouchableOpacity>
+
+          <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
 
           <TouchableOpacity
             activeOpacity={0.85}
@@ -244,6 +247,8 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </TouchableOpacity>
 
+          <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
+
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.parentWelcomeCard}
@@ -393,6 +398,8 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </TouchableOpacity>
 
+          <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
+
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.welcomeCard}
@@ -497,6 +504,8 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={styles.schoolTagline}>{currentSchool.slogan}</Text>
           </View>
         </TouchableOpacity>
+
+        <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
 
         {isPlatformAdmin && <SchoolSelector />}
 

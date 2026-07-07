@@ -104,9 +104,10 @@ export function scopedNotifications(user: ScopeUser | null, state: ScopeState) {
 export function scopedUsers(user: ScopeUser | null, state: ScopeState) {
   if (!user) return [];
   if (user.role === "super_admin" || isSuperAdminRole(sessionRoleToPlatformRole(user.role))) {
-    return state.users.filter((account) =>
-      ["Admin Pays", "Super Administrateur Somafrik", "Super Administrateur OKAFRIK"].includes(account.role ?? ""),
-    );
+    return state.users.filter((account) => {
+      const role = normalize(account.role);
+      return role === "admin pays" || role === "admin school";
+    });
   }
   if (user.role === "country_admin" || user.role === COUNTRY_ADMIN_ROLE) {
     const countrySchoolCodes = new Set(scopedSchools(user, state).map((school) => normalize(school.code)));

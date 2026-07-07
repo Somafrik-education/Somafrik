@@ -69,6 +69,9 @@ export function normalizeManagedRolePermissions(role: string, permissions: Itera
       continue;
     }
     if (/^[^:]+:[A-Z]+$/.test(permission)) {
+      if (role === COUNTRY_ADMIN_ROLE && (permission === "Pays:CREATE" || permission === "Pays:DELETE")) {
+        continue;
+      }
       normalized.add(permission);
     }
   }

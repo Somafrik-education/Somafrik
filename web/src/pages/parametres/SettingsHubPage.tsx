@@ -32,6 +32,14 @@ interface SettingCard {
 
 const SETTING_CARDS: SettingCard[] = [
   {
+    to: "/parametres/mon-abonnement",
+    title: "Mon abonnement",
+    description: "Offre SaaS Somafrik, factures, paiements, changement d'offre et résiliation.",
+    icon: CreditCard,
+    status: "available",
+    view: "mySubscription",
+  },
+  {
     to: "/parametres/abonnements",
     title: "Politique d'abonnement par pays",
     description: "Barème Essentiel, Standard et Premium par pays, devise et tarifs mensuels/annuels.",
@@ -44,7 +52,7 @@ const SETTING_CARDS: SettingCard[] = [
     title: "Profil établissement",
     description: "Identité de l'école : logo, adresse, contacts, code et responsable légal.",
     icon: Building2,
-    status: "soon",
+    status: "available",
     view: "configuration",
   },
   {
