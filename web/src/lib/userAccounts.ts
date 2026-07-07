@@ -21,6 +21,7 @@ import {
 import { isTeacherUserRole } from "./userTeacherSync";
 import { resolveEffectivePermissions } from "./permissions";
 import { api } from "../api/client";
+import { findDuplicateLoginIdentifier } from "./userAccountRules";
 
 const PLATFORM_ROLES = new Set([SUPER_ADMIN_ROLE, COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE]);
 
@@ -422,14 +423,9 @@ export function validateUserAccount(
     return "Identifiant obligatoire.";
   }
   const identifier = user.identifier.trim();
-  const duplicate = users.find(
-    (item) =>
-      item.id !== user.id &&
-      (normalize(item.identifier) === normalize(identifier) ||
-        normalize(item.publicId) === normalize(identifier)),
-  );
+  const duplicate = findDuplicateLoginIdentifier(users, user);
   if (duplicate) {
-    return `L'identifiant « ${identifier} » est déjà utilisé.`;
+    return `L'identifiant « ${identifier} » est déjà utilisé dans cet établissement.`;
   }
 
   if (isTeacherUserRole(user.role)) {

@@ -254,6 +254,9 @@ export interface UserAccount {
   createdAt?: string;
   lastLoginAt?: string;
   createdBy?: string;
+  deletedAt?: string;
+  suspensionReason?: string;
+  history?: string[];
 }
 
 export interface SessionUser extends UserAccount {

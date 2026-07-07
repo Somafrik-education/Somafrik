@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -38,12 +38,14 @@ import {
   linkContactToOperationalRecord,
   prepareContactForSave,
   promoteContactToUser,
+  revokeContactUserAccess,
   validateContactDuplicate,
 } from "../lib/contacts";
 import {
   findUserAccountForContact,
   resetUserAccountPassword,
 } from "../lib/userAccounts";
+import { validatePasswordPolicy } from "../lib/userAccountRules";
 import {
   getRelationContactOptions,
   getRelationParentContactOptions,
@@ -54,6 +56,7 @@ import {
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, rowsToCsv } from "../lib/csv";
 import { validateTeacherDeletion } from "../lib/teacherRules";
+import { markAllAnnouncementsRead } from "../lib/announcementsRead";
 import { normalize, isSchoolAdminRole } from "../lib/format";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
@@ -286,6 +289,12 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
     );
   }, [module, search, scopeUser, state, isParentChildMode]);
 
+  useEffect(() => {
+    if (module?.key === "announcements") {
+      markAllAnnouncementsRead(scopeUser, state);
+    }
+  }, [module?.key, scopeUser, state]);
+
   if (!module) {
     return <Navigate to="/etablissement" replace />;
   }
@@ -331,7 +340,7 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
       placeholder: "Mot de passe (min. 6 caractères)",
       inputType: "password",
       confirmLabel: "Réinitialiser",
-      validate: (value) => (value.length < 6 ? "Minimum 6 caractères." : null),
+      validate: (value) => validatePasswordPolicy(value),
     });
     if (!temporaryPassword) return;
     setBusy(true);
@@ -749,8 +758,20 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
 
     const nextContact = nextItem as Record<string, unknown>;
     let contactPromotion: ReturnType<typeof promoteContactToUser> | null = null;
+    if (module.key === "contacts" && String(nextContact.hasAccess ?? "") === "Non") {
+      const revoked = revokeContactUserAccess(nextContact, { ...state, ...patch, [module.key]: nextAllRows });
+      patch.users = revoked.users;
+      patch.contacts = (
+        (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows
+      ).map((row) => (String(row.id) === String(nextContact.id) ? revoked.contact : row)) as unknown as BackOfficeState["contacts"];
+    }
     if (module.key === "contacts" && String(nextContact.hasAccess ?? "") === "Oui") {
-      contactPromotion = promoteContactToUser(nextContact, state, scopeUser);
+      try {
+        contactPromotion = promoteContactToUser(nextContact, state, scopeUser);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "Création du compte impossible.", "error");
+        return;
+      }
       patch.users = contactPromotion.users;
       const promotedUser = contactPromotion.users.find(
         (user) => normalize(String(user.contactId ?? "")) === normalize(String(nextContact.id ?? "")),

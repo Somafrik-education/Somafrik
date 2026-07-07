@@ -5,6 +5,7 @@ import { scopedCountries, scopedSchools, scopedUsers } from "../lib/scope";
 import { getCurrentSchool } from "../lib/establishment";
 import { isInternalSchoolRole, normalize, getInitials, resolveCountryScopeFromSchool } from "../lib/format";
 import { canManageRolePermissions, canResetTargetUserPassword } from "../lib/permissions";
+import { USER_ACCOUNT_STATUS_OPTIONS, validatePasswordPolicy } from "../lib/userAccountRules";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import {
   applyRoleChangeToUser,
@@ -77,6 +78,7 @@ export function UsersPage() {
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [pendingOnly, setPendingOnly] = useState(false);
   const [detail, setDetail] = useState<UserAccount | null>(null);
   const [editing, setEditing] = useState<UserAccount | null>(null);
@@ -119,11 +121,12 @@ export function UsersPage() {
           normalize(v).includes(q),
         );
       const matchesRole = !roleFilter || u.role === roleFilter;
+      const matchesStatus = !statusFilter || String(u.status ?? "Actif") === statusFilter;
       const matchesPending =
         !pendingOnly || isPendingValidationStatus(u.validationStatus ?? u.status);
-      return matchesQuery && matchesRole && matchesPending;
+      return matchesQuery && matchesRole && matchesStatus && matchesPending;
     });
-  }, [allUsers, search, roleFilter, pendingOnly]);
+  }, [allUsers, search, roleFilter, statusFilter, pendingOnly]);
 
   async function persistUsers(next: UserAccount[], message: string, syncedUser?: UserAccount) {
     setBusy(true);
@@ -192,7 +195,7 @@ export function UsersPage() {
       placeholder: "Mot de passe (min. 6 caractères)",
       inputType: "password",
       confirmLabel: "Réinitialiser",
-      validate: (value) => (value.length < 6 ? "Minimum 6 caractères." : null),
+      validate: (value) => validatePasswordPolicy(value),
     });
     if (!temporaryPassword) return;
     setBusy(true);
@@ -367,6 +370,11 @@ export function UsersPage() {
             onChange={(e) => setRoleFilter(e.target.value)}
             options={[{ value: "", label: "Tous les rôles" }, ...roleOptions.map((r) => ({ value: r, label: r }))]}
           />
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            options={[{ value: "", label: "Tous les statuts" }, ...USER_ACCOUNT_STATUS_OPTIONS]}
+          />
           {isSuperadminView ? (
             <label className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm text-muted">
               <input
@@ -498,6 +506,7 @@ export function UsersPage() {
               <Row label="Établissement" value={getUserEstablishmentLabel(detail, schoolsForLabels)} />
               <Row label="Canal" value={formatAccessChannelLabel(detail.accessChannel)} />
               <Row label="Statut" value={detail.status} />
+              <Row label="Dernière connexion" value={detail.lastLoginAt ?? "—"} />
               <Row label="Validation" value={detail.validationStatus ?? "—"} />
             </dl>
           </>
@@ -665,7 +674,7 @@ export function UsersPage() {
                 <Select
                   value={editing.status ?? "Actif"}
                   onChange={(e) => setEditing({ ...editing, status: e.target.value })}
-                  options={["Actif", "Suspendu"].map((s) => ({ value: s, label: s }))}
+                  options={USER_ACCOUNT_STATUS_OPTIONS}
                 />
               </Field>
             )}

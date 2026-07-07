@@ -1,7 +1,13 @@
 const { AccountIdentifier } = require("./accountIdentifier");
 const { verifySecret } = require("./credentialService");
+const {
+  getLoginAttemptKey,
+  assertLoginNotLocked,
+  recordFailedLoginAttempt,
+  clearFailedLoginAttempts,
+} = require("../lib/loginLockout");
+const { GENERIC_AUTH_ERROR, canUserAccountLogin, loginBlockedMessage } = require("../lib/userAccountRules");
 
-const failedLoginAttempts = new Map();
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCK_DURATION_MS = 15 * 60 * 1000;
 
@@ -85,32 +91,36 @@ class AuthService {
     this.assertRequiredFields({ role, schoolCode, identifier, pin }, "Champs manquants");
     const schoolContext = this.assertSchoolCanConnect(schoolCode);
 
-    const loginKey = this.getLoginAttemptKey(schoolCode, identifier);
-    this.assertLoginNotLocked(loginKey);
+    const loginKey = getLoginAttemptKey(schoolCode, identifier);
+    try {
+      assertLoginNotLocked(loginKey);
+    } catch {
+      throw new BusinessError(
+        423,
+        "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
+      );
+    }
 
     const managedUser = this.findManagedUser(identifier, schoolCode, role);
     if (!managedUser) {
-      this.recordFailedLoginAttempt(loginKey);
-      throw new BusinessError(
-        401,
-        "Compte utilisateur requis. Contactez l'administration de l'établissement."
-      );
+      recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
     this.assertManagedUserCanUseMobile(managedUser);
 
     const managedMobileRole = this.getManagedMobileRole(managedUser);
     if (!managedMobileRole || managedMobileRole.role !== role) {
-      this.recordFailedLoginAttempt(loginKey);
-      throw new BusinessError(401, "Identifiants incorrects");
+      recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
     if (!this.verifyUserSecret(managedUser, pin)) {
-      this.recordFailedLoginAttempt(loginKey);
-      throw new BusinessError(401, "Identifiants incorrects");
+      recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
-    this.clearFailedLoginAttempts(loginKey);
+    clearFailedLoginAttempts(loginKey);
     return {
       role,
       user: this.buildManagedMobileUser(managedUser),
@@ -395,38 +405,6 @@ class AuthService {
     return String(user.password ?? "") === normalizedSecret || String(user.pin ?? "") === normalizedSecret;
   }
 
-  getLoginAttemptKey(schoolCode, identifier) {
-    return `${String(schoolCode).trim().toUpperCase()}:${String(identifier).trim().toLowerCase()}`;
-  }
-
-  assertLoginNotLocked(key) {
-    const current = failedLoginAttempts.get(key);
-
-    if (!current?.lockedUntil) {
-      return;
-    }
-
-    if (current.lockedUntil <= Date.now()) {
-      failedLoginAttempts.delete(key);
-      return;
-    }
-
-    throw new BusinessError(423, "Compte temporairement verrouille apres plusieurs tentatives. Reessayez dans 15 minutes.");
-  }
-
-  recordFailedLoginAttempt(key) {
-    const current = failedLoginAttempts.get(key) ?? { count: 0, lockedUntil: null };
-    const count = current.count + 1;
-    failedLoginAttempts.set(key, {
-      count,
-      lockedUntil: count >= MAX_FAILED_LOGIN_ATTEMPTS ? Date.now() + LOGIN_LOCK_DURATION_MS : null,
-    });
-  }
-
-  clearFailedLoginAttempts(key) {
-    failedLoginAttempts.delete(key);
-  }
-
   matchesSchoolCode(schoolCode) {
     return Boolean(this.findSchoolByCode(schoolCode));
   }
@@ -441,19 +419,8 @@ class AuthService {
   }
 
   assertManagedUserCanUseMobile(user) {
-    if (
-      user &&
-      (user.validationStatus === "En attente de validation" ||
-        user.status === "En attente de validation")
-    ) {
-      throw new BusinessError(
-        403,
-        "Compte en attente de validation par le Super Administrateur. Connexion indisponible."
-      );
-    }
-
-    if (user && user.status !== "Actif") {
-      throw new BusinessError(403, "Compte suspendu ou desactive. Connexion indisponible.");
+    if (!canUserAccountLogin(user)) {
+      throw new BusinessError(403, loginBlockedMessage(user));
     }
 
     if (

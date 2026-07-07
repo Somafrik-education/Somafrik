@@ -10,6 +10,7 @@ import {
 import { resolveCountryScopeFromSchool } from "./format";
 import { resolveEffectivePermissions } from "./permissions";
 import { generateTeacherIdentifiers } from "./entityIdentifiers";
+import { findDuplicateLoginIdentifier } from "./userAccountRules";
 
 type Row = Record<string, unknown>;
 
@@ -190,10 +191,16 @@ export function promoteContactToUser(
   state: BackOfficeState,
   creator: SessionUser | null,
 ): ContactPromotionResult {
-  const role = String(contact.role ?? "").trim();
+  const contactId = String(contact.id ?? "").trim();
   const schoolCode = String(contact.schoolCode ?? "").trim();
+  const lastName = String(contact.lastName ?? "").trim();
+  const firstName = String(contact.firstName ?? "").trim();
+  if (!contactId || !lastName || !firstName || !schoolCode) {
+    throw new Error("Un contact valide (nom, prénom, établissement) est obligatoire pour créer un compte.");
+  }
+
+  const role = String(contact.role ?? "").trim();
   const secondaryRole = String(contact.secondaryRole ?? "").trim();
-  const contactId = String(contact.id ?? "");
 
   const users = [...state.users];
   const existingIndex = users.findIndex(
@@ -209,6 +216,16 @@ export function promoteContactToUser(
 
   const defaults = getRoleDefaults(role, schoolCode);
   const identifier = existing?.identifier ?? generateUserIdentifier(state.users, role);
+  const duplicate = findDuplicateLoginIdentifier(state.users, {
+    id: existing?.id,
+    identifier,
+    email: String(contact.email ?? existing?.email ?? ""),
+    phone: String(contact.phone ?? existing?.phone ?? ""),
+    schoolCode,
+  });
+  if (duplicate && duplicate.id !== existing?.id) {
+    throw new Error(`L'identifiant « ${identifier} » est déjà utilisé dans cet établissement.`);
+  }
   const school = state.schools.find((item) => normalize(item.code) === normalize(schoolCode));
   const secondaryRoles = secondaryRole ? [secondaryRole] : [];
   const permissions = [
@@ -437,4 +454,32 @@ export function linkContactToOperationalRecord(
   }
 
   return { contact };
+}
+
+/** USR-010/012 — Retire l'accès applicatif d'un contact sans supprimer l'historique. */
+export function revokeContactUserAccess(
+  contact: Row,
+  state: BackOfficeState,
+): { users: UserAccount[]; contact: Row } {
+  const contactId = String(contact.id ?? "").trim();
+  const userId = String(contact.userId ?? "").trim();
+  const users = state.users.map((user) => {
+    const linked =
+      (contactId && normalize(String(user.contactId ?? "")) === normalize(contactId)) ||
+      (userId && normalize(String(user.id ?? "")) === normalize(userId));
+    if (!linked) return user;
+    return {
+      ...user,
+      status: "Inactif",
+      mustChangePassword: true,
+      temporaryPassword: "",
+    };
+  });
+  return {
+    users,
+    contact: {
+      ...contact,
+      hasAccess: "Non",
+    },
+  };
 }

@@ -1,6 +1,13 @@
 const { BusinessError } = require("./authService");
 const { CommunicationService } = require("./communicationService");
 const { verifySecret } = require("./credentialService");
+const {
+  getLoginAttemptKey,
+  assertLoginNotLocked,
+  recordFailedLoginAttempt,
+  clearFailedLoginAttempts,
+} = require("../lib/loginLockout");
+const { GENERIC_AUTH_ERROR, canUserAccountLogin, loginBlockedMessage } = require("../lib/userAccountRules");
 const { canAccessBackOfficeRole, canAccessWebPlatformRole, isEstablishmentBackOfficeRole } = require("../lib/establishmentRoles");
 const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("../lib/countryScope");
 
@@ -28,21 +35,25 @@ class BackOfficeAccessService {
       throw new BusinessError(400, "Identifiant et mot de passe obligatoires");
     }
 
-    const user = this.findUserAccount(identifier, schoolCode);
-
-    if (!user || !this.verifyPassword(user, password)) {
-      throw new BusinessError(401, "Identifiants plateforme incorrects");
-    }
-
-    if (this.isPendingValidation(user)) {
+    const loginKey = getLoginAttemptKey(schoolCode, identifier);
+    try {
+      assertLoginNotLocked(loginKey);
+    } catch {
       throw new BusinessError(
-        403,
-        "Compte en attente de validation par le Super Administrateur. Connexion indisponible."
+        423,
+        "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
       );
     }
 
-    if (user.status !== "Actif") {
-      throw new BusinessError(403, "Compte suspendu ou desactive");
+    const user = this.findUserAccount(identifier, schoolCode);
+
+    if (!user || !this.verifyPassword(user, password)) {
+      recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
+    }
+
+    if (!canUserAccountLogin(user)) {
+      throw new BusinessError(403, loginBlockedMessage(user));
     }
 
     if (!canAccessWebPlatformRole(user.role) && user.accessChannel !== "BackOffice") {
@@ -73,6 +84,8 @@ class BackOfficeAccessService {
     }
     this.assertScopeCanAccessSchool(user, schoolContext);
     this.assertSchoolCountryActive(user, schoolContext);
+
+    clearFailedLoginAttempts(loginKey);
 
     const { password: _password, temporaryPassword: _temporaryPassword, ...safeUser } = user;
     const mustChangePassword = Boolean(user.mustChangePassword) || Boolean(user.temporaryPassword);

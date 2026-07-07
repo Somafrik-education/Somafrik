@@ -8,6 +8,7 @@ require("dotenv").config();
 const { AuthService, BusinessError } = require("./services/authService");
 const { BackOfficeAccessService } = require("./services/backOfficeAccessService");
 const { hashSecret } = require("./services/credentialService");
+const { validatePasswordPolicy } = require("./lib/userAccountRules");
 const { GradeBookService } = require("./services/gradeBookService");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
@@ -274,8 +275,9 @@ app.post("/api/auth/logout", requireAuth, asyncHandler(async (req, res) => {
 
 app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res) => {
   const newPassword = String(req.body?.newPassword ?? "").trim();
-  if (newPassword.length < 6) {
-    throw new BusinessError(400, "Le nouveau mot de passe doit contenir au moins 6 caractères.");
+  const passwordError = validatePasswordPolicy(newPassword);
+  if (passwordError) {
+    throw new BusinessError(400, passwordError);
   }
 
   const lookupKeys = await resolveUserPasswordLookupKeys(req.principal);
@@ -517,8 +519,9 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
   }
 
   const temporaryPassword = String(req.body?.temporaryPassword ?? "").trim();
-  if (temporaryPassword.length < 6) {
-    throw new BusinessError(400, "Le mot de passe temporaire doit contenir au moins 6 caractères.");
+  const passwordError = validatePasswordPolicy(temporaryPassword);
+  if (passwordError) {
+    throw new BusinessError(400, passwordError);
   }
 
   const updatedUser = await repository.resetUserPassword(
@@ -2702,6 +2705,31 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+async function touchUserLastLogin(principal) {
+  if (!principal?.sub && !principal?.identifier) return;
+  const state = await getAuthoritativeBackOfficeState();
+  const now = new Date().toISOString();
+  let touched = false;
+  const users = (state.users ?? []).map((user) => {
+    const aliases = [user.id, user.publicId, user.identifier].map((value) => String(value ?? "").trim());
+    const principalKeys = [principal.sub, principal.identifier, principal.publicId]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    if (!principalKeys.some((key) => aliases.includes(key))) return user;
+    touched = true;
+    return {
+      ...user,
+      lastLoginAt: now,
+      history: [
+        ...(Array.isArray(user.history) ? user.history : []),
+        `Connexion réussie le ${now.slice(0, 10)}`,
+      ],
+    };
+  });
+  if (!touched) return;
+  await saveEstablishmentState({ ...state, users, updatedAt: now });
+}
+
 async function sendAuthenticatedResponse(req, res, response, action) {
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(response, rolePermissionsMap);
@@ -2739,6 +2767,7 @@ async function sendAuthenticatedResponse(req, res, response, action) {
     userAgent: req.get("user-agent"),
     newValue: { role: principal.role, schoolCode: principal.schoolCode },
   });
+  await touchUserLastLogin(principal);
 
   res.json({
     ...response,

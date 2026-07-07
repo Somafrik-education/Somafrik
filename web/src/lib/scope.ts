@@ -23,6 +23,7 @@ import {
   SCHOOL_ADMIN_ROLE,
 } from "./orgHierarchy";
 import { isSuperadminManagedUser } from "./userAccounts";
+import { isUserAccountVisible } from "./userAccountRules";
 
 interface ScopeState {
   schools: School[];
@@ -100,21 +101,22 @@ export function scopedNotifications(
 
 export function scopedUsers(user: SessionUser | null, state: ScopeState): UserAccount[] {
   if (!user) return [];
+  const visible = state.users.filter((account) => isUserAccountVisible(account));
   if (isSuperAdminRole(user.role)) {
-    return state.users.filter((account) => isSuperadminManagedUser(account));
+    return visible.filter((account) => isSuperadminManagedUser(account));
   }
   if (user.role === COUNTRY_ADMIN_ROLE) {
     const countrySchoolCodes = new Set(
       scopedSchools(user, state).map((school) => normalize(school.code)),
     );
-    return state.users.filter(
+    return visible.filter(
       (account) =>
         account.role === SCHOOL_ADMIN_ROLE &&
         (countryScopeMatches(account.countryScope, user.countryScope) ||
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
   }
-  return state.users.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
+  return visible.filter((account) => normalize(account.schoolCode) === normalize(user.schoolCode));
 }
 
 function countUsersByRole(users: UserAccount[], roles: string[]): number {
