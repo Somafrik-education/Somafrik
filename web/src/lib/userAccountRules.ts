@@ -71,7 +71,7 @@ export function findDuplicateLoginIdentifier(
   });
 }
 
-export function softDeleteUserAccount(user: UserAccount, actor?: string): UserAccount {
+export function softDeleteUserAccount(user: UserAccount, _actor?: string): UserAccount {
   const now = new Date().toISOString();
   return {
     ...user,

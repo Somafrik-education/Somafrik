@@ -103,6 +103,18 @@ export function parsePeriodDate(value?: string): Date | null {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
+  // Format compact hérité JJMMAAAA (ex. "01012000" → 01/01/2000).
+  const compact = raw.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (compact) {
+    const day = Number(compact[1]);
+    const month = Number(compact[2]);
+    const year = Number(compact[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = new Date(year, month - 1, day);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+  }
+
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

@@ -16,6 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { canReadView } from "../../lib/permissions";
+import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "../../lib/orgHierarchy";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 
 type SettingStatus = "available" | "soon";
@@ -114,9 +115,9 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/securite",
     title: "Sécurité",
-    description: "Politique de mot de passe, PIN, sessions actives et journal d'audit.",
+    description: "Politique de mot de passe, PIN, session active et journal d'audit.",
     icon: Lock,
-    status: "soon",
+    status: "available",
     view: "configuration",
   },
   {
@@ -138,17 +139,40 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/donnees",
     title: "Données et sauvegarde",
-    description: "Imports, exports Excel, sauvegarde, restauration et archivage.",
+    description: "Exports Excel/CSV, sauvegarde et restauration des données.",
     icon: DatabaseBackup,
-    status: "soon",
+    status: "available",
     view: "configuration",
   },
 ];
 
+/**
+ * Cartes réservées aux rôles plateforme (Superadmin / Admin Pays).
+ * Les rôles établissement conservent le filtrage par permission classique.
+ */
+const SUPERADMIN_SETTING_PATHS = new Set<string>([
+  "/parametres/abonnements",
+  "/parametres/graphiques",
+  "/parametres/securite",
+  "/parametres/donnees",
+]);
+const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>([
+  "/parametres/abonnements",
+  "/parametres/donnees",
+]);
+
 /** Hub Paramètres : grille de cartes par domaine de configuration. */
 export function SettingsHubPage() {
   const ctx = usePermissionContext();
-  const cards = SETTING_CARDS.filter((card) => canReadView(ctx, card.view));
+  const role = ctx.user?.role;
+  const platformPaths = isSuperAdminRole(role)
+    ? SUPERADMIN_SETTING_PATHS
+    : role === COUNTRY_ADMIN_ROLE
+      ? COUNTRY_ADMIN_SETTING_PATHS
+      : null;
+  const cards = platformPaths
+    ? SETTING_CARDS.filter((card) => platformPaths.has(card.to))
+    : SETTING_CARDS.filter((card) => canReadView(ctx, card.view));
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

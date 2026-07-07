@@ -362,18 +362,53 @@ export default function App() {
         <Route
           path="/parametres"
           element={
-            <PermissionRoute view="configuration">
+            <PermissionRoute view="settings">
               <ParametresLayout />
             </PermissionRoute>
           }
         >
           <Route index element={<SettingsHubPage />} />
           <Route path="etablissement" element={<Navigate to="/parametres/annee-scolaire" replace />} />
-          <Route path="profil" element={<SettingsProfilePage />} />
-          <Route path="annee-scolaire" element={<ConfigurationPage section="annee-scolaire" />} />
-          <Route path="structure" element={<ConfigurationPage section="structure" />} />
-          <Route path="utilisateurs" element={<ConfigurationPage section="utilisateurs" />} />
-          <Route path="finances" element={<SettingsFinancePage />} />
+          <Route
+            path="profil"
+            element={
+              <PermissionRoute view="configuration">
+                <SettingsProfilePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="annee-scolaire"
+            element={
+              <PermissionRoute view="configuration">
+                <ConfigurationPage section="annee-scolaire" />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="structure"
+            element={
+              <PermissionRoute view="configuration">
+                <ConfigurationPage section="structure" />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="utilisateurs"
+            element={
+              <PermissionRoute view="configuration">
+                <ConfigurationPage section="utilisateurs" />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="finances"
+            element={
+              <PermissionRoute view="configuration">
+                <SettingsFinancePage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="abonnements"
             element={
@@ -382,7 +417,14 @@ export default function App() {
               </PermissionRoute>
             }
           />
-          <Route path="notifications" element={<SettingsNotificationsPage />} />
+          <Route
+            path="notifications"
+            element={
+              <PermissionRoute view="configuration">
+                <SettingsNotificationsPage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="documents"
             element={
@@ -399,10 +441,38 @@ export default function App() {
               </PermissionRoute>
             }
           />
-          <Route path="securite" element={<SettingsSecurityPage />} />
-          <Route path="apparence" element={<SettingsAppearancePage />} />
-          <Route path="integrations" element={<SettingsIntegrationsPage />} />
-          <Route path="donnees" element={<SettingsDataPage />} />
+          <Route
+            path="securite"
+            element={
+              <PermissionRoute view="configuration">
+                <SettingsSecurityPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="apparence"
+            element={
+              <PermissionRoute view="configuration">
+                <SettingsAppearancePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="integrations"
+            element={
+              <PermissionRoute view="configuration">
+                <SettingsIntegrationsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="donnees"
+            element={
+              <PermissionRoute view="configuration">
+                <SettingsDataPage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="mon-abonnement"
             element={

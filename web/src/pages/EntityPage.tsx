@@ -9,6 +9,7 @@ import { PrintButton } from "../components/ui/PrintButton";
 import { Table, type Column } from "../components/ui/Table";
 import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
+import { DatePicker } from "../components/ui/DatePicker";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { usePrompt } from "../components/ui/PromptDialog";
@@ -58,6 +59,7 @@ import { csvToObjects, downloadCsv, rowsToCsv } from "../lib/csv";
 import { validateTeacherDeletion } from "../lib/teacherRules";
 import { markAllAnnouncementsRead } from "../lib/announcementsRead";
 import { normalize, isSchoolAdminRole } from "../lib/format";
+import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
 import { appendAuditLog, auditActor, makeAuditEntry, type AuditEntry } from "../lib/audit";
@@ -149,12 +151,20 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
   const { confirm } = useConfirm();
   const { prompt } = usePrompt();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
-  const scopeUser = scopedUser ?? session?.user ?? null;
+  // Le Super Admin diffuse annonces/messages au niveau système : aucun périmètre
+  // d'établissement ne doit lui être imposé (ni pour créer, ni pour consulter).
+  const isSuperadminSystemComm =
+    isSuperAdminRole(session?.user?.role) &&
+    (module?.key === "announcements" || module?.key === "messages");
+  const scopeUser = isSuperadminSystemComm
+    ? session?.user ?? null
+    : scopedUser ?? session?.user ?? null;
   const effectiveSchoolCode = useMemo(() => {
+    if (isSuperadminSystemComm) return "*";
     const fromContext = String(schoolCode ?? "").trim();
     if (fromContext && fromContext !== "*") return fromContext;
     return String(scopeUser?.schoolCode ?? "").trim();
-  }, [schoolCode, scopeUser?.schoolCode]);
+  }, [isSuperadminSystemComm, schoolCode, scopeUser?.schoolCode]);
 
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
@@ -697,6 +707,11 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
 
     let preparedItem = { ...linkedItem };
 
+    // Annonce/message créé par le Super Admin : diffusion système (aucun périmètre).
+    if (isSuperadminSystemComm) {
+      preparedItem.systemBroadcast = true;
+    }
+
     if (module.key === "teachers") {
       const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
       if (!code || code === "*") {
@@ -759,7 +774,10 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
     const nextContact = nextItem as Record<string, unknown>;
     let contactPromotion: ReturnType<typeof promoteContactToUser> | null = null;
     if (module.key === "contacts" && String(nextContact.hasAccess ?? "") === "Non") {
-      const revoked = revokeContactUserAccess(nextContact, { ...state, ...patch, [module.key]: nextAllRows });
+      const revoked = revokeContactUserAccess(
+        nextContact,
+        { ...state, ...patch, [module.key]: nextAllRows } as unknown as BackOfficeState,
+      );
       patch.users = revoked.users;
       patch.contacts = (
         (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows
@@ -1288,15 +1306,14 @@ export function EntityPage({ entity, mode }: EntityPageProps) {
                     ]}
                   />
                 ) : field.inputType === "date" ? (
-                  <Input
+                  <DatePicker
                     id={field.key}
-                    type="date"
                     value={periodDateToInput(String(editing[field.key] ?? ""))}
                     required={field.required}
                     readOnly={field.readOnly}
                     disabled={field.readOnly}
-                    onChange={(e) =>
-                      setEditing({ ...editing, [field.key]: inputToPeriodDate(e.target.value) })
+                    onChange={(v) =>
+                      setEditing({ ...editing, [field.key]: inputToPeriodDate(v) })
                     }
                   />
                 ) : (
