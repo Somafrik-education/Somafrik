@@ -34,6 +34,12 @@ export function normalizePresenceStatus(presence?: Pick<PresenceItem, "present" 
   return presence.present ? "Présent" : "Absent";
 }
 
+/** Statut initial pour un appel : présent par défaut si aucune saisie du jour. */
+export function rollCallInitialStatus(presence?: Pick<PresenceItem, "present" | "status">): PresenceStatus {
+  if (!presence) return "Présent";
+  return normalizePresenceStatus(presence);
+}
+
 export function isAttendedPresence(presence: Pick<PresenceItem, "present" | "status">) {
   const status = normalizePresenceStatus(presence);
   return status === "Présent" || status === "Retard";

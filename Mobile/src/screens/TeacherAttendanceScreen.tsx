@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
+import { getPresenceStats, rollCallInitialStatus } from "../domain/metrics/schoolMetrics";
 import { canManagePresences, canReadRoute } from "../domain/security/permissions";
 import {
   classNameMatches,
@@ -82,7 +82,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         return [
           student.id,
           {
-            status: normalizePresenceStatus(latest) as AttendanceStatus,
+            status: rollCallInitialStatus(latest) as AttendanceStatus,
           },
         ];
       })

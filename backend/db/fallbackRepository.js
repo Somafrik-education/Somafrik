@@ -393,11 +393,13 @@ class FallbackRepository {
     }
 
     const state = (await this.getBackOfficeState()) ?? {};
-    const catalogStudents = [
-      ...(Array.isArray(state.students) ? state.students : []),
-      ...seedData.students,
-    ];
+    const catalogStudents = Array.isArray(state.students) ? state.students : [];
     const student = catalogStudents.find(
+      (item) =>
+        String(item.id) === String(payload.studentId) ||
+        String(item.matricule) === String(payload.studentId) ||
+        String(item.publicId) === String(payload.studentId),
+    ) ?? (shouldSeedDemoData() ? seedData.students : []).find(
       (item) =>
         String(item.id) === String(payload.studentId) ||
         String(item.matricule) === String(payload.studentId) ||
@@ -416,14 +418,26 @@ class FallbackRepository {
         .trim()
         .toLowerCase();
 
+    // Classe de référence pour l'appel : celle de la fiche élève si elle existe,
+    // sinon la classe pour laquelle l'appel est effectué (payload.className). Cela
+    // évite un refus à tort quand la fiche backend n'a pas (encore) de classe
+    // synchronisée alors que l'élève figure bien dans la classe appelée.
+    const resolvedClassName =
+      String(student.className ?? "").trim() || String(payload.className ?? "").trim();
+    const studentForAccess = { ...student, className: resolvedClassName };
+
     if (principal.role === "Enseignant") {
       const classNames = principal.classNames ?? [];
       const classAllowedByPrincipal =
         classNames.length > 0 &&
         classNames.some(
-          (className) => normalizeClassName(className) === normalizeClassName(student.className),
+          (className) => normalizeClassName(className) === normalizeClassName(resolvedClassName),
         );
-      const classAllowedByBackOffice = this.teacherCanAccessClassFromBackOffice(principal, student, state);
+      const classAllowedByBackOffice = this.teacherCanAccessClassFromBackOffice(
+        principal,
+        studentForAccess,
+        state,
+      );
       if (!classAllowedByPrincipal && !classAllowedByBackOffice) {
         const error = new Error("Accès refusé: élève hors classe affectée.");
         error.statusCode = 403;
@@ -448,7 +462,7 @@ class FallbackRepository {
       publicId: existingIndex >= 0 ? this.presences[existingIndex].publicId : `PRE-MEM-${Date.now()}`,
       studentId: String(student.matricule ?? student.publicId ?? student.id),
       schoolCode: student.schoolCode,
-      className: student.className,
+      className: resolvedClassName || student.className,
       date: payload.date,
       savedAt,
       present,

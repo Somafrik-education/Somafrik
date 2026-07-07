@@ -4,6 +4,7 @@ import {
   AcademicManagementConfig,
   CountryProfile,
   Course,
+  CourseScheduleSlot,
   DEFAULT_CLASS_NAMES,
   DEFAULT_LEVELS,
   DEFAULT_SUBJECTS,
@@ -31,7 +32,7 @@ import {
 } from "../lib/activeSchool";
 import { normalize } from "../lib/format";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
-import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getNotes, getPresences, getStudents, saveBackOfficeState, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, BackOfficeStatePayload } from "../services/api";
 import { SYNC_INTERVAL_MS } from "../config/env";
 import { useAuth } from "./AuthContext";
 
@@ -59,6 +60,7 @@ type AdminDataContextValue = {
   countriesData: CountryProfile[];
   coursesData: Course[];
   assignmentsData: TeacherAssignment[];
+  courseSchedulesData: CourseScheduleSlot[];
   paymentsData: PaymentItem[];
   subscriptionsData: SubscriptionItem[];
   paymentStatusesData: PaymentStatus[];
@@ -110,6 +112,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const [countriesData, setCountriesData] = useState<CountryProfile[]>([]);
   const [coursesData, setCoursesData] = useState<Course[]>([]);
   const [assignmentsData, setAssignmentsData] = useState<TeacherAssignment[]>([]);
+  const [courseSchedulesData, setCourseSchedulesData] = useState<CourseScheduleSlot[]>([]);
   const [paymentsData, setPaymentsData] = useState<PaymentItem[]>([]);
   const [subscriptionsData, setSubscriptionsData] = useState<SubscriptionItem[]>([]);
   const [paymentStatusesData, setPaymentStatusesData] = useState<PaymentStatus[]>([]);
@@ -263,6 +266,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         getPresences(),
         getAcademicConfig(),
         getAssignments(),
+        getCourseSchedules().catch(() => [] as unknown[]),
       ])
         .then(
           ([
@@ -273,6 +277,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
             presencePayload,
             academicConfigPayload,
             assignmentPayload,
+            courseSchedulePayload,
           ]) => {
         if (mounted) {
           applyArray(studentPayload, setStudentsData);
@@ -281,6 +286,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           applyArray(notePayload, setNotesData);
           applyArray(presencePayload, setPresencesData);
           applyArray(assignmentPayload, setAssignmentsData);
+          applyArray(courseSchedulePayload, setCourseSchedulesData);
           setAcademicConfigData(academicConfigPayload as AcademicManagementConfig);
           setSyncStatus("synced");
         }
@@ -304,6 +310,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     applyArray(payload.countries, setCountriesData);
     applyArray(payload.courses, setCoursesData);
     applyArray(payload.assignments, setAssignmentsData);
+    applyArray(payload.courseSchedules, setCourseSchedulesData);
     applyArray(payload.payments, setPaymentsData);
     applyArray(payload.subscriptions, setSubscriptionsData);
     applyArray(payload.paymentStatuses, setPaymentStatusesData);
@@ -426,6 +433,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       countriesData: (state.countries ?? []) as CountryProfile[],
       coursesData: (state.courses ?? []) as Course[],
       assignmentsData: (state.assignments ?? []) as TeacherAssignment[],
+      courseSchedulesData,
       paymentsData: (state.payments ?? []) as PaymentItem[],
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
@@ -516,6 +524,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     classesData,
     countriesData,
     coursesData,
+    courseSchedulesData,
     messagesData,
     notesData,
     paymentsData,

@@ -98,6 +98,16 @@ export function getEvaluationTypes(state: BackOfficeState, schoolCode: string): 
   return [...EVALUATION_TYPES];
 }
 
+/** Noms de périodes configurées pour l'établissement (fallback trimestres). */
+export function getSchoolPeriodNames(state: BackOfficeState, schoolCode: string): string[] {
+  const config = getSchoolAcademicConfig(state, schoolCode);
+  const periods = Array.isArray(config.periods) ? config.periods : [];
+  const names = periods
+    .map((item) => String((item as Record<string, unknown>).name ?? "").trim())
+    .filter(Boolean);
+  return names.length ? names : ["Trimestre 1", "Trimestre 2", "Trimestre 3"];
+}
+
 export function resolveDefaultPeriod(state: BackOfficeState, schoolCode: string): string {
   const config = getSchoolAcademicConfig(state, schoolCode);
   const periods = Array.isArray(config.periods) ? config.periods : [];

@@ -25,7 +25,11 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
 import CommunicationHeaderIcons from "../components/CommunicationHeaderIcons";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
-import { scopedStudentsForSession, teacherScopedClassLabels } from "../lib/establishment";
+import {
+  resolveTeacherAssignmentsForSession,
+  scopedStudentsForSession,
+  teacherScopedClassLabels,
+} from "../lib/establishment";
 
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -64,7 +68,11 @@ export default function HomeScreen({ navigation }: any) {
   if (session?.role === "teacher") {
     const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
     const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
-    const courses = session.user.courses ?? [];
+    const sessionCourses = session.user.courses ?? [];
+    const assignmentCourses = resolveTeacherAssignmentsForSession(session, assignmentsData)
+      .map((assignment) => String(assignment.course ?? "").trim())
+      .filter(Boolean);
+    const courses = [...new Set([...sessionCourses, ...assignmentCourses])];
     const teacherStudentIds = teacherStudents.map((student) => student.id);
     const teacherTodayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
     const teacherPresenceStats = getPresenceStats(teacherTodayPresenceRows, teacherStudentIds);

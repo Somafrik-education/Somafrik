@@ -1544,6 +1544,9 @@ export function detectScheduleConflicts(
     end: occurrence.end,
   }));
 
+  const whenLabel = (occ: { start: string; end: string }) =>
+    `${weekdayLabelFromDate(new Date(occ.start))} ${extractTimeFromIso(occ.start)}–${extractTimeFromIso(occ.end)}`.trim();
+
   const issues: string[] = [];
 
   for (const slot of slots) {
@@ -1572,10 +1575,13 @@ export function detectScheduleConflicts(
           slotOcc.teacherId &&
           candidateOcc.teacherId === slotOcc.teacherId
         ) {
-          issues.push(`Conflit enseignant : ${slotOcc.subject} (${slotOcc.className}).`);
+          const teacherLabel = slotOcc.teacherName ? ` ${slotOcc.teacherName}` : "";
+          issues.push(
+            `Conflit enseignant${teacherLabel} : déjà « ${slotOcc.subject} » (${slotOcc.className}) ${whenLabel(slotOcc)}.`,
+          );
         }
         if (planningLabelsMatch(candidateOcc.className, slotOcc.className)) {
-          issues.push(`Conflit sur ${slotOcc.className} : ${slotOcc.subject} à cet horaire.`);
+          issues.push(`Conflit sur ${slotOcc.className} : « ${slotOcc.subject} » ${whenLabel(slotOcc)}.`);
         }
       }
     }

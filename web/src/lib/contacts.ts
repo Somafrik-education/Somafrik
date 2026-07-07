@@ -302,6 +302,40 @@ export function contactHasOperationalRecord(contactType: string): boolean {
   return STUDENT_CONTACT_TYPES.has(value) || TEACHER_CONTACT_TYPES.has(value);
 }
 
+/**
+ * ELEVE-001 / ENS-001 — Contacts (type Élève/Étudiant ou Enseignant) rattachés à
+ * l'établissement mais pas encore reliés à une fiche opérationnelle. Sert au
+ * sélecteur « créer une fiche depuis un contact existant ».
+ */
+export function getLinkableContactOptions(
+  state: BackOfficeState,
+  schoolCode: string,
+  kind: "student" | "teacher",
+): { value: string; label: string }[] {
+  const types = kind === "student" ? STUDENT_CONTACT_TYPES : TEACHER_CONTACT_TYPES;
+  const linkKey = kind === "student" ? "studentId" : "teacherId";
+  const ficheRows = ((kind === "student" ? state.students : state.teachers) ?? []) as Row[];
+  const linkedContactIds = new Set(
+    ficheRows.map((row) => normalize(String(row.contactId ?? ""))).filter(Boolean),
+  );
+  const school = normalize(schoolCode);
+  return ((state.contacts ?? []) as unknown as Row[])
+    .filter((contact) => {
+      if (!contact.id) return false;
+      if (!types.has(String(contact.contactType ?? "").trim())) return false;
+      const contactSchool = normalize(String(contact.schoolCode ?? ""));
+      if (school && school !== "*" && contactSchool && contactSchool !== school) return false;
+      if (String(contact[linkKey] ?? "").trim()) return false;
+      if (linkedContactIds.has(normalize(String(contact.id ?? "")))) return false;
+      return true;
+    })
+    .map((contact) => ({
+      value: String(contact.id),
+      label: `${String(contact.lastName ?? "")} ${String(contact.firstName ?? "")}`.trim() || String(contact.id),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+}
+
 /** Retrouve une fiche existante par contactId, sinon par nom + prénom (dans le même établissement). */
 function findFicheIndex(rows: Row[], contact: Row, contactId: string, schoolCode: string): number {
   if (contactId) {

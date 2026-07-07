@@ -40,7 +40,14 @@ export function getRelationContactOptions(
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
 }
 
-/** Contacts de type Parent (liaison parent-enfant). */
+/**
+ * Contacts pouvant être « parent »/responsable d'un élève (liaison parent-enfant).
+ * RB-002 : un contact peut cumuler plusieurs rôles métier — un enseignant peut
+ * aussi être parent. On propose donc tout contact, à l'exception des contacts qui
+ * sont eux-mêmes des élèves/étudiants (ce sont les enfants, pas les parents).
+ */
+const NON_PARENT_CONTACT_TYPES = new Set([normalize("Élève"), normalize("Étudiant")]);
+
 export function getRelationParentContactOptions(
   user: SessionUser | null,
   state: BackOfficeState,
@@ -49,7 +56,7 @@ export function getRelationParentContactOptions(
     .filter((contact) => {
       if (!contact.id) return false;
       const type = normalize(String(contact.contactType ?? ""));
-      return type === normalize("Parent");
+      return !NON_PARENT_CONTACT_TYPES.has(type);
     })
     .map((contact) => ({ value: String(contact.id), label: contactLabel(contact) }))
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
@@ -106,6 +113,7 @@ export function prepareRelationForSave(form: Row, state: BackOfficeState): Row {
       toStudentName: student
         ? `${String(student.name ?? "")} ${String(student.firstName ?? "")}`.trim()
         : String(form.toStudentName ?? ""),
+      isPrincipal: String(form.isPrincipal ?? "").trim() === "Oui" ? "Oui" : "Non",
       accountCode: "",
       accountName: "",
     };
@@ -120,6 +128,28 @@ export function prepareRelationForSave(form: Row, state: BackOfficeState): Row {
     toStudentId: "",
     toStudentName: "",
   };
+}
+
+/**
+ * PE-005 — Un seul parent principal par élève. Lorsqu'une relation parent-enfant
+ * est marquée « principal », toutes les autres relations du même élève repassent
+ * à « Non ». Retourne la liste complète mise à jour.
+ */
+export function enforceSinglePrincipalParent(relations: Row[], saved: Row): Row[] {
+  const relationType = String(saved.relationType ?? "").trim();
+  const isPrincipal = String(saved.isPrincipal ?? "").trim() === "Oui";
+  const studentId = String(saved.toStudentId ?? "").trim();
+  if (relationType !== RELATION_PARENT_CHILD || !isPrincipal || !studentId) {
+    return relations;
+  }
+  const savedId = String(saved.id ?? "");
+  return relations.map((row) => {
+    if (String(row.id ?? "") === savedId) return row;
+    if (normalize(String(row.relationType ?? "")) !== normalize(RELATION_PARENT_CHILD)) return row;
+    if (String(row.toStudentId ?? "").trim() !== studentId) return row;
+    if (String(row.isPrincipal ?? "").trim() !== "Oui") return row;
+    return { ...row, isPrincipal: "Non" };
+  });
 }
 
 /** Validation métier des relations (REL-001, REL-004). */

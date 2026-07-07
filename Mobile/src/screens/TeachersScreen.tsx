@@ -1,17 +1,22 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getTeacherClasses, getTeacherCourses } from "../data/catalog";
 import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity } from "../domain/security/permissions";
+import { entityCreateViaContactsOnly } from "../lib/contactProvisioning";
+import {
+  resolveTeacherClassesForRecord,
+  resolveTeacherCoursesForRecord,
+} from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
 export default function TeachersScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const { session } = useAuth();
-  const { teachersData } = useAdminData();
-  const canCreate = canMutateEntity(session, "teachers", "CREATE");
+  const { teachersData, assignmentsData } = useAdminData();
+  const canCreate =
+    canMutateEntity(session, "teachers", "CREATE") && !entityCreateViaContactsOnly("teachers");
   const canUpdate = canMutateEntity(session, "teachers", "UPDATE");
 
   return (
@@ -31,8 +36,8 @@ export default function TeachersScreen({ navigation }: any) {
       )}
 
       {teachersData.map((teacher) => {
-        const teacherClasses = getTeacherClasses(teacher);
-        const teacherCourses = getTeacherCourses(teacher);
+        const teacherClasses = resolveTeacherClassesForRecord(teacher, assignmentsData);
+        const teacherCourses = resolveTeacherCoursesForRecord(teacher, assignmentsData);
 
         return (
           <TouchableOpacity

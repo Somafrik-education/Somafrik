@@ -7,6 +7,28 @@ export type PresenceRow = {
   date?: string;
 };
 
+export type StudentIdentity = {
+  id?: string;
+  matricule?: string;
+  publicId?: string;
+};
+
+export function studentPresenceKeys(student: StudentIdentity) {
+  return [student.id, student.matricule, student.publicId]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+export function presenceMatchesStudent(presence: Pick<PresenceRow, "studentId">, student: StudentIdentity) {
+  const presenceId = String(presence.studentId ?? "").trim();
+  return studentPresenceKeys(student).includes(presenceId);
+}
+
+/** Identifiant stable pour l'API présences (aligné backend : matricule en priorité). */
+export function resolveStudentApiId(student: StudentIdentity) {
+  return String(student.matricule ?? student.publicId ?? student.id ?? "").trim();
+}
+
 export function normalizePresenceStatus(presence?: Pick<PresenceRow, "present" | "status">): AttendanceStatus {
   if (!presence) return "Absent";
 
@@ -62,4 +84,24 @@ function normalizeDateKey(value?: string) {
 
 export function presenceIsAttended(status: AttendanceStatus) {
   return status === "Présent" || status === "Retard";
+}
+
+/** Statut initial pour un appel du jour : présent par défaut, sinon dernière saisie. */
+export function rollCallInitialStatus(presence?: Pick<PresenceRow, "present" | "status">): AttendanceStatus {
+  if (!presence) return "Présent";
+  return normalizePresenceStatus(presence);
+}
+
+export function findTodayPresenceForStudent(
+  presences: PresenceRow[],
+  student: StudentIdentity,
+  todayLabel: string,
+) {
+  return [...presences]
+    .reverse()
+    .find(
+      (presence) =>
+        presenceMatchesStudent(presence, student) &&
+        sameAttendanceDay(String(presence.date ?? ""), todayLabel),
+    );
 }

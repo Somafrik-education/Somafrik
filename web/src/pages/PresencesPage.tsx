@@ -14,10 +14,14 @@ import { scopedClasses, scopedStudents, teacherScopedClassNames } from "../lib/e
 import { normalize } from "../lib/format";
 import {
   type AttendanceStatus,
+  findTodayPresenceForStudent,
   formatAttendanceDate,
   formatAttendanceHour,
-  normalizePresenceStatus,
+  getPresenceStats,
   presenceIsAttended,
+  presenceMatchesStudent,
+  resolveStudentApiId,
+  rollCallInitialStatus,
   sameAttendanceDay,
 } from "../lib/presenceMetrics";
 
@@ -61,13 +65,8 @@ function buildInitialAttendance(
   return Object.fromEntries(
     students.map((student) => {
       const studentId = String(student.id ?? "");
-      const latest = [...presences]
-        .reverse()
-        .find(
-          (presence) =>
-            String(presence.studentId ?? "") === studentId && sameAttendanceDay(String(presence.date ?? ""), todayLabel),
-        );
-      return [studentId, normalizePresenceStatus(latest as { present?: boolean; status?: string })];
+      const latest = findTodayPresenceForStudent(presences, student, todayLabel);
+      return [studentId, rollCallInitialStatus(latest)];
     }),
   );
 }
@@ -125,26 +124,49 @@ export function PresencesPage() {
   }, [classes, classNames]);
 
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
-  const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>(() =>
-    buildInitialAttendance(students, presences, todayLabel),
-  );
+  const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
+  const [attendanceDirty, setAttendanceDirty] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    setAttendance(buildInitialAttendance(students, presences, todayLabel));
-  }, [students, presences, todayLabel]);
+  const classStudents = useMemo(() => {
+    if (!selectedClass) return [];
+    if (selectedClass === UNASSIGNED_CLASS) return unassignedStudents;
+    return students.filter((student) => normalize(student.className) === normalize(selectedClass));
+  }, [selectedClass, students, unassignedStudents]);
 
-  const classStudents = selectedClass
-    ? selectedClass === UNASSIGNED_CLASS
-      ? unassignedStudents
-      : students.filter((student) => normalize(student.className) === normalize(selectedClass))
-    : [];
+  useEffect(() => {
+    if (!selectedClass) return;
+    setAttendanceDirty(false);
+  }, [selectedClass]);
+
+  useEffect(() => {
+    if (!selectedClass || attendanceDirty) return;
+    setAttendance(buildInitialAttendance(classStudents, presences, todayLabel));
+  }, [selectedClass, todayLabel, classStudents, presences, attendanceDirty]);
+
+  const liveStats = useMemo(() => {
+    const rows = classStudents.map((student) => ({
+      studentId: String(student.id ?? ""),
+      status: attendance[String(student.id ?? "")] ?? "Présent",
+      present: presenceIsAttended(attendance[String(student.id ?? "")] ?? "Présent"),
+    }));
+    return getPresenceStats(rows as PresenceRow[]);
+  }, [attendance, classStudents]);
+
+  const savedTodayCount = useMemo(
+    () =>
+      classStudents.filter((student) =>
+        Boolean(findTodayPresenceForStudent(presences, student, todayLabel)),
+      ).length,
+    [classStudents, presences, todayLabel],
+  );
 
   function setStudentStatus(studentId: string, status: AttendanceStatus) {
     if (!canUpdate) {
       showToast("Action refusée — vous n'êtes pas autorisé à modifier les présences.", "error");
       return;
     }
+    setAttendanceDirty(true);
     setAttendance((current) => ({ ...current, [studentId]: status }));
   }
 
@@ -177,6 +199,7 @@ export function PresencesPage() {
       return;
     }
     if (!selectedClass) return;
+    setAttendanceDirty(true);
     setAttendance((current) => ({
       ...current,
       ...Object.fromEntries(classStudents.map((student) => [String(student.id ?? ""), "Présent" as const])),
@@ -199,12 +222,15 @@ export function PresencesPage() {
 
     const items = classStudents.map((student) => {
       const studentId = String(student.id ?? "");
+      const studentApiId = resolveStudentApiId(student);
       const status = attendance[studentId] ?? "Présent";
       return {
-        id: `PRE-${todayLabel}-${studentId}`,
-        publicId: `PRE-${todayLabel}-${studentId}`,
-        schoolCode: String(student.schoolCode ?? scopeUser?.schoolCode ?? ""),
-        studentId,
+        id: `PRE-${todayLabel}-${studentApiId}`,
+        publicId: `PRE-${todayLabel}-${studentApiId}`,
+        schoolCode: String(student.schoolCode ?? scopeUser?.schoolCode ?? session?.user?.schoolCode ?? "")
+          .trim()
+          .toUpperCase(),
+        studentId: studentApiId,
         className: String(student.className ?? "").trim() || batchClassName,
         date: todayLabel,
         present: presenceIsAttended(status),
@@ -225,6 +251,8 @@ export function PresencesPage() {
         throw new Error("Aucune présence enregistrée.");
       }
       await refresh();
+      setAttendanceDirty(false);
+      setAttendance(buildInitialAttendance(classStudents, saved ?? presences, todayLabel));
       const absentCount = items.filter((item) => item.status === "Absent").length;
       const lateCount = items.filter((item) => item.status === "Retard").length;
       const justifiedCount = items.filter((item) => item.status === "Justifié").length;
@@ -259,7 +287,7 @@ export function PresencesPage() {
             const savedToday = presences.filter(
               (presence) =>
                 sameAttendanceDay(String(presence.date ?? ""), todayLabel) &&
-                rows.some((student) => String(student.id ?? "") === String(presence.studentId ?? "")),
+                rows.some((student) => presenceMatchesStudent(presence, student)),
             ).length;
 
             return (
@@ -326,6 +354,40 @@ export function PresencesPage() {
             {busy ? "Enregistrement…" : "Enregistrer l'appel"}
           </Button>
         </div>
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Card className="bg-slate-900 p-4 text-white">
+          <p className="text-2xl font-black">{liveStats.rate}%</p>
+          <p className="text-xs font-semibold text-slate-300">Taux de présence</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-2xl font-black text-emerald-700">{liveStats.present}</p>
+          <p className="text-xs font-semibold text-muted">Présents</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-2xl font-black text-red-600">{liveStats.absent}</p>
+          <p className="text-xs font-semibold text-muted">Absents</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-2xl font-black text-amber-600">{liveStats.late}</p>
+          <p className="text-xs font-semibold text-muted">Retards</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-2xl font-black text-blue-600">{liveStats.justified}</p>
+          <p className="text-xs font-semibold text-muted">Justifiés</p>
+        </Card>
+      </div>
+
+      {savedTodayCount > 0 ? (
+        <Card className="border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-bold text-emerald-800">
+            {savedTodayCount === classStudents.length
+              ? "Appel déjà enregistré aujourd'hui pour toute la classe."
+              : `${savedTodayCount}/${classStudents.length} élève(s) déjà enregistré(s) aujourd'hui.`}
+            {attendanceDirty ? " Modifications non sauvegardées." : ""}
+          </p>
+        </Card>
       ) : null}
 
       <Card className="overflow-hidden p-0">

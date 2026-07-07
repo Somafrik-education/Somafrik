@@ -34,6 +34,54 @@ export function downloadCsv(filename: string, csv: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** Échappe une valeur pour une cellule HTML (export Excel). */
+function escapeHtml(value: unknown): string {
+  const str = value === null || value === undefined ? "" : String(value);
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Génère un classeur Excel (.xls) à partir de lignes et colonnes.
+ * Utilise un tableau HTML interprété nativement par Excel — aucune dépendance
+ * externe requise (WEB-ME-003).
+ */
+export function rowsToExcelHtml(
+  rows: Row[],
+  columns: { key: string; header: string }[],
+): string {
+  const head = columns.map((col) => `<th>${escapeHtml(col.header)}</th>`).join("");
+  const body = rows
+    .map(
+      (row) =>
+        `<tr>${columns.map((col) => `<td>${escapeHtml(row[col.key])}</td>`).join("")}</tr>`,
+    )
+    .join("");
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8" /></head><body><table border="1"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`;
+}
+
+/** Déclenche le téléchargement d'un classeur Excel (.xls). */
+export function downloadExcel(
+  filename: string,
+  rows: Row[],
+  columns: { key: string; header: string }[],
+): void {
+  const html = rowsToExcelHtml(rows, columns);
+  const blob = new Blob([`\ufeff${html}`], {
+    type: "application/vnd.ms-excel;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename.endsWith(".xls") ? filename : `${filename}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 /** Analyse un texte CSV (séparateur , ou ;) en lignes de champs. */
 function parseCsvLines(text: string): string[][] {
   const rows: string[][] = [];

@@ -2,7 +2,7 @@ import { Text, StyleSheet, ScrollView, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import MenuCard from "../components/MenuCard";
-import { AdminEntity } from "../context/AdminDataContext";
+import { AdminEntity, useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canReadEntity, canReadRoute } from "../domain/security/permissions";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
@@ -18,8 +18,9 @@ export default function SchoolManagementScreen({
   const stackPaddingBottom = useStackScreenBottomPadding();
   const containerStyle = [styles.container, { paddingBottom: stackPaddingBottom }];
   const { session } = useAuth();
+  const { syncStatus } = useAdminData();
   const isSchoolAdmin = session?.role === "school_admin";
-  const items = [
+  const items: { title: string; entity?: AdminEntity; route?: string }[] = [
     { title: "🏫 Établissements", entity: "schools" },
     { title: "👤 Utilisateurs", entity: "users" },
     ...(isSchoolAdmin ? [] : [{ title: "👥 Élèves", entity: "students" as const }]),
@@ -30,7 +31,7 @@ export default function SchoolManagementScreen({
     { title: "💰 Paiements", entity: "payments" },
     { title: "⚙️ Statuts paiement", entity: "paymentStatuses" },
     { title: "📢 Annonces", entity: "announcements" },
-  ] satisfies { title: string; entity?: AdminEntity; route?: string }[];
+  ];
   const visibleItems = items.filter((item) =>
     item.entity ? canReadEntity(session, item.entity) : canReadRoute(session, item.route)
   );
@@ -38,6 +39,15 @@ export default function SchoolManagementScreen({
   return (
     <ScrollView contentContainerStyle={containerStyle}>
       <Text style={styles.title}>Gestion de l'école</Text>
+
+      {syncStatus === "offline" && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineText}>
+            Hors connexion — les dernières données synchronisées sont affichées et peuvent ne pas
+            être à jour.
+          </Text>
+        </View>
+      )}
 
       {visibleItems.map((item) => (
         <MenuCard
@@ -78,5 +88,18 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#64748B",
     fontWeight: "700",
+  },
+  offlineBanner: {
+    backgroundColor: "#FEF3C7",
+    borderColor: "#FCD34D",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 18,
+  },
+  offlineText: {
+    color: "#92400E",
+    fontWeight: "700",
+    fontSize: 13,
   },
 });

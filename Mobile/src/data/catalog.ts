@@ -19,6 +19,9 @@ export type Teacher = {
   publicId: string;
   name: string;
   firstName: string;
+  lastName?: string;
+  userId?: string;
+  identifier?: string;
   gender: "Masculin" | "Féminin" | string;
   phone: string;
   email: string;
@@ -31,8 +34,28 @@ export type Teacher = {
 export type TeacherAssignment = {
   id?: string;
   teacherId?: string;
+  teacherName?: string;
   className: string;
   course: string;
+};
+
+/** Créneau de planning réel synchronisé depuis le back-office (jour/heure). */
+export type CourseScheduleSlot = {
+  id: string;
+  schoolCode: string;
+  className: string;
+  subject: string;
+  teacherId?: string;
+  teacherName?: string;
+  start: string;
+  end: string;
+  room?: string;
+  kind?: "course" | "exam";
+  examName?: string;
+  examType?: string;
+  periodName?: string;
+  periodStart?: string;
+  periodEnd?: string;
 };
 
 export type Course = {

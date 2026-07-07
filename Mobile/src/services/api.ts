@@ -115,6 +115,7 @@ export type BackOfficeStatePayload = Record<string, unknown> & {
   classes?: unknown[];
   courses?: unknown[];
   assignments?: unknown[];
+  courseSchedules?: unknown[];
   payments?: unknown[];
   paymentStatuses?: unknown[];
   presences?: unknown[];
@@ -241,6 +242,10 @@ export function getCourses() {
 
 export function getAssignments() {
   return request<TeacherAssignment[]>("/assignments");
+}
+
+export function getCourseSchedules() {
+  return request<unknown[]>("/course-schedules");
 }
 
 export function getAcademicConfig() {

@@ -12,6 +12,18 @@ import {
   periodDateToInput,
   inputToPeriodDate,
 } from "../src/lib/academicPeriods";
+import { entityCreateViaContactsOnly } from "../src/lib/entityModules";
+import {
+  enforceSinglePrincipalParent,
+  getRelationParentContactOptions,
+} from "../src/lib/relations";
+import { getLinkableContactOptions } from "../src/lib/contacts";
+import { getSchoolPeriodNames } from "../src/lib/evaluations";
+import {
+  detectScheduleConflicts,
+  validatePlanningSlotBusinessRules,
+  type CourseScheduleSlot,
+} from "../src/lib/coursePlanning";
 import type { BackOfficeState, SessionUser } from "../src/types";
 
 /**
@@ -275,6 +287,123 @@ describe("scopedTeachers", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Règle métier RB-001 / CONTACT-004 : Contacts est le référentiel unique.
+// Les fiches Élèves/Enseignants se créent uniquement via un contact ;
+// aucun autre sous-module ne provisionne de personne/compte.
+// ---------------------------------------------------------------------------
+describe("Contacts = référentiel unique (RB-001 / CONTACT-004)", () => {
+  it("les fiches Élèves ne sont créables que via Contacts", () => {
+    expect(entityCreateViaContactsOnly("students")).toBe(true);
+  });
+
+  it("les fiches Enseignants ne sont créables que via Contacts", () => {
+    expect(entityCreateViaContactsOnly("teachers")).toBe(true);
+  });
+
+  it("Contacts et Classes restent créables directement", () => {
+    expect(entityCreateViaContactsOnly("contacts")).toBe(false);
+    expect(entityCreateViaContactsOnly("classes")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PE-005 : un seul parent principal par élève.
+// ---------------------------------------------------------------------------
+describe("enforceSinglePrincipalParent (PE-005)", () => {
+  // La ligne sauvegardée est déjà fusionnée dans la liste (isPrincipal = Oui)
+  // au moment de l'appel, comme dans le flux réel de EntityPage.
+  const relations: Row[] = [
+    { id: "r1", relationType: "Parent → Élève", toStudentId: "s1", isPrincipal: "Oui" },
+    { id: "r2", relationType: "Parent → Élève", toStudentId: "s1", isPrincipal: "Oui" },
+    { id: "r3", relationType: "Parent → Élève", toStudentId: "s2", isPrincipal: "Oui" },
+  ];
+
+  it("bascule les autres principaux du même élève à Non", () => {
+    const saved = { id: "r2", relationType: "Parent → Élève", toStudentId: "s1", isPrincipal: "Oui" };
+    const next = enforceSinglePrincipalParent(relations, saved);
+    expect(next.find((r) => r.id === "r1")?.isPrincipal).toBe("Non");
+    expect(next.find((r) => r.id === "r2")?.isPrincipal).toBe("Oui");
+    // Un autre élève n'est pas affecté.
+    expect(next.find((r) => r.id === "r3")?.isPrincipal).toBe("Oui");
+  });
+
+  it("ne modifie rien si la relation sauvegardée n'est pas principale", () => {
+    const saved = { id: "r1", relationType: "Parent → Élève", toStudentId: "s1", isPrincipal: "Non" };
+    const next = enforceSinglePrincipalParent(relations, saved);
+    expect(next).toEqual(relations);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RB-002 : un contact peut cumuler des rôles ; un enseignant peut être parent.
+// ---------------------------------------------------------------------------
+describe("getRelationParentContactOptions (RB-002)", () => {
+  const state = makeState({
+    contacts: [
+      { id: "p1", contactType: "Parent", schoolCode: "SCH1", lastName: "Kdi", firstName: "Awa" },
+      { id: "t1", contactType: "Enseignant", schoolCode: "SCH1", lastName: "Seke", firstName: "Kilombo" },
+      { id: "e1", contactType: "Élève", schoolCode: "SCH1", lastName: "Jean", firstName: "Onan" },
+      { id: "s1", contactType: "Étudiant", schoolCode: "SCH1", lastName: "Uni", firstName: "Max" },
+    ],
+  });
+
+  it("inclut un enseignant (parent potentiel) mais exclut les élèves/étudiants", () => {
+    const options = getRelationParentContactOptions(makeUser({ schoolCode: "SCH1" }), state);
+    const ids = options.map((o) => o.value).sort();
+    expect(ids).toEqual(["p1", "t1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ELEVE-001 / ENS-001 : contacts éligibles à la création de fiche.
+// ---------------------------------------------------------------------------
+describe("getLinkableContactOptions (ELEVE-001 / ENS-001)", () => {
+  const state = makeState({
+    contacts: [
+      { id: "c1", contactType: "Élève", schoolCode: "SCH1", lastName: "Doe", firstName: "Jane" },
+      { id: "c2", contactType: "Élève", schoolCode: "SCH1", lastName: "Roe", firstName: "Max", studentId: "s9" },
+      { id: "c3", contactType: "Enseignant", schoolCode: "SCH1", lastName: "Prof", firstName: "Al" },
+      { id: "c4", contactType: "Élève", schoolCode: "SCH2", lastName: "Autre", firstName: "Ecole" },
+    ],
+    students: [{ id: "sX", contactId: "cLinked" }],
+    teachers: [],
+  });
+
+  it("propose les contacts élève non reliés de l'école", () => {
+    const options = getLinkableContactOptions(state, "SCH1", "student");
+    expect(options.map((o) => o.value)).toEqual(["c1"]);
+  });
+
+  it("propose les contacts enseignant non reliés", () => {
+    const options = getLinkableContactOptions(state, "SCH1", "teacher");
+    expect(options.map((o) => o.value)).toEqual(["c3"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AFF-001 : noms de périodes de l'établissement (fallback trimestres).
+// ---------------------------------------------------------------------------
+describe("getSchoolPeriodNames", () => {
+  it("retourne les périodes configurées", () => {
+    const state = {
+      academicConfigs: {
+        SCH1: { periods: [{ name: "Semestre 1" }, { name: "Semestre 2" }] },
+      },
+    } as unknown as BackOfficeState;
+    expect(getSchoolPeriodNames(state, "SCH1")).toEqual(["Semestre 1", "Semestre 2"]);
+  });
+
+  it("retombe sur les trimestres par défaut", () => {
+    const state = { academicConfigs: {} } as unknown as BackOfficeState;
+    expect(getSchoolPeriodNames(state, "SCH1")).toEqual([
+      "Trimestre 1",
+      "Trimestre 2",
+      "Trimestre 3",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Dates : parsing / conversions (incluant le format compact hérité)
 // ---------------------------------------------------------------------------
 describe("dates", () => {
@@ -321,5 +450,81 @@ describe("dates", () => {
     const asInput = periodDateToInput(stored);
     expect(asInput).toBe("2010-03-07");
     expect(inputToPeriodDate(asInput)).toBe(stored);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Planning par créneau : détection de chevauchement enseignant (jour/heure).
+// ---------------------------------------------------------------------------
+describe("detectScheduleConflicts — chevauchement enseignant", () => {
+  const baseCourse: CourseScheduleSlot = {
+    id: "CS-1",
+    schoolCode: "SCH1",
+    className: "6ème A",
+    subject: "Mathématiques",
+    teacherId: "T1",
+    teacherName: "Seke Kilombo",
+    start: "2026-09-14T10:00:00.000Z", // lundi 10:00
+    end: "2026-09-14T11:00:00.000Z",
+    kind: "course",
+    periodName: "Trimestre 1",
+    periodStart: "10-09-2026",
+    periodEnd: "23-12-2026",
+  };
+
+  it("détecte la double réservation d'un enseignant sur deux classes au même horaire", () => {
+    const otherClassSameTeacher: CourseScheduleSlot = {
+      ...baseCourse,
+      id: "CS-2",
+      className: "5ème B",
+      subject: "Physique",
+      start: "2026-09-14T10:30:00.000Z",
+      end: "2026-09-14T11:30:00.000Z",
+    };
+    const issues = detectScheduleConflicts([otherClassSameTeacher], baseCourse);
+    expect(issues.some((row) => row.includes("Conflit enseignant"))).toBe(true);
+  });
+
+  it("n'émet pas de conflit enseignant si les professeurs diffèrent", () => {
+    const differentTeacher: CourseScheduleSlot = {
+      ...baseCourse,
+      id: "CS-3",
+      className: "5ème B",
+      subject: "Physique",
+      teacherId: "T2",
+      teacherName: "Autre Prof",
+      start: "2026-09-14T10:30:00.000Z",
+      end: "2026-09-14T11:30:00.000Z",
+    };
+    const issues = detectScheduleConflicts([differentTeacher], baseCourse);
+    expect(issues.some((row) => row.includes("Conflit enseignant"))).toBe(false);
+  });
+
+  it("n'émet pas de conflit enseignant pour des créneaux adjacents (10-11 / 11-12)", () => {
+    const adjacent: CourseScheduleSlot = {
+      ...baseCourse,
+      id: "CS-4",
+      className: "5ème B",
+      subject: "Physique",
+      start: "2026-09-14T11:00:00.000Z",
+      end: "2026-09-14T12:00:00.000Z",
+    };
+    const issues = detectScheduleConflicts([adjacent], baseCourse);
+    expect(issues.some((row) => row.includes("Conflit enseignant"))).toBe(false);
+  });
+
+  it("validatePlanningSlotBusinessRules bloque la double réservation enseignant", () => {
+    const otherClassSameTeacher: CourseScheduleSlot = {
+      ...baseCourse,
+      id: "CS-5",
+      className: "5ème B",
+      subject: "Physique",
+      start: "2026-09-14T10:30:00.000Z",
+      end: "2026-09-14T11:30:00.000Z",
+    };
+    const issues = validatePlanningSlotBusinessRules([otherClassSameTeacher], baseCourse, {
+      allowedSubjects: ["Mathématiques"],
+    });
+    expect(issues.some((row) => row.includes("Conflit enseignant"))).toBe(true);
   });
 });

@@ -44,6 +44,7 @@ import { FinancesLayout } from "./pages/finances/FinancesLayout";
 import { FinanceFeesPage } from "./pages/finances/FinanceFeesPage";
 import { FinanceUnpaidPage } from "./pages/finances/FinanceUnpaidPage";
 import { MonEtablissementLayout } from "./pages/etablissement/MonEtablissementLayout";
+import { EtablissementOverviewPage } from "./pages/etablissement/EtablissementOverviewPage";
 import { ClassStudentsPage } from "./pages/etablissement/ClassStudentsPage";
 import { ParentChildRelationsPage } from "./pages/etablissement/ParentChildRelationsPage";
 import { AdministrationLayout } from "./pages/administration/AdministrationLayout";
@@ -97,8 +98,9 @@ export default function App() {
             </PermissionRoute>
           }
         >
-          <Route index element={<Navigate to="classes" replace />} />
-          <Route path="pilotage" element={<Navigate to="/etablissement/classes" replace />} />
+          <Route index element={<Navigate to="vue-ensemble" replace />} />
+          <Route path="pilotage" element={<Navigate to="/etablissement/vue-ensemble" replace />} />
+          <Route path="vue-ensemble" element={<EtablissementOverviewPage />} />
           <Route
             path="classes"
             element={

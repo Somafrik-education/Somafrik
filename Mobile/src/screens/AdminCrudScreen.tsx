@@ -23,6 +23,7 @@ import { removeSchoolClassFromState } from "../lib/classRules";
 import { formatTeacherClasses } from "../lib/teacherClasses";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
+import { CONTACT_PROVISIONING_HINT, entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { isTeacherUserRole, upsertTeacherFromUser } from "../lib/userTeacherSync";
 
@@ -293,7 +294,7 @@ export default function AdminCrudScreen({ route }: Props) {
   const [calendarStep, setCalendarStep] = useState<"year" | "month" | "day">("year");
   const [selectedPermissionRole, setSelectedPermissionRole] = useState("");
   const [selectedPermissionFeature, setSelectedPermissionFeature] = useState("");
-  const canCreate = canMutateEntity(session, entity, "CREATE");
+  const canCreate = canMutateEntity(session, entity, "CREATE") && !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
   const canUpdate = canMutateEntity(session, entity, "UPDATE");
   const canDelete = canMutateEntity(session, entity, "DELETE");
@@ -398,6 +399,10 @@ export default function AdminCrudScreen({ route }: Props) {
   }, [entity, filter, visibleItems]);
 
   const openCreate = () => {
+    if (entityCreateViaContactsOnly(entity)) {
+      Alert.alert("Création via Contacts", CONTACT_PROVISIONING_HINT);
+      return;
+    }
     if (!canCreate) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de créer cet élément.");
       return;

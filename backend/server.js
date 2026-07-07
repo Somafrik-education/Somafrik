@@ -31,6 +31,10 @@ const {
 } = require("./lib/bulletinDesignResolver");
 const { renderReportCardPdf, renderReportCardPreviewHtml } = require("./services/bulletinPdfRenderer");
 const { dedupeBackOfficeState } = require("./lib/backofficeDedupe");
+const {
+  detectIntroducedConflicts,
+  changedScheduleIds,
+} = require("./lib/planningConflicts");
 const { repairOrphanSchools } = require("./lib/repairOrphanSchools");
 const { ensureSubscriptionModuleState } = require("./services/subscriptionModuleService");
 const { EstablishmentService } = require("./services/establishmentService");
@@ -339,6 +343,44 @@ app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
   res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
 }));
 
+app.get("/api/course-schedules", requireAuth, asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const scope = deriveSchoolScope(req.principal, state);
+  let rows = tenantScopeService.filterRows(state.courseSchedules ?? [], req.principal, scope);
+
+  const normalizeKey = (value) =>
+    String(value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+  // Un enseignant ne voit que ses propres créneaux (par identifiant ou par nom).
+  if (req.principal.role === "Enseignant") {
+    const userId = String(req.principal.sub ?? "").trim();
+    const nameKeys = new Set(
+      [
+        req.principal.name,
+        req.principal.identifier,
+        [req.principal.firstName, req.principal.lastName].filter(Boolean).join(" "),
+        [req.principal.lastName, req.principal.firstName].filter(Boolean).join(" "),
+      ]
+        .map(normalizeKey)
+        .filter(Boolean),
+    );
+    const classNames = new Set((req.principal.classNames ?? []).map(normalizeKey));
+    rows = rows.filter((slot) => {
+      if (userId && String(slot.teacherId ?? "") === userId) return true;
+      if (nameKeys.size && nameKeys.has(normalizeKey(slot.teacherName))) return true;
+      if (classNames.size && classNames.has(normalizeKey(slot.className))) return true;
+      return false;
+    });
+  }
+
+  res.json(rows);
+}));
+
 app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
@@ -462,12 +504,29 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
     const student = findStudent(state.students ?? [], item.studentId);
     return {
       ...item,
-      studentId: student?.matricule ?? student?.publicId ?? item.studentId,
+      studentId: student?.matricule ?? student?.publicId ?? student?.id ?? item.studentId,
       className: String(item.className ?? batchClassName ?? student?.className ?? "").trim(),
-      schoolCode: item.schoolCode ?? student?.schoolCode ?? req.principal.schoolCode,
+      schoolCode: String(item.schoolCode ?? student?.schoolCode ?? req.principal.schoolCode ?? "")
+        .trim()
+        .toUpperCase(),
     };
   });
-  const saved = await repository.upsertAttendanceBatch({ ...body, items }, req.principal);
+
+  await ensureRepositoryBackOfficeSnapshot(state);
+
+  let saved;
+  try {
+    saved = await repository.upsertAttendanceBatch({ ...body, items }, req.principal);
+  } catch (error) {
+    const message = String(error?.message ?? "");
+    const status = error?.statusCode ?? error?.status;
+    if (status === 404 && message.includes("introuvable")) {
+      saved = await savePresencesViaBackOfficeState(state, items);
+    } else {
+      throw error;
+    }
+  }
+
   await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
     count: saved.length,
     className: req.body?.className,
@@ -803,6 +862,20 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   if (courseValidationError) {
     throw new BusinessError(400, courseValidationError);
   }
+
+  // Filet de sécurité serveur : refuser toute double réservation (enseignant /
+  // classe) introduite par cette requête sur les créneaux de planning.
+  const introducedScheduleConflicts = detectIntroducedConflicts(
+    nextStateWithCourses.courseSchedules ?? [],
+    changedScheduleIds(
+      currentState.courseSchedules ?? [],
+      nextStateWithCourses.courseSchedules ?? [],
+    ),
+  );
+  if (introducedScheduleConflicts.length) {
+    throw new BusinessError(409, introducedScheduleConflicts[0].message);
+  }
+
   const saved = await repository.saveBackOfficeState(nextStateWithCourses);
   await auditCriticalStateChanges(req, currentState, saved);
   await auditService.record(req, "sync_backoffice_state", "backoffice_state", "default", {
@@ -930,11 +1003,12 @@ async function getRuntime() {
   applyStoredStatusOverlay(dataset, storedState);
   applyStoredSchoolOverlay(dataset, storedState);
   applyStoredUserOverlay(dataset, storedState);
+  const mergedStudents = mergeRowsByIdentity(dataset.students ?? [], storedState?.students ?? []);
   const authService = new AuthService({
     school: dataset.school,
     schools: dataset.platformSchools,
     teachers: dataset.teachers,
-    students: dataset.students,
+    students: mergedStudents,
     userAccounts: dataset.userAccounts,
     countries: dataset.countries,
     subscriptions: dataset.subscriptions ?? [],
@@ -950,7 +1024,7 @@ async function getRuntime() {
   const reportPdfService = new ReportPdfService({ school: dataset.school });
   const mvpBusinessService = new MvpBusinessService({
     school: dataset.school,
-    students: dataset.students,
+    students: mergedStudents,
     classes: dataset.classes,
     courses: dataset.courses,
     notes: dataset.notes,
@@ -960,6 +1034,7 @@ async function getRuntime() {
     school: dataset.school,
     schools: dataset.platformSchools,
     userAccounts: dataset.userAccounts,
+    students: mergedStudents,
     countries: dataset.countries,
     subscriptions: dataset.subscriptions,
     notifications: dataset.platformNotifications,
@@ -3117,6 +3192,68 @@ function findStudent(students, studentId) {
   }
 
   return undefined;
+}
+
+function samePresenceDay(left, right) {
+  const normalize = (value) => {
+    const text = String(value ?? "").trim();
+    const localMatch = text.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (localMatch) return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
+    const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    return text;
+  };
+  return normalize(left) === normalize(right);
+}
+
+async function ensureRepositoryBackOfficeSnapshot(state) {
+  const storedState = await repository.getBackOfficeState();
+  if (!hasUserBackOfficeState(storedState)) {
+    await repository.saveBackOfficeState(sanitizeBackOfficeState(state));
+  }
+}
+
+async function savePresencesViaBackOfficeState(state, items = []) {
+  const currentPresences = Array.isArray(state.presences) ? state.presences : [];
+  const nextPresences = [...currentPresences];
+
+  for (const item of items) {
+    const studentKey = String(item.studentId ?? "").trim();
+    const existingIndex = nextPresences.findIndex(
+      (presence) =>
+        String(presence.studentId ?? "").trim() === studentKey &&
+        samePresenceDay(presence.date, item.date),
+    );
+    const entry = {
+      id: item.id ?? item.publicId ?? `PRE-${item.date}-${studentKey}`,
+      publicId: item.publicId ?? item.id ?? `PRE-${item.date}-${studentKey}`,
+      schoolCode: item.schoolCode,
+      studentId: studentKey,
+      className: item.className,
+      date: item.date,
+      present: item.present,
+      status: item.status,
+      reason: item.reason,
+      savedAt: new Date().toISOString(),
+    };
+    if (existingIndex >= 0) {
+      nextPresences[existingIndex] = { ...nextPresences[existingIndex], ...entry };
+    } else {
+      nextPresences.unshift(entry);
+    }
+  }
+
+  await repository.saveBackOfficeState({ ...state, presences: nextPresences });
+  return items.map((item) => ({
+    id: item.id ?? item.publicId ?? `PRE-${item.date}-${item.studentId}`,
+    publicId: item.publicId ?? item.id,
+    schoolCode: item.schoolCode,
+    studentId: item.studentId,
+    className: item.className,
+    date: item.date,
+    present: item.present,
+    status: item.status,
+  }));
 }
 
 function buildScopedStudentIdSet(students = []) {

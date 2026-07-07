@@ -193,6 +193,81 @@ export function resolveTeacherAssignmentsForSession(
   });
 }
 
+/**
+ * Affectations d'une fiche enseignant donnée (pas la session) : fusionne les
+ * affectations embarquées sur la fiche et la table globale des affectations
+ * (module Affectations), en faisant correspondre par id, publicId, userId ou nom.
+ * Aligne l'affichage mobile sur le web (où les matières viennent des Affectations).
+ */
+export function resolveTeacherAssignmentsForRecord(
+  teacher: Teacher | undefined,
+  assignments: TeacherAssignment[] = [],
+): TeacherAssignment[] {
+  const row = (teacher ?? {}) as Row;
+  const fromRecord = Array.isArray(row.assignments) ? (row.assignments as TeacherAssignment[]) : [];
+
+  const refKeys = new Set<string>();
+  [row.id, row.publicId, row.userId, row.identifier].forEach((value) => {
+    const key = String(value ?? "").trim();
+    if (key) refKeys.add(key);
+  });
+
+  const nameKeys = new Set<string>();
+  const addName = (value: unknown) => {
+    const key = normalize(value);
+    if (key) nameKeys.add(key);
+  };
+  [row.name, row.firstName, row.lastName].forEach(addName);
+  const first = normalize(row.firstName);
+  const last = normalize(row.lastName ?? row.name);
+  if (first && last) {
+    nameKeys.add(`${first} ${last}`.trim());
+    nameKeys.add(`${last} ${first}`.trim());
+  }
+
+  const fromGlobal = assignments.filter((assignment) => {
+    const ref = String((assignment as Row).teacherId ?? "").trim();
+    if (ref && refKeys.has(ref)) return true;
+    return nameKeys.size > 0 && nameKeys.has(normalize((assignment as Row).teacherName));
+  });
+
+  const seen = new Set<string>();
+  return [...fromRecord, ...fromGlobal].filter((assignment) => {
+    const key = `${normalize(assignment.className)}|${normalize(assignment.course)}`;
+    if (!assignment.className || !assignment.course || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Matières distinctes d'un enseignant (fiche + Affectations globales). */
+export function resolveTeacherCoursesForRecord(
+  teacher: Teacher | undefined,
+  assignments: TeacherAssignment[] = [],
+): string[] {
+  return [
+    ...new Set(
+      resolveTeacherAssignmentsForRecord(teacher, assignments)
+        .map((assignment) => String(assignment.course ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** Classes distinctes d'un enseignant (fiche + Affectations globales). */
+export function resolveTeacherClassesForRecord(
+  teacher: Teacher | undefined,
+  assignments: TeacherAssignment[] = [],
+): string[] {
+  return [
+    ...new Set(
+      resolveTeacherAssignmentsForRecord(teacher, assignments)
+        .map((assignment) => String(assignment.className ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export function filterStudentsByClassName(students: Student[], className: string): Student[] {
   return students.filter((student) => classNameMatches(student.className, className));
 }

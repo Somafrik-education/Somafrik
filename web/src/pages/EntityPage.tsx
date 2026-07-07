@@ -21,10 +21,11 @@ import {
   getEntityModule,
   getScopedEntityRows,
   mergeScopedEntityRows,
+  entityCreateViaContactsOnly,
   type SchoolEntityKey,
 } from "../lib/entityModules";
 import { applyActiveGridsToStudent } from "../lib/fees";
-import { syncSingleUserToTeachers, promoteTeacherToUser } from "../lib/userTeacherSync";
+import { syncSingleUserToTeachers } from "../lib/userTeacherSync";
 import {
   getAssignmentSelectOptions,
   normalizeAssignmentForm,
@@ -36,6 +37,7 @@ import {
   type ContactLinkResult,
   getContactAccountOptions,
   getContactRoleOptions,
+  getLinkableContactOptions,
   linkContactToOperationalRecord,
   prepareContactForSave,
   promoteContactToUser,
@@ -49,13 +51,14 @@ import {
 import { validatePasswordPolicy } from "../lib/userAccountRules";
 import {
   getRelationContactOptions,
+  enforceSinglePrincipalParent,
   getRelationParentContactOptions,
   getRelationStudentOptions,
   prepareRelationForSave,
   RELATION_PARENT_CHILD,
   validateRelation,
 } from "../lib/relations";
-import { csvToObjects, downloadCsv, rowsToCsv } from "../lib/csv";
+import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
 import { validateTeacherDeletion } from "../lib/teacherRules";
 import { markAllAnnouncementsRead } from "../lib/announcementsRead";
 import { normalize, isSchoolAdminRole } from "../lib/format";
@@ -88,6 +91,7 @@ import {
 } from "../lib/pedagogySync";
 import type { BackOfficeState, SessionUser } from "../types";
 import { getSchoolAcademicLists, getSubjectsForClass, mergeSelectOptions } from "../lib/academicConfig";
+import { getSchoolPeriodNames } from "../lib/evaluations";
 import {
   generateTeacherIdentifiers,
   getTeacherLoginIdentifier,
@@ -143,7 +147,33 @@ interface EntityPageProps {
 }
 
 const PARENT_CHILD_HIDDEN_FIELDS = new Set(["relationType", "accountCode"]);
-const PARENT_CHILD_COLUMNS = ["fromContactName", "toStudentName", "status"];
+const PARENT_CHILD_COLUMNS = ["fromContactName", "toStudentName", "isPrincipal", "status"];
+
+/** Entités « données sensibles » tracées au journal d'audit (WEB-ME-006 / SEC-ME-003). */
+const AUDITED_ENTITY_KEYS = new Set<SchoolEntityKey>([
+  "classes",
+  "students",
+  "teachers",
+  "assignments",
+]);
+
+/** Libellé lisible d'une ligne pour le journal d'audit. */
+function auditEntityLabel(key: SchoolEntityKey, row: Record<string, unknown>): string {
+  const str = (value: unknown) => String(value ?? "").trim();
+  switch (key) {
+    case "classes":
+      return str(row.name) || str(row.className);
+    case "students":
+    case "teachers":
+      return `${str(row.name)} ${str(row.firstName)}`.trim();
+    case "assignments":
+      return [str(row.teacherName), str(row.subject), str(row.className)]
+        .filter(Boolean)
+        .join(" · ");
+    default:
+      return str(row.name);
+  }
+}
 
 export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   const module = getEntityModule(entity);
@@ -175,6 +205,8 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   const [receiptPayment, setReceiptPayment] = useState<PaymentRecord | null>(null);
   const [cancellingPayment, setCancellingPayment] = useState<PaymentRecord | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [linkContactOpen, setLinkContactOpen] = useState(false);
+  const [linkContactId, setLinkContactId] = useState("");
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const ctx = usePermissionContext();
@@ -190,8 +222,23 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     () => getEntityFeaturePermissions(ctx, "students", "Élèves"),
     [ctx],
   );
-  const allowCreate = canCreate && !module?.planningManaged && module?.key !== "payments";
+  const allowCreate =
+    canCreate &&
+    !module?.planningManaged &&
+    module?.key !== "payments" &&
+    !entityCreateViaContactsOnly(module?.key ?? "");
   const allowDelete = canDelete && !module?.planningManaged && module?.key !== "payments";
+
+  // ELEVE-001 / ENS-001 : créer une fiche à partir d'un contact existant.
+  const linkableContactKind: "student" | "teacher" | null =
+    module?.key === "students" ? "student" : module?.key === "teachers" ? "teacher" : null;
+  const linkableContactOptions = useMemo(
+    () =>
+      linkableContactKind
+        ? getLinkableContactOptions(state, effectiveSchoolCode, linkableContactKind)
+        : [],
+    [linkableContactKind, state, effectiveSchoolCode],
+  );
   const academicLists = useMemo(
     () => getSchoolAcademicLists(state, schoolCode),
     [state, schoolCode],
@@ -232,10 +279,22 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         module?.key === "assignments"
           ? (assignmentOptions?.classes ?? []).map((option) => option.value)
           : [];
-      return mergeSelectOptions(academicLists.classNames, extra).map((option) => ({
-        value: option,
-        label: option,
-      }));
+      // CLASSE-003 : une classe archivée n'est plus proposée aux nouvelles inscriptions.
+      const archivedClassNames = new Set(
+        ((state.classes ?? []) as Record<string, unknown>[])
+          .filter((cls) => normalize(String(cls.status ?? "")) === normalize("Archivée"))
+          .map((cls) => normalize(String(cls.name ?? cls.className ?? ""))),
+      );
+      const currentValue = normalize(String(editing?.className ?? ""));
+      return mergeSelectOptions(academicLists.classNames, extra)
+        .filter(
+          (option) =>
+            !archivedClassNames.has(normalize(option)) || normalize(option) === currentValue,
+        )
+        .map((option) => ({
+          value: option,
+          label: option,
+        }));
     }
     if (field.optionsKey === "subjects") {
       const className = String(editing?.className ?? "");
@@ -269,6 +328,12 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     }
     if (field.optionsKey === "assignmentSubjects") {
       return assignmentOptions?.subjects ?? [];
+    }
+    if (field.optionsKey === "periods") {
+      return getSchoolPeriodNames(state, effectiveSchoolCode).map((name) => ({
+        value: name,
+        label: name,
+      }));
     }
     if (field.optionsKey === "accounts") {
       return getContactAccountOptions(scopeUser, state);
@@ -385,14 +450,27 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       canResetTargetUserPassword(ctx, linkedContactUser),
   );
 
-  function handleExportCsv() {
-    if (!module) return;
-    const exportColumns = module.columns.map((key) => ({
+  function getExportColumns() {
+    if (!module) return [];
+    return module.columns.map((key) => ({
       key,
       header: module.columnLabels?.[key] ?? module.fields.find((f) => f.key === key)?.label ?? key,
     }));
-    const csv = rowsToCsv(rows as Record<string, unknown>[], exportColumns);
+  }
+
+  function handleExportCsv() {
+    if (!module) return;
+    const csv = rowsToCsv(rows as Record<string, unknown>[], getExportColumns());
     downloadCsv(`${module.key}-${new Date().toISOString().slice(0, 10)}`, csv);
+  }
+
+  function handleExportExcel() {
+    if (!module) return;
+    downloadExcel(
+      `${module.key}-${new Date().toISOString().slice(0, 10)}`,
+      rows as Record<string, unknown>[],
+      getExportColumns(),
+    );
   }
 
   async function handleImportContactsFile(file: File) {
@@ -532,6 +610,14 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!editing || !module) return;
+
+    if (!editing.id && entityCreateViaContactsOnly(module.key)) {
+      showToast(
+        "Créez d'abord un contact (type Élève ou Enseignant) dans Contacts pour éviter les doublons.",
+        "error",
+      );
+      return;
+    }
 
     if (module.planningManaged && !editing.id) {
       showToast("La planification se fait uniquement depuis Planning de cours.", "error");
@@ -767,24 +853,22 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     const nextAllRows = mergeResult.rows;
     const patch = buildPedagogyPatch(module.key, nextItem, nextAllRows);
 
+    // La synchro pédagogique reconstruit certaines affectations : on réapplique
+    // les champs métier (période, salle) sur la ligne enregistrée (AFF-001).
+    if (module.key === "assignments" && patch.assignments) {
+      const targetId = String(nextItem.id ?? "");
+      const period = String((nextItem as Record<string, unknown>).period ?? "");
+      const room = String((nextItem as Record<string, unknown>).room ?? "");
+      patch.assignments = (patch.assignments as Record<string, unknown>[]).map((row) =>
+        String(row.id) === targetId ? { ...row, period, room } : row,
+      ) as BackOfficeState["assignments"];
+    }
+
     let successMessage = exists ? `${module.label} modifié` : `${module.label} créé`;
 
-    if (module.key === "teachers" && !exists) {
-      const teacherPromotion = promoteTeacherToUser(
-        { ...(nextItem as Record<string, unknown>), schoolCode: effectiveSchoolCode ?? String((nextItem as Record<string, unknown>).schoolCode ?? "") },
-        state,
-        scopeUser,
-      );
-      if (teacherPromotion?.created && teacherPromotion.temporaryPassword) {
-        patch.users = teacherPromotion.users;
-        const teacherRows = ((patch.teachers as Record<string, unknown>[] | undefined) ??
-          nextAllRows) as Record<string, unknown>[];
-        patch.teachers = teacherRows.map((row) =>
-          String(row.id) === String(nextItem.id) ? teacherPromotion.teacher : row,
-        ) as BackOfficeState["teachers"];
-        successMessage = `Enseignant créé · identifiant ${String(teacherPromotion.teacher.identifier ?? "")} · mot de passe provisoire : ${teacherPromotion.temporaryPassword}`;
-      }
-    }
+    // RB-003 / CONTACT-004 : aucun compte utilisateur n'est créé hors du
+    // sous-module Contacts. Les fiches enseignant se provisionnent uniquement
+    // depuis un contact (linkContactToOperationalRecord).
 
     const nextContact = nextItem as Record<string, unknown>;
     let contactPromotion: ReturnType<typeof promoteContactToUser> | null = null;
@@ -861,6 +945,15 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       }
     }
 
+    if (module.key === "relations") {
+      const currentRelations =
+        (patch.relations as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
+      patch.relations = enforceSinglePrincipalParent(
+        currentRelations,
+        nextItem as Record<string, unknown>,
+      ) as unknown as BackOfficeState["relations"];
+    }
+
     if (module.key === "contacts" || module.key === "relations") {
       const isContact = module.key === "contacts";
       const label = isContact
@@ -917,6 +1010,20 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         );
       }
       patch.auditLog = appendAuditLog(state.auditLog, ...entries);
+    }
+
+    if (AUDITED_ENTITY_KEYS.has(module.key)) {
+      patch.auditLog = appendAuditLog(
+        state.auditLog,
+        makeAuditEntry({
+          ...auditActor(scopeUser),
+          action: `${module.key}.${exists ? "update" : "create"}`,
+          entityType: module.key,
+          entityId: String(nextItem.id ?? ""),
+          entityLabel: auditEntityLabel(module.key, nextItem as Record<string, unknown>) || undefined,
+          schoolCode: String((nextItem as Record<string, unknown>).schoolCode ?? "") || undefined,
+        }),
+      );
     }
 
     if (module.key === "students" && !exists) {
@@ -1007,8 +1114,22 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         showToast(result.error, "error");
         return;
       }
+      const classPatch: Partial<BackOfficeState> = {
+        ...result.patch,
+        auditLog: appendAuditLog(
+          state.auditLog,
+          makeAuditEntry({
+            ...auditActor(scopeUser),
+            action: "classes.delete",
+            entityType: "classes",
+            entityId: String(row.id ?? ""),
+            entityLabel: auditEntityLabel("classes", row) || undefined,
+            schoolCode: String(row.schoolCode ?? "") || undefined,
+          }),
+        ),
+      };
       try {
-        await persistPatch(result.patch, "Classe supprimée");
+        await persistPatch(classPatch, "Classe supprimée");
       } catch {
         /* toast déjà affiché */
       }
@@ -1041,9 +1162,68 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           schoolCode: String(row.schoolCode ?? "") || undefined,
         }),
       );
+    } else if (AUDITED_ENTITY_KEYS.has(module.key)) {
+      deletePatch.auditLog = appendAuditLog(
+        state.auditLog,
+        makeAuditEntry({
+          ...auditActor(scopeUser),
+          action: `${module.key}.delete`,
+          entityType: module.key,
+          entityId: String(row.id ?? ""),
+          entityLabel: auditEntityLabel(module.key, row) || undefined,
+          schoolCode: String(row.schoolCode ?? "") || undefined,
+        }),
+      );
     }
     try {
       await persistPatch(deletePatch, "Élément supprimé");
+    } catch {
+      /* toast déjà affiché */
+    }
+  }
+
+  async function handleCreateFicheFromContact() {
+    if (!module || !linkContactId) return;
+    const contact = ((state.contacts ?? []) as unknown as Record<string, unknown>[]).find(
+      (row) => String(row.id) === linkContactId,
+    );
+    if (!contact) {
+      showToast("Contact introuvable.", "error");
+      return;
+    }
+    const link = linkContactToOperationalRecord(contact, state, effectiveSchoolCode);
+    if (!link.linkedType) {
+      showToast("Ce contact ne peut pas être relié à une fiche.", "error");
+      return;
+    }
+    const patch: Partial<BackOfficeState> = {};
+    if (link.students) patch.students = link.students as unknown as BackOfficeState["students"];
+    if (link.teachers) patch.teachers = link.teachers as unknown as BackOfficeState["teachers"];
+    patch.contacts = ((state.contacts ?? []) as unknown as Record<string, unknown>[]).map((row) =>
+      String(row.id) === linkContactId ? link.contact : row,
+    ) as unknown as BackOfficeState["contacts"];
+    const label = `${String(contact.lastName ?? "")} ${String(contact.firstName ?? "")}`.trim();
+    patch.auditLog = appendAuditLog(
+      state.auditLog,
+      makeAuditEntry({
+        ...auditActor(scopeUser),
+        action: `${link.linkedType}.${link.created ? "create" : "link"}`,
+        entityType: link.linkedType,
+        entityId: link.linkedRecordId,
+        entityLabel: label || undefined,
+        schoolCode: String(contact.schoolCode ?? "") || undefined,
+        details: link.created
+          ? "Fiche créée depuis un contact existant"
+          : "Fiche existante reliée au contact",
+      }),
+    );
+    try {
+      await persistPatch(
+        patch,
+        link.created ? `${module.label} créé depuis le contact` : "Fiche reliée au contact",
+      );
+      setLinkContactOpen(false);
+      setLinkContactId("");
     } catch {
       /* toast déjà affiché */
     }
@@ -1197,6 +1377,14 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
               >
                 Exporter CSV
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExportExcel}
+                disabled={rows.length === 0}
+              >
+                Exporter Excel
+              </Button>
               {module.key === "contacts" && allowCreate ? (
                 <>
                   <input
@@ -1223,6 +1411,18 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
               {module.key === "payments" && canCreate ? (
                 <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
                   Saisie rapide
+                </Button>
+              ) : null}
+              {linkableContactKind && canUpdate ? (
+                <Button
+                  size="sm"
+                  disabled={busy || linkableContactOptions.length === 0}
+                  onClick={() => {
+                    setLinkContactId("");
+                    setLinkContactOpen(true);
+                  }}
+                >
+                  Ajouter depuis un contact
                 </Button>
               ) : null}
               {allowCreate ? (
@@ -1284,6 +1484,15 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
             . Cet écran sert au suivi des statuts et à la publication des résultats.
           </p>
         ) : null}
+        {entityCreateViaContactsOnly(module.key) ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Pour créer un compte ou une fiche, utilisez{" "}
+            <Link to="/etablissement/contacts" className="font-semibold text-brand underline">
+              Contacts
+            </Link>{" "}
+            (type Élève, Enseignant, etc.). Cet écran sert à consulter et mettre à jour les dossiers existants.
+          </p>
+        ) : null}
         <div className="no-print mt-4">
           <Input
             placeholder={`Rechercher dans ${module.label.toLowerCase()}…`}
@@ -1296,9 +1505,53 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
             columns={columns}
             rows={rows}
             rowKey={(row, index) => String(row.id ?? index)}
+            sortable
+            pageSize={25}
           />
         </div>
       </Card>
+
+      <Modal
+        open={linkContactOpen}
+        onClose={() => setLinkContactOpen(false)}
+        title={`Créer une fiche depuis un contact`}
+        description="Sélectionnez un contact existant (créé dans Contacts) pour générer sa fiche."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setLinkContactOpen(false)}>
+              Annuler
+            </Button>
+            <Button
+              disabled={busy || !linkContactId}
+              onClick={() => void handleCreateFicheFromContact()}
+            >
+              Créer la fiche
+            </Button>
+          </>
+        }
+      >
+        {linkableContactOptions.length === 0 ? (
+          <p className="text-sm text-muted">
+            Aucun contact éligible non relié. Créez d'abord un contact dans{" "}
+            <Link to="/etablissement/contacts" className="font-semibold text-brand underline">
+              Contacts
+            </Link>
+            .
+          </p>
+        ) : (
+          <Field label="Contact" htmlFor="link-contact-select">
+            <Select
+              id="link-contact-select"
+              value={linkContactId}
+              onChange={(event) => setLinkContactId(event.target.value)}
+              options={[
+                { value: "", label: "Choisir un contact" },
+                ...linkableContactOptions,
+              ]}
+            />
+          </Field>
+        )}
+      </Modal>
 
       <Modal
         open={Boolean(editing)}

@@ -9,7 +9,11 @@ import { canReadEntity, canReadRoute, canReadView } from "../domain/security/per
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
-import { scopedStudentsForSession, teacherScopedClassLabels } from "../lib/establishment";
+import {
+  resolveTeacherAssignmentsForSession,
+  scopedStudentsForSession,
+  teacherScopedClassLabels,
+} from "../lib/establishment";
 
 type MenuItem = {
   label: string;
@@ -140,7 +144,15 @@ export default function MenuScreen() {
 
       {isTeacher && (
         <Text style={styles.childrenCount}>
-          {(session?.user.courses ?? []).join(", ")} •{" "}
+          {[
+            ...new Set([
+              ...(session?.user.courses ?? []),
+              ...resolveTeacherAssignmentsForSession(session, assignmentsData)
+                .map((assignment) => String(assignment.course ?? "").trim())
+                .filter(Boolean),
+            ]),
+          ].join(", ") || "Cours non renseignés"}
+          {" • "}
           {teacherScopedClassLabels(
             session,
             scopedStudentsForSession(session, studentsData, teacherScopeState),

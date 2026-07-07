@@ -904,7 +904,9 @@ class PostgresRepository {
     const classCode = String(
       backOfficeClass?.publicId ??
         backOfficeClass?.id ??
-        `CLS-${normalizedClassName.replace(/\s+/g, "-").toUpperCase()}`,
+        `${String((await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]))?.school_code ?? schoolId)
+          .trim()
+          .toUpperCase()}-${normalizedClassName.replace(/\s+/g, "-").toUpperCase()}`,
     ).trim();
     const inserted = await this.one(
       `INSERT INTO classes (school_id, academic_year_id, class_code, name, level, section, status)
@@ -937,9 +939,55 @@ class PostgresRepository {
     );
   }
 
+  async ensureSchoolFromBackOfficeRecord(schoolCode) {
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    if (!normalized || normalized === "*") return null;
+
+    const existing = await this.getSchoolByCode(normalized);
+    if (existing) return existing;
+
+    const state = (await this.getBackOfficeState()) ?? {};
+    const backOfficeSchool = (Array.isArray(state.schools) ? state.schools : []).find(
+      (row) => String(row.code ?? "").trim().toUpperCase() === normalized,
+    );
+    if (!backOfficeSchool) return null;
+
+    const rawCountryCode = String(backOfficeSchool.countryCode ?? backOfficeSchool.country ?? "CD").trim().toUpperCase();
+    const isoCode = rawCountryCode === "RDC" ? "CD" : rawCountryCode.slice(0, 2);
+    let country = await this.one("SELECT id FROM countries WHERE iso_code = $1 LIMIT 1", [isoCode]);
+    if (!country) {
+      country = await this.one(
+        `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
+         VALUES ($1, $2, '+243', 'CDF', TRUE, NOW(), NOW())
+         ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id`,
+        [backOfficeSchool.country ?? "République Démocratique du Congo", isoCode],
+      );
+    }
+
+    return this.one(
+      `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+       ON CONFLICT (school_code) DO UPDATE SET name = EXCLUDED.name
+       RETURNING *`,
+      [
+        country.id,
+        normalized,
+        backOfficeSchool.name ?? normalized,
+        backOfficeSchool.logoUrl ?? "",
+        backOfficeSchool.address ?? "",
+        backOfficeSchool.city ?? "",
+        backOfficeSchool.phone ?? "",
+        backOfficeSchool.email ?? "",
+        backOfficeSchool.type ?? "Établissement",
+        this.toDbStatus(backOfficeSchool.status ?? "Actif"),
+      ],
+    );
+  }
+
   async materializeBackOfficeStudent(record) {
     const schoolCode = String(record.schoolCode ?? "").trim().toUpperCase();
-    const school = await this.getSchoolByCode(schoolCode);
+    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
     if (!school) return null;
 
     const matricule = String(record.matricule ?? record.publicId ?? record.id ?? "").trim();
@@ -982,23 +1030,37 @@ class PostgresRepository {
   async resolveStudentForAttendance(payload, principal = {}) {
     const schoolCode = String(payload.schoolCode ?? principal.schoolCode ?? "").trim().toUpperCase();
     const className = String(payload.className ?? "").trim();
+
+    if (schoolCode && schoolCode !== "*") {
+      await this.ensureSchoolFromBackOfficeRecord(schoolCode);
+    }
+
     let { row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, schoolCode);
+
+    if (!student && !backOfficeStudent) {
+      ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, ""));
+    }
 
     if (!student && backOfficeStudent) {
       const materializedId = await this.materializeBackOfficeStudent(backOfficeStudent);
       if (materializedId) {
-        ({ row: student } = await this.queryStudentWithClass(materializedId, schoolCode));
+        ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(materializedId, schoolCode));
       }
     }
 
     if (!student) return null;
 
     if (!student.class_id) {
-      const targetClassName = className || backOfficeStudent?.className || student.class_name;
-      const classId = await this.ensureClassForSchool(student.school_id, targetClassName);
-      if (classId) {
-        await this.ensureActiveEnrollment(student.school_id, student.id, classId);
-        ({ row: student } = await this.queryStudentWithClass(student.student_code, schoolCode));
+      const targetClassName =
+        className ||
+        String(backOfficeStudent?.className ?? "").trim() ||
+        String(student.class_name ?? "").trim();
+      if (targetClassName) {
+        const classId = await this.ensureClassForSchool(student.school_id, targetClassName);
+        if (classId) {
+          await this.ensureActiveEnrollment(student.school_id, student.id, classId);
+          student = { ...student, class_id: classId, class_name: targetClassName };
+        }
       }
     }
 

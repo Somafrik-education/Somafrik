@@ -68,6 +68,58 @@ function testClassTimeConflict() {
   assert(issues.some((row) => row.includes("Conflit sur")), "Conflit horaire même classe attendu");
 }
 
+function testTeacherTimeConflict() {
+  // Même enseignant (T1), classes différentes, créneaux qui se chevauchent.
+  const otherClassSameTeacher: CourseScheduleSlot = {
+    ...baseCourse,
+    id: "CS-T-1",
+    className: "5ème B",
+    subject: "Physique",
+    start: "2026-09-14T10:30:00.000Z",
+    end: "2026-09-14T11:30:00.000Z",
+  };
+  const teacherConflict = detectScheduleConflicts([otherClassSameTeacher], baseCourse);
+  assert(
+    teacherConflict.some((row) => row.includes("Conflit enseignant")),
+    "Chevauchement enseignant attendu (même prof, deux classes au même horaire)",
+  );
+
+  // Enseignant différent sur le même créneau, autre classe : aucun conflit.
+  const differentTeacher: CourseScheduleSlot = {
+    ...otherClassSameTeacher,
+    id: "CS-T-2",
+    teacherId: "T2",
+    teacherName: "Prof B",
+  };
+  const noConflict = detectScheduleConflicts([differentTeacher], baseCourse);
+  assert(
+    !noConflict.some((row) => row.includes("Conflit enseignant")),
+    "Aucun conflit enseignant si les professeurs diffèrent",
+  );
+
+  // Même enseignant mais créneaux adjacents (pas de chevauchement).
+  const adjacent: CourseScheduleSlot = {
+    ...otherClassSameTeacher,
+    id: "CS-T-3",
+    start: "2026-09-14T11:00:00.000Z",
+    end: "2026-09-14T12:00:00.000Z",
+  };
+  const adjacentConflict = detectScheduleConflicts([adjacent], baseCourse);
+  assert(
+    !adjacentConflict.some((row) => row.includes("Conflit enseignant")),
+    "Aucun conflit enseignant si les créneaux sont adjacents (10-11 / 11-12)",
+  );
+
+  // La validation métier doit bloquer la double réservation enseignant.
+  const blocked = validatePlanningSlotBusinessRules([otherClassSameTeacher], baseCourse, {
+    allowedSubjects: ["Mathématiques"],
+  });
+  assert(
+    blocked.some((row) => row.includes("Conflit enseignant")),
+    "validatePlanningSlotBusinessRules doit refuser la double réservation enseignant",
+  );
+}
+
 function testExamSingleOccurrence() {
   const exam: CourseScheduleSlot = {
     ...baseCourse,
@@ -300,6 +352,7 @@ const checks = [
   ["Récurrence hebdomadaire lundi → déc.", testWeeklyRecurrence],
   ["Doublon matière / classe / période", testDuplicateSubjectPeriod],
   ["Conflit horaire même classe", testClassTimeConflict],
+  ["Chevauchement enseignant (double réservation)", testTeacherTimeConflict],
   ["Examen ponctuel", testExamSingleOccurrence],
   ["Cours sans période refusé", testValidationRequiresPeriodForCourse],
   ["Réparation encodage UTF-8", testEncodingRepair],

@@ -42,6 +42,13 @@ export type SchoolEntityKey =
   | "bulletins"
   | "documents";
 
+/** Fiches créées uniquement via Contacts (évite doublons compte / élève / enseignant). */
+export const CONTACT_PROVISIONED_ENTITY_KEYS = new Set<SchoolEntityKey>(["students", "teachers"]);
+
+export function entityCreateViaContactsOnly(entityKey: string): boolean {
+  return CONTACT_PROVISIONED_ENTITY_KEYS.has(entityKey as SchoolEntityKey);
+}
+
 /** Regroupement métier des écrans établissement. */
 export type EntityModuleGroup = "utilisateurs" | "pedagogie" | "finance" | "communication" | "administratif";
 
@@ -69,6 +76,7 @@ export interface EntityField {
     | "teachers"
       | "classes"
       | "assignmentSubjects"
+      | "periods"
       | "accounts"
       | "userRoles"
       | "relationContacts"
@@ -207,6 +215,16 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         hint: "Requis pour une relation Parent → Élève.",
       },
       {
+        key: "isPrincipal",
+        label: "Parent principal",
+        inputType: "select",
+        selectOptions: [
+          { value: "Non", label: "Non" },
+          { value: "Oui", label: "Oui" },
+        ],
+        hint: "Responsable principal contacté en priorité pour les notifications (PE-005).",
+      },
+      {
         key: "accountCode",
         label: "Compte associé",
         placeholder: "Choisir un compte",
@@ -221,10 +239,11 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         selectOptions: RELATION_STATUS_OPTIONS,
       },
     ],
-    columns: ["relationType", "fromContactName", "toStudentName", "accountName", "status"],
+    columns: ["relationType", "fromContactName", "toStudentName", "isPrincipal", "accountName", "status"],
     columnLabels: {
       fromContactName: "Contact",
       toStudentName: "Élève",
+      isPrincipal: "Principal",
       accountName: "Compte",
     },
   },
@@ -235,10 +254,16 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     label: "Élèves",
     feature: "Élèves",
     group: "utilisateurs",
-    description: "Effectifs, classes et dossiers élèves de l'établissement.",
+    description: "Effectifs, classes et dossiers élèves. La création se fait via Contacts (type Élève).",
     fields: [
       { key: "name", label: "Nom complet", placeholder: "Nom de l'élève" },
       { key: "firstName", label: "Prénom", placeholder: "Prénom" },
+      {
+        key: "matricule",
+        label: "Matricule",
+        readOnly: true,
+        hint: "Identifiant scolaire généré automatiquement.",
+      },
       {
         key: "className",
         label: "Classe",
@@ -246,10 +271,36 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         inputType: "select",
         optionsKey: "classNames",
       },
+      { key: "schoolYear", label: "Année scolaire", placeholder: "2025-2026" },
+      { key: "enrollmentDate", label: "Date d'inscription", inputType: "date" },
+      {
+        key: "schoolStatus",
+        label: "Statut scolaire",
+        inputType: "select",
+        selectOptions: [
+          { value: "Inscrit", label: "Inscrit" },
+          { value: "En attente", label: "En attente" },
+          { value: "Transféré", label: "Transféré" },
+          { value: "Sorti", label: "Sorti" },
+        ],
+      },
+      {
+        key: "regime",
+        label: "Régime",
+        inputType: "select",
+        selectOptions: [
+          { value: "Externe", label: "Externe" },
+          { value: "Demi-pensionnaire", label: "Demi-pensionnaire" },
+          { value: "Interne", label: "Interne" },
+        ],
+      },
+      { key: "previousSchool", label: "Ancien établissement", placeholder: "Établissement précédent" },
+      { key: "observations", label: "Observations", placeholder: "Notes complémentaires" },
       { key: "parentName", label: "Parent", placeholder: "Nom du parent" },
       { key: "parentPhone", label: "Téléphone parent", placeholder: "+243 ..." },
     ],
-    columns: ["name", "firstName", "className", "parentPhone"],
+    columns: ["name", "firstName", "matricule", "className", "schoolStatus", "parentPhone"],
+    columnLabels: { matricule: "Matricule", schoolStatus: "Statut" },
   },
   {
     key: "teachers",
@@ -259,7 +310,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     feature: "Enseignants",
     group: "utilisateurs",
     description:
-      "Équipe pédagogique. L'admin établissement peut uniquement ajouter un enseignant (pas de modification ni suppression).",
+      "Équipe pédagogique (consultation et mise à jour). La création se fait via Contacts (type Enseignant).",
     fields: [
       { key: "name", label: "Nom complet", placeholder: "Nom de l'enseignant", required: true },
       { key: "firstName", label: "Prénom", placeholder: "Prénom", required: true },
@@ -294,8 +345,43 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
       },
       { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
       { key: "email", label: "Email", placeholder: "prof@ecole.cd" },
+      { key: "specialty", label: "Spécialité", placeholder: "Ex. Mathématiques" },
+      {
+        key: "contractType",
+        label: "Type de contrat",
+        inputType: "select",
+        selectOptions: [
+          { value: "CDI", label: "CDI" },
+          { value: "CDD", label: "CDD" },
+          { value: "Vacataire", label: "Vacataire" },
+          { value: "Stagiaire", label: "Stagiaire" },
+        ],
+      },
+      { key: "entryDate", label: "Date d'entrée", inputType: "date" },
+      {
+        key: "availability",
+        label: "Disponibilité",
+        inputType: "select",
+        selectOptions: [
+          { value: "Disponible", label: "Disponible" },
+          { value: "Partiel", label: "Temps partiel" },
+          { value: "Indisponible", label: "Indisponible" },
+        ],
+      },
+      {
+        key: "status",
+        label: "Statut",
+        inputType: "select",
+        selectOptions: [
+          { value: "Actif", label: "Actif" },
+          { value: "Suspendu", label: "Suspendu" },
+          { value: "Inactif", label: "Inactif" },
+        ],
+      },
+      { key: "observations", label: "Observations", placeholder: "Notes complémentaires" },
     ],
-    columns: ["name", "firstName", "publicId", "birthDate", "gender", "phone"],
+    columns: ["name", "firstName", "publicId", "specialty", "contractType", "phone"],
+    columnLabels: { specialty: "Spécialité", contractType: "Contrat" },
   },
   {
     key: "classes",
@@ -327,8 +413,32 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         inputType: "select",
         optionsKey: "tracks",
       },
+      {
+        key: "cycle",
+        label: "Cycle",
+        inputType: "select",
+        selectOptions: [
+          { value: "Maternelle", label: "Maternelle" },
+          { value: "Primaire", label: "Primaire" },
+          { value: "Secondaire", label: "Secondaire" },
+          { value: "Supérieur", label: "Supérieur" },
+        ],
+      },
+      { key: "schoolYear", label: "Année scolaire", placeholder: "2025-2026" },
+      { key: "capacity", label: "Capacité maximale", placeholder: "Ex. 40" },
+      { key: "mainRoom", label: "Salle principale", placeholder: "Ex. Salle 12" },
+      {
+        key: "status",
+        label: "Statut",
+        inputType: "select",
+        selectOptions: [
+          { value: "Active", label: "Active" },
+          { value: "Archivée", label: "Archivée" },
+        ],
+      },
     ],
-    columns: ["name", "level", "track"],
+    columns: ["name", "level", "track", "status"],
+    columnLabels: { status: "Statut" },
   },
   {
     key: "courses",
@@ -400,9 +510,23 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         optionsKey: "teachers",
         required: true,
       },
+      {
+        key: "period",
+        label: "Période",
+        placeholder: "Choisir une période",
+        inputType: "select",
+        optionsKey: "periods",
+        hint: "Période scolaire couverte par l'affectation (AFF-001).",
+      },
+      {
+        key: "room",
+        label: "Salle",
+        placeholder: "Ex. Salle 12",
+        hint: "Salle principale (optionnel).",
+      },
     ],
-    columns: ["className", "subject", "teacherName"],
-    columnLabels: { teacherName: "Enseignant" },
+    columns: ["className", "subject", "teacherName", "period"],
+    columnLabels: { teacherName: "Enseignant", period: "Période" },
   },
   {
     key: "presences",

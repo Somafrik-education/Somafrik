@@ -19,15 +19,47 @@ function isSuperAdminRole(role) {
   return role === SUPER_ADMIN_ROLE || role === LEGACY_SUPER_ADMIN_ROLE;
 }
 
+function normalizeLoginText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
 class BackOfficeAccessService {
-  constructor({ school, schools = [school], userAccounts, countries = [], subscriptions = [], notifications = [] }) {
+  constructor({
+    school,
+    schools = [school],
+    userAccounts,
+    students = [],
+    countries = [],
+    subscriptions = [],
+    notifications = [],
+  }) {
     this.school = school;
     this.schools = schools;
     this.userAccounts = userAccounts;
+    this.students = students;
     this.countries = countries;
     this.subscriptions = subscriptions;
     this.notifications = notifications;
     this.communicationService = new CommunicationService({ notifications });
+  }
+
+  findLinkedParentChildren(user, schoolCode) {
+    const normalizedSchoolCode = String(schoolCode ?? "").trim().toUpperCase();
+    const parentPhone =
+      normalizeLoginText(user.identifier) || normalizeLoginText(user.phone);
+    if (!parentPhone) {
+      return [];
+    }
+
+    return this.students.filter(
+      (student) =>
+        String(student.schoolCode ?? "").trim().toUpperCase() === normalizedSchoolCode &&
+        normalizeLoginText(student.parentPhone) === parentPhone,
+    );
   }
 
   login({ schoolCode, identifier, password }) {
@@ -89,9 +121,20 @@ class BackOfficeAccessService {
 
     const { password: _password, temporaryPassword: _temporaryPassword, ...safeUser } = user;
     const mustChangePassword = Boolean(user.mustChangePassword) || Boolean(user.temporaryPassword);
+    const scopedSchoolCode = resolvedSchoolCode || user.schoolCode || "";
+    const enrichedUser =
+      user.role === "Parent"
+        ? {
+            ...safeUser,
+            children: this.findLinkedParentChildren(user, scopedSchoolCode).map(
+              ({ password: _pwd, passwordHash: _hash, pinHash: _pinHash, pin: _pin, ...child }) =>
+                child,
+            ),
+          }
+        : safeUser;
 
     return {
-      user: { ...safeUser, mustChangePassword },
+      user: { ...enrichedUser, mustChangePassword },
       schoolContext,
       scope: this.getScope(user),
       menus: this.getMenus(user),

@@ -1,17 +1,22 @@
 import { Outlet } from "react-router-dom";
-import { BookOpen, Contact, GraduationCap, Link2, School, Users } from "lucide-react";
+import { BookOpen, Contact, GraduationCap, LayoutDashboard, Link2, School, Users } from "lucide-react";
 import { TabNav, type TabItem } from "../../components/layout/TabNav";
 import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 
-/** Onglet + vue de permission requise pour l'afficher. */
+/**
+ * Onglet + vue de permission requise pour l'afficher.
+ * Ordre métier « Contacts-first » : le référentiel des personnes précède les
+ * fiches qui en dérivent (élèves, enseignants, associations, affectations).
+ */
 const ETABLISSEMENT_TABS: (TabItem & { view: string })[] = [
+  { to: "/etablissement/vue-ensemble", label: "Vue d'ensemble", icon: LayoutDashboard, view: "establishment" },
+  { to: "/etablissement/contacts", label: "Contacts", icon: Contact, view: "contacts" },
   { to: "/etablissement/classes", label: "Classes", icon: School, view: "classes" },
-  { to: "/etablissement/affectations", label: "Affectations", icon: BookOpen, view: "assignments" },
   { to: "/etablissement/eleves", label: "Élèves", icon: GraduationCap, view: "students" },
   { to: "/etablissement/enseignants", label: "Enseignants", icon: Users, view: "teachers" },
-  { to: "/etablissement/contacts", label: "Contacts", icon: Contact, view: "contacts" },
   { to: "/etablissement/relations-parent-enfant", label: "Parents & élèves", icon: Link2, view: "relations" },
+  { to: "/etablissement/affectations", label: "Affectations", icon: BookOpen, view: "assignments" },
 ];
 
 /** Module Mon établissement : en-tête + onglets, contenu via <Outlet />. */

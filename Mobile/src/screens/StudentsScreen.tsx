@@ -12,6 +12,7 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
+import { entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import {
   filterStudentsByClassName,
   scopedStudentsForSession,
@@ -49,7 +50,8 @@ export default function StudentsScreen({ route, navigation }: any) {
   const classStudentIds = classStudents.map((student) => student.id);
   const presenceStats = getPresenceStats(presencesData, classStudentIds);
   const paymentStats = getPaymentStats(paymentsData, classStudentIds);
-  const canCreateStudent = canMutateEntity(session, "students", "CREATE");
+  const canCreateStudent =
+    canMutateEntity(session, "students", "CREATE") && !entityCreateViaContactsOnly("students");
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
   const classGroups = filteredStudents.reduce<Record<string, typeof filteredStudents>>(
     (groups, student) => {
