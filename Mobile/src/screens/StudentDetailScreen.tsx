@@ -8,11 +8,16 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
-import { getStudentById, notes, payments, presences } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
+import { useAdminData } from "../context/AdminDataContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { canReadRoute } from "../domain/security/permissions";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import {
+  CLASSES_STUDENT_TEST_IDS,
+} from "../lib/classesStudentJourneySpec";
+import { STUDENT_SUB_SCREENS_TEST_IDS } from "../lib/studentSubScreensSpec";
+import { normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 
 type Props = NativeStackScreenProps<
   RootStackParamList,
@@ -26,35 +31,67 @@ export default function StudentDetailScreen({
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const containerStyle = [styles.container, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const studentId = selectedStudentId ?? route?.params?.studentId;
+  const { studentsData, notesData, presencesData, paymentsData } = useAdminData();
+  const studentId = route?.params?.studentId ?? selectedStudentId;
   const canSeeNotes = canReadRoute(session, "StudentNotes");
   const canSeePresences = canReadRoute(session, "StudentPresences");
   const canSeePayments = canReadRoute(session, "StudentPayments");
 
-  const student = studentId ? getStudentById(studentId) : undefined;
+  const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
   if (!student) {
     return (
-      <View style={styles.container}>
+      <View style={styles.container} testID={CLASSES_STUDENT_TEST_IDS.studentDetailScreen}>
         <Text>Élève introuvable</Text>
       </View>
     );
   }
 
+  const studentNotes = notesData.filter((item) => item.studentId === student.id);
+  const studentPresences = presencesData.filter((item) => item.studentId === student.id);
+  const presentCount = studentPresences.filter(
+    (item) => {
+      const status = normalizePresenceStatus(item);
+      return status === "Présent" || status === "Retard";
+    },
+  ).length;
+  const studentPayments = paymentsData.filter((item) => item.studentId === student.id);
+  const displayName = [student.firstName, student.name].filter(Boolean).join(" ").trim() || student.name;
+
+  const openSubScreen = (screen: "StudentNotes" | "StudentPresences" | "StudentPayments") => {
+    navigation?.navigate(screen, { studentId: student.id });
+  };
+
   return (
-    <ScrollView contentContainerStyle={containerStyle}>
+    <ScrollView
+      contentContainerStyle={containerStyle}
+      testID={CLASSES_STUDENT_TEST_IDS.studentDetailScreen}
+    >
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={styles.backButton}
+        testID={CLASSES_STUDENT_TEST_IDS.studentDetailBackButton}
+        onPress={() => navigation?.goBack()}
+      >
+        <Ionicons name="arrow-back" size={24} color="#0F172A" />
+      </TouchableOpacity>
+
       <StudentSwitcher />
 
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{student.name.charAt(0)}</Text>
+          <Text style={styles.avatarText}>{displayName.charAt(0)}</Text>
         </View>
 
         <View style={styles.profileInfo}>
-          <Text style={styles.title}>{student.name}</Text>
+          <Text style={styles.title} testID={CLASSES_STUDENT_TEST_IDS.studentDetailName}>
+            {displayName}
+          </Text>
           <Text style={styles.info}>Matricule : {student.matricule}</Text>
           <Text style={styles.info}>Sexe : {student.gender ?? "Non renseigné"}</Text>
-          <Text style={styles.info}>Classe : {student.className}</Text>
+          <Text style={styles.info} testID={CLASSES_STUDENT_TEST_IDS.studentDetailClass}>
+            Classe : {student.className}
+          </Text>
           <Text style={styles.info}>Établissement : {student.schoolCode}</Text>
         </View>
       </View>
@@ -64,11 +101,10 @@ export default function StudentDetailScreen({
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.statCard}
-            onPress={() => navigation?.navigate("StudentNotes", { studentId: student.id })}
+            testID="student-detail-notes-stat"
+            onPress={() => openSubScreen("StudentNotes")}
           >
-            <Text style={styles.statValue}>
-              {notes.filter((item) => item.studentId === student.id).length}
-            </Text>
+            <Text style={styles.statValue}>{studentNotes.length}</Text>
             <Text style={styles.statLabel}>Notes</Text>
           </TouchableOpacity>
         )}
@@ -77,11 +113,10 @@ export default function StudentDetailScreen({
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.statCard}
-            onPress={() => navigation?.navigate("StudentPresences", { studentId: student.id })}
+            testID="student-detail-presences-stat"
+            onPress={() => openSubScreen("StudentPresences")}
           >
-            <Text style={styles.statValue}>
-              {presences.filter((item) => item.studentId === student.id && item.present).length}
-            </Text>
+            <Text style={styles.statValue}>{presentCount}</Text>
             <Text style={styles.statLabel}>Présences</Text>
           </TouchableOpacity>
         )}
@@ -92,7 +127,8 @@ export default function StudentDetailScreen({
           icon="book-outline"
           label="Notes"
           detail="Bulletins et évaluations"
-          onPress={() => navigation?.navigate("StudentNotes", { studentId: student.id })}
+          testID={STUDENT_SUB_SCREENS_TEST_IDS.openNotesButton}
+          onPress={() => openSubScreen("StudentNotes")}
         />
       )}
 
@@ -101,7 +137,8 @@ export default function StudentDetailScreen({
           icon="calendar-outline"
           label="Présences"
           detail="Suivi des absences"
-          onPress={() => navigation?.navigate("StudentPresences", { studentId: student.id })}
+          testID={STUDENT_SUB_SCREENS_TEST_IDS.openPresencesButton}
+          onPress={() => openSubScreen("StudentPresences")}
         />
       )}
 
@@ -109,8 +146,9 @@ export default function StudentDetailScreen({
         <StudentAction
           icon="card-outline"
           label="Paiements"
-          detail={`${payments.filter((item) => item.studentId === student.id).length} opération(s)`}
-          onPress={() => navigation?.navigate("StudentPayments", { studentId: student.id })}
+          detail={`${studentPayments.length} opération(s)`}
+          testID={STUDENT_SUB_SCREENS_TEST_IDS.openPaymentsButton}
+          onPress={() => openSubScreen("StudentPayments")}
         />
       )}
     </ScrollView>
@@ -121,12 +159,18 @@ type StudentActionProps = {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   detail: string;
+  testID?: string;
   onPress: () => void;
 };
 
-function StudentAction({ icon, label, detail, onPress }: StudentActionProps) {
+function StudentAction({ icon, label, detail, testID, onPress }: StudentActionProps) {
   return (
-    <TouchableOpacity style={styles.menuButton} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={styles.menuButton}
+      onPress={onPress}
+      activeOpacity={0.85}
+      testID={testID}
+    >
       <View style={styles.menuIcon}>
         <Ionicons name={icon} size={22} color="#2563EB" />
       </View>
@@ -144,6 +188,15 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 24,
     backgroundColor: "#F8FAFC",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
   },
   profileCard: {
     backgroundColor: "#FFFFFF",

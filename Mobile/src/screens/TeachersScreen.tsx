@@ -9,6 +9,7 @@ import {
   resolveTeacherCoursesForRecord,
 } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 
 export default function TeachersScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -20,8 +21,14 @@ export default function TeachersScreen({ navigation }: any) {
   const canUpdate = canMutateEntity(session, "teachers", "UPDATE");
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
-      <Text style={styles.title}>Enseignants</Text>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={contentStyle}
+      testID={NAVIGATION_TEST_IDS.teachersScreen}
+    >
+      <Text style={styles.title} testID={NAVIGATION_TEST_IDS.teachersTitle}>
+        Enseignants
+      </Text>
       <Text style={styles.subtitle}>Équipe pédagogique active</Text>
 
       {canCreate && (

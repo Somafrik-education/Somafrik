@@ -1,3 +1,4 @@
+import { View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
@@ -34,6 +35,7 @@ import {
 import PermissionsScreen from "../screens/PermissionsScreen";
 import ConfigurationScreen from "../screens/ConfigurationScreen";
 import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";
+import OfflineBanner from "../components/OfflineBanner";
 import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
@@ -115,7 +117,14 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function HomeTabs() {
-  return <BottomTabsNavigator/>;
+  return (
+    <View style={{ flex: 1 }}>
+      <OfflineBanner />
+      <View style={{ flex: 1 }}>
+        <BottomTabsNavigator />
+      </View>
+    </View>
+  );
 }
 
 export default function AppNavigator() {

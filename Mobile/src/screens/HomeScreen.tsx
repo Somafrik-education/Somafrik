@@ -30,13 +30,24 @@ import {
   scopedStudentsForSession,
   teacherScopedClassLabels,
 } from "../lib/establishment";
+import { HOME_TEST_IDS } from "../lib/loginScreenSpec";
+import { NAVIGATION_COPY, NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
-  const scrollContentStyle = [styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
   const { studentsData, paymentsData, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData, teachersData, assignmentsData, classesData } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
+  const scrollContentStyle = [
+    styles.scrollContent,
+    {
+      paddingBottom: scrollContentPaddingBottom,
+      paddingHorizontal: horizontalPadding,
+      maxWidth: contentMaxWidth,
+      alignSelf: "center",
+      width: "100%",
+    },
+  ];
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
   const currentSchool =
@@ -109,6 +120,7 @@ export default function HomeScreen({ navigation }: any) {
             activeOpacity={0.85}
             style={styles.teacherWelcomeCard}
             onPress={() => navigation.navigate("TeacherAttendance")}
+            testID={HOME_TEST_IDS.teacherDashboard}
           >
             <View>
               <Text style={styles.welcomeTitle}>Espace enseignant</Text>
@@ -263,6 +275,7 @@ export default function HomeScreen({ navigation }: any) {
             activeOpacity={0.85}
             style={styles.parentWelcomeCard}
             onPress={() => navigation.navigate("StudentNotes", { studentId: selectedStudentId })}
+            testID={HOME_TEST_IDS.parentDashboard}
           >
             <View>
               <Text style={styles.welcomeTitle}>
@@ -561,6 +574,7 @@ export default function HomeScreen({ navigation }: any) {
           activeOpacity={0.85}
           style={styles.welcomeCard}
           onPress={() => canOpenSchoolManagement && navigation.navigate("SchoolManagement")}
+          testID={isSchoolAdmin ? HOME_TEST_IDS.adminDashboard : undefined}
         >
           <View>
             <Text style={styles.welcomeTitle}>
@@ -575,7 +589,9 @@ export default function HomeScreen({ navigation }: any) {
 
         {/* Statistiques */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Vue d’ensemble</Text>
+          <Text style={styles.sectionTitle} testID={NAVIGATION_TEST_IDS.homeOverviewTitle}>
+            {NAVIGATION_COPY.homeOverview}
+          </Text>
           <Text style={styles.sectionLink}>Aujourd’hui</Text>
         </View>
 

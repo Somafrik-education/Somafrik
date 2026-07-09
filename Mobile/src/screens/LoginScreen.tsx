@@ -16,6 +16,17 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import { IdentifyResponse, changePassword, identifyAccount, login, LoginResponse } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  LOGIN_SCREEN_COPY,
+  LOGIN_TEST_IDS,
+  MIN_TOUCH_TARGET,
+  ERROR_MESSAGES,
+  canSubmitLogin,
+  mapLoginApiError,
+  resolveIdentifierKeyboardType,
+  resolveSecretKeyboardType,
+} from "../lib/loginScreenSpec";
+import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -33,6 +44,7 @@ export default function LoginScreen({ navigation, route }: Props) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { setSession } = useAuth();
 
   useEffect(() => {
@@ -43,6 +55,7 @@ export default function LoginScreen({ navigation, route }: Props) {
     }
 
     setIdentity(null);
+    setErrorMessage(null);
 
     if (normalizedIdentifier.length < 3) {
       return;
@@ -57,8 +70,12 @@ export default function LoginScreen({ navigation, route }: Props) {
           identifier: normalizedIdentifier,
         });
         setIdentity(result);
+        setErrorMessage(null);
       } catch {
         setIdentity(null);
+        if (normalizedIdentifier.length >= 3) {
+          setErrorMessage(ERROR_MESSAGES.invalidIdentifier);
+        }
       } finally {
         setIsIdentifying(false);
       }
@@ -69,16 +86,17 @@ export default function LoginScreen({ navigation, route }: Props) {
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
-      Alert.alert("Erreur", "Veuillez saisir votre identifiant et votre mot de passe.");
+      setErrorMessage(ERROR_MESSAGES.emptyFields);
       return;
     }
 
     if (!identity) {
-      Alert.alert("Compte introuvable", "Veuillez saisir un identifiant reconnu par l'établissement.");
+      setErrorMessage(ERROR_MESSAGES.invalidIdentifier);
       return;
     }
 
     setIsLoading(true);
+    setErrorMessage(null);
 
     try {
       const session = await login({
@@ -97,9 +115,8 @@ export default function LoginScreen({ navigation, route }: Props) {
 
       completeLogin(session);
     } catch (error) {
-      Alert.alert(
-        "Connexion impossible",
-        error instanceof Error ? error.message : "Veuillez réessayer"
+      setErrorMessage(
+        mapLoginApiError(error instanceof Error ? error.message : "", identity?.role),
       );
     } finally {
       setIsLoading(false);
@@ -160,57 +177,114 @@ export default function LoginScreen({ navigation, route }: Props) {
     }
   };
 
+  const loginReady = canSubmitLogin(identity, identifier, password, isLoading);
+  const identifierKeyboard = resolveIdentifierKeyboardType(identifier);
+  const secretKeyboard = resolveSecretKeyboardType(identity?.role);
+
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <View style={styles.schoolLogo}>
+    <SafeAreaView
+      style={styles.container}
+      edges={["top", "bottom"]}
+      testID={LOGIN_TEST_IDS.screen}
+      accessible
+      accessibilityLabel={MOBILE_ACCESSIBILITY_COPY.loginScreenLabel}
+    >
+      <View style={styles.schoolLogo} testID={LOGIN_TEST_IDS.schoolLogo}>
         {school.logoUrl ? (
           <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
         ) : (
           <Image source={somafrikLogo} style={styles.schoolLogoImage} />
         )}
       </View>
-      <Text style={styles.title}>{school.name}</Text>
+      <Text style={styles.title} testID={LOGIN_TEST_IDS.schoolName}>{school.name}</Text>
       <Text style={styles.subtitle}>{school.city} • {school.code}</Text>
 
+      <Text style={styles.instructionText} testID={LOGIN_TEST_IDS.instructionText}>
+        {LOGIN_SCREEN_COPY.identifierHint}
+      </Text>
+
       <TextInput
-        placeholder="Identifiant unique utilisateur"
+        placeholder={LOGIN_SCREEN_COPY.identifierPlaceholder}
         value={identifier}
-        onChangeText={setIdentifier}
+        onChangeText={(value) => {
+          setIdentifier(value);
+          setErrorMessage(null);
+        }}
         autoCapitalize="none"
+        keyboardType={identifierKeyboard}
+        textContentType={identifierKeyboard === "email-address" ? "emailAddress" : "username"}
+        autoComplete={identifierKeyboard === "email-address" ? "email" : "username"}
         style={styles.input}
         editable={!accessRole}
+        testID={LOGIN_TEST_IDS.identifierInput}
+        accessibilityLabel={LOGIN_SCREEN_COPY.identifierPlaceholder}
       />
 
       <View style={styles.roleRow}>
-        <Text style={styles.roleLabel}>Rôle détecté</Text>
-        {isIdentifying ? (
-          <ActivityIndicator size="small" color="#2563EB" />
-        ) : (
-          <Text style={[styles.roleBadge, !identity && styles.roleBadgeMuted]}>
-            {identity?.roleLabel ?? "En attente"}
+        <Text style={styles.roleLabel}>{LOGIN_SCREEN_COPY.roleLabel}</Text>
+        <View style={styles.roleBadgeWrap}>
+          {isIdentifying ? (
+            <ActivityIndicator size="small" color="#2563EB" style={styles.roleBadgeSpinner} />
+          ) : null}
+          <Text
+            style={[
+              styles.roleBadge,
+              !identity && styles.roleBadgeMuted,
+              isIdentifying && styles.roleBadgeHidden,
+            ]}
+            testID={LOGIN_TEST_IDS.roleBadge}
+          >
+            {identity?.roleLabel ?? LOGIN_SCREEN_COPY.rolePending}
           </Text>
-        )}
+        </View>
       </View>
 
       {identity && (
         <TextInput
-          placeholder={identity.role === "parent_student" || identity.role === "student" ? "PIN" : "Mot de passe"}
+          placeholder={
+            identity.role === "parent_student" || identity.role === "student"
+              ? LOGIN_SCREEN_COPY.pinPlaceholder
+              : LOGIN_SCREEN_COPY.passwordPlaceholder
+          }
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(value) => {
+            setPassword(value);
+            setErrorMessage(null);
+          }}
           secureTextEntry
+          keyboardType={secretKeyboard}
+          textContentType="password"
+          autoComplete="password"
           style={styles.input}
+          testID={LOGIN_TEST_IDS.passwordInput}
+          accessibilityLabel={
+            identity.role === "parent_student" || identity.role === "student"
+              ? LOGIN_SCREEN_COPY.pinPlaceholder
+              : LOGIN_SCREEN_COPY.passwordPlaceholder
+          }
         />
       )}
 
+      {errorMessage ? (
+        <View style={styles.errorBanner} testID={LOGIN_TEST_IDS.errorBanner} accessibilityRole="alert">
+          <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+
       <TouchableOpacity
-        style={[styles.loginButton, (!identity || isLoading) && styles.loginButtonDisabled]}
+        style={[styles.loginButton, !loginReady && styles.loginButtonDisabled]}
         onPress={handleLogin}
-        disabled={!identity || isLoading}
+        disabled={!loginReady}
+        testID={LOGIN_TEST_IDS.loginButton}
+        accessibilityRole="button"
+        accessibilityLabel={LOGIN_SCREEN_COPY.loginButton}
+        accessibilityState={{ disabled: !loginReady, busy: isLoading }}
       >
         {isLoading ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={styles.loginButtonText}>Se connecter</Text>
+          <Text style={styles.loginButtonText}>{LOGIN_SCREEN_COPY.loginButton}</Text>
         )}
       </TouchableOpacity>
 
@@ -232,7 +306,7 @@ export default function LoginScreen({ navigation, route }: Props) {
 
       <Modal visible={Boolean(pendingSession)} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={styles.passwordCard}>
+          <View style={styles.passwordCard} testID="login-password-change-modal">
             <Text style={styles.passwordTitle}>Nouveau mot de passe</Text>
             <Text style={styles.passwordHint}>
               Votre mot de passe temporaire a été accepté. Choisissez maintenant votre mot de passe personnel.
@@ -301,11 +375,21 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontWeight: "800",
     marginTop: 6,
-    marginBottom: 28,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  instructionText: {
+    width: "100%",
+    color: "#475569",
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginBottom: 14,
     textAlign: "center",
   },
   input: {
     width: "100%",
+    minHeight: MIN_TOUCH_TARGET,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     borderRadius: 14,
@@ -340,12 +424,47 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     backgroundColor: "#F1F5F9",
   },
+  roleBadgeWrap: {
+    position: "relative",
+    minWidth: 88,
+    minHeight: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roleBadgeSpinner: {
+    position: "absolute",
+  },
+  roleBadgeHidden: {
+    opacity: 0,
+  },
+  errorBanner: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    marginBottom: 14,
+  },
+  errorText: {
+    flex: 1,
+    color: "#B91C1C",
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 20,
+  },
   loginButton: {
     width: "100%",
+    minHeight: MIN_TOUCH_TARGET,
     backgroundColor: "#2563EB",
     padding: 15,
     borderRadius: 14,
     alignItems: "center",
+    justifyContent: "center",
   },
   loginButtonDisabled: {
     opacity: 0.55,

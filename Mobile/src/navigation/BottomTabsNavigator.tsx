@@ -11,6 +11,8 @@ import {
   type RoleTabDefinition,
 } from "./roleTabPreferences";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
+import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
+import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
 
 const Tab = createBottomTabNavigator();
 
@@ -57,9 +59,12 @@ export default function BottomTabsNavigator() {
         },
         tabBarStyle,
         tabBarItemStyle: {
+          flex: 1,
+          minWidth: 48,
+          minHeight: 48,
           height: 58,
           borderRadius: 18,
-          marginHorizontal: 2,
+          marginHorizontal: 1,
           paddingVertical: 5,
         },
         tabBarIcon: ({ focused }) => {
@@ -96,10 +101,34 @@ export default function BottomTabsNavigator() {
         },
       })}
     >
-      <Tab.Screen name="Accueil" component={HomeScreen} options={{ tabBarLabel: "Accueil" }} />
-      {visibleTabs.map((tab) => (
-        <Tab.Screen key={tab.tabName} name={tab.tabName} component={tab.component} />
-      ))}
+      <Tab.Screen
+        name="Accueil"
+        component={HomeScreen}
+        options={{
+          tabBarLabel: "Accueil",
+          tabBarButtonTestID: TAB_TEST_IDS.accueil,
+          tabBarAccessibilityLabel: "Accueil",
+        }}
+      />
+      {visibleTabs.map((tab) => {
+        const tabTestId = tabTestIdForTabName(tab.tabName) ?? tabTestIdForTabName(tab.label);
+        return (
+        <Tab.Screen
+          key={tab.tabName}
+          name={tab.tabName}
+          component={tab.component}
+          options={
+            tabTestId
+              ? {
+                  tabBarButtonTestID: tabTestId,
+                  tabBarLabel: tab.label,
+                  tabBarAccessibilityLabel: tab.label,
+                }
+              : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
+          }
+        />
+        );
+      })}
       {hiddenTabs.map((tab) => (
         <Tab.Screen
           key={`hidden-${tab.tabName}`}
@@ -108,7 +137,15 @@ export default function BottomTabsNavigator() {
           options={hiddenTabOptions}
         />
       ))}
-      <Tab.Screen name="Menu" component={MenuScreen} options={{ tabBarLabel: "Menu" }} />
+      <Tab.Screen
+        name="Menu"
+        component={MenuScreen}
+        options={{
+          tabBarLabel: "Menu",
+          tabBarButtonTestID: TAB_TEST_IDS.menu,
+          tabBarAccessibilityLabel: "Menu",
+        }}
+      />
     </Tab.Navigator>
   );
 }

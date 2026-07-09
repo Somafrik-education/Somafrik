@@ -4,6 +4,8 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RootStackParamList } from "../navigation/AppNavigator";
+import { WELCOME_SCREEN_COPY, WELCOME_TEST_IDS } from "../lib/welcomeScreenSpec";
+import { MIN_TOUCH_TARGET } from "../lib/mobileAccessibilitySpec";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Welcome">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -24,22 +26,46 @@ export default function WelcomeScreen({ navigation }: Props) {
   }, [buttonOffset, opacity, scale]);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <Animated.View style={[styles.logoBox, { opacity, transform: [{ scale }] }]}>
-        <Image source={somafrikLogo} style={styles.logoImage} />
+    <SafeAreaView
+      style={styles.container}
+      edges={["top", "bottom"]}
+      testID={WELCOME_TEST_IDS.screen}
+      accessibilityLabel="Écran d'accueil Somafrik"
+    >
+      <Animated.View
+        style={[styles.logoBox, { opacity, transform: [{ scale }] }]}
+        testID={WELCOME_TEST_IDS.logo}
+        accessibilityLabel="Logo Somafrik"
+      >
+        <Image
+          source={somafrikLogo}
+          style={styles.logoImage}
+          accessibilityIgnoresInvertColors
+        />
       </Animated.View>
-      <Animated.Text style={[styles.brand, { opacity }]}>Somafrik</Animated.Text>
-      <Animated.Text style={[styles.parentBrand, { opacity }]}>par Somafrik</Animated.Text>
-      <Animated.Text style={[styles.subtitle, { opacity }]}>
-        ERP scolaire mobile et tablette pour tous les rôles.
+      <Animated.Text
+        style={[styles.brand, { opacity }]}
+        testID={WELCOME_TEST_IDS.brand}
+        accessibilityRole="header"
+      >
+        {WELCOME_SCREEN_COPY.brandName}
+      </Animated.Text>
+      <Animated.Text style={[styles.parentBrand, { opacity }]} testID={WELCOME_TEST_IDS.parentBrand}>
+        {WELCOME_SCREEN_COPY.parentBrand}
+      </Animated.Text>
+      <Animated.Text style={[styles.subtitle, { opacity }]} testID={WELCOME_TEST_IDS.subtitle}>
+        {WELCOME_SCREEN_COPY.subtitle}
       </Animated.Text>
       <Animated.View style={{ transform: [{ translateY: buttonOffset }], opacity }}>
         <TouchableOpacity
           activeOpacity={0.86}
           style={styles.button}
+          testID={WELCOME_TEST_IDS.loginButton}
+          accessibilityRole="button"
+          accessibilityLabel={WELCOME_SCREEN_COPY.loginButtonLabel}
           onPress={() => navigation.navigate("RoleSelection")}
         >
-          <Text style={styles.buttonText}>Se connecter</Text>
+          <Text style={styles.buttonText}>{WELCOME_SCREEN_COPY.loginButtonLabel}</Text>
           <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
         </TouchableOpacity>
       </Animated.View>
@@ -84,10 +110,11 @@ const styles = StyleSheet.create({
     marginBottom: 34,
   },
   button: {
-    backgroundColor: "#2563EB",
+    backgroundColor: "#1D4ED8",
     borderRadius: 18,
     paddingHorizontal: 22,
     paddingVertical: 15,
+    minHeight: MIN_TOUCH_TARGET,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,

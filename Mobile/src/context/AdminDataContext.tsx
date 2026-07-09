@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   Announcement,
   AcademicManagementConfig,
@@ -78,6 +78,7 @@ type AdminDataContextValue = {
   requiresSchoolSelection: boolean;
   setActiveSchoolCode: (code: string) => void;
   syncStatus: "idle" | "syncing" | "synced" | "offline";
+  refreshBackOfficeState: () => Promise<void>;
   getItems: (entity: AdminEntity) => any[];
   createItem: (entity: AdminEntity, item: any) => void;
   updateItem: (entity: AdminEntity, item: any) => void;
@@ -335,6 +336,73 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshBackOfficeState = useCallback(async () => {
+    if (!session?.accessToken) {
+      return;
+    }
+
+    setSyncStatus("syncing");
+
+    try {
+      if (canSyncBackOfficeState(session.role, session.accessToken)) {
+        const payload = await getBackOfficeState();
+        applySyncedState(payload);
+        setSyncStatus("synced");
+        return;
+      }
+
+      const [
+        studentPayload,
+        classPayload,
+        coursePayload,
+        notePayload,
+        presencePayload,
+        academicConfigPayload,
+        assignmentPayload,
+        courseSchedulePayload,
+      ] = await Promise.all([
+        getStudents(),
+        getClasses(),
+        getCourses(),
+        getNotes(),
+        getPresences(),
+        getAcademicConfig(),
+        getAssignments(),
+        getCourseSchedules().catch(() => [] as unknown[]),
+      ]);
+
+      applyArray(studentPayload, setStudentsData);
+      applyArray(classPayload, setClassesData);
+      applyArray(coursePayload, setCoursesData);
+      applyArray(notePayload, setNotesData);
+      applyArray(presencePayload, setPresencesData);
+      applyArray(assignmentPayload, setAssignmentsData);
+      applyArray(courseSchedulePayload, setCourseSchedulesData);
+      setAcademicConfigData(academicConfigPayload as AcademicManagementConfig);
+      setSyncStatus("synced");
+    } catch {
+      setSyncStatus("offline");
+      throw new Error("Synchronisation impossible");
+    }
+  }, [session?.accessToken, session?.role, activeSchoolCode, session?.user?.schoolCode, session?.school?.code]);
+
+  useEffect(() => {
+    if (!session?.accessToken) {
+      return;
+    }
+
+    const handleOnline = () => {
+      refreshBackOfficeState().catch(() => null);
+    };
+
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("online", handleOnline);
+      return () => window.removeEventListener("online", handleOnline);
+    }
+
+    return undefined;
+  }, [session?.accessToken, refreshBackOfficeState]);
+
   useEffect(() => {
     if (!session) {
       return;
@@ -451,6 +519,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       requiresSchoolSelection,
       setActiveSchoolCode,
       syncStatus,
+      refreshBackOfficeState,
       getItems: (entity) => state[entity],
       createItem: (entity, item) => commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]),
       updateItem: (entity, item) =>
@@ -546,6 +615,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     scopedStateSnapshot,
     stateSnapshot,
     syncStatus,
+    refreshBackOfficeState,
   ]);
 
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;

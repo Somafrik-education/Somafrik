@@ -8,6 +8,8 @@ import { AdminEntity, useAdminData } from "../context/AdminDataContext";
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
+import { MENU_TEST_IDS } from "../lib/loginScreenSpec";
+import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 import {
   resolveTeacherAssignmentsForSession,
@@ -127,8 +129,11 @@ export default function MenuScreen() {
         { paddingBottom: scrollContentPaddingBottom, paddingHorizontal: horizontalPadding, maxWidth: contentMaxWidth, alignSelf: "center", width: "100%" },
       ]}
       showsVerticalScrollIndicator={false}
+      testID={NAVIGATION_TEST_IDS.menuScreen}
     >
-      <Text style={styles.title}>Menu</Text>
+      <Text style={styles.title} testID={NAVIGATION_TEST_IDS.menuTitle}>
+        Menu
+      </Text>
       <Text style={styles.userName}>{session?.user.name ?? "Utilisateur"}</Text>
 
       {isPlatformAdmin && <SchoolSelector />}
@@ -192,7 +197,13 @@ export default function MenuScreen() {
         ))}
       </View>
 
-      <TouchableOpacity style={styles.logout} onPress={handleLogout}>
+      <TouchableOpacity
+        style={styles.logout}
+        onPress={handleLogout}
+        testID={MENU_TEST_IDS.logoutButton}
+        accessibilityRole="button"
+        accessibilityLabel="Déconnexion"
+      >
         <Text style={styles.logoutText}>Déconnexion</Text>
       </TouchableOpacity>
     </ScrollView>
