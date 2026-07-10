@@ -224,13 +224,38 @@ export function scopedGrades(user: SessionUser | null, state: BackOfficeState): 
     students.map((row) => [normalize(String(row.name ?? "")), String(row.id ?? "")]),
   );
 
-  return allGrades(state)
+  const rows = allGrades(state)
     .map((grade) => {
       if (grade.studentId) return grade;
       const resolved = studentIdByName.get(normalize(grade.studentName));
       return resolved ? { ...grade, studentId: resolved } : grade;
     })
     .filter((grade) => grade.studentId && studentIds.has(grade.studentId));
+
+  return filterGradesForParentOrStudent(user?.role, rows, state.evaluations ?? []);
+}
+
+function isParentOrStudentRole(role?: string): boolean {
+  const key = normalize(String(role ?? ""));
+  return key.includes("parent") || key.includes("eleve") || key.includes("etudiant");
+}
+
+/** Notes visibles parent / élève : uniquement évaluations publiées. */
+export function filterGradesForParentOrStudent(
+  role: string | undefined,
+  grades: StudentGrade[],
+  evaluations: Evaluation[],
+): StudentGrade[] {
+  if (!isParentOrStudentRole(role)) return grades;
+  const publishedEvalIds = new Set(
+    evaluations
+      .filter((row) => row.active !== false && row.status === "Publiée")
+      .map((row) => String(row.id)),
+  );
+  return grades.filter((grade) => {
+    const evaluationId = String(grade.evaluationId ?? "");
+    return evaluationId && publishedEvalIds.has(evaluationId);
+  });
 }
 
 export function gradesForEvaluation(grades: StudentGrade[], evaluationId: string): StudentGrade[] {

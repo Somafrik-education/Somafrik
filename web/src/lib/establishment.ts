@@ -114,6 +114,46 @@ export function teacherScopedClassNames(
   return names.size ? names : null;
 }
 
+/**
+ * Libellés affichables des classes affectées à l'enseignant (casse / accents préservés).
+ * Les clés internes de teacherScopedClassNames sont normalisées — ne pas les utiliser en UI.
+ */
+export function listTeacherScopedClassLabels(
+  user: SessionUser | null,
+  state: BackOfficeState,
+  students: Row[] = [],
+  classes: Row[] = [],
+): string[] | null {
+  const teacherClasses = teacherScopedClassNames(user, state);
+  if (!teacherClasses?.size) return null;
+
+  const labels = new Map<string, string>();
+  const addLabel = (value: unknown) => {
+    const label = String(value ?? "").trim();
+    const key = normalize(label);
+    if (key && teacherClasses.has(key)) {
+      labels.set(key, label);
+    }
+  };
+
+  students.forEach((student) => addLabel(student.className));
+  classes.forEach((row) => addLabel(row.name ?? row.className));
+  ((state.assignments ?? []) as Row[]).forEach((assignment) => addLabel(assignment.className));
+  ((state.classes ?? []) as Row[]).forEach((row) => addLabel(row.name ?? row.className));
+
+  teacherClasses.forEach((key) => {
+    if (labels.has(key)) return;
+    const fromClasses = ((state.classes ?? []) as Row[]).find(
+      (row) => normalize(row.name ?? row.className) === key,
+    );
+    if (fromClasses) {
+      addLabel(fromClasses.name ?? fromClasses.className);
+    }
+  });
+
+  return [...labels.values()].sort((left, right) => left.localeCompare(right, "fr"));
+}
+
 export function scopedStudents(user: SessionUser | null, state: BackOfficeState): Row[] {
   const schoolCode = user?.schoolCode;
   const rows = (state.students ?? []) as Row[];

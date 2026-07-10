@@ -12,7 +12,8 @@ import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
-import { scopedClasses, scopedStudents, teacherScopedClassNames } from "../lib/establishment";
+import { classNamesMatch } from "../lib/classRules";
+import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
 import {
   allGrades,
   appendGradeAuditLog,
@@ -72,10 +73,8 @@ export function GradesEvaluationsPage() {
   const students = scopedStudents(scopeUser, state) as Record<string, unknown>[];
   const classes = scopedClasses(scopeUser, state, students) as Record<string, unknown>[];
   const classNames = useMemo(() => {
-    const teacherClasses = teacherScopedClassNames(scopeUser, state);
-    if (teacherClasses?.size) {
-      return [...teacherClasses].sort((left, right) => left.localeCompare(right, "fr"));
-    }
+    const teacherLabels = listTeacherScopedClassLabels(scopeUser, state, students, classes);
+    if (teacherLabels?.length) return teacherLabels;
     return uniqueClassNames(students, classes);
   }, [scopeUser, state, students, classes]);
   const code = String(activeSchoolCode ?? scopeUser?.schoolCode ?? "").trim();
@@ -449,7 +448,7 @@ export function GradesEvaluationsPage() {
               options={[
                 { value: "", label: "Choisir une évaluation…" },
                 ...filteredEvaluations
-                  .filter((evaluation) => !selectedClass || evaluation.className === selectedClass)
+                  .filter((evaluation) => !selectedClass || classNamesMatch(evaluation.className, selectedClass))
                   .map((evaluation) => ({
                     value: evaluation.id,
                     label: `${evaluation.title} — ${evaluation.subject}`,

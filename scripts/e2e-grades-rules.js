@@ -32,17 +32,32 @@ function teacherCanAccessEvaluation(user, evaluation, state) {
   }
   if (role.includes("enseignant") || role.includes("teacher")) {
     const teacher = resolveTeacherRecordForUser(user, state);
-    if (!teacher) return false;
-    const teacherName = `${String(teacher.firstName ?? "")} ${String(teacher.lastName ?? "")}`.trim();
-    if (evaluation.teacherId && String(evaluation.teacherId) === String(teacher.id)) return true;
-    if (evaluation.teacherName && normalize(evaluation.teacherName) === normalize(teacherName)) return true;
+    const teacherName = teacher
+      ? `${String(teacher.firstName ?? "")} ${String(teacher.lastName ?? "")}`.trim()
+      : "";
+    const userId = String(user.id ?? "").trim();
+
+    if (evaluation.teacherId) {
+      if (teacher?.id && String(evaluation.teacherId) === String(teacher.id)) return true;
+      const owner = (state.teachers ?? []).find((row) => String(row.id) === String(evaluation.teacherId));
+      if (owner && userId && String(owner.userId) === userId) return true;
+    }
+    if (evaluation.teacherName && teacherName && normalize(evaluation.teacherName) === normalize(teacherName)) {
+      return true;
+    }
+
     const assignments = state.assignments ?? [];
-    return assignments.some(
-      (assignment) =>
-        normalize(String(assignment.className ?? "")) === normalize(evaluation.className) &&
-        normalize(String(assignment.subject ?? assignment.course ?? "")) === normalize(evaluation.subject) &&
-        String(assignment.teacherId ?? "") === String(teacher.id),
-    );
+    return assignments.some((assignment) => {
+      const classOk = normalize(String(assignment.className ?? "")) === normalize(evaluation.className);
+      const subjectOk =
+        normalize(String(assignment.subject ?? assignment.course ?? "")) === normalize(evaluation.subject);
+      if (!classOk || !subjectOk) return false;
+      if (teacher?.id && String(assignment.teacherId ?? "") === String(teacher.id)) return true;
+      const assignedTeacher = (state.teachers ?? []).find(
+        (row) => String(row.id) === String(assignment.teacherId ?? ""),
+      );
+      return assignedTeacher ? String(assignedTeacher.userId ?? "") === userId : false;
+    });
   }
   return false;
 }

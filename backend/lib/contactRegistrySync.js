@@ -411,6 +411,8 @@ module.exports = {
   linkContactToOperationalRecord,
   linkContactToUser,
   isPlatformUser,
+  studentLinkedToContacts,
+  teacherLinkedToContacts,
   collectStudentKeys,
   collectTeacherKeys,
   collectUserKeys,

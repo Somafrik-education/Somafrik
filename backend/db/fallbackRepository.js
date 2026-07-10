@@ -14,6 +14,7 @@ class FallbackRepository {
     this.ready = false;
     this.sessions = new Map();
     this.auditLogs = [];
+    this.idempotencyRecords = new Map();
     this.backOfficeState = null;
     this.notes = clone(seedData.notes);
     this.presences = clone(seedData.presences);
@@ -170,6 +171,27 @@ class FallbackRepository {
       this.notes = clone(payload.notes);
     }
     return this.getBackOfficeState();
+  }
+
+  async findIdempotencyRecord(cacheId) {
+    const record = this.idempotencyRecords.get(String(cacheId ?? ""));
+    if (!record) return null;
+    if (new Date(record.expires_at).getTime() <= Date.now()) {
+      this.idempotencyRecords.delete(String(cacheId ?? ""));
+      return null;
+    }
+    return record;
+  }
+
+  async saveIdempotencyRecord({ cacheId, routeKey, principalId, statusCode, responseBody, expiresAt }) {
+    this.idempotencyRecords.set(String(cacheId ?? ""), {
+      cache_id: String(cacheId ?? ""),
+      route_key: String(routeKey ?? ""),
+      principal_id: String(principalId ?? ""),
+      status_code: Number(statusCode ?? 200),
+      response_body: clone(responseBody ?? {}),
+      expires_at: expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
   }
 
   async getAcademicConfig(schoolCode) {

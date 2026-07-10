@@ -7,6 +7,10 @@ export function normalizeClassName(value: unknown) {
   return normalize(String(value ?? ""));
 }
 
+export function classNamesMatch(left: unknown, right: unknown): boolean {
+  return normalizeClassName(left) === normalizeClassName(right);
+}
+
 function scopedSchoolStudents(state: BackOfficeState, schoolCode?: string): Row[] {
   const rows = (state.students ?? []) as Row[];
   if (!schoolCode || schoolCode === "*") return rows;

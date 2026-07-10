@@ -47,7 +47,6 @@ async function main() {
   pushResult(results, "1. Admin établissement connecté", "200", schoolAdminIdentifier, true);
 
   let state = await getState(adminToken);
-  const superState = await getState(superToken);
   const scopeUser = (state.users ?? []).find(
     (user) => normalize(user.identifier) === normalize(schoolAdminIdentifier),
   );
@@ -58,7 +57,7 @@ async function main() {
     state = await putStatePatch(adminToken, academicSetup.patch);
   }
 
-  const className = pickUnusedClassName(superState, schoolCode);
+  const className = pickUnusedClassName(state, schoolCode);
   const schoolYear = resolveSchoolYear();
   const { levels, tracks } = getSchoolAcademicLists(state, schoolCode);
 

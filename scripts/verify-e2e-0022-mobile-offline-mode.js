@@ -46,7 +46,7 @@ const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1
 
 async function probe(url) {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
     return response.ok || response.status === 304;
   } catch {
     return false;

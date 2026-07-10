@@ -5,12 +5,13 @@ const assert = require("assert");
 
 const base = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
 
-async function request(path, { method = "GET", token, body } = {}) {
+async function request(path, { method = "GET", token, body, headers = {} } = {}) {
   const response = await fetch(`${base}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -21,7 +22,7 @@ async function request(path, { method = "GET", token, body } = {}) {
   } catch {
     data = text;
   }
-  return { status: response.status, data };
+  return { status: response.status, body: data, data };
 }
 
 async function login(identifier, password, schoolCode) {
@@ -181,7 +182,14 @@ async function setupActiveSchool(superToken, stamp) {
     mustChangePassword: false,
     permissions: [],
   };
-  await putState(superToken, { users: [schoolAdmin] });
+  const current = await getState(superToken);
+  const nextUsers = [
+    ...(current.users ?? []).filter(
+      (user) => normalize(user.identifier) !== normalize(schoolAdminIdentifier),
+    ),
+    schoolAdmin,
+  ];
+  await putStatePatch(superToken, { users: nextUsers });
   const adminToken = await login(schoolAdminIdentifier, ADMIN_PASSWORD, schoolCode);
   return { schoolCode, schoolName, schoolAdminIdentifier, adminToken };
 }

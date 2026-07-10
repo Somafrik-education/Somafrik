@@ -135,6 +135,18 @@ function classBelongsToSchool(item, schoolCode, className) {
   return !itemSchool || itemSchool === normalize(schoolCode);
 }
 
+function scopedSchoolCourses(state, schoolCode) {
+  const rows = state.courses ?? [];
+  if (!schoolCode || schoolCode === "*") return rows;
+  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+}
+
+function scopedSchoolCourseSchedules(state, schoolCode) {
+  const rows = state.courseSchedules ?? [];
+  if (!schoolCode || schoolCode === "*") return rows;
+  return rows.filter((row) => normalize(row.schoolCode) === normalize(schoolCode));
+}
+
 function validateClassDeletion(className, state, schoolCode) {
   const target = normalizeClassName(className);
   if (!target) return "Le nom de la classe est requis.";
@@ -145,14 +157,14 @@ function validateClassDeletion(className, state, schoolCode) {
     return `Suppression refusée : ${enrolled.length} élève(s) encore inscrit(s) dans cette classe.`;
   }
 
-  const courses = (state.courses ?? []).filter(
+  const courses = scopedSchoolCourses(state, schoolCode).filter(
     (course) => normalizeClassName(course.className) === target,
   );
   if (courses.length) {
     return `Suppression refusée : ${courses.length} cours lié(s) à cette classe. Retirez-les d'abord.`;
   }
 
-  const courseSchedules = (state.courseSchedules ?? []).filter(
+  const courseSchedules = scopedSchoolCourseSchedules(state, schoolCode).filter(
     (slot) => normalizeClassName(slot.className) === target,
   );
   if (courseSchedules.length) {
@@ -340,10 +352,14 @@ function pickUnusedClassName(state, schoolCode) {
   const { classNames } = getSchoolAcademicLists(state, schoolCode);
   const existing = filterSchoolClassRecords(state.classes ?? [], schoolCode);
   const taken = new Set(existing.map((row) => normalizeClassName(row.name)).filter(Boolean));
-  for (const name of classNames) {
+  const candidates = [
+    ...classNames,
+    `E2E-${Date.now().toString(36).toUpperCase()}`,
+    `E2E-${Date.now()}`,
+  ];
+  for (const name of candidates) {
     const key = normalizeClassName(name);
     if (!key || taken.has(key)) continue;
-    // validateClassDeletion vérifie les cours/élèves globaux par nom (comportement UI).
     if (validateClassDeletion(String(name).trim(), state, schoolCode)) continue;
     return String(name).trim();
   }

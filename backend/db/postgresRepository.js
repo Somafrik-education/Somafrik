@@ -2670,6 +2670,35 @@ class PostgresRepository {
     if (status === "PARTIEL") return "partial";
     return "pending";
   }
+
+  async findIdempotencyRecord(cacheId) {
+    await this.init();
+    const row = await this.pool.query(
+      "SELECT cache_id, status_code, response_body, expires_at FROM idempotency_keys WHERE cache_id = $1 LIMIT 1",
+      [String(cacheId ?? "")],
+    );
+    return row.rows[0] ?? null;
+  }
+
+  async saveIdempotencyRecord({ cacheId, routeKey, principalId, statusCode, responseBody, expiresAt }) {
+    await this.init();
+    await this.pool.query(
+      `INSERT INTO idempotency_keys (cache_id, route_key, principal_id, status_code, response_body, expires_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+       ON CONFLICT (cache_id) DO UPDATE SET
+         status_code = EXCLUDED.status_code,
+         response_body = EXCLUDED.response_body,
+         expires_at = EXCLUDED.expires_at`,
+      [
+        String(cacheId ?? ""),
+        String(routeKey ?? ""),
+        String(principalId ?? ""),
+        Number(statusCode ?? 200),
+        JSON.stringify(responseBody ?? {}),
+        expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      ],
+    );
+  }
 }
 
 module.exports = { PostgresRepository };

@@ -10,7 +10,7 @@ import { PrintButton } from "../components/ui/PrintButton";
 import { useToast } from "../components/ui/Toast";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import { canManagePresences } from "../lib/permissions";
-import { scopedClasses, scopedStudents, teacherScopedClassNames } from "../lib/establishment";
+import { scopedClasses, scopedStudents, listTeacherScopedClassLabels, teacherScopedClassNames } from "../lib/establishment";
 import { normalize } from "../lib/format";
 import {
   type AttendanceStatus,
@@ -92,17 +92,10 @@ export function PresencesPage() {
   const isTeacherRestricted = Boolean(teacherClasses?.size);
 
   const classNames = useMemo(() => {
-    if (teacherClasses?.size) {
-      const labels = new Map<string, string>();
-      students.forEach((student) => {
-        const label = String(student.className ?? "").trim();
-        const key = normalize(label);
-        if (key && teacherClasses.has(key)) labels.set(key, label);
-      });
-      return [...labels.values()].sort((left, right) => left.localeCompare(right, "fr"));
-    }
+    const teacherLabels = listTeacherScopedClassLabels(scopeUser, state, students, classes);
+    if (teacherLabels?.length) return teacherLabels;
     return uniqueClassNames(students, classes.map((row) => String(row.name ?? "")));
-  }, [teacherClasses, students, classes]);
+  }, [scopeUser, state, students, classes, teacherClasses]);
 
   // Élèves de l'établissement non couverts par une carte de classe (classe vide/inconnue).
   // Non exposé aux enseignants (portée restreinte à leurs classes affectées).

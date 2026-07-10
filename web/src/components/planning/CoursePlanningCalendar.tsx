@@ -6,6 +6,7 @@ import {
 } from "../../lib/coursePlanning";
 import {
   formatRangeLabel,
+  getDefaultPlanningCalendarView,
   getViewDays,
   shiftAnchorDate,
   VIEW_LABELS,
@@ -58,7 +59,7 @@ function CoursePlanningCalendarInner({
   onEventMove,
   onEventResize,
 }: CoursePlanningCalendarProps) {
-  const [view, setView] = useState<PlanningCalendarView>("work_week");
+  const [view, setView] = useState<PlanningCalendarView>(() => getDefaultPlanningCalendarView());
   const [date, setDate] = useState(() => initialAnchorDate ?? new Date());
 
   useEffect(() => {

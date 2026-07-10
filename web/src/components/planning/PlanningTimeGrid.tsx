@@ -171,6 +171,18 @@ export function PlanningTimeGrid({
     setPreview(null);
   }, [eventsKey, setDragState]);
 
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body || !days.some((day) => isToday(day))) return;
+    const minutes = minutesFromMidnight(new Date());
+    const scrollTop = Math.max(
+      0,
+      ((minutes - PLANNING_HOUR_START * 60) / PLANNING_SLOT_MINUTES) * PLANNING_ROW_HEIGHT -
+        PLANNING_ROW_HEIGHT * 2,
+    );
+    body.scrollTop = scrollTop;
+  }, [days.map((day) => day.toDateString()).join("|")]);
+
   const getColumnRects = useCallback(() => {
     return columnRefs.current.filter(Boolean).map((node) => node!.getBoundingClientRect());
   }, []);

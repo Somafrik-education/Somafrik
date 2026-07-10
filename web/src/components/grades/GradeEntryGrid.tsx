@@ -9,6 +9,7 @@ import {
   gradesForEvaluation,
   upsertStudentGrade,
 } from "../../lib/evaluations";
+import { classNamesMatch } from "../../lib/classRules";
 import { formatStudentName } from "../../lib/gradeBook";
 
 type StudentRow = Record<string, unknown>;
@@ -35,7 +36,7 @@ export function GradeEntryGrid({
   const classStudents = useMemo(
     () =>
       students
-        .filter((student) => String(student.className ?? "") === evaluation.className)
+        .filter((student) => classNamesMatch(student.className, evaluation.className))
         .sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b), "fr")),
     [students, evaluation.className],
   );

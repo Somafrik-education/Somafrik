@@ -267,6 +267,7 @@ async function main() {
     ],
     presences: [...seededPresences, ...(state.presences ?? [])],
   });
+  const gradeRulesState = state;
   const expectedAssignedClasses = getTeacherAssignedClasses(state, schoolCode, teacherUser, teacherRecord);
   pushResult(results, "3. Enseignant affecté (6ème A / Math)", CLASS_ASSIGNED, assignment.className, true);
   pushResult(
@@ -321,14 +322,19 @@ async function main() {
   const scopedClasses = filterRowsByAssignedClasses(teacherClasses, expectedAssignedClasses, {
     nameField: "name",
   });
+  const uniqueScopedClasses = [
+    ...new Map(
+      scopedClasses.map((row) => [normalize(row.name ?? row.className), row]),
+    ).values(),
+  ];
   pushResult(
     results,
     "7. Classes visibles (uniquement affectées)",
     CLASS_ASSIGNED,
-    scopedClasses.map((row) => row.name ?? row.className).join(", ") || "—",
+    uniqueScopedClasses.map((row) => row.name ?? row.className).join(", ") || "—",
     classesRes.status === 200 &&
-      scopedClasses.length === 1 &&
-      !scopedClasses.some((row) => normalize(row.name) === normalize(CLASS_OTHER)),
+      uniqueScopedClasses.length === 1 &&
+      !uniqueScopedClasses.some((row) => normalize(row.name) === normalize(CLASS_OTHER)),
   );
 
   const studentsRes = await request("/students", { token: teacherToken });
@@ -374,7 +380,8 @@ async function main() {
   // Création évaluation (règles métier) + persistance + saisie notes API
   state = await getState(adminToken);
   const storedTeacher =
-    (state.teachers ?? []).find((row) => String(row.userId) === String(teacherUser.id)) ?? teacherRecord;
+    (gradeRulesState.teachers ?? []).find((row) => String(row.userId) === String(teacherUser.id)) ??
+    teacherRecord;
   const teacherSessionUser = {
     id: teacherUser.id,
     identifier: teacherUser.identifier,
@@ -385,7 +392,7 @@ async function main() {
   };
 
   const evalSession = buildGradeEntrySession({
-    state,
+    state: gradeRulesState,
     author: teacherSessionUser,
     evaluationInput: {
       schoolCode,
@@ -422,7 +429,7 @@ async function main() {
     },
     teacherSessionUser,
   );
-  const foreignDenied = teacherCanAccessEvaluation(teacherSessionUser, foreignEval, state) === false;
+  const foreignDenied = teacherCanAccessEvaluation(teacherSessionUser, foreignEval, gradeRulesState) === false;
   pushResult(
     results,
     "10. Évaluation créée (classe affectée)",

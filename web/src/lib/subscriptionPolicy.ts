@@ -17,7 +17,12 @@ export function normalizeSubscriptionPlan(plan?: string): SubscriptionPlanName {
   const value = String(plan ?? "").trim();
   if (value === "Premium") return "Premium";
   if (value === "Essentiel") return "Essentiel";
+  if (value === "Essai gratuit") return "Essai gratuit";
   return "Standard";
+}
+
+export function isTrialSubscriptionPlan(plan?: string): boolean {
+  return String(plan ?? "").trim() === "Essai gratuit";
 }
 
 export function resolveSchoolCountryCode(
@@ -80,6 +85,15 @@ export function getPlanPricing(
   country?: Country | null,
 ): { plan: SubscriptionPlanName; monthlyPrice: number; annualPrice: number; currency: string } {
   const planName = normalizeSubscriptionPlan(plan);
+  if (isTrialSubscriptionPlan(planName)) {
+    const policy = resolveCountrySubscriptionPolicy(country);
+    return {
+      plan: planName,
+      monthlyPrice: 0,
+      annualPrice: 0,
+      currency: policy.currency ?? GLOBAL_SUBSCRIPTION_POLICY.currency ?? "USD",
+    };
+  }
   const policy = resolveCountrySubscriptionPolicy(country);
   const pricing = policy.plans[planName];
   return {

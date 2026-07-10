@@ -62,11 +62,13 @@ function buildTeacherFromUser(user, existing) {
 
   const resolvedIdentifier = String(user.identifier ?? ids.identifier);
   const resolvedPublicId = String(user.publicId ?? ids.publicId);
+  const contactId = String(user.contactId ?? existing?.contactId ?? "").trim();
 
   return {
     ...(existing ?? {}),
     id: String(existing?.id ?? `TEACHER-${Date.now()}`),
     userId: user.id,
+    contactId: contactId || undefined,
     publicId: resolvedPublicId,
     identifier: resolvedIdentifier,
     schoolCode,
@@ -81,6 +83,21 @@ function buildTeacherFromUser(user, existing) {
     assignments: Array.isArray(existing?.assignments) ? existing.assignments : [],
     assignedClasses: Array.isArray(existing?.assignedClasses) ? existing.assignedClasses : [],
   };
+}
+
+function linkTeacherToContact(contacts = [], user, teacher) {
+  const contactId = String(user?.contactId ?? teacher?.contactId ?? "").trim();
+  const teacherId = String(teacher?.id ?? "").trim();
+  if (!contactId || !teacherId) return contacts;
+
+  return contacts.map((contact) => {
+    if (String(contact.id ?? "") !== contactId) return contact;
+    return {
+      ...contact,
+      teacherId,
+      userId: user?.id ?? contact.userId,
+    };
+  });
 }
 
 class UserTeacherSyncService {
@@ -107,12 +124,21 @@ class UserTeacherSyncService {
 
   syncTeachersFromUserAccounts(state = {}) {
     let teachers = Array.isArray(state.teachers) ? [...state.teachers] : [];
+    let contacts = Array.isArray(state.contacts) ? [...state.contacts] : [];
     const users = Array.isArray(state.users) ? state.users : [];
     for (const user of users) {
       if (!isTeacherUserRole(user.role)) continue;
       teachers = this.upsertTeacherFromUser(teachers, user);
+      const index = teachers.findIndex((teacher) => teacherMatchesUser(teacher, user));
+      if (index < 0) continue;
+      const teacher = teachers[index];
+      const contactId = String(user.contactId ?? teacher.contactId ?? "").trim();
+      if (contactId) {
+        teachers[index] = { ...teacher, contactId };
+        contacts = linkTeacherToContact(contacts, user, teachers[index]);
+      }
     }
-    return teachers;
+    return { teachers, contacts };
   }
 }
 

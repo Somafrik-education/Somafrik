@@ -252,6 +252,21 @@ export function generateTemporaryPassword(): string {
   return `SF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
+function generateUserRecordId(users: UserAccount[]): string {
+  const existing = new Set(users.map((user) => String(user.id ?? "").trim()).filter(Boolean));
+  let attempt =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  while (existing.has(attempt)) {
+    attempt =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+  return attempt;
+}
+
 function findSchoolInScope(state: BackOfficeState, session: Session, schoolCode?: string) {
   const code = schoolCode ?? getDefaultSchoolCode(session, state);
   return state.schools.find((item) => normalize(item.code) === normalize(code));
@@ -316,6 +331,7 @@ export function buildNewUserDraft(
     session.user.role === COUNTRY_ADMIN_ROLE && role === SCHOOL_ADMIN_ROLE;
 
   return {
+    id: generateUserRecordId(state.users),
     firstName: "",
     lastName: "",
     role,

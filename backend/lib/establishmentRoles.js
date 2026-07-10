@@ -31,6 +31,7 @@ module.exports = {
   SUPER_ADMIN_ROLES,
   ESTABLISHMENT_BACKOFFICE_ROLES,
   PLATFORM_BACKOFFICE_ROLES,
+  WEB_PLATFORM_DEMO_ROLES,
   canAccessBackOfficeRole,
   canAccessWebPlatformRole,
   isEstablishmentBackOfficeRole,

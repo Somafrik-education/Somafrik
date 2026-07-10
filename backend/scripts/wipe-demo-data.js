@@ -34,7 +34,10 @@ function resolveDatabaseUrl() {
 
 const TABLES = [
   "sessions",
+  "idempotency_keys",
   "audit_logs",
+  "payment_reminders",
+  "student_fee_obligations",
   "backoffice_state",
   "notifications",
   "announcements",

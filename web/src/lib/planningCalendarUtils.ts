@@ -28,6 +28,12 @@ export const VIEW_LABELS: Record<PlanningCalendarView, string> = {
 
 export const VIEW_ORDER: PlanningCalendarView[] = ["day", "work_week", "week", "month"];
 
+/** Vue par défaut : semaine en cours (lun–ven), ou 7 jours le week-end pour inclure aujourd'hui. */
+export function getDefaultPlanningCalendarView(date = new Date()): PlanningCalendarView {
+  const weekday = date.getDay();
+  return weekday === 0 || weekday === 6 ? "week" : "work_week";
+}
+
 export function toValidDate(value: string | Date): Date {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? new Date() : date;

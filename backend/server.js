@@ -39,6 +39,7 @@ const { repairOrphanSchools } = require("./lib/repairOrphanSchools");
 const { ensureSubscriptionModuleState } = require("./services/subscriptionModuleService");
 const { EstablishmentService } = require("./services/establishmentService");
 const { UnpaidService } = require("./services/unpaidService");
+const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");
 const schoolSubscriptionAccessService = require("./services/schoolSubscriptionAccessService");
 
 const establishmentService = new EstablishmentService();
@@ -55,6 +56,8 @@ const roleGovernanceService = new RoleGovernanceService();
 const pedagogyGovernanceService = new PedagogyGovernanceService();
 const userTeacherSyncService = new UserTeacherSyncService();
 let auditService = new AuditService(repository);
+let idempotencyService = new IdempotencyService(repository);
+app.locals.idempotencyService = idempotencyService;
 
 app.disable("x-powered-by");
 app.use(appSecurityHeaders);
@@ -458,20 +461,22 @@ app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
-  const { notes, students } = await getAuthoritativeBackOfficeState();
+  const { notes, students, evaluations } = await getAuthoritativeBackOfficeState();
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
   if (!student) {
     return res.json([]);
   }
   const studentIds = buildScopedStudentIdSet([student]);
-  res.json(notes.filter((note) => studentIds.has(String(note.studentId ?? ""))));
+  const scopedNotes = notes.filter((note) => studentIds.has(String(note.studentId ?? "")));
+  res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
 app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
-  const { notes, students } = await getAuthoritativeBackOfficeState();
+  const { notes, students, evaluations } = await getAuthoritativeBackOfficeState();
   const scopedStudents = tenantScopeService.filterRows(students, req.principal);
   const studentIds = buildScopedStudentIdSet(scopedStudents);
-  res.json(notes.filter((note) => studentIds.has(String(note.studentId ?? ""))));
+  const scopedNotes = notes.filter((note) => studentIds.has(String(note.studentId ?? "")));
+  res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
 app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
@@ -489,50 +494,90 @@ app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
-  assertCanManageNotes(req.principal);
-  const saved = await repository.upsertGrade(req.body ?? {}, req.principal);
-  await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
-  res.status(201).json(saved);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/notes",
+    principal: req.principal,
+    handler: async () => {
+      assertCanManageNotes(req.principal);
+      const state = await getAuthoritativeBackOfficeState();
+      const body = req.body ?? {};
+      const { assertNoteWrite } = require("./services/dataIntegrityService");
+      assertNoteWrite(state, body);
+      let saved;
+      try {
+        await ensureRepositoryBackOfficeSnapshot(state);
+        saved = await repository.upsertGrade(body, req.principal);
+      } catch (error) {
+        const message = String(error?.message ?? "");
+        const status = error?.statusCode ?? error?.status;
+        if (
+          (status === 404 || status === 400) &&
+          (message.includes("introuvable") || message.includes("Eleve") || message.includes("Matiere"))
+        ) {
+          saved = await saveNotesViaBackOfficeState(state, body, req.principal);
+        } else {
+          throw error;
+        }
+      }
+      await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
+      return { statusCode: 201, body: saved };
+    },
+  });
 }));
 
 app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_presence"), asyncHandler(async (req, res) => {
-  assertCanManagePresences(req.principal);
-  const state = await getAuthoritativeBackOfficeState();
-  const body = req.body ?? {};
-  const batchClassName = String(body.className ?? "").trim();
-  const items = (Array.isArray(body.items) ? body.items : []).map((item) => {
-    const student = findStudent(state.students ?? [], item.studentId);
-    return {
-      ...item,
-      studentId: student?.matricule ?? student?.publicId ?? student?.id ?? item.studentId,
-      className: String(item.className ?? batchClassName ?? student?.className ?? "").trim(),
-      schoolCode: String(item.schoolCode ?? student?.schoolCode ?? req.principal.schoolCode ?? "")
-        .trim()
-        .toUpperCase(),
-    };
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/presences",
+    principal: req.principal,
+    handler: async () => {
+      assertCanManagePresences(req.principal);
+      const state = await getAuthoritativeBackOfficeState();
+      const body = req.body ?? {};
+      const batchClassName = String(body.className ?? "").trim();
+      const items = (Array.isArray(body.items) ? body.items : []).map((item) => {
+        const student = findStudent(state.students ?? [], item.studentId);
+        return {
+          ...item,
+          studentId: student?.matricule ?? student?.publicId ?? student?.id ?? item.studentId,
+          className: String(item.className ?? batchClassName ?? student?.className ?? "").trim(),
+          schoolCode: String(item.schoolCode ?? student?.schoolCode ?? req.principal.schoolCode ?? "")
+            .trim()
+            .toUpperCase(),
+        };
+      });
+
+      const { assertPresenceWrite } = require("./services/dataIntegrityService");
+      for (const item of items) {
+        assertPresenceWrite(state, item, { skipDuplicateCheck: false });
+      }
+
+      await ensureRepositoryBackOfficeSnapshot(state);
+
+      let saved;
+      try {
+        saved = await repository.upsertAttendanceBatch({ ...body, items }, req.principal);
+      } catch (error) {
+        const message = String(error?.message ?? "");
+        const status = error?.statusCode ?? error?.status;
+        if (status === 404 && message.includes("introuvable")) {
+          saved = await savePresencesViaBackOfficeState(state, items);
+        } else {
+          throw error;
+        }
+      }
+
+      await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
+        count: saved.length,
+        className: req.body?.className,
+        date: req.body?.date,
+      });
+      return { statusCode: 201, body: saved };
+    },
   });
-
-  await ensureRepositoryBackOfficeSnapshot(state);
-
-  let saved;
-  try {
-    saved = await repository.upsertAttendanceBatch({ ...body, items }, req.principal);
-  } catch (error) {
-    const message = String(error?.message ?? "");
-    const status = error?.statusCode ?? error?.status;
-    if (status === 404 && message.includes("introuvable")) {
-      saved = await savePresencesViaBackOfficeState(state, items);
-    } else {
-      throw error;
-    }
-  }
-
-  await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
-    count: saved.length,
-    className: req.body?.className,
-    date: req.body?.date,
-  });
-  res.status(201).json(saved);
 }));
 
 app.get("/api/students/:id/report", requireAuth, asyncHandler(async (req, res) => {
@@ -679,6 +724,35 @@ app.get("/api/payments", requireAuth, requirePermission("GET /api/payments"), as
   sendList(res, result, req.query, ["studentName", "className", "status", "method"]);
 }));
 
+app.post("/api/payments", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/payments",
+    principal: req.principal,
+    handler: async () => {
+      const body = req.body ?? {};
+      const required = ["studentId", "feeType", "amount", "method", "date"];
+      const missing = required.filter((field) => !String(body[field] ?? "").trim() && body[field] !== 0);
+      if (missing.length) {
+        throw new BusinessError(400, `Champs obligatoires manquants : ${missing.join(", ")}`);
+      }
+      const amount = Number(body.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new BusinessError(400, "Le montant doit être strictement positif.");
+      }
+
+      const state = await getAuthoritativeBackOfficeState();
+      const { applyAtomicPayment } = require("./services/paymentTransactionService");
+      const { payment, nextState } = applyAtomicPayment(state, body, req.principal);
+      await ensureRepositoryBackOfficeSnapshot(state);
+      await repository.saveBackOfficeState(nextState);
+      await auditService.record(req, "create_payment", "payment", payment.id, payment);
+      return { statusCode: 201, body: payment };
+    },
+  });
+}));
+
 app.get("/api/announcements", requireAuth, asyncHandler(async (req, res) => {
   const { announcements } = await getAuthoritativeBackOfficeState();
   res.json(tenantScopeService.filterRows(announcements, req.principal));
@@ -734,7 +808,7 @@ app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST 
   const { school, state: nextState } = establishmentService.create(req.body ?? {}, state, req.principal, {
     force: Boolean(req.body?.force),
   });
-  const saved = await saveEstablishmentState(nextState);
+  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "create_establishment", "school", school.code, { name: school.name });
   res.status(201).json({ school, state: scopeBackOfficeState(saved, req.principal) });
 }));
@@ -747,7 +821,7 @@ app.post("/api/backoffice/establishments/import", requireAuth, requirePermission
     req.principal,
     { force: Boolean(req.body?.force) },
   );
-  const saved = await saveEstablishmentState(nextState);
+  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "import_establishments", "school", "bulk", {
     created: created.length,
     errors: errors.length,
@@ -755,10 +829,18 @@ app.post("/api/backoffice/establishments/import", requireAuth, requirePermission
   res.status(201).json({ created, errors, count: created.length });
 }));
 
+app.post("/api/backoffice/import/students/validate", requireAuth, requirePermission("POST /api/backoffice/import/students/validate"), asyncHandler(async (req, res) => {
+  const state = await getAuthoritativeBackOfficeState();
+  const { validateStudentImportRows } = require("./services/importValidationService");
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  const report = validateStudentImportRows(rows, state);
+  res.json(report);
+}));
+
 app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const { school, state: nextState } = establishmentService.update(req.params.code, req.body ?? {}, state, req.principal);
-  const saved = await saveEstablishmentState(nextState);
+  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "update_establishment", "school", school.code);
   res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
 }));
@@ -766,7 +848,7 @@ app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission
 app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const { school, state: nextState } = establishmentService.activate(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState);
+  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "activate_establishment", "school", school.code);
   res.json({ school });
 }));
@@ -774,7 +856,7 @@ app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requireP
 app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const { school, state: nextState } = establishmentService.suspend(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState);
+  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "suspend_establishment", "school", school.code);
   res.json({ school });
 }));
@@ -782,7 +864,7 @@ app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePe
 app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermission("DELETE /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const { school, state: nextState } = establishmentService.softDelete(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState);
+  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "delete_establishment", "school", school.code);
   res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
 }));
@@ -818,7 +900,7 @@ app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, req
     req.body ?? {},
     { force: Boolean(req.body?.force) },
   );
-  const saved = await saveEstablishmentState(nextState);
+  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
     channel: reminder.channel,
     summary: reminder.summary,
@@ -833,11 +915,16 @@ app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
-  assertBackOfficeManager(req.principal);
-  const currentState = await getAuthoritativeBackOfficeState();
   const rawBody = req.body ?? {};
-  const requestedState = sanitizeBackOfficeState(rawBody);
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
+  assertBackOfficeWriter(req.principal, touchedKeys);
+  const currentState = await getAuthoritativeBackOfficeState();
+  const requestedState = sanitizeBackOfficeState(rawBody);
+  const { validateWritePayload } = require("./services/dataIntegrityService");
+  const integrityCheck = validateWritePayload(currentState, requestedState, touchedKeys);
+  if (!integrityCheck.ok) {
+    throw new BusinessError(400, integrityCheck.errors[0]?.message ?? "Données incohérentes.");
+  }
   const nextState = mergeScopedBackOfficeState(
     currentState,
     requestedState,
@@ -876,7 +963,7 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     throw new BusinessError(409, introducedScheduleConflicts[0].message);
   }
 
-  const saved = await repository.saveBackOfficeState(nextStateWithCourses);
+  const saved = await saveEstablishmentState(nextStateWithCourses, currentState, req.principal);
   await auditCriticalStateChanges(req, currentState, saved);
   await auditService.record(req, "sync_backoffice_state", "backoffice_state", "default", {
     schools: saved.schools?.length ?? 0,
@@ -1322,6 +1409,65 @@ function assertBackOfficeManager(principal) {
   }
 }
 
+function getWebPlatformWritableEntities(principal) {
+  const permissions = new Set(principal?.permissions ?? []);
+  const allowed = new Set(["auditLog"]);
+
+  if (permissions.has("ALL_PRIVILEGES") || permissions.has("COUNTRY_PRIVILEGES")) {
+    backOfficeDeletableEntities.forEach((entity) => allowed.add(entity));
+    allowed.add("rolePermissions");
+    allowed.add("academicConfigs");
+    allowed.add("dashboardChartConfig");
+    return allowed;
+  }
+
+  if (
+    permissions.has("Notes:CREATE") ||
+    permissions.has("Notes:UPDATE") ||
+    permissions.has("Modifier notes")
+  ) {
+    allowed.add("notes");
+    allowed.add("evaluations");
+  }
+
+  if (
+    permissions.has("Présences:CREATE") ||
+    permissions.has("Présences:UPDATE") ||
+    permissions.has("Faire appel") ||
+    permissions.has("Gérer appels")
+  ) {
+    allowed.add("presences");
+  }
+
+  if (permissions.has("Messages:CREATE") || permissions.has("Messages:UPDATE")) {
+    allowed.add("messages");
+  }
+
+  return allowed;
+}
+
+function assertBackOfficeWriter(principal, touchedKeys = []) {
+  const { canAccessBackOfficeRole, canAccessWebPlatformRole } = require("./lib/establishmentRoles");
+  if (!principal) {
+    throw new BusinessError(403, "Accès plateforme non autorisé");
+  }
+
+  if (canAccessBackOfficeRole(principal.role)) {
+    return;
+  }
+
+  if (principal.authSource === "backoffice" && canAccessWebPlatformRole(principal.role)) {
+    const allowedEntities = getWebPlatformWritableEntities(principal);
+    const forbidden = touchedKeys.filter((key) => !allowedEntities.has(key));
+    if (forbidden.length) {
+      throw new BusinessError(403, "Permission insuffisante pour modifier ces données.");
+    }
+    return;
+  }
+
+  throw new BusinessError(403, "Accès plateforme non autorisé");
+}
+
 function assertCanManageNotes(principal) {
   const permissions = new Set(principal?.permissions ?? []);
   if (
@@ -1353,8 +1499,11 @@ function assertCanManagePresences(principal) {
   throw new BusinessError(403, "Permission insuffisante pour enregistrer l'appel.");
 }
 
-async function saveEstablishmentState(nextState) {
-  const sanitized = sanitizeBackOfficeState(nextState);
+async function saveEstablishmentState(nextState, currentState = null, principal = null) {
+  const current = currentState ?? (await getAuthoritativeBackOfficeState());
+  const { enrichStateWithValidationAlerts } = require("./lib/validationNotifications");
+  const enriched = enrichStateWithValidationAlerts(current, nextState, principal);
+  const sanitized = sanitizeBackOfficeState(enriched);
   const hydrated = ensureSubscriptionModuleState(hydrateSubscriptionsFromSchools(sanitized));
   return repository.saveBackOfficeState(hydrated);
 }
@@ -1669,7 +1818,7 @@ function hydrateSubscriptionsFromSchools(state = {}) {
 
     const existing = subscriptionBySchool.get(schoolCode);
     if (existing) {
-      if (!String(existing.plan ?? "").trim() && String(school.subscriptionPlan ?? "").trim()) {
+      if (String(school.subscriptionPlan ?? "").trim()) {
         existing.plan = school.subscriptionPlan;
       }
       if (
@@ -1711,7 +1860,12 @@ function normalizeSubscriptionPlanName(plan) {
   const value = String(plan ?? "").trim();
   if (value === "Premium") return "Premium";
   if (value === "Essentiel") return "Essentiel";
+  if (value === "Essai gratuit") return "Essai gratuit";
   return "Standard";
+}
+
+function isTrialSubscriptionPlan(plan) {
+  return normalizeSubscriptionPlanName(plan) === "Essai gratuit";
 }
 
 function resolveSchoolCountryCodeFromRow(school = {}) {
@@ -1771,7 +1925,9 @@ function applySubscriptionPolicyToState(state = {}) {
       const country = findCountryForSubscription(countries, school, subscription);
       const policy = resolveCountrySubscriptionPolicy(country);
       const plan = normalizeSubscriptionPlanName(subscription.plan ?? school?.subscriptionPlan);
-      const pricing = policy.plans[plan] ?? policy.plans.Standard;
+      const pricing = isTrialSubscriptionPlan(plan)
+        ? { monthlyPrice: 0, annualPrice: 0 }
+        : policy.plans[plan] ?? policy.plans.Standard;
 
       return {
         ...subscription,
@@ -2292,14 +2448,24 @@ function mergeScopedBackOfficeState(
     scopedCurrent,
     touchedKeys,
   );
-  const syncedTeachers =
+  const mergedContacts = mergeScopedEntityIfTouched(
+    "contacts",
+    current,
+    scopedRequested,
+    scopedCurrent,
+    touchedKeys,
+  );
+  const teacherSync =
     usersTouched || teachersTouched
       ? userTeacherSyncService.syncTeachersFromUserAccounts({
           ...current,
           users: mergedUsers,
           teachers: mergedTeachers,
+          contacts: mergedContacts,
         })
-      : current.teachers;
+      : null;
+  const syncedTeachers = teacherSync?.teachers ?? current.teachers;
+  const syncedContacts = teacherSync?.contacts ?? mergedContacts;
   const mergedCourses = mergeScopedEntityIfTouched(
     "courses",
     current,
@@ -2318,7 +2484,7 @@ function mergeScopedBackOfficeState(
     subscriptions: principal.role === "Admin School"
       ? current.subscriptions
       : mergeScopedEntityIfTouched("subscriptions", current, scopedRequested, scopedCurrent, touchedKeys),
-    contacts: mergeScopedEntityIfTouched("contacts", current, scopedRequested, scopedCurrent, touchedKeys),
+    contacts: syncedContacts,
     relations: mergeScopedEntityIfTouched("relations", current, scopedRequested, scopedCurrent, touchedKeys),
     notifications: mergeGlobalEntityIfTouched("notifications", current, requested, touchedKeys),
     students: mergeScopedEntityIfTouched("students", current, scopedRequested, scopedCurrent, touchedKeys),
@@ -2620,6 +2786,7 @@ function getEditableEntitiesForPrincipal(principal) {
     "feeTariffHistory",
     "presences",
     "notes",
+    "evaluations",
     "exams",
     "bulletins",
     "documents",
@@ -3214,8 +3381,13 @@ async function ensureRepositoryBackOfficeSnapshot(state) {
 }
 
 async function savePresencesViaBackOfficeState(state, items = []) {
+  const { assertPresenceWrite } = require("./services/dataIntegrityService");
   const currentPresences = Array.isArray(state.presences) ? state.presences : [];
   const nextPresences = [...currentPresences];
+
+  for (const item of items) {
+    assertPresenceWrite({ ...state, presences: nextPresences }, item, { skipDuplicateCheck: false });
+  }
 
   for (const item of items) {
     const studentKey = String(item.studentId ?? "").trim();
@@ -3265,6 +3437,95 @@ function buildScopedStudentIdSet(students = []) {
     }
   }
   return ids;
+}
+
+function isParentOrStudentPrincipalRole(role = "") {
+  const key = String(role ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  return key.includes("parent") || key.includes("eleve") || key.includes("etudiant");
+}
+
+/** Parent / élève : uniquement les notes liées à une évaluation publiée. */
+function filterNotesForPrincipal(notes = [], evaluations = [], principal = {}) {
+  if (!isParentOrStudentPrincipalRole(principal.role)) {
+    return notes;
+  }
+  const publishedEvalIds = new Set(
+    (evaluations ?? [])
+      .filter((row) => row.active !== false && row.status === "Publiée")
+      .map((row) => String(row.id)),
+  );
+  return (notes ?? []).filter((note) => {
+    const evaluationId = String(note.evaluationId ?? "");
+    return evaluationId && publishedEvalIds.has(evaluationId);
+  });
+}
+
+async function saveNotesViaBackOfficeState(state, payload = {}, principal = {}) {
+  const { assertNoteWrite } = require("./services/dataIntegrityService");
+  const { assertNoteOptimisticLock, bumpNoteVersion } = require("./lib/noteConcurrency");
+  assertNoteWrite(state, payload);
+
+  const value = Number(payload.value);
+  const scale = Number(payload.scale ?? 20);
+  if (!payload.studentId || !payload.subject || Number.isNaN(value) || value < 0 || value > scale) {
+    throw new BusinessError(400, "Note invalide");
+  }
+
+  const student = findStudent(state.students ?? [], payload.studentId);
+  if (!student) {
+    throw new BusinessError(404, "Eleve introuvable");
+  }
+
+  const studentKeys = buildScopedStudentIdSet([student]);
+  const evaluationId = String(payload.evaluationId ?? "").trim();
+  const currentNotes = Array.isArray(state.notes) ? state.notes : [];
+  const existingIndex = currentNotes.findIndex(
+    (note) =>
+      String(note.evaluationId ?? "") === evaluationId &&
+      studentKeys.has(String(note.studentId ?? "")),
+  );
+  const existingNote = existingIndex >= 0 ? currentNotes[existingIndex] : null;
+  assertNoteOptimisticLock(existingNote, payload.version);
+
+  const now = new Date().toISOString();
+  let entry = {
+    id: existingIndex >= 0 ? currentNotes[existingIndex].id : payload.id ?? `NOTE-${Date.now()}`,
+    schoolCode: String(payload.schoolCode ?? student.schoolCode ?? principal.schoolCode ?? "").trim(),
+    studentId: String(student.id ?? student.matricule ?? payload.studentId),
+    studentName: `${student.firstName ?? ""} ${student.lastName ?? student.name ?? ""}`.trim(),
+    subject: String(payload.subject),
+    className: String(payload.className ?? student.className ?? ""),
+    period: String(payload.period ?? ""),
+    value,
+    scale,
+    coefficient: Number(payload.coefficient ?? payload.evaluationCoefficient ?? 1),
+    evaluationCoefficient: Number(payload.evaluationCoefficient ?? payload.coefficient ?? 1),
+    evaluationId: evaluationId || undefined,
+    gradeStatus: payload.gradeStatus ?? "Saisie",
+    authorId: principal.sub ?? payload.authorId,
+    enteredAt: now,
+    date: payload.date ?? now.slice(0, 10),
+    audit: existingIndex >= 0 ? currentNotes[existingIndex].audit ?? [] : [],
+    version: 1,
+  };
+
+  if (existingIndex >= 0) {
+    entry = bumpNoteVersion({ ...currentNotes[existingIndex], ...entry }, principal);
+  }
+
+  const nextNotes = [...currentNotes];
+  if (existingIndex >= 0) {
+    nextNotes[existingIndex] = entry;
+  } else {
+    nextNotes.unshift(entry);
+  }
+
+  await repository.saveBackOfficeState({ ...state, notes: nextNotes });
+  return entry;
 }
 
 function asyncHandler(handler) {
@@ -3369,6 +3630,8 @@ async function initRepository() {
   const { repository: active } = await initializeRepository({ repository });
   repository = active;
   auditService = new AuditService(repository);
+  idempotencyService = new IdempotencyService(repository);
+  app.locals.idempotencyService = idempotencyService;
 }
 
 function warnIfUnsafeConfiguration() {

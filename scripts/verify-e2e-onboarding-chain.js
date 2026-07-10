@@ -12,43 +12,16 @@
  *   SOMAFRIK_API_URL=http://127.0.0.1:5000/api node scripts/verify-e2e-onboarding-chain.js
  */
 const assert = require("assert");
+const {
+  request,
+  login,
+  SUPERADMIN_ID,
+  SUPERADMIN_PASSWORD,
+  normalize,
+} = require("./e2e-api-helpers");
 
-const base = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
 const PENDING = "En attente de validation";
 const COUNTRY = "RDC";
-const SUPERADMIN_ID = process.env.SOMAFRIK_E2E_SUPERADMIN_ID || process.env.SOMAFRIK_TEST_SUPERADMIN_ID || "superadmin";
-const SUPERADMIN_PASSWORD =
-  process.env.SOMAFRIK_E2E_SUPERADMIN_PASSWORD ||
-  process.env.SOMAFRIK_TEST_SUPERADMIN_PASSWORD ||
-  "E2eTest!2026";
-
-async function request(path, { method = "GET", token, body } = {}) {
-  const response = await fetch(`${base}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await response.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-  return { status: response.status, data };
-}
-
-async function login(identifier, password, schoolCode) {
-  const res = await request("/backoffice/login", {
-    method: "POST",
-    body: { identifier, password, ...(schoolCode ? { schoolCode } : {}) },
-  });
-  assert.strictEqual(res.status, 200, `login ${identifier}: ${JSON.stringify(res.data)}`);
-  return res.data.accessToken;
-}
 
 async function loginExpect(identifier, password, schoolCode, expectedStatus) {
   const res = await request("/backoffice/login", {

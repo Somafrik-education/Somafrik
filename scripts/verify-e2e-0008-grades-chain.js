@@ -12,6 +12,7 @@ const {
   request,
   login,
   getState,
+  putState,
   putStatePatch,
   newId,
   normalize,
@@ -235,6 +236,7 @@ async function main() {
   };
   const studentUser = {
     id: newId("USERS"),
+    contactId: studentRows[0].contactId,
     firstName: studentRows[0].firstName,
     lastName: studentRows[0].lastName ?? studentRows[0].name,
     role: "Élève / Étudiant",
@@ -358,14 +360,30 @@ async function main() {
   let allNotes = gradesToLegacyNotes(allGrades);
   let allEvaluations = [publishedEval, draftEval];
 
-  state = await putStatePatch(adminToken, {
+  // Parcours UI : l'enseignant enregistre évaluations + notes via PUT /backoffice/state (patch partiel)
+  state = await putState(teacherToken, {
     evaluations: allEvaluations,
     notes: allNotes,
   });
-  state = await getState(adminToken);
   pushResult(
     results,
-    "7. Évaluation créée + notes saisies",
+    "7. Enseignant crée évaluation + saisit notes (PUT état)",
+    "200",
+    "200",
+    true,
+  );
+  state = await getState(adminToken);
+  const adminSeesEval = (state.evaluations ?? []).some((row) => row.id === publishedEval.id);
+  pushResult(
+    results,
+    "7b. Évaluation persistée côté admin",
+    publishedEval.id,
+    adminSeesEval ? publishedEval.id : "—",
+    adminSeesEval,
+  );
+  pushResult(
+    results,
+    "7c. Notes saisies persistées",
     "2 notes publiées + 1 brouillon",
     `${publishedSession.grades.length}+${draftGradeFlow.grades.length}`,
     publishedSession.grades.length === 2,
@@ -392,11 +410,9 @@ async function main() {
   pushResult(
     results,
     "8. Enseignant enregistre via API",
-    "201 ou saisie état",
+    "201",
     String(apiNoteRes.status),
-    apiNoteRes.status === 201 ||
-      apiNoteRes.status === 200 ||
-      (apiNoteRes.status === 404 && publishedSession.grades.length >= 2),
+    apiNoteRes.status === 201,
   );
 
   // Note > barème refusée (API)
@@ -455,7 +471,13 @@ async function main() {
 
   // Moyennes recalculées (coef évaluation + coef matière)
   state = await getState(adminToken);
-  const notesForAverage = (state.notes ?? []).filter((row) => studentIds.includes(String(row.studentId)));
+  const student1Row = (state.students ?? []).find((row) => row.id === studentIds[0]);
+  const student1Keys = new Set(
+    [studentIds[0], student1Row?.matricule, student1Row?.publicId]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean),
+  );
+  const notesForAverage = allNotes.filter((row) => student1Keys.has(String(row.studentId)));
   const gradeBook = new GradeBookService({
     students: state.students ?? [],
     notes: notesForAverage,
@@ -508,6 +530,23 @@ async function main() {
     !parentSeesDraftBefore,
   );
 
+  // API parent : notes non publiées masquées
+  const parentToken = await login(parentPhone, parentPassword, schoolCode);
+  const parentNotesBeforeApi = await request(`/students/${encodeURIComponent(studentIds[0])}/notes`, {
+    token: parentToken,
+  });
+  const parentBeforeCount = Array.isArray(parentNotesBeforeApi.data) ? parentNotesBeforeApi.data.length : 0;
+  const parentSeesDraftApi = (parentNotesBeforeApi.data ?? []).some(
+    (row) => row.evaluationId === draftEval.id,
+  );
+  pushResult(
+    results,
+    "15b. Parent API : pas de note brouillon",
+    "0 brouillon",
+    parentSeesDraftApi ? "brouillon visible" : String(parentBeforeCount),
+    !parentSeesDraftApi,
+  );
+
   // Publication de l'évaluation principale
   const validated = validateEvaluationGrades(publishedEval, allGrades, { id: schoolAdminIdentifier, role: "Admin School" });
   publishedEval = publishEvaluation(validated.evaluation, { id: schoolAdminIdentifier, role: "Admin School" });
@@ -524,18 +563,19 @@ async function main() {
     parentSeesPublished,
   );
 
-  // API parent + élève
-  const parentToken = await login(parentPhone, parentPassword, schoolCode);
+  // API parent + élève (après publication)
   const parentNotesApi = await request(`/students/${encodeURIComponent(studentIds[0])}/notes`, {
     token: parentToken,
   });
-  const parentApiCount = Array.isArray(parentNotesApi.data) ? parentNotesApi.data.length : 0;
+  const parentApiNotes = Array.isArray(parentNotesApi.data) ? parentNotesApi.data : [];
+  const parentApiCount = parentApiNotes.length;
+  const parentApiOnlyPublished = parentApiNotes.every((row) => row.evaluationId === publishedEval.id);
   pushResult(
     results,
-    "17. Parent consulte notes API",
-    ">=1",
+    "17. Parent consulte notes API (publiées uniquement)",
+    "1 publiée",
     String(parentApiCount),
-    parentNotesApi.status === 200 && parentApiCount >= 1,
+    parentNotesApi.status === 200 && parentApiCount >= 1 && parentApiOnlyPublished,
   );
 
   let studentApiOk = false;

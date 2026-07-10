@@ -94,6 +94,17 @@ async function main() {
     OK: stored.status === PENDING && stored.validationStatus === PENDING,
   });
 
+  const superStateAfterCreate = await request("/backoffice/state", { token: superToken });
+  const validationAlert = (superStateAfterCreate.data.notifications ?? []).find(
+    (notification) => notification.id === `NOTIF-VAL-USER-${newUser.id}`,
+  );
+  results.push({
+    Etape: "Alerte Super Admin (notification)",
+    Attendu: "Non lu",
+    Obtenu: validationAlert?.status ?? "absente",
+    OK: Boolean(validationAlert) && validationAlert.status === "Non lu",
+  });
+
   // 4) Connexion impossible tant que non validé
   const blocked = await request("/backoffice/login", {
     method: "POST",
@@ -151,6 +162,17 @@ async function main() {
     Attendu: "Actif/Validé",
     Obtenu: `${stored.status}/${stored.validationStatus}`,
     OK: stored.status === "Actif" && stored.validationStatus === "Validé",
+  });
+
+  const superStateAfterValidate = await request("/backoffice/state", { token: superToken });
+  const resolvedAlert = (superStateAfterValidate.data.notifications ?? []).find(
+    (notification) => notification.id === `NOTIF-VAL-USER-${newUser.id}`,
+  );
+  results.push({
+    Etape: "Alerte marquée lue après validation",
+    Attendu: "Lu",
+    Obtenu: resolvedAlert?.status ?? "absente",
+    OK: resolvedAlert?.status === "Lu",
   });
 
   // 7) Connexion désormais possible

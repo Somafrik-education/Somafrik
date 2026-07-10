@@ -426,6 +426,18 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  cache_id TEXT PRIMARY KEY,
+  route_key TEXT NOT NULL,
+  principal_id TEXT NOT NULL DEFAULT '',
+  status_code INTEGER NOT NULL,
+  response_body JSONB NOT NULL DEFAULT '{}'::jsonb,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_keys(expires_at);
+
 CREATE INDEX IF NOT EXISTS idx_schools_country_id ON schools(country_id);
 CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);
 CREATE INDEX IF NOT EXISTS idx_students_school_id ON students(school_id);

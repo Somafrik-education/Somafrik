@@ -186,11 +186,6 @@ export function CoursePlanningPage() {
     return schoolPeriods.find((row) => row.name === selectedPeriodName) ?? null;
   }, [schoolPeriods, selectedPeriodName]);
 
-  const calendarAnchorDate = useMemo(() => {
-    const parsed = parsePeriodDate(activePeriod?.startDate ?? defaultPeriod.periodStart);
-    return parsed ?? new Date();
-  }, [activePeriod?.startDate, defaultPeriod.periodStart]);
-
   const classes = useMemo(
     () =>
       classNamesKeyFromState(state, scopeUser)
@@ -776,7 +771,6 @@ export function CoursePlanningPage() {
             className={selectedClassName || "—"}
             events={selectedClassName ? events : []}
             legendSubjects={selectedClassName ? subjectOptions : []}
-            initialAnchorDate={calendarAnchorDate}
             editable={editable && Boolean(selectedClassName)}
             onSelectSlot={handleSelectSlot}
             onEventClick={handleEventClick}

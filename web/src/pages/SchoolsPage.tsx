@@ -261,6 +261,7 @@ export function SchoolsPage() {
           auditSchool("Création admin établissement", school, draft.identifier),
         ),
       });
+      await refresh();
       showToast(`Administrateur créé — identifiant : ${draft.identifier}`, "success");
     } catch {
       showToast("Échec de la création de l'administrateur", "error");

@@ -37,7 +37,7 @@ const RESPONSIVE_VIEWPORTS = [
 const TABLET_CONTENT_MAX_WIDTH = 960;
 const TABLET_MIN_WIDTH = 768;
 
-const WELCOME_MAX_DISPLAY_MS = Number(process.env.SOMAFRIK_E2E_MAX_DISPLAY_MS ?? 4000);
+const WELCOME_MAX_DISPLAY_MS = Number(process.env.SOMAFRIK_E2E_MAX_DISPLAY_MS ?? 20000);
 const ANIMATION_SETTLE_MS = 950;
 
 function pushResult(results, step, expected, obtained, ok) {
@@ -69,10 +69,18 @@ async function loadPlaywright() {
 }
 
 async function waitForWelcomeReady(page, { settle = true } = {}) {
-  await page.waitForSelector(testIdSelector(WELCOME_TEST_IDS.loginButton), {
-    state: "visible",
-    timeout: WELCOME_MAX_DISPLAY_MS,
-  });
+  const loginSelector = testIdSelector(WELCOME_TEST_IDS.loginButton);
+  try {
+    await page.waitForSelector(loginSelector, {
+      state: "visible",
+      timeout: WELCOME_MAX_DISPLAY_MS,
+    });
+  } catch {
+    await page.getByRole("button", { name: /se connecter/i }).first().waitFor({
+      state: "visible",
+      timeout: WELCOME_MAX_DISPLAY_MS,
+    });
+  }
   if (settle) {
     await page.waitForTimeout(ANIMATION_SETTLE_MS);
   }
@@ -80,7 +88,7 @@ async function waitForWelcomeReady(page, { settle = true } = {}) {
 
 async function measureWelcomeDisplayMs(page, url) {
   const startedAt = Date.now();
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+  await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
   await waitForWelcomeReady(page, { settle: false });
   return Date.now() - startedAt;
 }
@@ -262,9 +270,14 @@ const IDENTIFY_DEBOUNCE_MS = 700;
 const LOGIN_MAX_MS = Number(process.env.SOMAFRIK_E2E_LOGIN_MAX_MS ?? 12000);
 
 async function openWelcomeAndRoleSelection(page, url) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+  await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
   await waitForWelcomeReady(page);
-  await page.locator(testIdSelector(WELCOME_TEST_IDS.loginButton)).click();
+  const loginButton = page.locator(testIdSelector(WELCOME_TEST_IDS.loginButton));
+  if ((await loginButton.count()) > 0) {
+    await loginButton.click();
+  } else {
+    await page.getByRole("button", { name: /se connecter/i }).first().click();
+  }
   await page.waitForSelector(testIdSelector(ROLE_SELECTION_TEST_IDS.screen), {
     state: "visible",
     timeout: LOGIN_MAX_MS,

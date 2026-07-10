@@ -54,7 +54,7 @@ export interface Country {
   subscriptionPolicy?: CountrySubscriptionPolicy;
 }
 
-export type SubscriptionPlanName = "Essentiel" | "Standard" | "Premium";
+export type SubscriptionPlanName = "Essentiel" | "Standard" | "Premium" | "Essai gratuit";
 
 export interface SubscriptionPlanPricing {
   monthlyPrice: number;

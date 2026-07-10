@@ -9,6 +9,12 @@
     "dev:nodemon": "nodemon server.js",
     "verify:establishment": "node scripts/verify-establishment-e2e.js",
     "verify:planning-conflicts": "node scripts/verify-planning-conflicts.js",
+    "test": "node --test tests/**/*.test.js",
+    "test:auth": "node --test tests/auth.test.js",
+    "test:roles": "node --test tests/roles-permissions.test.js",
+    "test:integrity": "node --test tests/data-integrity.test.js",
+    "test:unit": "node --test tests/unit-priority.test.js",
+    "test:all": "node --test tests/**/*.test.js",
     "postinstall": "node ./node_modules/puppeteer/install.mjs"
   },
   "dependencies": {

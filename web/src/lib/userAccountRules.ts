@@ -49,7 +49,8 @@ export function findDuplicateLoginIdentifier(
   const excludeId = String(candidate.id ?? "");
 
   return users.find((user) => {
-    if (!user?.id || user.id === excludeId || isUserAccountDeleted(user)) return false;
+    if (isUserAccountDeleted(user)) return false;
+    if (excludeId && user.id === excludeId) return false;
     const sameSchool =
       !schoolCode ||
       !user.schoolCode ||

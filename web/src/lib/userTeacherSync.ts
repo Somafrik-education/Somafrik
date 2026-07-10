@@ -42,11 +42,13 @@ function buildTeacherRow(user: UserAccount, existing?: Row): Row {
 
   const lastName = String(user.lastName ?? "").trim();
   const firstName = String(user.firstName ?? "").trim();
+  const contactId = String(user.contactId ?? existing?.contactId ?? "").trim();
 
   return {
     ...(existing ?? {}),
     id: String(existing?.id ?? newTeacherId()),
     userId: user.id,
+    contactId: contactId || undefined,
     publicId: String(user.publicId ?? ids.publicId),
     identifier: String(user.identifier ?? ids.identifier),
     schoolCode,

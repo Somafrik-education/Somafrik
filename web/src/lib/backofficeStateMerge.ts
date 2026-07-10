@@ -4,14 +4,42 @@ import { dedupeAssignments } from "./pedagogySync";
 
 
 
-type Row = Record<string, unknown> & { id?: string; schoolCode?: string };
-
-
+type Row = Record<string, unknown> & {
+  id?: string;
+  schoolCode?: string;
+  identifier?: string;
+  publicId?: string;
+};
 
 function rowId(row: Row): string {
-
   return String(row.id ?? "");
+}
 
+function userIdentityKey(row: Row): string {
+  const school = normalizeSchoolCode(row.schoolCode) || "*";
+  const identity = String(row.id ?? row.publicId ?? row.identifier ?? "").trim().toLowerCase();
+  return identity ? `${school}|${identity}` : "";
+}
+
+function mergeUsersByIdentity<T extends Row>(prev: T[] = [], remote: T[] = []): T[] {
+  const map = new Map<string, T>();
+  for (const row of prev) {
+    const key = userIdentityKey(row);
+    if (key) map.set(key, row);
+  }
+  for (const row of remote) {
+    const key = userIdentityKey(row);
+    if (key) map.set(key, row);
+  }
+  return [...map.values()];
+}
+
+function mergeScopedUserRows(prev: Row[] = [], remote: Row[] = []): Row[] {
+  if (!remote.length && prev.length) return prev;
+  const scope = schoolCodesInRows(remote);
+  if (!scope.size) return remote.length ? remote : prev;
+  const kept = prev.filter((row) => !scope.has(normalizeSchoolCode(row.schoolCode)));
+  return mergeUsersByIdentity(kept, remote);
 }
 
 
@@ -190,12 +218,12 @@ const GLOBAL_LIST_KEYS = [
 function mergeUserRowsPreservingCredentials(prev: Row[] = [], remote: Row[] = []): Row[] {
   const prevByKey = new Map<string, Row>();
   for (const row of prev) {
-    const key = String(row.id ?? row.identifier ?? row.publicId ?? "").trim();
+    const key = userIdentityKey(row);
     if (key) prevByKey.set(key, row);
   }
 
-  return remote.map((row) => {
-    const key = String(row.id ?? row.identifier ?? row.publicId ?? "").trim();
+  return mergeUsersByIdentity(prev, remote).map((row) => {
+    const key = userIdentityKey(row);
     const existing = key ? prevByKey.get(key) : undefined;
     if (!existing) return row;
 
@@ -237,13 +265,13 @@ function mergeSchoolScopedListKey(
 
   }
 
-  const merged = mergeScopedSchoolRows(
-
-    (prev[key] as Row[] | undefined) ?? [],
-
-    (remote[key] as Row[] | undefined) ?? [],
-
-  );
+  const merged =
+    key === "users"
+      ? mergeScopedUserRows(
+          (prev[key] as unknown as Row[] | undefined) ?? [],
+          (remote[key] as unknown as Row[] | undefined) ?? [],
+        )
+      : mergeScopedSchoolRows((prev[key] as Row[] | undefined) ?? [], (remote[key] as Row[] | undefined) ?? []);
 
   if (key === "users") {
     return mergeUserRowsPreservingCredentials(
