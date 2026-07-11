@@ -230,7 +230,11 @@ class PedagogyGovernanceService {
 
       if (existing) {
         preservedKeys.add(key);
-        nextTeachers.push(existing);
+        nextTeachers.push({
+          ...existing,
+          ...(Array.isArray(teacher.assignments) ? { assignments: teacher.assignments } : {}),
+          ...(Array.isArray(teacher.assignedClasses) ? { assignedClasses: teacher.assignedClasses } : {}),
+        });
         continue;
       }
 

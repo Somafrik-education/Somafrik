@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  BookOpen,
   Contact,
   GraduationCap,
   Link2,
@@ -88,14 +87,6 @@ export function EtablissementOverviewPage() {
         view: "relations",
         icon: Link2,
         count: relations.length,
-      },
-      {
-        key: "assignments",
-        label: "Affectations",
-        to: "/etablissement/affectations",
-        view: "assignments",
-        icon: BookOpen,
-        count: assignments.length,
       },
     ];
 

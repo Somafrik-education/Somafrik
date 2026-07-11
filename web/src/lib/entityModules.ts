@@ -310,7 +310,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     feature: "Enseignants",
     group: "utilisateurs",
     description:
-      "Équipe pédagogique (consultation et mise à jour). La création se fait via Contacts (type Enseignant).",
+      "Équipe pédagogique et affectations classe ↔ matière. La création se fait via Contacts (type Enseignant).",
     fields: [
       { key: "name", label: "Nom complet", placeholder: "Nom de l'enseignant", required: true },
       { key: "firstName", label: "Prénom", placeholder: "Prénom", required: true },
@@ -380,8 +380,8 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
       },
       { key: "observations", label: "Observations", placeholder: "Notes complémentaires" },
     ],
-    columns: ["name", "firstName", "publicId", "specialty", "contractType", "phone"],
-    columnLabels: { specialty: "Spécialité", contractType: "Contrat" },
+    columns: ["name", "firstName", "publicId", "specialty", "assignmentsSummary"],
+    columnLabels: { specialty: "Spécialité", assignmentsSummary: "Affectations" },
   },
   {
     key: "classes",
@@ -448,7 +448,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     feature: "Matières",
     group: "pedagogie",
     description:
-      "Catalogue des matières par classe (paramètres établissement). Les affectations enseignant se gèrent dans Mon établissement → Affectations.",
+      "Catalogue des matières par classe (paramètres établissement). Les affectations enseignant se gèrent dans Mon établissement → Enseignants.",
     fields: [
       {
         key: "className",
@@ -479,12 +479,12 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
   {
     key: "assignments",
     view: "assignments",
-    path: "/etablissement/affectations",
+    path: "/etablissement/enseignants",
     label: "Affectations",
     feature: "Affectations",
     group: "pedagogie",
     description:
-      "Affectation enseignant ↔ classe ↔ matière. Le catalogue des matières se configure dans Paramètres ; l'horaire se définit dans Emploi du temps.",
+      "Affectation enseignant ↔ classe ↔ matière (gérée depuis Enseignants). Le catalogue des matières se configure dans Paramètres ; l'horaire se définit dans Emploi du temps.",
     fields: [
       {
         key: "className",

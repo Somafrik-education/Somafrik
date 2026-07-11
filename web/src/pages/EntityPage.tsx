@@ -28,6 +28,8 @@ import { applyActiveGridsToStudent } from "../lib/fees";
 import { syncSingleUserToTeachers } from "../lib/userTeacherSync";
 import {
   getAssignmentSelectOptions,
+  formatTeacherAssignmentsSummary,
+  listTeacherAssignments,
   normalizeAssignmentForm,
   prepareAssignmentForSave,
   validateAssignmentConflict,
@@ -77,6 +79,7 @@ import {
 } from "../lib/quickPayment";
 import {
   getCurrentSchool,
+  scopedAssignments,
   scopedClasses,
   scopedCourses,
   scopedStudents,
@@ -207,6 +210,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   const [cancelReason, setCancelReason] = useState("");
   const [linkContactOpen, setLinkContactOpen] = useState(false);
   const [linkContactId, setLinkContactId] = useState("");
+  const [teacherAssignmentContext, setTeacherAssignmentContext] = useState<Record<string, unknown> | null>(
+    null,
+  );
+  const [editingAssignment, setEditingAssignment] = useState<Record<string, unknown> | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const ctx = usePermissionContext();
@@ -222,6 +229,11 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     () => getEntityFeaturePermissions(ctx, "students", "Élèves"),
     [ctx],
   );
+  const assignmentPermissions = useMemo(
+    () => getEntityFeaturePermissions(ctx, "assignments", "Affectations"),
+    [ctx],
+  );
+  const assignmentModule = useMemo(() => getEntityModule("assignments"), []);
   const allowCreate =
     canCreate &&
     !module?.planningManaged &&
@@ -249,6 +261,22 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         ? getAssignmentSelectOptions(scopeUser, state, String(editing?.className ?? ""), schoolCode)
         : null,
     [module?.key, scopeUser, state, editing?.className, schoolCode],
+  );
+  const teacherAssignmentOptions = useMemo(
+    () =>
+      editingAssignment
+        ? getAssignmentSelectOptions(
+            scopeUser,
+            state,
+            String(editingAssignment.className ?? ""),
+            schoolCode,
+          )
+        : null,
+    [editingAssignment, scopeUser, state, schoolCode],
+  );
+  const scopedAssignmentsList = useMemo(
+    () => scopedAssignments(scopeUser, state),
+    [scopeUser, state],
   );
 
   const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
@@ -351,6 +379,25 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return getRelationStudentOptions(scopeUser, state);
     }
     return [];
+  }
+
+  function getTeacherAssignmentFieldOptions(
+    field: NonNullable<typeof assignmentModule>["fields"][number],
+  ) {
+    const className = String(editingAssignment?.className ?? "");
+    if (field.optionsKey === "classes") {
+      return teacherAssignmentOptions?.classes ?? [];
+    }
+    if (field.optionsKey === "assignmentSubjects") {
+      return teacherAssignmentOptions?.subjects ?? [];
+    }
+    if (field.optionsKey === "periods") {
+      return getSchoolPeriodNames(state, effectiveSchoolCode).map((name) => ({
+        value: name,
+        label: name,
+      }));
+    }
+    return field.selectOptions ?? [];
   }
 
   const school = getCurrentSchool(scopeUser, state);
@@ -1229,6 +1276,192 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     }
   }
 
+  async function handleAssignmentSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!assignmentModule || !editingAssignment || !teacherAssignmentContext) return;
+
+    const teachers = scopedTeachers(scopeUser, state);
+    const linkedTeacher =
+      teachers.find((row) => String(row.id) === String(teacherAssignmentContext.id ?? "")) ??
+      teachers.find((row) =>
+        [row.publicId, row.identifier, row.userId, row.contactId].some(
+          (value) => String(value ?? "") === String(teacherAssignmentContext.id ?? ""),
+        ),
+      ) ??
+      teacherAssignmentContext;
+
+    let workingItem = prepareAssignmentForSave(
+      {
+        ...editingAssignment,
+        teacherId: String(linkedTeacher.id ?? teacherAssignmentContext.id ?? ""),
+      },
+      teachers,
+      effectiveSchoolCode,
+      state,
+      scopeUser,
+    );
+
+    const missingRequired = assignmentModule.fields.find(
+      (field) => field.required && !String(workingItem[field.key] ?? "").trim(),
+    );
+    if (missingRequired) {
+      showToast(`${missingRequired.label} est obligatoire`, "error");
+      return;
+    }
+
+    const conflict = validateAssignmentConflict(
+      workingItem,
+      scopedAssignmentsList,
+      scopedCourses(scopeUser, state),
+      scopedClasses(scopeUser, state),
+      teachers,
+      editingAssignment.id ? String(editingAssignment.id) : undefined,
+      state,
+      effectiveSchoolCode,
+    );
+    if (conflict) {
+      showToast(conflict, "error");
+      return;
+    }
+
+    const scopedItem = applySchoolScopeToItem(
+      "assignments",
+      workingItem,
+      effectiveSchoolCode,
+      state,
+    );
+    const current = getScopedEntityRows("assignments", scopeUser, state);
+    const exists =
+      Boolean(scopedItem.id) && current.some((row) => String(row.id) === String(scopedItem.id));
+
+    if (exists && !assignmentPermissions.canUpdate) {
+      showToast("Modification des affectations non autorisée pour votre rôle.", "error");
+      return;
+    }
+    if (!exists && !assignmentPermissions.canCreate) {
+      showToast("Création d'affectation non autorisée pour votre rôle.", "error");
+      return;
+    }
+
+    const nextItem = exists
+      ? scopedItem
+      : {
+          ...scopedItem,
+          id: String(scopedItem.id ?? newId("ASSIGNMENT")),
+        };
+
+    const mergeResult = mergeScopedEntityRows("assignments", scopeUser, state, nextItem);
+    if (!mergeResult.applied) {
+      showToast("Modification refusée : affectation hors périmètre de l'établissement.", "error");
+      return;
+    }
+
+    const pedagogyPatch = buildPedagogyPatch("assignments", nextItem, mergeResult.rows);
+    const targetId = String(nextItem.id ?? "");
+    const period = String(nextItem.period ?? "");
+    const room = String(nextItem.room ?? "");
+    const patch: Partial<BackOfficeState> = {
+      assignments: pedagogyPatch.assignments,
+      courses: pedagogyPatch.courses,
+      teachers: pedagogyPatch.teachers,
+    };
+    if (patch.assignments) {
+      patch.assignments = (patch.assignments as Record<string, unknown>[]).map((row) =>
+        String(row.id) === targetId ? { ...row, period, room } : row,
+      ) as BackOfficeState["assignments"];
+    }
+    patch.auditLog = appendAuditLog(
+      state.auditLog,
+      makeAuditEntry({
+        ...auditActor(scopeUser),
+        action: exists ? "assignments.update" : "assignments.create",
+        entityType: "assignments",
+        entityId: targetId,
+        entityLabel: auditEntityLabel("assignments", nextItem) || undefined,
+        schoolCode: String(nextItem.schoolCode ?? "") || undefined,
+      }),
+    );
+
+    try {
+      await persistPatch(patch, exists ? "Affectation modifiée" : "Affectation créée");
+      setTeacherAssignmentContext({ ...linkedTeacher });
+      setEditingAssignment({
+        teacherId: String(linkedTeacher.id ?? ""),
+        className: "",
+        subject: "",
+      });
+    } catch {
+      /* toast déjà affiché */
+    }
+  }
+
+  async function handleDeleteAssignment(assignment: Record<string, unknown>) {
+    if (!assignment.id || !assignmentPermissions.canDelete) {
+      showToast("Suppression non autorisée pour votre rôle.", "error");
+      return;
+    }
+    const confirmed = await confirm({
+      title: "Supprimer cette affectation ?",
+      description: "Retirer définitivement cette affectation enseignant ↔ classe ↔ matière ?",
+      confirmLabel: "Supprimer",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    const nextAllRows = deleteScopedEntityRow(
+      "assignments",
+      scopeUser,
+      state,
+      String(assignment.id),
+    );
+    if (nextAllRows.length === ((state.assignments ?? []) as unknown[]).length) {
+      showToast("Suppression refusée : affectation hors périmètre ou introuvable.", "error");
+      return;
+    }
+
+    const pedagogyPatch = buildPedagogyPatch("assignments", assignment, nextAllRows);
+    const patch: Partial<BackOfficeState> = {
+      assignments: nextAllRows as BackOfficeState["assignments"],
+      courses: pedagogyPatch.courses,
+    };
+    if (teacherAssignmentContext) {
+      const remaining = listTeacherAssignments(teacherAssignmentContext, nextAllRows);
+      const embedded = remaining.map((row) => ({
+        className: row.className,
+        course: row.subject ?? row.course,
+      }));
+      patch.teachers = ((state.teachers ?? []) as Record<string, unknown>[]).map((teacher) =>
+        String(teacher.id) === String(teacherAssignmentContext.id ?? "")
+          ? { ...teacher, assignments: embedded }
+          : teacher,
+      ) as BackOfficeState["teachers"];
+    }
+    patch.auditLog = appendAuditLog(
+      state.auditLog,
+      makeAuditEntry({
+        ...auditActor(scopeUser),
+        action: "assignments.delete",
+        entityType: "assignments",
+        entityId: String(assignment.id ?? ""),
+        entityLabel: auditEntityLabel("assignments", assignment) || undefined,
+        schoolCode: String(assignment.schoolCode ?? "") || undefined,
+      }),
+    );
+
+    try {
+      await persistPatch(patch, "Affectation supprimée");
+      if (String(editingAssignment?.id ?? "") === String(assignment.id)) {
+        setEditingAssignment({
+          teacherId: String(teacherAssignmentContext?.id ?? ""),
+          className: "",
+          subject: "",
+        });
+      }
+    } catch {
+      /* toast déjà affiché */
+    }
+  }
+
   const displayColumns = isParentChildMode ? PARENT_CHILD_COLUMNS : module.columns;
   const displayFields = isParentChildMode
     ? module.fields.filter((field) => !PARENT_CHILD_HIDDEN_FIELDS.has(field.key))
@@ -1250,6 +1483,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         const publicId = String(row.publicId ?? "").trim();
         if (!publicId) return "—";
         return `${publicId} · connexion : ${getTeacherLoginIdentifier(publicId)}`;
+      }
+      if (module.key === "teachers" && key === "assignmentsSummary") {
+        const teacherAssignments = listTeacherAssignments(row, scopedAssignmentsList);
+        return formatTeacherAssignmentsSummary(teacherAssignments);
       }
       return String(row[key] ?? "—");
     },
@@ -1320,6 +1557,23 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                   }}
                 >
                   Modifier
+                </Button>
+              ) : null}
+              {module.key === "teachers" &&
+              (assignmentPermissions.canCreate || assignmentPermissions.canUpdate) ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setTeacherAssignmentContext({ ...row });
+                    setEditingAssignment({
+                      teacherId: String(row.id ?? ""),
+                      className: "",
+                      subject: "",
+                    });
+                  }}
+                >
+                  Affecter
                 </Button>
               ) : null}
               {allowDelete ? (
@@ -1668,6 +1922,187 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           </form>
         ) : null}
       </Modal>
+
+      {module.key === "teachers" && assignmentModule ? (
+        <Modal
+          open={Boolean(teacherAssignmentContext)}
+          onClose={() => {
+            setTeacherAssignmentContext(null);
+            setEditingAssignment(null);
+          }}
+          title={
+            teacherAssignmentContext
+              ? `Affectations — ${getTeacherDisplayName(teacherAssignmentContext)}`
+              : "Affectations"
+          }
+          description="Associez cet enseignant à une ou plusieurs classes et matières."
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setTeacherAssignmentContext(null);
+                  setEditingAssignment(null);
+                }}
+              >
+                Fermer
+              </Button>
+              {editingAssignment &&
+              (editingAssignment.id
+                ? assignmentPermissions.canUpdate
+                : assignmentPermissions.canCreate) ? (
+                <Button form="teacher-assignment-form" type="submit" disabled={busy}>
+                  Enregistrer
+                </Button>
+              ) : null}
+            </>
+          }
+        >
+          {teacherAssignmentContext ? (
+            <div className="space-y-4">
+              {(() => {
+                const teacherAssignments = listTeacherAssignments(
+                  teacherAssignmentContext,
+                  scopedAssignmentsList,
+                );
+                if (!teacherAssignments.length) {
+                  return (
+                    <p className="text-sm text-muted">Aucune affectation pour cet enseignant.</p>
+                  );
+                }
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted">
+                      Affectations actuelles
+                    </p>
+                    {teacherAssignments.map((assignment) => (
+                      <div
+                        key={String(assignment.id ?? "")}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2"
+                      >
+                        <span className="text-sm font-semibold text-ink">
+                          {[assignment.className, assignment.subject ?? assignment.course]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {assignmentPermissions.canUpdate ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() =>
+                                setEditingAssignment(
+                                  normalizeAssignmentForm(
+                                    { ...assignment },
+                                    scopedTeachers(scopeUser, state),
+                                  ),
+                                )
+                              }
+                            >
+                              Modifier
+                            </Button>
+                          ) : null}
+                          {assignmentPermissions.canDelete ? (
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => void handleDeleteAssignment(assignment)}
+                            >
+                              Supprimer
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              {assignmentPermissions.canCreate || assignmentPermissions.canUpdate ? (
+                <form
+                  id="teacher-assignment-form"
+                  onSubmit={(event) => void handleAssignmentSubmit(event)}
+                  className="grid gap-4 border-t border-line pt-4"
+                >
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">
+                    {editingAssignment?.id ? "Modifier l'affectation" : "Nouvelle affectation"}
+                  </p>
+                  {assignmentModule.fields
+                    .filter((field) => field.key !== "teacherId")
+                    .map((field) => (
+                      <Field key={field.key} label={field.label} htmlFor={`ta-${field.key}`} hint={field.hint}>
+                        {field.inputType === "select" ? (
+                          <Select
+                            id={`ta-${field.key}`}
+                            value={String(editingAssignment?.[field.key] ?? "")}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              if (field.key === "className") {
+                                setEditingAssignment((current) => ({
+                                  ...(current ?? {
+                                    teacherId: String(teacherAssignmentContext.id ?? ""),
+                                  }),
+                                  className: value,
+                                  subject: "",
+                                }));
+                                return;
+                              }
+                              setEditingAssignment((current) => ({
+                                ...(current ?? {
+                                  teacherId: String(teacherAssignmentContext.id ?? ""),
+                                }),
+                                [field.key]: value,
+                              }));
+                            }}
+                            options={[
+                              { value: "", label: field.placeholder ?? "Choisir…" },
+                              ...getTeacherAssignmentFieldOptions(field),
+                            ]}
+                          />
+                        ) : (
+                          <Input
+                            id={`ta-${field.key}`}
+                            value={String(editingAssignment?.[field.key] ?? "")}
+                            placeholder={field.placeholder}
+                            onChange={(event) =>
+                              setEditingAssignment((current) => ({
+                                ...(current ?? {
+                                  teacherId: String(teacherAssignmentContext.id ?? ""),
+                                }),
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                          />
+                        )}
+                      </Field>
+                    ))}
+                  {!String(editingAssignment?.className ?? "") ? (
+                    <p className="text-xs text-muted">
+                      Sélectionnez d'abord une classe pour voir les matières disponibles.
+                    </p>
+                  ) : null}
+                  {editingAssignment?.id && assignmentPermissions.canCreate ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        setEditingAssignment({
+                          teacherId: String(teacherAssignmentContext.id ?? ""),
+                          className: "",
+                          subject: "",
+                        })
+                      }
+                    >
+                      Nouvelle affectation
+                    </Button>
+                  ) : null}
+                </form>
+              ) : null}
+            </div>
+          ) : null}
+        </Modal>
+      ) : null}
 
       {module.key === "payments" ? (
         <>

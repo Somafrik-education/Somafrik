@@ -56,10 +56,12 @@ export function extractTeacherSubjectLinks(teacher: Row): SubjectLink[] {
   return links;
 }
 
-function teacherMatchesReference(teacher: Row, reference: string): boolean {
+export function teacherMatchesReference(teacher: Row, reference: string): boolean {
   const target = String(reference ?? "").trim();
   if (!target) return false;
-  return [teacher.id, teacher.publicId].some((value) => String(value ?? "") === target);
+  return [teacher.id, teacher.publicId, teacher.identifier, teacher.userId, teacher.contactId].some(
+    (value) => String(value ?? "").trim() === target,
+  );
 }
 
 /** Classes affectées à un enseignant (affectations et responsabilité de classe). */

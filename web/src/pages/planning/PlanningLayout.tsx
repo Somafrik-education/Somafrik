@@ -18,7 +18,7 @@ export function PlanningLayout() {
         <h1 className="mt-1 text-2xl font-black text-ink">Planning</h1>
         <p className="mt-1 text-sm text-muted">
           Emploi du temps, salles, remplacements et conflits d'un même endroit. La relation
-          enseignant ↔ classe ↔ matière se gère dans Mon établissement → Affectations.
+          enseignant ↔ classe ↔ matière se gère dans Mon établissement → Enseignants.
         </p>
       </div>
       <TabNav tabs={PLANNING_TABS} />

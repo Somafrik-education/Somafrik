@@ -1756,6 +1756,7 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     teachers: mergeRowsByIdentity(runtimeState.teachers, storedState.teachers),
     classes: mergeRowsByIdentity(runtimeState.classes, storedState.classes),
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
+    assignments: mergeRowsByIdentity(runtimeState.assignments ?? [], storedState.assignments ?? []),
     courseSchedules: mergeRowsByIdentity(runtimeState.courseSchedules ?? [], storedState.courseSchedules ?? []),
     payments: mergeRowsByIdentity(runtimeState.payments, storedState.payments),
     feeGrids: mergeRowsByIdentity(runtimeState.feeGrids ?? [], storedState.feeGrids ?? []),
@@ -2046,7 +2047,13 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
     (item.assignedClasses ?? []).some((className) => classNames.has(className)) ||
     (item.assignments ?? []).some((assignment) => classNames.has(assignment.className))
   );
-  const teacherIds = new Set(teachers.map((item) => item.id));
+  const teacherRefs = new Set();
+  for (const teacher of teachers) {
+    for (const ref of [teacher.id, teacher.publicId, teacher.identifier, teacher.userId, teacher.contactId]) {
+      const value = String(ref ?? "").trim();
+      if (value) teacherRefs.add(value);
+    }
+  }
   const classes = state.classes.filter((item) => hasSchoolScope(item, schoolCodes) || classNames.has(item.name));
   classes.forEach((item) => {
     if (item.name) classNames.add(item.name);
@@ -2056,7 +2063,7 @@ function scopeStateWithSchools(state, schoolCodes, overrides = {}) {
   const assignments = state.assignments.filter((item) =>
     hasSchoolScope(item, schoolCodes) ||
     classNames.has(item.className) ||
-    teacherIds.has(item.teacherId)
+    teacherRefs.has(String(item.teacherId ?? "").trim()),
   );
   const courseSchedules = (state.courseSchedules ?? []).filter((item) =>
     hasSchoolScope(item, schoolCodes) || classNames.has(item.className),

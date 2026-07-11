@@ -62,7 +62,7 @@ export function validateCourseTeacherRule(
   return null;
 }
 
-/** Admin School : création d'enseignants uniquement. */
+/** Admin School : consultation, création et mise à jour des fiches enseignants. */
 export function canSchoolAdminMutateTeachers(action: string): boolean {
-  return action === "READ" || action === "CREATE";
+  return action === "READ" || action === "CREATE" || action === "UPDATE";
 }

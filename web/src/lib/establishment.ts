@@ -304,15 +304,23 @@ export function scopedCourses(user: SessionUser | null, state: BackOfficeState):
 
 export function scopedAssignments(user: SessionUser | null, state: BackOfficeState): Row[] {
   const schoolCode = user?.schoolCode;
-  const classNames = new Set(scopedStudents(user, state).map((s) => String(s.className ?? "")).filter(Boolean));
-  const teacherIds = new Set(scopedTeachers(user, state).map((t) => String(t.id ?? "")).filter(Boolean));
+  const scopedStudentsList = scopedStudents(user, state);
+  const classNames = new Set(scopedStudentsList.map((s) => String(s.className ?? "")).filter(Boolean));
+  const teachers = scopedTeachers(user, state, scopedStudentsList);
+  const teacherRefs = new Set<string>();
+  for (const teacher of teachers) {
+    for (const ref of [teacher.id, teacher.publicId, teacher.identifier, teacher.userId, teacher.contactId]) {
+      const value = String(ref ?? "").trim();
+      if (value) teacherRefs.add(value);
+    }
+  }
   const rows = (state.assignments ?? []) as Row[];
   if (!schoolCode || schoolCode === "*") return rows;
   return rows.filter(
     (row) =>
       normalize(row.schoolCode) === normalize(schoolCode) ||
       classNames.has(String(row.className ?? "")) ||
-      teacherIds.has(String(row.teacherId ?? "")),
+      teacherRefs.has(String(row.teacherId ?? "").trim()),
   );
 }
 

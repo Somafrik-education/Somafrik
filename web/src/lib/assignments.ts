@@ -7,7 +7,7 @@ import {
   scopedTeachers,
 } from "./establishment";
 import { normalize } from "./format";
-import { findTeacherByName, getTeacherDisplayName } from "./pedagogySync";
+import { findTeacherByName, getTeacherDisplayName, teacherMatchesReference } from "./pedagogySync";
 
 type Row = Record<string, unknown>;
 
@@ -122,6 +122,32 @@ export function prepareAssignmentForSave(
     className,
     ...(resolvedSchoolCode && resolvedSchoolCode !== "*" ? { schoolCode: resolvedSchoolCode } : {}),
   };
+}
+
+export function formatTeacherAssignmentsSummary(assignments: Row[]): string {
+  if (!assignments.length) return "—";
+  return assignments
+    .map((assignment) => {
+      const className = String(assignment.className ?? "").trim();
+      const subject = String(assignment.subject ?? assignment.course ?? "").trim();
+      return [className, subject].filter(Boolean).join(" · ");
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+export function listTeacherAssignments(teacher: Row, assignments: Row[]): Row[] {
+  const teacherName = getTeacherDisplayName(teacher);
+  return assignments.filter((assignment) => {
+    const assignmentTeacherId = String(assignment.teacherId ?? "").trim();
+    if (assignmentTeacherId && teacherMatchesReference(teacher, assignmentTeacherId)) return true;
+    const assignmentTeacherName = String(assignment.teacherName ?? "").trim();
+    return Boolean(
+      assignmentTeacherName &&
+        teacherName &&
+        normalize(assignmentTeacherName) === normalize(teacherName),
+    );
+  });
 }
 
 export function validateAssignmentConflict(
