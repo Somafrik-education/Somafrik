@@ -66,28 +66,32 @@ function printReport(report) {
   }
 }
 
+async function loadStateViaApi() {
+  const { login, getState, SUPERADMIN_ID, SUPERADMIN_PASSWORD } = require("./e2e-api-helpers");
+  const token = await login(SUPERADMIN_ID, SUPERADMIN_PASSWORD);
+  const state = await getState(token);
+  return { state, pgUsers: [], source: "api" };
+}
+
 async function loadState() {
-  const { Pool } = require("pg");
-  const { buildDatabaseUrl } = require("../backend/db/connectionConfig");
-  const databaseUrl = process.env.DATABASE_URL || buildDatabaseUrl();
-  const pool = new Pool({ connectionString: databaseUrl });
-  const row = await pool.query(
-    "SELECT state_payload FROM backoffice_state WHERE state_key = 'default' LIMIT 1",
-  );
-  const pgUsers = await pool.query("SELECT id, user_code, first_name, last_name, role FROM users ORDER BY created_at");
-  await pool.end();
-  return {
-    state: row.rows[0]?.state_payload ?? {},
-    pgUsers: pgUsers.rows,
-  };
+  const { loadBackofficeStateFromPostgres, loadUsersFromPostgres } = require("./pg-connection");
+  try {
+    const { state, updatedAt, source } = await loadBackofficeStateFromPostgres();
+    const pgUsers = await loadUsersFromPostgres();
+    return { state, pgUsers, source, updatedAt };
+  } catch (error) {
+    console.warn(`Lecture PostgreSQL échouée (${error.message}) — repli API.`);
+    return loadStateViaApi();
+  }
 }
 
 async function main() {
-  const { state, pgUsers } = await loadState();
+  const { state, pgUsers, source } = await loadState();
   const users = state.users ?? [];
   const contacts = state.contacts ?? [];
 
   console.log("\n=== Audit unicité id — comptes & contacts ===\n");
+  console.log(`Source : ${source ?? "postgres"}\n`);
 
   const usersById = auditCollection(users, "Comptes (users) — clé id", (u) => String(u.id ?? "").trim());
   usersById.samples = users.filter((u) => !String(u.id ?? "").trim()).slice(0, 5);
@@ -105,11 +109,15 @@ async function main() {
   contactsById.samples = contacts.filter((c) => !String(c.id ?? "").trim()).slice(0, 5);
   printReport(contactsById);
 
-  const pgByCode = auditCollection(pgUsers, "PostgreSQL users — user_code", (u) => String(u.user_code ?? "").trim());
-  printReport(pgByCode);
+  const pgByCode = pgUsers.length
+    ? auditCollection(pgUsers, "PostgreSQL users — user_code", (u) => String(u.user_code ?? "").trim())
+    : { label: "PostgreSQL users — user_code", total: 0, unique: 0, missing: 0, duplicates: [] };
+  if (pgUsers.length) printReport(pgByCode);
 
-  const pgByUuid = auditCollection(pgUsers, "PostgreSQL users — uuid id", (u) => String(u.id ?? "").trim());
-  printReport(pgByUuid);
+  const pgByUuid = pgUsers.length
+    ? auditCollection(pgUsers, "PostgreSQL users — uuid id", (u) => String(u.id ?? "").trim())
+    : { label: "PostgreSQL users — uuid id", total: 0, unique: 0, missing: 0, duplicates: [] };
+  if (pgUsers.length) printReport(pgByUuid);
 
   const issues =
     usersById.missing +

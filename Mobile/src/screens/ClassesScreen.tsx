@@ -43,8 +43,8 @@ export default function ClassesScreen({ navigation }: any) {
       paddingBottom: scrollContentPaddingBottom,
       paddingHorizontal: horizontalPadding,
       maxWidth: contentMaxWidth,
-      alignSelf: "center",
-      width: "100%",
+      alignSelf: "center" as const,
+      width: "100%" as const,
     },
   ];
   const { session } = useAuth();
@@ -108,7 +108,6 @@ export default function ClassesScreen({ navigation }: any) {
               activeOpacity={0.85}
               style={[styles.addButton, blockNetworkActions && styles.disabledControl]}
               disabled={showLoading}
-              pointerEvents={showLoading ? "none" : "auto"}
               testID={CLASSES_LOADING_TEST_IDS.addClassButton}
               accessibilityState={{ disabled: blockNetworkActions, busy: showLoading }}
               aria-disabled={blockNetworkActions}

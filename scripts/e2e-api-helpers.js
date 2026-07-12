@@ -30,6 +30,14 @@ async function login(identifier, password, schoolCode) {
   return data.accessToken;
 }
 
+function extractApiList(response) {
+  const payload = response?.data ?? response?.body ?? response;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  return [];
+}
+
 async function loginFull(identifier, password, schoolCode) {
   const tryLogin = (candidatePassword) =>
     request("/backoffice/login", {
@@ -37,23 +45,109 @@ async function loginFull(identifier, password, schoolCode) {
       body: { identifier, password: candidatePassword, ...(schoolCode ? { schoolCode } : {}) },
     });
 
-  const candidates =
-    normalize(identifier) === normalize(SUPERADMIN_ID)
-      ? [...new Set([password, SUPERADMIN_PASSWORD, "E2eTest!2026", "1234"])]
-      : normalize(identifier) === "admin"
-        ? [...new Set([password, "1234", ADMIN_PASSWORD, "E2eTest!2026"])]
-        : [password];
+  const finalizeLogin = async (res, candidatePassword) => {
+    const data = res.data;
+    const needsPasswordChange =
+      Boolean(data?.user?.mustChangePassword) ||
+      Boolean(String(data?.user?.temporaryPassword ?? "").trim());
+    if (needsPasswordChange && data?.accessToken) {
+      const changeRes = await request("/auth/change-password", {
+        method: "POST",
+        token: data.accessToken,
+        body: { newPassword: candidatePassword },
+      });
+      if (changeRes.status === 200 && changeRes.data?.accessToken) {
+        return {
+          ...data,
+          ...changeRes.data,
+          user: { ...(data.user ?? {}), ...(changeRes.data.user ?? {}), mustChangePassword: false },
+          mustChangePassword: false,
+        };
+      }
+    }
+    return data;
+  };
+
+  const candidates = buildLoginPasswordCandidates(identifier, password);
 
   let res = null;
   for (const candidatePassword of candidates) {
     res = await tryLogin(candidatePassword);
     if (res.status === 200) {
-      return res.data;
+      return finalizeLogin(res, candidatePassword);
+    }
+    if (res.status === 423) {
+      await clearLoginLockout();
+      res = await tryLogin(candidatePassword);
+      if (res.status === 200) {
+        return finalizeLogin(res, candidatePassword);
+      }
+      assert.fail(
+        `login ${identifier}: compte verrouillé — exécutez « docker compose restart backend » ou « npm run verify:e2e-preflight ».`,
+      );
     }
   }
 
-  assert.strictEqual(res?.status, 200, `login ${identifier}: ${JSON.stringify(res?.data)}`);
+  assert.strictEqual(
+    res?.status,
+    200,
+    `login ${identifier}: ${JSON.stringify(res?.data)} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».`,
+  );
   return res.data;
+}
+
+function buildLoginPasswordCandidates(identifier, password) {
+  const nonEmpty = (value) => String(value ?? "").trim();
+  if (normalize(identifier) === normalize(SUPERADMIN_ID)) {
+    const primary = resolveSuperadminPassword(password);
+    if (process.env.SOMAFRIK_E2E_TRY_KNOWN_PASSWORDS === "true") {
+      return [
+        ...new Set(
+          [primary, ...KNOWN_SUPERADMIN_PASSWORDS]
+            .map(nonEmpty)
+            .filter(Boolean),
+        ),
+      ];
+    }
+    return [primary];
+  }
+  if (normalize(identifier) === "admin") {
+    return [...new Set([password, ADMIN_PASSWORD, "E2eTest!2026"].map(nonEmpty).filter(Boolean))];
+  }
+  return [nonEmpty(password)].filter(Boolean);
+}
+
+function resolveSuperadminPassword(explicitPassword) {
+  const nonEmpty = (value) => String(value ?? "").trim();
+  const ordered = [
+    explicitPassword,
+    process.env.SOMAFRIK_E2E_SUPERADMIN_PASSWORD,
+    process.env.SOMAFRIK_TEST_SUPERADMIN_PASSWORD,
+    process.env.BOOTSTRAP_SUPERADMIN_PASSWORD,
+    SUPERADMIN_PASSWORD,
+  ]
+    .map(nonEmpty)
+    .filter(Boolean);
+  return ordered[0] ?? "E2eTest!2026";
+}
+
+async function clearLoginLockout() {
+  try {
+    await request("/backoffice/e2e/clear-login-lockout", { method: "POST" });
+  } catch {
+    /* endpoint indisponible hors mode E2E */
+  }
+}
+
+async function probeBackend() {
+  try {
+    const response = await fetch(`${base.replace(/\/api$/, "")}/api/health`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function loginExpect(identifier, password, schoolCode, expectedStatus) {
@@ -80,7 +174,26 @@ async function mobileLoginFull(role, identifier, pin, schoolCode) {
     body: { role, identifier, pin, schoolCode },
   });
   assert.strictEqual(res.status, 200, `mobile login ${identifier}: ${JSON.stringify(res.data)}`);
-  return res.data;
+  const data = res.data;
+  const needsPasswordChange =
+    Boolean(data?.user?.mustChangePassword) ||
+    Boolean(String(data?.user?.temporaryPassword ?? "").trim());
+  if (needsPasswordChange && data?.accessToken) {
+    const changeRes = await request("/auth/change-password", {
+      method: "POST",
+      token: data.accessToken,
+      body: { newPassword: pin },
+    });
+    if (changeRes.status === 200 && changeRes.data?.accessToken) {
+      return {
+        ...data,
+        ...changeRes.data,
+        user: { ...(data.user ?? {}), ...(changeRes.data.user ?? {}), mustChangePassword: false },
+        accessToken: changeRes.data.accessToken,
+      };
+    }
+  }
+  return data;
 }
 
 async function mobileIdentify(identifier, schoolCode) {
@@ -136,9 +249,11 @@ const SUPERADMIN_PASSWORD =
   process.env.SOMAFRIK_TEST_SUPERADMIN_PASSWORD ||
   "E2eTest!2026";
 const ADMIN_PASSWORD =
-  process.env.SOMAFRIK_E2E_SUPERADMIN_PASSWORD ||
+  process.env.SOMAFRIK_E2E_ADMIN_PASSWORD ||
   process.env.SOMAFRIK_TEST_ADMIN_PASSWORD ||
   "E2eTest!2026";
+/** Mots de passe connus des jeux de données locaux (seed, wipe --bootstrap, E2E). */
+const KNOWN_SUPERADMIN_PASSWORDS = ["1234", "E2eTest!2026", "change-me-now"];
 
 async function setupActiveSchool(superToken, stamp) {
   const schoolName = `E2E School ${stamp}`;
@@ -178,7 +293,7 @@ async function setupActiveSchool(superToken, stamp) {
     status: "Actif",
     validationStatus: "Validé",
     password: ADMIN_PASSWORD,
-    temporaryPassword: ADMIN_PASSWORD,
+    temporaryPassword: "",
     mustChangePassword: false,
     permissions: [],
   };
@@ -239,6 +354,11 @@ module.exports = {
   SUPERADMIN_ID,
   SUPERADMIN_PASSWORD,
   ADMIN_PASSWORD,
+  KNOWN_SUPERADMIN_PASSWORDS,
   setupActiveSchool,
   resolveSchoolContext,
+  resolveSuperadminPassword,
+  clearLoginLockout,
+  probeBackend,
+  extractApiList,
 };

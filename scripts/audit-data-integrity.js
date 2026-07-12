@@ -11,6 +11,7 @@ try {
 }
 
 const { auditBackOfficeState } = require("../backend/services/dataIntegrityService");
+const { loadBackofficeStateFromPostgres } = require("./pg-connection");
 
 async function loadStateViaApi() {
   const { login, getState, SUPERADMIN_ID, SUPERADMIN_PASSWORD } = require("./e2e-api-helpers");
@@ -21,26 +22,9 @@ async function loadStateViaApi() {
 
 async function loadState() {
   try {
-    const backendRoot = path.join(__dirname, "..", "backend");
-    const { Pool } = require(path.join(backendRoot, "node_modules", "pg"));
-    const { buildDatabaseUrl } = require(path.join(backendRoot, "db", "connectionConfig"));
-    let databaseUrl = process.env.DATABASE_URL || buildDatabaseUrl();
-    const hostPort = process.env.POSTGRES_HOST_PORT;
-    if (hostPort && !process.env.POSTGRES_PORT) {
-      databaseUrl = databaseUrl.replace(/:(\d+)\/([^/]+)$/, `:${hostPort}/$2`);
-    }
-    const pool = new Pool({ connectionString: databaseUrl });
-    const row = await pool.query(
-      "SELECT state_payload, updated_at FROM backoffice_state WHERE state_key = 'default' LIMIT 1",
-    );
-    await pool.end();
-    return {
-      state: row.rows[0]?.state_payload ?? {},
-      updatedAt: row.rows[0]?.updated_at ?? null,
-      source: "postgres",
-    };
+    return await loadBackofficeStateFromPostgres();
   } catch (error) {
-    console.warn(`Connexion PostgreSQL indisponible (${error.code ?? error.message}) — repli API.`);
+    console.warn(`Lecture PostgreSQL échouée (${error.message}) — repli API.`);
     return loadStateViaApi();
   }
 }

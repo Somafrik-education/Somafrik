@@ -44,8 +44,8 @@ export default function HomeScreen({ navigation }: any) {
       paddingBottom: scrollContentPaddingBottom,
       paddingHorizontal: horizontalPadding,
       maxWidth: contentMaxWidth,
-      alignSelf: "center",
-      width: "100%",
+      alignSelf: "center" as const,
+      width: "100%" as const,
     },
   ];
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };

@@ -54,7 +54,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
       paddingHorizontal: horizontalPadding,
       maxWidth: contentMaxWidth,
       alignSelf: "center" as const,
-      width: "100%",
+      width: "100%" as const,
     },
   ];
   const { session } = useAuth();

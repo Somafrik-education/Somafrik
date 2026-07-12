@@ -89,11 +89,18 @@ function summarizeByOrigin(rows, kind) {
   return counts;
 }
 
-async function loadStateViaApi() {
-  const { login, getState, SUPERADMIN_ID, SUPERADMIN_PASSWORD } = require("./e2e-api-helpers");
-  const token = await login(SUPERADMIN_ID, SUPERADMIN_PASSWORD);
-  const state = await getState(token);
-  return { state, source: "api" };
+async function loadState() {
+  const { loadBackofficeStateFromPostgres } = require("./pg-connection");
+  try {
+    const { state, source } = await loadBackofficeStateFromPostgres();
+    return { state, source };
+  } catch (error) {
+    console.warn(`Lecture PostgreSQL échouée (${error.message}) — repli API.`);
+    const { login, getState, SUPERADMIN_ID, SUPERADMIN_PASSWORD } = require("./e2e-api-helpers");
+    const token = await login(SUPERADMIN_ID, SUPERADMIN_PASSWORD);
+    const state = await getState(token);
+    return { state, source: "api" };
+  }
 }
 
 async function loadPostgresCounts() {
@@ -131,7 +138,7 @@ function printRow(row) {
 async function main() {
   console.log("\n=== Audit élèves / enseignants sans contacts ===\n");
 
-  const { state, source } = await loadStateViaApi();
+  const { state, source } = await loadState();
   const contacts = state.contacts ?? [];
   const students = state.students ?? [];
   const teachers = state.teachers ?? [];

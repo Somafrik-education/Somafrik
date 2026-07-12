@@ -10,6 +10,7 @@ export const GLOBAL_SUBSCRIPTION_POLICY: CountrySubscriptionPolicy = {
     Essentiel: { monthlyPrice: 60, annualPrice: 600 },
     Standard: { monthlyPrice: 90, annualPrice: 900 },
     Premium: { monthlyPrice: 120, annualPrice: 1200 },
+    "Essai gratuit": { monthlyPrice: 0, annualPrice: 0 },
   },
 };
 
