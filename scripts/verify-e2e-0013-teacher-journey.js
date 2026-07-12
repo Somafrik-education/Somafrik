@@ -24,6 +24,7 @@ const {
   pushResult,
   SUPERADMIN_ID,
   SUPERADMIN_PASSWORD,
+  E2E_TEACHER_PIN,
   mobileLoginFull,
   mobileIdentify,
   resolveSchoolContext,
@@ -49,7 +50,7 @@ const {
 } = require(path.join(__dirname, "..", "backend", "services", "authService"));
 const { rolePermissions } = require(path.join(__dirname, "..", "backend", "data.js"));
 
-const TEACHER_PIN = "1234";
+const TEACHER_PIN = E2E_TEACHER_PIN;
 const CLASS_ASSIGNED = "6ème A";
 const CLASS_OTHER = "5ème B";
 const PERIOD = "Trimestre 1";

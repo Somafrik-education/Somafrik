@@ -33,9 +33,10 @@ const {
   loginAsSchoolAdmin,
   assertResponsiveAuthenticatedUi,
   RESPONSIVE_VIEWPORTS,
+  DEFAULT_MOBILE_WEB_URL,
 } = require("./e2e-mobile-ui-helpers");
 
-const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1:19006").replace(/\/$/, "");
+const MOBILE_WEB_URL = DEFAULT_MOBILE_WEB_URL;
 const CLASS_NAME = "6ème A";
 
 process.env.SOMAFRIK_E2E_LOGIN_MAX_MS = process.env.SOMAFRIK_E2E_LOGIN_MAX_MS || "24000";

@@ -16,6 +16,7 @@
  *   npm run verify:e2e-0024
  */
 const assert = require("assert");
+const path = require("path");
 const {
   login,
   getState,
@@ -30,19 +31,37 @@ const {
   base,
   todayPeriodDate,
 } = require("./e2e-api-helpers");
-const { resolveSchoolYear } = require("./e2e-student-enrollment-rules");
+const { prepareContactForSave, assertContactRequiredFields, validateContactDuplicate } = require("./e2e-contacts-rules");
+const { buildEnrollmentPatch, resolveSchoolYear } = require("./e2e-student-enrollment-rules");
+const { linkContactToOperationalRecord } = require(path.join(
+  __dirname,
+  "..",
+  "backend",
+  "lib",
+  "contactRegistrySync",
+));
 const {
   pushResult: pushUiResult,
   loadPlaywright,
   loginAsSchoolAdmin,
   assertLongStudentsListUi,
   LONG_STUDENTS_LIST_MIN_COUNT,
+  DEFAULT_MOBILE_WEB_URL,
 } = require("./e2e-mobile-ui-helpers");
 
-const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1:19006").replace(/\/$/, "");
+const MOBILE_WEB_URL = DEFAULT_MOBILE_WEB_URL;
 const VIEWPORT = { name: "iPhone 13", width: 390, height: 844 };
 const ACADEMIC_YEAR = resolveSchoolYear();
 const STUDENT_COUNT = LONG_STUDENTS_LIST_MIN_COUNT + 5;
+
+function saveContactOnly(state, draft, schoolCode) {
+  const prepared = prepareContactForSave({ ...draft, schoolCode }, state);
+  const requiredError = assertContactRequiredFields(prepared);
+  if (requiredError) return { ok: false, error: requiredError };
+  const duplicate = validateContactDuplicate(prepared, state.contacts ?? []);
+  if (duplicate.block) return { ok: false, error: duplicate.block };
+  return { ok: true, contact: { ...prepared, id: draft.id ?? newId("CONTACT") } };
+}
 
 async function setupLongStudentsListFixtures() {
   const stamp = Date.now();
@@ -64,25 +83,58 @@ async function setupLongStudentsListFixtures() {
   );
   state = await putStatePatch(adminToken, { users });
 
-  const students = Array.from({ length: STUDENT_COUNT }, (_, index) => {
+  state = await putStatePatch(adminToken, { users });
+
+  let workingState = { ...state };
+  const newContacts = [];
+  const enrollments = [];
+
+  for (let index = 0; index < STUDENT_COUNT; index += 1) {
     const rank = index + 1;
     const padded = String(rank).padStart(2, "0");
     const lastName = `LongList-${padded}`;
-    return {
-      id: newId("STUDENTS"),
-      firstName: "Eleve",
-      lastName,
-      name: lastName,
-      matricule: `ELE-LL-${stamp}-${padded}`,
-      className,
+    const studentContactFlow = saveContactOnly(
+      workingState,
+      {
+        id: newId("CONTACT"),
+        lastName,
+        firstName: "Eleve",
+        contactType: "Élève",
+        phone: `+243 81${String(stamp + rank).slice(-7)}`,
+        email: `eleve-ll-${stamp}-${padded}@somafrik.app`,
+        status: "Actif",
+      },
       schoolCode,
-      schoolYear: ACADEMIC_YEAR,
-      schoolStatus: "Inscrit",
-      enrollmentDate: todayPeriodDate(),
-      gender: rank % 2 === 0 ? "F" : "M",
-      archived: false,
+    );
+    assert.ok(studentContactFlow.ok, studentContactFlow.error);
+    newContacts.push(studentContactFlow.contact);
+    workingState = {
+      ...workingState,
+      contacts: [...(workingState.contacts ?? []), studentContactFlow.contact],
     };
-  });
+
+    const link = linkContactToOperationalRecord(studentContactFlow.contact, workingState, schoolCode);
+    assert.strictEqual(link.linkedType, "student");
+    const student = (link.students ?? []).find(
+      (row) => normalize(row.contactId) === normalize(studentContactFlow.contact.id),
+    );
+    assert.ok(student, `Fiche élève absente (${padded})`);
+
+    enrollments.push(
+      buildEnrollmentPatch(student, {
+        className,
+        matricule: `ELE-LL-${stamp}-${padded}`,
+        schoolYear: ACADEMIC_YEAR,
+        schoolStatus: "Inscrit",
+        enrollmentDate: todayPeriodDate(),
+        gender: rank % 2 === 0 ? "F" : "M",
+      }),
+    );
+    workingState = {
+      ...workingState,
+      students: [...enrollments, ...(state.students ?? [])],
+    };
+  }
 
   state = await putStatePatch(adminToken, {
     classes: [
@@ -96,7 +148,8 @@ async function setupLongStudentsListFixtures() {
       },
       ...(state.classes ?? []),
     ],
-    students: [...students, ...(state.students ?? [])],
+    contacts: [...newContacts, ...(state.contacts ?? [])],
+    students: [...enrollments, ...(state.students ?? [])],
   });
 
   const stored = (state.students ?? [])

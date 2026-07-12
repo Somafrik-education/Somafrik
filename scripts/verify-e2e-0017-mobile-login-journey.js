@@ -8,7 +8,7 @@
  *
  * Prérequis :
  *   1. Backend API : npm run backend  (ou Docker)
- *   2. Mobile web  : cd Mobile && npx expo start --web --port 19006
+ *   2. Mobile web  : npm run docker:up (port 8083) ou cd Mobile && npx expo start --web
  *   3. Playwright    : npm install -D playwright && npx playwright install chromium
  *
  *   SOMAFRIK_MOBILE_WEB_URL=http://127.0.0.1:19006 EXPO_PUBLIC_API_URL=http://127.0.0.1:5000 npm run verify:e2e-0017
@@ -24,6 +24,8 @@ const {
   pushResult,
   SUPERADMIN_ID,
   SUPERADMIN_PASSWORD,
+  E2E_PARENT_PIN,
+  E2E_TEACHER_PIN,
   mobileIdentify,
   resolveSchoolContext,
   base,
@@ -58,11 +60,12 @@ const {
   ROLE_SELECTION_TEST_IDS,
   WELCOME_TEST_IDS,
   LOGIN_MAX_MS,
+  DEFAULT_MOBILE_WEB_URL,
 } = require("./e2e-mobile-ui-helpers");
 
-const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1:19006").replace(/\/$/, "");
-const PARENT_PIN = "1234";
-const TEACHER_PIN = "5678";
+const MOBILE_WEB_URL = DEFAULT_MOBILE_WEB_URL;
+const PARENT_PIN = E2E_PARENT_PIN;
+const TEACHER_PIN = E2E_TEACHER_PIN;
 const SCHOOL_LOGO_URL = "https://cdn.somafrik.test/logo-e2e-mobile.png";
 
 function saveContactOnly(state, draft, schoolCode) {

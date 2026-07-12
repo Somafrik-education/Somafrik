@@ -27,37 +27,19 @@ const {
   waitForWelcomeReady,
   measureWelcomeDisplayMs,
   assertWelcomeScreenUi,
+  ensureMobileWebOrExit,
+  DEFAULT_MOBILE_WEB_URL,
 } = require("./e2e-mobile-ui-helpers");
 
-const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1:19006").replace(/\/$/, "");
-
-async function probeMobileWeb(url) {
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    return response.ok || response.status === 304;
-  } catch {
-    return false;
-  }
-}
+const MOBILE_WEB_URL = DEFAULT_MOBILE_WEB_URL;
 
 async function main() {
   const results = [];
-  const reachable = await probeMobileWeb(MOBILE_WEB_URL);
-  pushResult(
+  await ensureMobileWebOrExit({
+    url: MOBILE_WEB_URL,
     results,
-    "0. Application mobile accessible",
-    MOBILE_WEB_URL,
-    reachable ? MOBILE_WEB_URL : "indisponible",
-    reachable,
-  );
-  if (!reachable) {
-    console.error(
-      `\nServeur mobile web introuvable à ${MOBILE_WEB_URL}.\n` +
-        "Lancez : cd Mobile && npx expo start --web --port 19006\n",
-    );
-    printReport(results);
-    process.exit(1);
-  }
+    step: "0. Application mobile accessible",
+  });
 
   const { chromium } = await loadPlaywright();
   const browser = await chromium.launch({ headless: true });

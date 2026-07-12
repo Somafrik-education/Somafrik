@@ -44,9 +44,10 @@ const {
   loadPlaywright,
   loginAsSchoolAdmin,
   assertStudentSubScreensUi,
+  DEFAULT_MOBILE_WEB_URL,
 } = require("./e2e-mobile-ui-helpers");
 
-const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1:19006").replace(/\/$/, "");
+const MOBILE_WEB_URL = DEFAULT_MOBILE_WEB_URL;
 const VIEWPORT = { name: "iPhone 13", width: 390, height: 844 };
 const ACADEMIC_YEAR = resolveSchoolYear();
 

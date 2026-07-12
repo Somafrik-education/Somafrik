@@ -20,6 +20,8 @@ const {
   pushResult,
   SUPERADMIN_ID,
   SUPERADMIN_PASSWORD,
+  E2E_PARENT_PIN,
+  E2E_WRONG_PIN,
   resolveSchoolContext,
   base,
 } = require("./e2e-api-helpers");
@@ -49,11 +51,12 @@ const {
   assertFieldEditable,
   IDENTIFY_DEBOUNCE_MS,
   LOGIN_MAX_MS,
+  DEFAULT_MOBILE_WEB_URL,
 } = require("./e2e-mobile-ui-helpers");
 
-const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1:19006").replace(/\/$/, "");
-const PARENT_PIN = "1234";
-const WRONG_PIN = "9999";
+const MOBILE_WEB_URL = DEFAULT_MOBILE_WEB_URL;
+const PARENT_PIN = E2E_PARENT_PIN;
+const WRONG_PIN = E2E_WRONG_PIN;
 
 function saveContactOnly(state, draft, schoolCode) {
   const prepared = prepareContactForSave({ ...draft, schoolCode }, state);

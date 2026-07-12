@@ -2169,6 +2169,92 @@ async function assertMobileAccessibilityUi(page, url, fixtures, results) {
   );
 }
 
+function resolveDefaultMobileWebPort() {
+  return String(
+    process.env.SOMAFRIK_MOBILE_WEB_PORT ||
+      process.env.EXPO_PORT ||
+      process.env.SOMAFRIK_EXPO_PORT ||
+      "8083",
+  ).trim();
+}
+
+const DEFAULT_MOBILE_WEB_URL = (
+  process.env.SOMAFRIK_MOBILE_WEB_URL || `http://127.0.0.1:${resolveDefaultMobileWebPort()}`
+).replace(/\/$/, "");
+
+async function resolveMobileWebUrl(preferredUrl = DEFAULT_MOBILE_WEB_URL) {
+  const candidates = [
+    preferredUrl,
+    process.env.SOMAFRIK_MOBILE_WEB_URL,
+    `http://127.0.0.1:${resolveDefaultMobileWebPort()}`,
+    "http://127.0.0.1:8083",
+    "http://127.0.0.1:19006",
+  ]
+    .filter(Boolean)
+    .map((url) => String(url).replace(/\/$/, ""));
+  const unique = [...new Set(candidates)];
+  for (const url of unique) {
+    if (await probeMobileWeb(url)) {
+      return url;
+    }
+  }
+  return preferredUrl;
+}
+
+async function probeMobileWeb(url = DEFAULT_MOBILE_WEB_URL) {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    return response.ok || response.status === 304;
+  } catch {
+    return false;
+  }
+}
+
+function shouldSkipMobileE2e() {
+  return process.env.SOMAFRIK_SKIP_MOBILE_E2E === "true";
+}
+
+/**
+ * Vérifie l'accessibilité du serveur Expo web.
+ * - SOMAFRIK_SKIP_MOBILE_E2E=true → sortie 0 (ignoré)
+ * - serveur absent et SOMAFRIK_REQUIRE_MOBILE_E2E≠true → sortie 0 (ignoré)
+ * - sinon enregistre l'étape et quitte en erreur si indisponible
+ */
+async function ensureMobileWebOrExit({
+  url = DEFAULT_MOBILE_WEB_URL,
+  results = [],
+  step = "1. Mobile web accessible",
+} = {}) {
+  if (shouldSkipMobileE2e()) {
+    console.log("SKIP : tests mobile E2E désactivés (SOMAFRIK_SKIP_MOBILE_E2E=true).");
+    process.exit(0);
+  }
+
+  const resolvedUrl = await resolveMobileWebUrl(url);
+  const reachable = await probeMobileWeb(resolvedUrl);
+  pushResult(results, step, resolvedUrl, reachable ? resolvedUrl : "indisponible", reachable);
+
+  if (reachable) {
+    return true;
+  }
+
+  console.error(
+    `\nServeur mobile web introuvable (essayé : ${resolvedUrl}).\n` +
+      "Lancez : npm run docker:up  (Expo port 8083) ou npm run mobile:web\n" +
+      "Ou ignorez les E2E mobile : SOMAFRIK_SKIP_MOBILE_E2E=true\n",
+  );
+
+  if (process.env.SOMAFRIK_REQUIRE_MOBILE_E2E === "true") {
+    if (results.length) {
+      console.table(results);
+    }
+    process.exit(1);
+  }
+
+  console.log("SKIP : suite mobile E2E ignorée (serveur indisponible).");
+  process.exit(0);
+}
+
 module.exports = {
   WELCOME_COPY,
   WELCOME_TEST_IDS,
@@ -2247,4 +2333,9 @@ module.exports = {
   clickTab,
   assertInlineError,
   assertFieldEditable,
+  DEFAULT_MOBILE_WEB_URL,
+  resolveMobileWebUrl,
+  probeMobileWeb,
+  shouldSkipMobileE2e,
+  ensureMobileWebOrExit,
 };

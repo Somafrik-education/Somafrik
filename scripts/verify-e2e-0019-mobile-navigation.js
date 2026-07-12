@@ -39,9 +39,10 @@ const {
   CLASSES_STUDENT_TEST_IDS,
   classCardTestId,
   LOGIN_MAX_MS,
+  DEFAULT_MOBILE_WEB_URL,
 } = require("./e2e-mobile-ui-helpers");
 
-const MOBILE_WEB_URL = (process.env.SOMAFRIK_MOBILE_WEB_URL || "http://127.0.0.1:19006").replace(/\/$/, "");
+const MOBILE_WEB_URL = DEFAULT_MOBILE_WEB_URL;
 const CLASS_NAME = "6ème A";
 
 async function probe(url) {

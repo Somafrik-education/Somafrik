@@ -252,6 +252,10 @@ const ADMIN_PASSWORD =
   process.env.SOMAFRIK_E2E_ADMIN_PASSWORD ||
   process.env.SOMAFRIK_TEST_ADMIN_PASSWORD ||
   "E2eTest!2026";
+/** PIN mobile E2E (6 chiffres, non trivial — aligné validatePinPolicy). */
+const E2E_PARENT_PIN = process.env.SOMAFRIK_E2E_PARENT_PIN || "847392";
+const E2E_TEACHER_PIN = process.env.SOMAFRIK_E2E_TEACHER_PIN || "529481";
+const E2E_WRONG_PIN = process.env.SOMAFRIK_E2E_WRONG_PIN || "638274";
 /** Mots de passe connus des jeux de données locaux (seed, wipe --bootstrap, E2E). */
 const KNOWN_SUPERADMIN_PASSWORDS = ["1234", "E2eTest!2026", "change-me-now"];
 
@@ -354,6 +358,9 @@ module.exports = {
   SUPERADMIN_ID,
   SUPERADMIN_PASSWORD,
   ADMIN_PASSWORD,
+  E2E_PARENT_PIN,
+  E2E_TEACHER_PIN,
+  E2E_WRONG_PIN,
   KNOWN_SUPERADMIN_PASSWORDS,
   setupActiveSchool,
   resolveSchoolContext,
