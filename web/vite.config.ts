@@ -48,6 +48,31 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
       sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return;
+
+            if (id.includes("react-router")) return "router";
+            if (
+              id.includes("react-dom") ||
+              id.includes("/react/") ||
+              id.includes("scheduler")
+            ) {
+              return "react";
+            }
+
+            if (id.includes("grapesjs")) return "vendor-grapesjs";
+            if (id.includes("recharts") || id.includes("/d3-")) return "vendor-recharts";
+            if (id.includes("framer-motion")) return "vendor-motion";
+            if (id.includes("@tanstack/react-table")) return "vendor-table";
+            if (id.includes("@radix-ui")) return "vendor-radix";
+            if (id.includes("lucide-react")) return "vendor-icons";
+            if (id.includes("date-fns")) return "vendor-date-fns";
+            if (id.includes("zod") || id.includes("@hookform")) return "vendor-forms";
+          },
+        },
+      },
     },
   };
 });

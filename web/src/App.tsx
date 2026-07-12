@@ -1,73 +1,74 @@
+import { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { PermissionRoute } from "./components/PermissionRoute";
+import { RouteFallback } from "./components/RouteFallback";
 import { AppLayout } from "./components/layout/AppLayout";
 import { DataProvider } from "./context/DataContext";
-import { LandingPage } from "./pages/LandingPage";
-import { LoginPage } from "./pages/LoginPage";
-import { DashboardEntryPage } from "./pages/DashboardEntryPage";
-import { CountriesPage } from "./pages/CountriesPage";
-import { SchoolsPage } from "./pages/SchoolsPage";
-import { SubscriptionsLayout } from "./pages/abonnements/SubscriptionsLayout";
-import { SubscriptionOffersPage } from "./pages/abonnements/SubscriptionOffersPage";
-import { SubscriptionSchoolsPage } from "./pages/abonnements/SubscriptionSchoolsPage";
-import { SubscriptionPaymentsPage } from "./pages/abonnements/SubscriptionPaymentsPage";
-import { SubscriptionInvoicesPage } from "./pages/abonnements/SubscriptionInvoicesPage";
-import { SubscriptionDiscountsPage } from "./pages/abonnements/SubscriptionDiscountsPage";
-import { SubscriptionDelinquencyPage } from "./pages/abonnements/SubscriptionDelinquencyPage";
-import { SubscriptionReportsPage } from "./pages/abonnements/SubscriptionReportsPage";
-import { MonAbonnementLayout } from "./pages/abonnements/MonAbonnementLayout";
-import { MonAbonnementPage } from "./pages/abonnements/MonAbonnementPage";
-import { MonAbonnementInvoicesPage } from "./pages/abonnements/MonAbonnementInvoicesPage";
-import { MonAbonnementPaymentsPage } from "./pages/abonnements/MonAbonnementPaymentsPage";
-import { ChangeOfferPage } from "./pages/abonnements/ChangeOfferPage";
-import { CancellationRequestPage } from "./pages/abonnements/CancellationRequestPage";
-import { NotificationsPage } from "./pages/NotificationsPage";
-import { UsersPage } from "./pages/UsersPage";
-import { PermissionsPage } from "./pages/PermissionsPage";
-import { ChartSettingsPage } from "./pages/ChartSettingsPage";
-import { ReportsPage } from "./pages/ReportsPage";
-import { ConfigurationPage } from "./pages/ConfigurationPage";
-import { EntityPage } from "./pages/EntityPage";
-import { CoursePlanningPage } from "./pages/CoursePlanningPage";
-import { PlanningLayout } from "./pages/planning/PlanningLayout";
-import { TimetableLayout } from "./pages/planning/TimetableLayout";
-import { TimetableByClassPage } from "./pages/planning/TimetableByClassPage";
-import { TimetableByTeacherPage } from "./pages/planning/TimetableByTeacherPage";
-import {
+import { isMarketplaceEnabled } from "./lib/marketplaceFeature";import {
+  AdministrationLayout,
+  BulletinDesignPage,
+  CancellationRequestPage,
+  ChangeOfferPage,
+  ChartSettingsPage,
+  ClassStudentsPage,
+  ConfigurationPage,
+  CountriesPage,
+  CoursePlanningPage,
+  DashboardEntryPage,
+  MarketplacePage,
+  EtablissementOverviewPage,  EntityPage,
+  FinanceFeesPage,
+  FinanceUnpaidPage,
+  FinancesLayout,
+  GradesEvaluationsPage,
+  LandingPage,
+  LoginPage,
+  MonAbonnementInvoicesPage,
+  MonAbonnementLayout,
+  MonAbonnementPage,
+  MonAbonnementPaymentsPage,
+  MonEtablissementLayout,
+  NotificationsPage,
+  ParametresLayout,
+  ParentChildRelationsPage,
+  PermissionsPage,
+  PlanningConflictsPage,
+  PlanningLayout,
   PlanningRoomsPage,
   PlanningSubstitutionsPage,
-  TimetableByRoomPage,
-} from "./pages/planning/PlanningPlaceholders";
-import { PlanningConflictsPage } from "./pages/planning/PlanningConflictsPage";
-import { FinancesLayout } from "./pages/finances/FinancesLayout";
-import { FinanceFeesPage } from "./pages/finances/FinanceFeesPage";
-import { FinanceUnpaidPage } from "./pages/finances/FinanceUnpaidPage";
-import { MonEtablissementLayout } from "./pages/etablissement/MonEtablissementLayout";
-import { EtablissementOverviewPage } from "./pages/etablissement/EtablissementOverviewPage";
-import { ClassStudentsPage } from "./pages/etablissement/ClassStudentsPage";
-import { ParentChildRelationsPage } from "./pages/etablissement/ParentChildRelationsPage";
-import { AdministrationLayout } from "./pages/administration/AdministrationLayout";
-import { ParametresLayout } from "./pages/parametres/ParametresLayout";
-import { SettingsHubPage } from "./pages/parametres/SettingsHubPage";
-import { SubscriptionPolicySettingsPage } from "./pages/parametres/SubscriptionPolicySettingsPage";
-import {
+  PresencesPage,
+  ReportsPage,
+  SchoolsPage,
   SettingsAppearancePage,
   SettingsDataPage,
   SettingsFinancePage,
+  SettingsHubPage,
   SettingsIntegrationsPage,
   SettingsNotificationsPage,
   SettingsProfilePage,
   SettingsSecurityPage,
-} from "./pages/parametres/SettingsPlaceholders";
-import { BulletinDesignPage } from "./pages/BulletinDesignPage";
-import { PresencesPage } from "./pages/PresencesPage";
-import { GradesEvaluationsPage } from "./pages/GradesEvaluationsPage";
+  SubscriptionDelinquencyPage,
+  SubscriptionDiscountsPage,
+  SubscriptionInvoicesPage,
+  SubscriptionOffersPage,
+  SubscriptionPaymentsPage,
+  SubscriptionPolicySettingsPage,
+  SubscriptionReportsPage,
+  SubscriptionSchoolsPage,
+  SubscriptionsLayout,
+  TimetableByClassPage,
+  TimetableByRoomPage,
+  TimetableByTeacherPage,
+  TimetableLayout,
+  UsersPage,
+} from "./lazyPages";
 import { ActiveSchoolProvider } from "./context/ActiveSchoolContext";
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/connexion" element={<LoginPage />} />
       <Route
@@ -89,6 +90,16 @@ export default function App() {
             </PermissionRoute>
           }
         />
+        {isMarketplaceEnabled() ? (
+          <Route
+            path="/marketplace"
+            element={
+              <PermissionRoute view="countries">
+                <MarketplacePage />
+              </PermissionRoute>
+            }
+          />
+        ) : null}
         {/* Module Mon établissement */}
         <Route
           path="/etablissement"
@@ -502,6 +513,7 @@ export default function App() {
         <Route path="/parametres-graphiques" element={<Navigate to="/parametres/graphiques" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/tableau-de-bord" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
