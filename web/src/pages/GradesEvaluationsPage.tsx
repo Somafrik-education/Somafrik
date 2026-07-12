@@ -556,14 +556,14 @@ export function GradesEvaluationsPage() {
         }
       >
         <div className="grid gap-4">
-          <Field label="Nouvelle note">
+          <Field label="Nouvelle note" required>
             <Input
               type="number"
               value={correctionValue}
               onChange={(e) => setCorrectionValue(e.target.value)}
             />
           </Field>
-          <Field label="Motif (obligatoire)">
+          <Field label="Motif" required>
             <Input value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} />
           </Field>
         </div>

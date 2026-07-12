@@ -31,6 +31,7 @@ const {
   resolveSchoolContext,
 } = require("./e2e-api-helpers");
 const { resolveSchoolYear } = require("./e2e-student-enrollment-rules");
+const { createStudentFromContact } = require("./e2e-contact-flow");
 const {
   newFeeId,
   validateFeeGridInput,
@@ -41,17 +42,24 @@ const {
 
 const MONTHLY_MONTHS = ["Septembre", "Octobre", "Novembre"];
 
-function buildStudent(schoolCode, className, stamp, suffix) {
-  const id = newId("STUDENTS");
+function buildStudentContact(schoolCode, className, stamp, suffix) {
   return {
-    id,
-    name: `Élève${suffix}`,
+    id: newId("CONTACT"),
+    lastName: `Élève${suffix}`,
     firstName: `Frais${stamp}`,
+    contactType: "Élève",
+    phone: `+243 810 ${String(stamp + suffix).slice(-6)}`,
+    email: `eleve-frais-${stamp}-${suffix}@somafrik.app`,
+    status: "Actif",
+  };
+}
+
+function buildStudentEnrollment(className, stamp, suffix) {
+  return {
+    name: `Élève${suffix}`,
     className,
-    schoolCode,
     gender: "Masculin",
     birthDate: "10-05-2011",
-    phone: `+243 810 ${String(stamp + suffix).slice(-6)}`,
     matricule: `ELE-FRAIS-${stamp}-${suffix}`,
     archived: false,
     schoolYear: resolveSchoolYear(),
@@ -136,10 +144,15 @@ async function main() {
   pushResult(results, "2. Classe sélectionnée / créée", className, newClass.name, true);
 
   // Élève existant dans la classe (avant activation grille)
-  const existingStudent = buildStudent(schoolCode, className, stamp, "A");
-  state = await putStatePatch(comptableToken, {
-    students: [existingStudent, ...(state.students ?? [])],
-  });
+  const existingFlow = createStudentFromContact(
+    state,
+    buildStudentContact(schoolCode, className, stamp, "A"),
+    schoolCode,
+    buildStudentEnrollment(className, stamp, "A"),
+  );
+  assert.ok(existingFlow.ok, existingFlow.error);
+  state = await putStatePatch(comptableToken, existingFlow.patch);
+  const existingStudent = existingFlow.student;
   pushResult(
     results,
     "3. Élève existant dans la classe",
@@ -244,13 +257,20 @@ async function main() {
   assert.ok(existingMatch.ok, "Montants incohérents pour l'élève existant");
 
   // Nouvel élève inscrit → hérite des frais actifs
-  const newStudent = buildStudent(schoolCode, className, stamp, "B");
+  const newFlow = createStudentFromContact(
+    state,
+    buildStudentContact(schoolCode, className, stamp, "B"),
+    schoolCode,
+    buildStudentEnrollment(className, stamp, "B"),
+  );
+  assert.ok(newFlow.ok, newFlow.error);
+  const newStudent = newFlow.student;
   const inheritedFees = applyActiveGridsToStudent(
     { ...state, students: [newStudent, ...(state.students ?? [])] },
     newStudent,
   );
   state = await putStatePatch(comptableToken, {
-    students: [newStudent, ...(state.students ?? [])],
+    ...newFlow.patch,
     studentFees: inheritedFees,
   });
   const newMatch = studentFeesMatchGrid(state.studentFees ?? [], newStudent.id, activeGrid, storedItems);

@@ -1,5 +1,6 @@
 const { AccountIdentifier } = require("./accountIdentifier");
 const { verifySecret } = require("./credentialService");
+const { resolveParentChildren } = require("../lib/parentChildren");
 const {
   getLoginAttemptKey,
   assertLoginNotLocked,
@@ -137,6 +138,7 @@ class AuthService {
     schools = [school],
     teachers,
     students,
+    relations = [],
     userAccounts,
     countries = [],
     subscriptions = [],
@@ -146,6 +148,7 @@ class AuthService {
     this.schools = schools.filter(Boolean);
     this.teachers = teachers;
     this.students = students;
+    this.relations = relations;
     this.userAccounts = userAccounts;
     this.countries = countries;
     this.subscriptions = subscriptions;
@@ -312,23 +315,14 @@ class AuthService {
   }
 
   findLinkedParentChildren(user, schoolCode) {
-    const normalizedSchoolCode = String(schoolCode).trim().toUpperCase();
-    const parentPhone = normalizeText(user.identifier) || normalizeText(user.phone);
-    if (!parentPhone) {
-      return [];
-    }
-
-    return this.students.filter(
-      (student) =>
-        student.schoolCode === normalizedSchoolCode &&
-        normalizeText(student.parentPhone) === parentPhone
-    );
+    return resolveParentChildren(user, { students: this.students, relations: this.relations }, schoolCode);
   }
 
   buildManagedMobileUser(user) {
     const base = {
       id: user.id,
       publicId: user.publicId,
+      contactId: user.contactId,
       name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.identifier,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -341,9 +335,11 @@ class AuthService {
       schoolCode: user.role === "Admin Pays" ? "*" : user.schoolCode,
       permissions: user.permissions,
       mustChangePassword:
-        user.mustChangePassword != null
-          ? Boolean(user.mustChangePassword)
-          : Boolean(user.temporaryPassword),
+        user.mustChangePassword === false
+          ? false
+          : user.mustChangePassword != null
+            ? Boolean(user.mustChangePassword)
+            : Boolean(user.temporaryPassword),
     };
 
     if (isTeacherRole(user.role)) {

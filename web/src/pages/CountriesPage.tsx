@@ -21,6 +21,11 @@ import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import type { BackOfficeState, Country, School } from "../types";
 import {
+  COUNTRY_GMT_OPTIONS,
+  formatCountryGmt,
+  normalizeCountryGmt,
+} from "../lib/countryGmt";
+import {
   SUBSCRIPTION_PLAN_NAMES,
   resolveCountrySubscriptionPolicy,
 } from "../lib/subscriptionPolicy";
@@ -30,7 +35,7 @@ const EMPTY_COUNTRY: Country = {
   code: "",
   phonePrefix: "",
   currency: "",
-  timezone: "Africa/Kinshasa",
+  timezone: "GMT+1",
   status: "Actif",
 };
 
@@ -164,7 +169,7 @@ export function CountriesPage() {
       code: editing.code.trim().toUpperCase(),
       phonePrefix: editing.phonePrefix?.trim(),
       currency: editing.currency?.trim().toUpperCase(),
-      timezone: editing.timezone?.trim(),
+      timezone: normalizeCountryGmt(editing.timezone),
     };
 
     const error = validateCountry(payload, state.countries, originalCode || undefined);
@@ -203,7 +208,7 @@ export function CountriesPage() {
 
   function openEdit(country: Country) {
     setOriginalCode(country.code);
-    setEditing({ ...country });
+    setEditing({ ...country, timezone: normalizeCountryGmt(country.timezone) });
     setDetail(null);
   }
 
@@ -277,7 +282,7 @@ export function CountriesPage() {
             <dl className="grid grid-cols-2 gap-4 text-sm">
               <DetailRow label="Indicatif" value={detail.phonePrefix} />
               <DetailRow label="Devise" value={detail.currency} />
-              <DetailRow label="Fuseau horaire" value={detail.timezone} />
+              <DetailRow label="GMT" value={formatCountryGmt(detail.timezone)} />
               <DetailRow label="Statut" value={detail.status} />
               <DetailRow label="Créé le" value={detail.createdAt} />
             </dl>
@@ -336,14 +341,14 @@ export function CountriesPage() {
       >
         {editing ? (
           <form id="country-form" onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Nom du pays">
+            <Field label="Nom du pays" required>
               <Input
                 value={editing.name}
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                 required
               />
             </Field>
-            <Field label="Code ISO" hint="2 lettres, ex. CD, BI, SN">
+            <Field label="Code ISO" hint="2 lettres, ex. CD, BI, SN" required>
               <Input
                 value={editing.code}
                 onChange={(e) => setEditing({ ...editing, code: e.target.value.toUpperCase() })}
@@ -366,11 +371,14 @@ export function CountriesPage() {
                 placeholder="CDF"
               />
             </Field>
-            <Field label="Fuseau horaire">
-              <Input
-                value={editing.timezone ?? ""}
+            <Field label="GMT" hint="Décalage horaire du pays (ex. GMT+1).">
+              <Select
+                value={normalizeCountryGmt(editing.timezone)}
                 onChange={(e) => setEditing({ ...editing, timezone: e.target.value })}
-                placeholder="Africa/Kinshasa"
+                options={COUNTRY_GMT_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                }))}
               />
             </Field>
             <Field label="Statut">

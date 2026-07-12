@@ -206,7 +206,7 @@ export function NotificationsPage() {
         {composing ? (
           <form id="notification-form" onSubmit={handleCreate} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <Field label="Titre">
+              <Field label="Titre" required>
                 <Input
                   value={composing.title}
                   onChange={(e) => setComposing({ ...composing, title: e.target.value })}
@@ -215,7 +215,7 @@ export function NotificationsPage() {
               </Field>
             </div>
             <div className="sm:col-span-2">
-              <Field label="Message">
+              <Field label="Message" required>
                 <textarea
                   className="input-base min-h-[96px] resize-y"
                   value={composing.message}

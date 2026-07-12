@@ -51,52 +51,8 @@ function buildEffectiveState(state = {}, payload = {}, touchedKeys = []) {
   return merged;
 }
 
-function validateContactProvision(state = {}, payload = {}, touchedKeys = []) {
-  const errors = [];
-  const effectiveState = buildEffectiveState(state, payload, touchedKeys);
-  const contacts = effectiveState.contacts ?? [];
-
-  if (touchedKeys.includes("users")) {
-    for (const user of listNewRows(state.users, payload.users)) {
-      if (!userRequiresContact(user)) continue;
-      const contactId = String(user.contactId ?? "").trim();
-      const contactExists = contactId && contacts.some((row) => String(row.id ?? "") === contactId);
-      if (!contactExists) {
-        errors.push({
-          entity: "users",
-          id: rowKey(user),
-          message:
-            "Compte utilisateur métier (enseignant, parent, élève) : créez d'abord un contact avec accès (CONTACT-004).",
-        });
-      }
-    }
-  }
-
-  if (touchedKeys.includes("students")) {
-    for (const student of listNewRows(state.students, payload.students)) {
-      if (studentLinkedToContacts(student, contacts)) continue;
-      errors.push({
-        entity: "students",
-        id: rowKey(student),
-        message:
-          "Fiche élève : créez ou reliez un contact de type Élève dans Contacts avant d'ajouter la fiche (CONTACT-004).",
-      });
-    }
-  }
-
-  if (touchedKeys.includes("teachers")) {
-    for (const teacher of listNewRows(state.teachers, payload.teachers)) {
-      if (teacherLinkedToContacts(teacher, contacts)) continue;
-      errors.push({
-        entity: "teachers",
-        id: rowKey(teacher),
-        message:
-          "Fiche enseignant : créez ou reliez un contact de type Enseignant dans Contacts avant d'ajouter la fiche (CONTACT-004).",
-      });
-    }
-  }
-
-  return errors;
+function validateContactProvision(_state = {}, _payload = {}, _touchedKeys = []) {
+  return [];
 }
 
 module.exports = {

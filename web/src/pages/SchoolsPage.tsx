@@ -642,7 +642,7 @@ export function SchoolsPage() {
       >
         {editing ? (
           <form id="school-form" onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Nom *">
+            <Field label="Nom" required>
               <Input
                 value={editing.name}
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
@@ -651,7 +651,8 @@ export function SchoolsPage() {
               />
             </Field>
             <Field
-              label="Code établissement *"
+              label="Code établissement"
+              required
               hint={
                 isEditingExisting && !isSuperAdmin
                   ? "Modifiable uniquement par le Super Administrateur."
@@ -669,7 +670,7 @@ export function SchoolsPage() {
                 readOnly={!isEditingExisting || !isSuperAdmin}
               />
             </Field>
-            <Field label="Type *">
+            <Field label="Type" required>
               <Select
                 value={editing.type ?? ""}
                 onChange={(e) => setEditing({ ...editing, type: e.target.value })}
@@ -678,7 +679,8 @@ export function SchoolsPage() {
               />
             </Field>
             <Field
-              label="Pays *"
+              label="Pays"
+              required
               hint={
                 !countryOptions.length
                   ? "Créez d'abord un pays dans Paramétrage plateforme → Pays."
@@ -699,28 +701,28 @@ export function SchoolsPage() {
                 <Input readOnly value="" placeholder="Aucun pays disponible" />
               )}
             </Field>
-            <Field label="Ville *">
+            <Field label="Ville" required>
               <Input
                 value={editing.city ?? ""}
                 onChange={(e) => setEditing({ ...editing, city: e.target.value })}
                 required
               />
             </Field>
-            <Field label="Responsable principal *">
+            <Field label="Responsable principal" required>
               <Input
                 value={editing.principalName ?? ""}
                 onChange={(e) => setEditing({ ...editing, principalName: e.target.value })}
                 required
               />
             </Field>
-            <Field label="Téléphone *">
+            <Field label="Téléphone" required>
               <Input
                 value={editing.phone ?? ""}
                 onChange={(e) => setEditing({ ...editing, phone: e.target.value })}
                 required
               />
             </Field>
-            <Field label="Email *">
+            <Field label="Email" required>
               <Input
                 type="email"
                 value={editing.email ?? ""}

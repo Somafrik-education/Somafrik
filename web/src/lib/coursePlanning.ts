@@ -343,9 +343,10 @@ export function buildSchoolPlanningResetPatch(
 }
 
 /** Vide tout le planning plateforme (tous établissements). */
-export function buildFullPlanningResetPatch(
-  _state: BackOfficeState,
-): Pick<BackOfficeState, "courseSchedules" | "assignments" | "exams"> {
+export function buildFullPlanningResetPatch(): Pick<
+  BackOfficeState,
+  "courseSchedules" | "assignments" | "exams"
+> {
   return {
     courseSchedules: [],
     assignments: [],
@@ -1116,7 +1117,7 @@ function resolveAllScheduleConflicts(slots: CourseScheduleSlot[]): {
   slots: CourseScheduleSlot[];
   conflictsResolved: number;
 } {
-  let next = [...slots];
+  const next = [...slots];
   let conflictsResolved = 0;
   const maxPasses = 4;
 

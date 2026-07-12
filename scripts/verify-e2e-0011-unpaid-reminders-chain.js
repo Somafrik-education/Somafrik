@@ -30,6 +30,11 @@ const {
   resolveSchoolContext,
 } = require("./e2e-api-helpers");
 const { resolveSchoolYear } = require("./e2e-student-enrollment-rules");
+const {
+  saveContactOnly,
+  createStudentFromContact,
+  createParentUserFromContact,
+} = require("./e2e-contact-flow");
 const { newFeeId } = require("./e2e-fee-rules");
 const {
   listUnpaidStudentFees,
@@ -43,17 +48,24 @@ const {
 const PAST_DUE = "01-01-2026";
 const ACADEMIC_YEAR = resolveSchoolYear();
 
-function buildStudent({ schoolCode, className, stamp, suffix, parentPhone }) {
-  const id = newId("STUDENTS");
+function buildStudentContact(stamp, suffix) {
   return {
-    id,
-    name: `Retard${suffix}`,
+    id: newId("CONTACT"),
+    lastName: `Retard${suffix}`,
     firstName: `Élève${stamp}`,
+    contactType: "Élève",
+    phone: `+243 811 ${String(stamp + suffix).slice(-6)}`,
+    email: `eleve-imp-${stamp}-${suffix}@somafrik.app`,
+    status: "Actif",
+  };
+}
+
+function buildStudentEnrollment(className, stamp, suffix, parentPhone) {
+  return {
+    name: `Retard${suffix}`,
     className,
-    schoolCode,
     gender: "Féminin",
     birthDate: "12-08-2011",
-    phone: `+243 811 ${String(stamp + suffix).slice(-6)}`,
     matricule: `ELE-IMP-${stamp}-${suffix}`,
     parentPhone,
     archived: false,
@@ -137,37 +149,52 @@ async function main() {
     { id: newId("CLASS"), name: classClear, className: classClear, level: "5ème", track: "Générale", schoolCode, status: "Actif" },
   ];
 
-  const studentOverdue = buildStudent({ schoolCode, className: classOverdue, stamp, suffix: "A", parentPhone });
-  const studentSettled = buildStudent({ schoolCode, className: classOverdue, stamp, suffix: "B", parentPhone });
-  const studentNoDebt = buildStudent({ schoolCode, className: classClear, stamp, suffix: "C", parentPhone });
+  state = await putStatePatch(comptableToken, { classes: [...classes, ...(state.classes ?? [])] });
+
+  const seedStudent = async (className, suffix) => {
+    const flow = createStudentFromContact(
+      state,
+      buildStudentContact(stamp, suffix),
+      schoolCode,
+      buildStudentEnrollment(className, stamp, suffix, parentPhone),
+    );
+    assert.ok(flow.ok, flow.error);
+    state = await putStatePatch(comptableToken, flow.patch);
+    return flow.student;
+  };
+
+  const studentOverdue = await seedStudent(classOverdue, "A");
+  const studentSettled = await seedStudent(classOverdue, "B");
+  const studentNoDebt = await seedStudent(classClear, "C");
 
   const feeOverdueA1 = buildOverdueFee(studentOverdue, "Frais d'inscription", 80_000, ACADEMIC_YEAR);
   const feeOverdueA2 = buildOverdueFee(studentOverdue, "Transport", 40_000, "Janvier");
   const feeSettled = buildPaidFee(studentSettled, "Cantine", 25_000);
   const feeNoDebt = buildPaidFee(studentNoDebt, "Inscription", 50_000);
 
-  const parentUser = {
-    id: newId("USERS"),
-    contactId: newId("CONTACT"),
-    firstName: "Parent",
-    lastName: `Impayé${stamp}`,
-    role: "Parent",
-    identifier: parentPhone,
-    phone: parentPhone,
-    email: `parent-imp-${stamp}@somafrik.app`,
+  const parentContactFlow = saveContactOnly(
+    state,
+    {
+      id: newId("CONTACT"),
+      lastName: "Parent",
+      firstName: `Impayé${stamp}`,
+      contactType: "Parent",
+      phone: parentPhone,
+      email: `parent-imp-${stamp}@somafrik.app`,
+      status: "Actif",
+    },
     schoolCode,
-    countryScope: "RDC",
-    scopeLevel: "Établissement",
-    accessChannel: "Application",
-    status: "Actif",
-    password: parentPassword,
-    temporaryPassword: parentPassword,
-    permissions: [],
-  };
+  );
+  assert.ok(parentContactFlow.ok, parentContactFlow.error);
+  const parentUser = createParentUserFromContact(
+    parentContactFlow.contact,
+    schoolCode,
+    parentPhone,
+    parentPassword,
+  );
 
   state = await putStatePatch(comptableToken, {
-    classes: [...classes, ...(state.classes ?? [])],
-    students: [studentOverdue, studentSettled, studentNoDebt, ...(state.students ?? [])],
+    contacts: [parentContactFlow.contact, ...(state.contacts ?? [])],
     studentFees: [feeOverdueA1, feeOverdueA2, feeSettled, feeNoDebt, ...(state.studentFees ?? [])],
     users: [parentUser, ...(state.users ?? [])],
   });

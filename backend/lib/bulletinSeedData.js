@@ -97,15 +97,20 @@ function buildSchoolBulletinBundle({
   courses = [],
   teachers = [],
   periods = DEFAULT_PERIODS,
+  studentsPerClass = 10,
 }) {
   const schoolStudents = students.filter((student) => student.schoolCode === schoolCode && !student.archived);
   const schoolCourses = courses.filter((course) => !course.schoolCode || course.schoolCode === schoolCode);
   const schoolTeachers = teachers.filter((teacher) => !teacher.schoolCode || teacher.schoolCode === schoolCode);
+  const sampledStudents =
+    schoolStudents.length > 60
+      ? schoolStudents.filter((_, index) => index % studentsPerClass === 0)
+      : schoolStudents;
   const notes = [];
   const bulletins = [];
 
   periods.forEach((period) => {
-    schoolStudents.forEach((student) => {
+    sampledStudents.forEach((student) => {
       const classCourses = schoolCourses.filter((course) => course.className === student.className);
       notes.push(
         ...buildStudentNotes({
@@ -120,7 +125,7 @@ function buildSchoolBulletinBundle({
 
     bulletins.push(
       ...buildBulletinsForStudents({
-        students: schoolStudents,
+        students: sampledStudents,
         courses: schoolCourses,
         notes: notes.filter((note) => !note.period || note.period === period),
         schoolCode,

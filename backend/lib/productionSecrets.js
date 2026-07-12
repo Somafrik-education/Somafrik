@@ -60,6 +60,20 @@ function collectProductionSecretViolations(env = process.env) {
     );
   }
 
+  if (env.SOMAFRIK_DISABLE_LOGIN_LOCKOUT === "true") {
+    violations.push(
+      "SOMAFRIK_DISABLE_LOGIN_LOCKOUT doit être false (ou absent) en production.",
+    );
+  }
+
+  if (env.SOMAFRIK_AUTH_OPTIONAL === "true") {
+    violations.push("SOMAFRIK_AUTH_OPTIONAL=true est interdit en production.");
+  }
+
+  if (env.SOMAFRIK_E2E === "true") {
+    violations.push("SOMAFRIK_E2E=true est interdit en production.");
+  }
+
   return violations;
 }
 

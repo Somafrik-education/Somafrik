@@ -68,12 +68,141 @@ function validatePasswordPolicy(password) {
   return null;
 }
 
+const KNOWN_WEAK_PINS = new Set([
+  "000000",
+  "111111",
+  "222222",
+  "333333",
+  "444444",
+  "555555",
+  "666666",
+  "777777",
+  "888888",
+  "999999",
+  "123456",
+  "654321",
+  "012345",
+  "543210",
+  "123123",
+  "121212",
+  "101010",
+  "010101",
+]);
+
+function isWeakPin(pin) {
+  const value = String(pin ?? "").trim();
+  if (!/^\d{6}$/.test(value)) {
+    return false;
+  }
+  if (KNOWN_WEAK_PINS.has(value)) {
+    return true;
+  }
+  if (/^(\d)\1{5}$/.test(value)) {
+    return true;
+  }
+  const digits = value.split("").map(Number);
+  const ascending = digits.every((digit, index) => index === 0 || digit === digits[index - 1] + 1);
+  const descending = digits.every((digit, index) => index === 0 || digit === digits[index - 1] - 1);
+  return ascending || descending;
+}
+
 function validatePinPolicy(pin) {
   const value = String(pin ?? "").trim();
   if (!/^\d{6}$/.test(value)) {
     return "Le PIN doit contenir exactement 6 chiffres.";
   }
+  if (isWeakPin(value)) {
+    return "Ce PIN est trop faible. Choisissez un code à 6 chiffres plus difficile à deviner.";
+  }
   return null;
+}
+
+function validateAccountSecret(secret) {
+  const value = String(secret ?? "").trim();
+  if (!value) {
+    return null;
+  }
+  if (/^\d{6}$/.test(value)) {
+    return validatePinPolicy(value);
+  }
+  return validatePasswordPolicy(value);
+}
+
+function accountRowKey(row = {}) {
+  return String(row.id ?? row.identifier ?? row.publicId ?? row.matricule ?? "").trim();
+}
+
+function validateIntroducedAccountSecrets(currentState = {}, nextState = {}, touchedKeys = []) {
+  const errors = [];
+
+  if (touchedKeys.includes("users")) {
+    const currentByKey = new Map((currentState.users ?? []).map((user) => [accountRowKey(user), user]));
+    for (const user of nextState.users ?? []) {
+      const key = accountRowKey(user);
+      const previous = currentByKey.get(key) ?? {};
+
+      const temporaryPassword = String(user.temporaryPassword ?? "").trim();
+      const previousTemporaryPassword = String(previous.temporaryPassword ?? "").trim();
+      if (
+        temporaryPassword &&
+        temporaryPassword !== previousTemporaryPassword &&
+        !user.passwordHash &&
+        !user.pinHash
+      ) {
+        const message = validateAccountSecret(temporaryPassword);
+        if (message) {
+          errors.push({ entity: "users", id: key, message });
+        }
+      }
+
+      const pin = String(user.pin ?? "").trim();
+      const previousPin = String(previous.pin ?? "").trim();
+      if (pin && pin !== previousPin && !user.pinHash) {
+        const message = validatePinPolicy(pin);
+        if (message) {
+          errors.push({ entity: "users", id: key, message });
+        }
+      }
+    }
+  }
+
+  if (touchedKeys.includes("students")) {
+    const currentByKey = new Map(
+      (currentState.students ?? []).map((student) => [accountRowKey(student), student]),
+    );
+    for (const student of nextState.students ?? []) {
+      const key = accountRowKey(student);
+      const previous = currentByKey.get(key) ?? {};
+      const pin = String(student.pin ?? "").trim();
+      const previousPin = String(previous.pin ?? "").trim();
+      if (pin && pin !== previousPin && !student.pinHash) {
+        const message = validatePinPolicy(pin);
+        if (message) {
+          errors.push({ entity: "students", id: key, message });
+        }
+      }
+    }
+  }
+
+  if (touchedKeys.includes("teachers")) {
+    const currentByKey = new Map(
+      (currentState.teachers ?? []).map((teacher) => [accountRowKey(teacher), teacher]),
+    );
+    for (const teacher of nextState.teachers ?? []) {
+      const key = accountRowKey(teacher);
+      const previous = currentByKey.get(key) ?? {};
+      const password = String(teacher.password ?? "").trim();
+      const previousPassword = String(previous.password ?? "").trim();
+      if (password && password !== previousPassword && !teacher.passwordHash && !teacher.pinHash) {
+        const message = validateAccountSecret(password);
+        if (message) {
+          errors.push({ entity: "teachers", id: key, message });
+        }
+      }
+    }
+  }
+
+  return errors;
 }
 
 function findDuplicateLoginIdentifier(users = [], candidate = {}, options = {}) {
@@ -127,6 +256,9 @@ module.exports = {
   loginBlockedMessage,
   validatePasswordPolicy,
   validatePinPolicy,
+  isWeakPin,
+  validateAccountSecret,
+  validateIntroducedAccountSecrets,
   findDuplicateLoginIdentifier,
   softDeleteUserAccount,
 };

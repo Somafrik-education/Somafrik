@@ -15,7 +15,7 @@ export function Sidebar() {
 
   const visible = NAV_ITEMS.filter((item) => {
     if (item.schoolOnly && !schoolBackOffice) return false;
-    // Les comptes établissement gèrent utilisateurs / droits via Paramètres.
+    // Les comptes établissement gèrent les accès via Mon établissement ; les droits via Paramètres.
     if (internalSchool && (item.view === "users" || item.view === "permissions")) return false;
     return canReadView(ctx, item.view);
   });

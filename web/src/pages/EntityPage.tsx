@@ -57,12 +57,11 @@ import {
 } from "../lib/userAccounts";
 import { validatePasswordPolicy } from "../lib/userAccountRules";
 import {
-  getRelationContactOptions,
   enforceSinglePrincipalParent,
   formatContactPersonName,
   formatStudentPersonName,
   getParentLinkedStudentIds,
-  getRelationParentContactOptions,
+  getRelationParentUserOptions,
   getRelationStudentOptions,
   groupParentChildRelations,
   isParentChildBundleRow,
@@ -436,10 +435,8 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       const accountCode = String(editing?.schoolCode ?? schoolCode ?? "");
       return getContactRoleOptions(state, accountCode);
     }
-    if (field.optionsKey === "relationContacts") {
-      return isParentChildMode
-        ? getRelationParentContactOptions(scopeUser, state)
-        : getRelationContactOptions(scopeUser, state);
+    if (field.optionsKey === "relationParents" || field.optionsKey === "relationContacts") {
+      return getRelationParentUserOptions(scopeUser, state);
     }
     if (field.optionsKey === "relationStudents") {
       return getRelationStudentOptions(scopeUser, state);
@@ -779,11 +776,11 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       newId("RELATIONS"),
     );
 
-    const parentContact = ((state.contacts ?? []) as unknown as Record<string, unknown>[]).find(
+    const parentAccount = ((state.users ?? []) as unknown as Record<string, unknown>[]).find(
       (row) => String(row.id ?? "") === fromContactId,
     );
-    const label = parentContact
-      ? formatContactPersonName(parentContact)
+    const label = parentAccount
+      ? formatContactPersonName(parentAccount)
       : String(editing.fromContactName ?? fromContactId);
 
     try {
@@ -798,7 +795,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
               entityType: "relation",
               entityId: fromContactId,
               entityLabel: label || undefined,
-              schoolCode: String(editing.schoolCode ?? parentContact?.schoolCode ?? "") || undefined,
+              schoolCode: String(editing.schoolCode ?? parentAccount?.schoolCode ?? "") || undefined,
               details: `${(editing.toStudentIds as string[] | undefined)?.length ?? 0} élève(s) lié(s)`,
             }),
           ),
@@ -1746,10 +1743,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     header: relationColumnHeader(key, module, isParentChildMode),
     render: (row: Record<string, unknown>) => {
       if (module.key === "relations" && key === "fromContactName") {
-        const contact = ((state.contacts ?? []) as unknown as Record<string, unknown>[]).find(
+        const account = ((state.users ?? []) as unknown as Record<string, unknown>[]).find(
           (item) => String(item.id ?? "") === String(row.fromContactId ?? ""),
         );
-        if (contact) return formatContactPersonName(contact);
+        if (account) return formatContactPersonName(account);
       }
       if (module.key === "relations" && key === "toStudentName") {
         if (isParentChildMode) {
@@ -2322,9 +2319,9 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                 )}
               </Field>
             ) : null}
-            {isParentChildMode && getRelationParentContactOptions(scopeUser, state).length === 0 ? (
+            {isParentChildMode && getRelationParentUserOptions(scopeUser, state).length === 0 ? (
               <p className="text-xs text-muted">
-                Aucun contact de type Parent. Créez d&apos;abord un parent dans{" "}
+                Aucun compte parent. Créez d&apos;abord un compte Parent dans{" "}
                 <Link to="/etablissement/comptes-utilisateurs" className="font-semibold text-brand underline">
                   Mon établissement → Comptes utilisateurs
                 </Link>

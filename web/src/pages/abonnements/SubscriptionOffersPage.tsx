@@ -255,7 +255,7 @@ export function SubscriptionOffersPage() {
         <Card className="p-6">
           <SectionHeader title={draft.id ? "Modifier l'offre" : "Créer une offre"} />
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Pays *">
+            <Field label="Pays" required>
               <Select
                 value={draft.countryCodes?.[0] ?? ""}
                 options={countryOptions}
@@ -271,7 +271,7 @@ export function SubscriptionOffersPage() {
                 }}
               />
             </Field>
-            <Field label="Nom *">
+            <Field label="Nom" required>
               <Input
                 value={draft.name ?? ""}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -289,7 +289,7 @@ export function SubscriptionOffersPage() {
                 onChange={(e) => setDraft({ ...draft, currency: e.target.value })}
               />
             </Field>
-            <Field label="Prix mensuel *">
+            <Field label="Prix mensuel" required>
               <Input
                 type="number"
                 min={0}

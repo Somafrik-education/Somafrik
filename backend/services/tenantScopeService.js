@@ -38,14 +38,22 @@ class TenantScopeService {
       // Diffusion système (Super Admin) : annonce/message destiné à tous les établissements.
       if (this.isSystemBroadcast(row)) return true;
 
-      const rowSchool = row[schoolField];
+      if (
+        (principal.role === "Parent" || principal.role === "Élève / Étudiant") &&
+        this.rowMatchesStudentScope(row, studentIds)
+      ) {
+        return true;
+      }
+
+      const rowSchool = this.normalizeSchoolCode(row[schoolField]);
+      const principalSchool = this.normalizeSchoolCode(principal.schoolCode);
       if (rowSchool) {
-        return rowSchool === principal.schoolCode;
+        return rowSchool === principalSchool;
       }
 
       const studentId = row[studentField];
       if (studentId) {
-        return studentIds.has(studentId);
+        return studentIds.has(String(studentId).trim());
       }
 
       const directClass = row[classField] ?? (row.level && row.track ? row.name : undefined);
@@ -66,6 +74,20 @@ class TenantScopeService {
     });
   }
 
+  normalizeSchoolCode(value) {
+    return String(value ?? "").trim().toUpperCase();
+  }
+
+  rowMatchesStudentScope(row = {}, studentIds = new Set()) {
+    for (const value of [row.studentId, row.id, row.publicId, row.matricule]) {
+      const key = String(value ?? "").trim();
+      if (key && studentIds.has(key)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   filterByRoleOwnership(rows, principal) {
     const studentIds = new Set(principal.studentIds ?? []);
     const classNames = new Set(principal.classNames ?? []);
@@ -76,10 +98,13 @@ class TenantScopeService {
       }
 
       return rows.filter((row) => {
-        if (row.studentId) return studentIds.has(row.studentId);
-        if (row.id && row.matricule) return studentIds.has(row.id);
+        if (this.rowMatchesStudentScope(row, studentIds)) return true;
+        if (row.studentId) return studentIds.has(String(row.studentId).trim());
+        if (row.id && row.matricule) return false;
         if (row.className && !row.studentId && !row.matricule) return true;
-        return !["student", "payment", "grade", "attendance"].includes(String(row.entityType ?? "").toLowerCase());
+        return !["student", "payment", "grade", "attendance"].includes(
+          String(row.entityType ?? "").toLowerCase(),
+        );
       });
     }
 

@@ -48,11 +48,25 @@ const {
   warnIfUnsafeDevelopmentSecrets,
 } = require("./lib/productionSecrets");
 const { assertProductionCors, buildCorsOptions } = require("./lib/corsConfig");
+const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
+const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
 
 const establishmentService = new EstablishmentService();
 const unpaidService = new UnpaidService();
 
 const app = express();
+
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+if (trustProxyHops > 0) {
+  app.set("trust proxy", trustProxyHops);
+}
+
+const loginRateLimiter = createRateLimiter({
+  windowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS ?? 60_000),
+  max: Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 15),
+  keyFn: loginRateLimitKey,
+  message: "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
+});
 let repository = createPostgresRepository();
 const tokenService = new TokenService();
 const rbacService = new RbacService();
@@ -122,6 +136,8 @@ app.use(
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
         res.setHeader("Pragma", "no-cache");
         res.setHeader("Expires", "0");
+      } else if (/\.(js|css|woff2?|png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       }
     },
   }),
@@ -230,7 +246,7 @@ app.get("/api/schools/:code", asyncHandler(async (req, res) => {
   res.json(foundSchool);
 }));
 
-app.post("/api/backoffice/login", asyncHandler(async (req, res) => {
+app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { backOfficeAccessService } = await getRuntime();
   const response = handleBusinessAction(() => backOfficeAccessService.login(req.body));
   if (response?.user?.role === "Parent") {
@@ -248,12 +264,12 @@ app.post("/api/backoffice/login", asyncHandler(async (req, res) => {
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
 }));
 
-app.post("/api/identify", asyncHandler(async (req, res) => {
+app.post("/api/identify", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
   handleBusinessResponse(res, () => authService.identify(req.body));
 }));
 
-app.post("/api/login", asyncHandler(async (req, res) => {
+app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
   const response = handleBusinessAction(() => authService.login(req.body));
   if (response?.user?.role === "Parent") {
@@ -3874,11 +3890,17 @@ function asyncHandler(handler) {
   };
 }
 
-function appSecurityHeaders(_req, res, next) {
+function appSecurityHeaders(req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
+
+  if (process.env.NODE_ENV === "production" && req.secure) {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+
   next();
 }
 
@@ -3928,6 +3950,7 @@ async function initRepository() {
 
 function warnIfUnsafeConfiguration() {
   assertProductionSecrets();
+  assertProductionSecurityConfiguration();
   assertProductionCors();
   warnIfUnsafeDevelopmentSecrets();
 }

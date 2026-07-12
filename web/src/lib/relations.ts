@@ -1,15 +1,16 @@
 import type { BackOfficeState, SessionUser } from "../types";
 import { normalize } from "./format";
-import { scopedContacts, scopedStudents } from "./establishment";
-import { scopedSchools } from "./scope";
+import { scopedStudents } from "./establishment";
+import { scopedSchools, scopedUsers } from "./scope";
 
 type Row = Record<string, unknown>;
 
 export const RELATION_PARENT_CHILD = "Parent → Élève";
+/** @deprecated Modèle contacts retiré */
 export const RELATION_CONTACT_ACCOUNT = "Contact → Compte";
 
-/** Types de relation gérés (REL-001, REL-004). */
-export const RELATION_TYPES = [RELATION_PARENT_CHILD, RELATION_CONTACT_ACCOUNT] as const;
+/** Types de relation gérés (REL-001). */
+export const RELATION_TYPES = [RELATION_PARENT_CHILD] as const;
 
 export const RELATION_TYPE_OPTIONS = RELATION_TYPES.map((value) => ({ value, label: value }));
 
@@ -18,7 +19,7 @@ export const RELATION_STATUS_OPTIONS = [
   { value: "Inactif", label: "Inactif" },
 ];
 
-/** Affichage Prénom Nom pour un contact. */
+/** Affichage Prénom Nom (contact ou compte utilisateur). */
 export function formatContactPersonName(contact: Row): string {
   const first = String(contact.firstName ?? "").trim();
   const last = String(contact.lastName ?? "").trim();
@@ -32,48 +33,55 @@ export function formatStudentPersonName(student: Row): string {
   return `${first} ${last}`.trim() || String(student.id ?? "Élève");
 }
 
-function contactLabel(contact: Row): string {
-  const name = formatContactPersonName(contact);
-  const type = String(contact.contactType ?? "").trim();
-  return type ? `${name} (${type})` : name || String(contact.id ?? "");
+function userLabel(user: Row): string {
+  const name = formatContactPersonName(user);
+  const role = String(user.role ?? "").trim();
+  const identifier = String(user.identifier ?? "").trim();
+  const suffix = role ? ` (${role})` : "";
+  return identifier ? `${name}${suffix} — ${identifier}` : `${name}${suffix}` || String(user.id ?? "");
+}
+
+/** @deprecated Utiliser getRelationParentUserOptions */
+export function getRelationContactOptions(
+  user: SessionUser | null,
+  state: BackOfficeState,
+): { value: string; label: string }[] {
+  return getRelationParentUserOptions(user, state);
+}
+
+const NON_PARENT_USER_ROLES = new Set([
+  normalize("Élève / Étudiant"),
+  normalize("Élève"),
+  normalize("Étudiant"),
+]);
+
+/** Comptes utilisateurs pouvant être parent d'un élève. */
+export function getRelationParentUserOptions(
+  user: SessionUser | null,
+  state: BackOfficeState,
+): { value: string; label: string }[] {
+  return scopedUsers(user, state)
+    .filter((account) => {
+      if (!account.id) return false;
+      const role = normalize(String(account.role ?? ""));
+      return !NON_PARENT_USER_ROLES.has(role);
+    })
+    .map((account) => ({ value: String(account.id), label: userLabel(account as unknown as Row) }))
+    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+}
+
+/** @deprecated Alias — parent via compte utilisateur (champ fromContactId = user.id). */
+export function getRelationParentContactOptions(
+  user: SessionUser | null,
+  state: BackOfficeState,
+): { value: string; label: string }[] {
+  return getRelationParentUserOptions(user, state);
 }
 
 function studentLabel(student: Row): string {
   const name = formatStudentPersonName(student);
   const className = String(student.className ?? "").trim();
   return className ? `${name} — ${className}` : name;
-}
-
-export function getRelationContactOptions(
-  user: SessionUser | null,
-  state: BackOfficeState,
-): { value: string; label: string }[] {
-  return scopedContacts(user, state)
-    .filter((contact) => contact.id)
-    .map((contact) => ({ value: String(contact.id), label: contactLabel(contact) }))
-    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
-}
-
-/**
- * Contacts pouvant être « parent »/responsable d'un élève (liaison parent-enfant).
- * RB-002 : un contact peut cumuler plusieurs rôles métier — un enseignant peut
- * aussi être parent. On propose donc tout contact, à l'exception des contacts qui
- * sont eux-mêmes des élèves/étudiants (ce sont les enfants, pas les parents).
- */
-const NON_PARENT_CONTACT_TYPES = new Set([normalize("Élève"), normalize("Étudiant")]);
-
-export function getRelationParentContactOptions(
-  user: SessionUser | null,
-  state: BackOfficeState,
-): { value: string; label: string }[] {
-  return scopedContacts(user, state)
-    .filter((contact) => {
-      if (!contact.id) return false;
-      const type = normalize(String(contact.contactType ?? ""));
-      return !NON_PARENT_CONTACT_TYPES.has(type);
-    })
-    .map((contact) => ({ value: String(contact.id), label: contactLabel(contact) }))
-    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
 }
 
 export function getRelationStudentOptions(
@@ -96,23 +104,23 @@ export function getRelationAccountOptions(
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
 }
 
-function lookupContact(state: BackOfficeState, id: string): Row | undefined {
-  return (state.contacts as unknown as Row[]).find((row) => String(row.id) === id);
+function lookupParentUser(state: BackOfficeState, id: string): Row | undefined {
+  return (state.users as unknown as Row[]).find((row) => String(row.id) === id);
 }
 
 /** Complète une relation (libellés + portée) avant enregistrement. */
 export function prepareRelationForSave(form: Row, state: BackOfficeState): Row {
   const relationType = String(form.relationType ?? "").trim();
   const fromContactId = String(form.fromContactId ?? "").trim();
-  const fromContact = lookupContact(state, fromContactId);
-  const schoolCode = String(fromContact?.schoolCode ?? form.schoolCode ?? "").trim();
+  const fromUser = lookupParentUser(state, fromContactId);
+  const schoolCode = String(fromUser?.schoolCode ?? form.schoolCode ?? "").trim();
 
   const base: Row = {
     ...form,
     relationType,
     fromContactId,
-    fromContactName: fromContact
-      ? formatContactPersonName(fromContact)
+    fromContactName: fromUser
+      ? formatContactPersonName(fromUser)
       : String(form.fromContactName ?? ""),
     schoolCode,
     status: String(form.status ?? "Actif").trim() || "Actif",
@@ -176,7 +184,7 @@ export function validateRelation(
   const fromContactId = String(item.fromContactId ?? "").trim();
 
   if (!relationType) return "Choisissez un type de relation.";
-  if (!fromContactId) return "Sélectionnez le contact concerné.";
+  if (!fromContactId) return "Sélectionnez le compte parent.";
 
   if (relationType === RELATION_PARENT_CHILD && !String(item.toStudentId ?? "").trim()) {
     return "Sélectionnez l'élève à associer au parent.";

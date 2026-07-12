@@ -116,7 +116,7 @@ export function EstablishmentProfilePage() {
         <section className="space-y-4">
           <h2 className="text-xs font-black uppercase tracking-wide text-brand">Identité</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Nom de l'établissement *">
+            <Field label="Nom de l'établissement" required>
               <Input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -124,7 +124,7 @@ export function EstablishmentProfilePage() {
                 disabled={!canEdit || busy}
               />
             </Field>
-            <Field label="Type *">
+            <Field label="Type" required>
               <Select
                 value={draft.type ?? "Collège"}
                 onChange={(e) => setDraft({ ...draft, type: e.target.value })}
@@ -184,7 +184,7 @@ export function EstablishmentProfilePage() {
         <section className="space-y-4">
           <h2 className="text-xs font-black uppercase tracking-wide text-brand">Contacts</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Téléphone *">
+            <Field label="Téléphone" required>
               <Input
                 value={draft.phone ?? ""}
                 onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
@@ -192,7 +192,7 @@ export function EstablishmentProfilePage() {
                 disabled={!canEdit || busy}
               />
             </Field>
-            <Field label="Email *">
+            <Field label="Email" required>
               <Input
                 type="email"
                 value={draft.email ?? ""}
@@ -207,7 +207,7 @@ export function EstablishmentProfilePage() {
         <section className="space-y-4">
           <h2 className="text-xs font-black uppercase tracking-wide text-brand">Responsable légal</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Nom du responsable *">
+            <Field label="Nom du responsable" required>
               <Input
                 value={draft.principalName ?? ""}
                 onChange={(e) => setDraft({ ...draft, principalName: e.target.value })}

@@ -27,13 +27,14 @@ Les alertes `npm audit` restantes dans **Mobile** proviennent surtout de la cha�
 |---------|------|
 | `.env` | Docker Compose, backend, PostgreSQL, CORS (dev), `EXPO_PORT` (port Metro dans le conteneur) |
 | `Mobile/.env.local` | Expo uniquement : IP LAN, URL API mobile, mode démo |
-| `.env.production.example` | Modèle pour la production réelle (CORS HTTPS, secrets, `SOMAFRIK_SKIP_DEMO_SEED=true`) |
+| `.env.production.example` | Modèle pour la production réelle (`somafrik.app`, secrets, `SOMAFRIK_SKIP_DEMO_SEED=true`) |
+| `.env.preproduction.example` | Modèle préproduction MVP (`npm run preprod:up`) — voir `docs/preproduction.md` |
 
 Les variables `REACT_NATIVE_PACKAGER_HOSTNAME`, `EXPO_PUBLIC_API_URL` et `EXPO_PUBLIC_DEMO_MODE` **ne doivent pas** être placées dans `.env` racine (Expo 57+ les refuse à cet emplacement).
 
 **CORS :**
 - **Développement** (`.env`) : localhost et IP LAN, enrichis par `npm run sync:env`
-- **Production** (`.env.production.example` → `.env`) : uniquement vos domaines publics, ex. `CORS_ORIGINS=https://app.somafrik.com` — le backend refuse les origines locales automatiques lorsque `NODE_ENV=production`
+- **Production** (`.env.production.example` → `.env`) : domaine officiel `https://somafrik.app` — le backend refuse les origines locales automatiques lorsque `NODE_ENV=production`
 
 ```powershell
 Copy-Item .env.example .env
@@ -67,6 +68,16 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 | Web React (dev, hot reload) | http://localhost:5173/web/ |
 | PostgreSQL (hôte) | localhost:5433 |
 | Expo Metro (mobile) | port 8083 — QR dans les logs |
+
+### Préproduction (domaine officiel)
+
+| Service | URL |
+|---------|-----|
+| Application web | https://somafrik.app/web/ |
+| Connexion | https://somafrik.app/web/connexion |
+| API | https://somafrik.app/api/health |
+
+Déploiement : `docs/preproduction.md` (`npm run preprod:init-env` → `preprod:bootstrap` → `preprod:up`).
 
 ```powershell
 npm run docker:logs:mobile   # QR Code Expo

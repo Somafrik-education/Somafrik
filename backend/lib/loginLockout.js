@@ -2,11 +2,20 @@ const failedLoginAttempts = new Map();
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCK_DURATION_MS = 15 * 60 * 1000;
 
+function isLoginLockoutDisabled() {
+  return (
+    process.env.SOMAFRIK_DISABLE_LOGIN_LOCKOUT === "true" ||
+    process.env.SOMAFRIK_E2E === "true" ||
+    process.env.NODE_ENV === "test"
+  );
+}
+
 function getLoginAttemptKey(schoolCode, identifier) {
   return `${String(schoolCode ?? "").trim().toUpperCase()}:${String(identifier ?? "").trim().toLowerCase()}`;
 }
 
 function assertLoginNotLocked(key) {
+  if (isLoginLockoutDisabled()) return;
   const current = failedLoginAttempts.get(key);
   if (!current?.lockedUntil) return;
   if (current.lockedUntil <= Date.now()) {
@@ -17,6 +26,7 @@ function assertLoginNotLocked(key) {
 }
 
 function recordFailedLoginAttempt(key) {
+  if (isLoginLockoutDisabled()) return;
   const current = failedLoginAttempts.get(key) ?? { count: 0, lockedUntil: null };
   const count = current.count + 1;
   failedLoginAttempts.set(key, {
@@ -29,11 +39,17 @@ function clearFailedLoginAttempts(key) {
   failedLoginAttempts.delete(key);
 }
 
+function clearAllFailedLoginAttempts() {
+  failedLoginAttempts.clear();
+}
+
 module.exports = {
   MAX_FAILED_LOGIN_ATTEMPTS,
   LOGIN_LOCK_DURATION_MS,
+  isLoginLockoutDisabled,
   getLoginAttemptKey,
   assertLoginNotLocked,
   recordFailedLoginAttempt,
   clearFailedLoginAttempts,
+  clearAllFailedLoginAttempts,
 };

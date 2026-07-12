@@ -479,7 +479,7 @@ export function getSuperadminManagedRoles(): string[] {
   return [...SUPERADMIN_MANAGED_ROLES];
 }
 
-export function getPermissionRoles(_ctx?: PermissionContext): string[] {
+export function getPermissionRoles(): string[] {
   return getSuperadminManagedRoles();
 }
 

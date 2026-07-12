@@ -36,6 +36,13 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
         profile: "country",
       },
       {
+        label: "Admin Pays CG",
+        role: "Admin Pays",
+        identifier: "admin-cg",
+        password: DEMO_PASSWORD,
+        profile: "country",
+      },
+      {
         label: "Admin Pays BI",
         role: "Admin Pays",
         identifier: "admin-bi",
@@ -45,16 +52,37 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
     ],
   },
   {
-    title: "Établissement",
+    title: "Admins établissement",
     accounts: [
       {
-        label: "Admin école",
+        label: "Admin école CD",
         role: "Admin School",
         identifier: "admin",
         password: DEMO_PASSWORD,
         profile: "school",
-        schoolCode: DEMO_SCHOOL_CODE,
+        schoolCode: "CD-2026-0001",
       },
+      {
+        label: "Admin école CG",
+        role: "Admin School",
+        identifier: "admin-cg",
+        password: DEMO_PASSWORD,
+        profile: "school",
+        schoolCode: "CG-2026-0001",
+      },
+      {
+        label: "Admin école BI",
+        role: "Admin School",
+        identifier: "admin-bi",
+        password: DEMO_PASSWORD,
+        profile: "school",
+        schoolCode: "BI-2026-0001",
+      },
+    ],
+  },
+  {
+    title: "Établissement CD (rôles métier)",
+    accounts: [
       {
         label: "Secrétaire",
         role: "Secrétaire",
@@ -71,11 +99,6 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
         profile: "school",
         schoolCode: DEMO_SCHOOL_CODE,
       },
-    ],
-  },
-  {
-    title: "Rôles métier",
-    accounts: [
       {
         label: "Enseignant",
         role: "Enseignant",

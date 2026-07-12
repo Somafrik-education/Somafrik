@@ -51,6 +51,7 @@ const { linkContactToOperationalRecord } = require(path.join(
   "lib",
   "contactRegistrySync",
 ));
+const { createStudentFromContact } = require("./e2e-contact-flow");
 
 const PAST_DUE = "01-01-2026";
 const ACADEMIC_YEAR = resolveSchoolYear();
@@ -146,20 +147,30 @@ async function main() {
   let state = await getState(adminToken);
 
   // Établissement B (hors périmètre) + élève témoin
-  const otherSchoolStudent = {
-    id: newId("STUDENTS"),
-    firstName: `Autre${stamp}`,
-    lastName: "Ecole",
-    name: "Ecole",
-    className: "6ème Z",
-    schoolCode: schoolB.schoolCode,
-    matricule: `ELE-OTHER-${stamp}`,
-    schoolYear: ACADEMIC_YEAR,
-    schoolStatus: "Inscrit",
-  };
-  const otherSchoolState = await getState(schoolB.adminToken);
+  let otherSchoolState = await getState(schoolB.adminToken);
+  const otherStudentFlow = createStudentFromContact(
+    otherSchoolState,
+    {
+      id: newId("CONTACT"),
+      lastName: "Ecole",
+      firstName: `Autre${stamp}`,
+      contactType: "Élève",
+      phone: `+243 812 ${String(stamp).slice(-6)}`,
+      email: `autre-ecole-${stamp}@somafrik.app`,
+      status: "Actif",
+    },
+    schoolB.schoolCode,
+    {
+      className: "6ème Z",
+      matricule: `ELE-OTHER-${stamp}`,
+      schoolYear: ACADEMIC_YEAR,
+      schoolStatus: "Inscrit",
+    },
+  );
+  assert.ok(otherStudentFlow.ok, otherStudentFlow.error);
+  const otherSchoolStudent = otherStudentFlow.student;
   await putStatePatch(schoolB.adminToken, {
-    students: [otherSchoolStudent, ...(otherSchoolState.students ?? [])],
+    ...otherStudentFlow.patch,
     classes: [
       {
         id: newId("CLASS"),
@@ -239,18 +250,22 @@ async function main() {
   );
 
   // 4) Affectation élève
-  const link = linkContactToOperationalRecord(studentContactFlow.contact, state, schoolCode);
-  assert.strictEqual(link.linkedType, "student");
-  state = await putStatePatch(adminToken, {
-    contacts: (state.contacts ?? []).map((row) =>
-      String(row.id) === String(studentContactFlow.contact.id) ? link.contact : row,
-    ),
-    students: link.students,
-  });
-  let student = (state.students ?? []).find(
-    (row) => normalize(row.contactId) === normalize(studentContactFlow.contact.id),
+  const studentFlow = createStudentFromContact(
+    state,
+    {
+      id: studentContactFlow.contact.id,
+      lastName: studentContactFlow.contact.lastName,
+      firstName: studentContactFlow.contact.firstName,
+      contactType: studentContactFlow.contact.contactType,
+      phone: studentContactFlow.contact.phone,
+      email: studentContactFlow.contact.email,
+      status: studentContactFlow.contact.status,
+    },
+    schoolCode,
   );
-  assert.ok(student, "Fiche élève absente");
+  assert.ok(studentFlow.ok, studentFlow.error);
+  state = await putStatePatch(adminToken, studentFlow.patch);
+  let student = studentFlow.student;
   const enrollment = buildEnrollmentPatch(student, {
     className,
     matricule: `ELE-ADM-${stamp}`,

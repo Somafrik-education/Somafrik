@@ -35,6 +35,17 @@ function assignmentSignature(assignment = {}) {
   ].join("|");
 }
 
+function teacherSignature(teacher = {}) {
+  return [
+    String(teacher.firstName ?? ""),
+    String(teacher.name ?? ""),
+    String(teacher.birthDate ?? ""),
+    String(teacher.entryDate ?? ""),
+    String(teacher.status ?? ""),
+    normalizeSchoolCode(teacher.schoolCode),
+  ].join("|");
+}
+
 function listChangedRows(stateRows = [], payloadRows = [], signatureFn) {
   const currentById = new Map((stateRows ?? []).map((row) => [rowKey(row), row]));
   const changed = [];
@@ -88,6 +99,10 @@ function paymentSignature(payment = {}) {
 
 function listChangedAssignments(state = {}, payload = {}) {
   return listChangedRows(state.assignments, payload.assignments, assignmentSignature);
+}
+
+function listChangedTeachers(state = {}, payload = {}) {
+  return listChangedRows(state.teachers, payload.teachers, teacherSignature);
 }
 
 function listChangedNotes(state = {}, payload = {}) {
@@ -366,6 +381,12 @@ function validateAssignmentWrite(state = {}, assignment = {}) {
   }
 
   return null;
+}
+
+/** Fiche enseignant — date d'entrée cohérente avec la date de naissance (18 ans minimum). */
+function validateTeacherWrite(_state = {}, teacher = {}) {
+  const { validateTeacherSchoolEntry } = require("./teacherEntryRules");
+  return validateTeacherSchoolEntry(teacher);
 }
 
 function detectDuplicateNoteKeys(notes = []) {
@@ -665,6 +686,12 @@ function validateTouchedPayload(state = {}, payload = {}, touchedKeys = []) {
       if (message) errors.push({ entity: "assignments", id: rowKey(assignment), message });
     }
   }
+  if (touchedKeys.includes("teachers")) {
+    for (const teacher of listChangedTeachers(state, payload)) {
+      const message = validateTeacherWrite(effectiveState, teacher);
+      if (message) errors.push({ entity: "teachers", id: rowKey(teacher), message });
+    }
+  }
 
   const { validateContactProvision } = require("./contactProvisionRules");
   errors.push(...validateContactProvision(state, payload, touchedKeys));
@@ -684,6 +711,7 @@ module.exports = {
   validatePresenceWrite,
   validatePaymentWrite,
   validateAssignmentWrite,
+  validateTeacherWrite,
   detectDuplicateNoteKeys,
   detectDuplicatePresenceKeys,
   detectDuplicatePaymentReferences,
@@ -696,4 +724,5 @@ module.exports = {
   validateTouchedPayload,
   isPaymentCounted,
   isStudentArchived,
+  normalizePresenceDay,
 };

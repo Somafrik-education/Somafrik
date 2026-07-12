@@ -2239,6 +2239,8 @@ class PostgresRepository {
       "USR-SECRETARY-0001": "secretaire",
       // Jeu bulk : comptes démo de CD-2026-0001 (voir bulkPlatformSeed.buildSchoolRoleUser)
       "ADMIN-CD-2026-0001-01": "admin",
+      "ADMIN-CG-2026-0001-01": "admin-cg",
+      "ADMIN-BI-2026-0001-01": "admin-bi",
       "SECRETAIRE-CD-2026-0001-01": "secretaire",
       "PREFET-CD-2026-0001-01": "prefet",
     };

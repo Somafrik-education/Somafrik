@@ -1,32 +1,29 @@
 ﻿{
-    "cli":  {
-                "version":  ">= 20.4.0",
-                "appVersionSource":  "local"
-            },
-    "build":  {
-                  "development":  {
-                                      "developmentClient":  true,
-                                      "distribution":  "internal"
-                                  },
-                  "preview":  {
-                                  "distribution":  "internal",
-                                  "env":  {
-                                              "EXPO_PUBLIC_API_URL":  "http://192.168.1.35:5000",
-                                              "EXPO_PUBLIC_DEMO_MODE":  "false"
-                                          }
-                              },
-                  "production":  {
-                                     "autoIncrement":  false,
-                                     "env":  {
-                                                 "EXPO_PUBLIC_API_URL":  "http://192.168.1.35:5000",
-                                                 "EXPO_PUBLIC_DEMO_MODE":  "false"
-                                             }
-                                 }
-              },
-    "submit":  {
-                   "production":  {
-
-                                  }
-               }
+  "cli": {
+    "version": ">= 20.4.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://somafrik.app",
+        "EXPO_PUBLIC_DEMO_MODE": "false"
+      }
+    },
+    "production": {
+      "autoIncrement": false,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://somafrik.app",
+        "EXPO_PUBLIC_DEMO_MODE": "false"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
 }
-

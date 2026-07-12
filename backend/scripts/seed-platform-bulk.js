@@ -1,5 +1,5 @@
 /**
- * Alimente PostgreSQL avec le jeu de données bulk (3 pays, 30 établissements, etc.).
+ * Alimente PostgreSQL avec le jeu de données bulk (3 pays, 3 établissements, 300 élèves/école, etc.).
  *
  * Usage :
  *   node backend/scripts/seed-platform-bulk.js
@@ -490,6 +490,8 @@ function buildBackOfficePayload(seed) {
     academicConfigs: seed.academicConfigs ?? {},
     announcements: seed.announcements,
     messages: seed.messages,
+    contacts: seed.contacts ?? [],
+    relations: seed.relations ?? [],
     auditLog: [],
     rolePermissions: seed.rolePermissions,
     deletedRows: {},
@@ -577,7 +579,11 @@ async function main() {
     console.log("\nSeed bulk terminé avec succès.");
     console.log(`  Pays : ${seed.meta.countries}`);
     console.log(`  Établissements : ${seed.meta.schools}`);
-    console.log(`  Enregistrements / fonctionnalité / établissement : ${seed.meta.recordsPerFeature}`);
+    console.log(`  Classes / établissement : ${seed.meta.classesPerSchool}`);
+    console.log(`  Élèves / établissement : ${seed.meta.studentsPerSchool} (${seed.meta.studentsPerClass} / classe)`);
+    console.log(`  Enseignants / établissement : ${seed.meta.teachersPerSchool}`);
+    console.log(`  Matières / établissement : ${seed.meta.subjectsPerSchool}`);
+    console.log(`  Enregistrements démo / autre fonctionnalité : ${seed.meta.recordsPerFeature}`);
     console.log(`  Utilisateurs / rôle : ${seed.meta.usersPerRole}`);
     console.log(`  Comptes utilisateurs (hors élèves/enseignants PG) : ${seed.userAccounts.length}`);
     console.log("  Répartition par rôle :");

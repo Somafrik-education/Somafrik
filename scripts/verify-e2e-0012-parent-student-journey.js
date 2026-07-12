@@ -42,7 +42,7 @@ const {
   validateEvaluationGrades,
 } = require("./e2e-grades-rules");
 
-const PARENT_PIN = "1234";
+const PARENT_PIN = "847392";
 const CLASS_NAME = "6ème A";
 const PERIOD = "Trimestre 1";
 const SUBJECT = "Mathématiques";
@@ -90,8 +90,7 @@ function createParentUser(contact, schoolCode, phone, pin) {
     accessChannel: "Application",
     status: "Actif",
     password: pin,
-    temporaryPassword: pin,
-    pin,
+    mustChangePassword: false,
     permissions: [],
   };
 }

@@ -100,13 +100,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const changePassword = useCallback(
     async (newPassword: string) => {
-      const response = await api.post<{ user: Session["user"] }>("/auth/change-password", {
-        newPassword: newPassword.trim(),
-      });
+      const response = await api.post<{ user: Session["user"]; accessToken?: string }>(
+        "/auth/change-password",
+        {
+          newPassword: newPassword.trim(),
+        },
+      );
       const current = sessionRef.current;
       if (current) {
         setSession({
           ...current,
+          accessToken: response.accessToken ?? current.accessToken,
           user: { ...current.user, ...response.user, mustChangePassword: false },
         });
       }

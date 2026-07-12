@@ -33,6 +33,8 @@ class TokenService {
         schoolCode: subject.schoolCode,
         countryCode: subject.countryCode,
         authSource: subject.authSource,
+        identifier: subject.identifier,
+        publicId: subject.publicId,
         typ: "refresh",
       },
       this.refreshTokenTtlSeconds

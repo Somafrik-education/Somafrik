@@ -4,9 +4,9 @@ import { Search } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { usePermissionContext } from "../../lib/usePermissionContext";
-import { canManageContacts, canReadView } from "../../lib/permissions";
+import { canReadView } from "../../lib/permissions";
 import { scopedSchools, scopedUsers } from "../../lib/scope";
-import { scopedContacts, scopedStudents } from "../../lib/establishment";
+import { scopedStudents } from "../../lib/establishment";
 import { normalize } from "../../lib/format";
 
 interface SearchHit {
@@ -42,7 +42,6 @@ export function GlobalSearch() {
   }, []);
 
   const canSchools = canReadView(ctx, "schools");
-  const canContacts = canManageContacts(ctx);
   const canUsers = canReadView(ctx, "users");
   const canStudents = canReadView(ctx, "students");
 
@@ -66,23 +65,6 @@ export function GlobalSearch() {
         );
     }
 
-    if (canContacts) {
-      (scopedContacts(user, state) as Record<string, unknown>[])
-        .filter((c) =>
-          [c.lastName, c.firstName, c.phone, c.email].some((v) => normalize(String(v ?? "")).includes(q)),
-        )
-        .slice(0, MAX_PER_GROUP)
-        .forEach((c) =>
-          results.push({
-            id: `contact-${String(c.id)}`,
-            group: "Contacts",
-            label: `${String(c.lastName ?? "")} ${String(c.firstName ?? "")}`.trim(),
-            sub: [String(c.contactType ?? ""), String(c.phone ?? "")].filter(Boolean).join(" · "),
-            to: "/etablissement/contacts",
-          }),
-        );
-    }
-
     if (canUsers) {
       (scopedUsers(user, state) as unknown as Record<string, unknown>[])
         .filter((u) =>
@@ -99,7 +81,7 @@ export function GlobalSearch() {
               `${String(u.firstName ?? "")} ${String(u.lastName ?? "")}`.trim() ||
               String(u.identifier ?? ""),
             sub: [String(u.identifier ?? ""), String(u.role ?? "")].filter(Boolean).join(" · "),
-            to: "/administration/utilisateurs",
+            to: "/etablissement/comptes-utilisateurs",
           }),
         );
     }
@@ -126,7 +108,7 @@ export function GlobalSearch() {
     }
 
     return results;
-  }, [query, state, user, canSchools, canContacts, canUsers, canStudents]);
+  }, [query, state, user, canSchools, canUsers, canStudents]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, SearchHit[]>();
@@ -138,7 +120,7 @@ export function GlobalSearch() {
     return [...map.entries()];
   }, [hits]);
 
-  if (!canSchools && !canContacts && !canUsers && !canStudents) return null;
+  if (!canSchools && !canUsers && !canStudents) return null;
 
   function goTo(to: string) {
     setOpen(false);

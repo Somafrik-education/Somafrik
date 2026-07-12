@@ -101,6 +101,7 @@ async function main() {
       };
       delete next.password;
       delete next.pin;
+      delete next.temporaryPassword;
       return next;
     });
 

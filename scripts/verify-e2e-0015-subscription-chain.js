@@ -28,6 +28,7 @@ const {
   SUPERADMIN_PASSWORD,
   ADMIN_PASSWORD,
 } = require("./e2e-api-helpers");
+const { createStudentFromContact } = require("./e2e-contact-flow");
 const {
   resolveSchoolAccess,
   canUseFeature,
@@ -184,16 +185,28 @@ async function main() {
     accessActiveRes.status === 200 && accessActiveRes.data?.level === "full",
   );
 
-  const student = {
-    id: newId("STUDENTS"),
-    name: "Kabila",
-    firstName: `Élève${stamp}`,
-    className,
+  const studentFlow = createStudentFromContact(
+    state,
+    {
+      id: newId("CONTACT"),
+      lastName: "Kabila",
+      firstName: `Élève${stamp}`,
+      contactType: "Élève",
+      phone: `+243 813 ${String(stamp).slice(-6)}`,
+      email: `eleve-sub-${stamp}@somafrik.app`,
+      status: "Actif",
+    },
     schoolCode,
-    matricule: `ELE-SUB-${stamp}`,
-    archived: false,
-    schoolStatus: "Inscrit",
-  };
+    {
+      name: "Kabila",
+      className,
+      matricule: `ELE-SUB-${stamp}`,
+      archived: false,
+      schoolStatus: "Inscrit",
+    },
+  );
+  assert.ok(studentFlow.ok, studentFlow.error);
+  const student = studentFlow.student;
   const schoolClass = {
     id: newId("CLASS"),
     name: className,
@@ -204,7 +217,7 @@ async function main() {
     status: "Actif",
   };
   state = await putStatePatch(adminToken, {
-    students: [student, ...(state.students ?? [])],
+    ...studentFlow.patch,
     classes: [schoolClass, ...(state.classes ?? [])],
   });
   const studentCountBefore = (state.students ?? []).filter((row) => row.schoolCode === schoolCode).length;

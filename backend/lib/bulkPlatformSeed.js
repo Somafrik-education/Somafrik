@@ -1,14 +1,21 @@
 /**
- * Jeu de données plateforme : 3 pays, 3 admins pays, 10 établissements / pays,
- * 10 admins scolaires / établissement, 10 enregistrements / fonctionnalité / établissement.
+ * Jeu de données plateforme : 3 pays, 3 établissements (1 / pays).
+ * Par établissement : 30 classes (10 élèves/classe), 300 élèves, 59 enseignants, 40 matières.
  */
 const { rolePermissions } = require("../data");
 const { buildSchoolBulletinBundle } = require("./bulletinSeedData");
 const { buildSchoolPlanningSlots, buildAcademicConfigsFromState } = require("./planningSeedData");
 
-const SCHOOLS_PER_COUNTRY = 10;
+const SCHOOLS_PER_COUNTRY = 1;
 const USERS_PER_ROLE = 10;
+const PLATFORM_ADMINS_PER_SCOPE = 1;
 const RECORDS_PER_FEATURE = 10;
+
+const CLASSES_PER_SCHOOL = 30;
+const STUDENTS_PER_CLASS = 10;
+const STUDENTS_PER_SCHOOL = CLASSES_PER_SCHOOL * STUDENTS_PER_CLASS;
+const TEACHERS_PER_SCHOOL = 59;
+const SUBJECTS_PER_SCHOOL = 40;
 
 /** Rôles établissement créés comme comptes utilisateurs (hors Enseignant/Élève déjà portés par teachers/students). */
 const SCHOOL_USER_ROLES = [
@@ -44,6 +51,36 @@ const DEMO_SUBJECTS = [
   "Chimie",
   "SVT",
   "Informatique",
+  "EPS",
+  "Musique",
+  "Arts plastiques",
+  "Philosophie",
+  "Latin",
+  "Espagnol",
+  "Allemand",
+  "Économie",
+  "Comptabilité",
+  "Droit",
+  "Biologie",
+  "Géologie",
+  "Astronomie",
+  "Robotique",
+  "Programmation",
+  "Électronique",
+  "Mécanique",
+  "Électricité",
+  "Dessin technique",
+  "Statistiques",
+  "Communication",
+  "Entrepreneuriat",
+  "Citoyenneté",
+  "Éducation civique",
+  "Religion",
+  "Kinyarwanda",
+  "Lingala",
+  "Swahili",
+  "Kituba",
+  "Tshiluba",
 ];
 
 const DEMO_FIRST_NAMES = ["Jean", "Marie", "Patrick", "Sarah", "Grace", "David", "Amina", "Joseph", "Chantal", "Moise"];
@@ -56,13 +93,15 @@ const DEMO_CITIES = {
   BI: ["Bujumbura", "Gitega", "Ngozi", "Rumonge", "Muyinga"],
 };
 
+const CONTACT_TYPES_CYCLE = ["Parent", "Enseignant", "Élève", "Secrétaire", "Comptable", "Directeur"];
+
 const COUNTRY_TEMPLATES = [
   {
     code: "CD",
     name: "République Démocratique du Congo",
     phonePrefix: "+243",
     currency: "CDF",
-    timezone: "Africa/Kinshasa",
+    timezone: "GMT+1",
     scope: "RDC",
     adminIdentifier: "admin-rdc",
   },
@@ -71,7 +110,7 @@ const COUNTRY_TEMPLATES = [
     name: "République du Congo",
     phonePrefix: "+242",
     currency: "XAF",
-    timezone: "Africa/Brazzaville",
+    timezone: "GMT+1",
     scope: "CG",
     adminIdentifier: "admin-cg",
   },
@@ -80,7 +119,7 @@ const COUNTRY_TEMPLATES = [
     name: "Burundi",
     phonePrefix: "+257",
     currency: "BIF",
-    timezone: "Africa/Bujumbura",
+    timezone: "GMT+2",
     scope: "BI",
     adminIdentifier: "admin-bi",
   },
@@ -130,9 +169,13 @@ function buildSuperAdmins() {
   return users;
 }
 
+function usersPerSchoolRole(role) {
+  return role === "Admin School" ? PLATFORM_ADMINS_PER_SCOPE : USERS_PER_ROLE;
+}
+
 function buildCountryAdmins(country, countryIndex) {
   const users = [];
-  for (let index = 1; index <= USERS_PER_ROLE; index += 1) {
+  for (let index = 1; index <= PLATFORM_ADMINS_PER_SCOPE; index += 1) {
     users.push({
       id: `USER-COUNTRY-${country.code}-${pad(index, 2)}`,
       publicId: `ADM-${country.code}-2026-${pad(index, 4)}`,
@@ -230,16 +273,19 @@ function buildSchoolRoleUser(school, country, role, userIndex) {
   const code = school.code;
   const schoolNum = pad(parseInt(code.slice(-4), 10), 2);
   const prefix = ROLE_IDENTIFIER_PREFIX[role] ?? "user";
-  const isPrimaryDemo = code === "CD-2026-0001" && userIndex === 1;
-  const identifier = isPrimaryDemo
-    ? role === "Admin School"
-      ? "admin"
-      : role === "Préfet des études"
-        ? "prefet"
-        : role === "Secrétaire"
-          ? "secretaire"
-          : `${prefix}-${country.code.toLowerCase()}-${schoolNum}-${pad(userIndex, 2)}`
-    : `${prefix}-${country.code.toLowerCase()}-${schoolNum}-${pad(userIndex, 2)}`;
+  const isPrimaryDemo = userIndex === 1;
+  const identifier =
+    role === "Admin School" && isPrimaryDemo
+      ? country.code === "CD"
+        ? "admin"
+        : `admin-${country.code.toLowerCase()}`
+      : isPrimaryDemo && code === "CD-2026-0001"
+        ? role === "Préfet des études"
+          ? "prefet"
+          : role === "Secrétaire"
+            ? "secretaire"
+            : `${prefix}-${country.code.toLowerCase()}-${schoolNum}-${pad(userIndex, 2)}`
+        : `${prefix}-${country.code.toLowerCase()}-${schoolNum}-${pad(userIndex, 2)}`;
 
   const roleSlug = prefix.toUpperCase().replace(/-/g, "_");
   const publicId = `${roleSlug}-${code}-${pad(userIndex, 2)}`.slice(0, 64);
@@ -274,34 +320,101 @@ function buildSchoolRoleUser(school, country, role, userIndex) {
 function buildSchoolStaffUsers(school, country) {
   const users = [];
   for (const role of SCHOOL_USER_ROLES) {
-    for (let userIndex = 1; userIndex <= USERS_PER_ROLE; userIndex += 1) {
+    for (let userIndex = 1; userIndex <= usersPerSchoolRole(role); userIndex += 1) {
       users.push(buildSchoolRoleUser(school, country, role, userIndex));
     }
   }
   return users;
 }
 
+function buildClassName(classIndex) {
+  const level = DEMO_LEVELS[Math.floor(classIndex / 5) % DEMO_LEVELS.length];
+  const section = String.fromCharCode(65 + (classIndex % 5));
+  return `${level} ${section}`;
+}
+
+function buildSubjectCatalog(count = SUBJECTS_PER_SCHOOL) {
+  return DEMO_SUBJECTS.slice(0, count);
+}
+
+function buildSchoolContactsAndRelations(school, country, students, teachers) {
+  const code = school.code;
+  const contacts = [];
+  const relations = [];
+
+  for (let index = 1; index <= RECORDS_PER_FEATURE; index += 1) {
+    const contactType = CONTACT_TYPES_CYCLE[(index - 1) % CONTACT_TYPES_CYCLE.length];
+    const firstName = DEMO_FIRST_NAMES[(index - 1) % DEMO_FIRST_NAMES.length];
+    const lastName = DEMO_LAST_NAMES[(index + 1) % DEMO_LAST_NAMES.length];
+    const contactId = `CNT-${code}-${pad(index, 2)}`;
+    const student = students[index - 1];
+    const teacher = teachers[index - 1];
+    const wantsAccess = contactType === "Parent" && index <= 3;
+
+    contacts.push({
+      id: contactId,
+      schoolCode: code,
+      lastName,
+      firstName,
+      contactType,
+      phone: `${country.phonePrefix} 850 ${pad(index, 3)} ${pad(parseInt(code.slice(-4), 10), 3)}`,
+      email: scopedEmail(code, `contact${index}`),
+      gender: index % 2 === 0 ? "Féminin" : "Masculin",
+      birthDate: `15-0${(index % 9) + 1}-1985`,
+      address: `Rue ${index}, ${school.city}`,
+      status: "Actif",
+      hasAccess: wantsAccess ? "Oui" : "Non",
+      role: wantsAccess ? "Parent" : "",
+      teacherId: contactType === "Enseignant" ? teacher?.id ?? "" : "",
+      studentId: contactType === "Élève" ? student?.id ?? "" : "",
+      userId: wantsAccess ? `USER-PARENT-${code}-${pad(index, 2)}` : "",
+      userIdentifier: wantsAccess
+        ? `parent-${country.code.toLowerCase()}-01-${pad(index, 2)}`
+        : "",
+    });
+  }
+
+  students.forEach((student, index) => {
+    const parentUserId = `USER-PARENT-${code}-${pad(((index) % USERS_PER_ROLE) + 1, 2)}`;
+    const parentFirstName = DEMO_FIRST_NAMES[(index + 1) % DEMO_FIRST_NAMES.length];
+    const parentLastName = DEMO_LAST_NAMES[index % DEMO_LAST_NAMES.length];
+    const studentLastName = student.name.replace(student.firstName, "").trim() || student.name;
+
+    relations.push({
+      id: `REL-${code}-${pad(index + 1, 3)}`,
+      schoolCode: code,
+      relationType: "Parent → Élève",
+      fromContactId: parentUserId,
+      fromContactName: `${parentFirstName} ${parentLastName}`,
+      toStudentId: student.id,
+      toStudentName: `${student.firstName} ${studentLastName}`,
+      isPrincipal: index === 0 ? "Oui" : "Non",
+      status: "Actif",
+    });
+  });
+
+  return { contacts, relations };
+}
+
 function buildSchoolAcademicBundle(school, country) {
   const code = school.code;
+  const subjectNames = buildSubjectCatalog(SUBJECTS_PER_SCHOOL);
   const classes = [];
-  const courses = [];
   const teachers = [];
   const students = [];
   const assignments = [];
-  const notes = [];
   const presences = [];
   const payments = [];
   const announcements = [];
   const exams = [];
-  const bulletins = [];
   const documents = [];
   const messages = [];
 
-  for (let index = 1; index <= RECORDS_PER_FEATURE; index += 1) {
-    const classId = `CLS-${code}-${pad(index, 2)}`;
-    const level = DEMO_LEVELS[(index - 1) % DEMO_LEVELS.length];
-    const track = DEMO_TRACKS[(index - 1) % DEMO_TRACKS.length];
-    const className = `${level} ${String.fromCharCode(64 + ((index - 1) % 2) + 1)}`;
+  for (let classIndex = 0; classIndex < CLASSES_PER_SCHOOL; classIndex += 1) {
+    const className = buildClassName(classIndex);
+    const classId = `CLS-${code}-${pad(classIndex + 1, 2)}`;
+    const level = DEMO_LEVELS[Math.floor(classIndex / 5) % DEMO_LEVELS.length];
+    const track = DEMO_TRACKS[classIndex % DEMO_TRACKS.length];
 
     classes.push({
       id: classId,
@@ -312,25 +425,18 @@ function buildSchoolAcademicBundle(school, country) {
       track,
       teacherId: "",
     });
+  }
 
-    const subject = DEMO_SUBJECTS[(index - 1) % DEMO_SUBJECTS.length];
-    courses.push({
-      id: `CRS-${code}-${pad(index, 2)}`,
-      publicId: `CRS-${code}-${pad(index, 2)}`,
-      schoolCode: code,
-      name: subject,
-      className,
-      coefficient: (index % 3) + 1,
-      teacherId: "",
-      teacherName: "",
-    });
-
-    const teacherId = `TCH-${code}-${pad(index, 2)}`;
+  for (let index = 1; index <= TEACHERS_PER_SCHOOL; index += 1) {
+    const teacherId = `TCH-${code}-${pad(index, 3)}`;
     const teacherPublicId = `${code}-ENS-${pad(index, 4)}`;
     const teacherLoginId =
       code === "CD-2026-0001" && index === 1 ? "ENS-0001" : `ENS-${pad(parseInt(code.slice(-4), 10) * 100 + index, 4)}`;
     const teacherFirstName = DEMO_FIRST_NAMES[(index - 1) % DEMO_FIRST_NAMES.length];
     const teacherLastName = DEMO_LAST_NAMES[(index + 2) % DEMO_LAST_NAMES.length];
+    const mainSubject = subjectNames[(index - 1) % SUBJECTS_PER_SCHOOL];
+    const className = classes[(index - 1) % CLASSES_PER_SCHOOL].name;
+
     teachers.push({
       id: teacherId,
       publicId: teacherPublicId,
@@ -338,70 +444,84 @@ function buildSchoolAcademicBundle(school, country) {
       identifier: teacherLoginId,
       name: `${teacherFirstName} ${teacherLastName}`,
       firstName: teacherFirstName,
-      phone: `${country.phonePrefix} 830 ${pad(index, 3)} ${pad(parseInt(code.slice(-4), 10), 3)}`,
+      phone: `${country.phonePrefix} 830 ${pad(index % 1000, 3)} ${pad(parseInt(code.slice(-4), 10), 3)}`,
       email: scopedEmail(code, `ens${index}`),
-      mainSubject: subject,
+      mainSubject,
       password: "1234",
-      assignments: [{ className, course: subject }],
+      assignments: [{ className, course: mainSubject }],
     });
 
     assignments.push({
-      id: `${teacherId}-ASSIGN-${pad(index, 2)}`,
+      id: `${teacherId}-ASSIGN-${pad(index, 3)}`,
       schoolCode: code,
       teacherId,
       teacherName: `${teacherFirstName} ${teacherLastName}`,
       className,
-      subject,
-      course: subject,
+      subject: mainSubject,
+      course: mainSubject,
     });
 
-    courses[index - 1].teacherId = teacherId;
-    courses[index - 1].teacherName = `${teacherFirstName} ${teacherLastName}`;
-    classes[index - 1].teacherId = teacherPublicId;
+    classes[(index - 1) % CLASSES_PER_SCHOOL].teacherId = teacherPublicId;
+  }
 
-    const studentId = `STU-${code}-${pad(index, 2)}`;
-    const matricule = code === "CD-2026-0001" && index === 1 ? "ELE-0001" : `${code}-ELE-${pad(index, 4)}`;
-    const studentFirstName = DEMO_FIRST_NAMES[(index + 4) % DEMO_FIRST_NAMES.length];
-    const studentLastName = DEMO_LAST_NAMES[(index + 1) % DEMO_LAST_NAMES.length];
-    students.push({
-      id: studentId,
-      publicId: matricule,
-      matricule,
-      name: `${studentFirstName} ${studentLastName}`,
-      firstName: studentFirstName,
-      gender: index % 2 === 0 ? "Féminin" : "Masculin",
-      birthDate: `${pad((index % 27) + 1, 2)}-0${(index % 9) + 1}-2012`,
-      className,
-      schoolCode: code,
-      pin: "1234",
-      parentName: `Parent ${studentLastName}`,
-      parentPhone: `${country.phonePrefix} 840 ${pad(index, 3)} ${pad(parseInt(code.slice(-4), 10), 3)}`,
-      parentEmail: scopedEmail(code, `parent${index}`),
-      archived: false,
-    });
+  for (let classIndex = 0; classIndex < CLASSES_PER_SCHOOL; classIndex += 1) {
+    const className = classes[classIndex].name;
+    for (let seat = 0; seat < STUDENTS_PER_CLASS; seat += 1) {
+      const studentIndex = classIndex * STUDENTS_PER_CLASS + seat + 1;
+      const studentId = `STU-${code}-${pad(studentIndex, 3)}`;
+      const matricule =
+        code === "CD-2026-0001" && studentIndex === 1 ? "ELE-0001" : `${code}-ELE-${pad(studentIndex, 4)}`;
+      const studentFirstName = DEMO_FIRST_NAMES[(studentIndex + 4) % DEMO_FIRST_NAMES.length];
+      const studentLastName = DEMO_LAST_NAMES[(studentIndex + 1) % DEMO_LAST_NAMES.length];
 
+      students.push({
+        id: studentId,
+        publicId: matricule,
+        matricule,
+        name: `${studentFirstName} ${studentLastName}`,
+        firstName: studentFirstName,
+        gender: studentIndex % 2 === 0 ? "Féminin" : "Masculin",
+        birthDate: `${pad((studentIndex % 27) + 1, 2)}-0${(studentIndex % 9) + 1}-2012`,
+        className,
+        schoolCode: code,
+        pin: "1234",
+        parentName: `Parent ${studentLastName}`,
+        parentPhone: `${country.phonePrefix} 840 ${pad(studentIndex % 1000, 3)} ${pad(parseInt(code.slice(-4), 10), 3)}`,
+        parentEmail: scopedEmail(code, `parent${studentIndex}`),
+        archived: false,
+      });
+    }
+  }
+
+  students.forEach((student, index) => {
     const presenceStatus = ["Present", "Absent", "Retard", "Justifié"][index % 4];
     presences.push({
-      id: `P-${code}-${pad(index, 2)}`,
-      publicId: `PRE-${code}-${pad(index, 2)}`,
+      id: `P-${code}-${pad(index + 1, 3)}`,
+      publicId: `PRE-${code}-${pad(index + 1, 3)}`,
       schoolCode: code,
-      studentId,
-      className,
+      studentId: student.id,
+      className: student.className,
       date: `2026-06-${pad((index % 27) + 1, 2)}`,
       present: presenceStatus === "Present" || presenceStatus === "Justifié",
       status: presenceStatus,
     });
 
     payments.push({
-      id: `PAY-${code}-${pad(index, 2)}`,
-      publicId: `PAY-${code}-${pad(index, 2)}`,
+      id: `PAY-${code}-${pad(index + 1, 3)}`,
+      publicId: `PAY-${code}-${pad(index + 1, 3)}`,
       schoolCode: code,
-      studentId,
+      studentId: student.id,
       amount: 10000 + (index % 5) * 5000,
       date: `2026-05-${pad((index % 27) + 1, 2)}`,
       status: index % 4 === 0 ? "EN_ATTENTE" : "PAYE",
       method: ["Mobile Money", "Especes", "Virement bancaire", "Carte bancaire"][index % 4],
     });
+  });
+
+  for (let index = 1; index <= RECORDS_PER_FEATURE; index += 1) {
+    const className = classes[(index - 1) % CLASSES_PER_SCHOOL].name;
+    const subject = subjectNames[(index - 1) % SUBJECTS_PER_SCHOOL];
+    const student = students[index - 1];
 
     announcements.push({
       id: `A-${code}-${pad(index, 2)}`,
@@ -425,50 +545,69 @@ function buildSchoolAcademicBundle(school, country) {
       status: ["Programmé", "En cours", "Publié", "Validé"][index % 4],
     });
 
-    documents.push({
-      id: `DOC-${code}-${pad(index, 2)}`,
-      schoolCode: code,
-      studentId,
-      studentName: `${studentFirstName} ${studentLastName}`,
-      documentType: ["Attestation", "Certificat", "Relevé", "Bulletin"][index % 4],
-      title: `Document ${index} — ${studentLastName}`,
-      format: "PDF",
-      status: index % 5 === 0 ? "En génération" : "Disponible",
-      generatedAt: index % 5 === 0 ? "" : `${pad((index % 27) + 1, 2)}-05-2026`,
-    });
+    if (student) {
+      documents.push({
+        id: `DOC-${code}-${pad(index, 2)}`,
+        schoolCode: code,
+        studentId: student.id,
+        studentName: student.name,
+        documentType: ["Attestation", "Certificat", "Relevé", "Bulletin"][index % 4],
+        title: `Document ${index} — ${student.name}`,
+        format: "PDF",
+        status: index % 5 === 0 ? "En génération" : "Disponible",
+        generatedAt: index % 5 === 0 ? "" : `${pad((index % 27) + 1, 2)}-05-2026`,
+      });
 
-    messages.push({
-      id: `MSG-${code}-${pad(index, 2)}`,
-      schoolCode: code,
-      from: `Admin ${school.name}`,
-      to: `Parent ${studentLastName}`,
-      subject: `Message ${index}`,
-      body: `Message établissement ${code} pour la famille ${studentLastName}.`,
-      date: `${pad((index % 27) + 1, 2)}-06-2026`,
-      status: index % 3 === 0 ? "Lu" : "Non lu",
-      channel: "Application",
-    });
+      messages.push({
+        id: `MSG-${code}-${pad(index, 2)}`,
+        schoolCode: code,
+        from: `Admin ${school.name}`,
+        to: `Parent ${student.name}`,
+        subject: `Message ${index}`,
+        body: `Message établissement ${code} pour la famille ${student.name}.`,
+        date: `${pad((index % 27) + 1, 2)}-06-2026`,
+        status: index % 3 === 0 ? "Lu" : "Non lu",
+        channel: "Application",
+      });
+    }
   }
+
+  const classCourses = classes.flatMap((schoolClass) =>
+    subjectNames.map((subject, subjectIndex) => ({
+      id: `CRS-${code}-${slugClass(schoolClass.name)}-${pad(subjectIndex + 1, 3)}`,
+      publicId: `CRS-${code}-${slugClass(schoolClass.name)}-${pad(subjectIndex + 1, 3)}`,
+      schoolCode: code,
+      name: subject,
+      className: schoolClass.name,
+      coefficient: (subjectIndex % 3) + 1,
+      teacherId: teachers[subjectIndex % TEACHERS_PER_SCHOOL].id,
+      teacherName: teachers[subjectIndex % TEACHERS_PER_SCHOOL].name,
+    })),
+  );
 
   const bulletinBundle = buildSchoolBulletinBundle({
     schoolCode: code,
     students,
-    courses,
+    courses: classCourses,
     teachers,
     periods: ["Trimestre 1"],
+    studentsPerClass: STUDENTS_PER_CLASS,
   });
 
   const courseSchedules = buildSchoolPlanningSlots({
     schoolCode: code,
-    courses,
+    courses: classCourses,
     classes,
+    maxClasses: CLASSES_PER_SCHOOL,
   });
+
+  const { contacts, relations } = buildSchoolContactsAndRelations(school, country, students, teachers);
 
   return {
     school,
     country,
     classes,
-    courses,
+    courses: classCourses,
     teachers,
     students,
     assignments,
@@ -481,7 +620,17 @@ function buildSchoolAcademicBundle(school, country) {
     courseSchedules,
     documents,
     messages,
+    contacts,
+    relations,
   };
+}
+
+function slugClass(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "")
+    .toUpperCase();
 }
 
 function buildPlatformNotifications(countries) {
@@ -531,6 +680,8 @@ function buildBulkPlatformSeed() {
     courseSchedules: [],
     documents: [],
     messages: [],
+    contacts: [],
+    relations: [],
   };
 
   COUNTRY_TEMPLATES.forEach((country, countryIndex) => {
@@ -577,10 +728,16 @@ function buildBulkPlatformSeed() {
   return {
     meta: {
       countries: countries.length,
-      countryAdmins: countries.length * USERS_PER_ROLE,
+      countryAdmins: countries.length * PLATFORM_ADMINS_PER_SCOPE,
       schools: platformSchools.length,
+      platformAdminsPerScope: PLATFORM_ADMINS_PER_SCOPE,
       usersPerRole: USERS_PER_ROLE,
       recordsPerFeature: RECORDS_PER_FEATURE,
+      classesPerSchool: CLASSES_PER_SCHOOL,
+      studentsPerClass: STUDENTS_PER_CLASS,
+      studentsPerSchool: STUDENTS_PER_SCHOOL,
+      teachersPerSchool: TEACHERS_PER_SCHOOL,
+      subjectsPerSchool: SUBJECTS_PER_SCHOOL,
       schoolUserRoles: SCHOOL_USER_ROLES,
       usersByRole,
       totalUserAccounts: userAccounts.length + flat.teachers.length + flat.students.length,
@@ -601,7 +758,13 @@ module.exports = {
   buildBulkPlatformSeed,
   SCHOOLS_PER_COUNTRY,
   USERS_PER_ROLE,
+  PLATFORM_ADMINS_PER_SCOPE,
   RECORDS_PER_FEATURE,
+  CLASSES_PER_SCHOOL,
+  STUDENTS_PER_CLASS,
+  STUDENTS_PER_SCHOOL,
+  TEACHERS_PER_SCHOOL,
+  SUBJECTS_PER_SCHOOL,
   SCHOOL_USER_ROLES,
   COUNTRY_TEMPLATES,
 };

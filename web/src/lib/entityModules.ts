@@ -23,7 +23,7 @@ import {
   CONTACT_STATUS_OPTIONS,
   CONTACT_TYPE_OPTIONS,
 } from "./contacts";
-import { RELATION_STATUS_OPTIONS, RELATION_TYPE_OPTIONS } from "./relations";
+import { RELATION_PARENT_CHILD, RELATION_STATUS_OPTIONS } from "./relations";
 
 export type SchoolEntityKey =
   | "contacts"
@@ -42,11 +42,11 @@ export type SchoolEntityKey =
   | "bulletins"
   | "documents";
 
-/** Fiches créées uniquement via Contacts (évite doublons compte / élève / enseignant). */
-export const CONTACT_PROVISIONED_ENTITY_KEYS = new Set<SchoolEntityKey>(["students", "teachers"]);
+/** @deprecated Les fiches se créent directement ; le modèle Contacts est retiré. */
+export const CONTACT_PROVISIONED_ENTITY_KEYS = new Set<SchoolEntityKey>();
 
-export function entityCreateViaContactsOnly(entityKey: string): boolean {
-  return CONTACT_PROVISIONED_ENTITY_KEYS.has(entityKey as SchoolEntityKey);
+export function entityCreateViaContactsOnly(_entityKey: string): boolean {
+  return false;
 }
 
 /** Regroupement métier des écrans établissement. */
@@ -80,6 +80,7 @@ export interface EntityField {
       | "accounts"
       | "userRoles"
       | "relationContacts"
+      | "relationParents"
       | "relationStudents";
   selectOptions?: { value: string; label: string }[];
 }
@@ -100,7 +101,7 @@ export interface EntityModuleConfig {
   planningManaged?: boolean;
 }
 
-export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
+export const SCHOOL_ENTITY_MODULES = ([
   {
     key: "contacts",
     view: "contacts",
@@ -188,22 +189,22 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     feature: "Relations",
     group: "utilisateurs",
     description:
-      "Liens entre personnes et structures : parent → élève et rattachement d'un contact à plusieurs comptes.",
+      "Liens parent → élève entre comptes utilisateurs et fiches élèves.",
     fields: [
       {
         key: "relationType",
         label: "Type de relation",
         placeholder: "Choisir un type",
         inputType: "select",
-        selectOptions: RELATION_TYPE_OPTIONS,
+        selectOptions: [{ value: RELATION_PARENT_CHILD, label: RELATION_PARENT_CHILD }],
         required: true,
       },
       {
         key: "fromContactId",
-        label: "Contact",
-        placeholder: "Choisir un contact",
+        label: "Parent (compte utilisateur)",
+        placeholder: "Choisir un compte parent",
         inputType: "select",
-        optionsKey: "relationContacts",
+        optionsKey: "relationParents",
         required: true,
       },
       {
@@ -689,7 +690,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     ],
     columns: ["studentName", "subject", "status"],
   },
-];
+] as EntityModuleConfig[]).filter((module) => module.key !== "contacts");
 
 /** Vues sidebar / hub établissement (hors modules rattachés à Configuration). */
 export const SCHOOL_ENTITY_SIDEBAR_VIEWS = new Set(

@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # --- Étape 1: build du frontend web (React + Vite + Tailwind) ---
-FROM node:22-alpine AS web
+FROM node:22.12-alpine AS web
 
 WORKDIR /web
+
+ARG VITE_SHOW_DEMO_ACCOUNTS=false
+ENV VITE_SHOW_DEMO_ACCOUNTS=$VITE_SHOW_DEMO_ACCOUNTS
 
 COPY web/package*.json ./
 RUN npm install
@@ -13,7 +16,7 @@ COPY web/ .
 RUN npx vite build
 
 # --- Étape 2: image backend (Node.js + Express) ---
-FROM node:22-alpine
+FROM node:22.12-alpine
 
 # Healthcheck docker compose (wget) + Chromium pour Puppeteer (bulletins PDF)
 RUN apk add --no-cache \

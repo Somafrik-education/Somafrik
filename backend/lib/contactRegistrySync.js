@@ -5,7 +5,8 @@
  * - nettoie les données dépendantes (notes, présences, etc.)
  */
 const { PedagogyGovernanceService } = require("../services/pedagogyGovernanceService");
-const { SUPER_ADMIN_ROLES } = require("./establishmentRoles");
+const { SUPER_ADMIN_ROLES, ESTABLISHMENT_BACKOFFICE_ROLES } = require("./establishmentRoles");
+const { provisionUserFromContact } = require("./contactUserProvision");
 
 const pedagogyGovernanceService = new PedagogyGovernanceService();
 
@@ -183,18 +184,29 @@ function linkContactToUser(contact, users) {
     return { contact, users };
   }
 
-  const nextUsers = [...users];
-  const idx = nextUsers.findIndex(
+  const role = String(contact.role ?? "").trim();
+  if (!role) {
+    return { contact, users };
+  }
+
+  const idx = users.findIndex(
     (user) =>
       normalize(user.contactId) === normalize(contactId) ||
-      (contact.userId && normalize(user.id) === normalize(contact.userId)),
+      (contact.userId && normalize(user.id) === normalize(contact.userId)) ||
+      (contact.userIdentifier &&
+        normalize(String(user.identifier ?? "")) === normalize(String(contact.userIdentifier))),
   );
 
   if (idx < 0) {
-    return { contact, users: nextUsers };
+    const provisioned = provisionUserFromContact(contact, users);
+    if (provisioned.user) {
+      return { contact: provisioned.contact, users: provisioned.users };
+    }
+    return { contact, users };
   }
 
-  const existing = nextUsers[idx];
+  const existing = users[idx];
+  const nextUsers = [...users];
   nextUsers[idx] = {
     ...existing,
     contactId,
@@ -266,6 +278,8 @@ function teacherLinkedToContacts(teacher, contacts) {
 
 function userLinkedToContacts(user, contacts) {
   if (isPlatformUser(user)) return true;
+  const role = String(user.role ?? "").trim();
+  if (ESTABLISHMENT_BACKOFFICE_ROLES.includes(role)) return true;
   const contactId = String(user.contactId ?? "").trim();
   if (contactId && contacts.some((contact) => String(contact.id ?? "") === contactId)) {
     return true;
@@ -405,8 +419,31 @@ function syncContactRegistry(state = {}) {
   return { state: next, report };
 }
 
+/**
+ * Rétablit les comptes manquants pour les contacts avec accès, sans purger les orphelins.
+ */
+function repairMissingUsersFromContacts(state = {}) {
+  let next = {
+    ...state,
+    contacts: Array.isArray(state.contacts) ? [...state.contacts] : [],
+    users: Array.isArray(state.users) ? [...state.users] : [],
+  };
+  let repaired = 0;
+
+  next.contacts = next.contacts.map((contact) => {
+    const userLink = linkContactToUser(contact, next.users);
+    const before = next.users.length;
+    next.users = userLink.users;
+    if (next.users.length > before) repaired += 1;
+    return userLink.contact;
+  });
+
+  return { state: next, repaired };
+}
+
 module.exports = {
   syncContactRegistry,
+  repairMissingUsersFromContacts,
   mergeRowsByIdentity,
   linkContactToOperationalRecord,
   linkContactToUser,

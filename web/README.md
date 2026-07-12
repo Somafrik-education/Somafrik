@@ -14,7 +14,7 @@ flux d'état (`GET`/`PUT /api/backoffice/state`).
 
 ## Prérequis
 
-- Node.js 18+
+- Node.js >= 22.12.0 (voir `.nvmrc` à la racine du dépôt)
 - Backend Somafrik en cours d'exécution (`http://localhost:5000`)
 
 ## Installation

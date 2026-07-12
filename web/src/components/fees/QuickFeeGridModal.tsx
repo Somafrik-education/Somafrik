@@ -178,7 +178,7 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Année scolaire">
+          <Field label="Année scolaire" required>
             <Input
               value={form.academicYear}
               onChange={(event) => setForm({ ...form, academicYear: event.target.value })}

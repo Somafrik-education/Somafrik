@@ -7,6 +7,7 @@ const {
   recordFailedLoginAttempt,
   clearFailedLoginAttempts,
 } = require("../lib/loginLockout");
+const { resolveParentChildren } = require("../lib/parentChildren");
 const { GENERIC_AUTH_ERROR, canUserAccountLogin, loginBlockedMessage } = require("../lib/userAccountRules");
 const { canAccessBackOfficeRole, canAccessWebPlatformRole, isEstablishmentBackOfficeRole } = require("../lib/establishmentRoles");
 const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("../lib/countryScope");
@@ -33,6 +34,7 @@ class BackOfficeAccessService {
     schools = [school],
     userAccounts,
     students = [],
+    relations = [],
     countries = [],
     subscriptions = [],
     notifications = [],
@@ -41,6 +43,7 @@ class BackOfficeAccessService {
     this.schools = schools;
     this.userAccounts = userAccounts;
     this.students = students;
+    this.relations = relations;
     this.countries = countries;
     this.subscriptions = subscriptions;
     this.notifications = notifications;
@@ -48,18 +51,7 @@ class BackOfficeAccessService {
   }
 
   findLinkedParentChildren(user, schoolCode) {
-    const normalizedSchoolCode = String(schoolCode ?? "").trim().toUpperCase();
-    const parentPhone =
-      normalizeLoginText(user.identifier) || normalizeLoginText(user.phone);
-    if (!parentPhone) {
-      return [];
-    }
-
-    return this.students.filter(
-      (student) =>
-        String(student.schoolCode ?? "").trim().toUpperCase() === normalizedSchoolCode &&
-        normalizeLoginText(student.parentPhone) === parentPhone,
-    );
+    return resolveParentChildren(user, { students: this.students, relations: this.relations }, schoolCode);
   }
 
   login({ schoolCode, identifier, password }) {
@@ -120,7 +112,10 @@ class BackOfficeAccessService {
     clearFailedLoginAttempts(loginKey);
 
     const { password: _password, temporaryPassword: _temporaryPassword, ...safeUser } = user;
-    const mustChangePassword = Boolean(user.mustChangePassword) || Boolean(user.temporaryPassword);
+    const mustChangePassword =
+      user.mustChangePassword === false
+        ? false
+        : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim());
     const scopedSchoolCode = resolvedSchoolCode || user.schoolCode || "";
     const enrichedUser =
       user.role === "Parent"

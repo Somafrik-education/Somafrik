@@ -102,7 +102,7 @@ export function EvaluationFormModal({
       }
     >
       <form id="evaluation-form" onSubmit={handleSubmit} className="grid gap-4">
-        <Field label="Classe" htmlFor="eval-class">
+        <Field label="Classe" htmlFor="eval-class" required>
           <Select
             id="eval-class"
             value={className}
@@ -113,7 +113,7 @@ export function EvaluationFormModal({
             options={classNames.map((name) => ({ value: name, label: name }))}
           />
         </Field>
-        <Field label="Matière" htmlFor="eval-subject">
+        <Field label="Matière" htmlFor="eval-subject" required>
           <Select
             id="eval-subject"
             value={subject}
@@ -138,7 +138,7 @@ export function EvaluationFormModal({
             ]}
           />
         </Field>
-        <Field label="Période" htmlFor="eval-period">
+        <Field label="Période" htmlFor="eval-period" required>
           <Input id="eval-period" value={period} onChange={(e) => setPeriod(e.target.value)} required />
         </Field>
         <Field label="Type" htmlFor="eval-type">
@@ -152,7 +152,7 @@ export function EvaluationFormModal({
             }))}
           />
         </Field>
-        <Field label="Titre" htmlFor="eval-title">
+        <Field label="Titre" htmlFor="eval-title" required>
           <Input
             id="eval-title"
             value={title}

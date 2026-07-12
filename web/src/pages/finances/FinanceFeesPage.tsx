@@ -452,7 +452,7 @@ export function FinanceFeesPage() {
         {editing ? (
           <form id="fee-grid-form" onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Classe" hint="Obligatoire">
+              <Field label="Classe" hint="Obligatoire" required>
                 <Select
                   value={editing.className}
                   onChange={(e) => setEditing({ ...editing, className: e.target.value })}
@@ -460,7 +460,7 @@ export function FinanceFeesPage() {
                   required
                 />
               </Field>
-              <Field label="Année scolaire">
+              <Field label="Année scolaire" required>
                 <Input
                   value={editing.academicYear}
                   onChange={(e) => setEditing({ ...editing, academicYear: e.target.value })}
@@ -474,7 +474,7 @@ export function FinanceFeesPage() {
                   placeholder="Trimestre 1, Semestre 2…"
                 />
               </Field>
-              <Field label="Devise" hint="Obligatoire">
+              <Field label="Devise" hint="Obligatoire" required>
                 <Input
                   value={editing.currency}
                   onChange={(e) => setEditing({ ...editing, currency: e.target.value.toUpperCase() })}
@@ -506,7 +506,7 @@ export function FinanceFeesPage() {
                 {draftItems.map((item, index) => (
                   <div key={index} className="rounded-lg border border-line/80 p-3">
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Type">
+                      <Field label="Type" required>
                         <Select
                           value={item.feeType}
                           onChange={(e) => {
@@ -522,7 +522,7 @@ export function FinanceFeesPage() {
                           options={SCHOOL_FEE_TYPES.map((t) => ({ value: t, label: t }))}
                         />
                       </Field>
-                      <Field label="Libellé">
+                      <Field label="Libellé" required>
                         <Input
                           value={item.label}
                           onChange={(e) => {
@@ -533,7 +533,7 @@ export function FinanceFeesPage() {
                           placeholder="Frais d'inscription, Uniforme…"
                         />
                       </Field>
-                      <Field label="Montant">
+                      <Field label="Montant" required>
                         <Input
                           type="number"
                           min={1}

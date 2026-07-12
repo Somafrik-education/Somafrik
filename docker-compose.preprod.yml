@@ -1,0 +1,82 @@
+# Stack préproduction Somafrik — PostgreSQL + backend (image figée) + Caddy (HTTPS)
+# Usage : docker compose -f docker-compose.preprod.yml --env-file .env up -d --build
+
+name: somafrik-preprod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB requis}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER requis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
+    volumes:
+      - postgres_preprod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - somafrik_internal
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        VITE_SHOW_DEMO_ACCOUNTS: ${VITE_SHOW_DEMO_ACCOUNTS:-false}
+    image: somafrik-backend:preprod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requis}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS requis}
+      SOMAFRIK_DB_REQUIRED: "true"
+      SOMAFRIK_SKIP_DEMO_SEED: "true"
+      SOMAFRIK_DISABLE_LOGIN_LOCKOUT: "false"
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-2mb}
+      WEB_DIST_PATH: /web/dist
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-15}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 45s
+    networks:
+      - somafrik_internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SOMAFRIK_DOMAIN: ${SOMAFRIK_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - somafrik_internal
+
+networks:
+  somafrik_internal:
+    driver: bridge
+
+volumes:
+  postgres_preprod_data:
+  caddy_data:
+  caddy_config:

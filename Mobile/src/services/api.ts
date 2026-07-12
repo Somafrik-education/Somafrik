@@ -190,9 +190,17 @@ export async function logout() {
 }
 
 export function changePassword(newPassword: string) {
-  return request<{ user: LoginResponse["user"]; message: string }>("/auth/change-password", {
-    method: "POST",
-    body: JSON.stringify({ newPassword }),
+  return request<{ user: LoginResponse["user"]; message: string; accessToken?: string }>(
+    "/auth/change-password",
+    {
+      method: "POST",
+      body: JSON.stringify({ newPassword }),
+    },
+  ).then((response) => {
+    if (response.accessToken) {
+      accessToken = response.accessToken;
+    }
+    return response;
   });
 }
 

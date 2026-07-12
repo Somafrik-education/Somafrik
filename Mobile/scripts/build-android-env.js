@@ -102,9 +102,9 @@ function loadBuildEnv() {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
   if (!apiUrl || /localhost|127\.0\.0\.1/i.test(apiUrl)) {
     console.error(
-      "EXPO_PUBLIC_API_URL doit pointer vers l'IP LAN du backend (ex. http://192.168.1.35:5000).",
+      "EXPO_PUBLIC_API_URL doit pointer vers l'IP LAN du backend (ex. http://192.168.x.x:5000).",
     );
-    console.error("Definissez-la dans Mobile/.env.local ou en variable d'environnement.");
+    console.error("Lancez npm run sync:env ou definissez LAN_IP / EXPO_PUBLIC_API_URL dans Mobile/.env.local.");
     process.exit(1);
   }
 

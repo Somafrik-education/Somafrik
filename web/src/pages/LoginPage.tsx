@@ -23,6 +23,9 @@ import { cn } from "../lib/utils";
 import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/demoAccounts";
 import type { LoginProfile } from "../types";
 
+const SHOW_DEMO_ACCOUNTS =
+  import.meta.env.DEV || String(import.meta.env.VITE_SHOW_DEMO_ACCOUNTS ?? "").toLowerCase() === "true";
+
 const PROFILES: { id: LoginProfile; label: string }[] = [
   { id: "superadmin", label: "Super Admin" },
   { id: "country", label: "Admin Pays" },
@@ -205,7 +208,10 @@ export function LoginPage() {
                   name="schoolCode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Code établissement</FormLabel>
+                      <FormLabel>
+                        Code établissement
+                        <span className="text-danger"> *</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="ex. CD-2026-0001" {...field} value={field.value ?? ""} />
                       </FormControl>
@@ -220,7 +226,10 @@ export function LoginPage() {
                 name="identifier"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Identifiant</FormLabel>
+                    <FormLabel>
+                      Identifiant
+                      <span className="text-danger"> *</span>
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="ex. superadmin" autoComplete="username" {...field} />
                     </FormControl>
@@ -234,7 +243,10 @@ export function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Mot de passe</FormLabel>
+                    <FormLabel>
+                      Mot de passe
+                      <span className="text-danger"> *</span>
+                    </FormLabel>
                     <FormControl>
                       <Input
                         type="password"
@@ -260,6 +272,7 @@ export function LoginPage() {
             </form>
           </Form>
 
+          {SHOW_DEMO_ACCOUNTS ? (
           <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4">
             <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">
               Comptes de démonstration
@@ -291,6 +304,7 @@ export function LoginPage() {
               <strong>{DEMO_SCHOOL_CODE}</strong>
             </p>
           </div>
+          ) : null}
         </div>
       </section>
 
@@ -321,7 +335,10 @@ export function LoginPage() {
               name="newPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Nouveau mot de passe</FormLabel>
+                  <FormLabel>
+                    Nouveau mot de passe
+                    <span className="text-danger"> *</span>
+                  </FormLabel>
                   <FormControl>
                     <Input type="password" autoFocus {...field} />
                   </FormControl>
@@ -334,7 +351,10 @@ export function LoginPage() {
               name="confirmPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Confirmation</FormLabel>
+                  <FormLabel>
+                    Confirmation
+                    <span className="text-danger"> *</span>
+                  </FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
                   </FormControl>

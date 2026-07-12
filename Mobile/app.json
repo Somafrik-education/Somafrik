@@ -39,7 +39,6 @@
     },
     "scheme": "somafrik",
     "extra": {
-      "apiUrl": "http://192.168.1.35:5000",
       "demoMode": false,
       "eas": {
         "projectId": "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5"

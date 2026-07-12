@@ -18,6 +18,7 @@ const {
   SUPERADMIN_ID,
   SUPERADMIN_PASSWORD,
   normalize,
+  extractApiList,
 } = require("./e2e-api-helpers");
 
 const PENDING = "En attente de validation";
@@ -139,7 +140,7 @@ async function main() {
 
   // Admin Pays voit l'établissement créé
   const establishmentsRes = await request("/backoffice/establishments", { token: countryToken });
-  const visibleSchool = (establishmentsRes.data ?? []).find((s) => s.code === schoolCode);
+  const visibleSchool = extractApiList(establishmentsRes).find((s) => s.code === schoolCode);
   results.push({
     Etape: "4b. Admin Pays voit l'établissement",
     Attendu: schoolCode,

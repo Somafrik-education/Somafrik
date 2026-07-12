@@ -93,6 +93,9 @@ if (Test-Path $easPath) {
   $easRaw = Get-Content $easPath -Raw
   $eas = $easRaw | ConvertFrom-Json
   foreach ($profile in @("preview", "production")) {
+    if ($nodeEnv -eq "production" -or $envMap["SOMAFRIK_SKIP_DEMO_SEED"] -eq "true") {
+      continue
+    }
     if ($eas.build.PSObject.Properties.Name -contains $profile) {
       if (-not $eas.build.$profile.env) {
         $eas.build.$profile | Add-Member -NotePropertyName env -NotePropertyValue ([pscustomobject]@{})

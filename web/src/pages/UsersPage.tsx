@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useData } from "../context/DataContext";
 import { scopedCountries, scopedSchools, scopedUsers } from "../lib/scope";
 import { getCurrentSchool } from "../lib/establishment";
@@ -59,21 +60,23 @@ function toCsv(users: UserAccount[], schools: School[]): string {
 
 export function UsersPage() {
   const { session } = useAuth();
+  const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { state, update } = useData();
   const ctx = usePermissionContext();
+  const scopeUser = scopedUser ?? session?.user ?? null;
   const { showToast } = useToast();
   const { prompt } = usePrompt();
 
-  const allUsers = scopedUsers(session?.user ?? null, state);
+  const allUsers = scopedUsers(scopeUser, state);
   const schoolsForLabels = useMemo(
-    () => scopedSchools(session?.user ?? null, state),
-    [session?.user, state],
+    () => scopedSchools(scopeUser, state),
+    [scopeUser, state],
   );
   const isSuperadminView = isSuperAdminRole(session?.user?.role);
   const canValidateAccount = canManageRolePermissions(ctx);
   const isCountryAdminView = session?.user?.role === COUNTRY_ADMIN_ROLE;
-  const school = getCurrentSchool(session?.user ?? null, state);
-  const schoolCode = session?.user?.schoolCode;
+  const school = getCurrentSchool(scopeUser, state);
+  const schoolCode = activeSchoolCode || scopeUser?.schoolCode;
   const { canCreate, canUpdate, canSuspend } = useFeaturePermissions("Utilisateurs");
 
   const [search, setSearch] = useState("");
@@ -85,8 +88,8 @@ export function UsersPage() {
   const [busy, setBusy] = useState(false);
 
   const creatableRoles = useMemo(
-    () => getCreatableUserRoles(session?.user, state, schoolCode),
-    [session?.user, state, schoolCode],
+    () => getCreatableUserRoles(scopeUser, state, schoolCode),
+    [scopeUser, state, schoolCode],
   );
 
   const roleOptions = useMemo(
@@ -95,18 +98,18 @@ export function UsersPage() {
   );
 
   const countryOptions = useMemo(
-    () => getCountryScopeOptions(scopedCountries(session?.user ?? null, state)),
-    [session?.user, state],
+    () => getCountryScopeOptions(scopedCountries(scopeUser, state)),
+    [scopeUser, state],
   );
 
   const schoolOptions = useMemo(() => {
-    return scopedSchools(session?.user ?? null, state).map((item) => ({
+    return scopedSchools(scopeUser, state).map((item) => ({
       value: item.code,
       label: `${item.name} (${item.code})`,
     }));
-  }, [session?.user, state]);
+  }, [scopeUser, state]);
 
-  const fieldPolicy = getUserFormFieldPolicy(session?.user, editing?.role ?? creatableRoles[0] ?? "");
+  const fieldPolicy = getUserFormFieldPolicy(scopeUser, editing?.role ?? creatableRoles[0] ?? "");
   const allowedSchoolCodes = useMemo(
     () => schoolOptions.map((option) => normalize(option.value)),
     [schoolOptions],
@@ -543,21 +546,21 @@ export function UsersPage() {
                 disabled={isEditingExisting}
               />
             </Field>
-            <Field label="Identifiant" hint="Généré automatiquement selon le rôle">
+            <Field label="Identifiant" hint="Généré automatiquement selon le rôle" required>
               <Input
                 value={editing.identifier ?? ""}
                 onChange={(e) => setEditing({ ...editing, identifier: e.target.value })}
                 required
               />
             </Field>
-            <Field label="Prénom">
+            <Field label="Prénom" required>
               <Input
                 value={editing.firstName ?? ""}
                 onChange={(e) => setEditing({ ...editing, firstName: e.target.value })}
                 required
               />
             </Field>
-            <Field label="Nom">
+            <Field label="Nom" required>
               <Input
                 value={editing.lastName ?? ""}
                 onChange={(e) => setEditing({ ...editing, lastName: e.target.value })}

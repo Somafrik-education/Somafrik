@@ -154,7 +154,7 @@ export function SubscriptionPaymentsPage() {
                 onChange={(e) => setForm({ ...form, method: e.target.value })}
               />
             </Field>
-            <Field label="Référence unique *">
+            <Field label="Référence unique" required>
               <Input
                 value={form.reference}
                 onChange={(e) => setForm({ ...form, reference: e.target.value })}

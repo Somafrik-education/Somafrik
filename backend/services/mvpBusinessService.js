@@ -276,7 +276,7 @@ class MvpBusinessService {
   getReadiness() {
     return {
       schoolCode: this.school?.code ?? "",
-      status: "MVP opérationnel démo",
+      status: process.env.NODE_ENV === "production" ? "MVP préproduction" : "MVP opérationnel démo",
       modules: [
         this.module("Authentification", "Couvert", ["Code établissement", "Détection rôle", "Blocage comptes suspendus", "Redirection par rôle"]),
         this.module("Établissements", "Couvert", ["Création plateforme", "Modification", "Suspension", "Logo", "Paramètres SaaS"]),
