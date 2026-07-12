@@ -58,6 +58,7 @@
     "verify:e2e-0027": "node scripts/verify-e2e-0027-mobile-accessibility.js",
     "verify:e2e-0012": "node scripts/verify-e2e-0012-parent-student-journey.js",
     "verify:e2e-0013": "node scripts/verify-e2e-0013-teacher-journey.js",
+    "verify:e2e-0028": "node scripts/verify-e2e-0028-teacher-planning-grades.js",
     "verify:e2e-0014": "node scripts/verify-e2e-0014-school-admin-journey.js",
     "verify:e2e-0011": "node scripts/verify-e2e-0011-unpaid-reminders-chain.js",
     "verify:e2e-0015": "node scripts/verify-e2e-0015-subscription-chain.js",

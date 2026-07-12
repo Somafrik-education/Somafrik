@@ -5,12 +5,47 @@ Somafrik unifie la gestion éducative, du pays à la classe. Stack Docker : Post
 ## Prérequis
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows)
-- Copier `.env.example` vers `.env` et adapter l’IP Wi‑Fi si besoin
+- **Node.js >= 22.12.0** pour le développement hors Docker (`nvm use` lit `.nvmrc`)
+- Copier `.env.example` vers `.env` (Docker, backend, PostgreSQL)
+- Copier `Mobile/.env.example` vers `Mobile/.env.local` (Expo, téléphone physique)
+
+## Installation des dépendances
+
+À la racine, une seule commande installe les 4 packages (racine, backend, web, Mobile) :
+
+```powershell
+npm run install:all
+```
+
+> `npm install` seul à la racine n'installe que les outils workspace (ex. Playwright). Pour le backend, le web et le mobile, utilisez `npm run install:all`.
+
+Les alertes `npm audit` restantes dans **Mobile** proviennent surtout de la chaîne Expo (correction complète = migration Expo 57+). **Web** : `esbuild` est forcé en version corrigée via `overrides` sans passer à Vite 8.
+
+## Configuration des variables d'environnement
+
+| Fichier | Rôle |
+|---------|------|
+| `.env` | Docker Compose, backend, PostgreSQL, CORS (dev), `EXPO_PORT` (port Metro dans le conteneur) |
+| `Mobile/.env.local` | Expo uniquement : IP LAN, URL API mobile, mode démo |
+| `.env.production.example` | Modèle pour la production réelle (CORS HTTPS, secrets, `SOMAFRIK_SKIP_DEMO_SEED=true`) |
+
+Les variables `REACT_NATIVE_PACKAGER_HOSTNAME`, `EXPO_PUBLIC_API_URL` et `EXPO_PUBLIC_DEMO_MODE` **ne doivent pas** être placées dans `.env` racine (Expo 57+ les refuse à cet emplacement).
+
+**CORS :**
+- **Développement** (`.env`) : localhost et IP LAN, enrichis par `npm run sync:env`
+- **Production** (`.env.production.example` → `.env`) : uniquement vos domaines publics, ex. `CORS_ORIGINS=https://app.somafrik.com` — le backend refuse les origines locales automatiques lorsque `NODE_ENV=production`
+
+```powershell
+Copy-Item .env.example .env
+Copy-Item Mobile\.env.example Mobile\.env.local
+npm run sync:env   # optionnel : aligne CORS, Mobile/.env.local et Mobile/eas.json
+```
 
 ## Démarrage (tout sur Docker)
 
 ```powershell
 Copy-Item .env.example .env
+Copy-Item Mobile\.env.example Mobile\.env.local
 npm run docker:up
 ```
 
@@ -40,15 +75,31 @@ npm run docker:logs          # tous les services
 
 ## Mobile sur téléphone
 
-Dans `.env`, l’IP Wi‑Fi du PC doit être correcte :
+L’IP Wi‑Fi du PC varie selon le réseau. Utilisez la détection automatique :
 
-```env
-REACT_NATIVE_PACKAGER_HOSTNAME=192.168.1.35
-EXPO_PUBLIC_API_URL=http://192.168.1.35:5000
-EXPO_PUBLIC_DEMO_MODE=false
+```powershell
+npm run sync:env
+# ou au démarrage Docker :
+powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 ```
 
-Le téléphone et le PC doivent être sur le **même Wi‑Fi**. Test : `http://VOTRE_IP:5000/api/health` depuis le navigateur du téléphone.
+Le script détecte l’IP LAN et génère `Mobile/.env.local` :
+
+```env
+LAN_IP=<ip_detectee>
+REACT_NATIVE_PACKAGER_HOSTNAME=<ip_detectee>
+EXPO_PUBLIC_API_URL=http://<ip_detectee>:5000
+```
+
+Vous pouvez aussi fixer l’IP manuellement dans `.env` :
+
+```env
+LAN_IP=192.168.x.x
+```
+
+Puis relancer `npm run sync:env`.
+
+Le téléphone et le PC doivent être sur le **même Wi‑Fi**. Test : `http://<LAN_IP>:5000/api/health` depuis le navigateur du téléphone.
 
 ## Arrêt
 
@@ -65,6 +116,9 @@ npm run docker:up:core
 ```
 
 ## Comptes de démonstration
+
+> **Usage local uniquement.** Ces comptes ne sont jamais créés en production.
+> En production, définissez obligatoirement `SOMAFRIK_SKIP_DEMO_SEED=true` (le backend refuse de démarrer sinon).
 
 Plateforme web (`http://localhost:5173/web/` ou `http://localhost:5000/web/`) — mot de passe **`1234`** :
 
@@ -93,10 +147,13 @@ Parent : +243 820 000 001 / PIN 1234
 
 1. `http://localhost:5000/api/health` → `"database": "postgresql"`
 2. Connexion web sur `http://localhost:5173/web/` (proxy Vite → backend Docker)
-3. Mobile : `EXPO_PUBLIC_DEMO_MODE=false` et même backend Docker
+3. Mobile : `EXPO_PUBLIC_DEMO_MODE=false` dans `Mobile/.env.local` et même backend Docker
 
 ## Avant usage réel
 
+- Partez de `.env.production.example` pour créer votre `.env` de production.
 - Changez `POSTGRES_PASSWORD` et `JWT_SECRET` dans `.env`.
+- Définissez `NODE_ENV=production` et **`SOMAFRIK_SKIP_DEMO_SEED=true`** (obligatoire).
 - Gardez `SOMAFRIK_DB_REQUIRED=true`.
-- Définissez `CORS_ORIGINS` avec vos URL réelles.
+- Définissez `CORS_ORIGINS` avec vos URL HTTPS publiques uniquement (pas de `localhost`, `127.0.0.1` ni IP privée).
+- Les comptes réels doivent utiliser un PIN à 6 chiffres non trivial ; le premier mot de passe est imposé à la première connexion.

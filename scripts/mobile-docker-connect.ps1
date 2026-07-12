@@ -11,18 +11,25 @@ Write-Host "=== Somafrik Mobile (Docker) ===" -ForegroundColor Cyan
 & (Join-Path $root "scripts\sync-env.ps1")
 & (Join-Path $root "scripts\open-firewall-dev.ps1")
 
-$envMap = @{}
-foreach ($line in Get-Content ".env") {
-  $t = $line.Trim()
-  if (-not $t -or $t.StartsWith("#")) { continue }
-  $eq = $t.IndexOf("=")
-  if ($eq -le 0) { continue }
-  $envMap[$t.Substring(0, $eq).Trim()] = $t.Substring($eq + 1).Trim()
+function Read-DotEnv($path) {
+  $map = @{}
+  if (-not (Test-Path $path)) { return $map }
+  foreach ($line in Get-Content $path) {
+    $t = $line.Trim()
+    if (-not $t -or $t.StartsWith("#")) { continue }
+    $eq = $t.IndexOf("=")
+    if ($eq -le 0) { continue }
+    $map[$t.Substring(0, $eq).Trim()] = $t.Substring($eq + 1).Trim()
+  }
+  return $map
 }
 
-$hostIp = $envMap["REACT_NATIVE_PACKAGER_HOSTNAME"]
-$apiUrl = $envMap["EXPO_PUBLIC_API_URL"]
-$expoPort = if ($envMap["EXPO_PORT"]) { $envMap["EXPO_PORT"] } else { "8083" }
+$rootEnvMap = Read-DotEnv (Join-Path $root ".env")
+$mobileEnvMap = Read-DotEnv (Join-Path $root "Mobile\.env.local")
+
+$hostIp = $mobileEnvMap["REACT_NATIVE_PACKAGER_HOSTNAME"]
+$apiUrl = $mobileEnvMap["EXPO_PUBLIC_API_URL"]
+$expoPort = if ($rootEnvMap["EXPO_PORT"]) { $rootEnvMap["EXPO_PORT"] } else { "8083" }
 
 Write-Host ""
 Write-Host "Demarrage / verification des services..." -ForegroundColor Yellow
@@ -88,9 +95,9 @@ if (-not $metroLanOk) {
   Write-Host ""
 }
 
-if ($envMap["EXPO_PUBLIC_DEMO_MODE"] -eq "true") {
+if ($mobileEnvMap["EXPO_PUBLIC_DEMO_MODE"] -eq "true") {
   Write-Host "ATTENTION : EXPO_PUBLIC_DEMO_MODE=true - l app ignore l API Docker." -ForegroundColor Yellow
-  Write-Host "Mettez false dans .env puis relancez ce script." -ForegroundColor Yellow
+  Write-Host "Mettez false dans Mobile/.env.local puis relancez ce script." -ForegroundColor Yellow
   Write-Host ""
 }
 

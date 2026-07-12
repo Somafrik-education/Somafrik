@@ -1,11 +1,15 @@
-# Aligne .env, Mobile/.env.local et Mobile/eas.json (preview + production).
+# Aligne .env, Mobile/.env.local et Mobile/eas.json avec l'IP LAN detectee.
 # Usage : powershell -ExecutionPolicy Bypass -File scripts\sync-env.ps1
+#         npm run sync:env
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "lib\lan-ip.ps1")
+
 $envPath = Join-Path $root ".env"
 $examplePath = Join-Path $root ".env.example"
 $mobileEnvPath = Join-Path $root "Mobile\.env.local"
+$mobileExamplePath = Join-Path $root "Mobile\.env.example"
 $easPath = Join-Path $root "Mobile\eas.json"
 
 function Read-DotEnv($path) {
@@ -21,19 +25,6 @@ function Read-DotEnv($path) {
   return $map
 }
 
-function Get-LanIp {
-  $ip = (
-    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-    Where-Object {
-      $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and $_.PrefixOrigin -ne "WellKnown"
-    } |
-    Sort-Object InterfaceMetric |
-    Select-Object -First 1 -ExpandProperty IPAddress
-  )
-  if ($ip) { return $ip }
-  return "192.168.1.35"
-}
-
 if (-not (Test-Path $envPath)) {
   if (Test-Path $examplePath) {
     Copy-Item $examplePath $envPath
@@ -43,45 +34,54 @@ if (-not (Test-Path $envPath)) {
   }
 }
 
-$lanIp = Get-LanIp
+if (-not (Test-Path $mobileEnvPath) -and (Test-Path $mobileExamplePath)) {
+  Copy-Item $mobileExamplePath $mobileEnvPath
+  Write-Host "Mobile/.env.local cree depuis Mobile/.env.example"
+}
+
 $envMap = Read-DotEnv $envPath
-$requiredKeys = @(
-  "NODE_ENV", "BACKEND_PORT", "POSTGRES_HOST_PORT", "POSTGRES_DB", "POSTGRES_USER",
-  "POSTGRES_PASSWORD", "JWT_SECRET", "CORS_ORIGINS", "WEB_DEV_PORT", "SOMAFRIK_DB_REQUIRED",
-  "JSON_BODY_LIMIT", "EXPO_PORT"
-)
-
 $mobileEnvMap = Read-DotEnv $mobileEnvPath
-$apiUrl = if ($mobileEnvMap["EXPO_PUBLIC_API_URL"]) { $mobileEnvMap["EXPO_PUBLIC_API_URL"] } elseif ($envMap["EXPO_PUBLIC_API_URL"]) { $envMap["EXPO_PUBLIC_API_URL"] } else { "http://${lanIp}:5000" }
-$packagerHost = if ($mobileEnvMap["REACT_NATIVE_PACKAGER_HOSTNAME"]) { $mobileEnvMap["REACT_NATIVE_PACKAGER_HOSTNAME"] } elseif ($envMap["REACT_NATIVE_PACKAGER_HOSTNAME"]) { $envMap["REACT_NATIVE_PACKAGER_HOSTNAME"] } else { $lanIp }
-$expoPort = if ($mobileEnvMap["EXPO_PORT"]) { $mobileEnvMap["EXPO_PORT"] } elseif ($envMap["EXPO_PORT"]) { $envMap["EXPO_PORT"] } else { "8083" }
-$demoMode = if ($mobileEnvMap["EXPO_PUBLIC_DEMO_MODE"]) { $mobileEnvMap["EXPO_PUBLIC_DEMO_MODE"] } elseif ($envMap["EXPO_PUBLIC_DEMO_MODE"]) { $envMap["EXPO_PUBLIC_DEMO_MODE"] } else { "false" }
+$lanIp = Resolve-LanIp $envMap
 
-$corsBase = "http://localhost:5000,http://127.0.0.1:5000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:${expoPort},http://127.0.0.1:${expoPort}"
-$corsLan = "http://${packagerHost}:5000,http://${packagerHost}:5173,http://${packagerHost}:${expoPort}"
-$corsMerged = "$corsBase,$corsLan"
+if (-not $lanIp) {
+  Write-Warning "IP LAN introuvable. Definissez LAN_IP=<votre_ip_wifi> dans .env puis relancez npm run sync:env"
+  $lanIp = "ADRESSE_IP_DU_PC"
+}
 
-$mergedEnv = @"
-NODE_ENV=production
-BACKEND_PORT=5000
-POSTGRES_HOST_PORT=5433
-POSTGRES_DB=somafrik
-POSTGRES_USER=somafrik
-POSTGRES_PASSWORD=change-me
-JWT_SECRET=change-this-long-random-secret-before-use
-CORS_ORIGINS=$corsMerged
-WEB_DEV_PORT=5173
-SOMAFRIK_DB_REQUIRED=true
-JSON_BODY_LIMIT=1mb
+$backendPort = if ($envMap["BACKEND_PORT"]) { $envMap["BACKEND_PORT"] } else { "5000" }
+$expoPort = if ($envMap["EXPO_PORT"]) { $envMap["EXPO_PORT"] } elseif ($mobileEnvMap["EXPO_PORT"]) { $mobileEnvMap["EXPO_PORT"] } else { "8083" }
+$demoMode = if ($mobileEnvMap["EXPO_PUBLIC_DEMO_MODE"]) { $mobileEnvMap["EXPO_PUBLIC_DEMO_MODE"] } else { "false" }
+$apiUrl = "http://${lanIp}:${backendPort}"
+$packagerHost = $lanIp
 
-# Port Metro pour Docker Compose (service mobile).
-EXPO_PORT=$expoPort
-"@
+$nodeEnv = if ($envMap["NODE_ENV"]) { $envMap["NODE_ENV"].Trim() } else { "development" }
 
-Set-Content -Path $envPath -Value $mergedEnv.TrimEnd() -Encoding utf8
+$cors = [string]$envMap["CORS_ORIGINS"]
+if (-not $cors) {
+  $cors = "http://localhost:5000,http://127.0.0.1:5000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:${expoPort},http://127.0.0.1:${expoPort}"
+}
+$cors = $cors -replace 'ADRESSE_IP_DU_PC', $lanIp
+if ($nodeEnv -ne "production" -and $lanIp -ne "ADRESSE_IP_DU_PC") {
+  foreach ($origin in @(
+    "http://${lanIp}:${backendPort}",
+    "http://${lanIp}:5173",
+    "http://${lanIp}:${expoPort}"
+  )) {
+    if ($cors -notmatch [regex]::Escape($origin)) {
+      $cors = "$cors,$origin"
+    }
+  }
+}
+
+Update-DotEnvFile $envPath @{
+  LAN_IP = $lanIp
+  CORS_ORIGINS = $cors
+  EXPO_PORT = $expoPort
+}
 
 $mobileEnv = @"
-# Variables Expo locales (machine / telephone). Ne pas mettre dans .env racine (Expo 57+).
+# Genere par scripts/sync-env.ps1 - ne pas placer dans .env racine (Expo 57+).
+LAN_IP=$lanIp
 EXPO_PORT=$expoPort
 REACT_NATIVE_PACKAGER_HOSTNAME=$packagerHost
 EXPO_PUBLIC_API_URL=$apiUrl
@@ -107,9 +107,15 @@ if (Test-Path $easPath) {
 }
 
 Write-Host "=== Environnements synchronises ===" -ForegroundColor Green
-Write-Host "  .env                  OK"
+Write-Host "  .env                  OK (LAN_IP=$lanIp)"
 Write-Host "  Mobile/.env.local     OK"
-Write-Host "  Mobile/eas.json     OK (preview + production)"
+if (Test-Path $easPath) {
+  Write-Host "  Mobile/eas.json       OK (preview + production)"
+}
 Write-Host ""
 Write-Host "  API mobile : $apiUrl"
-Write-Host "  Expo Metro : $packagerHost`:$expoPort"
+Write-Host "  Expo Metro : ${packagerHost}:$expoPort"
+if ($lanIp -eq "ADRESSE_IP_DU_PC") {
+  Write-Host ""
+  Write-Host "  Astuce : ipconfig (Windows) puis LAN_IP=<IPv4 Wi-Fi> dans .env" -ForegroundColor Yellow
+}

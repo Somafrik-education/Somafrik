@@ -18,7 +18,7 @@ Write-Host "=== Somafrik Mobile (Expo sur PC) ===" -ForegroundColor Cyan
 
 $envMap = @{}
 $mobileEnvPath = Join-Path $root "Mobile\.env.local"
-foreach ($path in @($mobileEnvPath, (Join-Path $root ".env"))) {
+foreach ($path in @($mobileEnvPath)) {
   if (-not (Test-Path $path)) { continue }
   foreach ($line in Get-Content $path) {
     $t = $line.Trim()
@@ -29,9 +29,21 @@ foreach ($path in @($mobileEnvPath, (Join-Path $root ".env"))) {
   }
 }
 
+$rootEnvMap = @{}
+$rootEnvPath = Join-Path $root ".env"
+if (Test-Path $rootEnvPath) {
+  foreach ($line in Get-Content $rootEnvPath) {
+    $t = $line.Trim()
+    if (-not $t -or $t.StartsWith("#")) { continue }
+    $eq = $t.IndexOf("=")
+    if ($eq -le 0) { continue }
+    $rootEnvMap[$t.Substring(0, $eq).Trim()] = $t.Substring($eq + 1).Trim()
+  }
+}
+
 $hostIp = $envMap["REACT_NATIVE_PACKAGER_HOSTNAME"]
 $apiUrl = $envMap["EXPO_PUBLIC_API_URL"]
-$expoPort = if ($envMap["EXPO_PORT"]) { $envMap["EXPO_PORT"] } else { "8083" }
+$expoPort = if ($envMap["EXPO_PORT"]) { $envMap["EXPO_PORT"] } elseif ($rootEnvMap["EXPO_PORT"]) { $rootEnvMap["EXPO_PORT"] } else { "8081" }
 
 foreach ($key in @("REACT_NATIVE_PACKAGER_HOSTNAME", "EXPO_PUBLIC_API_URL", "EXPO_PUBLIC_DEMO_MODE", "EXPO_PORT")) {
   if ($envMap.ContainsKey($key)) {
