@@ -5,7 +5,8 @@ import { PermissionRoute } from "./components/PermissionRoute";
 import { RouteFallback } from "./components/RouteFallback";
 import { AppLayout } from "./components/layout/AppLayout";
 import { DataProvider } from "./context/DataContext";
-import { isMarketplaceEnabled } from "./lib/marketplaceFeature";import {
+import { marketplaceEnabled } from "./lib/featureFlags";
+import {
   AdministrationLayout,
   BulletinDesignPage,
   CancellationRequestPage,
@@ -90,7 +91,7 @@ export default function App() {
             </PermissionRoute>
           }
         />
-        {isMarketplaceEnabled() ? (
+        {marketplaceEnabled ? (
           <Route
             path="/marketplace"
             element={

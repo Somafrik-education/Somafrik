@@ -12,8 +12,19 @@
  *   BOOTSTRAP_SUPERADMIN_PASSWORD=...
  */
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
-require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env.local"), override: true });
+const fs = require("fs");
+
+const repoRoot = path.join(__dirname, "..", "..");
+const preprodEnvPath = path.join(repoRoot, ".env.preproduction");
+const isBootstrap =
+  process.argv.includes("--bootstrap") || process.env.SOMAFRIK_BOOTSTRAP_SUPERADMIN === "true";
+
+if (isBootstrap && fs.existsSync(preprodEnvPath)) {
+  require("dotenv").config({ path: preprodEnvPath });
+} else {
+  require("dotenv").config({ path: path.join(repoRoot, ".env") });
+  require("dotenv").config({ path: path.join(repoRoot, ".env.local"), override: true });
+}
 
 const { Pool } = require("pg");
 const { buildDatabaseUrl } = require("../db/connectionConfig");

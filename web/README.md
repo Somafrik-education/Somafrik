@@ -30,9 +30,11 @@ npm install
 npm run dev
 ```
 
-Ouvrir http://localhost:5173/web/
+Ouvrir http://localhost:5173/
 
 Le proxy Vite redirige `/api` vers le backend Express.
+
+En production (Vercel), définir `VITE_API_URL` (ex. `https://api.somafrik.app`). Voir `docs/vercel.md`.
 
 ## Build production
 
@@ -40,7 +42,10 @@ Le proxy Vite redirige `/api` vers le backend Express.
 npm run build
 ```
 
-Les fichiers sont générés dans `web/dist/` et servis par le backend sur `/web/`.
+Les fichiers sont générés dans `web/dist/`.
+
+- **Vercel** (prod / préprod) : déployer `dist/` à la racine du domaine.
+- **Docker local** : servis par le backend sur `/web/` (`VITE_BASE_PATH=/web/` au build).
 
 ## Structure
 

@@ -16,6 +16,7 @@ Mobile/ios/build/
 
 # Environment
 .env
+.env.preproduction
 .env.local
 .env.*.local
 Mobile/.env.local

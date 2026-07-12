@@ -1,74 +1,111 @@
 # Déploiement préproduction — Somafrik MVP
 
-Guide pour mettre en ligne le MVP avec toutes les fonctionnalités actuelles (web, API, mobile, PostgreSQL).
+Guide pour mettre en ligne le MVP avec frontend Vercel et API backend séparée.
+
+## Architecture
+
+| Composant | Hébergement | URL |
+|-----------|-------------|-----|
+| Frontend web prod | Vercel (`main`) | https://somafrik.app |
+| Frontend web préprod | Vercel (`develop`) | https://preprod.somafrik.app |
+| API production | Docker + Caddy | https://api.somafrik.app |
+| API préproduction | Docker + Caddy | https://api-preprod.somafrik.app |
+
+Voir aussi `docs/vercel.md` pour la configuration Vercel.
 
 ## Prérequis
 
-- Serveur Linux ou Windows avec Docker et Docker Compose
-- Nom de domaine officiel **somafrik.app** pointant vers le serveur
-- Ports 80 et 443 ouverts (Caddy + Let's Encrypt)
+- Serveur Linux ou Windows avec Docker et Docker Compose (API uniquement)
+- Compte Vercel lié au dépôt (`web/` comme racine)
+- DNS :
+  - `somafrik.app`, `preprod.somafrik.app` → Vercel
+  - `api.somafrik.app`, `api-preprod.somafrik.app` → serveur backend
 - Node.js 22+ (pour le bootstrap initial uniquement)
 
-## 1. Configuration
+## 1. Configuration backend (préprod)
 
 ```powershell
-# Windows
 npm run preprod:init-env
 ```
 
-Ou copiez manuellement `.env.preproduction.example` vers `.env` et renseignez :
+Cela crée **`.env.preproduction`** (séparé du `.env` de développement local) avec des secrets générés.
+
+Ou copiez `.env.preproduction.example` vers `.env.preproduction` et renseignez :
 
 | Variable | Description |
 |----------|-------------|
-| `SOMAFRIK_DOMAIN` | Domaine officiel (`somafrik.app`) |
-| `CORS_ORIGINS` | Origines autorisées (`https://somafrik.app`) |
+| `SOMAFRIK_API_DOMAIN` | `api-preprod.somafrik.app` |
+| `CORS_ORIGINS` | `https://preprod.somafrik.app` |
 | `POSTGRES_PASSWORD` | Mot de passe fort unique |
 | `JWT_SECRET` | Secret ≥ 32 caractères (`openssl rand -hex 32`) |
 | `BOOTSTRAP_SUPERADMIN_PASSWORD` | Mot de passe initial superadmin (≥ 12 car.) |
-| `EXPO_PUBLIC_API_URL` | URL HTTPS pour builds mobile EAS |
+| `EXPO_PUBLIC_API_URL` | `https://api-preprod.somafrik.app` |
 
-Variables obligatoires en préproduction :
+Variables obligatoires :
 
 ```env
 NODE_ENV=production
 SOMAFRIK_SKIP_DEMO_SEED=true
 SOMAFRIK_DISABLE_LOGIN_LOCKOUT=false
 TRUST_PROXY_HOPS=1
-VITE_SHOW_DEMO_ACCOUNTS=false
 ```
 
-## 2. Bootstrap base vide + superadmin
+## 2. Démarrage API préprod (PostgreSQL + backend)
+
+```powershell
+npm run preprod:check
+npm run preprod:up
+```
+
+Si vous avez déjà lancé la préprod avec un `.env` de développement (mots de passe faibles), réinitialisez les volumes avant de relancer :
+
+```powershell
+docker compose -f docker-compose.preprod.yml --env-file .env.preproduction down -v
+npm run preprod:up
+```
+
+## 3. Bootstrap base vide + superadmin
+
+Une fois le stack démarré (`npm run preprod:up`) :
 
 ```powershell
 npm run preprod:bootstrap
 ```
 
+Le bootstrap s'exécute dans le conteneur backend (connexion PostgreSQL via le réseau Docker).
+
 Crée une base PostgreSQL vide avec un compte Super Admin initial (`mustChangePassword: true`).
 
-## 3. Démarrage
-
-```powershell
-npm run preprod:up
-```
-
-Services déployés :
+Services déployés par `preprod:up` :
 
 | Service | Rôle |
 |---------|------|
-| `postgres` | Base de données (réseau interne uniquement) |
-| `backend` | API Express + web React (`/web/`) + BackOffice legacy |
-| `caddy` | HTTPS, reverse proxy |
+| `postgres` | Base de données (port hôte `5434` pour bootstrap) |
+| `backend` | API Express API-only (`SOMAFRIK_API_ONLY=true`) |
+| `caddy` | HTTPS sur `api-preprod.somafrik.app` |
 
 URLs :
 
-- Application web : `https://somafrik.app/web/`
-- Connexion : `https://somafrik.app/web/connexion`
-- API santé : `https://somafrik.app/api/health`
-- BackOffice legacy : `https://somafrik.app/backoffice/`
+- Web préprod (Vercel) : `https://preprod.somafrik.app/`
+- Connexion : `https://preprod.somafrik.app/connexion`
+- API santé : `https://api-preprod.somafrik.app/api/health`
+- BackOffice legacy : `https://api-preprod.somafrik.app/backoffice/`
 
-## 4. Configuration initiale métier
+## 4. Déploiement frontend Vercel
 
-Connectez-vous en Super Admin puis :
+1. Lier le projet Vercel au dépôt, **Root Directory** = `web`.
+2. Branche `develop` → domaine `preprod.somafrik.app`.
+3. Variables d'environnement (voir `docs/vercel.md`) :
+
+```env
+VITE_API_URL=https://api-preprod.somafrik.app
+VITE_SHOW_DEMO_ACCOUNTS=false
+VITE_ENABLE_MARKETPLACE=false
+```
+
+## 5. Configuration initiale métier
+
+Connectez-vous en Super Admin sur `https://preprod.somafrik.app/connexion` puis :
 
 1. Créer les pays
 2. Créer les établissements
@@ -76,75 +113,78 @@ Connectez-vous en Super Admin puis :
 4. Configurer l'année scolaire, classes, matières
 5. Importer ou saisir élèves, enseignants, parents
 
-Toutes les fonctionnalités MVP restent disponibles : notes, présences, paiements, bulletins PDF, planning, notifications, audit, dashboards multi-rôles.
+## 6. Production
 
-## 5. Application mobile
+Même procédure avec :
 
-Mettez à jour `Mobile/eas.json` (profils `preview` et `production`) avec votre URL HTTPS :
-
-```json
-"EXPO_PUBLIC_API_URL": "https://somafrik.app"
-```
-
-Build APK/AAB :
+- `.env` basé sur `.env.production.example`
+- `docker compose -f docker-compose.production.yml up -d --build`
+- Vercel branche `main` → `somafrik.app`
+- `CORS_ORIGINS=https://somafrik.app`
+- `VITE_API_URL=https://api.somafrik.app`
 
 ```powershell
-cd Mobile
-npm run build:apk
-# ou
-npm run build:play
+npm run production:up
 ```
 
-> `npm run sync:env` ne modifie plus les profils EAS `production`/`preview` quand `NODE_ENV=production`.
+## 7. Application mobile
 
-## 6. Sécurité activée en préproduction
+`Mobile/eas.json` pointe déjà vers les API :
+
+- Preview / préprod : `https://api-preprod.somafrik.app`
+- Production : `https://api.somafrik.app`
+
+## 8. Sécurité activée en préproduction
 
 - Pas de seed automatique de données démo
 - Comptes démo masqués sur la page de connexion web
 - Rate limiting sur `/api/login`, `/api/identify`, `/api/backoffice/login`
 - Verrouillage après échecs de connexion (actif)
 - Validation des secrets au démarrage
-- CORS strict (pas de localhost en production)
+- CORS strict (origine Vercel exacte)
 - Headers de sécurité + HSTS derrière HTTPS
 - `SOMAFRIK_E2E` et `SOMAFRIK_AUTH_OPTIONAL` interdits en production
 
-## 7. Commandes utiles
+## 9. Commandes utiles
 
 ```powershell
-npm run preprod:logs      # journaux
-npm run preprod:down      # arrêt
-npm run docker:build      # rebuild image backend seule
+npm run preprod:logs
+npm run preprod:down
+npm run production:up
+npm run production:logs
+npm run production:down
+npm run docker:build
 ```
 
-## 8. Sauvegarde PostgreSQL
+## 10. Sauvegarde PostgreSQL
 
 ```powershell
 docker compose -f docker-compose.preprod.yml exec -T postgres pg_dump -U somafrik somafrik > backup.sql
 ```
 
-Restauration :
-
-```powershell
-Get-Content backup.sql | docker compose -f docker-compose.preprod.yml exec -T postgres psql -U somafrik somafrik
-```
-
-## 9. Développement local vs préproduction
+## 11. Développement local vs préproduction
 
 | | Développement | Préproduction |
 |--|---------------|---------------|
-| Fichier env | `.env.example` | `.env.preproduction.example` |
-| Compose | `docker-compose.yml` | `docker-compose.preprod.yml` |
+| Frontend | `localhost:5173/` (Vite) | Vercel `preprod.somafrik.app` |
+| API | `localhost:5000` | `api-preprod.somafrik.app` |
+| Fichier env | `.env.example` | `.env.preproduction` |
+| Compose API | `docker-compose.yml` | `docker-compose.preprod.yml` |
 | Seed démo | Oui (optionnel) | Non |
-| Expo / Vite dev | Oui | Non |
-| HTTPS | Non | Oui (Caddy) |
-| Comptes démo UI | Oui | Non |
+| HTTPS | Non | Oui (Caddy + Vercel) |
 
-## 10. Dépannage
+## 12. Dépannage
 
-**Backend ne démarre pas** — vérifiez `JWT_SECRET` (≥ 32 car.) et `POSTGRES_PASSWORD` (≠ `change-me`).
+**Erreur CORS** — `CORS_ORIGINS` doit être exactement `https://preprod.somafrik.app` (sans slash final).
 
-**CORS** — `CORS_ORIGINS` doit inclure exactement l'origine HTTPS du navigateur.
+**API inaccessible** — vérifier DNS `api-preprod.somafrik.app` et ports 80/443 sur le serveur.
 
-**Certificat TLS** — le domaine doit pointer vers le serveur avant le premier démarrage Caddy.
+**Frontend sans données** — vérifier `VITE_API_URL` dans Vercel (rebuild nécessaire après modification).
 
-**503 sur /web/** — reconstruire l'image : `npm run preprod:up` (le build Vite est inclus dans `backend/Dockerfile`).
+**Backend ne démarre pas** — le stack préprod lit **`.env.preproduction`**, pas `.env` local. Vérifiez :
+
+```powershell
+npm run preprod:check
+```
+
+Erreurs fréquentes : `JWT_SECRET` trop court, `POSTGRES_PASSWORD=change-me`, `BOOTSTRAP_SUPERADMIN_PASSWORD` &lt; 12 caractères.

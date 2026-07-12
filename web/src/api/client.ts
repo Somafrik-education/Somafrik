@@ -1,7 +1,9 @@
 // Client API minimaliste: même contrat que le BackOffice historique.
-// Toutes les requêtes passent par /api (proxifié vers Express en dev).
+// VITE_API_URL obligatoire (ex. https://api.somafrik.app ou http://localhost:5000).
 
-const API_BASE_URL = "/api";
+import { API_URL } from "../lib/apiUrl";
+
+const API_BASE_URL = `${API_URL.replace(/\/$/, "")}/api`;
 
 export class ApiError extends Error {
   status: number;

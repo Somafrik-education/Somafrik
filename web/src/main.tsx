@@ -8,9 +8,12 @@ import { ConfirmProvider } from "./components/ui/ConfirmDialog";
 import { PromptProvider } from "./components/ui/PromptDialog";
 import "./index.css";
 
+const routerBasename =
+  import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename}>
       <ToastProvider>
         <ConfirmProvider>
           <PromptProvider>

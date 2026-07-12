@@ -19,12 +19,10 @@ import {
   FormMessage,
 } from "../components/ui/shadcn/form";
 import { getDefaultAppPath } from "../lib/superAdminAccess";
+import { showDemoAccounts } from "../lib/featureFlags";
 import { cn } from "../lib/utils";
 import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/demoAccounts";
 import type { LoginProfile } from "../types";
-
-const SHOW_DEMO_ACCOUNTS =
-  import.meta.env.DEV || String(import.meta.env.VITE_SHOW_DEMO_ACCOUNTS ?? "").toLowerCase() === "true";
 
 const PROFILES: { id: LoginProfile; label: string }[] = [
   { id: "superadmin", label: "Super Admin" },
@@ -272,7 +270,7 @@ export function LoginPage() {
             </form>
           </Form>
 
-          {SHOW_DEMO_ACCOUNTS ? (
+          {showDemoAccounts ? (
           <div className="rounded-xl border border-dashed border-line bg-slate-50 p-4">
             <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">
               Comptes de démonstration

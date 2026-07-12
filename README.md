@@ -64,20 +64,20 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 |---------|-----|
 | API santé | http://localhost:5000/api/health |
 | Plateforme legacy | http://localhost:5000/backoffice/ |
-| Web React (build intégré) | http://localhost:5000/web/ |
-| Web React (dev, hot reload) | http://localhost:5173/web/ |
+| Web React (build intégré Docker) | http://localhost:5000/web/ |
+| Web React (dev Vite) | http://localhost:5173/ |
 | PostgreSQL (hôte) | localhost:5433 |
 | Expo Metro (mobile) | port 8083 — QR dans les logs |
 
-### Préproduction (domaine officiel)
+### Production / préproduction (Vercel + API séparée)
 
-| Service | URL |
-|---------|-----|
-| Application web | https://somafrik.app/web/ |
-| Connexion | https://somafrik.app/web/connexion |
-| API | https://somafrik.app/api/health |
+| Service | Production | Préproduction |
+|---------|------------|---------------|
+| Frontend web | https://somafrik.app | https://preprod.somafrik.app |
+| Connexion | https://somafrik.app/connexion | https://preprod.somafrik.app/connexion |
+| API | https://api.somafrik.app/api/health | https://api-preprod.somafrik.app/api/health |
 
-Déploiement : `docs/preproduction.md` (`npm run preprod:init-env` → `preprod:bootstrap` → `preprod:up`).
+Déploiement : `docs/preproduction.md` (API) + `docs/vercel.md` (frontend Vercel).
 
 ```powershell
 npm run docker:logs:mobile   # QR Code Expo
@@ -131,7 +131,7 @@ npm run docker:up:core
 > **Usage local uniquement.** Ces comptes ne sont jamais créés en production.
 > En production, définissez obligatoirement `SOMAFRIK_SKIP_DEMO_SEED=true` (le backend refuse de démarrer sinon).
 
-Plateforme web (`http://localhost:5173/web/` ou `http://localhost:5000/web/`) — mot de passe **`1234`** :
+Plateforme web (`http://localhost:5173/` ou `http://localhost:5000/web/`) — mot de passe **`1234`** :
 
 | Groupe | Profil | Identifiant | Code établissement |
 |--------|--------|-------------|-------------------|
@@ -157,7 +157,7 @@ Parent : +243 820 000 001 / PIN 1234
 ## Vérification auth stable
 
 1. `http://localhost:5000/api/health` → `"database": "postgresql"`
-2. Connexion web sur `http://localhost:5173/web/` (proxy Vite → backend Docker)
+2. Connexion web sur `http://localhost:5173/` (proxy Vite → backend Docker)
 3. Mobile : `EXPO_PUBLIC_DEMO_MODE=false` dans `Mobile/.env.local` et même backend Docker
 
 ## Avant usage réel

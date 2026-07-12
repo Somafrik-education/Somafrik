@@ -22,6 +22,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        VITE_BASE_PATH: /web/
+        VITE_API_URL: http://localhost:5000
+        VITE_SHOW_DEMO_ACCOUNTS: ${VITE_SHOW_DEMO_ACCOUNTS:-true}
     image: somafrik-backend:latest
     restart: unless-stopped
     ports:
@@ -61,6 +65,7 @@ services:
     ports:
       - "${WEB_DEV_PORT:-5173}:5173"
     environment:
+      VITE_API_URL: http://localhost:5000
       VITE_API_TARGET: http://backend:5000
       CHOKIDAR_USEPOLLING: "true"
     volumes:
