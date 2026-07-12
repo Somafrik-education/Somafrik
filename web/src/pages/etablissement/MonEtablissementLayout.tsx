@@ -1,17 +1,15 @@
 import { Outlet } from "react-router-dom";
-import { Contact, GraduationCap, LayoutDashboard, Link2, School, Users } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Link2, School, UserRound, Users } from "lucide-react";
 import { TabNav, type TabItem } from "../../components/layout/TabNav";
 import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 
 /**
- * Onglet + vue de permission requise pour l'afficher.
- * Ordre métier « Contacts-first » : le référentiel des personnes précède les
- * fiches qui en dérivent (élèves, enseignants, associations).
+ * Onglets Mon établissement — gestion opérationnelle des personnes et structures.
  */
 const ETABLISSEMENT_TABS: (TabItem & { view: string })[] = [
   { to: "/etablissement/vue-ensemble", label: "Vue d'ensemble", icon: LayoutDashboard, view: "establishment" },
-  { to: "/etablissement/contacts", label: "Contacts", icon: Contact, view: "contacts" },
+  { to: "/etablissement/comptes-utilisateurs", label: "Comptes utilisateurs", icon: UserRound, view: "users" },
   { to: "/etablissement/classes", label: "Classes", icon: School, view: "classes" },
   { to: "/etablissement/eleves", label: "Élèves", icon: GraduationCap, view: "students" },
   { to: "/etablissement/enseignants", label: "Enseignants", icon: Users, view: "teachers" },
@@ -29,7 +27,7 @@ export function MonEtablissementLayout() {
         <p className="text-xs font-black uppercase tracking-wide text-brand">Mon établissement</p>
         <h1 className="mt-1 text-2xl font-black text-ink">Mon établissement</h1>
         <p className="mt-1 text-sm text-muted">
-          Classes, affectations (via enseignants), effectifs, contacts et liaisons parent-enfant de l'établissement.
+          Comptes d'accès, classes, effectifs et liaisons parent-enfant de l'établissement.
         </p>
       </div>
       <TabNav tabs={tabs} />

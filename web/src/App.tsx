@@ -140,9 +140,13 @@ export default function App() {
           />
           <Route
             path="contacts"
+            element={<Navigate to="/etablissement/comptes-utilisateurs" replace />}
+          />
+          <Route
+            path="comptes-utilisateurs"
             element={
-              <PermissionRoute view="contacts">
-                <EntityPage entity="contacts" />
+              <PermissionRoute view="users">
+                <UsersPage />
               </PermissionRoute>
             }
           />
@@ -160,21 +164,17 @@ export default function App() {
         <Route path="/matieres" element={<Navigate to="/etablissement/enseignants" replace />} />
         <Route path="/eleves" element={<Navigate to="/etablissement/eleves" replace />} />
         <Route path="/enseignants" element={<Navigate to="/etablissement/enseignants" replace />} />
-        <Route path="/contacts" element={<Navigate to="/etablissement/contacts" replace />} />
-        <Route path="/administration/contacts" element={<Navigate to="/etablissement/contacts" replace />} />
+        <Route path="/contacts" element={<Navigate to="/etablissement/comptes-utilisateurs" replace />} />
+        <Route path="/administration/contacts" element={<Navigate to="/etablissement/comptes-utilisateurs" replace />} />
         <Route path="/configuration/eleves" element={<Navigate to="/etablissement/eleves" replace />} />
         <Route
           path="/configuration/enseignants"
           element={<Navigate to="/etablissement/enseignants" replace />}
         />
-        {/* Comptes utilisateurs (accessibles depuis le hub Paramètres) */}
+        {/* Comptes utilisateurs établissement (Mon établissement) */}
         <Route
           path="/configuration/utilisateurs"
-          element={
-            <PermissionRoute view="users">
-              <UsersPage />
-            </PermissionRoute>
-          }
+          element={<Navigate to="/etablissement/comptes-utilisateurs" replace />}
         />
         <Route path="/affectations" element={<Navigate to="/etablissement/enseignants" replace />} />
         <Route
@@ -326,7 +326,7 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="utilisateurs" replace />} />
-          <Route path="contacts" element={<Navigate to="/etablissement/contacts" replace />} />
+          <Route path="contacts" element={<Navigate to="/etablissement/comptes-utilisateurs" replace />} />
           <Route
             path="relations"
             element={
@@ -402,13 +402,14 @@ export default function App() {
             }
           />
           <Route
-            path="utilisateurs"
+            path="roles-droits"
             element={
               <PermissionRoute view="configuration">
-                <ConfigurationPage section="utilisateurs" />
+                <ConfigurationPage section="roles-droits" />
               </PermissionRoute>
             }
           />
+          <Route path="utilisateurs" element={<Navigate to="/parametres/roles-droits" replace />} />
           <Route
             path="finances"
             element={

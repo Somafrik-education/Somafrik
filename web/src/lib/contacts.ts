@@ -9,7 +9,7 @@ import {
 } from "./userAccounts";
 import { resolveCountryScopeFromSchool } from "./format";
 import { resolveEffectivePermissions } from "./permissions";
-import { generateTeacherIdentifiers } from "./entityIdentifiers";
+import { generateStudentMatricule, generateTeacherIdentifiers, resolveStudentMatricule } from "./entityIdentifiers";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
 
 type Row = Record<string, unknown>;
@@ -394,6 +394,7 @@ export function linkContactToOperationalRecord(
     const idx = findFicheIndex(students, contact, contactId, schoolCode);
     if (idx >= 0) {
       const existing = students[idx];
+      const matriculeInfo = resolveStudentMatricule(existing, schoolCode, students);
       students[idx] = {
         ...existing,
         name: existing.name || lastName,
@@ -403,6 +404,8 @@ export function linkContactToOperationalRecord(
         birthDate: existing.birthDate ?? contact.birthDate,
         phone: existing.phone ?? contact.phone,
         email: existing.email ?? contact.email,
+        matricule: matriculeInfo.matricule,
+        publicId: matriculeInfo.publicId,
         contactId,
       };
       return {
@@ -414,6 +417,7 @@ export function linkContactToOperationalRecord(
       };
     }
     const id = newRecordId("STUDENTS");
+    const matricule = generateStudentMatricule(schoolCode, students);
     const record: Row = {
       id,
       name: lastName,
@@ -424,7 +428,8 @@ export function linkContactToOperationalRecord(
       birthDate: contact.birthDate ?? "",
       phone: contact.phone ?? "",
       email: contact.email ?? "",
-      matricule: id,
+      matricule,
+      publicId: matricule,
       archived: false,
       contactId,
     };

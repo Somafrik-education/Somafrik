@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  Contact,
   GraduationCap,
   Link2,
   School,
+  UserRound,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -15,12 +15,14 @@ import { canReadView } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
   scopedAssignments,
-  scopedContacts,
   scopedRelations,
   scopedStudents,
   scopedTeachers,
   scopedClasses,
+  getEstablishmentMetrics,
 } from "../../lib/establishment";
+import { countUniqueParentsInRelations } from "../../lib/relations";
+import { scopedUsers } from "../../lib/scope";
 
 type Row = Record<string, unknown>;
 
@@ -43,18 +45,19 @@ export function EtablissementOverviewPage() {
     const students = scopedStudents(scopedUser, state);
     const teachers = scopedTeachers(scopedUser, state, students);
     const classes = scopedClasses(scopedUser, state, students);
-    const contacts = scopedContacts(scopedUser, state);
     const assignments = scopedAssignments(scopedUser, state);
     const relations = scopedRelations(scopedUser, state);
+    const users = scopedUsers(scopedUser, state);
+    const metrics = getEstablishmentMetrics(scopedUser, state, users);
 
     const allTiles: OverviewTile[] = [
       {
-        key: "contacts",
-        label: "Contacts",
-        to: "/etablissement/contacts",
-        view: "contacts",
-        icon: Contact,
-        count: contacts.length,
+        key: "users",
+        label: "Comptes utilisateurs",
+        to: "/etablissement/comptes-utilisateurs",
+        view: "users",
+        icon: UserRound,
+        count: metrics.activeUsers,
       },
       {
         key: "classes",
@@ -86,7 +89,7 @@ export function EtablissementOverviewPage() {
         to: "/etablissement/relations-parent-enfant",
         view: "relations",
         icon: Link2,
-        count: relations.length,
+        count: countUniqueParentsInRelations(relations),
       },
     ];
 

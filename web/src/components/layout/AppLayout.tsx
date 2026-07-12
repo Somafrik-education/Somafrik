@@ -18,10 +18,17 @@ const SUBSCRIPTION_NAV = [
   { path: "/parametres/mon-abonnement", label: "Mon abonnement" },
 ];
 
+const ETABLISSEMENT_PAGE_NAV = [
+  { path: "/etablissement/vue-ensemble", label: "Vue d'ensemble" },
+  { path: "/etablissement/comptes-utilisateurs", label: "Comptes utilisateurs" },
+  { path: "/etablissement/relations-parent-enfant", label: "Parents & élèves" },
+];
+
 const PAGE_NAV_ITEMS = [
   ...NAV_ITEMS,
   ...SUBSCRIPTION_NAV,
-  ...SCHOOL_ENTITY_MODULES.map((module) => ({
+  ...ETABLISSEMENT_PAGE_NAV,
+  ...SCHOOL_ENTITY_MODULES.filter((module) => module.key !== "contacts").map((module) => ({
     view: module.view,
     path: module.path,
     label: module.label,

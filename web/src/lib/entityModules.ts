@@ -212,6 +212,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         placeholder: "Choisir un élève",
         inputType: "select",
         optionsKey: "relationStudents",
+        required: true,
         hint: "Requis pour une relation Parent → Élève.",
       },
       {
@@ -254,7 +255,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     label: "Élèves",
     feature: "Élèves",
     group: "utilisateurs",
-    description: "Effectifs, classes et dossiers élèves. La création se fait via Contacts (type Élève).",
+    description: "Effectifs, classes et dossiers élèves. Matricule généré automatiquement (ex. ELE-0001-0001-000001).",
     fields: [
       { key: "name", label: "Nom complet", placeholder: "Nom de l'élève" },
       { key: "firstName", label: "Prénom", placeholder: "Prénom" },
@@ -310,9 +311,9 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
     feature: "Enseignants",
     group: "utilisateurs",
     description:
-      "Équipe pédagogique et affectations classe ↔ matière. La création se fait via Contacts (type Enseignant).",
+      "Équipe pédagogique et affectations classe ↔ matière. Fiche créée automatiquement depuis Comptes utilisateurs.",
     fields: [
-      { key: "name", label: "Nom complet", placeholder: "Nom de l'enseignant", required: true },
+      { key: "name", label: "Nom", placeholder: "Nom de famille", required: true },
       { key: "firstName", label: "Prénom", placeholder: "Prénom", required: true },
       {
         key: "publicId",
@@ -326,7 +327,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
         readOnly: true,
         hint: "Utilisé pour l'authentification (ex. ENS-0001).",
       },
-      { key: "birthDate", label: "Date de naissance", inputType: "date", required: true },
+      { key: "birthDate", label: "Date de naissance", inputType: "date", hint: "Obligatoire si une date d'entrée est renseignée." },
       {
         key: "gender",
         label: "Sexe",
@@ -357,7 +358,7 @@ export const SCHOOL_ENTITY_MODULES: EntityModuleConfig[] = [
           { value: "Stagiaire", label: "Stagiaire" },
         ],
       },
-      { key: "entryDate", label: "Date d'entrée", inputType: "date" },
+      { key: "entryDate", label: "Date d'entrée", inputType: "date", hint: "L'enseignant doit avoir au moins 18 ans à cette date." },
       {
         key: "availability",
         label: "Disponibilité",
@@ -700,10 +701,10 @@ export const SCHOOL_ENTITY_VIEWS = new Set(SCHOOL_ENTITY_MODULES.map((module) =>
 
 export const CONFIGURATION_USER_ACCOUNTS = {
   view: "users",
-  path: "/configuration/utilisateurs",
+  path: "/etablissement/comptes-utilisateurs",
   label: "Comptes utilisateurs",
   feature: "Utilisateurs",
-  description: "Comptes d'accès, rôles et habilitations plateforme / mobile.",
+  description: "Comptes d'accès, identifiants et habilitations plateforme / mobile.",
 } as const;
 
 export const CONFIGURATION_USER_MODULES = SCHOOL_ENTITY_MODULES.filter(

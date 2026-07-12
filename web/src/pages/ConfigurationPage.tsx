@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { Card, SectionHeader } from "../components/ui/Card";
@@ -26,16 +25,14 @@ import {
   type AcademicPeriodRow,
   type PeriodMode,
 } from "../lib/academicPeriods";
-import { getEstablishmentMetrics } from "../lib/establishment";
 import { isPlatformBackOfficeRole, isSuperAdminRole } from "../lib/orgHierarchy";
-import { CONFIGURATION_USER_ACCOUNTS, CONFIGURATION_USER_MODULES } from "../lib/entityModules";
 import { scopedUsers } from "../lib/scope";
 import { isAllSchoolsSelection, resolveTargetSchoolCodes } from "../lib/activeSchool";
 import { buildSchoolSelectOptions } from "../lib/superadminCrudPath";
-import { hasBackOfficePermission, canAccessSchoolBackOffice, canManageEstablishmentSettings } from "../lib/permissions";
+import { canAccessSchoolBackOffice, canManageEstablishmentSettings } from "../lib/permissions";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
-import { isSchoolAdminRole, formatMetric, displayRoleName, normalize } from "../lib/format";
+import { isSchoolAdminRole, displayRoleName, normalize } from "../lib/format";
 import {
   applyRoleRenames,
   canDelegateSchoolPermission,
@@ -60,7 +57,7 @@ type SavingSection =
   | null;
 
 /** Domaine de configuration affiché (hub Paramètres). Non défini = tout afficher. */
-export type ConfigurationSection = "annee-scolaire" | "structure" | "utilisateurs";
+export type ConfigurationSection = "annee-scolaire" | "structure" | "roles-droits";
 
 export function ConfigurationPage({ section }: { section?: ConfigurationSection } = {}) {
   const { session } = useAuth();
@@ -118,7 +115,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const [selectedSubjectClass, setSelectedSubjectClass] = useState("");
 
   const users = scopedUsers(scopedUser, state);
-  const metrics = getEstablishmentMetrics(scopedUser, state, users);
   const settingsPermissions = useFeaturePermissions("Paramètres Établissement");
   const canConfigure = canManageEstablishmentSettings(ctx);
   const canReadSettings = settingsPermissions.canRead || canConfigure;
@@ -141,14 +137,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     [ctx, selectedPilotageFeature],
   );
   const pilotageDirty = rolePermissionDraft !== null;
-
-  const userManagementModules = useMemo(
-    () => CONFIGURATION_USER_MODULES.filter((module) => hasBackOfficePermission(ctx, module.feature, "READ")),
-    [ctx],
-  );
-  const canManageAccounts = hasBackOfficePermission(ctx, CONFIGURATION_USER_ACCOUNTS.feature, "READ");
-  const showUserManagement =
-    !isSuperAdminRole(user?.role) && (userManagementModules.length > 0 || canManageAccounts);
 
   const resolvedPeriodRows = useMemo(() => applySystemActivePeriod(periodRows), [periodRows]);
   const classNamesForSubjects = useMemo(() => {
@@ -428,7 +416,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
     setSavingSection("userRoles");
     try {
-      let nextConfigs = { ...state.academicConfigs };
+      const nextConfigs = { ...state.academicConfigs };
       let nextUsers = state.users;
       let nextRolePermissions = state.rolePermissions;
       let renamedLabels = "";
@@ -529,8 +517,29 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
   const showAcademicConfig = canConfigure || canReadSettings;
   const inSection = (target: ConfigurationSection) => !section || section === target;
+  const hasRolesAccess = canConfigure || showRolePilotage;
 
-  if (!showAcademicConfig && !showUserManagement && !showRolePilotage) {
+  if (section === "roles-droits" && !hasRolesAccess) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm font-semibold text-muted">
+          Vous n'avez pas les droits nécessaires pour configurer les rôles et habilitations.
+        </p>
+      </Card>
+    );
+  }
+
+  if ((section === "annee-scolaire" || section === "structure") && !showAcademicConfig) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm font-semibold text-muted">
+          Vous n'avez pas les droits nécessaires pour accéder à la configuration de l'établissement.
+        </p>
+      </Card>
+    );
+  }
+
+  if (!section && !showAcademicConfig && !hasRolesAccess) {
     return (
       <Card className="p-6">
         <p className="text-sm font-semibold text-muted">
@@ -574,53 +583,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         </p>
       </Card>
 
-      {showUserManagement && inSection("utilisateurs") ? (
-        <Card className="p-6">
-          <SectionHeader
-            title="Gestion des utilisateurs"
-            description="Élèves, enseignants et comptes d'accès de l'établissement."
-          />
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {userManagementModules.map((module) => {
-              const count =
-                module.key === "students"
-                  ? metrics.students
-                  : module.key === "teachers"
-                    ? metrics.teachers
-                    : null;
-              return (
-                <Link key={module.key} to={module.path}>
-                  <Card className="h-full border border-line p-5 transition hover:border-brand/40 hover:shadow-md">
-                    <p className="text-base font-bold text-ink">{module.label}</p>
-                    <p className="mt-1 text-sm text-muted">{module.description}</p>
-                    {count !== null ? (
-                      <p className="mt-3 text-sm font-semibold text-brand">
-                        {formatMetric(count)} enregistrement{count > 1 ? "s" : ""}
-                      </p>
-                    ) : (
-                      <span className="mt-3 inline-block text-sm font-semibold text-brand">Ouvrir →</span>
-                    )}
-                  </Card>
-                </Link>
-              );
-            })}
-            {canManageAccounts ? (
-              <Link to={CONFIGURATION_USER_ACCOUNTS.path}>
-                <Card className="h-full border border-line p-5 transition hover:border-brand/40 hover:shadow-md">
-                  <p className="text-base font-bold text-ink">{CONFIGURATION_USER_ACCOUNTS.label}</p>
-                  <p className="mt-1 text-sm text-muted">{CONFIGURATION_USER_ACCOUNTS.description}</p>
-                  <p className="mt-3 text-sm font-semibold text-brand">
-                    {formatMetric(metrics.activeUsers)} compte{metrics.activeUsers !== 1 ? "s" : ""} actif
-                    {metrics.activeUsers !== 1 ? "s" : ""}
-                  </p>
-                </Card>
-              </Link>
-            ) : null}
-          </div>
-        </Card>
-      ) : null}
-
-      {canConfigure && inSection("utilisateurs") ? (
+      {canConfigure && inSection("roles-droits") ? (
         <Card key={`userRoles-${academicFormKey}`} className="p-6">
           <SectionHeader
             title="Rôles"
@@ -642,7 +605,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         </Card>
       ) : null}
 
-      {showRolePilotage && delegableFeatures.length && configuredUserRoles.length && inSection("utilisateurs") ? (
+      {showRolePilotage && delegableFeatures.length && configuredUserRoles.length && inSection("roles-droits") ? (
         <Card className="p-6">
           <SectionHeader
             title="Pilotage des rôles de l'établissement"

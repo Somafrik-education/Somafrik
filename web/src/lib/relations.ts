@@ -18,16 +18,30 @@ export const RELATION_STATUS_OPTIONS = [
   { value: "Inactif", label: "Inactif" },
 ];
 
+/** Affichage Prénom Nom pour un contact. */
+export function formatContactPersonName(contact: Row): string {
+  const first = String(contact.firstName ?? "").trim();
+  const last = String(contact.lastName ?? "").trim();
+  return `${first} ${last}`.trim() || String(contact.id ?? "");
+}
+
+/** Affichage Prénom Nom pour une fiche élève. */
+export function formatStudentPersonName(student: Row): string {
+  const first = String(student.firstName ?? "").trim();
+  const last = String(student.name ?? student.lastName ?? "").trim();
+  return `${first} ${last}`.trim() || String(student.id ?? "Élève");
+}
+
 function contactLabel(contact: Row): string {
-  const name = `${String(contact.lastName ?? "")} ${String(contact.firstName ?? "")}`.trim();
+  const name = formatContactPersonName(contact);
   const type = String(contact.contactType ?? "").trim();
   return type ? `${name} (${type})` : name || String(contact.id ?? "");
 }
 
 function studentLabel(student: Row): string {
-  const name = `${String(student.name ?? "")} ${String(student.firstName ?? "")}`.trim();
+  const name = formatStudentPersonName(student);
   const className = String(student.className ?? "").trim();
-  return className ? `${name} — ${className}` : name || String(student.id ?? "");
+  return className ? `${name} — ${className}` : name;
 }
 
 export function getRelationContactOptions(
@@ -98,7 +112,7 @@ export function prepareRelationForSave(form: Row, state: BackOfficeState): Row {
     relationType,
     fromContactId,
     fromContactName: fromContact
-      ? `${String(fromContact.lastName ?? "")} ${String(fromContact.firstName ?? "")}`.trim()
+      ? formatContactPersonName(fromContact)
       : String(form.fromContactName ?? ""),
     schoolCode,
     status: String(form.status ?? "Actif").trim() || "Actif",
@@ -111,7 +125,7 @@ export function prepareRelationForSave(form: Row, state: BackOfficeState): Row {
       ...base,
       toStudentId,
       toStudentName: student
-        ? `${String(student.name ?? "")} ${String(student.firstName ?? "")}`.trim()
+        ? formatStudentPersonName(student)
         : String(form.toStudentName ?? ""),
       isPrincipal: String(form.isPrincipal ?? "").trim() === "Oui" ? "Oui" : "Non",
       accountCode: "",
@@ -185,4 +199,189 @@ export function validateRelation(
   }
 
   return null;
+}
+
+export const PARENT_CHILD_STUDENT_NAME_SEPARATOR = " · ";
+
+/** Découpe les noms d'élèves regroupés sous un même parent. */
+export function splitParentChildStudentNames(value: string): string[] {
+  return String(value ?? "")
+    .split(PARENT_CHILD_STUDENT_NAME_SEPARATOR)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/** Compte les parents distincts liés à au moins un élève (pas le nombre de liaisons). */
+export function countUniqueParentsInRelations(relations: Row[]): number {
+  const parentIds = new Set<string>();
+  for (const row of relations) {
+    if (normalize(String(row.relationType ?? "")) !== normalize(RELATION_PARENT_CHILD)) {
+      continue;
+    }
+    const fromContactId = String(row.fromContactId ?? "").trim();
+    if (fromContactId) {
+      parentIds.add(fromContactId);
+    }
+  }
+  return parentIds.size;
+}
+
+export const PARENT_CHILD_BUNDLE_ID_PREFIX = "parent-bundle:";
+
+export function parentChildBundleId(fromContactId: string): string {
+  return `${PARENT_CHILD_BUNDLE_ID_PREFIX}${fromContactId}`;
+}
+
+export function isParentChildBundleRow(row: Row): boolean {
+  return String(row.id ?? "").startsWith(PARENT_CHILD_BUNDLE_ID_PREFIX);
+}
+
+/** IDs élèves déjà liés à un contact parent. */
+export function getParentLinkedStudentIds(relations: Row[], fromContactId: string): string[] {
+  const parentId = String(fromContactId ?? "").trim();
+  if (!parentId) return [];
+  return relations
+    .filter(
+      (row) =>
+        normalize(String(row.relationType ?? "")) === normalize(RELATION_PARENT_CHILD) &&
+        String(row.fromContactId ?? "").trim() === parentId,
+    )
+    .map((row) => String(row.toStudentId ?? "").trim())
+    .filter(Boolean);
+}
+
+/** Une ligne par parent, avec tous ses élèves regroupés. */
+export function groupParentChildRelations(relations: Row[]): Row[] {
+  const byParent = new Map<string, Row[]>();
+  for (const row of relations) {
+    if (normalize(String(row.relationType ?? "")) !== normalize(RELATION_PARENT_CHILD)) {
+      continue;
+    }
+    const fromContactId = String(row.fromContactId ?? "").trim();
+    if (!fromContactId) continue;
+    if (!byParent.has(fromContactId)) byParent.set(fromContactId, []);
+    byParent.get(fromContactId)!.push(row);
+  }
+
+  const bundles: Row[] = [];
+  for (const [fromContactId, items] of byParent) {
+    const studentIds = items
+      .map((row) => String(row.toStudentId ?? "").trim())
+      .filter(Boolean);
+    const studentNames = items
+      .map((row) => String(row.toStudentName ?? "").trim())
+      .filter(Boolean);
+    bundles.push({
+      id: parentChildBundleId(fromContactId),
+      relationType: RELATION_PARENT_CHILD,
+      fromContactId,
+      fromContactName: String(items[0]?.fromContactName ?? ""),
+      toStudentId: studentIds[0] ?? "",
+      toStudentIds: studentIds,
+      toStudentName: studentNames.join(PARENT_CHILD_STUDENT_NAME_SEPARATOR),
+      relationIds: items.map((row) => String(row.id ?? "")).filter(Boolean),
+      isPrincipal: items.some((row) => String(row.isPrincipal ?? "") === "Oui") ? "Oui" : "Non",
+      status: items.every((row) => String(row.status ?? "") === "Inactif") ? "Inactif" : "Actif",
+      schoolCode: String(items[0]?.schoolCode ?? ""),
+    });
+  }
+
+  return bundles.sort((a, b) =>
+    String(a.fromContactName ?? "").localeCompare(String(b.fromContactName ?? ""), "fr"),
+  );
+}
+
+export function parentChildBundleToForm(bundle: Row): Row {
+  const fromContactId = String(bundle.fromContactId ?? "").trim();
+  const studentIds = Array.isArray(bundle.toStudentIds)
+    ? (bundle.toStudentIds as string[]).map(String).filter(Boolean)
+    : getParentLinkedStudentIds([], fromContactId);
+  const resolvedIds =
+    studentIds.length > 0
+      ? studentIds
+      : String(bundle.toStudentId ?? "").trim()
+        ? [String(bundle.toStudentId)]
+        : [];
+  return {
+    id: String(bundle.id ?? parentChildBundleId(fromContactId)),
+    relationType: RELATION_PARENT_CHILD,
+    fromContactId,
+    fromContactName: String(bundle.fromContactName ?? ""),
+    toStudentIds: resolvedIds,
+    isPrincipal: String(bundle.isPrincipal ?? "Oui") === "Oui" ? "Oui" : "Non",
+    status: String(bundle.status ?? "Actif"),
+    schoolCode: String(bundle.schoolCode ?? ""),
+  };
+}
+
+export function validateParentChildBundle(form: Row): string | null {
+  const fromContactId = String(form.fromContactId ?? "").trim();
+  if (!fromContactId) return "Sélectionnez le parent.";
+  const studentIds = Array.isArray(form.toStudentIds)
+    ? (form.toStudentIds as string[]).map(String).filter(Boolean)
+    : String(form.toStudentId ?? "").trim()
+      ? [String(form.toStudentId).trim()]
+      : [];
+  if (!studentIds.length) return "Sélectionnez au moins un élève.";
+  return null;
+}
+
+/** Crée / met à jour / retire les liaisons d'un parent vers ses élèves sélectionnés. */
+export function syncParentChildRelations(
+  form: Row,
+  relations: Row[],
+  state: BackOfficeState,
+  createId: () => string,
+): Row[] {
+  const fromContactId = String(form.fromContactId ?? "").trim();
+  const studentIds = Array.isArray(form.toStudentIds)
+    ? (form.toStudentIds as string[]).map(String).filter(Boolean)
+    : String(form.toStudentId ?? "").trim()
+      ? [String(form.toStudentId).trim()]
+      : [];
+  const status = String(form.status ?? "Actif").trim() || "Actif";
+  const isPrincipal = String(form.isPrincipal ?? "").trim() === "Oui" ? "Oui" : "Non";
+
+  const others = relations.filter((row) => {
+    if (normalize(String(row.relationType ?? "")) !== normalize(RELATION_PARENT_CHILD)) {
+      return true;
+    }
+    return String(row.fromContactId ?? "").trim() !== fromContactId;
+  });
+
+  let next = [...others];
+  for (const studentId of studentIds) {
+    const existing = relations.find(
+      (row) =>
+        normalize(String(row.relationType ?? "")) === normalize(RELATION_PARENT_CHILD) &&
+        String(row.fromContactId ?? "").trim() === fromContactId &&
+        String(row.toStudentId ?? "").trim() === studentId,
+    );
+    const prepared = prepareRelationForSave(
+      {
+        ...(existing ?? {}),
+        id: existing?.id ?? createId(),
+        relationType: RELATION_PARENT_CHILD,
+        fromContactId,
+        toStudentId: studentId,
+        isPrincipal,
+        status,
+      },
+      state,
+    );
+    next.push(prepared);
+    next = enforceSinglePrincipalParent(next, prepared);
+  }
+  return next;
+}
+
+/** Retire toutes les liaisons parent-enfant d'un contact parent. */
+export function removeParentChildBundle(relations: Row[], fromContactId: string): Row[] {
+  const parentId = String(fromContactId ?? "").trim();
+  if (!parentId) return relations;
+  return relations.filter(
+    (row) =>
+      normalize(String(row.relationType ?? "")) !== normalize(RELATION_PARENT_CHILD) ||
+      String(row.fromContactId ?? "").trim() !== parentId,
+  );
 }

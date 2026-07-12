@@ -14,8 +14,17 @@ import {
 } from "../src/lib/academicPeriods";
 import { entityCreateViaContactsOnly } from "../src/lib/entityModules";
 import {
+  countUniqueParentsInRelations,
   enforceSinglePrincipalParent,
+  formatContactPersonName,
+  formatStudentPersonName,
   getRelationParentContactOptions,
+  groupParentChildRelations,
+  parentChildBundleToForm,
+  prepareRelationForSave,
+  RELATION_PARENT_CHILD,
+  splitParentChildStudentNames,
+  syncParentChildRelations,
 } from "../src/lib/relations";
 import { getLinkableContactOptions } from "../src/lib/contacts";
 import { getSchoolPeriodNames } from "../src/lib/evaluations";
@@ -307,6 +316,152 @@ describe("Contacts = référentiel unique (RB-001 / CONTACT-004)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Compteur tableau de bord : parents distincts, pas liaisons.
+// ---------------------------------------------------------------------------
+describe("countUniqueParentsInRelations", () => {
+  it("compte 1 parent pour 2 enfants (cas OKITO Baudouin)", () => {
+    const relations: Row[] = [
+      {
+        id: "r1",
+        relationType: RELATION_PARENT_CHILD,
+        fromContactId: "p-okito",
+        toStudentId: "s1",
+      },
+      {
+        id: "r2",
+        relationType: RELATION_PARENT_CHILD,
+        fromContactId: "p-okito",
+        toStudentId: "s2",
+      },
+    ];
+    expect(countUniqueParentsInRelations(relations)).toBe(1);
+  });
+
+  it("ignore les relations non parent-enfant", () => {
+    const relations: Row[] = [
+      {
+        id: "r1",
+        relationType: RELATION_PARENT_CHILD,
+        fromContactId: "p1",
+        toStudentId: "s1",
+      },
+      {
+        id: "r2",
+        relationType: "Contact → Compte",
+        fromContactId: "p1",
+        accountCode: "SCH1",
+      },
+    ];
+    expect(countUniqueParentsInRelations(relations)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regroupement parent → plusieurs élèves (une ligne par parent).
+// ---------------------------------------------------------------------------
+describe("groupParentChildRelations / syncParentChildRelations", () => {
+  it("regroupe 2 enfants sous 1 parent (OKITO Baudouin)", () => {
+    const relations: Row[] = [
+      {
+        id: "r1",
+        relationType: RELATION_PARENT_CHILD,
+        fromContactId: "p-okito",
+        fromContactName: "Baudouin OKITO",
+        toStudentId: "s1",
+        toStudentName: "Hope Sabrina OKITO",
+        status: "Actif",
+      },
+      {
+        id: "r2",
+        relationType: RELATION_PARENT_CHILD,
+        fromContactId: "p-okito",
+        fromContactName: "Baudouin OKITO",
+        toStudentId: "s2",
+        toStudentName: "Esther OKITO",
+        status: "Actif",
+      },
+    ];
+    const bundles = groupParentChildRelations(relations);
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.fromContactName).toBe("Baudouin OKITO");
+    expect(bundles[0]?.toStudentIds).toEqual(["s1", "s2"]);
+    expect(String(bundles[0]?.toStudentName)).toContain("Hope Sabrina OKITO");
+    expect(String(bundles[0]?.toStudentName)).toContain("Esther OKITO");
+  });
+
+  it("synchronise les liaisons quand on ajoute ou retire des élèves", () => {
+    const state = makeState({
+      contacts: [{ id: "p1", lastName: "OKITO", firstName: "Baudouin", schoolCode: "SCH1" }],
+      students: [
+        { id: "s1", firstName: "Hope", name: "OKITO", schoolCode: "SCH1", className: "1ère A" },
+        { id: "s2", firstName: "Esther", name: "OKITO", schoolCode: "SCH1", className: "1ère A" },
+        { id: "s3", firstName: "Paul", name: "Martin", schoolCode: "SCH1", className: "2nde A" },
+      ],
+      relations: [
+        {
+          id: "r1",
+          relationType: RELATION_PARENT_CHILD,
+          fromContactId: "p1",
+          toStudentId: "s1",
+          status: "Actif",
+          isPrincipal: "Oui",
+        },
+      ],
+    });
+    const next = syncParentChildRelations(
+      {
+        fromContactId: "p1",
+        toStudentIds: ["s1", "s2"],
+        status: "Actif",
+        isPrincipal: "Oui",
+      },
+      state.relations as unknown as Row[],
+      state,
+      () => "r-new",
+    );
+    const parentLinks = next.filter(
+      (row) =>
+        row.relationType === RELATION_PARENT_CHILD && String(row.fromContactId) === "p1",
+    );
+    expect(parentLinks).toHaveLength(2);
+    expect(parentLinks.map((row) => row.toStudentId).sort()).toEqual(["s1", "s2"]);
+
+    const trimmed = syncParentChildRelations(
+      { fromContactId: "p1", toStudentIds: ["s2"], status: "Actif", isPrincipal: "Oui" },
+      next,
+      state,
+      () => "r-extra",
+    );
+    const remaining = trimmed.filter(
+      (row) =>
+        row.relationType === RELATION_PARENT_CHILD && String(row.fromContactId) === "p1",
+    );
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.toStudentId).toBe("s2");
+  });
+
+  it("convertit un bundle en formulaire d'édition", () => {
+    const form = parentChildBundleToForm({
+      id: "parent-bundle:p1",
+      fromContactId: "p1",
+      fromContactName: "Baudouin OKITO",
+      toStudentIds: ["s1", "s2"],
+      isPrincipal: "Oui",
+      status: "Actif",
+    });
+    expect(form.toStudentIds).toEqual(["s1", "s2"]);
+    expect(form.fromContactId).toBe("p1");
+  });
+
+  it("découpe les noms d'élèves regroupés", () => {
+    expect(splitParentChildStudentNames("Hope Sabrina OKITO · Esther OKITO")).toEqual([
+      "Hope Sabrina OKITO",
+      "Esther OKITO",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // PE-005 : un seul parent principal par élève.
 // ---------------------------------------------------------------------------
 describe("enforceSinglePrincipalParent (PE-005)", () => {
@@ -331,6 +486,41 @@ describe("enforceSinglePrincipalParent (PE-005)", () => {
     const saved = { id: "r1", relationType: "Parent → Élève", toStudentId: "s1", isPrincipal: "Non" };
     const next = enforceSinglePrincipalParent(relations, saved);
     expect(next).toEqual(relations);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Affichage Prénom Nom dans les relations parent-enfant.
+// ---------------------------------------------------------------------------
+describe("formatContactPersonName / formatStudentPersonName", () => {
+  it("affiche Prénom Nom pour un contact", () => {
+    expect(
+      formatContactPersonName({ lastName: "OKITO", firstName: "Baudouin" }),
+    ).toBe("Baudouin OKITO");
+  });
+
+  it("affiche Prénom Nom pour un élève", () => {
+    expect(
+      formatStudentPersonName({ name: "OKITO", firstName: "Hope Sabrina" }),
+    ).toBe("Hope Sabrina OKITO");
+  });
+
+  it("enregistre les libellés dans le bon ordre", () => {
+    const state = makeState({
+      contacts: [{ id: "p1", lastName: "OKITO", firstName: "Baudouin", schoolCode: "SCH1" }],
+      students: [{ id: "s1", name: "OKITO", firstName: "Esther", schoolCode: "SCH1" }],
+    });
+    const saved = prepareRelationForSave(
+      {
+        relationType: RELATION_PARENT_CHILD,
+        fromContactId: "p1",
+        toStudentId: "s1",
+        isPrincipal: "Oui",
+      },
+      state,
+    );
+    expect(saved.fromContactName).toBe("Baudouin OKITO");
+    expect(saved.toStudentName).toBe("Esther OKITO");
   });
 });
 

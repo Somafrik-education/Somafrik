@@ -6,9 +6,9 @@ type Row = Record<string, unknown>;
 
 function newTeacherId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `TEACHER-${crypto.randomUUID()}`;
+    return `TEACHERS-${crypto.randomUUID()}`;
   }
-  return `TEACHER-${Date.now()}`;
+  return `TEACHERS-${Date.now()}`;
 }
 
 export function isTeacherUserRole(role?: string): boolean {
@@ -114,4 +114,95 @@ export function syncSingleUserToTeachers(
   return {
     teachers: upsertTeacherFromUser((state.teachers ?? []) as Row[], user),
   };
+}
+
+function teacherLinkedToUser(teachers: Row[], user: UserAccount): boolean {
+  const userId = normalize(String(user.id ?? ""));
+  const identifier = normalize(String(user.identifier ?? ""));
+  return teachers.some((teacher) => {
+    if (userId && normalize(String(teacher.userId ?? "")) === userId) return true;
+    if (identifier && normalize(String(teacher.identifier ?? "")) === identifier) return true;
+    return false;
+  });
+}
+
+/** Comptes enseignant sans fiche opérationnelle (Comptes utilisateurs → Enseignants). */
+export function getLinkableTeacherUserOptions(
+  state: BackOfficeState,
+  schoolCode: string,
+): { value: string; label: string }[] {
+  const school = normalize(schoolCode);
+  const teachers = (state.teachers ?? []) as Row[];
+  return (state.users ?? [])
+    .filter((user) => {
+      if (!isTeacherUserRole(user.role)) return false;
+      const userSchool = normalize(String(user.schoolCode ?? ""));
+      if (school && school !== "*" && userSchool && userSchool !== school) return false;
+      return !teacherLinkedToUser(teachers, user);
+    })
+    .map((user) => ({
+      value: String(user.id ?? ""),
+      label:
+        `${String(user.firstName ?? "")} ${String(user.lastName ?? "")}`.trim() ||
+        String(user.identifier ?? user.id ?? ""),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+}
+
+export interface TeacherProvisioningOption {
+  value: string;
+  label: string;
+  kind: "contact" | "user";
+}
+
+/** Contacts ou comptes utilisateurs éligibles à la création d'une fiche enseignant. */
+export function getTeacherProvisioningOptions(
+  state: BackOfficeState,
+  schoolCode: string,
+  contactOptions: { value: string; label: string }[],
+): TeacherProvisioningOption[] {
+  const fromContacts = contactOptions.map((option) => ({
+    ...option,
+    value: `contact:${option.value}`,
+    kind: "contact" as const,
+  }));
+  const fromUsers = getLinkableTeacherUserOptions(state, schoolCode).map((option) => ({
+    ...option,
+    value: `user:${option.value}`,
+    kind: "user" as const,
+  }));
+  return [...fromContacts, ...fromUsers].sort((a, b) => a.label.localeCompare(b.label, "fr"));
+}
+
+export function parseTeacherProvisioningSelection(
+  value: string,
+): { kind: "contact" | "user"; id: string } | null {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+  const match = /^(contact|user):(.+)$/i.exec(normalized);
+  if (match?.[1] && match[2]) {
+    return { kind: match[1].toLowerCase() as "contact" | "user", id: match[2] };
+  }
+  return { kind: "contact", id: normalized };
+}
+
+/** Propage les champs dossier enseignant vers le compte utilisateur lié. */
+export function syncTeacherProfileToUser(users: UserAccount[], teacher: Row): UserAccount[] {
+  const userId = String(teacher.userId ?? "").trim();
+  if (!userId) return users;
+  const lastName = String(teacher.name ?? "").trim();
+  const firstName = String(teacher.firstName ?? "").trim();
+  return users.map((user) => {
+    if (String(user.id ?? "") !== userId) return user;
+    return {
+      ...user,
+      firstName: firstName || user.firstName,
+      lastName: lastName || user.lastName,
+      phone: String(teacher.phone ?? user.phone ?? ""),
+      email: String(teacher.email ?? user.email ?? ""),
+      birthDate: String(teacher.birthDate ?? user.birthDate ?? ""),
+      gender: String(teacher.gender ?? user.gender ?? "Non renseigné"),
+      publicId: String(teacher.publicId ?? user.publicId ?? ""),
+    };
+  });
 }
