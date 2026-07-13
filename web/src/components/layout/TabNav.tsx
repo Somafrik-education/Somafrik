@@ -26,7 +26,10 @@ export function TabNav({ tabs, variant = "primary", className }: TabNavProps) {
   if (variant === "sub") {
     return (
       <nav
-        className={cn("no-print flex flex-wrap items-center gap-1.5", className)}
+        className={cn(
+          "no-print -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1",
+          className,
+        )}
         aria-label="Sous-onglets"
       >
         {tabs.map((tab) => (
@@ -36,7 +39,7 @@ export function TabNav({ tabs, variant = "primary", className }: TabNavProps) {
             end={tab.end}
             className={({ isActive }) =>
               cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition",
                 isActive
                   ? "border-brand bg-brand-50 text-brand"
                   : "border-line bg-white text-slate-600 hover:border-brand/40 hover:text-ink",
@@ -53,7 +56,10 @@ export function TabNav({ tabs, variant = "primary", className }: TabNavProps) {
 
   return (
     <nav
-      className={cn("no-print flex flex-wrap items-center gap-1 border-b border-line", className)}
+      className={cn(
+        "no-print -mx-1 flex items-center gap-1 overflow-x-auto border-b border-line px-1",
+        className,
+      )}
       aria-label="Onglets"
     >
       {tabs.map((tab) => (
@@ -63,7 +69,7 @@ export function TabNav({ tabs, variant = "primary", className }: TabNavProps) {
           end={tab.end}
           className={({ isActive }) =>
             cn(
-              "-mb-px inline-flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition",
+              "-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition",
               isActive
                 ? "border-brand text-brand"
                 : "border-transparent text-slate-600 hover:border-line hover:text-ink",
