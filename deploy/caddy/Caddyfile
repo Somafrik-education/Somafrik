@@ -1,7 +1,7 @@
-# Reverse proxy HTTPS pour Somafrik (domaine officiel somafrik.app).
-# Caddy obtient automatiquement un certificat Let's Encrypt lorsque SOMAFRIK_DOMAIN
-# pointe vers ce serveur (enregistrement DNS A/AAAA sur somafrik.app).
-{$SOMAFRIK_DOMAIN:localhost} {
+# Reverse proxy HTTPS pour l'API Somafrik (sous-domaines api.*).
+# Caddy obtient automatiquement un certificat Let's Encrypt lorsque SOMAFRIK_API_DOMAIN
+# pointe vers ce serveur (enregistrement DNS A/AAAA).
+{$SOMAFRIK_API_DOMAIN:localhost} {
 	encode gzip zstd
 
 	reverse_proxy backend:5000 {

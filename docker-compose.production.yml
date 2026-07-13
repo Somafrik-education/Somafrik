@@ -1,8 +1,8 @@
-# Stack préproduction API Somafrik — PostgreSQL + backend API-only + Caddy (HTTPS)
-# Frontend web : Vercel (https://preprod.somafrik.app, branche develop)
-# Usage : docker compose -f docker-compose.preprod.yml --env-file .env.preproduction up -d --build
+# Stack production API Somafrik — PostgreSQL + backend API-only + Caddy (HTTPS)
+# Frontend web : Vercel (https://somafrik.app, branche main)
+# Usage : npm run production:up  (valide et charge .env.production)
 
-name: somafrik-preprod
+name: somafrik-production
 
 services:
   postgres:
@@ -13,9 +13,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER requis}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
     volumes:
-      - postgres_preprod_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_HOST_PORT:-5434}:5432"
+      - postgres_production_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -30,7 +28,7 @@ services:
       dockerfile: backend/Dockerfile
       args:
         SKIP_WEB_BUILD: "true"
-    image: somafrik-backend:preprod
+    image: somafrik-backend:production
     restart: unless-stopped
     depends_on:
       postgres:
@@ -67,7 +65,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      SOMAFRIK_API_DOMAIN: ${SOMAFRIK_API_DOMAIN:-api-preprod.somafrik.app}
+      SOMAFRIK_API_DOMAIN: ${SOMAFRIK_API_DOMAIN:-api.somafrik.app}
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -80,6 +78,6 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_preprod_data:
+  postgres_production_data:
   caddy_data:
   caddy_config:

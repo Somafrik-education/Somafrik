@@ -98,6 +98,7 @@ app.use(
 );
 
 const webDistPath = process.env.WEB_DIST_PATH || path.join(__dirname, "..", "web", "dist");
+const apiOnly = process.env.SOMAFRIK_API_ONLY === "true";
 
 function sendWebAppShell(res, next) {
   const indexPath = path.join(webDistPath, "index.html");
@@ -117,6 +118,7 @@ function sendWebAppShell(res, next) {
   });
 }
 
+if (!apiOnly) {
 app.get(/^\/web$/, (_req, res) => {
   res.redirect(302, "/web/");
 });
@@ -150,16 +152,22 @@ app.get(/^\/web(\/.*)?$/, (req, res, next) => {
   }
   sendWebAppShell(res, next);
 });
+}
 
 app.get("/", asyncHandler(async (req, res) => {
-  if (req.accepts("html")) {
+  if (!apiOnly && req.accepts("html")) {
     return res.redirect(302, "/web/");
   }
+
+  const webEndpoints = apiOnly
+    ? []
+    : ["/web/", "/web/connexion", "/web/tableau-de-bord"];
 
   res.json({
     name: "Somafrik API",
     status: "ok",
     database: repository.engine ?? "postgresql",
+    mode: apiOnly ? "api-only" : "integrated",
     endpoints: [
       "/api/health",
       "/api/schools",
@@ -200,9 +208,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/v2/exams",
       "/api/v2/documents",
       "/api/v2/reports/advanced",
-      "/web/",
-      "/web/connexion",
-      "/web/tableau-de-bord",
+      ...webEndpoints,
     ],
   });
 }));

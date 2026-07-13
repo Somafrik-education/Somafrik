@@ -11,14 +11,14 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://somafrik.app",
+        "EXPO_PUBLIC_API_URL": "https://api-preprod.somafrik.app",
         "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     },
     "production": {
       "autoIncrement": false,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://somafrik.app",
+        "EXPO_PUBLIC_API_URL": "https://api.somafrik.app",
         "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     }
