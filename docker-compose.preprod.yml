@@ -1,5 +1,6 @@
 # Stack préproduction API Somafrik — PostgreSQL + backend API-only + Caddy (HTTPS)
 # Frontend web : Vercel (https://preprod.somafrik.app, branche develop)
+# API preprod hebergee : https://somafrik-api-preprod.onrender.com
 # Usage : docker compose -f docker-compose.preprod.yml --env-file .env.preproduction up -d --build
 
 name: somafrik-preprod
@@ -67,7 +68,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      SOMAFRIK_API_DOMAIN: ${SOMAFRIK_API_DOMAIN:-api-preprod.somafrik.app}
+      SOMAFRIK_API_DOMAIN: ${SOMAFRIK_API_DOMAIN:-somafrik-api-preprod.onrender.com}
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

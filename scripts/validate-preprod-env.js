@@ -68,7 +68,7 @@ function validatePreprodEnv(env = process.env) {
   }
 
   if (!String(env.CORS_ORIGINS ?? "").trim()) {
-    errors.push("CORS_ORIGINS est requis (ex. https://preprod.somafrik.app).");
+    errors.push("CORS_ORIGINS est requis (ex. https://somafrik-web-preprod.onrender.com).");
   }
 
   return errors;

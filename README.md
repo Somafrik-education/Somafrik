@@ -75,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 |---------|------------|---------------|
 | Frontend web | https://somafrik.app | https://preprod.somafrik.app |
 | Connexion | https://somafrik.app/connexion | https://preprod.somafrik.app/connexion |
-| API | https://api.somafrik.app/api/health | https://api-preprod.somafrik.app/api/health |
+| API | https://api.somafrik.app/api/health | https://somafrik-api-preprod.onrender.com/api/health |
 
 Déploiement : `docs/preproduction.md` (API) + `docs/vercel.md` (frontend Vercel).
 

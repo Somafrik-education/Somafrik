@@ -80,6 +80,8 @@
     "preprod:reset": "docker compose -f docker-compose.preprod.yml --env-file .env.preproduction down -v",
     "preprod:logs": "docker compose -f docker-compose.preprod.yml --env-file .env.preproduction logs -f",
     "preprod:bootstrap": "node scripts/validate-preprod-env.js && node backend/scripts/bootstrap-preprod.js --confirm",
+    "preprod:repair-superadmin": "node scripts/validate-preprod-env.js && node backend/scripts/repair-preprod-superadmin.js",
+    "preprod:verify-login": "node scripts/validate-preprod-env.js && node backend/scripts/verify-preprod-superadmin-login.js",
     "preprod:init-env": "powershell -ExecutionPolicy Bypass -File scripts/preprod-init-env.ps1",
     "production:check": "node scripts/validate-production-env.js",
     "production:init-env": "powershell -ExecutionPolicy Bypass -File scripts/production-init-env.ps1",
