@@ -4,7 +4,10 @@
 const fs = require("fs");
 const path = require("path");
 const { collectProductionSecretViolations } = require("../backend/lib/productionSecrets");
-const { collectProductionCorsViolations } = require("../backend/lib/corsConfig");
+const {
+  collectProductionCorsViolations,
+  PRODUCTION_FRONTEND_ORIGIN,
+} = require("../backend/lib/corsConfig");
 
 const PRODUCTION_ENV_PATH = path.join(__dirname, "..", ".env.production");
 
@@ -56,7 +59,7 @@ function validateProductionEnv(env = process.env) {
   }
 
   if (!String(env.CORS_ORIGINS ?? "").trim()) {
-    errors.push("CORS_ORIGINS est requis (ex. https://somafrik.app pour le frontend Vercel).");
+    errors.push(`CORS_ORIGINS est requis (valeur attendue : ${PRODUCTION_FRONTEND_ORIGIN}).`);
   }
 
   if (!String(env.SOMAFRIK_API_DOMAIN ?? "").trim()) {

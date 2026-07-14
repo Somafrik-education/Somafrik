@@ -5,6 +5,17 @@ const DEV_ORIGINS = [
   "http://127.0.0.1:5174",
 ];
 
+/** Origine frontend production (Vercel, branche main). */
+const PRODUCTION_FRONTEND_ORIGIN = "https://somafrik.app";
+
+/**
+ * @param {string} origin
+ * @returns {string}
+ */
+function normalizeOrigin(origin) {
+  return String(origin ?? "").trim().replace(/\/+$/, "");
+}
+
 /**
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {boolean}
@@ -49,7 +60,7 @@ function parseConfiguredOrigins(env = process.env) {
     ...new Set(
       rawOrigins
         .split(",")
-        .map((origin) => origin.trim())
+        .map((origin) => normalizeOrigin(origin))
         .filter(Boolean),
     ),
   ];
@@ -85,6 +96,16 @@ function collectProductionCorsViolations(env = process.env) {
   if (unsafeOrigins.length > 0) {
     violations.push(
       `CORS_ORIGINS contient des origines locales ou privées interdites en production: ${unsafeOrigins.join(", ")}.`,
+    );
+  }
+
+  if (env.SOMAFRIK_ENV !== "preproduction" && configured.length !== 1) {
+    violations.push(
+      `CORS_ORIGINS doit autoriser exactement ${PRODUCTION_FRONTEND_ORIGIN} en production (une seule origine).`,
+    );
+  } else if (env.SOMAFRIK_ENV !== "preproduction" && configured[0] !== PRODUCTION_FRONTEND_ORIGIN) {
+    violations.push(
+      `CORS_ORIGINS doit valoir exactement ${PRODUCTION_FRONTEND_ORIGIN} en production (reçu: ${configured.join(", ")}).`,
     );
   }
 
@@ -134,6 +155,8 @@ function buildCorsOptions({ BusinessError }, env = process.env) {
 
 module.exports = {
   DEV_ORIGINS,
+  PRODUCTION_FRONTEND_ORIGIN,
+  normalizeOrigin,
   shouldAllowDevOrigins,
   isLocalDevOrigin,
   isLocalOrPrivateOrigin,

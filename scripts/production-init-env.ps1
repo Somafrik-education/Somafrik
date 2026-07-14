@@ -22,5 +22,8 @@ Write-Host "Éditez .env.production et remplacez :" -ForegroundColor Cyan
 Write-Host "  POSTGRES_PASSWORD"
 Write-Host "  JWT_SECRET              (openssl rand -hex 32)"
 Write-Host ""
+Write-Host "CORS production déjà fixé :" -ForegroundColor Cyan
+Write-Host "  CORS_ORIGINS=https://somafrik.app"
+Write-Host ""
 Write-Host "Puis :" -ForegroundColor Cyan
 Write-Host "  npm run production:up"
