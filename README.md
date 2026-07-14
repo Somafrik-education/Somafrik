@@ -166,5 +166,5 @@ Parent : +243 820 000 001 / PIN 1234
 - Changez `POSTGRES_PASSWORD` et `JWT_SECRET` dans `.env`.
 - Définissez `NODE_ENV=production` et **`SOMAFRIK_SKIP_DEMO_SEED=true`** (obligatoire).
 - Gardez `SOMAFRIK_DB_REQUIRED=true`.
-- Définissez `CORS_ORIGINS=https://somafrik.app` (exactement, sans slash final) pour la production.
+- Définissez `APP_ENV=production` (CORS → `https://somafrik.app`) ou `APP_ENV=preproduction` (CORS → `https://preprod.somafrik.app`).
 - Les comptes réels doivent utiliser un PIN à 6 chiffres non trivial ; le premier mot de passe est imposé à la première connexion.

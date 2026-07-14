@@ -53,7 +53,7 @@ jobs:
           POSTGRES_USER: somafrik
           POSTGRES_PASSWORD: ci-preprod-postgres-password-32
           JWT_SECRET: ci-preprod-jwt-secret-with-enough-length-for-checks
-          CORS_ORIGINS: https://ci.example.com
+          APP_ENV: preproduction
           SOMAFRIK_API_DOMAIN: localhost
           VITE_SHOW_DEMO_ACCOUNTS: "false"
         run: docker compose -f docker-compose.preprod.yml build backend

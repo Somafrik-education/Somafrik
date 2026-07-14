@@ -4,7 +4,11 @@
 const fs = require("fs");
 const path = require("path");
 const { collectProductionSecretViolations } = require("../backend/lib/productionSecrets");
-const { collectProductionCorsViolations } = require("../backend/lib/corsConfig");
+const {
+  collectProductionCorsViolations,
+  PREPRODUCTION_FRONTEND_ORIGIN,
+  resolvePrimaryOrigin,
+} = require("../backend/lib/corsConfig");
 
 const PREPROD_ENV_PATH = path.join(__dirname, "..", ".env.preproduction");
 
@@ -67,8 +71,11 @@ function validatePreprodEnv(env = process.env) {
     errors.push("BOOTSTRAP_SUPERADMIN_PASSWORD utilise encore le placeholder du modèle.");
   }
 
-  if (!String(env.CORS_ORIGINS ?? "").trim()) {
-    errors.push("CORS_ORIGINS est requis (ex. https://somafrik-web-preprod.onrender.com).");
+  const appEnv = String(env.APP_ENV ?? env.SOMAFRIK_ENV ?? "").trim();
+  if (appEnv !== "preproduction") {
+    errors.push(`APP_ENV=preproduction est requis (CORS → ${PREPRODUCTION_FRONTEND_ORIGIN}).`);
+  } else if (resolvePrimaryOrigin(env) !== PREPRODUCTION_FRONTEND_ORIGIN) {
+    errors.push(`Origine CORS préproduction invalide (attendu : ${PREPRODUCTION_FRONTEND_ORIGIN}).`);
   }
 
   return errors;

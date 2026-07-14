@@ -43,7 +43,7 @@ Write-Host "  BOOTSTRAP_SUPERADMIN_ID       = superadmin"
 Write-Host ""
 Write-Host "Verifiez aussi :" -ForegroundColor Cyan
 Write-Host "  SOMAFRIK_API_DOMAIN=somafrik-api-preprod.onrender.com"
-Write-Host "  CORS_ORIGINS=https://preprod.somafrik.app"
+Write-Host "  APP_ENV=preproduction  →  CORS https://preprod.somafrik.app"
 Write-Host ""
 Write-Host "Puis :" -ForegroundColor Cyan
 Write-Host "  npm run preprod:check"

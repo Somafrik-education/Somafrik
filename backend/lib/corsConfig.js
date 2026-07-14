@@ -5,15 +5,29 @@ const DEV_ORIGINS = [
   "http://127.0.0.1:5174",
 ];
 
-/** Origine frontend production (Vercel, branche main). */
 const PRODUCTION_FRONTEND_ORIGIN = "https://somafrik.app";
+const PREPRODUCTION_FRONTEND_ORIGIN = "https://preprod.somafrik.app";
 
 /**
- * @param {string} origin
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {string}
  */
-function normalizeOrigin(origin) {
-  return String(origin ?? "").trim().replace(/\/+$/, "");
+function resolveAppEnv(env = process.env) {
+  const explicit = String(env.APP_ENV ?? "").trim();
+  if (explicit) return explicit;
+  if (env.SOMAFRIK_ENV === "preproduction") return "preproduction";
+  return env.NODE_ENV === "production" ? "production" : "development";
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {string}
+ */
+function resolvePrimaryOrigin(env = process.env) {
+  if (resolveAppEnv(env) === "production") {
+    return PRODUCTION_FRONTEND_ORIGIN;
+  }
+  return PREPRODUCTION_FRONTEND_ORIGIN;
 }
 
 /**
@@ -34,47 +48,13 @@ function isLocalDevOrigin(origin) {
 }
 
 /**
- * @param {string} origin
- * @returns {boolean}
- */
-function isLocalOrPrivateOrigin(origin) {
-  try {
-    const { hostname } = new URL(origin);
-    if (hostname === "localhost" || hostname === "127.0.0.1") return true;
-    if (/^10\./.test(hostname)) return true;
-    if (/^192\.168\./.test(hostname)) return true;
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true;
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-/**
- * @param {NodeJS.ProcessEnv} [env]
- * @returns {string[]}
- */
-function parseConfiguredOrigins(env = process.env) {
-  const rawOrigins = String(env.CORS_ORIGINS ?? "*").trim();
-  return [
-    ...new Set(
-      rawOrigins
-        .split(",")
-        .map((origin) => normalizeOrigin(origin))
-        .filter(Boolean),
-    ),
-  ];
-}
-
-/**
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {string[]}
  */
 function resolveAllowedOrigins(env = process.env) {
-  const configured = parseConfiguredOrigins(env);
-  if (configured.includes("*")) return ["*"];
-  if (!shouldAllowDevOrigins(env)) return configured;
-  return [...new Set([...configured, ...DEV_ORIGINS])];
+  const allowedOrigin = resolvePrimaryOrigin(env);
+  if (!shouldAllowDevOrigins(env)) return [allowedOrigin];
+  return [...new Set([allowedOrigin, ...DEV_ORIGINS])];
 }
 
 /**
@@ -84,32 +64,12 @@ function resolveAllowedOrigins(env = process.env) {
 function collectProductionCorsViolations(env = process.env) {
   if (env.NODE_ENV !== "production") return [];
 
-  const violations = [];
-  const configured = parseConfiguredOrigins(env);
-
-  if (configured.length === 0 || configured.includes("*")) {
-    violations.push("CORS_ORIGINS doit lister explicitement les URL de production (pas de wildcard « * »).");
-    return violations;
+  const appEnv = resolveAppEnv(env);
+  if (appEnv !== "production" && appEnv !== "preproduction") {
+    return [`APP_ENV doit valoir "production" ou "preproduction" (reçu: ${appEnv || "(vide)"}).`];
   }
 
-  const unsafeOrigins = configured.filter(isLocalOrPrivateOrigin);
-  if (unsafeOrigins.length > 0) {
-    violations.push(
-      `CORS_ORIGINS contient des origines locales ou privées interdites en production: ${unsafeOrigins.join(", ")}.`,
-    );
-  }
-
-  if (env.SOMAFRIK_ENV !== "preproduction" && configured.length !== 1) {
-    violations.push(
-      `CORS_ORIGINS doit autoriser exactement ${PRODUCTION_FRONTEND_ORIGIN} en production (une seule origine).`,
-    );
-  } else if (env.SOMAFRIK_ENV !== "preproduction" && configured[0] !== PRODUCTION_FRONTEND_ORIGIN) {
-    violations.push(
-      `CORS_ORIGINS doit valoir exactement ${PRODUCTION_FRONTEND_ORIGIN} en production (reçu: ${configured.join(", ")}).`,
-    );
-  }
-
-  return violations;
+  return [];
 }
 
 /**
@@ -132,10 +92,6 @@ function buildCorsOptions({ BusinessError }, env = process.env) {
   const allowedOrigins = resolveAllowedOrigins(env);
   const allowDevOrigins = shouldAllowDevOrigins(env);
 
-  if (allowedOrigins.includes("*")) {
-    return { origin: true };
-  }
-
   return {
     origin(origin, callback) {
       if (
@@ -156,11 +112,11 @@ function buildCorsOptions({ BusinessError }, env = process.env) {
 module.exports = {
   DEV_ORIGINS,
   PRODUCTION_FRONTEND_ORIGIN,
-  normalizeOrigin,
+  PREPRODUCTION_FRONTEND_ORIGIN,
+  resolveAppEnv,
+  resolvePrimaryOrigin,
   shouldAllowDevOrigins,
   isLocalDevOrigin,
-  isLocalOrPrivateOrigin,
-  parseConfiguredOrigins,
   resolveAllowedOrigins,
   collectProductionCorsViolations,
   assertProductionCors,
