@@ -4,10 +4,10 @@ Le frontend React est hébergé sur **Vercel**. L'API Express reste sur un serve
 
 ## Architecture cible
 
-| Environnement | Frontend (Vercel) | API (Docker + Caddy) |
-|---------------|-------------------|----------------------|
+| Environnement | Frontend (Vercel) | API |
+|---------------|-------------------|-----|
 | **Production** | https://somafrik.app (branche `main`) | https://api.somafrik.app |
-| **Préproduction** | https://preprod.somafrik.app (branche `develop`) | https://api-preprod.somafrik.app |
+| **Préproduction** | https://somafrik-web-preprod.onrender.com ou https://preprod.somafrik.app (branche `develop`) | https://somafrik-api-preprod.onrender.com |
 
 ## Configuration du projet Vercel
 
@@ -33,13 +33,16 @@ VITE_SHOW_DEMO_ACCOUNTS=false
 VITE_ENABLE_MARKETPLACE=false
 ```
 
-### Préproduction (branche `develop`, domaine `preprod.somafrik.app`)
+### Préproduction (branche `develop`, Render ou Vercel)
 
 ```env
-VITE_API_URL=https://api-preprod.somafrik.app
+VITE_API_URL=https://somafrik-api-preprod.onrender.com
 VITE_SHOW_DEMO_ACCOUNTS=false
 VITE_ENABLE_MARKETPLACE=false
 ```
+
+Frontend Render : `https://somafrik-web-preprod.onrender.com`  
+Frontend Vercel : `https://preprod.somafrik.app`
 
 > Ne pas définir `VITE_BASE_PATH` sur Vercel : l'application est servie à la racine (`/`).
 > Ne pas définir `VITE_API_TARGET` : variable dev uniquement (proxy Vite local).
@@ -57,8 +60,8 @@ Dans *Project Settings → Domains*, assigner chaque domaine au bon environnemen
 |----------------|-------|
 | `somafrik.app` | Vercel (CNAME ou A selon doc Vercel) |
 | `preprod.somafrik.app` | Vercel |
-| `api.somafrik.app` | Serveur backend (A/AAAA) |
-| `api-preprod.somafrik.app` | Serveur backend préprod (A/AAAA) |
+| `api.somafrik.app` | Serveur backend production (A/AAAA) |
+| `somafrik-api-preprod.onrender.com` | Service web Render (préprod) |
 
 ## CORS (côté backend)
 
@@ -67,7 +70,7 @@ Le backend doit autoriser **exactement** l'origine du frontend Vercel :
 | Stack | `CORS_ORIGINS` |
 |-------|----------------|
 | API production | `https://somafrik.app` |
-| API préproduction | `https://preprod.somafrik.app` |
+| API préproduction | `https://somafrik-web-preprod.onrender.com` (Render web) ou `https://preprod.somafrik.app` (Vercel) |
 
 Voir `.env.production.example` et `.env.preproduction.example`.
 

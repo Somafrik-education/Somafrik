@@ -4,7 +4,11 @@
 const fs = require("fs");
 const path = require("path");
 const { collectProductionSecretViolations } = require("../backend/lib/productionSecrets");
-const { collectProductionCorsViolations } = require("../backend/lib/corsConfig");
+const {
+  collectProductionCorsViolations,
+  PRODUCTION_FRONTEND_ORIGIN,
+  resolvePrimaryOrigin,
+} = require("../backend/lib/corsConfig");
 
 const PRODUCTION_ENV_PATH = path.join(__dirname, "..", ".env.production");
 
@@ -55,8 +59,10 @@ function validateProductionEnv(env = process.env) {
     errors.push("JWT_SECRET utilise encore une valeur d'exemple ou placeholder.");
   }
 
-  if (!String(env.CORS_ORIGINS ?? "").trim()) {
-    errors.push("CORS_ORIGINS est requis (ex. https://somafrik.app pour le frontend Vercel).");
+  if (env.APP_ENV !== "production") {
+    errors.push(`APP_ENV=production est requis (CORS → ${PRODUCTION_FRONTEND_ORIGIN}).`);
+  } else if (resolvePrimaryOrigin(env) !== PRODUCTION_FRONTEND_ORIGIN) {
+    errors.push(`Origine CORS production invalide (attendu : ${PRODUCTION_FRONTEND_ORIGIN}).`);
   }
 
   if (!String(env.SOMAFRIK_API_DOMAIN ?? "").trim()) {

@@ -38,7 +38,7 @@ services:
       PORT: 5000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requis}
-      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS requis}
+      APP_ENV: ${APP_ENV:-production}
       SOMAFRIK_API_ONLY: "true"
       SOMAFRIK_DB_REQUIRED: "true"
       SOMAFRIK_SKIP_DEMO_SEED: "true"

@@ -45,7 +45,8 @@ export type SchoolEntityKey =
 /** @deprecated Les fiches se créent directement ; le modèle Contacts est retiré. */
 export const CONTACT_PROVISIONED_ENTITY_KEYS = new Set<SchoolEntityKey>();
 
-export function entityCreateViaContactsOnly(_entityKey: string): boolean {
+export function entityCreateViaContactsOnly(entityKey: string): boolean {
+  void entityKey;
   return false;
 }
 

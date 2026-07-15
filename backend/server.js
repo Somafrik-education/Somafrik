@@ -1486,6 +1486,13 @@ function applyStoredUserOverlay(dataset, storedState) {
 
     applyStoredUserCredentials(base, stored, merged);
 
+    if (!merged.passwordHash && !merged.pinHash && String(merged.password ?? "").trim()) {
+      const legacyHash = hashSecret(String(merged.password).trim());
+      merged.passwordHash = legacyHash;
+      merged.pinHash = legacyHash;
+      delete merged.password;
+    }
+
     registerUser(merged, primaryKey);
   }
 

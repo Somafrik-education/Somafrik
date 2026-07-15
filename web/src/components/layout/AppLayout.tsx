@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { NAV_ITEMS } from "../../lib/constants";
 import { CONFIGURATION_USER_ACCOUNTS, SCHOOL_ENTITY_MODULES } from "../../lib/entityModules";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { MobileNavDrawer } from "./MobileNavDrawer";
 import { SubscriptionAccessBanner } from "../SubscriptionAccessBanner";
 
 const SUBSCRIPTION_NAV = [
@@ -43,6 +44,7 @@ const PAGE_NAV_ITEMS = [
 ];
 
 export function AppLayout() {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
   const title = useMemo(() => {
     const match = PAGE_NAV_ITEMS.filter(
@@ -53,11 +55,16 @@ export function AppLayout() {
     return match?.label ?? "Tableau de bord";
   }, [location.pathname]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
+      <MobileNavDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar title={title} />
+        <Topbar title={title} onMenuOpen={() => setMobileNavOpen(true)} />
         <main className="flex-1 px-4 py-6 sm:px-6">
           <div className="mx-auto w-full max-w-6xl space-y-6">
             <SubscriptionAccessBanner />

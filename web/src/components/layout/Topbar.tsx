@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { Bell, Mail, Megaphone } from "lucide-react";
+import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -46,7 +46,7 @@ function TopbarIcon({
   );
 }
 
-export function Topbar({ title }: { title: string }) {
+export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () => void }) {
   const { session, logout } = useAuth();
   const { state, loading, error, refresh } = useData();
   const { scopedUser } = useActiveSchool();
@@ -71,21 +71,43 @@ export function Topbar({ title }: { title: string }) {
     : 0;
 
   return (
-    <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-line bg-white/90 px-6 py-3 backdrop-blur">
-      <div>
-        <h1 className="text-lg font-bold text-ink">{title}</h1>
-        {session?.scope?.label ? <p className="text-xs text-muted">{session.scope.label}</p> : null}
+    <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-white/90 px-4 py-3 backdrop-blur sm:gap-4 sm:px-6">
+      <div className="flex min-w-0 items-center gap-3">
+        {onMenuOpen ? (
+          <button
+            type="button"
+            onClick={onMenuOpen}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-50 hover:text-ink lg:hidden"
+            aria-label="Ouvrir le menu"
+          >
+            <Menu className="h-5 w-5" strokeWidth={1.8} />
+          </button>
+        ) : null}
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-bold text-ink sm:text-lg">{title}</h1>
+          {session?.scope?.label ? (
+            <p className="truncate text-xs text-muted">{session.scope.label}</p>
+          ) : null}
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
         <GlobalSearch />
         {error ? (
-          <p className="max-w-xs truncate text-xs text-danger" title={error}>
+          <p className="hidden max-w-xs truncate text-xs text-danger md:block" title={error}>
             {error}
           </p>
         ) : null}
-        <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "Synchronisation…" : "Rafraîchir"}
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void refresh()}
+          disabled={loading}
+          aria-label={loading ? "Synchronisation en cours" : "Rafraîchir les données"}
+          className="px-2.5 sm:px-3"
+        >
+          <RefreshCw className={`h-4 w-4 sm:hidden ${loading ? "animate-spin" : ""}`} />
+          <span className="hidden sm:inline">{loading ? "Synchronisation…" : "Rafraîchir"}</span>
         </Button>
         {canReadMessages ? (
           <TopbarIcon to="/messages" label="Messages" count={unreadMessages}>
@@ -113,8 +135,15 @@ export function Topbar({ title }: { title: string }) {
             {getInitials(user?.firstName, user?.lastName)}
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={logout}>
-          Déconnexion
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={logout}
+          aria-label="Déconnexion"
+          className="px-2.5 sm:px-3"
+        >
+          <LogOut className="h-4 w-4 sm:hidden" />
+          <span className="hidden sm:inline">Déconnexion</span>
         </Button>
       </div>
     </header>

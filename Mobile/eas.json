@@ -11,7 +11,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api-preprod.somafrik.app",
+        "EXPO_PUBLIC_API_URL": "https://somafrik-api-preprod.onrender.com",
         "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     },

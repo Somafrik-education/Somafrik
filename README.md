@@ -75,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 |---------|------------|---------------|
 | Frontend web | https://somafrik.app | https://preprod.somafrik.app |
 | Connexion | https://somafrik.app/connexion | https://preprod.somafrik.app/connexion |
-| API | https://api.somafrik.app/api/health | https://api-preprod.somafrik.app/api/health |
+| API | https://api.somafrik.app/api/health | https://somafrik-api-preprod.onrender.com/api/health |
 
 Déploiement : `docs/preproduction.md` (API) + `docs/vercel.md` (frontend Vercel).
 
@@ -166,5 +166,5 @@ Parent : +243 820 000 001 / PIN 1234
 - Changez `POSTGRES_PASSWORD` et `JWT_SECRET` dans `.env`.
 - Définissez `NODE_ENV=production` et **`SOMAFRIK_SKIP_DEMO_SEED=true`** (obligatoire).
 - Gardez `SOMAFRIK_DB_REQUIRED=true`.
-- Définissez `CORS_ORIGINS` avec vos URL HTTPS publiques uniquement (pas de `localhost`, `127.0.0.1` ni IP privée).
+- Définissez `APP_ENV=production` (CORS → `https://somafrik.app`) ou `APP_ENV=preproduction` (CORS → `https://preprod.somafrik.app`).
 - Les comptes réels doivent utiliser un PIN à 6 chiffres non trivial ; le premier mot de passe est imposé à la première connexion.

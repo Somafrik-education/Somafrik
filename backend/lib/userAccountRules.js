@@ -29,7 +29,7 @@ function canUserAccountLogin(user = {}) {
   ) {
     return false;
   }
-  return user.status === USER_ACCOUNT_STATUSES.ACTIVE;
+  return user.status === USER_ACCOUNT_STATUSES.ACTIVE || normalizeKey(user.status) === "active";
 }
 
 function loginBlockedMessage(user = {}) {
