@@ -170,10 +170,10 @@ export function PresencesPage() {
     }
     const target = className.trim();
     if (!studentId || !target) return;
-    const nextStudents = (state.students ?? []).map((row) =>
-      String((row as StudentRow).id ?? "") === studentId
-        ? { ...(row as StudentRow), className: target }
-        : row,
+    const nextStudents = state.students.map((student) =>
+      student.id === studentId
+        ? { ...student, className: target }
+        : student,
     );
     setBusy(true);
     try {
