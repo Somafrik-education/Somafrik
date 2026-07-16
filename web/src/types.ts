@@ -1,6 +1,25 @@
 // Types métier alignés sur l'API Express/PostgreSQL de Somafrik.
 
 import type { DashboardChartConfig } from "./lib/chartTypes";
+import type {
+  Guardian,
+  Person,
+  Student,
+  StudentDocument,
+  StudentEnrollment,
+  StudentGuardianRelation,
+  StudentMedicalProfile,
+} from "./lib/studentDomain";
+
+export type {
+  Guardian,
+  Person,
+  Student,
+  StudentDocument,
+  StudentEnrollment,
+  StudentGuardianRelation,
+  StudentMedicalProfile,
+} from "./lib/studentDomain";
 
 export type { DashboardChartConfig };
 
@@ -588,7 +607,13 @@ export interface BackOfficeState {
   subscriptionDiscounts?: SubscriptionDiscount[];
   subscriptionAuditLog?: SubscriptionAuditEntry[];
   notifications: PlatformNotification[];
-  students: unknown[];
+  students: Student[];
+  persons?: Person[];
+  studentEnrollments?: StudentEnrollment[];
+  guardians?: Guardian[];
+  studentGuardianRelations?: StudentGuardianRelation[];
+  studentMedicalProfiles?: StudentMedicalProfile[];
+  studentDocuments?: StudentDocument[];
   teachers: unknown[];
   classes: unknown[];
   courses: unknown[];
