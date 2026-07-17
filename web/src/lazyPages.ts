@@ -126,6 +126,10 @@ export const ParentChildRelationsPage = lazyPage(
   () => import("./pages/etablissement/ParentChildRelationsPage"),
   "ParentChildRelationsPage",
 );
+export const StudentWorkspacePage = lazyPage(
+  () => import("./pages/etablissement/StudentWorkspacePage"),
+  "StudentWorkspacePage",
+);
 export const AdministrationLayout = lazyPage(
   () => import("./pages/administration/AdministrationLayout"),
   "AdministrationLayout",
