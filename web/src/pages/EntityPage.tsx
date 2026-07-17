@@ -1834,7 +1834,16 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                     Élèves
                   </Button>
                 </Link>
-              ) : null}
+              ) : null}{module.key === "students" && row.id ? (
+  <Link
+    to={`/etablissement/eleves/${encodeURIComponent(String(row.id))}`}
+    className="inline-flex"
+  >
+    <Button variant="secondary" size="sm" type="button">
+      Dossier
+    </Button>
+  </Link>
+) : null}
               {canUpdate ? (
                 <Button
                   variant="secondary"
