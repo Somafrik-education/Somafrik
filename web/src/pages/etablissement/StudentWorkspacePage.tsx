@@ -2,6 +2,7 @@ import { Link, Navigate, useParams } from "react-router-dom";
 import { StudentWorkspaceSummary } from "../../components/students/StudentWorkspaceSummary";
 import { Card } from "../../components/ui/Card";
 import { useStudentWorkspace } from "../../hooks/useStudentWorkspace";
+import { StudentWorkspaceTabs } from "../../components/students/StudentWorkspaceTabs";
 
 export function StudentWorkspacePage() {
   const { studentId = "" } = useParams();
@@ -45,5 +46,10 @@ export function StudentWorkspacePage() {
     );
   }
 
-  return <StudentWorkspaceSummary workspace={workspace} />;
+  return (
+  <div className="space-y-6">
+    <StudentWorkspaceSummary workspace={workspace} />
+    <StudentWorkspaceTabs workspace={workspace} />
+  </div>
+);
 }
