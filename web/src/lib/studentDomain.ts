@@ -72,17 +72,34 @@ export interface StudentEnrollment {
   studentId: string;
   schoolCode: string;
   academicYear: string;
+
+  /**
+   * Structure d'Ã©tablissement facultative.
+   * Les Ã©coles simples peuvent fonctionner uniquement avec className.
+   */
+  campusId?: string;
+  campusName?: string;
+  levelId?: string;
+  levelName?: string;
   classId?: string;
   className?: string;
-  levelId?: string;
+  sectionId?: string;
+  sectionName?: string;
+  optionId?: string;
+  optionName?: string;
   trackId?: string;
+  trackName?: string;
+
+  /** Organisation locale de la scolaritÃ©, toujours facultative. */
+  shift?: string;
+  regime?: string;
+
   enrollmentDate?: string;
   startDate?: string;
   endDate?: string;
   status: StudentEnrollmentStatus;
-  regime?: string;
-  previousSchool?: string;
   isRepeating?: boolean;
+  previousSchool?: string;
   exitReason?: string;
   createdAt?: string;
   updatedAt?: string;
