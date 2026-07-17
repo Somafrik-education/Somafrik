@@ -314,6 +314,58 @@ export function adaptLegacyEnrollments(
 ): StudentEnrollment[] {
   return sources.map(adaptLegacyEnrollment);
 }
+export const ENROLLMENT_STATUS = {
+  PRE_ENROLLED: "PrÃ©inscrit",
+  ENROLLED: "Inscrit",
+  PENDING: "En attente",
+  TRANSFERRED: "TransfÃ©rÃ©",
+  EXITED: "Sorti",
+  CANCELLED: "AnnulÃ©",
+} as const satisfies Record<string, StudentEnrollmentStatus>;
+
+const CLOSED_ENROLLMENT_STATUSES: readonly StudentEnrollmentStatus[] = [
+  ENROLLMENT_STATUS.TRANSFERRED,
+  ENROLLMENT_STATUS.EXITED,
+  ENROLLMENT_STATUS.CANCELLED,
+];
+
+/**
+ * Une inscription est active tant qu'elle n'est ni transfÃ©rÃ©e, ni sortie,
+ * ni annulÃ©e. Les donnÃ©es administratives facultatives n'influencent pas ce
+ * calcul.
+ */
+export function isEnrollmentActive(
+  enrollment: Pick<StudentEnrollment, "status">,
+): boolean {
+  return !CLOSED_ENROLLMENT_STATUSES.includes(enrollment.status);
+}
+
+export function isEnrollmentClosed(
+  enrollment: Pick<StudentEnrollment, "status">,
+): boolean {
+  return CLOSED_ENROLLMENT_STATUSES.includes(enrollment.status);
+}
+
+/**
+ * La promotion n'est proposÃ©e qu'Ã  une inscription confirmÃ©e.
+ * L'absence de classe, niveau, document ou information administrative ne
+ * bloque pas la rÃ¨gle mÃ©tier.
+ */
+export function canPromoteEnrollment(
+  enrollment: Pick<StudentEnrollment, "status">,
+): boolean {
+  return enrollment.status === ENROLLMENT_STATUS.ENROLLED;
+}
+
+/**
+ * Un transfert reste possible pour toute inscription encore active.
+ * Les inscriptions dÃ©jÃ  transfÃ©rÃ©es, sorties ou annulÃ©es sont exclues.
+ */
+export function canTransferEnrollment(
+  enrollment: Pick<StudentEnrollment, "status">,
+): boolean {
+  return isEnrollmentActive(enrollment);
+}
 export function getActiveEnrollment(
   enrollments: readonly StudentEnrollment[],
   studentId: string,
