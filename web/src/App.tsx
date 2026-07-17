@@ -58,6 +58,7 @@ import {
   SubscriptionReportsPage,
   SubscriptionSchoolsPage,
   SubscriptionsLayout,
+  StudentWorkspacePage,
   TimetableByClassPage,
   TimetableByRoomPage,
   TimetableByTeacherPage,
@@ -142,6 +143,14 @@ export default function App() {
               </PermissionRoute>
             }
           />
+          <Route
+  path="eleves/:studentId"
+  element={
+    <PermissionRoute view="students">
+      <StudentWorkspacePage />
+    </PermissionRoute>
+  }
+/>
           <Route
             path="enseignants"
             element={
