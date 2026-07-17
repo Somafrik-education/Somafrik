@@ -207,6 +207,113 @@ export function adaptLegacyStudents(
   return rows.map(adaptLegacyStudent);
 }
 
+export interface LegacyEnrollmentSource extends Record<string, unknown> {
+  id?: string;
+  enrollmentId?: string;
+  studentId?: string;
+  schoolCode?: string;
+  schoolYear?: string;
+  academicYear?: string;
+  classId?: string;
+  className?: string;
+  levelId?: string;
+  levelName?: string;
+  sectionId?: string;
+  sectionName?: string;
+  optionId?: string;
+  optionName?: string;
+  trackId?: string;
+  trackName?: string;
+  campusId?: string;
+  campusName?: string;
+  shift?: string;
+  regime?: string;
+  enrollmentDate?: string;
+  startDate?: string;
+  endDate?: string;
+  schoolStatus?: string;
+  status?: StudentEnrollmentStatus;
+  isRepeating?: boolean;
+  previousSchool?: string;
+  exitReason?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+const ENROLLMENT_STATUSES: readonly StudentEnrollmentStatus[] = [
+  "PrÃ©inscrit",
+  "Inscrit",
+  "En attente",
+  "TransfÃ©rÃ©",
+  "Sorti",
+  "AnnulÃ©",
+];
+
+function normalizeEnrollmentStatus(value: unknown): StudentEnrollmentStatus {
+  const normalized = String(value ?? "").trim();
+  return ENROLLMENT_STATUSES.includes(normalized as StudentEnrollmentStatus)
+    ? (normalized as StudentEnrollmentStatus)
+    : "Inscrit";
+}
+
+/**
+ * Convertit une ancienne fiche Ã©lÃ¨ve ou inscription partielle vers le nouveau
+ * modÃ¨le annuel. Aucun champ administratif facultatif ne bloque la conversion.
+ */
+export function adaptLegacyEnrollment(
+  source: LegacyEnrollmentSource,
+): StudentEnrollment {
+  const studentId = String(source.studentId ?? source.id ?? "").trim();
+  const schoolCode = String(source.schoolCode ?? "").trim();
+  const academicYear = String(
+    source.academicYear ?? source.schoolYear ?? "",
+  ).trim();
+  const explicitId = String(source.enrollmentId ?? "").trim();
+  const generatedId = ["ENROLLMENT", studentId, schoolCode, academicYear]
+    .filter(Boolean)
+    .join("-");
+
+  return {
+    id: explicitId || generatedId || `ENROLLMENT-${studentId || "LEGACY"}`,
+    studentId,
+    schoolCode,
+    academicYear,
+    campusId: String(source.campusId ?? "").trim() || undefined,
+    campusName: String(source.campusName ?? "").trim() || undefined,
+    levelId: String(source.levelId ?? "").trim() || undefined,
+    levelName: String(source.levelName ?? "").trim() || undefined,
+    classId: String(source.classId ?? "").trim() || undefined,
+    className: String(source.className ?? "").trim() || undefined,
+    sectionId: String(source.sectionId ?? "").trim() || undefined,
+    sectionName: String(source.sectionName ?? "").trim() || undefined,
+    optionId: String(source.optionId ?? "").trim() || undefined,
+    optionName: String(source.optionName ?? "").trim() || undefined,
+    trackId: String(source.trackId ?? "").trim() || undefined,
+    trackName: String(source.trackName ?? "").trim() || undefined,
+    shift: String(source.shift ?? "").trim() || undefined,
+    regime: String(source.regime ?? "").trim() || undefined,
+    enrollmentDate:
+      String(source.enrollmentDate ?? "").trim() || undefined,
+    startDate: String(source.startDate ?? "").trim() || undefined,
+    endDate: String(source.endDate ?? "").trim() || undefined,
+    status: normalizeEnrollmentStatus(source.status ?? source.schoolStatus),
+    isRepeating:
+      typeof source.isRepeating === "boolean"
+        ? source.isRepeating
+        : undefined,
+    previousSchool:
+      String(source.previousSchool ?? "").trim() || undefined,
+    exitReason: String(source.exitReason ?? "").trim() || undefined,
+    createdAt: String(source.createdAt ?? "").trim() || undefined,
+    updatedAt: String(source.updatedAt ?? "").trim() || undefined,
+  };
+}
+
+export function adaptLegacyEnrollments(
+  sources: readonly LegacyEnrollmentSource[] = [],
+): StudentEnrollment[] {
+  return sources.map(adaptLegacyEnrollment);
+}
 export function getActiveEnrollment(
   enrollments: readonly StudentEnrollment[],
   studentId: string,
