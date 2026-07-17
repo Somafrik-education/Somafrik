@@ -13,6 +13,13 @@ export interface StudentWorkspaceOverview {
   studentId: string;
   fullName: string;
   matricule: string | null;
+  gender: string | null;
+  birthDate: string | null;
+  birthPlace: string | null;
+  nationality: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
   enrollmentStatus: StudentEnrollmentStatus | null;
   currentAcademicYear: string | null;
   currentClassId: string | null;
@@ -32,6 +39,7 @@ export interface BuildStudentWorkspaceOverviewInput {
   medicalProfile?: StudentMedicalProfile | null;
 }
 
+
 function buildStudentFullName(
   student: Student,
   person?: Person | null,
@@ -45,6 +53,10 @@ function buildStudentFullName(
     .filter(Boolean);
 
   return parts.join(" ");
+}
+function normalizeOptionalValue(value: unknown): string | null {
+  const normalizedValue = String(value ?? "").trim();
+  return normalizedValue || null;
 }
 
 export function buildStudentWorkspaceOverview({
@@ -62,11 +74,20 @@ export function buildStudentWorkspaceOverview({
     student.schoolCode,
     academicYear,
   );
-
+  
   return {
     studentId: student.id,
     fullName: buildStudentFullName(student, person),
     matricule: student.matricule.trim() || null,
+      gender: normalizeOptionalValue(person?.gender ?? student.gender),
+  birthDate: normalizeOptionalValue(
+    person?.birthDate ?? student.birthDate,
+  ),
+  birthPlace: normalizeOptionalValue(person?.birthPlace),
+  nationality: normalizeOptionalValue(person?.nationality),
+  phone: normalizeOptionalValue(person?.phone ?? student.phone),
+  email: normalizeOptionalValue(person?.email ?? student.email),
+  address: normalizeOptionalValue(person?.address),
     enrollmentStatus: activeEnrollment?.status ?? null,
     currentAcademicYear: activeEnrollment?.academicYear ?? null,
     currentClassId: activeEnrollment?.classId ?? null,
