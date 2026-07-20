@@ -1,3 +1,4 @@
+import * as FileSystem from "expo-file-system/legacy";
 import { UserRole } from "../navigation/AppNavigator";
 import { resolveApiBaseUrl, resolveApiRootUrl, isUsingLocalhostOnDevice } from "../config/env";
 
@@ -299,9 +300,43 @@ export function resetUserPassword(userId: string, temporaryPassword: string) {
   });
 }
 
+/** URL du bulletin PDF (sans JWT — l'auth passe uniquement par Authorization: Bearer). */
 export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
-  const tokenQuery = accessToken ? `&access_token=${encodeURIComponent(accessToken)}` : "";
-  return `${getApiBaseUrl()}/students/${encodeURIComponent(studentId)}/report.pdf?period=${encodeURIComponent(period)}${tokenQuery}`;
+  return `${getApiBaseUrl()}/students/${encodeURIComponent(studentId)}/report.pdf?period=${encodeURIComponent(period)}`;
+}
+
+/**
+ * S2.1 — Télécharge le bulletin via Authorization: Bearer (expo-file-system natif),
+ * puis renvoie une URI locale ouvrable. Plus aucun JWT dans la query string.
+ */
+export async function downloadReportCardPdf(studentId: string, period = "Trimestre 1"): Promise<string> {
+  if (!accessToken) {
+    throw new Error("Authentification requise pour télécharger le bulletin PDF.");
+  }
+
+  const url = getReportCardPdfUrl(studentId, period);
+  const cacheDir = FileSystem.cacheDirectory;
+  if (!cacheDir) {
+    throw new Error("Stockage local indisponible pour ouvrir le bulletin PDF.");
+  }
+
+  const safePeriod = period.replace(/[^\w.-]+/g, "-").toLowerCase();
+  const target = `${cacheDir}bulletin-${studentId}-${safePeriod}.pdf`;
+  const result = await FileSystem.downloadAsync(url, target, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(
+      result.status === 401 || result.status === 403
+        ? "Accès refusé au bulletin PDF."
+        : `Impossible de télécharger le bulletin PDF (HTTP ${result.status}).`,
+    );
+  }
+
+  return result.uri;
 }
 
 function buildApiConnectionError(error: unknown) {
