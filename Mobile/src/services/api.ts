@@ -1,3 +1,4 @@
+import * as FileSystem from "expo-file-system/legacy";
 import { UserRole } from "../navigation/AppNavigator";
 import { resolveApiBaseUrl, resolveApiRootUrl, isUsingLocalhostOnDevice } from "../config/env";
 
@@ -305,29 +306,15 @@ export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
 }
 
 /**
- * S2.1 — Télécharge le bulletin via Authorization: Bearer, puis renvoie une URI locale
- * ouvrable (Linking / visionneuse PDF). Plus aucun JWT dans la query string.
+ * S2.1 — Télécharge le bulletin via Authorization: Bearer (expo-file-system natif),
+ * puis renvoie une URI locale ouvrable. Plus aucun JWT dans la query string.
  */
 export async function downloadReportCardPdf(studentId: string, period = "Trimestre 1"): Promise<string> {
-  const url = getReportCardPdfUrl(studentId, period);
-  const response = await fetch(url, {
-    headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
-  });
-
-  if (!response.ok) {
-    let message = "Impossible de télécharger le bulletin PDF.";
-    try {
-      const data = await response.json();
-      if (data?.message) message = String(data.message);
-    } catch {
-      // ignore non-JSON error bodies
-    }
-    throw new Error(message);
+  if (!accessToken) {
+    throw new Error("Authentification requise pour télécharger le bulletin PDF.");
   }
 
-  const FileSystem = await import("expo-file-system/legacy");
+  const url = getReportCardPdfUrl(studentId, period);
   const cacheDir = FileSystem.cacheDirectory;
   if (!cacheDir) {
     throw new Error("Stockage local indisponible pour ouvrir le bulletin PDF.");
@@ -335,17 +322,21 @@ export async function downloadReportCardPdf(studentId: string, period = "Trimest
 
   const safePeriod = period.replace(/[^\w.-]+/g, "-").toLowerCase();
   const target = `${cacheDir}bulletin-${studentId}-${safePeriod}.pdf`;
-  const arrayBuffer = await response.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 1) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  const base64 = globalThis.btoa(binary);
-  await FileSystem.writeAsStringAsync(target, base64, {
-    encoding: FileSystem.EncodingType.Base64,
+  const result = await FileSystem.downloadAsync(url, target, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
-  return target;
+
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(
+      result.status === 401 || result.status === 403
+        ? "Accès refusé au bulletin PDF."
+        : `Impossible de télécharger le bulletin PDF (HTTP ${result.status}).`,
+    );
+  }
+
+  return result.uri;
 }
 
 function buildApiConnectionError(error: unknown) {
