@@ -1,7 +1,13 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { UserRole } from "../navigation/AppNavigator";
 import { isUsingLocalhostOnDevice, resolveApiBaseUrl, resolveApiRootUrl } from "../config/env";
-import { ApiClientError, httpRequest, httpUpload } from "./httpClient";
+import {
+  ApiClientError,
+  httpRequest,
+  httpUpload,
+  type SecureUploadFile,
+  type SecureUploadRequestOptions,
+} from "./httpClient";
 import { sanitizeUserFacingError } from "./safeLogger";
 import {
   clearSecureSession,
@@ -318,7 +324,13 @@ export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
 }
 
 /**
- * S2.3 — Téléchargement sécurisé : Authorization via client, contrôle status/MIME/taille.
+ * S2.3 — Téléchargement sécurisé PDF.
+ *
+ * Adaptateur natif volontaire autour du client HTTP central (`httpClient`) :
+ * `FileSystem.downloadAsync` écrit directement vers le cache et n'est pas
+ * interchangeable avec `fetch` JSON. Les autres appels réseau doivent passer
+ * par `httpRequest` / `httpUpload` — ne pas dupliquer ce pattern ailleurs.
+ * Contrôles : Bearer, status 200 strict, MIME PDF/octet-stream, taille > 0.
  */
 export async function downloadReportCardPdf(studentId: string, period = "Trimestre 1"): Promise<string> {
   const token = await getAccessToken();
@@ -334,6 +346,7 @@ export async function downloadReportCardPdf(studentId: string, period = "Trimest
 
   const safePeriod = period.replace(/[^\w.-]+/g, "-").toLowerCase();
   const target = `${cacheDir}bulletin-${studentId}-${safePeriod}.pdf`;
+  // Exception documentée : adaptateur FileSystem (voir JSDoc ci-dessus).
   const result = await FileSystem.downloadAsync(url, target, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -362,10 +375,19 @@ export async function downloadReportCardPdf(studentId: string, period = "Trimest
   return result.uri;
 }
 
-/** Upload sécurisé (HTTPS + Authorization + contrôles MIME/taille). */
-export function uploadSecureForm(path: string, formData: FormData) {
-  return httpUpload(path, formData);
+/**
+ * Upload sécurisé : MIME + taille validés avant FormData (impossible de contourner).
+ * HTTPS + Authorization via httpClient.
+ */
+export function uploadSecureFile(
+  path: string,
+  file: SecureUploadFile,
+  options?: SecureUploadRequestOptions,
+) {
+  return httpUpload(path, file, options);
 }
+
+export type { SecureUploadFile };
 
 function buildApiConnectionError(error: unknown) {
   if (error instanceof ApiClientError) {

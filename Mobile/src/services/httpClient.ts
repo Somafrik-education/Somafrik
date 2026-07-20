@@ -17,9 +17,16 @@ import {
   resolveApiRootUrl,
   validateApiRootUrl,
 } from "../config/env";
+import {
+  assertSecureUploadFile,
+  DEFAULT_ALLOWED_UPLOAD_MIME_TYPES,
+  DEFAULT_UPLOAD_MAX_BYTES,
+  SecureUploadFile,
+  SecureUploadValidationError,
+} from "./uploadValidation";
 
+/** Timeout global de requête (connexion + réponse). React Native fetch n'expose pas de connect timeout distinct. */
 export const REQUEST_TIMEOUT_MS = 20_000;
-export const CONNECT_TIMEOUT_MS = 10_000;
 
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
@@ -43,13 +50,24 @@ function notifySessionExpired() {
   logoutHandler?.();
 }
 
+/** Routes authentification / découverte réellement publiques (pas de préfixe large). */
+const PUBLIC_PATHS = new Set([
+  "/login",
+  "/identify",
+  "/auth/refresh",
+  "/health",
+]);
+
+/**
+ * Seules les routes publiques exactes (ou le lookup établissement pré-login)
+ * omettent le Bearer. Toute autre route sous /schools/ exige un token.
+ */
 function isAuthPublicPath(path: string) {
+  const pathname = (path.split("?")[0] ?? path).trim();
+
   return (
-    path.startsWith("/login") ||
-    path.startsWith("/identify") ||
-    path.startsWith("/auth/refresh") ||
-    path.startsWith("/schools/") ||
-    path.startsWith("/health")
+    PUBLIC_PATHS.has(pathname) ||
+    /^\/schools\/[^/]+$/.test(pathname)
   );
 }
 
@@ -67,7 +85,7 @@ async function fetchWithTimeout(
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new ApiClientError("Délai de connexion dépassé. Vérifiez votre réseau.");
+      throw new ApiClientError("Délai de requête dépassé. Vérifiez votre réseau.");
     }
     const message = error instanceof Error ? error.message : String(error);
     if (/network request failed|failed to fetch|offline|internet/i.test(message)) {
@@ -220,23 +238,51 @@ export async function httpRequest<T = Json>(
   return data as T;
 }
 
+export type SecureUploadRequestOptions = {
+  fieldName?: string;
+  maxBytes?: number;
+  allowedMimeTypes?: string[];
+  extraFields?: Record<string, string>;
+};
+
+/**
+ * Upload sécurisé : validation MIME + taille obligatoire avant FormData.
+ * L'API n'accepte pas un FormData brut (impossible de contourner les contrôles).
+ */
 export async function httpUpload(
   path: string,
-  formData: FormData,
+  file: SecureUploadFile,
   {
-    maxBytes = 5 * 1024 * 1024,
-    allowedMimeTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"],
-  }: { maxBytes?: number; allowedMimeTypes?: string[] } = {},
+    fieldName = "file",
+    maxBytes = DEFAULT_UPLOAD_MAX_BYTES,
+    allowedMimeTypes = [...DEFAULT_ALLOWED_UPLOAD_MIME_TYPES],
+    extraFields = {},
+  }: SecureUploadRequestOptions = {},
 ): Promise<unknown> {
-  void maxBytes;
-  void allowedMimeTypes;
-  // Les contrôles MIME/taille sont appliqués par l'appelant lorsque les métadonnées
-  // du fichier sont disponibles (ImagePicker). Ici on impose HTTPS + Authorization.
+  try {
+    assertSecureUploadFile(file, { maxBytes, allowedMimeTypes });
+  } catch (error) {
+    if (error instanceof SecureUploadValidationError) {
+      throw new ApiClientError(error.message);
+    }
+    throw error;
+  }
 
   const root = resolveApiRootUrl();
   validateApiRootUrl(root);
   if (!isDevelopmentRuntime() && !root.startsWith("https://")) {
     throw new ApiClientError("Les envois de fichiers exigent HTTPS.");
+  }
+
+  const formData = new FormData();
+  formData.append(fieldName, {
+    uri: file.uri,
+    name: file.name,
+    type: file.mimeType,
+  } as unknown as Blob);
+
+  for (const [key, value] of Object.entries(extraFields)) {
+    formData.append(key, value);
   }
 
   return httpRequest(path, {
@@ -245,3 +291,10 @@ export async function httpUpload(
     headers: {},
   });
 }
+
+export {
+  assertSecureUploadFile,
+  DEFAULT_ALLOWED_UPLOAD_MIME_TYPES,
+  DEFAULT_UPLOAD_MAX_BYTES,
+};
+export type { SecureUploadFile };

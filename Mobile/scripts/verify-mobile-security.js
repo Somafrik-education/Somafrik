@@ -6,6 +6,8 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("url");
+const { spawnSync } = require("child_process");
 
 const ROOT = path.join(__dirname, "..", "..");
 const MOBILE = path.join(ROOT, "Mobile");
@@ -42,6 +44,73 @@ function rel(file) {
 
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+function assertUploadValidationBehavior() {
+  const validationPath = path.join(SRC, "services", "uploadValidation.ts");
+  const runner = `
+import {
+  assertSecureUploadFile,
+  DEFAULT_ALLOWED_UPLOAD_MIME_TYPES,
+  DEFAULT_UPLOAD_MAX_BYTES,
+  SecureUploadValidationError,
+} from ${JSON.stringify(pathToFileURL(validationPath).href)};
+
+function expectFail(label, fn) {
+  try {
+    fn();
+    throw new Error("EXPECTED_FAIL:" + label);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("EXPECTED_FAIL:")) throw error;
+    if (!(error instanceof SecureUploadValidationError)) {
+      throw new Error(label + ": expected SecureUploadValidationError, got " + (error && error.name));
+    }
+  }
+}
+
+const base = {
+  uri: "file:///tmp/photo.jpg",
+  name: "photo.jpg",
+  mimeType: "image/jpeg",
+  size: 1024,
+};
+const options = {
+  maxBytes: DEFAULT_UPLOAD_MAX_BYTES,
+  allowedMimeTypes: [...DEFAULT_ALLOWED_UPLOAD_MIME_TYPES],
+};
+
+expectFail("upload > maxBytes", () => {
+  assertSecureUploadFile({ ...base, size: DEFAULT_UPLOAD_MAX_BYTES + 1 }, options);
+});
+
+expectFail("upload MIME interdit", () => {
+  assertSecureUploadFile({ ...base, mimeType: "application/x-msdownload" }, options);
+});
+
+expectFail("upload taille nulle", () => {
+  assertSecureUploadFile({ ...base, size: 0 }, options);
+});
+
+expectFail("upload taille inconnue", () => {
+  assertSecureUploadFile({ ...base, size: Number.NaN }, options);
+});
+
+assertSecureUploadFile(base, options);
+console.log("OK: upload validation comportementale (maxBytes / MIME / taille)");
+`;
+
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "-e", runner],
+    { encoding: "utf8", cwd: MOBILE },
+  );
+
+  if (result.status !== 0) {
+    throw new Error(
+      `upload behavioral tests failed:\n${result.stderr || result.stdout || result.error}`,
+    );
+  }
+  process.stdout.write(result.stdout);
 }
 
 function main() {
@@ -86,10 +155,21 @@ function main() {
 
   // 4) Client HTTP centralisé
   const httpClient = read(path.join(SRC, "services", "httpClient.ts"));
+  const httpClientCode = stripComments(httpClient);
   assert.ok(httpClient.includes("Authorization"), "Authorization centralisé");
   assert.ok(httpClient.includes("refreshAccessTokenOnce") || httpClient.includes("auth/refresh"), "refresh centralisé");
   assert.ok(/REQUEST_TIMEOUT_MS\s*=\s*\d+/.test(httpClient), "timeout défini");
   assert.ok(httpClient.includes("AbortController"), "timeout AbortController");
+  assert.ok(
+    httpClientCode.includes("timeoutMs = REQUEST_TIMEOUT_MS") ||
+      /fetchWithTimeout\([\s\S]*REQUEST_TIMEOUT_MS/.test(httpClientCode),
+    "REQUEST_TIMEOUT_MS doit être utilisé par les requêtes",
+  );
+  // Option A : pas de fausse distinction connect timeout
+  assert.ok(
+    !/\bCONNECT_TIMEOUT_MS\b/.test(httpClientCode),
+    "CONNECT_TIMEOUT_MS ne doit pas être déclaré sans usage réel (Option A)",
+  );
   const api = read(path.join(SRC, "services", "api.ts"));
   assert.ok(api.includes('from "./httpClient"') || api.includes("httpRequest"), "api utilise httpClient");
   // Pas d'Authorization construit dans les écrans
@@ -101,7 +181,7 @@ function main() {
     }
   }
   assert.deepStrictEqual(screenAuthHits, [], `Authorization manuel écrans: ${screenAuthHits.join(", ")}`);
-  console.log("OK: Authorization Header centralisé + timeout");
+  console.log("OK: Authorization Header centralisé + timeout global unique");
 
   // 5) HTTPS production / validation URL
   const env = read(path.join(SRC, "config", "env.ts"));
@@ -112,12 +192,16 @@ function main() {
   assert.ok(/!isProdProfile|isProdProfile/.test(appConfig), "cleartext limité hors prod");
   console.log("OK: validation URL / HTTPS production");
 
-  // 6) Téléchargement sécurisé
+  // 6) Téléchargement sécurisé + adaptateur documenté
   assert.ok(api.includes("downloadAsync") || api.includes("downloadReportCardPdf"), "download PDF");
   assert.ok(api.includes("result.status !== 200") || api.includes("status !== 200"), "status 200 strict");
   assert.ok(/mimeType|application\/pdf|pdf/.test(api), "content-type contrôlé");
   assert.ok(/size\s*<=\s*0|size\s*>\s*0/.test(api), "taille contrôlée");
-  console.log("OK: téléchargement sécurisé");
+  assert.ok(
+    /adaptateur|FileSystem\.downloadAsync|exception documentée/i.test(api),
+    "exception native PDF documentée",
+  );
+  console.log("OK: téléchargement sécurisé (adaptateur documenté)");
 
   // 7) Secrets hardcodés
   const secretHits = [];
@@ -175,6 +259,38 @@ function main() {
   // 13) Production logs / debug
   assert.ok(read(path.join(SRC, "services", "safeLogger.ts")).includes("isProdRuntime") || read(path.join(SRC, "services", "safeLogger.ts")).includes("__DEV__"));
   console.log("OK: logs verbeux désactivés en production");
+
+  // 14) Upload : contrôles réels (pas de paramètres neutralisés)
+  const uploadValidation = read(path.join(SRC, "services", "uploadValidation.ts"));
+  assert.ok(uploadValidation.includes("assertSecureUploadFile"), "assertSecureUploadFile requis");
+  assert.ok(uploadValidation.includes("SecureUploadFile"), "type SecureUploadFile requis");
+  assert.ok(!/void\s+maxBytes/.test(httpClientCode), "maxBytes ne doit pas être neutralisé");
+  assert.ok(!/void\s+allowedMimeTypes/.test(httpClientCode), "allowedMimeTypes ne doit pas être neutralisé");
+  assert.ok(
+    httpClientCode.includes("assertSecureUploadFile(file"),
+    "httpUpload doit appeler assertSecureUploadFile",
+  );
+  assert.ok(
+    /function\s+httpUpload\s*\(\s*path:\s*string,\s*file:\s*SecureUploadFile/.test(httpClient) ||
+      /httpUpload\(\s*path:\s*string,\s*file:\s*SecureUploadFile/.test(httpClient),
+    "httpUpload doit exiger SecureUploadFile (pas FormData brut)",
+  );
+  assert.ok(api.includes("uploadSecureFile"), "API publique uploadSecureFile");
+  assert.ok(!/uploadSecureForm\s*\(\s*path:\s*string,\s*formData:\s*FormData/.test(api), "pas de bypass FormData");
+  assertUploadValidationBehavior();
+
+  // 15) Routes publiques précises (pas de préfixe /schools/ trop large)
+  assert.ok(httpClientCode.includes("PUBLIC_PATHS"), "liste PUBLIC_PATHS requise");
+  assert.ok(
+    !/startsWith\(\s*["']\/schools\//.test(httpClientCode),
+    "interdit: path.startsWith(\"/schools/\")",
+  );
+  assert.ok(
+    /\/\^\\\/schools\\\/\[\^\/\]\+\$\//.test(httpClient) ||
+      /\/\^\\\/schools\\\/\[\^\/\]\+\$/.test(httpClient),
+    "lookup /schools/:code précis requis",
+  );
+  console.log("OK: routes publiques restreintes (pas de préfixe /schools/ large)");
 
   void allMobileFiles;
   console.log("verify-mobile-security: SUCCESS");
