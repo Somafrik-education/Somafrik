@@ -12,7 +12,12 @@ const {
   SECRETARY_WRITABLE_ENTITIES,
   ACCOUNTANT_WRITABLE_ENTITIES,
   ADMIN_SCHOOL_WRITABLE_ENTITIES,
+  PREFET_WRITABLE_ENTITIES,
+  DIRECTOR_WRITABLE_ENTITIES,
+  COUNTRY_ADMIN_WRITABLE_ENTITIES,
   evaluateBackOfficeWriteAccess,
+  getWritableBackOfficeEntitiesForPrincipal,
+  getEditableEntitiesForPrincipalRole,
 } = require("../lib/backOfficeWritableEntities");
 const {
   canAccessMvpRoutes,
@@ -24,6 +29,7 @@ function runMatrixUnitTests() {
   const admin = { role: "Admin School", schoolCode: "CD-2026-0001" };
   const secretary = { role: "Secrétaire", schoolCode: "CD-2026-0001" };
   const accountant = { role: "Comptable", schoolCode: "CD-2026-0001" };
+  const allEntities = ["students", "users", "notes", "payments", "auditLog"];
 
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
@@ -32,6 +38,40 @@ function runMatrixUnitTests() {
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("notes"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("users"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("feeGrids"));
+
+  // Fail-closed : principal absent
+  assert.deepStrictEqual(getWritableBackOfficeEntitiesForPrincipal(null, allEntities), []);
+  assert.deepStrictEqual(getWritableBackOfficeEntitiesForPrincipal(undefined, allEntities), []);
+  assert.deepStrictEqual(getEditableEntitiesForPrincipalRole(null, allEntities), []);
+  assert.deepStrictEqual(getEditableEntitiesForPrincipalRole(undefined, allEntities), []);
+  assert.strictEqual(evaluateBackOfficeWriteAccess(null, []).ok, false);
+  assert.strictEqual(evaluateBackOfficeWriteAccess(null, ["students"]).ok, false);
+  assert.strictEqual(evaluateBackOfficeWriteAccess(undefined, ["payments"]).ok, false);
+
+  // auditLog jamais writable côté client
+  for (const list of [
+    ADMIN_SCHOOL_WRITABLE_ENTITIES,
+    SECRETARY_WRITABLE_ENTITIES,
+    ACCOUNTANT_WRITABLE_ENTITIES,
+    PREFET_WRITABLE_ENTITIES,
+    DIRECTOR_WRITABLE_ENTITIES,
+    COUNTRY_ADMIN_WRITABLE_ENTITIES,
+  ]) {
+    assert.ok(!list.includes("auditLog"), "auditLog ne doit pas être writable client");
+  }
+  assert.ok(!getWritableBackOfficeEntitiesForPrincipal(admin).includes("auditLog"));
+  assert.ok(!getWritableBackOfficeEntitiesForPrincipal(secretary).includes("auditLog"));
+  assert.ok(!getWritableBackOfficeEntitiesForPrincipal(accountant).includes("auditLog"));
+  assert.ok(
+    !getWritableBackOfficeEntitiesForPrincipal(
+      { role: "Super Administrateur Somafrik" },
+      allEntities,
+    ).includes("auditLog"),
+  );
+  assert.strictEqual(evaluateBackOfficeWriteAccess(admin, ["auditLog"]).ok, false);
+  assert.strictEqual(evaluateBackOfficeWriteAccess(secretary, ["auditLog"]).ok, false);
+  assert.strictEqual(evaluateBackOfficeWriteAccess(accountant, ["auditLog"]).ok, false);
+
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(secretary, ["students", "payments"]).ok,
     true,
@@ -57,16 +97,14 @@ function runMatrixUnitTests() {
     true,
   );
 
-  // Pas d'élargissement Secrétaire vs Admin School
+  // Pas d'élargissement Secrétaire / Comptable vs Admin School
   for (const entity of SECRETARY_WRITABLE_ENTITIES) {
-    if (entity === "auditLog") continue;
     assert.ok(
       ADMIN_SCHOOL_WRITABLE_ENTITIES.includes(entity),
       `Secrétaire entity ${entity} must be subset of Admin School`,
     );
   }
   for (const entity of ACCOUNTANT_WRITABLE_ENTITIES) {
-    if (entity === "auditLog") continue;
     assert.ok(
       ADMIN_SCHOOL_WRITABLE_ENTITIES.includes(entity),
       `Comptable entity ${entity} must be subset of Admin School`,
@@ -81,37 +119,45 @@ function runMatrixUnitTests() {
   assert.strictEqual(canAccessMvpRoutes(null), false);
 
   const tenantScopeService = new TenantScopeService();
-  const scoped = scopeMvpDatasetForPrincipal(
-    {
-      school: { code: "CD-2026-0001", name: "A" },
-      platformSchools: [
-        { code: "CD-2026-0001", name: "A", countryCode: "CD" },
-        { code: "BI-2026-0001", name: "B", countryCode: "BI" },
-      ],
-      students: [
-        { id: "1", schoolCode: "CD-2026-0001", name: "Local" },
-        { id: "2", schoolCode: "BI-2026-0001", name: "Other" },
-      ],
-      classes: [
-        { id: "c1", schoolCode: "CD-2026-0001", name: "6A" },
-        { id: "c2", schoolCode: "BI-2026-0001", name: "6B" },
-      ],
-      courses: [],
-      notes: [],
-      payments: [
-        { id: "p1", schoolCode: "CD-2026-0001", amount: 10 },
-        { id: "p2", schoolCode: "BI-2026-0001", amount: 99 },
-      ],
-    },
-    admin,
-    tenantScopeService,
+  const sampleDataset = {
+    school: { code: "CD-2026-0001", name: "A" },
+    platformSchools: [
+      { code: "CD-2026-0001", name: "A", countryCode: "CD" },
+      { code: "BI-2026-0001", name: "B", countryCode: "BI" },
+    ],
+    students: [
+      { id: "1", schoolCode: "CD-2026-0001", name: "Local" },
+      { id: "2", schoolCode: "BI-2026-0001", name: "Other" },
+    ],
+    classes: [
+      { id: "c1", schoolCode: "CD-2026-0001", name: "6A" },
+      { id: "c2", schoolCode: "BI-2026-0001", name: "6B" },
+    ],
+    courses: [],
+    notes: [],
+    payments: [
+      { id: "p1", schoolCode: "CD-2026-0001", amount: 10 },
+      { id: "p2", schoolCode: "BI-2026-0001", amount: 99 },
+    ],
+  };
+
+  // Fail-closed MVP : principal absent ⇒ exception (jamais dataset global)
+  assert.throws(
+    () => scopeMvpDatasetForPrincipal(sampleDataset, null, tenantScopeService),
+    (error) => error?.code === "MVP_SCOPE_PRINCIPAL_REQUIRED",
   );
+  assert.throws(
+    () => scopeMvpDatasetForPrincipal(sampleDataset, undefined, tenantScopeService),
+    (error) => error?.code === "MVP_SCOPE_PRINCIPAL_REQUIRED",
+  );
+
+  const scoped = scopeMvpDatasetForPrincipal(sampleDataset, admin, tenantScopeService);
   assert.strictEqual(scoped.students.length, 1);
   assert.strictEqual(scoped.students[0].id, "1");
   assert.strictEqual(scoped.payments.length, 1);
   assert.strictEqual(scoped.school.code, "CD-2026-0001");
 
-  console.log("OK unit: matrice RBAC + scope MVP");
+  console.log("OK unit: matrice RBAC + scope MVP + fail-closed");
 }
 
 async function runHttpTestsIfAvailable() {
@@ -156,6 +202,8 @@ async function runHttpTestsIfAvailable() {
 
   const schoolAdmin = await login("admin", "1234", "CD-2026-0001");
   const secretary = await login("secretaire", "1234", "CD-2026-0001");
+  const superadmin = await login("superadmin@somafrik.app", "1234");
+
   // Mobile teacher / parent for MVP RBAC
   const teacherMobileRes = await request("/login", {
     method: "POST",
@@ -274,8 +322,23 @@ async function runHttpTestsIfAvailable() {
   });
   assert.strictEqual(accForbidden.status, 403, "Comptable users doit être 403");
 
-  // A6 — Cross-tenant : secrétaire ne peut pas injecter un élève d'un autre établissement
-  // (scoping merge : la ligne hors école ne doit pas apparaître dans l'état scoped)
+  // A5b — auditLog interdit pour les rôles métier
+  for (const [label, token] of [
+    ["Secrétaire", secretary.accessToken],
+    ["Comptable", accountant.accessToken],
+    ["Admin School", schoolAdmin.accessToken],
+  ]) {
+    const auditPut = await request("/backoffice/state", {
+      method: "PUT",
+      token,
+      body: {
+        auditLog: [{ id: "AUD-CLIENT-FORBIDDEN", action: "tamper" }],
+      },
+    });
+    assert.strictEqual(auditPut.status, 403, `${label} auditLog doit être 403`);
+  }
+
+  // A6 — Cross-tenant : la ligne étrangère ne doit JAMAIS être persistée (état autoritatif)
   const foreignStudent = {
     id: "ELE-FOREIGN-S14",
     publicId: "ELE-FOREIGN-S14",
@@ -283,6 +346,10 @@ async function runHttpTestsIfAvailable() {
     schoolCode: "BI-2026-0001",
     className: "6ème A",
   };
+  const beforeSuper = await request("/backoffice/state", { token: superadmin.accessToken });
+  assert.strictEqual(beforeSuper.status, 200);
+  const existedBefore = (beforeSuper.data.students ?? []).some((s) => s.id === foreignStudent.id);
+
   const crossPut = await request("/backoffice/state", {
     method: "PUT",
     token: secretary.accessToken,
@@ -291,9 +358,29 @@ async function runHttpTestsIfAvailable() {
     },
   });
   assert.ok(crossPut.status >= 200 && crossPut.status < 300, "cross put status");
-  const afterCross = await request("/backoffice/state", { token: secretary.accessToken });
-  const leaked = (afterCross.data.students ?? []).some((s) => s.id === foreignStudent.id);
-  assert.strictEqual(leaked, false, "élève hors établissement ne doit pas être accessible");
+
+  // Lecture scoped secrétaire
+  const afterCrossScoped = await request("/backoffice/state", { token: secretary.accessToken });
+  assert.strictEqual(
+    (afterCrossScoped.data.students ?? []).some((s) => s.id === foreignStudent.id),
+    false,
+    "élève hors établissement ne doit pas être accessible (scoped)",
+  );
+
+  // Lecture globale Super Admin = état autoritatif
+  const afterCrossGlobal = await request("/backoffice/state", { token: superadmin.accessToken });
+  assert.strictEqual(afterCrossGlobal.status, 200);
+  const persistedGlobally = (afterCrossGlobal.data.students ?? []).some((s) => s.id === foreignStudent.id);
+  assert.strictEqual(
+    persistedGlobally,
+    false,
+    "élève cross-tenant ne doit jamais être persisté dans l'état autoritatif",
+  );
+  assert.strictEqual(
+    existedBefore,
+    false,
+    "précondition: élève foreign absent avant le PUT",
+  );
 
   // B — MVP
   for (const route of ["/mvp/readiness", "/mvp/snapshot", "/mvp/dashboard"]) {
@@ -325,7 +412,7 @@ async function runHttpTestsIfAvailable() {
     }
   }
 
-  console.log("OK http: PUT state RBAC + MVP");
+  console.log("OK http: PUT state RBAC + MVP + auditLog + cross-tenant autoritatif");
 }
 
 async function main() {

@@ -1566,7 +1566,8 @@ function assertBackOfficeManager(principal) {
 
 function getWebPlatformWritableEntities(principal) {
   const permissions = new Set(principal?.permissions ?? []);
-  const allowed = new Set(["auditLog"]);
+  // auditLog exclu : journal enrichi uniquement côté serveur.
+  const allowed = new Set();
 
   if (permissions.has("ALL_PRIVILEGES") || permissions.has("COUNTRY_PRIVILEGES")) {
     backOfficeDeletableEntities.forEach((entity) => allowed.add(entity));

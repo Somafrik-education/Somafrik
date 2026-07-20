@@ -3,6 +3,9 @@
  *
  * Source : securityMatrix (CRUD) + permissions seed, sans élargir les droits.
  * Le scoping tenant (mergeScopedBackOfficeState) reste orthogonal à cette matrice.
+ *
+ * Fail-closed : principal absent ⇒ aucun droit.
+ * auditLog n'est jamais modifiable côté client (enrichi uniquement par le serveur).
  */
 
 const {
@@ -39,7 +42,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
   "rolePermissions",
   "academicConfigs",
   "dashboardChartConfig",
-  "auditLog",
 ]);
 
 /**
@@ -56,7 +58,6 @@ const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
   "announcements",
   "messages",
   "documents",
-  "auditLog",
 ]);
 
 /**
@@ -67,7 +68,6 @@ const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([
   "payments",
   "paymentStatuses",
   "studentFees",
-  "auditLog",
 ]);
 
 /**
@@ -90,7 +90,6 @@ const PREFET_WRITABLE_ENTITIES = Object.freeze([
   "messages",
   "notifications",
   "academicConfigs",
-  "auditLog",
 ]);
 
 /**
@@ -108,7 +107,6 @@ const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([
   "relations",
   "subscriptions",
   "notifications",
-  "auditLog",
 ]);
 
 const ROLE_WRITABLE_ENTITIES = Object.freeze({
@@ -129,20 +127,25 @@ function isSuperAdminRole(role) {
 
 /**
  * Liste des clés d'état qu'un principal peut toucher sur PUT /api/backoffice/state.
+ * Fail-closed : principal absent ⇒ [].
  * @param {{ role?: string } | null | undefined} principal
  * @param {string[]} [allEntities] entités connues (superadmin)
  * @returns {string[]}
  */
 function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) {
-  const role = principal?.role ?? "";
+  if (!principal) {
+    return [];
+  }
 
-  if (!principal || isSuperAdminRole(role)) {
+  const role = principal.role ?? "";
+
+  if (isSuperAdminRole(role)) {
+    // auditLog volontairement exclu : journal serveur uniquement.
     return [
-      ...allEntities,
+      ...allEntities.filter((entity) => entity !== "auditLog"),
       "rolePermissions",
       "academicConfigs",
       "dashboardChartConfig",
-      "auditLog",
     ];
   }
 
@@ -151,9 +154,9 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
     return [...mapped];
   }
 
-  // Rôle backoffice établissement inconnu : aucun droit d'écriture élargi.
+  // Rôle backoffice établissement inconnu : aucun droit d'écriture.
   if (isEstablishmentBackOfficeRole(role)) {
-    return ["auditLog"];
+    return [];
   }
 
   return [];
@@ -166,6 +169,10 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
  * @returns {{ ok: true } | { ok: false, forbidden: string[] }}
  */
 function evaluateBackOfficeWriteAccess(principal, touchedKeys = [], allEntities = []) {
+  if (!principal) {
+    return { ok: false, forbidden: [...touchedKeys, "(principal absent)"] };
+  }
+
   const allowed = new Set(getWritableBackOfficeEntitiesForPrincipal(principal, allEntities));
   const forbidden = touchedKeys.filter((key) => !allowed.has(key));
   if (forbidden.length) {
@@ -175,7 +182,8 @@ function evaluateBackOfficeWriteAccess(principal, touchedKeys = [], allEntities 
 }
 
 /**
- * Entités « métier » éditables (hors clés optionnelles de config) — utilisé pour le scope de suppression.
+ * Entités « métier » éditables (hors clés optionnelles de config) — used pour le scope de suppression.
+ * Fail-closed : principal absent ⇒ [].
  * @param {{ role?: string } | null | undefined} principal
  * @param {string[]} deletableEntities
  * @param {string[]} [countryAdminEntities]
@@ -186,9 +194,13 @@ function getEditableEntitiesForPrincipalRole(
   deletableEntities = [],
   countryAdminEntities = COUNTRY_ADMIN_WRITABLE_ENTITIES,
 ) {
-  const role = principal?.role ?? "";
+  if (!principal) {
+    return [];
+  }
 
-  if (!principal || isSuperAdminRole(role)) {
+  const role = principal.role ?? "";
+
+  if (isSuperAdminRole(role)) {
     return [...deletableEntities];
   }
 

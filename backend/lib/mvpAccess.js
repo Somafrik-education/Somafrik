@@ -24,6 +24,7 @@ function canAccessMvpRoutes(principal) {
 
 /**
  * Filtre les collections MVP selon le tenant du principal.
+ * Fail-closed : principal absent ⇒ erreur contrôlée (jamais le dataset global).
  * Super Admin : pas de filtre.
  * Admin Pays : pays (préfixe schoolCode / countryCode).
  * Autres : établissement (+ classes enseignant via filterRows si fourni).
@@ -33,7 +34,13 @@ function canAccessMvpRoutes(principal) {
  * @param {{ filterRows: Function }} tenantScopeService
  */
 function scopeMvpDatasetForPrincipal(dataset, principal, tenantScopeService) {
-  const role = principal?.role ?? "";
+  if (!principal) {
+    const error = new Error("Principal requis pour scoper les données MVP.");
+    error.code = "MVP_SCOPE_PRINCIPAL_REQUIRED";
+    throw error;
+  }
+
+  const role = principal.role ?? "";
   const students = dataset.students ?? [];
   const classes = dataset.classes ?? [];
   const courses = dataset.courses ?? [];
@@ -41,7 +48,7 @@ function scopeMvpDatasetForPrincipal(dataset, principal, tenantScopeService) {
   const payments = dataset.payments ?? [];
   const schools = dataset.platformSchools ?? dataset.schools ?? [];
 
-  if (!principal || SUPER_ADMIN_ROLES.includes(role)) {
+  if (SUPER_ADMIN_ROLES.includes(role)) {
     return {
       school: dataset.school,
       students,
