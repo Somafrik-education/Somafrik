@@ -24,6 +24,13 @@ function assertProductionSecurityConfiguration(env = process.env) {
       "Configuration de production invalide : SOMAFRIK_SKIP_DEMO_SEED=true est obligatoire pour empêcher la création des comptes de démonstration.",
     );
   }
+
+  // S2.2 — aucun fallback mémoire / seed « best effort » en production.
+  if (env.SOMAFRIK_DB_REQUIRED === "false") {
+    throw new Error(
+      "Configuration de production invalide : SOMAFRIK_DB_REQUIRED=false est interdit (PostgreSQL obligatoire, aucun fallback mémoire).",
+    );
+  }
 }
 
 module.exports = {

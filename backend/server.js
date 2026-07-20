@@ -13,6 +13,11 @@ const { GradeBookService } = require("./services/gradeBookService");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
 const { createPostgresRepository, initializeRepository } = require("./db/repositoryFactory");
+const {
+  assertDatabaseConfiguration,
+  sanitizeDbErrorMessage,
+  DbConfigError,
+} = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
 const { RbacService } = require("./services/rbacService");
 const { PaginationService } = require("./services/paginationService");
@@ -4009,7 +4014,13 @@ initRepository()
     });
   })
   .catch((error) => {
-    console.error("Impossible d'initialiser le stockage Somafrik", error);
+    // S2.2 — ne jamais journaliser URI/mots de passe complets.
+    const safeMessage =
+      error instanceof DbConfigError
+        ? error.message
+        : sanitizeDbErrorMessage(error);
+    console.error("Impossible d'initialiser le stockage Somafrik");
+    console.error(safeMessage);
     process.exit(1);
   });
 
@@ -4018,12 +4029,16 @@ async function initRepository() {
 
   const { repository: active } = await initializeRepository({ repository });
   repository = active;
+  if (process.env.NODE_ENV === "production" && (repository.engine ?? "") === "memory") {
+    throw new DbConfigError("Base mémoire interdite en production.");
+  }
   auditService = new AuditService(repository);
   idempotencyService = new IdempotencyService(repository);
   app.locals.idempotencyService = idempotencyService;
 }
 
 function warnIfUnsafeConfiguration() {
+  assertDatabaseConfiguration();
   assertProductionSecrets();
   assertProductionSecurityConfiguration();
   assertProductionCors();
