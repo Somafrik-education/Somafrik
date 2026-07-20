@@ -23,7 +23,10 @@ export function compareGuardianPrimaryPriority(
     Number(right.isEmergencyContact) - Number(left.isEmergencyContact);
   if (emergencyDelta !== 0) return emergencyDelta;
 
-  return compareNames(left.displayName, right.displayName);
+  const nameDelta = compareNames(left.displayName, right.displayName);
+  if (nameDelta !== 0) return nameDelta;
+
+  return left.id.localeCompare(right.id);
 }
 
 export function selectPrimaryGuardian(

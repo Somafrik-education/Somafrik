@@ -4,9 +4,11 @@
  */
 import {
   collectStudentGuardianRelationRecords,
+  deriveGuardiansFromLegacyStudent,
   getGuardianRelationshipLabel,
   listGuardianRelationshipLabels,
   normalizeGuardianRelationshipType,
+  normalizeGuardianRelationStatus,
   GUARDIAN_RELATIONSHIP_TYPES,
   type StudentGuardianRelationRecord,
 } from "../src/lib/studentGuardian";
@@ -73,6 +75,9 @@ function createRelation(
     address: null,
     isActive: true,
     isExpired: false,
+    source: "STRUCTURED",
+    requiresVerification: false,
+    dataQuality: "VERIFIED",
     ...partial,
   };
 }
@@ -324,7 +329,94 @@ function testPermissionsAndLegacy() {
   assertEqual(legacy.length, 1, "Fallback legacy");
   assertEqual(legacy[0]?.displayName, "Parent Legacy", "Nom legacy");
   assertEqual(legacy[0]?.phone, "+243700", "Téléphone legacy");
-  assert(legacy[0]?.isLegalGuardian, "Légal legacy");
+  assertEqual(legacy[0]?.isLegalGuardian, false, "Legacy sans autorité légale");
+}
+
+function testLegacyFallbackNoInventedAuthorizations() {
+  const student: Student = {
+    id: "STU-LEG2",
+    matricule: "M-L2",
+    schoolCode: "CD-1",
+    parentName: "Marie Test",
+    parentPhone: "+243600000000",
+  };
+
+  const [legacy] = deriveGuardiansFromLegacyStudent(student);
+  assert(Boolean(legacy), "Contact legacy présent");
+  assertEqual(legacy.isLegalGuardian, false, "Pas de légal inventé");
+  assertEqual(legacy.isEmergencyContact, false, "Pas d'urgence inventée");
+  assertEqual(legacy.pickupAuthorized, false, "Pas de pickup inventé");
+  assertEqual(legacy.financialResponsible, false, "Pas de financier inventé");
+  assertEqual(legacy.source, "LEGACY", "Source LEGACY");
+  assertEqual(legacy.requiresVerification, true, "requiresVerification");
+  assertEqual(legacy.dataQuality, "UNVERIFIED", "dataQuality UNVERIFIED");
+
+  const vm = buildStudentGuardianViewModel(legacy, { isPrimary: true });
+  assertEqual(vm.requiresVerification, true, "VM requiresVerification");
+  assertEqual(vm.source, "LEGACY", "VM source");
+  assertEqual(
+    vm.relationshipLabel,
+    "Contact parent hérité",
+    "Libellé contact hérité",
+  );
+  assert(
+    vm.badges.some((badge) => badge.kind === "unverified"),
+    "Badge informations héritées à vérifier",
+  );
+  assert(
+    !vm.badges.some((badge) => badge.kind === "legal"),
+    "Pas de badge légal inventé",
+  );
+  assert(
+    !vm.badges.some((badge) => badge.kind === "pickup"),
+    "Pas de badge pickup inventé",
+  );
+
+  const workspace = buildStudentWorkspace({
+    studentId: "STU-LEG2",
+    academicYear: "2026-2027",
+    data: {
+      students: [student],
+      guardians: [],
+      guardianRelations: [],
+      persons: [],
+    },
+  });
+  const overviewVm = buildStudentWorkspaceViewModel(workspace!);
+  const alertIds = overviewVm.alerts.map((alert) => alert.id);
+  assert(alertIds.includes("missing-legal-guardian"), "Alerte légal non masquée");
+  assert(
+    alertIds.includes("missing-emergency-contact"),
+    "Alerte urgence non masquée",
+  );
+  assert(
+    alertIds.includes("missing-financial-responsible"),
+    "Alerte financier non masquée",
+  );
+  assert(
+    !alertIds.includes("missing-guardian-phone"),
+    "Téléphone legacy reconnu",
+  );
+  assert(
+    !alertIds.includes("missing-guardians"),
+    "Contact historique visible (pas « aucun responsable »)",
+  );
+
+  assertEqual(
+    normalizeGuardianRelationStatus("INACTIVE"),
+    "INACTIVE",
+    "Statut INACTIVE",
+  );
+  assertEqual(
+    normalizeGuardianRelationStatus("Inactif"),
+    "INACTIVE",
+    "Statut Inactif",
+  );
+  assertEqual(
+    normalizeGuardianRelationStatus("active"),
+    "ACTIVE",
+    "Statut active",
+  );
 }
 
 function testDomainBridgeAndOverview() {
@@ -419,6 +511,7 @@ function main() {
     ["tri urgence pickup expirées", testSortingEmergencyPickupExpired],
     ["badges et view model", testBadgesAndMobileViewModel],
     ["permissions et legacy", testPermissionsAndLegacy],
+    ["fallback legacy sans autorisations", testLegacyFallbackNoInventedAuthorizations],
     ["bridge domaine et overview", testDomainBridgeAndOverview],
   ] as const;
 

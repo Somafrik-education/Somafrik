@@ -101,6 +101,10 @@ export const FUTURE_STUDENT_GUARDIAN_PERMISSIONS: readonly FutureStudentGuardian
     "student.guardians.delete",
   ];
 
+export type GuardianRelationSource = "STRUCTURED" | "LEGACY";
+
+export type GuardianDataQuality = "VERIFIED" | "UNVERIFIED";
+
 /**
  * Relation métier élève ↔ responsable (C1.3).
  * Les règles (légal, urgence, pickup, finance) vivent ici, pas dans l'UI.
@@ -131,6 +135,12 @@ export interface StudentGuardianRelationRecord {
 
   isActive: boolean;
   isExpired: boolean;
+
+  /** Origine de la relation (structurée vs champs hérités). */
+  source: GuardianRelationSource;
+  /** true si les autorisations métier n'ont pas été confirmées. */
+  requiresVerification: boolean;
+  dataQuality: GuardianDataQuality;
 }
 
 function normalizeOptional(value: unknown): string | null {
@@ -246,6 +256,28 @@ export function isGuardianRelationExpired(
   return parsed.getTime() < today.getTime();
 }
 
+/** Normalise le statut Actif/Inactif (variantes FR/EN/casse). */
+export function normalizeGuardianRelationStatus(
+  value: unknown,
+): "ACTIVE" | "INACTIVE" | "UNKNOWN" {
+  const folded = foldKey(String(value ?? ""));
+  if (!folded) return "UNKNOWN";
+  if (
+    folded === "inactif" ||
+    folded === "inactive" ||
+    folded === "desactive" ||
+    folded === "disabled" ||
+    folded === "archive" ||
+    folded === "archived"
+  ) {
+    return "INACTIVE";
+  }
+  if (folded === "actif" || folded === "active") {
+    return "ACTIVE";
+  }
+  return "UNKNOWN";
+}
+
 export function toStudentGuardianRelationRecord(
   relation: StudentGuardianRelation,
   options: {
@@ -262,7 +294,8 @@ export function toStudentGuardianRelationRecord(
 
   const endDate = normalizeOptional(relation.endDate);
   const isExpired = isGuardianRelationExpired(endDate, options.referenceDate);
-  const isInactive = relation.status === "Inactif";
+  const isInactive =
+    normalizeGuardianRelationStatus(relation.status) === "INACTIVE";
   const displayName = buildPersonDisplayName(options.person);
 
   return {
@@ -294,12 +327,15 @@ export function toStudentGuardianRelationRecord(
     address: normalizeOptional(options.person?.address),
     isActive: !isInactive && !isExpired,
     isExpired,
+    source: "STRUCTURED",
+    requiresVerification: false,
+    dataQuality: "VERIFIED",
   };
 }
 
 /**
- * Pont legacy : parentName / parentPhone sur la fiche élève
- * lorsque aucune relation structurée n'existe.
+ * Pont legacy conservateur : parentName / parentPhone uniquement.
+ * Aucune autorisation métier n'est déduite (légal, urgence, pickup, finance).
  */
 export function deriveGuardiansFromLegacyStudent(
   student: Student,
@@ -316,21 +352,25 @@ export function deriveGuardiansFromLegacyStudent(
       studentId: student.id,
       guardianId: `LEGACY-G-${student.id}`,
       relationshipType: "OTHER",
-      isLegalGuardian: true,
+      isLegalGuardian: false,
       livesWithStudent: false,
-      isEmergencyContact: true,
-      pickupAuthorized: true,
-      financialResponsible: true,
+      isEmergencyContact: false,
+      pickupAuthorized: false,
+      financialResponsible: false,
       priority: 1,
       startDate: null,
       endDate: null,
-      notes: "Relation dérivée des champs legacy parentName / parentPhone",
-      displayName: parentName ?? "Responsable",
+      notes:
+        "Contact parent hérité (parentName / parentPhone) — informations à confirmer",
+      displayName: parentName ?? "Contact parent hérité",
       phone: parentPhone,
       email: null,
       address: null,
       isActive: true,
       isExpired: false,
+      source: "LEGACY",
+      requiresVerification: true,
+      dataQuality: "UNVERIFIED",
     },
   ];
 }

@@ -20,7 +20,8 @@ export type GuardianBadgeKind =
   | "pickup"
   | "lives_with"
   | "primary"
-  | "expired";
+  | "expired"
+  | "unverified";
 
 export interface GuardianBadge {
   kind: GuardianBadgeKind;
@@ -47,6 +48,9 @@ export interface StudentGuardianViewModel {
   financialResponsible: boolean;
   isExpired: boolean;
   isActive: boolean;
+  source: StudentGuardianRelationRecord["source"];
+  requiresVerification: boolean;
+  dataQuality: StudentGuardianRelationRecord["dataQuality"];
   badges: GuardianBadge[];
   notesLabel: string;
 }
@@ -68,6 +72,13 @@ function buildBadges(
 ): GuardianBadge[] {
   const badges: GuardianBadge[] = [];
 
+  if (record.requiresVerification || record.source === "LEGACY") {
+    badges.push({
+      kind: "unverified",
+      label: "Informations héritées à vérifier",
+      tone: "warning",
+    });
+  }
   if (isPrimary) {
     badges.push({ kind: "primary", label: "Principal", tone: "info" });
   }
@@ -114,13 +125,17 @@ export function buildStudentGuardianViewModel(
   options: { isPrimary?: boolean } = {},
 ): StudentGuardianViewModel {
   const isPrimary = Boolean(options.isPrimary);
+  const relationshipLabel =
+    record.source === "LEGACY"
+      ? "Contact parent hérité"
+      : getGuardianRelationshipLabel(record.relationshipType);
 
   return {
     id: record.id,
     guardianId: record.guardianId,
     displayName: record.displayName.trim() || "Responsable",
     relationshipType: record.relationshipType,
-    relationshipLabel: getGuardianRelationshipLabel(record.relationshipType),
+    relationshipLabel,
     phoneLabel: record.phone?.trim() || MISSING,
     emailLabel: record.email?.trim() || MISSING,
     addressLabel: record.address?.trim() || MISSING,
@@ -134,6 +149,9 @@ export function buildStudentGuardianViewModel(
     financialResponsible: record.financialResponsible,
     isExpired: record.isExpired,
     isActive: record.isActive,
+    source: record.source,
+    requiresVerification: record.requiresVerification,
+    dataQuality: record.dataQuality,
     badges: buildBadges(record, isPrimary),
     notesLabel: record.notes?.trim() || MISSING,
   };
