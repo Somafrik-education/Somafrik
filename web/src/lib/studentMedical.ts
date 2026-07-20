@@ -49,7 +49,11 @@ export type DisabilityType =
   | "COGNITIVE"
   | "OTHER";
 
-export type MedicationStatus = "ACTIVE" | "INACTIVE" | "COMPLETED";
+export type MedicationStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "COMPLETED"
+  | "UNKNOWN";
 
 export type VaccinationItemStatus = "UP_TO_DATE" | "INCOMPLETE" | "UNKNOWN";
 
@@ -119,6 +123,11 @@ export interface PhysicianRecord {
   visibility: MedicalVisibility;
 }
 
+export interface MedicalNoteRecord {
+  content: string;
+  visibility: MedicalVisibility;
+}
+
 /**
  * Profil médical consolidé — agrégat indépendant du dossier élève.
  * Les futurs modules (certificats, PAI, infirmerie) enrichiront cet agrégat.
@@ -133,7 +142,8 @@ export interface StudentMedicalRecord {
   vaccinations: VaccinationRecord[];
   physician: PhysicianRecord | null;
   emergencyInstructions: string | null;
-  medicalNotes: string | null;
+  /** Notes structurées — les notes legacy `confidentialNotes` sont MEDICAL. */
+  medicalNotes: MedicalNoteRecord[];
   updatedAt: string | null;
   /** Cloisonnement futur STAFF vs MEDICAL. */
   visibility: MedicalVisibility;
@@ -405,6 +415,43 @@ function parseConditionsFromLegacy(
   });
 }
 
+/** Détecte un statut médicament uniquement si un marqueur explicite est présent. */
+export function detectMedicationStatus(text: string): MedicationStatus {
+  const key = foldKey(text);
+  if (
+    key.includes("en cours") ||
+    key.includes("actuel") ||
+    key.includes("actuelle") ||
+    key.includes("active") ||
+    key.includes("actif") ||
+    key.includes("activee")
+  ) {
+    return "ACTIVE";
+  }
+  if (
+    key.includes("termine") ||
+    key.includes("terminee") ||
+    key.includes("completed") ||
+    key.includes("complete") ||
+    key.includes("arrete") ||
+    key.includes("fini") ||
+    key.includes("anterieur") ||
+    key.includes("historique")
+  ) {
+    return "COMPLETED";
+  }
+  if (
+    key.includes("suspendu") ||
+    key.includes("inactif") ||
+    key.includes("inactive") ||
+    key.includes("stoppe") ||
+    key.includes("pause")
+  ) {
+    return "INACTIVE";
+  }
+  return "UNKNOWN";
+}
+
 function parseMedicationsFromLegacy(
   raw: string | null | undefined,
   studentId: string,
@@ -415,14 +462,17 @@ function parseMedicationsFromLegacy(
     const detail = paren?.[2]?.trim() ?? null;
     const looksLikeFrequency =
       detail &&
-      /(fois|prise|jour|semaine|matin|soir|\/\s*j|par jour)/i.test(detail);
+      /(fois|prise|jour|semaine|matin|soir|\/\s*j|par jour)/i.test(detail) &&
+      detectMedicationStatus(detail) === "UNKNOWN";
+    const status = detectMedicationStatus(entry);
 
     return {
       id: `LEGACY-MED-${studentId}-${index + 1}`,
-      label,
+      label: stripSeverityAnnotations(label) || label,
       dosage: looksLikeFrequency ? null : detail,
       frequency: looksLikeFrequency ? detail : null,
-      status: "ACTIVE" as const,
+      // Absence de statut explicite ≠ traitement actif confirmé.
+      status,
       notes: null,
       visibility: "STAFF" as const,
     };
@@ -515,11 +565,17 @@ function parseVaccinationsFromLegacy(
           ? ("INCOMPLETE" as const)
           : ("UNKNOWN" as const),
       administeredAt: null,
-      visibility: "MEDICAL" as const,
+      // Statut vaccinal agrégé = information administrative établissement (STAFF).
+      visibility: "STAFF" as const,
     };
   });
 }
 
+/**
+ * Sémantique C1.4 : aucune preuve vaccinale enregistrée ⇒ dossier administratif
+ * incomplet (`INCOMPLETE`). Ce n'est pas un diagnostic clinique « non vacciné ».
+ * Une distinction future `UNKNOWN` pourra être introduite hors C1.4.
+ */
 export function resolveVaccinationAggregateStatus(
   vaccinations: readonly VaccinationRecord[],
 ): VaccinationAggregateStatus {
@@ -530,6 +586,44 @@ export function resolveVaccinationAggregateStatus(
     (item) => item.status === "UP_TO_DATE",
   );
   return allUpToDate ? "UP_TO_DATE" : "INCOMPLETE";
+}
+
+export function isMedicalVisibilityAllowed(
+  visibility: MedicalVisibility,
+  allowedVisibility: readonly MedicalVisibility[],
+): boolean {
+  return allowedVisibility.includes(visibility);
+}
+
+/**
+ * Filtre l'agrégat selon le niveau d'accès.
+ * MEDICAL voit STAFF + MEDICAL ; STAFF ne voit pas MEDICAL.
+ */
+export function filterStudentMedicalRecordByVisibility(
+  record: StudentMedicalRecord,
+  allowedVisibility: readonly MedicalVisibility[],
+): StudentMedicalRecord {
+  const allow = (visibility: MedicalVisibility) =>
+    isMedicalVisibilityAllowed(visibility, allowedVisibility);
+
+  return {
+    ...record,
+    allergies: record.allergies.filter((item) => allow(item.visibility)),
+    chronicConditions: record.chronicConditions.filter((item) =>
+      allow(item.visibility),
+    ),
+    medications: record.medications.filter((item) => allow(item.visibility)),
+    disabilities: record.disabilities.filter((item) => allow(item.visibility)),
+    vaccinations: record.vaccinations.filter((item) => allow(item.visibility)),
+    physician:
+      record.physician && allow(record.physician.visibility)
+        ? record.physician
+        : null,
+    emergencyInstructions: allow("STAFF")
+      ? record.emergencyInstructions
+      : null,
+    medicalNotes: record.medicalNotes.filter((note) => allow(note.visibility)),
+  };
 }
 
 export function diagnoseMedicalRecord(
@@ -549,6 +643,7 @@ export function diagnoseMedicalRecord(
     hasPhysician: Boolean(record.physician?.name.trim()),
     hasBloodType: Boolean(record.bloodType),
     hasMedicalUpdate: Boolean(record.updatedAt?.trim()),
+    // Uniquement un traitement ACTIVE explicitement confirmé.
     hasMedication: record.medications.some((item) => item.status === "ACTIVE"),
     vaccinationStatus: resolveVaccinationAggregateStatus(record.vaccinations),
     criticalAllergyCount,
@@ -569,7 +664,7 @@ export function createEmptyStudentMedicalRecord(
     vaccinations: [],
     physician: null,
     emergencyInstructions: null,
-    medicalNotes: null,
+    medicalNotes: [],
     updatedAt: null,
     visibility: "STAFF",
     source: "EMPTY",
@@ -626,7 +721,17 @@ export function toStudentMedicalRecord(
         }
       : null,
     emergencyInstructions: normalizeOptionalText(profile.emergencyInstructions),
-    medicalNotes: normalizeOptionalText(profile.confidentialNotes),
+    medicalNotes: (() => {
+      const confidential = normalizeOptionalText(profile.confidentialNotes);
+      if (!confidential) return [];
+      // Les notes legacy sont explicitement confidentielles → MEDICAL.
+      return [
+        {
+          content: confidential,
+          visibility: "MEDICAL" as const,
+        },
+      ];
+    })(),
     updatedAt: normalizeOptionalText(profile.updatedAt),
     visibility: "STAFF",
     source: "LEGACY",

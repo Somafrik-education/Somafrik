@@ -8,7 +8,9 @@ import {
   collectStudentMedicalRecord,
   compareAllergySeverity,
   createEmptyStudentMedicalRecord,
+  detectMedicationStatus,
   diagnoseMedicalRecord,
+  filterStudentMedicalRecordByVisibility,
   normalizeBloodType,
   resolveVaccinationAggregateStatus,
   sortAllergiesBySeverity,
@@ -19,6 +21,7 @@ import {
 import {
   buildStudentMedicalViewModel,
   getAllergySeverityLabel,
+  getMedicationStatusLabel,
   getVaccinationStatusLabel,
 } from "../src/lib/studentMedicalViewModel";
 import { buildStudentWorkspace } from "../src/lib/studentWorkspaceService";
@@ -136,10 +139,11 @@ function testCriticalConditionsAndRisk() {
 }
 
 function testVaccinations() {
+  // Sémantique documentée : aucune preuve enregistrée = dossier administratif incomplet.
   assertEqual(
     resolveVaccinationAggregateStatus([]),
     "INCOMPLETE",
-    "Vide = incomplet",
+    "Vide = dossier administratif incomplet (pas UNKNOWN clinique)",
   );
   assertEqual(
     resolveVaccinationAggregateStatus([
@@ -228,7 +232,7 @@ function testCriticalBadgeAndViewModel() {
   const vm = buildStudentMedicalViewModel(record);
   assertEqual(vm.bloodTypeLabel, "O+", "VM groupe sanguin");
   assert(vm.hasCriticalRisk, "VM risque critique");
-  assert(vm.hasMedication, "VM traitement");
+  assert(!vm.hasMedication, "Legacy sans marqueur ≠ traitement actif");
   assert(vm.hasPhysician, "VM médecin");
   assertEqual(vm.vaccinationStatusLabel, "Incomplètes", "VM vaccins");
   assert(
@@ -236,8 +240,8 @@ function testCriticalBadgeAndViewModel() {
     "Badge allergie critique",
   );
   assert(
-    vm.badges.some((badge) => badge.label === "TRAITEMENT"),
-    "Badge traitement",
+    !vm.badges.some((badge) => badge.label === "TRAITEMENT"),
+    "Pas de badge TRAITEMENT sans ACTIVE confirmé",
   );
   assert(
     vm.badges.some((badge) => badge.label === "HANDICAP"),
@@ -257,7 +261,11 @@ function testCriticalBadgeAndViewModel() {
   );
   assertEqual(vm.allergies[0]?.severity, "CRITICAL", "Allergie triée en tête");
   assertEqual(vm.allergies[0]?.label, "Arachides", "Label arachides");
-  assertEqual(vm.medications[0]?.statusLabel, "En cours", "Traitement en cours");
+  assertEqual(
+    vm.medications[0]?.statusLabel,
+    "Statut à confirmer",
+    "Traitement legacy à confirmer",
+  );
   assert(
     vm.disabilities[0]?.accommodationRequested,
     "Aménagement demandé",
@@ -267,6 +275,149 @@ function testCriticalBadgeAndViewModel() {
     record.allergies.every((item) => item.visibility === "STAFF"),
     "Visibility allergies",
   );
+}
+
+function testLegacyMedicationsUnknown() {
+  const record = toStudentMedicalRecord(
+    {
+      id: "MED-1",
+      studentId: "STU-1",
+      medications: "Ventoline",
+    },
+    "STU-1",
+  );
+
+  assertEqual(record.medications.length, 1, "1 médicament legacy");
+  assertEqual(record.medications[0]?.status, "UNKNOWN", "status UNKNOWN");
+  assertEqual(
+    diagnoseMedicalRecord(record).hasMedication,
+    false,
+    "hasMedication false",
+  );
+
+  const vm = buildStudentMedicalViewModel(record);
+  assertEqual(vm.hasMedication, false, "VM hasMedication false");
+  assertEqual(
+    vm.medications[0]?.statusLabel,
+    "Statut à confirmer",
+    "statusLabel à confirmer",
+  );
+  assertEqual(
+    getMedicationStatusLabel("UNKNOWN"),
+    "Statut à confirmer",
+    "Label UNKNOWN",
+  );
+
+  assertEqual(
+    detectMedicationStatus("Ventoline (en cours)"),
+    "ACTIVE",
+    "Marqueur actif",
+  );
+  assertEqual(
+    detectMedicationStatus("Amoxicilline (terminé)"),
+    "COMPLETED",
+    "Marqueur terminé",
+  );
+
+  const activeRecord = toStudentMedicalRecord(
+    {
+      id: "MED-2",
+      studentId: "STU-1",
+      medications: "Ventoline (en cours)",
+    },
+    "STU-1",
+  );
+  assertEqual(activeRecord.medications[0]?.status, "ACTIVE", "ACTIVE explicite");
+  assert(
+    diagnoseMedicalRecord(activeRecord).hasMedication,
+    "hasMedication si ACTIVE",
+  );
+  assertEqual(
+    buildStudentMedicalViewModel(activeRecord).medications[0]?.statusLabel,
+    "En cours",
+    "Label En cours si ACTIVE",
+  );
+}
+
+function testConfidentialNotesAndVisibility() {
+  const confidential = "Information strictement médicale";
+  const record = toStudentMedicalRecord(
+    {
+      id: "MED-1",
+      studentId: "STU-1",
+      bloodType: "A+",
+      doctorName: "Dr Martin",
+      confidentialNotes: confidential,
+      emergencyInstructions: "Appeler les parents",
+    },
+    "STU-1",
+  );
+
+  assertEqual(record.medicalNotes.length, 1, "Note legacy présente");
+  assertEqual(
+    record.medicalNotes[0]?.visibility,
+    "MEDICAL",
+    "Note legacy = MEDICAL",
+  );
+  assertEqual(record.medicalNotes[0]?.content, confidential, "Contenu stocké");
+
+  const staffVm = buildStudentMedicalViewModel(record, {
+    allowedVisibility: ["STAFF"],
+  });
+  assertEqual(staffVm.medicalNotesLabel, null, "STAFF ne reçoit pas la note");
+  assert(
+    !String(staffVm.medicalNotesLabel ?? "").includes(confidential),
+    "Contenu confidentiel absent du VM STAFF",
+  );
+  assertEqual(
+    staffVm.emergencyInstructionsLabel,
+    "Appeler les parents",
+    "STAFF voit consignes urgence",
+  );
+
+  const medicalVm = buildStudentMedicalViewModel(record, {
+    allowedVisibility: ["STAFF", "MEDICAL"],
+  });
+  assertEqual(
+    medicalVm.medicalNotesLabel,
+    confidential,
+    "MEDICAL voit la note",
+  );
+
+  // Filtrage générique : STAFF voit STAFF, pas MEDICAL ; MEDICAL voit les deux.
+  const mixed: StudentMedicalRecord = {
+    ...record,
+    allergies: [
+      {
+        id: "a-staff",
+        label: "Pollen",
+        severity: "LOW",
+        notes: null,
+        visibility: "STAFF",
+      },
+      {
+        id: "a-medical",
+        label: "Secret médical",
+        severity: "HIGH",
+        notes: null,
+        visibility: "MEDICAL",
+      },
+    ],
+  };
+
+  const staffFiltered = filterStudentMedicalRecordByVisibility(mixed, [
+    "STAFF",
+  ]);
+  assertEqual(staffFiltered.allergies.length, 1, "STAFF : 1 allergie");
+  assertEqual(staffFiltered.allergies[0]?.id, "a-staff", "STAFF voit STAFF");
+  assertEqual(staffFiltered.medicalNotes.length, 0, "STAFF : 0 note MEDICAL");
+
+  const medicalFiltered = filterStudentMedicalRecordByVisibility(mixed, [
+    "STAFF",
+    "MEDICAL",
+  ]);
+  assertEqual(medicalFiltered.allergies.length, 2, "MEDICAL voit STAFF+MEDICAL");
+  assertEqual(medicalFiltered.medicalNotes.length, 1, "MEDICAL voit notes");
 }
 
 function testOverviewAlerts() {
@@ -447,7 +598,16 @@ function testWorkspaceBuildAndShell() {
   assertEqual(vm.medical.bloodTypeLabel, "B+", "VM workspace groupe");
   assert(vm.hasMedicalProfile, "hasMedicalProfile");
   assert(vm.medical.hasPhysician, "hasPhysician VM");
-  assert(vm.medical.hasMedication, "hasMedication VM");
+  assert(
+    !vm.medical.hasMedication,
+    "Ventoline legacy ≠ hasMedication ACTIVE",
+  );
+  assertEqual(
+    vm.medical.medications[0]?.status,
+    "UNKNOWN",
+    "Workspace médication UNKNOWN",
+  );
+  assertEqual(vm.medical.medicalNotesLabel, null, "Pas de notes MEDICAL en STAFF");
 
   // Confirmation lecture seule : aucune API mutative exportée du domaine.
   assert(
@@ -465,6 +625,8 @@ function main() {
     ["vaccinations", testVaccinations],
     ["absence médecin et groupe sanguin", testMissingPhysicianAndBloodType],
     ["badge critique et ViewModel", testCriticalBadgeAndViewModel],
+    ["traitements legacy UNKNOWN", testLegacyMedicationsUnknown],
+    ["notes confidentielles et visibilité", testConfidentialNotesAndVisibility],
     ["alertes overview", testOverviewAlerts],
     ["permissions et compat legacy", testPermissionsAndLegacyCompat],
     ["build workspace et shell", testWorkspaceBuildAndShell],

@@ -1,5 +1,6 @@
 import {
   diagnoseMedicalRecord,
+  filterStudentMedicalRecordByVisibility,
   resolveVaccinationAggregateStatus,
   sortAllergiesBySeverity,
   type AllergyRecord,
@@ -9,7 +10,9 @@ import {
   type MedicalConditionRecord,
   type MedicalConditionSeverity,
   type MedicalRiskDiagnostics,
+  type MedicalVisibility,
   type MedicationRecord,
+  type MedicationStatus,
   type PhysicianRecord,
   type StudentMedicalRecord,
   type VaccinationAggregateStatus,
@@ -53,6 +56,7 @@ export interface MedicationViewModel {
   label: string;
   dosageLabel: string;
   frequencyLabel: string;
+  status: MedicationStatus;
   statusLabel: string;
   isActive: boolean;
 }
@@ -89,7 +93,11 @@ export interface StudentMedicalViewModel {
   disabilities: DisabilityViewModel[];
   physician: PhysicianViewModel | null;
   emergencyInstructionsLabel: string;
-  medicalNotesLabel: string;
+  /**
+   * Contenu des notes uniquement si autorisé par `allowedVisibility`.
+   * Les notes MEDICAL ne sont jamais exposées au ViewModel STAFF.
+   */
+  medicalNotesLabel: string | null;
   hasProfile: boolean;
   diagnostics: MedicalRiskDiagnostics;
   summary: {
@@ -102,7 +110,17 @@ export interface StudentMedicalViewModel {
   };
 }
 
+export interface BuildStudentMedicalViewModelOptions {
+  missingValueLabel?: string;
+  /**
+   * Niveaux de visibilité autorisés pour ce ViewModel.
+   * Défaut : STAFF uniquement (bridge Élèves:READ / personnel établissement).
+   */
+  allowedVisibility?: readonly MedicalVisibility[];
+}
+
 const MISSING = "Non renseigné";
+const DEFAULT_ALLOWED_VISIBILITY: readonly MedicalVisibility[] = ["STAFF"];
 
 const ALLERGY_SEVERITY_LABELS: Record<AllergySeverity, string> = {
   CRITICAL: "Critique",
@@ -125,6 +143,13 @@ const DISABILITY_TYPE_LABELS: Record<DisabilityType, string> = {
   OTHER: "Handicap",
 };
 
+const MEDICATION_STATUS_LABELS: Record<MedicationStatus, string> = {
+  ACTIVE: "En cours",
+  INACTIVE: "Inactif",
+  COMPLETED: "Terminé",
+  UNKNOWN: "Statut à confirmer",
+};
+
 export function getAllergySeverityLabel(severity: AllergySeverity): string {
   return ALLERGY_SEVERITY_LABELS[severity];
 }
@@ -137,6 +162,10 @@ export function getConditionSeverityLabel(
 
 export function getDisabilityTypeLabel(type: DisabilityType): string {
   return DISABILITY_TYPE_LABELS[type];
+}
+
+export function getMedicationStatusLabel(status: MedicationStatus): string {
+  return MEDICATION_STATUS_LABELS[status];
 }
 
 export function getVaccinationStatusLabel(
@@ -254,19 +283,13 @@ function toConditionViewModel(
 }
 
 function toMedicationViewModel(record: MedicationRecord): MedicationViewModel {
-  const statusLabel =
-    record.status === "ACTIVE"
-      ? "En cours"
-      : record.status === "COMPLETED"
-        ? "Terminé"
-        : "Inactif";
-
   return {
     id: record.id,
     label: record.label,
     dosageLabel: record.dosage?.trim() || MISSING,
     frequencyLabel: record.frequency?.trim() || MISSING,
-    statusLabel,
+    status: record.status,
+    statusLabel: getMedicationStatusLabel(record.status),
     isActive: record.status === "ACTIVE",
   };
 }
@@ -315,48 +338,61 @@ function formatListSummary(
 
 export function buildStudentMedicalViewModel(
   record: StudentMedicalRecord,
-  options: { missingValueLabel?: string } = {},
+  options: BuildStudentMedicalViewModelOptions = {},
 ): StudentMedicalViewModel {
   const missingValueLabel = options.missingValueLabel?.trim() || MISSING;
-  const diagnostics = diagnoseMedicalRecord(record);
-  const allergies = sortAllergiesBySeverity(record.allergies).map(
+  const allowedVisibility =
+    options.allowedVisibility ?? DEFAULT_ALLOWED_VISIBILITY;
+
+  // Appliquer le cloisonnement avant toute projection UI.
+  const visibleRecord = filterStudentMedicalRecordByVisibility(
+    record,
+    allowedVisibility,
+  );
+  const diagnostics = diagnoseMedicalRecord(visibleRecord);
+  const allergies = sortAllergiesBySeverity(visibleRecord.allergies).map(
     toAllergyViewModel,
   );
-  const conditions = record.chronicConditions.map(toConditionViewModel);
-  const medications = record.medications.map(toMedicationViewModel);
-  const disabilities = record.disabilities.map(toDisabilityViewModel);
-  const physician = toPhysicianViewModel(record.physician);
+  const conditions = visibleRecord.chronicConditions.map(toConditionViewModel);
+  const medications = visibleRecord.medications.map(toMedicationViewModel);
+  const disabilities = visibleRecord.disabilities.map(toDisabilityViewModel);
+  const physician = toPhysicianViewModel(visibleRecord.physician);
   const vaccinationStatus = resolveVaccinationAggregateStatus(
-    record.vaccinations,
+    visibleRecord.vaccinations,
   );
   const lastUpdateLabel = formatCivilDateLabel(
-    record.updatedAt,
+    visibleRecord.updatedAt,
     missingValueLabel,
   );
 
-  const bloodTypeLabel = record.bloodType ?? missingValueLabel;
+  const bloodTypeLabel = visibleRecord.bloodType ?? missingValueLabel;
+  const accessibleNotes = visibleRecord.medicalNotes
+    .map((note) => note.content.trim())
+    .filter(Boolean);
 
   return {
-    studentId: record.studentId,
+    studentId: visibleRecord.studentId,
     bloodTypeLabel,
-    allergyBadges: buildAllergyBadges(record.allergies),
-    conditionBadges: buildConditionBadges(record.chronicConditions),
+    allergyBadges: buildAllergyBadges(visibleRecord.allergies),
+    conditionBadges: buildConditionBadges(visibleRecord.chronicConditions),
     vaccinationStatus,
     vaccinationStatusLabel: getVaccinationStatusLabel(vaccinationStatus),
     hasCriticalRisk: diagnostics.hasCriticalRisk,
     hasMedication: diagnostics.hasMedication,
     hasPhysician: diagnostics.hasPhysician,
     lastUpdateLabel,
-    badges: buildCentralizedBadges(record, diagnostics),
+    badges: buildCentralizedBadges(visibleRecord, diagnostics),
     allergies,
     conditions,
     medications,
     disabilities,
     physician,
     emergencyInstructionsLabel:
-      record.emergencyInstructions?.trim() || missingValueLabel,
-    medicalNotesLabel: record.medicalNotes?.trim() || missingValueLabel,
-    hasProfile: record.hasProfile,
+      visibleRecord.emergencyInstructions?.trim() || missingValueLabel,
+    // null = aucune note accessible (ex. note MEDICAL filtrée pour STAFF).
+    medicalNotesLabel:
+      accessibleNotes.length > 0 ? accessibleNotes.join("\n\n") : null,
+    hasProfile: visibleRecord.hasProfile,
     diagnostics,
     summary: {
       bloodTypeLabel,

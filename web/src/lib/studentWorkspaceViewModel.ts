@@ -105,6 +105,8 @@ export function buildStudentWorkspaceViewModel(
 
   const medical = buildStudentMedicalViewModel(workspace.medical, {
     missingValueLabel,
+    // Bridge Élèves:READ / personnel : STAFF uniquement (pas de notes MEDICAL).
+    allowedVisibility: ["STAFF"],
   });
 
   const statusPresentation = getEnrollmentStatusPresentation(
