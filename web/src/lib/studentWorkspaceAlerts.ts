@@ -28,6 +28,13 @@ export function buildStudentWorkspaceAlerts(
     | "enrollmentActiveWithoutDate"
     | "hasDuplicateActiveEnrollments"
     | "enrollmentYearMismatch"
+    | "hasLegalGuardian"
+    | "hasGuardianPhone"
+    | "hasEmergencyContact"
+    | "hasFinancialResponsible"
+    | "multiplePriorityOneGuardians"
+    | "multipleFinancialResponsibles"
+    | "hasExpiredGuardianRelation"
   >,
 ): StudentWorkspaceAlert[] {
   const alerts: StudentWorkspaceAlert[] = [];
@@ -105,6 +112,69 @@ export function buildStudentWorkspaceAlerts(
       message: "Aucun responsable associé",
       targetModuleId: "guardians",
     });
+  } else {
+    if (!overview.hasLegalGuardian) {
+      alerts.push({
+        id: "missing-legal-guardian",
+        severity: "warning",
+        message: "Aucun responsable légal",
+        targetModuleId: "guardians",
+      });
+    }
+
+    if (!overview.hasGuardianPhone) {
+      alerts.push({
+        id: "missing-guardian-phone",
+        severity: "warning",
+        message: "Aucun téléphone de responsable",
+        targetModuleId: "guardians",
+      });
+    }
+
+    if (!overview.hasEmergencyContact) {
+      alerts.push({
+        id: "missing-emergency-contact",
+        severity: "warning",
+        message: "Aucun contact d'urgence",
+        targetModuleId: "guardians",
+      });
+    }
+
+    if (!overview.hasFinancialResponsible) {
+      alerts.push({
+        id: "missing-financial-responsible",
+        severity: "warning",
+        message: "Aucun responsable financier",
+        targetModuleId: "guardians",
+      });
+    }
+
+    if (overview.multiplePriorityOneGuardians) {
+      alerts.push({
+        id: "multiple-priority-one-guardians",
+        severity: "warning",
+        message: "Plusieurs responsables avec priorité 1",
+        targetModuleId: "guardians",
+      });
+    }
+
+    if (overview.multipleFinancialResponsibles) {
+      alerts.push({
+        id: "multiple-financial-responsibles",
+        severity: "info",
+        message: "Plusieurs responsables financiers",
+        targetModuleId: "guardians",
+      });
+    }
+
+    if (overview.hasExpiredGuardianRelation) {
+      alerts.push({
+        id: "expired-guardian-relation",
+        severity: "info",
+        message: "Relation responsable expirée",
+        targetModuleId: "guardians",
+      });
+    }
   }
 
   if (!overview.phone && !overview.email) {

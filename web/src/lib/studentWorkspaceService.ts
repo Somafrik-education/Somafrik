@@ -12,6 +12,10 @@ import {
   type StudentEnrollmentRecord,
 } from "./studentEnrollment";
 import {
+  collectStudentGuardianRelationRecords,
+  type StudentGuardianRelationRecord,
+} from "./studentGuardian";
+import {
   buildStudentWorkspaceOverview,
   type StudentWorkspaceOverview,
 } from "./studentWorkspaceOverview";
@@ -19,6 +23,7 @@ import {
 export interface StudentWorkspace {
   overview: StudentWorkspaceOverview;
   enrollments: StudentEnrollmentRecord[];
+  guardians: StudentGuardianRelationRecord[];
 }
 
 export interface StudentWorkspaceDataSource {
@@ -36,12 +41,14 @@ export interface BuildStudentWorkspaceInput {
   studentId: string;
   academicYear: string;
   data: StudentWorkspaceDataSource;
+  referenceDate?: Date;
 }
 
 export function buildStudentWorkspace({
   studentId,
   academicYear,
   data,
+  referenceDate,
 }: BuildStudentWorkspaceInput): StudentWorkspace | null {
   const normalizedStudentId = studentId.trim();
   const normalizedAcademicYear = academicYear.trim();
@@ -75,6 +82,14 @@ export function buildStudentWorkspace({
     schoolName,
   });
 
+  const guardians = collectStudentGuardianRelationRecords({
+    student,
+    guardians: data.guardians,
+    guardianRelations: data.guardianRelations,
+    persons: data.persons,
+    referenceDate,
+  });
+
   return {
     overview: buildStudentWorkspaceOverview({
       student,
@@ -83,6 +98,7 @@ export function buildStudentWorkspace({
       schoolName,
       enrollments: data.enrollments,
       enrollmentRecords: enrollments,
+      guardianRecords: guardians,
       guardians: data.guardians,
       guardianRelations: data.guardianRelations,
       persons: data.persons,
@@ -90,5 +106,6 @@ export function buildStudentWorkspace({
       medicalProfile,
     }),
     enrollments,
+    guardians,
   };
 }

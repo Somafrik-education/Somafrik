@@ -15,6 +15,11 @@ import {
   type EnrollmentTimelineStep,
   type StudentEnrollmentViewModel,
 } from "./studentEnrollmentViewModel";
+import {
+  buildStudentGuardiansModuleViewModel,
+  type StudentGuardianViewModel,
+  type StudentGuardiansModuleViewModel,
+} from "./studentGuardianViewModel";
 
 export interface StudentWorkspaceViewModel {
   studentId: string;
@@ -48,6 +53,12 @@ export interface StudentWorkspaceViewModel {
   currentEnrollment: StudentEnrollmentViewModel | null;
   enrollmentHistory: StudentEnrollmentViewModel[];
   enrollmentTimeline: EnrollmentTimelineStep[];
+  primaryGuardian: StudentGuardianViewModel | null;
+  guardians: StudentGuardianViewModel[];
+  emergencyContacts: StudentGuardianViewModel[];
+  pickupAuthorizedGuardians: StudentGuardianViewModel[];
+  financialResponsibles: StudentGuardianViewModel[];
+  guardiansModule: StudentGuardiansModuleViewModel;
 }
 
 export interface BuildStudentWorkspaceViewModelOptions {
@@ -84,6 +95,10 @@ export function buildStudentWorkspaceViewModel(
     academicYear: overview.currentAcademicYear ?? undefined,
     schoolCode: overview.schoolCode,
   });
+
+  const guardiansModule = buildStudentGuardiansModuleViewModel(
+    workspace.guardians,
+  );
 
   const statusPresentation = getEnrollmentStatusPresentation(
     overview.enrollmentStatus,
@@ -154,5 +169,11 @@ export function buildStudentWorkspaceViewModel(
     currentEnrollment: enrollmentModels.currentEnrollment,
     enrollmentHistory: enrollmentModels.enrollmentHistory,
     enrollmentTimeline: enrollmentModels.timeline,
+    primaryGuardian: guardiansModule.primaryGuardian,
+    guardians: guardiansModule.guardians,
+    emergencyContacts: guardiansModule.emergencyContacts,
+    pickupAuthorizedGuardians: guardiansModule.pickupAuthorizedGuardians,
+    financialResponsibles: guardiansModule.financialResponsibles,
+    guardiansModule,
   };
 }
