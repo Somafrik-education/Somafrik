@@ -101,6 +101,10 @@ function parseSslModeFromUrl(databaseUrl) {
  * @returns {{ enabled: boolean|null, rejectUnauthorized: boolean|null, mode: string }}
  */
 function resolveSslPolicy(env = process.env, databaseUrl = "") {
+  const SSL_TRUE = new Set(["true", "1", "require", "on", "yes"]);
+  const SSL_FALSE = new Set(["false", "0", "disable", "off", "no"]);
+  const SSL_BOOL = new Set([...SSL_TRUE, ...SSL_FALSE]);
+
   const sslFlag = readEnv(env, "DB_SSL", "POSTGRES_SSL", "DATABASE_SSL").toLowerCase();
   const rejectFlag = readEnv(
     env,
@@ -109,9 +113,16 @@ function resolveSslPolicy(env = process.env, databaseUrl = "") {
   ).toLowerCase();
   const sslmode = parseSslModeFromUrl(databaseUrl) || readEnv(env, "DB_SSLMODE", "PGSSLMODE").toLowerCase();
 
+  if (sslFlag && !SSL_BOOL.has(sslFlag)) {
+    throw new DbConfigError("DB_SSL contient une valeur invalide.");
+  }
+  if (rejectFlag && !SSL_BOOL.has(rejectFlag)) {
+    throw new DbConfigError("DB_SSL_REJECT_UNAUTHORIZED contient une valeur invalide.");
+  }
+
   let enabled = null;
-  if (["true", "1", "require", "on", "yes"].includes(sslFlag)) enabled = true;
-  if (["false", "0", "disable", "off", "no"].includes(sslFlag)) enabled = false;
+  if (SSL_TRUE.has(sslFlag)) enabled = true;
+  if (SSL_FALSE.has(sslFlag)) enabled = false;
 
   if (sslmode) {
     if (["disable", "allow"].includes(sslmode)) {
@@ -128,7 +139,7 @@ function resolveSslPolicy(env = process.env, databaseUrl = "") {
         );
       }
       enabled = true;
-    } else if (sslmode) {
+    } else {
       throw new DbConfigError(
         "Configuration SSL invalide : sslmode non supporté (disable, require, verify-ca, verify-full).",
       );
@@ -136,8 +147,8 @@ function resolveSslPolicy(env = process.env, databaseUrl = "") {
   }
 
   let rejectUnauthorized = null;
-  if (["true", "1", "on", "yes"].includes(rejectFlag)) rejectUnauthorized = true;
-  if (["false", "0", "off", "no"].includes(rejectFlag)) rejectUnauthorized = false;
+  if (SSL_TRUE.has(rejectFlag)) rejectUnauthorized = true;
+  if (SSL_FALSE.has(rejectFlag)) rejectUnauthorized = false;
 
   if (sslmode === "verify-full" || sslmode === "verify-ca") {
     if (rejectUnauthorized === false) {
@@ -315,6 +326,13 @@ function collectDatabaseConfigViolations(env = process.env) {
     }
   }
 
+  // SSL toujours validé s'il est présent (y compris hors production / mode mémoire).
+  try {
+    resolveSslPolicy(env, readEnv(env, "DATABASE_URL"));
+  } catch (error) {
+    violations.push(sanitizeDbErrorMessage(error));
+  }
+
   if (isMemoryFallbackAllowed(env)) {
     return violations;
   }
@@ -326,8 +344,6 @@ function collectDatabaseConfigViolations(env = process.env) {
         "Hôte de base de données local interdit en production (localhost / 127.0.0.1).",
       );
     }
-    // SSL : tenter à nouveau pour remonter les incohérences déjà levées par resolve.
-    resolveSslPolicy(env, config.connectionString);
   } catch (error) {
     violations.push(sanitizeDbErrorMessage(error));
   }

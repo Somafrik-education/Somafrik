@@ -2,6 +2,7 @@
  * Fabrique de dépôts: point de composition unique de la couche de persistance.
  *
  * S2.2 — en production : PostgreSQL obligatoire, aucun fallback mémoire.
+ * S2.2.1 — mode mémoire développement sans credentials : fallback fiable.
  */
 
 const { PostgresRepository } = require("./postgresRepository");
@@ -17,9 +18,18 @@ const {
 } = require("./connectionConfig");
 const { assertRepositoryContract } = require("./repositoryContract");
 
+function hasResolvableDatabaseConfig(env = process.env) {
+  try {
+    resolveDatabaseConfig(env);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Crée le dépôt PostgreSQL (non initialisé).
- * @param {string|object} [databaseConfig] URL ou config pool explicite.
+ * @param {string|object|null} [databaseConfig] URL ou config pool explicite.
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {PostgresRepository}
  */
@@ -32,8 +42,6 @@ function createPostgresRepository(databaseConfig, env = process.env) {
         : databaseConfig;
   } else if (isMemoryFallbackAllowed(env)) {
     // Mode démo local : pas d'exigence de secrets au chargement du module.
-    // Si PostgreSQL répond malgré tout, initializeRepository utilisera une config réelle
-    // uniquement lorsque les variables sont présentes ; sinon fallback mémoire.
     try {
       config = resolveDatabaseConfig(env).poolConfig;
     } catch {
@@ -50,10 +58,11 @@ function createPostgresRepository(databaseConfig, env = process.env) {
 
 /**
  * Crée le dépôt mémoire de secours (mode démo local uniquement).
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {FallbackRepository}
  */
-function createFallbackRepository() {
-  if (isProductionEnvironment()) {
+function createFallbackRepository(env = process.env) {
+  if (isProductionEnvironment(env)) {
     throw new DbConfigError(
       "Le dépôt mémoire est interdit en production.",
     );
@@ -69,7 +78,7 @@ function createFallbackRepository() {
  *
  * @param {object} [options]
  * @param {object} [options.repository] Dépôt PostgreSQL pré-construit à réutiliser.
- * @param {string|object} [options.databaseUrl] URL / config explicite.
+ * @param {string|object|null} [options.databaseUrl] URL / config explicite.
  * @param {boolean} [options.required] Interdit le repli mémoire.
  * @param {Console} [options.logger] Journaliseur (défaut: console).
  * @param {NodeJS.ProcessEnv} [options.env]
@@ -91,11 +100,26 @@ async function initializeRepository({
     );
   }
 
-  const primary =
-    repository ??
-    createPostgresRepository(
-      databaseUrl == null ? resolveDatabaseConfig(env).poolConfig : databaseUrl,
-    );
+  // S2.2.1 — mémoire explicite sans config BD : pas de tentative PostgreSQL inutile.
+  if (
+    repository == null &&
+    databaseUrl == null &&
+    !mustUsePostgres &&
+    isMemoryFallbackAllowed(env) &&
+    !hasResolvableDatabaseConfig(env)
+  ) {
+    logger.warn("Aucune configuration PostgreSQL : démarrage en mode démo mémoire.");
+    const fallback = createFallbackRepository(env);
+    await fallback.init();
+    return {
+      repository: fallback,
+      engine: fallback.engine ?? "memory",
+      usedFallback: true,
+    };
+  }
+
+  // Laisser createPostgresRepository gérer le mode mémoire (placeholder si besoin).
+  const primary = repository ?? createPostgresRepository(databaseUrl, env);
 
   try {
     await primary.init();
@@ -112,16 +136,15 @@ async function initializeRepository({
       throw error;
     }
     if (mustUsePostgres || isProductionEnvironment(env)) {
-      const safe = sanitizeDbErrorMessage(error);
       throw new DbConfigError(
-        `Connexion PostgreSQL obligatoire impossible : ${safe}`,
+        "Connexion PostgreSQL obligatoire impossible.",
       );
     }
 
     logger.warn("PostgreSQL indisponible, démarrage en mode démo mémoire.");
     logger.warn(`Cause: ${sanitizeDbErrorMessage(error)}`);
 
-    const fallback = createFallbackRepository();
+    const fallback = createFallbackRepository(env);
     await fallback.init();
     return {
       repository: fallback,
