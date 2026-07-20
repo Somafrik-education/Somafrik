@@ -163,4 +163,5 @@ Mêmes règles que `develop`, **plus** :
 ## Références
 
 - Mission S2.1–S2.3 : JWT header, DB config, Mobile hardening
-- Scripts : `backend/scripts/verify-db-config.js`, `Mobile/scripts/verify-mobile-security.js`
+- Scripts : `backend/scripts/verify-db-config.js`, `Mobile/scripts/verify-mobile-security.js`,
+  `backend/scripts/verify-jwt-header.js` (assertions PDF alignées SecureStore / `Bearer ${token}`)
