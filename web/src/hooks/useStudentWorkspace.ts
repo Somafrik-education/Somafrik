@@ -53,7 +53,9 @@ export function useStudentWorkspace(
       data: {
         students: state.students,
         persons: state.persons,
+        schools: state.schools,
         enrollments,
+        guardians: state.guardians,
         guardianRelations: state.studentGuardianRelations,
         documents: state.studentDocuments,
         medicalProfiles: state.studentMedicalProfiles,

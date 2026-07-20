@@ -144,13 +144,21 @@ export default function App() {
             }
           />
           <Route
-  path="eleves/:studentId"
-  element={
-    <PermissionRoute view="students">
-      <StudentWorkspacePage />
-    </PermissionRoute>
-  }
-/>
+            path="eleves/:studentId"
+            element={
+              <PermissionRoute view="students">
+                <StudentWorkspacePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="eleves/:studentId/:section"
+            element={
+              <PermissionRoute view="students">
+                <StudentWorkspacePage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="enseignants"
             element={
