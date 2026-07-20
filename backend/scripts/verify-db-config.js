@@ -136,13 +136,10 @@ function runUnitValidationTests() {
     }),
   );
   assert.ok(prodMemory.some((v) => /SOMAFRIK_DB_REQUIRED=false/i.test(v)));
-  const previousNodeEnv = process.env.NODE_ENV;
-  process.env.NODE_ENV = "production";
   assert.throws(
-    () => createFallbackRepository(),
+    () => createFallbackRepository({ NODE_ENV: "production" }),
     (error) => error instanceof DbConfigError,
   );
-  process.env.NODE_ENV = previousNodeEnv || "development";
   console.log("OK unit: aucun fallback mémoire en production");
 
   // Aucun seed automatique en production
@@ -191,7 +188,18 @@ function runUnitValidationTests() {
   );
   const sslOk = resolveSslPolicy({ DB_SSL: "true" }, "");
   assert.strictEqual(sslOk.enabled, true);
-  console.log("OK unit: validation SSL");
+
+  assert.throws(
+    () => resolveSslPolicy({ DB_SSL: "tru" }, ""),
+    (error) => error instanceof DbConfigError && /DB_SSL contient une valeur invalide/i.test(error.message),
+  );
+  assert.throws(
+    () => resolveSslPolicy({ DB_SSL_REJECT_UNAUTHORIZED: "maybe" }, ""),
+    (error) =>
+      error instanceof DbConfigError &&
+      /DB_SSL_REJECT_UNAUTHORIZED contient une valeur invalide/i.test(error.message),
+  );
+  console.log("OK unit: validation SSL (y compris valeurs invalides)");
 
   // Messages sans fuite
   const secretUrl = "postgresql://admin:SuperSecretPass@db.internal:5432/somafrik";
@@ -333,10 +341,28 @@ async function runProductionInitializeGuard() {
   }
 }
 
+async function testDevelopmentMemoryModeWithoutDbConfig() {
+  const env = {
+    NODE_ENV: "development",
+    SOMAFRIK_DB_REQUIRED: "false",
+  };
+
+  const result = await initializeRepository({
+    env,
+    logger: { warn() {} },
+  });
+
+  assert.strictEqual(result.engine, "memory");
+  assert.strictEqual(result.usedFallback, true);
+  assert.ok(result.repository, "repository mémoire attendu");
+  console.log("OK runtime: development + SOMAFRIK_DB_REQUIRED=false sans DB → memory");
+}
+
 async function main() {
   runUnitValidationTests();
   runHardcodedSecretAudit();
   await runProductionInitializeGuard();
+  await testDevelopmentMemoryModeWithoutDbConfig();
   console.log("verify-db-config: SUCCESS");
 }
 
