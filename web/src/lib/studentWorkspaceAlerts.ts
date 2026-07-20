@@ -22,22 +22,78 @@ export function buildStudentWorkspaceAlerts(
     | "currentClassName"
     | "hasGuardians"
     | "guardiansCount"
+    | "hasActiveEnrollment"
+    | "enrollmentIsIncomplete"
+    | "enrollmentApprovedWithoutClass"
+    | "enrollmentActiveWithoutDate"
+    | "hasDuplicateActiveEnrollments"
+    | "enrollmentYearMismatch"
   >,
 ): StudentWorkspaceAlert[] {
   const alerts: StudentWorkspaceAlert[] = [];
 
-  if (!overview.enrollmentStatus) {
+  if (!overview.hasActiveEnrollment || !overview.enrollmentStatus) {
     alerts.push({
       id: "missing-active-enrollment",
       severity: "warning",
       message: "Aucune inscription active",
       targetModuleId: "enrollments",
     });
-  } else if (!overview.currentClassName) {
+  } else {
+    if (overview.enrollmentIsIncomplete) {
+      alerts.push({
+        id: "incomplete-pre-enrollment",
+        severity: "warning",
+        message: "Dossier de préinscription incomplet",
+        targetModuleId: "enrollments",
+      });
+    }
+
+    if (overview.enrollmentApprovedWithoutClass) {
+      alerts.push({
+        id: "approved-without-class",
+        severity: "warning",
+        message: "Inscription validée sans classe",
+        targetModuleId: "enrollments",
+      });
+    }
+
+    if (
+      overview.enrollmentStatus === "ENROLLED" &&
+      !overview.currentClassName
+    ) {
+      alerts.push({
+        id: "enrolled-without-class",
+        severity: "warning",
+        message: "Inscription active sans classe affectée",
+        targetModuleId: "enrollments",
+      });
+    }
+
+    if (overview.enrollmentActiveWithoutDate) {
+      alerts.push({
+        id: "active-without-enrollment-date",
+        severity: "info",
+        message: "Inscription active sans date d'inscription",
+        targetModuleId: "enrollments",
+      });
+    }
+  }
+
+  if (overview.hasDuplicateActiveEnrollments) {
     alerts.push({
-      id: "missing-class",
+      id: "duplicate-active-enrollments",
       severity: "warning",
-      message: "Classe actuelle non renseignée",
+      message: "Plusieurs inscriptions actives détectées",
+      targetModuleId: "enrollments",
+    });
+  }
+
+  if (overview.enrollmentYearMismatch) {
+    alerts.push({
+      id: "enrollment-year-mismatch",
+      severity: "info",
+      message: "Année scolaire incohérente",
       targetModuleId: "enrollments",
     });
   }

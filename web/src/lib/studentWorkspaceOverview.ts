@@ -1,5 +1,4 @@
 import {
-  getActiveEnrollment,
   type Guardian,
   type Person,
   type Student,
@@ -10,6 +9,11 @@ import {
   type StudentMedicalProfile,
   type StudentStatus,
 } from "./studentDomain";
+import type { StudentEnrollmentRecord } from "./studentEnrollment";
+import {
+  findDuplicateActiveEnrollments,
+} from "./studentEnrollment";
+import { selectCurrentStudentEnrollment } from "./studentEnrollmentSelection";
 
 export interface StudentWorkspaceOverview {
   studentId: string;
@@ -37,6 +41,13 @@ export interface StudentWorkspaceOverview {
   hasGuardians: boolean;
   hasDocuments: boolean;
   hasMedicalProfile: boolean;
+  /** Champs C1.2 pour alertes inscription. */
+  hasActiveEnrollment: boolean;
+  enrollmentIsIncomplete: boolean;
+  enrollmentApprovedWithoutClass: boolean;
+  enrollmentActiveWithoutDate: boolean;
+  hasDuplicateActiveEnrollments: boolean;
+  enrollmentYearMismatch: boolean;
 }
 
 export interface BuildStudentWorkspaceOverviewInput {
@@ -45,6 +56,7 @@ export interface BuildStudentWorkspaceOverviewInput {
   academicYear: string;
   schoolName?: string | null;
   enrollments?: readonly StudentEnrollment[];
+  enrollmentRecords?: readonly StudentEnrollmentRecord[];
   guardians?: readonly Guardian[];
   guardianRelations?: readonly StudentGuardianRelation[];
   persons?: readonly Person[];
@@ -105,9 +117,14 @@ function resolveStudentIsActive(student: Student): boolean {
   if (student.archived) return false;
   const status = String(student.status ?? "").trim().toLowerCase();
   if (!status) return true;
-  return !["inactif", "archivé", "archivÃ©", "sorti", "transféré", "transfÃ©rÃ©"].includes(
-    status,
-  );
+  return ![
+    "inactif",
+    "archivé",
+    "archivÃ©",
+    "sorti",
+    "transféré",
+    "transfÃ©rÃ©",
+  ].includes(status);
 }
 
 export function buildStudentWorkspaceOverview({
@@ -115,19 +132,18 @@ export function buildStudentWorkspaceOverview({
   person,
   academicYear,
   schoolName = null,
-  enrollments = [],
+  enrollmentRecords = [],
   guardians = [],
   guardianRelations = [],
   persons = [],
   documents = [],
   medicalProfile = null,
 }: BuildStudentWorkspaceOverviewInput): StudentWorkspaceOverview {
-  const activeEnrollment = getActiveEnrollment(
-    enrollments,
-    student.id,
-    student.schoolCode,
+  const currentEnrollment = selectCurrentStudentEnrollment({
+    enrollments: enrollmentRecords,
     academicYear,
-  );
+    schoolCode: student.schoolCode,
+  });
 
   const activeRelations = resolveActiveGuardianRelations(
     student.id,
@@ -141,6 +157,26 @@ export function buildStudentWorkspaceOverview({
     ? persons.find((candidate) => candidate.id === primaryGuardian.personId)
     : undefined;
 
+  const duplicates = findDuplicateActiveEnrollments(enrollmentRecords);
+  const hasActiveEnrollment = Boolean(currentEnrollment);
+  const enrollmentIsIncomplete =
+    currentEnrollment?.status === "INCOMPLETE";
+  const enrollmentApprovedWithoutClass =
+    currentEnrollment?.status === "APPROVED" &&
+    !currentEnrollment.classId &&
+    !currentEnrollment.className;
+  const enrollmentActiveWithoutDate =
+    Boolean(currentEnrollment) &&
+    (currentEnrollment?.status === "ENROLLED" ||
+      currentEnrollment?.status === "APPROVED") &&
+    !currentEnrollment?.enrolledAt;
+  const enrollmentYearMismatch = Boolean(
+    currentEnrollment &&
+      academicYear.trim() &&
+      currentEnrollment.academicYear.trim() &&
+      currentEnrollment.academicYear.trim() !== academicYear.trim(),
+  );
+
   return {
     studentId: student.id,
     fullName: buildStudentFullName(student, person),
@@ -152,16 +188,17 @@ export function buildStudentWorkspaceOverview({
     phone: normalizeOptionalValue(person?.phone ?? student.phone),
     email: normalizeOptionalValue(person?.email ?? student.email),
     address: normalizeOptionalValue(person?.address),
-    enrollmentStatus: activeEnrollment?.status ?? null,
+    enrollmentStatus: currentEnrollment?.status ?? null,
     enrollmentDate: normalizeOptionalValue(
-      activeEnrollment?.enrollmentDate ??
-        activeEnrollment?.startDate ??
+      currentEnrollment?.enrolledAt ??
         student.admissionDate ??
         student.enrollmentDate,
     ),
-    currentAcademicYear: activeEnrollment?.academicYear ?? null,
-    currentClassId: activeEnrollment?.classId ?? null,
-    currentClassName: activeEnrollment?.className ?? null,
+    currentAcademicYear:
+      currentEnrollment?.academicYear ??
+      normalizeOptionalValue(academicYear),
+    currentClassId: currentEnrollment?.classId ?? null,
+    currentClassName: currentEnrollment?.className ?? null,
     schoolCode: normalizeOptionalValue(student.schoolCode),
     schoolName: normalizeOptionalValue(schoolName),
     studentStatus: student.status ?? null,
@@ -174,5 +211,11 @@ export function buildStudentWorkspaceOverview({
       (document) => document.studentId === student.id,
     ),
     hasMedicalProfile: medicalProfile?.studentId === student.id,
+    hasActiveEnrollment,
+    enrollmentIsIncomplete,
+    enrollmentApprovedWithoutClass,
+    enrollmentActiveWithoutDate,
+    hasDuplicateActiveEnrollments: duplicates.length > 0,
+    enrollmentYearMismatch,
   };
 }
