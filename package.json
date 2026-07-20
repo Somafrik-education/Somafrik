@@ -26,6 +26,7 @@
     "check:api": "node scripts/verify-api-connections.js",
     "check:suspension": "node scripts/verify-suspension.js",
     "verify:sanitize-user-responses": "npm --prefix backend run verify:sanitize-user-responses",
+    "verify:rbac-s1-4": "npm --prefix backend run verify:rbac-s1-4",
     "audit:integrity": "node scripts/audit-data-integrity.js",
     "audit:sql-integrity": "node scripts/audit-sql-integrity.js",
     "audit:ids": "node scripts/audit-ids-uniqueness.js",
