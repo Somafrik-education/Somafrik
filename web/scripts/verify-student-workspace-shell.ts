@@ -272,6 +272,13 @@ function testComputedAlerts() {
     enrollmentActiveWithoutDate: false,
     hasDuplicateActiveEnrollments: false,
     enrollmentYearMismatch: false,
+    hasLegalGuardian: false,
+    hasGuardianPhone: false,
+    hasEmergencyContact: false,
+    hasFinancialResponsible: false,
+    multiplePriorityOneGuardians: false,
+    multipleFinancialResponsibles: false,
+    hasExpiredGuardianRelation: false,
   });
 
   const ids = alerts.map((alert) => alert.id);
@@ -296,6 +303,13 @@ function testComputedAlerts() {
     enrollmentActiveWithoutDate: false,
     hasDuplicateActiveEnrollments: false,
     enrollmentYearMismatch: false,
+    hasLegalGuardian: true,
+    hasGuardianPhone: true,
+    hasEmergencyContact: true,
+    hasFinancialResponsible: true,
+    multiplePriorityOneGuardians: false,
+    multipleFinancialResponsibles: false,
+    hasExpiredGuardianRelation: false,
   });
   assertEqual(healthy.length, 0, "Aucune alerte si dossier complet");
 }
@@ -368,8 +382,8 @@ function testGuardiansSummaryAndImplementedFlags() {
   assert(isStudentWorkspaceModuleImplemented("overview"), "Overview implémenté");
   assert(isStudentWorkspaceModuleImplemented("identity"), "Identity implémenté");
   assert(
-    !isStudentWorkspaceModuleImplemented("guardians"),
-    "Guardians encore à venir",
+    isStudentWorkspaceModuleImplemented("guardians"),
+    "Guardians implémenté (C1.3)",
   );
 }
 

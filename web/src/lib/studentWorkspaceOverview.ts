@@ -14,6 +14,11 @@ import {
   findDuplicateActiveEnrollments,
 } from "./studentEnrollment";
 import { selectCurrentStudentEnrollment } from "./studentEnrollmentSelection";
+import type { StudentGuardianRelationRecord } from "./studentGuardian";
+import {
+  diagnoseGuardianRelations,
+  selectPrimaryGuardian,
+} from "./studentGuardianSelection";
 
 export interface StudentWorkspaceOverview {
   studentId: string;
@@ -48,6 +53,14 @@ export interface StudentWorkspaceOverview {
   enrollmentActiveWithoutDate: boolean;
   hasDuplicateActiveEnrollments: boolean;
   enrollmentYearMismatch: boolean;
+  /** Champs C1.3 pour alertes responsables. */
+  hasLegalGuardian: boolean;
+  hasGuardianPhone: boolean;
+  hasEmergencyContact: boolean;
+  hasFinancialResponsible: boolean;
+  multiplePriorityOneGuardians: boolean;
+  multipleFinancialResponsibles: boolean;
+  hasExpiredGuardianRelation: boolean;
 }
 
 export interface BuildStudentWorkspaceOverviewInput {
@@ -57,6 +70,7 @@ export interface BuildStudentWorkspaceOverviewInput {
   schoolName?: string | null;
   enrollments?: readonly StudentEnrollment[];
   enrollmentRecords?: readonly StudentEnrollmentRecord[];
+  guardianRecords?: readonly StudentGuardianRelationRecord[];
   guardians?: readonly Guardian[];
   guardianRelations?: readonly StudentGuardianRelation[];
   persons?: readonly Person[];
@@ -133,6 +147,7 @@ export function buildStudentWorkspaceOverview({
   academicYear,
   schoolName = null,
   enrollmentRecords = [],
+  guardianRecords = [],
   guardians = [],
   guardianRelations = [],
   persons = [],
@@ -145,6 +160,11 @@ export function buildStudentWorkspaceOverview({
     schoolCode: student.schoolCode,
   });
 
+  const resolvedGuardianRecords = guardianRecords;
+  const primaryFromRecords = selectPrimaryGuardian(resolvedGuardianRecords);
+  const guardianDiagnostics = diagnoseGuardianRelations(resolvedGuardianRecords);
+
+  // Repli compat si aucun record C1.3 n'est fourni.
   const activeRelations = resolveActiveGuardianRelations(
     student.id,
     guardianRelations,
@@ -156,6 +176,18 @@ export function buildStudentWorkspaceOverview({
   const primaryGuardianPerson = primaryGuardian?.personId
     ? persons.find((candidate) => candidate.id === primaryGuardian.personId)
     : undefined;
+
+  const primaryGuardianName =
+    primaryFromRecords?.displayName ??
+    buildPersonFullName(primaryGuardianPerson);
+  const primaryGuardianPhone =
+    primaryFromRecords?.phone ??
+    normalizeOptionalValue(primaryGuardianPerson?.phone);
+
+  const activeGuardianCount =
+    resolvedGuardianRecords.length > 0
+      ? resolvedGuardianRecords.filter((relation) => relation.isActive).length
+      : activeRelations.length;
 
   const duplicates = findDuplicateActiveEnrollments(enrollmentRecords);
   const hasActiveEnrollment = Boolean(currentEnrollment);
@@ -203,10 +235,10 @@ export function buildStudentWorkspaceOverview({
     schoolName: normalizeOptionalValue(schoolName),
     studentStatus: student.status ?? null,
     isActive: resolveStudentIsActive(student),
-    guardiansCount: activeRelations.length,
-    primaryGuardianName: buildPersonFullName(primaryGuardianPerson),
-    primaryGuardianPhone: normalizeOptionalValue(primaryGuardianPerson?.phone),
-    hasGuardians: activeRelations.length > 0,
+    guardiansCount: activeGuardianCount,
+    primaryGuardianName: normalizeOptionalValue(primaryGuardianName),
+    primaryGuardianPhone,
+    hasGuardians: activeGuardianCount > 0,
     hasDocuments: documents.some(
       (document) => document.studentId === student.id,
     ),
@@ -217,5 +249,13 @@ export function buildStudentWorkspaceOverview({
     enrollmentActiveWithoutDate,
     hasDuplicateActiveEnrollments: duplicates.length > 0,
     enrollmentYearMismatch,
+    hasLegalGuardian: guardianDiagnostics.hasLegalGuardian,
+    hasGuardianPhone: guardianDiagnostics.hasPhone,
+    hasEmergencyContact: guardianDiagnostics.hasEmergencyContact,
+    hasFinancialResponsible: guardianDiagnostics.hasFinancialResponsible,
+    multiplePriorityOneGuardians: guardianDiagnostics.multiplePriorityOne,
+    multipleFinancialResponsibles:
+      guardianDiagnostics.multipleFinancialResponsible,
+    hasExpiredGuardianRelation: guardianDiagnostics.hasExpiredRelation,
   };
 }
