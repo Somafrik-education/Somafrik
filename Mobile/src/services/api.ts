@@ -1,15 +1,27 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { UserRole } from "../navigation/AppNavigator";
-import { resolveApiBaseUrl, resolveApiRootUrl, isUsingLocalhostOnDevice } from "../config/env";
-
-let accessToken: string | null = null;
+import { isUsingLocalhostOnDevice, resolveApiBaseUrl, resolveApiRootUrl } from "../config/env";
+import {
+  ApiClientError,
+  httpRequest,
+  httpUpload,
+  type SecureUploadFile,
+  type SecureUploadRequestOptions,
+} from "./httpClient";
+import { sanitizeUserFacingError } from "./safeLogger";
+import {
+  clearSecureSession,
+  getAccessToken,
+  saveSessionProfile,
+  saveTokens,
+} from "./secureStorage";
 
 export function getApiBaseUrl() {
   return resolveApiBaseUrl();
 }
 
 /** @deprecated Préférez getApiBaseUrl() — conservé pour compatibilité. */
-export const API_BASE_URL = resolveApiBaseUrl();
+export const API_BASE_URL = ""; // renseigné dynamiquement via getApiBaseUrl()
 
 export type StudentSummary = {
   id: string;
@@ -137,47 +149,47 @@ export type AcademicConfigPayload = {
   reportCardMode: string;
 };
 
-type TeacherSummary = {
-  id: string;
-  publicId?: string;
-  phone: string;
-};
+/** Persist tokens in SecureStore and return a session object without secrets. */
+export async function persistAuthenticatedSession(session: LoginResponse): Promise<LoginResponse> {
+  await saveTokens(session.accessToken ?? null, session.refreshToken ?? null);
+  const safeSession: LoginResponse = {
+    ...session,
+    accessToken: undefined,
+    refreshToken: undefined,
+  };
+  await saveSessionProfile({
+    role: safeSession.role,
+    permissions: safeSession.permissions,
+    user: safeSession.user as unknown as Record<string, unknown>,
+    school: safeSession.school as unknown as Record<string, unknown>,
+  });
+  return safeSession;
+}
+
+export async function hasActiveAccessToken() {
+  return Boolean(await getAccessToken());
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...options?.headers,
-    },
-    ...options,
-  });
-
-  const contentType = response.headers.get("content-type") ?? "";
-  const isJson = contentType.includes("application/json");
-  const data = isJson ? await response.json() : null;
-
-  if (!response.ok) {
-    throw new Error(data?.message ?? "L'API Somafrik ne répond pas correctement. Vérifiez que le backend est lancé sur le port 5000.");
+  try {
+    return await httpRequest<T>(path, options);
+  } catch (error) {
+    if (error instanceof ApiClientError) throw error;
+    throw new ApiClientError(
+      sanitizeUserFacingError(error, "Impossible de joindre le serveur Somafrik."),
+    );
   }
-
-  if (!isJson) {
-    throw new Error("Réponse API invalide. Vérifiez l'adresse API et redémarrez le backend.");
-  }
-
-  return data;
 }
 
 export function login(payload: LoginPayload) {
   return request<LoginResponse>("/login", {
     method: "POST",
     body: JSON.stringify(payload),
-  }).catch((error) => {
-    throw buildApiConnectionError(error);
-  }).then((session) => {
-    accessToken = session.accessToken ?? null;
-    return session;
-  });
+  })
+    .catch((error) => {
+      throw buildApiConnectionError(error);
+    })
+    .then((session) => persistAuthenticatedSession(session));
 }
 
 export async function logout() {
@@ -185,8 +197,10 @@ export async function logout() {
     await request<{ message: string }>("/auth/logout", {
       method: "POST",
     });
+  } catch {
+    // best effort — on nettoie toujours localement
   } finally {
-    accessToken = null;
+    await clearSecureSession();
   }
 }
 
@@ -197,9 +211,10 @@ export function changePassword(newPassword: string) {
       method: "POST",
       body: JSON.stringify({ newPassword }),
     },
-  ).then((response) => {
+  ).then(async (response) => {
     if (response.accessToken) {
-      accessToken = response.accessToken;
+      const { getRefreshToken } = await import("./secureStorage");
+      await saveTokens(response.accessToken, await getRefreshToken());
     }
     return response;
   });
@@ -294,68 +309,102 @@ export function saveBackOfficeState(payload: BackOfficeStatePayload) {
 }
 
 export function resetUserPassword(userId: string, temporaryPassword: string) {
-  return request<{ temporaryPassword: string; user: unknown }>(`/users/${encodeURIComponent(userId)}/reset-password`, {
-    method: "POST",
-    body: JSON.stringify({ temporaryPassword }),
-  });
+  return request<{ temporaryPassword: string; user: unknown }>(
+    `/users/${encodeURIComponent(userId)}/reset-password`,
+    {
+      method: "POST",
+      body: JSON.stringify({ temporaryPassword }),
+    },
+  );
 }
 
-/** URL du bulletin PDF (sans JWT — l'auth passe uniquement par Authorization: Bearer). */
+/** URL du bulletin PDF (sans JWT). */
 export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
   return `${getApiBaseUrl()}/students/${encodeURIComponent(studentId)}/report.pdf?period=${encodeURIComponent(period)}`;
 }
 
 /**
- * S2.1 — Télécharge le bulletin via Authorization: Bearer (expo-file-system natif),
- * puis renvoie une URI locale ouvrable. Plus aucun JWT dans la query string.
+ * S2.3 — Téléchargement sécurisé PDF.
+ *
+ * Adaptateur natif volontaire autour du client HTTP central (`httpClient`) :
+ * `FileSystem.downloadAsync` écrit directement vers le cache et n'est pas
+ * interchangeable avec `fetch` JSON. Les autres appels réseau doivent passer
+ * par `httpRequest` / `httpUpload` — ne pas dupliquer ce pattern ailleurs.
+ * Contrôles : Bearer, status 200 strict, MIME PDF/octet-stream, taille > 0.
  */
 export async function downloadReportCardPdf(studentId: string, period = "Trimestre 1"): Promise<string> {
-  if (!accessToken) {
-    throw new Error("Authentification requise pour télécharger le bulletin PDF.");
+  const token = await getAccessToken();
+  if (!token) {
+    throw new ApiClientError("Authentification requise pour télécharger le bulletin PDF.");
   }
 
   const url = getReportCardPdfUrl(studentId, period);
   const cacheDir = FileSystem.cacheDirectory;
   if (!cacheDir) {
-    throw new Error("Stockage local indisponible pour ouvrir le bulletin PDF.");
+    throw new ApiClientError("Stockage local indisponible pour ouvrir le bulletin PDF.");
   }
 
   const safePeriod = period.replace(/[^\w.-]+/g, "-").toLowerCase();
   const target = `${cacheDir}bulletin-${studentId}-${safePeriod}.pdf`;
+  // Exception documentée : adaptateur FileSystem (voir JSDoc ci-dessus).
   const result = await FileSystem.downloadAsync(url, target, {
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${token}`,
     },
   });
 
-  if (result.status < 200 || result.status >= 300) {
-    throw new Error(
+  if (result.status !== 200) {
+    throw new ApiClientError(
       result.status === 401 || result.status === 403
         ? "Accès refusé au bulletin PDF."
-        : `Impossible de télécharger le bulletin PDF (HTTP ${result.status}).`,
+        : "Impossible de télécharger le bulletin PDF.",
     );
+  }
+
+  const mime = String(result.mimeType ?? "").toLowerCase();
+  if (mime && !mime.includes("pdf") && !mime.includes("octet-stream")) {
+    throw new ApiClientError("Type de fichier PDF invalide.");
+  }
+
+  const info = await FileSystem.getInfoAsync(result.uri);
+  const size = "size" in info ? Number(info.size ?? 0) : 0;
+  if (!info.exists || size <= 0) {
+    throw new ApiClientError("Bulletin PDF vide ou illisible.");
   }
 
   return result.uri;
 }
 
+/**
+ * Upload sécurisé : MIME + taille validés avant FormData (impossible de contourner).
+ * HTTPS + Authorization via httpClient.
+ */
+export function uploadSecureFile(
+  path: string,
+  file: SecureUploadFile,
+  options?: SecureUploadRequestOptions,
+) {
+  return httpUpload(path, file, options);
+}
+
+export type { SecureUploadFile };
+
 function buildApiConnectionError(error: unknown) {
-  const reason = error instanceof Error ? error.message : "Connexion API impossible";
-  const apiUrl = getApiBaseUrl();
-  const rootUrl = resolveApiRootUrl();
+  if (error instanceof ApiClientError) {
+    return error;
+  }
+  const reason = sanitizeUserFacingError(error, "Connexion API impossible");
   if (isUsingLocalhostOnDevice()) {
-    return new Error(
-      `${reason}\n\nSur téléphone, localhost ne fonctionne pas.\n` +
-        `Mettez l'IP du PC dans Mobile/.env.local :\n` +
-        `EXPO_PUBLIC_API_URL=http://VOTRE_IP:5000\n` +
-        `Puis rebuild l'application.`
+    return new ApiClientError(
+      `${reason} Configurez EXPO_PUBLIC_API_URL vers l'IP de votre machine, puis reconstruisez l'application.`,
     );
   }
-  return new Error(
-    `${reason}\n\nAPI : ${apiUrl}\n` +
-      `Backend attendu : ${rootUrl}\n` +
-      `1) Lancez scripts\\start-backend.ps1 sur le PC\n` +
-      `2) Même Wi-Fi que le téléphone\n` +
-      `3) Testez ${rootUrl}/api/health dans le navigateur du téléphone`
-  );
+  try {
+    resolveApiRootUrl();
+  } catch {
+    // ignore
+  }
+  return new ApiClientError(reason);
 }
+
+export { ApiClientError };
