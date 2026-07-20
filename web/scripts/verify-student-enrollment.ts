@@ -159,6 +159,48 @@ function testSelectCurrentEnrollmentDeterministic() {
   );
 }
 
+function testRecencyBreaksTiesAgainstAlphabeticalIds() {
+  // id "A" est alphabétiquement avant "B" — sans récence réelle, A serait choisi.
+  const olderFirst = [
+    createEnrollment({
+      id: "A",
+      academicYear: "2026-2027",
+      status: "ENROLLED",
+      schoolCode: "CD-2026-0001",
+      enrolledAt: "2026-01-01",
+    }),
+    createEnrollment({
+      id: "B",
+      academicYear: "2026-2027",
+      status: "ENROLLED",
+      schoolCode: "CD-2026-0001",
+      enrolledAt: "2026-09-01",
+    }),
+  ];
+
+  const selectedFromOlderFirst = selectCurrentStudentEnrollment({
+    enrollments: olderFirst,
+    academicYear: "2026-2027",
+    schoolCode: "CD-2026-0001",
+  });
+  assertEqual(
+    selectedFromOlderFirst?.id,
+    "B",
+    "Récence : date plus récente gagne malgré id alphabétique défavorable",
+  );
+
+  const selectedFromReversed = selectCurrentStudentEnrollment({
+    enrollments: [...olderFirst].reverse(),
+    academicYear: "2026-2027",
+    schoolCode: "CD-2026-0001",
+  });
+  assertEqual(
+    selectedFromReversed?.id,
+    "B",
+    "Récence indépendante de l'ordre du tableau et des ids",
+  );
+}
+
 function testSingleActivePerYearAndDuplicates() {
   const ok = assertSingleActiveEnrollmentPerYear([
     createEnrollment({
@@ -248,6 +290,21 @@ function testLegacyNormalizationAndLabels() {
     normalizeStudentEnrollmentStatus("Sorti"),
     "WITHDRAWN",
     "Normalisation Sorti",
+  );
+  assertEqual(
+    normalizeStudentEnrollmentStatus(""),
+    "PENDING_REVIEW",
+    "Valeur vide → PENDING_REVIEW (pas ENROLLED silencieux)",
+  );
+  assertEqual(
+    normalizeStudentEnrollmentStatus("STATUT-CORROMPU"),
+    "PENDING_REVIEW",
+    "Valeur inconnue → PENDING_REVIEW",
+  );
+  assertEqual(
+    normalizeStudentEnrollmentStatus(null, { fallback: "ENROLLED" }),
+    "ENROLLED",
+    "Fallback explicite legacy ENROLLED",
   );
 
   const labels = listEnrollmentStatusLabels();
@@ -577,6 +634,7 @@ function testTimelineAndAlerts() {
 function main() {
   const tests = [
     ["sélection déterministe", testSelectCurrentEnrollmentDeterministic],
+    ["récence vs ids alphabétiques", testRecencyBreaksTiesAgainstAlphabeticalIds],
     ["unicité inscription active", testSingleActivePerYearAndDuplicates],
     ["règles de classe", testClassRulesAndStatuses],
     ["normalisation et libellés", testLegacyNormalizationAndLabels],

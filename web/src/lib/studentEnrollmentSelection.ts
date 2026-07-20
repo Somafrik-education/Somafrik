@@ -27,11 +27,36 @@ function isCurrentCandidateStatus(status: StudentEnrollmentStatus): boolean {
   return CURRENT_CANDIDATE_STATUSES.includes(status);
 }
 
+function matchesYear(
+  enrollment: StudentEnrollmentRecord,
+  academicYear: string,
+): boolean {
+  return Boolean(academicYear) && enrollment.academicYear.trim() === academicYear;
+}
+
+function matchesSchool(
+  enrollment: StudentEnrollmentRecord,
+  schoolCode: string,
+): boolean {
+  return (
+    Boolean(schoolCode) &&
+    enrollment.schoolCode.trim().toLowerCase() === schoolCode.toLowerCase()
+  );
+}
+
+function getStatusPriority(status: StudentEnrollmentStatus): number {
+  if (isActiveEnrollmentStatus(status)) return 2;
+  if (isCurrentCandidateStatus(status)) return 1;
+  return 0;
+}
+
 function compareAcademicYearDesc(left: string, right: string): number {
   return right.localeCompare(left);
 }
 
-function enrollmentRecencyScore(enrollment: StudentEnrollmentRecord): number {
+export function enrollmentRecencyScore(
+  enrollment: StudentEnrollmentRecord,
+): number {
   const candidates = [
     enrollment.enrolledAt,
     enrollment.validatedAt,
@@ -51,36 +76,35 @@ function enrollmentRecencyScore(enrollment: StudentEnrollmentRecord): number {
   return 0;
 }
 
-function rankEnrollment(
-  enrollment: StudentEnrollmentRecord,
+/**
+ * Comparateur lexicographique explicite :
+ * année demandée → établissement → priorité de statut → récence → id.
+ */
+export function compareEnrollmentPriority(
+  left: StudentEnrollmentRecord,
+  right: StudentEnrollmentRecord,
   academicYear: string,
   schoolCode: string,
 ): number {
-  let score = 0;
+  const yearDelta =
+    Number(matchesYear(right, academicYear)) -
+    Number(matchesYear(left, academicYear));
+  if (yearDelta !== 0) return yearDelta;
 
-  if (
-    academicYear &&
-    enrollment.academicYear.trim() === academicYear.trim()
-  ) {
-    score += 1_000_000;
-  }
+  const schoolDelta =
+    Number(matchesSchool(right, schoolCode)) -
+    Number(matchesSchool(left, schoolCode));
+  if (schoolDelta !== 0) return schoolDelta;
 
-  if (
-    schoolCode &&
-    enrollment.schoolCode.trim().toLowerCase() === schoolCode.trim().toLowerCase()
-  ) {
-    score += 100_000;
-  }
+  const statusDelta =
+    getStatusPriority(right.status) - getStatusPriority(left.status);
+  if (statusDelta !== 0) return statusDelta;
 
-  if (isActiveEnrollmentStatus(enrollment.status)) {
-    score += 10_000;
-  } else if (isCurrentCandidateStatus(enrollment.status)) {
-    score += 5_000;
-  }
+  const recencyDelta =
+    enrollmentRecencyScore(right) - enrollmentRecencyScore(left);
+  if (recencyDelta !== 0) return recencyDelta;
 
-  score += Math.min(enrollmentRecencyScore(enrollment) / 1_000, 9_999);
-
-  return score;
+  return left.id.localeCompare(right.id);
 }
 
 /**
@@ -99,25 +123,14 @@ export function selectCurrentStudentEnrollment({
   const year = String(academicYear ?? "").trim();
   const school = String(schoolCode ?? "").trim();
 
-  const sorted = [...enrollments].sort((left, right) => {
-    const rankDelta =
-      rankEnrollment(right, year, school) - rankEnrollment(left, year, school);
-    if (rankDelta !== 0) return rankDelta;
-
-    const yearDelta = compareAcademicYearDesc(
-      left.academicYear,
-      right.academicYear,
-    );
-    if (yearDelta !== 0) return yearDelta;
-
-    return left.id.localeCompare(right.id);
-  });
+  const sorted = [...enrollments].sort((left, right) =>
+    compareEnrollmentPriority(left, right, year, school),
+  );
 
   const preferredActive = sorted.find(
     (enrollment) =>
-      (!year || enrollment.academicYear.trim() === year) &&
-      (!school ||
-        enrollment.schoolCode.trim().toLowerCase() === school.toLowerCase()) &&
+      (!year || matchesYear(enrollment, year)) &&
+      (!school || matchesSchool(enrollment, school)) &&
       isActiveEnrollmentStatus(enrollment.status),
   );
 
@@ -127,9 +140,8 @@ export function selectCurrentStudentEnrollment({
 
   const preferredAdmission = sorted.find(
     (enrollment) =>
-      (!year || enrollment.academicYear.trim() === year) &&
-      (!school ||
-        enrollment.schoolCode.trim().toLowerCase() === school.toLowerCase()) &&
+      (!year || matchesYear(enrollment, year)) &&
+      (!school || matchesSchool(enrollment, school)) &&
       isCurrentCandidateStatus(enrollment.status),
   );
 

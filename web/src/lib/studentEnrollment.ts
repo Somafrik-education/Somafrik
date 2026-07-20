@@ -218,8 +218,7 @@ export function toStudentEnrollmentRecord(
     programName: resolveProgramName(enrollment),
     status: normalizeStudentEnrollmentStatus(enrollment.status),
     source,
-    applicationReference:
-      source === "PUBLIC_WEBSITE" ? applicationReference : applicationReference,
+    applicationReference,
     requestedAt: normalizeOptional(raw.requestedAt),
     enrolledAt,
     validatedAt: normalizeOptional(raw.validatedAt),
@@ -268,7 +267,10 @@ export function deriveEnrollmentFromLegacyStudent(
     className,
     programId: null,
     programName: null,
-    status: normalizeStudentEnrollmentStatus(schoolStatus ?? "Inscrit"),
+    status: normalizeStudentEnrollmentStatus(schoolStatus, {
+      // Fiche élève historique sans statut : conserver le comportement « Inscrit ».
+      fallback: "ENROLLED",
+    }),
     source: "MIGRATION",
     applicationReference: null,
     requestedAt: null,

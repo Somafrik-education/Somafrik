@@ -155,20 +155,32 @@ export function isStudentEnrollmentStatus(
   );
 }
 
+export interface NormalizeStudentEnrollmentStatusOptions {
+  /**
+   * Statut utilisé lorsque la valeur est vide ou inconnue.
+   * Défaut : PENDING_REVIEW (évite de créer silencieusement une inscription active).
+   */
+  fallback?: StudentEnrollmentStatus;
+}
+
 /**
  * Normalise un statut hérité (FR, mojibake, canonique) vers le type fermé.
- * Défaut : ENROLLED pour les valeurs inconnues non vides (compat données live).
+ * Les valeurs vides / inconnues utilisent `fallback` (PENDING_REVIEW par défaut).
+ * Le pont legacy peut passer `fallback: "ENROLLED"` lorsque l'ancien champ est absent.
  */
 export function normalizeStudentEnrollmentStatus(
   value: unknown,
+  options: NormalizeStudentEnrollmentStatusOptions = {},
 ): StudentEnrollmentStatus {
+  const fallback = options.fallback ?? "PENDING_REVIEW";
+
   if (isStudentEnrollmentStatus(value)) {
     return value;
   }
 
   const raw = String(value ?? "").trim();
   if (!raw) {
-    return "ENROLLED";
+    return fallback;
   }
 
   const folded = foldStatusKey(raw);
@@ -190,7 +202,7 @@ export function normalizeStudentEnrollmentStatus(
     return "PENDING_REVIEW";
   }
 
-  return "ENROLLED";
+  return fallback;
 }
 
 export function getEnrollmentStatusPresentation(
