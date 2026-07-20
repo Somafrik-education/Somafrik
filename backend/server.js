@@ -55,6 +55,14 @@ const {
   sanitizeAuthPayloadForResponse,
   stripSensitiveFieldsDeep,
 } = require("./lib/sanitizeUserForResponse");
+const {
+  evaluateBackOfficeWriteAccess,
+  getEditableEntitiesForPrincipalRole,
+} = require("./lib/backOfficeWritableEntities");
+const {
+  canAccessMvpRoutes,
+  scopeMvpDatasetForPrincipal,
+} = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
 
@@ -1203,18 +1211,21 @@ app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/
   res.json(await cacheService.remember("v2:reports:advanced", () => repository.getAdvancedReportsV2()));
 }));
 
-app.get("/api/mvp/readiness", requireAuth, asyncHandler(async (_req, res) => {
-  const { mvpBusinessService } = await getRuntime();
+app.get("/api/mvp/readiness", requireAuth, asyncHandler(async (req, res) => {
+  assertMvpAccess(req.principal);
+  const mvpBusinessService = await getScopedMvpBusinessService(req.principal);
   res.json(stripSensitiveFieldsDeep(mvpBusinessService.getReadiness()));
 }));
 
-app.get("/api/mvp/snapshot", requireAuth, asyncHandler(async (_req, res) => {
-  const { mvpBusinessService } = await getRuntime();
+app.get("/api/mvp/snapshot", requireAuth, asyncHandler(async (req, res) => {
+  assertMvpAccess(req.principal);
+  const mvpBusinessService = await getScopedMvpBusinessService(req.principal);
   res.json(stripSensitiveFieldsDeep(mvpBusinessService.getSnapshot()));
 }));
 
-app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (_req, res) => {
-  const { mvpBusinessService } = await getRuntime();
+app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (req, res) => {
+  assertMvpAccess(req.principal);
+  const mvpBusinessService = await getScopedMvpBusinessService(req.principal);
   res.json(stripSensitiveFieldsDeep(mvpBusinessService.getEstablishmentDashboard()));
 }));
 
@@ -1597,6 +1608,14 @@ function assertBackOfficeWriter(principal, touchedKeys = []) {
   }
 
   if (canAccessBackOfficeRole(principal.role)) {
+    const decision = evaluateBackOfficeWriteAccess(
+      principal,
+      touchedKeys,
+      backOfficeDeletableEntities,
+    );
+    if (!decision.ok) {
+      throw new BusinessError(403, "Permission insuffisante pour modifier ces données.");
+    }
     return;
   }
 
@@ -1610,6 +1629,31 @@ function assertBackOfficeWriter(principal, touchedKeys = []) {
   }
 
   throw new BusinessError(403, "Accès plateforme non autorisé");
+}
+
+function assertMvpAccess(principal) {
+  if (!canAccessMvpRoutes(principal)) {
+    throw new BusinessError(403, "Accès MVP non autorisé pour ce rôle.");
+  }
+}
+
+async function getScopedMvpBusinessService(principal) {
+  const runtime = await getRuntime();
+  const state = await getAuthoritativeBackOfficeState();
+  const scoped = scopeMvpDatasetForPrincipal(
+    {
+      school: runtime.school,
+      platformSchools: runtime.platformSchools ?? state.schools ?? [],
+      students: state.students ?? runtime.students ?? [],
+      classes: state.classes ?? runtime.classes ?? [],
+      courses: state.courses ?? runtime.courses ?? [],
+      notes: state.notes ?? runtime.notes ?? [],
+      payments: state.payments ?? runtime.payments ?? [],
+    },
+    principal,
+    tenantScopeService,
+  );
+  return new MvpBusinessService(scoped);
 }
 
 function assertCanManageNotes(principal) {
@@ -2999,39 +3043,17 @@ function rowKey(row = {}) {
 }
 
 function getEditableEntitiesForPrincipal(principal) {
-  if (!principal || isSuperAdminPrincipal(principal)) {
-    return backOfficeDeletableEntities;
-  }
-
-  if (principal.role === "Admin Pays") {
-    return roleGovernanceService.editableEntitiesForCountryAdmin();
-  }
-
-  return [
-    "contacts",
-    "relations",
-    "users",
-    "students",
-    "teachers",
-    "classes",
-    "courses",
-    "assignments",
-    "courseSchedules",
-    "payments",
-    "paymentStatuses",
-    "feeGrids",
-    "schoolFeeItems",
-    "studentFees",
-    "feeTariffHistory",
-    "presences",
-    "notes",
-    "evaluations",
-    "exams",
-    "bulletins",
-    "documents",
-    "announcements",
-    "messages",
+  const countryEntities = [
+    ...new Set([
+      ...roleGovernanceService.editableEntitiesForCountryAdmin(),
+      "notifications",
+    ]),
   ];
+  return getEditableEntitiesForPrincipalRole(
+    principal,
+    backOfficeDeletableEntities,
+    countryEntities,
+  );
 }
 
 const SCHOOL_SCOPED_DELETABLE_ENTITIES = new Set([
