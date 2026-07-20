@@ -25,6 +25,7 @@ import {
   type SchoolEntityKey,
 } from "../lib/entityModules";
 import { applyActiveGridsToStudent } from "../lib/fees";
+import { adaptLegacyStudents } from "../lib/studentDomain";
 import {
   getTeacherProvisioningOptions,
   parseTeacherProvisioningSelection,
@@ -1269,7 +1270,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
     if (module.key === "students" && !exists) {
       patch.studentFees = applyActiveGridsToStudent(
-        { ...state, ...patch, students: nextAllRows },
+        { ...state, ...patch, students: adaptLegacyStudents(nextAllRows) },
         nextItem as Record<string, unknown>,
       );
     }
@@ -1833,7 +1834,16 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                     Élèves
                   </Button>
                 </Link>
-              ) : null}
+              ) : null}{module.key === "students" && row.id ? (
+  <Link
+    to={`/etablissement/eleves/${encodeURIComponent(String(row.id))}`}
+    className="inline-flex"
+  >
+    <Button variant="secondary" size="sm" type="button">
+      Dossier
+    </Button>
+  </Link>
+) : null}
               {canUpdate ? (
                 <Button
                   variant="secondary"
