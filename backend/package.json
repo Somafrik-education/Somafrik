@@ -14,6 +14,7 @@
     "verify:planning-conflicts": "node scripts/verify-planning-conflicts.js",
     "verify:sanitize-user-responses": "node scripts/verify-sanitize-user-responses.js",
     "verify:rbac-s1-4": "node scripts/verify-rbac-s1-4.js",
+    "verify:jwt-header": "node scripts/verify-jwt-header.js",
     "postinstall": "node ./node_modules/puppeteer/install.mjs"
   },
   "dependencies": {

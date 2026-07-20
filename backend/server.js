@@ -99,6 +99,8 @@ app.disable("x-powered-by");
 app.use(appSecurityHeaders);
 app.use(cors(buildCorsOptions({ BusinessError })));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? "1mb" }));
+// S2.1 — JWT uniquement via Authorization: Bearer (jamais ?token= / ?access_token=).
+app.use("/api", rejectJwtInQueryString);
 app.use(
   "/backoffice",
   express.static(path.join(__dirname, "..", "BackOffice"), {
@@ -3640,11 +3642,32 @@ async function hydrateParentPrincipal(principal) {
   };
 }
 
+function rejectJwtInQueryString(req, res, next) {
+  const query = req.query ?? {};
+  if (query.token != null || query.access_token != null) {
+    return next(
+      new BusinessError(
+        401,
+        "JWT dans l'URL interdit. Utilisez Authorization: Bearer <token>.",
+      ),
+    );
+  }
+  return next();
+}
+
 function requireAuth(req, res, next) {
   (async () => {
+    // S2.1 — auth exclusivement via header Bearer (plus de fallback query).
+    if (req.query?.token != null || req.query?.access_token != null) {
+      throw new BusinessError(
+        401,
+        "JWT dans l'URL interdit. Utilisez Authorization: Bearer <token>.",
+      );
+    }
+
     const header = req.get("authorization") ?? "";
     const match = header.match(/^Bearer\s+(.+)$/i);
-    const token = match?.[1] ?? req.query.access_token;
+    const token = match?.[1];
 
     if (!token) {
       throw new BusinessError(401, "Authentification JWT requise");
