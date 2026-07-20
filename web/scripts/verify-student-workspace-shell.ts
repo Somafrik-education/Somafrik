@@ -279,6 +279,11 @@ function testComputedAlerts() {
     multiplePriorityOneGuardians: false,
     multipleFinancialResponsibles: false,
     hasExpiredGuardianRelation: false,
+    hasCriticalAllergy: false,
+    hasCriticalCondition: false,
+    hasPhysician: false,
+    hasBloodType: false,
+    hasMedicalUpdate: false,
   });
 
   const ids = alerts.map((alert) => alert.id);
@@ -286,6 +291,8 @@ function testComputedAlerts() {
   assert(ids.includes("missing-guardians"), "Alerte responsables");
   assert(ids.includes("missing-contact"), "Alerte contact");
   assert(ids.includes("missing-identity-fields"), "Alerte identité");
+  assert(ids.includes("missing-physician"), "Alerte médecin");
+  assert(ids.includes("missing-blood-type"), "Alerte groupe sanguin");
 
   const healthy = buildStudentWorkspaceAlerts({
     gender: "F",
@@ -310,6 +317,11 @@ function testComputedAlerts() {
     multiplePriorityOneGuardians: false,
     multipleFinancialResponsibles: false,
     hasExpiredGuardianRelation: false,
+    hasCriticalAllergy: false,
+    hasCriticalCondition: false,
+    hasPhysician: true,
+    hasBloodType: true,
+    hasMedicalUpdate: true,
   });
   assertEqual(healthy.length, 0, "Aucune alerte si dossier complet");
 }
@@ -384,6 +396,10 @@ function testGuardiansSummaryAndImplementedFlags() {
   assert(
     isStudentWorkspaceModuleImplemented("guardians"),
     "Guardians implémenté (C1.3)",
+  );
+  assert(
+    isStudentWorkspaceModuleImplemented("health"),
+    "Médical implémenté (C1.4)",
   );
 }
 

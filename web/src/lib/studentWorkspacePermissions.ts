@@ -24,12 +24,28 @@ export function canReadStudentWorkspaceModule(
   );
 
   if (granularStudentPermissions.length > 0) {
-    return granularStudentPermissions.some(
-      (token) => token.trim().toLowerCase() === permission.toLowerCase(),
+    return granularStudentPermissions.some((token) =>
+      studentPermissionMatches(permission, token),
     );
   }
 
   return true;
+}
+
+/** C1.4 : `student.medical.read` ↔ `student.health.read` (alias temporaire). */
+function studentPermissionMatches(
+  required: StudentWorkspacePermission,
+  token: string,
+): boolean {
+  const expected = required.trim().toLowerCase();
+  const actual = token.trim().toLowerCase();
+  if (expected === actual) return true;
+
+  const medicalReadAliases = new Set([
+    "student.medical.read",
+    "student.health.read",
+  ]);
+  return medicalReadAliases.has(expected) && medicalReadAliases.has(actual);
 }
 
 export function filterAccessibleStudentWorkspaceModules(

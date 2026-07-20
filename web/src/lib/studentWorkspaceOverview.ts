@@ -19,6 +19,11 @@ import {
   diagnoseGuardianRelations,
   selectPrimaryGuardian,
 } from "./studentGuardianSelection";
+import {
+  diagnoseMedicalRecord,
+  toStudentMedicalRecord,
+  type StudentMedicalRecord,
+} from "./studentMedical";
 
 export interface StudentWorkspaceOverview {
   studentId: string;
@@ -61,6 +66,12 @@ export interface StudentWorkspaceOverview {
   multiplePriorityOneGuardians: boolean;
   multipleFinancialResponsibles: boolean;
   hasExpiredGuardianRelation: boolean;
+  /** Champs C1.4 pour alertes médicales. */
+  hasCriticalAllergy: boolean;
+  hasCriticalCondition: boolean;
+  hasPhysician: boolean;
+  hasBloodType: boolean;
+  hasMedicalUpdate: boolean;
 }
 
 export interface BuildStudentWorkspaceOverviewInput {
@@ -76,6 +87,7 @@ export interface BuildStudentWorkspaceOverviewInput {
   persons?: readonly Person[];
   documents?: readonly StudentDocument[];
   medicalProfile?: StudentMedicalProfile | null;
+  medicalRecord?: StudentMedicalRecord | null;
 }
 
 function buildStudentFullName(
@@ -153,6 +165,7 @@ export function buildStudentWorkspaceOverview({
   persons = [],
   documents = [],
   medicalProfile = null,
+  medicalRecord = null,
 }: BuildStudentWorkspaceOverviewInput): StudentWorkspaceOverview {
   const currentEnrollment = selectCurrentStudentEnrollment({
     enrollments: enrollmentRecords,
@@ -209,6 +222,11 @@ export function buildStudentWorkspaceOverview({
       currentEnrollment.academicYear.trim() !== academicYear.trim(),
   );
 
+  const resolvedMedicalRecord =
+    medicalRecord ??
+    toStudentMedicalRecord(medicalProfile, student.id);
+  const medicalDiagnostics = diagnoseMedicalRecord(resolvedMedicalRecord);
+
   return {
     studentId: student.id,
     fullName: buildStudentFullName(student, person),
@@ -242,7 +260,7 @@ export function buildStudentWorkspaceOverview({
     hasDocuments: documents.some(
       (document) => document.studentId === student.id,
     ),
-    hasMedicalProfile: medicalProfile?.studentId === student.id,
+    hasMedicalProfile: resolvedMedicalRecord.hasProfile,
     hasActiveEnrollment,
     enrollmentIsIncomplete,
     enrollmentApprovedWithoutClass,
@@ -257,5 +275,10 @@ export function buildStudentWorkspaceOverview({
     multipleFinancialResponsibles:
       guardianDiagnostics.multipleFinancialResponsible,
     hasExpiredGuardianRelation: guardianDiagnostics.hasExpiredRelation,
+    hasCriticalAllergy: medicalDiagnostics.hasCriticalAllergy,
+    hasCriticalCondition: medicalDiagnostics.hasCriticalCondition,
+    hasPhysician: medicalDiagnostics.hasPhysician,
+    hasBloodType: medicalDiagnostics.hasBloodType,
+    hasMedicalUpdate: medicalDiagnostics.hasMedicalUpdate,
   };
 }
