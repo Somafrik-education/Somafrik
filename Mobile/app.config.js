@@ -21,8 +21,16 @@ loadEnvFile(path.join(workspaceRoot, ".env"));
 loadEnvFile(path.join(mobileRoot, ".env.local"));
 
 module.exports = ({ config }) => {
-  const apiUrl = String(process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:5000").replace(/\/$/, "");
+  const apiUrl = String(process.env.EXPO_PUBLIC_API_URL ?? "").replace(/\/$/, "");
   const demoMode = process.env.EXPO_PUBLIC_DEMO_MODE === "true";
+  const isProdProfile =
+    process.env.EAS_BUILD_PROFILE === "production" ||
+    process.env.APP_ENV === "production" ||
+    process.env.NODE_ENV === "production";
+
+  if (isProdProfile && apiUrl && !apiUrl.startsWith("https://")) {
+    throw new Error("S2.3 — EXPO_PUBLIC_API_URL doit être HTTPS en production.");
+  }
 
   return {
     ...config,
@@ -32,8 +40,9 @@ module.exports = ({ config }) => {
     userInterfaceStyle: "light",
     extra: {
       ...config.extra,
-      apiUrl,
+      apiUrl: apiUrl || (isProdProfile ? "" : "http://localhost:5000"),
       demoMode,
+      certificatePinningReady: true,
     },
     ios: {
       ...config.ios,
@@ -43,8 +52,12 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: "com.somafrik.app",
-      // Obligatoire pour http://192.168.x.x:5000 en build release (AAB/APK Play Store).
-      usesCleartextTraffic: true,
+      // S2.3 — cleartext HTTP uniquement hors production (dev LAN / émulateur).
+      usesCleartextTraffic: !isProdProfile,
     },
+    plugins: [
+      ...(config.plugins ?? []),
+      "expo-secure-store",
+    ],
   };
 };

@@ -163,7 +163,6 @@ export default function LoginScreen({ navigation, route }: Props) {
       const response = await changePassword(newPassword.trim());
       completeLogin({
         ...pendingSession,
-        accessToken: response.accessToken ?? pendingSession.accessToken,
         user: {
           ...pendingSession.user,
           ...response.user,
