@@ -1,54 +1,56 @@
-import type { StudentEnrollmentStatus } from "./studentDomain";
+import type { StudentEnrollmentStatus, StudentStatus } from "./studentDomain";
 import type { StudentWorkspace } from "./studentWorkspaceService";
+import {
+  formatAgeLabel,
+  formatCivilDateLabel,
+} from "./studentWorkspaceDates";
+import { buildStudentWorkspaceAlerts, type StudentWorkspaceAlert } from "./studentWorkspaceAlerts";
 
 export interface StudentWorkspaceViewModel {
   studentId: string;
   displayName: string;
   matriculeLabel: string;
-    genderLabel: string;
+  genderLabel: string;
   birthDateLabel: string;
   birthPlaceLabel: string;
   nationalityLabel: string;
   phoneLabel: string;
   emailLabel: string;
   addressLabel: string;
+  ageLabel: string;
   enrollmentStatus: StudentEnrollmentStatus | null;
   enrollmentStatusLabel: string;
+  enrollmentDateLabel: string;
   academicYearLabel: string;
   classLabel: string;
+  schoolNameLabel: string;
+  studentStatus: StudentStatus | null;
+  isActive: boolean;
+  activeStatusLabel: string;
+  guardiansCount: number;
+  guardiansCountLabel: string;
+  primaryGuardianNameLabel: string;
+  primaryGuardianPhoneLabel: string;
   hasGuardians: boolean;
   hasDocuments: boolean;
   hasMedicalProfile: boolean;
+  alerts: StudentWorkspaceAlert[];
 }
 
 export interface BuildStudentWorkspaceViewModelOptions {
   missingValueLabel?: string;
   missingEnrollmentLabel?: string;
+  missingGuardiansLabel?: string;
+  referenceDate?: Date;
 }
 
 const DEFAULT_MISSING_VALUE_LABEL = "Non renseigné";
-const DEFAULT_MISSING_ENROLLMENT_LABEL = "Non inscrit";
+const DEFAULT_MISSING_ENROLLMENT_LABEL = "Aucune inscription active";
+const DEFAULT_MISSING_GUARDIANS_LABEL = "Aucun responsable associé";
 
 function normalizeLabel(value: string | null, fallback: string): string {
   const normalizedValue = value?.trim();
   return normalizedValue || fallback;
-}
-function formatDateLabel(value: string | null, fallback: string): string {
-  if (!value) {
-    return fallback;
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(date);
 }
 
 export function buildStudentWorkspaceViewModel(
@@ -60,31 +62,42 @@ export function buildStudentWorkspaceViewModel(
   const missingEnrollmentLabel =
     options.missingEnrollmentLabel?.trim() ||
     DEFAULT_MISSING_ENROLLMENT_LABEL;
+  const missingGuardiansLabel =
+    options.missingGuardiansLabel?.trim() || DEFAULT_MISSING_GUARDIANS_LABEL;
   const { overview } = workspace;
 
   return {
     studentId: overview.studentId,
     displayName: normalizeLabel(overview.fullName, missingValueLabel),
     matriculeLabel: normalizeLabel(overview.matricule, missingValueLabel),
-      genderLabel: normalizeLabel(overview.gender, missingValueLabel),
-  birthDateLabel: formatDateLabel(
-    overview.birthDate,
-    missingValueLabel,
-  ),
-  birthPlaceLabel: normalizeLabel(
-    overview.birthPlace,
-    missingValueLabel,
-  ),
-  nationalityLabel: normalizeLabel(
-    overview.nationality,
-    missingValueLabel,
-  ),
-  phoneLabel: normalizeLabel(overview.phone, missingValueLabel),
-  emailLabel: normalizeLabel(overview.email, missingValueLabel),
-  addressLabel: normalizeLabel(overview.address, missingValueLabel),
+    genderLabel: normalizeLabel(overview.gender, missingValueLabel),
+    birthDateLabel: formatCivilDateLabel(
+      overview.birthDate,
+      missingValueLabel,
+    ),
+    birthPlaceLabel: normalizeLabel(
+      overview.birthPlace,
+      missingValueLabel,
+    ),
+    nationalityLabel: normalizeLabel(
+      overview.nationality,
+      missingValueLabel,
+    ),
+    phoneLabel: normalizeLabel(overview.phone, missingValueLabel),
+    emailLabel: normalizeLabel(overview.email, missingValueLabel),
+    addressLabel: normalizeLabel(overview.address, missingValueLabel),
+    ageLabel: formatAgeLabel(
+      overview.birthDate,
+      missingValueLabel,
+      options.referenceDate,
+    ),
     enrollmentStatus: overview.enrollmentStatus,
     enrollmentStatusLabel:
       overview.enrollmentStatus ?? missingEnrollmentLabel,
+    enrollmentDateLabel: formatCivilDateLabel(
+      overview.enrollmentDate,
+      missingValueLabel,
+    ),
     academicYearLabel: normalizeLabel(
       overview.currentAcademicYear,
       missingValueLabel,
@@ -93,8 +106,26 @@ export function buildStudentWorkspaceViewModel(
       overview.currentClassName,
       missingValueLabel,
     ),
+    schoolNameLabel: normalizeLabel(overview.schoolName, missingValueLabel),
+    studentStatus: overview.studentStatus,
+    isActive: overview.isActive,
+    activeStatusLabel: overview.isActive ? "Actif" : "Inactif",
+    guardiansCount: overview.guardiansCount,
+    guardiansCountLabel:
+      overview.guardiansCount > 0
+        ? String(overview.guardiansCount)
+        : missingGuardiansLabel,
+    primaryGuardianNameLabel: normalizeLabel(
+      overview.primaryGuardianName,
+      missingGuardiansLabel,
+    ),
+    primaryGuardianPhoneLabel: normalizeLabel(
+      overview.primaryGuardianPhone,
+      missingValueLabel,
+    ),
     hasGuardians: overview.hasGuardians,
     hasDocuments: overview.hasDocuments,
     hasMedicalProfile: overview.hasMedicalProfile,
+    alerts: buildStudentWorkspaceAlerts(overview),
   };
 }

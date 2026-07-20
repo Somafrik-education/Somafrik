@@ -1,4 +1,5 @@
 import {
+  type Guardian,
   type Person,
   type Student,
   type StudentDocument,
@@ -18,7 +19,9 @@ export interface StudentWorkspace {
 export interface StudentWorkspaceDataSource {
   students: readonly Student[];
   persons?: readonly Person[];
+  schools?: readonly { code: string; name: string }[];
   enrollments?: readonly StudentEnrollment[];
+  guardians?: readonly Guardian[];
   guardianRelations?: readonly StudentGuardianRelation[];
   documents?: readonly StudentDocument[];
   medicalProfiles?: readonly StudentMedicalProfile[];
@@ -54,13 +57,23 @@ export function buildStudentWorkspace({
     (candidate) => candidate.studentId === student.id,
   );
 
+  const schoolName =
+    data.schools?.find(
+      (school) =>
+        school.code.trim().toLowerCase() ===
+        student.schoolCode.trim().toLowerCase(),
+    )?.name ?? null;
+
   return {
     overview: buildStudentWorkspaceOverview({
       student,
       person,
       academicYear: normalizedAcademicYear,
+      schoolName,
       enrollments: data.enrollments,
+      guardians: data.guardians,
       guardianRelations: data.guardianRelations,
+      persons: data.persons,
       documents: data.documents,
       medicalProfile,
     }),

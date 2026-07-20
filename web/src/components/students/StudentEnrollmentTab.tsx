@@ -1,3 +1,10 @@
+import { getStudentWorkspaceModule } from "../../lib/studentWorkspace";
+import { StudentWorkspaceComingSoonTab } from "./StudentWorkspaceComingSoonTab";
+
 export function StudentEnrollmentTab() {
-  return <div>Vue d'ensemble</div>;
+  return (
+    <StudentWorkspaceComingSoonTab
+      module={getStudentWorkspaceModule("enrollments")}
+    />
+  );
 }
