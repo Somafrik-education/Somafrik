@@ -17,6 +17,7 @@ Mobile/ios/build/
 # Environment
 .env
 .env.preproduction
+.env.production
 .env.local
 .env.*.local
 Mobile/.env.local
@@ -28,6 +29,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local tooling / artifacts
+local.properties
+**/local.properties
+*.keystore
+test-results/
 
 # Caches / tooling
 .cache/
