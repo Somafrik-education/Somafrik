@@ -16,6 +16,10 @@ import {
   type StudentGuardianRelationRecord,
 } from "./studentGuardian";
 import {
+  collectStudentMedicalRecord,
+  type StudentMedicalRecord,
+} from "./studentMedical";
+import {
   buildStudentWorkspaceOverview,
   type StudentWorkspaceOverview,
 } from "./studentWorkspaceOverview";
@@ -24,6 +28,7 @@ export interface StudentWorkspace {
   overview: StudentWorkspaceOverview;
   enrollments: StudentEnrollmentRecord[];
   guardians: StudentGuardianRelationRecord[];
+  medical: StudentMedicalRecord;
 }
 
 export interface StudentWorkspaceDataSource {
@@ -65,6 +70,11 @@ export function buildStudentWorkspace({
     ? data.persons?.find((candidate) => candidate.id === student.personId)
     : undefined;
 
+  const medical = collectStudentMedicalRecord({
+    studentId: student.id,
+    medicalProfiles: data.medicalProfiles,
+  });
+
   const medicalProfile = data.medicalProfiles?.find(
     (candidate) => candidate.studentId === student.id,
   );
@@ -104,8 +114,10 @@ export function buildStudentWorkspace({
       persons: data.persons,
       documents: data.documents,
       medicalProfile,
+      medicalRecord: medical,
     }),
     enrollments,
     guardians,
+    medical,
   };
 }

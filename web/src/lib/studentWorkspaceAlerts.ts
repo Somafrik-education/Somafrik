@@ -35,9 +35,33 @@ export function buildStudentWorkspaceAlerts(
     | "multiplePriorityOneGuardians"
     | "multipleFinancialResponsibles"
     | "hasExpiredGuardianRelation"
+    | "hasCriticalAllergy"
+    | "hasCriticalCondition"
+    | "hasPhysician"
+    | "hasBloodType"
+    | "hasMedicalUpdate"
   >,
 ): StudentWorkspaceAlert[] {
   const alerts: StudentWorkspaceAlert[] = [];
+
+  // Alertes médicales critiques en tête (priorité sécurité).
+  if (overview.hasCriticalAllergy) {
+    alerts.push({
+      id: "critical-allergy",
+      severity: "warning",
+      message: "Allergie critique signalée",
+      targetModuleId: "health",
+    });
+  }
+
+  if (overview.hasCriticalCondition) {
+    alerts.push({
+      id: "critical-condition",
+      severity: "warning",
+      message: "Pathologie critique signalée",
+      targetModuleId: "health",
+    });
+  }
 
   if (!overview.hasActiveEnrollment || !overview.enrollmentStatus) {
     alerts.push({
@@ -197,6 +221,33 @@ export function buildStudentWorkspaceAlerts(
       severity: "info",
       message: `Données manquantes : ${missingIdentityFields.join(", ")}`,
       targetModuleId: "identity",
+    });
+  }
+
+  if (!overview.hasPhysician) {
+    alerts.push({
+      id: "missing-physician",
+      severity: "info",
+      message: "Aucun médecin référent",
+      targetModuleId: "health",
+    });
+  }
+
+  if (!overview.hasMedicalUpdate) {
+    alerts.push({
+      id: "missing-medical-update",
+      severity: "info",
+      message: "Profil médical sans date de mise à jour",
+      targetModuleId: "health",
+    });
+  }
+
+  if (!overview.hasBloodType) {
+    alerts.push({
+      id: "missing-blood-type",
+      severity: "info",
+      message: "Groupe sanguin non renseigné",
+      targetModuleId: "health",
     });
   }
 

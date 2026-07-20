@@ -31,6 +31,9 @@ export type StudentWorkspacePermission =
   | "student.finance.read"
   | "student.documents.read"
   | "student.health.read"
+  | "student.medical.read"
+  | "student.medical.update"
+  | "student.medical.validate"
   | "student.discipline.read"
   | "student.history.read"
   | "student.access.read";
@@ -76,8 +79,8 @@ export const STUDENT_WORKSPACE_MODULES = [
     id: "health",
     title: "Médical",
     icon: "heart-pulse",
-    enabledByDefault: false,
-    requiredPermission: "student.health.read",
+    enabledByDefault: true,
+    requiredPermission: "student.medical.read",
   },
   {
     id: "documents",

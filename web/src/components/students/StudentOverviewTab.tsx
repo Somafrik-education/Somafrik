@@ -95,9 +95,11 @@ export function StudentOverviewTab({ workspace }: StudentOverviewTabProps) {
             },
             {
               label: "Profil médical",
-              value: workspace.hasMedicalProfile
-                ? "Profil médical disponible"
-                : "Aucun profil médical",
+              value: workspace.medical.hasCriticalRisk
+                ? "Risque critique signalé"
+                : workspace.hasMedicalProfile
+                  ? "Profil médical disponible"
+                  : "Aucun profil médical",
             },
           ]}
         />
