@@ -1,10 +1,20 @@
-import type { StudentEnrollmentStatus, StudentStatus } from "./studentDomain";
+import type { StudentStatus } from "./studentDomain";
+import type { StudentEnrollmentStatus } from "./studentEnrollmentStatus";
+import { getEnrollmentStatusPresentation } from "./studentEnrollmentStatus";
 import type { StudentWorkspace } from "./studentWorkspaceService";
 import {
   formatAgeLabel,
   formatCivilDateLabel,
 } from "./studentWorkspaceDates";
-import { buildStudentWorkspaceAlerts, type StudentWorkspaceAlert } from "./studentWorkspaceAlerts";
+import {
+  buildStudentWorkspaceAlerts,
+  type StudentWorkspaceAlert,
+} from "./studentWorkspaceAlerts";
+import {
+  buildStudentEnrollmentViewModels,
+  type EnrollmentTimelineStep,
+  type StudentEnrollmentViewModel,
+} from "./studentEnrollmentViewModel";
 
 export interface StudentWorkspaceViewModel {
   studentId: string;
@@ -35,6 +45,9 @@ export interface StudentWorkspaceViewModel {
   hasDocuments: boolean;
   hasMedicalProfile: boolean;
   alerts: StudentWorkspaceAlert[];
+  currentEnrollment: StudentEnrollmentViewModel | null;
+  enrollmentHistory: StudentEnrollmentViewModel[];
+  enrollmentTimeline: EnrollmentTimelineStep[];
 }
 
 export interface BuildStudentWorkspaceViewModelOptions {
@@ -66,6 +79,16 @@ export function buildStudentWorkspaceViewModel(
     options.missingGuardiansLabel?.trim() || DEFAULT_MISSING_GUARDIANS_LABEL;
   const { overview } = workspace;
 
+  const enrollmentModels = buildStudentEnrollmentViewModels({
+    enrollments: workspace.enrollments,
+    academicYear: overview.currentAcademicYear ?? undefined,
+    schoolCode: overview.schoolCode,
+  });
+
+  const statusPresentation = getEnrollmentStatusPresentation(
+    overview.enrollmentStatus,
+  );
+
   return {
     studentId: overview.studentId,
     displayName: normalizeLabel(overview.fullName, missingValueLabel),
@@ -92,8 +115,9 @@ export function buildStudentWorkspaceViewModel(
       options.referenceDate,
     ),
     enrollmentStatus: overview.enrollmentStatus,
-    enrollmentStatusLabel:
-      overview.enrollmentStatus ?? missingEnrollmentLabel,
+    enrollmentStatusLabel: overview.enrollmentStatus
+      ? statusPresentation.label
+      : missingEnrollmentLabel,
     enrollmentDateLabel: formatCivilDateLabel(
       overview.enrollmentDate,
       missingValueLabel,
@@ -127,5 +151,8 @@ export function buildStudentWorkspaceViewModel(
     hasDocuments: overview.hasDocuments,
     hasMedicalProfile: overview.hasMedicalProfile,
     alerts: buildStudentWorkspaceAlerts(overview),
+    currentEnrollment: enrollmentModels.currentEnrollment,
+    enrollmentHistory: enrollmentModels.enrollmentHistory,
+    enrollmentTimeline: enrollmentModels.timeline,
   };
 }

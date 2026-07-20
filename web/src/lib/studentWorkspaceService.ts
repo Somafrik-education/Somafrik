@@ -8,12 +8,17 @@ import {
   type StudentMedicalProfile,
 } from "./studentDomain";
 import {
+  collectStudentEnrollmentRecords,
+  type StudentEnrollmentRecord,
+} from "./studentEnrollment";
+import {
   buildStudentWorkspaceOverview,
   type StudentWorkspaceOverview,
 } from "./studentWorkspaceOverview";
 
 export interface StudentWorkspace {
   overview: StudentWorkspaceOverview;
+  enrollments: StudentEnrollmentRecord[];
 }
 
 export interface StudentWorkspaceDataSource {
@@ -64,6 +69,12 @@ export function buildStudentWorkspace({
         student.schoolCode.trim().toLowerCase(),
     )?.name ?? null;
 
+  const enrollments = collectStudentEnrollmentRecords({
+    student,
+    enrollments: data.enrollments,
+    schoolName,
+  });
+
   return {
     overview: buildStudentWorkspaceOverview({
       student,
@@ -71,11 +82,13 @@ export function buildStudentWorkspace({
       academicYear: normalizedAcademicYear,
       schoolName,
       enrollments: data.enrollments,
+      enrollmentRecords: enrollments,
       guardians: data.guardians,
       guardianRelations: data.guardianRelations,
       persons: data.persons,
       documents: data.documents,
       medicalProfile,
     }),
+    enrollments,
   };
 }

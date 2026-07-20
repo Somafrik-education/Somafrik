@@ -266,6 +266,12 @@ function testComputedAlerts() {
     currentClassName: null,
     hasGuardians: false,
     guardiansCount: 0,
+    hasActiveEnrollment: false,
+    enrollmentIsIncomplete: false,
+    enrollmentApprovedWithoutClass: false,
+    enrollmentActiveWithoutDate: false,
+    hasDuplicateActiveEnrollments: false,
+    enrollmentYearMismatch: false,
   });
 
   const ids = alerts.map((alert) => alert.id);
@@ -280,10 +286,16 @@ function testComputedAlerts() {
     phone: "+243800000000",
     email: "a@test.local",
     nationality: "Congolaise",
-    enrollmentStatus: "Inscrit",
+    enrollmentStatus: "ENROLLED",
     currentClassName: "6ème A",
     hasGuardians: true,
     guardiansCount: 1,
+    hasActiveEnrollment: true,
+    enrollmentIsIncomplete: false,
+    enrollmentApprovedWithoutClass: false,
+    enrollmentActiveWithoutDate: false,
+    hasDuplicateActiveEnrollments: false,
+    enrollmentYearMismatch: false,
   });
   assertEqual(healthy.length, 0, "Aucune alerte si dossier complet");
 }
@@ -326,7 +338,7 @@ function testGuardiansSummaryAndImplementedFlags() {
     schoolCode: "CD-2026-0001",
     academicYear: "2025-2026",
     className: "5ème B",
-    status: "Inscrit",
+    status: "ENROLLED",
     enrollmentDate: "2025-09-01",
   };
 

@@ -76,5 +76,9 @@ export function resolveStudentWorkspaceModuleIdFromSection(
 export function isStudentWorkspaceModuleImplemented(
   moduleId: StudentWorkspaceModuleId,
 ): boolean {
-  return moduleId === "overview" || moduleId === "identity";
+  return (
+    moduleId === "overview" ||
+    moduleId === "identity" ||
+    moduleId === "enrollments"
+  );
 }

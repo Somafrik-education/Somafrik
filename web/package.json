@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
-    "verify:student-workspace-shell": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-workspace-shell.ts"
+    "verify:student-workspace-shell": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-workspace-shell.ts",
+    "verify:student-enrollment": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-enrollment.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

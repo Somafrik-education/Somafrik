@@ -34,7 +34,7 @@ function renderActiveTab(
     case "identity":
       return <StudentIdentityTab workspace={workspace} />;
     case "enrollments":
-      return <StudentEnrollmentTab />;
+      return <StudentEnrollmentTab workspace={workspace} />;
     case "guardians":
       return <StudentGuardiansTab />;
     case "health":

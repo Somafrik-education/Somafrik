@@ -1,10 +1,22 @@
-import { getStudentWorkspaceModule } from "../../lib/studentWorkspace";
-import { StudentWorkspaceComingSoonTab } from "./StudentWorkspaceComingSoonTab";
+import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
+import { StudentCurrentEnrollmentCard } from "./StudentCurrentEnrollmentCard";
+import { StudentEnrollmentHistory } from "./StudentEnrollmentHistory";
 
-export function StudentEnrollmentTab() {
+interface StudentEnrollmentTabProps {
+  workspace: StudentWorkspaceViewModel;
+}
+
+export function StudentEnrollmentTab({
+  workspace,
+}: StudentEnrollmentTabProps) {
   return (
-    <StudentWorkspaceComingSoonTab
-      module={getStudentWorkspaceModule("enrollments")}
-    />
+    <div className="space-y-6" data-testid="student-enrollment-tab">
+      <StudentCurrentEnrollmentCard
+        enrollment={workspace.currentEnrollment}
+        timeline={workspace.enrollmentTimeline}
+        schoolNameLabel={workspace.schoolNameLabel}
+      />
+      <StudentEnrollmentHistory enrollments={workspace.enrollmentHistory} />
+    </div>
   );
 }
