@@ -48,6 +48,13 @@ const {
   warnIfUnsafeDevelopmentSecrets,
 } = require("./lib/productionSecrets");
 const { assertProductionCors, buildCorsOptions } = require("./lib/corsConfig");
+const {
+  sanitizeUserForResponse,
+  sanitizeUsersForResponse,
+  sanitizeCredentialBearingStateForResponse,
+  sanitizeAuthPayloadForResponse,
+  stripSensitiveFieldsDeep,
+} = require("./lib/sanitizeUserForResponse");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
 
@@ -262,9 +269,7 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
       response.schoolContext?.schoolCode ??
       response.user?.schoolCode ??
       req.body?.schoolCode;
-    const children = resolveParentChildren(response.user, state, schoolCode).map(
-      ({ password: _pwd, passwordHash: _hash, pinHash: _pin, pin: _pinCode, ...child }) => child,
-    );
+    const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
     response.user = { ...response.user, children };
   }
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
@@ -288,9 +293,7 @@ app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
     if (schoolCode && !response.user.schoolCode) {
       response.user = { ...response.user, schoolCode };
     }
-    const children = resolveParentChildren(response.user, state, schoolCode).map(
-      ({ password: _pwd, passwordHash: _hash, pinHash: _pin, pin: _pinCode, ...child }) => child,
-    );
+    const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
     response.user = { ...response.user, children };
   }
   await sendAuthenticatedResponse(req, res, response, "mobile_login");
@@ -369,10 +372,13 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
   });
-  const { passwordHash, pinHash, password, pin, temporaryPassword, ...safeUser } = updatedUser;
+  const safeUser = {
+    ...sanitizeUserForResponse(updatedUser),
+    mustChangePassword: false,
+  };
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(
-    { user: { ...safeUser, mustChangePassword: false } },
+    { user: safeUser },
     rolePermissionsMap,
   );
   const accessToken = tokenService.createAccessToken({
@@ -383,10 +389,7 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   });
   res.json({
     message: "Mot de passe mis à jour.",
-    user: {
-      ...safeUser,
-      mustChangePassword: false,
-    },
+    user: safeUser,
     accessToken,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,
@@ -527,9 +530,10 @@ app.put("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
 app.get("/api/students", requireAuth, asyncHandler(async (req, res) => {
   const { students } = await getAuthoritativeBackOfficeState();
   const { className } = req.query;
-  let result = tenantScopeService.filterRows(students, req.principal)
-    .filter((student) => !className || student.className === className);
-  result = result.map(({ pin, pinHash, ...student }) => student);
+  const result = sanitizeUsersForResponse(
+    tenantScopeService.filterRows(students, req.principal)
+      .filter((student) => !className || student.className === className),
+  );
 
   sendList(res, result, req.query, ["name", "matricule", "className", "parentPhone"]);
 }));
@@ -542,8 +546,7 @@ app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  const { pin, pinHash, ...safeStudent } = student;
-  res.json(safeStudent);
+  res.json(sanitizeUserForResponse(student));
 }));
 
 app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
@@ -704,7 +707,7 @@ app.get("/api/students/:id/report", requireAuth, asyncHandler(async (req, res) =
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  res.json(gradeBookService.generateReport(student.id));
+  res.json(stripSensitiveFieldsDeep(gradeBookService.generateReport(student.id)));
 }));
 
 app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, res) => {
@@ -753,20 +756,20 @@ app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res)
 app.get("/api/teachers", requireAuth, requirePermission("GET /api/teachers"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
-  const result = tenantScopeService.filterRows(state.teachers, req.principal, scope).map(({ password, passwordHash, pinHash, ...teacher }) => ({
-      ...teacher,
-      assignedClasses: [...new Set((teacher.assignments ?? []).map((item) => item.className))],
-      courses: [...new Set((teacher.assignments ?? []).map((item) => item.course))],
-    }));
+  const result = tenantScopeService.filterRows(state.teachers, req.principal, scope).map((teacher) => {
+    const safeTeacher = sanitizeUserForResponse(teacher);
+    return {
+      ...safeTeacher,
+      assignedClasses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.className))],
+      courses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.course))],
+    };
+  });
   sendList(res, result, req.query, ["name", "phone", "email", "mainSubject"]);
 }));
 
 app.get("/api/users", requireAuth, requirePermission("GET /api/users"), asyncHandler(async (req, res) => {
   const { users } = await getAuthoritativeBackOfficeState();
-  const result = tenantScopeService.filterRows(users, req.principal).map(({ temporaryPassword, passwordHash, pinHash, ...user }) => ({
-    ...user,
-    hasTemporaryPassword: Boolean(temporaryPassword),
-  }));
+  const result = sanitizeUsersForResponse(tenantScopeService.filterRows(users, req.principal));
   sendList(res, result, req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
 }));
 
@@ -816,11 +819,11 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     user: target.identifier,
     oldPasswordInvalidated: true,
   });
-  const { passwordHash, pinHash, password, pin, ...safeUser } = updatedUser;
   res.json({
+    // Mot de passe provisoire renvoyé uniquement au top-level (handoff admin).
     temporaryPassword,
     user: {
-      ...safeUser,
+      ...sanitizeUserForResponse(updatedUser),
       hasTemporaryPassword: true,
     },
   });
@@ -916,7 +919,7 @@ app.get("/api/backoffice/establishments", requireAuth, requirePermission("GET /a
 
 app.get("/api/backoffice/establishments/:code/users", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
-  res.json(establishmentService.getUsers(req.params.code, state, req.principal));
+  res.json(sanitizeUsersForResponse(establishmentService.getUsers(req.params.code, state, req.principal)));
 }));
 
 app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -936,7 +939,7 @@ app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST 
   });
   const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "create_establishment", "school", school.code, { name: school.name });
-  res.status(201).json({ school, state: scopeBackOfficeState(saved, req.principal) });
+  res.status(201).json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.post("/api/backoffice/establishments/import", requireAuth, requirePermission("POST /api/backoffice/establishments/import"), asyncHandler(async (req, res) => {
@@ -968,7 +971,7 @@ app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission
   const { school, state: nextState } = establishmentService.update(req.params.code, req.body ?? {}, state, req.principal);
   const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "update_establishment", "school", school.code);
-  res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
+  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -992,7 +995,7 @@ app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermissio
   const { school, state: nextState } = establishmentService.softDelete(req.params.code, state, req.principal);
   const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "delete_establishment", "school", school.code);
-  res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
+  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
@@ -1031,13 +1034,13 @@ app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, req
     channel: reminder.channel,
     summary: reminder.summary,
   });
-  res.status(201).json({ reminder, state: scopeBackOfficeState(saved, req.principal) });
+  res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   assertBackOfficeReader(req.principal);
   const state = await getAuthoritativeBackOfficeState();
-  res.json(scopeBackOfficeState(state, req.principal));
+  res.json(scopedBackOfficeStateForResponse(state, req.principal));
 }));
 
 app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
@@ -1107,7 +1110,7 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     classes: saved.classes?.length ?? 0,
     roles: Object.keys(saved.rolePermissions ?? {}).length,
   });
-  res.json(scopeBackOfficeState(saved, req.principal));
+  res.json(scopedBackOfficeStateForResponse(saved, req.principal));
 }));
 
 app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
@@ -1202,17 +1205,17 @@ app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/
 
 app.get("/api/mvp/readiness", requireAuth, asyncHandler(async (_req, res) => {
   const { mvpBusinessService } = await getRuntime();
-  res.json(mvpBusinessService.getReadiness());
+  res.json(stripSensitiveFieldsDeep(mvpBusinessService.getReadiness()));
 }));
 
 app.get("/api/mvp/snapshot", requireAuth, asyncHandler(async (_req, res) => {
   const { mvpBusinessService } = await getRuntime();
-  res.json(mvpBusinessService.getSnapshot());
+  res.json(stripSensitiveFieldsDeep(mvpBusinessService.getSnapshot()));
 }));
 
 app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (_req, res) => {
   const { mvpBusinessService } = await getRuntime();
-  res.json(mvpBusinessService.getEstablishmentDashboard());
+  res.json(stripSensitiveFieldsDeep(mvpBusinessService.getEstablishmentDashboard()));
 }));
 
 async function getRuntime() {
@@ -2145,6 +2148,14 @@ function mergeSchoolRows(dbSchools = [], storedSchools = []) {
 
 function isSuperAdminPrincipal(principal) {
   return principal?.role === "Super Administrateur Somafrik" || principal?.role === "Super Administrateur OKAFRIK";
+}
+
+/**
+ * Vue backoffice destinée au client HTTP : scoping métier + sanitization des secrets.
+ * Ne pas utiliser pour les merges internes (qui doivent conserver passwordHash, etc.).
+ */
+function scopedBackOfficeStateForResponse(payload = {}, principal) {
+  return sanitizeCredentialBearingStateForResponse(scopeBackOfficeState(payload, principal));
 }
 
 function scopeBackOfficeState(payload = {}, principal) {
@@ -3332,12 +3343,17 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   });
   await touchUserLastLogin(principal);
 
-  res.json({
+  const safePayload = sanitizeAuthPayloadForResponse({
     ...response,
     user: response.user
       ? { ...response.user, role: principal.role, permissions: principal.permissions }
       : response.user,
+  });
+
+  res.json({
+    ...safePayload,
     accessToken,
+    // Jeton de session top-level (contrat auth) — jamais embarqué dans `user`.
     refreshToken: refreshSession.token,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,

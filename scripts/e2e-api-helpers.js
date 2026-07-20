@@ -47,9 +47,8 @@ async function loginFull(identifier, password, schoolCode) {
 
   const finalizeLogin = async (res, candidatePassword) => {
     const data = res.data;
-    const needsPasswordChange =
-      Boolean(data?.user?.mustChangePassword) ||
-      Boolean(String(data?.user?.temporaryPassword ?? "").trim());
+    // temporaryPassword n'est plus renvoyé dans user (S1.3) — s'appuyer sur mustChangePassword.
+    const needsPasswordChange = Boolean(data?.user?.mustChangePassword);
     if (needsPasswordChange && data?.accessToken) {
       const changeRes = await request("/auth/change-password", {
         method: "POST",
