@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Node fixe (pas de version flottante). Aligné sur .nvmrc / security.yml.
+env:
+  NODE_VERSION: "22.12.0"
+
 jobs:
   lint-build:
     name: Lint et build
@@ -31,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -39,7 +43,7 @@ jobs:
             web/package-lock.json
             Mobile/package-lock.json
 
-      - name: Install dependencies
+      - name: Install dependencies (npm ci)
         run: npm run ci:install
 
       - run: npm run lint --if-present

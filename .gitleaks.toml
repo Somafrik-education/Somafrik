@@ -1,0 +1,10 @@
+# Gitleaks — configuration Somafrik (S2.4)
+# https://github.com/gitleaks/gitleaks
+
+title = "Somafrik"
+
+[extend]
+useDefault = true
+
+# Les fichiers d'exemple / modèles peuvent contenir des placeholders non secrets.
+# Ajouter des allowlists ciblées ici uniquement si un faux positif est confirmé.

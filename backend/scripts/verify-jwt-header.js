@@ -146,9 +146,14 @@ function runStaticAudit() {
     "Mobile ne doit plus placer access_token dans l'URL PDF",
   );
   assert.ok(
-    /Authorization:\s*`Bearer \$\{accessToken\}`/.test(mobileApi) ||
-      mobileApi.includes("Authorization: `Bearer ${accessToken}`"),
+    /Authorization:\s*`Bearer \$\{(accessToken|token)\}`/.test(mobileApi) ||
+      mobileApi.includes("Authorization: `Bearer ${accessToken}`") ||
+      mobileApi.includes("Authorization: `Bearer ${token}`"),
     "Mobile doit envoyer Authorization Bearer pour le PDF",
+  );
+  assert.ok(
+    mobileApi.includes("getAccessToken") || /const\s+accessToken\s*=/.test(mobileApi),
+    "downloadReportCardPdf doit résoudre le token via SecureStore / getAccessToken",
   );
   assert.ok(
     mobileApi.includes("FileSystem.downloadAsync") || mobileApi.includes("downloadAsync("),
@@ -159,8 +164,8 @@ function runStaticAudit() {
     "downloadReportCardPdf ne doit plus convertir arrayBuffer/btoa",
   );
   assert.ok(
-    /if\s*\(\s*!accessToken\s*\)/.test(mobileApi),
-    "downloadReportCardPdf doit refuser explicitement l'absence d'accessToken",
+    /if\s*\(\s*!(accessToken|token)\s*\)/.test(mobileApi),
+    "downloadReportCardPdf doit refuser explicitement l'absence de token",
   );
 
   const reportScreen = readUtf8(path.join(MOBILE_DIR, "src", "screens", "ReportCardsScreen.tsx"));
