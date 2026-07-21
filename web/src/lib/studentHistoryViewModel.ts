@@ -4,6 +4,7 @@ import {
   historyEventTimestamp,
   isRecentHistoryEvent,
   sortStudentHistoryEvents,
+  type HistoryDateQuality,
   type HistoryIconKey,
   type HistorySeverity,
   type HistorySourceModule,
@@ -21,12 +22,14 @@ export type HistoryGroupKey =
   | "YESTERDAY"
   | "THIS_WEEK"
   | "THIS_MONTH"
-  | "OLDER";
+  | "OLDER"
+  | "DATE_UNKNOWN";
 
 export interface StudentHistoryEventViewModel {
   id: string;
   type: StudentHistoryEventType;
-  occurredAt: string;
+  occurredAt: string | null;
+  dateQuality: HistoryDateQuality;
   occurredAtLabel: string;
   dayLabel: string;
   title: string;
@@ -40,6 +43,7 @@ export interface StudentHistoryEventViewModel {
   iconKey: HistoryIconKey;
   isImportant: boolean;
   isRecent: boolean;
+  isUndated: boolean;
 }
 
 export interface StudentHistoryGroupViewModel {
@@ -88,9 +92,11 @@ const SOURCE_LABELS: Record<HistorySourceModule, string> = {
 const GROUP_LABELS: Record<HistoryGroupKey, string> = {
   TODAY: "Aujourd'hui",
   YESTERDAY: "Hier",
+  // « Cette semaine » = 6 jours précédents (hors aujourd'hui/hier), pas la semaine civile.
   THIS_WEEK: "Cette semaine",
   THIS_MONTH: "Ce mois",
   OLDER: "Plus ancien",
+  DATE_UNKNOWN: "Date non renseignée",
 };
 
 function startOfDay(date: Date): Date {
@@ -108,11 +114,13 @@ function civilFromOccurredAt(occurredAt: string): Date | null {
 }
 
 export function resolveHistoryGroupKey(
-  occurredAt: string,
+  occurredAt: string | null,
   referenceDate: Date = new Date(),
 ): HistoryGroupKey {
+  if (!occurredAt) return "DATE_UNKNOWN";
+
   const eventDay = civilFromOccurredAt(occurredAt);
-  if (!eventDay) return "OLDER";
+  if (!eventDay) return "DATE_UNKNOWN";
 
   const today = startOfDay(referenceDate);
   const diffDays = Math.round(
@@ -136,19 +144,17 @@ function toEventViewModel(
   missingValueLabel: string,
   referenceDate: Date,
 ): StudentHistoryEventViewModel {
-  const dayLabel = formatCivilDateLabel(
-    event.occurredAt.slice(0, 10),
-    missingValueLabel,
-  );
+  const isUndated = event.occurredAt == null;
+  const dayLabel = isUndated
+    ? "Date non renseignée"
+    : formatCivilDateLabel(event.occurredAt!.slice(0, 10), missingValueLabel);
 
   return {
     id: event.id,
     type: event.type,
     occurredAt: event.occurredAt,
-    occurredAtLabel: formatCivilDateLabel(
-      event.occurredAt.slice(0, 10),
-      missingValueLabel,
-    ),
+    dateQuality: event.dateQuality,
+    occurredAtLabel: dayLabel,
     dayLabel,
     title: event.title,
     descriptionLabel: event.description?.trim() || missingValueLabel,
@@ -161,6 +167,7 @@ function toEventViewModel(
     iconKey: event.iconKey,
     isImportant: event.severity === "IMPORTANT",
     isRecent: isRecentHistoryEvent(event.occurredAt, referenceDate),
+    isUndated,
   };
 }
 
@@ -174,6 +181,7 @@ export function groupStudentHistoryEvents(
     THIS_WEEK: [],
     THIS_MONTH: [],
     OLDER: [],
+    DATE_UNKNOWN: [],
   };
 
   for (const event of events) {
@@ -187,6 +195,7 @@ export function groupStudentHistoryEvents(
     "THIS_WEEK",
     "THIS_MONTH",
     "OLDER",
+    "DATE_UNKNOWN",
   ];
 
   return order
@@ -236,9 +245,12 @@ export function compareHistoryEventsForTests(
   left: StudentHistoryEvent,
   right: StudentHistoryEvent,
 ): number {
-  const timeDelta =
-    historyEventTimestamp(right.occurredAt) -
-    historyEventTimestamp(left.occurredAt);
-  if (timeDelta !== 0) return timeDelta;
+  const leftTs = historyEventTimestamp(left.occurredAt);
+  const rightTs = historyEventTimestamp(right.occurredAt);
+  if (leftTs != null && rightTs == null) return -1;
+  if (leftTs == null && rightTs != null) return 1;
+  if (leftTs != null && rightTs != null && leftTs !== rightTs) {
+    return rightTs - leftTs;
+  }
   return left.id.localeCompare(right.id);
 }

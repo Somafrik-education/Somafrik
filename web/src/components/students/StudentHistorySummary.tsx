@@ -29,7 +29,8 @@ export function StudentHistorySummary({ history }: StudentHistorySummaryProps) {
             Dernier événement
           </dt>
           <dd className="mt-1 text-sm font-medium text-ink">
-            {history.timeline[0]?.occurredAtLabel ?? "Aucun"}
+            {history.timeline.find((event) => !event.isUndated)
+              ?.occurredAtLabel ?? "Aucun"}
           </dd>
         </div>
         <div>

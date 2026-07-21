@@ -72,6 +72,8 @@ function createItem(
     issuedAt: null,
     expiresAt: null,
     verifiedAt: null,
+    submittedAt: null,
+    rejectedAt: null,
     verifiedBy: null,
     fileName: null,
     visibility: "STAFF",

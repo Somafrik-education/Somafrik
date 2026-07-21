@@ -17,6 +17,7 @@ export type StudentHistoryEventType =
   | "STUDENT_CREATED"
   | "ENROLLMENT_CREATED"
   | "ENROLLMENT_UPDATED"
+  | "CLASS_ASSIGNED"
   | "CLASS_CHANGED"
   | "STATUS_CHANGED"
   | "GUARDIAN_ADDED"
@@ -29,6 +30,13 @@ export type StudentHistoryEventType =
   | "NOTE_ADDED"
   | "ARCHIVED"
   | "OTHER";
+
+/**
+ * Qualité de la date d'événement.
+ * EXACT = champ métier dédié ; INFERRED = dérivation raisonnable documentée ;
+ * UNKNOWN = aucune date correspondante (occurredAt null).
+ */
+export type HistoryDateQuality = "EXACT" | "INFERRED" | "UNKNOWN";
 
 export type HistorySeverity = "INFO" | "WARNING" | "IMPORTANT";
 
@@ -69,7 +77,9 @@ export const HISTORY_RECENT_ACTIVITY_DAYS = 30;
 export interface StudentHistoryEvent {
   id: string;
   type: StudentHistoryEventType;
-  occurredAt: string;
+  /** null = date non renseignée (jamais une date technique de repli). */
+  occurredAt: string | null;
+  dateQuality: HistoryDateQuality;
   title: string;
   description: string | null;
   severity: HistorySeverity;
@@ -111,6 +121,7 @@ const EVENT_ICON: Record<StudentHistoryEventType, HistoryIconKey> = {
   STUDENT_CREATED: "identity",
   ENROLLMENT_CREATED: "enrollment",
   ENROLLMENT_UPDATED: "enrollment",
+  CLASS_ASSIGNED: "enrollment",
   CLASS_CHANGED: "enrollment",
   STATUS_CHANGED: "enrollment",
   GUARDIAN_ADDED: "guardian",
@@ -144,9 +155,10 @@ export function compareHistorySeverity(
 }
 
 /** Parse une date d'événement (ISO ou civile) en timestamp pour le tri. */
-export function historyEventTimestamp(occurredAt: string): number {
+export function historyEventTimestamp(occurredAt: string | null): number | null {
+  if (!occurredAt) return null;
   const raw = occurredAt.trim();
-  if (!raw) return 0;
+  if (!raw) return null;
   const civil = parseCivilDate(raw.slice(0, 10));
   if (civil && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
     // Pour les dates civiles pures, minuit local ; pour ISO complet, Date native.
@@ -157,20 +169,26 @@ export function historyEventTimestamp(occurredAt: string): number {
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
   if (civil) return civil.getTime();
-  return 0;
+  return null;
 }
 
 /**
- * Tri : plus récent → plus ancien ; puis IMPORTANT → WARNING → INFO ; puis id.
+ * Tri : datés plus récents → plus anciens ; non datés après tous les datés ;
+ * puis IMPORTANT → WARNING → INFO ; puis id.
  */
 export function sortStudentHistoryEvents(
   events: readonly StudentHistoryEvent[],
 ): StudentHistoryEvent[] {
   return [...events].sort((left, right) => {
-    const timeDelta =
-      historyEventTimestamp(right.occurredAt) -
-      historyEventTimestamp(left.occurredAt);
-    if (timeDelta !== 0) return timeDelta;
+    const leftTs = historyEventTimestamp(left.occurredAt);
+    const rightTs = historyEventTimestamp(right.occurredAt);
+    const leftDated = leftTs != null;
+    const rightDated = rightTs != null;
+    if (leftDated && !rightDated) return -1;
+    if (!leftDated && rightDated) return 1;
+    if (leftDated && rightDated && leftTs !== rightTs) {
+      return rightTs! - leftTs!;
+    }
     const severityDelta = compareHistorySeverity(left.severity, right.severity);
     if (severityDelta !== 0) return severityDelta;
     return left.id.localeCompare(right.id);
@@ -178,12 +196,12 @@ export function sortStudentHistoryEvents(
 }
 
 export function isRecentHistoryEvent(
-  occurredAt: string,
+  occurredAt: string | null,
   referenceDate: Date = new Date(),
   windowDays = HISTORY_RECENT_ACTIVITY_DAYS,
 ): boolean {
   const ts = historyEventTimestamp(occurredAt);
-  if (!ts) return false;
+  if (ts == null) return false;
   const ref = new Date(
     referenceDate.getFullYear(),
     referenceDate.getMonth(),
@@ -201,13 +219,20 @@ export function isRecentHistoryEvent(
 }
 
 function createEvent(
-  partial: Omit<StudentHistoryEvent, "iconKey" | "metadata"> & {
+  partial: Omit<StudentHistoryEvent, "iconKey" | "metadata" | "dateQuality"> & {
     metadata?: Record<string, string>;
     iconKey?: HistoryIconKey;
+    dateQuality?: HistoryDateQuality;
   },
 ): StudentHistoryEvent {
+  const occurredAt = normalizeOptionalText(partial.occurredAt);
+  const dateQuality: HistoryDateQuality = occurredAt
+    ? (partial.dateQuality ?? "EXACT")
+    : "UNKNOWN";
   return {
     ...partial,
+    occurredAt,
+    dateQuality,
     description: partial.description ?? null,
     actor: partial.actor ?? null,
     metadata: partial.metadata ?? {},
@@ -342,32 +367,35 @@ function projectEnrollmentEvents(
       );
     }
 
+    // Affectation initiale (état observé) — pas un changement de classe.
+    // CLASS_CHANGED est réservé aux transitions previous→new (voir createClassChangedEvent).
     if (enrollment.classId || enrollment.className) {
       const classAt =
         enrollment.enrolledAt ??
         enrollment.validatedAt ??
         enrollment.updatedAt ??
-        enrollment.createdAt;
-      if (classAt) {
-        events.push(
-          createEvent({
-            id: `HIST-ENR-CLASS-${enrollment.id}`,
-            type: "CLASS_CHANGED",
-            occurredAt: classAt,
-            title: "Affectation de classe",
-            description: enrollment.className ?? enrollment.classId,
-            severity: "INFO",
-            sourceModule: "ENROLLMENT",
-            actor: null,
-            visibility: "STAFF",
-            metadata: {
-              enrollmentId: enrollment.id,
-              classId: enrollment.classId ?? "",
-              className: enrollment.className ?? "",
-            },
-          }),
-        );
-      }
+        enrollment.createdAt ??
+        null;
+      events.push(
+        createEvent({
+          id: `HIST-ENR-CLASS-${enrollment.id}`,
+          type: "CLASS_ASSIGNED",
+          occurredAt: classAt,
+          dateQuality: classAt ? "INFERRED" : "UNKNOWN",
+          title: "Affectation de classe",
+          description: enrollment.className ?? enrollment.classId,
+          severity: "INFO",
+          sourceModule: "ENROLLMENT",
+          actor: null,
+          visibility: "STAFF",
+          metadata: {
+            enrollmentId: enrollment.id,
+            classId: enrollment.classId ?? "",
+            className: enrollment.className ?? "",
+            inferredFrom: classAt ? "enrollment.class+date" : "enrollment.class",
+          },
+        }),
+      );
     }
 
     if (
@@ -399,14 +427,14 @@ function projectEnrollmentEvents(
 function projectGuardianEvents(
   guardians: readonly StudentGuardianRelationRecord[],
 ): StudentHistoryEvent[] {
-  return guardians.map((guardian) =>
-    createEvent({
+  return guardians.map((guardian) => {
+    const startDate = normalizeOptionalText(guardian.startDate);
+    return createEvent({
       id: `HIST-GUARDIAN-${guardian.id}`,
       type: "GUARDIAN_ADDED",
-      occurredAt:
-        guardian.startDate ??
-        // Repli déterministe pour relations sans date (legacy).
-        `1970-01-01T00:00:00.000Z`,
+      // Sans startDate : événement non daté — jamais 1970 inventée.
+      occurredAt: startDate,
+      dateQuality: startDate ? "EXACT" : "UNKNOWN",
       title:
         guardian.source === "LEGACY"
           ? "Contact parent hérité"
@@ -421,8 +449,8 @@ function projectGuardianEvents(
         relationshipType: guardian.relationshipType,
         source: guardian.source,
       },
-    }),
-  );
+    });
+  });
 }
 
 function projectMedicalEvents(
@@ -445,20 +473,46 @@ function projectMedicalEvents(
   ];
 }
 
-function documentEventOccurredAt(document: StudentDocumentItem): string | null {
+/**
+ * Date d'événement documentaire : uniquement un champ métier dédié.
+ * Ne jamais utiliser issuedAt pour dater un dépôt ou une vérification.
+ */
+function resolveDocumentEventDate(
+  document: StudentDocumentItem,
+): { occurredAt: string | null; dateQuality: HistoryDateQuality; source: string } {
   if (document.status === "VERIFIED") {
-    return document.verifiedAt ?? document.issuedAt ?? document.expiresAt;
+    const at = normalizeOptionalText(document.verifiedAt);
+    return {
+      occurredAt: at,
+      dateQuality: at ? "EXACT" : "UNKNOWN",
+      source: at ? "verifiedAt" : "none",
+    };
   }
   if (document.status === "EXPIRED") {
-    return document.expiresAt ?? document.verifiedAt ?? document.issuedAt;
+    const at = normalizeOptionalText(document.expiresAt);
+    return {
+      occurredAt: at,
+      dateQuality: at ? "EXACT" : "UNKNOWN",
+      source: at ? "expiresAt" : "none",
+    };
   }
   if (document.status === "REJECTED") {
-    return document.verifiedAt ?? document.issuedAt ?? document.expiresAt;
+    const at = normalizeOptionalText(document.rejectedAt);
+    return {
+      occurredAt: at,
+      dateQuality: at ? "EXACT" : "UNKNOWN",
+      source: at ? "rejectedAt" : "none",
+    };
   }
   if (document.status === "SUBMITTED") {
-    return document.issuedAt ?? document.verifiedAt;
+    const at = normalizeOptionalText(document.submittedAt);
+    return {
+      occurredAt: at,
+      dateQuality: at ? "EXACT" : "UNKNOWN",
+      source: at ? "submittedAt" : "none",
+    };
   }
-  return null;
+  return { occurredAt: null, dateQuality: "UNKNOWN", source: "none" };
 }
 
 function projectDocumentEvents(
@@ -472,8 +526,7 @@ function projectDocumentEvents(
       continue;
     }
 
-    const occurredAt = documentEventOccurredAt(document);
-    if (!occurredAt) continue;
+    const { occurredAt, dateQuality, source } = resolveDocumentEventDate(document);
 
     if (document.status === "VERIFIED") {
       events.push(
@@ -481,13 +534,18 @@ function projectDocumentEvents(
           id: `HIST-DOC-VERIFIED-${document.id}`,
           type: "DOCUMENT_VERIFIED",
           occurredAt,
+          dateQuality,
           title: "Document vérifié",
           description: document.label,
           severity: "IMPORTANT",
           sourceModule: "DOCUMENTS",
           actor: document.verifiedBy,
           visibility: document.visibility,
-          metadata: { documentId: document.id, type: document.type },
+          metadata: {
+            documentId: document.id,
+            type: document.type,
+            dateSource: source,
+          },
         }),
       );
       continue;
@@ -499,13 +557,18 @@ function projectDocumentEvents(
           id: `HIST-DOC-REJECTED-${document.id}`,
           type: "DOCUMENT_REJECTED",
           occurredAt,
+          dateQuality,
           title: "Document refusé",
           description: document.label,
           severity: "WARNING",
           sourceModule: "DOCUMENTS",
           actor: document.verifiedBy,
           visibility: document.visibility,
-          metadata: { documentId: document.id, type: document.type },
+          metadata: {
+            documentId: document.id,
+            type: document.type,
+            dateSource: source,
+          },
         }),
       );
       continue;
@@ -517,13 +580,18 @@ function projectDocumentEvents(
           id: `HIST-DOC-EXPIRED-${document.id}`,
           type: "DOCUMENT_EXPIRED",
           occurredAt,
+          dateQuality,
           title: "Document expiré",
           description: document.label,
           severity: "WARNING",
           sourceModule: "DOCUMENTS",
           actor: null,
           visibility: document.visibility,
-          metadata: { documentId: document.id, type: document.type },
+          metadata: {
+            documentId: document.id,
+            type: document.type,
+            dateSource: source,
+          },
         }),
       );
       continue;
@@ -535,13 +603,18 @@ function projectDocumentEvents(
           id: `HIST-DOC-SUBMITTED-${document.id}`,
           type: "DOCUMENT_SUBMITTED",
           occurredAt,
+          dateQuality,
           title: "Document déposé",
           description: document.label,
           severity: "INFO",
           sourceModule: "DOCUMENTS",
           actor: null,
           visibility: document.visibility,
-          metadata: { documentId: document.id, type: document.type },
+          metadata: {
+            documentId: document.id,
+            type: document.type,
+            dateSource: source,
+          },
         }),
       );
     }
@@ -550,14 +623,50 @@ function projectDocumentEvents(
   return events;
 }
 
+/**
+ * Produit un CLASS_CHANGED uniquement lorsqu'une transition réelle est connue.
+ * Réservé aux données futures (previousClass / newClass / changedAt).
+ */
+export function createClassChangedEvent(input: {
+  enrollmentId: string;
+  previousClassId: string | null;
+  previousClassName: string | null;
+  newClassId: string | null;
+  newClassName: string | null;
+  changedAt: string;
+}): StudentHistoryEvent {
+  const from = input.previousClassName ?? input.previousClassId ?? "—";
+  const to = input.newClassName ?? input.newClassId ?? "—";
+  return createEvent({
+    id: `HIST-ENR-CLASS-CHANGED-${input.enrollmentId}-${input.changedAt}`,
+    type: "CLASS_CHANGED",
+    occurredAt: input.changedAt,
+    dateQuality: "EXACT",
+    title: "Changement de classe",
+    description: `${from} → ${to}`,
+    severity: "IMPORTANT",
+    sourceModule: "ENROLLMENT",
+    actor: null,
+    visibility: "STAFF",
+    metadata: {
+      enrollmentId: input.enrollmentId,
+      previousClassId: input.previousClassId ?? "",
+      previousClassName: input.previousClassName ?? "",
+      newClassId: input.newClassId ?? "",
+      newClassName: input.newClassName ?? "",
+    },
+  });
+}
+
 export function buildStudentHistorySummary(
   events: readonly StudentHistoryEvent[],
   referenceDate: Date = new Date(),
 ): StudentHistorySummary {
   const sorted = sortStudentHistoryEvents(events);
+  const latestDated = sorted.find((event) => event.occurredAt != null) ?? null;
   return {
     totalEvents: sorted.length,
-    latestEventDate: sorted[0]?.occurredAt ?? null,
+    latestEventDate: latestDated?.occurredAt ?? null,
     hasImportantEvent: sorted.some((event) => event.severity === "IMPORTANT"),
     hasRecentActivity: sorted.some((event) =>
       isRecentHistoryEvent(event.occurredAt, referenceDate),
@@ -570,16 +679,17 @@ export function diagnoseStudentHistory(
   referenceDate: Date = new Date(),
 ): StudentHistoryDiagnostics {
   const sorted = sortStudentHistoryEvents(record.events);
+  const dated = sorted.filter((event) => event.occurredAt != null);
   const latestImportantEvent =
-    sorted.find((event) => event.severity === "IMPORTANT") ?? null;
-  const hasRecentActivity = sorted.some((event) =>
+    dated.find((event) => event.severity === "IMPORTANT") ?? null;
+  const hasRecentActivity = dated.some((event) =>
     isRecentHistoryEvent(event.occurredAt, referenceDate),
   );
 
   return {
     hasImportantEvent: sorted.some((event) => event.severity === "IMPORTANT"),
     hasRecentActivity,
-    latestEvent: sorted[0] ?? null,
+    latestEvent: dated[0] ?? null,
     latestImportantEvent,
   };
 }
