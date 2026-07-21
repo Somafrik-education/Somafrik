@@ -101,6 +101,14 @@ export function StudentOverviewTab({ workspace }: StudentOverviewTabProps) {
                   ? "Profil médical disponible"
                   : "Aucun profil médical",
             },
+            {
+              label: "Historique",
+              value: workspace.historyModule.latestImportantEventLabel
+                ? workspace.historyModule.latestImportantEventLabel
+                : workspace.historyModule.summary.totalEvents > 0
+                  ? `${workspace.historyModule.summary.totalEvents} événement${workspace.historyModule.summary.totalEvents > 1 ? "s" : ""}`
+                  : "Aucun événement",
+            },
           ]}
         />
       </div>

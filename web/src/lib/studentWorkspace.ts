@@ -39,6 +39,8 @@ export type StudentWorkspacePermission =
   | "student.medical.validate"
   | "student.discipline.read"
   | "student.history.read"
+  | "student.history.export"
+  | "student.history.audit"
   | "student.access.read";
 
 export interface StudentWorkspaceModule {

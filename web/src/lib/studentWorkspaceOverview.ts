@@ -29,6 +29,11 @@ import {
   diagnoseStudentDocuments,
   type StudentDocumentRecord,
 } from "./studentDocuments";
+import {
+  collectStudentHistoryRecord,
+  diagnoseStudentHistory,
+  type StudentHistoryRecord,
+} from "./studentHistory";
 
 export interface StudentWorkspaceOverview {
   studentId: string;
@@ -83,6 +88,9 @@ export interface StudentWorkspaceOverview {
   hasRejectedDocument: boolean;
   documentComplianceRate: number;
   hasLowDocumentCompliance: boolean;
+  /** Champs C1.6 pour alertes historique. */
+  hasImportantHistoryEvent: boolean;
+  latestImportantHistoryEventTitle: string | null;
 }
 
 export interface BuildStudentWorkspaceOverviewInput {
@@ -100,6 +108,7 @@ export interface BuildStudentWorkspaceOverviewInput {
   medicalProfile?: StudentMedicalProfile | null;
   medicalRecord?: StudentMedicalRecord | null;
   documentRecord?: StudentDocumentRecord | null;
+  historyRecord?: StudentHistoryRecord | null;
   referenceDate?: Date;
 }
 
@@ -180,6 +189,7 @@ export function buildStudentWorkspaceOverview({
   medicalProfile = null,
   medicalRecord = null,
   documentRecord = null,
+  historyRecord = null,
   referenceDate,
 }: BuildStudentWorkspaceOverviewInput): StudentWorkspaceOverview {
   const currentEnrollment = selectCurrentStudentEnrollment({
@@ -251,6 +261,18 @@ export function buildStudentWorkspaceOverview({
     });
   const documentDiagnostics = diagnoseStudentDocuments(resolvedDocumentRecord);
 
+  const resolvedHistoryRecord =
+    historyRecord ??
+    collectStudentHistoryRecord({
+      studentId: student.id,
+      student,
+      referenceDate,
+    });
+  const historyDiagnostics = diagnoseStudentHistory(
+    resolvedHistoryRecord,
+    referenceDate ?? new Date(),
+  );
+
   return {
     studentId: student.id,
     fullName: buildStudentFullName(student, person),
@@ -309,5 +331,8 @@ export function buildStudentWorkspaceOverview({
     hasRejectedDocument: documentDiagnostics.hasRejectedDocument,
     documentComplianceRate: documentDiagnostics.complianceRate,
     hasLowDocumentCompliance: documentDiagnostics.hasLowCompliance,
+    hasImportantHistoryEvent: historyDiagnostics.hasImportantEvent,
+    latestImportantHistoryEventTitle:
+      historyDiagnostics.latestImportantEvent?.title ?? null,
   };
 }

@@ -42,7 +42,7 @@ function renderActiveTab(
     case "documents":
       return <StudentDocumentsTab workspace={workspace} />;
     case "history":
-      return <StudentHistoryTab />;
+      return <StudentHistoryTab workspace={workspace} />;
     default:
       return module ? (
         <StudentWorkspaceComingSoonTab module={module} />

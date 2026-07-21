@@ -44,6 +44,8 @@ export function buildStudentWorkspaceAlerts(
     | "hasExpiredRequiredDocument"
     | "hasRejectedDocument"
     | "hasLowDocumentCompliance"
+    | "hasImportantHistoryEvent"
+    | "latestImportantHistoryEventTitle"
   >,
 ): StudentWorkspaceAlert[] {
   const alerts: StudentWorkspaceAlert[] = [];
@@ -289,6 +291,17 @@ export function buildStudentWorkspaceAlerts(
       severity: "info",
       message: "Groupe sanguin non renseigné",
       targetModuleId: "health",
+    });
+  }
+
+  if (overview.hasImportantHistoryEvent) {
+    alerts.push({
+      id: "important-history-event",
+      severity: "info",
+      message: overview.latestImportantHistoryEventTitle
+        ? `Dernier événement important : ${overview.latestImportantHistoryEventTitle}`
+        : "Événement important dans l'historique",
+      targetModuleId: "history",
     });
   }
 
