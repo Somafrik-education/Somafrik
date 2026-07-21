@@ -40,7 +40,7 @@ function renderActiveTab(
     case "health":
       return <StudentMedicalTab workspace={workspace} />;
     case "documents":
-      return <StudentDocumentsTab />;
+      return <StudentDocumentsTab workspace={workspace} />;
     case "history":
       return <StudentHistoryTab />;
     default:

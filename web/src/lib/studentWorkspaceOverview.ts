@@ -24,6 +24,11 @@ import {
   toStudentMedicalRecord,
   type StudentMedicalRecord,
 } from "./studentMedical";
+import {
+  collectStudentDocumentRecord,
+  diagnoseStudentDocuments,
+  type StudentDocumentRecord,
+} from "./studentDocuments";
 
 export interface StudentWorkspaceOverview {
   studentId: string;
@@ -72,6 +77,12 @@ export interface StudentWorkspaceOverview {
   hasPhysician: boolean;
   hasBloodType: boolean;
   hasMedicalUpdate: boolean;
+  /** Champs C1.5 pour alertes documents. */
+  hasMissingRequiredDocument: boolean;
+  hasExpiredRequiredDocument: boolean;
+  hasRejectedDocument: boolean;
+  documentComplianceRate: number;
+  hasLowDocumentCompliance: boolean;
 }
 
 export interface BuildStudentWorkspaceOverviewInput {
@@ -88,6 +99,8 @@ export interface BuildStudentWorkspaceOverviewInput {
   documents?: readonly StudentDocument[];
   medicalProfile?: StudentMedicalProfile | null;
   medicalRecord?: StudentMedicalRecord | null;
+  documentRecord?: StudentDocumentRecord | null;
+  referenceDate?: Date;
 }
 
 function buildStudentFullName(
@@ -166,6 +179,8 @@ export function buildStudentWorkspaceOverview({
   documents = [],
   medicalProfile = null,
   medicalRecord = null,
+  documentRecord = null,
+  referenceDate,
 }: BuildStudentWorkspaceOverviewInput): StudentWorkspaceOverview {
   const currentEnrollment = selectCurrentStudentEnrollment({
     enrollments: enrollmentRecords,
@@ -227,6 +242,15 @@ export function buildStudentWorkspaceOverview({
     toStudentMedicalRecord(medicalProfile, student.id);
   const medicalDiagnostics = diagnoseMedicalRecord(resolvedMedicalRecord);
 
+  const resolvedDocumentRecord =
+    documentRecord ??
+    collectStudentDocumentRecord({
+      studentId: student.id,
+      documents,
+      referenceDate,
+    });
+  const documentDiagnostics = diagnoseStudentDocuments(resolvedDocumentRecord);
+
   return {
     studentId: student.id,
     fullName: buildStudentFullName(student, person),
@@ -257,8 +281,8 @@ export function buildStudentWorkspaceOverview({
     primaryGuardianName: normalizeOptionalValue(primaryGuardianName),
     primaryGuardianPhone,
     hasGuardians: activeGuardianCount > 0,
-    hasDocuments: documents.some(
-      (document) => document.studentId === student.id,
+    hasDocuments: resolvedDocumentRecord.documents.some(
+      (document) => document.status !== "MISSING",
     ),
     hasMedicalProfile: resolvedMedicalRecord.hasProfile,
     hasActiveEnrollment,
@@ -280,5 +304,10 @@ export function buildStudentWorkspaceOverview({
     hasPhysician: medicalDiagnostics.hasPhysician,
     hasBloodType: medicalDiagnostics.hasBloodType,
     hasMedicalUpdate: medicalDiagnostics.hasMedicalUpdate,
+    hasMissingRequiredDocument: documentDiagnostics.hasMissingRequiredDocument,
+    hasExpiredRequiredDocument: documentDiagnostics.hasExpiredRequiredDocument,
+    hasRejectedDocument: documentDiagnostics.hasRejectedDocument,
+    documentComplianceRate: documentDiagnostics.complianceRate,
+    hasLowDocumentCompliance: documentDiagnostics.hasLowCompliance,
   };
 }

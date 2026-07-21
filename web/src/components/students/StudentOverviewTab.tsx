@@ -90,7 +90,7 @@ export function StudentOverviewTab({ workspace }: StudentOverviewTabProps) {
             {
               label: "Documents",
               value: workspace.hasDocuments
-                ? "Documents disponibles"
+                ? `Conformité ${workspace.documentsModule.complianceLabel}`
                 : "Aucun document",
             },
             {

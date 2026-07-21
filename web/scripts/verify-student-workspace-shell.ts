@@ -284,6 +284,10 @@ function testComputedAlerts() {
     hasPhysician: false,
     hasBloodType: false,
     hasMedicalUpdate: false,
+    hasMissingRequiredDocument: false,
+    hasExpiredRequiredDocument: false,
+    hasRejectedDocument: false,
+    hasLowDocumentCompliance: false,
   });
 
   const ids = alerts.map((alert) => alert.id);
@@ -322,6 +326,10 @@ function testComputedAlerts() {
     hasPhysician: true,
     hasBloodType: true,
     hasMedicalUpdate: true,
+    hasMissingRequiredDocument: false,
+    hasExpiredRequiredDocument: false,
+    hasRejectedDocument: false,
+    hasLowDocumentCompliance: false,
   });
   assertEqual(healthy.length, 0, "Aucune alerte si dossier complet");
 }
@@ -400,6 +408,10 @@ function testGuardiansSummaryAndImplementedFlags() {
   assert(
     isStudentWorkspaceModuleImplemented("health"),
     "Médical implémenté (C1.4)",
+  );
+  assert(
+    isStudentWorkspaceModuleImplemented("documents"),
+    "Documents implémenté (C1.5)",
   );
 }
 

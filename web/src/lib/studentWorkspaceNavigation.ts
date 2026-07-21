@@ -81,6 +81,7 @@ export function isStudentWorkspaceModuleImplemented(
     moduleId === "identity" ||
     moduleId === "enrollments" ||
     moduleId === "guardians" ||
-    moduleId === "health"
+    moduleId === "health" ||
+    moduleId === "documents"
   );
 }

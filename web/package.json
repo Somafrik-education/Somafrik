@@ -16,7 +16,8 @@
     "verify:student-workspace-shell": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-workspace-shell.ts",
     "verify:student-enrollment": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-enrollment.ts",
     "verify:student-guardians": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-guardians.ts",
-    "verify:student-medical": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-medical.ts"
+    "verify:student-medical": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-medical.ts",
+    "verify:student-documents": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-documents.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
