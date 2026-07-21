@@ -28,6 +28,8 @@ export type StudentHistoryEventType =
   | "DOCUMENT_REJECTED"
   | "DOCUMENT_EXPIRED"
   | "NOTE_ADDED"
+  | "IDENTITY_UPDATED"
+  | "ADMINISTRATIVE_DETAILS_UPDATED"
   | "ARCHIVED"
   | "OTHER";
 
@@ -132,6 +134,8 @@ const EVENT_ICON: Record<StudentHistoryEventType, HistoryIconKey> = {
   DOCUMENT_REJECTED: "documents",
   DOCUMENT_EXPIRED: "documents",
   NOTE_ADDED: "system",
+  IDENTITY_UPDATED: "identity",
+  ADMINISTRATIVE_DETAILS_UPDATED: "system",
   ARCHIVED: "archive",
   OTHER: "system",
 };
@@ -264,6 +268,36 @@ function projectStudentCreated(
       actor: null,
       visibility: "STAFF",
       metadata: { studentId: student.id },
+    }),
+  ];
+}
+
+/**
+ * Projection IDENTITY_UPDATED uniquement si updatedAt métier existe
+ * et diffère de createdAt (pas d'injection manuelle depuis l'édition).
+ */
+function projectStudentIdentityUpdated(
+  student: Student | null | undefined,
+): StudentHistoryEvent[] {
+  if (!student) return [];
+  const updatedAt = normalizeOptionalText(student.updatedAt);
+  const createdAt = normalizeOptionalText(student.createdAt);
+  if (!updatedAt) return [];
+  if (createdAt && updatedAt === createdAt) return [];
+
+  return [
+    createEvent({
+      id: `HIST-IDENTITY-UPDATED-${student.id}-${updatedAt}`,
+      type: "IDENTITY_UPDATED",
+      occurredAt: updatedAt,
+      dateQuality: "EXACT",
+      title: "Identité mise à jour",
+      description: "Informations d'identité administrative actualisées",
+      severity: "INFO",
+      sourceModule: "IDENTITY",
+      actor: null,
+      visibility: "STAFF",
+      metadata: { studentId: student.id, source: "student.updatedAt" },
     }),
   ];
 }
@@ -751,6 +785,7 @@ export function collectStudentHistoryRecord(input: {
 
   const events = sortStudentHistoryEvents([
     ...projectStudentCreated(input.student),
+    ...projectStudentIdentityUpdated(input.student),
     ...projectStudentArchived(input.student),
     ...projectEnrollmentEvents(input.enrollments ?? []),
     ...projectGuardianEvents(input.guardians ?? []),

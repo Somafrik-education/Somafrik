@@ -15,6 +15,7 @@ export type StudentWorkspaceModuleId =
 export type StudentWorkspacePermission =
   | "student.overview.read"
   | "student.identity.read"
+  | "student.identity.update"
   | "student.enrollments.read"
   | "student.enrollments.create"
   | "student.enrollments.update"
@@ -41,6 +42,8 @@ export type StudentWorkspacePermission =
   | "student.history.read"
   | "student.history.export"
   | "student.history.audit"
+  | "student.administrative.update"
+  | "student.archive"
   | "student.access.read";
 
 export interface StudentWorkspaceModule {

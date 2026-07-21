@@ -1,9 +1,11 @@
+import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
 import { Card, SectionHeader } from "../ui/Card";
 import { StudentEmergencyContacts } from "./StudentEmergencyContacts";
 import { StudentGuardianCard } from "./StudentGuardianCard";
 import { StudentGuardianTable } from "./StudentGuardianTable";
 import { StudentPickupAuthorization } from "./StudentPickupAuthorization";
+import { StudentEditingPanel } from "./editing/StudentEditingPanel";
 
 interface StudentGuardiansTabProps {
   workspace: StudentWorkspaceViewModel;
@@ -11,6 +13,7 @@ interface StudentGuardiansTabProps {
 
 export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
   const financial = workspace.financialResponsibles[0] ?? null;
+  const editing = useStudentEditingContext(workspace.studentId);
 
   return (
     <div className="space-y-6" data-testid="student-guardians-tab">
@@ -47,23 +50,23 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
         )}
       </Card>
 
-      <Card className="p-5">
-        <p className="text-sm font-semibold text-ink">
-          Actions administratives à venir
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {["Ajouter", "Modifier", "Changer priorité", "Retirer"].map(
-            (label) => (
-              <button
-                key={label}
-                type="button"
-                disabled
-                className="inline-flex min-h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-muted opacity-60"
-              >
-                {label}
-              </button>
-            ),
-          )}
+      <Card className="p-6">
+        <SectionHeader
+          title="Édition des coordonnées"
+          description="Périmètre C1.7 : téléphone, e-mail, adresse, urgence, récupération, priorité. Pas de création/suppression ni changement de responsable légal."
+        />
+        <div className="mt-6">
+          <StudentEditingPanel
+            canUpdateIdentity={false}
+            canUpdateGuardians={editing.canUpdateGuardians}
+            canUpdateAdministrative={false}
+            identity={null}
+            guardians={editing.guardians}
+            administrative={null}
+            authContext={editing.authContext}
+            repository={editing.repository}
+            onSuccess={editing.refreshFromStore}
+          />
         </div>
       </Card>
     </div>
