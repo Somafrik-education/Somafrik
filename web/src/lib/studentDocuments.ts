@@ -76,6 +76,10 @@ export interface StudentDocumentItem {
   issuedAt: string | null;
   expiresAt: string | null;
   verifiedAt: string | null;
+  /** Date de dépôt dans Somafrik (distincte de issuedAt = émission du document). */
+  submittedAt: string | null;
+  /** Date de refus dédiée — absente des données legacy actuelles. */
+  rejectedAt: string | null;
   verifiedBy: string | null;
   fileName: string | null;
   visibility: DocumentVisibility;
@@ -489,6 +493,9 @@ export function toStudentDocumentItem(
     issuedAt: normalizeOptionalText(document.issuedAt),
     expiresAt,
     verifiedAt: normalizeOptionalText(document.verifiedAt),
+    // createdAt du DTO = dépôt administratif, jamais confondu avec issuedAt.
+    submittedAt: normalizeOptionalText(document.createdAt),
+    rejectedAt: null,
     verifiedBy: normalizeOptionalText(document.verifiedBy),
     fileName: extractFileName(document.fileUrl),
     visibility: meta.visibility,
@@ -511,6 +518,8 @@ function createMissingPlaceholder(
     issuedAt: null,
     expiresAt: null,
     verifiedAt: null,
+    submittedAt: null,
+    rejectedAt: null,
     verifiedBy: null,
     fileName: null,
     visibility: requirement.visibility,

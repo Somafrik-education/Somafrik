@@ -288,6 +288,8 @@ function testComputedAlerts() {
     hasExpiredRequiredDocument: false,
     hasRejectedDocument: false,
     hasLowDocumentCompliance: false,
+    hasImportantHistoryEvent: false,
+    latestImportantHistoryEventTitle: null,
   });
 
   const ids = alerts.map((alert) => alert.id);
@@ -330,6 +332,8 @@ function testComputedAlerts() {
     hasExpiredRequiredDocument: false,
     hasRejectedDocument: false,
     hasLowDocumentCompliance: false,
+    hasImportantHistoryEvent: false,
+    latestImportantHistoryEventTitle: null,
   });
   assertEqual(healthy.length, 0, "Aucune alerte si dossier complet");
 }
@@ -412,6 +416,10 @@ function testGuardiansSummaryAndImplementedFlags() {
   assert(
     isStudentWorkspaceModuleImplemented("documents"),
     "Documents implémenté (C1.5)",
+  );
+  assert(
+    isStudentWorkspaceModuleImplemented("history"),
+    "Historique implémenté (C1.6)",
   );
 }
 

@@ -24,6 +24,10 @@ import {
   type StudentDocumentRecord,
 } from "./studentDocuments";
 import {
+  collectStudentHistoryRecord,
+  type StudentHistoryRecord,
+} from "./studentHistory";
+import {
   buildStudentWorkspaceOverview,
   type StudentWorkspaceOverview,
 } from "./studentWorkspaceOverview";
@@ -34,6 +38,7 @@ export interface StudentWorkspace {
   guardians: StudentGuardianRelationRecord[];
   medical: StudentMedicalRecord;
   documents: StudentDocumentRecord;
+  history: StudentHistoryRecord;
 }
 
 export interface StudentWorkspaceDataSource {
@@ -111,6 +116,16 @@ export function buildStudentWorkspace({
     referenceDate,
   });
 
+  const history = collectStudentHistoryRecord({
+    studentId: student.id,
+    student,
+    enrollments,
+    guardians,
+    medical,
+    documents,
+    referenceDate,
+  });
+
   return {
     overview: buildStudentWorkspaceOverview({
       student,
@@ -127,11 +142,13 @@ export function buildStudentWorkspace({
       medicalProfile,
       medicalRecord: medical,
       documentRecord: documents,
+      historyRecord: history,
       referenceDate,
     }),
     enrollments,
     guardians,
     medical,
     documents,
+    history,
   };
 }
