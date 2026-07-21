@@ -9,7 +9,9 @@ import {
   collectStudentDocumentRecord,
   compareDocumentStatus,
   diagnoseStudentDocuments,
+  evaluateDocumentRequirement,
   filterStudentDocumentRecordByVisibility,
+  getDocumentRequirements,
   isDocumentExpired,
   normalizeStudentDocumentStatus,
   normalizeStudentDocumentType,
@@ -480,8 +482,191 @@ function testWorkspaceBuild() {
   );
 
   // Summary helper isolé
-  const summary = buildStudentDocumentSummary(workspace!.documents.documents);
+  const summary = buildStudentDocumentSummary(
+    workspace!.documents.documents,
+    workspace!.documents.requirements,
+  );
   assertEqual(summary.total, workspace!.documents.summary.total, "Summary sync");
+}
+
+function verifiedDocsBase(): StudentDocument[] {
+  return [
+    {
+      id: "D-BIRTH",
+      studentId: "STU-1",
+      documentType: "Acte de naissance",
+      fileUrl: "/files/acte.pdf",
+      status: "Vérifié",
+    },
+    {
+      id: "D-PHOTO",
+      studentId: "STU-1",
+      documentType: "Photo",
+      fileUrl: "/files/photo.jpg",
+      status: "Vérifié",
+    },
+    {
+      id: "D-MED",
+      studentId: "STU-1",
+      documentType: "Certificat médical",
+      fileUrl: "/files/med.pdf",
+      status: "Vérifié",
+    },
+  ];
+}
+
+function testIdentityPassportVerified() {
+  const record = collectStudentDocumentRecord({
+    studentId: "STU-1",
+    documents: [
+      ...verifiedDocsBase(),
+      {
+        id: "D-PASS",
+        studentId: "STU-1",
+        documentType: "Passeport",
+        fileUrl: "/files/pass.pdf",
+        status: "Vérifié",
+      },
+    ],
+  });
+
+  const identity = evaluateDocumentRequirement(
+    getDocumentRequirements().find((item) => item.id === "IDENTITY")!,
+    record.documents,
+  );
+  assert(identity.satisfied, "Identité conforme via passeport VERIFIED");
+  assertEqual(identity.status, "VERIFIED", "Statut exigence VERIFIED");
+  assert(!record.summary.hasCriticalMissingDocument, "Pas de missing critique");
+  assertEqual(record.summary.complianceRate, 100, "Conformité 100 %");
+  assert(
+    !record.documents.some(
+      (item) => item.id.startsWith("MISSING-IDENTITY"),
+    ),
+    "Pas de placeholder CNI",
+  );
+  assert(
+    record.documents.some((item) => item.type === "PASSPORT" && item.required),
+    "Passeport compté comme pièce d'identité obligatoire",
+  );
+}
+
+function testIdentityPassportSubmitted() {
+  const record = collectStudentDocumentRecord({
+    studentId: "STU-1",
+    documents: [
+      ...verifiedDocsBase(),
+      {
+        id: "D-PASS",
+        studentId: "STU-1",
+        documentType: "Passeport",
+        fileUrl: "/files/pass.pdf",
+        status: "En attente",
+      },
+    ],
+  });
+
+  const identity = evaluateDocumentRequirement(
+    getDocumentRequirements().find((item) => item.id === "IDENTITY")!,
+    record.documents,
+  );
+  assert(!identity.satisfied, "Identité non vérifiée");
+  assertEqual(identity.status, "SUBMITTED", "Exigence en attente");
+  assert(record.summary.complianceRate < 100, "Conformité < 100 %");
+  assertEqual(record.summary.complianceRate, 75, "3/4 exigences vérifiées");
+  assert(!record.summary.hasCriticalMissingDocument, "Pas missing (candidat présent)");
+}
+
+function testIdentityPassportExpired() {
+  const referenceDate = new Date(2026, 6, 21);
+  const record = collectStudentDocumentRecord({
+    studentId: "STU-1",
+    referenceDate,
+    documents: [
+      ...verifiedDocsBase(),
+      {
+        id: "D-PASS",
+        studentId: "STU-1",
+        documentType: "Passeport",
+        fileUrl: "/files/pass.pdf",
+        status: "Vérifié",
+        expiresAt: "2025-01-01",
+      },
+    ],
+  });
+
+  const diagnostics = diagnoseStudentDocuments(record);
+  assert(diagnostics.hasExpiredRequiredDocument, "Exigence identité expirée");
+  const identity = evaluateDocumentRequirement(
+    getDocumentRequirements().find((item) => item.id === "IDENTITY")!,
+    record.documents,
+  );
+  assert(!identity.satisfied, "Identité non conforme");
+  assertEqual(identity.status, "EXPIRED", "Statut EXPIRED");
+}
+
+function testIdentityPassportRejected() {
+  const record = collectStudentDocumentRecord({
+    studentId: "STU-1",
+    documents: [
+      ...verifiedDocsBase(),
+      {
+        id: "D-PASS",
+        studentId: "STU-1",
+        documentType: "Passeport",
+        fileUrl: "/files/pass.pdf",
+        status: "Refusé",
+      },
+    ],
+  });
+
+  const diagnostics = diagnoseStudentDocuments(record);
+  assert(diagnostics.hasRejectedDocument, "Rejet détecté");
+  const identity = evaluateDocumentRequirement(
+    getDocumentRequirements().find((item) => item.id === "IDENTITY")!,
+    record.documents,
+  );
+  assert(!identity.satisfied, "Identité non conforme");
+  assertEqual(identity.status, "REJECTED", "Statut REJECTED");
+  assert(record.summary.complianceRate < 100, "Pas de faux 100 %");
+}
+
+function testIdentityCniRejectedPassportVerified() {
+  const record = collectStudentDocumentRecord({
+    studentId: "STU-1",
+    documents: [
+      ...verifiedDocsBase(),
+      {
+        id: "D-CNI",
+        studentId: "STU-1",
+        documentType: "Carte identité",
+        fileUrl: "/files/cni.pdf",
+        status: "Refusé",
+      },
+      {
+        id: "D-PASS",
+        studentId: "STU-1",
+        documentType: "Passeport",
+        fileUrl: "/files/pass.pdf",
+        status: "Vérifié",
+      },
+    ],
+  });
+
+  const identity = evaluateDocumentRequirement(
+    getDocumentRequirements().find((item) => item.id === "IDENTITY")!,
+    record.documents,
+  );
+  assert(identity.satisfied, "Identité satisfaite par passeport");
+  assertEqual(identity.status, "VERIFIED", "Exigence VERIFIED");
+  assert(
+    record.documents.some((item) => item.status === "REJECTED"),
+    "Rejet CNI toujours visible",
+  );
+  assert(
+    diagnoseStudentDocuments(record).hasRejectedDocument,
+    "Rejet toujours diagnostiqué",
+  );
+  assertEqual(record.summary.complianceRate, 100, "Conformité 100 % via passeport");
 }
 
 function main() {
@@ -495,6 +680,11 @@ function main() {
     ["permissions et visibilité", testPermissionsAndVisibility],
     ["overview alerts", testOverviewAlerts],
     ["workspace build", testWorkspaceBuild],
+    ["identité passeport vérifié", testIdentityPassportVerified],
+    ["identité passeport soumis", testIdentityPassportSubmitted],
+    ["identité passeport expiré", testIdentityPassportExpired],
+    ["identité passeport refusé", testIdentityPassportRejected],
+    ["identité CNI refusée + passeport vérifié", testIdentityCniRejectedPassportVerified],
   ] as const;
 
   for (const [name, run] of tests) {

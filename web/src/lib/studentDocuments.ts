@@ -108,10 +108,99 @@ export interface StudentDocumentDiagnostics {
 export interface StudentDocumentRecord {
   studentId: string;
   documents: StudentDocumentItem[];
+  /** Exigences de conformité (distinctes des documents physiques). */
+  requirements: RequiredDocumentRequirement[];
   summary: StudentDocumentSummary;
   source: DocumentDataSource;
 }
 
+/**
+ * Exigence administrative pouvant être satisfaite par plusieurs types de pièces.
+ * Ex. IDENTITY ← IDENTITY_CARD | PASSPORT (uniquement si VERIFIED).
+ */
+export interface RequiredDocumentRequirement {
+  id: string;
+  label: string;
+  acceptedTypes: readonly StudentDocumentType[];
+  critical: boolean;
+  visibility: DocumentVisibility;
+}
+
+export type RequirementSatisfactionStatus =
+  | "MISSING"
+  | "SUBMITTED"
+  | "VERIFIED"
+  | "REJECTED"
+  | "EXPIRED";
+
+export interface RequirementEvaluation {
+  requirementId: string;
+  status: RequirementSatisfactionStatus;
+  /** true uniquement si au moins un candidat accepté est VERIFIED. */
+  satisfied: boolean;
+  critical: boolean;
+  matchingDocuments: StudentDocumentItem[];
+}
+
+/**
+ * Catalogue d'exigences du dossier administratif.
+ * TRANSFER_CERTIFICATE n'est requis que si `requireTransferCertificate`.
+ */
+export function getDocumentRequirements(options: {
+  requireTransferCertificate?: boolean;
+  requireMedicalCertificate?: boolean;
+} = {}): readonly RequiredDocumentRequirement[] {
+  const requireMedical = options.requireMedicalCertificate !== false;
+  const requireTransfer = Boolean(options.requireTransferCertificate);
+
+  const requirements: RequiredDocumentRequirement[] = [
+    {
+      id: "BIRTH_CERTIFICATE",
+      label: "Acte de naissance",
+      acceptedTypes: ["BIRTH_CERTIFICATE"],
+      critical: true,
+      visibility: "STAFF",
+    },
+    {
+      id: "PHOTO",
+      label: "Photo",
+      acceptedTypes: ["PHOTO"],
+      critical: false,
+      visibility: "STAFF",
+    },
+    {
+      id: "IDENTITY",
+      label: "Pièce d'identité",
+      acceptedTypes: ["IDENTITY_CARD", "PASSPORT"],
+      critical: true,
+      visibility: "ADMIN",
+    },
+  ];
+
+  if (requireMedical) {
+    requirements.push({
+      id: "MEDICAL_CERTIFICATE",
+      label: "Certificat médical",
+      acceptedTypes: ["MEDICAL_CERTIFICATE"],
+      critical: true,
+      visibility: "STAFF",
+    });
+  }
+
+  if (requireTransfer) {
+    requirements.push({
+      id: "TRANSFER_CERTIFICATE",
+      label: "Certificat de transfert",
+      acceptedTypes: ["TRANSFER_CERTIFICATE"],
+      critical: true,
+      visibility: "STAFF",
+    });
+  }
+
+  return requirements;
+}
+
+/** @deprecated préférer getDocumentRequirements — conservé pour méta d'item. */
 interface RequiredDocumentSpec {
   type: StudentDocumentType;
   required: boolean;
@@ -119,49 +208,23 @@ interface RequiredDocumentSpec {
   visibility: DocumentVisibility;
 }
 
-/**
- * Catalogue de base du dossier administratif.
- * TRANSFER_CERTIFICATE n'est requis que si `requireTransferCertificate`.
- */
-export function getRequiredDocumentCatalog(options: {
-  requireTransferCertificate?: boolean;
-  requireMedicalCertificate?: boolean;
-} = {}): readonly RequiredDocumentSpec[] {
-  const requireMedical = options.requireMedicalCertificate !== false;
-  const requireTransfer = Boolean(options.requireTransferCertificate);
-
-  return [
-    {
-      type: "BIRTH_CERTIFICATE",
-      required: true,
-      critical: true,
-      visibility: "STAFF",
-    },
-    {
-      type: "PHOTO",
-      required: true,
-      critical: false,
-      visibility: "STAFF",
-    },
-    {
-      type: "IDENTITY_CARD",
-      required: true,
-      critical: true,
-      visibility: "ADMIN",
-    },
-    {
-      type: "MEDICAL_CERTIFICATE",
-      required: requireMedical,
-      critical: requireMedical,
-      visibility: "STAFF",
-    },
-    {
-      type: "TRANSFER_CERTIFICATE",
-      required: requireTransfer,
-      critical: requireTransfer,
-      visibility: "STAFF",
-    },
-  ];
+function requirementsToItemCatalog(
+  requirements: readonly RequiredDocumentRequirement[],
+): readonly RequiredDocumentSpec[] {
+  const specs: RequiredDocumentSpec[] = [];
+  for (const requirement of requirements) {
+    for (const type of requirement.acceptedTypes) {
+      specs.push({
+        type,
+        // Les alternatives d'une même exigence sont toutes « obligatoires »
+        // au sens UI, mais la conformité se calcule sur l'exigence.
+        required: true,
+        critical: requirement.critical,
+        visibility: requirement.visibility,
+      });
+    }
+  }
+  return specs;
 }
 
 function foldKey(value: string): string {
@@ -363,16 +426,6 @@ function resolveCatalogMeta(
     };
   }
 
-  // Passeport couvre le besoin d'identité critique.
-  if (type === "PASSPORT") {
-    const identity = catalog.find((item) => item.type === "IDENTITY_CARD");
-    return {
-      required: false,
-      critical: Boolean(identity?.critical),
-      visibility: "ADMIN",
-    };
-  }
-
   return { required: false, critical: false, visibility: "STAFF" };
 }
 
@@ -408,10 +461,14 @@ export function toStudentDocumentItem(
   document: StudentDocument,
   options: {
     catalog?: readonly RequiredDocumentSpec[];
+    requirements?: readonly RequiredDocumentRequirement[];
     referenceDate?: Date;
   } = {},
 ): StudentDocumentItem {
-  const catalog = options.catalog ?? getRequiredDocumentCatalog();
+  const requirements =
+    options.requirements ?? getDocumentRequirements();
+  const catalog =
+    options.catalog ?? requirementsToItemCatalog(requirements);
   const referenceDate = options.referenceDate ?? new Date();
   const type = normalizeStudentDocumentType(document.documentType);
   const meta = resolveCatalogMeta(type, catalog);
@@ -441,57 +498,117 @@ export function toStudentDocumentItem(
 }
 
 function createMissingPlaceholder(
-  spec: RequiredDocumentSpec,
+  requirement: RequiredDocumentRequirement,
   studentId: string,
 ): StudentDocumentItem {
+  const type = requirement.acceptedTypes[0] ?? "OTHER";
   return {
-    id: `MISSING-${spec.type}-${studentId}`,
-    type: spec.type,
-    label: getStudentDocumentTypeLabel(spec.type),
+    id: `MISSING-${requirement.id}-${studentId}`,
+    type,
+    label: requirement.label || getStudentDocumentTypeLabel(type),
     status: "MISSING",
-    required: spec.required,
+    required: true,
     issuedAt: null,
     expiresAt: null,
     verifiedAt: null,
     verifiedBy: null,
     fileName: null,
-    visibility: spec.visibility,
+    visibility: requirement.visibility,
     notes: null,
-    critical: spec.critical,
+    critical: requirement.critical,
   };
 }
 
+function isPhysicalDocument(item: StudentDocumentItem): boolean {
+  return !item.id.startsWith("MISSING-");
+}
+
 /**
- * Satisfait le besoin d'identité si CNI ou passeport est présent (non manquant).
+ * Évalue une exigence : conforme uniquement si un candidat accepté est VERIFIED.
+ * Ordre hors vérification : REJECTED → EXPIRED → SUBMITTED → MISSING.
  */
-function hasIdentityCoverage(documents: readonly StudentDocumentItem[]): boolean {
-  return documents.some(
-    (item) =>
-      (item.type === "IDENTITY_CARD" || item.type === "PASSPORT") &&
-      item.status !== "MISSING",
+export function evaluateDocumentRequirement(
+  requirement: RequiredDocumentRequirement,
+  documents: readonly StudentDocumentItem[],
+): RequirementEvaluation {
+  const matchingDocuments = documents.filter((item) =>
+    requirement.acceptedTypes.includes(item.type),
+  );
+  const candidates = matchingDocuments.filter(
+    (item) => isPhysicalDocument(item) && item.status !== "MISSING",
+  );
+
+  if (candidates.some((item) => item.status === "VERIFIED")) {
+    return {
+      requirementId: requirement.id,
+      status: "VERIFIED",
+      satisfied: true,
+      critical: requirement.critical,
+      matchingDocuments,
+    };
+  }
+  if (candidates.some((item) => item.status === "REJECTED")) {
+    return {
+      requirementId: requirement.id,
+      status: "REJECTED",
+      satisfied: false,
+      critical: requirement.critical,
+      matchingDocuments,
+    };
+  }
+  if (candidates.some((item) => item.status === "EXPIRED")) {
+    return {
+      requirementId: requirement.id,
+      status: "EXPIRED",
+      satisfied: false,
+      critical: requirement.critical,
+      matchingDocuments,
+    };
+  }
+  if (candidates.some((item) => item.status === "SUBMITTED")) {
+    return {
+      requirementId: requirement.id,
+      status: "SUBMITTED",
+      satisfied: false,
+      critical: requirement.critical,
+      matchingDocuments,
+    };
+  }
+
+  return {
+    requirementId: requirement.id,
+    status: "MISSING",
+    satisfied: false,
+    critical: requirement.critical,
+    matchingDocuments,
+  };
+}
+
+export function evaluateDocumentRequirements(
+  requirements: readonly RequiredDocumentRequirement[],
+  documents: readonly StudentDocumentItem[],
+): RequirementEvaluation[] {
+  return requirements.map((requirement) =>
+    evaluateDocumentRequirement(requirement, documents),
   );
 }
 
 export function buildStudentDocumentSummary(
   documents: readonly StudentDocumentItem[],
+  requirements: readonly RequiredDocumentRequirement[] = getDocumentRequirements(),
 ): StudentDocumentSummary {
-  const required = documents.filter((item) => item.required);
-  const verifiedRequired = required.filter(
-    (item) => item.status === "VERIFIED",
+  const evaluations = evaluateDocumentRequirements(requirements, documents);
+  const requirementCount = evaluations.length;
+  const verifiedRequirements = evaluations.filter(
+    (item) => item.satisfied,
   ).length;
-  const requiredCount = required.length;
   const complianceRate =
-    requiredCount === 0
+    requirementCount === 0
       ? 100
-      : Math.round((verifiedRequired / requiredCount) * 100);
+      : Math.round((verifiedRequirements / requirementCount) * 100);
 
-  const identityCovered = hasIdentityCoverage(documents);
-  const hasCriticalMissingDocument = documents.some(
-    (item) =>
-      item.critical &&
-      item.required &&
-      item.status === "MISSING" &&
-      !(item.type === "IDENTITY_CARD" && identityCovered),
+  const hasCriticalMissingDocument = evaluations.some(
+    (item) => item.critical && item.status === "MISSING",
   );
 
   return {
@@ -509,19 +626,25 @@ export function buildStudentDocumentSummary(
 export function diagnoseStudentDocuments(
   record: StudentDocumentRecord,
 ): StudentDocumentDiagnostics {
-  const { documents, summary } = record;
+  const evaluations = evaluateDocumentRequirements(
+    record.requirements,
+    record.documents,
+  );
+
   return {
-    hasMissingRequiredDocument: documents.some(
-      (item) => item.required && item.status === "MISSING",
+    hasMissingRequiredDocument: evaluations.some(
+      (item) => item.status === "MISSING",
     ),
-    hasExpiredRequiredDocument: documents.some(
-      (item) => item.required && item.status === "EXPIRED",
+    hasExpiredRequiredDocument: evaluations.some(
+      (item) => item.status === "EXPIRED",
     ),
-    hasRejectedDocument: documents.some((item) => item.status === "REJECTED"),
-    complianceRate: summary.complianceRate,
-    hasCriticalMissingDocument: summary.hasCriticalMissingDocument,
+    hasRejectedDocument:
+      record.documents.some((item) => item.status === "REJECTED") ||
+      evaluations.some((item) => item.status === "REJECTED"),
+    complianceRate: record.summary.complianceRate,
+    hasCriticalMissingDocument: record.summary.hasCriticalMissingDocument,
     hasLowCompliance:
-      summary.complianceRate < DOCUMENT_COMPLIANCE_ALERT_THRESHOLD,
+      record.summary.complianceRate < DOCUMENT_COMPLIANCE_ALERT_THRESHOLD,
   };
 }
 
@@ -543,11 +666,15 @@ export function filterStudentDocumentRecordByVisibility(
   const documents = record.documents.filter((item) =>
     isDocumentVisibilityAllowed(item.visibility, allowedVisibility),
   );
+  const requirements = record.requirements.filter((requirement) =>
+    isDocumentVisibilityAllowed(requirement.visibility, allowedVisibility),
+  );
   const sorted = sortStudentDocuments(documents);
-  const summary = buildStudentDocumentSummary(sorted);
+  const summary = buildStudentDocumentSummary(sorted, requirements);
   return {
     ...record,
     documents: sorted,
+    requirements,
     summary,
   };
 }
@@ -555,9 +682,11 @@ export function filterStudentDocumentRecordByVisibility(
 export function createEmptyStudentDocumentRecord(
   studentId: string,
 ): StudentDocumentRecord {
+  const requirements = getDocumentRequirements();
   return {
     studentId,
     documents: [],
+    requirements: [...requirements],
     summary: {
       total: 0,
       verified: 0,
@@ -581,30 +710,34 @@ export function collectStudentDocumentRecord(input: {
 }): StudentDocumentRecord {
   const studentId = input.studentId.trim();
   const referenceDate = input.referenceDate ?? new Date();
-  const catalog = getRequiredDocumentCatalog({
+  const requirements = getDocumentRequirements({
     requireTransferCertificate: input.requireTransferCertificate,
     requireMedicalCertificate: input.requireMedicalCertificate,
   });
+  const catalog = requirementsToItemCatalog(requirements);
 
   const rawDocuments = (input.documents ?? []).filter(
     (document) => document.studentId === studentId,
   );
 
   const items = rawDocuments.map((document) =>
-    toStudentDocumentItem(document, { catalog, referenceDate }),
+    toStudentDocumentItem(document, { catalog, requirements, referenceDate }),
   );
 
-  const presentTypes = new Set(items.map((item) => item.type));
-  if (hasIdentityCoverage(items)) {
-    presentTypes.add("IDENTITY_CARD");
-  }
-
-  const placeholders = catalog
-    .filter((spec) => spec.required && !presentTypes.has(spec.type))
-    .map((spec) => createMissingPlaceholder(spec, studentId));
+  // Placeholder uniquement si aucun document physique d'un type accepté n'existe.
+  const placeholders = requirements
+    .filter((requirement) => {
+      const hasPhysicalCandidate = items.some(
+        (item) =>
+          requirement.acceptedTypes.includes(item.type) &&
+          isPhysicalDocument(item),
+      );
+      return !hasPhysicalCandidate;
+    })
+    .map((requirement) => createMissingPlaceholder(requirement, studentId));
 
   const documents = sortStudentDocuments([...items, ...placeholders]);
-  const summary = buildStudentDocumentSummary(documents);
+  const summary = buildStudentDocumentSummary(documents, requirements);
 
   let source: DocumentDataSource = "EMPTY";
   if (rawDocuments.length > 0) {
@@ -616,6 +749,7 @@ export function collectStudentDocumentRecord(input: {
   return {
     studentId,
     documents,
+    requirements: [...requirements],
     summary,
     source,
   };
