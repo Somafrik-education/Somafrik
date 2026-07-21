@@ -22,6 +22,8 @@ import {
 } from "./studentGuardianViewModel";
 import { buildStudentMedicalViewModel } from "./studentMedicalViewModel";
 import type { StudentMedicalViewModel } from "./studentMedicalViewModel";
+import { buildStudentDocumentViewModel } from "./studentDocumentsViewModel";
+import type { StudentDocumentViewModel } from "./studentDocumentsViewModel";
 
 export interface StudentWorkspaceViewModel {
   studentId: string;
@@ -62,6 +64,7 @@ export interface StudentWorkspaceViewModel {
   financialResponsibles: StudentGuardianViewModel[];
   guardiansModule: StudentGuardiansModuleViewModel;
   medical: StudentMedicalViewModel;
+  documentsModule: StudentDocumentViewModel;
 }
 
 export interface BuildStudentWorkspaceViewModelOptions {
@@ -107,6 +110,12 @@ export function buildStudentWorkspaceViewModel(
     missingValueLabel,
     // Bridge Élèves:READ / personnel : STAFF uniquement (pas de notes MEDICAL).
     allowedVisibility: ["STAFF"],
+  });
+
+  const documentsModule = buildStudentDocumentViewModel(workspace.documents, {
+    missingValueLabel,
+    // Bridge administratif : STAFF + ADMIN pour la conformité du dossier.
+    allowedVisibility: ["STAFF", "ADMIN"],
   });
 
   const statusPresentation = getEnrollmentStatusPresentation(
@@ -185,5 +194,6 @@ export function buildStudentWorkspaceViewModel(
     financialResponsibles: guardiansModule.financialResponsibles,
     guardiansModule,
     medical,
+    documentsModule,
   };
 }

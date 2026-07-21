@@ -40,6 +40,10 @@ export function buildStudentWorkspaceAlerts(
     | "hasPhysician"
     | "hasBloodType"
     | "hasMedicalUpdate"
+    | "hasMissingRequiredDocument"
+    | "hasExpiredRequiredDocument"
+    | "hasRejectedDocument"
+    | "hasLowDocumentCompliance"
   >,
 ): StudentWorkspaceAlert[] {
   const alerts: StudentWorkspaceAlert[] = [];
@@ -60,6 +64,43 @@ export function buildStudentWorkspaceAlerts(
       severity: "warning",
       message: "Pathologie critique signalée",
       targetModuleId: "health",
+    });
+  }
+
+  // Alertes documents (ordre : missing → expired → rejected → compliance).
+  if (overview.hasMissingRequiredDocument) {
+    alerts.push({
+      id: "missing-required-document",
+      severity: "warning",
+      message: "Document obligatoire manquant",
+      targetModuleId: "documents",
+    });
+  }
+
+  if (overview.hasExpiredRequiredDocument) {
+    alerts.push({
+      id: "expired-required-document",
+      severity: "warning",
+      message: "Document obligatoire expiré",
+      targetModuleId: "documents",
+    });
+  }
+
+  if (overview.hasRejectedDocument) {
+    alerts.push({
+      id: "rejected-document",
+      severity: "warning",
+      message: "Document refusé",
+      targetModuleId: "documents",
+    });
+  }
+
+  if (overview.hasLowDocumentCompliance) {
+    alerts.push({
+      id: "low-document-compliance",
+      severity: "info",
+      message: "Conformité documentaire insuffisante",
+      targetModuleId: "documents",
     });
   }
 

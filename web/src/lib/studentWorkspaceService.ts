@@ -20,6 +20,10 @@ import {
   type StudentMedicalRecord,
 } from "./studentMedical";
 import {
+  collectStudentDocumentRecord,
+  type StudentDocumentRecord,
+} from "./studentDocuments";
+import {
   buildStudentWorkspaceOverview,
   type StudentWorkspaceOverview,
 } from "./studentWorkspaceOverview";
@@ -29,6 +33,7 @@ export interface StudentWorkspace {
   enrollments: StudentEnrollmentRecord[];
   guardians: StudentGuardianRelationRecord[];
   medical: StudentMedicalRecord;
+  documents: StudentDocumentRecord;
 }
 
 export interface StudentWorkspaceDataSource {
@@ -75,6 +80,12 @@ export function buildStudentWorkspace({
     medicalProfiles: data.medicalProfiles,
   });
 
+  const documents = collectStudentDocumentRecord({
+    studentId: student.id,
+    documents: data.documents,
+    referenceDate,
+  });
+
   const medicalProfile = data.medicalProfiles?.find(
     (candidate) => candidate.studentId === student.id,
   );
@@ -115,9 +126,12 @@ export function buildStudentWorkspace({
       documents: data.documents,
       medicalProfile,
       medicalRecord: medical,
+      documentRecord: documents,
+      referenceDate,
     }),
     enrollments,
     guardians,
     medical,
+    documents,
   };
 }
