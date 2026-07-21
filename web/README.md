@@ -57,3 +57,9 @@ src/
   lib/          Permissions, scoping, modules métier
   pages/        Vues par route
 ```
+
+## Framework UI/UX
+
+Documentation normative (Phase D) : [`docs/ux/`](../docs/ux/README.md)  
+Vision, principes, inventaire D1.1, glossaire et décisions officielles (DO-xxx).  
+Toute PR UI/UX doit s’y conformer.
