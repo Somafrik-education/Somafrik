@@ -15,7 +15,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |
 | Classes métier | D3.2a — Fiche | 🔒 | `RecordLayout` (cible) | **Fiche absente** (prérequis produit) |
 | Classes métier | D3.2b — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
-| Classes métier | D3.2c — Membres / élèves | ⏳ | `ListLayout` (cible) | `ClassStudentsPage` → EntityPage students |
+| Classes métier | D3.2c — Membres / élèves | ✅ | `ListLayout` via `EntityListShell` | classScope EntityPage ; modales |
 | Classes config | Structure (D2.5) | ✅ | `FormLayout` | Monolithe `ConfigurationPage` |
 | Enseignants | D3.3 — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
 | Enseignants | Fiche | 🔒 | `RecordLayout` (cible) | Fiche absente |
@@ -47,7 +47,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | DataTable | ⏳ | — | 0 % | ui legacy |
 | Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | StatusBadge ; onglets |
 | Élèves — liste | ✅ | `ListLayout` | D3.1b `StudentsListPage` | Modales EntityPage |
-| Classes (module métier) | ✅ / ⏳ | `ListLayout` | Liste D3.2b | Fiche absente ; D3.2c membres |
+| Classes (module métier) | ✅ / ⏳ | `ListLayout` | Liste D3.2b + membres D3.2c | Fiche absente ; modales EntityPage |
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | 🔒 | — | 0 % | Oui |
 | Présences | 🔒 | — | 0 % | Oui |
@@ -64,6 +64,6 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D2.7 : chrome EntityPage — [AUDIT](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT](./RAPPORT-D2.7-entitypage.md).
 - D3.2b : liste Classes — [RAPPORT](./RAPPORT-D3.2b-liste-classes.md).
 - D3.3 : liste Enseignants — [RAPPORT](./RAPPORT-D3.3-enseignants.md).
-- Attendre validation CTO avant **D3.2c — Membres / élèves d’une classe**.
+- D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.
