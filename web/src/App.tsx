@@ -14,6 +14,7 @@ import {
   ChartSettingsPage,
   ClassesListPage,
   ClassStudentsPage,
+  StudentsListPage,
   TeachersListPage,
   ConfigurationPage,
   CountriesPage,
@@ -141,7 +142,7 @@ export default function App() {
             path="eleves"
             element={
               <PermissionRoute view="students">
-                <EntityPage entity="students" />
+                <StudentsListPage />
               </PermissionRoute>
             }
           />
