@@ -560,11 +560,12 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 **Décision :** Aucune PR ne modifie tokens, CSS variables, thèmes ou primitives visuelles pour se conformer à D1.4 tant que ce document n’est pas validé CTO.
 
 **Implications :**
-- D1.4 = documentation uniquement dans son lot.
-- Après validation : lots D2.x+ citant DO-035 → DO-044.
-- Les valeurs concrètes feront l’objet de sous-lots dédiés (palette, type scale…).
+- **Statut :** D1.4 validé CTO (APPROVE WITH COMMENTS) — le verrou d’implémentation est levé pour la Phase D2.
+- Les lots D2.x+ citent DO-035 → DO-046, Patterns et Anti-patterns.
+- Les valeurs concrètes (palette, type scale…) font l’objet de sous-lots dédiés.
+- Compatibilité et dépréciations : DO-045 / DO-046.
 
-**Réf. :** Design Language D1.4 §19 ; DO-012.
+**Réf. :** Design Language D1.4 §20 ; DO-012.
 
 ---
 
@@ -590,6 +591,32 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 - Hardcode, rôles inventés, motion décorative, dual-kit, cibles tactiles insuffisantes, typo cassée = non-conformité.
 
 **Réf. :** [`anti-patterns.md`](./anti-patterns.md) ; Design Language D1.4 §13.
+
+---
+
+## DO-045 — Compatibilité ascendante du Design System
+
+**Décision :** Toute évolution du Design System doit préserver autant que possible la compatibilité avec les implémentations existantes, sauf décision de migration validée.
+
+**Implications :**
+- Préférer l’ajout de tokens / variantes à la rupture silencieuse.
+- Une rupture (rename, suppression, changement de sémantique) exige une décision de migration explicite (PR + plan).
+- Réduit les refontes massives non maîtrisées en Phase D2.
+
+**Réf. :** Design Language D1.4 §18–§19 ; DO-043.
+
+---
+
+## DO-046 — Dépréciation contrôlée
+
+**Décision :** Lorsqu’un token, un pattern, une convention ou un rôle est remplacé : (1) il est marqué **déprécié**, (2) la stratégie de migration est documentée, (3) la suppression n’intervient qu’après validation.
+
+**Implications :**
+- Pas de suppression « surprise » d’API visuelle ou de Pattern.
+- La période de dépréciation laisse le temps aux écrans de migrer (D2.3).
+- Le journal DO / Patterns / tokens trace l’état déprécié.
+
+**Réf. :** DO-045 ; Design Language D1.4 §19.
 
 ---
 
@@ -641,3 +668,5 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 | DO-042 | Validation CTO avant implémentation Design System | D1.4 |
 | DO-043 | Gouvernance des Éléments gelés | D1.4 |
 | DO-044 | Anti-patterns Design System | D1.4 |
+| DO-045 | Compatibilité ascendante du Design System | D1.4 |
+| DO-046 | Dépréciation contrôlée | D1.4 |

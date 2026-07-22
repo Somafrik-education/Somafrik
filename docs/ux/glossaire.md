@@ -298,3 +298,11 @@ Nom officiel d’une classe d’écran : Grand écran, Desktop, Laptop, Tablette
 ### Thème
 
 Jeu de valeurs de tokens (ex. light). Le dark mode est **supportable** par architecture mais non productisé (DO-039).
+
+### Compatibilité ascendante (Design System)
+
+Principe selon lequel une évolution DS préserve autant que possible les implémentations existantes, sauf migration validée (DO-045).
+
+### Dépréciation contrôlée
+
+Processus : marquage déprécié → stratégie de migration documentée → suppression après validation (DO-046).

@@ -1,14 +1,15 @@
 # Design Language & Design System Somafrik — D1.4
 
-**Statut :** normatif (sous réserve validation CTO)  
-**Phase :** D1.4  
-**Nature :** spécification uniquement — aucune implémentation, aucun token runtime modifié  
+**Statut :** normatif — **validé CTO** (APPROVE WITH COMMENTS, amendements intégrés)  
+**Phase :** D1.4 — clôture de la Phase D1 (Framework Produit)  
+**Nature :** spécification uniquement dans cette PR — l’implémentation relève de la Phase D2  
 **Références :** [Vision](./vision-produit.md) · [Principes](./principes-ux.md) · [Navigation](./architecture-navigation.md) · [Pages métier](./architecture-pages-metier.md) · [Patterns](./patterns-produit.md) · [Anti-patterns](./anti-patterns.md) · [Décisions](./decisions-officielles.md) · [Glossaire](./glossaire.md)
 
 Cette spécification définit le **Design Language officiel** de Somafrik et l’architecture du **Design System**.  
 Elle doit rester valable plusieurs années et servir de base à tous les composants UI.
 
-**Aucune modification de code, CSS, tokens ou composants n’est autorisée tant que le CTO n’a pas validé ce document (DO-042).**
+Avec D1.1–D1.3, elle constitue le **socle Framework Produit** Somafrik.  
+L’implémentation progressive s’ouvre en **Phase D2** (DO-042 levé).
 
 ---
 
@@ -356,9 +357,11 @@ D1.4 ne crée pas de nouveau Pattern de page ; il **contraint l’apparence** de
 | **DO-039** | Dark mode : supportable par architecture, non productisé |
 | **DO-040** | Un seul kit visuel ERP (renforce DO-011) |
 | **DO-041** | Minima accessibilité du Design System |
-| **DO-042** | Validation CTO avant implémentation Design System |
+| **DO-042** | Validation CTO avant implémentation Design System *(levé — D1.4 validé)* |
 | **DO-043** | Gouvernance des Éléments gelés |
 | **DO-044** | Anti-patterns Design System (AP-007 → AP-012) |
+| **DO-045** | Compatibilité ascendante du Design System |
+| **DO-046** | Dépréciation contrôlée |
 
 ---
 
@@ -427,7 +430,8 @@ Légende : ✅ conforme · ⚠️ écart partiel · ❌ non conforme · — N/A
 | Catalogue Patterns P-001 → P-010 (D1.3) | **Gelé** (rappel) | Nouveaux P par amendement |
 | Types de pages / structures Fiche-Liste (D1.3) | **Gelé** (rappel) | Détails d’implémentation |
 | Niveaux de navigation + Contexte (D1.2) | **Gelé** (rappel) | UI des sélecteurs |
-| DO-001 → DO-044 | **Gelé** une fois validés | Amendement CTO uniquement |
+| DO-001 → DO-046 | **Gelé** une fois validés | Amendement CTO uniquement |
+| Compatibilité ascendante / dépréciation (DO-045, DO-046) | **Gelé** | Plans de migration documentés |
 
 ### Ce qui n’est volontairement **pas** gelé
 
@@ -440,16 +444,34 @@ Légende : ✅ conforme · ⚠️ écart partiel · ❌ non conforme · — N/A
 
 ---
 
-## 19. Critères de validation CTO
+## 19. Suite recommandée — Phase D2 (hors D1.4)
 
-- [ ] Philosophie visuelle acceptée
-- [ ] Principes DS acceptés
-- [ ] Familles de tokens (sans valeurs) acceptées
-- [ ] Rôles couleurs / typo acceptés
-- [ ] Posture Dark Mode acceptée
-- [ ] Anti-patterns AP-007 → AP-012 acceptés
-- [ ] Chapitre Éléments gelés accepté comme méthode
-- [ ] DO-035 → DO-044 intégrés
-- [ ] Tableau d’impact pris comme baseline
+Ordre indicatif CTO pour l’implémentation progressive :
 
-**Statut demandé :** Validé CTO / Amendé / Reporté
+| Lot | Objectif |
+|-----|----------|
+| **D2.1** | Fondation des composants (Button, Input, Badge, Card, Modal…) strictement sur D1.4 |
+| **D2.2** | Layouts (PageLayout, ListLayout, RecordLayout, DashboardLayout…) |
+| **D2.3** | Migration progressive des écrans existants vers Patterns / DS — sans refonte massive |
+
+Chaque lot D2 cite DO / P / AP et respecte DO-045 / DO-046.
+
+---
+
+## 20. Validation CTO
+
+| Critère | Statut |
+|---------|--------|
+| Philosophie visuelle (sobre, dense, lisible, ERP) | ✅ Validé |
+| Structure tokens avant valeurs | ✅ Validé |
+| Posture Dark Mode | ✅ Validé |
+| Anti-patterns AP-007 → AP-012 | ✅ Validé |
+| Éléments gelés (méthode pérenne) | ✅ Validé |
+| Dette documentée sans refactor immédiat | ✅ Validé |
+| DO-045 Compatibilité ascendante | ✅ Intégré |
+| DO-046 Dépréciation contrôlée | ✅ Intégré |
+| DO-035 → DO-046 | ✅ Intégrés |
+
+**Décision CTO :** APPROVE WITH COMMENTS — amendements intégrés.  
+**Fusion :** autorisée.  
+**Phase D1 :** clôturée. **Phase D2 :** recommandée ensuite.
