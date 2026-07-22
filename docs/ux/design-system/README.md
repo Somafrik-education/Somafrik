@@ -1,6 +1,6 @@
 # Design System Somafrik — documentation technique
 
-**Phase :** D2.1 (primitives) + D2.2 (layouts) + D2.3 (migrations métier)  
+**Phase :** D2.1 → D2.4  
 **Code :** `web/src/design-system/`  
 **Spec :** [Design Language D1.4](../design-language.md) · [Pages métier D1.3](../architecture-pages-metier.md)
 
@@ -11,10 +11,13 @@
 | [AUDIT-D2.1.md](./AUDIT-D2.1.md) | État des composants avant fondation |
 | [AUDIT-D2.2.md](./AUDIT-D2.2.md) | État des layouts avant fondation |
 | [AUDIT-D2.3.md](./AUDIT-D2.3.md) | Audit module Profil établissement |
+| [AUDIT-D2.4.md](./AUDIT-D2.4.md) | Audit feedback & états transverses |
 | [RAPPORT-D2.3-profil-etablissement.md](./RAPPORT-D2.3-profil-etablissement.md) | Rapport CTO première migration |
-| [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS + mapping pages → layouts |
-| [PRIMITIVES.md](./PRIMITIVES.md) | API développeur des primitives |
-| [LAYOUTS.md](./LAYOUTS.md) | API, zones, exemples et limites des layouts |
+| [RAPPORT-D2.4.md](./RAPPORT-D2.4.md) | Rapport CTO lot feedback |
+| [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS + mapping |
+| [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |
+| [LAYOUTS.md](./LAYOUTS.md) | API layouts |
+| [FEEDBACK.md](./FEEDBACK.md) | API feedback & états |
 
 ## Arborescence code
 
@@ -26,7 +29,8 @@ web/src/design-system/
   forms/          FormField
   layout/         AppLayout, DashboardLayout, ListLayout,
                   RecordLayout, FormLayout, WizardLayout, ToolLayout
-  feedback/       (stub)
+  feedback/       InlineAlert, EmptyState, ComingSoonState,
+                  LoadingState, ErrorState, ForbiddenState, Toast
   navigation/     (stub)
   overlays/       (stub — Modal etc.)
   data-display/   (stub — Table)
@@ -37,7 +41,13 @@ web/src/design-system/
 ## Utilisation
 
 ```ts
-import { Button, Badge, Card, FormField, Input, RecordLayout } from "@/design-system";
+import {
+  Button,
+  RecordLayout,
+  InlineAlert,
+  EmptyState,
+  LoadingState,
+} from "@/design-system";
 ```
 
 ## Tests
@@ -52,17 +62,17 @@ npm --prefix web run test
 - Pas de hardcode hors tokens (AP-007)
 - Un kit ERP (DO-040)
 - Compatibilité ascendante (DO-045) · Dépréciation contrôlée (DO-046)
-- Layouts génériques à slots — pas de logique métier
+- Layouts / feedback génériques — pas de logique métier
 
 ## Impact modules
 
 | Zone | Conforme | Écart | Action future |
 |------|----------|-------|---------------|
 | Modules métier | ⚠️ | Majorité encore legacy | D2.3+ un module à la fois |
-| Profil établissement | ✅ | Première migration D2.3 (`FormLayout`) | Attendre validation CTO |
-| Primitives DS | ✅ | Livrées D2.1 | Consommer dès nouveaux écrans |
-| Layouts DS | ✅ | Livrés D2.2 | Consommés dès D2.3 |
-| Overlays / Tables | — | Stubs (Toast encore legacy) | D2.4 feedback / Table |
+| Profil établissement | ✅ | Migration D2.3 (`FormLayout`) | Consommer feedback DS à la prochaine itération |
+| Primitives / Layouts / Feedback DS | ✅ | Livrés D2.1–D2.4 | Consommer dès nouveaux écrans |
+| Toast runtime | ⚠️ | Toujours `components/ui/Toast` | Bascule provider = PR dédiée |
+| Overlays / Tables | — | Stubs | Lots suivants |
 
 ## Éléments gelés
 
@@ -70,7 +80,8 @@ npm --prefix web run test
 |---------|--------|
 | Arborescence `design-system/` | Gelée |
 | Variantes Button `primary/secondary/tertiary/danger` | Gelées |
-| Tones Badge D1.4 | Gelés |
-| Catalogue layouts D2.2 + slots nommés | Gelé (extensions via PR documentée) |
-| Coexistence avec `components/ui` et `components/layout` | Gelée jusqu’à migration validée |
+| Tones Badge / InlineAlert D1.4 | Gelés |
+| Catalogue layouts D2.2 + slots | Gelé |
+| Catalogue états feedback D2.4 | Gelé (extensions via PR documentée) |
+| Coexistence Toast / PagePlaceholder legacy | Gelée jusqu’à migration validée |
 | Valeurs hex / rebrand | Non gelées (D1.4) |

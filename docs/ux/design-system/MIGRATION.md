@@ -1,7 +1,7 @@
 # Stratégie de coexistence & migration — Design System
 
 **Décisions :** DO-045 (compatibilité ascendante) · DO-046 (dépréciation contrôlée) · DO-040 (kit ERP)  
-**Lots :** D2.1 (primitives) · D2.2 (layouts) · D2.3 (écrans métier)
+**Lots :** D2.1 (primitives) · D2.2 (layouts) · D2.3 (écrans) · D2.4 (feedback)
 
 ## Principe
 
@@ -9,10 +9,10 @@ Le Design System (`web/src/design-system/`) **s’ajoute** sans remplacer les im
 
 ```
 Écrans métier existants  →  components/ui/* + components/layout/*  (legacy, inchangé)
-Nouveaux écrans / D2.3+  →  @/design-system (primitives + layouts)
+Nouveaux écrans / D2.3+  →  @/design-system (primitives + layouts + feedback)
 ```
 
-**D2.1 / D2.2 :** aucun écran métier migré.  
+**D2.1 / D2.2 / D2.4 :** fondations — pas de migration massive d’écrans.  
 **D2.3+ :** migration progressive, **un module à la fois**, avec [rapport CTO obligatoire](./RAPPORT-D2.3-profil-etablissement.md).
 
 ### Première migration (D2.3)
@@ -22,6 +22,16 @@ Nouveaux écrans / D2.3+  →  @/design-system (primitives + layouts)
 | Profil établissement (`/parametres/profil`) | `FormLayout` | ✅ Livré — voir [AUDIT](./AUDIT-D2.3.md) + [Rapport](./RAPPORT-D2.3-profil-etablissement.md) |
 
 Attendre validation CTO avant un second module.
+
+### Feedback (D2.4) — coexistence
+
+| Legacy | Équivalent DS | Action D2.4 |
+|--------|---------------|-------------|
+| `components/ui/Toast` | `ToastProvider` / `useToast` | Coexistence — **ne pas** basculer `main.tsx` |
+| `PagePlaceholder` | `ComingSoonState` | Coexistence |
+| Empty dashed ad hoc | `EmptyState` | Disponible pour D2.3+ / nouveaux écrans |
+| Messages loading / error / forbidden | `LoadingState` / `ErrorState` / `ForbiddenState` | Idem |
+| Alertes inline ad hoc | `InlineAlert` | Idem |
 
 ---
 
