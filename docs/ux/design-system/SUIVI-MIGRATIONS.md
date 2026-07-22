@@ -38,5 +38,6 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 ## Notes
 
 - D2.6 : coexistence via **re-exports** `components/ui/{Toast,Modal,ConfirmDialog,Table,PagePlaceholder}` → `@/design-system`.
+- D3.1 : fiche Élèves migrée (`RecordLayout`) ; **liste** encore sur `EntityPage` (⏳).
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
-- Modules 🔒 : attendre validation CTO avant ouverture.
+- Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant (ordre D3.2+).
