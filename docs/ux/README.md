@@ -1,69 +1,70 @@
-# Framework UI/UX Somafrik
+# Framework Produit / UI-UX Somafrik
 
 Documentation **normative** de l’expérience utilisateur Somafrik (Phase D).
 
 Elle joue, pour l’interface, le même rôle que le framework métier de la Phase C :
 toute PR UI/UX doit s’y conformer.
 
+## Socle validé (Framework Produit)
+
+| Lot | Document | Statut |
+|-----|----------|--------|
+| **D1.1** | Vision Produit + Principes UX | ✅ Validé |
+| **D1.2** | Architecture de navigation | ✅ Validé |
+| **D1.3** | Architecture des pages métier + Patterns + Anti-patterns | ✅ Validé |
+
+Ces trois lots forment le **socle de l’expérience utilisateur** Somafrik.
+
 ## Ordre de lecture
 
-### Socle D1.1 (validé)
+1. [Vision Produit](./vision-produit.md)
+2. [Principes UX](./principes-ux.md) (dont P14)
+3. [Inventaire UI](./inventaire-ui.md) — constat D1.1
+4. [Glossaire](./glossaire.md)
+5. [Décisions officielles](./decisions-officielles.md) — DO-001 → DO-034
+6. [Architecture de navigation](./architecture-navigation.md) — D1.2
+7. [Architecture des pages métier](./architecture-pages-metier.md) — D1.3
+8. [Patterns Produit](./patterns-produit.md) — P-001 → P-010
+9. [Anti-patterns](./anti-patterns.md) — AP-001 → AP-006
 
-1. [Vision Produit](./vision-produit.md) — pourquoi l’UI Somafrik existe
-2. [Principes UX](./principes-ux.md) — règles de conception applicables (dont P14)
-3. [Inventaire UI](./inventaire-ui.md) — état actuel, patterns, dette (audit D1.1)
-4. [Glossaire](./glossaire.md) — vocabulaire officiel
-5. [Décisions officielles](./decisions-officielles.md) — référentiel DO-xxx pour les revues de PR
-
-### Extension D1.2 (validée CTO)
-
-6. [Architecture de navigation](./architecture-navigation.md) — niveaux, contexte actif, shell, locale, breadcrumb, onglets, responsive, états, impact modules
-
-### Extension D1.3 (spécification — validation CTO requise)
-
-7. [Architecture des pages métier](./architecture-pages-metier.md) — types de pages, fiche, liste, dashboards, résumé, actions, surfaces, états
-8. [Patterns Produit](./patterns-produit.md) — catalogue P-001 → P-010 (bibliothèque de référence)
-
-## Statut
+## Statut des documents
 
 | Document | Nature | Modifiable sans revue CTO |
 |----------|--------|---------------------------|
 | Vision, Principes, Glossaire, Décisions | Normatif | Non |
 | Architecture de navigation (D1.2) | Normatif — validé CTO | Non |
-| Architecture des pages métier (D1.3) | Normatif (sous réserve validation CTO) | Non |
-| Patterns Produit | Normatif (sous réserve validation CTO avec D1.3) | Non (ajout de Pattern = revue CTO) |
-| Inventaire UI | Descriptif (constat D1.1) | Oui (mises à jour factuelles) |
+| Architecture des pages métier (D1.3) | Normatif — validé CTO | Non |
+| Patterns Produit / Anti-patterns | Normatif — validé CTO | Non (ajout = revue CTO) |
+| Inventaire UI | Descriptif | Oui (mises à jour factuelles) |
 
-## Périmètre documentation Phase D
+## Méthode des spécifications
 
-- Documentation uniquement pour D1.1, D1.2 et D1.3
-- Aucun changement CSS, composants, navigation runtime, API, permissions ou backend dans ces lots
-- Implémentation : lots D2.x+ citant les DO et Patterns
+Chaque spécification D (et, lorsque pertinent, chaque **spécification fonctionnelle**) contient :
 
-## Méthode à partir de D1.2 / D1.3
+1. **Impact sur les modules existants** — tableau Module / Conforme / Écart / Action future  
+2. **Patterns Produit** — liste des P-00X concernés  
+3. (UI) Vérification qu’aucun **Anti-pattern** n’est introduit  
 
-Chaque spécification D contient :
+## Checklist de conformité — dès D2.x
 
-1. Un chapitre **« Impact sur les modules existants »** (Module / Conforme / Écart / Action future)
-2. Une section **« Patterns Produit »** (à partir de D1.3) — déclaration des P-00X concernés
+Toute nouvelle implémentation UI est revue avec :
 
-## Gouvernance des DO et Patterns
-
-Les **DO-xxx** et les **Patterns Produit (P-00X)** sont des exigences d’acceptation des PR UI.
+- [ ] Conforme aux **DO** ?
+- [ ] Conforme aux **Patterns Produit** (P-00X) ?
+- [ ] Aucun **Anti-pattern** (AP-00X) introduit ?
+- [ ] Respect de l’**accessibilité** (DO-010) ?
+- [ ] Respect de la **navigation** (D1.2 / DO-013 → DO-024) ?
+- [ ] Respect du **résumé métier** sur les fiches (DO-028 / P-001) ?
+- [ ] Respect du **contexte actif** (DO-023) ?
 
 En revue, on peut écrire :
 
 - `Conforme à DO-028.`
-- `Non conforme à DO-031.`
 - `Pattern: P-003 (+ P-001).`
-- `Conforme à P-002.`
+- `Anti-pattern AP-002 détecté.`
+- `Aucun Anti-pattern introduit.`
 
-## Usage en revue de PR
+## Périmètre documentation Phase D (D1.x)
 
-1. Vérifier la conformité aux [Décisions officielles](./decisions-officielles.md) (DO-xxx).
-2. Contrôler l’alignement avec les [Principes UX](./principes-ux.md).
-3. Utiliser le [Glossaire](./glossaire.md) pour les libellés et concepts.
-4. Navigation : [Architecture de navigation](./architecture-navigation.md) · DO-013 → DO-024.
-5. Pages métier : [Architecture des pages métier](./architecture-pages-metier.md) · DO-025 → DO-033.
-6. Déclarer le [Pattern Produit](./patterns-produit.md) (DO-032).
-7. **DO-033 :** pas d’implémentation structures de pages D1.3 tant que non validé CTO.
+- Lots D1.1–D1.3 = documentation normative
+- Implémentation runtime = lots **D2.x+** citant DO / Patterns / Anti-patterns

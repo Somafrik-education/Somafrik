@@ -1,16 +1,16 @@
 # Architecture des pages métier Somafrik — D1.3
 
-**Statut :** normatif (sous réserve validation CTO)  
+**Statut :** normatif — **validé CTO** (APPROVE WITH COMMENTS, amendements intégrés)  
 **Phase :** D1.3  
-**Nature :** spécification uniquement — aucune implémentation dans cette étape  
-**Références :** [Vision](./vision-produit.md) · [Principes](./principes-ux.md) · [Navigation D1.2](./architecture-navigation.md) · [Glossaire](./glossaire.md) · [Décisions](./decisions-officielles.md) · [Patterns Produit](./patterns-produit.md) · [Inventaire D1.1](./inventaire-ui.md)
+**Nature :** spécification uniquement dans cette PR — l’implémentation relève des lots D2.x+  
+**Références :** [Vision](./vision-produit.md) · [Principes](./principes-ux.md) · [Navigation D1.2](./architecture-navigation.md) · [Glossaire](./glossaire.md) · [Décisions](./decisions-officielles.md) · [Patterns Produit](./patterns-produit.md) · [Anti-patterns](./anti-patterns.md) · [Inventaire D1.1](./inventaire-ui.md)
 
 Cette spécification définit la **structure officielle des pages métier** de Somafrik.  
 Elle s’applique à tous les modules présents et futurs (Élèves, Enseignants, Personnel, Classes, Matières, Présences, Notes, Finance, Bibliothèque, RH, Communication, Administration…).
 
-Les DO-xxx associées sont des **exigences d’acceptation** des futures PR UI.
+Avec D1.1 et D1.2, elle forme le **socle Framework Produit** de l’expérience utilisateur Somafrik.
 
-**Aucune modification runtime n’est autorisée tant que le CTO n’a pas validé ce document (DO-033).**
+Les DO-xxx, Patterns (P-00X) et Anti-patterns (AP-00X) sont des **exigences d’acceptation** des PR UI.
 
 ---
 
@@ -178,26 +178,28 @@ Deux sous-types officiels (observés et conservés) :
 
 ---
 
-## 5. Résumés métier (signature Somafrik)
+## 5. Résumés métier (signature officielle Somafrik)
 
-Le **Résumé métier** est obligatoire en tête de toute **Fiche** (DO-001, DO-028).  
-Il est la signature UX de Somafrik.
+Le **Résumé métier** est la **signature officielle** de Somafrik.  
+Il est obligatoire en tête de **toute fiche métier**, sauf exception dûment justifiée en PR (DO-001, DO-028, Anti-pattern **AP-002**).
 
-### Objectif
+S’applique notamment à : Élève, Enseignant, Classe, Parent, Facture, Paiement, Contrat, Salle, Véhicule, ouvrage / Bibliothèque, et toute fiche future.
 
-En quelques secondes, l’utilisateur doit pouvoir répondre :
+### Objectif — trois questions obligatoires
 
-1. Quel est l’état actuel ?
-2. Qu’est-ce qui pose problème ?
-3. Que dois-je faire maintenant ?
+En quelques secondes, le résumé doit permettre de répondre :
+
+1. **Quel est l’état actuel ?**
+2. **Quelles actions sont requises ?**
+3. **Quels sont les risques ou alertes ?**
 
 ### Contenu type
 
 | Élément | Obligatoire | Notes |
 |---------|-------------|-------|
-| Statut(s) métier | Oui | Badges tones officiels |
+| Statut(s) métier | Oui | Badges tones officiels (jamais couleur seule — AP-005) |
 | Contexte scolaire / organisationnel | Oui | Classe, année, établissement… |
-| Alertes prioritaires | Si présentes | Max. visibles ; lien vers résolution |
+| Alertes / risques prioritaires | Si présents | Visibles en tête ; lien vers résolution (pas AP-006) |
 | KPI / signaux vivants | Recommandés | Ex. docs manquants, impayés, échéances |
 | Actions recommandées | Si action possible | Liées au workflow (DO-006) |
 | Interprétation courte | Recommandée | « Dossier administratif incomplet » (DO-008) |
@@ -206,9 +208,9 @@ En quelques secondes, l’utilisateur doit pouvoir répondre :
 
 1. Identité + statut  
 2. Contexte (classe / année / établissement)  
-3. Alertes critiques  
+3. Alertes / risques critiques  
 4. Signaux (documents, finance, présence…)  
-5. Prochaine action  
+5. Actions requises  
 
 ### Interdits Résumé
 
@@ -216,6 +218,7 @@ En quelques secondes, l’utilisateur doit pouvoir répondre :
 - Mur de champs bruts sans synthèse
 - Compteurs plats alors qu’un signal existe (DO-007)
 - Actions destructives dans le résumé (réservées + confirmation)
+- Enterrer l’essentiel sous des onglets (AP-006)
 
 ### Mapping Pattern
 
@@ -278,6 +281,17 @@ Extension de DO-005 / DO-021 pour les pages métier.
 
 Forbidden ≠ Empty ≠ Error ≠ Coming soon ≠ Lecture seule.
 
+### Distinction à formaliser (suite recommandée — hors D1.3 runtime)
+
+Ne pas mélanger :
+
+| Famille | Exemples | Nature |
+|---------|----------|--------|
+| **État système** | Chargement, erreur technique, maintenance, sync | Technique / disponibilité |
+| **État métier** | Inscription incomplète, paiement en retard, document expiré | Situation fonctionnelle de l’entité |
+
+Cette distinction est **reconnue** dès D1.3 ; sa formalisation normative détaillée (contrats d’affichage, patterns dédiés) est reportée à une étape ultérieure (ex. D1.4 / D2.x doc), sur demande CTO.
+
 ---
 
 ## 9. Responsive — structure par surface
@@ -298,7 +312,17 @@ Forbidden ≠ Empty ≠ Error ≠ Coming soon ≠ Lecture seule.
 
 ## 10. Patterns Produit
 
-À partir de D1.3, chaque spécification UI contient une section **Patterns Produit**.  
+À partir de D1.3, chaque spécification **UI** et chaque spécification **fonctionnelle** (lorsque pertinent) référence les Patterns concernés.
+
+Exemple dans une spec fonctionnelle :
+
+```text
+Patterns :
+- P-003 — Fiche avec onglets
+- P-001 — Résumé métier
+- P-002 — Liste + Filtres + Tableau
+```
+
 Le catalogue vivant est tenu dans [`patterns-produit.md`](./patterns-produit.md).
 
 Lorsqu’un développeur crée une fonctionnalité, il déclare :
@@ -320,7 +344,22 @@ Lorsqu’un développeur crée une fonctionnalité, il déclare :
 | **P-009** | Consultation légère (Modal) | Consultation | Détail / édition courte |
 | **P-010** | Rapport | Rapport | Synthèses / conformité |
 
-Détail normatif de chaque pattern : [`patterns-produit.md`](./patterns-produit.md).
+---
+
+## 10 bis. Anti-patterns Produit
+
+Catalogue des pratiques **interdites** : [`anti-patterns.md`](./anti-patterns.md).
+
+| ID | Anti-pattern |
+|----|--------------|
+| **AP-001** | Plus d’une action primaire sur une même page |
+| **AP-002** | Une fiche sans résumé métier |
+| **AP-003** | Une action destructive sans confirmation |
+| **AP-004** | Une navigation qui fait perdre le contexte |
+| **AP-005** | Des statuts exprimés uniquement par une couleur |
+| **AP-006** | Informations critiques masquées sous plusieurs niveaux d’onglets |
+
+En revue D2.x+ : vérifier qu’**aucun Anti-pattern** n’est introduit (DO-034).
 
 ---
 
@@ -336,7 +375,8 @@ Détail normatif de chaque pattern : [`patterns-produit.md`](./patterns-produit.
 | **DO-030** | Choix des surfaces (page, modal, carte, panneau, placeholder) |
 | **DO-031** | États officiels des pages métier |
 | **DO-032** | Déclaration obligatoire d’un Pattern Produit |
-| **DO-033** | Validation CTO avant implémentation pages D1.3 |
+| **DO-033** | Validation CTO avant implémentation pages D1.3 *(levé — D1.3 validé)* |
+| **DO-034** | Catalogue officiel des Anti-patterns Produit |
 
 Détail : [Décisions officielles](./decisions-officielles.md).
 
@@ -417,16 +457,19 @@ Légende : ✅ conforme · ⚠️ écart partiel · ❌ non conforme · — non 
 
 ---
 
-## 15. Critères de validation CTO
+## 15. Validation CTO
 
-- [ ] Types de pages §1 acceptés
-- [ ] Structure Fiche §2 acceptée
-- [ ] Structure Liste §3 acceptée
-- [ ] Règles Dashboard §4 acceptées
-- [ ] Contrat Résumé métier §5 accepté (signature)
-- [ ] Actions / surfaces / états §6–8 acceptés
-- [ ] Catalogue Patterns Produit §10 + `patterns-produit.md` acceptés
-- [ ] DO-025 → DO-033 intégrés
-- [ ] Tableau d’impact §13 pris comme baseline
+| Critère | Statut |
+|---------|--------|
+| Types de pages §1 (dont Assistant cible) | ✅ Validé |
+| Structure Fiche / Liste / Dashboard §2–4 | ✅ Validé |
+| Résumé métier = signature officielle §5 | ✅ Validé |
+| Actions / surfaces / états §6–8 | ✅ Validé |
+| Patterns Produit P-001 → P-010 | ✅ Validé |
+| Anti-patterns AP-001 → AP-006 | ✅ Intégrés (amendement) |
+| DO-025 → DO-034 | ✅ Intégrés |
+| Tableau d’impact §13 (méthode pérenne) | ✅ Validé |
 
-**Statut demandé :** Validé CTO / Amendé / Reporté
+**Décision CTO :** APPROVE WITH COMMENTS — amendements intégrés.  
+**Fusion :** autorisée.  
+**Implémentation runtime :** lots D2.x+ avec checklist de conformité Framework.

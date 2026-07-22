@@ -1,8 +1,8 @@
 # Patterns Produit Somafrik
 
-**Statut :** normatif (introduit D1.3 — sous réserve validation CTO)  
+**Statut :** normatif — validé CTO avec D1.3  
 **Usage :** bibliothèque de référence pour concevoir et revoir les pages métier  
-**Référence :** [Architecture des pages métier](./architecture-pages-metier.md) · [Décisions](./decisions-officielles.md)
+**Référence :** [Architecture des pages métier](./architecture-pages-metier.md) · [Anti-patterns](./anti-patterns.md) · [Décisions](./decisions-officielles.md)
 
 ## Intention
 
@@ -13,7 +13,9 @@ Lorsqu’un développeur ou un designer crée une fonctionnalité, il déclare :
 Objectif : expérience homogène, moins de divergences entre équipes, accélération des développements.
 
 Toute PR UI qui crée ou refond une page métier doit citer le Pattern utilisé (DO-032).  
-Tout nouveau Pattern nécessite une décision DO et une mise à jour de ce catalogue.
+Les spécifications **fonctionnelles** (pas seulement UI) référencent aussi les Patterns lorsque pertinent.  
+Tout nouveau Pattern nécessite une décision DO et une mise à jour de ce catalogue.  
+Complément obligatoire : ne jamais introduire d’[Anti-pattern](./anti-patterns.md) (DO-034).
 
 ---
 
@@ -172,11 +174,12 @@ Si le besoin dépasse P-009 → basculer vers **P-003**.
 
 ## Règles de gouvernance
 
-1. **Citation obligatoire** dans la PR : `Pattern: P-00X` (DO-032).
+1. **Citation obligatoire** dans la PR / spec : `Pattern: P-00X` (DO-032).
 2. **Pas de Pattern fantôme** : si aucun ne convient, proposer un amendement D (doc) avant d’inventer une UI.
 3. **Composition autorisée** : une Fiche = P-003 + P-001 ; une Liste peut ouvrir P-009.
 4. **Évolution** : nouveau Pattern = mise à jour de ce fichier + DO associée + validation CTO.
 5. **Revue** : « Conforme à P-002 / DO-027 » ou « Non conforme à P-001 ».
+6. **Anti-patterns** : vérifier l’absence d’AP-00X (DO-034).
 
 ---
 

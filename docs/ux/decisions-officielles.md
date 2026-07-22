@@ -441,11 +441,26 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 **Décision :** Aucune PR ne modifie les structures de pages runtime pour se conformer à D1.3 tant que cette architecture n’est pas validée CTO.
 
 **Implications :**
-- D1.3 = documentation normative uniquement dans son lot.
-- Les écarts du tableau d’impact restent de la dette jusqu’aux lots D2.x+.
-- Après validation : implémentation par lots citant DO / Patterns.
+- **Statut :** D1.3 validé CTO (APPROVE WITH COMMENTS) — le verrou d’implémentation est levé pour les lots D2.x+ conformes.
+- Les PR d’implémentation citent DO, Patterns (P-00X) et vérifient l’absence d’Anti-patterns (AP-00X).
+- Les écarts du tableau d’impact restent de la dette jusqu’à leur lot dédié.
+- Checklist de conformité Framework obligatoire à partir de D2.x (voir `docs/ux/README.md`).
 
 **Réf. :** Architecture pages métier D1.3 §15 ; DO-012.
+
+---
+
+## DO-034 — Catalogue officiel des Anti-patterns Produit
+
+**Décision :** Les Anti-patterns Produit (AP-00X) font partie du Framework : ils listent les pratiques interdites et servent d’exigences d’acceptation négatives en revue de PR.
+
+**Implications :**
+- Catalogue : [`anti-patterns.md`](./anti-patterns.md) (AP-001 → AP-006 à l’introduction).
+- Une PR qui introduit un Anti-pattern est non conforme, sauf dérogation explicite CTO / produit.
+- Complète les Patterns Produit (DO-032) : P = à faire, AP = à ne jamais faire.
+- Applicable dès les revues D2.x+.
+
+**Réf. :** Architecture pages métier D1.3 §10 bis ; Patterns Produit.
 
 ---
 
@@ -486,3 +501,4 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 | DO-031 | États officiels des pages métier | D1.3 |
 | DO-032 | Déclaration obligatoire d’un Pattern Produit | D1.3 |
 | DO-033 | Validation CTO avant implémentation pages D1.3 | D1.3 |
+| DO-034 | Catalogue officiel des Anti-patterns Produit | D1.3 |
