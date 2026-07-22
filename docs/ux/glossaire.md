@@ -78,8 +78,14 @@ Pattern **P-010**.
 ### Pattern Produit
 
 Structure d’interface réutilisable et nommée (**P-00X**).  
-Déclaré dans chaque PR de page métier (DO-032).  
+Déclaré dans chaque PR de page métier et, lorsque pertinent, dans les specs fonctionnelles (DO-032).  
 Catalogue : [patterns-produit.md](./patterns-produit.md).
+
+### Anti-pattern Produit
+
+Pratique d’interface **interdite**, nommée (**AP-00X**).  
+Sert de critère d’acceptation négatif en revue (DO-034).  
+Catalogue : [anti-patterns.md](./anti-patterns.md).
 
 ### Section
 
