@@ -3,11 +3,17 @@ import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
-import { Card, SectionHeader } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
+import {
+  Button,
+  EntityListForbidden,
+  EntityListSearch,
+  EntityListShell,
+  EntityListTable,
+  InlineAlert,
+  Modal,
+  type Column,
+} from "@/design-system";
 import { PrintButton } from "../components/ui/PrintButton";
-import { Table, type Column } from "../components/ui/Table";
-import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { DatePicker } from "../components/ui/DatePicker";
 import { useToast } from "../components/ui/Toast";
@@ -525,13 +531,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   }
 
   if (!canRead) {
-    return (
-      <Card className="p-6">
-        <p className="text-sm font-semibold text-muted">
-          Vous n'avez pas l'autorisation de consulter {module.label.toLowerCase()}.
-        </p>
-      </Card>
-    );
+    return <EntityListForbidden moduleLabel={module.label} />;
   }
 
   async function persistPatch(patch: Partial<BackOfficeState>, message: string) {
@@ -1895,186 +1895,201 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     },
   ];
 
+  const listTitle = classScope
+    ? `Élèves — ${classScope}`
+    : isParentChildMode
+      ? "Relations parent-enfant"
+      : module.label;
+
+  const listDescription = classScope
+    ? `Inscription et dossiers des élèves de la classe ${classScope}.`
+    : isParentChildMode
+      ? school
+        ? `Liez un parent à un ou plusieurs élèves. Périmètre : ${school.name} (${school.code})`
+        : "Liez un parent à un ou plusieurs élèves de l'établissement."
+      : school
+        ? `${module.description} · Périmètre : ${school.name} (${school.code})`
+        : module.description;
+
+  const secondaryActions = (
+    <>
+      <PrintButton
+        documentTitle={school ? `${module.label} — ${school.name}` : module.label}
+      />
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={handleExportCsv}
+        disabled={rows.length === 0}
+      >
+        Exporter CSV
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={handleExportExcel}
+        disabled={rows.length === 0}
+      >
+        Exporter Excel
+      </Button>
+      {module.key === "contacts" && allowCreate ? (
+        <>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleImportContactsFile(file);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => importInputRef.current?.click()}
+          >
+            Importer CSV
+          </Button>
+        </>
+      ) : null}
+    </>
+  );
+
+  const primaryActions = (
+    <>
+      {module.key === "payments" && canCreate ? (
+        <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
+          Saisie rapide
+        </Button>
+      ) : null}
+      {linkableContactKind && canUpdate ? (
+        <Button
+          size="sm"
+          disabled={busy || linkableProvisioningOptions.length === 0}
+          onClick={() => {
+            setLinkContactId("");
+            setLinkContactOpen(true);
+          }}
+        >
+          {linkableContactKind === "teacher"
+            ? "Créer la fiche depuis un compte"
+            : "Ajouter depuis un contact"}
+        </Button>
+      ) : null}
+      {allowCreate ? (
+        <Button
+          size="sm"
+          onClick={() => {
+            if (module.key === "contacts") {
+              setEditing({
+                status: "Actif",
+                schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : "",
+              });
+              return;
+            }
+            if (module.key === "relations") {
+              setEditing({
+                relationType: isParentChildMode ? RELATION_PARENT_CHILD : "Parent → Élève",
+                status: "Actif",
+                isPrincipal: "Oui",
+                toStudentIds: [],
+              });
+              return;
+            }
+            if (module.key === "assignments") {
+              setEditing({ className: "", subject: "", teacherId: "" });
+              return;
+            }
+            if (module.key === "courses") {
+              setEditing({ className: "", name: "", teacherName: "" });
+              return;
+            }
+            if (module.key === "teachers") {
+              const code = schoolCode;
+              if (!code || code === "*") {
+                showToast("Code établissement requis pour générer l'identifiant", "error");
+                return;
+              }
+              setEditing(
+                generateTeacherIdentifiers(code, (state.teachers ?? []) as Record<string, unknown>[]),
+              );
+              return;
+            }
+            if (module.key === "students" && classScope) {
+              setEditing({ className: classScope });
+              return;
+            }
+            setEditing({});
+          }}
+        >
+          {isParentChildMode ? "Lier un parent" : "Ajouter"}
+        </Button>
+      ) : null}
+    </>
+  );
+
+  const listAlerts = (
+    <>
+      {module.planningManaged ? (
+        <InlineAlert tone="info">
+          Les dates, horaires et classes se planifient dans{" "}
+          <Link to="/planning" className="font-semibold text-brand underline">
+            Planning de cours
+          </Link>
+          . Cet écran sert au suivi des statuts et à la publication des résultats.
+        </InlineAlert>
+      ) : null}
+      {entityCreateViaContactsOnly(module.key) ? (
+        <InlineAlert tone="warning">
+          Pour créer un compte ou une fiche, utilisez{" "}
+          <Link
+            to="/etablissement/comptes-utilisateurs"
+            className="font-semibold text-brand underline"
+          >
+            Comptes utilisateurs
+          </Link>{" "}
+          (type Élève, Enseignant, etc.). Cet écran sert à consulter et mettre à jour les dossiers
+          existants.
+        </InlineAlert>
+      ) : null}
+    </>
+  );
+
   return (
     <>
-      <Card className="p-6">
-        {classScope ? (
-          <Link
-            to="/etablissement/classes"
-            className="mb-3 inline-flex text-sm font-semibold text-brand hover:underline"
-          >
-            ← Retour aux classes
-          </Link>
-        ) : null}
-        <SectionHeader
-          title={
-            classScope
-              ? `Élèves — ${classScope}`
-              : isParentChildMode
-                ? "Relations parent-enfant"
-                : module.label
-          }
-          description={
-            classScope
-              ? `Inscription et dossiers des élèves de la classe ${classScope}.`
-              : isParentChildMode
-              ? school
-                ? `Liez un parent à un ou plusieurs élèves. Périmètre : ${school.name} (${school.code})`
-                : "Liez un parent à un ou plusieurs élèves de l'établissement."
-              : school
-                ? `${module.description} · Périmètre : ${school.name} (${school.code})`
-                : module.description
-          }
-          actions={
-            <>
-              <PrintButton
-                documentTitle={school ? `${module.label} — ${school.name}` : module.label}
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleExportCsv}
-                disabled={rows.length === 0}
-              >
-                Exporter CSV
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleExportExcel}
-                disabled={rows.length === 0}
-              >
-                Exporter Excel
-              </Button>
-              {module.key === "contacts" && allowCreate ? (
-                <>
-                  <input
-                    ref={importInputRef}
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void handleImportContactsFile(file);
-                      e.target.value = "";
-                    }}
-                  />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => importInputRef.current?.click()}
-                  >
-                    Importer CSV
-                  </Button>
-                </>
-              ) : null}
-              {module.key === "payments" && canCreate ? (
-                <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
-                  Saisie rapide
-                </Button>
-              ) : null}
-              {linkableContactKind && canUpdate ? (
-                <Button
-                  size="sm"
-                  disabled={busy || linkableProvisioningOptions.length === 0}
-                  onClick={() => {
-                    setLinkContactId("");
-                    setLinkContactOpen(true);
-                  }}
-                >
-                  {linkableContactKind === "teacher"
-                    ? "Créer la fiche depuis un compte"
-                    : "Ajouter depuis un contact"}
-                </Button>
-              ) : null}
-              {allowCreate ? (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (module.key === "contacts") {
-                      setEditing({
-                        status: "Actif",
-                        schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : "",
-                      });
-                      return;
-                    }
-                    if (module.key === "relations") {
-                      setEditing({
-                        relationType: isParentChildMode ? RELATION_PARENT_CHILD : "Parent → Élève",
-                        status: "Actif",
-                        isPrincipal: "Oui",
-                        toStudentIds: [],
-                      });
-                      return;
-                    }
-                    if (module.key === "assignments") {
-                      setEditing({ className: "", subject: "", teacherId: "" });
-                      return;
-                    }
-                    if (module.key === "courses") {
-                      setEditing({ className: "", name: "", teacherName: "" });
-                      return;
-                    }
-                    if (module.key === "teachers") {
-                      const code = schoolCode;
-                      if (!code || code === "*") {
-                        showToast("Code établissement requis pour générer l'identifiant", "error");
-                        return;
-                      }
-                      setEditing(
-                        generateTeacherIdentifiers(code, (state.teachers ?? []) as Record<string, unknown>[]),
-                      );
-                      return;
-                    }
-                    if (module.key === "students" && classScope) {
-                      setEditing({ className: classScope });
-                      return;
-                    }
-                    setEditing({});
-                  }}
-                >
-                  {isParentChildMode ? "Lier un parent" : "Ajouter"}
-                </Button>
-              ) : null}
-            </>
-          }
-        />
-        {module.planningManaged ? (
-          <p className="mt-3 rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-sm text-ink">
-            Les dates, horaires et classes se planifient dans{" "}
-            <Link to="/planning" className="font-semibold text-brand underline">
-              Planning de cours
+      <EntityListShell
+        title={listTitle}
+        description={listDescription}
+        orientation={
+          classScope ? (
+            <Link
+              to="/etablissement/classes"
+              className="inline-flex font-semibold text-brand hover:underline"
+            >
+              ← Retour aux classes
             </Link>
-            . Cet écran sert au suivi des statuts et à la publication des résultats.
-          </p>
-        ) : null}
-        {entityCreateViaContactsOnly(module.key) ? (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Pour créer un compte ou une fiche, utilisez{" "}
-            <Link to="/etablissement/comptes-utilisateurs" className="font-semibold text-brand underline">
-              Comptes utilisateurs
-            </Link>{" "}
-            (type Élève, Enseignant, etc.). Cet écran sert à consulter et mettre à jour les dossiers existants.
-          </p>
-        ) : null}
-        <div className="no-print mt-4">
-          <Input
+          ) : null
+        }
+        secondaryActions={secondaryActions}
+        primaryActions={primaryActions}
+        alerts={listAlerts}
+        filters={
+          <EntityListSearch
             placeholder={`Rechercher dans ${module.label.toLowerCase()}…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-        <div className="mt-4">
-          <Table
-            columns={columns}
-            rows={rows}
-            rowKey={(row, index) => String(row.id ?? index)}
-            sortable
-            pageSize={25}
-          />
-        </div>
-      </Card>
+        }
+      >
+        <EntityListTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row, index) => String(row.id ?? index)}
+        />
+      </EntityListShell>
 
       <Modal
         open={linkContactOpen}

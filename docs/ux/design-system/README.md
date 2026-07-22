@@ -1,6 +1,6 @@
 # Design System Somafrik — documentation technique
 
-**Phase :** D2.1 → D2.6  
+**Phase :** D2.1 → D2.7  
 **Code :** `web/src/design-system/`  
 **Spec :** [Design Language D1.4](../design-language.md) · [Pages métier D1.3](../architecture-pages-metier.md)
 
@@ -10,6 +10,7 @@
 |----------|------|
 | [AUDIT-D2.1.md](./AUDIT-D2.1.md) … [AUDIT-D2.6.md](./AUDIT-D2.6.md) | Audits par lot |
 | [RAPPORT-D2.3](./RAPPORT-D2.3-profil-etablissement.md) … [RAPPORT-D2.6](./RAPPORT-D2.6.md) | Rapports CTO D2 |
+| [AUDIT-D2.7-entitypage.md](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE-D2.7-entitypage.md](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT-D2.7-entitypage.md](./RAPPORT-D2.7-entitypage.md) | D2.7 EntityPage |
 | [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves |
 | [AUDIT-D3.2-classes.md](./AUDIT-D3.2-classes.md) · [RAPPORT-D3.2-classes.md](./RAPPORT-D3.2-classes.md) | D3.2 Classes métier (audit / scope lock) |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
@@ -33,6 +34,7 @@ web/src/design-system/
                   LoadingState, ErrorState, ForbiddenState, Toast
   overlays/       Modal, ConfirmDialog
   data-display/   Table
+  patterns/       entity-list (EntityListShell, Search, Table, Forbidden)
   navigation/     (stub — TabNav / Breadcrumb)
   tokens/         Rôles sémantiques → classes ERP existantes
   index.ts        Point d’entrée public
