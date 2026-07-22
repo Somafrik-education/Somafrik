@@ -14,10 +14,11 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Élèves | Liste | ⏳ | `EntityList*` (socle) | EntityPage métier restant |
 | Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |
 | Classes métier | D3.2a — Fiche | 🔒 | `RecordLayout` (cible) | **Fiche absente** (prérequis produit) |
-| Classes métier | D3.2b — Liste | ⏳ | `ListLayout` (cible) | Attendre validation CTO post-D2.7 |
+| Classes métier | D3.2b — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
 | Classes métier | D3.2c — Membres / élèves | ⏳ | `ListLayout` (cible) | `ClassStudentsPage` → EntityPage students |
 | Classes config | Structure (D2.5) | ✅ | `FormLayout` | Monolithe `ConfigurationPage` |
-| Enseignants | Module | 🔒 | — | Oui — attendre CTO (pas avant fin D2.7 / D3.2b) |
+| Enseignants | D3.3 — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
+| Enseignants | Fiche | 🔒 | `RecordLayout` (cible) | Fiche absente |
 
 ## Suivi consolidé
 
