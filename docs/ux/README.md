@@ -19,39 +19,51 @@ toute PR UI/UX doit s’y conformer.
 
 6. [Architecture de navigation](./architecture-navigation.md) — niveaux, contexte actif, shell, locale, breadcrumb, onglets, responsive, états, impact modules
 
+### Extension D1.3 (spécification — validation CTO requise)
+
+7. [Architecture des pages métier](./architecture-pages-metier.md) — types de pages, fiche, liste, dashboards, résumé, actions, surfaces, états
+8. [Patterns Produit](./patterns-produit.md) — catalogue P-001 → P-010 (bibliothèque de référence)
+
 ## Statut
 
 | Document | Nature | Modifiable sans revue CTO |
 |----------|--------|---------------------------|
 | Vision, Principes, Glossaire, Décisions | Normatif | Non |
 | Architecture de navigation (D1.2) | Normatif — validé CTO | Non |
+| Architecture des pages métier (D1.3) | Normatif (sous réserve validation CTO) | Non |
+| Patterns Produit | Normatif (sous réserve validation CTO avec D1.3) | Non (ajout de Pattern = revue CTO) |
 | Inventaire UI | Descriptif (constat D1.1) | Oui (mises à jour factuelles) |
 
 ## Périmètre documentation Phase D
 
-- Documentation uniquement pour D1.1 et D1.2
+- Documentation uniquement pour D1.1, D1.2 et D1.3
 - Aucun changement CSS, composants, navigation runtime, API, permissions ou backend dans ces lots
-- Implémentation navigation : lots D2.x+ citant les DO
+- Implémentation : lots D2.x+ citant les DO et Patterns
 
-## Méthode à partir de D1.2
+## Méthode à partir de D1.2 / D1.3
 
-Chaque spécification D se termine par un chapitre **« Impact sur les modules existants »**  
-(tableau Module / Conforme / Écart / Action future) — indicateur de maturité du Framework UI/UX.
+Chaque spécification D contient :
 
-## Gouvernance des DO (exigences d’acceptation)
+1. Un chapitre **« Impact sur les modules existants »** (Module / Conforme / Écart / Action future)
+2. Une section **« Patterns Produit »** (à partir de D1.3) — déclaration des P-00X concernés
 
-À partir de D1.2, chaque **Décision Officielle (DO-xxx)** est une exigence d’acceptation des PR UI, sur le modèle des règles métier Phase C.
+## Gouvernance des DO et Patterns
+
+Les **DO-xxx** et les **Patterns Produit (P-00X)** sont des exigences d’acceptation des PR UI.
 
 En revue, on peut écrire :
 
-- `Conforme à DO-017.`
-- `Non conforme à DO-021.`
-- `Conforme à DO-024.`
+- `Conforme à DO-028.`
+- `Non conforme à DO-031.`
+- `Pattern: P-003 (+ P-001).`
+- `Conforme à P-002.`
 
 ## Usage en revue de PR
 
 1. Vérifier la conformité aux [Décisions officielles](./decisions-officielles.md) (DO-xxx).
-2. Contrôler l’alignement avec les [Principes UX](./principes-ux.md) (dont P14).
+2. Contrôler l’alignement avec les [Principes UX](./principes-ux.md).
 3. Utiliser le [Glossaire](./glossaire.md) pour les libellés et concepts.
-4. Pour toute évolution de navigation : respecter l’[Architecture de navigation](./architecture-navigation.md) et DO-013 → DO-024.
-5. Ne pas introduire de pattern contradictoire avec l’inventaire sans décision DO explicite.
+4. Navigation : [Architecture de navigation](./architecture-navigation.md) · DO-013 → DO-024.
+5. Pages métier : [Architecture des pages métier](./architecture-pages-metier.md) · DO-025 → DO-033.
+6. Déclarer le [Pattern Produit](./patterns-produit.md) (DO-032).
+7. **DO-033 :** pas d’implémentation structures de pages D1.3 tant que non validé CTO.

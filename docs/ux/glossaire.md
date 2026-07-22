@@ -1,12 +1,12 @@
 # Glossaire UX Somafrik
 
 **Statut :** normatif  
-**Phase :** D1.1 · étendu D1.2 (navigation)  
+**Phase :** D1.1 · D1.2 (navigation) · D1.3 (pages métier)  
 
 Ce glossaire fixe le vocabulaire utilisé dans les specs, les PR et les revues.  
 En cas d’ambiguïté, ce document fait foi.
 
-Référence structurelle : [Architecture de navigation](./architecture-navigation.md).
+Références : [Navigation](./architecture-navigation.md) · [Pages métier](./architecture-pages-metier.md) · [Patterns Produit](./patterns-produit.md).
 
 ---
 
@@ -51,8 +51,35 @@ Synonyme produit courant : « dossier ».
 
 ### Résumé métier
 
-Synthèse opérationnelle affichée **en tête** d’une fiche.  
-Elle répond à « où en est cette entité ? » avant tout détail ou formulaire.
+Synthèse opérationnelle affichée **en tête** d’une fiche (signature Somafrik).  
+Elle répond : état actuel, problèmes, prochaine action.  
+Pattern **P-001** · DO-001 · DO-028.
+
+### Dashboard
+
+Page de synthèse pour décider ou prioriser.  
+Sous-types : opérationnel (**P-004**) et analytique (**P-005**).
+
+### Outil
+
+Page dédiée à une tâche opérationnelle dense (appel, saisie, calendrier).  
+Pattern **P-007**.
+
+### Assistant
+
+Parcours multi-étapes guidé avec progression et validation.  
+Pattern **P-008** (cible — absent de l’existant D1.3).
+
+### Rapport
+
+Page de synthèse analytique ou de conformité, souvent exportable.  
+Pattern **P-010**.
+
+### Pattern Produit
+
+Structure d’interface réutilisable et nommée (**P-00X**).  
+Déclaré dans chaque PR de page métier (DO-032).  
+Catalogue : [patterns-produit.md](./patterns-produit.md).
 
 ### Section
 
@@ -96,6 +123,11 @@ Toujours protégée par confirmation.
 
 Prochaine action suggérée par le système à partir de l’état métier (ex. « Ajouter certificat »).
 
+### Action contextuelle
+
+Action liée à une ligne, une section ou une alerte — pas à l’écran entier.  
+Voir DO-029.
+
 ### Workflow
 
 Enchaînement intentionnel qui mène de la compréhension à l’action.  
@@ -107,7 +139,7 @@ Chaque écran doit rendre la prochaine étape du workflow identifiable.
 
 ### État système
 
-État technique ou d’accès de l’écran :
+État technique ou d’accès de l’écran (DO-005, DO-031) :
 
 | État | Signification |
 |------|----------------|
@@ -115,6 +147,12 @@ Chaque écran doit rendre la prochaine étape du workflow identifiable.
 | Empty | Aucune donnée pertinente à afficher |
 | Error | Échec de chargement ou d’opération |
 | Forbidden | Accès non autorisé (permission insuffisante) |
+| Conflit | Version / édition concurrente |
+| Ressource absente | Entité introuvable |
+| Lecture seule | Visible sans droit d’écriture |
+| Synchronisation | Sync en cours ou en échec non bloquant |
+| Maintenance | Indisponibilité planifiée / technique |
+| Coming soon | Capacité non livrée (≠ Empty) |
 
 ### État métier
 
@@ -200,9 +238,10 @@ Doit rester distincte d’un empty métier et d’un forbidden.
 
 Composant partagé non métier (`Button`, `Badge`, `Card`, `Modal`…).
 
-### Pattern
+### Pattern (UI)
 
-Combinaison récurrente de primitives + conventions (ex. `Card` + `SectionHeader` + `dl`).
+Combinaison récurrente de primitives + conventions (ex. `Card` + `SectionHeader` + `dl`).  
+Ne pas confondre avec **Pattern Produit** (P-00X).
 
 ### Présentation de statut
 
