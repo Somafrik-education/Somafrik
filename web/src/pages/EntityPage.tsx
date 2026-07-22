@@ -2085,14 +2085,14 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           />
         }
       >
-        {/* D3.2b — empty DS pour la liste Classes (présentation uniquement). */}
-        {module.key === "classes" && rows.length === 0 ? (
+        {/* EmptyState DS générique (D3.2b / D3.3) — aucune branche par entité. */}
+        {rows.length === 0 ? (
           <EmptyState
-            title={search.trim() ? "Aucun résultat" : "Aucune classe"}
+            title={search.trim() ? "Aucun résultat" : "Liste vide"}
             description={
               search.trim()
-                ? "Aucune classe ne correspond à votre recherche."
-                : "Aucune classe à afficher pour cet établissement."
+                ? "Aucun élément ne correspond à votre recherche."
+                : `Aucun élément à afficher dans ${module.label.toLowerCase()}.`
             }
           />
         ) : (
@@ -2100,9 +2100,6 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
             columns={columns}
             rows={rows}
             rowKey={(row, index) => String(row.id ?? index)}
-            emptyLabel={
-              module.key === "classes" ? "Aucune classe à afficher." : undefined
-            }
           />
         )}
       </EntityListShell>

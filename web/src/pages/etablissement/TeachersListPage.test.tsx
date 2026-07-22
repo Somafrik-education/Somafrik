@@ -13,33 +13,31 @@ const permissions = vi.hoisted(() => ({
 const dataState = vi.hoisted(() => ({
   current: {
     schools: [{ code: "SCH-001", name: "Lycée Test" }],
-    classes: [
+    classes: [],
+    students: [],
+    teachers: [
       {
-        id: "cls-1",
-        name: "6ème A",
-        level: "6ème",
-        track: "Général",
-        status: "Active",
+        id: "t1",
+        name: "Ndiaye",
+        firstName: "Aïssatou",
+        publicId: "SN-2026-0001-ENS-0001",
+        specialty: "Mathématiques",
         schoolCode: "SCH-001",
       },
       {
-        id: "cls-2",
-        name: "5ème B",
-        level: "5ème",
-        track: "Général",
-        status: "Active",
+        id: "t2",
+        name: "Ba",
+        firstName: "Moussa",
+        publicId: "SN-2026-0001-ENS-0002",
+        specialty: "Français",
         schoolCode: "SCH-001",
       },
     ],
-    students: [
-      { id: "s1", className: "6ème A", schoolCode: "SCH-001" },
-      { id: "s2", className: "6ème A", schoolCode: "SCH-001" },
-    ],
-    teachers: [],
     assignments: [],
     courses: [],
     contacts: [],
     relations: [],
+    users: [],
     academicConfigBySchool: {},
     auditLog: [],
   } as Record<string, unknown>,
@@ -89,8 +87,11 @@ vi.mock("../../lib/permissions", async (importOriginal) => {
   return {
     ...actual,
     getEntityFeaturePermissions: (_ctx: unknown, key: string) => {
-      if (key === "students") {
+      if (key === "assignments") {
         return { canRead: true, canCreate: true, canUpdate: true, canDelete: false };
+      }
+      if (key === "students") {
+        return { canRead: true, canCreate: false, canUpdate: false, canDelete: false };
       }
       return { ...permissions };
     },
@@ -113,17 +114,17 @@ vi.mock("../../components/ui/PrintButton", () => ({
   PrintButton: () => <button type="button">Imprimer</button>,
 }));
 
-import { ClassesListPage } from "./ClassesListPage";
+import { TeachersListPage } from "./TeachersListPage";
 
 function renderPage() {
   return render(
     <MemoryRouter>
-      <ClassesListPage />
+      <TeachersListPage />
     </MemoryRouter>,
   );
 }
 
-describe("ClassesListPage (D3.2b — consommation D2.7)", () => {
+describe("TeachersListPage (D3.3 — consommation D2.7)", () => {
   beforeEach(() => {
     permissions.canRead = true;
     permissions.canCreate = true;
@@ -131,40 +132,36 @@ describe("ClassesListPage (D3.2b — consommation D2.7)", () => {
     permissions.canDelete = true;
     dataState.current = {
       ...dataState.current,
-      classes: [
+      teachers: [
         {
-          id: "cls-1",
-          name: "6ème A",
-          level: "6ème",
-          track: "Général",
-          status: "Active",
+          id: "t1",
+          name: "Ndiaye",
+          firstName: "Aïssatou",
+          publicId: "SN-2026-0001-ENS-0001",
+          specialty: "Mathématiques",
           schoolCode: "SCH-001",
         },
         {
-          id: "cls-2",
-          name: "5ème B",
-          level: "5ème",
-          track: "Général",
-          status: "Active",
+          id: "t2",
+          name: "Ba",
+          firstName: "Moussa",
+          publicId: "SN-2026-0001-ENS-0002",
+          specialty: "Français",
           schoolCode: "SCH-001",
         },
-      ],
-      students: [
-        { id: "s1", className: "6ème A", schoolCode: "SCH-001" },
-        { id: "s2", className: "6ème A", schoolCode: "SCH-001" },
       ],
     };
   });
 
-  it("rend le chrome D2.7 (ListLayout / EntityListShell) pour Classes", () => {
+  it("rend le chrome D2.7 (ListLayout / EntityListShell) pour Enseignants", () => {
     renderPage();
 
-    expect(screen.getByRole("heading", { level: 2, name: "Classes" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Enseignants" })).toBeInTheDocument();
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByLabelText("Filtres et recherche")).toBeInTheDocument();
     expect(screen.getByLabelText("Liste")).toBeInTheDocument();
     expect(
-      screen.getByRole("searchbox", { name: /Rechercher dans classes/i }),
+      screen.getByRole("searchbox", { name: /Rechercher dans enseignants/i }),
     ).toBeInTheDocument();
   });
 
@@ -172,32 +169,31 @@ describe("ClassesListPage (D3.2b — consommation D2.7)", () => {
     renderPage();
 
     const list = screen.getByLabelText("Liste");
-    expect(within(list).getByRole("columnheader", { name: /Nom/i })).toBeInTheDocument();
-    expect(within(list).getByText("6ème A")).toBeInTheDocument();
-    expect(within(list).getByText("5ème B")).toBeInTheDocument();
+    expect(within(list).getByText("Ndiaye")).toBeInTheDocument();
+    expect(within(list).getByText("Ba")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ajouter" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Élèves" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Supprimer" }).length).toBeGreaterThan(0);
   });
 
   it("filtre la liste via EntityListSearch sans changer les données source", async () => {
     const user = userEvent.setup();
     renderPage();
 
-    const search = screen.getByRole("searchbox", { name: /Rechercher dans classes/i });
-    await user.type(search, "6ème");
+    const search = screen.getByRole("searchbox", { name: /Rechercher dans enseignants/i });
+    await user.type(search, "Ndiaye");
 
-    expect(screen.getByText("6ème A")).toBeInTheDocument();
-    expect(screen.queryByText("5ème B")).not.toBeInTheDocument();
+    expect(screen.getByText("Ndiaye")).toBeInTheDocument();
+    expect(screen.queryByText("Ba")).not.toBeInTheDocument();
   });
 
   it("affiche EmptyState DS lorsque la liste est vide", () => {
-    // scopedClasses synthétise aussi des classes depuis les élèves — vider les deux.
-    dataState.current = { ...dataState.current, classes: [], students: [] };
+    dataState.current = { ...dataState.current, teachers: [] };
     renderPage();
 
     const empty = screen.getByRole("status");
     expect(empty).toHaveTextContent("Liste vide");
-    expect(empty).toHaveTextContent("Aucun élément à afficher dans classes.");
+    expect(empty).toHaveTextContent("Aucun élément à afficher dans enseignants.");
   });
 
   it("affiche ForbiddenState (EntityListForbidden) si accès refusé", () => {
@@ -206,9 +202,9 @@ describe("ClassesListPage (D3.2b — consommation D2.7)", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Accès non autorisé");
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Vous n'avez pas l'autorisation de consulter classes.",
+      "Vous n'avez pas l'autorisation de consulter enseignants.",
     );
-    expect(screen.queryByRole("heading", { name: "Classes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Enseignants" })).not.toBeInTheDocument();
   });
 
   it("conserve les actions secondaires d’export", () => {

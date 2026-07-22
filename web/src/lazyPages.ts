@@ -122,6 +122,10 @@ export const ClassesListPage = lazyPage(
   () => import("./pages/etablissement/ClassesListPage"),
   "ClassesListPage",
 );
+export const TeachersListPage = lazyPage(
+  () => import("./pages/etablissement/TeachersListPage"),
+  "TeachersListPage",
+);
 export const ClassStudentsPage = lazyPage(
   () => import("./pages/etablissement/ClassStudentsPage"),
   "ClassStudentsPage",

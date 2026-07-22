@@ -47,7 +47,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | Liste `EntityPage` ; StatusBadge |
 | Élèves — liste | ⏳ | — | 0 % | `EntityPage` partagé |
 | Classes (module métier) | ✅ / ⏳ | `ListLayout` | Liste D3.2b | Fiche absente ; D3.2c membres ; modales EntityPage |
-| Enseignants | 🔒 | — | 0 % | Oui |
+| Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | 🔒 | — | 0 % | Oui |
 | Présences | 🔒 | — | 0 % | Oui |
 | Notes | 🔒 | — | 0 % | Oui |
