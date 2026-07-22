@@ -1,6 +1,5 @@
 import type { MedicationViewModel } from "../../lib/studentMedicalViewModel";
-import { Card, SectionHeader } from "../ui/Card";
-import { Badge } from "../ui/Badge";
+import { Badge, Card, EmptyState, SectionHeader } from "../../design-system";
 
 interface StudentMedicalMedicationsProps {
   medications: readonly MedicationViewModel[];
@@ -17,9 +16,7 @@ export function StudentMedicalMedications({
       />
 
       {medications.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          Aucun traitement renseigné
-        </p>
+        <EmptyState className="mt-6" title="Aucun traitement renseigné" />
       ) : (
         <ul className="mt-6 space-y-3">
           {medications.map((medication) => (

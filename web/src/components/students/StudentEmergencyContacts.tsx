@@ -1,5 +1,5 @@
 import type { StudentGuardianViewModel } from "../../lib/studentGuardianViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 
 interface StudentEmergencyContactsProps {
   contacts: readonly StudentGuardianViewModel[];
@@ -16,9 +16,7 @@ export function StudentEmergencyContacts({
       />
 
       {contacts.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          Aucun contact d&apos;urgence
-        </p>
+        <EmptyState className="mt-6" title="Aucun contact d&apos;urgence" />
       ) : (
         <ol className="mt-6 space-y-4">
           {contacts.map((contact, index) => (

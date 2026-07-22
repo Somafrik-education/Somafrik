@@ -1,5 +1,5 @@
 import type { GuardianBadge } from "../../lib/studentGuardianViewModel";
-import { Badge } from "../ui/Badge";
+import { Badge } from "../../design-system";
 
 interface StudentGuardianBadgesProps {
   badges: readonly GuardianBadge[];

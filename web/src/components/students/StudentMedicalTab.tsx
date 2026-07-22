@@ -1,5 +1,5 @@
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 import { StudentMedicalAllergies } from "./StudentMedicalAllergies";
 import { StudentMedicalConditions } from "./StudentMedicalConditions";
 import { StudentMedicalMedications } from "./StudentMedicalMedications";
@@ -42,9 +42,7 @@ export function StudentMedicalTab({ workspace }: StudentMedicalTabProps) {
               </p>
             </div>
           ) : (
-            <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-              Aucun médecin référent
-            </p>
+            <EmptyState className="mt-6" title="Aucun médecin référent" />
           )}
         </Card>
 

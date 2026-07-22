@@ -1,5 +1,5 @@
 import type { DocumentBadge } from "../../lib/studentDocumentsViewModel";
-import { Badge } from "../ui/Badge";
+import { Badge } from "../../design-system";
 
 interface StudentDocumentBadgesProps {
   badges: readonly DocumentBadge[];

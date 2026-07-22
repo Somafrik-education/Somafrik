@@ -1,5 +1,5 @@
 import type { StudentDocumentItemViewModel } from "../../lib/studentDocumentsViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 import { StudentDocumentBadges } from "./StudentDocumentBadges";
 import { cn } from "../../lib/utils";
 
@@ -16,9 +16,7 @@ export function StudentDocumentsList({ documents }: StudentDocumentsListProps) {
       />
 
       {documents.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          Aucun document
-        </p>
+        <EmptyState className="mt-6" title="Aucun document" />
       ) : (
         <ul className="mt-6 divide-y divide-line">
           {documents.map((document) => (

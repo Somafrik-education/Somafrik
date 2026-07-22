@@ -1,5 +1,5 @@
 import type { StudentMedicalViewModel } from "../../lib/studentMedicalViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader } from "../../design-system";
 import { StudentMedicalBadges } from "./StudentMedicalBadges";
 import { cn } from "../../lib/utils";
 

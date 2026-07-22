@@ -2,8 +2,7 @@ import type {
   ConditionViewModel,
   DisabilityViewModel,
 } from "../../lib/studentMedicalViewModel";
-import { Card, SectionHeader } from "../ui/Card";
-import { Badge } from "../ui/Badge";
+import { Badge, Card, EmptyState, SectionHeader } from "../../design-system";
 import { cn } from "../../lib/utils";
 
 interface StudentMedicalConditionsProps {
@@ -32,9 +31,7 @@ export function StudentMedicalConditions({
         />
 
         {conditions.length === 0 ? (
-          <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-            Aucune pathologie renseignée
-          </p>
+          <EmptyState className="mt-6" title="Aucune pathologie renseignée" />
         ) : (
           <ul className="mt-6 space-y-3">
             {conditions.map((condition) => (
@@ -64,9 +61,7 @@ export function StudentMedicalConditions({
         />
 
         {disabilities.length === 0 ? (
-          <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-            Aucun handicap renseigné
-          </p>
+          <EmptyState className="mt-6" title="Aucun handicap renseigné" />
         ) : (
           <ul className="mt-6 space-y-3">
             {disabilities.map((disability) => (

@@ -25,9 +25,10 @@ Ces quatre documents constituent le **Framework Produit Somafrik** — base des 
 | **D2.3** | Première migration métier (Profil établissement) | ✅ Livré |
 | **D2.4** | Feedback & états transverses (`InlineAlert`, `EmptyState`, Toast DS…) | ✅ Livré |
 | **D2.5** | Migration modules Paramètres simples | ✅ Livré |
-| **D2.6** | Stabilisation du socle UI (Toast/Modal/Confirm/Table runtime) | ⏳ En cours (PR) |
+| **D2.6** | Stabilisation du socle UI (Toast/Modal/Confirm/Table runtime) | ✅ Livré |
+| **D3.1** | Migration Élèves — fiche / workspace | ⏳ En cours (PR) |
 
-Doc technique DS : [design-system/](./design-system/README.md) · [Layouts](./design-system/LAYOUTS.md) · [Feedback](./design-system/FEEDBACK.md) · [Suivi migrations](./design-system/SUIVI-MIGRATIONS.md)
+Doc technique DS : [design-system/](./design-system/README.md) · [Suivi migrations](./design-system/SUIVI-MIGRATIONS.md) · [Rapport D3.1](./design-system/RAPPORT-D3.1-eleves.md)
 
 ## Ordre de lecture
 

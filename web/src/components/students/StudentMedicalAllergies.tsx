@@ -1,6 +1,5 @@
 import type { AllergyViewModel } from "../../lib/studentMedicalViewModel";
-import { Card, SectionHeader } from "../ui/Card";
-import { Badge } from "../ui/Badge";
+import { Badge, Card, EmptyState, SectionHeader } from "../../design-system";
 import { cn } from "../../lib/utils";
 
 interface StudentMedicalAllergiesProps {
@@ -27,9 +26,7 @@ export function StudentMedicalAllergies({
       />
 
       {allergies.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          Aucune allergie renseignée
-        </p>
+        <EmptyState className="mt-6" title="Aucune allergie renseignée" />
       ) : (
         <ul className="mt-6 space-y-3">
           {allergies.map((allergy) => (

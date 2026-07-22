@@ -25,9 +25,11 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Shell `ParametresLayout` | ⏳ | ad hoc | 0 % | Shell module |
 | PromptDialog | ⏳ | — | 0 % | ui legacy |
 | DataTable | ⏳ | — | 0 % | ui legacy |
-| Élèves | 🔒 | — | 0 % | Oui |
+| Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | Liste `EntityPage` ; StatusBadge |
+| Élèves — liste | ⏳ | — | 0 % | `EntityPage` partagé |
 | Classes (module métier) | 🔒 | — | 0 % | Oui |
 | Enseignants | 🔒 | — | 0 % | Oui |
+| Parents / Responsables | 🔒 | — | 0 % | Oui |
 | Présences | 🔒 | — | 0 % | Oui |
 | Notes | 🔒 | — | 0 % | Oui |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
@@ -36,5 +38,6 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 ## Notes
 
 - D2.6 : coexistence via **re-exports** `components/ui/{Toast,Modal,ConfirmDialog,Table,PagePlaceholder}` → `@/design-system`.
+- D3.1 : fiche Élèves migrée (`RecordLayout`) ; **liste** encore sur `EntityPage` (⏳).
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
-- Modules 🔒 : attendre validation CTO avant ouverture.
+- Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant (ordre D3.2+).

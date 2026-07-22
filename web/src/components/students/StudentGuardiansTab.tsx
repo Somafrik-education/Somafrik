@@ -1,6 +1,6 @@
 import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 import { StudentEmergencyContacts } from "./StudentEmergencyContacts";
 import { StudentGuardianCard } from "./StudentGuardianCard";
 import { StudentGuardianTable } from "./StudentGuardianTable";
@@ -44,9 +44,7 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
             </p>
           </div>
         ) : (
-          <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-            Aucun responsable financier
-          </p>
+          <EmptyState className="mt-6" title="Aucun responsable financier" />
         )}
       </Card>
 

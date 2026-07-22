@@ -5,7 +5,7 @@ import type {
 } from "../../lib/studentWorkspace";
 import { buildStudentWorkspacePath } from "../../lib/studentWorkspaceNavigation";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
-import { Card } from "../ui/Card";
+import { ForbiddenState } from "../../design-system";
 import { StudentDocumentsTab } from "./StudentDocumentsTab";
 import { StudentEnrollmentTab } from "./StudentEnrollmentTab";
 import { StudentGuardiansTab } from "./StudentGuardiansTab";
@@ -66,19 +66,18 @@ export function StudentWorkspaceTabs({
       />
 
       {accessDenied ? (
-        <Card className="p-6">
-          <p className="font-semibold text-danger">Accès non autorisé</p>
-          <p className="mt-2 text-sm text-muted">
-            Vous n&apos;avez pas la permission de consulter cette section du
-            dossier élève.
-          </p>
-          <Link
-            className="mt-4 inline-flex text-sm font-semibold text-brand"
-            to={buildStudentWorkspacePath(workspace.studentId, "overview")}
-          >
-            Retour à la vue d&apos;ensemble
-          </Link>
-        </Card>
+        <ForbiddenState
+          title="Accès non autorisé"
+          message="Vous n'avez pas la permission de consulter cette section du dossier élève."
+          action={
+            <Link
+              className="text-sm font-semibold text-brand"
+              to={buildStudentWorkspacePath(workspace.studentId, "overview")}
+            >
+              Retour à la vue d&apos;ensemble
+            </Link>
+          }
+        />
       ) : (
         renderActiveTab(activeModuleId, workspace, activeModule)
       )}

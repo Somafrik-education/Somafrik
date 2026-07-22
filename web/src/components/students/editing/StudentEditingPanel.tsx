@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button } from "../../ui/Button";
-import { Modal } from "../../ui/Modal";
+import { Button, Modal } from "../../../design-system";
 import { useStudentEditController } from "../../../hooks/useStudentEditController";
 import type {
   EditableGuardianContact,

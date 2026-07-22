@@ -1,4 +1,4 @@
-import { Button } from "../../ui/Button";
+import { Button } from "../../../design-system";
 
 interface StudentEditButtonProps {
   canUpdate: boolean;

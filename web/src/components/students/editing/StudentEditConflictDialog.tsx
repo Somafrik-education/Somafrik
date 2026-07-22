@@ -1,5 +1,4 @@
-import { Modal } from "../../ui/Modal";
-import { Button } from "../../ui/Button";
+import { Button, Modal } from "../../../design-system";
 import type { StudentEditConflict } from "../../../lib/studentEditing";
 
 interface StudentEditConflictDialogProps {
