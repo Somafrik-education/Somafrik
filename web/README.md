@@ -57,3 +57,9 @@ src/
   lib/          Permissions, scoping, modules métier
   pages/        Vues par route
 ```
+
+## Framework UI/UX
+
+Documentation normative (Phase D) : [`docs/ux/`](../docs/ux/README.md)  
+Vision, principes, inventaire D1.1, glossaire, décisions officielles (DO-xxx) et architecture de navigation D1.2 (validée CTO).  
+Toute PR UI/UX doit s’y conformer ; les DO sont des exigences d’acceptation. L’implémentation navigation relève des lots D2.x+.
