@@ -61,5 +61,5 @@ src/
 ## Framework UI/UX
 
 Documentation normative (Phase D) — Framework Produit : [`docs/ux/`](../docs/ux/README.md)  
-D1.1 Vision/Principes · D1.2 Navigation · D1.3 Pages métier · Patterns (P-00X) · Anti-patterns (AP-00X).  
+D1.1 Vision · D1.2 Navigation · D1.3 Pages · D1.4 Design Language · Patterns / Anti-patterns.  
 Toute PR UI/UX D2.x+ passe la checklist de conformité Framework.
