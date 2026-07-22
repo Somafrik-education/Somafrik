@@ -20,11 +20,11 @@ Ces quatre documents constituent le **Framework Produit Somafrik** — base des 
 
 | Lot | Objectif | Statut |
 |-----|----------|--------|
-| **D2.1** | Fondation Design System (`web/src/design-system`) | ⏳ En cours |
-| **D2.2** | Layouts (PageLayout, ListLayout, RecordLayout, DashboardLayout…) | Planifié |
+| **D2.1** | Fondation Design System (`web/src/design-system`) | ✅ Livré |
+| **D2.2** | Layouts officiels à slots (`AppLayout`, `ListLayout`, `RecordLayout`…) | ⏳ En cours (PR) |
 | **D2.3** | Migration progressive des écrans — sans refonte massive | Planifié |
 
-Doc technique DS : [design-system/](./design-system/README.md)
+Doc technique DS : [design-system/](./design-system/README.md) · [Layouts](./design-system/LAYOUTS.md)
 
 ## Ordre de lecture
 
@@ -38,7 +38,8 @@ Doc technique DS : [design-system/](./design-system/README.md)
 8. [Patterns Produit](./patterns-produit.md) — P-001 → P-010
 9. [Anti-patterns](./anti-patterns.md) — AP-001 → AP-012
 10. [Design Language & Design System](./design-language.md)
-11. [Design System technique (D2.1)](./design-system/README.md)
+11. [Design System technique (D2.1 / D2.2)](./design-system/README.md)
+12. [Layouts officiels (D2.2)](./design-system/LAYOUTS.md)
 
 ## Quatre axes de revue UI (gouvernance mature)
 

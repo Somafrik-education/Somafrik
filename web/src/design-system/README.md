@@ -1,8 +1,9 @@
-# `@/design-system` — Fondation D2.1
+# `@/design-system` — D2.1 + D2.2
 
-Point d’entrée : `import { Button, Badge, … } from "@/design-system"`.
+Point d’entrée : `import { Button, Badge, RecordLayout, … } from "@/design-system"`.
 
 Documentation : [`docs/ux/design-system/`](../../../docs/ux/design-system/README.md)
 
-- Audit, migration, API primitives
-- Coexistence avec `components/ui` (ne pas supprimer le legacy ici)
+- **D2.1** — primitives, tokens, coexistence `components/ui`
+- **D2.2** — layouts à slots (`layout/`) — structure seule, pas de logique métier
+- Aucun écran métier migré dans ces lots
