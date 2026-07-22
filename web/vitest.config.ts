@@ -12,7 +12,11 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/design-system/test/setup.ts"],
-    include: ["src/design-system/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "src/design-system/**/*.{test,spec}.{ts,tsx}",
+      // Pages migrées D2.3+ (tests de structure / non-régression UI)
+      "src/pages/**/*.{test,spec}.{ts,tsx}",
+    ],
     css: false,
     globals: false,
   },

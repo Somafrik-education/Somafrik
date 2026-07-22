@@ -1,6 +1,6 @@
 # Design System Somafrik — documentation technique
 
-**Phase :** D2.1 (primitives) + D2.2 (layouts)  
+**Phase :** D2.1 (primitives) + D2.2 (layouts) + D2.3 (migrations métier)  
 **Code :** `web/src/design-system/`  
 **Spec :** [Design Language D1.4](../design-language.md) · [Pages métier D1.3](../architecture-pages-metier.md)
 
@@ -10,6 +10,8 @@
 |----------|------|
 | [AUDIT-D2.1.md](./AUDIT-D2.1.md) | État des composants avant fondation |
 | [AUDIT-D2.2.md](./AUDIT-D2.2.md) | État des layouts avant fondation |
+| [AUDIT-D2.3.md](./AUDIT-D2.3.md) | Audit module Profil établissement |
+| [RAPPORT-D2.3-profil-etablissement.md](./RAPPORT-D2.3-profil-etablissement.md) | Rapport CTO première migration |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS + mapping pages → layouts |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API développeur des primitives |
 | [LAYOUTS.md](./LAYOUTS.md) | API, zones, exemples et limites des layouts |
@@ -56,10 +58,11 @@ npm --prefix web run test
 
 | Zone | Conforme | Écart | Action future |
 |------|----------|-------|---------------|
-| Modules métier | ⚠️ | Toujours sur legacy ui/layout | D2.3 migration progressive |
+| Modules métier | ⚠️ | Majorité encore legacy | D2.3+ un module à la fois |
+| Profil établissement | ✅ | Première migration D2.3 (`FormLayout`) | Attendre validation CTO |
 | Primitives DS | ✅ | Livrées D2.1 | Consommer dès nouveaux écrans |
-| Layouts DS | ✅ | Livrés D2.2, non branchés runtime | Brancher en D2.3+ |
-| Overlays / Tables | — | Stubs | Lots suivants |
+| Layouts DS | ✅ | Livrés D2.2 | Consommés dès D2.3 |
+| Overlays / Tables | — | Stubs (Toast encore legacy) | D2.4 feedback / Table |
 
 ## Éléments gelés
 
