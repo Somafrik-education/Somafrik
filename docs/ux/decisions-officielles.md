@@ -290,11 +290,41 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 **Décision :** Aucune PR ne modifie la navigation runtime (routes, shell, TabNav, breadcrumb, sélecteurs globaux) tant que l’architecture D1.2 n’est pas validée CTO.
 
 **Implications :**
-- D1.2 = documentation normative uniquement.
-- Les écarts listés dans le tableau d’impact restent de la dette jusqu’aux lots D2.x+.
-- Toute dérogation post-validation doit citer les DO impactées.
+- **Statut :** D1.2 validé CTO (APPROVE WITH COMMENTS) — le verrou d’implémentation est levé pour les lots D2.x+ conformes.
+- Les PR d’implémentation navigation doivent citer les DO impactées et respecter le tableau d’impact modules.
+- Les écarts listés dans le tableau d’impact restent de la dette jusqu’à leur lot dédié.
+- Toute dérogation doit être explicite en revue (« Non conforme à DO-xxx » + justification).
 
 **Réf. :** Architecture navigation D1.2 §13 ; DO-012.
+
+---
+
+## DO-023 — Contexte actif
+
+**Décision :** Toute navigation métier s’effectue dans un **contexte actif explicite** (au minimum établissement et année scolaire lorsque ces informations sont pertinentes). Les changements de contexte ne doivent jamais être implicites.
+
+**Implications :**
+- Le Contexte est une **dimension transversale**, pas un niveau de la hiérarchie Module → … → Section.
+- Établissement actif et année scolaire active sont exposés dans le shell lorsque le rôle le nécessite (cohérent DO-017).
+- Extensions futures possibles (campus, filiale) suivent la même règle.
+- Aucune bascule silencieuse d’établissement ou d’année lors d’une navigation ou d’une action.
+- Critique pour le multi-établissements et la confiance dans les données affichées.
+
+**Réf. :** DO-017, Architecture navigation D1.2 §1 (Contexte), §2.6, §2.7, §6.4, §6.5.
+
+---
+
+## DO-024 — Préservation du contexte de navigation dans une fiche
+
+**Décision :** Dans une fiche métier, après une action locale (ajout, modification, détail), l’utilisateur revient au **même onglet / même contexte de fiche**, pas à un niveau supérieur non demandé.
+
+**Implications :**
+- Exemple : Élève → Documents → Ajouter un document → Retour à **Documents** (pas à la liste des élèves).
+- Les modales se ferment sur l’onglet courant.
+- Seules les actions explicites (Retour à la liste, breadcrumb vers un parent) quittent ce contexte.
+- Les revues UI vérifient cette continuité (P14 — « Comment revenir en arrière ? »).
+
+**Réf. :** P14, Architecture navigation D1.2 §6.6.
 
 ---
 
@@ -324,3 +354,5 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 | DO-020 | Une barre d’onglets primaire à la fois sur mobile | D1.2 |
 | DO-021 | États système et orientation préservée | D1.2 |
 | DO-022 | Validation CTO avant implémentation navigation D1.2 | D1.2 |
+| DO-023 | Contexte actif | D1.2 |
+| DO-024 | Préservation du contexte de navigation dans une fiche | D1.2 |

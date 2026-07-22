@@ -165,13 +165,22 @@ Enchaînements liés à l’entité ou au scope : retour liste, ouverture fiche,
 
 Entrée Header hors arborescence sidebar (ex. Messages, Annonces, Notifications).
 
+### Contexte actif
+
+Dimension transversale de navigation (hors pile hiérarchique) : établissement, année scolaire, et extensions futures (campus, filiale).  
+Toute navigation métier s’y inscrit de façon **explicite** (DO-023).
+
 ### Établissement actif
 
-Périmètre établissement courant du shell (DO-017).
+Périmètre établissement courant du shell (DO-017, DO-023).
 
 ### Année scolaire active
 
-Année de travail courante du shell (DO-017), distincte de l’écran de configuration des années.
+Année de travail courante du shell (DO-017, DO-023), distincte de l’écran de configuration des années.
+
+### Préservation de contexte (fiche)
+
+Après une action locale dans une fiche (ajout, édition, détail), retour au même onglet / même contexte — pas à un niveau supérieur non demandé (DO-024).
 
 ### Empty state
 

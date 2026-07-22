@@ -1,14 +1,14 @@
 # Architecture de navigation Somafrik — D1.2
 
-**Statut :** normatif (sous réserve validation CTO)  
+**Statut :** normatif — **validé CTO** (APPROVE WITH COMMENTS, amendements intégrés)  
 **Phase :** D1.2  
-**Nature :** spécification uniquement — aucune implémentation dans cette étape  
+**Nature :** spécification uniquement dans cette PR — l’implémentation relève des lots D2.x+  
 **Références :** [Vision](./vision-produit.md) · [Principes](./principes-ux.md) · [Glossaire](./glossaire.md) · [Décisions](./decisions-officielles.md) · [Inventaire D1.1](./inventaire-ui.md)
 
 Cette spécification définit l’**architecture officielle de navigation** de Somafrik.  
 Elle doit rester valide plusieurs années et s’appliquer à tous les modules (Éducation, Finance, RH, Bibliothèque, Communication, Administration, modules futurs).
 
-**Aucune modification runtime n’est autorisée tant que le CTO n’a pas validé ce document.**
+Les DO-xxx de navigation sont des **exigences d’acceptation** des futures PR UI (comme les règles métier de la Phase C).
 
 ---
 
@@ -87,10 +87,53 @@ Section
 | **Application** | Shell authentifié : sidebar, header, contexte global | `AppLayout` | Non (contenant) |
 | **Module** | Domaine métier de premier niveau, entrée du menu principal | Éducation / Mon établissement, Finances, Planning | Oui (`/finances`) |
 | **Sous-module** | Partition stable d’un module, exposée en navigation locale | Élèves, Paiements, Emploi du temps | Oui (`/etablissement/eleves`) |
-| **Vue** | Écran de travail du sous-module : liste, hub, calendrier, outil | Liste élèves, calendrier planning | Oui |
+| **Vue** | Écran de travail du sous-module : facette d’intention (liste, hub, calendrier, outil, dashboard, statistiques…) | Liste élèves, calendrier planning, dashboard élèves | Oui |
 | **Fiche** | Vue détaillée d’une entité métier (workspace / dossier) | Fiche élève | Oui (`…/eleves/:id`) |
 | **Onglet de fiche** | Partition thématique d’une fiche | Identité, Médical, Documents | Oui (`…/eleves/:id/medical`) |
 | **Section** | Bloc thématique à l’intérieur d’un onglet / d’une vue | « Synthèse médicale », tableau responsables | Non (ancre optionnelle) |
+
+### Richesse du niveau Vue
+
+Le niveau **Vue** évite de tout réduire à une « Liste ». Un même Sous-module peut exposer plusieurs Vues :
+
+```
+Éducation / Mon établissement
+  ↓
+Élèves
+  ↓
+Vue Dashboard | Vue Liste | Vue Calendrier | Vue Statistiques
+```
+
+Chaque Vue reste adressable et appartient au même Sous-module.
+
+### Dimension transversale — Contexte actif (pas un niveau)
+
+La hiérarchie décrit **où** l’utilisateur se trouve.  
+Le **Contexte** décrit **dans quel périmètre** il travaille. Ce n’est **pas** un niveau supplémentaire de la pile Module → … → Section.
+
+Exemple de lecture combinée :
+
+```
+Contexte : Établissement « Lycée Horizon » · Année 2026-2027
+Navigation :
+  Module Établissement
+    ↓
+  Sous-module Élèves
+    ↓
+  Vue Liste
+    ↓
+  Fiche Jean Dupont
+    ↓
+  Onglet Documents
+```
+
+| Élément de contexte | Obligatoire quand pertinent | Placement |
+|---------------------|----------------------------|-----------|
+| Établissement actif | Multi-établissements / rôles plateforme | Shell (Header) |
+| Année scolaire active | Données scolaires dépendantes de l’année | Shell (Header) |
+| Campus / filiale (futur) | Si le produit l’introduit | Shell, même règle |
+
+Règle : les changements de contexte sont **explicites** (DO-023). Aucun bascule silencieuse d’établissement ou d’année.
 
 ### Règles de profondeur
 
@@ -99,17 +142,29 @@ Section
 2. Entre le Module et la Fiche, on tolère au plus **un** niveau de sous-vue supplémentaire (ex. Emploi du temps → Par classe).
 3. Si un parcours dépasse cette profondeur, c’est un signal de **mauvaise découpe module / sous-module**, pas une invitation à ajouter un 7ᵉ niveau d’URL.
 4. Les redirections d’anciennes URLs sont autorisées ; elles ne comptent pas comme niveaux officiels.
+5. Le Contexte actif n’allonge pas la profondeur d’URL hiérarchique ; il filtre le périmètre des données affichées.
 
 ### Mapping glossaire
 
-| Terme glossaire | Niveau |
-|-----------------|--------|
+| Terme glossaire | Niveau / dimension |
+|-----------------|--------------------|
 | Module applicatif | Module |
 | Sous-module / onglet de module | Sous-module |
-| Liste / Hub / Outil | Vue |
+| Liste / Hub / Outil / Dashboard / Statistiques | Vue |
 | Fiche / Workspace / Dossier | Fiche |
 | Onglet / Module de fiche | Onglet de fiche |
 | Section | Section |
+| Contexte actif | Dimension transversale (hors pile) |
+
+### Les trois questions de navigation métier (P14)
+
+Toute navigation / écran métier doit permettre de répondre :
+
+1. **Où suis-je ?** — Module, Vue/Fiche, onglet, contexte actif  
+2. **Que puis-je faire ?** — Action primaire / prochaine action (DO-006)  
+3. **Comment revenir en arrière ?** — Retour liste, breadcrumb, ou retour à l’onglet d’origine (DO-024)
+
+Ces trois questions guident les revues UI.
 
 ---
 
@@ -342,6 +397,7 @@ Deux familles distinctes (ne pas les confondre — voir Glossaire) :
 - Toute Fiche expose une action explicite **Retour à la liste** (ou au parent immédiat).
 - Cible : la Vue liste du Sous-module (ex. `/etablissement/eleves`), en préservant si possible les filtres via état de navigation ultérieur.
 - Le breadcrumb et le retour liste sont complémentaires.
+- Cette action quitte la fiche ; elle ne remplace pas le retour local après une action *dans* un onglet (cf. §6.6).
 
 ### 6.2 Ouverture d’une fiche
 
@@ -357,16 +413,41 @@ Deux familles distinctes (ne pas les confondre — voir Glossaire) :
 
 ### 6.4 Changement d’année scolaire
 
-- Via sélecteur global (spécifié §2.7).
+- Via sélecteur global (spécifié §2.7) — changement **explicite** (DO-023).
 - Les listes se rafraîchissent sur l’année active.
 - Si la fiche ouverte n’existe plus dans la nouvelle année : état **ressource absente** + retour liste (pas d’écran blanc).
 - Ne pas changer silencieusement d’entité.
 
 ### 6.5 Changement d’établissement
 
-- Via sélecteur global (spécifié §2.6).
+- Via sélecteur global (spécifié §2.6) — changement **explicite** (DO-023).
 - Même règle : conserver la position dans l’arborescence si autorisée et si la ressource existe ; sinon fallback safe.
 - Les données affichées après bascule appartiennent exclusivement au nouvel établissement.
+
+### 6.6 Préservation du contexte dans une fiche (DO-024)
+
+Dans une fiche métier, l’utilisateur ne doit **presque jamais** perdre son contexte de travail local.
+
+Enchaînement attendu :
+
+```
+Fiche Élève
+  ↓
+Onglet Documents
+  ↓
+Action « Ajouter un document » (page, panneau ou modale)
+  ↓
+Retour → Onglet Documents (même fiche)
+```
+
+| Situation | Retour attendu |
+|-----------|----------------|
+| Ajout / édition / détail depuis un onglet de fiche | **Même onglet** de la même fiche |
+| Fermeture d’une modale d’action sur un onglet | Onglet inchangé |
+| Action « Retour à la liste » (explicite) | Vue liste du Sous-module |
+| Breadcrumb vers un niveau supérieur | Niveau choisi, volontairement |
+
+Interdit : après « Ajouter un document », renvoyer à la liste des élèves ou à la vue d’ensemble par défaut sans intention utilisateur.
 
 ---
 
@@ -417,7 +498,7 @@ Les états système (DO-005) s’appliquent **sans perdre l’orientation** (she
 ## 9. Décisions officielles (navigation)
 
 Les décisions suivantes sont ajoutées au référentiel [DO-xxx](./decisions-officielles.md).  
-Résumé pour lecture D1.2 :
+Elles constituent des **exigences d’acceptation** des PR UI (« Conforme à DO-017 », « Non conforme à DO-024 », etc.).
 
 | ID | Titre |
 |----|-------|
@@ -430,7 +511,9 @@ Résumé pour lecture D1.2 :
 | **DO-019** | Plafonds d’onglets (7 / 5 / 8) et critères onglet vs page |
 | **DO-020** | Sur fiche, une seule barre d’onglets « primaire » à la fois sur mobile |
 | **DO-021** | Les états système préservent le shell et l’orientation |
-| **DO-022** | Validation CTO avant toute implémentation de navigation D1.2 |
+| **DO-022** | Validation CTO avant implémentation navigation D1.2 *(levé — D1.2 validé)* |
+| **DO-023** | Contexte actif explicite (établissement, année scolaire, …) |
+| **DO-024** | Préservation du contexte de navigation dans une fiche |
 
 ---
 
@@ -465,15 +548,16 @@ Résumé pour lecture D1.2 :
 
 ## 11. Périmètre futur (hors D1.2 implémentation)
 
-Ordre indicatif après validation CTO — chaque lot = PR séparée :
+Ordre indicatif — chaque lot = PR séparée, citant les DO impactées :
 
-1. Exposer sélecteurs **établissement** / **année** dans le shell (DO-017).
+1. Exposer sélecteurs **établissement** / **année** dans le shell (DO-017, DO-023).
 2. Introduire le **breadcrumb** selon DO-016.
-3. Aligner titres Topbar sur la Fiche ouverte (DO-009).
+3. Aligner titres Topbar sur la Fiche ouverte (DO-009, P14).
 4. Traiter la densité des doubles onglets sur workspace (DO-020).
-5. Deep-links Recherche → fiches.
-6. Harmoniser filtrage permission des onglets de module.
-7. Étendre le modèle aux modules futurs (RH, Bibliothèque…) sans nouveau pattern.
+5. Garantir la **préservation de contexte** après actions dans une fiche (DO-024).
+6. Deep-links Recherche → fiches.
+7. Harmoniser filtrage permission des onglets de module.
+8. Étendre le modèle aux modules futurs (RH, Bibliothèque…) sans nouveau pattern.
 
 ---
 
@@ -515,20 +599,24 @@ Légende conformité : ✅ conforme · ⚠️ écart partiel · ❌ non conforme
 
 - Aucune ligne ❌ bloquante n’impose une refonte immédiate.
 - Les ⚠️ documentent la **dette d’alignement** ; les corrections sont planifiées (D2.x+), pas exécutées dans D1.2.
-- Ce tableau constitue le **premier tableau de bord d’alignement** du Framework UI/UX ; il sera mis à jour à chaque spécification D suivante.
+- Ce tableau constitue le **indicateur de maturité** du Framework UI/UX ; il sera repris et mis à jour dans **toutes** les futures spécifications UI.
 
 ---
 
-## 13. Critères de validation CTO
+## 13. Validation CTO
 
-Avant toute PR d’implémentation navigation :
+| Critère | Statut |
+|---------|--------|
+| Niveaux §1 (y compris richesse du niveau Vue) | ✅ Validé |
+| Dimension Contexte actif (transversale) | ✅ Validé (+ DO-023) |
+| Rôles shell §2 | ✅ Validé |
+| Règles locales §3 + P14 (3 questions) | ✅ Validé |
+| Contrat breadcrumb §4 | ✅ Validé |
+| Contrat onglets §5 | ✅ Validé |
+| Préservation contexte fiche §6.6 | ✅ Validé (+ DO-024) |
+| DO-013 → DO-024 | ✅ Intégrés |
+| Tableau d’impact §12 (méthode pérenne) | ✅ Validé |
 
-- [ ] Niveaux §1 acceptés
-- [ ] Rôles shell §2 acceptés (y compris établissement + année)
-- [ ] Règles locales §3 acceptées
-- [ ] Contrat breadcrumb §4 accepté
-- [ ] Contrat onglets §5 accepté
-- [ ] DO-013 à DO-022 intégrés au référentiel
-- [ ] Tableau d’impact §12 pris comme baseline de conformité
-
-**Statut demandé :** Validé CTO / Amendé / Reporté
+**Décision CTO :** APPROVE WITH COMMENTS — amendements intégrés dans cette révision.  
+**Fusion :** autorisée après cette mise à jour documentaire.  
+**Implémentation runtime :** lots D2.x+ uniquement, avec citation des DO.

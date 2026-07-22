@@ -102,6 +102,16 @@ Les dialogs doivent rester utilisables au clavier.
 Les composants doivent être réutilisables.  
 Ne pas multiplier les abstractions prématurément : factoriser un pattern seulement lorsqu’il est stable et répété.
 
+## P14 — Trois questions de navigation métier
+
+Toute navigation / écran métier doit permettre de répondre clairement :
+
+1. **Où suis-je ?** — module, vue ou fiche, onglet, et contexte actif  
+2. **Que puis-je faire ?** — prochaine action utile (voir aussi P3 / DO-006)  
+3. **Comment revenir en arrière ?** — retour liste, breadcrumb, ou retour à l’onglet d’origine (DO-024)
+
+Ces trois questions guident les revues UI.
+
 ---
 
 ## Mapping rapide principes → décisions
@@ -116,7 +126,8 @@ Ne pas multiplier les abstractions prématurément : factoriser un pattern seule
 | P3 Workflow | DO-006 |
 | P4 Données vivantes | DO-007 |
 | P5 Aide à la décision | DO-008 |
-| P10 Orientation | DO-009, DO-013 → DO-021 (navigation D1.2) |
+| P10 Orientation | DO-009, DO-013 → DO-024 (navigation D1.2) |
 | P11 Cohérence inter-modules | DO-011, Architecture navigation |
 | P12 Accessibilité | DO-010, DO-020 |
 | P13 Réutilisation pragmatique | DO-012, DO-022 |
+| P14 Trois questions de navigation | DO-009, DO-023, DO-024 |
