@@ -1,7 +1,7 @@
 # Décisions officielles UI/UX (DO-xxx)
 
 **Statut :** normatif  
-**Phase :** D1.1 · étendu D1.2 (navigation)  
+**Phase :** D1.1 · D1.2 (navigation) · D1.3 (pages métier)  
 **Usage :** référence obligatoire pour toute PR UI/UX
 
 Toute dérogation doit être explicite dans la PR et validée en revue CTO / produit.
@@ -328,6 +328,142 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 
 ---
 
+## DO-025 — Catalogue officiel des types de pages
+
+**Décision :** Toute page métier appartient à l’un des types officiels : Dashboard, Liste, Fiche, Outil, Hub, Formulaire, Assistant, Rapport, Consultation, Placeholder.
+
+**Implications :**
+- La PR déclare le type de page.
+- Landing / Auth restent hors catalogue ERP (kit distinct, DO-011).
+- Un flux ≥ 3 étapes dépendantes utilise le type Assistant (Pattern P-008), pas une Modal opaque.
+
+**Réf. :** Architecture pages métier D1.3 §1.
+
+---
+
+## DO-026 — Structure officielle de la Fiche métier
+
+**Décision :** Une Fiche suit l’ordre : Orientation → Header → Résumé métier → Alertes → Actions → Navigation locale (si multi-domaines) → Contenu → Historique (recommandé).
+
+**Implications :**
+- Pas de formulaire en premier viewport (DO-001 / DO-028).
+- Référence d’implémentation actuelle : dossier élève ; cible pour toutes les fiches futures.
+- Pattern associé : P-003 (+ P-001).
+
+**Réf. :** Architecture pages métier D1.3 §2 ; Pattern P-003.
+
+---
+
+## DO-027 — Structure officielle de la page Liste
+
+**Décision :** Une Liste expose titre, barre d’outils (recherche / filtres / actions), tableau (ou équivalent), pagination si volume, et états système explicites.
+
+**Implications :**
+- KPIs / signaux recommandés lorsqu’il existe une donnée vivante (DO-007).
+- Ouverture d’entité riche → Fiche URL (DO-014) ; détail léger → P-009.
+- Pattern associé : P-002.
+
+**Réf. :** Architecture pages métier D1.3 §3.
+
+---
+
+## DO-028 — Résumé métier obligatoire (signature Somafrik)
+
+**Décision :** Toute Fiche commence par un Résumé métier qui permet de répondre : état actuel, problèmes, prochaine action.
+
+**Implications :**
+- Contenu type : statuts, contexte, alertes, KPI vivants, interprétation, actions recommandées.
+- Interdit : mur de champs, compteurs plats alors qu’un signal existe, actions destructives non protégées.
+- Pattern associé : P-001.
+- Renforce et opérationnalise DO-001 pour toutes les fiches modules.
+
+**Réf. :** DO-001, DO-006, DO-007, DO-008 ; Architecture pages métier D1.3 §5.
+
+---
+
+## DO-029 — Taxonomy et placement des actions
+
+**Décision :** Les actions se classent en primaire, secondaire, contextuelle, destructive — avec emplacements et styles stables.
+
+**Implications :**
+- Une seule action primaire par écran / zone (DO-002).
+- Destructive → confirmation (DO-003).
+- Contextuelle près de la ligne / section / alerte concernée.
+- Pas de faux CTA « à venir » en primaire.
+
+**Réf. :** DO-002, DO-003 ; Architecture pages métier D1.3 §6.
+
+---
+
+## DO-030 — Choix des surfaces
+
+**Décision :** Page dédiée, Modal, Carte, Encart, Panneau latéral et Placeholder ont des rôles distincts ; une Modal ne remplace pas une Fiche riche.
+
+**Implications :**
+- Workspace (résumé + onglets + historique) → Page Fiche (P-003).
+- CRUD léger / détail court → Modal (P-009).
+- Capacité non livrée → Placeholder (≠ Empty / Forbidden).
+- Panneau latéral réservé à l’édition / détail secondaire sans quitter le contexte (cible).
+
+**Réf. :** Architecture pages métier D1.3 §7.
+
+---
+
+## DO-031 — États officiels des pages métier
+
+**Décision :** Les pages métier distinguent explicitement : Loading, Empty, Erreur, Permission refusée, Conflit, Ressource absente, Lecture seule, Synchronisation, Maintenance, Coming soon.
+
+**Implications :**
+- Ces états ne sont pas interchangeables.
+- Le shell et l’orientation restent compréhensibles (DO-021).
+- Lecture seule et Coming soon ne se présentent pas comme Empty.
+
+**Réf. :** DO-005, DO-021 ; Architecture pages métier D1.3 §8.
+
+---
+
+## DO-032 — Déclaration obligatoire d’un Pattern Produit
+
+**Décision :** Toute PR qui crée ou refond une page métier déclare le Pattern Produit utilisé (P-00X) issu du catalogue officiel.
+
+**Implications :**
+- Catalogue : [`patterns-produit.md`](./patterns-produit.md).
+- Composition autorisée (ex. P-003 + P-001).
+- Si aucun Pattern ne convient : amendement documentaire avant invention d’UI.
+- En revue : « Conforme à P-002 » / « Non conforme à P-001 ».
+
+**Réf. :** Architecture pages métier D1.3 §10 ; Patterns Produit.
+
+---
+
+## DO-033 — Validation CTO avant implémentation pages D1.3
+
+**Décision :** Aucune PR ne modifie les structures de pages runtime pour se conformer à D1.3 tant que cette architecture n’est pas validée CTO.
+
+**Implications :**
+- **Statut :** D1.3 validé CTO (APPROVE WITH COMMENTS) — le verrou d’implémentation est levé pour les lots D2.x+ conformes.
+- Les PR d’implémentation citent DO, Patterns (P-00X) et vérifient l’absence d’Anti-patterns (AP-00X).
+- Les écarts du tableau d’impact restent de la dette jusqu’à leur lot dédié.
+- Checklist de conformité Framework obligatoire à partir de D2.x (voir `docs/ux/README.md`).
+
+**Réf. :** Architecture pages métier D1.3 §15 ; DO-012.
+
+---
+
+## DO-034 — Catalogue officiel des Anti-patterns Produit
+
+**Décision :** Les Anti-patterns Produit (AP-00X) font partie du Framework : ils listent les pratiques interdites et servent d’exigences d’acceptation négatives en revue de PR.
+
+**Implications :**
+- Catalogue : [`anti-patterns.md`](./anti-patterns.md) (AP-001 → AP-006 à l’introduction).
+- Une PR qui introduit un Anti-pattern est non conforme, sauf dérogation explicite CTO / produit.
+- Complète les Patterns Produit (DO-032) : P = à faire, AP = à ne jamais faire.
+- Applicable dès les revues D2.x+.
+
+**Réf. :** Architecture pages métier D1.3 §10 bis ; Patterns Produit.
+
+---
+
 ## Journal
 
 | ID | Titre | Introduit |
@@ -356,3 +492,13 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 | DO-022 | Validation CTO avant implémentation navigation D1.2 | D1.2 |
 | DO-023 | Contexte actif | D1.2 |
 | DO-024 | Préservation du contexte de navigation dans une fiche | D1.2 |
+| DO-025 | Catalogue officiel des types de pages | D1.3 |
+| DO-026 | Structure officielle de la Fiche métier | D1.3 |
+| DO-027 | Structure officielle de la page Liste | D1.3 |
+| DO-028 | Résumé métier obligatoire (signature Somafrik) | D1.3 |
+| DO-029 | Taxonomy et placement des actions | D1.3 |
+| DO-030 | Choix des surfaces (page, modal, carte, panneau, placeholder) | D1.3 |
+| DO-031 | États officiels des pages métier | D1.3 |
+| DO-032 | Déclaration obligatoire d’un Pattern Produit | D1.3 |
+| DO-033 | Validation CTO avant implémentation pages D1.3 | D1.3 |
+| DO-034 | Catalogue officiel des Anti-patterns Produit | D1.3 |

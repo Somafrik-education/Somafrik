@@ -127,7 +127,8 @@ Ces trois questions guident les revues UI.
 | P4 Données vivantes | DO-007 |
 | P5 Aide à la décision | DO-008 |
 | P10 Orientation | DO-009, DO-013 → DO-024 (navigation D1.2) |
-| P11 Cohérence inter-modules | DO-011, Architecture navigation |
+| P11 Cohérence inter-modules | DO-011, Architecture navigation, Patterns Produit |
 | P12 Accessibilité | DO-010, DO-020 |
-| P13 Réutilisation pragmatique | DO-012, DO-022 |
+| P13 Réutilisation pragmatique | DO-012, DO-022, DO-032 (Patterns) |
 | P14 Trois questions de navigation | DO-009, DO-023, DO-024 |
+| P2 Résumé + signature pages | DO-001, DO-028, Pattern P-001 |
