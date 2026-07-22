@@ -43,6 +43,6 @@ Cette vision ne prescrit pas, à elle seule :
 - des changements métier, API ou permissions ;
 - une implémentation runtime de navigation (voir D1.2 + DO-022).
 
-L’**architecture de navigation** est spécifiée en D1.2 ([document](./architecture-navigation.md)) ; son application runtime attend la validation CTO.
+L’**architecture de navigation** est spécifiée et **validée CTO** en D1.2 ([document](./architecture-navigation.md)) ; son application runtime relève des lots D2.x+.
 
 Elle fixe le **cadre** dans lequel les étapes D suivantes devront s’exécuter.
