@@ -23,9 +23,10 @@ Ces quatre documents constituent le **Framework Produit Somafrik** — base des 
 | **D2.1** | Fondation Design System (`web/src/design-system`) | ✅ Livré |
 | **D2.2** | Layouts officiels à slots (`AppLayout`, `ListLayout`, `RecordLayout`…) | ✅ Livré |
 | **D2.3** | Première migration métier (Profil établissement) | ✅ Livré |
-| **D2.4** | Feedback & états transverses (`InlineAlert`, `EmptyState`, Toast DS…) | ⏳ En cours (PR) |
+| **D2.4** | Feedback & états transverses (`InlineAlert`, `EmptyState`, Toast DS…) | ✅ Livré |
+| **D2.5** | Migration modules Paramètres simples | ⏳ En cours (PR) |
 
-Doc technique DS : [design-system/](./design-system/README.md) · [Layouts](./design-system/LAYOUTS.md) · [Feedback](./design-system/FEEDBACK.md)
+Doc technique DS : [design-system/](./design-system/README.md) · [Layouts](./design-system/LAYOUTS.md) · [Feedback](./design-system/FEEDBACK.md) · [Suivi migrations](./design-system/SUIVI-MIGRATIONS.md)
 
 ## Ordre de lecture
 
@@ -42,6 +43,7 @@ Doc technique DS : [design-system/](./design-system/README.md) · [Layouts](./de
 11. [Design System technique (D2.1 → D2.4)](./design-system/README.md)
 12. [Layouts officiels (D2.2)](./design-system/LAYOUTS.md)
 13. [Feedback & états (D2.4)](./design-system/FEEDBACK.md)
+14. [Suivi des migrations](./design-system/SUIVI-MIGRATIONS.md)
 
 ## Quatre axes de revue UI (gouvernance mature)
 

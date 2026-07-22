@@ -11,9 +11,15 @@ import {
 } from "../../lib/subscriptionPolicy";
 import { formatMetric } from "../../lib/format";
 import { useFeaturePermissions, usePermissionContext } from "../../lib/usePermissionContext";
-import { Card, SectionHeader } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
-import { Field, Input } from "../../components/ui/Field";
+import {
+  Button,
+  Card,
+  EmptyState,
+  FormField,
+  FormLayout,
+  Input,
+  SectionHeader,
+} from "../../design-system";
 import { useToast } from "../../components/ui/Toast";
 import type { Country, CountrySubscriptionPolicy } from "../../types";
 
@@ -81,113 +87,131 @@ export function SubscriptionPolicySettingsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <Card className="p-6">
+    <FormLayout>
+      <FormLayout.Header>
         <SectionHeader
           title="Politique d'abonnement par pays"
           description="Barème appliqué aux abonnements selon le plan choisi dans la fiche établissement (Essentiel, Standard, Premium)."
         />
-        <p className="mt-2 text-xs text-muted">
-          Barème global Somafrik (repli si un pays n&apos;a pas de tarif personnalisé) : Essentiel{" "}
-          {formatMetric(
-            GLOBAL_SUBSCRIPTION_POLICY.plans.Essentiel.monthlyPrice,
-            GLOBAL_SUBSCRIPTION_POLICY.currency,
-          )}
-          /mois · Standard{" "}
-          {formatMetric(
-            GLOBAL_SUBSCRIPTION_POLICY.plans.Standard.monthlyPrice,
-            GLOBAL_SUBSCRIPTION_POLICY.currency,
-          )}
-          /mois · Premium{" "}
-          {formatMetric(
-            GLOBAL_SUBSCRIPTION_POLICY.plans.Premium.monthlyPrice,
-            GLOBAL_SUBSCRIPTION_POLICY.currency,
-          )}
-          /mois
-        </p>
-      </Card>
+      </FormLayout.Header>
+      <FormLayout.Description>
+        Barème global Somafrik (repli si un pays n&apos;a pas de tarif personnalisé) : Essentiel{" "}
+        {formatMetric(
+          GLOBAL_SUBSCRIPTION_POLICY.plans.Essentiel.monthlyPrice,
+          GLOBAL_SUBSCRIPTION_POLICY.currency,
+        )}
+        /mois · Standard{" "}
+        {formatMetric(
+          GLOBAL_SUBSCRIPTION_POLICY.plans.Standard.monthlyPrice,
+          GLOBAL_SUBSCRIPTION_POLICY.currency,
+        )}
+        /mois · Premium{" "}
+        {formatMetric(
+          GLOBAL_SUBSCRIPTION_POLICY.plans.Premium.monthlyPrice,
+          GLOBAL_SUBSCRIPTION_POLICY.currency,
+        )}
+        /mois
+      </FormLayout.Description>
 
-      {draft.length === 0 ? (
-        <Card className="p-6">
-          <p className="text-sm text-muted">
-            Aucun pays configuré. Créez d&apos;abord un pays dans le module Plateforme → Pays.
-          </p>
-        </Card>
-      ) : (
-        draft.map((country) => {
-          const policy = resolveCountrySubscriptionPolicy(country);
-          return (
-            <Card key={country.code} className="p-6">
-              <SectionHeader
-                title={country.name}
-                description={`Code ISO : ${country.code}`}
-              />
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="Devise facturation">
-                  <Input
-                    value={policy.currency}
-                    readOnly={!canUpdate}
-                    onChange={(event) =>
-                      patchCountry(country.code, {
-                        subscriptionPolicy: {
-                          ...policy,
-                          currency: event.target.value.toUpperCase(),
-                        },
-                      })
-                    }
-                  />
-                </Field>
-              </div>
-              <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                {SUBSCRIPTION_PLAN_NAMES.map((plan) => (
-                  <div
-                    key={plan}
-                    className="rounded-xl border border-line/70 bg-slate-50/50 p-4"
-                  >
-                    <p className="text-sm font-bold text-ink">{plan}</p>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <Field label="Mensuel">
-                        <Input
-                          type="number"
-                          min={0}
-                          readOnly={!canUpdate}
-                          value={policy.plans[plan].monthlyPrice}
-                          onChange={(event) =>
-                            patchCountryPolicy(country.code, (current) =>
-                              updateCountryPlanPrice(current, plan, "monthlyPrice", event.target.value),
-                            )
-                          }
-                        />
-                      </Field>
-                      <Field label="Annuel">
-                        <Input
-                          type="number"
-                          min={0}
-                          readOnly={!canUpdate}
-                          value={policy.plans[plan].annualPrice}
-                          onChange={(event) =>
-                            patchCountryPolicy(country.code, (current) =>
-                              updateCountryPlanPrice(current, plan, "annualPrice", event.target.value),
-                            )
-                          }
-                        />
-                      </Field>
-                    </div>
+      <FormLayout.Content>
+        {draft.length === 0 ? (
+          <EmptyState
+            title="Aucun pays configuré"
+            description="Créez d'abord un pays dans le module Plateforme → Pays."
+          />
+        ) : (
+          <div className="space-y-5">
+            {draft.map((country) => {
+              const policy = resolveCountrySubscriptionPolicy(country);
+              return (
+                <Card key={country.code} className="p-6">
+                  <SectionHeader title={country.name} description={`Code ISO : ${country.code}`} />
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <FormField label="Devise facturation" htmlFor={`currency-${country.code}`}>
+                      <Input
+                        id={`currency-${country.code}`}
+                        value={policy.currency}
+                        readOnly={!canUpdate}
+                        onChange={(event) =>
+                          patchCountry(country.code, {
+                            subscriptionPolicy: {
+                              ...policy,
+                              currency: event.target.value.toUpperCase(),
+                            },
+                          })
+                        }
+                      />
+                    </FormField>
                   </div>
-                ))}
-              </div>
-            </Card>
-          );
-        })
-      )}
+                  <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                    {SUBSCRIPTION_PLAN_NAMES.map((plan) => (
+                      <div
+                        key={plan}
+                        className="rounded-xl border border-line/70 bg-slate-50/50 p-4"
+                      >
+                        <p className="text-sm font-bold text-ink">{plan}</p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <FormField
+                            label="Mensuel"
+                            htmlFor={`monthly-${country.code}-${plan}`}
+                          >
+                            <Input
+                              id={`monthly-${country.code}-${plan}`}
+                              type="number"
+                              min={0}
+                              readOnly={!canUpdate}
+                              value={policy.plans[plan].monthlyPrice}
+                              onChange={(event) =>
+                                patchCountryPolicy(country.code, (current) =>
+                                  updateCountryPlanPrice(
+                                    current,
+                                    plan,
+                                    "monthlyPrice",
+                                    event.target.value,
+                                  ),
+                                )
+                              }
+                            />
+                          </FormField>
+                          <FormField label="Annuel" htmlFor={`annual-${country.code}-${plan}`}>
+                            <Input
+                              id={`annual-${country.code}-${plan}`}
+                              type="number"
+                              min={0}
+                              readOnly={!canUpdate}
+                              value={policy.plans[plan].annualPrice}
+                              onChange={(event) =>
+                                patchCountryPolicy(country.code, (current) =>
+                                  updateCountryPlanPrice(
+                                    current,
+                                    plan,
+                                    "annualPrice",
+                                    event.target.value,
+                                  ),
+                                )
+                              }
+                            />
+                          </FormField>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </FormLayout.Content>
 
       {canUpdate && draft.length > 0 ? (
-        <div className="flex justify-end">
-          <Button disabled={busy} onClick={() => void savePolicies()}>
-            Enregistrer la politique
-          </Button>
-        </div>
+        <FormLayout.StickyActions>
+          <div className="flex justify-end">
+            <Button type="button" disabled={busy} onClick={() => void savePolicies()}>
+              Enregistrer la politique
+            </Button>
+          </div>
+        </FormLayout.StickyActions>
       ) : null}
-    </div>
+    </FormLayout>
   );
 }

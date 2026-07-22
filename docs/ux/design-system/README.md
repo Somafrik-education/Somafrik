@@ -1,6 +1,6 @@
 # Design System Somafrik — documentation technique
 
-**Phase :** D2.1 → D2.4  
+**Phase :** D2.1 → D2.5  
 **Code :** `web/src/design-system/`  
 **Spec :** [Design Language D1.4](../design-language.md) · [Pages métier D1.3](../architecture-pages-metier.md)
 
@@ -14,6 +14,8 @@
 | [AUDIT-D2.4.md](./AUDIT-D2.4.md) | Audit feedback & états transverses |
 | [RAPPORT-D2.3-profil-etablissement.md](./RAPPORT-D2.3-profil-etablissement.md) | Rapport CTO première migration |
 | [RAPPORT-D2.4.md](./RAPPORT-D2.4.md) | Rapport CTO lot feedback |
+| [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi des migrations |
+| [RAPPORT-D2.5.md](./RAPPORT-D2.5.md) | Rapport CTO migration paramètres |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS + mapping |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |
 | [LAYOUTS.md](./LAYOUTS.md) | API layouts |
@@ -68,11 +70,11 @@ npm --prefix web run test
 
 | Zone | Conforme | Écart | Action future |
 |------|----------|-------|---------------|
-| Modules métier | ⚠️ | Majorité encore legacy | D2.3+ un module à la fois |
-| Profil établissement | ✅ | Migration D2.3 (`FormLayout`) | Consommer feedback DS à la prochaine itération |
+| Paramètres simples (D2.5) | ✅ | Hub, config, sécurité, données, placeholders | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) |
+| Modules métier cœur | 🔒 | Hors D2.5 | Après validation CTO |
 | Primitives / Layouts / Feedback DS | ✅ | Livrés D2.1–D2.4 | Consommer dès nouveaux écrans |
 | Toast runtime | ⚠️ | Toujours `components/ui/Toast` | Bascule provider = PR dédiée |
-| Overlays / Tables | — | Stubs | Lots suivants |
+| Overlays / Tables | — | Table legacy Sécurité ; Modal stub | Lots suivants |
 
 ## Éléments gelés
 

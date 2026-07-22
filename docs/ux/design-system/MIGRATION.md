@@ -1,7 +1,8 @@
 # Stratégie de coexistence & migration — Design System
 
 **Décisions :** DO-045 (compatibilité ascendante) · DO-046 (dépréciation contrôlée) · DO-040 (kit ERP)  
-**Lots :** D2.1 (primitives) · D2.2 (layouts) · D2.3 (écrans) · D2.4 (feedback)
+**Lots :** D2.1 → D2.5  
+**Suivi officiel :** [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md)
 
 ## Principe
 
@@ -21,7 +22,10 @@ Nouveaux écrans / D2.3+  →  @/design-system (primitives + layouts + feedback)
 |--------|--------|--------|
 | Profil établissement (`/parametres/profil`) | `FormLayout` | ✅ Livré — voir [AUDIT](./AUDIT-D2.3.md) + [Rapport](./RAPPORT-D2.3-profil-etablissement.md) |
 
-Attendre validation CTO avant un second module.
+### Lot D2.5 — Paramètres simples
+
+Migration multi-écrans documentée dans [RAPPORT-D2.5.md](./RAPPORT-D2.5.md) et [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md).  
+Attendre validation CTO avant modules cœur (Élèves, Classes, Finance…).
 
 ### Feedback (D2.4) — coexistence
 
