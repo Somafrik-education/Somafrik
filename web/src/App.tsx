@@ -12,6 +12,7 @@ import {
   CancellationRequestPage,
   ChangeOfferPage,
   ChartSettingsPage,
+  ClassesListPage,
   ClassStudentsPage,
   ConfigurationPage,
   CountriesPage,
@@ -118,7 +119,7 @@ export default function App() {
             path="classes"
             element={
               <PermissionRoute view="classes">
-                <EntityPage entity="classes" />
+                <ClassesListPage />
               </PermissionRoute>
             }
           />
