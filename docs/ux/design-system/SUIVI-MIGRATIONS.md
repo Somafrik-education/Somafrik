@@ -11,7 +11,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Infra | D2.7 EntityPage — chrome liste | ✅ | `ListLayout` via `EntityListShell` | Handlers / colonnes / modales |
 | Infra | D2.7 EntityPage — modales / colonnes | ⏳ | — | Dans monolithe |
 | Élèves | Fiche / workspace | ✅ | `RecordLayout` | StatusBadge ; nav onglets custom |
-| Élèves | Liste | ⏳ | `EntityList*` (socle) | EntityPage métier restant |
+| Élèves | Liste (D3.1b) | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage |
 | Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |
 | Classes métier | D3.2a — Fiche | 🔒 | `RecordLayout` (cible) | **Fiche absente** (prérequis produit) |
 | Classes métier | D3.2b — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
@@ -45,9 +45,9 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Shell `ParametresLayout` | ⏳ | ad hoc | 0 % | Shell module |
 | PromptDialog | ⏳ | — | 0 % | ui legacy |
 | DataTable | ⏳ | — | 0 % | ui legacy |
-| Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | Liste `EntityPage` ; StatusBadge |
-| Élèves — liste | ⏳ | — | 0 % | `EntityPage` partagé |
-| Classes (module métier) | ✅ / ⏳ | `ListLayout` | Liste D3.2b | Fiche absente ; D3.2c membres ; modales EntityPage |
+| Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | StatusBadge ; onglets |
+| Élèves — liste | ✅ | `ListLayout` | D3.1b `StudentsListPage` | Modales EntityPage |
+| Classes (module métier) | ✅ / ⏳ | `ListLayout` | Liste D3.2b | Fiche absente ; D3.2c membres |
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | 🔒 | — | 0 % | Oui |
 | Présences | 🔒 | — | 0 % | Oui |
@@ -58,8 +58,12 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 ## Notes
 
 - D2.6 : coexistence via **re-exports** `components/ui/{Toast,Modal,ConfirmDialog,Table,PagePlaceholder}` → `@/design-system`.
-- D3.1 : fiche Élèves migrée (`RecordLayout`) ; **liste** encore sur `EntityPage` (⏳).
-- D3.2 : audit Classes métier livré ([AUDIT](./AUDIT-D3.2-classes.md) · [RAPPORT](./RAPPORT-D3.2-classes.md)) ; **aucune migration UI** — fiche inexistante ; liste = EntityPage partagé.
-- D2.7 : décomposition EntityPage — chrome liste → `EntityListShell` / Search / Table / Forbidden ([AUDIT](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT](./RAPPORT-D2.7-entitypage.md)). Attendre validation CTO avant **D3.2b** et **D3.3 Enseignants**.
+- D3.1 : fiche Élèves migrée (`RecordLayout`).
+- D3.1b : liste Élèves — `StudentsListPage` → EntityPage — [RAPPORT](./RAPPORT-D3.1b-liste-eleves.md).
+- D3.2 : audit Classes — [AUDIT](./AUDIT-D3.2-classes.md) · [RAPPORT](./RAPPORT-D3.2-classes.md).
+- D2.7 : chrome EntityPage — [AUDIT](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT](./RAPPORT-D2.7-entitypage.md).
+- D3.2b : liste Classes — [RAPPORT](./RAPPORT-D3.2b-liste-classes.md).
+- D3.3 : liste Enseignants — [RAPPORT](./RAPPORT-D3.3-enseignants.md).
+- Attendre validation CTO avant **D3.2c — Membres / élèves d’une classe**.
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.

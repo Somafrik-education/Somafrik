@@ -11,7 +11,8 @@
 | [AUDIT-D2.1.md](./AUDIT-D2.1.md) … [AUDIT-D2.6.md](./AUDIT-D2.6.md) | Audits par lot |
 | [RAPPORT-D2.3](./RAPPORT-D2.3-profil-etablissement.md) … [RAPPORT-D2.6](./RAPPORT-D2.6.md) | Rapports CTO D2 |
 | [AUDIT-D2.7-entitypage.md](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE-D2.7-entitypage.md](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT-D2.7-entitypage.md](./RAPPORT-D2.7-entitypage.md) | D2.7 EntityPage |
-| [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves |
+| [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves (fiche) |
+| [RAPPORT-D3.1b-liste-eleves.md](./RAPPORT-D3.1b-liste-eleves.md) | D3.1b Liste Élèves (conso D2.7) |
 | [AUDIT-D3.2-classes.md](./AUDIT-D3.2-classes.md) · [RAPPORT-D3.2-classes.md](./RAPPORT-D3.2-classes.md) | D3.2 Classes métier (audit / scope lock) |
 | [RAPPORT-D3.2b-liste-classes.md](./RAPPORT-D3.2b-liste-classes.md) | D3.2b Liste Classes (conso D2.7) |
 | [RAPPORT-D3.3-enseignants.md](./RAPPORT-D3.3-enseignants.md) | D3.3 Liste Enseignants (conso D2.7) |
