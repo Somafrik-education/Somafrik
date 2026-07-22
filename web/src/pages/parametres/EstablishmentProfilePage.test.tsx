@@ -49,9 +49,13 @@ vi.mock("../../lib/establishmentsApi", () => ({
   establishmentsApi: { update },
 }));
 
-vi.mock("../../components/ui/Toast", () => ({
-  useToast: () => ({ showToast }),
-}));
+vi.mock("../../design-system", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../design-system")>();
+  return {
+    ...actual,
+    useToast: () => ({ showToast }),
+  };
+});
 
 import { EstablishmentProfilePage } from "./EstablishmentProfilePage";
 

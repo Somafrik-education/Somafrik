@@ -3,8 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
-import { ToastProvider } from "./components/ui/Toast";
-import { ConfirmProvider } from "./components/ui/ConfirmDialog";
+import { ConfirmProvider, ToastProvider } from "./design-system";
 import { PromptProvider } from "./components/ui/PromptDialog";
 import "./index.css";
 

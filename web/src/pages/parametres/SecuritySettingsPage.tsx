@@ -12,7 +12,7 @@ import {
   SectionHeader,
   Select,
 } from "../../design-system";
-import { Table, type Column } from "../../components/ui/Table";
+import { Table, type Column } from "../../design-system";
 import { PrintButton } from "../../components/ui/PrintButton";
 import { rowsToCsv, downloadCsv } from "../../lib/csv";
 import type { AuditEntry } from "../../lib/audit";

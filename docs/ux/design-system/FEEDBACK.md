@@ -93,8 +93,8 @@ showToast("Profil enregistré", "success");
 | `error` | `bg-danger` (alias API legacy) |
 | `warning` | `bg-amber` (**nouveau** D2.4) |
 
-**Runtime actuel :** `main.tsx` utilise encore `components/ui/Toast`.  
-Ne pas monter deux providers. Migration provider = PR dédiée après validation.
+**Runtime (D2.6) :** `main.tsx` monte `ToastProvider` depuis `@/design-system`.  
+`components/ui/Toast` est un **re-export** du même contexte — ne jamais monter deux providers.
 
 ---
 
@@ -108,9 +108,8 @@ Ne pas monter deux providers. Migration provider = PR dédiée après validation
 | ErrorState | `alert` |
 | Toast région | `aria-live="polite"` |
 
-## Limites D2.4
+## Limites
 
 - Pas d’états Conflit / Maintenance / Sync dédiés
 - Pas de file d’attente toast multi-messages
-- Pas de migration des écrans ni bascule `main.tsx`
-- Table / Modal hors lot
+- PromptDialog encore legacy (D2.6+)

@@ -1,7 +1,7 @@
 # Stratégie de coexistence & migration — Design System
 
 **Décisions :** DO-045 (compatibilité ascendante) · DO-046 (dépréciation contrôlée) · DO-040 (kit ERP)  
-**Lots :** D2.1 → D2.5  
+**Lots :** D2.1 → D2.6  
 **Suivi officiel :** [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md)
 
 ## Principe
@@ -27,15 +27,18 @@ Nouveaux écrans / D2.3+  →  @/design-system (primitives + layouts + feedback)
 Migration multi-écrans documentée dans [RAPPORT-D2.5.md](./RAPPORT-D2.5.md) et [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md).  
 Attendre validation CTO avant modules cœur (Élèves, Classes, Finance…).
 
-### Feedback (D2.4) — coexistence
+### Feedback (D2.4) + stabilisation runtime (D2.6)
 
-| Legacy | Équivalent DS | Action D2.4 |
-|--------|---------------|-------------|
-| `components/ui/Toast` | `ToastProvider` / `useToast` | Coexistence — **ne pas** basculer `main.tsx` |
-| `PagePlaceholder` | `ComingSoonState` | Coexistence |
-| Empty dashed ad hoc | `EmptyState` | Disponible pour D2.3+ / nouveaux écrans |
-| Messages loading / error / forbidden | `LoadingState` / `ErrorState` / `ForbiddenState` | Idem |
-| Alertes inline ad hoc | `InlineAlert` | Idem |
+| Legacy | Équivalent DS | Action |
+|--------|---------------|--------|
+| `components/ui/Toast` | `ToastProvider` / `useToast` | ✅ Re-export + `main.tsx` DS |
+| `components/ui/Modal` | `Modal` | ✅ Re-export |
+| `components/ui/ConfirmDialog` | `ConfirmProvider` / `useConfirm` | ✅ Re-export + `main.tsx` DS |
+| `components/ui/Table` | `Table` | ✅ Re-export |
+| `PagePlaceholder` | `ComingSoonState` | ✅ Wrapper + Marketplace migré |
+| Empty / Loading / Error / Forbidden / InlineAlert | feedback/* | Disponibles |
+| `PromptDialog` | — | ⏳ Legacy |
+| `DataTable` | — | ⏳ Legacy |
 
 ---
 

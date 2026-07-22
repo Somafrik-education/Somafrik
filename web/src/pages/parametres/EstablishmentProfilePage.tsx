@@ -15,8 +15,8 @@ import {
   Input,
   SectionHeader,
   Select,
+  useToast,
 } from "../../design-system";
-import { useToast } from "../../components/ui/Toast";
 import type { School } from "../../types";
 
 function schoolToDraft(school: School): School {
