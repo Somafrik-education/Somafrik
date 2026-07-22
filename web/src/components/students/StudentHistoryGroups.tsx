@@ -1,5 +1,5 @@
 import type { StudentHistoryGroupViewModel } from "../../lib/studentHistoryViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 import { StudentHistoryTimeline } from "./StudentHistoryTimeline";
 
 interface StudentHistoryGroupsProps {
@@ -18,9 +18,7 @@ export function StudentHistoryGroups({
           title="Chronologie"
           description="Événements regroupés par période."
         />
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          {emptyState}
-        </p>
+        <EmptyState className="mt-6" title={emptyState} />
       </Card>
     );
   }

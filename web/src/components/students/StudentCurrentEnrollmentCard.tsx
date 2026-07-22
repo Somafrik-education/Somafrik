@@ -1,6 +1,6 @@
 import type { StudentEnrollmentViewModel } from "../../lib/studentEnrollmentViewModel";
 import type { EnrollmentTimelineStep } from "../../lib/studentEnrollmentViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 import { StudentEnrollmentStatusBadge } from "./StudentEnrollmentStatusBadge";
 import { StudentEnrollmentTimeline } from "./StudentEnrollmentTimeline";
 
@@ -33,9 +33,7 @@ export function StudentCurrentEnrollmentCard({
           title="Inscription actuelle"
           description="Situation scolaire de l'année en cours."
         />
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          Aucune inscription active
-        </p>
+        <EmptyState className="mt-6" title="Aucune inscription active" />
       </Card>
     );
   }

@@ -1,5 +1,5 @@
 import type { StudentDocumentViewModel } from "../../lib/studentDocumentsViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader } from "../../design-system";
 import { StudentDocumentBadges } from "./StudentDocumentBadges";
 import { cn } from "../../lib/utils";
 

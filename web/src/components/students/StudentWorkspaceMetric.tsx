@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader } from "../../design-system";
 
 interface MetricItem {
   label: string;

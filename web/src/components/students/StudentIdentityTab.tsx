@@ -1,6 +1,6 @@
 import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader } from "../../design-system";
 import { StudentEditingPanel } from "./editing/StudentEditingPanel";
 
 interface StudentIdentityTabProps {

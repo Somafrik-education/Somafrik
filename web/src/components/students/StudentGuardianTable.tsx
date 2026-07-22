@@ -1,5 +1,5 @@
 import type { StudentGuardianViewModel } from "../../lib/studentGuardianViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 import { StudentGuardianBadges } from "./StudentGuardianBadges";
 import { cn } from "../../lib/utils";
 
@@ -26,9 +26,7 @@ export function StudentGuardianTable({
       />
 
       {guardians.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          Aucun responsable associé
-        </p>
+        <EmptyState className="mt-6" title="Aucun responsable associé" />
       ) : (
         <>
           <div className="mt-6 hidden overflow-x-auto md:block">

@@ -1,5 +1,5 @@
 import type { StudentEnrollmentViewModel } from "../../lib/studentEnrollmentViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader, EmptyState } from "../../design-system";
 import { StudentEnrollmentStatusBadge } from "./StudentEnrollmentStatusBadge";
 import { cn } from "../../lib/utils";
 
@@ -18,9 +18,7 @@ export function StudentEnrollmentHistory({
       />
 
       {enrollments.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 px-4 py-8 text-center text-sm font-medium text-muted">
-          Aucune inscription enregistrée
-        </p>
+        <EmptyState className="mt-6" title="Aucune inscription enregistrée" />
       ) : (
         <>
           <div className="mt-6 hidden overflow-x-auto md:block">

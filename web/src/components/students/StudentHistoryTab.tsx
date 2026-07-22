@@ -1,5 +1,5 @@
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
-import { Card } from "../ui/Card";
+import { Card } from "../../design-system";
 import { StudentHistoryGroups } from "./StudentHistoryGroups";
 import { StudentHistorySummary } from "./StudentHistorySummary";
 

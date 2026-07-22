@@ -9,7 +9,8 @@
 | Document | Rôle |
 |----------|------|
 | [AUDIT-D2.1.md](./AUDIT-D2.1.md) … [AUDIT-D2.6.md](./AUDIT-D2.6.md) | Audits par lot |
-| [RAPPORT-D2.3](./RAPPORT-D2.3-profil-etablissement.md) … [RAPPORT-D2.6](./RAPPORT-D2.6.md) | Rapports CTO |
+| [RAPPORT-D2.3](./RAPPORT-D2.3-profil-etablissement.md) … [RAPPORT-D2.6](./RAPPORT-D2.6.md) | Rapports CTO D2 |
+| [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |

@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
-import { Badge, StatusBadge } from "../ui/Badge";
-import { Card } from "../ui/Card";
+import { Badge, Card } from "../../design-system";
+import { StatusBadge } from "../ui/Badge";
 
 interface StudentWorkspaceHeaderProps {
   workspace: StudentWorkspaceViewModel;

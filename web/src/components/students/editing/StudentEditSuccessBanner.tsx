@@ -1,3 +1,5 @@
+import { Button, InlineAlert } from "../../../design-system";
+
 interface StudentEditSuccessBannerProps {
   visible: boolean;
   message?: string;
@@ -14,29 +16,19 @@ export function StudentEditSuccessBanner({
   if (!visible) return null;
 
   return (
-    <div
-      className="flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3"
-      role="status"
-      aria-live="polite"
+    <InlineAlert
+      tone="success"
+      title={message}
+      action={
+        onDismiss ? (
+          <Button type="button" variant="tertiary" size="sm" onClick={onDismiss}>
+            Fermer
+          </Button>
+        ) : null
+      }
       data-testid="student-edit-success"
     >
-      <div>
-        <p className="text-sm font-semibold text-emerald-900">{message}</p>
-        {newVersion != null ? (
-          <p className="mt-1 text-xs text-emerald-800">
-            Nouvelle version : {newVersion}
-          </p>
-        ) : null}
-      </div>
-      {onDismiss ? (
-        <button
-          type="button"
-          className="text-xs font-semibold text-emerald-900 underline"
-          onClick={onDismiss}
-        >
-          Fermer
-        </button>
-      ) : null}
-    </div>
+      {newVersion != null ? <>Nouvelle version : {newVersion}</> : null}
+    </InlineAlert>
   );
 }

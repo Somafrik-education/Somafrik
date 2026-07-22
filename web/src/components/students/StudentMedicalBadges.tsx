@@ -1,5 +1,5 @@
 import type { MedicalBadge } from "../../lib/studentMedicalViewModel";
-import { Badge } from "../ui/Badge";
+import { Badge } from "../../design-system";
 
 interface StudentMedicalBadgesProps {
   badges: readonly MedicalBadge[];

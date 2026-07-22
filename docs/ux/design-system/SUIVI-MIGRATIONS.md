@@ -25,9 +25,11 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Shell `ParametresLayout` | ⏳ | ad hoc | 0 % | Shell module |
 | PromptDialog | ⏳ | — | 0 % | ui legacy |
 | DataTable | ⏳ | — | 0 % | ui legacy |
-| Élèves | 🔒 | — | 0 % | Oui |
+| Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | Liste `EntityPage` ; StatusBadge |
+| Élèves — liste | ⏳ | — | 0 % | `EntityPage` partagé |
 | Classes (module métier) | 🔒 | — | 0 % | Oui |
 | Enseignants | 🔒 | — | 0 % | Oui |
+| Parents / Responsables | 🔒 | — | 0 % | Oui |
 | Présences | 🔒 | — | 0 % | Oui |
 | Notes | 🔒 | — | 0 % | Oui |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |

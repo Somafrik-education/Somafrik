@@ -1,5 +1,5 @@
 import type { StudentHistoryViewModel } from "../../lib/studentHistoryViewModel";
-import { Card, SectionHeader } from "../ui/Card";
+import { Card, SectionHeader } from "../../design-system";
 
 interface StudentHistorySummaryProps {
   history: StudentHistoryViewModel;

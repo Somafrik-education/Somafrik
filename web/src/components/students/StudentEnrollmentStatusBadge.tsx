@@ -1,6 +1,6 @@
 import type { StudentEnrollmentStatus } from "../../lib/studentEnrollmentStatus";
 import { getEnrollmentStatusPresentation } from "../../lib/studentEnrollmentStatus";
-import { Badge } from "../ui/Badge";
+import { Badge } from "../../design-system";
 
 interface StudentEnrollmentStatusBadgeProps {
   status: StudentEnrollmentStatus | null | undefined;

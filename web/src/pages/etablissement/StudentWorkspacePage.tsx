@@ -1,7 +1,12 @@
 import { Link, Navigate, useParams } from "react-router-dom";
 import { StudentWorkspaceHeader } from "../../components/students/StudentWorkspaceHeader";
 import { StudentWorkspaceTabs } from "../../components/students/StudentWorkspaceTabs";
-import { Card } from "../../components/ui/Card";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  RecordLayout,
+} from "../../design-system";
 import { useStudentWorkspace } from "../../hooks/useStudentWorkspace";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
@@ -14,6 +19,10 @@ import {
 } from "../../lib/studentWorkspacePermissions";
 import { getStudentWorkspaceModule } from "../../lib/studentWorkspace";
 
+/**
+ * Fiche élève — workspace (D3.1).
+ * Layout RecordLayout + feedback DS ; logique métier inchangée.
+ */
 export function StudentWorkspacePage() {
   const { studentId = "", section } = useParams();
   const normalizedStudentId = studentId.trim();
@@ -33,35 +42,33 @@ export function StudentWorkspacePage() {
   }
 
   if (loading) {
-    return (
-      <Card className="p-6">
-        <p className="text-sm text-muted">Chargement de la fiche élève…</p>
-      </Card>
-    );
+    return <LoadingState message="Chargement de la fiche élève…" />;
   }
 
   if (error) {
     return (
-      <Card className="p-6">
-        <p className="font-semibold text-danger">
-          Impossible de charger la fiche élève.
-        </p>
-        <p className="mt-2 text-sm text-muted">{error}</p>
-      </Card>
+      <ErrorState
+        title="Impossible de charger la fiche élève."
+        message={error}
+        action={
+          <Link className="text-sm font-semibold text-brand" to="/etablissement/eleves">
+            Retour à la liste des élèves
+          </Link>
+        }
+      />
     );
   }
 
   if (!workspace) {
     return (
-      <Card className="p-6">
-        <p className="font-semibold">Élève introuvable</p>
-        <Link
-          className="mt-3 inline-flex text-sm font-semibold text-brand"
-          to="/etablissement/eleves"
-        >
-          Retour à la liste des élèves
-        </Link>
-      </Card>
+      <EmptyState
+        title="Élève introuvable"
+        action={
+          <Link className="text-sm font-semibold text-brand" to="/etablissement/eleves">
+            Retour à la liste des élèves
+          </Link>
+        }
+      />
     );
   }
 
@@ -84,14 +91,18 @@ export function StudentWorkspacePage() {
         );
 
   return (
-    <div className="space-y-6">
-      <StudentWorkspaceHeader workspace={workspace} />
-      <StudentWorkspaceTabs
-        workspace={workspace}
-        modules={visibleModules}
-        activeModuleId={resolvedModuleId}
-        accessDenied={!canAccessRequestedModule}
-      />
-    </div>
+    <RecordLayout>
+      <RecordLayout.Header>
+        <StudentWorkspaceHeader workspace={workspace} />
+      </RecordLayout.Header>
+      <RecordLayout.Content>
+        <StudentWorkspaceTabs
+          workspace={workspace}
+          modules={visibleModules}
+          activeModuleId={resolvedModuleId}
+          accessDenied={!canAccessRequestedModule}
+        />
+      </RecordLayout.Content>
+    </RecordLayout>
   );
 }
