@@ -84,6 +84,76 @@ En revue :
 
 ---
 
+---
+
+## Design System (D1.4)
+
+### AP-007 — Hardcoder un style hors tokens sur un écran ERP
+
+| Attribut | Valeur |
+|----------|--------|
+| **Interdit** | Couleur, ombre, rayon, z-index ou taille « magique » hors tokens / primitives DS sur un écran ERP |
+| **Pourquoi** | Empêche rebrand, cohérence et thèmes futurs |
+| **Correctif** | Consommer un rôle / token ; sinon amender le catalogue |
+| **DO liés** | DO-036, DO-040, DO-044 |
+
+---
+
+### AP-008 — Inventer un rôle de couleur non catalogué
+
+| Attribut | Valeur |
+|----------|--------|
+| **Interdit** | Introduire un rôle ad hoc (« accent violet », « soft pink status ») hors catalogue §4 D1.4 |
+| **Pourquoi** | Dilue la sémantique métier (DO-004) |
+| **Correctif** | Mapper vers Primary / Success / Warning / Danger / Info / Neutral… |
+| **DO liés** | DO-037, DO-004 |
+
+---
+
+### AP-009 — Animation décorative qui concurrence le métier
+
+| Attribut | Valeur |
+|----------|--------|
+| **Interdit** | Motion continue ou longue qui retarde / distrait la compréhension ou la saisie |
+| **Pourquoi** | Contredit la sobriété ERP et l’aide à la décision |
+| **Correctif** | Motion courte utilitaire ; respecter `prefers-reduced-motion` |
+| **DO liés** | DO-035, DO-041 |
+
+---
+
+### AP-010 — Mélanger kit ERP et kit secondaire sur un écran métier
+
+| Attribut | Valeur |
+|----------|--------|
+| **Interdit** | Composer un écran ERP avec primitives shadcn/marketing + kit ERP sans décision |
+| **Pourquoi** | Double langage visuel ; dette DO-011 |
+| **Correctif** | Kit `components/ui/*` sur ERP ; shadcn limité aux surfaces déjà autorisées |
+| **DO liés** | DO-011, DO-040 |
+
+---
+
+### AP-011 — Contrôle sous la taille tactile minimale
+
+| Attribut | Valeur |
+|----------|--------|
+| **Interdit** | Cibles trop petites pour onglets, icônes d’action ou boutons sur mobile / tablette |
+| **Pourquoi** | Échec d’usage terrain ; contredit DO-041 |
+| **Correctif** | Respecter les dimensions tokenisées / minima tactiles |
+| **DO liés** | DO-041 |
+
+---
+
+### AP-012 — Casser la hiérarchie typographique
+
+| Attribut | Valeur |
+|----------|--------|
+| **Interdit** | Titres concurrents, Display en liste ERP, rôles typo inventés hors catalogue |
+| **Pourquoi** | Perte d’orientation et de scanabilité |
+| **Correctif** | Rôles Title / Subtitle / Section / Body / Label / Caption |
+| **DO liés** | DO-038, DO-010 |
+
+---
+
 ## Gouvernance
 
 1. Toute PR UI D2.x+ est revue contre ce catalogue (checklist Framework).
@@ -102,3 +172,9 @@ En revue :
 | AP-004 | Une navigation qui fait perdre le contexte | D1.3 |
 | AP-005 | Des statuts exprimés uniquement par une couleur | D1.3 |
 | AP-006 | Informations critiques masquées sous plusieurs niveaux d’onglets | D1.3 |
+| AP-007 | Hardcoder style hors tokens sur un écran ERP | D1.4 |
+| AP-008 | Inventer un rôle de couleur non catalogué | D1.4 |
+| AP-009 | Animation décorative qui concurrence le métier | D1.4 |
+| AP-010 | Mélanger kit ERP et kit secondaire sur un écran métier | D1.4 |
+| AP-011 | Contrôle sous la taille tactile minimale | D1.4 |
+| AP-012 | Casser la hiérarchie typographique | D1.4 |

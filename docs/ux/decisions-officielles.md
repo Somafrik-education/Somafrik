@@ -1,7 +1,7 @@
 # Décisions officielles UI/UX (DO-xxx)
 
 **Statut :** normatif  
-**Phase :** D1.1 · D1.2 (navigation) · D1.3 (pages métier)  
+**Phase :** D1.1 · D1.2 · D1.3 · D1.4 (Design Language)  
 **Usage :** référence obligatoire pour toute PR UI/UX
 
 Toute dérogation doit être explicite dans la PR et validée en revue CTO / produit.
@@ -464,6 +464,135 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 
 ---
 
+## DO-035 — Design Language officiel Somafrik
+
+**Décision :** Somafrik adopte un Design Language unique : ERP scolaire sobre, lisible, densité moyenne à élevée, hiérarchie informationnelle avant décoration.
+
+**Implications :**
+- Les écrans authentifiés suivent cette personnalité (pas le ton marketing landing).
+- Toute dérive stylistique majeure nécessite amendement CTO.
+- Réf. normative : [`design-language.md`](./design-language.md).
+
+**Réf. :** Vision Produit ; Design Language D1.4 §1–§2.
+
+---
+
+## DO-036 — Familles de tokens — structure gelée
+
+**Décision :** Les familles de tokens (couleur, typographie, espacement, rayon, élévation, bordure, motion, icône, dimension, z-index, breakpoint, disabled/opacity) forment la structure officielle du Design System.
+
+**Implications :**
+- Aucune valeur n’est imposée par D1.4.
+- Ajouter une famille = amendement documentaire + validation CTO.
+- Les implémentations consomment ces familles ; pas de styles magiques ERP (AP-007).
+
+**Réf. :** Design Language D1.4 §3 ; DO-043.
+
+---
+
+## DO-037 — Rôles de couleurs sémantiques gelés
+
+**Décision :** Les rôles Primary, Secondary, Success, Warning, Danger, Info, Background, Surface, Border, Text, Text muted, Disabled, Focus ring, Overlay (et foreground associés) sont le catalogue officiel.
+
+**Implications :**
+- Les **valeurs** (hex/HSL) peuvent évoluer (rebrand) sans renommer les rôles.
+- Interdit d’inventer un rôle hors catalogue (AP-008).
+- Renforce DO-004 (couleur = signification métier).
+
+**Réf. :** Design Language D1.4 §4.
+
+---
+
+## DO-038 — Hiérarchie typographique gelée
+
+**Décision :** Les rôles Display, Title, Subtitle, Section, Body, Body emphasis, Label, Caption, Code/Mono constituent la hiérarchie officielle.
+
+**Implications :**
+- Famille de police et tailles exactes non gelées.
+- Display hors ERP dense ; un Title pertinent par vue.
+- AP-012 si hiérarchie cassée.
+
+**Réf. :** Design Language D1.4 §5 ; DO-010.
+
+---
+
+## DO-039 — Dark mode supportable, non productisé
+
+**Décision :** Le Design System doit **pouvoir** supporter un thème sombre via les rôles/tokens, mais le thème ERP productisé reste clair jusqu’à décision contraire.
+
+**Implications :**
+- Ne pas activer un dark mode ERP incomplet.
+- Toute nouvelle couleur reste mappable light (et ultérieurement dark).
+- `darkMode: ["class"]` existant ≠ promesse produit.
+
+**Réf. :** Design Language D1.4 §12.
+
+---
+
+## DO-040 — Un seul kit visuel ERP
+
+**Décision :** Les écrans ERP authentifiés utilisent le kit `web/src/components/ui/*` (hors `shadcn/`) comme source de vérité visuelle.
+
+**Implications :**
+- Renforce DO-011.
+- `ui/shadcn/*` limité aux surfaces déjà concernées (auth / marketing / cas isolés documentés).
+- AP-010 si mélange sur un écran métier.
+
+**Réf. :** DO-011 ; Design Language D1.4 §2, §13.
+
+---
+
+## DO-041 — Minima accessibilité du Design System
+
+**Décision :** Contraste (cible AA), focus visible, clavier, ARIA pertinent, zones tactiles et respect de `prefers-reduced-motion` sont exigés pour tout composant / écran ERP nouveau ou refondu.
+
+**Implications :**
+- Renforce DO-010 au niveau Design System.
+- La couleur n’est jamais le seul canal (AP-005).
+- Checklist D2.x inclut ces minima.
+
+**Réf. :** Design Language D1.4 §11.
+
+---
+
+## DO-042 — Validation CTO avant implémentation Design System
+
+**Décision :** Aucune PR ne modifie tokens, CSS variables, thèmes ou primitives visuelles pour se conformer à D1.4 tant que ce document n’est pas validé CTO.
+
+**Implications :**
+- D1.4 = documentation uniquement dans son lot.
+- Après validation : lots D2.x+ citant DO-035 → DO-044.
+- Les valeurs concrètes feront l’objet de sous-lots dédiés (palette, type scale…).
+
+**Réf. :** Design Language D1.4 §19 ; DO-012.
+
+---
+
+## DO-043 — Gouvernance des Éléments gelés
+
+**Décision :** Chaque spécification D à partir de D1.4 comporte un chapitre **« Éléments gelés »** distinguant le stable (rôles, familles, principes) du variable (valeurs d’implémentation).
+
+**Implications :**
+- On peut changer une palette sans rouvrir l’architecture DS.
+- Rouvrir un élément gelé = amendement CTO explicite.
+- Méthode applicable aux specs suivantes (UI et, si pertinent, fonctionnelles).
+
+**Réf. :** Design Language D1.4 §18 ; `docs/ux/README.md`.
+
+---
+
+## DO-044 — Anti-patterns Design System
+
+**Décision :** Les Anti-patterns AP-007 → AP-012 font partie du catalogue officiel et s’appliquent aux revues UI / Design System.
+
+**Implications :**
+- Complète DO-034.
+- Hardcode, rôles inventés, motion décorative, dual-kit, cibles tactiles insuffisantes, typo cassée = non-conformité.
+
+**Réf. :** [`anti-patterns.md`](./anti-patterns.md) ; Design Language D1.4 §13.
+
+---
+
 ## Journal
 
 | ID | Titre | Introduit |
@@ -502,3 +631,13 @@ Application → Module → Sous-module → Vue (Liste | Hub | Outil) → Fiche �
 | DO-032 | Déclaration obligatoire d’un Pattern Produit | D1.3 |
 | DO-033 | Validation CTO avant implémentation pages D1.3 | D1.3 |
 | DO-034 | Catalogue officiel des Anti-patterns Produit | D1.3 |
+| DO-035 | Design Language officiel Somafrik | D1.4 |
+| DO-036 | Familles de tokens — structure gelée | D1.4 |
+| DO-037 | Rôles de couleurs sémantiques gelés | D1.4 |
+| DO-038 | Hiérarchie typographique gelée | D1.4 |
+| DO-039 | Dark mode supportable, non productisé | D1.4 |
+| DO-040 | Un seul kit visuel ERP | D1.4 |
+| DO-041 | Minima accessibilité du Design System | D1.4 |
+| DO-042 | Validation CTO avant implémentation Design System | D1.4 |
+| DO-043 | Gouvernance des Éléments gelés | D1.4 |
+| DO-044 | Anti-patterns Design System | D1.4 |
