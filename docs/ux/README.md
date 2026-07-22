@@ -21,8 +21,8 @@ Ces quatre documents constituent le **Framework Produit Somafrik** — base des 
 | Lot | Objectif | Statut |
 |-----|----------|--------|
 | **D2.1** | Fondation Design System (`web/src/design-system`) | ✅ Livré |
-| **D2.2** | Layouts officiels à slots (`AppLayout`, `ListLayout`, `RecordLayout`…) | ⏳ En cours (PR) |
-| **D2.3** | Migration progressive des écrans — sans refonte massive | Planifié |
+| **D2.2** | Layouts officiels à slots (`AppLayout`, `ListLayout`, `RecordLayout`…) | ✅ Livré |
+| **D2.3** | Première migration métier (Profil établissement) | ⏳ En cours (PR) |
 
 Doc technique DS : [design-system/](./design-system/README.md) · [Layouts](./design-system/LAYOUTS.md)
 

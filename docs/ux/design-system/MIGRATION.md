@@ -13,7 +13,15 @@ Nouveaux écrans / D2.3+  →  @/design-system (primitives + layouts)
 ```
 
 **D2.1 / D2.2 :** aucun écran métier migré.  
-**D2.3+ :** migration progressive, un module à la fois.
+**D2.3+ :** migration progressive, **un module à la fois**, avec [rapport CTO obligatoire](./RAPPORT-D2.3-profil-etablissement.md).
+
+### Première migration (D2.3)
+
+| Module | Layout | Statut |
+|--------|--------|--------|
+| Profil établissement (`/parametres/profil`) | `FormLayout` | ✅ Livré — voir [AUDIT](./AUDIT-D2.3.md) + [Rapport](./RAPPORT-D2.3-profil-etablissement.md) |
+
+Attendre validation CTO avant un second module.
 
 ---
 
