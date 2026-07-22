@@ -8,8 +8,10 @@ import { establishmentsApi } from "../../lib/establishmentsApi";
 import {
   Button,
   Card,
+  EmptyState,
   FormField,
   FormLayout,
+  InlineAlert,
   Input,
   SectionHeader,
   Select,
@@ -65,11 +67,10 @@ export function EstablishmentProfilePage() {
           />
         </FormLayout.Header>
         <FormLayout.Content>
-          <Card className="p-6">
-            <p className="rounded-xl border border-dashed border-line bg-slate-50 p-6 text-center text-sm text-muted">
-              Aucun établissement actif. Sélectionnez un établissement pour modifier son profil.
-            </p>
-          </Card>
+          <EmptyState
+            title="Aucun établissement actif"
+            description="Sélectionnez un établissement pour modifier son profil."
+          />
         </FormLayout.Content>
       </FormLayout>
     );
@@ -131,9 +132,9 @@ export function EstablishmentProfilePage() {
 
         {!canEdit ? (
           <FormLayout.Alerts>
-            <p className="rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-ink" role="status">
+            <InlineAlert tone="warning" title="Lecture seule">
               Vous disposez d&apos;un accès en lecture seule. Seul l&apos;Admin School peut modifier le profil.
-            </p>
+            </InlineAlert>
           </FormLayout.Alerts>
         ) : null}
 
