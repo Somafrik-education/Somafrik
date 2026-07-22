@@ -1,5 +1,6 @@
 /**
- * Data display (Table, DataTable…) — migration progressive.
- * Sources actuelles : `components/ui/Table`, `DataTable`.
+ * Data display — D2.6.
+ * Table = source de vérité DS (coexistence via re-export ui).
  */
-export {};
+
+export { Table, type Column, type TableProps } from "./Table";

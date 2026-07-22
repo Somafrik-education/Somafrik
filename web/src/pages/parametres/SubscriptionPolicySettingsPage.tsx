@@ -19,8 +19,8 @@ import {
   FormLayout,
   Input,
   SectionHeader,
+  useToast,
 } from "../../design-system";
-import { useToast } from "../../components/ui/Toast";
 import type { Country, CountrySubscriptionPolicy } from "../../types";
 
 export function SubscriptionPolicySettingsPage() {

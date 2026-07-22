@@ -2,8 +2,6 @@ import { useMemo, useRef, useState } from "react";
 import { Database, DatabaseBackup, Download, FileSpreadsheet, Upload } from "lucide-react";
 import { useData } from "../../context/DataContext";
 import { useAuth } from "../../context/AuthContext";
-import { useToast } from "../../components/ui/Toast";
-import { useConfirm } from "../../components/ui/ConfirmDialog";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { canManageEstablishmentSettings } from "../../lib/permissions";
 import { getScopedEntityRows, type SchoolEntityKey } from "../../lib/entityModules";
@@ -14,6 +12,8 @@ import {
   DashboardLayout,
   InlineAlert,
   SectionHeader,
+  useConfirm,
+  useToast,
 } from "../../design-system";
 import type { BackOfficeState } from "../../types";
 
