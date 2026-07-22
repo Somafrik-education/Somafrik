@@ -61,5 +61,5 @@ src/
 ## Framework UI/UX
 
 Documentation normative (Phase D) : [`docs/ux/`](../docs/ux/README.md)  
-Vision, principes, inventaire D1.1, glossaire, décisions officielles (DO-xxx) et architecture de navigation D1.2 (validée CTO).  
-Toute PR UI/UX doit s’y conformer ; les DO sont des exigences d’acceptation. L’implémentation navigation relève des lots D2.x+.
+Vision, principes, inventaire, glossaire, DO-xxx, navigation D1.2 (validée), pages métier D1.3 et Patterns Produit (P-00X).  
+Toute PR UI/UX doit s’y conformer ; DO et Patterns sont des exigences d’acceptation.
