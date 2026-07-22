@@ -61,5 +61,6 @@ src/
 ## Framework UI/UX
 
 Documentation normative — Framework Produit (Phase D1 validée) : [`docs/ux/`](../docs/ux/README.md)  
-D1.1–D1.4 · DO / Patterns / Anti-patterns / Design Language.  
-Implémentation progressive : Phase D2 — checklist de conformité sur quatre axes.
+Design System (D2.1) : [`src/design-system`](./src/design-system) · doc [`docs/ux/design-system/`](../docs/ux/design-system/README.md)  
+`components/ui` reste en coexistence ; nouveau code → `@/design-system`.  
+Tests DS : `npm test`.

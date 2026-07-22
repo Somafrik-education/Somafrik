@@ -16,13 +16,15 @@ toute PR UI/UX doit s’y conformer.
 
 Ces quatre documents constituent le **Framework Produit Somafrik** — base des développements des prochaines années.
 
-## Phase D2 — Implémentation progressive (recommandée)
+## Phase D2 — Implémentation progressive
 
-| Lot | Objectif |
-|-----|----------|
-| **D2.1** | Fondation des composants (Button, Input, Badge, Card, Modal…) sur D1.4 |
-| **D2.2** | Layouts (PageLayout, ListLayout, RecordLayout, DashboardLayout…) |
-| **D2.3** | Migration progressive des écrans — sans refonte massive |
+| Lot | Objectif | Statut |
+|-----|----------|--------|
+| **D2.1** | Fondation Design System (`web/src/design-system`) | ⏳ En cours |
+| **D2.2** | Layouts (PageLayout, ListLayout, RecordLayout, DashboardLayout…) | Planifié |
+| **D2.3** | Migration progressive des écrans — sans refonte massive | Planifié |
+
+Doc technique DS : [design-system/](./design-system/README.md)
 
 ## Ordre de lecture
 
@@ -36,6 +38,7 @@ Ces quatre documents constituent le **Framework Produit Somafrik** — base des 
 8. [Patterns Produit](./patterns-produit.md) — P-001 → P-010
 9. [Anti-patterns](./anti-patterns.md) — AP-001 → AP-012
 10. [Design Language & Design System](./design-language.md)
+11. [Design System technique (D2.1)](./design-system/README.md)
 
 ## Quatre axes de revue UI (gouvernance mature)
 
