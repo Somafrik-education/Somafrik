@@ -46,7 +46,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | DataTable | ⏳ | — | 0 % | ui legacy |
 | Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | Liste `EntityPage` ; StatusBadge |
 | Élèves — liste | ⏳ | — | 0 % | `EntityPage` partagé |
-| Classes (module métier) | 📋 | — | Audit D3.2 | EntityPage ; pas de fiche ; ClassStudentsPage |
+| Classes (module métier) | ✅ / ⏳ | `ListLayout` | Liste D3.2b | Fiche absente ; D3.2c membres ; modales EntityPage |
 | Enseignants | 🔒 | — | 0 % | Oui |
 | Parents / Responsables | 🔒 | — | 0 % | Oui |
 | Présences | 🔒 | — | 0 % | Oui |

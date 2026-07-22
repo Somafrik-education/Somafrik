@@ -5,6 +5,7 @@ import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import {
   Button,
+  EmptyState,
   EntityListForbidden,
   EntityListSearch,
   EntityListShell,
@@ -2084,11 +2085,26 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           />
         }
       >
-        <EntityListTable
-          columns={columns}
-          rows={rows}
-          rowKey={(row, index) => String(row.id ?? index)}
-        />
+        {/* D3.2b — empty DS pour la liste Classes (présentation uniquement). */}
+        {module.key === "classes" && rows.length === 0 ? (
+          <EmptyState
+            title={search.trim() ? "Aucun résultat" : "Aucune classe"}
+            description={
+              search.trim()
+                ? "Aucune classe ne correspond à votre recherche."
+                : "Aucune classe à afficher pour cet établissement."
+            }
+          />
+        ) : (
+          <EntityListTable
+            columns={columns}
+            rows={rows}
+            rowKey={(row, index) => String(row.id ?? index)}
+            emptyLabel={
+              module.key === "classes" ? "Aucune classe à afficher." : undefined
+            }
+          />
+        )}
       </EntityListShell>
 
       <Modal

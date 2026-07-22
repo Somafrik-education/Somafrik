@@ -13,6 +13,7 @@
 | [AUDIT-D2.7-entitypage.md](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE-D2.7-entitypage.md](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT-D2.7-entitypage.md](./RAPPORT-D2.7-entitypage.md) | D2.7 EntityPage |
 | [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves |
 | [AUDIT-D3.2-classes.md](./AUDIT-D3.2-classes.md) · [RAPPORT-D3.2-classes.md](./RAPPORT-D3.2-classes.md) | D3.2 Classes métier (audit / scope lock) |
+| [RAPPORT-D3.2b-liste-classes.md](./RAPPORT-D3.2b-liste-classes.md) | D3.2b Liste Classes (conso D2.7) |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |
