@@ -1,12 +1,12 @@
 # Glossaire UX Somafrik
 
 **Statut :** normatif  
-**Phase :** D1.1 · D1.2 (navigation) · D1.3 (pages métier)  
+**Phase :** D1.1 · D1.2 · D1.3 · D1.4 (Design Language)  
 
 Ce glossaire fixe le vocabulaire utilisé dans les specs, les PR et les revues.  
 En cas d’ambiguïté, ce document fait foi.
 
-Références : [Navigation](./architecture-navigation.md) · [Pages métier](./architecture-pages-metier.md) · [Patterns Produit](./patterns-produit.md).
+Références : [Navigation](./architecture-navigation.md) · [Pages métier](./architecture-pages-metier.md) · [Patterns](./patterns-produit.md) · [Anti-patterns](./anti-patterns.md) · [Design Language](./design-language.md).
 
 ---
 
@@ -253,3 +253,56 @@ Ne pas confondre avec **Pattern Produit** (P-00X).
 
 Mapping canonique statut métier → libellé + tone (ex. inscription élève).  
 À préférer aux heuristiques génériques sur libellés libres.
+
+---
+
+## Design System
+
+### Design Language
+
+Ensemble des principes visuels et sémantiques qui définissent l’identité d’interface Somafrik.  
+Réf. : [design-language.md](./design-language.md) · DO-035.
+
+### Design System
+
+Système opérationnel (tokens, rôles, règles, composants) qui matérialise le Design Language.
+
+### Token
+
+Variable de design nommée (couleur, espace, typo, motion…).  
+On consomme le token / rôle, pas une valeur magique (AP-007).
+
+### Famille de tokens
+
+Catégorie structurante (couleur, typographie, espacement, rayon, élévation, etc.).  
+Structure gelée (DO-036) ; valeurs modifiables.
+
+### Rôle sémantique (couleur)
+
+Fonction d’une couleur dans l’UI (Primary, Danger, Text muted…).  
+Gelé (DO-037) ; indépendant du hex concret.
+
+### Rôle typographique
+
+Fonction d’un niveau de texte (Title, Body, Label, Caption…).  
+Gelé (DO-038).
+
+### Élément gelé
+
+Décision / rôle / famille considéré **stable** : on peut changer les valeurs d’implémentation sans rouvrir l’architecture (DO-043).
+
+### Surface responsive
+
+Nom officiel d’une classe d’écran : Grand écran, Desktop, Laptop, Tablette, Mobile (DO-043 / D1.4 §10).
+
+### Thème
+
+Jeu de valeurs de tokens (ex. light). Le dark mode est **supportable** par architecture mais non productisé (DO-039).
+
+### Compatibilité ascendante (Design System)
+
+Principe selon lequel une évolution DS préserve autant que possible les implémentations existantes, sauf migration validée (DO-045).
+
+### Dépréciation contrôlée
+
+Processus : marquage déprécié → stratégie de migration documentée → suppression après validation (DO-046).
