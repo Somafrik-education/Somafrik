@@ -28,7 +28,8 @@ function baseState(overrides: Partial<BackOfficeState> = {}): BackOfficeState {
     schools: [{ code: "SCH-001", name: "École" }],
     users: [
       {
-        id: "parent-1",
+        id: "user-parent-1",
+        contactId: "parent-1",
         firstName: "Awa",
         lastName: "Diallo",
         role: "Parent",

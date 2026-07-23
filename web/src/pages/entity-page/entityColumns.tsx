@@ -95,8 +95,11 @@ function renderDataCell(
   const { module, isParentChildMode, users, students, scopedAssignments } = ctx;
 
   if (module.key === "relations" && key === "fromContactName") {
+    const contactKey = String(row.fromContactId ?? "").trim();
     const account = users.find(
-      (item) => String(item.id ?? "") === String(row.fromContactId ?? ""),
+      (item) =>
+        String(item.contactId ?? "").trim() === contactKey ||
+        String(item.id ?? "").trim() === contactKey,
     );
     if (account) return formatContactPersonName(account);
   }

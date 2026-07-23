@@ -17,6 +17,7 @@ import {
   prepareRelationForSave,
   RELATION_PARENT_CHILD,
   removeParentChildBundle,
+  resolveParentContactId,
   syncParentChildRelations,
   validateParentChildBundle,
   validateRelation,
@@ -118,13 +119,19 @@ export function buildParentChildBundleSubmitPlan(
   const { scopeUser, state, showToast, createRelationId } = deps;
   const { editing, permissions } = input;
 
-  const bundleError = validateParentChildBundle(editing);
+  const canonicalFromContactId = resolveParentContactId(state, String(editing.fromContactId ?? ""));
+  const normalizedEditing: EntityRow = {
+    ...editing,
+    fromContactId: canonicalFromContactId || String(editing.fromContactId ?? "").trim(),
+  };
+
+  const bundleError = validateParentChildBundle(normalizedEditing);
   if (bundleError) {
     showToast(bundleError, "error");
     return { ok: false };
   }
 
-  const fromContactId = String(editing.fromContactId ?? "").trim();
+  const fromContactId = String(normalizedEditing.fromContactId ?? "").trim();
   const currentScoped = getScopedEntityRows("relations", scopeUser, state);
   const existedBefore = currentScoped.some(
     (row) =>
@@ -142,14 +149,21 @@ export function buildParentChildBundleSubmitPlan(
   }
 
   const allRelations = (state.relations ?? []) as unknown as EntityRow[];
-  const nextRelations = syncParentChildRelations(editing, allRelations, state, createRelationId);
+  const nextRelations = syncParentChildRelations(
+    normalizedEditing,
+    allRelations,
+    state,
+    createRelationId,
+  );
 
   const parentAccount = ((state.users ?? []) as unknown as EntityRow[]).find(
-    (row) => String(row.id ?? "") === fromContactId,
+    (row) =>
+      String(row.contactId ?? "").trim() === fromContactId ||
+      String(row.id ?? "").trim() === fromContactId,
   );
   const label = parentAccount
     ? formatContactPersonName(parentAccount)
-    : String(editing.fromContactName ?? fromContactId);
+    : String(normalizedEditing.fromContactName ?? editing.fromContactName ?? fromContactId);
 
   return {
     ok: true,

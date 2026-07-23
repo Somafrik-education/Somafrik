@@ -374,17 +374,21 @@ function buildSchoolContactsAndRelations(school, country, students, teachers) {
     });
   }
 
+  const parentContacts = contacts.filter((row) => String(row.contactType ?? "") === "Parent");
   students.forEach((student, index) => {
-    const parentUserId = `USER-PARENT-${code}-${pad(((index) % USERS_PER_ROLE) + 1, 2)}`;
-    const parentFirstName = DEMO_FIRST_NAMES[(index + 1) % DEMO_FIRST_NAMES.length];
-    const parentLastName = DEMO_LAST_NAMES[index % DEMO_LAST_NAMES.length];
+    const parentContact =
+      parentContacts[index % Math.max(parentContacts.length, 1)] ?? contacts[0];
+    const parentContactId = String(parentContact?.id ?? "").trim();
+    const parentFirstName = String(parentContact?.firstName ?? DEMO_FIRST_NAMES[(index + 1) % DEMO_FIRST_NAMES.length]);
+    const parentLastName = String(parentContact?.lastName ?? DEMO_LAST_NAMES[index % DEMO_LAST_NAMES.length]);
     const studentLastName = student.name.replace(student.firstName, "").trim() || student.name;
+    if (!parentContactId) return;
 
     relations.push({
       id: `REL-${code}-${pad(index + 1, 3)}`,
       schoolCode: code,
       relationType: "Parent → Élève",
-      fromContactId: parentUserId,
+      fromContactId: parentContactId,
       fromContactName: `${parentFirstName} ${parentLastName}`,
       toStudentId: student.id,
       toStudentName: `${student.firstName} ${studentLastName}`,
