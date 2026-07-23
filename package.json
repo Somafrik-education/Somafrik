@@ -24,6 +24,7 @@
     "lint": "npm --prefix web run lint",
     "build": "npm --prefix web run build",
     "typecheck": "npm run typecheck:backend && npm run typecheck:web && npm run typecheck:mobile",
+    "verify:notes-sync": "node backend/lib/gradesBoPersistence.test.js && node backend/lib/evaluationAttachment.test.js && node backend/lib/evaluationSyncRepository.test.js",
     "typecheck:backend": "node --check backend/server.js && node --check backend/db/postgresRepository.js && node --check BackOffice/app.js",
     "typecheck:web": "npm --prefix web run typecheck",
     "typecheck:mobile": "npm --prefix Mobile run typecheck",

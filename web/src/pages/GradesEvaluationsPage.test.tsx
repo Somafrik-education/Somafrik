@@ -58,8 +58,10 @@ vi.mock("../context/DataContext", () => ({
     state: dataState.current,
     loading: dataLoading.current,
     error: null,
+    syncJournal: [],
     update: vi.fn(),
     refresh: vi.fn(),
+    retryFailedSync: vi.fn(),
   }),
 }));
 

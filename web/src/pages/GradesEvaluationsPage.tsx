@@ -11,7 +11,13 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
-import { EmptyState, ForbiddenState, LoadingState, ToolLayout } from "../design-system";
+import {
+  EmptyState,
+  ForbiddenState,
+  InlineAlert,
+  LoadingState,
+  ToolLayout,
+} from "../design-system";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { classNamesMatch } from "../lib/classRules";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
@@ -64,7 +70,7 @@ function uniqueClassNames(students: Record<string, unknown>[], classes: Record<s
 
 export function GradesEvaluationsPage() {
   const { session } = useAuth();
-  const { state, update, loading } = useData();
+  const { state, update, loading, error: syncError, retryFailedSync } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -137,6 +143,11 @@ export function GradesEvaluationsPage() {
     setBusy(true);
     try {
       await update(patch);
+      return { ok: true as const };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur de synchronisation";
+      showToast(message, "error");
+      return { ok: false as const, message };
     } finally {
       setBusy(false);
     }
@@ -158,7 +169,7 @@ export function GradesEvaluationsPage() {
       nextEvaluations = [...current, evaluation];
     }
 
-    await persistState({
+    const persisted = await persistState({
       evaluations: nextEvaluations,
       auditLog: appendGradeAuditLog(
         state.auditLog,
@@ -167,6 +178,10 @@ export function GradesEvaluationsPage() {
         { evaluationId: evaluation.id, title: evaluation.title },
       ),
     });
+    if (!persisted.ok) {
+      // Conservée localement (outbox failed) — ne pas afficher un succès trompeur.
+      return;
+    }
     showToast(exists ? "Évaluation mise à jour" : "Évaluation créée");
     setEditingEvaluation(null);
   }
@@ -318,6 +333,24 @@ export function GradesEvaluationsPage() {
       render: (row) => <StatusBadge status={row.status} />,
     },
     {
+      key: "sync",
+      header: "Sync",
+      render: (row) => {
+        const syncRow = row as Evaluation & { syncStatus?: string; syncError?: string };
+        if (syncRow.syncStatus === "failed") {
+          return (
+            <span className="text-xs text-danger" title={syncRow.syncError ?? "Échec de synchronisation"}>
+              Échec{syncRow.syncError ? ` — ${syncRow.syncError}` : ""}
+            </span>
+          );
+        }
+        if (syncRow.syncStatus === "pending" || syncRow.syncStatus === "syncing") {
+          return <span className="text-xs text-amber-700">En attente</span>;
+        }
+        return <span className="text-xs text-muted">OK</span>;
+      },
+    },
+    {
       key: "actions",
       header: "",
       render: (row) => (
@@ -396,6 +429,20 @@ export function GradesEvaluationsPage() {
         </ToolLayout.Header>
 
         <ToolLayout.Context>
+          {syncError ? (
+            <InlineAlert
+              tone="danger"
+              title="Synchronisation Notes en échec"
+              className="mb-3"
+              action={
+                <Button variant="secondary" className="text-xs" onClick={() => void retryFailedSync()}>
+                  Réessayer
+                </Button>
+              }
+            >
+              {syncError}
+            </InlineAlert>
+          ) : null}
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Vues Notes">
             {TABS.map((item) => (
               <Button

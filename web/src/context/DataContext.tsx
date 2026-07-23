@@ -238,6 +238,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         const failure = formatOutboxFailureMessage(workingOutbox);
         setError(failure);
+        // HOTFIX-SYNC-02 : un rejet métier (ex. rattachement) doit remonter à l'UI.
+        if (failure) {
+          syncPausedRef.current = false;
+          throw new Error(failure);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erreur de synchronisation";
         workingOutbox = workingOutbox.map((entry) =>
