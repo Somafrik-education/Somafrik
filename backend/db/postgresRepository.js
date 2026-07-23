@@ -1188,73 +1188,155 @@ class PostgresRepository {
     return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
   }
 
+  async ensureSubjectForSchool(schoolId, subjectName, context = {}) {
+    const normalizedName = String(subjectName ?? "").trim();
+    if (!normalizedName) return null;
+
+    const existing = await this.one(
+      `SELECT *
+       FROM subjects
+       WHERE school_id = $1
+         AND (
+           LOWER(TRIM(name)) = LOWER(TRIM($2))
+           OR LOWER(TRIM(subject_code)) = LOWER(TRIM($2))
+         )
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [schoolId, normalizedName],
+    );
+    if (existing) return existing;
+
+    const { matchByNormalizedName } = require("../lib/evaluationAttachment");
+    const state = (await this.getBackOfficeState()) ?? {};
+    const fromContext =
+      matchByNormalizedName(context.subjects, normalizedName) ||
+      matchByNormalizedName(context.courses, normalizedName) ||
+      matchByNormalizedName(state.subjects, normalizedName) ||
+      matchByNormalizedName(state.courses, normalizedName);
+
+    const school = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
+    const subjectCode = String(
+      fromContext?.code ??
+        fromContext?.subjectCode ??
+        fromContext?.publicId ??
+        fromContext?.id ??
+        `${String(school?.school_code ?? schoolId).trim().toUpperCase()}-SUB-${normalizedName
+          .replace(/\s+/g, "-")
+          .toUpperCase()
+          .slice(0, 24)}`,
+    )
+      .trim()
+      .toUpperCase();
+
+    return this.one(
+      `INSERT INTO subjects (school_id, subject_code, name, coefficient, level, description, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active')
+       ON CONFLICT (subject_code) DO UPDATE SET
+         name = EXCLUDED.name,
+         coefficient = EXCLUDED.coefficient,
+         updated_at = NOW()
+       RETURNING *`,
+      [
+        schoolId,
+        subjectCode,
+        String(fromContext?.name ?? normalizedName).trim(),
+        Number(fromContext?.coefficient ?? 1),
+        String(fromContext?.level ?? "Tous niveaux").trim(),
+        String(fromContext?.description ?? "").trim(),
+      ],
+    );
+  }
+
   async upsertEvaluationFromLegacy(evaluation = {}, options = {}) {
     const {
       toEvaluationStatus,
       validateEvaluationContract,
     } = require("../lib/gradesCanonical");
+    const { resolveEvaluationAttachments } = require("../lib/evaluationAttachment");
 
     const legacyId = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
-    const schoolCode = String(evaluation.schoolCode ?? "").trim().toUpperCase();
-    const school = schoolCode ? await this.getSchoolByCode(schoolCode) : null;
-    if (!school) {
-      const error = new Error("Etablissement introuvable pour l'évaluation");
-      error.statusCode = 400;
-      throw error;
-    }
+    const context = options.context ?? {};
 
-    const className = String(evaluation.className ?? "").trim();
-    const subjectName = String(evaluation.subject ?? "").trim();
-    const periodName = String(evaluation.period ?? "Trimestre 1").trim() || "Trimestre 1";
-    const schoolClass = await this.one(
-      `SELECT * FROM classes WHERE school_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
-      [school.id, className],
+    const {
+      school,
+      schoolClass,
+      subject,
+      academicYear,
+      term,
+      teacher,
+      periodName,
+      schoolCode,
+    } = await resolveEvaluationAttachments(
+      evaluation,
+      {
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        ensureSchool: (code) => this.ensureSchoolFromBackOfficeRecord(code),
+        findClassById: (schoolId, id) =>
+          this.one(`SELECT * FROM classes WHERE school_id = $1 AND (id::text = $2 OR class_code = $2) LIMIT 1`, [
+            schoolId,
+            id,
+          ]),
+        findClassByName: (schoolId, name) =>
+          this.one(
+            `SELECT * FROM classes
+             WHERE school_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+             ORDER BY created_at DESC LIMIT 1`,
+            [schoolId, name],
+          ),
+        ensureClass: async (schoolId, name) => {
+          const classId = await this.ensureClassForSchool(schoolId, name);
+          return classId
+            ? this.one(`SELECT * FROM classes WHERE id = $1`, [classId])
+            : null;
+        },
+        findSubjectById: (schoolId, id) =>
+          this.one(
+            `SELECT * FROM subjects WHERE school_id = $1 AND (id::text = $2 OR subject_code = $2) LIMIT 1`,
+            [schoolId, id],
+          ),
+        findSubjectByCode: (schoolId, code) =>
+          this.one(
+            `SELECT * FROM subjects WHERE school_id = $1 AND LOWER(TRIM(subject_code)) = LOWER(TRIM($2)) LIMIT 1`,
+            [schoolId, code],
+          ),
+        findSubjectByName: (schoolId, name) =>
+          this.one(
+            `SELECT * FROM subjects
+             WHERE school_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+             ORDER BY created_at DESC LIMIT 1`,
+            [schoolId, name],
+          ),
+        ensureSubject: (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context),
+        getCurrentAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
+        ensureAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
+        ensureTerm: async (academicYearId, name) =>
+          (await this.one(
+            `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+            [academicYearId, name],
+          )) ??
+          (await this.one(
+            `INSERT INTO terms (academic_year_id, name, status)
+             VALUES ($1, $2, 'open')
+             ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
+             RETURNING *`,
+            [academicYearId, name],
+          )),
+        findTeacherByCode: (schoolId, code) =>
+          this.one(
+            `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
+            [schoolId, code],
+          ),
+        findAnyTeacher: (schoolId) =>
+          this.one(`SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1`, [
+            schoolId,
+          ]),
+      },
+      { ensure: options.ensure !== false, context },
     );
-    const subject = await this.one(
-      `SELECT * FROM subjects WHERE school_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
-      [school.id, subjectName],
-    );
-    if (!schoolClass || !subject) {
-      const error = new Error("Classe ou matiere introuvable pour l'évaluation");
-      error.statusCode = 400;
-      throw error;
-    }
 
-    const academicYear = await this.one(
-      `SELECT *
-       FROM academic_years
-       WHERE school_id = $1 AND status IN ('active', 'open')
-       ORDER BY is_current DESC, created_at DESC
-       LIMIT 1`,
-      [school.id],
-    );
-    if (!academicYear) {
-      const error = new Error("Annee scolaire introuvable pour l'évaluation");
-      error.statusCode = 400;
-      throw error;
-    }
-    const term =
-      (await this.one(
-        `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
-        [academicYear.id, periodName],
-      )) ??
-      (await this.one(
-        `INSERT INTO terms (academic_year_id, name, status)
-         VALUES ($1, $2, 'open')
-         ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
-         RETURNING *`,
-        [academicYear.id, periodName],
-      ));
-
-    const teacherCode = String(evaluation.teacherId ?? "").trim();
-    const teacher = teacherCode
-      ? await this.one(
-          `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
-          [school.id, teacherCode],
-        )
-      : await this.one(`SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1`, [
-          school.id,
-        ]);
+    // academicYear / periodName reserved for term resolution side-effects above
+    void academicYear;
+    void periodName;
 
     const maxScore = Number(evaluation.scale ?? evaluation.max_score ?? 20);
     const coefficient = Number(evaluation.coefficient ?? 1);
@@ -1349,11 +1431,22 @@ class PostgresRepository {
     }
 
     if (evaluations) {
+      const attachmentContext = {
+        schools: Array.isArray(payload.schools) ? payload.schools : [],
+        classes: Array.isArray(payload.classes) ? payload.classes : [],
+        courses: Array.isArray(payload.courses) ? payload.courses : [],
+        subjects: Array.isArray(payload.subjects) ? payload.subjects : [],
+        teachers: Array.isArray(payload.teachers) ? payload.teachers : [],
+      };
       for (const evaluation of evaluations) {
         const id = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
         const clientMutationId = String(evaluation.clientMutationId ?? "").trim() || undefined;
         try {
-          await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
+          await this.upsertEvaluationFromLegacy(evaluation, {
+            skipCacheClear: true,
+            context: attachmentContext,
+            ensure: true,
+          });
           if (id) accepted.evaluations.push(id);
         } catch (error) {
           if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
@@ -1361,6 +1454,7 @@ class PostgresRepository {
             entity: "evaluations",
             id: id || undefined,
             clientMutationId,
+            code: error?.code,
             error: error?.message ?? "Échec de synchronisation de l'évaluation",
           });
         }
