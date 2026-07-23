@@ -142,21 +142,20 @@ Comptes (rôle Parent) ──contactId──► Contacts (type Parent)
 
 **Impact :** une liaison créée uniquement via l’UI établissement peut **ne pas** hydrater `user.children` côté mobile si ni téléphone legacy ni `contactId` ne matchent.
 
-**Verrou D3.4a :** aucune migration UI Parents tant que le **modèle d’identité canonique** n’est pas décidé et documenté (user.id vs contactId vs phone, et stratégie de migration des données existantes).
+**Décision CTO (levée) :** `contactId` = identité métier canonique — voir [§10](#10-décisions-cto--arbitrages-du-gate).  
+Le décalage UI (`users.id`) vs backend (`user.contactId`) reste un **risque fonctionnel réel** à corriger en **D3.4b** avant toute migration UI.
 
 ---
 
 ## 6. Triple source de vérité
 
-| Source | Usage actuel |
-|--------|--------------|
-| `state.relations` (type Parent → Élève) | Admin **Parents & élèves** ; PE-005 principal ; bundles |
-| `student.parentName` / `parentPhone` | Colonnes liste Élèves ; fallback C1.3 ; match mobile téléphone |
-| `guardians` / `studentGuardianRelations` | Onglet Responsables fiche Élève (C1.3) |
+| Source | Usage actuel | Décision CTO |
+|--------|--------------|--------------|
+| `state.relations` (type Parent → Élève) | Admin **Parents & élèves** ; PE-005 ; bundles | **Canonique** (avec contacts) |
+| `student.parentName` / `parentPhone` | Colonnes liste Élèves ; fallback C1.3 ; match mobile téléphone | **Legacy temporaire** — fallback lecture OK ; pas de nouvelle autorité ; pas de liaison créée uniquement par téléphone |
+| `guardians` / `studentGuardianRelations` | Onglet Responsables fiche Élève (C1.3) | Surface **Responsables** distincte — ne pas fusionner artificiellement avec les liaisons admin |
 
-**Verrou :** D3.4 ne doit pas ajouter une 4ᵉ surface ni une liste « Parents » qui réécrit ces modèles.  
-Toute suite UI doit déclarer la **source canonique** et le sort des deux autres (lecture seule / sync / dépréciation).
-
+**Verrou :** pas de 4ᵉ surface ni de liste « Parents ». À terme : `relations` + `contacts` = source d’autorité ; `parentName` / `parentPhone` = projection legacy.
 ---
 
 ## 7. Permissions, validations, audit
@@ -182,7 +181,7 @@ Toute suite UI doit déclarer la **source canonique** et le sort des deux autres
 | Fiche Élève Responsables | DS partiel (Card, EmptyState, SectionHeader) |
 | Thin list page dédiée | **Absente** (contrairement Élèves / Classes / Enseignants) |
 
-Créer un `ParentsListPage` thin wrapper **sans** décision produit sur le modèle = risque d’écran sans valeur métier (même anti-pattern que Fiche Classe inventée).
+**Décision CTO :** aucune nouvelle liste Parents. Un wrapper cosmétique `ParentsListPage` reste **interdit**.
 
 ---
 
@@ -190,52 +189,111 @@ Créer un `ParentsListPage` thin wrapper **sans** décision produit sur le modè
 
 | Sous-lot | Statut | Justification |
 |----------|--------|---------------|
-| **D3.4a — Audit / verrouillage** | ✅ Ce lot (docs) | Obligatoire avant toute suite |
-| **Décision produit — surface canonique** | 🔒 Produit | Parents & élèves vs liste Parents vs Responsables fiche vs comptes |
-| **Décision technique — identité** | 🔒 Tech + produit | user.id / contactId / phone (§5) |
-| **D3.4b — Chrome liste (éventuel)** | 🔒 | Seulement après § décisions ; pas de wrapper cosmétique |
-| **Fiche Parent** | 🔒 Produit | Absente ; pas d’UI inventée |
-| **Unification C1.3 ↔ relations** | 🔒 | Prérequis modèle ; hors UI cosmétique |
-| **E2E UI liaisons** | 🔒 | Après modèle ; corriger seed double 0012 |
+| **D3.4a — Audit / verrouillage** | ✅ Ce lot (docs) | Gate produit levé (§10) |
+| **D3.4b — Contrat d’identité Parents et convergence des relations** | 🔓 Prochain lot autorisé | Identité `contactId` + migration données + E2E 0012 — **pas** de chrome DS |
+| **Nouvelle liste Parents** | 🔒 | Non retenue |
+| **Fiche Parent** | 🔒 Produit | Absente ; ouverture seulement si besoin métier concret |
+| **Chrome DS / migration UI Parents & élèves** | 🔒 | Après D3.4b ; hors D3.4b |
+| **Unification C1.3 ↔ relations (UI)** | 🔒 | Surfaces distinctes ; pas de fusion artificielle |
 | **Présences / Notes / Finance familles** | 🔒 | Hors D3.4 — priorités ultérieures |
-| **Réouverture D2.8 / EntityPage** | 🔒 | Clos (`d2.8e`) |
+| **Réouverture D2.8 / EntityPage** | 🔒 | Clos (`d2.8e`) — interdit aussi en D3.4b |
 | **D3.1–D3.3** | 🔒 | Clos — ne pas rouvrir |
 
 ---
 
-## 10. Questions produit à trancher (gate avant code)
+## 10. Décisions CTO — arbitrages du gate
 
-1. **Quelle est la surface primaire « module Parents » ?**  
-   Onglet actuel Parents & élèves · nouvelle liste Parents · onglet Responsables élève · comptes famille.
-2. **Faut-il une fiche Parent ?** Si non → 🔒 explicite (comme Classes). Si oui → données / onglets / permissions.
-3. **Source canonique du lien parent↔élève** pour admin + mobile.
-4. **Que devient `parentName` / `parentPhone` ?** Conservation, sync, dépréciation.
-5. **Périmètre D3.4b** : chrome DS only sur relations, ou chantier modèle d’abord ?
+**Statut :** validé CTO · 2026-07-23 · gate §10 levé  
+**Numérotation validée :** D3.3 = Enseignants · D3.4 = Parents / Responsables
 
-Sans réponses → **aucun lot UI Parents ouvert**.
+### 10.1 Surface primaire du module Parents
+
+**Décision :** conserver **Parents & élèves** comme surface administrative canonique à court terme.
+
+| Surface | Rôle |
+|---------|------|
+| **Parents & élèves** | Gestion administrative des liaisons parent↔élève |
+| **Responsables — fiche Élève** | Vue centrée sur un élève et ses responsables |
+| **Comptes utilisateurs** | Accès, rôle Parent, authentification |
+| **Nouvelle liste Parents** | 🔒 Non retenue actuellement |
+
+Ces surfaces **ne doivent pas être fusionnées artificiellement** : responsabilités différentes.
+
+### 10.2 Fiche Parent
+
+**Décision :** **aucune fiche Parent dans D3.4**.
+
+Verrou explicite. Ouverture future seulement si besoin produit concret (ex. : dossier familial partagé, historique communications, préférences notification, facturation familiale, gestion avancée multi-enfants).  
+Aucun écran créé uniquement pour reproduire une structure « liste + fiche ».
+
+### 10.3 Identité canonique parent↔élève
+
+**Décision :** `contactId` = identité métier canonique du parent.
+
+**Contrat cible :**
+
+```
+relations.fromContactId = contact.id
+user.contactId = contact.id
+```
+
+- `user.id` = identité technique du compte d’authentification uniquement.  
+- `user.id` **ne doit pas** servir de clé métier dans les relations parent↔élève.  
+- Backend et modèle doivent **converger sur ce contrat avant toute migration UI**.
+
+### 10.4 Sort de `parentName` et `parentPhone`
+
+**Décision :** compatibilité temporaire, puis dépréciation.
+
+| Horizon | Règle |
+|---------|-------|
+| Court terme | Lecture fallback autorisée |
+| Court terme | Aucune **nouvelle** logique métier ne dépend prioritairement de ces champs |
+| Court terme | Aucune liaison parent↔élève créée **uniquement** par téléphone |
+| À terme | `relations` + `contacts` = source canonique |
+| À terme | `parentName` / `parentPhone` = projection legacy |
+
+Une synchronisation temporaire peut exister pendant la migration ; ces champs ne restent **pas** une seconde source d’autorité permanente.
+
+### 10.5 Périmètre de D3.4b
+
+**Décision :** D3.4b **n’est pas** un lot de chrome DS.
+
+**Nom :** D3.4b — Contrat d’identité Parents et convergence des relations
+
+**Périmètre attendu :**
+
+1. Documenter formellement `user.id`, `contact.id`, `user.contactId`
+2. Corriger création et résolution des relations pour utiliser `contactId`
+3. Inventorier les relations existantes créées avec `user.id`
+4. Définir une migration idempotente
+5. Réduire le fallback téléphone
+6. Corriger l’E2E 0012 pour tester séparément : résolution par relation · fallback legacy téléphone · absence de double seed masquant les erreurs
+7. Ne modifier aucun écran métier au-delà du strictement indispensable au contrat
+
+**Interdit en D3.4b :** nouvelle liste Parents · fiche Parent · migration DS / chrome · réouverture EntityPage.
 
 ---
 
-## 11. Risques si on force une suite UI maintenant
+## 11. Risques résiduels (post-décisions)
 
-1. **Inventer `ParentsListPage` / fiche** → écran sans valeur + dette modèle.
-2. **Migrer le chrome sans corriger l’identité** → régression mobile `children`.
-3. **Toucher C1.3 et relations en même temps** → double écriture / incohérence.
-4. **Rouvrir EntityPage sous bannière Parents** → effet de bord multi-entités (interdit).
-5. **Confondre avec D3.3 Enseignants** → chaos de suivi / tags.
+1. **Migrer le chrome avant D3.4b** → régression mobile `children` (interdit).
+2. **Laisser `users.id` dans `fromContactId`** → hydratation parent mobile cassée.
+3. **Fusionner Parents & élèves / Responsables / Comptes** → responsabilités mélangées (interdit).
+4. **Inventer liste / fiche Parent** → écran sans valeur (interdit).
+5. **Rouvrir EntityPage sous bannière Parents** → effet de bord multi-entités (interdit).
 
 ---
 
 ## 12. Livrable D3.4a et merge gate
 
-**Inclus :** ce document, rapport D3.4a, mise à jour suivi / README.  
+**Inclus :** ce document (décisions CTO §10), rapport D3.4a, mise à jour suivi / README.  
 **Exclus :** tout fichier sous `web/src/**`, `backend/**`, `Mobile/**`, scripts runtime.
 
 | Gate | Attente |
 |------|---------|
-| Draft PR | Oui |
-| Revue CTO | Diff docs + verrou §9–10 |
+| Décisions CTO §10 | ✅ Levées (ce document) |
 | CI / Security | Verts (docs-only) |
-| UX / API / métier runtime | Aucun changement |
-
-**Suite après validation CTO :** uniquement sur instruction explicite — décisions §10 puis éventuel D3.4b (migration incrémentale), **sans** réintroduire de dette EntityPage.
+| Undraft → merge | Après checks verts |
+| Tag | `d3.4a` après merge sur `develop` |
+| Suite | Ouvrir **D3.4b** en draft (contrat identité — pas UI) |

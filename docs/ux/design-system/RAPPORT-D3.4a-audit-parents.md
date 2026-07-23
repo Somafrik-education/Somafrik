@@ -2,7 +2,7 @@
 
 **Type :** Audit / scope lock (documentation uniquement)  
 **Module :** Parents / Responsables  
-**Sous-périmètre :** D3.4a — inventaire post-`d3.2a` + verrouillage sous-lots  
+**Sous-périmètre :** D3.4a — inventaire post-`d3.2a` + verrouillage + décisions CTO  
 **Impact runtime :** Non  
 **Migration métier :** Non  
 **Backend/API :** Inchangés  
@@ -12,22 +12,14 @@
 **Audit :** [AUDIT-D3.4-parents.md](./AUDIT-D3.4-parents.md)  
 **Base :** `develop` @ `045ef54e` · tags `d2.8e`, `d3.2a`
 
-**Numérotation :** D3.3 = Enseignants (déjà livré). Le prochain bloc métier Parents est **D3.4**.
+**Numérotation validée CTO :** D3.3 = Enseignants · D3.4 = Parents / Responsables
 
 ---
 
 ## 1. Objectif
 
-Ouvrir le jalon Parents dans la stratégie officielle **audit → verrouillage → migration incrémentale → validation → tag**, sans écrire de code applicatif tant que le choix produit n’est pas arrêté.
-
-Alignement roadmap CTO :
-
-| Priorité | Module | Décision D3.4a |
-|----------|--------|----------------|
-| 1 | Parents | **Audit / lock** (ce lot) |
-| 2 | Présences | Hors — plus tard |
-| 3 | Notes / Évaluations | Hors — plus tard |
-| — | Fiche Classe | Reste 🔒 produit (D3.2) |
+Clôturer le jalon D3.4a : audit + **arbitrages produit/tech du gate §10**, sans code applicatif.  
+Prochain lot autorisé : **D3.4b — Contrat d’identité Parents et convergence des relations** (pas de chrome DS).
 
 ---
 
@@ -35,8 +27,8 @@ Alignement roadmap CTO :
 
 | Document | Action |
 |----------|--------|
-| `AUDIT-D3.4-parents.md` | Créé |
-| `RAPPORT-D3.4a-audit-parents.md` | Créé |
+| `AUDIT-D3.4-parents.md` | Créé puis amendé (Décisions CTO §10) |
+| `RAPPORT-D3.4a-audit-parents.md` | Aligné |
 | `SUIVI-MIGRATIONS.md` / `README.md` | Alignés |
 
 **Fichiers `web/src/**`, `backend/**`, `Mobile/**` :** aucun.
@@ -47,37 +39,50 @@ Alignement roadmap CTO :
 
 | Élément | Statut |
 |---------|--------|
-| Liste Parents dédiée / entité `parents` | Absente |
-| Parents & élèves (`ParentChildRelationsPage`) | Wrapper EntityPage mode bundle |
+| Liste Parents dédiée / entité `parents` | Absente — 🔒 non retenue |
+| Parents & élèves (`ParentChildRelationsPage`) | Surface admin **canonique** à court terme |
 | Workflow D2.8d3 | ✅ Extrait — JSX picker reste assembleur |
-| Fiche Parent | Absente — 🔒 produit |
-| Responsables fiche Élève (C1.3) | Présent — modèle parallèle aux `relations` |
-| Identité `fromContactId` | Divergence web (`users.id`) vs backend (`contactId`) + legacy phone |
-| E2E UI web liaisons | Absent ; 0012 seed double |
+| Fiche Parent | Absente — 🔒 D3.4 |
+| Responsables fiche Élève (C1.3) | Surface distincte (élève-centrée) |
+| Identité `fromContactId` | Divergence actuelle → contrat cible `contact.id` (D3.4b) |
+| E2E 0012 | Seed double à corriger en D3.4b |
 
 ---
 
-## 4. Périmètre verrouillé
+## 4. Décisions CTO (gate levé)
+
+| # | Sujet | Décision |
+|---|-------|----------|
+| 1 | Surface primaire | **Parents & élèves** (admin liaisons) ; Responsables / Comptes distincts ; pas de nouvelle liste |
+| 2 | Fiche Parent | 🔒 Aucune dans D3.4 |
+| 3 | Identité | `relations.fromContactId = contact.id` · `user.contactId = contact.id` · `user.id` ≠ clé métier |
+| 4 | `parentName` / `parentPhone` | Fallback lecture temporaire → dépréciation ; pas de liaison téléphone-only |
+| 5 | D3.4b | **Contrat d’identité + convergence** — interdits : liste / fiche / chrome DS / EntityPage |
+
+Détail normatif : [AUDIT §10](./AUDIT-D3.4-parents.md#10-décisions-cto--arbitrages-du-gate).
+
+---
+
+## 5. Périmètre verrouillé
 
 | Sous-lot | Décision |
 |----------|----------|
-| D3.4a Audit | ✅ Livré (docs) |
-| Surface / modèle canonique | 🔒 Décision produit + tech |
-| Fiche Parent | 🔒 Pas d’UI inventée |
-| D3.4b chrome liste (éventuel) | 🔒 Après décisions |
+| D3.4a Audit + décisions | ✅ Livré (docs) |
+| D3.4b Contrat identité | 🔓 Prochain — draft après tag `d3.4a` |
+| Liste / fiche Parent | 🔒 |
+| Chrome DS Parents | 🔒 Hors D3.4b |
 | Présences / Notes / Finance familles | 🔒 Hors D3.4 |
 | D2.8 / EntityPage infra | 🔒 Clos (`d2.8e`) |
-| D3.1–D3.3 | 🔒 Clos — ne pas rouvrir |
+| D3.1–D3.3 | 🔒 Clos |
 
 ---
 
-## 5. Tableau CTO
+## 6. Tableau CTO
 
 | Élément | Résultat |
 |---------|----------|
 | Changement fonctionnel | Non |
 | Code applicatif modifié | Non |
-| Audit Parents ouvert | Oui (D3.4a) |
-| Sous-lots verrouillés | Oui |
-| Collision numérotation D3.3 | Évitée (Parents = D3.4) |
-| Suite | Instruction CTO explicite après décisions §10 de l’audit |
+| Audit Parents | Oui (D3.4a) |
+| Gate §10 | ✅ Décisions intégrées |
+| Suite | Tag `d3.4a` → ouvrir D3.4b draft (identité, pas UI) |

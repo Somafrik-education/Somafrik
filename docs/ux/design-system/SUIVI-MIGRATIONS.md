@@ -26,10 +26,10 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Classes config | Structure (D2.5) | ✅ | `FormLayout` | Monolithe `ConfigurationPage` |
 | Enseignants | D3.3 — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
 | Enseignants | Fiche | 🔒 | `RecordLayout` (cible) | Fiche absente |
-| Parents / Responsables | D3.4a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.4-parents.md) post-`d3.2a` |
-| Parents / Responsables | Surface / modèle canonique | 🔒 | — | Décision produit + identité `fromContactId` |
-| Parents / Responsables | Fiche Parent | 🔒 | `RecordLayout` (cible) | **Fiche absente** (prérequis produit) |
-| Parents / Responsables | D3.4b — Chrome liste (éventuel) | 🔒 | `ListLayout` (cible) | Attente décisions §10 audit |
+| Parents / Responsables | D3.4a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.4-parents.md) · décisions CTO §10 |
+| Parents / Responsables | Surface admin canonique | ✅ | — | **Parents & élèves** (pas de nouvelle liste) |
+| Parents / Responsables | Fiche Parent | 🔒 | `RecordLayout` (cible) | **Aucune fiche dans D3.4** |
+| Parents / Responsables | D3.4b — Contrat d’identité / convergence | ⏳ | — | `contactId` canonique ; pas de chrome DS / EntityPage |
 
 ## Suivi consolidé
 
