@@ -61,6 +61,10 @@ import {
   resolveSelectedParentStudentLabels,
 } from "./entity-page/parentChildRelationWorkflow";
 import {
+  buildPaymentCancelPlan,
+  buildPaymentReceiptPrintPlan,
+} from "./entity-page/paymentWorkflow";
+import {
   buildTeacherAssignmentDeleteConfirmCopy,
   buildTeacherAssignmentDeletePlan,
   buildTeacherAssignmentSubmitPlan,
@@ -119,11 +123,7 @@ import { appendAuditLog, auditActor, makeAuditEntry } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
-import {
-  buildPaymentAuditEntry,
-  cancelPaymentRecord,
-  type PaymentRecord,
-} from "../lib/quickPayment";
+import { type PaymentRecord } from "../lib/quickPayment";
 import {
   getCurrentSchool,
   scopedAssignments,
@@ -950,27 +950,14 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   }
 
   async function submitCancelPayment() {
-    if (!cancellingPayment || !cancelReason.trim()) {
-      showToast("Le motif d'annulation est obligatoire", "error");
-      return;
-    }
-    const cancelled = cancelPaymentRecord(cancellingPayment, cancelReason, scopeUser);
-    const mergeResult = mergeEntityIntoState("payments", scopeUser, state, cancelled);
-    if (!mergeResult.applied) {
-      showToast("Annulation refusée : paiement hors périmètre de l'établissement.", "error");
-      return;
-    }
+    if (!cancellingPayment) return;
+    const plan = buildPaymentCancelPlan(
+      { scopeUser, state, showToast },
+      { payment: cancellingPayment, reason: cancelReason },
+    );
+    if (!plan.ok) return;
     try {
-      await persistPatch(
-        {
-          payments: mergeResult.rows as BackOfficeState["payments"],
-          auditLog: appendAuditLog(
-            state.auditLog,
-            buildPaymentAuditEntry(cancelled, scopeUser, "payment.cancel", cancelReason.trim()),
-          ),
-        },
-        "Paiement annulé",
-      );
+      await persistPatch(plan.patch, plan.successMessage);
       setCancellingPayment(null);
       setCancelReason("");
     } catch {
@@ -1891,12 +1878,11 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                 <Button
                   onClick={() => {
                     if (receiptPayment) {
-                      void update({
-                        auditLog: appendAuditLog(
-                          state.auditLog,
-                          buildPaymentAuditEntry(receiptPayment, scopeUser, "payment.receipt.print"),
-                        ),
-                      });
+                      const plan = buildPaymentReceiptPrintPlan(
+                        { scopeUser, state },
+                        { payment: receiptPayment },
+                      );
+                      void update(plan.patch);
                     }
                     window.print();
                   }}

@@ -82,6 +82,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D2.8c : noyau CRUD transversal — [RAPPORT](./RAPPORT-D2.8c-crud-entitypage.md).
 - D2.8d1 : workflow affectations enseignants — [RAPPORT](./RAPPORT-D2.8d1-affectations-enseignants.md).
 - D2.8d2 : workflow Contacts & Comptes — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md).
-- D2.8d3 : workflow Relations parent-enfant — [RAPPORT](./RAPPORT-D2.8d3-relations-parent-enfant.md). Suite : D2.8d4 Paiements (vigilance renforcée).
+- D2.8d3 : workflow Relations parent-enfant — [RAPPORT](./RAPPORT-D2.8d3-relations-parent-enfant.md).
+- D2.8d4 : workflow Paiements — [RAPPORT](./RAPPORT-D2.8d4-paiements.md). Suite : D2.8e nettoyage final.
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.
