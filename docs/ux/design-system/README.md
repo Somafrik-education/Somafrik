@@ -18,6 +18,7 @@
 | [RAPPORT-D2.8d2-contacts-comptes.md](./RAPPORT-D2.8d2-contacts-comptes.md) | D2.8d2 contacts & comptes |
 | [RAPPORT-D2.8d3-relations-parent-enfant.md](./RAPPORT-D2.8d3-relations-parent-enfant.md) | D2.8d3 relations parent-enfant |
 | [RAPPORT-D2.8d4-paiements.md](./RAPPORT-D2.8d4-paiements.md) | D2.8d4 paiements |
+| [RAPPORT-D2.8e-nettoyage-entitypage.md](./RAPPORT-D2.8e-nettoyage-entitypage.md) | D2.8e nettoyage final EntityPage |
 | [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves (fiche) |
 | [RAPPORT-D3.1b-liste-eleves.md](./RAPPORT-D3.1b-liste-eleves.md) | D3.1b Liste Élèves (conso D2.7) |
 | [AUDIT-D3.2-classes.md](./AUDIT-D3.2-classes.md) · [RAPPORT-D3.2-classes.md](./RAPPORT-D3.2-classes.md) | D3.2 Classes métier (audit / scope lock) |
