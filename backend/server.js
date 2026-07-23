@@ -618,23 +618,32 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       const state = await getAuthoritativeBackOfficeState();
       const body = req.body ?? {};
       const { assertNoteWrite } = require("./services/dataIntegrityService");
-      assertNoteWrite(state, body, { enforceLockedEvaluation: false });
+      // Unicité portée par PG upsert (school+evaluation+student) — comme D3.5b présences.
+      assertNoteWrite(state, body, {
+        enforceLockedEvaluation: false,
+        skipDuplicateCheck: true,
+      });
       let saved;
+      // D3.6b : PostgreSQL = autorité canonique. JSON BO seulement en moteur mémoire.
+      const engine = String(repository.engine ?? "postgresql");
       try {
         await ensureRepositoryBackOfficeSnapshot(state);
         saved = await repository.upsertGrade(body, req.principal);
       } catch (error) {
         const message = String(error?.message ?? "");
         const status = error?.statusCode ?? error?.status;
-        if (
+        const canUseTransientBoFallback =
+          engine === "memory" &&
           (status === 404 || status === 400 || status === 403) &&
           (message.includes("introuvable") ||
             message.includes("Eleve") ||
             message.includes("Matiere") ||
             message.includes("Enseignant") ||
+            message.includes("Evaluation") ||
+            message.includes("évaluation") ||
             message.includes("trimestre") ||
-            message.includes("Accès"))
-        ) {
+            message.includes("Accès"));
+        if (canUseTransientBoFallback) {
           saved = await saveNotesViaBackOfficeState(state, body, req.principal);
         } else {
           throw error;
@@ -3907,9 +3916,10 @@ function filterNotesForPrincipal(notes = [], evaluations = [], principal = {}) {
   if (!isParentOrStudentPrincipalRole(principal.role)) {
     return notes;
   }
+  const { isPublishedEvaluationStatus } = require("./lib/gradesCanonical");
   const publishedEvalIds = new Set(
     (evaluations ?? [])
-      .filter((row) => row.active !== false && row.status === "Publiée")
+      .filter((row) => row.active !== false && isPublishedEvaluationStatus(row.status))
       .map((row) => String(row.id)),
   );
   return (notes ?? []).filter((note) => {
