@@ -31,7 +31,7 @@
 | **Bulletins** | Sync opportuniste depuis publication d’évaluation + EntityPage `/bulletins` — **D3.7** |
 | **Exigences non couvertes** | `grade_sessions` (SOM-DATA-002), unicité PG note×élève×évaluation, table `evaluations` |
 
-**Recommandation D3.6a :** verrouiller le périmètre et les arbitrages §10 **avant** tout commit métier (D3.6b).  
+**Recommandation D3.6a :** verrouiller le périmètre et les arbitrages §11 **avant** tout commit métier (D3.6b).  
 Ne pas migrer le chrome DS tant que le **contrat de note** (valeur, barème, coefficient, type, granularité, source canonique, règles de calcul) n’est pas figé.  
 Ne pas ouvrir Bulletins (D3.7) sous bannière Notes.  
 Ne pas réouvrir Présences (pas de D3.5c, pas de ToolLayout Présences).
@@ -311,12 +311,11 @@ Index : `student_id`, `school_id`.
 
 | Sous-lot | Statut | Justification |
 |----------|--------|---------------|
-| **D3.6a — Audit / verrouillage** | ✅ Ce lot (docs) | Gate avant tout code |
-| **Décisions produit §11** | 🔒 Gate CTO | Contrat note, granularité, source, calculs, interfaces |
-| **D3.6b — Contrat Notes + persistance canonique** | 🔒 | Seulement après §11 |
-| **D3.6c — Migration des écrans Notes** | 🔒 | Après D3.6b stable |
+| **D3.6a — Audit / verrouillage** | ✅ Ce lot (docs) | Gate §11 levé |
+| **D3.6b — Contrat Notes + persistance canonique** | 🔓 Prochain lot autorisé | PG évaluations + notes · UNIQUE · calcul · migration — **pas** chrome |
+| **D3.6c — Migration des écrans Notes** | 🔒 | Après D3.6b stable · éventuel ToolLayout |
 | **Onglet Résultats fiche Élève** | 🔒 | Hors D3.6b |
-| **Chrome DS / ToolLayout Notes** | 🔒 | Après stabilisation métier (pas D3.6b) |
+| **Chrome DS / ToolLayout Notes** | 🔒 | D3.6c seulement |
 | **Bulletins (D3.7)** | 🔒 | Aucun chantier sous D3.6 |
 | **Examens EntityPage / redesign** | 🔒 | Hors D3.6 |
 | **D3.5c / ToolLayout Présences** | 🔒 | Verrou D3.5 inchangé |
@@ -325,105 +324,237 @@ Index : `student_id`, `school_id`.
 
 ---
 
-## 11. Questions produit à trancher (gate avant code)
+## 11. Décisions CTO — arbitrages du gate
 
-Sans réponses → **aucun lot D3.6b / migration UI / refactor API ouvert**.
+**Statut :** validé CTO · 2026-07-23 · gate §11 levé  
+**Numérotation validée :** D3.6 = Notes · Bulletins = D3.7 · Présences / EntityPage non rouverts
 
-### 11.1 Contrat de la note
+### 11.1 Contrat canonique d’une évaluation
 
-1. La note canonique est-elle toujours liée à une **évaluation** (`evaluationId` obligatoire) ?  
-2. Champs figés : `value`, `scale` (barème), `evaluationCoefficient`, `gradeStatus` — lesquels sont obligatoires à la saisie ?  
-3. Conservons-nous l’enum `EvaluationType` NE-* (6 valeurs) pour D3.6b, ou la config établissement prime-t-elle ?  
-4. Conservons-nous l’enum `GradeStatus` actuel (8 valeurs), ou simplifions-nous (ex. présent / absent justifié / dispensé) ?  
-5. Signification de **Non justifiée = 0** dans les moyennes : confirmée ou revue ?
+**Décision :** une évaluation est une **entité métier distincte** de la note.
 
-### 11.2 Granularité
+**Contrat cible minimal :**
 
-6. Granularité d’écriture : **évaluation** (session) → notes élèves ?  
-7. Agrégats : matière × période × élève ; période = trimestre/semestre via config ?  
-8. `terms` PG vs libellés `period` JSON : quelle source canonique de période ?  
-9. Année académique : obligatoire sur évaluation / note dès D3.6b ?
+| Champ | Rôle |
+|-------|------|
+| `evaluation.id` | Identité |
+| `school_id` | Établissement |
+| `class_id` | Classe |
+| `subject_id` | Matière |
+| `teacher_id` | Enseignant |
+| `term_id` | Période (année scolaire → période) |
+| `title` | Libellé |
+| `type` | Type d’évaluation |
+| `evaluation_date` | Date |
+| `max_score` | Barème |
+| `coefficient` | Coefficient de l’évaluation |
+| `status` | Cycle de vie |
 
-### 11.3 Source canonique
+**Statuts recommandés :**
 
-10. Persistance canonique : **une seule table de notes** (PG `grades` étendue / normalisée) ?  
-11. Où vivent les **évaluations** (sessions) : nouvelle table PG vs rester JSON temporairement ?  
-12. JSON BO `notes` / `evaluations` : autorité durable **interdite** (alignement D3.5b) ?  
-13. Clé d’unicité cible : `établissement + élève + évaluation` (ou équivalent UUID) ?  
-14. Comportement : upsert idempotent web = mobile = API ?
+| Statut | Interprétation |
+|--------|----------------|
+| `draft` | Préparation |
+| `open` | Saisie autorisée |
+| `locked` | Saisie fermée, corrections contrôlées |
+| `published` | Visible par élèves et parents |
+| `archived` | Conservée, hors activité courante |
 
-### 11.4 Règles de calcul
+La **publication** rend les résultats visibles — elle **n’est pas** la création d’un bulletin.
 
-15. Quelle implémentation devient **la** référence (web `gradeBook.ts` ?) — les autres doivent s’aligner ou disparaître ?  
-16. Pondérations : coef évaluation × coef matière — confirmées ?  
-17. Arrondis : affichage 2 décimales ; stockage / bulletin 1 décimale ; règle d’arrondi métier ?  
-18. Seuil de réussite classe = 10/20 — figé ?  
-19. Classements / stats : calculés à la volée (pas de table) dans D3.6 ?
+### 11.2 Contrat canonique d’une note
 
-### 11.5 Interfaces
+**Décision :** une note = résultat d’un élève pour **une** évaluation.
 
-20. Surface web canonique = `/notes` (`GradesEvaluationsPage`) ?  
-21. Mobile enseignant = saisie terrain (même contrat API) ; parent/élève = lecture publiée ?  
-22. Onglet Résultats fiche Élève : 🔒 hors D3.6b ?  
-23. Droits validate/publish : rester sur heuristique rôle ou basculer sur permissions feature explicites ?
+**Contrat cible minimal :**
 
-### 11.6 Interfaces futures (scope in / out)
+| Champ | Rôle |
+|-------|------|
+| `grade.id` | Identité |
+| `school_id` | Établissement |
+| `evaluation_id` | Évaluation parente (obligatoire) |
+| `student_id` | Élève |
+| `score` | Valeur numérique ou `null` selon statut |
+| `status` | Statut de saisie |
+| `comment` | Commentaire |
+| `version` | Concurrence optimiste |
+| `created_by` / `updated_by` | Audit acteurs |
+| `created_at` / `updated_at` | Audit temps |
 
-| Inclure dans D3.6b (recommandation audit) | Exclure de D3.6b |
-|-------------------------------------------|------------------|
-| Contrat note / évaluation / statuts | Écrans Bulletins / EntityPage bulletins |
-| Persistance canonique PG + unicité | Redesign PDF / Grapes / conception bulletins |
-| Alignement règles de calcul (une référence) | Classements persistés / stats avancées produit |
-| Alignement API web / mobile | Onglet fiche Élève « Résultats » |
-| Tests contrat / upsert / publication filter | Migration ToolLayout Notes |
-| Points d’extension documentés pour D3.7 | D3.5c / ToolLayout Présences / Examens redesign |
+Le **barème** (`max_score`) et le **coefficient** appartiennent à l’**évaluation**, pas à chaque note.
 
-24. Les Notes doivent-elles **continuer** à pousser un agrégat bulletin à la publication (comportement actuel), ou ce feed est-il gelé jusqu’à D3.7 ?  
-25. D3.7 Bulletins consomme le contrat Notes sans modifier les tables Notes — confirmé ?
+**Clé d’unicité cible :**
 
-### 11.7 Recommandations audit (propositions — non validées)
+```sql
+UNIQUE (school_id, evaluation_id, student_id)
+```
 
-> Ces propositions accélèrent le gate ; elles **ne remplacent pas** la validation CTO.
+Une note **ne doit pas** être identifiée seulement par élève + matière + période (plusieurs évaluations possibles).
 
-| # | Sujet | Proposition |
-|---|-------|-------------|
-| R1 | Surface | `/notes` + mobile TeacherGrades (même API) ; lecture parent/élève ; fiche Élève 🔒 |
-| R2 | Contrat note | Note toujours rattachée à une évaluation ; `value` + `scale` + `evaluationCoefficient` + `gradeStatus` |
-| R3 | Types | Conserver enums NE-* D3.6b ; config établissement en lecture |
-| R4 | Granularité | Évaluation → notes ; agrégats matière/période calculés |
-| R5 | Période | Libellé aligné sur `terms` / config ; pas de période orpheline |
-| R6 | Persistance | PG canonique ; JSON BO non autorité durable ; UNIQUE élève×évaluation (+ school) |
-| R7 | Calcul | Web `gradeBook.ts` = référence ; backend/mobile s’alignent en D3.6b |
-| R8 | Arrondi | Affichage 2 déc. ; contrat stockage à figer (proposer 2 déc. numériques, projection bulletin 1 déc. en D3.7) |
-| R9 | D3.6b in | Contrat + persistance + alignement calcul/API/tests |
-| R10 | D3.6b out | ToolLayout · fiche Élève · Bulletins UI · Examens redesign · Présences |
-| R11 | Bulletins | Garder sync minimale non régressive **ou** la geler explicitement jusqu’à D3.7 (choix CTO) |
-| R12 | Séquence | D3.6b → D3.6c (écrans) → D3.7 Bulletins |
+### 11.3 Valeur et statuts de saisie
+
+**Décision :** ne pas représenter tous les cas par une seule valeur numérique nullable.
+
+| Statut | Score | Rôle |
+|--------|-------|------|
+| `graded` | obligatoire | Note chiffrée |
+| `absent` | `null` | Absence |
+| `excused` | `null` | Absence justifiée |
+| `not_submitted` | `null` | Non rendu (≠ absent) |
+| `exempt` | `null` | Dispense |
+
+**Règles :**
+
+- `graded` exige un `score`
+- les autres statuts exigent `score = null`
+- `0 <= score <= max_score` (barème de l’évaluation)
+- un élève absent **ne reçoit pas** implicitement zéro
+- une absence justifiée **n’entre pas** dans la moyenne comme zéro
+- `not_submitted` reste distinct de `absent`
+
+Remplacement, rattrapage ou zéro disciplinaire : **hors D3.6b**, sauf nécessité déjà présente dans le runtime.
+
+### 11.4 Granularité
+
+**Décision :** granularité canonique =
+
+```
+une évaluation × un élève = une note
+```
+
+Une évaluation appartient à : établissement → année scolaire → période → classe → matière.
+
+**Ne pas** introduire `grade_sessions` dans D3.6b sans besoin produit validé.  
+Le modèle `evaluation` + `grades` suffit pour le premier contrat canonique.
+
+### 11.5 PostgreSQL comme source d’autorité
+
+**Décision :** **PostgreSQL** = source canonique.
+
+Les collections JSON `evaluations` / `notes` deviennent des formats **transitoires** (compatibilité / moteur mémoire) — **pas** une seconde persistance durable.
+
+PostgreSQL doit porter : évaluations · notes · relations · statuts · unicité · version de concurrence.
+
+D3.6b ne doit **pas** se limiter à ajouter une contrainte sur `grades` : les évaluations ne doivent plus vivre durablement uniquement dans le JSON.
+
+### 11.6 Migration legacy
+
+**Décision :** concevoir la migration **avant** la contrainte unique.
+
+**Ordre recommandé :**
+
+1. Schéma non bloquant  
+2. Inventaire évaluations / notes legacy  
+3. Création ou résolution des `evaluation_id`  
+4. Détection des doublons  
+5. Déduplication déterministe  
+6. Vérification  
+7. Contrainte `UNIQUE`  
+8. Bascule des écritures  
+
+**Priorité de conservation des doublons (exemple) :**
+
+```
+version DESC → updated_at DESC → created_at DESC → id DESC
+```
+
+Les notes impossibles à rattacher à une évaluation : **anomalies de migration** remontées — **pas** de fusion silencieuse.
+
+### 11.7 Règles de calcul
+
+**Décision :** **une** règle partagée web / backend / mobile.
+
+Pour une évaluation : `normalized_score = score / max_score`  
+
+Moyenne pondérée :
+
+```
+sum(normalized_score × coefficient) / sum(coefficients éligibles)
+```
+
+puis conversion vers l’échelle d’affichage (typiquement /20).
+
+**Exclusions de la moyenne :** `absent` · `excused` · `not_submitted` · `exempt` (sauf règle produit future explicite).
+
+| Règle | Décision |
+|-------|----------|
+| Arrondi | Uniquement à l’affichage |
+| Calcul interne | Précision complète |
+| Coefficient / barème | Strictement positifs |
+| Classement | Pas de classement sur échantillon incomplet sans signalement |
+| Implémentation normative | **Une seule** côté domaine / backend |
+| Web / mobile | Adaptateurs / consommateurs — **pas** trois moteurs indépendants |
+
+### 11.8 Interfaces
+
+| Surface | Responsabilité |
+|---------|----------------|
+| **`/notes` web** | Gestion des évaluations, saisie, verrouillage et publication |
+| **Mobile enseignant** | Saisie terrain sur évaluations `open` |
+| **Mobile élève / parent** | Lecture des seules évaluations `published` |
+| **Fiche Élève « Résultats »** | 🔒 Hors D3.6b |
+| **ToolLayout Notes** | D3.6c |
+| **Bulletins** | D3.7 |
+
+**Surface canonique :** `/notes`.
+
+### 11.9 Bulletins et publication
+
+**Décision :** D3.6 expose des données stables pour D3.7, mais **ne crée / ne synchronise pas** de bulletins comme effet secondaire métier durable.
+
+```
+publication d’une évaluation
+  → rend les notes visibles
+  → émet éventuellement un événement métier
+  → ne fabrique pas automatiquement le bulletin canonique
+```
+
+Génération, agrégation, PDF et publication des bulletins = **D3.7**.
+
+La sync opportuniste actuelle (`syncBulletinsForClass`) : **inventorier puis isoler** — pas forcément suppression brutale au premier commit D3.6b si risque de régression.
+
+### 11.10 Périmètre D3.6b / D3.6c
+
+**Nom D3.6b :** Contrat Notes et persistance canonique
+
+| Inclure dans D3.6b | Exclure de D3.6b |
+|--------------------|------------------|
+| Table / modèle PG des évaluations | Refonte `GradesEvaluationsPage` |
+| Contrat PG des notes | ToolLayout |
+| `UNIQUE (school_id, evaluation_id, student_id)` | Onglet Résultats fiche Élève |
+| Statuts évaluation / note | Classement avancé |
+| Validation score / barème | Génération ou design des bulletins |
+| Migration legacy déterministe | D3.7 |
+| Concurrence / `version` | |
+| Moteur de calcul canonique | |
+| Fallback JSON limité au moteur mémoire | |
+| Tests unitaires et migration | |
+
+**D3.6c** (après clôture D3.6b seulement) : alignement web/mobile · suppression duplications UI/domaine · éventuel ToolLayout · simplification des cinq onglets · suppression du quasi-doublon classe / stats.
 
 ---
 
-## 12. Risques si on force une implémentation maintenant
+## 12. Risques résiduels (post-décisions)
 
-1. Migrer ToolLayout sans figer le contrat note → refonte UI puis refonte modèle.  
-2. Ouvrir Bulletins (D3.7) en parallèle → dépendances circulaires Notes ↔ Bulletins.  
-3. Unifier PG/JSON sans UNIQUE → perte ou doublons silencieux.  
-4. Laisser trois GradeBook divergents → moyennes différentes selon surface.  
-5. Réouvrir Présences / EntityPage sous bannière Notes → dette transversale.  
-6. « Activer » l’onglet Résultats fiche Élève sans contrat → écran creux.  
-7. Traiter `exam_results` comme seconde source de notes → double autorité.
+1. Laisser le JSON BO comme autorité parallèle → divergence (interdit durable).  
+2. Ajouter seulement UNIQUE sur `grades` sans table évaluations PG → contrat incomplet.  
+3. Fusionner silencieusement les notes sans `evaluation_id` → perte de données.  
+4. Conserver trois GradeBook indépendants → moyennes divergentes (interdit).  
+5. Resynchroniser des bulletins à la publication comme effet durable → empiète sur D3.7.  
+6. Migrer ToolLayout / ouvrir fiche Élève avant D3.6b → refonte UI prématurée.  
+7. Réouvrir Présences / EntityPage sous bannière Notes → dette transversale (interdit).
 
 ---
 
 ## 13. Livrable D3.6a et merge gate
 
-**Inclus :** ce document, rapport D3.6a, mise à jour suivi / README.  
+**Inclus :** ce document (décisions CTO §11), rapport D3.6a, mise à jour suivi / README.  
 **Exclus :** tout fichier sous `web/src/**`, `backend/**`, `Mobile/**`, scripts runtime.
 
 | Gate | Attente |
 |------|---------|
-| Draft PR | Oui |
-| Revue CTO | Diff docs + verrou §10–11 |
+| Décisions CTO §11 | ✅ Levées (ce document) |
 | CI / Security | Verts (docs-only) |
-| UX / API / métier runtime | Aucun changement |
-
-**Suite après validation CTO :** intégrer les arbitrages §11 (section Décisions CTO), tag `d3.6a`, **puis seulement** ouvrir **D3.6b — Contrat Notes + persistance canonique**, sans ToolLayout, sans Bulletins, sans D3.5c.
+| Undraft → merge | Après checks verts |
+| Tag | `d3.6a` après merge sur `develop` |
+| Suite | Ouvrir **D3.6b** en draft (contrat + persistance — pas chrome DS, pas Bulletins) |

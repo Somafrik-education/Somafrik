@@ -2,7 +2,7 @@
 
 **Type :** Audit / scope lock (documentation uniquement)  
 **Module :** Notes / Évaluations  
-**Sous-périmètre :** D3.6a — inventaire post-`d3.5b` + verrouillage sous-lots  
+**Sous-périmètre :** D3.6a — inventaire post-`d3.5b` + décisions CTO  
 **Impact runtime :** Non  
 **Migration métier :** Non  
 **Backend/API :** Inchangés  
@@ -12,15 +12,14 @@
 **Audit :** [AUDIT-D3.6-notes.md](./AUDIT-D3.6-notes.md)  
 **Base :** `develop` @ `b533652c` · tags `d2.8e`, `d3.2a`, `d3.4a`, `d3.4b`, `d3.5a`, `d3.5b`
 
-**Numérotation :** D3.6 = Notes · D3.5 = Présences (clos) · Bulletins = **D3.7** (hors lot)
+**Numérotation validée CTO :** D3.6 = Notes · Bulletins = D3.7 · Présences / EntityPage non rouverts
 
 ---
 
 ## 1. Objectif
 
-Ouvrir le jalon Notes dans la stratégie **audit → décisions → implémentation incrémentale → validation → tag**, sans écrire de code applicatif tant que le gate §11 n’est pas levé.
-
-Pourquoi Notes après Présences : le socle Élèves / Classes / Enseignants / Parents / Présences est stable ; Notes pourra ensuite alimenter les Bulletins (D3.7) sans revenir modifier les contrats précédents.
+Clôturer D3.6a : audit + **arbitrages produit/tech du gate §11**, sans code applicatif.  
+Prochain lot autorisé : **D3.6b — Contrat Notes + persistance canonique** (pas de chrome DS, pas de Bulletins).
 
 ---
 
@@ -28,8 +27,8 @@ Pourquoi Notes après Présences : le socle Élèves / Classes / Enseignants / P
 
 | Document | Action |
 |----------|--------|
-| `AUDIT-D3.6-notes.md` | Créé |
-| `RAPPORT-D3.6a-audit-notes.md` | Créé |
+| `AUDIT-D3.6-notes.md` | Créé puis amendé (Décisions CTO §11) |
+| `RAPPORT-D3.6a-audit-notes.md` | Aligné |
 | `SUIVI-MIGRATIONS.md` / `README.md` | Alignés |
 
 **Fichiers `web/src/**`, `backend/**`, `Mobile/**` :** aucun.
@@ -40,70 +39,55 @@ Pourquoi Notes après Présences : le socle Élèves / Classes / Enseignants / P
 
 | Élément | Statut |
 |---------|--------|
-| Outil web `/notes` | Présent — `GradesEvaluationsPage` legacy P-007 non DS |
-| Saisie mobile | Présent — `POST /api/notes` |
-| Lecture parent / élève | Présent — filtre évaluations Publiée |
-| Onglet fiche Élève « Résultats » | Catalogué, non implémenté |
-| Modèle typé | `Evaluation` + `StudentGrade` (NE-*) |
-| Persistance | Dual PG `grades` + JSON BO `notes`/`evaluations` |
-| Unicité PG | Absente (intégrité JSON seulement) |
-| Calculs | Triple GradeBookService non aligné |
-| Bulletins | Sync opportuniste + EntityPage — **D3.7** |
-| Chrome DS | 🔒 0 % |
+| Surface web canonique | `/notes` (évaluations, saisie, verrouillage, publication) |
+| Mobile enseignant | Saisie terrain sur évaluations `open` |
+| Lecture parent / élève | Évaluations `published` uniquement |
+| Onglet fiche Élève « Résultats » | 🔒 Hors D3.6b |
+| Évaluation | Entité distincte · barème + coefficient |
+| Note | `evaluation_id` + `student_id` · score selon statut |
+| Unicité cible | `UNIQUE (school_id, evaluation_id, student_id)` |
+| Persistance cible | PostgreSQL canonique · JSON BO transitoire / mémoire |
+| Calcul | Une règle normative backend · web/mobile consommateurs |
+| Bulletins | Publication ≠ bulletin · sync actuelle à isoler · **D3.7** |
 
 ---
 
-## 4. Périmètre verrouillé
+## 4. Décisions CTO (gate §11 levé)
+
+| # | Sujet | Décision |
+|---|-------|----------|
+| 1 | Évaluation | Entité distincte · statuts `draft/open/locked/published/archived` |
+| 2 | Note | Liée à une évaluation · barème/coef sur l’évaluation · UNIQUE school+eval+student |
+| 3 | Statuts saisie | `graded/absent/excused/not_submitted/exempt` · pas de zéro implicite |
+| 4 | Granularité | évaluation × élève · pas de `grade_sessions` en D3.6b |
+| 5 | Persistance | PG canonique (évaluations + notes) · JSON non autorité durable |
+| 6 | Migration | Inventaire → résolution eval → dédup → UNIQUE → bascule écritures |
+| 7 | Calcul | Une implémentation normative · exclusions 4 statuts · arrondi affichage seul |
+| 8 | Interfaces | `/notes` + mobile · fiche Élève / ToolLayout / Bulletins hors D3.6b |
+| 9 | Bulletins | Publication ≠ bulletin · sync opportuniste isolée · D3.7 |
+
+Détail : [AUDIT §11](./AUDIT-D3.6-notes.md#11-décisions-cto--arbitrages-du-gate).
+
+---
+
+## 5. Périmètre verrouillé
 
 | Sous-lot | Décision |
 |----------|----------|
-| D3.6a Audit | ✅ Livré (docs) |
-| Gate §11 (contrat / granularité / source / calculs / interfaces) | 🔒 Décision CTO |
-| D3.6b Contrat + persistance canonique | 🔒 Après §11 |
-| D3.6c Migration écrans Notes | 🔒 Après D3.6b |
+| D3.6a Audit + décisions | ✅ Livré (docs) |
+| D3.6b Contrat + persistance | 🔓 Prochain — draft après tag `d3.6a` |
+| D3.6c Écrans / ToolLayout | 🔒 Après D3.6b |
 | Bulletins (D3.7) | 🔒 Hors D3.6 |
-| ToolLayout Notes / Présences · D3.5c | 🔒 |
-| EntityPage / D3.1–D3.5 | 🔒 Clos — ne pas rouvrir |
+| EntityPage / D3.1–D3.5 / D3.5c | 🔒 Clos |
 
 ---
 
-## 5. Gate CTO (à lever)
-
-Avant D3.6b, figer :
-
-1. Contrat de la note (valeur, barème, coefficient, type d’évaluation, statuts)  
-2. Granularité (évaluation, matière, période / trimestre-semestre)  
-3. Source canonique (une seule table de notes ; sort des évaluations JSON)  
-4. Règles de calcul (moyennes, pondérations, arrondis, exclusions)  
-5. Interfaces (enseignant, administration, parent/élève)  
-6. Interfaces futures avec Bulletins, classements, statistiques  
-
-Détail et propositions audit : [AUDIT §11](./AUDIT-D3.6-notes.md#11-questions-produit-à-trancher-gate-avant-code).
-
----
-
-## 6. Séquence recommandée
-
-```
-D3.6a  Audit Notes (docs only)          ← ce lot
-        ↓
-Validation CTO (§11)
-        ↓
-D3.6b  Contrat Notes + persistance canonique
-        ↓
-D3.6c  Migration des écrans Notes
-        ↓
-D3.7   Bulletins
-```
-
----
-
-## 7. Tableau CTO
+## 6. Tableau CTO
 
 | Élément | Résultat |
 |---------|----------|
 | Changement fonctionnel | Non |
 | Code applicatif modifié | Non |
-| Audit Notes ouvert | Oui (D3.6a) |
-| Sous-lots verrouillés | Oui |
-| Suite | Arbitrages §11 → tag `d3.6a` → D3.6b uniquement sur instruction |
+| Audit Notes | Oui (D3.6a) |
+| Gate §11 | ✅ Décisions intégrées |
+| Suite | Tag `d3.6a` → ouvrir D3.6b draft (pas écrans, pas Bulletins) |
