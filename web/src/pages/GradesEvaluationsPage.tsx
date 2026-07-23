@@ -11,6 +11,7 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
+import { ForbiddenState, ToolLayout } from "../design-system";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { classNamesMatch } from "../lib/classRules";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
@@ -355,176 +356,189 @@ export function GradesEvaluationsPage() {
 
   if (!canRead) {
     return (
-      <Card className="p-6">
-        <p className="text-sm text-muted">Accès aux notes non autorisé pour votre rôle.</p>
-      </Card>
+      <ForbiddenState
+        title="Accès aux notes non autorisé"
+        message="Votre rôle ne permet pas d'ouvrir l'outil Notes & évaluations."
+      />
     );
   }
 
   return (
-    <div className="space-y-6">
-      <Card className="p-6">
-        <SectionHeader
-          title="Notes & évaluations"
-          description="Création d'évaluations, saisie des notes, moyennes, validation et préparation des bulletins."
-          actions={
-            <div className="flex flex-wrap gap-2">
-              <PrintButton />
-              <Button variant="secondary" onClick={exportGrades}>
-                Exporter CSV
-              </Button>
-              {canCreate ? (
-                <Button
-                  onClick={() => {
-                    setEditingEvaluation(null);
-                    setFormOpen(true);
-                  }}
-                >
-                  Nouvelle évaluation
+    <>
+      <ToolLayout>
+        <ToolLayout.Header>
+          <SectionHeader
+            title="Notes & évaluations"
+            description="Création d'évaluations, saisie des notes, moyennes et validation (contrat D3.6b)."
+            actions={
+              <div className="flex flex-wrap gap-2">
+                <PrintButton />
+                <Button variant="secondary" onClick={exportGrades}>
+                  Exporter CSV
                 </Button>
-              ) : null}
-            </div>
-          }
-        />
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {TABS.map((item) => (
-            <Button
-              key={item.key}
-              variant={tab === item.key ? "primary" : "secondary"}
-              onClick={() => setTab(item.key)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Field label="Période">
-            <Input value={period} onChange={(e) => setPeriod(e.target.value)} />
-          </Field>
-          {tab !== "eleve" ? (
-            <Field label="Classe">
-              <Select
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
-                options={classNames.map((name) => ({ value: name, label: name }))}
-              />
-            </Field>
-          ) : (
-            <Field label="Élève">
-              <Select
-                value={selectedStudentId}
-                onChange={(e) => setSelectedStudentId(e.target.value)}
-                options={[
-                  { value: "", label: "Choisir…" },
-                  ...students.map((student) => ({
-                    value: String(student.id ?? ""),
-                    label: String(student.name ?? student.id ?? ""),
-                  })),
-                ]}
-              />
-            </Field>
-          )}
-        </div>
-      </Card>
-
-      {tab === "evaluations" ? (
-        <Card className="p-6">
-          <Table
-            columns={evaluationColumns}
-            rows={filteredEvaluations}
-            rowKey={(row) => row.id}
-          />
-        </Card>
-      ) : null}
-
-      {tab === "saisie" ? (
-        <Card className="p-6">
-          <Field label="Évaluation">
-            <Select
-              value={selectedEvaluationId}
-              onChange={(e) => setSelectedEvaluationId(e.target.value)}
-              options={[
-                { value: "", label: "Choisir une évaluation…" },
-                ...filteredEvaluations
-                  .filter((evaluation) => !selectedClass || classNamesMatch(evaluation.className, selectedClass))
-                  .map((evaluation) => ({
-                    value: evaluation.id,
-                    label: `${evaluation.title} — ${evaluation.subject}`,
-                  })),
-              ]}
-            />
-          </Field>
-          {selectedEvaluation ? (
-            <div className="mt-4">
-              <GradeEntryGrid
-                evaluation={selectedEvaluation}
-                students={students}
-                grades={allGrades(state)}
-                canEdit={
-                  canUpdate &&
-                  teacherCanAccessEvaluation(scopeUser, selectedEvaluation, state) &&
-                  canEditEvaluation(selectedEvaluation, state)
-                }
-                user={scopeUser}
-                onChange={(next) => void handleGradesChange(next)}
-                onError={(message) => showToast(message, "error")}
-              />
-              {canCorrectValidatedGrades(scopeUser) ? (
-                <div className="mt-4">
+                {canCreate ? (
                   <Button
-                    variant="secondary"
                     onClick={() => {
-                      const validated = grades.find(
-                        (grade) =>
-                          grade.evaluationId === selectedEvaluation.id &&
-                          (grade.gradeStatus === "Validée" || grade.gradeStatus === "Corrigée"),
-                      );
-                      if (!validated) {
-                        showToast("Aucune note validée à corriger pour cette évaluation.", "error");
-                        return;
-                      }
-                      setCorrectionGrade(validated);
-                      setCorrectionValue(String(validated.value ?? ""));
+                      setEditingEvaluation(null);
+                      setFormOpen(true);
                     }}
                   >
-                    Corriger une note validée
+                    Nouvelle évaluation
                   </Button>
+                ) : null}
+              </div>
+            }
+          />
+        </ToolLayout.Header>
+
+        <ToolLayout.Context>
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Vues Notes">
+            {TABS.map((item) => (
+              <Button
+                key={item.key}
+                variant={tab === item.key ? "primary" : "secondary"}
+                onClick={() => setTab(item.key)}
+                aria-selected={tab === item.key}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Field label="Période">
+              <Input value={period} onChange={(e) => setPeriod(e.target.value)} />
+            </Field>
+            {tab !== "eleve" ? (
+              <Field label="Classe">
+                <Select
+                  value={selectedClass}
+                  onChange={(e) => setSelectedClass(e.target.value)}
+                  options={classNames.map((name) => ({ value: name, label: name }))}
+                />
+              </Field>
+            ) : (
+              <Field label="Élève">
+                <Select
+                  value={selectedStudentId}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  options={[
+                    { value: "", label: "Choisir…" },
+                    ...students.map((student) => ({
+                      value: String(student.id ?? ""),
+                      label: String(student.name ?? student.id ?? ""),
+                    })),
+                  ]}
+                />
+              </Field>
+            )}
+          </div>
+        </ToolLayout.Context>
+
+        <ToolLayout.Content>
+          {tab === "evaluations" ? (
+            <Card className="p-6">
+              <Table
+                columns={evaluationColumns}
+                rows={filteredEvaluations}
+                rowKey={(row) => row.id}
+              />
+            </Card>
+          ) : null}
+
+          {tab === "saisie" ? (
+            <Card className="p-6">
+              <Field label="Évaluation">
+                <Select
+                  value={selectedEvaluationId}
+                  onChange={(e) => setSelectedEvaluationId(e.target.value)}
+                  options={[
+                    { value: "", label: "Choisir une évaluation…" },
+                    ...filteredEvaluations
+                      .filter(
+                        (evaluation) =>
+                          !selectedClass || classNamesMatch(evaluation.className, selectedClass),
+                      )
+                      .map((evaluation) => ({
+                        value: evaluation.id,
+                        label: `${evaluation.title} — ${evaluation.subject}`,
+                      })),
+                  ]}
+                />
+              </Field>
+              {selectedEvaluation ? (
+                <div className="mt-4">
+                  <GradeEntryGrid
+                    evaluation={selectedEvaluation}
+                    students={students}
+                    grades={allGrades(state)}
+                    canEdit={
+                      canUpdate &&
+                      teacherCanAccessEvaluation(scopeUser, selectedEvaluation, state) &&
+                      canEditEvaluation(selectedEvaluation, state)
+                    }
+                    user={scopeUser}
+                    onChange={(next) => void handleGradesChange(next)}
+                    onError={(message) => showToast(message, "error")}
+                  />
+                  {canCorrectValidatedGrades(scopeUser) ? (
+                    <div className="mt-4">
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const validated = grades.find(
+                            (grade) =>
+                              grade.evaluationId === selectedEvaluation.id &&
+                              (grade.gradeStatus === "Validée" || grade.gradeStatus === "Corrigée"),
+                          );
+                          if (!validated) {
+                            showToast(
+                              "Aucune note validée à corriger pour cette évaluation.",
+                              "error",
+                            );
+                            return;
+                          }
+                          setCorrectionGrade(validated);
+                          setCorrectionValue(String(validated.value ?? ""));
+                        }}
+                      >
+                        Corriger une note validée
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
-            </div>
+            </Card>
           ) : null}
-        </Card>
-      ) : null}
 
-      {tab === "classe" ? (
-        <ClassGradesOverview
-          className={selectedClass}
-          period={period}
-          state={state}
-          user={scopeUser}
-        />
-      ) : null}
+          {tab === "classe" ? (
+            <ClassGradesOverview
+              className={selectedClass}
+              period={period}
+              state={state}
+              user={scopeUser}
+            />
+          ) : null}
 
-      {tab === "eleve" ? (
-        <StudentGradesPanel
-          student={students.find((row) => String(row.id) === selectedStudentId) ?? null}
-          state={state}
-          user={scopeUser}
-          period={period}
-        />
-      ) : null}
+          {tab === "eleve" ? (
+            <StudentGradesPanel
+              student={students.find((row) => String(row.id) === selectedStudentId) ?? null}
+              state={state}
+              user={scopeUser}
+              period={period}
+            />
+          ) : null}
 
-      {tab === "stats" ? (
-        <ClassGradesOverview
-          className={selectedClass}
-          period={period}
-          state={state}
-          user={scopeUser}
-          difficultyThreshold={10}
-        />
-      ) : null}
+          {tab === "stats" ? (
+            <ClassGradesOverview
+              className={selectedClass}
+              period={period}
+              state={state}
+              user={scopeUser}
+              difficultyThreshold={10}
+            />
+          ) : null}
+        </ToolLayout.Content>
+      </ToolLayout>
 
       <EvaluationFormModal
         open={formOpen}
@@ -568,6 +582,6 @@ export function GradesEvaluationsPage() {
           </Field>
         </div>
       </Modal>
-    </div>
+    </>
   );
 }

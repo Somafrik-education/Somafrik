@@ -39,9 +39,9 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Présences | Chrome DS / ToolLayout | 🔒 | `ToolLayout` (cible) | Après stabilisation métier · pas de D3.5c |
 | Notes / Évaluations | D3.6a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.6-notes.md) · décisions CTO §11 |
 | Notes / Évaluations | Surface / contrat données | ✅ | — | `/notes` + mobile ; eval×élève ; PG cible ; UNIQUE school+eval+student |
-| Notes / Évaluations | D3.6b — Contrat & persistance canonique | ⏳ | — | [CONTRAT](./CONTRAT-D3.6b-notes.md) · PR en cours |
-| Notes / Évaluations | D3.6c — Migration écrans | 🔒 | `ToolLayout` (cible) | Après D3.6b · pas en parallèle |
-| Notes / Évaluations | Onglet fiche Élève « Résultats » | 🔒 | — | Hors D3.6b |
+| Notes / Évaluations | D3.6b — Contrat & persistance canonique | ✅ | — | [CONTRAT](./CONTRAT-D3.6b-notes.md) · tag `d3.6b` |
+| Notes / Évaluations | D3.6c — Migration écrans | ⏳ | `ToolLayout` | [RAPPORT](./RAPPORT-D3.6c-notes-toollayout.md) · `/notes` · pas de D3.7 |
+| Notes / Évaluations | Onglet fiche Élève « Résultats » | 🔒 | — | Hors D3.6c |
 | Bulletins | D3.7 | 🔒 | — | Après Notes stabilisées · publication ≠ bulletin · pas en parallèle |
 
 ## Suivi consolidé
@@ -82,7 +82,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
 | Présences | ✅ / 🔒 | — | D3.5a/b clos (`d3.5b`) | Chrome DS / ToolLayout 🔒 · pas de D3.5c |
-| Notes | ✅ / ⏳ | — | D3.6a clos (`d3.6a`) · D3.6b persistance | PG évaluations+notes ; chrome DS 🔒 ; Bulletins D3.7 🔒 |
+| Notes | ✅ / ⏳ | `ToolLayout` | D3.6a/b clos (`d3.6b`) · D3.6c chrome | `/notes` ToolLayout ; Résultats 🔒 ; Bulletins D3.7 🔒 |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
 | RH | 🔒 | — | 0 % | Oui |
 
@@ -101,7 +101,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.5a : audit / verrouillage Présences — [AUDIT](./AUDIT-D3.5-presences.md) · [RAPPORT](./RAPPORT-D3.5a-audit-presences.md). Tag : `d3.5a`.
 - D3.5b : contrat + persistance Présences — [CONTRAT](./CONTRAT-D3.5b-presences.md) · [RAPPORT](./RAPPORT-D3.5b-presences-persistence.md). Tag `d3.5b` @ `b533652c`. PG UNIQUE · upsert · pas ToolLayout / Notes · **pas de D3.5c**.
 - D3.6a : audit / verrouillage Notes — [AUDIT](./AUDIT-D3.6-notes.md) · [RAPPORT](./RAPPORT-D3.6a-audit-notes.md). Tag `d3.6a` @ `8885cd92`.
-- D3.6b : contrat + persistance Notes — [CONTRAT](./CONTRAT-D3.6b-notes.md) · [RAPPORT](./RAPPORT-D3.6b-notes-persistence.md). PG `evaluations`+`grades` · UNIQUE school+eval+student · migration legacy · calcul canonique · JSON mémoire-only. **Pas de D3.6c / D3.7 en parallèle.**
+- D3.6b : contrat + persistance Notes — [CONTRAT](./CONTRAT-D3.6b-notes.md) · [RAPPORT](./RAPPORT-D3.6b-notes-persistence.md). Tag `d3.6b` @ `62bdda16`. PG `evaluations`+`grades` · UNIQUE school+eval+student · migration legacy · calcul canonique · JSON mémoire-only.
+- D3.6c : migration écrans Notes — [RAPPORT](./RAPPORT-D3.6c-notes-toollayout.md). `/notes` → `ToolLayout` · contrat D3.6b conservé · **pas** de persistance · **pas** d’onglet Résultats · **pas de D3.7 en parallèle.**
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
