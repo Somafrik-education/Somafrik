@@ -218,7 +218,10 @@ CREATE TABLE IF NOT EXISTS evaluations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT evaluations_max_score_positive CHECK (max_score > 0),
-  CONSTRAINT evaluations_coefficient_positive CHECK (coefficient > 0)
+  CONSTRAINT evaluations_coefficient_positive CHECK (coefficient > 0),
+  CONSTRAINT evaluations_status_check CHECK (
+    status IN ('draft', 'open', 'locked', 'published', 'archived')
+  )
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluations_school_legacy_json_id
@@ -248,7 +251,15 @@ CREATE TABLE IF NOT EXISTS grades (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT grades_score_check CHECK (score IS NULL OR score <= max_score),
-  CONSTRAINT grades_score_non_negative CHECK (score IS NULL OR score >= 0)
+  CONSTRAINT grades_score_non_negative CHECK (score IS NULL OR score >= 0),
+  CONSTRAINT grades_version_positive CHECK (version >= 1),
+  CONSTRAINT grades_status_check CHECK (
+    grade_status IN ('graded', 'absent', 'excused', 'not_submitted', 'exempt')
+  ),
+  CONSTRAINT grades_status_score_coherence CHECK (
+    (grade_status = 'graded' AND score IS NOT NULL)
+    OR (grade_status <> 'graded' AND score IS NULL)
+  )
 );
 
 -- D3.6b : colonnes canoniques sur bases legacy (schéma non bloquant)

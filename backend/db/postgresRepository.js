@@ -96,9 +96,45 @@ class PostgresRepository {
    * D3.6b — Ordre : schéma déjà appliqué → inventaire/migration JSON → dédup → UNIQUE.
    */
   async ensureNotesCanonicalPersistence() {
+    // Ordre D3.6b : inventaire/rattachement → anomalies → dédup → UNIQUE → contraintes.
     await this.migrateEvaluationsFromBackOffice();
     await this.migrateNotesFromBackOffice();
     await this.ensureGradeCanonicalUniqueness();
+    await this.ensureGradeContractConstraints();
+  }
+
+  async ensureGradeContractConstraints() {
+    const statements = [
+      `DO $$ BEGIN
+         ALTER TABLE evaluations
+           ADD CONSTRAINT evaluations_status_check
+           CHECK (status IN ('draft', 'open', 'locked', 'published', 'archived'));
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+      `DO $$ BEGIN
+         ALTER TABLE grades
+           ADD CONSTRAINT grades_version_positive CHECK (version >= 1);
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+      `DO $$ BEGIN
+         ALTER TABLE grades
+           ADD CONSTRAINT grades_status_check
+           CHECK (grade_status IN ('graded', 'absent', 'excused', 'not_submitted', 'exempt'));
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+      `DO $$ BEGIN
+         ALTER TABLE grades
+           ADD CONSTRAINT grades_status_score_coherence
+           CHECK (
+             (grade_status = 'graded' AND score IS NOT NULL)
+             OR (grade_status <> 'graded' AND score IS NULL)
+           );
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+    ];
+    for (const sql of statements) {
+      try {
+        await this.pool.query(sql);
+      } catch (error) {
+        console.warn(`[D3.6b] Contrainte grades/evaluations non appliquée: ${error.message}`);
+      }
+    }
   }
 
   async ensureGradeCanonicalUniqueness() {
@@ -581,20 +617,26 @@ class PostgresRepository {
 
   async saveBackOfficeState(payload) {
     await this.init();
+    // D3.6b : synchroniser d'abord vers PG, puis ne PAS persister notes/evaluations
+    // comme seconde autorité durable dans le JSON BackOffice.
+    try {
+      await this.syncNotesDomainFromBackOffice(payload ?? {});
+    } catch (error) {
+      console.warn(`[D3.6b] Sync BO→PG notes domain: ${error.message}`);
+    }
+    const durablePayload = {
+      ...(payload ?? {}),
+      notes: [],
+      evaluations: [],
+    };
     await this.pool.query(
       `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
        VALUES ('default', $1, NOW())
        ON CONFLICT (state_key) DO UPDATE SET
          state_payload = EXCLUDED.state_payload,
          updated_at = NOW()`,
-      [JSON.stringify(payload ?? {})]
+      [JSON.stringify(durablePayload)]
     );
-    // D3.6b : PG reste l'autorité — synchroniser évaluations/notes touchées.
-    try {
-      await this.syncNotesDomainFromBackOffice(payload ?? {});
-    } catch (error) {
-      console.warn(`[D3.6b] Sync BO→PG notes domain: ${error.message}`);
-    }
     this.cachedDataset = null;
     return this.getBackOfficeState();
   }

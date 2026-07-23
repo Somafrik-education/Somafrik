@@ -27,9 +27,11 @@ Appliquer les décisions CTO D3.6a §11 : évaluation distincte, note liée, UNI
 | `gradeUniqueness.js` | SQL count / dédup / UNIQUE partiel |
 | `postgresRepository` | Migration BO→PG · upsert évaluation/note · mapEvaluation/mapGrade · sync save BO |
 | `server.js` | Fallback JSON **mémoire seulement** · filtre `published` |
+| `saveBackOfficeState` | Sync PG puis strip durable `notes`/`evaluations` |
 | `gradeBookService.js` | Moteur calcul canonique + exclusions |
+| `web/mobile gradeBook` | Consommateurs alignés (exclusions D3.6b, pas de zéro implicite) |
 | `dataIntegrityRules` | Contrat note + unicité eval×élève |
-| Tests | `noteContract.test.js` · `gradeUniqueness.test.js` |
+| Tests | `noteContract` · `gradeUniqueness` · `gradesMigrationOrder` |
 
 **Interdit (respecté) :** ToolLayout · GradesEvaluationsPage refonte · onglet Résultats · Bulletins / D3.7 · D3.6c.
 
@@ -47,6 +49,7 @@ Appliquer les décisions CTO D3.6a §11 : évaluation distincte, note liée, UNI
 | Migration legacy déterministe | Oui |
 | Anomalies `evaluation_id` manquant | Oui (warn, pas de fusion silencieuse) |
 | Calcul pondéré canonique | Oui |
-| JSON non durable en mode PG | Oui (fallback mémoire) |
+| JSON non durable en mode PG | Oui (fallback mémoire + strip BO) |
+| Calcul web/mobile aligné | Oui (exclusions, pas moteur divergent) |
 | Filtre parent/élève published | Oui |
 | Chrome DS / Bulletins | Non |

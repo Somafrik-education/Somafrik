@@ -29,8 +29,29 @@ export type AcademicGrade = NoteItem & {
   evaluationCoefficient?: number;
   authorId?: string;
   enteredAt?: string;
+  gradeStatus?: string;
+  status?: string;
   audit?: GradeAuditEntry[];
 };
+
+/** D3.6b — aligné sur backend/lib/gradesCanonical (statuts non notés exclus). */
+const EXCLUDED_GRADE_STATUSES = new Set([
+  "Absente",
+  "Justifiée",
+  "Dispensée",
+  "En attente",
+  "Non justifiée",
+  "absent",
+  "excused",
+  "not_submitted",
+  "exempt",
+]);
+
+function gradeCountsInAverage(grade: AcademicGrade): boolean {
+  const status = String(grade.gradeStatus ?? grade.status ?? "").trim();
+  if (status && EXCLUDED_GRADE_STATUSES.has(status)) return false;
+  return typeof grade.value === "number" && !Number.isNaN(grade.value);
+}
 
 export type StudentAverage = {
   studentId: string;
@@ -175,12 +196,16 @@ export class GradeBookService {
 
   private computeAverage(grades: AcademicGrade[], subject: string) {
     const courseCoefficient = this.getCourseCoefficient(subject);
-    const totalWeighted = grades.reduce((sum, grade) => {
+    const eligible = grades.filter((grade) => gradeCountsInAverage(grade));
+    const totalWeighted = eligible.reduce((sum, grade) => {
       const scale = grade.scale ?? 20;
       const normalizedValue = scale === 20 ? grade.value : (grade.value / scale) * 20;
       return sum + normalizedValue * (grade.evaluationCoefficient ?? 1);
     }, 0);
-    const totalEvaluationCoefficients = grades.reduce((sum, grade) => sum + (grade.evaluationCoefficient ?? 1), 0);
+    const totalEvaluationCoefficients = eligible.reduce(
+      (sum, grade) => sum + (grade.evaluationCoefficient ?? 1),
+      0,
+    );
     const average = totalEvaluationCoefficients ? totalWeighted / totalEvaluationCoefficients : 0;
 
     return {

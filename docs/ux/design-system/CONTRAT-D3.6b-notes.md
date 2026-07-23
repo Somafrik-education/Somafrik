@@ -84,7 +84,9 @@ Pas de `grade_sessions` dans D3.6b.
 | **PostgreSQL `evaluations` + `grades`** | Source d’autorité canonique |
 | JSON BackOffice `evaluations` / `notes` | Transitoire / secours **mémoire uniquement** |
 
-En moteur `postgresql`, l’écriture API ne doit pas basculer silencieusement vers le JSON comme seconde autorité durable.
+En moteur `postgresql` :
+- `POST /api/notes` n’écrit **pas** de JSON durable (fallback mémoire seulement) ;
+- `saveBackOfficeState` synchronise d’abord vers PG puis **persiste `notes: []` / `evaluations: []`** dans le blob JSON (pas de seconde autorité durable).
 
 ### Migration bases legacy
 
