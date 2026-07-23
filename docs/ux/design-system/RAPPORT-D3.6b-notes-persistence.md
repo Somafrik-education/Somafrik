@@ -27,7 +27,8 @@ Appliquer les décisions CTO D3.6a §11 : évaluation distincte, note liée, UNI
 | `gradeUniqueness.js` | SQL count / dédup / UNIQUE partiel |
 | `postgresRepository` | Migration BO→PG · upsert évaluation/note · mapEvaluation/mapGrade · sync save BO |
 | `server.js` | Fallback JSON **mémoire seulement** · filtre `published` |
-| `saveBackOfficeState` | Sync PG puis strip durable `notes`/`evaluations` |
+| `saveBackOfficeState` | Transaction sync PG fail-fast → strip JSON ; échec ⇒ pas de vide silencieux |
+| `gradesBoPersistence` | Helpers + tests perte silencieuse / normalisation contraintes |
 | `gradeBookService.js` | Moteur calcul canonique + exclusions |
 | `web/mobile gradeBook` | Consommateurs alignés (exclusions D3.6b, pas de zéro implicite) |
 | `dataIntegrityRules` | Contrat note + unicité eval×élève |

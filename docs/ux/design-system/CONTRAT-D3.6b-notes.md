@@ -86,7 +86,8 @@ Pas de `grade_sessions` dans D3.6b.
 
 En moteur `postgresql` :
 - `POST /api/notes` n’écrit **pas** de JSON durable (fallback mémoire seulement) ;
-- `saveBackOfficeState` synchronise d’abord vers PG puis **persiste `notes: []` / `evaluations: []`** dans le blob JSON (pas de seconde autorité durable).
+- `saveBackOfficeState` : **transaction** sync PG complète (fail-fast, aucune absorption d’erreur) → seulement ensuite strip `notes: []` / `evaluations: []` ;
+- échec d’une seule entrée ⇒ ROLLBACK · JSON **non vidé** (conservation explicite).
 
 ### Migration bases legacy
 

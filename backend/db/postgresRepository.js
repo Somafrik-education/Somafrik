@@ -79,7 +79,7 @@ class PostgresRepository {
     }
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
-    await this.pool.query(schema);
+    await this.query(schema);
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
     if (shouldSeedDemoData()) {
@@ -96,14 +96,53 @@ class PostgresRepository {
    * D3.6b — Ordre : schéma déjà appliqué → inventaire/migration JSON → dédup → UNIQUE.
    */
   async ensureNotesCanonicalPersistence() {
-    // Ordre D3.6b : inventaire/rattachement → anomalies → dédup → UNIQUE → contraintes.
+    // Ordre D3.6b : inventaire/rattachement → anomalies → dédup → UNIQUE → normalisation → contraintes.
     await this.migrateEvaluationsFromBackOffice();
     await this.migrateNotesFromBackOffice();
     await this.ensureGradeCanonicalUniqueness();
+    await this.normalizeLegacyGradeContractRows();
     await this.ensureGradeContractConstraints();
   }
 
+  /**
+   * Normalise les lignes legacy incohérentes avant application des CHECK.
+   * Sans cette étape, ensureGradeContractConstraints doit échouer (fail-fast).
+   */
+  async normalizeLegacyGradeContractRows() {
+    await this.query(
+      `UPDATE grades
+       SET version = 1
+       WHERE version IS NULL OR version < 1`,
+    );
+    await this.query(
+      `UPDATE grades
+       SET grade_status = CASE
+         WHEN score IS NOT NULL THEN 'graded'
+         ELSE 'not_submitted'
+       END
+       WHERE grade_status IS NULL
+          OR grade_status NOT IN ('graded', 'absent', 'excused', 'not_submitted', 'exempt')`,
+    );
+    await this.query(
+      `UPDATE grades
+       SET grade_status = 'not_submitted', score = NULL
+       WHERE grade_status = 'graded' AND score IS NULL`,
+    );
+    await this.query(
+      `UPDATE grades
+       SET grade_status = 'graded'
+       WHERE grade_status <> 'graded' AND score IS NOT NULL`,
+    );
+    await this.query(
+      `UPDATE evaluations
+       SET status = 'draft'
+       WHERE status IS NULL
+          OR status NOT IN ('draft', 'open', 'locked', 'published', 'archived')`,
+    );
+  }
+
   async ensureGradeContractConstraints() {
+    // duplicate_object géré en SQL (idempotence). Toute autre erreur remonte et bloque init.
     const statements = [
       `DO $$ BEGIN
          ALTER TABLE evaluations
@@ -129,11 +168,34 @@ class PostgresRepository {
        EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
     ];
     for (const sql of statements) {
+      await this.query(sql);
+    }
+  }
+
+  async query(sql, params = []) {
+    const runner = this._txClient ?? this.pool;
+    return runner.query(sql, params);
+  }
+
+  async withTransaction(fn) {
+    const client = await this.pool.connect();
+    const previous = this._txClient;
+    this._txClient = client;
+    try {
+      await client.query("BEGIN");
+      const result = await fn(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
       try {
-        await this.pool.query(sql);
-      } catch (error) {
-        console.warn(`[D3.6b] Contrainte grades/evaluations non appliquée: ${error.message}`);
+        await client.query("ROLLBACK");
+      } catch (_rollbackError) {
+        // conserve l'erreur métier d'origine
       }
+      throw error;
+    } finally {
+      this._txClient = previous;
+      client.release();
     }
   }
 
@@ -159,7 +221,7 @@ class PostgresRepository {
       console.warn(
         `[D3.6b] Notes : ${duplicateGroups} groupe(s) en doublon — conservation version/updated_at/created_at/id DESC`,
       );
-      await this.pool.query(DEDUP_GRADES_KEEP_LATEST_SQL);
+      await this.query(DEDUP_GRADES_KEEP_LATEST_SQL);
     }
 
     const after = await this.one(COUNT_GRADE_DUPLICATE_GROUPS_SQL);
@@ -169,7 +231,7 @@ class PostgresRepository {
       );
     }
 
-    await this.pool.query(CREATE_GRADE_UNIQUE_INDEX_SQL);
+    await this.query(CREATE_GRADE_UNIQUE_INDEX_SQL);
   }
 
   async migrateEvaluationsFromBackOffice() {
@@ -275,7 +337,7 @@ class PostgresRepository {
       console.warn(
         `[D3.5b] Présences : ${duplicateGroups} groupe(s) en doublon — conservation updated_at/created_at/id DESC`,
       );
-      await this.pool.query(DEDUP_ATTENDANCE_KEEP_LATEST_SQL);
+      await this.query(DEDUP_ATTENDANCE_KEEP_LATEST_SQL);
     }
 
     const after = await this.one(COUNT_ATTENDANCE_DUPLICATE_GROUPS_SQL);
@@ -285,7 +347,7 @@ class PostgresRepository {
       );
     }
 
-    await this.pool.query(CREATE_ATTENDANCE_UNIQUE_INDEX_SQL);
+    await this.query(CREATE_ATTENDANCE_UNIQUE_INDEX_SQL);
   }
 
   async getDataset() {
@@ -480,12 +542,12 @@ class PostgresRepository {
   }
 
   async all(sql, params = []) {
-    const result = await this.pool.query(sql, params);
+    const result = await this.query(sql, params);
     return result.rows;
   }
 
   async one(sql, params = []) {
-    const result = await this.pool.query(sql, params);
+    const result = await this.query(sql, params);
     return result.rows[0];
   }
 
@@ -497,7 +559,7 @@ class PostgresRepository {
     await this.init();
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);
-    await this.pool.query(
+    await this.query(
       `INSERT INTO sessions (session_code, refresh_token_hash, user_id, school_id, role, expires_at, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [sessionId, refreshTokenHash, dbUserId, school?.id ?? null, role, expiresAt, ipAddress ?? "", userAgent ?? ""]
@@ -537,7 +599,7 @@ class PostgresRepository {
 
   async revokeSession(sessionId, reason = "logout") {
     await this.init();
-    await this.pool.query(
+    await this.query(
       "UPDATE sessions SET revoked_at = NOW(), revoke_reason = $2 WHERE session_code = $1 AND revoked_at IS NULL",
       [sessionId, reason]
     );
@@ -547,7 +609,7 @@ class PostgresRepository {
     await this.init();
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);
-    await this.pool.query(
+    await this.query(
       `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
@@ -617,26 +679,25 @@ class PostgresRepository {
 
   async saveBackOfficeState(payload) {
     await this.init();
-    // D3.6b : synchroniser d'abord vers PG, puis ne PAS persister notes/evaluations
-    // comme seconde autorité durable dans le JSON BackOffice.
-    try {
-      await this.syncNotesDomainFromBackOffice(payload ?? {});
-    } catch (error) {
-      console.warn(`[D3.6b] Sync BO→PG notes domain: ${error.message}`);
-    }
-    const durablePayload = {
-      ...(payload ?? {}),
-      notes: [],
-      evaluations: [],
-    };
-    await this.pool.query(
-      `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
-       VALUES ('default', $1, NOW())
-       ON CONFLICT (state_key) DO UPDATE SET
-         state_payload = EXCLUDED.state_payload,
-         updated_at = NOW()`,
-      [JSON.stringify(durablePayload)]
-    );
+    const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
+    // D3.6b : sync PG complète et vérifiée (fail-fast) → seulement ensuite strip JSON.
+    // Transaction : échec sync ⇒ ROLLBACK, collections notes/evaluations non vidées.
+    await this.withTransaction(async () => {
+      await persistBackOfficeAfterNotesSync({
+        payload: payload ?? {},
+        syncFn: async (body) => this.syncNotesDomainFromBackOffice(body),
+        persistFn: async (durablePayload) => {
+          await this.query(
+            `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
+             VALUES ('default', $1, NOW())
+             ON CONFLICT (state_key) DO UPDATE SET
+               state_payload = EXCLUDED.state_payload,
+               updated_at = NOW()`,
+            [JSON.stringify(durablePayload)],
+          );
+        },
+      });
+    });
     this.cachedDataset = null;
     return this.getBackOfficeState();
   }
@@ -1017,7 +1078,7 @@ class PostgresRepository {
         payload.version ?? payload.expectedVersion,
       );
       const nextVersion = noteVersion(existing) + 1;
-      await this.pool.query(
+      await this.query(
         `UPDATE grades
          SET score = $1,
              max_score = $2,
@@ -1202,7 +1263,7 @@ class PostgresRepository {
     }
 
     if (existing) {
-      await this.pool.query(
+      await this.query(
         `UPDATE evaluations
          SET class_id = $1, subject_id = $2, teacher_id = $3, term_id = $4,
              title = $5, evaluation_type = $6, evaluation_date = $7,
@@ -1257,39 +1318,46 @@ class PostgresRepository {
     return inserted;
   }
 
+  /**
+   * Sync BO → PG fail-fast : une seule entrée en échec fait échouer l'opération entière.
+   * Aucune absorption console.warn en mode PostgreSQL.
+   */
   async syncNotesDomainFromBackOffice(payload = {}) {
     const evaluations = Array.isArray(payload.evaluations) ? payload.evaluations : null;
     const notes = Array.isArray(payload.notes) ? payload.notes : null;
-    if (!evaluations && !notes) return;
+    if (!evaluations && !notes) return { synced: true, evaluationCount: 0, noteCount: 0 };
 
     if (evaluations) {
       for (const evaluation of evaluations) {
-        try {
-          await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
-        } catch (error) {
-          console.warn(`[D3.6b] Sync évaluation BO→PG ignorée: ${error.message}`);
-        }
+        await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
       }
     }
     if (notes) {
       const { toGradeStatus } = require("../lib/gradesCanonical");
       for (const note of notes) {
-        if (!String(note.evaluationId ?? "").trim()) continue;
-        try {
-          await this.upsertGrade(
-            {
-              ...note,
-              gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
-            },
-            { role: "Admin School", sub: note.authorId ?? note.updatedBy },
-            { skipCacheClear: true, allowMissingTeacher: true },
+        if (!String(note.evaluationId ?? "").trim()) {
+          const error = new Error(
+            `D3.6b: note sans evaluation_id refusée (${note.id ?? note.studentId ?? "?"})`,
           );
-        } catch (error) {
-          console.warn(`[D3.6b] Sync note BO→PG ignorée: ${error.message}`);
+          error.statusCode = 400;
+          throw error;
         }
+        await this.upsertGrade(
+          {
+            ...note,
+            gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
+          },
+          { role: "Admin School", sub: note.authorId ?? note.updatedBy },
+          { skipCacheClear: true, allowMissingTeacher: true },
+        );
       }
     }
     this.cachedDataset = null;
+    return {
+      synced: true,
+      evaluationCount: evaluations?.length ?? 0,
+      noteCount: notes?.length ?? 0,
+    };
   }
 
   normalizeComparableText(value) {
@@ -1431,7 +1499,7 @@ class PostgresRepository {
     if (!studentDbId || !classId) return;
     const academicYear = await this.getCurrentAcademicYear(schoolId);
     if (!academicYear) return;
-    await this.pool.query(
+    await this.query(
       `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, enrollment_date, status)
        VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
        ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
@@ -2047,7 +2115,7 @@ class PostgresRepository {
       return;
     }
     for (const country of seedData.countries) {
-      await this.pool.query(
+      await this.query(
         `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
          ON CONFLICT (iso_code) DO UPDATE SET
@@ -2074,7 +2142,7 @@ class PostgresRepository {
 
     for (const user of seedData.userAccounts.filter((item) => platformRoles.has(item.role))) {
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
-      await this.pool.query(
+      await this.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (user_code) DO UPDATE SET
@@ -2109,7 +2177,7 @@ class PostgresRepository {
     if (!shouldSeedDemoData()) {
       return;
     }
-    await this.pool.query(
+    await this.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
        SELECT st.school_id, st.student_code, st.first_name, st.last_name, st.parent_email, st.parent_phone,
               NULL, $1, 'STUDENT', st.status
@@ -2139,7 +2207,7 @@ class PostgresRepository {
       }
 
       try {
-        await this.pool.query(
+        await this.query(
           `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (user_code) DO UPDATE SET
@@ -2173,7 +2241,7 @@ class PostgresRepository {
 
     const demoSchoolId = schoolIds.get(demoSchoolCode);
     if (demoSchoolId) {
-      await this.pool.query(
+      await this.query(
         `UPDATE users
          SET password_hash = COALESCE(password_hash, $1),
              pin_hash = COALESCE(pin_hash, $1)
@@ -2243,7 +2311,7 @@ class PostgresRepository {
 
       for (const [studentIndex, student] of students.slice(0, 5).entries()) {
         const score = 10 + ((studentIndex + index) % 9);
-        await this.pool.query(
+        await this.query(
           `INSERT INTO exam_results (school_id, exam_id, student_id, score, max_score, mention, observation, status, created_by)
            VALUES ($1, $2, $3, $4, 20, $5, $6, 'published', $7)
            ON CONFLICT (exam_id, student_id) DO UPDATE SET score = EXCLUDED.score, mention = EXCLUDED.mention`,
@@ -2267,7 +2335,7 @@ class PostgresRepository {
         ["RELEVE_NOTES", "Relevé de notes"],
       ];
       for (const [docIndex, [type, title]] of docs.entries()) {
-        await this.pool.query(
+        await this.query(
           `INSERT INTO student_documents (school_id, student_id, document_code, document_type, title, format, version, storage_key, generated_by, metadata)
            VALUES ($1, $2, $3, $4, $5, 'PDF', 1, $6, $7, $8)
            ON CONFLICT (document_code) DO NOTHING`,
@@ -2286,7 +2354,7 @@ class PostgresRepository {
     }
 
     if (year && students[0]) {
-      await this.pool.query(
+      await this.query(
         `INSERT INTO promotion_decisions (school_id, academic_year_id, student_id, decision, reason, decided_by, decided_at)
          VALUES ($1, $2, $3, 'promoted', 'Moyenne suffisante', $4, NOW())
          ON CONFLICT (academic_year_id, student_id) DO NOTHING`,
@@ -2302,7 +2370,7 @@ class PostgresRepository {
     ];
 
     for (const [code, firstName, lastName, email, role] of roles) {
-      await this.pool.query(
+      await this.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
          VALUES ($1, $2, $3, $4, $5, NULL, $6, NULL, $7, 'active')
          ON CONFLICT (user_code) DO UPDATE SET role = EXCLUDED.role, email = EXCLUDED.email`,
@@ -2312,7 +2380,7 @@ class PostgresRepository {
   }
 
   async ensureSubjectScopes(schoolId) {
-    await this.pool.query(
+    await this.query(
       `INSERT INTO subject_class_assignments (school_id, subject_id, class_id, level, status)
        SELECT s.school_id, s.id, cl.id, NULL, 'active'
        FROM subjects s
@@ -2415,7 +2483,7 @@ class PostgresRepository {
       error.statusCode = 409;
       throw error;
     }
-    await this.pool.query("DELETE FROM subjects WHERE id = $1", [subject.id]);
+    await this.query("DELETE FROM subjects WHERE id = $1", [subject.id]);
     this.cachedDataset = null;
     await this.recordAudit({
       action: "subject_delete",
@@ -3238,7 +3306,7 @@ class PostgresRepository {
 
   async findIdempotencyRecord(cacheId) {
     await this.init();
-    const row = await this.pool.query(
+    const row = await this.query(
       "SELECT cache_id, status_code, response_body, expires_at FROM idempotency_keys WHERE cache_id = $1 LIMIT 1",
       [String(cacheId ?? "")],
     );
@@ -3247,7 +3315,7 @@ class PostgresRepository {
 
   async saveIdempotencyRecord({ cacheId, routeKey, principalId, statusCode, responseBody, expiresAt }) {
     await this.init();
-    await this.pool.query(
+    await this.query(
       `INSERT INTO idempotency_keys (cache_id, route_key, principal_id, status_code, response_body, expires_at)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
        ON CONFLICT (cache_id) DO UPDATE SET
