@@ -14,7 +14,8 @@
 | Résolution options de champs | `getSelectOptionsForField`, teacher assignment options | **D2.8b** ✅ |
 | Handlers CRUD génériques (noyau) | id, scope, merge/delete, persist+busy, audit commun | **D2.8c** ✅ |
 | Workflow affectations enseignants | submit / delete plan modale Enseignants | **D2.8d1** ✅ |
-| Autres workflows / modales | form, contact, payments, relations, règles métier | D2.8d* |
+| Workflow Contacts & Comptes | pré-submit, promote/revoke, import, fiche, audit | **D2.8d2** ✅ |
+| Autres workflows / modales | payments, relations, règles métier | D2.8d* |
 | Chrome liste | déjà EntityList* (D2.7) | ✅ |
 | État / permissions / scope assembleur | reste dans EntityPage | D2.8e nettoyage |
 
@@ -51,5 +52,6 @@ Candidats extraits :
 2. **D2.8b** Options de formulaire ✅  
 3. **D2.8c** Noyau CRUD transversal ✅ — [RAPPORT](./RAPPORT-D2.8c-crud-entitypage.md)  
 4. **D2.8d1** Affectations enseignants ✅ — [RAPPORT](./RAPPORT-D2.8d1-affectations-enseignants.md)  
-5. D2.8d* Autres workflows spécialisés (un module par workflow)  
-6. D2.8e Nettoyage final  
+5. **D2.8d2** Contacts & Comptes ✅ — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md)  
+6. D2.8d* Autres workflows spécialisés (un module par workflow)  
+7. D2.8e Nettoyage final  
