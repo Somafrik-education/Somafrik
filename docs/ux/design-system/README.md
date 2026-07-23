@@ -29,6 +29,7 @@
 | [CONTRAT-D3.4b-identite-parents.md](./CONTRAT-D3.4b-identite-parents.md) · [RAPPORT-D3.4b-identite-parents.md](./RAPPORT-D3.4b-identite-parents.md) | D3.4b identité `contactId` (pas de chrome DS) |
 | [AUDIT-D3.5-presences.md](./AUDIT-D3.5-presences.md) · [RAPPORT-D3.5a-audit-presences.md](./RAPPORT-D3.5a-audit-presences.md) | D3.5a Présences (audit) |
 | [CONTRAT-D3.5b-presences.md](./CONTRAT-D3.5b-presences.md) · [RAPPORT-D3.5b-presences-persistence.md](./RAPPORT-D3.5b-presences-persistence.md) | D3.5b contrat + persistance PG |
+| [AUDIT-D3.6-notes.md](./AUDIT-D3.6-notes.md) · [RAPPORT-D3.6a-audit-notes.md](./RAPPORT-D3.6a-audit-notes.md) | D3.6a Notes (audit — pas de code) |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |
