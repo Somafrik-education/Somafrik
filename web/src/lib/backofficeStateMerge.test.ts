@@ -47,22 +47,44 @@ describe("backofficeStateMerge (HOTFIX-SYNC-01)", () => {
           id: "EVAL-PENDING",
           title: "Devoir local",
           schoolCode: "SCH-001",
+          className: "6e A",
+          subject: "Mathématiques",
+          period: "T1",
+          evaluationType: "Devoir",
+          scale: 20,
+          coefficient: 1,
+          status: "open",
+          date: "2026-01-01",
           syncStatus: "pending",
           clientMutationId: "cm-1",
-        },
+        } as never,
       ],
     });
     const remote = {
-      evaluations: [{ id: "EVAL-OTHER", title: "Serveur", schoolCode: "SCH-001" }],
-    };
+      evaluations: [
+        {
+          id: "EVAL-OTHER",
+          title: "Serveur",
+          schoolCode: "SCH-001",
+          className: "6e A",
+          subject: "Mathématiques",
+          period: "T1",
+          evaluationType: "Devoir",
+          scale: 20,
+          coefficient: 1,
+          status: "open",
+          date: "2026-01-01",
+          active: true,
+        },
+      ],
+    } as unknown as Partial<BackOfficeState>;
 
     const merged = mergeRemoteSnapshot(prev, remote);
-    expect(merged.evaluations.map((row) => String((row as { id?: string }).id))).toEqual(
-      expect.arrayContaining(["EVAL-PENDING", "EVAL-OTHER"]),
-    );
-    const pending = merged.evaluations.find(
-      (row) => String((row as { id?: string }).id) === "EVAL-PENDING",
-    ) as { syncStatus?: string };
+    const ids = (merged.evaluations ?? []).map((row) => String(row.id));
+    expect(ids).toEqual(expect.arrayContaining(["EVAL-PENDING", "EVAL-OTHER"]));
+    const pending = (merged.evaluations ?? []).find((row) => String(row.id) === "EVAL-PENDING") as {
+      syncStatus?: string;
+    };
     expect(pending.syncStatus).toBe("pending");
   });
 
@@ -79,7 +101,9 @@ describe("backofficeStateMerge (HOTFIX-SYNC-01)", () => {
     const remote = [{ id: "PRES-2", schoolCode: "SCH-001", studentId: "S2" }];
     const merged = mergeScopedSchoolRows(prev, remote);
     expect(merged.map((row) => row.id)).toEqual(expect.arrayContaining(["PRES-1", "PRES-2"]));
-    expect(merged.find((row) => row.id === "PRES-1")?.syncStatus).toBe("failed");
+    expect((merged.find((row) => row.id === "PRES-1") as { syncStatus?: string }).syncStatus).toBe(
+      "failed",
+    );
   });
 
   it("double upsert idempotent : même id local+remote → une seule ligne (pending gagne)", () => {
@@ -96,6 +120,6 @@ describe("backofficeStateMerge (HOTFIX-SYNC-01)", () => {
     const merged = mergeScopedSchoolRows(prev, remote);
     expect(merged).toHaveLength(1);
     expect(merged[0].title).toBe("Local pending");
-    expect(merged[0].syncStatus).toBe("pending");
+    expect((merged[0] as { syncStatus?: string }).syncStatus).toBe("pending");
   });
 });

@@ -9,8 +9,18 @@ import {
   markOutboxStatus,
   reapplyOutboxToState,
   saveSyncOutbox,
+  settleOutboxAfterHttpSave,
   upsertOutboxEntry,
+  type SyncOutboxEntry,
 } from "./syncOutbox";
+
+function asSyncing(entries: SyncOutboxEntry[]): SyncOutboxEntry[] {
+  return entries.map((entry) =>
+    entry.status === "pending"
+      ? { ...entry, status: "syncing" as const, attempts: entry.attempts + 1 }
+      : entry,
+  );
+}
 
 describe("syncOutbox (HOTFIX-SYNC-01)", () => {
   beforeEach(() => {
@@ -107,5 +117,67 @@ describe("syncOutbox (HOTFIX-SYNC-01)", () => {
     expect(row.syncStatus).toBe("pending");
     expect(entries).toHaveLength(1);
     expect(entries[0].recordId).toBe("EVAL-1");
+  });
+
+  it("PUT mixte evaluation+presence : ACK Notes + presence implicite · aucune syncing restante", () => {
+    const { entries, annotatedPatch } = enqueuePatchMutations([], {
+      evaluations: [{ id: "EVAL-1", title: "Devoir", schoolCode: "SCH-001" }],
+      presences: [{ id: "PRES-1", schoolCode: "SCH-001", studentId: "S1" }],
+    });
+    const syncing = asSyncing(entries);
+    const settled = settleOutboxAfterHttpSave(syncing, {
+      ack: {
+        accepted: [{ entity: "evaluations", id: "EVAL-1" }],
+        rejected: [],
+      },
+      annotatedPatch,
+    });
+
+    expect(settled.find((entry) => entry.status === "syncing")).toBeUndefined();
+    expect(settled.find((entry) => entry.recordId === "EVAL-1")).toBeUndefined();
+    expect(settled.find((entry) => entry.recordId === "PRES-1")).toBeUndefined();
+  });
+
+  it("PUT presence-only avec syncAck Notes vide → presence marquée synced", () => {
+    const { entries, annotatedPatch } = enqueuePatchMutations([], {
+      presences: [{ id: "PRES-ONLY", schoolCode: "SCH-001", studentId: "S1" }],
+    });
+    const syncing = asSyncing(entries);
+    const settled = settleOutboxAfterHttpSave(syncing, {
+      ack: { accepted: [], rejected: [] },
+      annotatedPatch,
+    });
+
+    expect(settled).toHaveLength(0);
+    expect(settled.find((entry) => entry.recordId === "PRES-ONLY")).toBeUndefined();
+  });
+
+  it("PUT mixte : évaluation rejetée reste failed, presence est ACK implicite", () => {
+    const { entries, annotatedPatch } = enqueuePatchMutations([], {
+      evaluations: [{ id: "EVAL-BAD", title: "Bad", schoolCode: "SCH-001", clientMutationId: "cm-bad" }],
+      exams: [{ id: "EXAM-1", schoolCode: "SCH-001", title: "Exam" }],
+      payments: [{ id: "PAY-1", schoolCode: "SCH-001", amount: 1000 }],
+    });
+    const syncing = asSyncing(entries);
+    const settled = settleOutboxAfterHttpSave(syncing, {
+      ack: {
+        accepted: [],
+        rejected: [
+          {
+            entity: "evaluations",
+            id: "EVAL-BAD",
+            clientMutationId: "cm-bad",
+            error: "Classe ou matiere introuvable pour l'évaluation",
+          },
+        ],
+      },
+      annotatedPatch,
+    });
+
+    expect(settled).toHaveLength(1);
+    expect(settled[0].recordId).toBe("EVAL-BAD");
+    expect(settled[0].status).toBe("failed");
+    expect(settled.find((entry) => entry.entity === "exams")).toBeUndefined();
+    expect(settled.find((entry) => entry.entity === "payments")).toBeUndefined();
   });
 });

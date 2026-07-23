@@ -20,7 +20,7 @@ Garantir qu’une synchronisation ne peut jamais provoquer une perte silencieuse
 | Zone | Changement |
 |------|------------|
 | `web/src/lib/syncOutbox.ts` | File durable `pending/syncing/synced/failed` + `clientMutationId` |
-| `web/src/context/DataContext.tsx` | Enqueue avant PUT · ACK · réinjection pending au refresh · erreur visible · `retryFailedSync` |
+| `web/src/context/DataContext.tsx` | Enqueue avant PUT · `settleOutboxAfterHttpSave` (ACK Notes + ACK implicite BO snapshot) · réinjection pending · erreur visible · `retryFailedSync` |
 | `web/src/lib/backofficeStateMerge.ts` | `evaluations` school-scoped · non-écrasement pending/failed |
 | `backend/lib/gradesBoPersistence.js` | Strip partiel + conservation des rejets |
 | `backend/db/postgresRepository.js` | Sync Notes par enregistrement + `syncAck` sur save |

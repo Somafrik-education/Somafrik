@@ -15,14 +15,13 @@ import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMer
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
 import {
-  applySyncAckToOutbox,
   enqueuePatchMutations,
   formatOutboxFailureMessage,
   listActiveOutboxEntries,
   loadSyncOutbox,
-  markOutboxStatus,
   reapplyOutboxToState,
   saveSyncOutbox,
+  settleOutboxAfterHttpSave,
   type SyncAck,
   type SyncOutboxEntry,
 } from "../lib/syncOutbox";
@@ -220,26 +219,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           payload,
         );
         const ack = extractSyncAck(saved);
-        if (ack) {
-          workingOutbox = applySyncAckToOutbox(workingOutbox, ack);
-        } else {
-          // ACK implicite : succès HTTP sans détail → mutations du patch marquées synced
-          for (const key of ["evaluations", "notes", "presences", "exams", "payments"] as const) {
-            const rows = (annotatedPatch[key] as { id?: string; clientMutationId?: string }[] | undefined) ?? [];
-            for (const row of rows) {
-              workingOutbox = markOutboxStatus(
-                workingOutbox,
-                {
-                  clientMutationId: row.clientMutationId,
-                  recordId: String(row.id ?? ""),
-                  entity: key,
-                },
-                "synced",
-              );
-            }
-          }
-          workingOutbox = workingOutbox.filter((entry) => entry.status !== "synced");
-        }
+        // ACK Notes explicite + ACK implicite des domaines snapshot BO (presences/exams/payments).
+        workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
+          ack,
+          annotatedPatch,
+        });
         persistJournal(workingOutbox);
 
         setState((prev) => {

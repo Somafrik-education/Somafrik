@@ -65,7 +65,8 @@ Un GET / refresh serveur :
 
 - Sync **par enregistrement** : acceptés → PG ; rejetés → conservés en JSON durable avec `syncStatus: failed` + message.
 - Strip JSON uniquement pour les ids **acceptés**.
-- Réponse PUT peut exposer `syncAck: { accepted[], rejected[] }`.
+- Réponse PUT expose `syncAck: { accepted[], rejected[] }` pour **evaluations/notes**.
+- Domaines encore persistés par le snapshot BO (`presences`, `exams`, `payments`) : succès HTTP ⇒ **ACK implicite** des mutations du patch (même si `syncAck` Notes est vide ou partiel).
 - Échec de rattachement (classe / matière / élève / établissement / année) → rejet visible, **pas** de disparition.
 
 ---

@@ -185,7 +185,65 @@ export function applySyncAckToOutbox(entries: SyncOutboxEntry[], ack?: SyncAck |
   return next.filter((entry) => entry.status !== "synced");
 }
 
-const PEDAGOGY_OUTBOX_KEYS = ["evaluations", "notes", "presences", "exams", "payments"] as const;
+/** Domaines pédagogiques suivis par l'outbox. */
+export const PEDAGOGY_OUTBOX_KEYS = [
+  "evaluations",
+  "notes",
+  "presences",
+  "exams",
+  "payments",
+] as const;
+
+/**
+ * Domaines encore persistés par le snapshot BO (hors ACK Notes PG).
+ * Succès HTTP ⇒ ACK implicite des mutations du patch pour ces clés.
+ */
+export const BO_SNAPSHOT_OUTBOX_KEYS = ["presences", "exams", "payments"] as const;
+
+function markPatchRowsSynced(
+  entries: SyncOutboxEntry[],
+  annotatedPatch: Record<string, unknown>,
+  keys: readonly string[],
+): SyncOutboxEntry[] {
+  let next = entries;
+  for (const key of keys) {
+    const rows =
+      (annotatedPatch[key] as { id?: string; clientMutationId?: string }[] | undefined) ?? [];
+    for (const row of rows) {
+      next = markOutboxStatus(
+        next,
+        {
+          clientMutationId: row.clientMutationId,
+          recordId: String(row.id ?? ""),
+          entity: key,
+        },
+        "synced",
+      );
+    }
+  }
+  return next.filter((entry) => entry.status !== "synced");
+}
+
+/**
+ * HOTFIX-SYNC-01 — Règle d'ACK après PUT /backoffice/state :
+ * 1) appliquer syncAck Notes (evaluations/notes) s'il est présent ;
+ * 2) ACK implicite des domaines snapshot BO du patch (presences/exams/payments) ;
+ * 3) si aucun syncAck : ACK implicite de tous les domaines pédagogiques du patch.
+ */
+export function settleOutboxAfterHttpSave(
+  entries: SyncOutboxEntry[],
+  options: {
+    ack?: SyncAck | null;
+    annotatedPatch: Record<string, unknown>;
+  },
+): SyncOutboxEntry[] {
+  const { ack, annotatedPatch } = options;
+  if (ack) {
+    const afterNotesAck = applySyncAckToOutbox(entries, ack);
+    return markPatchRowsSynced(afterNotesAck, annotatedPatch, BO_SNAPSHOT_OUTBOX_KEYS);
+  }
+  return markPatchRowsSynced(entries, annotatedPatch, PEDAGOGY_OUTBOX_KEYS);
+}
 
 export function enqueuePatchMutations(
   entries: SyncOutboxEntry[],
@@ -206,7 +264,7 @@ export function enqueuePatchMutations(
         row.syncStatus === "failed" || row.syncStatus === "synced" || row.syncStatus === "syncing"
           ? (row.syncStatus as SyncMutationStatus)
           : "pending";
-      const annotated = {
+      const annotated: Record<string, unknown> = {
         ...row,
         clientMutationId,
         syncStatus: status === "synced" ? "pending" : status,
@@ -227,11 +285,11 @@ export function enqueuePatchMutations(
   return { entries: nextEntries, annotatedPatch };
 }
 
-export function reapplyOutboxToState<T extends Record<string, unknown>>(
+export function reapplyOutboxToState<T>(
   state: T,
   entries: SyncOutboxEntry[] = listActiveOutboxEntries(),
 ): T {
-  const next: Record<string, unknown> = { ...state };
+  const next: Record<string, unknown> = { ...(state as Record<string, unknown>) };
   for (const entry of entries) {
     if (!PROTECTED_SYNC_STATUSES.has(entry.status) && entry.status !== "syncing") continue;
     const key = entry.entity;
