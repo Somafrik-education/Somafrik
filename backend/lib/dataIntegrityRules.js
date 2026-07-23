@@ -296,13 +296,20 @@ function validatePresenceWrite(state = {}, presence = {}, options = {}) {
   }
 
   if (!options.skipDuplicateCheck) {
-    const duplicate = (state.presences ?? []).find(
-      (row) =>
-        String(row.id ?? "") !== String(presence.id ?? "") &&
-        String(row.studentId ?? "") === String(student.id ?? student.matricule ?? studentId) &&
-        normalizePresenceDay(row.date) === normalizePresenceDay(presence.date) &&
-        (!className || classNamesMatch(row.className, className)),
+    // D3.5b : unicité = établissement + élève + jour (pas la classe)
+    const presenceSchoolKey = presenceSchool || studentSchool;
+    const studentKeys = new Set(
+      [student.id, student.matricule, student.publicId, studentId]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
     );
+    const duplicate = (state.presences ?? []).find((row) => {
+      if (String(row.id ?? "") === String(presence.id ?? "")) return false;
+      const rowSchool = normalizeSchoolCode(row.schoolCode ?? "");
+      if (presenceSchoolKey && rowSchool && presenceSchoolKey !== rowSchool) return false;
+      if (!studentKeys.has(String(row.studentId ?? "").trim())) return false;
+      return normalizePresenceDay(row.date) === normalizePresenceDay(presence.date);
+    });
     if (duplicate) return "Une présence existe déjà pour cet élève à cette date.";
   }
 
@@ -405,8 +412,9 @@ function detectDuplicatePresenceKeys(presences = []) {
   const seen = new Map();
   const duplicates = [];
   for (const presence of presences) {
-    const key = `${String(presence.studentId ?? "")}|${normalizePresenceDay(presence.date)}|${normalize(presence.className)}`;
-    if (!key) continue;
+    // D3.5b : clé canonique établissement + élève + jour
+    const key = `${normalizeSchoolCode(presence.schoolCode)}|${String(presence.studentId ?? "").trim()}|${normalizePresenceDay(presence.date)}`;
+    if (!String(presence.studentId ?? "").trim() || !normalizePresenceDay(presence.date)) continue;
     if (seen.has(key)) duplicates.push({ key, rows: [seen.get(key), presence] });
     else seen.set(key, presence);
   }

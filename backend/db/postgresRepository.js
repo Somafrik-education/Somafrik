@@ -80,6 +80,7 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.pool.query(schema);
+    await this.ensureAttendanceCanonicalUniqueness();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -88,6 +89,25 @@ class PostgresRepository {
       await this.ensureV2Data();
     }
     this.ready = true;
+  }
+
+  /**
+   * D3.5b — Déduplique les lignes legacy puis garantit
+   * UNIQUE (school_id, student_id, attendance_date).
+   */
+  async ensureAttendanceCanonicalUniqueness() {
+    await this.pool.query(`
+      DELETE FROM attendance a
+      USING attendance b
+      WHERE a.school_id = b.school_id
+        AND a.student_id = b.student_id
+        AND a.attendance_date = b.attendance_date
+        AND a.ctid < b.ctid
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_school_student_date
+      ON attendance (school_id, student_id, attendance_date)
+    `);
   }
 
   async getDataset() {
@@ -1178,29 +1198,30 @@ class PostgresRepository {
 
     const teacher = await this.findTeacherForAttendance(student.school_id, principal.sub, student.class_id, principal.role);
     const status = this.toAttendanceStatus(payload.status, payload.present);
-    const reason = payload.reason ?? (status === "excused" ? "Justifié" : null);
-    const existing = await this.one(
-      `SELECT id FROM attendance
-       WHERE student_id = $1 AND attendance_date = $2
-       ORDER BY updated_at DESC
-       LIMIT 1`,
-      [student.id, attendanceDate]
+    // D3.5b : Justifié = absence justifiée (pas de justificatif documentaire)
+    const reason =
+      payload.reason ?? (status === "excused" ? "Absence justifiée" : null);
+    const row = await this.one(
+      `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (school_id, student_id, attendance_date)
+       DO UPDATE SET
+         status = EXCLUDED.status,
+         reason = EXCLUDED.reason,
+         teacher_id = EXCLUDED.teacher_id,
+         class_id = EXCLUDED.class_id,
+         updated_at = NOW()
+       RETURNING id`,
+      [
+        student.school_id,
+        student.id,
+        student.class_id,
+        teacher?.id ?? null,
+        attendanceDate,
+        status,
+        reason,
+      ],
     );
-
-    const row = existing
-      ? await this.one(
-          `UPDATE attendance
-           SET status = $1, reason = $2, teacher_id = $3, class_id = $4, updated_at = NOW()
-           WHERE id = $5
-           RETURNING id`,
-          [status, reason, teacher?.id ?? null, student.class_id, existing.id]
-        )
-      : await this.one(
-          `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id`,
-          [student.school_id, student.id, student.class_id, teacher?.id ?? null, attendanceDate, status, reason]
-        );
 
     return this.getAttendanceById(row.id);
   }
@@ -2647,9 +2668,23 @@ class PostgresRepository {
   }
 
   toAttendanceStatus(status, present) {
-    if (status === "Absent") return "absent";
-    if (status === "Retard") return "late";
-    if (status === "Justifié") return "excused";
+    const normalized = String(status ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    if (normalized === "absent" || normalized === "absence") return "absent";
+    if (normalized === "retard" || normalized === "late") return "late";
+    // Justifié = absence justifiée (contrat D3.5b)
+    if (
+      normalized === "justifie" ||
+      normalized === "justifiee" ||
+      normalized === "excused" ||
+      normalized === "excuse"
+    ) {
+      return "excused";
+    }
+    if (normalized === "present" || normalized === "present.") return "present";
     return present ? "present" : "absent";
   }
 
