@@ -14,7 +14,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Infra | D2.8c — Noyau CRUD | ✅ | — | `entityCrudCore.ts` (sans workflows métier) |
 | Infra | D2.8d1 — Affectations enseignants | ✅ | — | `teacherAssignmentWorkflow.ts` |
 | Infra | D2.8d2 — Contacts & Comptes | ✅ | — | `contactAccountWorkflow.ts` |
-| Infra | D2.8d*/e — Autres workflows & nettoyage | ⏳ | — | Paiements, relations, modales… |
+| Infra | D2.8d3 — Relations parent-enfant | ✅ | — | `parentChildRelationWorkflow.ts` |
+| Infra | D2.8d*/e — Autres workflows & nettoyage | ⏳ | — | Paiements, modales… |
 | Élèves | Fiche / workspace | ✅ | `RecordLayout` | StatusBadge ; nav onglets custom |
 | Élèves | Liste (D3.1b) | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage |
 | Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |

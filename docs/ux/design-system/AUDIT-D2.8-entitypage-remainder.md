@@ -15,7 +15,8 @@
 | Handlers CRUD génériques (noyau) | id, scope, merge/delete, persist+busy, audit commun | **D2.8c** ✅ |
 | Workflow affectations enseignants | submit / delete plan modale Enseignants | **D2.8d1** ✅ |
 | Workflow Contacts & Comptes | pré-submit, promote/revoke, import, fiche, audit | **D2.8d2** ✅ |
-| Autres workflows / modales | payments, relations, règles métier | D2.8d* |
+| Workflow Relations parent-enfant | bundle submit/delete, relation unitaire, helpers | **D2.8d3** ✅ |
+| Autres workflows / modales | payments, règles métier | D2.8d* |
 | Chrome liste | déjà EntityList* (D2.7) | ✅ |
 | État / permissions / scope assembleur | reste dans EntityPage | D2.8e nettoyage |
 
