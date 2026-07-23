@@ -29,7 +29,9 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Parents / Responsables | D3.4a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.4-parents.md) · décisions CTO §10 |
 | Parents / Responsables | Surface admin canonique | ✅ | — | **Parents & élèves** (pas de nouvelle liste) |
 | Parents / Responsables | Fiche Parent | 🔒 | `RecordLayout` (cible) | **Aucune fiche dans D3.4** |
-| Parents / Responsables | D3.4b — Contrat d’identité / convergence | ⏳ | — | [CONTRAT](./CONTRAT-D3.4b-identite-parents.md) · PR en cours |
+| Parents / Responsables | D3.4b — Contrat d’identité / convergence | ✅ | — | [CONTRAT](./CONTRAT-D3.4b-identite-parents.md) · tag `d3.4b` |
+| Parents / Responsables | Liste Parents | 🔒 | — | Non retenue |
+| Parents / Responsables | Chrome DS Parents | 🔒 | — | Aucun D3.4c automatique |
 
 ## Suivi consolidé
 
@@ -67,7 +69,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Élèves — liste | ✅ | `ListLayout` | D3.1b `StudentsListPage` | Modales EntityPage |
 | Classes (module métier) | ✅ / 🔒 | `ListLayout` | D3.2a audit + D3.2b/c | Fiche absente 🔒 ; modales EntityPage |
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
-| Parents / Responsables | 📋 / ⏳ | — | D3.4a ✅ · D3.4b identité | `contactId` ; chrome UI 🔒 |
+| Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
 | Présences | 🔒 | — | 0 % | Oui |
 | Notes | 🔒 | — | 0 % | Oui |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
@@ -84,7 +86,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.2b : liste Classes — [RAPPORT](./RAPPORT-D3.2b-liste-classes.md).
 - D3.3 : liste Enseignants — [RAPPORT](./RAPPORT-D3.3-enseignants.md).
 - D3.4a : audit / verrouillage Parents — [AUDIT](./AUDIT-D3.4-parents.md) · [RAPPORT](./RAPPORT-D3.4a-audit-parents.md). Tag : `d3.4a`. **D3.3 = Enseignants** · **D3.4 = Parents**.
-- D3.4b : contrat identité Parents — [CONTRAT](./CONTRAT-D3.4b-identite-parents.md) · [RAPPORT](./RAPPORT-D3.4b-identite-parents.md). Pas de liste / fiche / chrome DS / EntityPage.
+- D3.4b : contrat identité Parents — [CONTRAT](./CONTRAT-D3.4b-identite-parents.md) · [RAPPORT](./RAPPORT-D3.4b-identite-parents.md). Tag `d3.4b` @ `f442ce90`. Contrat actif : `fromContactId = contact.id` · `user.contactId = contact.id`. **Pas de D3.4c automatique** (liste / fiche / chrome DS / EntityPage 🔒).
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
