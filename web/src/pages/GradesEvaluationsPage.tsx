@@ -11,7 +11,7 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
-import { ForbiddenState, ToolLayout } from "../design-system";
+import { EmptyState, ForbiddenState, LoadingState, ToolLayout } from "../design-system";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { classNamesMatch } from "../lib/classRules";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
@@ -64,7 +64,7 @@ function uniqueClassNames(students: Record<string, unknown>[], classes: Record<s
 
 export function GradesEvaluationsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, loading } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -363,6 +363,10 @@ export function GradesEvaluationsPage() {
     );
   }
 
+  if (loading) {
+    return <LoadingState message="Chargement des notes et évaluations…" />;
+  }
+
   return (
     <>
       <ToolLayout>
@@ -436,13 +440,36 @@ export function GradesEvaluationsPage() {
 
         <ToolLayout.Content>
           {tab === "evaluations" ? (
-            <Card className="p-6">
-              <Table
-                columns={evaluationColumns}
-                rows={filteredEvaluations}
-                rowKey={(row) => row.id}
+            filteredEvaluations.length === 0 ? (
+              <EmptyState
+                title="Aucune évaluation"
+                description={
+                  period
+                    ? `Aucune évaluation pour la période « ${period} ».`
+                    : "Créez une évaluation pour commencer la saisie des notes."
+                }
+                action={
+                  canCreate ? (
+                    <Button
+                      onClick={() => {
+                        setEditingEvaluation(null);
+                        setFormOpen(true);
+                      }}
+                    >
+                      Nouvelle évaluation
+                    </Button>
+                  ) : undefined
+                }
               />
-            </Card>
+            ) : (
+              <Card className="p-6">
+                <Table
+                  columns={evaluationColumns}
+                  rows={filteredEvaluations}
+                  rowKey={(row) => row.id}
+                />
+              </Card>
+            )
           ) : null}
 
           {tab === "saisie" ? (
@@ -506,7 +533,14 @@ export function GradesEvaluationsPage() {
                     </div>
                   ) : null}
                 </div>
-              ) : null}
+              ) : (
+                <div className="mt-4">
+                  <EmptyState
+                    title="Aucune évaluation sélectionnée"
+                    description="Choisissez une évaluation pour saisir les notes."
+                  />
+                </div>
+              )}
             </Card>
           ) : null}
 
@@ -520,12 +554,19 @@ export function GradesEvaluationsPage() {
           ) : null}
 
           {tab === "eleve" ? (
-            <StudentGradesPanel
-              student={students.find((row) => String(row.id) === selectedStudentId) ?? null}
-              state={state}
-              user={scopeUser}
-              period={period}
-            />
+            selectedStudentId ? (
+              <StudentGradesPanel
+                student={students.find((row) => String(row.id) === selectedStudentId) ?? null}
+                state={state}
+                user={scopeUser}
+                period={period}
+              />
+            ) : (
+              <EmptyState
+                title="Aucun élève sélectionné"
+                description="Choisissez un élève dans le contexte pour consulter ses notes."
+              />
+            )
           ) : null}
 
           {tab === "stats" ? (

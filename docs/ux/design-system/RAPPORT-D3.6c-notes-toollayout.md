@@ -12,7 +12,7 @@
 
 ## 1. Objectif
 
-Migrer la page `/notes` (`GradesEvaluationsPage`) vers `ToolLayout` (Header / Context / Content), avec `ForbiddenState` pour le refus d’accès, sans toucher à la persistance ni au métier Notes.
+Migrer la page `/notes` (`GradesEvaluationsPage`) vers `ToolLayout` (Header / Context / Content), avec les états DS (`LoadingState` / `EmptyState` / `ForbiddenState`), sans toucher à la persistance ni au métier Notes.
 
 ---
 
@@ -20,21 +20,25 @@ Migrer la page `/notes` (`GradesEvaluationsPage`) vers `ToolLayout` (Header / Co
 
 | Zone | Changement |
 |------|------------|
-| `GradesEvaluationsPage.tsx` | Chrome `Card` → `ToolLayout` + `ForbiddenState` |
-| `GradesEvaluationsPage.test.tsx` | Landmarks ToolLayout + ForbiddenState |
+| `GradesEvaluationsPage.tsx` | Chrome `Card` → `ToolLayout` + états DS |
+| `GradesEvaluationsPage.test.tsx` | Landmarks ToolLayout + Loading / Empty / Forbidden |
 | `SUIVI-MIGRATIONS.md` / `README.md` | Suivi D3.6b ✅ · D3.6c ouvert |
 
-**Interdit (respecté) :** changement persistance PG/JSON · onglet Résultats fiche Élève · Bulletins / D3.7 · migration `components/grades/*` · ToolLayout Présences.
+**Interdit (respecté) :** changement persistance PG/JSON · moteur de calcul · onglet Résultats fiche Élève · Bulletins / D3.7 · migration `components/grades/*` · ToolLayout Présences.
+
+**Chrome préexistant conservé (non-régression, hors livrable D3.6c) :** `PrintButton`, export CSV, onglet Statistiques, handlers métier (`lib/evaluations`) — aucune extension Bulletin / PDF / moyenne annuelle / fiche Élève.
 
 ---
 
 ## 3. Structure ToolLayout
 
-| Slot | Contenu |
-|------|---------|
+| Slot / état | Contenu |
+|-------------|---------|
 | `ToolLayout.Header` | `SectionHeader` (titre, description contrat D3.6b, actions CSV / nouvelle évaluation) |
 | `ToolLayout.Context` | Onglets vues + filtres période / classe / élève |
-| `ToolLayout.Content` | Panneaux métier existants (évaluations, saisie, classe, élève, stats) |
+| `ToolLayout.Content` | Panneaux métier existants ; `EmptyState` si liste vide / sélection absente |
+| `LoadingState` | Avant layout si `useData().loading` |
+| `ForbiddenState` | Si `!canRead` Notes |
 | Modales | Hors `ToolLayout` (siblings) |
 
 ---
@@ -43,10 +47,10 @@ Migrer la page `/notes` (`GradesEvaluationsPage`) vers `ToolLayout` (Header / Co
 
 | Élément | Résultat |
 |---------|----------|
-| `/notes` → ToolLayout | Oui |
-| Contrat D3.6b conservé | Oui |
-| Aucun changement persistance | Oui |
-| ForbiddenState `grades` / Notes | Oui |
+| `/notes` → ToolLayout Header/Context/Content | Oui |
+| LoadingState / EmptyState / ForbiddenState | Oui |
+| UI-only (pas de recalcul local) | Oui — handlers inchangés via `lib/evaluations` |
+| Contrat D3.6b / PG / API / calcul | Inchangé (aucun fichier backend) |
 | Onglet Résultats fiche Élève | Non |
 | Bulletins / D3.7 | Non |
 | StickyActions | Non (pas de footer sticky métier actuel) |

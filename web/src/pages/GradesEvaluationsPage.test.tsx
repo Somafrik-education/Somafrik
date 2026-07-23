@@ -9,6 +9,8 @@ const permissions = vi.hoisted(() => ({
   canDelete: false,
 }));
 
+const dataLoading = vi.hoisted(() => ({ current: false }));
+
 const dataState = vi.hoisted(() => ({
   current: {
     schools: [{ code: "SCH-001", name: "Lycée Test" }],
@@ -54,7 +56,7 @@ vi.mock("../context/AuthContext", () => ({
 vi.mock("../context/DataContext", () => ({
   useData: () => ({
     state: dataState.current,
-    loading: false,
+    loading: dataLoading.current,
     error: null,
     update: vi.fn(),
     refresh: vi.fn(),
@@ -86,7 +88,7 @@ vi.mock("../lib/evaluations", async (importOriginal) => {
   return {
     ...actual,
     buildEvaluationsFromExams: () => [],
-    ensureEvaluationsSynced: (_state: unknown, _code: string) => [],
+    ensureEvaluationsSynced: () => [],
     scopedEvaluations: () => [],
     scopedGrades: () => [],
     allGrades: () => [],
@@ -137,6 +139,7 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     permissions.canRead = true;
     permissions.canCreate = true;
     permissions.canUpdate = true;
+    dataLoading.current = false;
   });
 
   it("structure la page Notes avec ToolLayout (Header / Context / Content)", () => {
@@ -149,6 +152,22 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     expect(screen.getByRole("button", { name: "Évaluations" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Saisie des notes" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Exporter CSV" })).toBeInTheDocument();
+  });
+
+  it("affiche EmptyState lorsqu'il n'y a aucune évaluation", () => {
+    renderPage();
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Aucune évaluation");
+    expect(status).toHaveTextContent("Aucune évaluation pour la période");
+  });
+
+  it("affiche LoadingState pendant le chargement des données", () => {
+    dataLoading.current = true;
+    renderPage();
+
+    expect(screen.getByText("Chargement des notes et évaluations…")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Notes & évaluations" })).not.toBeInTheDocument();
   });
 
   it("affiche ForbiddenState sans permission Notes:read", () => {
