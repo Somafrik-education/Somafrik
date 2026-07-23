@@ -54,5 +54,6 @@ Candidats extraits :
 3. **D2.8c** Noyau CRUD transversal ✅ — [RAPPORT](./RAPPORT-D2.8c-crud-entitypage.md)  
 4. **D2.8d1** Affectations enseignants ✅ — [RAPPORT](./RAPPORT-D2.8d1-affectations-enseignants.md)  
 5. **D2.8d2** Contacts & Comptes ✅ — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md)  
-6. D2.8d* Autres workflows spécialisés (un module par workflow)  
-7. D2.8e Nettoyage final  
+6. **D2.8d3** Relations parent-enfant ✅ — [RAPPORT](./RAPPORT-D2.8d3-relations-parent-enfant.md)  
+7. D2.8d4 Paiements (vigilance renforcée)  
+8. D2.8e Nettoyage final  

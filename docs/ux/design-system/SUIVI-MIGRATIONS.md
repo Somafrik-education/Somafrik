@@ -50,7 +50,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | EntityPage — noyau CRUD (D2.8c) | ✅ | — | `entityCrudCore` | — |
 | EntityPage — affectations (D2.8d1) | ✅ | — | `teacherAssignmentWorkflow` | Modale UI reste EntityPage |
 | EntityPage — contacts & comptes (D2.8d2) | ✅ | — | `contactAccountWorkflow` | Modales UI restent EntityPage |
-| EntityPage — autres workflows / modales | ⏳ | — | 0 % | Paiements, relations… |
+| EntityPage — relations parent-enfant (D2.8d3) | ✅ | — | `parentChildRelationWorkflow` | Picker UI reste EntityPage |
+| EntityPage — autres workflows / modales | ⏳ | — | 0 % | Paiements… |
 | Documents / bulletins | ⏳ | — | 0 % | Page legacy |
 | Graphiques dashboard | ⏳ | — | 0 % | Chart + panel |
 | Shell `ParametresLayout` | ⏳ | ad hoc | 0 % | Shell module |
@@ -80,6 +81,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
 - D2.8c : noyau CRUD transversal — [RAPPORT](./RAPPORT-D2.8c-crud-entitypage.md).
 - D2.8d1 : workflow affectations enseignants — [RAPPORT](./RAPPORT-D2.8d1-affectations-enseignants.md).
-- D2.8d2 : workflow Contacts & Comptes — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md). Suite : D2.8d* (paiements, relations…).
+- D2.8d2 : workflow Contacts & Comptes — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md).
+- D2.8d3 : workflow Relations parent-enfant — [RAPPORT](./RAPPORT-D2.8d3-relations-parent-enfant.md). Suite : D2.8d4 Paiements (vigilance renforcée).
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.
