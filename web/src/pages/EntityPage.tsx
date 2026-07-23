@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -12,8 +12,11 @@ import {
   EntityListTable,
   InlineAlert,
   Modal,
-  type Column,
 } from "@/design-system";
+import {
+  buildEntityColumns,
+  PARENT_CHILD_HIDDEN_FIELDS,
+} from "./entity-page/entityColumns";
 import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
 import { DatePicker } from "../components/ui/DatePicker";
@@ -41,7 +44,6 @@ import {
 } from "../lib/userTeacherSync";
 import {
   getAssignmentSelectOptions,
-  formatTeacherAssignmentsSummary,
   listTeacherAssignments,
   normalizeAssignmentForm,
   prepareAssignmentForSave,
@@ -67,7 +69,6 @@ import { validatePasswordPolicy } from "../lib/userAccountRules";
 import {
   enforceSinglePrincipalParent,
   formatContactPersonName,
-  formatStudentPersonName,
   getParentLinkedStudentIds,
   getRelationParentUserOptions,
   getRelationStudentOptions,
@@ -78,7 +79,6 @@ import {
   removeParentChildBundle,
   RELATION_PARENT_CHILD,
   syncParentChildRelations,
-  splitParentChildStudentNames,
   validateParentChildBundle,
   validateRelation,
 } from "../lib/relations";
@@ -96,7 +96,6 @@ import { PaymentReceipt } from "../components/payments/PaymentReceipt";
 import {
   buildPaymentAuditEntry,
   cancelPaymentRecord,
-  isPaymentCancelled,
   type PaymentRecord,
 } from "../lib/quickPayment";
 import {
@@ -172,47 +171,12 @@ function linkStudentFromName(
   };
 }
 
-function renderSeparatedStudentNames(labels: string[]): ReactNode {
-  if (!labels.length) return "—";
-  return (
-    <div className="divide-y divide-line">
-      {labels.map((label, index) => (
-        <div key={`${label}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
-          {label}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 interface EntityPageProps {
   entity: SchoolEntityKey;
   /** Vue simplifiée : uniquement les liaisons parent → élève. */
   mode?: "parentChildRelations";
   /** Limite la liste et la création à une classe (gestion depuis Classes). */
   classScope?: string;
-}
-
-const PARENT_CHILD_HIDDEN_FIELDS = new Set(["relationType", "accountCode", "toStudentId"]);
-const PARENT_CHILD_COLUMNS = ["fromContactName", "toStudentName", "isPrincipal", "status"];
-const PARENT_CHILD_COLUMN_LABELS: Record<string, string> = {
-  fromContactName: "Parent",
-  toStudentName: "Élève(s)",
-  isPrincipal: "Parent principal",
-  status: "Statut",
-};
-
-function relationColumnHeader(
-  key: string,
-  module: NonNullable<ReturnType<typeof getEntityModule>>,
-  isParentChildMode: boolean,
-): string {
-  if (isParentChildMode && PARENT_CHILD_COLUMN_LABELS[key]) {
-    return PARENT_CHILD_COLUMN_LABELS[key];
-  }
-  return (
-    module.columnLabels?.[key] ?? module.fields.find((field) => field.key === key)?.label ?? key
-  );
 }
 
 /** Entités « données sensibles » tracées au journal d'audit (WEB-ME-006 / SEC-ME-003). */
@@ -1735,166 +1699,50 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     }
   }
 
-  const displayColumns = isParentChildMode ? PARENT_CHILD_COLUMNS : module.columns;
   const displayFields = isParentChildMode
     ? module.fields.filter((field) => !PARENT_CHILD_HIDDEN_FIELDS.has(field.key))
     : module.fields;
 
-  const dataColumns: Column<Record<string, unknown>>[] = displayColumns.map((key) => ({
-    key,
-    header: relationColumnHeader(key, module, isParentChildMode),
-    render: (row: Record<string, unknown>) => {
-      if (module.key === "relations" && key === "fromContactName") {
-        const account = ((state.users ?? []) as unknown as Record<string, unknown>[]).find(
-          (item) => String(item.id ?? "") === String(row.fromContactId ?? ""),
-        );
-        if (account) return formatContactPersonName(account);
-      }
-      if (module.key === "relations" && key === "toStudentName") {
-        if (isParentChildMode) {
-          const storedNames = splitParentChildStudentNames(String(row.toStudentName ?? ""));
-          if (storedNames.length) return renderSeparatedStudentNames(storedNames);
-          const studentIds = Array.isArray(row.toStudentIds)
-            ? (row.toStudentIds as string[]).map(String).filter(Boolean)
-            : String(row.toStudentId ?? "").trim()
-              ? [String(row.toStudentId)]
-              : [];
-          const labels = studentIds
-            .map((studentId) => {
-              const student = ((state.students ?? []) as Record<string, unknown>[]).find(
-                (item) => String(item.id ?? "") === studentId,
-              );
-              return student ? formatStudentPersonName(student) : "";
-            })
-            .filter(Boolean);
-          return renderSeparatedStudentNames(labels);
-        }
-        const student = ((state.students ?? []) as Record<string, unknown>[]).find(
-          (item) => String(item.id ?? "") === String(row.toStudentId ?? ""),
-        );
-        if (student) return formatStudentPersonName(student);
-      }
-      if (module.key === "teachers" && key === "publicId") {
-        const publicId = String(row.publicId ?? "").trim();
-        if (!publicId) return "—";
-        return `${publicId} · connexion : ${getTeacherLoginIdentifier(publicId)}`;
-      }
-      if (module.key === "teachers" && key === "assignmentsSummary") {
-        const teacherAssignments = listTeacherAssignments(row, scopedAssignmentsList);
-        return formatTeacherAssignmentsSummary(teacherAssignments);
-      }
-      return String(row[key] ?? "—");
+  const columns = buildEntityColumns({
+    module,
+    isParentChildMode,
+    busy,
+    canUpdate,
+    allowDelete,
+    studentsCanRead: studentsPermissions.canRead,
+    assignmentCanCreateOrUpdate:
+      assignmentPermissions.canCreate || assignmentPermissions.canUpdate,
+    users: ((state.users ?? []) as unknown as Record<string, unknown>[]),
+    students: ((state.students ?? []) as Record<string, unknown>[]),
+    scopedStudents: scopedStudentsList,
+    scopedAssignments: scopedAssignmentsList,
+    onEdit: (row) => {
+      const next =
+        module.key === "assignments"
+          ? normalizeAssignmentForm({ ...row }, scopedTeachers(scopeUser, state))
+          : module.key === "relations" && isParentChildMode
+            ? parentChildBundleToForm(row)
+            : module.key === "teachers"
+              ? normalizeTeacherFormRow({ ...row })
+              : { ...row };
+      setEditing(next);
     },
-  }));
-
-  if (module.key === "classes") {
-    dataColumns.push({
-      key: "studentCount",
-      header: "Effectif",
-      render: (row) => {
-        const count = scopedStudentsList.filter(
-          (student) => normalize(String(student.className ?? "")) === normalize(String(row.name ?? "")),
-        ).length;
-        return String(count);
-      },
-    });
-  }
-
-  const columns: Column<Record<string, unknown>>[] = [
-    ...dataColumns,
-    {
-      key: "actions",
-      header: "Actions",
-      className: "no-print",
-      render: (row) => (
-        <div className="flex flex-wrap gap-2">
-          {module.key === "payments" ? (
-            <>
-              <Button variant="secondary" size="sm" onClick={() => setReceiptPayment(row as PaymentRecord)}>
-                Reçu
-              </Button>
-              {canUpdate && !isPaymentCancelled(row as PaymentRecord) ? (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void handleCancelPayment(row as PaymentRecord)}
-                >
-                  Annuler
-                </Button>
-              ) : null}
-            </>
-          ) : (
-            <>
-              {module.key === "classes" && studentsPermissions.canRead ? (
-                <Link
-                  to={`/etablissement/classes/${encodeURIComponent(String(row.name ?? ""))}/eleves`}
-                  className="inline-flex"
-                >
-                  <Button variant="secondary" size="sm" type="button">
-                    Élèves
-                  </Button>
-                </Link>
-              ) : null}{module.key === "students" && row.id ? (
-  <Link
-    to={`/etablissement/eleves/${encodeURIComponent(String(row.id))}`}
-    className="inline-flex"
-  >
-    <Button variant="secondary" size="sm" type="button">
-      Dossier
-    </Button>
-  </Link>
-) : null}
-              {canUpdate ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    const next =
-                      module.key === "assignments"
-                        ? normalizeAssignmentForm(
-                            { ...row },
-                            scopedTeachers(scopeUser, state),
-                          )
-                        : module.key === "relations" && isParentChildMode
-                          ? parentChildBundleToForm(row)
-                          : module.key === "teachers"
-                            ? normalizeTeacherFormRow({ ...row })
-                            : { ...row };
-                    setEditing(next);
-                  }}
-                >
-                  Modifier
-                </Button>
-              ) : null}
-              {module.key === "teachers" &&
-              (assignmentPermissions.canCreate || assignmentPermissions.canUpdate) ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setTeacherAssignmentContext({ ...row });
-                    setEditingAssignment({
-                      teacherId: String(row.id ?? ""),
-                      className: "",
-                      subject: "",
-                    });
-                  }}
-                >
-                  Affecter
-                </Button>
-              ) : null}
-              {allowDelete ? (
-                <Button variant="danger" size="sm" disabled={busy} onClick={() => void handleDelete(row)}>
-                  Supprimer
-                </Button>
-              ) : null}
-            </>
-          )}
-        </div>
-      ),
+    onDelete: (row) => {
+      void handleDelete(row);
     },
-  ];
+    onAssignTeacher: (row) => {
+      setTeacherAssignmentContext({ ...row });
+      setEditingAssignment({
+        teacherId: String(row.id ?? ""),
+        className: "",
+        subject: "",
+      });
+    },
+    onShowPaymentReceipt: (row) => setReceiptPayment(row),
+    onCancelPayment: (row) => {
+      void handleCancelPayment(row);
+    },
+  });
 
   const listTitle = classScope
     ? `Élèves — ${classScope}`

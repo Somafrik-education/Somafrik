@@ -8,8 +8,10 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 
 | Module | Sous-périmètre | Statut | Layout | Legacy restant |
 |--------|----------------|--------|--------|----------------|
-| Infra | D2.7 EntityPage — chrome liste | ✅ | `ListLayout` via `EntityListShell` | Handlers / colonnes / modales |
-| Infra | D2.7 EntityPage — modales / colonnes | ⏳ | — | Dans monolithe |
+| Infra | D2.7 EntityPage — chrome liste | ✅ | `ListLayout` via `EntityListShell` | Handlers / modales |
+| Infra | D2.8a — Colonnes EntityPage | ✅ | — | `entityColumns.tsx` ; handlers/modales restants |
+| Infra | D2.8b — Options formulaire | ⏳ | — | `getSelectOptionsForField` |
+| Infra | D2.7/D2.8 — modales & handlers | ⏳ | — | Monolithe restant |
 | Élèves | Fiche / workspace | ✅ | `RecordLayout` | StatusBadge ; nav onglets custom |
 | Élèves | Liste (D3.1b) | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage |
 | Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |
@@ -38,8 +40,9 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Toast provider (`main.tsx`) | ✅ | — | DS runtime | Re-export ui |
 | Modal / Confirm | ✅ | — | DS runtime | Re-export ui |
 | Table | ✅ | — | DS runtime | Re-export ui |
-| EntityPage — chrome liste (D2.7) | ✅ | `ListLayout` | patterns `entity-list` | Modales / colonnes / handlers |
-| EntityPage — modales & colonnes | ⏳ | — | 0 % | Monolithe restant |
+| EntityPage — chrome liste (D2.7) | ✅ | `ListLayout` | patterns `entity-list` | Handlers / modales |
+| EntityPage — colonnes (D2.8a) | ✅ | — | `entityColumns` | Options / CRUD / modales |
+| EntityPage — modales & handlers | ⏳ | — | 0 % | Monolithe restant |
 | Documents / bulletins | ⏳ | — | 0 % | Page legacy |
 | Graphiques dashboard | ⏳ | — | 0 % | Chart + panel |
 | Shell `ParametresLayout` | ⏳ | ad hoc | 0 % | Shell module |
@@ -65,5 +68,6 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.2b : liste Classes — [RAPPORT](./RAPPORT-D3.2b-liste-classes.md).
 - D3.3 : liste Enseignants — [RAPPORT](./RAPPORT-D3.3-enseignants.md).
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
+- D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md). Suite : D2.8b options formulaire.
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.
