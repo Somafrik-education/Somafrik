@@ -46,6 +46,7 @@ function buildDurableNotesBackOfficePayload(payload = {}, options = {}) {
           ...row,
           syncStatus: "failed",
           syncError: reject.error ?? "Échec de synchronisation",
+          syncErrorCode: reject.code ?? row.syncErrorCode,
           clientMutationId: row.clientMutationId ?? reject.clientMutationId,
         };
       });

@@ -199,6 +199,35 @@ class PostgresRepository {
     }
   }
 
+  /**
+   * HOTFIX-SYNC-04 — Isole chaque upsert Notes dans un SAVEPOINT.
+   * Sans cela, une erreur SQL sur une note abortait toute la TX → 500 « Erreur interne Somafrik ».
+   */
+  async withSavepoint(fn) {
+    if (!this._txClient) {
+      return fn();
+    }
+    const name = `sp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    await this.query(`SAVEPOINT ${name}`);
+    try {
+      const result = await fn();
+      await this.query(`RELEASE SAVEPOINT ${name}`);
+      return result;
+    } catch (error) {
+      try {
+        await this.query(`ROLLBACK TO SAVEPOINT ${name}`);
+      } catch (_rollbackError) {
+        // conserve l'erreur métier d'origine
+      }
+      try {
+        await this.query(`RELEASE SAVEPOINT ${name}`);
+      } catch (_releaseError) {
+        // ignore
+      }
+      throw error;
+    }
+  }
+
   async ensureGradeCanonicalUniqueness() {
     const {
       COUNT_GRADE_DUPLICATE_GROUPS_SQL,
@@ -982,7 +1011,8 @@ class PostgresRepository {
   }
 
   /**
-   * D3.6b — Upsert note canonique : clé (school_id, evaluation_id, student_id) + version.
+   * D3.6b + HOTFIX-SYNC-04 — Upsert note canonique : clé (school_id, evaluation_id, student_id) + version.
+   * Erreurs structurées GRADE_* ; résolution élève via codes BO / student_code.
    */
   async upsertGrade(payload, principal = {}, options = {}) {
     const {
@@ -991,181 +1021,180 @@ class PostgresRepository {
       fromGradeStatus,
     } = require("../lib/gradesCanonical");
     const { assertNoteOptimisticLock, noteVersion } = require("../lib/noteConcurrency");
+    const { GradeErrors, mapGradeSyncError } = require("../lib/gradeAttachment");
 
-    const evaluationKey = String(payload.evaluationId ?? "").trim();
-    if (!evaluationKey) {
-      const error = new Error("evaluation_id obligatoire pour une note");
-      error.statusCode = 400;
-      throw error;
-    }
+    try {
+      const evaluationKey = String(
+        payload.resolvedEvaluationId ?? payload.evaluationId ?? "",
+      ).trim();
+      if (!evaluationKey) {
+        throw GradeErrors.EVALUATION_REQUIRED();
+      }
 
-    const evaluation = await this.resolveEvaluationRow(evaluationKey, payload.schoolCode);
-    if (!evaluation) {
-      const error = new Error("Evaluation introuvable");
-      error.statusCode = 404;
-      throw error;
-    }
+      const evaluation = await this.resolveEvaluationRow(evaluationKey, payload.schoolCode);
+      if (!evaluation) {
+        throw GradeErrors.EVALUATION_MISSING(evaluationKey);
+      }
 
-    const gradeStatus = toGradeStatus(
-      payload.gradeStatus ?? payload.status,
-      payload.value != null && payload.value !== "",
-    );
-    const maxScore = Number(payload.scale ?? evaluation.max_score ?? 20);
-    const coefficient = Number(
-      payload.evaluationCoefficient ?? evaluation.coefficient ?? payload.coefficient ?? 1,
-    );
-    const scoreRaw = gradeStatus === "graded" ? payload.value ?? payload.score : null;
-    const contractError = validateGradeContract({
-      status: gradeStatus,
-      score: scoreRaw,
-      maxScore,
-      coefficient,
-    });
-    if (contractError) {
-      const error = new Error(contractError);
-      error.statusCode = 400;
-      throw error;
-    }
-    const score = gradeStatus === "graded" ? Number(scoreRaw) : null;
-
-    const student = await this.one(
-      `SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
-       FROM students st
-       JOIN schools s ON s.id = st.school_id
-       LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
-       LEFT JOIN classes cl ON cl.id = e.class_id
-       WHERE st.student_code = $1 OR st.id::text = $1`,
-      [String(payload.studentId)],
-    );
-    if (!student) {
-      const error = new Error("Eleve introuvable");
-      error.statusCode = 404;
-      throw error;
-    }
-    if (String(student.school_id) !== String(evaluation.school_id)) {
-      const error = new Error("L'élève et l'évaluation doivent appartenir au même établissement.");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    if (
-      principal.role === "Enseignant" &&
-      !(principal.classNames ?? []).includes(student.class_name) &&
-      !options.allowMissingTeacher
-    ) {
-      const error = new Error("Accès refusé: élève hors classe affectée.");
-      error.statusCode = 403;
-      throw error;
-    }
-
-    const teacher =
-      (await this.findTeacherForGrade(
-        evaluation.school_id,
-        principal.sub,
-        evaluation.class_id,
-        evaluation.subject_id,
-        principal.role,
-      )) ??
-      (options.allowMissingTeacher
-        ? await this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [
-            evaluation.school_id,
-          ])
-        : null);
-    if (!teacher && !evaluation.teacher_id) {
-      const error = new Error("Enseignant introuvable");
-      error.statusCode = 400;
-      throw error;
-    }
-    const teacherId = evaluation.teacher_id ?? teacher.id;
-
-    let existing = await this.one(
-      `SELECT * FROM grades
-       WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
-       LIMIT 1`,
-      [evaluation.school_id, evaluation.id, student.id],
-    );
-    if (!existing && isUuid(payload.id)) {
-      existing = await this.one("SELECT * FROM grades WHERE id = $1", [payload.id]);
-    }
-
-    if (existing) {
-      assertNoteOptimisticLock(
-        { version: existing.version ?? 1 },
-        payload.version ?? payload.expectedVersion,
+      const gradeStatus = toGradeStatus(
+        payload.gradeStatus ?? payload.status,
+        payload.value != null && payload.value !== "",
       );
-      const nextVersion = noteVersion(existing) + 1;
-      await this.query(
-        `UPDATE grades
-         SET score = $1,
-             max_score = $2,
-             coefficient = $3,
-             teacher_id = $4,
-             grade_type = $5,
-             comment = $6,
-             grade_status = $7,
-             evaluation_id = $8,
-             class_id = $9,
-             subject_id = $10,
-             term_id = $11,
-             version = $12,
-             updated_by = $13,
-             updated_at = NOW()
-         WHERE id = $14`,
+      const maxScore = Number(payload.scale ?? evaluation.max_score ?? 20);
+      const coefficient = Number(
+        payload.evaluationCoefficient ?? evaluation.coefficient ?? payload.coefficient ?? 1,
+      );
+      const scoreRaw = gradeStatus === "graded" ? payload.value ?? payload.score : null;
+      const contractError = validateGradeContract({
+        status: gradeStatus,
+        score: scoreRaw,
+        maxScore,
+        coefficient,
+      });
+      if (contractError) {
+        throw GradeErrors.CONTRACT(contractError);
+      }
+      const score = gradeStatus === "graded" ? Number(scoreRaw) : null;
+
+      const studentKey = String(payload.studentId ?? "").trim();
+      const schoolCode =
+        String(payload.schoolCode ?? "").trim() ||
+        (await this.one(`SELECT school_code FROM schools WHERE id = $1`, [evaluation.school_id]))
+          ?.school_code;
+      const { row: student } = await this.queryStudentWithClass(
+        studentKey,
+        schoolCode,
+        options.backOfficeStudents ?? null,
+      );
+      if (!student) {
+        throw GradeErrors.STUDENT_MISSING(studentKey);
+      }
+      if (String(student.school_id) !== String(evaluation.school_id)) {
+        throw GradeErrors.STUDENT_SCHOOL_MISMATCH();
+      }
+
+      if (
+        principal.role === "Enseignant" &&
+        !(principal.classNames ?? []).includes(student.class_name) &&
+        !options.allowMissingTeacher
+      ) {
+        throw GradeErrors.ACCESS_DENIED("Accès refusé: élève hors classe affectée.");
+      }
+
+      const teacher =
+        (await this.findTeacherForGrade(
+          evaluation.school_id,
+          principal.sub,
+          evaluation.class_id,
+          evaluation.subject_id,
+          principal.role,
+        )) ??
+        (options.allowMissingTeacher
+          ? await this.one(
+              "SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1",
+              [evaluation.school_id],
+            )
+          : null);
+      if (!teacher && !evaluation.teacher_id) {
+        throw GradeErrors.TEACHER_MISSING();
+      }
+      const teacherId = evaluation.teacher_id ?? teacher.id;
+
+      let existing = await this.one(
+        `SELECT * FROM grades
+         WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
+         LIMIT 1`,
+        [evaluation.school_id, evaluation.id, student.id],
+      );
+      if (!existing && isUuid(payload.id)) {
+        existing = await this.one("SELECT * FROM grades WHERE id = $1", [payload.id]);
+      }
+
+      if (existing) {
+        try {
+          assertNoteOptimisticLock(
+            { version: existing.version ?? 1 },
+            payload.version ?? payload.expectedVersion,
+          );
+        } catch (lockError) {
+          throw GradeErrors.VERSION_CONFLICT(lockError.message);
+        }
+        const nextVersion = noteVersion(existing) + 1;
+        await this.query(
+          `UPDATE grades
+           SET score = $1,
+               max_score = $2,
+               coefficient = $3,
+               teacher_id = $4,
+               grade_type = $5,
+               comment = $6,
+               grade_status = $7,
+               evaluation_id = $8,
+               class_id = $9,
+               subject_id = $10,
+               term_id = $11,
+               version = $12,
+               updated_by = $13,
+               updated_at = NOW()
+           WHERE id = $14`,
+          [
+            score,
+            maxScore,
+            coefficient,
+            teacherId,
+            toDbEvaluationType(payload.evaluationType ?? evaluation.evaluation_type),
+            payload.comment ?? "",
+            gradeStatus,
+            evaluation.id,
+            evaluation.class_id,
+            evaluation.subject_id,
+            evaluation.term_id,
+            nextVersion,
+            isUuid(principal.sub) ? principal.sub : null,
+            existing.id,
+          ],
+        );
+        if (!options.skipCacheClear) this.cachedDataset = null;
+        return this.getGradeById(existing.id);
+      }
+
+      const inserted = await this.one(
+        `INSERT INTO grades (
+           school_id, student_id, class_id, subject_id, teacher_id, term_id, evaluation_id,
+           grade_type, score, max_score, coefficient, comment, grade_status, version, created_by, updated_by
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,$14,$14)
+         RETURNING id`,
         [
+          evaluation.school_id,
+          student.id,
+          evaluation.class_id,
+          evaluation.subject_id,
+          teacherId,
+          evaluation.term_id,
+          evaluation.id,
+          toDbEvaluationType(payload.evaluationType ?? evaluation.evaluation_type),
           score,
           maxScore,
           coefficient,
-          teacherId,
-          toDbEvaluationType(payload.evaluationType ?? evaluation.evaluation_type),
           payload.comment ?? "",
           gradeStatus,
-          evaluation.id,
-          evaluation.class_id,
-          evaluation.subject_id,
-          evaluation.term_id,
-          nextVersion,
           isUuid(principal.sub) ? principal.sub : null,
-          existing.id,
         ],
       );
       if (!options.skipCacheClear) this.cachedDataset = null;
-      return this.getGradeById(existing.id);
+      const mapped = await this.getGradeById(inserted.id);
+      return mapped ?? {
+        id: inserted.id,
+        evaluationId: evaluation.legacy_json_id || evaluation.id,
+        studentId: student.student_code,
+        gradeStatus: fromGradeStatus(gradeStatus),
+        value: score,
+        scale: maxScore,
+        version: 1,
+      };
+    } catch (error) {
+      throw mapGradeSyncError(error);
     }
-
-    const inserted = await this.one(
-      `INSERT INTO grades (
-         school_id, student_id, class_id, subject_id, teacher_id, term_id, evaluation_id,
-         grade_type, score, max_score, coefficient, comment, grade_status, version, created_by, updated_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,$14,$14)
-       RETURNING id`,
-      [
-        evaluation.school_id,
-        student.id,
-        evaluation.class_id,
-        evaluation.subject_id,
-        teacherId,
-        evaluation.term_id,
-        evaluation.id,
-        toDbEvaluationType(payload.evaluationType ?? evaluation.evaluation_type),
-        score,
-        maxScore,
-        coefficient,
-        payload.comment ?? "",
-        gradeStatus,
-        isUuid(principal.sub) ? principal.sub : null,
-      ],
-    );
-    if (!options.skipCacheClear) this.cachedDataset = null;
-    const mapped = await this.getGradeById(inserted.id);
-    return mapped ?? {
-      id: inserted.id,
-      evaluationId: evaluation.legacy_json_id || evaluation.id,
-      studentId: student.student_code,
-      gradeStatus: fromGradeStatus(gradeStatus),
-      value: score,
-      scale: maxScore,
-      version: 1,
-    };
   }
 
   async resolveEvaluationRow(evaluationKey, schoolCode) {
@@ -1437,15 +1466,19 @@ class PostgresRepository {
   }
 
   /**
-   * Sync BO → PG par enregistrement (HOTFIX-SYNC-01).
+   * Sync BO → PG par enregistrement (HOTFIX-SYNC-01 + HOTFIX-SYNC-04).
    * Acceptés → PG ; rejetés métier → ACK failed (pas de throw global, pas de perte silencieuse).
-   * Les erreurs infra inattendues remontent toujours (rollback txn).
+   * Chaque ligne est isolée par SAVEPOINT pour ne pas abortir la TX sur une note.
+   * Les notes résolvent l'évaluation via legacy_json_id / id canonique créé juste avant.
    */
   async syncNotesDomainFromBackOffice(payload = {}) {
+    const { mapGradeSyncError } = require("../lib/gradeAttachment");
     const evaluations = Array.isArray(payload.evaluations) ? payload.evaluations : null;
     const notes = Array.isArray(payload.notes) ? payload.notes : null;
     const accepted = { evaluations: [], notes: [] };
     const rejected = [];
+    /** @type {Map<string, string>} legacy_json_id | client id → UUID PG évaluation */
+    const evaluationIdsByLegacy = new Map();
     if (!evaluations && !notes) {
       return { synced: true, accepted, rejected, evaluationCount: 0, noteCount: 0 };
     }
@@ -1462,14 +1495,31 @@ class PostgresRepository {
         const id = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
         const clientMutationId = String(evaluation.clientMutationId ?? "").trim() || undefined;
         try {
-          await this.upsertEvaluationFromLegacy(evaluation, {
-            skipCacheClear: true,
-            context: attachmentContext,
-            ensure: true,
-          });
-          if (id) accepted.evaluations.push(id);
+          const row = await this.withSavepoint(() =>
+            this.upsertEvaluationFromLegacy(evaluation, {
+              skipCacheClear: true,
+              context: attachmentContext,
+              ensure: true,
+            }),
+          );
+          if (id) {
+            accepted.evaluations.push(id);
+            if (row?.id) {
+              evaluationIdsByLegacy.set(id, String(row.id));
+              if (row.legacy_json_id) {
+                evaluationIdsByLegacy.set(String(row.legacy_json_id), String(row.id));
+              }
+            }
+          }
         } catch (error) {
-          if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+          // Seules les pannes infra non classifiées remontent (rollback global).
+          if (
+            error?.statusCode &&
+            Number(error.statusCode) >= 500 &&
+            !error?.code
+          ) {
+            throw error;
+          }
           rejected.push({
             entity: "evaluations",
             id: id || undefined,
@@ -1486,29 +1536,45 @@ class PostgresRepository {
         const id = String(note.id ?? "").trim();
         const clientMutationId = String(note.clientMutationId ?? "").trim() || undefined;
         try {
-          if (!String(note.evaluationId ?? "").trim()) {
-            const error = new Error(
-              `D3.6b: note sans evaluation_id refusée (${note.id ?? note.studentId ?? "?"})`,
+          const evaluationKey = String(note.evaluationId ?? "").trim();
+          if (!evaluationKey) {
+            throw mapGradeSyncError(
+              Object.assign(new Error("evaluation_id obligatoire pour une note"), {
+                code: "GRADE_ATTACHMENT_EVALUATION",
+                statusCode: 400,
+              }),
             );
-            error.statusCode = 400;
-            throw error;
           }
-          await this.upsertGrade(
-            {
-              ...note,
-              gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
-            },
-            { role: "Admin School", sub: note.authorId ?? note.updatedBy },
-            { skipCacheClear: true, allowMissingTeacher: true },
+          const resolvedEvaluationId =
+            evaluationIdsByLegacy.get(evaluationKey) || evaluationKey;
+          await this.withSavepoint(() =>
+            this.upsertGrade(
+              {
+                ...note,
+                evaluationId: evaluationKey,
+                resolvedEvaluationId,
+                gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
+              },
+              { role: "Admin School", sub: note.authorId ?? note.updatedBy ?? note.teacherId },
+              {
+                skipCacheClear: true,
+                allowMissingTeacher: true,
+                backOfficeStudents: Array.isArray(payload.students) ? payload.students : null,
+              },
+            ),
           );
           if (id) accepted.notes.push(id);
         } catch (error) {
-          if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+          const mapped = mapGradeSyncError(error);
+          if (mapped?.statusCode && Number(mapped.statusCode) >= 500 && !mapped?.code) {
+            throw mapped;
+          }
           rejected.push({
             entity: "notes",
             id: id || undefined,
             clientMutationId,
-            error: error?.message ?? "Échec de synchronisation de la note",
+            code: mapped?.code,
+            error: mapped?.message ?? "Échec de synchronisation de la note",
           });
         }
       }
@@ -1537,14 +1603,18 @@ class PostgresRepository {
     return (classNames ?? []).some((name) => this.normalizeComparableText(name) === target);
   }
 
-  async findBackOfficeStudentRecord(studentKey) {
-    const state = (await this.getBackOfficeState()) ?? {};
-    const students = Array.isArray(state.students) ? state.students : [];
+  async findBackOfficeStudentRecord(studentKey, studentsOverride = null) {
+    const state = studentsOverride == null ? (await this.getBackOfficeState()) ?? {} : null;
+    const students = Array.isArray(studentsOverride)
+      ? studentsOverride
+      : Array.isArray(state?.students)
+        ? state.students
+        : [];
     const key = String(studentKey ?? "").trim();
     if (!key) return null;
     return (
       students.find((student) =>
-        [student.id, student.publicId, student.matricule].some(
+        [student.id, student.publicId, student.matricule, student.studentCode].some(
           (candidate) => String(candidate ?? "").trim() === key,
         ),
       ) ?? null
@@ -1562,12 +1632,13 @@ class PostgresRepository {
       add(backOfficeStudent.id);
       add(backOfficeStudent.publicId);
       add(backOfficeStudent.matricule);
+      add(backOfficeStudent.studentCode);
     }
     return [...keys];
   }
 
-  async queryStudentWithClass(studentKey, schoolCode) {
-    const backOfficeStudent = await this.findBackOfficeStudentRecord(studentKey);
+  async queryStudentWithClass(studentKey, schoolCode, studentsOverride = null) {
+    const backOfficeStudent = await this.findBackOfficeStudentRecord(studentKey, studentsOverride);
     const lookupKeys = this.collectStudentLookupKeys(studentKey, backOfficeStudent);
 
     for (const key of lookupKeys) {

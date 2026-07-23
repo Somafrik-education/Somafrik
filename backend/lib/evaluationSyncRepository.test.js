@@ -275,6 +275,11 @@ function createInjectablePostgresRepository() {
       return [];
     }
 
+    // HOTFIX-SYNC-04 — SAVEPOINT isolent les upserts ; no-op en mémoire.
+    if (upper.startsWith("SAVEPOINT ") || upper.startsWith("RELEASE SAVEPOINT") || upper.startsWith("ROLLBACK TO SAVEPOINT")) {
+      return [];
+    }
+
     // Statements hors chemin Notes (init/migration) : no-op sûr
     if (
       upper.startsWith("DO $$") ||

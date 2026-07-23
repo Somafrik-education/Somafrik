@@ -32,6 +32,7 @@ export interface SyncAckItem {
   id?: string;
   clientMutationId?: string;
   canonicalId?: string;
+  code?: string;
   error?: string;
 }
 
@@ -170,6 +171,9 @@ export function applySyncAckToOutbox(entries: SyncOutboxEntry[], ack?: SyncAck |
     );
   }
   for (const item of ack.rejected ?? []) {
+    const code = String(item.code ?? "").trim();
+    const message = String(item.error ?? "Échec de synchronisation").trim();
+    const lastError = code && !message.startsWith(code) ? `${code}: ${message}` : message;
     next = markOutboxStatus(
       next,
       {
@@ -178,7 +182,7 @@ export function applySyncAckToOutbox(entries: SyncOutboxEntry[], ack?: SyncAck |
         entity: item.entity,
       },
       "failed",
-      item.error ?? "Échec de synchronisation",
+      lastError,
     );
   }
   // Purge synced anciens pour limiter la taille
