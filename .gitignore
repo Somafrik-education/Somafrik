@@ -35,6 +35,7 @@ local.properties
 **/local.properties
 *.keystore
 test-results/
+tmp/
 
 # Caches / tooling
 .cache/

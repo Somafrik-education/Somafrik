@@ -44,16 +44,53 @@ user.contactId          = contact.id
 
 ---
 
-## 4. Migration
+## 4. Migration opérationnelle (persistée)
 
 Helper : `backend/lib/parentRelationIdentity.js`
 
 | Fonction | Rôle |
 |----------|------|
-| `inventoryParentRelations` | Classe canonical / legacy_user_id / orphan… |
-| `migrateParentRelationsToContactId` | Remap idempotent `user.id` → `user.contactId` |
+| `inventoryParentRelations` | Classe les liaisons (`canonical`, `legacy_user_id`, `legacy_missing_contact`, …) |
+| `migrateParentRelationsToContactId` | Remap idempotent `user.id` → `user.contactId` **si et seulement si** le contact cible existe dans `contacts` |
 
-Script : `node scripts/migrate-parent-relation-contact-ids.js [--dry-run\|--apply]`
+### Prérequis
+
+1. Backend joignable (`SOMAFRIK_API_URL`, défaut `http://127.0.0.1:5000/api`)
+2. Compte superadmin ops (`SOMAFRIK_E2E_SUPERADMIN_ID` / `SOMAFRIK_E2E_SUPERADMIN_PASSWORD`)
+3. Fenêtre de maintenance courte recommandée (PUT state relations)
+
+### Procédure exécutable
+
+```bash
+# 1) Inventaire lecture seule (aucune écriture)
+node scripts/migrate-parent-relation-contact-ids.js
+
+# 2) Vérifier le résumé :
+#    - legacy_user_id = lignes migrables
+#    - legacy_missing_contact = user.contactId absent du registre (non touchées)
+
+# 3) Persistance sûre : sauvegarde JSON locale + putStatePatch({ relations })
+node scripts/migrate-parent-relation-contact-ids.js --apply --confirm
+
+# 4) Relancer l'inventaire : legacy_user_id doit être 0 ; second apply no-op
+node scripts/migrate-parent-relation-contact-ids.js
+```
+
+### Garanties du script `--apply --confirm`
+
+| Garantie | Comportement |
+|----------|--------------|
+| Canal store | API BackOffice `GET/PUT /api/backoffice/state` (même canal E2E) |
+| Sauvegarde | `tmp/parent-relation-migration-backup-<timestamp>.json` avant écriture |
+| Périmètre écrit | `relations` uniquement |
+| Contact cible | pas de remap si `user.contactId` ∉ `contacts` |
+| Comptage | inventaire avant / plan / après persistance |
+| Idempotence | second passage `changed === 0` (sinon exit 1) |
+| Confirmation | `--apply` **refuse** sans `--confirm` |
+
+### Hors script
+
+Corriger manuellement les lignes `legacy_missing_contact` (créer/réparer le contact, puis relancer).
 
 ---
 

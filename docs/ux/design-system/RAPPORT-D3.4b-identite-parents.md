@@ -31,8 +31,8 @@ user.contactId = contact.id
 | `entityColumns.tsx` | Affichage parent via `contactId` |
 | `entityModules.ts` | Libellé « Parent (contact) » |
 | `backend/lib/parentChildren.js` | Relations d’abord ; téléphone seulement si 0 résultat |
-| `backend/lib/parentRelationIdentity.js` | Inventaire + migration idempotente |
-| `scripts/migrate-parent-relation-contact-ids.js` | CLI inventaire |
+| `backend/lib/parentRelationIdentity.js` | Inventaire + migration idempotente (contact cible requis) |
+| `scripts/migrate-parent-relation-contact-ids.js` | CLI inventaire + `--apply --confirm` persisté (API + backup) |
 | `scripts/verify-e2e-0012-…` | Scénarios identité séparés |
 | `bulkPlatformSeed.js` | `fromContactId` = contact Parent |
 | Docs DS | Contrat + rapport + suivi |
@@ -47,6 +47,8 @@ user.contactId = contact.id
 |---------|----------|
 | Identité canonique | `contactId` |
 | UI chrome / liste / fiche | Non |
-| EntityPage rouvverte | Non |
+| EntityPage rouverte | Non |
 | E2E 0012 sans double seed | Oui |
-| Migration idempotente | Oui |
+| Migration persistée (`--apply --confirm`) | Oui (API + backup) |
+| Remap sans contact registre | Non (statut `legacy_missing_contact`) |
+| Idempotence | Oui |
