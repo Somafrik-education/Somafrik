@@ -60,6 +60,7 @@ Extraire les **plans métier Relations parent-enfant** hors de `EntityPage`, sur
 - Messages exacts create vs update / delete bundle
 - Changement de parent recharge les élèves liés s’il en existe
 - **`buildParentChildBundleDeletePlan` ne contrôle pas scope/permissions** : EntityPage conserve confirm + gates avant appel ; le plan ne doit jamais être invoqué depuis une autre UI sans ces préconditions
+- **`buildParentChildBundleDeletePlan` ne contrôle pas scope/permissions** : EntityPage conserve confirm + gates avant appel ; le plan ne doit jamais être invoqué depuis une autre UI sans ces préconditions
 
 ---
 

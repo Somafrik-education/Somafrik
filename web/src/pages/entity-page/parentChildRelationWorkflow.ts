@@ -177,6 +177,14 @@ export type ParentChildBundleDeletePlan = {
   successMessage: "Liaisons parent-enfant supprimées";
 };
 
+/**
+ * Construit le patch de suppression du bundle parent ↔ élèves.
+ *
+ * Précondition (hors module) : l’appelant DOIT avoir déjà appliqué
+ * confirm + contrôles permissions/scope (EntityPage aujourd’hui).
+ * Ce plan ne revalide ni le scope ni `canDelete` — ne pas l’appeler
+ * depuis une autre UI sans ces gates.
+ */
 export function buildParentChildBundleDeletePlan(
   deps: Pick<ParentChildRelationWorkflowDeps, "scopeUser" | "state">,
   input: { row: EntityRow },
