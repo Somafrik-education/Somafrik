@@ -2,7 +2,7 @@
 
 **Date :** 2026-07-23  
 **Contexte :** listes D3 stabilisées (Classes, Enseignants, Élèves, Membres classe)  
-**Fichier :** `web/src/pages/EntityPage.tsx` (~2500+ LOC après D2.7 chrome)
+**Fichier :** `web/src/pages/EntityPage.tsx` (~1883 LOC après D2.8e nettoyage)
 
 ---
 
@@ -17,9 +17,9 @@
 | Workflow Contacts & Comptes | pré-submit, promote/revoke, import, fiche, audit | **D2.8d2** ✅ |
 | Workflow Relations parent-enfant | bundle submit/delete, relation unitaire, helpers | **D2.8d3** ✅ |
 | Workflow Paiements | cancel, reçu, create persist | **D2.8d4** ✅ |
-| Nettoyage final | assemblage EntityPage / modales restantes | D2.8e |
+| Nettoyage final | assemblage EntityPage / modales restantes | **D2.8e** ✅ |
 | Chrome liste | déjà EntityList* (D2.7) | ✅ |
-| État / permissions / scope assembleur | reste dans EntityPage | D2.8e nettoyage |
+| État / permissions / scope assembleur | reste dans EntityPage (assembleur) | ✅ |
 
 ---
 
@@ -57,4 +57,5 @@ Candidats extraits :
 5. **D2.8d2** Contacts & Comptes ✅ — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md)  
 6. **D2.8d3** Relations parent-enfant ✅ — [RAPPORT](./RAPPORT-D2.8d3-relations-parent-enfant.md)  
 7. **D2.8d4** Paiements ✅ — [RAPPORT](./RAPPORT-D2.8d4-paiements.md)  
-8. D2.8e Nettoyage final  
+8. **D2.8e** Nettoyage final ✅ — [RAPPORT](./RAPPORT-D2.8e-nettoyage-entitypage.md)  
+

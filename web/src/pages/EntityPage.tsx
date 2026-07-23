@@ -311,31 +311,6 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
   const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
 
-  function getSelectOptionsForField(field: NonNullable<typeof module>["fields"][number]) {
-    return resolveEntitySelectOptions({
-      module,
-      field,
-      academicLists,
-      assignmentOptions,
-      schoolCode,
-      effectiveSchoolCode,
-      editing,
-      state,
-      scopeUser,
-    });
-  }
-
-  function getTeacherAssignmentFieldOptions(
-    field: NonNullable<typeof assignmentModule>["fields"][number],
-  ) {
-    return resolveTeacherAssignmentFieldOptions({
-      field,
-      teacherAssignmentOptions,
-      state,
-      effectiveSchoolCode,
-    });
-  }
-
   const school = getCurrentSchool(scopeUser, state);
 
   const rows = useMemo(() => {
@@ -399,6 +374,23 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
   async function persistPatch(patch: Partial<BackOfficeState>, message: string) {
     return persistEntityPatch({ update, showToast, setBusy }, patch, message);
+  }
+
+  async function applyPlan(
+    plan: { patch: Partial<BackOfficeState>; successMessage: string },
+    onSuccess?: () => void,
+  ) {
+    try {
+      await persistPatch(plan.patch, plan.successMessage);
+      onSuccess?.();
+    } catch {
+      /* toast déjà affiché */
+    }
+  }
+
+  function closeCancelModal() {
+    setCancellingPayment(null);
+    setCancelReason("");
   }
 
   async function handleResetContactPassword() {
@@ -501,12 +493,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       },
     );
     if (!plan.ok) return;
-
-    try {
-      await persistPatch(plan.patch, plan.successMessage);
-    } catch {
-      /* toast déjà affiché */
-    }
+    await applyPlan(plan);
   }
 
   function buildPedagogyPatch(
@@ -559,37 +546,25 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     return { [key]: nextEntityRows };
   }
 
-  async function handleParentChildBundleSubmit() {
-    if (!editing || !module) return;
-
-    const plan = buildParentChildBundleSubmitPlan(
-      {
-        scopeUser,
-        state,
-        showToast,
-        createRelationId: () => newEntityId("RELATIONS"),
-      },
-      {
-        editing,
-        permissions: { canCreate, canUpdate },
-      },
-    );
-    if (!plan.ok) return;
-
-    try {
-      await persistPatch(plan.patch, plan.successMessage);
-      setEditing(null);
-    } catch {
-      /* toast déjà affiché */
-    }
-  }
-
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!editing || !module) return;
 
     if (module.key === "relations" && isParentChildMode) {
-      await handleParentChildBundleSubmit();
+      const plan = buildParentChildBundleSubmitPlan(
+        {
+          scopeUser,
+          state,
+          showToast,
+          createRelationId: () => newEntityId("RELATIONS"),
+        },
+        {
+          editing,
+          permissions: { canCreate, canUpdate },
+        },
+      );
+      if (!plan.ok) return;
+      await applyPlan(plan, () => setEditing(null));
       return;
     }
 
@@ -675,10 +650,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     if (module.key === "assignments") {
       const teachers = scopedTeachers(scopeUser, state);
       workingItem = prepareAssignmentForSave(workingItem, teachers, schoolCode, state, scopeUser);
-      const scopedAssignments = getScopedEntityRows("assignments", scopeUser, state);
+      const existingAssignmentRows = getScopedEntityRows("assignments", scopeUser, state);
       const conflict = validateAssignmentConflict(
         workingItem,
-        scopedAssignments,
+        existingAssignmentRows,
         scopedCourses(scopeUser, state),
         scopedClasses(scopeUser, state),
         teachers,
@@ -935,18 +910,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       );
     }
 
-    try {
-      await persistPatch(patch, successMessage);
-      setEditing(null);
-    } catch {
-      /* toast déjà affiché */
-    }
-  }
-
-  async function handleCancelPayment(row: PaymentRecord) {
-    if (!module || module.key !== "payments") return;
-    setCancellingPayment(row);
-    setCancelReason("");
+    await applyPlan({ patch, successMessage }, () => setEditing(null));
   }
 
   async function submitCancelPayment() {
@@ -956,13 +920,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       { payment: cancellingPayment, reason: cancelReason },
     );
     if (!plan.ok) return;
-    try {
-      await persistPatch(plan.patch, plan.successMessage);
-      setCancellingPayment(null);
-      setCancelReason("");
-    } catch {
-      /* toast déjà affiché */
-    }
+    await applyPlan(plan, closeCancelModal);
   }
 
   async function handleDelete(row: Record<string, unknown>) {
@@ -999,11 +957,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
     if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
       const plan = buildParentChildBundleDeletePlan({ scopeUser, state }, { row });
-      try {
-        await persistPatch(plan.patch, plan.successMessage);
-      } catch {
-        /* toast déjà affiché */
-      }
+      await applyPlan(plan);
       return;
     }
 
@@ -1027,11 +981,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           }),
         ),
       };
-      try {
-        await persistPatch(classPatch, "Classe supprimée");
-      } catch {
-        /* toast déjà affiché */
-      }
+      await applyPlan({ patch: classPatch, successMessage: "Classe supprimée" });
       return;
     }
 
@@ -1067,11 +1017,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         deletePatch.auditLog = genericDeleteAudit;
       }
     }
-    try {
-      await persistPatch(deletePatch, ENTITY_DELETED_MESSAGE);
-    } catch {
-      /* toast déjà affiché */
-    }
+    await applyPlan({ patch: deletePatch, successMessage: ENTITY_DELETED_MESSAGE });
   }
 
   async function handleCreateFicheFromContact() {
@@ -1090,13 +1036,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       },
     );
     if (!plan.ok) return;
-    try {
-      await persistPatch(plan.patch, plan.successMessage);
+    await applyPlan(plan, () => {
       setLinkContactOpen(false);
       setLinkContactId("");
-    } catch {
-      /* toast déjà affiché */
-    }
+    });
   }
 
   async function handleAssignmentSubmit(event: FormEvent) {
@@ -1124,13 +1067,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     );
     if (!plan.ok) return;
 
-    try {
-      await persistPatch(plan.patch, plan.successMessage);
+    await applyPlan(plan, () => {
       setTeacherAssignmentContext(plan.refreshTeacherContext);
       setEditingAssignment(plan.resetEditingAssignment);
-    } catch {
-      /* toast déjà affiché */
-    }
+    });
   }
 
   async function handleDeleteAssignment(assignment: Record<string, unknown>) {
@@ -1162,8 +1102,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     );
     if (!plan.ok) return;
 
-    try {
-      await persistPatch(plan.patch, plan.successMessage);
+    await applyPlan(plan, () => {
       if (
         plan.clearEditingIfId &&
         String(editingAssignment?.id ?? "") === plan.clearEditingIfId
@@ -1172,9 +1111,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           emptyEditingAssignment(String(teacherAssignmentContext?.id ?? "")),
         );
       }
-    } catch {
-      /* toast déjà affiché */
-    }
+    });
   }
 
   const displayFields = isParentChildMode
@@ -1210,15 +1147,13 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     },
     onAssignTeacher: (row) => {
       setTeacherAssignmentContext({ ...row });
-      setEditingAssignment({
-        teacherId: String(row.id ?? ""),
-        className: "",
-        subject: "",
-      });
+      setEditingAssignment(emptyEditingAssignment(String(row.id ?? "")));
     },
     onShowPaymentReceipt: (row) => setReceiptPayment(row),
     onCancelPayment: (row) => {
-      void handleCancelPayment(row);
+      if (module.key !== "payments") return;
+      setCancellingPayment(row);
+      setCancelReason("");
     },
   });
 
@@ -1403,7 +1338,6 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           />
         }
       >
-        {/* EmptyState DS générique (D3.2b / D3.3) — aucune branche par entité. */}
         {rows.length === 0 ? (
           <EmptyState
             title={search.trim() ? "Aucun résultat" : "Liste vide"}
@@ -1561,7 +1495,17 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                     }}
                     options={[
                       { value: "", label: field.placeholder ?? "Choisir…" },
-                      ...getSelectOptionsForField(field),
+                      ...resolveEntitySelectOptions({
+                        module,
+                        field,
+                        academicLists,
+                        assignmentOptions,
+                        schoolCode,
+                        effectiveSchoolCode,
+                        editing,
+                        state,
+                        scopeUser,
+                      }),
                     ]}
                   />
                 ) : field.inputType === "date" ? (
@@ -1813,7 +1757,12 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                             }}
                             options={[
                               { value: "", label: field.placeholder ?? "Choisir…" },
-                              ...getTeacherAssignmentFieldOptions(field),
+                              ...resolveTeacherAssignmentFieldOptions({
+                                field,
+                                teacherAssignmentOptions,
+                                state,
+                                effectiveSchoolCode,
+                              }),
                             ]}
                           />
                         ) : (
@@ -1845,11 +1794,9 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                       variant="secondary"
                       size="sm"
                       onClick={() =>
-                        setEditingAssignment({
-                          teacherId: String(teacherAssignmentContext.id ?? ""),
-                          className: "",
-                          subject: "",
-                        })
+                        setEditingAssignment(
+                          emptyEditingAssignment(String(teacherAssignmentContext.id ?? "")),
+                        )
                       }
                     >
                       Nouvelle affectation
@@ -1907,19 +1854,10 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
             open={Boolean(cancellingPayment)}
             title="Annuler le paiement"
             description="L'annulation conserve l'historique comptable. Le motif est obligatoire."
-            onClose={() => {
-              setCancellingPayment(null);
-              setCancelReason("");
-            }}
+            onClose={closeCancelModal}
             footer={
               <>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setCancellingPayment(null);
-                    setCancelReason("");
-                  }}
-                >
+                <Button variant="secondary" onClick={closeCancelModal}>
                   Retour
                 </Button>
                 <Button variant="danger" disabled={busy || !cancelReason.trim()} onClick={() => void submitCancelPayment()}>

@@ -16,7 +16,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Infra | D2.8d2 — Contacts & Comptes | ✅ | — | `contactAccountWorkflow.ts` |
 | Infra | D2.8d3 — Relations parent-enfant | ✅ | — | `parentChildRelationWorkflow.ts` |
 | Infra | D2.8d4 — Paiements | ✅ | — | `paymentWorkflow.ts` |
-| Infra | D2.8e — Nettoyage final | ⏳ | — | Assemblage EntityPage / modales restantes |
+| Infra | D2.8e — Nettoyage final | ✅ | — | Assembleur EntityPage (modales UI conservées) |
 | Élèves | Fiche / workspace | ✅ | `RecordLayout` | StatusBadge ; nav onglets custom |
 | Élèves | Liste (D3.1b) | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage |
 | Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |
@@ -53,7 +53,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | EntityPage — contacts & comptes (D2.8d2) | ✅ | — | `contactAccountWorkflow` | Modales UI restent EntityPage |
 | EntityPage — relations parent-enfant (D2.8d3) | ✅ | — | `parentChildRelationWorkflow` | Picker UI reste EntityPage |
 | EntityPage — paiements (D2.8d4) | ✅ | — | `paymentWorkflow` | Modales UI restent EntityPage / QuickPaymentModal |
-| EntityPage — nettoyage final | ⏳ | — | 0 % | D2.8e |
+| EntityPage — nettoyage final (D2.8e) | ✅ | — | assembleur | Modales UI restent EntityPage |
 | Documents / bulletins | ⏳ | — | 0 % | Page legacy |
 | Graphiques dashboard | ⏳ | — | 0 % | Chart + panel |
 | Shell `ParametresLayout` | ⏳ | ad hoc | 0 % | Shell module |
@@ -85,6 +85,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D2.8d1 : workflow affectations enseignants — [RAPPORT](./RAPPORT-D2.8d1-affectations-enseignants.md).
 - D2.8d2 : workflow Contacts & Comptes — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md).
 - D2.8d3 : workflow Relations parent-enfant — [RAPPORT](./RAPPORT-D2.8d3-relations-parent-enfant.md).
-- D2.8d4 : workflow Paiements — [RAPPORT](./RAPPORT-D2.8d4-paiements.md). Suite : D2.8e nettoyage final.
+- D2.8d4 : workflow Paiements — [RAPPORT](./RAPPORT-D2.8d4-paiements.md).
+- D2.8e : nettoyage final assembleur EntityPage — [RAPPORT](./RAPPORT-D2.8e-nettoyage-entitypage.md). Lot D2.8 clos.
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.

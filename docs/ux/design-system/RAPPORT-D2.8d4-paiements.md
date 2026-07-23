@@ -79,4 +79,4 @@ Extraire les **plans métier Paiements** (annulation, reçu, persistance créati
 | Hooks / contextes | Non |
 | JSX déplacé | Non |
 | Vigilance montants / audit / immutabilité | Oui |
-| Suite | D2.8e nettoyage final (ou lots restants) |
+| Suite | D2.8e — nettoyage final EntityPage |
