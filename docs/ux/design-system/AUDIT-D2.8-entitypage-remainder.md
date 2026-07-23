@@ -46,8 +46,8 @@ Candidats extraits :
 
 ## 4. Ordre D2.8
 
-1. **D2.8a** Colonnes ← ce lot  
-2. D2.8b Options de formulaire  
+1. **D2.8a** Colonnes ✅  
+2. **D2.8b** Options de formulaire ✅  
 3. D2.8c Handlers CRUD  
 4. D2.8d Modales spécialisées  
 5. D2.8e Nettoyage final  
