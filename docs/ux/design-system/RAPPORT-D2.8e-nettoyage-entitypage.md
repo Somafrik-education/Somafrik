@@ -63,4 +63,4 @@ Finaliser le lot D2.8 en nettoyant l’assembleur `EntityPage.tsx` après les ex
 | Hooks / contextes déplacés | Non |
 | JSX déplacé | Non |
 | Comportement inchangé | Oui |
-| Suite | D2.8 clos ; reprise listes / fiches D3 selon CTO |
+| Suite | D2.8 clos (tag `d2.8e`) ; reprise D3 — D3.2a audit Classes |

@@ -21,7 +21,7 @@
 | [RAPPORT-D2.8e-nettoyage-entitypage.md](./RAPPORT-D2.8e-nettoyage-entitypage.md) | D2.8e nettoyage final EntityPage |
 | [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves (fiche) |
 | [RAPPORT-D3.1b-liste-eleves.md](./RAPPORT-D3.1b-liste-eleves.md) | D3.1b Liste Élèves (conso D2.7) |
-| [AUDIT-D3.2-classes.md](./AUDIT-D3.2-classes.md) · [RAPPORT-D3.2-classes.md](./RAPPORT-D3.2-classes.md) | D3.2 Classes métier (audit / scope lock) |
+| [AUDIT-D3.2-classes.md](./AUDIT-D3.2-classes.md) · [RAPPORT-D3.2a-audit-classes.md](./RAPPORT-D3.2a-audit-classes.md) · [RAPPORT-D3.2-classes.md](./RAPPORT-D3.2-classes.md) | D3.2 / D3.2a Classes (audit post-D2.8e) |
 | [RAPPORT-D3.2b-liste-classes.md](./RAPPORT-D3.2b-liste-classes.md) | D3.2b Liste Classes (conso D2.7) |
 | [RAPPORT-D3.2c-membres-classe.md](./RAPPORT-D3.2c-membres-classe.md) | D3.2c Membres classe (conso D2.7) |
 | [RAPPORT-D3.3-enseignants.md](./RAPPORT-D3.3-enseignants.md) | D3.3 Liste Enseignants (conso D2.7) |
