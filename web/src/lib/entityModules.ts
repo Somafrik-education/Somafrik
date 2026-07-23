@@ -202,8 +202,8 @@ export const SCHOOL_ENTITY_MODULES = ([
       },
       {
         key: "fromContactId",
-        label: "Parent (compte utilisateur)",
-        placeholder: "Choisir un compte parent",
+        label: "Parent (contact)",
+        placeholder: "Choisir un parent",
         inputType: "select",
         optionsKey: "relationParents",
         required: true,

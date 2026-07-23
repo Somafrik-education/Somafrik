@@ -1,10 +1,15 @@
 /**
- * E2E 0012 : Parcours parent / élève
+ * E2E 0012 : Parcours parent / élève (+ contrat identité D3.4b)
  *
  * Le parent se connecte (téléphone + PIN), consulte ses enfants, présences,
  * notes publiées, paiements, annonces, puis se déconnecte.
  * Vérifie l'isolation : pas d'enfants d'autres parents, notes non publiées
  * masquées, paiements limités aux enfants liés.
+ *
+ * Identité (D3.4b) — scénarios séparés, sans double seed masquant :
+ *   - résolution par relation (`fromContactId = contact.id`, sans parentPhone)
+ *   - fallback legacy téléphone (sans relations)
+ *   - relation avec user.id ne résout pas les enfants
  *
  *   npm run verify:e2e-0012
  */
@@ -32,6 +37,20 @@ const { linkContactToOperationalRecord } = require(path.join(
   "backend",
   "lib",
   "contactRegistrySync",
+));
+const { resolveParentChildren } = require(path.join(
+  __dirname,
+  "..",
+  "backend",
+  "lib",
+  "parentChildren",
+));
+const { migrateParentRelationsToContactId } = require(path.join(
+  __dirname,
+  "..",
+  "backend",
+  "lib",
+  "parentRelationIdentity",
 ));
 const {
   buildGradeEntrySession,
@@ -161,10 +180,11 @@ async function main() {
   const parentAUser = createParentUser(parentAContactFlow.contact, schoolCode, parentAPhone, PARENT_PIN);
   const parentBUser = createParentUser(parentBContactFlow.contact, schoolCode, parentBPhone, PARENT_PIN);
 
+  // Parcours principal : relations-only (pas de parentPhone — D3.4b).
   const childSpecs = [
-    { key: "childA1", parentPhone: parentAPhone, firstName: `Jean${stamp}`, lastName: "Dupont" },
-    { key: "childA2", parentPhone: parentAPhone, firstName: `Marie${stamp}`, lastName: "Martin" },
-    { key: "childB1", parentPhone: parentBPhone, firstName: `Paul${stamp}`, lastName: "Bernard" },
+    { key: "childA1", firstName: `Jean${stamp}`, lastName: "Dupont" },
+    { key: "childA2", firstName: `Marie${stamp}`, lastName: "Martin" },
+    { key: "childB1", firstName: `Paul${stamp}`, lastName: "Bernard" },
   ];
 
   const children = {};
@@ -187,8 +207,6 @@ async function main() {
       {
         className: CLASS_NAME,
         matricule: `ELE-${spec.key.toUpperCase()}-${stamp}`,
-        parentPhone: spec.parentPhone,
-        parentName: spec.parentPhone === parentAPhone ? "Mukendi Parent" : "Kabasele Parent",
         schoolStatus: "Inscrit",
       },
     );
@@ -600,6 +618,141 @@ async function main() {
     "vide",
     foreignBlocked ? "vide" : "données visibles",
     foreignBlocked,
+  );
+
+  // ── D3.4b identité : scénarios séparés (pas de double seed) ─────────────
+
+  const relationOnlyChildren = resolveParentChildren(
+    parentAUser,
+    {
+      students: [children.childA1, children.childA2, children.childB1],
+      relations,
+    },
+    schoolCode,
+  );
+  pushResult(
+    results,
+    "16. Identité — résolution par relation (sans parentPhone)",
+    "2",
+    String(relationOnlyChildren.length),
+    relationOnlyChildren.length === 2 &&
+      relationOnlyChildren.every((row) => !String(row.parentPhone ?? "").trim()),
+  );
+
+  const parentCPhone = `+243 822 ${String(stamp).slice(-6)}`;
+  const parentCContactFlow = saveContactOnly(
+    state,
+    {
+      id: newId("CONTACT"),
+      lastName: "Legacy",
+      firstName: `ParentC${stamp}`,
+      contactType: "Parent",
+      phone: parentCPhone,
+      email: `parent-c-${stamp}@somafrik.app`,
+      status: "Actif",
+    },
+    schoolCode,
+  );
+  assert.ok(parentCContactFlow.ok, parentCContactFlow.error);
+  const parentCUser = createParentUser(parentCContactFlow.contact, schoolCode, parentCPhone, PARENT_PIN);
+  const phoneChildFlow = createStudentFromContact(
+    { ...state, contacts: [...allContacts, parentCContactFlow.contact], students: allStudents },
+    {
+      id: newId("CONTACT"),
+      lastName: "LegacyChild",
+      firstName: `Luc${stamp}`,
+      contactType: "Élève",
+      phone: `+243 830 ${String(stamp).slice(-6)}`,
+      email: `child-c-${stamp}@somafrik.app`,
+      status: "Actif",
+    },
+    schoolCode,
+    {
+      className: CLASS_NAME,
+      matricule: `ELE-PHONE-${stamp}`,
+      parentPhone: parentCPhone,
+      parentName: "Legacy Parent",
+      schoolStatus: "Inscrit",
+    },
+  );
+  assert.ok(phoneChildFlow.ok, phoneChildFlow.error);
+
+  state = await putStatePatch(adminToken, {
+    contacts: [parentCContactFlow.contact, phoneChildFlow.contact, ...(state.contacts ?? [])],
+    users: [parentCUser, ...(state.users ?? [])],
+    students: [phoneChildFlow.student, ...(state.students ?? [])],
+  });
+
+  const phoneOnlyChildren = resolveParentChildren(
+    parentCUser,
+    {
+      students: [phoneChildFlow.student],
+      relations: [],
+    },
+    schoolCode,
+  );
+  pushResult(
+    results,
+    "17. Identité — fallback legacy téléphone (sans relations)",
+    "1",
+    String(phoneOnlyChildren.length),
+    phoneOnlyChildren.length === 1 &&
+      String(phoneOnlyChildren[0]?.id) === String(phoneChildFlow.student.id),
+  );
+
+  const wrongKeyChildren = resolveParentChildren(
+    parentAUser,
+    {
+      students: [children.childA1, children.childA2],
+      relations: [
+        {
+          id: newId("REL"),
+          relationType: "Parent → Élève",
+          fromContactId: parentAUser.id,
+          toStudentId: children.childA1.id,
+          schoolCode,
+          status: "Actif",
+        },
+      ],
+    },
+    schoolCode,
+  );
+  pushResult(
+    results,
+    "18. Identité — fromContactId=user.id ne résout pas",
+    "0",
+    String(wrongKeyChildren.length),
+    wrongKeyChildren.length === 0,
+  );
+
+  const migrated = migrateParentRelationsToContactId({
+    contacts: [parentAContactFlow.contact],
+    users: [parentAUser],
+    relations: [
+      {
+        id: "REL-LEGACY-UI",
+        relationType: "Parent → Élève",
+        fromContactId: parentAUser.id,
+        toStudentId: children.childA1.id,
+        schoolCode,
+        status: "Actif",
+      },
+    ],
+  });
+  const afterMigration = resolveParentChildren(
+    parentAUser,
+    {
+      students: [children.childA1],
+      relations: migrated.relations,
+    },
+    schoolCode,
+  );
+  pushResult(
+    results,
+    "19. Identité — migration user.id → contact.id",
+    "1",
+    String(afterMigration.length),
+    migrated.changed === 1 && afterMigration.length === 1,
   );
 
   console.log("\n=== E2E 0012 : Parcours parent / élève ===");
