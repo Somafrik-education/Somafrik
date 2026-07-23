@@ -447,9 +447,8 @@ CREATE INDEX IF NOT EXISTS idx_students_school_search ON students(school_id, stu
 CREATE INDEX IF NOT EXISTS idx_grades_student_id ON grades(student_id);
 CREATE INDEX IF NOT EXISTS idx_grades_school_id ON grades(school_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id, attendance_date);
--- D3.5b : contrainte/index unique pour bases déjà créées (CREATE TABLE IF NOT EXISTS ne les ajoute pas)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_school_student_date
-  ON attendance (school_id, student_id, attendance_date);
+-- D3.5b : l'index unique uq_attendance_school_student_date est créé APRÈS déduplication
+-- dans postgresRepository.ensureAttendanceCanonicalUniqueness() (bases legacy sûres).
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_school_id ON payments(school_id);
 CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_school_student ON student_fee_obligations(school_id, student_id);

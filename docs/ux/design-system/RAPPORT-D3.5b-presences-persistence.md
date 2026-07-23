@@ -22,7 +22,8 @@ Appliquer les décisions CTO D3.5a : journée, enum 4, PG canonique, unicité `s
 | Zone | Changement |
 |------|------------|
 | `CONTRAT-D3.5b-presences.md` | Contrat normatif |
-| `schema.sql` + `ensureAttendanceCanonicalUniqueness` | UNIQUE + dédup legacy |
+| `schema.sql` | UNIQUE dans CREATE TABLE (nouvelles bases) ; **pas** d’index unique global bloquant |
+| `attendanceUniqueness.js` + `ensureAttendanceCanonicalUniqueness` | Compte → dédup `ROW_NUMBER` (plus récente) → index unique |
 | `postgresRepository.upsertAttendance` | `ON CONFLICT` idempotent |
 | `dataIntegrityRules` / `server.js` | Même clé ; BO fallback **mémoire seulement** |
 | Web + Mobile | `reason` = « Absence justifiée » ; message notif reformulé |

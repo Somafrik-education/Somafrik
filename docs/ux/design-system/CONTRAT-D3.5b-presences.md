@@ -50,6 +50,18 @@ Pas de sortie anticipée, pas de double axe Absent×justification, pas de justif
 
 En moteur `postgresql`, l’écriture API ne doit pas basculer silencieusement vers le JSON comme seconde autorité.
 
+### Migration bases legacy
+
+Ordre obligatoire au démarrage du repository :
+
+1. Schéma non bloquant (`schema.sql` — **sans** index unique global sur les bases existantes)
+2. Inventaire / comptage des doublons
+3. Déduplication déterministe : conserve `updated_at DESC`, puis `created_at DESC`, puis `id DESC`
+4. Création de `uq_attendance_school_student_date`
+5. Démarrage prêt
+
+La clause `UNIQUE` du `CREATE TABLE` s’applique aux **nouvelles** bases uniquement (`IF NOT EXISTS` ne l’ajoute pas aux tables déjà créées).
+
 ---
 
 ## 5. API

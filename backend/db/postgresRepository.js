@@ -92,22 +92,33 @@ class PostgresRepository {
   }
 
   /**
-   * D3.5b — Déduplique les lignes legacy puis garantit
-   * UNIQUE (school_id, student_id, attendance_date).
+   * D3.5b — Pour bases legacy : compter → dédup déterministe → index unique.
+   * L'index n'est PAS créé dans schema.sql (évite l'échec avant dédup).
    */
   async ensureAttendanceCanonicalUniqueness() {
-    await this.pool.query(`
-      DELETE FROM attendance a
-      USING attendance b
-      WHERE a.school_id = b.school_id
-        AND a.student_id = b.student_id
-        AND a.attendance_date = b.attendance_date
-        AND a.ctid < b.ctid
-    `);
-    await this.pool.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_school_student_date
-      ON attendance (school_id, student_id, attendance_date)
-    `);
+    const {
+      COUNT_ATTENDANCE_DUPLICATE_GROUPS_SQL,
+      DEDUP_ATTENDANCE_KEEP_LATEST_SQL,
+      CREATE_ATTENDANCE_UNIQUE_INDEX_SQL,
+    } = require("../lib/attendanceUniqueness");
+
+    const before = await this.one(COUNT_ATTENDANCE_DUPLICATE_GROUPS_SQL);
+    const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+    if (duplicateGroups > 0) {
+      console.warn(
+        `[D3.5b] Présences : ${duplicateGroups} groupe(s) en doublon — conservation updated_at/created_at/id DESC`,
+      );
+      await this.pool.query(DEDUP_ATTENDANCE_KEEP_LATEST_SQL);
+    }
+
+    const after = await this.one(COUNT_ATTENDANCE_DUPLICATE_GROUPS_SQL);
+    if (Number(after?.duplicate_groups ?? 0) > 0) {
+      throw new Error(
+        "D3.5b : des doublons attendance persistent après déduplication — index unique non créé.",
+      );
+    }
+
+    await this.pool.query(CREATE_ATTENDANCE_UNIQUE_INDEX_SQL);
   }
 
   async getDataset() {
