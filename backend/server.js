@@ -70,6 +70,12 @@ const {
 } = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
+const {
+  isTeacherNotesPrincipal,
+  evaluateTeacherNotesTouchedKeys,
+  prepareTeacherNotesWritePayload,
+  teacherHasNotesWritePermission,
+} = require("./lib/teacherNotesWriteAccess");
 
 const establishmentService = new EstablishmentService();
 const unpaidService = new UnpaidService();
@@ -1080,23 +1086,51 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
-  const requestedState = sanitizeBackOfficeState(rawBody);
+
+  // HOTFIX-SYNC-03 — Enseignant : evaluations/notes uniquement, teacherId session, affectation.
+  let effectiveBody = rawBody;
+  let effectiveTouchedKeys = touchedKeys;
+  if (isTeacherNotesPrincipal(req.principal)) {
+    const prepared = prepareTeacherNotesWritePayload(rawBody, req.principal, currentState);
+    if (!prepared.ok) {
+      throw new BusinessError(403, prepared.message ?? "Permission insuffisante pour modifier ces données.");
+    }
+    effectiveBody = prepared.payload;
+    effectiveTouchedKeys = Object.keys(prepared.payload);
+  }
+
+  const requestedState = sanitizeBackOfficeState(effectiveBody);
   const { validateWritePayload } = require("./services/dataIntegrityService");
-  const integrityCheck = validateWritePayload(currentState, requestedState, touchedKeys);
+  const integrityCheck = validateWritePayload(currentState, requestedState, effectiveTouchedKeys);
   if (!integrityCheck.ok) {
     throw new BusinessError(400, integrityCheck.errors[0]?.message ?? "Données incohérentes.");
   }
-  const credentialErrors = validateIntroducedAccountSecrets(currentState, requestedState, touchedKeys);
+  const credentialErrors = validateIntroducedAccountSecrets(
+    currentState,
+    requestedState,
+    effectiveTouchedKeys,
+  );
   if (credentialErrors.length) {
     const first = credentialErrors[0];
     throw new BusinessError(400, first.message);
   }
-  const nextState = mergeScopedBackOfficeState(
-    currentState,
-    requestedState,
-    req.principal,
-    touchedKeys,
-  );
+
+  let nextState;
+  if (isTeacherNotesPrincipal(req.principal)) {
+    // Fusion métier déjà réalisée (préserve les lignes des autres enseignants).
+    nextState = {
+      ...currentState,
+      ...(effectiveBody.evaluations ? { evaluations: effectiveBody.evaluations } : {}),
+      ...(effectiveBody.notes ? { notes: effectiveBody.notes } : {}),
+    };
+  } else {
+    nextState = mergeScopedBackOfficeState(
+      currentState,
+      requestedState,
+      req.principal,
+      effectiveTouchedKeys,
+    );
+  }
   const hydratedCourses = pedagogyGovernanceService.hydrateCoursesFromAssignments(
     nextState.courses ?? [],
     nextState.assignments ?? [],
@@ -1604,6 +1638,8 @@ function getWebPlatformWritableEntities(principal) {
   if (
     permissions.has("Notes:CREATE") ||
     permissions.has("Notes:UPDATE") ||
+    permissions.has("Notes:CRUD") ||
+    permissions.has("Evaluations:CRUD") ||
     permissions.has("Modifier notes")
   ) {
     allowed.add("notes");
@@ -1630,6 +1666,18 @@ function assertBackOfficeWriter(principal, touchedKeys = []) {
   const { canAccessBackOfficeRole, canAccessWebPlatformRole } = require("./lib/establishmentRoles");
   if (!principal) {
     throw new BusinessError(403, "Accès plateforme non autorisé");
+  }
+
+  // HOTFIX-SYNC-03 — Enseignant : uniquement evaluations + notes (pas d'élargissement BO).
+  if (isTeacherNotesPrincipal(principal)) {
+    const decision = evaluateTeacherNotesTouchedKeys(touchedKeys);
+    if (!decision.ok) {
+      throw new BusinessError(403, "Permission insuffisante pour modifier ces données.");
+    }
+    if (!teacherHasNotesWritePermission(principal)) {
+      throw new BusinessError(403, "Permission insuffisante pour modifier les notes.");
+    }
+    return;
   }
 
   if (canAccessBackOfficeRole(principal.role)) {
@@ -1687,8 +1735,11 @@ function assertCanManageNotes(principal) {
     permissions.has("ALL_PRIVILEGES") ||
     permissions.has("COUNTRY_PRIVILEGES") ||
     permissions.has("Modifier notes") ||
+    permissions.has("Modifier notes") ||
     permissions.has("Notes:CREATE") ||
-    permissions.has("Notes:UPDATE")
+    permissions.has("Notes:UPDATE") ||
+    permissions.has("Notes:CRUD") ||
+    permissions.has("Evaluations:CRUD")
   ) {
     return;
   }

@@ -82,8 +82,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
 | Présences | ✅ / 🔒 | — | D3.5a/b clos (`d3.5b`) | Chrome DS / ToolLayout 🔒 · pas de D3.5c |
-| Notes | ✅ / ⏳ | `ToolLayout` | D3.6a/b/c clos (`d3.6c`) | `/notes` ToolLayout ; **PG sync enseignant bloquée** → [KNOWN-ISSUE-NOTES-01](./KNOWN-ISSUE-NOTES-01.md) |
-| Sync / outbox | 🔒 | — | SYNC-01 ✅ (`885979ff`) · runtime P0 restauré | **KNOWN-ISSUE-NOTES-01** · pas SYNC-03/04 tant que #73 + bissection |
+| Notes | ✅ / ⏳ | `ToolLayout` | D3.6a/b/c clos (`d3.6c`) | `/notes` ToolLayout ; Résultats 🔒 ; Bulletins D3.7 🔒 |
+| Sync / outbox | ⏳ | — | SYNC-01/02 ✅ · SYNC-03 RBAC enseignant Notes | SYNC-04 (SAVEPOINT / GRADE_*) encore isolé |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
 | RH | 🔒 | — | 0 % | Oui |
 
@@ -105,9 +105,9 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.6b : contrat + persistance Notes — [CONTRAT](./CONTRAT-D3.6b-notes.md) · [RAPPORT](./RAPPORT-D3.6b-notes-persistence.md). Tag `d3.6b` @ `62bdda16`. PG `evaluations`+`grades` · UNIQUE school+eval+student · migration legacy · calcul canonique · JSON mémoire-only.
 - D3.6c : migration écrans Notes — [RAPPORT](./RAPPORT-D3.6c-notes-toollayout.md). Tag `d3.6c` @ `dcc45574`. `/notes` → `ToolLayout`.
 - HOTFIX-SYNC-01 : intégrité non destructive sync — [CONTRAT](./CONTRAT-HOTFIX-SYNC-01.md) · [AUDIT](./AUDIT-HOTFIX-SYNC-01.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-01.md). Tag `hotfix-sync-01` @ `885979ff`. Non-perte OK · **base saine runtime post-P0**.
-- HOTFIX-SYNC-02 : rattachement évaluations PG — [CONTRAT](./CONTRAT-HOTFIX-SYNC-02.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-02.md). **Sous bissection** (post-#69) ; ne pas réempiler.
-- **KNOWN-ISSUE-NOTES-01** : enseignant OK, évaluations locales conservées, sync rejetée RBAC (`Permission insuffisante…`) après rollback #69 — [fiche](./KNOWN-ISSUE-NOTES-01.md). Résolution : bootstrap #73 → SYNC-03 isolé → SYNC-04 isolé. **#71/#72 = analyse seule, ne pas merger.**
-- Bootstrap runtime CI : [CONTRAT-BOOTSTRAP-RUNTIME.md](./CONTRAT-BOOTSTRAP-RUNTIME.md) · PR #73.
+- HOTFIX-SYNC-02 : rattachement évaluations PG — [CONTRAT](./CONTRAT-HOTFIX-SYNC-02.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-02.md). Ensure classe/matière/année · `syncError` visible · test ACK accepted → PG.
+- HOTFIX-SYNC-03 : autorisation métier enseignant evaluations/notes — [CONTRAT](./CONTRAT-HOTFIX-SYNC-03.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-03.md). Pas d’élargissement global `/backoffice/state` · `teacherId` session · rejet autres clés · Notes UI sans `auditLog` client. Clôture [KNOWN-ISSUE-NOTES-01](./KNOWN-ISSUE-NOTES-01.md).
+- Bootstrap runtime CI : [CONTRAT-BOOTSTRAP-RUNTIME.md](./CONTRAT-BOOTSTRAP-RUNTIME.md) · PR #73. **SYNC-04** encore isolé.
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
