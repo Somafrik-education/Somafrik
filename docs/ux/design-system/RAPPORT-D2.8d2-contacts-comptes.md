@@ -82,4 +82,4 @@ Extraire les **plans métier Contacts & Comptes** hors de `EntityPage`, sur le m
 | Hooks / contextes | Non |
 | JSX modales déplacé | Non |
 | Relations / Paiements absorbés | Non |
-| Suite | D2.8d3 — prochain workflow (à cadrer) |
+| Suite | D2.8d3 — Relations parent-enfant |

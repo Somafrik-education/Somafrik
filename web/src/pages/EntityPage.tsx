@@ -47,6 +47,20 @@ import {
   defaultNewContactDraft,
 } from "./entity-page/contactAccountWorkflow";
 import {
+  addParentChildStudentId,
+  applyParentContactChange,
+  buildParentChildBundleDeletePlan,
+  buildParentChildBundleSubmitPlan,
+  buildRelationDeleteAuditEntry,
+  buildRelationPostMergePlan,
+  buildRelationPreSubmitPlan,
+  defaultNewRelationDraft,
+  filterAvailableParentStudentOptions,
+  removeParentChildStudentId,
+  resolveSelectedParentStudentIds,
+  resolveSelectedParentStudentLabels,
+} from "./entity-page/parentChildRelationWorkflow";
+import {
   buildTeacherAssignmentDeleteConfirmCopy,
   buildTeacherAssignmentDeletePlan,
   buildTeacherAssignmentSubmitPlan,
@@ -88,20 +102,11 @@ import {
 } from "../lib/userAccounts";
 import { validatePasswordPolicy } from "../lib/userAccountRules";
 import {
-  enforceSinglePrincipalParent,
-  formatContactPersonName,
-  getParentLinkedStudentIds,
   getRelationParentUserOptions,
   getRelationStudentOptions,
   groupParentChildRelations,
   isParentChildBundleRow,
   parentChildBundleToForm,
-  prepareRelationForSave,
-  removeParentChildBundle,
-  RELATION_PARENT_CHILD,
-  syncParentChildRelations,
-  validateParentChildBundle,
-  validateRelation,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
 import { validateTeacherDeletion, validateTeacherSchoolEntry } from "../lib/teacherRules";
@@ -359,20 +364,16 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     () => (isParentChildMode ? getRelationStudentOptions(scopeUser, state) : []),
     [isParentChildMode, scopeUser, state],
   );
-  const selectedParentStudentIds = useMemo(() => {
-    if (!editing || !Array.isArray(editing.toStudentIds)) return [] as string[];
-    return (editing.toStudentIds as string[]).map(String).filter(Boolean);
-  }, [editing]);
+  const selectedParentStudentIds = useMemo(
+    () => resolveSelectedParentStudentIds(editing),
+    [editing],
+  );
   const availableParentStudentOptions = useMemo(
-    () => parentStudentOptions.filter((option) => !selectedParentStudentIds.includes(option.value)),
+    () => filterAvailableParentStudentOptions(parentStudentOptions, selectedParentStudentIds),
     [parentStudentOptions, selectedParentStudentIds],
   );
   const selectedParentStudentLabels = useMemo(
-    () =>
-      selectedParentStudentIds.map((studentId) => {
-        const option = parentStudentOptions.find((item) => item.value === studentId);
-        return { id: studentId, label: option?.label ?? studentId };
-      }),
+    () => resolveSelectedParentStudentLabels(selectedParentStudentIds, parentStudentOptions),
     [selectedParentStudentIds, parentStudentOptions],
   );
 
@@ -561,60 +562,22 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   async function handleParentChildBundleSubmit() {
     if (!editing || !module) return;
 
-    const bundleError = validateParentChildBundle(editing);
-    if (bundleError) {
-      showToast(bundleError, "error");
-      return;
-    }
-
-    const fromContactId = String(editing.fromContactId ?? "").trim();
-    const currentScoped = getScopedEntityRows("relations", scopeUser, state);
-    const existedBefore = currentScoped.some(
-      (row) =>
-        normalize(String(row.relationType ?? "")) === normalize(RELATION_PARENT_CHILD) &&
-        String(row.fromContactId ?? "").trim() === fromContactId,
+    const plan = buildParentChildBundleSubmitPlan(
+      {
+        scopeUser,
+        state,
+        showToast,
+        createRelationId: () => newEntityId("RELATIONS"),
+      },
+      {
+        editing,
+        permissions: { canCreate, canUpdate },
+      },
     );
-
-    if (existedBefore && !canUpdate) {
-      showToast("Modification non autorisée pour votre rôle.", "error");
-      return;
-    }
-    if (!existedBefore && !canCreate) {
-      showToast("Création non autorisée pour votre rôle.", "error");
-      return;
-    }
-
-    const allRelations = (state.relations ?? []) as unknown as Record<string, unknown>[];
-    const nextRelations = syncParentChildRelations(editing, allRelations, state, () =>
-      newEntityId("RELATIONS"),
-    );
-
-    const parentAccount = ((state.users ?? []) as unknown as Record<string, unknown>[]).find(
-      (row) => String(row.id ?? "") === fromContactId,
-    );
-    const label = parentAccount
-      ? formatContactPersonName(parentAccount)
-      : String(editing.fromContactName ?? fromContactId);
+    if (!plan.ok) return;
 
     try {
-      await persistPatch(
-        {
-          relations: nextRelations as unknown as BackOfficeState["relations"],
-          auditLog: appendAuditLog(
-            state.auditLog,
-            makeAuditEntry({
-              ...auditActor(scopeUser),
-              action: `relation.${existedBefore ? "update" : "create"}`,
-              entityType: "relation",
-              entityId: fromContactId,
-              entityLabel: label || undefined,
-              schoolCode: String(editing.schoolCode ?? parentAccount?.schoolCode ?? "") || undefined,
-              details: `${(editing.toStudentIds as string[] | undefined)?.length ?? 0} élève(s) lié(s)`,
-            }),
-          ),
-        },
-        existedBefore ? "Parent et élèves mis à jour" : "Parent lié à ses élèves",
-      );
+      await persistPatch(plan.patch, plan.successMessage);
       setEditing(null);
     } catch {
       /* toast déjà affiché */
@@ -762,19 +725,16 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     }
 
     if (module.key === "relations") {
-      if (isParentChildMode) {
-        workingItem = { ...workingItem, relationType: RELATION_PARENT_CHILD };
-      }
-      workingItem = prepareRelationForSave(workingItem, state);
-      const relationError = validateRelation(
-        workingItem,
-        getScopedEntityRows("relations", scopeUser, state),
-        editing.id ? String(editing.id) : undefined,
+      const preSubmit = buildRelationPreSubmitPlan(
+        { state, scopeUser, showToast },
+        {
+          workingItem,
+          editingId: editing.id ? String(editing.id) : undefined,
+          forceParentChildType: isParentChildMode,
+        },
       );
-      if (relationError) {
-        showToast(relationError, "error");
-        return;
-      }
+      if (!preSubmit.ok) return;
+      workingItem = preSubmit.workingItem;
     }
 
     for (const field of module.fields) {
@@ -944,23 +904,17 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       const nextRelation = nextItem as Record<string, unknown>;
       const currentRelations =
         (patch.relations as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
-      patch.relations = enforceSinglePrincipalParent(
-        currentRelations,
-        nextRelation,
-      ) as unknown as BackOfficeState["relations"];
-      const label =
-        `${String(nextRelation.relationType ?? "")} · ${String(nextRelation.fromContactName ?? "")}`.trim();
-      patch.auditLog = appendAuditLog(
-        state.auditLog,
-        makeAuditEntry({
-          ...auditActor(scopeUser),
-          action: `relation.${exists ? "update" : "create"}`,
-          entityType: "relation",
-          entityId: String(nextRelation.id ?? ""),
-          entityLabel: label || undefined,
-          schoolCode: String(nextRelation.schoolCode ?? "") || undefined,
-        }),
+      const relationPlan = buildRelationPostMergePlan(
+        { scopeUser },
+        {
+          nextRelation,
+          nextAllRows,
+          baseRelations: currentRelations,
+          exists,
+        },
       );
+      patch.relations = relationPlan.relations as unknown as BackOfficeState["relations"];
+      patch.auditLog = appendAuditLog(state.auditLog, relationPlan.auditEntry);
     }
 
     const genericAudit = appendGenericMutationAudit(
@@ -1057,29 +1011,9 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     if (!confirmed) return;
 
     if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
-      const fromContactId = String(row.fromContactId ?? "").trim();
-      const nextRelations = removeParentChildBundle(
-        (state.relations ?? []) as unknown as Record<string, unknown>[],
-        fromContactId,
-      );
+      const plan = buildParentChildBundleDeletePlan({ scopeUser, state }, { row });
       try {
-        await persistPatch(
-          {
-            relations: nextRelations as unknown as BackOfficeState["relations"],
-            auditLog: appendAuditLog(
-              state.auditLog,
-              makeAuditEntry({
-                ...auditActor(scopeUser),
-                action: "relation.delete",
-                entityType: "relation",
-                entityId: fromContactId,
-                entityLabel: String(row.fromContactName ?? "") || undefined,
-                schoolCode: String(row.schoolCode ?? "") || undefined,
-              }),
-            ),
-          },
-          "Liaisons parent-enfant supprimées",
-        );
+        await persistPatch(plan.patch, plan.successMessage);
       } catch {
         /* toast déjà affiché */
       }
@@ -1133,14 +1067,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     } else if (module.key === "relations") {
       deletePatch.auditLog = appendAuditLog(
         state.auditLog,
-        makeAuditEntry({
-          ...auditActor(scopeUser),
-          action: "relation.delete",
-          entityType: "relation",
-          entityId: String(row.id ?? ""),
-          entityLabel: String(row.relationType ?? "") || undefined,
-          schoolCode: String(row.schoolCode ?? "") || undefined,
-        }),
+        buildRelationDeleteAuditEntry(scopeUser, row),
       );
     } else {
       const genericDeleteAudit = appendGenericDeleteAudit(
@@ -1401,12 +1328,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
               return;
             }
             if (module.key === "relations") {
-              setEditing({
-                relationType: isParentChildMode ? RELATION_PARENT_CHILD : "Parent → Élève",
-                status: "Actif",
-                isPrincipal: "Oui",
-                toStudentIds: [],
-              });
+              setEditing(defaultNewRelationDraft(isParentChildMode));
               return;
             }
             if (module.key === "assignments") {
@@ -1638,20 +1560,13 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                         module.key === "relations" &&
                         field.key === "fromContactId"
                       ) {
-                        const linked = getParentLinkedStudentIds(
-                          (state.relations ?? []) as unknown as Record<string, unknown>[],
-                          value,
+                        setEditing(
+                          applyParentContactChange(
+                            editing,
+                            value,
+                            (state.relations ?? []) as unknown as Record<string, unknown>[],
+                          ),
                         );
-                        setEditing({
-                          ...editing,
-                          fromContactId: value,
-                          toStudentIds:
-                            linked.length > 0
-                              ? linked
-                              : Array.isArray(editing.toStudentIds)
-                                ? editing.toStudentIds
-                                : [],
-                        });
                         setPendingParentStudentId("");
                         return;
                       }
@@ -1723,10 +1638,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                         disabled={!pendingParentStudentId}
                         onClick={() => {
                           if (!pendingParentStudentId) return;
-                          setEditing({
-                            ...editing,
-                            toStudentIds: [...selectedParentStudentIds, pendingParentStudentId],
-                          });
+                          setEditing(addParentChildStudentId(editing, pendingParentStudentId));
                           setPendingParentStudentId("");
                         }}
                       >
@@ -1746,12 +1658,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
                               variant="secondary"
                               size="sm"
                               onClick={() => {
-                                setEditing({
-                                  ...editing,
-                                  toStudentIds: selectedParentStudentIds.filter(
-                                    (id) => id !== student.id,
-                                  ),
-                                });
+                                setEditing(removeParentChildStudentId(editing, student.id));
                               }}
                             >
                               Retirer
