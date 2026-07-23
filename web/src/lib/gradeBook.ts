@@ -37,7 +37,18 @@ export interface ClassGradeStatistics {
   top10: ClassRankingRow[];
 }
 
-const EXCLUDED_GRADE_STATUSES = new Set(["Absente", "Justifiée", "Dispensée", "En attente"]);
+/** D3.6b — aligné sur backend/lib/gradesCanonical (absent/excused/not_submitted/exempt). */
+const EXCLUDED_GRADE_STATUSES = new Set([
+  "Absente",
+  "Justifiée",
+  "Dispensée",
+  "En attente",
+  "Non justifiée",
+  "absent",
+  "excused",
+  "not_submitted",
+  "exempt",
+]);
 
 function studentDisplayName(student: StudentRow): string {
   const first = String(student.firstName ?? "").trim();
@@ -53,12 +64,10 @@ function normalizeToScale20(value: number, scale: number): number {
 
 function gradeCountsInAverage(grade: StudentGrade): boolean {
   if (EXCLUDED_GRADE_STATUSES.has(grade.gradeStatus)) return false;
-  if (grade.gradeStatus === "Non justifiée") return true;
   return typeof grade.value === "number" && !Number.isNaN(grade.value);
 }
 
 function gradeNumericValue(grade: StudentGrade): number {
-  if (grade.gradeStatus === "Non justifiée") return 0;
   return Number(grade.value ?? 0);
 }
 

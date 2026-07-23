@@ -1,3 +1,14 @@
+/**
+ * D3.6b — Moteur de calcul canonique des moyennes (domaine/backend).
+ * Web et mobile doivent consommer ces règles, pas en maintenir une copie divergente.
+ */
+const {
+  gradeCountsInAverage,
+  weightedAverage,
+  formatAverageForDisplay,
+  toGradeStatus,
+} = require("../lib/gradesCanonical");
+
 class GradeBookService {
   constructor({ students, notes, courses }) {
     this.students = students;
@@ -5,17 +16,18 @@ class GradeBookService {
     this.courses = courses;
   }
 
-  getStudentAverage(studentId) {
-    const studentNotes = this.notes.filter((note) => note.studentId === studentId);
-    const subjects = [...new Set(studentNotes.map((note) => note.subject))];
-    const subjectRows = subjects.map((subject) => this.getSubjectAverage(studentId, subject));
+  getStudentAverage(studentId, period) {
+    const average = this.getStudentAverageValue(studentId, period);
+    const studentNotes = this.notesForStudent(studentId, period);
+    const subjects = [...new Set(studentNotes.map((note) => note.subject).filter(Boolean))];
+    const subjectRows = subjects.map((subject) => this.getSubjectAverage(studentId, subject, period));
     const totalPoints = subjectRows.reduce((sum, row) => sum + row.average * row.coefficient, 0);
     const totalCoefficients = subjectRows.reduce((sum, row) => sum + row.coefficient, 0);
-    const average = totalCoefficients ? totalPoints / totalCoefficients : 0;
-    const rank = this.getClassRankingForStudent(studentId);
+    const rank = this.getClassRankingForStudent(studentId, period);
 
     return {
       average,
+      averageDisplay: formatAverageForDisplay(average, 2),
       totalPoints,
       totalCoefficients,
       rankLabel: `${rank.rank}e / ${rank.total}`,
@@ -24,26 +36,34 @@ class GradeBookService {
     };
   }
 
-  getSubjectAverage(studentId, subject) {
-    const notes = this.notes.filter((note) => note.studentId === studentId && note.subject === subject);
+  getSubjectAverage(studentId, subject, period) {
+    const notes = this.notesForStudent(studentId, period).filter((note) => note.subject === subject);
     const course = this.courses.find((item) => item.name === subject);
-    const total = notes.reduce((sum, note) => {
-      const scale = note.scale ?? 20;
-      const value = scale === 20 ? note.value : (note.value / scale) * 20;
-      return sum + value * (note.evaluationCoefficient ?? 1);
-    }, 0);
-    const coefficients = notes.reduce((sum, note) => sum + (note.evaluationCoefficient ?? 1), 0);
+    const { average, totalCoefficients } = weightedAverage(notes, { displayScale: 20 });
 
     return {
       subject,
-      average: coefficients ? total / coefficients : 0,
-      coefficient: course?.coefficient ?? 1,
+      average,
+      averageDisplay: formatAverageForDisplay(average, 2),
+      coefficient: Number(course?.coefficient ?? 1),
+      gradeCount: notes.filter((note) => gradeCountsInAverage(note)).length,
+      totalCoefficients,
     };
+  }
+
+  notesForStudent(studentId, period) {
+    return this.notes.filter((note) => {
+      if (note.studentId !== studentId) return false;
+      if (period && String(note.period ?? "").trim() && String(note.period) !== String(period)) {
+        return false;
+      }
+      return true;
+    });
   }
 
   generateReport(studentId, period = "Trimestre 1", status = "Publié") {
     const student = this.students.find((item) => item.id === studentId);
-    const average = this.getStudentAverage(studentId);
+    const average = this.getStudentAverage(studentId, period);
 
     return {
       id: `BUL-${studentId}-${period.replace(/\s+/g, "-").toUpperCase()}`,
@@ -56,10 +76,14 @@ class GradeBookService {
     };
   }
 
-  getClassRanking(className) {
+  getClassRanking(className, period) {
     const rows = this.students
       .filter((student) => student.className === className)
-      .map((student) => ({ student, average: this.getStudentAverageValue(student.id) }))
+      .map((student) => ({
+        student,
+        average: this.getStudentAverageValue(student.id, period),
+        incomplete: this.isSampleIncomplete(student.id, period),
+      }))
       .sort((a, b) => b.average - a.average);
     let lastAverage = null;
     let lastRank = 0;
@@ -69,19 +93,31 @@ class GradeBookService {
         lastAverage = row.average;
         lastRank = index + 1;
       }
-
       return { ...row, rank: lastRank };
     });
   }
 
-  getClassRankingForStudent(studentId) {
-    const student = this.students.find((item) => item.id === studentId);
-    if (!student) return { rank: 0, total: 0 };
+  isSampleIncomplete(studentId, period) {
+    const notes = this.notesForStudent(studentId, period);
+    if (!notes.length) return true;
+    return notes.some((note) => {
+      const status = toGradeStatus(note.gradeStatus ?? note.status, note.value != null);
+      return status === "not_submitted" || status === "absent";
+    });
+  }
 
-    const ranking = this.getClassRanking(student.className);
+  getClassRankingForStudent(studentId, period) {
+    const student = this.students.find((item) => item.id === studentId);
+    if (!student) return { rank: 0, total: 0, incomplete: true };
+
+    const ranking = this.getClassRanking(student.className, period);
     const row = ranking.find((item) => item.student.id === studentId);
 
-    return { rank: row?.rank ?? 0, total: ranking.length };
+    return {
+      rank: row?.rank ?? 0,
+      total: ranking.length,
+      incomplete: Boolean(row?.incomplete),
+    };
   }
 
   getAutomaticAppreciation(average) {
@@ -92,13 +128,12 @@ class GradeBookService {
     return "Insuffisant";
   }
 
-  getStudentAverageValue(studentId) {
-    const studentNotes = this.notes.filter((note) => note.studentId === studentId);
-    const subjects = [...new Set(studentNotes.map((note) => note.subject))];
-    const subjectRows = subjects.map((subject) => this.getSubjectAverage(studentId, subject));
+  getStudentAverageValue(studentId, period) {
+    const studentNotes = this.notesForStudent(studentId, period);
+    const subjects = [...new Set(studentNotes.map((note) => note.subject).filter(Boolean))];
+    const subjectRows = subjects.map((subject) => this.getSubjectAverage(studentId, subject, period));
     const totalPoints = subjectRows.reduce((sum, row) => sum + row.average * row.coefficient, 0);
     const totalCoefficients = subjectRows.reduce((sum, row) => sum + row.coefficient, 0);
-
     return totalCoefficients ? totalPoints / totalCoefficients : 0;
   }
 }

@@ -30,6 +30,7 @@ function buildEmptyBackOfficeState() {
     feeTariffHistory: [],
     presences: [],
     notes: [],
+    evaluations: [],
     exams: [],
     bulletins: [],
     documents: [],

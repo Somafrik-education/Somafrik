@@ -79,8 +79,9 @@ class PostgresRepository {
     }
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
-    await this.pool.query(schema);
+    await this.query(schema);
     await this.ensureAttendanceCanonicalUniqueness();
+    await this.ensureNotesCanonicalPersistence();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -89,6 +90,234 @@ class PostgresRepository {
       await this.ensureV2Data();
     }
     this.ready = true;
+  }
+
+  /**
+   * D3.6b — Ordre : schéma déjà appliqué → inventaire/migration JSON → dédup → UNIQUE.
+   */
+  async ensureNotesCanonicalPersistence() {
+    // Ordre D3.6b : inventaire/rattachement → anomalies → dédup → UNIQUE → normalisation → contraintes.
+    await this.migrateEvaluationsFromBackOffice();
+    await this.migrateNotesFromBackOffice();
+    await this.ensureGradeCanonicalUniqueness();
+    await this.normalizeLegacyGradeContractRows();
+    await this.ensureGradeContractConstraints();
+  }
+
+  /**
+   * Normalise les lignes legacy incohérentes avant application des CHECK.
+   * Sans cette étape, ensureGradeContractConstraints doit échouer (fail-fast).
+   */
+  async normalizeLegacyGradeContractRows() {
+    await this.query(
+      `UPDATE grades
+       SET version = 1
+       WHERE version IS NULL OR version < 1`,
+    );
+    await this.query(
+      `UPDATE grades
+       SET grade_status = CASE
+         WHEN score IS NOT NULL THEN 'graded'
+         ELSE 'not_submitted'
+       END
+       WHERE grade_status IS NULL
+          OR grade_status NOT IN ('graded', 'absent', 'excused', 'not_submitted', 'exempt')`,
+    );
+    await this.query(
+      `UPDATE grades
+       SET grade_status = 'not_submitted', score = NULL
+       WHERE grade_status = 'graded' AND score IS NULL`,
+    );
+    await this.query(
+      `UPDATE grades
+       SET grade_status = 'graded'
+       WHERE grade_status <> 'graded' AND score IS NOT NULL`,
+    );
+    await this.query(
+      `UPDATE evaluations
+       SET status = 'draft'
+       WHERE status IS NULL
+          OR status NOT IN ('draft', 'open', 'locked', 'published', 'archived')`,
+    );
+  }
+
+  async ensureGradeContractConstraints() {
+    // duplicate_object géré en SQL (idempotence). Toute autre erreur remonte et bloque init.
+    const statements = [
+      `DO $$ BEGIN
+         ALTER TABLE evaluations
+           ADD CONSTRAINT evaluations_status_check
+           CHECK (status IN ('draft', 'open', 'locked', 'published', 'archived'));
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+      `DO $$ BEGIN
+         ALTER TABLE grades
+           ADD CONSTRAINT grades_version_positive CHECK (version >= 1);
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+      `DO $$ BEGIN
+         ALTER TABLE grades
+           ADD CONSTRAINT grades_status_check
+           CHECK (grade_status IN ('graded', 'absent', 'excused', 'not_submitted', 'exempt'));
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+      `DO $$ BEGIN
+         ALTER TABLE grades
+           ADD CONSTRAINT grades_status_score_coherence
+           CHECK (
+             (grade_status = 'graded' AND score IS NOT NULL)
+             OR (grade_status <> 'graded' AND score IS NULL)
+           );
+       EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+    ];
+    for (const sql of statements) {
+      await this.query(sql);
+    }
+  }
+
+  async query(sql, params = []) {
+    const runner = this._txClient ?? this.pool;
+    return runner.query(sql, params);
+  }
+
+  async withTransaction(fn) {
+    const client = await this.pool.connect();
+    const previous = this._txClient;
+    this._txClient = client;
+    try {
+      await client.query("BEGIN");
+      const result = await fn(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_rollbackError) {
+        // conserve l'erreur métier d'origine
+      }
+      throw error;
+    } finally {
+      this._txClient = previous;
+      client.release();
+    }
+  }
+
+  async ensureGradeCanonicalUniqueness() {
+    const {
+      COUNT_GRADE_DUPLICATE_GROUPS_SQL,
+      DEDUP_GRADES_KEEP_LATEST_SQL,
+      CREATE_GRADE_UNIQUE_INDEX_SQL,
+      COUNT_GRADE_ANOMALIES_SQL,
+    } = require("../lib/gradeUniqueness");
+
+    const anomalies = await this.one(COUNT_GRADE_ANOMALIES_SQL);
+    const anomalyCount = Number(anomalies?.anomaly_count ?? 0);
+    if (anomalyCount > 0) {
+      console.warn(
+        `[D3.6b] Notes : ${anomalyCount} anomalie(s) sans evaluation_id résoluble — non fusionnées silencieusement`,
+      );
+    }
+
+    const before = await this.one(COUNT_GRADE_DUPLICATE_GROUPS_SQL);
+    const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+    if (duplicateGroups > 0) {
+      console.warn(
+        `[D3.6b] Notes : ${duplicateGroups} groupe(s) en doublon — conservation version/updated_at/created_at/id DESC`,
+      );
+      await this.query(DEDUP_GRADES_KEEP_LATEST_SQL);
+    }
+
+    const after = await this.one(COUNT_GRADE_DUPLICATE_GROUPS_SQL);
+    if (Number(after?.duplicate_groups ?? 0) > 0) {
+      throw new Error(
+        "D3.6b : des doublons grades persistent après déduplication — index unique non créé.",
+      );
+    }
+
+    await this.query(CREATE_GRADE_UNIQUE_INDEX_SQL);
+  }
+
+  async migrateEvaluationsFromBackOffice() {
+    const {
+      toEvaluationStatus,
+      validateEvaluationContract,
+    } = require("../lib/gradesCanonical");
+    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
+    const state = row?.state_payload ?? {};
+    const evaluations = Array.isArray(state.evaluations) ? state.evaluations : [];
+    for (const evaluation of evaluations) {
+      try {
+        await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
+      } catch (error) {
+        const contractError = validateEvaluationContract({
+          maxScore: evaluation.scale ?? evaluation.max_score ?? 20,
+          coefficient: evaluation.coefficient ?? 1,
+          status: toEvaluationStatus(evaluation.status, "draft"),
+        });
+        console.warn(
+          `[D3.6b] Évaluation legacy non migrée (${evaluation.id ?? "?"}): ${error.message || contractError || "erreur"}`,
+        );
+      }
+    }
+  }
+
+  async migrateNotesFromBackOffice() {
+    const { toGradeStatus } = require("../lib/gradesCanonical");
+    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
+    const state = row?.state_payload ?? {};
+    const notes = Array.isArray(state.notes) ? state.notes : [];
+    let anomalyCount = 0;
+    for (const note of notes) {
+      const evaluationId = String(note.evaluationId ?? "").trim();
+      if (!evaluationId) {
+        anomalyCount += 1;
+        console.warn(`[D3.6b] Anomalie note sans evaluation_id: ${note.id ?? note.studentId ?? "?"}`);
+        continue;
+      }
+      const evaluation = await this.resolveEvaluationRow(evaluationId, note.schoolCode);
+      if (!evaluation) {
+        anomalyCount += 1;
+        console.warn(
+          `[D3.6b] Anomalie note evaluation_id non résoluble: ${note.id ?? "?"} → ${evaluationId}`,
+        );
+        continue;
+      }
+      const student = await this.one(
+        `SELECT st.id FROM students st
+         WHERE st.school_id = $1 AND (st.student_code = $2 OR st.id::text = $2)
+         LIMIT 1`,
+        [evaluation.school_id, String(note.studentId ?? "")],
+      );
+      if (!student) {
+        anomalyCount += 1;
+        console.warn(`[D3.6b] Anomalie note élève introuvable: ${note.studentId ?? "?"}`);
+        continue;
+      }
+      const already = await this.one(
+        `SELECT id FROM grades
+         WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
+         LIMIT 1`,
+        [evaluation.school_id, evaluation.id, student.id],
+      );
+      // Idempotent : ne pas re-upsert (évite bump version à chaque démarrage).
+      if (already) continue;
+      try {
+        await this.upsertGrade(
+          {
+            ...note,
+            evaluationId: evaluation.legacy_json_id || evaluation.id,
+            gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
+            scale: note.scale ?? evaluation.max_score,
+            evaluationCoefficient: note.evaluationCoefficient ?? evaluation.coefficient,
+          },
+          { role: "Admin School", sub: note.authorId },
+          { allowMissingTeacher: true, skipCacheClear: true },
+        );
+      } catch (error) {
+        anomalyCount += 1;
+        console.warn(`[D3.6b] Anomalie migration note ${note.id ?? "?"}: ${error.message}`);
+      }
+    }
+    if (anomalyCount > 0) {
+      console.warn(`[D3.6b] Migration notes: ${anomalyCount} anomalie(s) explicite(s)`);
+    }
   }
 
   /**
@@ -108,7 +337,7 @@ class PostgresRepository {
       console.warn(
         `[D3.5b] Présences : ${duplicateGroups} groupe(s) en doublon — conservation updated_at/created_at/id DESC`,
       );
-      await this.pool.query(DEDUP_ATTENDANCE_KEEP_LATEST_SQL);
+      await this.query(DEDUP_ATTENDANCE_KEEP_LATEST_SQL);
     }
 
     const after = await this.one(COUNT_ATTENDANCE_DUPLICATE_GROUPS_SQL);
@@ -118,7 +347,7 @@ class PostgresRepository {
       );
     }
 
-    await this.pool.query(CREATE_ATTENDANCE_UNIQUE_INDEX_SQL);
+    await this.query(CREATE_ATTENDANCE_UNIQUE_INDEX_SQL);
   }
 
   async getDataset() {
@@ -138,6 +367,7 @@ class PostgresRepository {
       teacherRows,
       teacherAssignmentRows,
       studentRows,
+      evaluationRows,
       gradeRows,
       attendanceRows,
       paymentRows,
@@ -201,8 +431,23 @@ class PostgresRepository {
         ORDER BY st.created_at, st.student_code
       `),
       this.all(`
+        SELECT ev.*, s.school_code, cl.name AS class_name, sub.name AS subject_name,
+               t.teacher_code, term.name AS term_name
+        FROM evaluations ev
+        JOIN schools s ON s.id = ev.school_id
+        JOIN classes cl ON cl.id = ev.class_id
+        JOIN subjects sub ON sub.id = ev.subject_id
+        JOIN terms term ON term.id = ev.term_id
+        LEFT JOIN teachers t ON t.id = ev.teacher_id
+        ORDER BY ev.created_at
+      `),
+      this.all(`
         SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
-               sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name
+               sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name,
+               ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
+               ev.title AS evaluation_title, ev.status AS evaluation_status,
+               ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
+               ev.evaluation_type AS evaluation_type_pg
         FROM grades g
         JOIN schools s ON s.id = g.school_id
         JOIN students st ON st.id = g.student_id
@@ -210,6 +455,7 @@ class PostgresRepository {
         JOIN subjects sub ON sub.id = g.subject_id
         JOIN teachers t ON t.id = g.teacher_id
         JOIN terms term ON term.id = g.term_id
+        LEFT JOIN evaluations ev ON ev.id = g.evaluation_id
         ORDER BY g.created_at
       `),
       this.all(`
@@ -263,6 +509,7 @@ class PostgresRepository {
         .map((teacher) => [teacher.user_id, this.extractTeacherLoginId(teacher.teacher_code)])
     );
     const teachers = teacherRows.map((teacher) => this.mapTeacher(teacher, gradeRows, teacherAssignmentRows));
+    const evaluations = evaluationRows.map((evaluation) => this.mapEvaluation(evaluation));
     const notes = gradeRows.map((grade) => this.mapGrade(grade));
     const payments = paymentRows.map((payment) => this.mapPayment(payment));
     const primarySchoolRow = schoolRows.find((row) => row.school_code === seedData.school.code) ?? schoolRows[0];
@@ -283,6 +530,7 @@ class PostgresRepository {
       classes,
       courses,
       students,
+      evaluations,
       notes,
       presences: attendanceRows.map((attendance) => this.mapAttendance(attendance)),
       payments,
@@ -294,12 +542,12 @@ class PostgresRepository {
   }
 
   async all(sql, params = []) {
-    const result = await this.pool.query(sql, params);
+    const result = await this.query(sql, params);
     return result.rows;
   }
 
   async one(sql, params = []) {
-    const result = await this.pool.query(sql, params);
+    const result = await this.query(sql, params);
     return result.rows[0];
   }
 
@@ -311,7 +559,7 @@ class PostgresRepository {
     await this.init();
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);
-    await this.pool.query(
+    await this.query(
       `INSERT INTO sessions (session_code, refresh_token_hash, user_id, school_id, role, expires_at, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [sessionId, refreshTokenHash, dbUserId, school?.id ?? null, role, expiresAt, ipAddress ?? "", userAgent ?? ""]
@@ -351,7 +599,7 @@ class PostgresRepository {
 
   async revokeSession(sessionId, reason = "logout") {
     await this.init();
-    await this.pool.query(
+    await this.query(
       "UPDATE sessions SET revoked_at = NOW(), revoke_reason = $2 WHERE session_code = $1 AND revoked_at IS NULL",
       [sessionId, reason]
     );
@@ -361,7 +609,7 @@ class PostgresRepository {
     await this.init();
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);
-    await this.pool.query(
+    await this.query(
       `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
@@ -431,14 +679,25 @@ class PostgresRepository {
 
   async saveBackOfficeState(payload) {
     await this.init();
-    await this.pool.query(
-      `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
-       VALUES ('default', $1, NOW())
-       ON CONFLICT (state_key) DO UPDATE SET
-         state_payload = EXCLUDED.state_payload,
-         updated_at = NOW()`,
-      [JSON.stringify(payload ?? {})]
-    );
+    const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
+    // D3.6b : sync PG complète et vérifiée (fail-fast) → seulement ensuite strip JSON.
+    // Transaction : échec sync ⇒ ROLLBACK, collections notes/evaluations non vidées.
+    await this.withTransaction(async () => {
+      await persistBackOfficeAfterNotesSync({
+        payload: payload ?? {},
+        syncFn: async (body) => this.syncNotesDomainFromBackOffice(body),
+        persistFn: async (durablePayload) => {
+          await this.query(
+            `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
+             VALUES ('default', $1, NOW())
+             ON CONFLICT (state_key) DO UPDATE SET
+               state_payload = EXCLUDED.state_payload,
+               updated_at = NOW()`,
+            [JSON.stringify(durablePayload)],
+          );
+        },
+      });
+    });
     this.cachedDataset = null;
     return this.getBackOfficeState();
   }
@@ -706,14 +965,52 @@ class PostgresRepository {
     return updatedAccount;
   }
 
-  async upsertGrade(payload, principal = {}) {
-    const value = Number(payload.value);
-    const scale = Number(payload.scale ?? 20);
-    if (!payload.studentId || !payload.subject || Number.isNaN(value) || value < 0 || value > scale) {
-      const error = new Error("Note invalide");
+  /**
+   * D3.6b — Upsert note canonique : clé (school_id, evaluation_id, student_id) + version.
+   */
+  async upsertGrade(payload, principal = {}, options = {}) {
+    const {
+      toGradeStatus,
+      validateGradeContract,
+      fromGradeStatus,
+    } = require("../lib/gradesCanonical");
+    const { assertNoteOptimisticLock, noteVersion } = require("../lib/noteConcurrency");
+
+    const evaluationKey = String(payload.evaluationId ?? "").trim();
+    if (!evaluationKey) {
+      const error = new Error("evaluation_id obligatoire pour une note");
       error.statusCode = 400;
       throw error;
     }
+
+    const evaluation = await this.resolveEvaluationRow(evaluationKey, payload.schoolCode);
+    if (!evaluation) {
+      const error = new Error("Evaluation introuvable");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const gradeStatus = toGradeStatus(
+      payload.gradeStatus ?? payload.status,
+      payload.value != null && payload.value !== "",
+    );
+    const maxScore = Number(payload.scale ?? evaluation.max_score ?? 20);
+    const coefficient = Number(
+      payload.evaluationCoefficient ?? evaluation.coefficient ?? payload.coefficient ?? 1,
+    );
+    const scoreRaw = gradeStatus === "graded" ? payload.value ?? payload.score : null;
+    const contractError = validateGradeContract({
+      status: gradeStatus,
+      score: scoreRaw,
+      maxScore,
+      coefficient,
+    });
+    if (contractError) {
+      const error = new Error(contractError);
+      error.statusCode = 400;
+      throw error;
+    }
+    const score = gradeStatus === "graded" ? Number(scoreRaw) : null;
 
     const student = await this.one(
       `SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
@@ -722,103 +1019,345 @@ class PostgresRepository {
        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
        LEFT JOIN classes cl ON cl.id = e.class_id
        WHERE st.student_code = $1 OR st.id::text = $1`,
-      [String(payload.studentId)]
+      [String(payload.studentId)],
     );
     if (!student) {
       const error = new Error("Eleve introuvable");
       error.statusCode = 404;
       throw error;
     }
+    if (String(student.school_id) !== String(evaluation.school_id)) {
+      const error = new Error("L'élève et l'évaluation doivent appartenir au même établissement.");
+      error.statusCode = 400;
+      throw error;
+    }
 
-    if (principal.role === "Enseignant" && !(principal.classNames ?? []).includes(student.class_name)) {
+    if (
+      principal.role === "Enseignant" &&
+      !(principal.classNames ?? []).includes(student.class_name) &&
+      !options.allowMissingTeacher
+    ) {
       const error = new Error("Accès refusé: élève hors classe affectée.");
       error.statusCode = 403;
       throw error;
     }
 
-    const subject = await this.one(
-      `SELECT * FROM subjects WHERE school_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
-      [student.school_id, String(payload.subject)]
+    const teacher =
+      (await this.findTeacherForGrade(
+        evaluation.school_id,
+        principal.sub,
+        evaluation.class_id,
+        evaluation.subject_id,
+        principal.role,
+      )) ??
+      (options.allowMissingTeacher
+        ? await this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [
+            evaluation.school_id,
+          ])
+        : null);
+    if (!teacher && !evaluation.teacher_id) {
+      const error = new Error("Enseignant introuvable");
+      error.statusCode = 400;
+      throw error;
+    }
+    const teacherId = evaluation.teacher_id ?? teacher.id;
+
+    let existing = await this.one(
+      `SELECT * FROM grades
+       WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
+       LIMIT 1`,
+      [evaluation.school_id, evaluation.id, student.id],
     );
-    if (!subject || !student.class_id) {
-      const error = new Error("Matiere ou classe introuvable");
+    if (!existing && isUuid(payload.id)) {
+      existing = await this.one("SELECT * FROM grades WHERE id = $1", [payload.id]);
+    }
+
+    if (existing) {
+      assertNoteOptimisticLock(
+        { version: existing.version ?? 1 },
+        payload.version ?? payload.expectedVersion,
+      );
+      const nextVersion = noteVersion(existing) + 1;
+      await this.query(
+        `UPDATE grades
+         SET score = $1,
+             max_score = $2,
+             coefficient = $3,
+             teacher_id = $4,
+             grade_type = $5,
+             comment = $6,
+             grade_status = $7,
+             evaluation_id = $8,
+             class_id = $9,
+             subject_id = $10,
+             term_id = $11,
+             version = $12,
+             updated_by = $13,
+             updated_at = NOW()
+         WHERE id = $14`,
+        [
+          score,
+          maxScore,
+          coefficient,
+          teacherId,
+          toDbEvaluationType(payload.evaluationType ?? evaluation.evaluation_type),
+          payload.comment ?? "",
+          gradeStatus,
+          evaluation.id,
+          evaluation.class_id,
+          evaluation.subject_id,
+          evaluation.term_id,
+          nextVersion,
+          isUuid(principal.sub) ? principal.sub : null,
+          existing.id,
+        ],
+      );
+      if (!options.skipCacheClear) this.cachedDataset = null;
+      return this.getGradeById(existing.id);
+    }
+
+    const inserted = await this.one(
+      `INSERT INTO grades (
+         school_id, student_id, class_id, subject_id, teacher_id, term_id, evaluation_id,
+         grade_type, score, max_score, coefficient, comment, grade_status, version, created_by, updated_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,$14,$14)
+       RETURNING id`,
+      [
+        evaluation.school_id,
+        student.id,
+        evaluation.class_id,
+        evaluation.subject_id,
+        teacherId,
+        evaluation.term_id,
+        evaluation.id,
+        toDbEvaluationType(payload.evaluationType ?? evaluation.evaluation_type),
+        score,
+        maxScore,
+        coefficient,
+        payload.comment ?? "",
+        gradeStatus,
+        isUuid(principal.sub) ? principal.sub : null,
+      ],
+    );
+    if (!options.skipCacheClear) this.cachedDataset = null;
+    const mapped = await this.getGradeById(inserted.id);
+    return mapped ?? {
+      id: inserted.id,
+      evaluationId: evaluation.legacy_json_id || evaluation.id,
+      studentId: student.student_code,
+      gradeStatus: fromGradeStatus(gradeStatus),
+      value: score,
+      scale: maxScore,
+      version: 1,
+    };
+  }
+
+  async resolveEvaluationRow(evaluationKey, schoolCode) {
+    const key = String(evaluationKey ?? "").trim();
+    if (!key) return null;
+    if (isUuid(key)) {
+      const byId = await this.one("SELECT * FROM evaluations WHERE id = $1", [key]);
+      if (byId) return byId;
+    }
+    if (schoolCode && schoolCode !== "*") {
+      const school = await this.getSchoolByCode(schoolCode);
+      if (school) {
+        const byLegacySchool = await this.one(
+          `SELECT * FROM evaluations WHERE school_id = $1 AND legacy_json_id = $2 LIMIT 1`,
+          [school.id, key],
+        );
+        if (byLegacySchool) return byLegacySchool;
+      }
+    }
+    return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
+  }
+
+  async upsertEvaluationFromLegacy(evaluation = {}, options = {}) {
+    const {
+      toEvaluationStatus,
+      validateEvaluationContract,
+    } = require("../lib/gradesCanonical");
+
+    const legacyId = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
+    const schoolCode = String(evaluation.schoolCode ?? "").trim().toUpperCase();
+    const school = schoolCode ? await this.getSchoolByCode(schoolCode) : null;
+    if (!school) {
+      const error = new Error("Etablissement introuvable pour l'évaluation");
       error.statusCode = 400;
       throw error;
     }
 
-    const teacher = await this.findTeacherForGrade(student.school_id, principal.sub, student.class_id, subject.id, principal.role);
-    const requestedPeriod = String(payload.period ?? payload.term ?? "Trimestre 1").trim() || "Trimestre 1";
+    const className = String(evaluation.className ?? "").trim();
+    const subjectName = String(evaluation.subject ?? "").trim();
+    const periodName = String(evaluation.period ?? "Trimestre 1").trim() || "Trimestre 1";
+    const schoolClass = await this.one(
+      `SELECT * FROM classes WHERE school_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
+      [school.id, className],
+    );
+    const subject = await this.one(
+      `SELECT * FROM subjects WHERE school_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1`,
+      [school.id, subjectName],
+    );
+    if (!schoolClass || !subject) {
+      const error = new Error("Classe ou matiere introuvable pour l'évaluation");
+      error.statusCode = 400;
+      throw error;
+    }
+
     const academicYear = await this.one(
       `SELECT *
        FROM academic_years
        WHERE school_id = $1 AND status IN ('active', 'open')
        ORDER BY is_current DESC, created_at DESC
        LIMIT 1`,
-      [student.school_id]
+      [school.id],
     );
-    const term = academicYear ? await this.one(
-      `SELECT t.*
-       FROM terms t
-       WHERE t.academic_year_id = $1 AND t.name = $2
-       LIMIT 1`,
-      [academicYear.id, requestedPeriod]
-    ) : null;
-    const usableTerm = term ?? (academicYear ? await this.one(
-      `INSERT INTO terms (academic_year_id, name, status)
-       VALUES ($1, $2, 'open')
-       ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
-       RETURNING *`,
-      [academicYear.id, requestedPeriod]
-    ) : null);
-    if (!teacher || !usableTerm) {
-      const error = new Error("Enseignant ou trimestre introuvable");
+    if (!academicYear) {
+      const error = new Error("Annee scolaire introuvable pour l'évaluation");
+      error.statusCode = 400;
+      throw error;
+    }
+    const term =
+      (await this.one(
+        `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+        [academicYear.id, periodName],
+      )) ??
+      (await this.one(
+        `INSERT INTO terms (academic_year_id, name, status)
+         VALUES ($1, $2, 'open')
+         ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
+         RETURNING *`,
+        [academicYear.id, periodName],
+      ));
+
+    const teacherCode = String(evaluation.teacherId ?? "").trim();
+    const teacher = teacherCode
+      ? await this.one(
+          `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
+          [school.id, teacherCode],
+        )
+      : await this.one(`SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1`, [
+          school.id,
+        ]);
+
+    const maxScore = Number(evaluation.scale ?? evaluation.max_score ?? 20);
+    const coefficient = Number(evaluation.coefficient ?? 1);
+    const status = toEvaluationStatus(evaluation.status, "draft");
+    const contractError = validateEvaluationContract({ maxScore, coefficient, status });
+    if (contractError) {
+      const error = new Error(contractError);
       error.statusCode = 400;
       throw error;
     }
 
-    const existing = isUuid(payload.id)
-      ? await this.one("SELECT * FROM grades WHERE id = $1", [payload.id])
-      : null;
+    const title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
+    const evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
+    const evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
+
+    let existing = null;
+    if (legacyId) {
+      existing = await this.resolveEvaluationRow(legacyId, schoolCode);
+    }
+    if (!existing && isUuid(evaluation.id)) {
+      existing = await this.one("SELECT * FROM evaluations WHERE id = $1", [evaluation.id]);
+    }
 
     if (existing) {
-      await this.pool.query(
-        `UPDATE grades
-         SET score = $1, max_score = $2, coefficient = $3, teacher_id = $4, grade_type = $5, comment = $6, updated_at = NOW()
-         WHERE id = $7`,
+      await this.query(
+        `UPDATE evaluations
+         SET class_id = $1, subject_id = $2, teacher_id = $3, term_id = $4,
+             title = $5, evaluation_type = $6, evaluation_date = $7,
+             max_score = $8, coefficient = $9, status = $10,
+             active = $11, legacy_json_id = COALESCE(legacy_json_id, $12),
+             updated_at = NOW()
+         WHERE id = $13`,
         [
-          value,
-          scale,
-          Number(payload.evaluationCoefficient ?? payload.coefficient ?? 1),
-          teacher.id,
-          toDbEvaluationType(payload.evaluationType),
-          payload.evaluationTitle ?? payload.title ?? "",
+          schoolClass.id,
+          subject.id,
+          teacher?.id ?? null,
+          term.id,
+          title,
+          evaluationType,
+          evaluationDate,
+          maxScore,
+          coefficient,
+          status,
+          evaluation.active !== false,
+          legacyId || null,
           existing.id,
-        ]
+        ],
       );
-      this.cachedDataset = null;
-      return this.getGradeById(existing.id);
+      if (!options.skipCacheClear) this.cachedDataset = null;
+      return this.one("SELECT * FROM evaluations WHERE id = $1", [existing.id]);
     }
 
     const inserted = await this.one(
-      `INSERT INTO grades (school_id, student_id, class_id, subject_id, teacher_id, term_id, grade_type, score, max_score, coefficient, comment)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id`,
+      `INSERT INTO evaluations (
+         school_id, class_id, subject_id, teacher_id, term_id,
+         title, evaluation_type, evaluation_date, max_score, coefficient,
+         status, active, legacy_json_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       RETURNING *`,
       [
-        student.school_id,
-        student.id,
-        student.class_id,
+        school.id,
+        schoolClass.id,
         subject.id,
-        teacher.id,
-        usableTerm.id,
-        toDbEvaluationType(payload.evaluationType),
-        value,
-        scale,
-        Number(payload.evaluationCoefficient ?? payload.coefficient ?? 1),
-        payload.evaluationTitle ?? payload.title ?? "",
-      ]
+        teacher?.id ?? null,
+        term.id,
+        title,
+        evaluationType,
+        evaluationDate,
+        maxScore,
+        coefficient,
+        status,
+        evaluation.active !== false,
+        legacyId || null,
+      ],
     );
+    if (!options.skipCacheClear) this.cachedDataset = null;
+    return inserted;
+  }
+
+  /**
+   * Sync BO → PG fail-fast : une seule entrée en échec fait échouer l'opération entière.
+   * Aucune absorption console.warn en mode PostgreSQL.
+   */
+  async syncNotesDomainFromBackOffice(payload = {}) {
+    const evaluations = Array.isArray(payload.evaluations) ? payload.evaluations : null;
+    const notes = Array.isArray(payload.notes) ? payload.notes : null;
+    if (!evaluations && !notes) return { synced: true, evaluationCount: 0, noteCount: 0 };
+
+    if (evaluations) {
+      for (const evaluation of evaluations) {
+        await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
+      }
+    }
+    if (notes) {
+      const { toGradeStatus } = require("../lib/gradesCanonical");
+      for (const note of notes) {
+        if (!String(note.evaluationId ?? "").trim()) {
+          const error = new Error(
+            `D3.6b: note sans evaluation_id refusée (${note.id ?? note.studentId ?? "?"})`,
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+        await this.upsertGrade(
+          {
+            ...note,
+            gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
+          },
+          { role: "Admin School", sub: note.authorId ?? note.updatedBy },
+          { skipCacheClear: true, allowMissingTeacher: true },
+        );
+      }
+    }
     this.cachedDataset = null;
-    return this.getGradeById(inserted.id);
+    return {
+      synced: true,
+      evaluationCount: evaluations?.length ?? 0,
+      noteCount: notes?.length ?? 0,
+    };
   }
 
   normalizeComparableText(value) {
@@ -960,7 +1499,7 @@ class PostgresRepository {
     if (!studentDbId || !classId) return;
     const academicYear = await this.getCurrentAcademicYear(schoolId);
     if (!academicYear) return;
-    await this.pool.query(
+    await this.query(
       `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, enrollment_date, status)
        VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
        ON CONFLICT (student_id, academic_year_id) DO UPDATE SET
@@ -1576,7 +2115,7 @@ class PostgresRepository {
       return;
     }
     for (const country of seedData.countries) {
-      await this.pool.query(
+      await this.query(
         `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
          ON CONFLICT (iso_code) DO UPDATE SET
@@ -1603,7 +2142,7 @@ class PostgresRepository {
 
     for (const user of seedData.userAccounts.filter((item) => platformRoles.has(item.role))) {
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
-      await this.pool.query(
+      await this.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (user_code) DO UPDATE SET
@@ -1638,7 +2177,7 @@ class PostgresRepository {
     if (!shouldSeedDemoData()) {
       return;
     }
-    await this.pool.query(
+    await this.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
        SELECT st.school_id, st.student_code, st.first_name, st.last_name, st.parent_email, st.parent_phone,
               NULL, $1, 'STUDENT', st.status
@@ -1668,7 +2207,7 @@ class PostgresRepository {
       }
 
       try {
-        await this.pool.query(
+        await this.query(
           `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (user_code) DO UPDATE SET
@@ -1702,7 +2241,7 @@ class PostgresRepository {
 
     const demoSchoolId = schoolIds.get(demoSchoolCode);
     if (demoSchoolId) {
-      await this.pool.query(
+      await this.query(
         `UPDATE users
          SET password_hash = COALESCE(password_hash, $1),
              pin_hash = COALESCE(pin_hash, $1)
@@ -1772,7 +2311,7 @@ class PostgresRepository {
 
       for (const [studentIndex, student] of students.slice(0, 5).entries()) {
         const score = 10 + ((studentIndex + index) % 9);
-        await this.pool.query(
+        await this.query(
           `INSERT INTO exam_results (school_id, exam_id, student_id, score, max_score, mention, observation, status, created_by)
            VALUES ($1, $2, $3, $4, 20, $5, $6, 'published', $7)
            ON CONFLICT (exam_id, student_id) DO UPDATE SET score = EXCLUDED.score, mention = EXCLUDED.mention`,
@@ -1796,7 +2335,7 @@ class PostgresRepository {
         ["RELEVE_NOTES", "Relevé de notes"],
       ];
       for (const [docIndex, [type, title]] of docs.entries()) {
-        await this.pool.query(
+        await this.query(
           `INSERT INTO student_documents (school_id, student_id, document_code, document_type, title, format, version, storage_key, generated_by, metadata)
            VALUES ($1, $2, $3, $4, $5, 'PDF', 1, $6, $7, $8)
            ON CONFLICT (document_code) DO NOTHING`,
@@ -1815,7 +2354,7 @@ class PostgresRepository {
     }
 
     if (year && students[0]) {
-      await this.pool.query(
+      await this.query(
         `INSERT INTO promotion_decisions (school_id, academic_year_id, student_id, decision, reason, decided_by, decided_at)
          VALUES ($1, $2, $3, 'promoted', 'Moyenne suffisante', $4, NOW())
          ON CONFLICT (academic_year_id, student_id) DO NOTHING`,
@@ -1831,7 +2370,7 @@ class PostgresRepository {
     ];
 
     for (const [code, firstName, lastName, email, role] of roles) {
-      await this.pool.query(
+      await this.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
          VALUES ($1, $2, $3, $4, $5, NULL, $6, NULL, $7, 'active')
          ON CONFLICT (user_code) DO UPDATE SET role = EXCLUDED.role, email = EXCLUDED.email`,
@@ -1841,7 +2380,7 @@ class PostgresRepository {
   }
 
   async ensureSubjectScopes(schoolId) {
-    await this.pool.query(
+    await this.query(
       `INSERT INTO subject_class_assignments (school_id, subject_id, class_id, level, status)
        SELECT s.school_id, s.id, cl.id, NULL, 'active'
        FROM subjects s
@@ -1944,7 +2483,7 @@ class PostgresRepository {
       error.statusCode = 409;
       throw error;
     }
-    await this.pool.query("DELETE FROM subjects WHERE id = $1", [subject.id]);
+    await this.query("DELETE FROM subjects WHERE id = $1", [subject.id]);
     this.cachedDataset = null;
     await this.recordAudit({
       action: "subject_delete",
@@ -2364,25 +2903,66 @@ class PostgresRepository {
     };
   }
 
+  mapEvaluation(evaluation) {
+    const { fromEvaluationStatus } = require("../lib/gradesCanonical");
+    return {
+      id: evaluation.legacy_json_id || evaluation.id,
+      publicId: evaluation.legacy_json_id || evaluation.id,
+      pgId: evaluation.id,
+      schoolId: evaluation.school_id,
+      schoolCode: evaluation.school_code,
+      className: evaluation.class_name,
+      subject: evaluation.subject_name,
+      teacherId: evaluation.teacher_code,
+      period: evaluation.term_name,
+      title: evaluation.title,
+      evaluationType: this.fromEvaluationType(evaluation.evaluation_type),
+      date: this.formatDate(evaluation.evaluation_date),
+      scale: Number(evaluation.max_score ?? 20),
+      coefficient: Number(evaluation.coefficient ?? 1),
+      status: fromEvaluationStatus(evaluation.status),
+      active: evaluation.active !== false,
+      createdAt: this.formatIsoDateTime(evaluation.created_at),
+      updatedAt: this.formatIsoDateTime(evaluation.updated_at),
+    };
+  }
+
   mapGrade(grade) {
+    const { fromGradeStatus } = require("../lib/gradesCanonical");
+    const evaluationId =
+      grade.evaluation_legacy_id || grade.evaluation_uuid || grade.evaluation_id || null;
+    const gradeStatus = fromGradeStatus(grade.grade_status ?? (grade.score == null ? "not_submitted" : "graded"));
+    const score = grade.score == null ? undefined : Number(grade.score);
     return {
       id: grade.id,
       schoolId: grade.school_id,
       schoolCode: grade.school_code,
       studentId: grade.student_code,
+      className: grade.class_name,
       subject: grade.subject_name,
-      value: Number(grade.score),
+      value: score,
+      score,
       coefficient: Number(grade.subject_coefficient ?? 1),
       date: this.formatDate(grade.created_at),
-      evaluationId: grade.id,
-      evaluationTitle: grade.comment || this.fromEvaluationType(grade.grade_type),
-      evaluationType: this.fromEvaluationType(grade.grade_type),
+      evaluationId,
+      evaluationTitle: grade.evaluation_title || grade.comment || this.fromEvaluationType(grade.grade_type),
+      evaluationType: this.fromEvaluationType(grade.evaluation_type_pg || grade.grade_type),
       period: grade.term_name,
-      scale: Number(grade.max_score),
-      evaluationCoefficient: Number(grade.coefficient),
+      scale: Number(grade.evaluation_max_score ?? grade.max_score ?? 20),
+      evaluationCoefficient: Number(grade.evaluation_coefficient ?? grade.coefficient ?? 1),
+      gradeStatus,
+      status: gradeStatus,
+      comment: grade.comment ?? "",
+      version: Number(grade.version ?? 1),
       authorId: grade.teacher_code,
       enteredAt: this.formatDate(grade.created_at),
-      audit: [{ authorId: grade.teacher_code, newValue: Number(grade.score), date: this.formatDate(grade.created_at) }],
+      audit: [
+        {
+          authorId: grade.teacher_code,
+          newValue: score,
+          date: this.formatDate(grade.created_at),
+        },
+      ],
     };
   }
 
@@ -2509,7 +3089,11 @@ class PostgresRepository {
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
-              sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name
+              sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name,
+              ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
+              ev.title AS evaluation_title, ev.status AS evaluation_status,
+              ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
+              ev.evaluation_type AS evaluation_type_pg
        FROM grades g
        JOIN schools s ON s.id = g.school_id
        JOIN students st ON st.id = g.student_id
@@ -2517,8 +3101,9 @@ class PostgresRepository {
        JOIN subjects sub ON sub.id = g.subject_id
        JOIN teachers t ON t.id = g.teacher_id
        JOIN terms term ON term.id = g.term_id
+       LEFT JOIN evaluations ev ON ev.id = g.evaluation_id
        WHERE g.id = $1`,
-      [id]
+      [id],
     );
     return grade ? this.mapGrade(grade) : null;
   }
@@ -2721,7 +3306,7 @@ class PostgresRepository {
 
   async findIdempotencyRecord(cacheId) {
     await this.init();
-    const row = await this.pool.query(
+    const row = await this.query(
       "SELECT cache_id, status_code, response_body, expires_at FROM idempotency_keys WHERE cache_id = $1 LIMIT 1",
       [String(cacheId ?? "")],
     );
@@ -2730,7 +3315,7 @@ class PostgresRepository {
 
   async saveIdempotencyRecord({ cacheId, routeKey, principalId, statusCode, responseBody, expiresAt }) {
     await this.init();
-    await this.pool.query(
+    await this.query(
       `INSERT INTO idempotency_keys (cache_id, route_key, principal_id, status_code, response_body, expires_at)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
        ON CONFLICT (cache_id) DO UPDATE SET
