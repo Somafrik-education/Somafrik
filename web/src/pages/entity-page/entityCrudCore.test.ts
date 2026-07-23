@@ -3,6 +3,7 @@ import type { BackOfficeState, SessionUser } from "../../types";
 import {
   appendGenericDeleteAudit,
   appendGenericMutationAudit,
+  applyEntitySchoolScope,
   auditEntityLabel,
   deleteEntityFromState,
   ENTITY_DELETED_MESSAGE,
@@ -42,24 +43,99 @@ function baseState(
 }
 
 describe("entityCrudCore (D2.8c)", () => {
+  it("création générique : id + merge sans écraser les autres établissements", () => {
+    const state = baseState();
+    const snapshot = structuredClone(state.classes);
+    const prepared = prepareEntityRowForSave(
+      { name: "5ème B", schoolCode: "SCH-001" },
+      "CLASSES",
+      false,
+    );
+    expect(String(prepared.id)).toMatch(/^CLASSES-/);
+
+    const result = mergeEntityIntoState("classes", admin, state, prepared);
+    expect(result.applied).toBe(true);
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows.find((r) => r.id === "c2")).toEqual({
+      id: "c2",
+      name: "Autre",
+      schoolCode: "SCH-999",
+    });
+    expect(result.rows.some((r) => r.id === prepared.id)).toBe(true);
+    // Pas de mutation de l’état source
+    expect(state.classes).toEqual(snapshot);
+  });
+
+  it("modification générique : remplace la ligne du périmètre seulement", () => {
+    const state = baseState();
+    const snapshot = structuredClone(state.classes);
+    const prepared = prepareEntityRowForSave(
+      { id: "c1", name: "6ème A bis", schoolCode: "SCH-001" },
+      "CLASSES",
+      true,
+    );
+    expect(prepared.id).toBe("c1");
+
+    const result = mergeEntityIntoState("classes", admin, state, prepared);
+    expect(result.applied).toBe(true);
+    expect(result.rows.find((r) => r.id === "c1")?.name).toBe("6ème A bis");
+    expect(result.rows.find((r) => r.id === "c2")).toEqual(snapshot[1]);
+    expect(state.classes).toEqual(snapshot);
+  });
+
+  it("suppression générique : retire la ligne scopée sans toucher les autres établissements", () => {
+    const state = baseState();
+    const snapshot = structuredClone(state.classes);
+    const ok = deleteEntityFromState("classes", admin, state, "c1");
+    expect(ok.applied).toBe(true);
+    expect(ok.rows.map((r) => r.id)).toEqual(["c2"]);
+    expect(state.classes).toEqual(snapshot);
+
+    const denied = deleteEntityFromState("classes", admin, state, "c2");
+    expect(denied.applied).toBe(false);
+    expect(denied.rows).toHaveLength(2);
+  });
+
+  it("scope établissement : refuse la modification hors périmètre", () => {
+    const state = baseState();
+    const rejected = mergeEntityIntoState("classes", admin, state, {
+      id: "c2",
+      name: "Hijack",
+      schoolCode: "SCH-999",
+    });
+    expect(rejected.applied).toBe(false);
+    expect(rejected.rows).toEqual(state.classes);
+  });
+
+  it("applique le schoolCode via applyEntitySchoolScope", () => {
+    const state = baseState();
+    const scoped = applyEntitySchoolScope(
+      "classes",
+      { name: "Nouvelle" },
+      "SCH-001",
+      state,
+    );
+    expect(scoped).toEqual({ name: "Nouvelle", schoolCode: "SCH-001" });
+    expect(scoped).not.toBe(
+      applyEntitySchoolScope("classes", { name: "Nouvelle" }, "SCH-001", state),
+    );
+  });
+
   it("génère un id préfixé", () => {
     expect(newEntityId("CLASSES")).toMatch(/^CLASSES-/);
   });
 
-  it("prepareEntityRowForSave assigne un id à la création seulement", () => {
-    const created = prepareEntityRowForSave({ name: "6ème B" }, "CLASSES", false);
+  it("prepareEntityRowForSave ne mute pas l’objet source", () => {
+    const source = { name: "6ème B" };
+    const created = prepareEntityRowForSave(source, "CLASSES", false);
+    expect(source).toEqual({ name: "6ème B" });
+    expect(created).not.toBe(source);
     expect(String(created.id)).toMatch(/^CLASSES-/);
-    expect(created.name).toBe("6ème B");
 
-    const updated = prepareEntityRowForSave({ id: "c1", name: "6ème A" }, "CLASSES", true);
-    expect(updated).toEqual({ id: "c1", name: "6ème A" });
-
-    const withExistingId = prepareEntityRowForSave(
-      { id: "preset", name: "X" },
-      "CLASSES",
-      false,
-    );
+    const existing = { id: "preset", name: "X" };
+    const withExistingId = prepareEntityRowForSave(existing, "CLASSES", false);
     expect(withExistingId.id).toBe("preset");
+    expect(withExistingId).not.toBe(existing);
   });
 
   it("expose les libellés d’audit et les clés auditées", () => {
@@ -78,35 +154,7 @@ describe("entityCrudCore (D2.8c)", () => {
     ).toBe("K. · Maths · 6ème A");
   });
 
-  it("mergeEntityIntoState refuse hors périmètre et remplace dans le périmètre", () => {
-    const state = baseState();
-    const rejected = mergeEntityIntoState("classes", admin, state, {
-      id: "c2",
-      name: "Hijack",
-      schoolCode: "SCH-999",
-    });
-    expect(rejected.applied).toBe(false);
-
-    const applied = mergeEntityIntoState("classes", admin, state, {
-      id: "c1",
-      name: "6ème A bis",
-      schoolCode: "SCH-001",
-    });
-    expect(applied.applied).toBe(true);
-    expect(applied.rows.find((r) => r.id === "c1")?.name).toBe("6ème A bis");
-  });
-
-  it("deleteEntityFromState marque applied selon le scope", () => {
-    const state = baseState();
-    const ok = deleteEntityFromState("classes", admin, state, "c1");
-    expect(ok.applied).toBe(true);
-    expect(ok.rows.some((r) => r.id === "c1")).toBe(false);
-
-    const denied = deleteEntityFromState("classes", admin, state, "c2");
-    expect(denied.applied).toBe(false);
-  });
-
-  it("n’ajoute l’audit générique que pour les clés communes", () => {
+  it("audit générique create / update / delete + ignore hors clés communes", () => {
     const state = baseState();
     expect(
       appendGenericMutationAudit(state.auditLog, "contacts", admin, { id: "x" }, false),
@@ -122,6 +170,15 @@ describe("entityCrudCore (D2.8c)", () => {
     expect(createLog?.[0]?.action).toBe("classes.create");
     expect(createLog?.[0]?.entityLabel).toBe("5ème B");
 
+    const updateLog = appendGenericMutationAudit(
+      state.auditLog,
+      "classes",
+      admin,
+      { id: "c1", name: "6ème A", schoolCode: "SCH-001" },
+      true,
+    );
+    expect(updateLog?.[0]?.action).toBe("classes.update");
+
     const deleteLog = appendGenericDeleteAudit(
       state.auditLog,
       "teachers",
@@ -130,9 +187,10 @@ describe("entityCrudCore (D2.8c)", () => {
     );
     expect(deleteLog?.[0]?.action).toBe("teachers.delete");
     expect(deleteLog?.[0]?.entityLabel).toBe("Sow Ibra");
+    expect(state.auditLog).toEqual([]);
   });
 
-  it("persistEntityPatch gère busy + toasts succès / échec", async () => {
+  it("erreur de persistance : toast d’échec + busy remis à false", async () => {
     const setBusy = vi.fn();
     const showToast = vi.fn();
     const update = vi.fn().mockResolvedValue(undefined);

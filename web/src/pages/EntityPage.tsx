@@ -20,6 +20,7 @@ import {
 import {
   appendGenericDeleteAudit,
   appendGenericMutationAudit,
+  applyEntitySchoolScope,
   auditEntityLabel,
   deleteEntityFromState,
   ENTITY_DELETED_MESSAGE,
@@ -44,7 +45,6 @@ import { usePrompt } from "../components/ui/PromptDialog";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { getEntityFeaturePermissions, canResetTargetUserPassword } from "../lib/permissions";
 import {
-  applySchoolScopeToItem,
   getEntityModule,
   getScopedEntityRows,
   entityCreateViaContactsOnly,
@@ -830,7 +830,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       }
     }
 
-    const scopedItem = applySchoolScopeToItem(module.key, workingItem, effectiveSchoolCode, state);
+    const scopedItem = applyEntitySchoolScope(module.key, workingItem, effectiveSchoolCode, state);
     const linkedItem = linkStudentFromName(module.key, scopedItem, scopeUser, state);
     const current = getScopedEntityRows(module.key, scopeUser, state);
     const exists =
@@ -1426,7 +1426,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
 
-    const scopedItem = applySchoolScopeToItem(
+    const scopedItem = applyEntitySchoolScope(
       "assignments",
       workingItem,
       effectiveSchoolCode,

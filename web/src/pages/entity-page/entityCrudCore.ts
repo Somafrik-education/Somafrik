@@ -22,6 +22,7 @@ import {
   type AuditEntry,
 } from "../../lib/audit";
 import {
+  applySchoolScopeToItem,
   deleteScopedEntityRow,
   mergeScopedEntityRows,
   type MergeScopedEntityRowsResult,
@@ -86,6 +87,19 @@ export function prepareEntityRowForSave(
   if (exists) return preparedItem;
   const id = String(preparedItem.id ?? newEntityId(idPrefix));
   return { ...preparedItem, id };
+}
+
+/**
+ * Applique le scope établissement sur une ligne (délègue à `applySchoolScopeToItem`).
+ * Conservé dans le noyau pour un point d’entrée CRUD unique.
+ */
+export function applyEntitySchoolScope(
+  key: SchoolEntityKey,
+  item: Record<string, unknown>,
+  schoolCode: string | undefined,
+  state: BackOfficeState,
+): Record<string, unknown> {
+  return applySchoolScopeToItem(key, item, schoolCode, state);
 }
 
 /** Ajoute ou remplace une ligne dans l’état, limité au périmètre établissement. */

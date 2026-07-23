@@ -73,6 +73,6 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
-- D2.8c : noyau CRUD transversal — [RAPPORT](./RAPPORT-D2.8c-crud-core-entitypage.md). Suite : D2.8d modales / workflows spécialisés.
+- D2.8c : noyau CRUD transversal — [RAPPORT](./RAPPORT-D2.8c-crud-entitypage.md). Suite : D2.8d modales / workflows spécialisés.
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.
