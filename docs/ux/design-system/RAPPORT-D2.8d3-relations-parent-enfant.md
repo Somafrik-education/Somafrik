@@ -82,4 +82,4 @@ Extraire les **plans métier Relations parent-enfant** hors de `EntityPage`, sur
 | Hooks / contextes | Non |
 | JSX déplacé | Non |
 | Paiements / Contacts absorbés | Non |
-| Suite | D2.8d4 — Paiements (vigilance renforcée) |
+| Suite | D2.8d4 — Paiements |
