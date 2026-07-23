@@ -1,13 +1,15 @@
 # Rapport D3.4b — Contrat d’identité Parents et convergence des relations
 
 **Type :** Convergence identité / données (pas de chrome DS)  
+**Statut :** ✅ Clos CTO — tag `d3.4b` @ `f442ce90` (merge PR #62)  
 **Module :** Parents / Responsables  
 **Impact runtime :** Oui — création / résolution des liaisons parent↔élève  
 **Migration métier UI :** Non (écrans inchangés hors libellé champ)  
 **Breaking change :** Les liaisons encore stockées avec `user.id` ne résolvent plus les enfants tant que non migrées (fallback téléphone réduit)
 
 **Contrat :** [CONTRAT-D3.4b-identite-parents.md](./CONTRAT-D3.4b-identite-parents.md)  
-**Prérequis :** tag `d3.4a`
+**Prérequis :** tag `d3.4a`  
+**Suite :** aucun D3.4c automatique — liste / fiche / chrome DS / EntityPage restent 🔒
 
 ---
 
