@@ -17,6 +17,10 @@ import {
   buildEntityColumns,
   PARENT_CHILD_HIDDEN_FIELDS,
 } from "./entity-page/entityColumns";
+import {
+  resolveEntitySelectOptions,
+  resolveTeacherAssignmentFieldOptions,
+} from "./entity-page/entitySelectOptions";
 import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
 import { DatePicker } from "../components/ui/DatePicker";
@@ -52,8 +56,6 @@ import {
 import {
   contactHasOperationalRecord,
   type ContactLinkResult,
-  getContactAccountOptions,
-  getContactRoleOptions,
   getLinkableContactOptions,
   linkContactToOperationalRecord,
   prepareContactForSave,
@@ -114,8 +116,7 @@ import {
   findTeacherByName,
 } from "../lib/pedagogySync";
 import type { BackOfficeState, SessionUser } from "../types";
-import { getSchoolAcademicLists, getSubjectsForClass, mergeSelectOptions } from "../lib/academicConfig";
-import { getSchoolPeriodNames } from "../lib/evaluations";
+import { getSchoolAcademicLists } from "../lib/academicConfig";
 import {
   generateTeacherIdentifiers,
   getTeacherLoginIdentifier,
@@ -124,7 +125,6 @@ import {
 } from "../lib/entityIdentifiers";
 import {
   filterSchoolClassRecords,
-  getAvailableClassNameOptions,
   removeSchoolClassFromState,
   validateUniqueClassName,
 } from "../lib/classRules";
@@ -319,119 +319,28 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
 
   function getSelectOptionsForField(field: NonNullable<typeof module>["fields"][number]) {
-    if (field.selectOptions?.length) {
-      return field.selectOptions;
-    }
-    if (field.optionsKey === "levels") {
-      return academicLists.levels.map((option) => ({ value: option, label: option }));
-    }
-    if (field.optionsKey === "tracks") {
-      return academicLists.tracks.map((option) => ({ value: option, label: option }));
-    }
-    if (field.optionsKey === "classNames") {
-      if (module?.key === "classes") {
-        const existing = filterSchoolClassRecords(
-          (state.classes ?? []) as Record<string, unknown>[],
-          schoolCode,
-        );
-        return getAvailableClassNameOptions(
-          academicLists.classNames,
-          existing,
-          String(editing?.name ?? ""),
-        ).map((option) => ({ value: option, label: option }));
-      }
-      const extra =
-        module?.key === "assignments"
-          ? (assignmentOptions?.classes ?? []).map((option) => option.value)
-          : [];
-      // CLASSE-003 : une classe archivée n'est plus proposée aux nouvelles inscriptions.
-      const archivedClassNames = new Set(
-        ((state.classes ?? []) as Record<string, unknown>[])
-          .filter((cls) => normalize(String(cls.status ?? "")) === normalize("Archivée"))
-          .map((cls) => normalize(String(cls.name ?? cls.className ?? ""))),
-      );
-      const currentValue = normalize(String(editing?.className ?? ""));
-      return mergeSelectOptions(academicLists.classNames, extra)
-        .filter(
-          (option) =>
-            !archivedClassNames.has(normalize(option)) || normalize(option) === currentValue,
-        )
-        .map((option) => ({
-          value: option,
-          label: option,
-        }));
-    }
-    if (field.optionsKey === "subjects") {
-      const className = String(editing?.className ?? "");
-      const classScopedModules = module?.key === "courses" || module?.key === "assignments";
-      if (classScopedModules) {
-        if (!className) return [];
-        const configured = getSubjectsForClass(state, schoolCode, className);
-        const extra =
-          module?.key === "assignments"
-            ? (assignmentOptions?.subjects ?? []).map((option) => option.value)
-            : [];
-        return mergeSelectOptions(configured, extra).map((option) => ({
-          value: option,
-          label: option,
-        }));
-      }
-      return academicLists.subjects.map((option) => ({ value: option, label: option }));
-    }
-    if (field.optionsKey === "teachers") {
-      const teacherOptions =
-        module?.key === "courses"
-          ? scopedTeachers(scopeUser, state).map((teacher) => ({
-              value: getTeacherDisplayName(teacher),
-              label: getTeacherDisplayName(teacher),
-            }))
-          : (assignmentOptions?.teachers ?? []);
-      return teacherOptions;
-    }
-    if (field.optionsKey === "classes") {
-      return assignmentOptions?.classes ?? [];
-    }
-    if (field.optionsKey === "assignmentSubjects") {
-      return assignmentOptions?.subjects ?? [];
-    }
-    if (field.optionsKey === "periods") {
-      return getSchoolPeriodNames(state, effectiveSchoolCode).map((name) => ({
-        value: name,
-        label: name,
-      }));
-    }
-    if (field.optionsKey === "accounts") {
-      return getContactAccountOptions(scopeUser, state);
-    }
-    if (field.optionsKey === "userRoles") {
-      const accountCode = String(editing?.schoolCode ?? schoolCode ?? "");
-      return getContactRoleOptions(state, accountCode);
-    }
-    if (field.optionsKey === "relationParents" || field.optionsKey === "relationContacts") {
-      return getRelationParentUserOptions(scopeUser, state);
-    }
-    if (field.optionsKey === "relationStudents") {
-      return getRelationStudentOptions(scopeUser, state);
-    }
-    return [];
+    return resolveEntitySelectOptions({
+      module,
+      field,
+      academicLists,
+      assignmentOptions,
+      schoolCode,
+      effectiveSchoolCode,
+      editing,
+      state,
+      scopeUser,
+    });
   }
 
   function getTeacherAssignmentFieldOptions(
     field: NonNullable<typeof assignmentModule>["fields"][number],
   ) {
-    if (field.optionsKey === "classes") {
-      return teacherAssignmentOptions?.classes ?? [];
-    }
-    if (field.optionsKey === "assignmentSubjects") {
-      return teacherAssignmentOptions?.subjects ?? [];
-    }
-    if (field.optionsKey === "periods") {
-      return getSchoolPeriodNames(state, effectiveSchoolCode).map((name) => ({
-        value: name,
-        label: name,
-      }));
-    }
-    return field.selectOptions ?? [];
+    return resolveTeacherAssignmentFieldOptions({
+      field,
+      teacherAssignmentOptions,
+      state,
+      effectiveSchoolCode,
+    });
   }
 
   const school = getCurrentSchool(scopeUser, state);
