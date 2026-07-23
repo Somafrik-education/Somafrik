@@ -82,7 +82,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
 | Présences | ✅ / 🔒 | — | D3.5a/b clos (`d3.5b`) | Chrome DS / ToolLayout 🔒 · pas de D3.5c |
-| Notes | ✅ / ⏳ | `ToolLayout` | D3.6a/b clos (`d3.6b`) · D3.6c chrome | `/notes` ToolLayout ; Résultats 🔒 ; Bulletins D3.7 🔒 |
+| Notes | ✅ / ⏳ | `ToolLayout` | D3.6a/b/c clos (`d3.6c`) | `/notes` ToolLayout ; Résultats 🔒 ; Bulletins D3.7 🔒 |
+| Sync / outbox | ⏳ | — | HOTFIX-SYNC-01 | Non-perte silencieuse · file pending/failed · ACK |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
 | RH | 🔒 | — | 0 % | Oui |
 
@@ -102,7 +103,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.5b : contrat + persistance Présences — [CONTRAT](./CONTRAT-D3.5b-presences.md) · [RAPPORT](./RAPPORT-D3.5b-presences-persistence.md). Tag `d3.5b` @ `b533652c`. PG UNIQUE · upsert · pas ToolLayout / Notes · **pas de D3.5c**.
 - D3.6a : audit / verrouillage Notes — [AUDIT](./AUDIT-D3.6-notes.md) · [RAPPORT](./RAPPORT-D3.6a-audit-notes.md). Tag `d3.6a` @ `8885cd92`.
 - D3.6b : contrat + persistance Notes — [CONTRAT](./CONTRAT-D3.6b-notes.md) · [RAPPORT](./RAPPORT-D3.6b-notes-persistence.md). Tag `d3.6b` @ `62bdda16`. PG `evaluations`+`grades` · UNIQUE school+eval+student · migration legacy · calcul canonique · JSON mémoire-only.
-- D3.6c : migration écrans Notes — [RAPPORT](./RAPPORT-D3.6c-notes-toollayout.md). `/notes` → `ToolLayout` · contrat D3.6b conservé · **pas** de persistance · **pas** d’onglet Résultats · **pas de D3.7 en parallèle.**
+- D3.6c : migration écrans Notes — [RAPPORT](./RAPPORT-D3.6c-notes-toollayout.md). Tag `d3.6c` @ `dcc45574`. `/notes` → `ToolLayout`.
+- HOTFIX-SYNC-01 : intégrité non destructive sync — [CONTRAT](./CONTRAT-HOTFIX-SYNC-01.md) · [AUDIT](./AUDIT-HOTFIX-SYNC-01.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-01.md). Outbox durable · ACK Notes · **roadmap fonctionnelle suspendue** jusqu’à clôture.
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).

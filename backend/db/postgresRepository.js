@@ -680,10 +680,11 @@ class PostgresRepository {
   async saveBackOfficeState(payload) {
     await this.init();
     const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
-    // D3.6b : sync PG complète et vérifiée (fail-fast) → seulement ensuite strip JSON.
-    // Transaction : échec sync ⇒ ROLLBACK, collections notes/evaluations non vidées.
+    // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
+    // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
+    let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async () => {
-      await persistBackOfficeAfterNotesSync({
+      const syncResult = await persistBackOfficeAfterNotesSync({
         payload: payload ?? {},
         syncFn: async (body) => this.syncNotesDomainFromBackOffice(body),
         persistFn: async (durablePayload) => {
@@ -697,9 +698,24 @@ class PostgresRepository {
           );
         },
       });
+      syncAck = {
+        accepted: [
+          ...((syncResult?.accepted?.evaluations ?? []).map((id) => ({
+            entity: "evaluations",
+            id: String(id),
+          })) ?? []),
+          ...((syncResult?.accepted?.notes ?? []).map((id) => ({
+            entity: "notes",
+            id: String(id),
+          })) ?? []),
+        ],
+        rejected: syncResult?.rejected ?? [],
+      };
     });
     this.cachedDataset = null;
-    return this.getBackOfficeState();
+    this.lastSyncAck = syncAck;
+    const state = await this.getBackOfficeState();
+    return { ...state, syncAck };
   }
 
   async getAcademicConfig(schoolCode) {
@@ -1319,44 +1335,77 @@ class PostgresRepository {
   }
 
   /**
-   * Sync BO → PG fail-fast : une seule entrée en échec fait échouer l'opération entière.
-   * Aucune absorption console.warn en mode PostgreSQL.
+   * Sync BO → PG par enregistrement (HOTFIX-SYNC-01).
+   * Acceptés → PG ; rejetés métier → ACK failed (pas de throw global, pas de perte silencieuse).
+   * Les erreurs infra inattendues remontent toujours (rollback txn).
    */
   async syncNotesDomainFromBackOffice(payload = {}) {
     const evaluations = Array.isArray(payload.evaluations) ? payload.evaluations : null;
     const notes = Array.isArray(payload.notes) ? payload.notes : null;
-    if (!evaluations && !notes) return { synced: true, evaluationCount: 0, noteCount: 0 };
+    const accepted = { evaluations: [], notes: [] };
+    const rejected = [];
+    if (!evaluations && !notes) {
+      return { synced: true, accepted, rejected, evaluationCount: 0, noteCount: 0 };
+    }
 
     if (evaluations) {
       for (const evaluation of evaluations) {
-        await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
+        const id = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
+        const clientMutationId = String(evaluation.clientMutationId ?? "").trim() || undefined;
+        try {
+          await this.upsertEvaluationFromLegacy(evaluation, { skipCacheClear: true });
+          if (id) accepted.evaluations.push(id);
+        } catch (error) {
+          if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+          rejected.push({
+            entity: "evaluations",
+            id: id || undefined,
+            clientMutationId,
+            error: error?.message ?? "Échec de synchronisation de l'évaluation",
+          });
+        }
       }
     }
     if (notes) {
       const { toGradeStatus } = require("../lib/gradesCanonical");
       for (const note of notes) {
-        if (!String(note.evaluationId ?? "").trim()) {
-          const error = new Error(
-            `D3.6b: note sans evaluation_id refusée (${note.id ?? note.studentId ?? "?"})`,
+        const id = String(note.id ?? "").trim();
+        const clientMutationId = String(note.clientMutationId ?? "").trim() || undefined;
+        try {
+          if (!String(note.evaluationId ?? "").trim()) {
+            const error = new Error(
+              `D3.6b: note sans evaluation_id refusée (${note.id ?? note.studentId ?? "?"})`,
+            );
+            error.statusCode = 400;
+            throw error;
+          }
+          await this.upsertGrade(
+            {
+              ...note,
+              gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
+            },
+            { role: "Admin School", sub: note.authorId ?? note.updatedBy },
+            { skipCacheClear: true, allowMissingTeacher: true },
           );
-          error.statusCode = 400;
-          throw error;
+          if (id) accepted.notes.push(id);
+        } catch (error) {
+          if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+          rejected.push({
+            entity: "notes",
+            id: id || undefined,
+            clientMutationId,
+            error: error?.message ?? "Échec de synchronisation de la note",
+          });
         }
-        await this.upsertGrade(
-          {
-            ...note,
-            gradeStatus: toGradeStatus(note.gradeStatus ?? note.status, note.value != null),
-          },
-          { role: "Admin School", sub: note.authorId ?? note.updatedBy },
-          { skipCacheClear: true, allowMissingTeacher: true },
-        );
       }
     }
     this.cachedDataset = null;
     return {
-      synced: true,
-      evaluationCount: evaluations?.length ?? 0,
-      noteCount: notes?.length ?? 0,
+      synced: rejected.length === 0,
+      accepted,
+      rejected,
+      evaluationCount: accepted.evaluations.length,
+      noteCount: accepted.notes.length,
     };
   }
 

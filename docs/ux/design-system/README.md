@@ -32,6 +32,7 @@
 | [AUDIT-D3.6-notes.md](./AUDIT-D3.6-notes.md) · [RAPPORT-D3.6a-audit-notes.md](./RAPPORT-D3.6a-audit-notes.md) | D3.6a Notes (audit — pas de code) |
 | [CONTRAT-D3.6b-notes.md](./CONTRAT-D3.6b-notes.md) · [RAPPORT-D3.6b-notes-persistence.md](./RAPPORT-D3.6b-notes-persistence.md) | D3.6b contrat + persistance PG |
 | [RAPPORT-D3.6c-notes-toollayout.md](./RAPPORT-D3.6c-notes-toollayout.md) | D3.6c `/notes` → ToolLayout |
+| [CONTRAT-HOTFIX-SYNC-01.md](./CONTRAT-HOTFIX-SYNC-01.md) · [AUDIT-HOTFIX-SYNC-01.md](./AUDIT-HOTFIX-SYNC-01.md) · [RAPPORT-HOTFIX-SYNC-01.md](./RAPPORT-HOTFIX-SYNC-01.md) | HOTFIX-SYNC-01 sync non destructive |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |

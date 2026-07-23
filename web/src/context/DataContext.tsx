@@ -14,14 +14,29 @@ import { SYNC_INTERVAL_MS } from "../lib/constants";
 import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
+import {
+  applySyncAckToOutbox,
+  enqueuePatchMutations,
+  formatOutboxFailureMessage,
+  listActiveOutboxEntries,
+  loadSyncOutbox,
+  markOutboxStatus,
+  reapplyOutboxToState,
+  saveSyncOutbox,
+  type SyncAck,
+  type SyncOutboxEntry,
+} from "../lib/syncOutbox";
 import type { BackOfficeState, Session } from "../types";
 
 interface DataContextValue {
   state: BackOfficeState;
   loading: boolean;
   error: string | null;
+  /** HOTFIX-SYNC-01 — journal des mutations non synchronisées. */
+  syncJournal: SyncOutboxEntry[];
   refresh: () => Promise<void>;
   update: (patch: Partial<BackOfficeState>, options?: { sync?: boolean; partial?: boolean }) => Promise<void>;
+  retryFailedSync: () => Promise<void>;
 }
 
 const EMPTY_STATE: BackOfficeState = {
@@ -79,6 +94,10 @@ function samePermissionSet(left: string[], right: string[]) {
   return right.every((item) => values.has(item));
 }
 
+function extractSyncAck(saved: Partial<BackOfficeState> & { syncAck?: SyncAck }): SyncAck | null {
+  return saved.syncAck ?? null;
+}
+
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -93,17 +112,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncJournal, setSyncJournal] = useState<SyncOutboxEntry[]>(() => listActiveOutboxEntries());
+
+  const persistJournal = useCallback((entries: SyncOutboxEntry[]) => {
+    saveSyncOutbox(entries);
+    setSyncJournal(listActiveOutboxEntries(entries));
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!session || syncPausedRef.current) return;
     setLoading(true);
-    setError(null);
     try {
       const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
+      const outbox = loadSyncOutbox();
       setState((prev) => {
         const merged = mergeRemoteSnapshot(prev, remote);
-        return session?.user ? applyClientScopeToState(merged, session.user) : merged;
+        const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries(outbox));
+        return session?.user ? applyClientScopeToState(withPending, session.user) : withPending;
       });
+      const failure = formatOutboxFailureMessage(outbox);
+      if (failure) setError(failure);
+      else setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de chargement");
     } finally {
@@ -113,7 +142,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (session) {
-      setState(stateFromSession(session));
+      const seeded = reapplyOutboxToState(stateFromSession(session), listActiveOutboxEntries());
+      setState(seeded);
       void refresh();
     } else {
       setState(EMPTY_STATE);
@@ -121,7 +151,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken]);
 
-  // Rafraîchit la matrice de droits sans reconnexion (Super Admin → Admin établissement).
   useEffect(() => {
     if (!session?.accessToken) return;
     const timer = window.setInterval(() => {
@@ -151,24 +180,95 @@ export function DataProvider({ children }: { children: ReactNode }) {
     async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
       syncPausedRef.current = true;
       const usePartial = options.partial !== false;
-      setState((prev) => ({ ...prev, ...patch }));
+
+      const currentOutbox = loadSyncOutbox();
+      const { entries: enqueued, annotatedPatch } = enqueuePatchMutations(
+        currentOutbox,
+        patch as Record<string, unknown>,
+      );
+      let workingOutbox = enqueued;
+      persistJournal(workingOutbox);
+
+      setState((prev) => {
+        const next = { ...prev, ...(annotatedPatch as Partial<BackOfficeState>) };
+        return reapplyOutboxToState(next, listActiveOutboxEntries(workingOutbox));
+      });
+
       if (options.sync === false) {
         syncPausedRef.current = false;
         return;
       }
+
+      workingOutbox = enqueued.map((entry) =>
+        entry.status === "pending"
+          ? {
+              ...entry,
+              status: "syncing" as const,
+              attempts: entry.attempts + 1,
+              updatedAt: new Date().toISOString(),
+            }
+          : entry,
+      );
+      persistJournal(workingOutbox);
+
       try {
-        const payload = usePartial ? patch : { ...stateRef.current, ...patch };
-        const saved = await api.put<Partial<BackOfficeState>>("/backoffice/state", payload);
+        const payload = usePartial
+          ? (annotatedPatch as Partial<BackOfficeState>)
+          : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
+        const saved = await api.put<Partial<BackOfficeState> & { syncAck?: SyncAck }>(
+          "/backoffice/state",
+          payload,
+        );
+        const ack = extractSyncAck(saved);
+        if (ack) {
+          workingOutbox = applySyncAckToOutbox(workingOutbox, ack);
+        } else {
+          // ACK implicite : succès HTTP sans détail → mutations du patch marquées synced
+          for (const key of ["evaluations", "notes", "presences", "exams", "payments"] as const) {
+            const rows = (annotatedPatch[key] as { id?: string; clientMutationId?: string }[] | undefined) ?? [];
+            for (const row of rows) {
+              workingOutbox = markOutboxStatus(
+                workingOutbox,
+                {
+                  clientMutationId: row.clientMutationId,
+                  recordId: String(row.id ?? ""),
+                  entity: key,
+                },
+                "synced",
+              );
+            }
+          }
+          workingOutbox = workingOutbox.filter((entry) => entry.status !== "synced");
+        }
+        persistJournal(workingOutbox);
+
         setState((prev) => {
-          const next = usePartial
-            ? applyPartialSave(prev, saved, patch)
+          const base = usePartial
+            ? applyPartialSave(prev, saved, annotatedPatch as Partial<BackOfficeState>)
             : mergeRemoteSnapshot(prev, saved);
+          const withPending = reapplyOutboxToState(base, listActiveOutboxEntries(workingOutbox));
           return sessionUserRef.current
-            ? applyClientScopeToState(next, sessionUserRef.current)
-            : next;
+            ? applyClientScopeToState(withPending, sessionUserRef.current)
+            : withPending;
         });
+
+        const failure = formatOutboxFailureMessage(workingOutbox);
+        setError(failure);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Erreur de synchronisation");
+        const message = err instanceof Error ? err.message : "Erreur de synchronisation";
+        workingOutbox = workingOutbox.map((entry) =>
+          entry.status === "syncing"
+            ? {
+                ...entry,
+                status: "failed" as const,
+                lastError: message,
+                updatedAt: new Date().toISOString(),
+              }
+            : entry,
+        );
+        persistJournal(workingOutbox);
+        setState((prev) => reapplyOutboxToState(prev, listActiveOutboxEntries(workingOutbox)));
+        setError(formatOutboxFailureMessage(workingOutbox) ?? message);
         syncPausedRef.current = false;
         throw err;
       } finally {
@@ -177,12 +277,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }, 1500);
       }
     },
-    [],
+    [persistJournal],
   );
 
+  const retryFailedSync = useCallback(async () => {
+    const failed = listActiveOutboxEntries().filter((entry) => entry.status === "failed");
+    if (!failed.length) return;
+    const patch: Partial<BackOfficeState> = {};
+    for (const entry of failed) {
+      const key = entry.entity as keyof BackOfficeState;
+      const list = [...((patch[key] as Record<string, unknown>[] | undefined) ?? [])];
+      list.push({
+        ...entry.payload,
+        id: entry.recordId,
+        clientMutationId: entry.clientMutationId,
+        syncStatus: "pending",
+      });
+      (patch as Record<string, unknown>)[entry.entity] = list;
+    }
+    await update(patch);
+  }, [update]);
+
   const value = useMemo<DataContextValue>(
-    () => ({ state, loading, error, refresh, update }),
-    [state, loading, error, refresh, update],
+    () => ({ state, loading, error, syncJournal, refresh, update, retryFailedSync }),
+    [state, loading, error, syncJournal, refresh, update, retryFailedSync],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
