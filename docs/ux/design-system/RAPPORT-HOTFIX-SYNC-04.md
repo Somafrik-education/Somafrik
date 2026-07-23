@@ -42,8 +42,13 @@ Cause probable : une erreur SQL sur l’upsert note **abortissait la transaction
 
 ---
 
-## 4. Validation préprod
+## 4. Correction revue CTO (upsert partiel)
+
+`mergeTeacherOwnedRows` ne traite plus l’absence d’une ligne enseignant dans un PUT partiel comme une suppression. Comportement : upsert par id uniquement (remplacement / ajout), conservation de toutes les autres lignes (même enseignant + autres).
+
+## 5. Validation préprod
 
 1. Enseignant : créer évaluation + saisir note → Enregistrer  
 2. Succès attendu : outbox vide, pas d’« Erreur interne Somafrik »  
-3. Si rejet : message du type `GRADE_ATTACHMENT_STUDENT: …` (pas 500)
+3. Si rejet : message du type `GRADE_ATTACHMENT_STUDENT: …` (pas 500)  
+4. Note rejetée → ACK `GRADE_*` ciblé, pas de 500 globale, autres lignes de la TX OK

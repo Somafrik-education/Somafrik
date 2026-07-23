@@ -212,7 +212,126 @@ function run() {
   assert.strictEqual(notesOk.ok, true, notesOk.message);
   assert.strictEqual(notesOk.payload.notes[0].teacherId, "t-math");
 
-  console.log("OK teacherNotesWriteAccess HOTFIX-SYNC-03");
+  // 6) PUT partiel — upsert par id, jamais de suppression implicite (revue CTO #72)
+  const stateTwoEvals = buildState({
+    evaluations: [
+      {
+        id: "ev-A",
+        title: "Eval A",
+        className: "6e A",
+        subject: "Mathématiques",
+        teacherId: "t-math",
+        schoolCode: "CD-2026-0001",
+      },
+      {
+        id: "ev-B",
+        title: "Eval B",
+        className: "6e A",
+        subject: "Mathématiques",
+        teacherId: "t-math",
+        schoolCode: "CD-2026-0001",
+      },
+      {
+        id: "ev-other",
+        title: "Autre",
+        className: "5e B",
+        subject: "Français",
+        teacherId: "t-other",
+        schoolCode: "CD-2026-0001",
+      },
+    ],
+  });
+  const patchEvalA = prepareTeacherNotesWritePayload(
+    {
+      evaluations: [
+        {
+          id: "ev-A",
+          title: "Eval A modifiée",
+          className: "6e A",
+          subject: "Mathématiques",
+          schoolCode: "CD-2026-0001",
+        },
+      ],
+    },
+    teacherPrincipal,
+    stateTwoEvals,
+  );
+  assert.strictEqual(patchEvalA.ok, true, patchEvalA.message);
+  const evalIds = patchEvalA.payload.evaluations.map((row) => row.id).sort();
+  assert.deepStrictEqual(evalIds, ["ev-A", "ev-B", "ev-other"]);
+  assert.strictEqual(
+    patchEvalA.payload.evaluations.find((row) => row.id === "ev-A")?.title,
+    "Eval A modifiée",
+  );
+  assert.strictEqual(
+    patchEvalA.payload.evaluations.find((row) => row.id === "ev-B")?.title,
+    "Eval B",
+    "eval B du même enseignant doit être conservée",
+  );
+  assert.strictEqual(
+    patchEvalA.payload.evaluations.find((row) => row.id === "ev-other")?.teacherId,
+    "t-other",
+    "ligne d'un autre enseignant toujours conservée",
+  );
+
+  const stateTwoNotes = buildState({
+    notes: [
+      {
+        id: "note-1",
+        className: "6e A",
+        subject: "Mathématiques",
+        teacherId: "t-math",
+        schoolCode: "CD-2026-0001",
+        value: 10,
+      },
+      {
+        id: "note-2",
+        className: "6e A",
+        subject: "Mathématiques",
+        teacherId: "t-math",
+        schoolCode: "CD-2026-0001",
+        value: 12,
+      },
+      {
+        id: "note-other",
+        className: "5e B",
+        subject: "Français",
+        teacherId: "t-other",
+        schoolCode: "CD-2026-0001",
+        value: 15,
+      },
+    ],
+  });
+  const patchNote1 = prepareTeacherNotesWritePayload(
+    {
+      notes: [
+        {
+          id: "note-1",
+          className: "6e A",
+          subject: "Mathématiques",
+          schoolCode: "CD-2026-0001",
+          value: 18,
+        },
+      ],
+    },
+    teacherPrincipal,
+    stateTwoNotes,
+  );
+  assert.strictEqual(patchNote1.ok, true, patchNote1.message);
+  const noteIds = patchNote1.payload.notes.map((row) => row.id).sort();
+  assert.deepStrictEqual(noteIds, ["note-1", "note-2", "note-other"]);
+  assert.strictEqual(patchNote1.payload.notes.find((row) => row.id === "note-1")?.value, 18);
+  assert.strictEqual(
+    patchNote1.payload.notes.find((row) => row.id === "note-2")?.value,
+    12,
+    "note 2 du même enseignant doit être conservée",
+  );
+  assert.strictEqual(
+    patchNote1.payload.notes.find((row) => row.id === "note-other")?.teacherId,
+    "t-other",
+  );
+
+  console.log("OK teacherNotesWriteAccess HOTFIX-SYNC-03/04 upsert partiel");
 }
 
 run();

@@ -28,6 +28,7 @@ Contrôles serveur obligatoires :
 2. Il est affecté à la classe **et** à la matière de chaque ligne écrite
 3. `teacherId` est forcé depuis l’identité de session (jamais un `teacherId` libre client)
 4. Les évaluations / notes des autres enseignants sont préservées
+5. PUT partiel = **upsert par id** uniquement : l’absence d’une ligne dans le patch n’est jamais une suppression (y compris pour les autres lignes du même enseignant)
 
 Les rôles backoffice établissement (`Admin School`, `Directeur`, …) conservent leur matrice S1.4 existante.
 

@@ -222,27 +222,40 @@ function stampNotesWithSessionTeacher(notes = [], principal, state = {}) {
 }
 
 /**
- * Remplace uniquement les lignes de l'enseignant session ; conserve le reste.
+ * Upsert partiel par identifiant (HOTFIX-SYNC-03/04 — revue CTO).
+ * L'absence d'une ligne dans le patch n'est JAMAIS une suppression :
+ * current + remplacement des ids présents + ajout des nouveaux + conservation du reste.
+ * Une suppression explicite nécessitera une op dédiée (hors chemin PUT partiel).
  */
-function mergeTeacherOwnedRows(currentRows = [], stampedMine = [], sessionTeacherId = "", principal = {}) {
-  const mineIds = new Set(
-    (stampedMine ?? []).map((row) => String(row.id ?? "").trim()).filter(Boolean),
-  );
-  const sessionId = String(sessionTeacherId ?? "").trim();
-  const principalId = String(principal?.sub ?? principal?.id ?? "").trim();
-  const retained = (currentRows ?? []).filter((row) => {
-    const id = String(row.id ?? "").trim();
-    if (id && mineIds.has(id)) return false;
-    const tid = String(row.teacherId ?? row.authorId ?? "").trim();
-    // Conserver legacy sans owner et les lignes des autres enseignants.
-    if (!tid) return true;
-    if ((sessionId && tid === sessionId) || (principalId && tid === principalId)) {
-      // Ancienne ligne « mienne » absente du payload → retirée.
-      return false;
+function mergeTeacherOwnedRows(currentRows = [], stampedPatch = []) {
+  const patchedById = new Map();
+  for (const row of stampedPatch ?? []) {
+    const id = String(row?.id ?? "").trim();
+    if (id) patchedById.set(id, row);
+  }
+
+  const seen = new Set();
+  const merged = [];
+
+  for (const row of currentRows ?? []) {
+    const id = String(row?.id ?? "").trim();
+    if (!id) {
+      merged.push(row);
+      continue;
     }
-    return true;
-  });
-  return [...retained, ...(stampedMine ?? [])];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push(patchedById.has(id) ? patchedById.get(id) : row);
+  }
+
+  for (const row of stampedPatch ?? []) {
+    const id = String(row?.id ?? "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    merged.push(row);
+  }
+
+  return merged;
 }
 
 /**
@@ -314,15 +327,10 @@ function prepareTeacherNotesWritePayload(rawBody = {}, principal, state = {}) {
 
   const payload = {};
   if (evaluations) {
-    payload.evaluations = mergeTeacherOwnedRows(
-      state.evaluations ?? [],
-      evaluations,
-      sessionTeacherId,
-      principal,
-    );
+    payload.evaluations = mergeTeacherOwnedRows(state.evaluations ?? [], evaluations);
   }
   if (notes) {
-    payload.notes = mergeTeacherOwnedRows(state.notes ?? [], notes, sessionTeacherId, principal);
+    payload.notes = mergeTeacherOwnedRows(state.notes ?? [], notes);
   }
   return { ok: true, payload, sessionTeacherId };
 }
