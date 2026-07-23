@@ -85,4 +85,4 @@ Extraire le **plan métier** submit / delete de la modale d’affectations hors 
 | Hooks / contextes | Non |
 | Deps injectées (`buildPedagogyPatch`, toast, state) | Oui |
 | UI modale déplacée | Non |
-| Suite | D2.8d2 — prochain workflow spécialisé (à cadrer) |
+| Suite | D2.8d2 — Contacts & Comptes |

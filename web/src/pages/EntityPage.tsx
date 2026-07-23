@@ -37,6 +37,16 @@ import {
   resolveTeacherAssignmentFieldOptions,
 } from "./entity-page/entitySelectOptions";
 import {
+  buildContactDeleteAuditEntry,
+  buildContactImportPlan,
+  buildContactMutationAuditEntries,
+  buildContactPasswordResetGate,
+  buildContactPostMergePlan,
+  buildContactPreSubmitPlan,
+  buildCreateFicheFromSelectionPlan,
+  defaultNewContactDraft,
+} from "./entity-page/contactAccountWorkflow";
+import {
   buildTeacherAssignmentDeleteConfirmCopy,
   buildTeacherAssignmentDeletePlan,
   buildTeacherAssignmentSubmitPlan,
@@ -61,7 +71,6 @@ import { applyActiveGridsToStudent } from "../lib/fees";
 import { adaptLegacyStudents } from "../lib/studentDomain";
 import {
   getTeacherProvisioningOptions,
-  parseTeacherProvisioningSelection,
   syncSingleUserToTeachers,
   syncTeacherProfileToUser,
 } from "../lib/userTeacherSync";
@@ -72,16 +81,7 @@ import {
   prepareAssignmentForSave,
   validateAssignmentConflict,
 } from "../lib/assignments";
-import {
-  contactHasOperationalRecord,
-  type ContactLinkResult,
-  getLinkableContactOptions,
-  linkContactToOperationalRecord,
-  prepareContactForSave,
-  promoteContactToUser,
-  revokeContactUserAccess,
-  validateContactDuplicate,
-} from "../lib/contacts";
+import { getLinkableContactOptions } from "../lib/contacts";
 import {
   findUserAccountForContact,
   resetUserAccountPassword,
@@ -110,7 +110,7 @@ import { normalize, isSchoolAdminRole } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
-import { appendAuditLog, auditActor, makeAuditEntry, type AuditEntry } from "../lib/audit";
+import { appendAuditLog, auditActor, makeAuditEntry } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
@@ -401,19 +401,17 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   }
 
   async function handleResetContactPassword() {
-    if (!editing?.id || module?.key !== "contacts") return;
-    const linkedUser = findUserAccountForContact(editing, state.users);
-    if (!linkedUser) {
-      showToast("Aucun compte d'accès lié à ce contact.", "error");
-      return;
-    }
-    if (!canResetTargetUserPassword(ctx, linkedUser)) {
-      showToast("Réinitialisation non autorisée pour ce compte.", "error");
-      return;
-    }
+    const gate = buildContactPasswordResetGate({
+      editing,
+      moduleKey: module?.key,
+      users: state.users,
+      canReset: (user) => canResetTargetUserPassword(ctx, user),
+      showToast,
+    });
+    if (!gate.ok) return;
     const temporaryPassword = await prompt({
       title: "Mot de passe temporaire",
-      description: `Définir un mot de passe temporaire pour ${linkedUser.identifier}.`,
+      description: `Définir un mot de passe temporaire pour ${gate.linkedUser.identifier}.`,
       defaultValue: "Soma1234",
       placeholder: "Mot de passe (min. 6 caractères)",
       inputType: "password",
@@ -423,8 +421,11 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     if (!temporaryPassword) return;
     setBusy(true);
     try {
-      const issued = await resetUserAccountPassword(linkedUser, temporaryPassword);
-      showToast(`Mot de passe réinitialisé · ${linkedUser.identifier} · provisoire : ${issued}`, "success");
+      const issued = await resetUserAccountPassword(gate.linkedUser, temporaryPassword);
+      showToast(
+        `Mot de passe réinitialisé · ${gate.linkedUser.identifier} · provisoire : ${issued}`,
+        "success",
+      );
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Échec de la réinitialisation", "error");
     } finally {
@@ -491,59 +492,17 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
 
-    const existing = (state.contacts as unknown as Record<string, unknown>[]).slice();
-    const toAdd: Record<string, unknown>[] = [];
-    const errors: string[] = [];
-    const fallbackSchool = schoolCode && schoolCode !== "*" ? schoolCode : "";
-
-    parsed.forEach((raw, index) => {
-      const line = index + 2;
-      const prepared = prepareContactForSave(
-        { ...raw, schoolCode: String(raw.schoolCode ?? "").trim() || fallbackSchool },
-        state,
-      );
-      if (!prepared.lastName || !prepared.firstName || !prepared.contactType) {
-        errors.push(`Ligne ${line} : nom, prénom ou type manquant.`);
-        return;
-      }
-      if (!prepared.schoolCode) {
-        errors.push(`Ligne ${line} : compte lié manquant.`);
-        return;
-      }
-      const duplicate = validateContactDuplicate(prepared, [...existing, ...toAdd]);
-      if (duplicate.block) {
-        errors.push(`Ligne ${line} : ${duplicate.block}`);
-        return;
-      }
-      toAdd.push({ ...prepared, id: newEntityId("CONTACTS") });
-    });
-
-    if (!toAdd.length) {
-      showToast(`Aucun contact importé (${errors.length} ligne(s) en erreur).`, "error");
-      return;
-    }
+    const plan = buildContactImportPlan(
+      { state, scopeUser, showToast },
+      {
+        parsedRows: parsed,
+        fallbackSchool: schoolCode && schoolCode !== "*" ? schoolCode : "",
+      },
+    );
+    if (!plan.ok) return;
 
     try {
-      await persistPatch(
-        {
-          contacts: [...toAdd, ...existing] as unknown as BackOfficeState["contacts"],
-          auditLog: appendAuditLog(
-            state.auditLog,
-            makeAuditEntry({
-              ...auditActor(scopeUser),
-              action: "contact.import",
-              entityType: "contact",
-              schoolCode: fallbackSchool || undefined,
-              details: `${toAdd.length} importé(s)${
-                errors.length ? `, ${errors.length} ignoré(s)` : ""
-              }`,
-            }),
-          ),
-        },
-        `${toAdd.length} contact(s) importé(s)${
-          errors.length ? ` · ${errors.length} ignoré(s)` : ""
-        }`,
-      );
+      await persistPatch(plan.patch, plan.successMessage);
     } catch {
       /* toast déjà affiché */
     }
@@ -783,35 +742,22 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     }
 
     if (module.key === "contacts") {
-      workingItem = prepareContactForSave(workingItem, state);
-      if (!String(workingItem.schoolCode ?? "").trim()) {
-        showToast("Le compte lié est obligatoire : un contact ne peut pas être isolé.", "error");
-        return;
-      }
-      const allContacts = (state.contacts ?? []) as unknown as Record<string, unknown>[];
-      const duplicate = validateContactDuplicate(
-        workingItem,
-        allContacts,
-        editing.id ? String(editing.id) : undefined,
+      const preSubmit = buildContactPreSubmitPlan(
+        { state, showToast },
+        {
+          workingItem,
+          editingId: editing.id ? String(editing.id) : undefined,
+        },
       );
-      if (duplicate.block) {
-        showToast(duplicate.block, "error");
-        return;
-      }
-      if (duplicate.warn) {
+      if (!preSubmit.ok) return;
+      workingItem = preSubmit.workingItem;
+      if (preSubmit.duplicateWarn) {
         const proceed = await confirm({
           title: "Doublon potentiel",
-          description: duplicate.warn,
+          description: preSubmit.duplicateWarn,
           confirmLabel: "Créer quand même",
         });
         if (!proceed) return;
-      }
-      if (
-        String(workingItem.hasAccess ?? "") === "Oui" &&
-        !String(workingItem.role ?? "").trim()
-      ) {
-        showToast("Choisissez un rôle pour créer l'accès utilisateur.", "error");
-        return;
       }
     }
 
@@ -963,146 +909,58 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     // sous-module Contacts. Les fiches enseignant se provisionnent uniquement
     // depuis un contact (linkContactToOperationalRecord).
 
-    const nextContact = nextItem as Record<string, unknown>;
-    let contactPromotion: ReturnType<typeof promoteContactToUser> | null = null;
-    if (module.key === "contacts" && String(nextContact.hasAccess ?? "") === "Non") {
-      const revoked = revokeContactUserAccess(
-        nextContact,
-        { ...state, ...patch, [module.key]: nextAllRows } as unknown as BackOfficeState,
+    if (module.key === "contacts") {
+      const contactPlan = buildContactPostMergePlan(
+        {
+          scopeUser,
+          state,
+          showToast,
+          syncSingleUserToTeachers,
+        },
+        {
+          nextContact: nextItem as Record<string, unknown>,
+          nextAllRows,
+          basePatch: patch,
+          linkSchoolCode: schoolCode,
+          defaultSuccessMessage: successMessage,
+        },
       );
-      patch.users = revoked.users;
-      patch.contacts = (
-        (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows
-      ).map((row) => (String(row.id) === String(nextContact.id) ? revoked.contact : row)) as unknown as BackOfficeState["contacts"];
-    }
-    if (module.key === "contacts" && String(nextContact.hasAccess ?? "") === "Oui") {
-      try {
-        contactPromotion = promoteContactToUser(nextContact, state, scopeUser);
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : "Création du compte impossible.", "error");
-        return;
-      }
-      patch.users = contactPromotion.users;
-      const promotedUser = contactPromotion.users.find(
-        (user) => normalize(String(user.contactId ?? "")) === normalize(String(nextContact.id ?? "")),
+      if (!contactPlan.ok) return;
+      Object.assign(patch, contactPlan.patch);
+      successMessage = contactPlan.successMessage;
+      patch.auditLog = appendAuditLog(
+        state.auditLog,
+        ...buildContactMutationAuditEntries({
+          scopeUser,
+          nextContact: nextItem as Record<string, unknown>,
+          exists,
+          promotion: contactPlan.promotion,
+          ficheLink: contactPlan.ficheLink,
+        }),
       );
-      if (promotedUser) {
-        const teacherPatch = syncSingleUserToTeachers(
-          { ...state, users: contactPromotion.users },
-          promotedUser,
-        );
-        if (teacherPatch.teachers !== state.teachers) {
-          patch.teachers = teacherPatch.teachers;
-        }
-      }
-      const mergedContacts = (
-        (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows
-      ).map((row) => (String(row.id) === String(nextContact.id) ? contactPromotion!.contact : row));
-      patch.contacts = mergedContacts as unknown as BackOfficeState["contacts"];
-      if (contactPromotion.created && contactPromotion.temporaryPassword) {
-        successMessage = `Contact enregistré · accès ${contactPromotion.contact.userIdentifier} · mot de passe provisoire : ${contactPromotion.temporaryPassword}`;
-      } else {
-        successMessage = `Contact enregistré · accès ${contactPromotion.contact.userIdentifier}`;
-      }
-    }
-
-    let ficheLink: ContactLinkResult | null = null;
-    if (
-      module.key === "contacts" &&
-      contactHasOperationalRecord(String(nextContact.contactType ?? ""))
-    ) {
-      const currentContacts =
-        (patch.contacts as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
-      const sourceContact =
-        currentContacts.find((row) => String(row.id) === String(nextContact.id)) ?? nextContact;
-      ficheLink = linkContactToOperationalRecord(sourceContact, state, schoolCode);
-      if (ficheLink.students) {
-        patch.students = ficheLink.students as unknown as BackOfficeState["students"];
-      }
-      if (ficheLink.teachers) {
-        patch.teachers = ficheLink.teachers as unknown as BackOfficeState["teachers"];
-      }
-      patch.contacts = currentContacts.map((row) =>
-        String(row.id) === String(nextContact.id) ? ficheLink!.contact : row,
-      ) as unknown as BackOfficeState["contacts"];
-      if (ficheLink.linkedType) {
-        const ficheLabel = ficheLink.linkedType === "student" ? "fiche élève" : "fiche enseignant";
-        const baseMessage = ficheLink.created
-          ? `Contact enregistré · ${ficheLabel} créée et reliée`
-          : `Contact enregistré · ${ficheLabel} reliée`;
-        if (contactPromotion?.created && contactPromotion.temporaryPassword) {
-          successMessage = `${baseMessage} · mot de passe provisoire : ${contactPromotion.temporaryPassword}`;
-        } else {
-          successMessage = baseMessage;
-        }
-      }
     }
 
     if (module.key === "relations") {
+      const nextRelation = nextItem as Record<string, unknown>;
       const currentRelations =
         (patch.relations as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
       patch.relations = enforceSinglePrincipalParent(
         currentRelations,
-        nextItem as Record<string, unknown>,
+        nextRelation,
       ) as unknown as BackOfficeState["relations"];
-    }
-
-    if (module.key === "contacts" || module.key === "relations") {
-      const isContact = module.key === "contacts";
-      const label = isContact
-        ? `${String(nextContact.lastName ?? "")} ${String(nextContact.firstName ?? "")}`.trim()
-        : `${String(nextContact.relationType ?? "")} · ${String(nextContact.fromContactName ?? "")}`.trim();
-      const entries: AuditEntry[] = [
+      const label =
+        `${String(nextRelation.relationType ?? "")} · ${String(nextRelation.fromContactName ?? "")}`.trim();
+      patch.auditLog = appendAuditLog(
+        state.auditLog,
         makeAuditEntry({
           ...auditActor(scopeUser),
-          action: `${isContact ? "contact" : "relation"}.${exists ? "update" : "create"}`,
-          entityType: isContact ? "contact" : "relation",
-          entityId: String(nextContact.id ?? ""),
+          action: `relation.${exists ? "update" : "create"}`,
+          entityType: "relation",
+          entityId: String(nextRelation.id ?? ""),
           entityLabel: label || undefined,
-          schoolCode: String(nextContact.schoolCode ?? "") || undefined,
+          schoolCode: String(nextRelation.schoolCode ?? "") || undefined,
         }),
-      ];
-      if (isContact && String(nextContact.hasAccess ?? "") === "Oui") {
-        entries.push(
-          makeAuditEntry({
-            ...auditActor(scopeUser),
-            action: "user.role.assign",
-            entityType: "user",
-            entityId: String(nextContact.id ?? ""),
-            entityLabel: label || undefined,
-            schoolCode: String(nextContact.schoolCode ?? "") || undefined,
-            details:
-              contactPromotion?.created && contactPromotion.temporaryPassword
-                ? [
-                    [String(nextContact.role ?? ""), String(nextContact.secondaryRole ?? "")]
-                      .filter(Boolean)
-                      .join(" + "),
-                    "Mot de passe provisoire généré",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-                : [String(nextContact.role ?? ""), String(nextContact.secondaryRole ?? "")]
-                    .filter(Boolean)
-                    .join(" + "),
-          }),
-        );
-      }
-      if (isContact && ficheLink?.linkedType) {
-        entries.push(
-          makeAuditEntry({
-            ...auditActor(scopeUser),
-            action: `${ficheLink.linkedType}.${ficheLink.created ? "create" : "link"}`,
-            entityType: ficheLink.linkedType,
-            entityId: ficheLink.linkedRecordId,
-            entityLabel: label || undefined,
-            schoolCode: String(nextContact.schoolCode ?? "") || undefined,
-            details: ficheLink.created
-              ? "Fiche créée et reliée au contact"
-              : "Fiche existante reliée au contact",
-          }),
-        );
-      }
-      patch.auditLog = appendAuditLog(state.auditLog, ...entries);
+      );
     }
 
     const genericAudit = appendGenericMutationAudit(
@@ -1267,18 +1125,20 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
     const deletePatch: Partial<BackOfficeState> = { [module.key]: deleteResult.rows };
-    if (module.key === "contacts" || module.key === "relations") {
+    if (module.key === "contacts") {
+      deletePatch.auditLog = appendAuditLog(
+        state.auditLog,
+        buildContactDeleteAuditEntry(scopeUser, row),
+      );
+    } else if (module.key === "relations") {
       deletePatch.auditLog = appendAuditLog(
         state.auditLog,
         makeAuditEntry({
           ...auditActor(scopeUser),
-          action: `${module.key === "contacts" ? "contact" : "relation"}.delete`,
-          entityType: module.key === "contacts" ? "contact" : "relation",
+          action: "relation.delete",
+          entityType: "relation",
           entityId: String(row.id ?? ""),
-          entityLabel:
-            module.key === "contacts"
-              ? `${String(row.lastName ?? "")} ${String(row.firstName ?? "")}`.trim() || undefined
-              : String(row.relationType ?? "") || undefined,
+          entityLabel: String(row.relationType ?? "") || undefined,
           schoolCode: String(row.schoolCode ?? "") || undefined,
         }),
       );
@@ -1302,85 +1162,22 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
   async function handleCreateFicheFromContact() {
     if (!module || !linkContactId) return;
-    const selection = parseTeacherProvisioningSelection(linkContactId);
-    if (!selection) {
-      showToast("Sélection invalide.", "error");
-      return;
-    }
-
-    if (selection.kind === "user") {
-      const user = state.users.find((row) => String(row.id ?? "") === selection.id);
-      if (!user) {
-        showToast("Compte utilisateur introuvable.", "error");
-        return;
-      }
-      const teacherPatch = syncSingleUserToTeachers(state, user);
-      const linkedTeacher = (teacherPatch.teachers as Record<string, unknown>[]).find(
-        (row) => String(row.userId ?? "") === String(user.id ?? ""),
-      );
-      const patch: Partial<BackOfficeState> = {
-        teachers: teacherPatch.teachers as unknown as BackOfficeState["teachers"],
-      };
-      patch.auditLog = appendAuditLog(
-        state.auditLog,
-        makeAuditEntry({
-          ...auditActor(scopeUser),
-          action: "teacher.create",
-          entityType: "teacher",
-          entityId: String(linkedTeacher?.id ?? ""),
-          entityLabel: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || undefined,
-          schoolCode: String(user.schoolCode ?? "") || undefined,
-          details: "Fiche créée depuis un compte utilisateur",
-        }),
-      );
-      try {
-        await persistPatch(patch, `${module.label} créé depuis le compte utilisateur`);
-        setLinkContactOpen(false);
-        setLinkContactId("");
-      } catch {
-        /* toast déjà affiché */
-      }
-      return;
-    }
-
-    const contact = ((state.contacts ?? []) as unknown as Record<string, unknown>[]).find(
-      (row) => String(row.id) === selection.id,
+    const plan = buildCreateFicheFromSelectionPlan(
+      {
+        scopeUser,
+        state,
+        showToast,
+        syncSingleUserToTeachers,
+        effectiveSchoolCode,
+      },
+      {
+        selectionValue: linkContactId,
+        moduleLabel: module.label,
+      },
     );
-    if (!contact) {
-      showToast("Contact introuvable.", "error");
-      return;
-    }
-    const link = linkContactToOperationalRecord(contact, state, effectiveSchoolCode);
-    if (!link.linkedType) {
-      showToast("Ce contact ne peut pas être relié à une fiche.", "error");
-      return;
-    }
-    const patch: Partial<BackOfficeState> = {};
-    if (link.students) patch.students = link.students as unknown as BackOfficeState["students"];
-    if (link.teachers) patch.teachers = link.teachers as unknown as BackOfficeState["teachers"];
-    patch.contacts = ((state.contacts ?? []) as unknown as Record<string, unknown>[]).map((row) =>
-      String(row.id) === selection.id ? link.contact : row,
-    ) as unknown as BackOfficeState["contacts"];
-    const label = `${String(contact.lastName ?? "")} ${String(contact.firstName ?? "")}`.trim();
-    patch.auditLog = appendAuditLog(
-      state.auditLog,
-      makeAuditEntry({
-        ...auditActor(scopeUser),
-        action: `${link.linkedType}.${link.created ? "create" : "link"}`,
-        entityType: link.linkedType,
-        entityId: link.linkedRecordId,
-        entityLabel: label || undefined,
-        schoolCode: String(contact.schoolCode ?? "") || undefined,
-        details: link.created
-          ? "Fiche créée depuis un contact existant"
-          : "Fiche existante reliée au contact",
-      }),
-    );
+    if (!plan.ok) return;
     try {
-      await persistPatch(
-        patch,
-        link.created ? `${module.label} créé depuis le contact` : "Fiche reliée au contact",
-      );
+      await persistPatch(plan.patch, plan.successMessage);
       setLinkContactOpen(false);
       setLinkContactId("");
     } catch {
@@ -1600,10 +1397,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           size="sm"
           onClick={() => {
             if (module.key === "contacts") {
-              setEditing({
-                status: "Actif",
-                schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : "",
-              });
+              setEditing(defaultNewContactDraft(schoolCode));
               return;
             }
             if (module.key === "relations") {
