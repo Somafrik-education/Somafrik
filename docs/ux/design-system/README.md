@@ -27,6 +27,7 @@
 | [RAPPORT-D3.3-enseignants.md](./RAPPORT-D3.3-enseignants.md) | D3.3 Liste Enseignants (conso D2.7) |
 | [AUDIT-D3.4-parents.md](./AUDIT-D3.4-parents.md) · [RAPPORT-D3.4a-audit-parents.md](./RAPPORT-D3.4a-audit-parents.md) | D3.4a Parents / Responsables (audit) |
 | [CONTRAT-D3.4b-identite-parents.md](./CONTRAT-D3.4b-identite-parents.md) · [RAPPORT-D3.4b-identite-parents.md](./RAPPORT-D3.4b-identite-parents.md) | D3.4b identité `contactId` (pas de chrome DS) |
+| [AUDIT-D3.5-presences.md](./AUDIT-D3.5-presences.md) · [RAPPORT-D3.5a-audit-presences.md](./RAPPORT-D3.5a-audit-presences.md) | D3.5a Présences (audit — pas de code) |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |
