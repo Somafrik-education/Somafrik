@@ -34,6 +34,7 @@
 | [RAPPORT-D3.6c-notes-toollayout.md](./RAPPORT-D3.6c-notes-toollayout.md) | D3.6c `/notes` → ToolLayout |
 | [CONTRAT-HOTFIX-SYNC-01.md](./CONTRAT-HOTFIX-SYNC-01.md) · [AUDIT-HOTFIX-SYNC-01.md](./AUDIT-HOTFIX-SYNC-01.md) · [RAPPORT-HOTFIX-SYNC-01.md](./RAPPORT-HOTFIX-SYNC-01.md) | HOTFIX-SYNC-01 sync non destructive |
 | [CONTRAT-HOTFIX-SYNC-02.md](./CONTRAT-HOTFIX-SYNC-02.md) · [RAPPORT-HOTFIX-SYNC-02.md](./RAPPORT-HOTFIX-SYNC-02.md) | HOTFIX-SYNC-02 rattachement évaluations |
+| [CONTRAT-HOTFIX-SYNC-03.md](./CONTRAT-HOTFIX-SYNC-03.md) · [RAPPORT-HOTFIX-SYNC-03.md](./RAPPORT-HOTFIX-SYNC-03.md) | HOTFIX-SYNC-03 RBAC enseignant Notes |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |

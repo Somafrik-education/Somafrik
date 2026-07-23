@@ -83,7 +83,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
 | Présences | ✅ / 🔒 | — | D3.5a/b clos (`d3.5b`) | Chrome DS / ToolLayout 🔒 · pas de D3.5c |
 | Notes | ✅ / ⏳ | `ToolLayout` | D3.6a/b/c clos (`d3.6c`) | `/notes` ToolLayout ; Résultats 🔒 ; Bulletins D3.7 🔒 |
-| Sync / outbox | ⏳ | — | HOTFIX-SYNC-01 ✅ tag · HOTFIX-SYNC-02 rattachement | Observation prod · ACK accepted Notes |
+| Sync / outbox | ⏳ | — | HOTFIX-SYNC-01/02 ✅ · HOTFIX-SYNC-03 RBAC enseignant Notes | ACK accepted enseignant en préprod |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
 | RH | 🔒 | — | 0 % | Oui |
 
@@ -106,6 +106,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.6c : migration écrans Notes — [RAPPORT](./RAPPORT-D3.6c-notes-toollayout.md). Tag `d3.6c` @ `dcc45574`. `/notes` → `ToolLayout`.
 - HOTFIX-SYNC-01 : intégrité non destructive sync — [CONTRAT](./CONTRAT-HOTFIX-SYNC-01.md) · [AUDIT](./AUDIT-HOTFIX-SYNC-01.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-01.md). Tag `hotfix-sync-01` @ `885979ff`. Non-perte OK · **pas** validation prod fonctionnelle seule.
 - HOTFIX-SYNC-02 : rattachement évaluations PG — [CONTRAT](./CONTRAT-HOTFIX-SYNC-02.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-02.md). Ensure classe/matière/année · `syncError` visible · test ACK accepted → PG. **Roadmap toujours suspendue.**
+- HOTFIX-SYNC-03 : autorisation métier enseignant evaluations/notes — [CONTRAT](./CONTRAT-HOTFIX-SYNC-03.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-03.md). Pas d’élargissement global `/backoffice/state` · `teacherId` session · rejet autres clés. **Roadmap toujours suspendue.**
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
