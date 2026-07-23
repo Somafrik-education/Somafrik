@@ -19,9 +19,9 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Infra | D2.8e — Nettoyage final | ✅ | — | Assembleur EntityPage (modales UI conservées) |
 | Élèves | Fiche / workspace | ✅ | `RecordLayout` | StatusBadge ; nav onglets custom |
 | Élèves | Liste (D3.1b) | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage |
-| Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |
-| Classes métier | D3.2a — Fiche | 🔒 | `RecordLayout` (cible) | **Fiche absente** (prérequis produit) |
-| Classes métier | D3.2b — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
+| Classes métier | D3.2a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.2-classes.md) post-D2.8e |
+| Classes métier | Fiche Classe | 🔒 | `RecordLayout` (cible) | **Fiche absente** (prérequis produit) |
+| Classes métier | D3.2b — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales EntityPage ; pas de fiche |
 | Classes métier | D3.2c — Membres / élèves | ✅ | `ListLayout` via `EntityListShell` | classScope EntityPage ; modales |
 | Classes config | Structure (D2.5) | ✅ | `FormLayout` | Monolithe `ConfigurationPage` |
 | Enseignants | D3.3 — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage ; pas de fiche |
@@ -61,7 +61,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | DataTable | ⏳ | — | 0 % | ui legacy |
 | Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | StatusBadge ; onglets |
 | Élèves — liste | ✅ | `ListLayout` | D3.1b `StudentsListPage` | Modales EntityPage |
-| Classes (module métier) | ✅ / ⏳ | `ListLayout` | Liste D3.2b + membres D3.2c | Fiche absente ; modales EntityPage |
+| Classes (module métier) | ✅ / 🔒 | `ListLayout` | D3.2a audit + D3.2b/c | Fiche absente 🔒 ; modales EntityPage |
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | 🔒 | — | 0 % | Oui |
 | Présences | 🔒 | — | 0 % | Oui |
@@ -74,7 +74,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D2.6 : coexistence via **re-exports** `components/ui/{Toast,Modal,ConfirmDialog,Table,PagePlaceholder}` → `@/design-system`.
 - D3.1 : fiche Élèves migrée (`RecordLayout`).
 - D3.1b : liste Élèves — `StudentsListPage` → EntityPage — [RAPPORT](./RAPPORT-D3.1b-liste-eleves.md).
-- D3.2 : audit Classes — [AUDIT](./AUDIT-D3.2-classes.md) · [RAPPORT](./RAPPORT-D3.2-classes.md).
+- D3.2 : audit historique — [RAPPORT](./RAPPORT-D3.2-classes.md).
+- D3.2a : audit / verrouillage post-D2.8e — [AUDIT](./AUDIT-D3.2-classes.md) · [RAPPORT](./RAPPORT-D3.2a-audit-classes.md). Tag clôture D2.8e : `d2.8e` @ `4a5684b8`.
 - D2.7 : chrome EntityPage — [AUDIT](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT](./RAPPORT-D2.7-entitypage.md).
 - D3.2b : liste Classes — [RAPPORT](./RAPPORT-D3.2b-liste-classes.md).
 - D3.3 : liste Enseignants — [RAPPORT](./RAPPORT-D3.3-enseignants.md).
@@ -86,6 +87,6 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D2.8d2 : workflow Contacts & Comptes — [RAPPORT](./RAPPORT-D2.8d2-contacts-comptes.md).
 - D2.8d3 : workflow Relations parent-enfant — [RAPPORT](./RAPPORT-D2.8d3-relations-parent-enfant.md).
 - D2.8d4 : workflow Paiements — [RAPPORT](./RAPPORT-D2.8d4-paiements.md).
-- D2.8e : nettoyage final assembleur EntityPage — [RAPPORT](./RAPPORT-D2.8e-nettoyage-entitypage.md). Lot D2.8 clos.
+- D2.8e : nettoyage final assembleur EntityPage — [RAPPORT](./RAPPORT-D2.8e-nettoyage-entitypage.md). Lot D2.8 clos (tag `d2.8e`).
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.
