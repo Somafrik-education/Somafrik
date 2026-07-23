@@ -674,12 +674,16 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
       for (const item of items) {
         const student = findStudent(state.students ?? [], item.studentId);
         const studentKeys = student ? buildScopedStudentIdSet([student]) : new Set();
-        const duplicate = (state.presences ?? []).find(
-          (row) =>
+        // D3.5b : clé = établissement + élève + jour
+        const itemSchool = String(item.schoolCode ?? "").trim().toUpperCase();
+        const duplicate = (state.presences ?? []).find((row) => {
+          const rowSchool = String(row.schoolCode ?? "").trim().toUpperCase();
+          if (itemSchool && rowSchool && itemSchool !== rowSchool) return false;
+          return (
             studentKeys.has(String(row.studentId ?? "")) &&
-            normalizePresenceDay(row.date) === normalizePresenceDay(item.date) &&
-            (!item.className || !row.className || classNamesMatch(row.className, item.className)),
-        );
+            normalizePresenceDay(row.date) === normalizePresenceDay(item.date)
+          );
+        });
         const nextItem = duplicate ? { ...duplicate, ...item, id: duplicate.id } : item;
         assertPresenceWrite(state, nextItem, { skipDuplicateCheck: true });
         normalizedItems.push(nextItem);
@@ -687,16 +691,20 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
 
       await ensureRepositoryBackOfficeSnapshot(state);
 
+      // D3.5b : PostgreSQL = autorité canonique. Le JSON BO n'est autorisé
+      // qu'en moteur mémoire (secours démo), jamais comme 2ᵉ source durable.
       let saved;
+      const engine = String(repository.engine ?? "postgresql");
       try {
         saved = await repository.upsertAttendanceBatch({ ...body, items: normalizedItems }, req.principal);
       } catch (error) {
         const message = String(error?.message ?? "");
         const status = error?.statusCode ?? error?.status;
-        if (
+        const canUseTransientBoFallback =
+          engine === "memory" &&
           (status === 404 || status === 400) &&
-          (message.includes("introuvable") || message.includes("Eleve") || message.includes("présence"))
-        ) {
+          (message.includes("introuvable") || message.includes("Eleve") || message.includes("présence"));
+        if (canUseTransientBoFallback) {
           saved = await savePresencesViaBackOfficeState(state, normalizedItems);
         } else {
           throw error;
@@ -3823,21 +3831,35 @@ async function savePresencesViaBackOfficeState(state, items = []) {
   for (const item of items) {
     const student = findStudent(state.students ?? [], item.studentId);
     const studentKeys = student ? buildScopedStudentIdSet([student]) : new Set([String(item.studentId ?? "").trim()]);
-    const existingIndex = nextPresences.findIndex(
-      (presence) =>
-        studentKeys.has(String(presence.studentId ?? "")) &&
-        samePresenceDay(presence.date, item.date),
-    );
+    // D3.5b : même clé logique que PG — établissement + élève + jour
+    const itemSchool = String(item.schoolCode ?? student?.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    const existingIndex = nextPresences.findIndex((presence) => {
+      const rowSchool = String(presence.schoolCode ?? "")
+        .trim()
+        .toUpperCase();
+      if (itemSchool && rowSchool && itemSchool !== rowSchool) return false;
+      return (
+        studentKeys.has(String(presence.studentId ?? "")) && samePresenceDay(presence.date, item.date)
+      );
+    });
+    const status = item.status;
+    const reason =
+      item.reason ??
+      (String(status ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("justifi")
+        ? "Absence justifiée"
+        : undefined);
     const entry = {
       id: item.id ?? item.publicId ?? `PRE-${item.date}-${String(item.studentId ?? "")}`,
       publicId: item.publicId ?? item.id ?? `PRE-${item.date}-${String(item.studentId ?? "")}`,
-      schoolCode: item.schoolCode,
+      schoolCode: itemSchool || item.schoolCode,
       studentId: student?.id ?? item.studentId,
       className: item.className,
       date: item.date,
       present: item.present,
-      status: item.status,
-      reason: item.reason,
+      status,
+      reason,
       savedAt: new Date().toISOString(),
     };
     if (existingIndex >= 0) {

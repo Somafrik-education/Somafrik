@@ -228,7 +228,7 @@ export function PresencesPage() {
         date: todayLabel,
         present: presenceIsAttended(status),
         status,
-        reason: status === "Justifié" ? "Justifié" : undefined,
+        reason: status === "Justifié" ? "Absence justifiée" : undefined,
       };
     });
 
@@ -327,7 +327,7 @@ export function PresencesPage() {
         <div>
           <SectionHeader
             title={`Appel — ${selectedClass}`}
-            description={`${todayLabel} à ${currentHour} · Cliquez sur Présent, Absent, Retard ou Justifié pour chaque élève.`}
+            description={`${todayLabel} · Appel du jour (journée entière) · Présent, Absent, Retard ou Justifié (absence justifiée).`}
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">

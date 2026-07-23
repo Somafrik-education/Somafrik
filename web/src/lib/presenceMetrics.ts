@@ -1,3 +1,4 @@
+/** Statuts D3.5 — `Justifié` = absence justifiée (pas de double axe). */
 export type AttendanceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
 
 export type PresenceRow = {

@@ -216,7 +216,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
       Alert.alert(
         "Appel enregistré",
-        `${className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} justifié(s).\nLes parents concernés seront notifiés.`
+        `${className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\nAppel enregistré.`
       );
     } catch (error) {
       Alert.alert(
@@ -405,7 +405,7 @@ function buildEntry(
     modifiedBy,
     modifiedAt: `${formatDate(new Date())} ${formatHour(new Date())}`,
     arrivalTime: status === "Retard" ? formatHour(new Date()) : undefined,
-    reason: status === "Justifié" ? "Maladie" : undefined,
+    reason: status === "Justifié" ? "Absence justifiée" : undefined,
   };
 }
 
