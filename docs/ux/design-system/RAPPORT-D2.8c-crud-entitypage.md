@@ -104,4 +104,4 @@ Restent dans `EntityPage` pour **D2.8d** :
 | Wrappers D3 / D2.8a / D2.8b | Inchangés |
 | Changement fonctionnel / visuel | Non |
 | Difficulté | **Moyenne** (périmètre réduit) |
-| Suite | D2.8d — modales / workflows spécialisés |
+| Suite | D2.8d1 — workflow affectations enseignants |

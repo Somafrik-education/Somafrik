@@ -36,6 +36,13 @@ import {
   resolveEntitySelectOptions,
   resolveTeacherAssignmentFieldOptions,
 } from "./entity-page/entitySelectOptions";
+import {
+  buildTeacherAssignmentDeleteConfirmCopy,
+  buildTeacherAssignmentDeletePlan,
+  buildTeacherAssignmentSubmitPlan,
+  emptyEditingAssignment,
+  reapplyAssignmentPeriodRoom,
+} from "./entity-page/teacherAssignmentWorkflow";
 import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
 import { DatePicker } from "../components/ui/DatePicker";
@@ -942,8 +949,11 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       const targetId = String(nextItem.id ?? "");
       const period = String((nextItem as Record<string, unknown>).period ?? "");
       const room = String((nextItem as Record<string, unknown>).room ?? "");
-      patch.assignments = (patch.assignments as Record<string, unknown>[]).map((row) =>
-        String(row.id) === targetId ? { ...row, period, room } : row,
+      patch.assignments = reapplyAssignmentPeriodRoom(
+        patch.assignments as Record<string, unknown>[],
+        targetId,
+        period,
+        room,
       ) as BackOfficeState["assignments"];
     }
 
@@ -1382,111 +1392,31 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     event.preventDefault();
     if (!assignmentModule || !editingAssignment || !teacherAssignmentContext) return;
 
-    const teachers = scopedTeachers(scopeUser, state);
-    const linkedTeacher =
-      teachers.find((row) => String(row.id) === String(teacherAssignmentContext.id ?? "")) ??
-      teachers.find((row) =>
-        [row.publicId, row.identifier, row.userId, row.contactId].some(
-          (value) => String(value ?? "") === String(teacherAssignmentContext.id ?? ""),
-        ),
-      ) ??
-      teacherAssignmentContext;
-
-    const workingItem = prepareAssignmentForSave(
+    const plan = buildTeacherAssignmentSubmitPlan(
       {
-        ...editingAssignment,
-        teacherId: String(linkedTeacher.id ?? teacherAssignmentContext.id ?? ""),
+        scopeUser,
+        state,
+        effectiveSchoolCode,
+        showToast,
+        buildPedagogyPatch,
       },
-      teachers,
-      effectiveSchoolCode,
-      state,
-      scopeUser,
+      {
+        editingAssignment,
+        teacherAssignmentContext,
+        assignmentFields: assignmentModule.fields,
+        scopedAssignments: scopedAssignmentsList,
+        permissions: {
+          canCreate: assignmentPermissions.canCreate,
+          canUpdate: assignmentPermissions.canUpdate,
+        },
+      },
     );
-
-    const missingRequired = assignmentModule.fields.find(
-      (field) => field.required && !String(workingItem[field.key] ?? "").trim(),
-    );
-    if (missingRequired) {
-      showToast(`${missingRequired.label} est obligatoire`, "error");
-      return;
-    }
-
-    const conflict = validateAssignmentConflict(
-      workingItem,
-      scopedAssignmentsList,
-      scopedCourses(scopeUser, state),
-      scopedClasses(scopeUser, state),
-      teachers,
-      editingAssignment.id ? String(editingAssignment.id) : undefined,
-      state,
-      effectiveSchoolCode,
-    );
-    if (conflict) {
-      showToast(conflict, "error");
-      return;
-    }
-
-    const scopedItem = applyEntitySchoolScope(
-      "assignments",
-      workingItem,
-      effectiveSchoolCode,
-      state,
-    );
-    const current = getScopedEntityRows("assignments", scopeUser, state);
-    const exists =
-      Boolean(scopedItem.id) && current.some((row) => String(row.id) === String(scopedItem.id));
-
-    if (exists && !assignmentPermissions.canUpdate) {
-      showToast("Modification des affectations non autorisée pour votre rôle.", "error");
-      return;
-    }
-    if (!exists && !assignmentPermissions.canCreate) {
-      showToast("Création d'affectation non autorisée pour votre rôle.", "error");
-      return;
-    }
-
-    const nextItem = prepareEntityRowForSave(scopedItem, "ASSIGNMENT", exists);
-
-    const mergeResult = mergeEntityIntoState("assignments", scopeUser, state, nextItem);
-    if (!mergeResult.applied) {
-      showToast("Modification refusée : affectation hors périmètre de l'établissement.", "error");
-      return;
-    }
-
-    const pedagogyPatch = buildPedagogyPatch("assignments", nextItem, mergeResult.rows);
-    const targetId = String(nextItem.id ?? "");
-    const period = String(nextItem.period ?? "");
-    const room = String(nextItem.room ?? "");
-    const patch: Partial<BackOfficeState> = {
-      assignments: pedagogyPatch.assignments,
-      courses: pedagogyPatch.courses,
-      teachers: pedagogyPatch.teachers,
-    };
-    if (patch.assignments) {
-      patch.assignments = (patch.assignments as Record<string, unknown>[]).map((row) =>
-        String(row.id) === targetId ? { ...row, period, room } : row,
-      ) as BackOfficeState["assignments"];
-    }
-    patch.auditLog = appendAuditLog(
-      state.auditLog,
-      makeAuditEntry({
-        ...auditActor(scopeUser),
-        action: exists ? "assignments.update" : "assignments.create",
-        entityType: "assignments",
-        entityId: targetId,
-        entityLabel: auditEntityLabel("assignments", nextItem) || undefined,
-        schoolCode: String(nextItem.schoolCode ?? "") || undefined,
-      }),
-    );
+    if (!plan.ok) return;
 
     try {
-      await persistPatch(patch, exists ? "Affectation modifiée" : "Affectation créée");
-      setTeacherAssignmentContext({ ...linkedTeacher });
-      setEditingAssignment({
-        teacherId: String(linkedTeacher.id ?? ""),
-        className: "",
-        subject: "",
-      });
+      await persistPatch(plan.patch, plan.successMessage);
+      setTeacherAssignmentContext(plan.refreshTeacherContext);
+      setEditingAssignment(plan.resetEditingAssignment);
     } catch {
       /* toast déjà affiché */
     }
@@ -1498,68 +1428,38 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       showToast("Retrait non autorisé pour votre rôle.", "error");
       return;
     }
-    const className = String(assignment.className ?? "").trim();
-    const subject = String(assignment.subject ?? assignment.course ?? "").trim();
-    const confirmed = await confirm({
-      title: "Retirer cette affectation ?",
-      description:
-        className && subject
-          ? `Retirer la matière « ${subject} » pour la classe ${className} ?`
-          : "Retirer cette affectation enseignant ↔ classe ↔ matière ?",
-      confirmLabel: "Retirer",
-      tone: "danger",
-    });
+
+    const confirmed = await confirm(buildTeacherAssignmentDeleteConfirmCopy(assignment));
     if (!confirmed) return;
 
-    const deleteResult = deleteEntityFromState(
-      "assignments",
-      scopeUser,
-      state,
-      String(assignment.id),
+    const plan = buildTeacherAssignmentDeletePlan(
+      {
+        scopeUser,
+        state,
+        effectiveSchoolCode,
+        showToast,
+        buildPedagogyPatch,
+      },
+      {
+        assignment,
+        teacherAssignmentContext,
+        permissions: {
+          canUpdate: assignmentPermissions.canUpdate,
+          canDelete: assignmentPermissions.canDelete,
+        },
+      },
     );
-    if (!deleteResult.applied) {
-      showToast("Suppression refusée : affectation hors périmètre ou introuvable.", "error");
-      return;
-    }
-    const nextAllRows = deleteResult.rows;
-
-    const pedagogyPatch = buildPedagogyPatch("assignments", assignment, nextAllRows);
-    const patch: Partial<BackOfficeState> = {
-      assignments: nextAllRows as BackOfficeState["assignments"],
-      courses: pedagogyPatch.courses,
-    };
-    if (teacherAssignmentContext) {
-      const remaining = listTeacherAssignments(teacherAssignmentContext, nextAllRows);
-      const embedded = remaining.map((row) => ({
-        className: row.className,
-        course: row.subject ?? row.course,
-      }));
-      patch.teachers = ((state.teachers ?? []) as Record<string, unknown>[]).map((teacher) =>
-        String(teacher.id) === String(teacherAssignmentContext.id ?? "")
-          ? { ...teacher, assignments: embedded }
-          : teacher,
-      ) as BackOfficeState["teachers"];
-    }
-    patch.auditLog = appendAuditLog(
-      state.auditLog,
-      makeAuditEntry({
-        ...auditActor(scopeUser),
-        action: "assignments.delete",
-        entityType: "assignments",
-        entityId: String(assignment.id ?? ""),
-        entityLabel: auditEntityLabel("assignments", assignment) || undefined,
-        schoolCode: String(assignment.schoolCode ?? "") || undefined,
-      }),
-    );
+    if (!plan.ok) return;
 
     try {
-      await persistPatch(patch, "Affectation retirée");
-      if (String(editingAssignment?.id ?? "") === String(assignment.id)) {
-        setEditingAssignment({
-          teacherId: String(teacherAssignmentContext?.id ?? ""),
-          className: "",
-          subject: "",
-        });
+      await persistPatch(plan.patch, plan.successMessage);
+      if (
+        plan.clearEditingIfId &&
+        String(editingAssignment?.id ?? "") === plan.clearEditingIfId
+      ) {
+        setEditingAssignment(
+          emptyEditingAssignment(String(teacherAssignmentContext?.id ?? "")),
+        );
       }
     } catch {
       /* toast déjà affiché */

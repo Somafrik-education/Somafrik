@@ -12,7 +12,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Infra | D2.8a — Colonnes EntityPage | ✅ | — | `entityColumns.tsx` |
 | Infra | D2.8b — Options formulaire | ✅ | — | `entitySelectOptions.ts` |
 | Infra | D2.8c — Noyau CRUD | ✅ | — | `entityCrudCore.ts` (sans workflows métier) |
-| Infra | D2.8d/e — Modales & nettoyage | ⏳ | — | Workflows spécialisés + monolithe restant |
+| Infra | D2.8d1 — Affectations enseignants | ✅ | — | `teacherAssignmentWorkflow.ts` |
+| Infra | D2.8d*/e — Autres workflows & nettoyage | ⏳ | — | Paiements, contacts, relations, modales… |
 | Élèves | Fiche / workspace | ✅ | `RecordLayout` | StatusBadge ; nav onglets custom |
 | Élèves | Liste (D3.1b) | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage |
 | Classes métier | Audit D3.2 | 📋 | — | Voir sous-lots |
@@ -44,8 +45,9 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | EntityPage — chrome liste (D2.7) | ✅ | `ListLayout` | patterns `entity-list` | Handlers / modales |
 | EntityPage — colonnes (D2.8a) | ✅ | — | `entityColumns` | — |
 | EntityPage — options select (D2.8b) | ✅ | — | `entitySelectOptions` | — |
-| EntityPage — noyau CRUD (D2.8c) | ✅ | — | `entityCrudCore` | Workflows métier → D2.8d |
-| EntityPage — modales & workflows | ⏳ | — | 0 % | Monolithe restant |
+| EntityPage — noyau CRUD (D2.8c) | ✅ | — | `entityCrudCore` | — |
+| EntityPage — affectations (D2.8d1) | ✅ | — | `teacherAssignmentWorkflow` | Modale UI reste EntityPage |
+| EntityPage — autres workflows / modales | ⏳ | — | 0 % | Paiements, contacts, relations… |
 | Documents / bulletins | ⏳ | — | 0 % | Page legacy |
 | Graphiques dashboard | ⏳ | — | 0 % | Chart + panel |
 | Shell `ParametresLayout` | ⏳ | ad hoc | 0 % | Shell module |
@@ -73,6 +75,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
-- D2.8c : noyau CRUD transversal — [RAPPORT](./RAPPORT-D2.8c-crud-entitypage.md). Suite : D2.8d modales / workflows spécialisés.
+- D2.8c : noyau CRUD transversal — [RAPPORT](./RAPPORT-D2.8c-crud-entitypage.md).
+- D2.8d1 : workflow affectations enseignants — [RAPPORT](./RAPPORT-D2.8d1-affectations-enseignants.md). Suite : D2.8d* autres workflows.
 - Nouveaux écrans : importer uniquement depuis `@/design-system`.
 - Modules 🔒 : attendre validation CTO avant d’ouvrir le module suivant.
