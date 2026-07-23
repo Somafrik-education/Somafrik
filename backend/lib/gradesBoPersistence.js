@@ -1,42 +1,97 @@
 /**
- * D3.6b — Persistance BO Notes : strip JSON uniquement après sync PG réussie.
- * Jamais : warn → continuer → vider notes/evaluations.
+ * D3.6b + HOTFIX-SYNC-01 — Persistance BO Notes.
+ * Strip JSON uniquement pour les enregistrements acceptés (ACK).
+ * Les rejets restent durables avec syncStatus=failed — jamais de perte silencieuse.
  */
 
 /**
  * Construit le payload durable BackOffice.
  * @param {object} payload
- * @param {{ syncSucceeded: boolean }} options
+ * @param {{ syncSucceeded?: boolean, accepted?: { evaluations?: string[], notes?: string[] }, rejected?: Array<object> }} options
  */
-function buildDurableNotesBackOfficePayload(payload = {}, { syncSucceeded } = {}) {
+function buildDurableNotesBackOfficePayload(payload = {}, options = {}) {
   const base = { ...(payload ?? {}) };
-  if (!syncSucceeded) {
-    // Conserves explicites — ne pas stripper si la sync PG a échoué.
+  const {
+    syncSucceeded,
+    accepted = { evaluations: [], notes: [] },
+    rejected = [],
+  } = options;
+
+  // Compat D3.6b : syncSucceeded false → tout conserver ; true sans listes → strip total.
+  if (syncSucceeded === false) {
     return {
       ...base,
       notes: Array.isArray(base.notes) ? base.notes : [],
       evaluations: Array.isArray(base.evaluations) ? base.evaluations : [],
     };
   }
+
+  const acceptedEvalIds = new Set((accepted.evaluations ?? []).map((id) => String(id)));
+  const acceptedNoteIds = new Set((accepted.notes ?? []).map((id) => String(id)));
+  const rejectedByKey = new Map();
+  for (const item of rejected ?? []) {
+    const key = `${item.entity ?? ""}:${item.id ?? item.clientMutationId ?? ""}`;
+    rejectedByKey.set(key, item);
+  }
+
+  const keepWithFailure = (rows, entity, acceptedIds) =>
+    (Array.isArray(rows) ? rows : [])
+      .filter((row) => !acceptedIds.has(String(row.id ?? "")))
+      .map((row) => {
+        const reject =
+          rejectedByKey.get(`${entity}:${row.id ?? ""}`) ||
+          rejectedByKey.get(`${entity}:${row.clientMutationId ?? ""}`);
+        if (!reject) return row;
+        return {
+          ...row,
+          syncStatus: "failed",
+          syncError: reject.error ?? "Échec de synchronisation",
+          clientMutationId: row.clientMutationId ?? reject.clientMutationId,
+        };
+      });
+
+  // HOTFIX-SYNC-01 : strip partiel si accepted fourni ; sinon comportement D3.6b syncSucceeded=true.
+  if (acceptedEvalIds.size || acceptedNoteIds.size || (rejected ?? []).length) {
+    return {
+      ...base,
+      evaluations: keepWithFailure(base.evaluations, "evaluations", acceptedEvalIds),
+      notes: keepWithFailure(base.notes, "notes", acceptedNoteIds),
+    };
+  }
+
+  if (syncSucceeded === true) {
+    return {
+      ...base,
+      notes: [],
+      evaluations: [],
+    };
+  }
+
   return {
     ...base,
-    notes: [],
-    evaluations: [],
+    notes: Array.isArray(base.notes) ? base.notes : [],
+    evaluations: Array.isArray(base.evaluations) ? base.evaluations : [],
   };
 }
 
 /**
  * Orchestration synchrone testable du flux saveBackOfficeState (notes domain).
- * syncFn doit throw si une entrée échoue — aucune absorption ici.
+ * HOTFIX-SYNC-01 : syncFn peut renvoyer { accepted, rejected } sans throw.
+ * Throw global (infra) ⇒ aucune persistance JSON.
  */
 async function persistBackOfficeAfterNotesSync({
   payload,
   syncFn,
   persistFn,
 }) {
-  await syncFn(payload ?? {});
-  const durable = buildDurableNotesBackOfficePayload(payload ?? {}, { syncSucceeded: true });
-  return persistFn(durable);
+  const syncResult = (await syncFn(payload ?? {})) ?? {};
+  const durable = buildDurableNotesBackOfficePayload(payload ?? {}, {
+    syncSucceeded: true,
+    accepted: syncResult.accepted ?? { evaluations: [], notes: [] },
+    rejected: syncResult.rejected ?? [],
+  });
+  await persistFn(durable);
+  return syncResult;
 }
 
 /**
