@@ -34,10 +34,15 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Parents / Responsables | Chrome DS Parents | 🔒 | — | Aucun D3.4c automatique |
 | Présences | D3.5a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.5-presences.md) · décisions CTO §10 |
 | Présences | Surface / contrat données | ✅ | — | `/presences` + mobile ; journée ; enum 4 ; PG canonique |
-| Présences | D3.5b — Contrat & persistance canonique | ⏳ | — | [CONTRAT](./CONTRAT-D3.5b-presences.md) · PR en cours |
-| Présences | Onglet fiche Élève | 🔒 | — | Hors D3.5b |
-| Présences | Chrome DS / ToolLayout | 🔒 | `ToolLayout` (cible) | Après stabilisation métier |
-| Notes / Évaluations | — | 🔒 | — | Aucun chantier sous D3.5 |
+| Présences | D3.5b — Contrat & persistance canonique | ✅ | — | [CONTRAT](./CONTRAT-D3.5b-presences.md) · tag `d3.5b` |
+| Présences | Onglet fiche Élève | 🔒 | — | Hors D3.5 |
+| Présences | Chrome DS / ToolLayout | 🔒 | `ToolLayout` (cible) | Après stabilisation métier · pas de D3.5c |
+| Notes / Évaluations | D3.6a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.6-notes.md) · décisions CTO §11 |
+| Notes / Évaluations | Surface / contrat données | ✅ | — | `/notes` + mobile ; eval×élève ; PG cible ; UNIQUE school+eval+student |
+| Notes / Évaluations | D3.6b — Contrat & persistance canonique | ⏳ | — | Après tag `d3.6a` · pas chrome / pas Bulletins |
+| Notes / Évaluations | D3.6c — Migration écrans | 🔒 | `ToolLayout` (cible) | Après D3.6b |
+| Notes / Évaluations | Onglet fiche Élève « Résultats » | 🔒 | — | Hors D3.6b |
+| Bulletins | D3.7 | 🔒 | — | Après Notes stabilisées · publication ≠ bulletin |
 
 ## Suivi consolidé
 
@@ -76,8 +81,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Classes (module métier) | ✅ / 🔒 | `ListLayout` | D3.2a audit + D3.2b/c | Fiche absente 🔒 ; modales EntityPage |
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
-| Présences | 📋 / ⏳ | — | D3.5a décisions CTO | D3.5b persistance PG ; chrome DS 🔒 |
-| Notes | 🔒 | — | 0 % | Oui |
+| Présences | ✅ / 🔒 | — | D3.5a/b clos (`d3.5b`) | Chrome DS / ToolLayout 🔒 · pas de D3.5c |
+| Notes | ✅ / ⏳ | — | D3.6a décisions CTO §11 | D3.6b persistance PG ; chrome DS 🔒 ; Bulletins D3.7 🔒 |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
 | RH | 🔒 | — | 0 % | Oui |
 
@@ -94,7 +99,8 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.4a : audit / verrouillage Parents — [AUDIT](./AUDIT-D3.4-parents.md) · [RAPPORT](./RAPPORT-D3.4a-audit-parents.md). Tag : `d3.4a`. **D3.3 = Enseignants** · **D3.4 = Parents**.
 - D3.4b : contrat identité Parents — [CONTRAT](./CONTRAT-D3.4b-identite-parents.md) · [RAPPORT](./RAPPORT-D3.4b-identite-parents.md). Tag `d3.4b` @ `f442ce90`. Contrat actif : `fromContactId = contact.id` · `user.contactId = contact.id`. **Pas de D3.4c automatique** (liste / fiche / chrome DS / EntityPage 🔒).
 - D3.5a : audit / verrouillage Présences — [AUDIT](./AUDIT-D3.5-presences.md) · [RAPPORT](./RAPPORT-D3.5a-audit-presences.md). Tag : `d3.5a`.
-- D3.5b : contrat + persistance Présences — [CONTRAT](./CONTRAT-D3.5b-presences.md) · [RAPPORT](./RAPPORT-D3.5b-presences-persistence.md). PG UNIQUE · upsert · pas ToolLayout / Notes.
+- D3.5b : contrat + persistance Présences — [CONTRAT](./CONTRAT-D3.5b-presences.md) · [RAPPORT](./RAPPORT-D3.5b-presences-persistence.md). Tag `d3.5b` @ `b533652c`. PG UNIQUE · upsert · pas ToolLayout / Notes · **pas de D3.5c**.
+- D3.6a : audit / verrouillage Notes — [AUDIT](./AUDIT-D3.6-notes.md) · [RAPPORT](./RAPPORT-D3.6a-audit-notes.md). Décisions CTO §11 · tag `d3.6a`. **D3.6 = Notes** · **D3.7 = Bulletins**. PG évaluations+notes · UNIQUE school+eval+student · calcul unique · publication ≠ bulletin. Pas de ToolLayout / fiche Élève / D3.7 sous D3.6b.
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).
