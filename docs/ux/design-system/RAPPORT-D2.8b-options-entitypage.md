@@ -58,4 +58,4 @@ Extraire `getSelectOptionsForField` / `getTeacherAssignmentFieldOptions` hors du
 | Extraction formulaire / CRUD | Non (hors lot) |
 | Wrappers D3 | Inchangés |
 | Difficulté | **Faible à moyenne** |
-| Suite | D2.8c — handlers CRUD génériques |
+| Suite | D2.8c — noyau CRUD transversal (sans workflows métier) |

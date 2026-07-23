@@ -18,6 +18,21 @@ import {
   PARENT_CHILD_HIDDEN_FIELDS,
 } from "./entity-page/entityColumns";
 import {
+  appendGenericDeleteAudit,
+  appendGenericMutationAudit,
+  applyEntitySchoolScope,
+  auditEntityLabel,
+  deleteEntityFromState,
+  ENTITY_DELETED_MESSAGE,
+  ENTITY_OUT_OF_SCOPE_DELETE_MESSAGE,
+  ENTITY_OUT_OF_SCOPE_SAVE_MESSAGE,
+  entityMutationSuccessMessage,
+  mergeEntityIntoState,
+  newEntityId,
+  persistEntityPatch,
+  prepareEntityRowForSave,
+} from "./entity-page/entityCrudCore";
+import {
   resolveEntitySelectOptions,
   resolveTeacherAssignmentFieldOptions,
 } from "./entity-page/entitySelectOptions";
@@ -30,11 +45,8 @@ import { usePrompt } from "../components/ui/PromptDialog";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { getEntityFeaturePermissions, canResetTargetUserPassword } from "../lib/permissions";
 import {
-  applySchoolScopeToItem,
-  deleteScopedEntityRow,
   getEntityModule,
   getScopedEntityRows,
-  mergeScopedEntityRows,
   entityCreateViaContactsOnly,
   type SchoolEntityKey,
 } from "../lib/entityModules";
@@ -137,11 +149,6 @@ function normalizeTeacherFormRow(row: Record<string, unknown>): Record<string, u
   return next;
 }
 
-function newId(prefix: string): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `${prefix}-${crypto.randomUUID()}`;
-  return `${prefix}-${Date.now()}`;
-}
-
 const STUDENT_LINKED_KEYS = new Set<SchoolEntityKey>([
   "payments",
   "presences",
@@ -177,32 +184,6 @@ interface EntityPageProps {
   mode?: "parentChildRelations";
   /** Limite la liste et la création à une classe (gestion depuis Classes). */
   classScope?: string;
-}
-
-/** Entités « données sensibles » tracées au journal d'audit (WEB-ME-006 / SEC-ME-003). */
-const AUDITED_ENTITY_KEYS = new Set<SchoolEntityKey>([
-  "classes",
-  "students",
-  "teachers",
-  "assignments",
-]);
-
-/** Libellé lisible d'une ligne pour le journal d'audit. */
-function auditEntityLabel(key: SchoolEntityKey, row: Record<string, unknown>): string {
-  const str = (value: unknown) => String(value ?? "").trim();
-  switch (key) {
-    case "classes":
-      return str(row.name) || str(row.className);
-    case "students":
-    case "teachers":
-      return `${str(row.name)} ${str(row.firstName)}`.trim();
-    case "assignments":
-      return [str(row.teacherName), str(row.subject), str(row.className)]
-        .filter(Boolean)
-        .join(" · ");
-    default:
-      return str(row.name);
-  }
 }
 
 export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
@@ -409,16 +390,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   }
 
   async function persistPatch(patch: Partial<BackOfficeState>, message: string) {
-    setBusy(true);
-    try {
-      await update(patch, { partial: true });
-      showToast(message, "success");
-    } catch {
-      showToast("Échec de la synchronisation", "error");
-      throw new Error("sync failed");
-    } finally {
-      setBusy(false);
-    }
+    return persistEntityPatch({ update, showToast, setBusy }, patch, message);
   }
 
   async function handleResetContactPassword() {
@@ -536,7 +508,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         errors.push(`Ligne ${line} : ${duplicate.block}`);
         return;
       }
-      toAdd.push({ ...prepared, id: newId("CONTACTS") });
+      toAdd.push({ ...prepared, id: newEntityId("CONTACTS") });
     });
 
     if (!toAdd.length) {
@@ -648,7 +620,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
 
     const allRelations = (state.relations ?? []) as unknown as Record<string, unknown>[];
     const nextRelations = syncParentChildRelations(editing, allRelations, state, () =>
-      newId("RELATIONS"),
+      newEntityId("RELATIONS"),
     );
 
     const parentAccount = ((state.users ?? []) as unknown as Record<string, unknown>[]).find(
@@ -858,7 +830,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       }
     }
 
-    const scopedItem = applySchoolScopeToItem(module.key, workingItem, effectiveSchoolCode, state);
+    const scopedItem = applyEntitySchoolScope(module.key, workingItem, effectiveSchoolCode, state);
     const linkedItem = linkStudentFromName(module.key, scopedItem, scopeUser, state);
     const current = getScopedEntityRows(module.key, scopeUser, state);
     const exists =
@@ -937,24 +909,19 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       };
     }
 
-    const nextItem = exists
-      ? preparedItem
-      : (() => {
-          const id = String(preparedItem.id ?? newId(module.key.toUpperCase()));
-          return {
-            ...preparedItem,
-            id,
-            ...(module.key === "students"
-              ? {
-                  archived: preparedItem.archived ?? false,
-                }
-              : {}),
-          };
-        })();
+    const withId = prepareEntityRowForSave(
+      preparedItem,
+      module.key.toUpperCase(),
+      exists,
+    );
+    const nextItem =
+      !exists && module.key === "students"
+        ? { ...withId, archived: preparedItem.archived ?? false }
+        : withId;
 
-    const mergeResult = mergeScopedEntityRows(module.key, scopeUser, state, nextItem);
+    const mergeResult = mergeEntityIntoState(module.key, scopeUser, state, nextItem);
     if (!mergeResult.applied) {
-      showToast("Modification refusée : élément hors périmètre de l'établissement.", "error");
+      showToast(ENTITY_OUT_OF_SCOPE_SAVE_MESSAGE, "error");
       return;
     }
     const nextAllRows = mergeResult.rows;
@@ -980,7 +947,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       ) as BackOfficeState["assignments"];
     }
 
-    let successMessage = exists ? `${module.label} modifié` : `${module.label} créé`;
+    let successMessage = entityMutationSuccessMessage(module.label, exists);
 
     // RB-003 / CONTACT-004 : aucun compte utilisateur n'est créé hors du
     // sous-module Contacts. Les fiches enseignant se provisionnent uniquement
@@ -1128,18 +1095,15 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       patch.auditLog = appendAuditLog(state.auditLog, ...entries);
     }
 
-    if (AUDITED_ENTITY_KEYS.has(module.key)) {
-      patch.auditLog = appendAuditLog(
-        state.auditLog,
-        makeAuditEntry({
-          ...auditActor(scopeUser),
-          action: `${module.key}.${exists ? "update" : "create"}`,
-          entityType: module.key,
-          entityId: String(nextItem.id ?? ""),
-          entityLabel: auditEntityLabel(module.key, nextItem as Record<string, unknown>) || undefined,
-          schoolCode: String((nextItem as Record<string, unknown>).schoolCode ?? "") || undefined,
-        }),
-      );
+    const genericAudit = appendGenericMutationAudit(
+      state.auditLog,
+      module.key,
+      scopeUser,
+      nextItem as Record<string, unknown>,
+      exists,
+    );
+    if (genericAudit) {
+      patch.auditLog = genericAudit;
     }
 
     if (module.key === "students" && !exists) {
@@ -1169,7 +1133,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
     const cancelled = cancelPaymentRecord(cancellingPayment, cancelReason, scopeUser);
-    const mergeResult = mergeScopedEntityRows("payments", scopeUser, state, cancelled);
+    const mergeResult = mergeEntityIntoState("payments", scopeUser, state, cancelled);
     if (!mergeResult.applied) {
       showToast("Annulation refusée : paiement hors périmètre de l'établissement.", "error");
       return;
@@ -1282,17 +1246,17 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
 
-    const nextAllRows = deleteScopedEntityRow(
+    const deleteResult = deleteEntityFromState(
       module.key,
       scopeUser,
       state,
       String(row.id),
     );
-    if (nextAllRows.length === ((state[module.key] ?? []) as unknown[]).length) {
-      showToast("Suppression refusée : élément hors périmètre ou introuvable.", "error");
+    if (!deleteResult.applied) {
+      showToast(ENTITY_OUT_OF_SCOPE_DELETE_MESSAGE, "error");
       return;
     }
-    const deletePatch: Partial<BackOfficeState> = { [module.key]: nextAllRows };
+    const deletePatch: Partial<BackOfficeState> = { [module.key]: deleteResult.rows };
     if (module.key === "contacts" || module.key === "relations") {
       deletePatch.auditLog = appendAuditLog(
         state.auditLog,
@@ -1308,21 +1272,19 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
           schoolCode: String(row.schoolCode ?? "") || undefined,
         }),
       );
-    } else if (AUDITED_ENTITY_KEYS.has(module.key)) {
-      deletePatch.auditLog = appendAuditLog(
+    } else {
+      const genericDeleteAudit = appendGenericDeleteAudit(
         state.auditLog,
-        makeAuditEntry({
-          ...auditActor(scopeUser),
-          action: `${module.key}.delete`,
-          entityType: module.key,
-          entityId: String(row.id ?? ""),
-          entityLabel: auditEntityLabel(module.key, row) || undefined,
-          schoolCode: String(row.schoolCode ?? "") || undefined,
-        }),
+        module.key,
+        scopeUser,
+        row,
       );
+      if (genericDeleteAudit) {
+        deletePatch.auditLog = genericDeleteAudit;
+      }
     }
     try {
-      await persistPatch(deletePatch, "Élément supprimé");
+      await persistPatch(deletePatch, ENTITY_DELETED_MESSAGE);
     } catch {
       /* toast déjà affiché */
     }
@@ -1464,7 +1426,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
 
-    const scopedItem = applySchoolScopeToItem(
+    const scopedItem = applyEntitySchoolScope(
       "assignments",
       workingItem,
       effectiveSchoolCode,
@@ -1483,14 +1445,9 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       return;
     }
 
-    const nextItem = exists
-      ? scopedItem
-      : {
-          ...scopedItem,
-          id: String(scopedItem.id ?? newId("ASSIGNMENT")),
-        };
+    const nextItem = prepareEntityRowForSave(scopedItem, "ASSIGNMENT", exists);
 
-    const mergeResult = mergeScopedEntityRows("assignments", scopeUser, state, nextItem);
+    const mergeResult = mergeEntityIntoState("assignments", scopeUser, state, nextItem);
     if (!mergeResult.applied) {
       showToast("Modification refusée : affectation hors périmètre de l'établissement.", "error");
       return;
@@ -1554,16 +1511,17 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
     });
     if (!confirmed) return;
 
-    const nextAllRows = deleteScopedEntityRow(
+    const deleteResult = deleteEntityFromState(
       "assignments",
       scopeUser,
       state,
       String(assignment.id),
     );
-    if (nextAllRows.length === ((state.assignments ?? []) as unknown[]).length) {
+    if (!deleteResult.applied) {
       showToast("Suppression refusée : affectation hors périmètre ou introuvable.", "error");
       return;
     }
+    const nextAllRows = deleteResult.rows;
 
     const pedagogyPatch = buildPedagogyPatch("assignments", assignment, nextAllRows);
     const patch: Partial<BackOfficeState> = {

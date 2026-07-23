@@ -13,6 +13,7 @@
 | [AUDIT-D2.7-entitypage.md](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE-D2.7-entitypage.md](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT-D2.7-entitypage.md](./RAPPORT-D2.7-entitypage.md) | D2.7 EntityPage |
 | [AUDIT-D2.8-entitypage-remainder.md](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT-D2.8a-colonnes-entitypage.md](./RAPPORT-D2.8a-colonnes-entitypage.md) | D2.8a colonnes |
 | [RAPPORT-D2.8b-options-entitypage.md](./RAPPORT-D2.8b-options-entitypage.md) | D2.8b options select |
+| [RAPPORT-D2.8c-crud-entitypage.md](./RAPPORT-D2.8c-crud-entitypage.md) | D2.8c noyau CRUD |
 | [AUDIT-D3.1-eleves.md](./AUDIT-D3.1-eleves.md) · [RAPPORT-D3.1-eleves.md](./RAPPORT-D3.1-eleves.md) | D3.1 Élèves (fiche) |
 | [RAPPORT-D3.1b-liste-eleves.md](./RAPPORT-D3.1b-liste-eleves.md) | D3.1b Liste Élèves (conso D2.7) |
 | [AUDIT-D3.2-classes.md](./AUDIT-D3.2-classes.md) · [RAPPORT-D3.2-classes.md](./RAPPORT-D3.2-classes.md) | D3.2 Classes métier (audit / scope lock) |
