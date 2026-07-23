@@ -2,7 +2,7 @@
 
 **Type :** Audit / scope lock (documentation uniquement)  
 **Module :** Présences / Appels  
-**Sous-périmètre :** D3.5a — inventaire post-`d3.4b` + verrouillage sous-lots  
+**Sous-périmètre :** D3.5a — inventaire post-`d3.4b` + décisions CTO  
 **Impact runtime :** Non  
 **Migration métier :** Non  
 **Backend/API :** Inchangés  
@@ -12,15 +12,14 @@
 **Audit :** [AUDIT-D3.5-presences.md](./AUDIT-D3.5-presences.md)  
 **Base :** `develop` @ `5749e9b5` · tags `d2.8e`, `d3.2a`, `d3.4a`, `d3.4b`
 
-**Numérotation :** D3.5 = Présences · D3.4 = Parents (clos) · Notes hors lot
+**Numérotation validée CTO :** D3.5 = Présences · Notes / Bulletins hors D3.5
 
 ---
 
 ## 1. Objectif
 
-Ouvrir le jalon Présences dans la stratégie **audit → décisions → implémentation incrémentale → validation → tag**, sans écrire de code applicatif tant que le gate §10 n’est pas levé.
-
-Pourquoi Présences avant Notes : fondations Élèves / Classes / Parents stables ; Notes/Bulletins consommeront ensuite les présences sans dette prématurée.
+Clôturer D3.5a : audit + **arbitrages produit/tech du gate §10**, sans code applicatif.  
+Prochain lot autorisé : **D3.5b — Contrat Présences et persistance canonique** (pas de chrome DS).
 
 ---
 
@@ -28,8 +27,8 @@ Pourquoi Présences avant Notes : fondations Élèves / Classes / Parents stable
 
 | Document | Action |
 |----------|--------|
-| `AUDIT-D3.5-presences.md` | Créé |
-| `RAPPORT-D3.5a-audit-presences.md` | Créé |
+| `AUDIT-D3.5-presences.md` | Créé puis amendé (Décisions CTO §10) |
+| `RAPPORT-D3.5a-audit-presences.md` | Aligné |
 | `SUIVI-MIGRATIONS.md` / `README.md` | Alignés |
 
 **Fichiers `web/src/**`, `backend/**`, `Mobile/**` :** aucun.
@@ -40,36 +39,49 @@ Pourquoi Présences avant Notes : fondations Élèves / Classes / Parents stable
 
 | Élément | Statut |
 |---------|--------|
-| Outil web `/presences` | Présent — legacy P-007 non DS |
-| Appel mobile | Présent — même API batch |
-| Onglet fiche Élève web | Catalogué, non implémenté |
-| Granularité | Journée seule |
-| Statuts | Présent / Absent / Retard / Justifié |
-| Persistance | PG `attendance` + fallback JSON BO |
-| Notifications parents | Non implémentées (promesse UI) |
-| `attendance_sessions` / demi-journée | Absents |
-| Chrome DS | 🔒 0 % |
+| Surface web canonique | `/presences` (appel / correction admin) |
+| Mobile enseignant | Appel terrain — même contrat API |
+| Lecture parent / élève | Historique mobile |
+| Onglet fiche Élève | 🔒 Hors D3.5b |
+| Statuts D3.5 | Présent / Absent / Retard / Justifié (= absence justifiée) |
+| Granularité | Journée · clé `établissement + élève + date` |
+| Persistance cible | PostgreSQL canonique · JSON BO transitoire |
+| Unicité cible | `UNIQUE (school_id, student_id, attendance_date)` |
 
 ---
 
-## 4. Périmètre verrouillé
+## 4. Décisions CTO (gate levé)
+
+| # | Sujet | Décision |
+|---|-------|----------|
+| 1 | Surface | `/presences` + mobile Appel (même API) ; fiche Élève / dashboard hors écriture |
+| 2 | Statuts | Enum 4 ; Justifié = absence justifiée ; pas de sortie anticipée / double axe |
+| 3 | Granularité | Journée seule ; `hour` non persisté ; séances 🔒 |
+| 4 | Persistance | PG canonique + contrainte UNIQUE ; JSON BO non autorité durable |
+| 5 | D3.5b in/out | Contrat/upsert/alignement/tests **in** ; notifs/exports/bulletins/Notes/chrome **out** |
+
+Détail : [AUDIT §10](./AUDIT-D3.5-presences.md#10-décisions-cto--arbitrages-du-gate).
+
+---
+
+## 5. Périmètre verrouillé
 
 | Sous-lot | Décision |
 |----------|----------|
-| D3.5a Audit | ✅ Livré (docs) |
-| Gate §10 (surface / statuts / granularité / notifs / exports) | 🔒 Décision CTO |
-| D3.5b Migration incrémentale | 🔒 Après §10 |
-| Notes / Bulletins | 🔒 Hors D3.5a |
-| EntityPage / D3.1–D3.4 | 🔒 Clos — ne pas rouvrir |
+| D3.5a Audit + décisions | ✅ Livré (docs) |
+| D3.5b Contrat + persistance | 🔓 Prochain — draft après tag `d3.5a` |
+| ToolLayout / chrome DS | 🔒 Hors D3.5b |
+| Notes / Bulletins | 🔒 Hors D3.5 |
+| EntityPage / D3.1–D3.4 | 🔒 Clos |
 
 ---
 
-## 5. Tableau CTO
+## 6. Tableau CTO
 
 | Élément | Résultat |
 |---------|----------|
 | Changement fonctionnel | Non |
 | Code applicatif modifié | Non |
-| Audit Présences ouvert | Oui (D3.5a) |
-| Sous-lots verrouillés | Oui |
-| Suite | Arbitrages §10 → tag `d3.5a` → D3.5b uniquement sur instruction |
+| Audit Présences | Oui (D3.5a) |
+| Gate §10 | ✅ Décisions intégrées |
+| Suite | Tag `d3.5a` → ouvrir D3.5b draft (pas Notes) |

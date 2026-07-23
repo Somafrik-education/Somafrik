@@ -32,11 +32,12 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Parents / Responsables | D3.4b — Contrat d’identité / convergence | ✅ | — | [CONTRAT](./CONTRAT-D3.4b-identite-parents.md) · tag `d3.4b` |
 | Parents / Responsables | Liste Parents | 🔒 | — | Non retenue |
 | Parents / Responsables | Chrome DS Parents | 🔒 | — | Aucun D3.4c automatique |
-| Présences | D3.5a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.5-presences.md) post-`d3.4b` |
-| Présences | Décisions produit §10 | 🔒 | — | Surface / statuts / granularité / notifs / exports |
-| Présences | D3.5b — Migration incrémentale | 🔒 | `ToolLayout` (cible P-007) | Après gate §10 |
-| Présences | Onglet fiche Élève | 🔒 | — | Catalogué, non implémenté |
-| Notes / Évaluations | — | 🔒 | — | Après Présences stabilisées |
+| Présences | D3.5a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.5-presences.md) · décisions CTO §10 |
+| Présences | Surface / contrat données | ✅ | — | `/presences` + mobile ; journée ; enum 4 ; PG canonique |
+| Présences | D3.5b — Contrat & persistance canonique | ⏳ | — | UNIQUE PG + upsert + alignement API — pas ToolLayout |
+| Présences | Onglet fiche Élève | 🔒 | — | Hors D3.5b |
+| Présences | Chrome DS / ToolLayout | 🔒 | `ToolLayout` (cible) | Après stabilisation métier |
+| Notes / Évaluations | — | 🔒 | — | Aucun chantier sous D3.5 |
 
 ## Suivi consolidé
 
@@ -75,7 +76,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Classes (module métier) | ✅ / 🔒 | `ListLayout` | D3.2a audit + D3.2b/c | Fiche absente 🔒 ; modales EntityPage |
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
-| Présences | 📋 / 🔒 | — | D3.5a audit | UI legacy ; gate §10 ; DS 0 % |
+| Présences | 📋 / ⏳ | — | D3.5a décisions CTO | D3.5b persistance PG ; chrome DS 🔒 |
 | Notes | 🔒 | — | 0 % | Oui |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
 | RH | 🔒 | — | 0 % | Oui |
@@ -92,7 +93,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.3 : liste Enseignants — [RAPPORT](./RAPPORT-D3.3-enseignants.md).
 - D3.4a : audit / verrouillage Parents — [AUDIT](./AUDIT-D3.4-parents.md) · [RAPPORT](./RAPPORT-D3.4a-audit-parents.md). Tag : `d3.4a`. **D3.3 = Enseignants** · **D3.4 = Parents**.
 - D3.4b : contrat identité Parents — [CONTRAT](./CONTRAT-D3.4b-identite-parents.md) · [RAPPORT](./RAPPORT-D3.4b-identite-parents.md). Tag `d3.4b` @ `f442ce90`. Contrat actif : `fromContactId = contact.id` · `user.contactId = contact.id`. **Pas de D3.4c automatique** (liste / fiche / chrome DS / EntityPage 🔒).
-- D3.5a : audit / verrouillage Présences — [AUDIT](./AUDIT-D3.5-presences.md) · [RAPPORT](./RAPPORT-D3.5a-audit-presences.md). Base `5749e9b5`. **Aucun code** ; D3.5b après décisions CTO §10. Notes hors lot.
+- D3.5a : audit / verrouillage Présences — [AUDIT](./AUDIT-D3.5-presences.md) · [RAPPORT](./RAPPORT-D3.5a-audit-presences.md). Base `5749e9b5`. Décisions CTO §10 levées (PG canonique, journée, enum 4, pas de notifs/Notes/chrome dans D3.5b).
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
 - D2.8b : extraction options select — [RAPPORT](./RAPPORT-D2.8b-options-entitypage.md).

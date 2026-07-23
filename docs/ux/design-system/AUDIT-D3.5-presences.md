@@ -178,10 +178,10 @@ Index `(student_id, attendance_date)` — **pas** de contrainte UNIQUE explicite
 
 | Surface | État |
 |---------|------|
-| Outil web Présences | Legacy — cible théorique `ToolLayout` (P-007) |
-| Mobile Appel / Mes présences | Legacy RN |
-| SUIVI consolidé | Présences 🔒 0 % |
-| Migration chrome DS | **Interdite** tant que §10 non levé (D3.5b+) |
+| Outil web Présences | Legacy — `ToolLayout` **hors D3.5b** (chrome séparé après métier) |
+| Mobile Appel / Mes présences | Legacy RN — même contrat API que le web |
+| SUIVI consolidé | D3.5a décisions CTO · DS chrome 🔒 |
+| Migration chrome DS | **Interdite** dans D3.5b |
 
 ---
 
@@ -189,75 +189,129 @@ Index `(student_id, attendance_date)` — **pas** de contrainte UNIQUE explicite
 
 | Sous-lot | Statut | Justification |
 |----------|--------|---------------|
-| **D3.5a — Audit / verrouillage** | ✅ Ce lot (docs) | Gate avant tout code |
-| **Décisions produit §10** | 🔒 Gate CTO | Surface, statuts, granularité, notifs, exports |
-| **D3.5b — Migration incrémentale** | 🔒 | Seulement après §10 |
-| **Onglet Présences fiche Élève** | 🔒 Produit | Non implémenté — ne pas inventer |
-| **Séances / demi-journées** | 🔒 | Extension modèle — décision explicite |
-| **Notifications parents** | 🔒 | Hors tant que non décidé |
-| **Notes / Bulletins** | 🔒 | Domaine suivant, pas D3.5a |
+| **D3.5a — Audit / verrouillage** | ✅ Ce lot (docs) | Gate §10 levé |
+| **D3.5b — Contrat Présences et persistance canonique** | 🔓 Prochain lot autorisé | Données / PG / upsert / alignement — **pas** ToolLayout |
+| **Onglet Présences fiche Élève** | 🔒 | Hors D3.5b |
+| **Séances / demi-journées / `attendance_sessions`** | 🔒 | Hors D3.5 |
+| **Notifications parents** | 🔒 | Hors D3.5b — reformuler messages UI trompeurs |
+| **Exports PDF/Excel avancés** | 🔒 | Hors D3.5b |
+| **Notes / Bulletins / Évaluations** | 🔒 | Aucun chantier sous D3.5 |
+| **Migration chrome DS / ToolLayout** | 🔒 | Après stabilisation métier |
 | **Réouverture EntityPage** | 🔒 | Clos (`d2.8e`) |
 | **D3.1–D3.4** | 🔒 | Clos — ne pas rouvrir |
 
 ---
 
-## 10. Questions produit à trancher (gate avant code)
+## 10. Décisions CTO — arbitrages du gate
 
-Sans réponses → **aucun lot D3.5b / migration UI / refactor API ouvert**.
+**Statut :** validé CTO · 2026-07-23 · gate §10 levé  
+**Numérotation validée :** D3.5 = Présences · Notes/Bulletins hors D3.5
 
 ### 10.1 Surface canonique
 
-1. L’outil d’écriture canonique est-il **web `/presences` + mobile Appel** (même registre API), ou une seule surface prioritaire ?  
-2. L’onglet Présences fiche Élève web entre-t-il dans D3.5 ou reste-t-il 🔒 ?  
-3. Les vues lecture (parent mobile, dashboard) restent-elles des **consommateurs** hors migration chrome ?
+**Décision :** `/presences` reste la surface web canonique d’appel.
 
-### 10.2 Modèle de statuts
+| Surface | Responsabilité |
+|---------|----------------|
+| **Web `/presences`** | Appel et correction administrative |
+| **Mobile enseignant** | Appel terrain |
+| **Mobile parent / élève** | Lecture de l’historique |
+| **Onglet Présences fiche Élève web** | 🔒 Hors D3.5b |
+| **Dashboard** | Agrégats uniquement |
 
-4. Conserver l’enum 4 valeurs (`Présent` / `Absent` / `Retard` / `Justifié`) pour D3.5b, **ou** passer à Absent × justifié/non justifié + éventuelle sortie anticipée ?  
-5. Que signifie `Justifié` pour les taux et les bulletins futurs ?  
-6. Rôle et schéma de `reason` / justificatifs ?
+Web et mobile d’écriture partagent le **même contrat API** et les **mêmes règles**, sans imposer la même interface.
 
-### 10.3 Granularité temporelle
+### 10.2 Statuts
 
-7. D3.5 reste-t-il **journée seule** (état actuel) ?  
-8. Demi-journée / séance / `attendance_sessions` : 🔒 différé ou inclus ?  
-9. Que faire de `hour` (accepté puis droppé) et `arrivalTime` mobile local ?
+**Décision D3.5 :** conserver les quatre statuts actuels pour le premier incrément.
 
-### 10.4 Relations & persistance
+- `Présent`
+- `Absent`
+- `Retard`
+- `Justifié` — signifie actuellement **absence justifiée**
 
-10. Identifiant classe : rester sur `className` string ou migrer vers id classe ?  
-11. Persistance canonique : **PG only** vs conservation du fallback JSON BO ?  
-12. Clé d’unicité officielle : élève+jour vs élève+jour+classe ?
+**Ne pas introduire dans D3.5 :**
 
-### 10.5 Impacts futurs (scope in / out)
+- sortie anticipée
+- justificatif documentaire
+- double axe Absent + justification
 
-13. Notifications parents absences : **out** de D3.5b ?  
-14. Stats avancées / exports PDF-Excel : **out** sauf print existant ?  
-15. Alimentation bulletins : **out** (Notes ultérieures) ?
+Normalisation plus riche = lot ultérieur après stabilisation du stockage.
+
+### 10.3 Granularité
+
+**Décision :** **journée entière uniquement** dans D3.5b.
+
+**Clé fonctionnelle cible :** `établissement + élève + date`
+
+Demi-journée, séance et `attendance_sessions` restent 🔒.  
+Le champ `hour` **ne doit pas** être présenté comme granularité persistée tant qu’il n’est pas stocké.
+
+### 10.4 Persistance et unicité
+
+**Décision :** **PostgreSQL** = persistance canonique.
+
+Le JSON BackOffice reste un mécanisme **transitoire** de compatibilité / secours — **pas** une seconde source d’autorité durable.
+
+**Contrainte cible :**
+
+```sql
+UNIQUE (school_id, student_id, attendance_date)
+```
+
+L’établissement fait partie de la clé logique.  
+Comportement attendu : **upsert idempotent**.  
+Règles web, mobile, API et intégrité convergent sur la même clé.
+
+### 10.5 Notifications, exports et bulletins
+
+| Inclure dans D3.5b | Exclure de D3.5b |
+|--------------------|------------------|
+| Contrat de données | Notifications parents |
+| Persistance canonique PG | Exports PDF/Excel avancés |
+| Règles d’unicité | Bulletins |
+| Alignement web / mobile / API | Notes et Évaluations |
+| Tests résolution / upsert | Onglet fiche Élève |
+| Correction incohérences statuts / dates | Migration chrome DS complète |
+
+Les messages UI promettant une notification doivent être **supprimés ou reformulés** tant que le backend ne l’envoie pas.
+
+### 10.6 Périmètre D3.5b
+
+**Nom :** D3.5b — Contrat Présences et persistance canonique
+
+**Ordre d’exécution :**
+
+1. Contrat statuts / date  
+2. Contrainte PG et upsert  
+3. Suppression de la double autorité  
+4. Alignement API web / mobile  
+5. Tests unitaires et E2E  
+6. Documentation  
+
+**Aucune** migration `ToolLayout` dans ce lot.
 
 ---
 
-## 11. Risques si on force une migration maintenant
+## 11. Risques résiduels (post-décisions)
 
-1. Migrer vers `ToolLayout` sans figer les statuts → refonte UI puis refonte modèle.  
-2. Ajouter séances / demi-journées dans le même lot → explosion de scope.  
-3. « Activer » les notifications promises en UI → dette produit + perimètre non cadré.  
-4. Unifier PG/JSON sans décision → risque de perte ou double écriture.  
-5. Ouvrir Notes « parce que liés » → réintroduire de la dette transversale.  
-6. Inventer l’onglet fiche Élève sans besoin produit → écran creux.
+1. Laisser le JSON BO comme autorité parallèle → divergence (interdit durable).  
+2. Présenter `hour` comme persisté → fausse granularité.  
+3. Garder les messages « parents notifiés » → promesse produit fausse.  
+4. Ouvrir Notes / Bulletins sous D3.5 → dette transversale (interdit).  
+5. Migrer ToolLayout avant stabilisation métier → refonte UI prématurée.
 
 ---
 
 ## 12. Livrable D3.5a et merge gate
 
-**Inclus :** ce document, rapport D3.5a, mise à jour suivi / README.  
+**Inclus :** ce document (décisions CTO §10), rapport D3.5a, mise à jour suivi / README.  
 **Exclus :** tout fichier sous `web/src/**`, `backend/**`, `Mobile/**`, scripts runtime.
 
 | Gate | Attente |
 |------|---------|
-| Draft PR | Oui |
-| Revue CTO | Diff docs + verrou §9–10 |
+| Décisions CTO §10 | ✅ Levées (ce document) |
 | CI / Security | Verts (docs-only) |
-| UX / API / métier runtime | Aucun changement |
-
-**Suite après validation CTO :** intégrer les arbitrages §10 (section Décisions CTO), tag `d3.5a`, **puis seulement** ouvrir D3.5b (migration incrémentale), sans réouvrir EntityPage ni Notes.
+| Undraft → merge | Après checks verts |
+| Tag | `d3.5a` après merge sur `develop` |
+| Suite | Ouvrir **D3.5b** en draft (contrat + persistance — pas chrome DS, pas Notes) |
