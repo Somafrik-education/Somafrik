@@ -41,6 +41,13 @@ enseignant crée une évaluation
 → outbox vide
 ```
 
+Preuves automatisées exigées :
+
+1. **Repository** (`evaluationSyncRepository.test.js`) : méthodes réelles `PostgresRepository.saveBackOfficeState` / `syncNotesDomainFromBackOffice` / `upsertEvaluationFromLegacy` + lecture `evaluations` + `syncAck.accepted` (adapter SQL injectable fidèle, pas une Map `pgEvaluations` ad hoc).
+2. **Outbox web** : `enqueuePatchMutations` → `syncing` → `settleOutboxAfterHttpSave` → `loadSyncOutbox` vide.
+3. **Année scolaire** : aucune année initiale → `ensureCurrentAcademicYearForSchool` crée une ligne idempotente.
+4. **Anti-doublon** : `Mathématiques` puis `Mathematiques` → une seule matière.
+
 ---
 
 ## 4. UI

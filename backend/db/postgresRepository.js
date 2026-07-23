@@ -1188,11 +1188,11 @@ class PostgresRepository {
     return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
   }
 
-  async ensureSubjectForSchool(schoolId, subjectName, context = {}) {
-    const normalizedName = String(subjectName ?? "").trim();
-    if (!normalizedName) return null;
-
-    const existing = await this.one(
+  async findSubjectByNormalizedName(schoolId, subjectName) {
+    const { normalizeText } = require("../lib/evaluationAttachment");
+    const target = normalizeText(subjectName);
+    if (!target) return null;
+    const exact = await this.one(
       `SELECT *
        FROM subjects
        WHERE school_id = $1
@@ -1202,8 +1202,40 @@ class PostgresRepository {
          )
        ORDER BY created_at DESC
        LIMIT 1`,
-      [schoolId, normalizedName],
+      [schoolId, String(subjectName ?? "").trim()],
     );
+    if (exact) return exact;
+    const rows = await this.all(`SELECT * FROM subjects WHERE school_id = $1`, [schoolId]);
+    return (
+      rows.find(
+        (row) =>
+          normalizeText(row.name) === target || normalizeText(row.subject_code) === target,
+      ) ?? null
+    );
+  }
+
+  async findClassByNormalizedName(schoolId, className) {
+    const { normalizeText } = require("../lib/evaluationAttachment");
+    const target = normalizeText(className);
+    if (!target) return null;
+    const exact = await this.one(
+      `SELECT *
+       FROM classes
+       WHERE school_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [schoolId, String(className ?? "").trim()],
+    );
+    if (exact) return exact;
+    const rows = await this.all(`SELECT * FROM classes WHERE school_id = $1`, [schoolId]);
+    return rows.find((row) => normalizeText(row.name) === target) ?? null;
+  }
+
+  async ensureSubjectForSchool(schoolId, subjectName, context = {}) {
+    const normalizedName = String(subjectName ?? "").trim();
+    if (!normalizedName) return null;
+
+    const existing = await this.findSubjectByNormalizedName(schoolId, normalizedName);
     if (existing) return existing;
 
     const { matchByNormalizedName } = require("../lib/evaluationAttachment");
@@ -1276,13 +1308,7 @@ class PostgresRepository {
             schoolId,
             id,
           ]),
-        findClassByName: (schoolId, name) =>
-          this.one(
-            `SELECT * FROM classes
-             WHERE school_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
-             ORDER BY created_at DESC LIMIT 1`,
-            [schoolId, name],
-          ),
+        findClassByName: (schoolId, name) => this.findClassByNormalizedName(schoolId, name),
         ensureClass: async (schoolId, name) => {
           const classId = await this.ensureClassForSchool(schoolId, name);
           return classId
@@ -1299,16 +1325,10 @@ class PostgresRepository {
             `SELECT * FROM subjects WHERE school_id = $1 AND LOWER(TRIM(subject_code)) = LOWER(TRIM($2)) LIMIT 1`,
             [schoolId, code],
           ),
-        findSubjectByName: (schoolId, name) =>
-          this.one(
-            `SELECT * FROM subjects
-             WHERE school_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
-             ORDER BY created_at DESC LIMIT 1`,
-            [schoolId, name],
-          ),
+        findSubjectByName: (schoolId, name) => this.findSubjectByNormalizedName(schoolId, name),
         ensureSubject: (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context),
         getCurrentAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
-        ensureAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
+        ensureAcademicYear: (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId),
         ensureTerm: async (academicYearId, name) =>
           (await this.one(
             `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
@@ -1582,11 +1602,32 @@ class PostgresRepository {
     );
     if (current) return current;
 
+    // HOTFIX-SYNC-02 : lecture miss ⇒ création idempotente (ensure).
+    return this.ensureCurrentAcademicYearForSchool(schoolId);
+  }
+
+  /**
+   * HOTFIX-SYNC-02 — Crée une année scolaire active si absente (idempotent).
+   * Séparé de la lecture pour rendre l'ensure explicite dans les tests/revue.
+   */
+  async ensureCurrentAcademicYearForSchool(schoolId) {
+    const existing = await this.one(
+      `SELECT *
+       FROM academic_years
+       WHERE school_id = $1 AND status IN ('active', 'open')
+       ORDER BY is_current DESC, created_at DESC
+       LIMIT 1`,
+      [schoolId],
+    );
+    if (existing) return existing;
+
     const year = new Date().getFullYear();
     return this.one(
       `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
        VALUES ($1, $2, $3, $4, TRUE, 'open')
-       ON CONFLICT (school_id, name) DO UPDATE SET is_current = TRUE
+       ON CONFLICT (school_id, name) DO UPDATE SET
+         is_current = TRUE,
+         status = 'open'
        RETURNING *`,
       [schoolId, `${year}-${year + 1}`, `${year}-09-01`, `${year + 1}-08-31`],
     );
@@ -1596,15 +1637,7 @@ class PostgresRepository {
     const normalizedClassName = String(className ?? "").trim();
     if (!normalizedClassName) return null;
 
-    const existing = await this.one(
-      `SELECT cl.id
-       FROM classes cl
-       WHERE cl.school_id = $1
-         AND LOWER(TRIM(cl.name)) = LOWER(TRIM($2))
-       ORDER BY cl.created_at DESC
-       LIMIT 1`,
-      [schoolId, normalizedClassName],
-    );
+    const existing = await this.findClassByNormalizedName(schoolId, normalizedClassName);
     if (existing?.id) return existing.id;
 
     const state = (await this.getBackOfficeState()) ?? {};

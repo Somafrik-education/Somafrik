@@ -1,11 +1,13 @@
 /**
- * HOTFIX-SYNC-02 — rattachement évaluation + parcours sync accepted.
+ * HOTFIX-SYNC-02 — erreurs structurées + résolution injectable (unit).
+ * Le parcours repository/PG réel est dans evaluationSyncRepository.test.js.
  */
 const assert = require("assert");
 const {
   resolveEvaluationAttachments,
   ERRORS,
   matchByNormalizedName,
+  normalizeText,
 } = require("./evaluationAttachment");
 
 function createMemoryDeps(seed = {}) {
@@ -17,6 +19,8 @@ function createMemoryDeps(seed = {}) {
   const teachers = [...(seed.teachers ?? [])];
 
   return {
+    classes,
+    subjects,
     deps: {
       getSchoolByCode: async (code) => schools.get(String(code).toUpperCase()) ?? null,
       ensureSchool: async (code) => {
@@ -29,11 +33,13 @@ function createMemoryDeps(seed = {}) {
         null,
       findClassByName: async (schoolId, name) =>
         classes.find(
-          (row) =>
-            row.school_id === schoolId &&
-            String(row.name).toLowerCase() === String(name).toLowerCase(),
+          (row) => row.school_id === schoolId && normalizeText(row.name) === normalizeText(name),
         ) ?? null,
       ensureClass: async (schoolId, name) => {
+        const existing = classes.find(
+          (row) => row.school_id === schoolId && normalizeText(row.name) === normalizeText(name),
+        );
+        if (existing) return existing;
         const row = { id: `class-${name}`, school_id: schoolId, name, class_code: `C-${name}` };
         classes.push(row);
         return row;
@@ -45,15 +51,17 @@ function createMemoryDeps(seed = {}) {
         subjects.find(
           (row) =>
             row.school_id === schoolId &&
-            String(row.subject_code).toLowerCase() === String(code).toLowerCase(),
+            normalizeText(row.subject_code) === normalizeText(code),
         ) ?? null,
       findSubjectByName: async (schoolId, name) =>
         subjects.find(
-          (row) =>
-            row.school_id === schoolId &&
-            String(row.name).toLowerCase() === String(name).toLowerCase(),
+          (row) => row.school_id === schoolId && normalizeText(row.name) === normalizeText(name),
         ) ?? null,
       ensureSubject: async (schoolId, name) => {
+        const existing = subjects.find(
+          (row) => row.school_id === schoolId && normalizeText(row.name) === normalizeText(name),
+        );
+        if (existing) return existing;
         const row = {
           id: `subject-${name}`,
           school_id: schoolId,
@@ -66,8 +74,11 @@ function createMemoryDeps(seed = {}) {
       getCurrentAcademicYear: async (schoolId) =>
         years.find((row) => row.school_id === schoolId) ?? null,
       ensureAcademicYear: async (schoolId) => {
-        const row = { id: `year-${schoolId}`, school_id: schoolId, name: "2026-2027", status: "open" };
-        years.push(row);
+        let row = years.find((item) => item.school_id === schoolId);
+        if (!row) {
+          row = { id: `year-${schoolId}`, school_id: schoolId, name: "2026-2027", status: "open" };
+          years.push(row);
+        }
         return row;
       },
       ensureTerm: async (academicYearId, name) => {
@@ -114,7 +125,6 @@ async function run() {
       className: "6e A",
       subject: "Mathématiques",
       period: "T1",
-      teacherId: "",
     },
     mem.deps,
     { ensure: true },
@@ -123,74 +133,24 @@ async function run() {
   assert.strictEqual(resolved.subject.name, "Mathématiques");
   assert.ok(resolved.academicYear);
   assert.strictEqual(resolved.term.name, "T1");
-  assert.strictEqual(resolved.teacher, null);
 
+  // Anti-doublon accentué côté résolution
   assert.strictEqual(
     matchByNormalizedName([{ name: "Mathématiques" }], "Mathematiques")?.name,
     "Mathématiques",
   );
-
-  // E2E contrat CTO :
-  // créer → PUT/sync → ACK accepted → ligne PG → refresh autre session → outbox vide
-  const pgEvaluations = new Map();
-  const syncNotesDomain = async (payload) => {
-    const accepted = { evaluations: [], notes: [] };
-    const rejected = [];
-    for (const evaluation of payload.evaluations ?? []) {
-      try {
-        const attachments = await resolveEvaluationAttachments(evaluation, mem.deps, {
-          ensure: true,
-          context: payload,
-        });
-        pgEvaluations.set(evaluation.id, {
-          legacy_json_id: evaluation.id,
-          school_id: attachments.school.id,
-          class_id: attachments.schoolClass.id,
-          subject_id: attachments.subject.id,
-          title: evaluation.title,
-        });
-        accepted.evaluations.push(evaluation.id);
-      } catch (error) {
-        rejected.push({
-          entity: "evaluations",
-          id: evaluation.id,
-          clientMutationId: evaluation.clientMutationId,
-          error: error.message,
-          code: error.code,
-        });
-      }
-    }
-    return { accepted, rejected };
-  };
-
-  const created = {
-    id: "EVAL-E2E-1",
-    clientMutationId: "cm-e2e-1",
-    schoolCode: "SCH-001",
-    className: "5e B",
-    subject: "Français",
-    period: "Trimestre 1",
-    title: "Dictée",
-    syncStatus: "pending",
-  };
-
-  const syncAck = await syncNotesDomain({ evaluations: [created] });
-  assert.deepStrictEqual(syncAck.accepted.evaluations, ["EVAL-E2E-1"]);
-  assert.strictEqual(syncAck.rejected.length, 0);
-  assert.ok(pgEvaluations.has("EVAL-E2E-1"), "ligne présente dans PostgreSQL evaluations");
-
-  const remoteSnapshot = {
-    evaluations: [...pgEvaluations.values()].map((row) => ({
-      id: row.legacy_json_id,
-      title: row.title,
+  const beforeSubjects = mem.subjects.length;
+  await resolveEvaluationAttachments(
+    {
       schoolCode: "SCH-001",
-      syncStatus: "synced",
-    })),
-  };
-  assert.strictEqual(remoteSnapshot.evaluations[0].id, "EVAL-E2E-1");
-
-  const outboxAfterAck = [];
-  assert.strictEqual(outboxAfterAck.length, 0, "outbox vide après ACK accepted");
+      className: "6e A",
+      subject: "Mathematiques",
+      period: "T1",
+    },
+    mem.deps,
+    { ensure: true },
+  );
+  assert.strictEqual(mem.subjects.length, beforeSubjects, "pas de doublon matière accentuée");
 
   const failDeps = createMemoryDeps();
   await assert.rejects(
@@ -209,6 +169,7 @@ async function run() {
 
   assert.ok(ERRORS.CLASS_MISSING("6e A").message.includes("6e A"));
   assert.ok(ERRORS.SUBJECT_MISSING("Physique").message.includes("Physique"));
+  assert.ok(ERRORS.YEAR_MISSING().code === "EVAL_ATTACHMENT_YEAR");
 
   console.log("evaluationAttachment.test.js : OK");
 }

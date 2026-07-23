@@ -22,7 +22,7 @@ HOTFIX-SYNC-01 empêche la disparition silencieuse mais laisse les évaluations 
 | `postgresRepository` | `ensureSubjectForSchool` · upsert via ensure classe/matière/année |
 | `DataContext` | Throw si outbox `failed` après PUT (surface UI) |
 | `GradesEvaluationsPage` | Toast/InlineAlert/`syncError` · pas de succès trompeur · retry |
-| Tests | `evaluationAttachment.test.js` (E2E contrat) |
+| Tests | `evaluationSyncRepository.test.js` (saveBackOfficeState → PG evaluations → syncAck) · outbox localStorage · anti-doublon matière |
 
 ---
 

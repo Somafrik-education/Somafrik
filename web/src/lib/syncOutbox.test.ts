@@ -167,7 +167,7 @@ describe("syncOutbox (HOTFIX-SYNC-01)", () => {
             entity: "evaluations",
             id: "EVAL-BAD",
             clientMutationId: "cm-bad",
-            error: "Classe ou matiere introuvable pour l'évaluation",
+            error: "Classe introuvable pour l'évaluation (« 6e A »)",
           },
         ],
       },
@@ -179,5 +179,41 @@ describe("syncOutbox (HOTFIX-SYNC-01)", () => {
     expect(settled[0].status).toBe("failed");
     expect(settled.find((entry) => entry.entity === "exams")).toBeUndefined();
     expect(settled.find((entry) => entry.entity === "payments")).toBeUndefined();
+  });
+
+  it("purge réelle localStorage après ACK accepted (enqueue → syncing → settle → loadSyncOutbox)", () => {
+    const { entries, annotatedPatch } = enqueuePatchMutations([], {
+      evaluations: [
+        {
+          id: "EVAL-ACK-1",
+          title: "Contrôle",
+          schoolCode: "SCH-001",
+          clientMutationId: "cm-ack-1",
+        },
+      ],
+    });
+    const syncing = asSyncing(entries);
+    saveSyncOutbox(syncing);
+    expect(loadSyncOutbox()).toHaveLength(1);
+    expect(loadSyncOutbox()[0].status).toBe("syncing");
+
+    const settled = settleOutboxAfterHttpSave(syncing, {
+      ack: {
+        accepted: [
+          {
+            entity: "evaluations",
+            id: "EVAL-ACK-1",
+            clientMutationId: "cm-ack-1",
+          },
+        ],
+        rejected: [],
+      },
+      annotatedPatch,
+    });
+    saveSyncOutbox(settled);
+
+    expect(settled).toHaveLength(0);
+    expect(loadSyncOutbox()).toHaveLength(0);
+    expect(listActiveOutboxEntries(loadSyncOutbox())).toHaveLength(0);
   });
 });
