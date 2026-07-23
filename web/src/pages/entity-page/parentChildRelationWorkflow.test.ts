@@ -259,6 +259,8 @@ describe("parentChildRelationWorkflow (D2.8d3)", () => {
       ],
     });
     const snapshot = structuredClone(state.relations);
+    // Précondition documentée : scope/permissions/confirm restent dans EntityPage.
+    // Ce plan ne refuse pas un appel sans gate — il construit uniquement le patch.
     const plan = buildParentChildBundleDeletePlan(
       { scopeUser: admin, state },
       {
@@ -277,6 +279,30 @@ describe("parentChildRelationWorkflow (D2.8d3)", () => {
     expect(audit.action).toBe("relation.delete");
     expect(audit.entityId).toBe("parent-1");
     expect(state.relations).toEqual(snapshot);
+  });
+
+  it("bundle delete n’embarque pas de contrôle de permission (gate EntityPage)", () => {
+    const showToast = vi.fn();
+    // Même sans canDelete, le plan produit un patch — la protection est hors module.
+    const plan = buildParentChildBundleDeletePlan(
+      {
+        scopeUser: admin,
+        state: baseState({
+          relations: [
+            {
+              id: "r1",
+              relationType: RELATION_PARENT_CHILD,
+              fromContactId: "parent-1",
+              toStudentId: "stu-1",
+              schoolCode: "SCH-001",
+            },
+          ],
+        }),
+      },
+      { row: { fromContactId: "parent-1", fromContactName: "Awa Diallo" } },
+    );
+    expect(plan.patch.relations).toBeDefined();
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it("relation unitaire pré-submit + post-merge + delete audit", () => {
