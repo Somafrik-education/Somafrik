@@ -8,14 +8,10 @@ import { Field, Input, Select } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
 import { useConfirm } from "../ui/ConfirmDialog";
-import { appendAuditLog } from "../../lib/audit";
 import { getCurrentSchool, scopedPayments, scopedStudents } from "../../lib/establishment";
 import { scopedStudentFees } from "../../lib/fees";
-import { mergeScopedEntityRows } from "../../lib/entityModules";
 import { formatMetric } from "../../lib/format";
 import {
-  buildParentPaymentNotification,
-  buildPaymentAuditEntry,
   buildQuickPaymentRecord,
   computeFeeBalance,
   defaultPaymentDate,
@@ -35,8 +31,11 @@ import {
   type PaymentRecord,
   type StudentSearchResult,
 } from "../../lib/quickPayment";
+import {
+  buildPaymentCreatePersistPlan,
+  buildPaymentReceiptPrintPlan,
+} from "../../pages/entity-page/paymentWorkflow";
 import { PaymentReceipt } from "./PaymentReceipt";
-import type { BackOfficeState } from "../../types";
 
 interface QuickPaymentModalProps {
   open: boolean;
@@ -131,32 +130,18 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   }
 
   async function persistPayment(payment: PaymentRecord, printAfter = false) {
-    const mergeResult = mergeScopedEntityRows("payments", scopeUser, state, payment);
-    if (!mergeResult.applied) {
-      showToast("Paiement refusé : élève hors périmètre de l'établissement.", "error");
-      return;
-    }
-    const notification = selectedStudent
-      ? buildParentPaymentNotification(payment, selectedStudent)
-      : null;
-
-    const patch: Partial<BackOfficeState> = {
-      payments: mergeResult.rows as BackOfficeState["payments"],
-      auditLog: appendAuditLog(
-        state.auditLog,
-        buildPaymentAuditEntry(payment, scopeUser, "payment.create"),
-      ),
-      notifications: notification
-        ? [notification, ...(state.notifications ?? [])]
-        : state.notifications,
-    };
+    const plan = buildPaymentCreatePersistPlan(
+      { scopeUser, state, showToast },
+      { payment, student: selectedStudent },
+    );
+    if (!plan.ok) return;
 
     setBusy(true);
     try {
-      await update(patch);
-      setSavedPayment(payment);
-      onSaved?.(payment);
-      showToast(`Paiement enregistré · ${String(payment.reference ?? "")}`, "success");
+      await update(plan.patch);
+      setSavedPayment(plan.payment);
+      onSaved?.(plan.payment);
+      showToast(plan.successMessage, "success");
       if (printAfter) {
         setShowReceipt(true);
         window.setTimeout(() => window.print(), 300);
@@ -250,12 +235,11 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             </Button>
             <Button
               onClick={() => {
-                void update({
-                  auditLog: appendAuditLog(
-                    state.auditLog,
-                    buildPaymentAuditEntry(savedPayment, scopeUser, "payment.receipt.print"),
-                  ),
-                });
+                const plan = buildPaymentReceiptPrintPlan(
+                  { scopeUser, state },
+                  { payment: savedPayment },
+                );
+                void update(plan.patch);
                 window.print();
               }}
             >

@@ -9,22 +9,13 @@ require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
 
 const { Pool } = require("pg");
 const { verifySecret } = require("../services/credentialService");
+const { resolveDatabaseUrl } = require("../db/connectionConfig");
 
 const KNOWN_PASSWORDS = [
   { label: "demo-seed", value: "1234" },
   { label: "e2e-bootstrap", value: "E2eTest!2026" },
   { label: "wipe-bootstrap", value: "change-me-now" },
 ];
-
-function resolveDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  const user = encodeURIComponent(process.env.POSTGRES_USER ?? "somafrik");
-  const password = encodeURIComponent(process.env.POSTGRES_PASSWORD ?? "somafrik123");
-  const host = process.env.POSTGRES_HOST ?? "localhost";
-  const port = process.env.POSTGRES_HOST_PORT ?? process.env.POSTGRES_PORT ?? "5433";
-  const database = encodeURIComponent(process.env.POSTGRES_DB ?? "somafrik");
-  return `postgresql://${user}:${password}@${host}:${port}/${database}`;
-}
 
 function matchPassword(hash, plain) {
   if (!hash || !plain) return false;

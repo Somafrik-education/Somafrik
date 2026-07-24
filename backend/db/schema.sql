@@ -196,6 +196,38 @@ CREATE TABLE IF NOT EXISTS teacher_assignments (
 
 ALTER TABLE teacher_assignments ADD COLUMN IF NOT EXISTS assignment_role TEXT NOT NULL DEFAULT 'primary';
 
+-- D3.6b : évaluations pédagogiques (entité distincte des notes)
+CREATE TABLE IF NOT EXISTS evaluations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  class_id UUID NOT NULL REFERENCES classes(id),
+  subject_id UUID NOT NULL REFERENCES subjects(id),
+  teacher_id UUID REFERENCES teachers(id),
+  term_id UUID NOT NULL REFERENCES terms(id),
+  title TEXT NOT NULL,
+  evaluation_type TEXT NOT NULL DEFAULT 'devoir',
+  evaluation_date DATE,
+  max_score NUMERIC(8, 2) NOT NULL DEFAULT 20,
+  coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'draft',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  linked_exam_id UUID,
+  legacy_json_id TEXT,
+  created_by UUID REFERENCES users(id),
+  updated_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT evaluations_max_score_positive CHECK (max_score > 0),
+  CONSTRAINT evaluations_coefficient_positive CHECK (coefficient > 0),
+  CONSTRAINT evaluations_status_check CHECK (
+    status IN ('draft', 'open', 'locked', 'published', 'archived')
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluations_school_legacy_json_id
+  ON evaluations (school_id, legacy_json_id)
+  WHERE legacy_json_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS grades (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
@@ -204,20 +236,41 @@ CREATE TABLE IF NOT EXISTS grades (
   subject_id UUID NOT NULL REFERENCES subjects(id),
   teacher_id UUID NOT NULL REFERENCES teachers(id),
   term_id UUID NOT NULL REFERENCES terms(id),
+  evaluation_id UUID REFERENCES evaluations(id),
   grade_type TEXT NOT NULL,
-  score NUMERIC(8, 2) NOT NULL,
+  score NUMERIC(8, 2),
   max_score NUMERIC(8, 2) NOT NULL DEFAULT 20,
   coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1,
   comment TEXT,
+  grade_status TEXT NOT NULL DEFAULT 'graded',
+  version INTEGER NOT NULL DEFAULT 1,
   publication_status TEXT NOT NULL DEFAULT 'published',
   locked BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by UUID REFERENCES users(id),
+  updated_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT grades_score_check CHECK (score <= max_score)
+  CONSTRAINT grades_score_check CHECK (score IS NULL OR score <= max_score),
+  CONSTRAINT grades_score_non_negative CHECK (score IS NULL OR score >= 0),
+  CONSTRAINT grades_version_positive CHECK (version >= 1),
+  CONSTRAINT grades_status_check CHECK (
+    grade_status IN ('graded', 'absent', 'excused', 'not_submitted', 'exempt')
+  ),
+  CONSTRAINT grades_status_score_coherence CHECK (
+    (grade_status = 'graded' AND score IS NOT NULL)
+    OR (grade_status <> 'graded' AND score IS NULL)
+  )
 );
 
+-- D3.6b : colonnes canoniques sur bases legacy (schéma non bloquant)
+ALTER TABLE grades ADD COLUMN IF NOT EXISTS evaluation_id UUID REFERENCES evaluations(id);
+ALTER TABLE grades ADD COLUMN IF NOT EXISTS grade_status TEXT NOT NULL DEFAULT 'graded';
+ALTER TABLE grades ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE grades ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
+ALTER TABLE grades ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id);
 ALTER TABLE grades ADD COLUMN IF NOT EXISTS publication_status TEXT NOT NULL DEFAULT 'published';
 ALTER TABLE grades ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE grades ALTER COLUMN score DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS exams (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -298,7 +351,9 @@ CREATE TABLE IF NOT EXISTS attendance (
   reason TEXT,
   created_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- D3.5b : unicité canonique établissement + élève + jour
+  UNIQUE (school_id, student_id, attendance_date)
 );
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -444,7 +499,14 @@ CREATE INDEX IF NOT EXISTS idx_students_school_id ON students(school_id);
 CREATE INDEX IF NOT EXISTS idx_students_school_search ON students(school_id, student_code, first_name, last_name);
 CREATE INDEX IF NOT EXISTS idx_grades_student_id ON grades(student_id);
 CREATE INDEX IF NOT EXISTS idx_grades_school_id ON grades(school_id);
+CREATE INDEX IF NOT EXISTS idx_grades_evaluation_id ON grades(evaluation_id);
+CREATE INDEX IF NOT EXISTS idx_evaluations_school_id ON evaluations(school_id);
+CREATE INDEX IF NOT EXISTS idx_evaluations_class_subject ON evaluations(class_id, subject_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id, attendance_date);
+-- D3.5b : l'index unique uq_attendance_school_student_date est créé APRÈS déduplication
+-- dans postgresRepository.ensureAttendanceCanonicalUniqueness() (bases legacy sûres).
+-- D3.6b : l'index unique uq_grades_school_evaluation_student est créé APRÈS migration/dédup
+-- dans postgresRepository.ensureGradeCanonicalUniqueness() (bases legacy sûres).
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_school_id ON payments(school_id);
 CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_school_student ON student_fee_obligations(school_id, student_id);

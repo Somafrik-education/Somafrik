@@ -8,6 +8,10 @@ const {
   clearFailedLoginAttempts,
 } = require("../lib/loginLockout");
 const { GENERIC_AUTH_ERROR, canUserAccountLogin, loginBlockedMessage } = require("../lib/userAccountRules");
+const {
+  sanitizeUserForResponse,
+  sanitizeUsersForResponse,
+} = require("../lib/sanitizeUserForResponse");
 
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -348,7 +352,7 @@ class AuthService {
         const assignments = resolveTeacherAssignments(teacher, user, this.assignments);
         const assignedClasses = resolveTeacherAssignedClasses(teacher, user, this.assignments);
         const courses = [...new Set(assignments.map((item) => item.course).filter(Boolean))];
-        const { password: _password, passwordHash: _passwordHash, pinHash: _pinHash, ...safeTeacher } = teacher;
+        const safeTeacher = sanitizeUserForResponse(teacher);
         return {
           ...base,
           ...safeTeacher,
@@ -360,12 +364,9 @@ class AuthService {
     }
 
     if (user.role === "Parent") {
-      const children = this.findLinkedParentChildren(user, user.schoolCode).map(
-        ({ pin: _pin, pinHash: _pinHash, password: _password, ...safeStudent }) => safeStudent
-      );
       return {
         ...base,
-        children,
+        children: sanitizeUsersForResponse(this.findLinkedParentChildren(user, user.schoolCode)),
         parentPhone: user.phone ?? user.identifier,
       };
     }
@@ -373,7 +374,7 @@ class AuthService {
     if (isStudentRole(user.role)) {
       const student = this.findLinkedStudent(user, user.schoolCode);
       if (student) {
-        const { pin: _pin, pinHash: _pinHash, password: _password, ...safeStudent } = student;
+        const safeStudent = sanitizeUserForResponse(student);
         return {
           ...base,
           ...safeStudent,

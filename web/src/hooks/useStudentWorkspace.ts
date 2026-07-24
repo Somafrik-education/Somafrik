@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 import { useData } from "../context/DataContext";
+import type { StudentEnrollment } from "../lib/studentDomain";
+import type { StudentEnrollmentRecord } from "../lib/studentEnrollment";
 import { buildStudentWorkspace } from "../lib/studentWorkspaceService";
 import {
   buildStudentWorkspaceViewModel,
@@ -10,6 +12,11 @@ export interface UseStudentWorkspaceResult {
   workspace: StudentWorkspaceViewModel | null;
   loading: boolean;
   error: string | null;
+}
+
+export interface UseStudentWorkspaceOptions {
+  /** Remplace les inscriptions domaine (overlay C1.8a depuis le store d'édition). */
+  enrollmentOverride?: readonly StudentEnrollmentRecord[] | null;
 }
 
 function resolveAcademicYear(
@@ -26,8 +33,36 @@ function resolveAcademicYear(
   return matchingYears[0] ?? String(studentSchoolYear ?? "").trim();
 }
 
+function toDomainEnrollment(
+  record: StudentEnrollmentRecord,
+): StudentEnrollment {
+  return {
+    id: record.id,
+    studentId: record.studentId,
+    schoolCode: record.schoolCode,
+    academicYear: record.academicYear,
+    classId: record.classId,
+    className: record.className,
+    programId: record.programId,
+    programName: record.programName,
+    status: record.status,
+    source: record.source,
+    applicationReference: record.applicationReference,
+    requestedAt: record.requestedAt,
+    enrolledAt: record.enrolledAt,
+    validatedAt: record.validatedAt,
+    endedAt: record.endedAt,
+    previousSchool: record.previousSchoolName ?? undefined,
+    notes: record.notes,
+    enrollmentDate: record.enrolledAt ?? undefined,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
 export function useStudentWorkspace(
   studentId: string,
+  options: UseStudentWorkspaceOptions = {},
 ): UseStudentWorkspaceResult {
   const { state, loading, error } = useData();
 
@@ -40,7 +75,12 @@ export function useStudentWorkspace(
     );
     if (!student) return null;
 
-    const enrollments = state.studentEnrollments ?? [];
+    const baseEnrollments = state.studentEnrollments ?? [];
+    const enrollments =
+      options.enrollmentOverride && options.enrollmentOverride.length > 0
+        ? options.enrollmentOverride.map(toDomainEnrollment)
+        : baseEnrollments;
+
     const academicYear = resolveAcademicYear(
       student.id,
       student.schoolYear,
@@ -53,7 +93,9 @@ export function useStudentWorkspace(
       data: {
         students: state.students,
         persons: state.persons,
+        schools: state.schools,
         enrollments,
+        guardians: state.guardians,
         guardianRelations: state.studentGuardianRelations,
         documents: state.studentDocuments,
         medicalProfiles: state.studentMedicalProfiles,
@@ -63,7 +105,7 @@ export function useStudentWorkspace(
     return domainWorkspace
       ? buildStudentWorkspaceViewModel(domainWorkspace)
       : null;
-  }, [studentId, state]);
+  }, [studentId, state, options.enrollmentOverride]);
 
   return {
     workspace,

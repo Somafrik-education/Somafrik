@@ -55,22 +55,30 @@ const NON_PARENT_USER_ROLES = new Set([
   normalize("Étudiant"),
 ]);
 
-/** Comptes utilisateurs pouvant être parent d'un élève. */
+/**
+ * Comptes parent sélectionnables pour une liaison.
+ * Valeur = `user.contactId` (= `contact.id`) — contrat D3.4b.
+ * Les comptes sans `contactId` sont exclus (pas de clé métier).
+ */
 export function getRelationParentUserOptions(
   user: SessionUser | null,
   state: BackOfficeState,
 ): { value: string; label: string }[] {
   return scopedUsers(user, state)
     .filter((account) => {
-      if (!account.id) return false;
+      const contactId = String(account.contactId ?? "").trim();
+      if (!contactId) return false;
       const role = normalize(String(account.role ?? ""));
       return !NON_PARENT_USER_ROLES.has(role);
     })
-    .map((account) => ({ value: String(account.id), label: userLabel(account as unknown as Row) }))
+    .map((account) => ({
+      value: String(account.contactId).trim(),
+      label: userLabel(account as unknown as Row),
+    }))
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
 }
 
-/** @deprecated Alias — parent via compte utilisateur (champ fromContactId = user.id). */
+/** @deprecated Alias — parent via contact métier (champ fromContactId = contact.id). */
 export function getRelationParentContactOptions(
   user: SessionUser | null,
   state: BackOfficeState,
@@ -104,15 +112,34 @@ export function getRelationAccountOptions(
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
 }
 
-function lookupParentUser(state: BackOfficeState, id: string): Row | undefined {
-  return (state.users as unknown as Row[]).find((row) => String(row.id) === id);
+/**
+ * Résout le compte parent par identité métier `contactId`.
+ * Fallback transitoire sur `user.id` pour normaliser les liaisons legacy au save.
+ */
+export function lookupParentUser(state: BackOfficeState, id: string): Row | undefined {
+  const key = String(id ?? "").trim();
+  if (!key) return undefined;
+  const users = state.users as unknown as Row[];
+  const byContactId = users.find((row) => String(row.contactId ?? "").trim() === key);
+  if (byContactId) return byContactId;
+  return users.find((row) => String(row.id ?? "").trim() === key);
+}
+
+/** Identité métier parent à persister dans `relations.fromContactId`. */
+export function resolveParentContactId(state: BackOfficeState, rawFromContactId: string): string {
+  const raw = String(rawFromContactId ?? "").trim();
+  if (!raw) return "";
+  const fromUser = lookupParentUser(state, raw);
+  const contactId = String(fromUser?.contactId ?? "").trim();
+  return contactId || raw;
 }
 
 /** Complète une relation (libellés + portée) avant enregistrement. */
 export function prepareRelationForSave(form: Row, state: BackOfficeState): Row {
   const relationType = String(form.relationType ?? "").trim();
-  const fromContactId = String(form.fromContactId ?? "").trim();
-  const fromUser = lookupParentUser(state, fromContactId);
+  const rawFromContactId = String(form.fromContactId ?? "").trim();
+  const fromUser = lookupParentUser(state, rawFromContactId);
+  const fromContactId = resolveParentContactId(state, rawFromContactId);
   const schoolCode = String(fromUser?.schoolCode ?? form.schoolCode ?? "").trim();
 
   const base: Row = {

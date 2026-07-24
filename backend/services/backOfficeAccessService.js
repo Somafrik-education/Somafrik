@@ -11,6 +11,10 @@ const { resolveParentChildren } = require("../lib/parentChildren");
 const { GENERIC_AUTH_ERROR, canUserAccountLogin, loginBlockedMessage } = require("../lib/userAccountRules");
 const { canAccessBackOfficeRole, canAccessWebPlatformRole, isEstablishmentBackOfficeRole } = require("../lib/establishmentRoles");
 const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("../lib/countryScope");
+const {
+  sanitizeUserForResponse,
+  sanitizeUsersForResponse,
+} = require("../lib/sanitizeUserForResponse");
 
 const SUPER_ADMIN_ROLE = "Super Administrateur Somafrik";
 const LEGACY_SUPER_ADMIN_ROLE = "Super Administrateur OKAFRIK";
@@ -111,20 +115,17 @@ class BackOfficeAccessService {
 
     clearFailedLoginAttempts(loginKey);
 
-    const { password: _password, temporaryPassword: _temporaryPassword, ...safeUser } = user;
     const mustChangePassword =
       user.mustChangePassword === false
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim());
     const scopedSchoolCode = resolvedSchoolCode || user.schoolCode || "";
+    const safeUser = sanitizeUserForResponse(user);
     const enrichedUser =
       user.role === "Parent"
         ? {
             ...safeUser,
-            children: this.findLinkedParentChildren(user, scopedSchoolCode).map(
-              ({ password: _pwd, passwordHash: _hash, pinHash: _pinHash, pin: _pin, ...child }) =>
-                child,
-            ),
+            children: sanitizeUsersForResponse(this.findLinkedParentChildren(user, scopedSchoolCode)),
           }
         : safeUser;
 
@@ -135,7 +136,7 @@ class BackOfficeAccessService {
       menus: this.getMenus(user),
       dashboard: this.getDashboard(user),
       schools: this.getScopedSchools(user),
-      users: this.getScopedUsers(user).map(({ password: _pwd, temporaryPassword: _tmp, ...account }) => account),
+      users: sanitizeUsersForResponse(this.getScopedUsers(user)),
       countries: this.getScopedCountries(user),
       subscriptions: this.getScopedSubscriptions(user),
       notifications: this.getScopedNotifications(user),

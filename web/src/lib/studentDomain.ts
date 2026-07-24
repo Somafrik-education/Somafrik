@@ -1,12 +1,12 @@
-export type StudentStatus = "Actif" | "Inactif" | "TransfÃ©rÃ©" | "Sorti" | "ArchivÃ©";
+import {
+  isActiveEnrollmentStatus,
+  normalizeStudentEnrollmentStatus,
+  type StudentEnrollmentStatus,
+} from "./studentEnrollmentStatus";
 
-export type StudentEnrollmentStatus =
-  | "PrÃ©inscrit"
-  | "Inscrit"
-  | "En attente"
-  | "TransfÃ©rÃ©"
-  | "Sorti"
-  | "AnnulÃ©";
+export type { StudentEnrollmentStatus } from "./studentEnrollmentStatus";
+
+export type StudentStatus = "Actif" | "Inactif" | "TransfÃ©rÃ©" | "Sorti" | "ArchivÃ©";
 
 export interface Person {
   id: string;
@@ -81,14 +81,16 @@ export interface StudentEnrollment {
   campusName?: string;
   levelId?: string;
   levelName?: string;
-  classId?: string;
-  className?: string;
+  classId?: string | null;
+  className?: string | null;
   sectionId?: string;
   sectionName?: string;
   optionId?: string;
   optionName?: string;
   trackId?: string;
   trackName?: string;
+  programId?: string | null;
+  programName?: string | null;
 
   /** Organisation locale de la scolaritÃ©, toujours facultative. */
   shift?: string;
@@ -98,6 +100,14 @@ export interface StudentEnrollment {
   startDate?: string;
   endDate?: string;
   status: StudentEnrollmentStatus;
+  /** Canal d'origine (C1.2). */
+  source?: string;
+  applicationReference?: string | null;
+  requestedAt?: string | null;
+  enrolledAt?: string | null;
+  validatedAt?: string | null;
+  endedAt?: string | null;
+  notes?: string | null;
   isRepeating?: boolean;
   previousSchool?: string;
   exitReason?: string;
@@ -240,20 +250,8 @@ export interface LegacyEnrollmentSource extends Record<string, unknown> {
   updatedAt?: string;
 }
 
-const ENROLLMENT_STATUSES: readonly StudentEnrollmentStatus[] = [
-  "PrÃ©inscrit",
-  "Inscrit",
-  "En attente",
-  "TransfÃ©rÃ©",
-  "Sorti",
-  "AnnulÃ©",
-];
-
 function normalizeEnrollmentStatus(value: unknown): StudentEnrollmentStatus {
-  const normalized = String(value ?? "").trim();
-  return ENROLLMENT_STATUSES.includes(normalized as StudentEnrollmentStatus)
-    ? (normalized as StudentEnrollmentStatus)
-    : "Inscrit";
+  return normalizeStudentEnrollmentStatus(value);
 }
 
 /**
@@ -315,35 +313,38 @@ export function adaptLegacyEnrollments(
   return sources.map(adaptLegacyEnrollment);
 }
 export const ENROLLMENT_STATUS = {
-  PRE_ENROLLED: "PrÃ©inscrit",
-  ENROLLED: "Inscrit",
-  PENDING: "En attente",
-  TRANSFERRED: "TransfÃ©rÃ©",
-  EXITED: "Sorti",
-  CANCELLED: "AnnulÃ©",
+  PRE_ENROLLED: "PRE_REGISTERED",
+  PRE_REGISTERED: "PRE_REGISTERED",
+  PENDING: "PENDING_REVIEW",
+  PENDING_REVIEW: "PENDING_REVIEW",
+  INCOMPLETE: "INCOMPLETE",
+  APPROVED: "APPROVED",
+  ENROLLED: "ENROLLED",
+  SUSPENDED: "SUSPENDED",
+  WITHDRAWN: "WITHDRAWN",
+  TRANSFERRED: "TRANSFERRED",
+  EXITED: "WITHDRAWN",
+  CANCELLED: "WITHDRAWN",
+  COMPLETED: "COMPLETED",
+  GRADUATED: "GRADUATED",
+  REJECTED: "REJECTED",
 } as const satisfies Record<string, StudentEnrollmentStatus>;
 
-const CLOSED_ENROLLMENT_STATUSES: readonly StudentEnrollmentStatus[] = [
-  ENROLLMENT_STATUS.TRANSFERRED,
-  ENROLLMENT_STATUS.EXITED,
-  ENROLLMENT_STATUS.CANCELLED,
-];
-
 /**
- * Une inscription est active tant qu'elle n'est ni transfÃ©rÃ©e, ni sortie,
- * ni annulÃ©e. Les donnÃ©es administratives facultatives n'influencent pas ce
- * calcul.
+ * Une inscription est active selon les statuts C1.2 (APPROVED, ENROLLED, SUSPENDED).
  */
 export function isEnrollmentActive(
   enrollment: Pick<StudentEnrollment, "status">,
 ): boolean {
-  return !CLOSED_ENROLLMENT_STATUSES.includes(enrollment.status);
+  return isActiveEnrollmentStatus(
+    normalizeStudentEnrollmentStatus(enrollment.status),
+  );
 }
 
 export function isEnrollmentClosed(
   enrollment: Pick<StudentEnrollment, "status">,
 ): boolean {
-  return CLOSED_ENROLLMENT_STATUSES.includes(enrollment.status);
+  return !isEnrollmentActive(enrollment);
 }
 
 /**
@@ -354,7 +355,10 @@ export function isEnrollmentClosed(
 export function canPromoteEnrollment(
   enrollment: Pick<StudentEnrollment, "status">,
 ): boolean {
-  return enrollment.status === ENROLLMENT_STATUS.ENROLLED;
+  return (
+    normalizeStudentEnrollmentStatus(enrollment.status) ===
+    ENROLLMENT_STATUS.ENROLLED
+  );
 }
 
 /**
@@ -366,6 +370,7 @@ export function canTransferEnrollment(
 ): boolean {
   return isEnrollmentActive(enrollment);
 }
+
 export function getActiveEnrollment(
   enrollments: readonly StudentEnrollment[],
   studentId: string,
@@ -377,7 +382,7 @@ export function getActiveEnrollment(
       enrollment.studentId === studentId &&
       enrollment.schoolCode === schoolCode &&
       enrollment.academicYear === academicYear &&
-      !["Sorti", "AnnulÃ©", "TransfÃ©rÃ©"].includes(enrollment.status),
+      isEnrollmentActive(enrollment),
   );
 }
 

@@ -15,15 +15,35 @@ export type StudentWorkspaceModuleId =
 export type StudentWorkspacePermission =
   | "student.overview.read"
   | "student.identity.read"
+  | "student.identity.update"
   | "student.enrollments.read"
+  | "student.enrollments.create"
+  | "student.enrollments.update"
+  | "student.enrollments.validate"
+  | "student.enrollments.assign-class"
+  | "student.enrollments.transfer"
+  | "student.enrollments.close"
   | "student.guardians.read"
+  | "student.guardians.create"
+  | "student.guardians.update"
+  | "student.guardians.delete"
   | "student.attendance.read"
   | "student.grades.read"
   | "student.finance.read"
   | "student.documents.read"
+  | "student.documents.upload"
+  | "student.documents.verify"
+  | "student.documents.delete"
   | "student.health.read"
+  | "student.medical.read"
+  | "student.medical.update"
+  | "student.medical.validate"
   | "student.discipline.read"
   | "student.history.read"
+  | "student.history.export"
+  | "student.history.audit"
+  | "student.administrative.update"
+  | "student.archive"
   | "student.access.read";
 
 export interface StudentWorkspaceModule {
@@ -51,7 +71,7 @@ export const STUDENT_WORKSPACE_MODULES = [
   },
   {
     id: "enrollments",
-    title: "Inscriptions",
+    title: "Inscription",
     icon: "graduation-cap",
     enabledByDefault: true,
     requiredPermission: "student.enrollments.read",
@@ -62,6 +82,20 @@ export const STUDENT_WORKSPACE_MODULES = [
     icon: "users-round",
     enabledByDefault: true,
     requiredPermission: "student.guardians.read",
+  },
+  {
+    id: "health",
+    title: "Médical",
+    icon: "heart-pulse",
+    enabledByDefault: true,
+    requiredPermission: "student.medical.read",
+  },
+  {
+    id: "documents",
+    title: "Documents",
+    icon: "files",
+    enabledByDefault: true,
+    requiredPermission: "student.documents.read",
   },
   {
     id: "attendance",
@@ -83,20 +117,6 @@ export const STUDENT_WORKSPACE_MODULES = [
     icon: "wallet-cards",
     enabledByDefault: true,
     requiredPermission: "student.finance.read",
-  },
-  {
-    id: "documents",
-    title: "Documents",
-    icon: "files",
-    enabledByDefault: true,
-    requiredPermission: "student.documents.read",
-  },
-  {
-    id: "health",
-    title: "Santé",
-    icon: "heart-pulse",
-    enabledByDefault: false,
-    requiredPermission: "student.health.read",
   },
   {
     id: "discipline",

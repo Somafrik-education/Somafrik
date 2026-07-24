@@ -222,7 +222,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    if (!canSyncBackOfficeState(session?.role, session?.accessToken)) {
+    if (!canSyncBackOfficeState(session?.role, session)) {
       return;
     }
 
@@ -246,14 +246,14 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       clearInterval(intervalId);
     };
-  }, [session?.accessToken, session?.role]);
+  }, [session, session?.role]);
 
   useEffect(() => {
-    if (!session?.accessToken) {
+    if (!session) {
       return;
     }
 
-    if (canSyncBackOfficeState(session.role, session.accessToken)) {
+    if (canSyncBackOfficeState(session.role, session)) {
       return;
     }
 
@@ -302,7 +302,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       clearInterval(intervalId);
     };
-  }, [session?.accessToken]);
+  }, [session]);
 
   const applySyncedState = (payload: BackOfficeStatePayload) => {
     applyArray(payload.students, setStudentsData);
@@ -337,14 +337,14 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshBackOfficeState = useCallback(async () => {
-    if (!session?.accessToken) {
+    if (!session) {
       return;
     }
 
     setSyncStatus("syncing");
 
     try {
-      if (canSyncBackOfficeState(session.role, session.accessToken)) {
+      if (canSyncBackOfficeState(session.role, session)) {
         const payload = await getBackOfficeState();
         applySyncedState(payload);
         setSyncStatus("synced");
@@ -384,10 +384,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       setSyncStatus("offline");
       throw new Error("Synchronisation impossible");
     }
-  }, [session?.accessToken, session?.role, activeSchoolCode, session?.user?.schoolCode, session?.school?.code]);
+  }, [session, session?.role, activeSchoolCode, session?.user?.schoolCode, session?.school?.code]);
 
   useEffect(() => {
-    if (!session?.accessToken) {
+    if (!session) {
       return;
     }
 
@@ -401,7 +401,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     return undefined;
-  }, [session?.accessToken, refreshBackOfficeState]);
+  }, [session, refreshBackOfficeState]);
 
   useEffect(() => {
     if (!session) {
@@ -417,10 +417,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     setSession(enriched);
-  }, [rolePermissionsData, session?.accessToken, session?.role]);
+  }, [rolePermissionsData, session, session?.role]);
 
   const persistSyncedState = (nextState: BackOfficeStatePayload) => {
-    if (!canSyncBackOfficeState(session?.role, session?.accessToken)) {
+    if (!canSyncBackOfficeState(session?.role, session)) {
       return;
     }
 
@@ -608,7 +608,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     activeSchoolCode,
     availableSchools,
     requiresSchoolSelection,
-    session?.accessToken,
+    session,
     session?.role,
     session?.school.code,
     session?.user.schoolCode,
@@ -621,8 +621,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;
 }
 
-function canSyncBackOfficeState(role?: string, accessToken?: string) {
-  if (!accessToken) return false;
+function canSyncBackOfficeState(role?: string, authenticated?: unknown) {
+  if (!authenticated) return false;
   return ["super_admin", "country_admin", "school_admin", "principal", "prefet", "secretary"].includes(role ?? "");
 }
 

@@ -3,8 +3,20 @@
  * Utilisé par l'API, les audits et les tests E2E d'intégrité.
  */
 
-const LOCKED_EVALUATION_STATUSES = new Set(["Validée", "Publiée", "Annulée"]);
+const LOCKED_EVALUATION_STATUSES = new Set([
+  "Validée",
+  "Publiée",
+  "Annulée",
+  "locked",
+  "published",
+  "archived",
+]);
 const ARCHIVED_STUDENT_STATUSES = new Set(["archivé", "archive", "inactif", "suspendu"]);
+const {
+  validateGradeContract,
+  toGradeStatus,
+  isLockedEvaluationStatus,
+} = require("./gradesCanonical");
 
 function normalize(value) {
   return String(value ?? "")
@@ -216,7 +228,7 @@ function validatePositiveAmount(amount, label = "montant") {
   return null;
 }
 
-/** Écriture note — intégrité référentielle + barème + établissement. */
+/** Écriture note — intégrité référentielle + contrat D3.6b + établissement. */
 function validateNoteWrite(state = {}, note = {}, options = {}) {
   const studentId = String(note.studentId ?? "").trim();
   if (!studentId) return "L'élève est obligatoire pour une note.";
@@ -228,21 +240,25 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
     return "Un élève archivé ne peut plus recevoir de nouvelles notes.";
   }
 
-  const scale = Number(note.scale ?? 20);
-  const value = note.value == null || note.value === "" ? null : Number(note.value);
-  if (value != null) {
-    const scaleError = validateGradeValue(value, scale);
-    if (scaleError) return scaleError;
+  const evaluationId = String(note.evaluationId ?? "").trim();
+  if (!evaluationId && !options.allowMissingEvaluation) {
+    return "evaluation_id obligatoire pour une note.";
   }
 
-  const evaluationId = String(note.evaluationId ?? "").trim();
+  let scale = Number(note.scale ?? 20);
+  let coefficient = Number(note.evaluationCoefficient ?? note.coefficient ?? 1);
   if (evaluationId) {
     const evaluation = findEvaluation(state, evaluationId);
     if (!evaluation) return "Évaluation introuvable : note orpheline refusée.";
     if (evaluation.active === false) return "Évaluation inactive : saisie refusée.";
-    if (LOCKED_EVALUATION_STATUSES.has(evaluation.status) && options.enforceLockedEvaluation !== false) {
+    const locked =
+      LOCKED_EVALUATION_STATUSES.has(evaluation.status) ||
+      isLockedEvaluationStatus(evaluation.status);
+    if (locked && options.enforceLockedEvaluation !== false) {
       return `Évaluation ${evaluation.status} : modification de note refusée.`;
     }
+    scale = Number(evaluation.scale ?? evaluation.max_score ?? scale);
+    coefficient = Number(evaluation.coefficient ?? coefficient);
     const evalSchool = normalizeSchoolCode(evaluation.schoolCode);
     const studentSchool = normalizeSchoolCode(student.schoolCode);
     if (evalSchool && studentSchool && evalSchool !== studentSchool) {
@@ -256,6 +272,18 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
     }
   }
 
+  const gradeStatus = toGradeStatus(
+    note.gradeStatus ?? note.status,
+    note.value != null && note.value !== "",
+  );
+  const contractError = validateGradeContract({
+    status: gradeStatus,
+    score: gradeStatus === "graded" ? note.value ?? note.score : null,
+    maxScore: scale,
+    coefficient,
+  });
+  if (contractError) return contractError;
+
   const noteSchool = normalizeSchoolCode(note.schoolCode ?? student.schoolCode);
   const studentSchool = normalizeSchoolCode(student.schoolCode);
   if (noteSchool && studentSchool && noteSchool !== studentSchool) {
@@ -268,6 +296,21 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
     if (cls && noteClass && normalizeSchoolCode(cls.schoolCode) !== normalizeSchoolCode(noteClass.schoolCode)) {
       return "La classe de la note ne correspond pas à l'établissement de l'élève.";
     }
+  }
+
+  // D3.6b : unicité établissement implicite via evaluation + élève
+  if (!options.skipDuplicateCheck && evaluationId) {
+    const studentKeys = new Set(
+      [student.id, student.matricule, student.publicId, studentId]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
+    const duplicate = (state.notes ?? []).find((row) => {
+      if (String(row.id ?? "") === String(note.id ?? "")) return false;
+      if (String(row.evaluationId ?? "") !== evaluationId) return false;
+      return studentKeys.has(String(row.studentId ?? "").trim());
+    });
+    if (duplicate) return "Une note existe déjà pour cet élève sur cette évaluation.";
   }
 
   return null;
@@ -296,13 +339,20 @@ function validatePresenceWrite(state = {}, presence = {}, options = {}) {
   }
 
   if (!options.skipDuplicateCheck) {
-    const duplicate = (state.presences ?? []).find(
-      (row) =>
-        String(row.id ?? "") !== String(presence.id ?? "") &&
-        String(row.studentId ?? "") === String(student.id ?? student.matricule ?? studentId) &&
-        normalizePresenceDay(row.date) === normalizePresenceDay(presence.date) &&
-        (!className || classNamesMatch(row.className, className)),
+    // D3.5b : unicité = établissement + élève + jour (pas la classe)
+    const presenceSchoolKey = presenceSchool || studentSchool;
+    const studentKeys = new Set(
+      [student.id, student.matricule, student.publicId, studentId]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
     );
+    const duplicate = (state.presences ?? []).find((row) => {
+      if (String(row.id ?? "") === String(presence.id ?? "")) return false;
+      const rowSchool = normalizeSchoolCode(row.schoolCode ?? "");
+      if (presenceSchoolKey && rowSchool && presenceSchoolKey !== rowSchool) return false;
+      if (!studentKeys.has(String(row.studentId ?? "").trim())) return false;
+      return normalizePresenceDay(row.date) === normalizePresenceDay(presence.date);
+    });
     if (duplicate) return "Une présence existe déjà pour cet élève à cette date.";
   }
 
@@ -393,8 +443,9 @@ function detectDuplicateNoteKeys(notes = []) {
   const seen = new Map();
   const duplicates = [];
   for (const note of notes) {
-    const key = `${String(note.studentId ?? "")}|${String(note.evaluationId ?? "")}`;
-    if (!key || key === "|") continue;
+    // D3.6b : clé canonique établissement + évaluation + élève
+    const key = `${normalizeSchoolCode(note.schoolCode)}|${String(note.evaluationId ?? "").trim()}|${String(note.studentId ?? "").trim()}`;
+    if (!String(note.evaluationId ?? "").trim() || !String(note.studentId ?? "").trim()) continue;
     if (seen.has(key)) duplicates.push({ key, rows: [seen.get(key), note] });
     else seen.set(key, note);
   }
@@ -405,8 +456,9 @@ function detectDuplicatePresenceKeys(presences = []) {
   const seen = new Map();
   const duplicates = [];
   for (const presence of presences) {
-    const key = `${String(presence.studentId ?? "")}|${normalizePresenceDay(presence.date)}|${normalize(presence.className)}`;
-    if (!key) continue;
+    // D3.5b : clé canonique établissement + élève + jour
+    const key = `${normalizeSchoolCode(presence.schoolCode)}|${String(presence.studentId ?? "").trim()}|${normalizePresenceDay(presence.date)}`;
+    if (!String(presence.studentId ?? "").trim() || !normalizePresenceDay(presence.date)) continue;
     if (seen.has(key)) duplicates.push({ key, rows: [seen.get(key), presence] });
     else seen.set(key, presence);
   }

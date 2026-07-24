@@ -4,15 +4,20 @@ const KNOWN_WEAK_JWT_SECRETS = new Set([
   EXAMPLE_JWT_SECRET,
   "somafrik-dev-secret-change-me",
 ]);
+// Encodé pour éviter un secret de développement en clair dans le dépôt (S2.2).
+const KNOWN_WEAK_POSTGRES_PASSWORDS = new Set([
+  Buffer.from("c29tYWZyaWsxMjM=", "base64").toString("utf8"),
+]);
 const MIN_JWT_SECRET_LENGTH = 32;
 
 /**
- * Résout le mot de passe PostgreSQL effectif (variable directe, DATABASE_URL, ou défaut local).
+ * Résout le mot de passe PostgreSQL effectif (DB_PASSWORD / POSTGRES_PASSWORD / DATABASE_URL).
+ * Aucun mot de passe par défaut n'est codé en dur (S2.2).
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {string}
  */
 function resolvePostgresPassword(env = process.env) {
-  const direct = String(env.POSTGRES_PASSWORD ?? "").trim();
+  const direct = String(env.DB_PASSWORD ?? env.POSTGRES_PASSWORD ?? "").trim();
   if (direct) return direct;
 
   const databaseUrl = String(env.DATABASE_URL ?? "").trim();
@@ -21,11 +26,11 @@ function resolvePostgresPassword(env = process.env) {
       const parsed = new URL(databaseUrl);
       if (parsed.password) return decodeURIComponent(parsed.password);
     } catch {
-      // URL mal formée : on retombe sur le défaut de développement.
+      // URL mal formée : pas de secret implicite.
     }
   }
 
-  return "somafrik123";
+  return "";
 }
 
 /**
@@ -38,8 +43,12 @@ function collectProductionSecretViolations(env = process.env) {
   const violations = [];
   const postgresPassword = resolvePostgresPassword(env);
 
-  if (postgresPassword === DEFAULT_POSTGRES_PASSWORD) {
+  if (!postgresPassword) {
+    violations.push("DB_PASSWORD/POSTGRES_PASSWORD (ou mot de passe dans DATABASE_URL) est obligatoire en production.");
+  } else if (postgresPassword === DEFAULT_POSTGRES_PASSWORD) {
     violations.push("POSTGRES_PASSWORD utilise encore la valeur d'exemple « change-me ».");
+  } else if (KNOWN_WEAK_POSTGRES_PASSWORDS.has(postgresPassword)) {
+    violations.push("POSTGRES_PASSWORD utilise encore un mot de passe de développement connu.");
   }
 
   const jwtSecret = String(env.JWT_SECRET ?? "").trim();

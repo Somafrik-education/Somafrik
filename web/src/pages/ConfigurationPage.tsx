@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
-import { Card, SectionHeader } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
-import { Field, Input, Select } from "../components/ui/Field";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ForbiddenState,
+  FormField,
+  FormLayout,
+  Input,
+  SectionHeader,
+  Select,
+  Textarea,
+} from "../design-system";
 import { useToast } from "../components/ui/Toast";
 import {
   DEFAULT_CLASS_NAMES,
@@ -521,47 +531,46 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
   if (section === "roles-droits" && !hasRolesAccess) {
     return (
-      <Card className="p-6">
-        <p className="text-sm font-semibold text-muted">
-          Vous n'avez pas les droits nécessaires pour configurer les rôles et habilitations.
-        </p>
-      </Card>
+      <ForbiddenState
+        title="Accès non autorisé"
+        message="Vous n'avez pas les droits nécessaires pour configurer les rôles et habilitations."
+      />
     );
   }
 
   if ((section === "annee-scolaire" || section === "structure") && !showAcademicConfig) {
     return (
-      <Card className="p-6">
-        <p className="text-sm font-semibold text-muted">
-          Vous n'avez pas les droits nécessaires pour accéder à la configuration de l'établissement.
-        </p>
-      </Card>
+      <ForbiddenState
+        title="Accès non autorisé"
+        message="Vous n'avez pas les droits nécessaires pour accéder à la configuration de l'établissement."
+      />
     );
   }
 
   if (!section && !showAcademicConfig && !hasRolesAccess) {
     return (
-      <Card className="p-6">
-        <p className="text-sm font-semibold text-muted">
-          Vous n'avez pas les droits nécessaires pour accéder à la configuration de l'établissement.
-        </p>
-      </Card>
+      <ForbiddenState
+        title="Accès non autorisé"
+        message="Vous n'avez pas les droits nécessaires pour accéder à la configuration de l'établissement."
+      />
     );
   }
 
   return (
+    <FormLayout>
+      <FormLayout.Content>
     <div className="space-y-6">
       <Card className="bg-gradient-to-br from-slate-800 to-brand p-6 text-white">
         <p className="text-sm font-semibold text-white/75">Configuration</p>
         {requiresSelection && availableSchools.length >= 2 ? (
           <div className="mt-3 max-w-md">
-            <Field label="Établissement à configurer">
+            <FormField label="Établissement à configurer">
               <Select
                 value={configTarget}
                 onChange={(e) => setConfigTarget(e.target.value)}
                 options={buildSchoolSelectOptions(availableSchools)}
               />
-            </Field>
+            </FormField>
           </div>
         ) : null}
         <h2 className="mt-3 text-2xl font-black">
@@ -590,14 +599,13 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
             description="Un rôle par ligne pour votre établissement (secrétaire, préfet, enseignant…). Les droits se pilotent ci-dessous. Admin Pays et Admin School sont gérés par le Superadmin dans Droits par rôle."
           />
           <form onSubmit={handleUserRolesSubmit} className="mt-4 space-y-4">
-            <Field label="Rôles">
-              <textarea
+            <FormField label="Rôles">
+              <Textarea
                 name="userRoles"
                 rows={6}
                 defaultValue={(academicConfig.userRoles as string[] | undefined)?.join("\n") ?? DEFAULT_USER_ROLES.join("\n")}
-                className="input-base w-full"
               />
-            </Field>
+            </FormField>
             <Button type="submit" disabled={savingSection === "userRoles"}>
               Enregistrer
             </Button>
@@ -621,20 +629,20 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
             }
           />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="Rôle">
+            <FormField label="Rôle">
               <Select
                 value={selectedPilotageRole}
                 onChange={(e) => setSelectedPilotageRole(e.target.value)}
                 options={configuredUserRoles.map((role) => ({ value: role, label: displayRoleName(role) }))}
               />
-            </Field>
-            <Field label="Fonctionnalité">
+            </FormField>
+            <FormField label="Fonctionnalité">
               <Select
                 value={selectedPilotageFeature}
                 onChange={(e) => setSelectedPilotageFeature(e.target.value)}
                 options={delegableFeatures.map((feature) => ({ value: feature, label: feature }))}
               />
-            </Field>
+            </FormField>
           </div>
 
           <div className="mt-4 rounded-xl border border-line bg-slate-50/60 p-4">
@@ -692,7 +700,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
             />
             <form onSubmit={handlePeriodsSubmit} className="mt-4 space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Mode de période">
+                <FormField label="Mode de période">
                   <Select
                     value={periodMode}
                     onChange={(e) => handlePeriodModeChange(coercePeriodMode(e.target.value))}
@@ -702,17 +710,17 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                       { value: "periode", label: "Périodes personnalisées" },
                     ]}
                   />
-                </Field>
-                <Field label="Barème par défaut">
+                </FormField>
+                <FormField label="Barème par défaut">
                   <Input
                     name="defaultScale"
                     type="number"
                     min={1}
                     defaultValue={String(academicConfig.defaultScale ?? 20)}
                   />
-                </Field>
+                </FormField>
                 {canDesignBulletins ? (
-                  <Field label="Mode bulletin">
+                  <FormField label="Mode bulletin">
                     <Select
                       name="reportMode"
                       defaultValue={String(academicConfig.reportCardMode ?? "period")}
@@ -722,7 +730,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                         { value: "custom", label: "Personnalisé" },
                       ]}
                     />
-                  </Field>
+                  </FormField>
                 ) : null}
               </div>
 
@@ -751,36 +759,32 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                       key={`${periodMode}-${index}-${row.order}`}
                       className="grid gap-3 rounded-xl border border-line bg-white p-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
                     >
-                      <Field label={`Nom (${periodTypeLabel(periodMode)} ${index + 1})`}>
+                      <FormField label={`Nom (${periodTypeLabel(periodMode)} ${index + 1})`}>
                         <Input
                           value={row.name}
                           onChange={(e) => updatePeriodRow(index, { name: e.target.value })}
                           placeholder={`${periodTypeLabel(periodMode)} ${index + 1}`}
                         />
-                      </Field>
-                      <Field label="Date de début">
+                      </FormField>
+                      <FormField label="Date de début">
                         <Input
                           value={row.startDate}
                           onChange={(e) => updatePeriodRow(index, { startDate: e.target.value })}
                           placeholder="JJ-MM-AAAA"
                         />
-                      </Field>
-                      <Field label="Date de fin">
+                      </FormField>
+                      <FormField label="Date de fin">
                         <Input
                           value={row.endDate}
                           onChange={(e) => updatePeriodRow(index, { endDate: e.target.value })}
                           placeholder="JJ-MM-AAAA"
                         />
-                      </Field>
+                      </FormField>
                       <div className="flex items-end gap-2 pb-1">
                         {resolvedPeriodRows[index]?.active ? (
-                          <span className="inline-flex rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand">
-                            En cours
-                          </span>
+                          <Badge tone="info">En cours</Badge>
                         ) : (
-                          <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-muted">
-                            Inactive
-                          </span>
+                          <Badge tone="neutral">Inactive</Badge>
                         )}
                         {periodMode === "periode" && periodRows.length > 1 ? (
                           <Button
@@ -810,14 +814,13 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
               description="Liste des types proposés lors de la saisie des notes."
             />
             <form onSubmit={handleEvaluationsSubmit} className="mt-4 space-y-4">
-              <Field label="Types d'évaluation">
-                <textarea
+              <FormField label="Types d'évaluation">
+                <Textarea
                   name="evaluationTypes"
                   rows={4}
                   defaultValue={(academicConfig.evaluationTypes as string[] | undefined)?.join("\n") ?? "Interrogation\nDevoir\nExamen"}
-                  className="input-base w-full"
                 />
-              </Field>
+              </FormField>
               <Button type="submit" disabled={savingSection === "evaluations"}>
                 Enregistrer
               </Button>
@@ -834,15 +837,14 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
               description="Un niveau par ligne. Utilisés dans les listes déroulantes lors de la création de classes."
             />
             <form onSubmit={handleLevelsSubmit} className="mt-4 space-y-4">
-              <Field label="Niveaux">
-                <textarea
+              <FormField label="Niveaux">
+                <Textarea
                   name="levels"
                   rows={4}
                   readOnly={!canConfigure}
                   defaultValue={(academicConfig.levels as string[] | undefined)?.join("\n") ?? DEFAULT_LEVELS.join("\n")}
-                  className="input-base w-full"
                 />
-              </Field>
+              </FormField>
               <Button type="submit" disabled={!canConfigure || savingSection === "levels"}>
                 Enregistrer
               </Button>
@@ -855,14 +857,13 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
               description="Une filière par ligne. Utilisées dans les listes déroulantes lors de la création de classes."
             />
             <form onSubmit={handleTracksSubmit} className="mt-4 space-y-4">
-              <Field label="Filières">
-                <textarea
+              <FormField label="Filières">
+                <Textarea
                   name="tracks"
                   rows={4}
                   defaultValue={(academicConfig.tracks as string[] | undefined)?.join("\n") ?? DEFAULT_TRACKS.join("\n")}
-                  className="input-base w-full"
                 />
-              </Field>
+              </FormField>
               <Button type="submit" disabled={savingSection === "tracks"}>
                 Enregistrer
               </Button>
@@ -875,14 +876,13 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
               description="Une classe par ligne. Utilisées dans les listes déroulantes (élèves, matières, affectations)."
             />
             <form onSubmit={handleClassNamesSubmit} className="mt-4 space-y-4">
-              <Field label="Classes">
-                <textarea
+              <FormField label="Classes">
+                <Textarea
                   name="classNames"
                   rows={4}
                   defaultValue={(academicConfig.classNames as string[] | undefined)?.join("\n") ?? DEFAULT_CLASS_NAMES.join("\n")}
-                  className="input-base w-full"
                 />
-              </Field>
+              </FormField>
               <Button type="submit" disabled={savingSection === "classNames"}>
                 Enregistrer
               </Button>
@@ -896,7 +896,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
             />
             {classNamesForSubjects.length ? (
               <form onSubmit={handleSubjectsSubmit} className="mt-4 space-y-4">
-                <Field label="Classe">
+                <FormField label="Classe">
                   <Select
                     name="subjectClass"
                     value={selectedSubjectClass}
@@ -906,29 +906,32 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                       label: className,
                     }))}
                   />
-                </Field>
-                <Field label="Matières de la classe">
-                  <textarea
+                </FormField>
+                <FormField label="Matières de la classe">
+                  <Textarea
                     name="subjects"
                     rows={6}
                     key={`subjects-text-${selectedSubjectClass}-${academicFormKey}`}
                     defaultValue={(subjectsByClass[selectedSubjectClass] ?? []).join("\n")}
-                    className="input-base w-full"
                     placeholder={"Mathématiques\nFrançais\nSciences"}
                   />
-                </Field>
+                </FormField>
                 <Button type="submit" disabled={savingSection === "subjects" || !selectedSubjectClass}>
                   Enregistrer
                 </Button>
               </form>
             ) : (
-              <p className="mt-4 text-sm text-muted">
-                Enregistrez d'abord la liste des classes pour configurer les matières par classe.
-              </p>
+              <EmptyState
+                className="mt-4"
+                title="Aucune classe configurée"
+                description="Enregistrez d'abord la liste des classes pour configurer les matières par classe."
+              />
             )}
           </Card>
         </>
       ) : null}
     </div>
+      </FormLayout.Content>
+    </FormLayout>
   );
 }

@@ -2,10 +2,17 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, KeyRound, ShieldCheck, UserCog } from "lucide-react";
 import { useData } from "../../context/DataContext";
 import { useAuth } from "../../context/AuthContext";
-import { Card, SectionHeader } from "../../components/ui/Card";
-import { Table, type Column } from "../../components/ui/Table";
-import { Field, Input, Select } from "../../components/ui/Field";
-import { Button } from "../../components/ui/Button";
+import {
+  Button,
+  Card,
+  EmptyState,
+  FormField,
+  Input,
+  ListLayout,
+  SectionHeader,
+  Select,
+} from "../../design-system";
+import { Table, type Column } from "../../design-system";
 import { PrintButton } from "../../components/ui/PrintButton";
 import { rowsToCsv, downloadCsv } from "../../lib/csv";
 import type { AuditEntry } from "../../lib/audit";
@@ -157,7 +164,15 @@ export function SettingsSecurityPage() {
     [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.identifier || "—";
 
   return (
-    <div className="space-y-5">
+    <ListLayout>
+      <ListLayout.Header>
+        <SectionHeader
+          title="Sécurité"
+          description="Session active, politique d'accès et journal d'audit."
+        />
+      </ListLayout.Header>
+      <ListLayout.Content>
+      <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="p-6">
           <div className="flex items-center gap-3">
@@ -233,33 +248,44 @@ export function SettingsSecurityPage() {
           }
         />
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_240px]">
-          <Field label="Recherche">
+          <FormField label="Recherche" htmlFor="audit-search">
             <Input
+              id="audit-search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Auteur, élément, détails…"
             />
-          </Field>
-          <Field label="Type d'action">
+          </FormField>
+          <FormField label="Type d'action" htmlFor="audit-action">
             <Select
+              id="audit-action"
               value={actionFilter}
               onChange={(event) => setActionFilter(event.target.value)}
               options={actionOptions}
             />
-          </Field>
+          </FormField>
         </div>
         <div className="mt-4">
           {filteredEntries.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-line bg-slate-50 p-6 text-center text-sm text-muted">
-              {entries.length === 0
-                ? "Aucune action enregistrée pour le moment. Les créations, modifications et suppressions de contacts, relations et rôles apparaîtront ici."
-                : "Aucune action ne correspond à votre recherche."}
-            </p>
+            <EmptyState
+              title={
+                entries.length === 0
+                  ? "Aucune action enregistrée"
+                  : "Aucun résultat"
+              }
+              description={
+                entries.length === 0
+                  ? "Les créations, modifications et suppressions de contacts, relations et rôles apparaîtront ici."
+                  : "Aucune action ne correspond à votre recherche."
+              }
+            />
           ) : (
             <Table columns={columns} rows={filteredEntries} rowKey={(row) => row.id} />
           )}
         </div>
       </Card>
-    </div>
+      </div>
+      </ListLayout.Content>
+    </ListLayout>
   );
 }

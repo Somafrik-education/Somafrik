@@ -12,6 +12,11 @@
     "dev:nodemon": "nodemon server.js",
     "verify:establishment": "node scripts/verify-establishment-e2e.js",
     "verify:planning-conflicts": "node scripts/verify-planning-conflicts.js",
+    "verify:sanitize-user-responses": "node scripts/verify-sanitize-user-responses.js",
+    "verify:rbac-s1-4": "node scripts/verify-rbac-s1-4.js",
+    "verify:jwt-header": "node scripts/verify-jwt-header.js",
+    "verify:db-config": "node scripts/verify-db-config.js",
+    "verify:runtime-bootstrap": "node scripts/verify-runtime-bootstrap.js",
     "postinstall": "node ./node_modules/puppeteer/install.mjs"
   },
   "dependencies": {

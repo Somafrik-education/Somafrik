@@ -57,3 +57,10 @@ src/
   lib/          Permissions, scoping, modules métier
   pages/        Vues par route
 ```
+
+## Framework UI/UX
+
+Documentation normative — Framework Produit (Phase D1 validée) : [`docs/ux/`](../docs/ux/README.md)  
+Design System (D2.1) : [`src/design-system`](./src/design-system) · doc [`docs/ux/design-system/`](../docs/ux/design-system/README.md)  
+`components/ui` reste en coexistence ; nouveau code → `@/design-system`.  
+Tests DS : `npm test`.

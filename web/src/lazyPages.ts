@@ -118,6 +118,18 @@ export const EtablissementOverviewPage = lazyPage(
   () => import("./pages/etablissement/EtablissementOverviewPage"),
   "EtablissementOverviewPage",
 );
+export const ClassesListPage = lazyPage(
+  () => import("./pages/etablissement/ClassesListPage"),
+  "ClassesListPage",
+);
+export const TeachersListPage = lazyPage(
+  () => import("./pages/etablissement/TeachersListPage"),
+  "TeachersListPage",
+);
+export const StudentsListPage = lazyPage(
+  () => import("./pages/etablissement/StudentsListPage"),
+  "StudentsListPage",
+);
 export const ClassStudentsPage = lazyPage(
   () => import("./pages/etablissement/ClassStudentsPage"),
   "ClassStudentsPage",

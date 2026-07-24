@@ -15,6 +15,7 @@ import {
   PlugZap,
   Wallet,
 } from "lucide-react";
+import { Badge, DashboardLayout } from "../../design-system";
 import { canReadView } from "../../lib/permissions";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "../../lib/orgHierarchy";
 import { usePermissionContext } from "../../lib/usePermissionContext";
@@ -161,7 +162,7 @@ const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>([
   "/parametres/donnees",
 ]);
 
-/** Hub Paramètres : grille de cartes par domaine de configuration. */
+/** Hub Paramètres : grille de cartes par domaine de configuration (P-006). */
 export function SettingsHubPage() {
   const ctx = usePermissionContext();
   const role = ctx.user?.role;
@@ -175,37 +176,37 @@ export function SettingsHubPage() {
     : SETTING_CARDS.filter((card) => canReadView(ctx, card.view));
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {cards.map((card) => {
-        const Icon = card.icon;
-        return (
-          <Link
-            key={card.to}
-            to={card.to}
-            className="group flex h-full flex-col rounded-2xl border border-line bg-white p-5 transition hover:border-brand/40 hover:shadow-md"
-          >
-            <div className="flex items-center justify-between">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand">
-                <Icon className="h-5 w-5" strokeWidth={1.8} />
-              </span>
-              {card.status === "soon" ? (
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-muted">
-                  Bientôt
+    <DashboardLayout>
+      <DashboardLayout.Content>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <Link
+                key={card.to}
+                to={card.to}
+                className="group flex h-full flex-col rounded-2xl border border-line bg-white p-5 transition hover:border-brand/40 hover:shadow-md"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand">
+                    <Icon className="h-5 w-5" strokeWidth={1.8} />
+                  </span>
+                  {card.status === "soon" ? (
+                    <Badge tone="neutral">Bientôt</Badge>
+                  ) : (
+                    <Badge tone="success">Disponible</Badge>
+                  )}
+                </div>
+                <h2 className="mt-4 text-base font-black text-ink">{card.title}</h2>
+                <p className="mt-1 flex-1 text-sm text-muted">{card.description}</p>
+                <span className="mt-4 text-sm font-semibold text-brand group-hover:underline">
+                  Configurer →
                 </span>
-              ) : (
-                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-600">
-                  Disponible
-                </span>
-              )}
-            </div>
-            <h2 className="mt-4 text-base font-black text-ink">{card.title}</h2>
-            <p className="mt-1 flex-1 text-sm text-muted">{card.description}</p>
-            <span className="mt-4 text-sm font-semibold text-brand group-hover:underline">
-              Configurer →
-            </span>
-          </Link>
-        );
-      })}
-    </div>
+              </Link>
+            );
+          })}
+        </div>
+      </DashboardLayout.Content>
+    </DashboardLayout>
   );
 }

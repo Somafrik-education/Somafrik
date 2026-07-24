@@ -5,9 +5,15 @@ Somafrik unifie la gestion éducative, du pays à la classe. Stack Docker : Post
 ## Prérequis
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows)
-- **Node.js >= 22.12.0** pour le développement hors Docker (`nvm use` lit `.nvmrc`)
+- **Node.js 22.12.0** pour le développement hors Docker (`nvm use` lit `.nvmrc` ; CI pinée sur cette version)
 - Copier `.env.example` vers `.env` (Docker, backend, PostgreSQL)
 - Copier `Mobile/.env.example` vers `Mobile/.env.local` (Expo, téléphone physique)
+
+## CI / sécurité (S2.4)
+
+Les Pull Requests vers `develop` / `main` exécutent automatiquement Secrets, Security, TypeScript, Lint, Tests et Audit.
+
+Voir **[docs/ci-cd-security.md](docs/ci-cd-security.md)** (workflows, commandes locales, branch protection).
 
 ## Installation des dépendances
 

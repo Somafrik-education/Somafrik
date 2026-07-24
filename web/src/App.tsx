@@ -12,7 +12,10 @@ import {
   CancellationRequestPage,
   ChangeOfferPage,
   ChartSettingsPage,
+  ClassesListPage,
   ClassStudentsPage,
+  StudentsListPage,
+  TeachersListPage,
   ConfigurationPage,
   CountriesPage,
   CoursePlanningPage,
@@ -118,7 +121,7 @@ export default function App() {
             path="classes"
             element={
               <PermissionRoute view="classes">
-                <EntityPage entity="classes" />
+                <ClassesListPage />
               </PermissionRoute>
             }
           />
@@ -139,23 +142,31 @@ export default function App() {
             path="eleves"
             element={
               <PermissionRoute view="students">
-                <EntityPage entity="students" />
+                <StudentsListPage />
               </PermissionRoute>
             }
           />
           <Route
-  path="eleves/:studentId"
-  element={
-    <PermissionRoute view="students">
-      <StudentWorkspacePage />
-    </PermissionRoute>
-  }
-/>
+            path="eleves/:studentId"
+            element={
+              <PermissionRoute view="students">
+                <StudentWorkspacePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="eleves/:studentId/:section"
+            element={
+              <PermissionRoute view="students">
+                <StudentWorkspacePage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="enseignants"
             element={
               <PermissionRoute view="teachers">
-                <EntityPage entity="teachers" />
+                <TeachersListPage />
               </PermissionRoute>
             }
           />

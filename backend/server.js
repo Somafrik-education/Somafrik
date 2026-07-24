@@ -13,6 +13,11 @@ const { GradeBookService } = require("./services/gradeBookService");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
 const { createPostgresRepository, initializeRepository } = require("./db/repositoryFactory");
+const {
+  assertDatabaseConfiguration,
+  sanitizeDbErrorMessage,
+  DbConfigError,
+} = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
 const { RbacService } = require("./services/rbacService");
 const { PaginationService } = require("./services/paginationService");
@@ -48,6 +53,21 @@ const {
   warnIfUnsafeDevelopmentSecrets,
 } = require("./lib/productionSecrets");
 const { assertProductionCors, buildCorsOptions } = require("./lib/corsConfig");
+const {
+  sanitizeUserForResponse,
+  sanitizeUsersForResponse,
+  sanitizeCredentialBearingStateForResponse,
+  sanitizeAuthPayloadForResponse,
+  stripSensitiveFieldsDeep,
+} = require("./lib/sanitizeUserForResponse");
+const {
+  evaluateBackOfficeWriteAccess,
+  getEditableEntitiesForPrincipalRole,
+} = require("./lib/backOfficeWritableEntities");
+const {
+  canAccessMvpRoutes,
+  scopeMvpDatasetForPrincipal,
+} = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
 
@@ -84,6 +104,8 @@ app.disable("x-powered-by");
 app.use(appSecurityHeaders);
 app.use(cors(buildCorsOptions({ BusinessError })));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? "1mb" }));
+// S2.1 — JWT uniquement via Authorization: Bearer (jamais ?token= / ?access_token=).
+app.use("/api", rejectJwtInQueryString);
 app.use(
   "/backoffice",
   express.static(path.join(__dirname, "..", "BackOffice"), {
@@ -262,9 +284,7 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
       response.schoolContext?.schoolCode ??
       response.user?.schoolCode ??
       req.body?.schoolCode;
-    const children = resolveParentChildren(response.user, state, schoolCode).map(
-      ({ password: _pwd, passwordHash: _hash, pinHash: _pin, pin: _pinCode, ...child }) => child,
-    );
+    const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
     response.user = { ...response.user, children };
   }
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
@@ -288,9 +308,7 @@ app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
     if (schoolCode && !response.user.schoolCode) {
       response.user = { ...response.user, schoolCode };
     }
-    const children = resolveParentChildren(response.user, state, schoolCode).map(
-      ({ password: _pwd, passwordHash: _hash, pinHash: _pin, pin: _pinCode, ...child }) => child,
-    );
+    const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
     response.user = { ...response.user, children };
   }
   await sendAuthenticatedResponse(req, res, response, "mobile_login");
@@ -369,10 +387,13 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
   });
-  const { passwordHash, pinHash, password, pin, temporaryPassword, ...safeUser } = updatedUser;
+  const safeUser = {
+    ...sanitizeUserForResponse(updatedUser),
+    mustChangePassword: false,
+  };
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(
-    { user: { ...safeUser, mustChangePassword: false } },
+    { user: safeUser },
     rolePermissionsMap,
   );
   const accessToken = tokenService.createAccessToken({
@@ -383,10 +404,7 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   });
   res.json({
     message: "Mot de passe mis à jour.",
-    user: {
-      ...safeUser,
-      mustChangePassword: false,
-    },
+    user: safeUser,
     accessToken,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,
@@ -527,9 +545,10 @@ app.put("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
 app.get("/api/students", requireAuth, asyncHandler(async (req, res) => {
   const { students } = await getAuthoritativeBackOfficeState();
   const { className } = req.query;
-  let result = tenantScopeService.filterRows(students, req.principal)
-    .filter((student) => !className || student.className === className);
-  result = result.map(({ pin, pinHash, ...student }) => student);
+  const result = sanitizeUsersForResponse(
+    tenantScopeService.filterRows(students, req.principal)
+      .filter((student) => !className || student.className === className),
+  );
 
   sendList(res, result, req.query, ["name", "matricule", "className", "parentPhone"]);
 }));
@@ -542,8 +561,7 @@ app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  const { pin, pinHash, ...safeStudent } = student;
-  res.json(safeStudent);
+  res.json(sanitizeUserForResponse(student));
 }));
 
 app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
@@ -600,23 +618,32 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       const state = await getAuthoritativeBackOfficeState();
       const body = req.body ?? {};
       const { assertNoteWrite } = require("./services/dataIntegrityService");
-      assertNoteWrite(state, body, { enforceLockedEvaluation: false });
+      // Unicité portée par PG upsert (school+evaluation+student) — comme D3.5b présences.
+      assertNoteWrite(state, body, {
+        enforceLockedEvaluation: false,
+        skipDuplicateCheck: true,
+      });
       let saved;
+      // D3.6b : PostgreSQL = autorité canonique. JSON BO seulement en moteur mémoire.
+      const engine = String(repository.engine ?? "postgresql");
       try {
         await ensureRepositoryBackOfficeSnapshot(state);
         saved = await repository.upsertGrade(body, req.principal);
       } catch (error) {
         const message = String(error?.message ?? "");
         const status = error?.statusCode ?? error?.status;
-        if (
+        const canUseTransientBoFallback =
+          engine === "memory" &&
           (status === 404 || status === 400 || status === 403) &&
           (message.includes("introuvable") ||
             message.includes("Eleve") ||
             message.includes("Matiere") ||
             message.includes("Enseignant") ||
+            message.includes("Evaluation") ||
+            message.includes("évaluation") ||
             message.includes("trimestre") ||
-            message.includes("Accès"))
-        ) {
+            message.includes("Accès"));
+        if (canUseTransientBoFallback) {
           saved = await saveNotesViaBackOfficeState(state, body, req.principal);
         } else {
           throw error;
@@ -656,12 +683,16 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
       for (const item of items) {
         const student = findStudent(state.students ?? [], item.studentId);
         const studentKeys = student ? buildScopedStudentIdSet([student]) : new Set();
-        const duplicate = (state.presences ?? []).find(
-          (row) =>
+        // D3.5b : clé = établissement + élève + jour
+        const itemSchool = String(item.schoolCode ?? "").trim().toUpperCase();
+        const duplicate = (state.presences ?? []).find((row) => {
+          const rowSchool = String(row.schoolCode ?? "").trim().toUpperCase();
+          if (itemSchool && rowSchool && itemSchool !== rowSchool) return false;
+          return (
             studentKeys.has(String(row.studentId ?? "")) &&
-            normalizePresenceDay(row.date) === normalizePresenceDay(item.date) &&
-            (!item.className || !row.className || classNamesMatch(row.className, item.className)),
-        );
+            normalizePresenceDay(row.date) === normalizePresenceDay(item.date)
+          );
+        });
         const nextItem = duplicate ? { ...duplicate, ...item, id: duplicate.id } : item;
         assertPresenceWrite(state, nextItem, { skipDuplicateCheck: true });
         normalizedItems.push(nextItem);
@@ -669,16 +700,20 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
 
       await ensureRepositoryBackOfficeSnapshot(state);
 
+      // D3.5b : PostgreSQL = autorité canonique. Le JSON BO n'est autorisé
+      // qu'en moteur mémoire (secours démo), jamais comme 2ᵉ source durable.
       let saved;
+      const engine = String(repository.engine ?? "postgresql");
       try {
         saved = await repository.upsertAttendanceBatch({ ...body, items: normalizedItems }, req.principal);
       } catch (error) {
         const message = String(error?.message ?? "");
         const status = error?.statusCode ?? error?.status;
-        if (
+        const canUseTransientBoFallback =
+          engine === "memory" &&
           (status === 404 || status === 400) &&
-          (message.includes("introuvable") || message.includes("Eleve") || message.includes("présence"))
-        ) {
+          (message.includes("introuvable") || message.includes("Eleve") || message.includes("présence"));
+        if (canUseTransientBoFallback) {
           saved = await savePresencesViaBackOfficeState(state, normalizedItems);
         } else {
           throw error;
@@ -704,7 +739,7 @@ app.get("/api/students/:id/report", requireAuth, asyncHandler(async (req, res) =
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  res.json(gradeBookService.generateReport(student.id));
+  res.json(stripSensitiveFieldsDeep(gradeBookService.generateReport(student.id)));
 }));
 
 app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, res) => {
@@ -753,20 +788,20 @@ app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res)
 app.get("/api/teachers", requireAuth, requirePermission("GET /api/teachers"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
-  const result = tenantScopeService.filterRows(state.teachers, req.principal, scope).map(({ password, passwordHash, pinHash, ...teacher }) => ({
-      ...teacher,
-      assignedClasses: [...new Set((teacher.assignments ?? []).map((item) => item.className))],
-      courses: [...new Set((teacher.assignments ?? []).map((item) => item.course))],
-    }));
+  const result = tenantScopeService.filterRows(state.teachers, req.principal, scope).map((teacher) => {
+    const safeTeacher = sanitizeUserForResponse(teacher);
+    return {
+      ...safeTeacher,
+      assignedClasses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.className))],
+      courses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.course))],
+    };
+  });
   sendList(res, result, req.query, ["name", "phone", "email", "mainSubject"]);
 }));
 
 app.get("/api/users", requireAuth, requirePermission("GET /api/users"), asyncHandler(async (req, res) => {
   const { users } = await getAuthoritativeBackOfficeState();
-  const result = tenantScopeService.filterRows(users, req.principal).map(({ temporaryPassword, passwordHash, pinHash, ...user }) => ({
-    ...user,
-    hasTemporaryPassword: Boolean(temporaryPassword),
-  }));
+  const result = sanitizeUsersForResponse(tenantScopeService.filterRows(users, req.principal));
   sendList(res, result, req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
 }));
 
@@ -816,11 +851,11 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     user: target.identifier,
     oldPasswordInvalidated: true,
   });
-  const { passwordHash, pinHash, password, pin, ...safeUser } = updatedUser;
   res.json({
+    // Mot de passe provisoire renvoyé uniquement au top-level (handoff admin).
     temporaryPassword,
     user: {
-      ...safeUser,
+      ...sanitizeUserForResponse(updatedUser),
       hasTemporaryPassword: true,
     },
   });
@@ -916,7 +951,7 @@ app.get("/api/backoffice/establishments", requireAuth, requirePermission("GET /a
 
 app.get("/api/backoffice/establishments/:code/users", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
-  res.json(establishmentService.getUsers(req.params.code, state, req.principal));
+  res.json(sanitizeUsersForResponse(establishmentService.getUsers(req.params.code, state, req.principal)));
 }));
 
 app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -936,7 +971,7 @@ app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST 
   });
   const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "create_establishment", "school", school.code, { name: school.name });
-  res.status(201).json({ school, state: scopeBackOfficeState(saved, req.principal) });
+  res.status(201).json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.post("/api/backoffice/establishments/import", requireAuth, requirePermission("POST /api/backoffice/establishments/import"), asyncHandler(async (req, res) => {
@@ -968,7 +1003,7 @@ app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission
   const { school, state: nextState } = establishmentService.update(req.params.code, req.body ?? {}, state, req.principal);
   const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "update_establishment", "school", school.code);
-  res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
+  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -992,7 +1027,7 @@ app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermissio
   const { school, state: nextState } = establishmentService.softDelete(req.params.code, state, req.principal);
   const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "delete_establishment", "school", school.code);
-  res.json({ school, state: scopeBackOfficeState(saved, req.principal) });
+  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
@@ -1031,13 +1066,13 @@ app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, req
     channel: reminder.channel,
     summary: reminder.summary,
   });
-  res.status(201).json({ reminder, state: scopeBackOfficeState(saved, req.principal) });
+  res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(saved, req.principal) });
 }));
 
 app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   assertBackOfficeReader(req.principal);
   const state = await getAuthoritativeBackOfficeState();
-  res.json(scopeBackOfficeState(state, req.principal));
+  res.json(scopedBackOfficeStateForResponse(state, req.principal));
 }));
 
 app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
@@ -1107,7 +1142,7 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     classes: saved.classes?.length ?? 0,
     roles: Object.keys(saved.rolePermissions ?? {}).length,
   });
-  res.json(scopeBackOfficeState(saved, req.principal));
+  res.json(scopedBackOfficeStateForResponse(saved, req.principal));
 }));
 
 app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
@@ -1200,19 +1235,22 @@ app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/
   res.json(await cacheService.remember("v2:reports:advanced", () => repository.getAdvancedReportsV2()));
 }));
 
-app.get("/api/mvp/readiness", requireAuth, asyncHandler(async (_req, res) => {
-  const { mvpBusinessService } = await getRuntime();
-  res.json(mvpBusinessService.getReadiness());
+app.get("/api/mvp/readiness", requireAuth, asyncHandler(async (req, res) => {
+  assertMvpAccess(req.principal);
+  const mvpBusinessService = await getScopedMvpBusinessService(req.principal);
+  res.json(stripSensitiveFieldsDeep(mvpBusinessService.getReadiness()));
 }));
 
-app.get("/api/mvp/snapshot", requireAuth, asyncHandler(async (_req, res) => {
-  const { mvpBusinessService } = await getRuntime();
-  res.json(mvpBusinessService.getSnapshot());
+app.get("/api/mvp/snapshot", requireAuth, asyncHandler(async (req, res) => {
+  assertMvpAccess(req.principal);
+  const mvpBusinessService = await getScopedMvpBusinessService(req.principal);
+  res.json(stripSensitiveFieldsDeep(mvpBusinessService.getSnapshot()));
 }));
 
-app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (_req, res) => {
-  const { mvpBusinessService } = await getRuntime();
-  res.json(mvpBusinessService.getEstablishmentDashboard());
+app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (req, res) => {
+  assertMvpAccess(req.principal);
+  const mvpBusinessService = await getScopedMvpBusinessService(req.principal);
+  res.json(stripSensitiveFieldsDeep(mvpBusinessService.getEstablishmentDashboard()));
 }));
 
 async function getRuntime() {
@@ -1552,7 +1590,8 @@ function assertBackOfficeManager(principal) {
 
 function getWebPlatformWritableEntities(principal) {
   const permissions = new Set(principal?.permissions ?? []);
-  const allowed = new Set(["auditLog"]);
+  // auditLog exclu : journal enrichi uniquement côté serveur.
+  const allowed = new Set();
 
   if (permissions.has("ALL_PRIVILEGES") || permissions.has("COUNTRY_PRIVILEGES")) {
     backOfficeDeletableEntities.forEach((entity) => allowed.add(entity));
@@ -1594,6 +1633,14 @@ function assertBackOfficeWriter(principal, touchedKeys = []) {
   }
 
   if (canAccessBackOfficeRole(principal.role)) {
+    const decision = evaluateBackOfficeWriteAccess(
+      principal,
+      touchedKeys,
+      backOfficeDeletableEntities,
+    );
+    if (!decision.ok) {
+      throw new BusinessError(403, "Permission insuffisante pour modifier ces données.");
+    }
     return;
   }
 
@@ -1607,6 +1654,31 @@ function assertBackOfficeWriter(principal, touchedKeys = []) {
   }
 
   throw new BusinessError(403, "Accès plateforme non autorisé");
+}
+
+function assertMvpAccess(principal) {
+  if (!canAccessMvpRoutes(principal)) {
+    throw new BusinessError(403, "Accès MVP non autorisé pour ce rôle.");
+  }
+}
+
+async function getScopedMvpBusinessService(principal) {
+  const runtime = await getRuntime();
+  const state = await getAuthoritativeBackOfficeState();
+  const scoped = scopeMvpDatasetForPrincipal(
+    {
+      school: runtime.school,
+      platformSchools: runtime.platformSchools ?? state.schools ?? [],
+      students: state.students ?? runtime.students ?? [],
+      classes: state.classes ?? runtime.classes ?? [],
+      courses: state.courses ?? runtime.courses ?? [],
+      notes: state.notes ?? runtime.notes ?? [],
+      payments: state.payments ?? runtime.payments ?? [],
+    },
+    principal,
+    tenantScopeService,
+  );
+  return new MvpBusinessService(scoped);
 }
 
 function assertCanManageNotes(principal) {
@@ -2145,6 +2217,14 @@ function mergeSchoolRows(dbSchools = [], storedSchools = []) {
 
 function isSuperAdminPrincipal(principal) {
   return principal?.role === "Super Administrateur Somafrik" || principal?.role === "Super Administrateur OKAFRIK";
+}
+
+/**
+ * Vue backoffice destinée au client HTTP : scoping métier + sanitization des secrets.
+ * Ne pas utiliser pour les merges internes (qui doivent conserver passwordHash, etc.).
+ */
+function scopedBackOfficeStateForResponse(payload = {}, principal) {
+  return sanitizeCredentialBearingStateForResponse(scopeBackOfficeState(payload, principal));
 }
 
 function scopeBackOfficeState(payload = {}, principal) {
@@ -2988,39 +3068,17 @@ function rowKey(row = {}) {
 }
 
 function getEditableEntitiesForPrincipal(principal) {
-  if (!principal || isSuperAdminPrincipal(principal)) {
-    return backOfficeDeletableEntities;
-  }
-
-  if (principal.role === "Admin Pays") {
-    return roleGovernanceService.editableEntitiesForCountryAdmin();
-  }
-
-  return [
-    "contacts",
-    "relations",
-    "users",
-    "students",
-    "teachers",
-    "classes",
-    "courses",
-    "assignments",
-    "courseSchedules",
-    "payments",
-    "paymentStatuses",
-    "feeGrids",
-    "schoolFeeItems",
-    "studentFees",
-    "feeTariffHistory",
-    "presences",
-    "notes",
-    "evaluations",
-    "exams",
-    "bulletins",
-    "documents",
-    "announcements",
-    "messages",
+  const countryEntities = [
+    ...new Set([
+      ...roleGovernanceService.editableEntitiesForCountryAdmin(),
+      "notifications",
+    ]),
   ];
+  return getEditableEntitiesForPrincipalRole(
+    principal,
+    backOfficeDeletableEntities,
+    countryEntities,
+  );
 }
 
 const SCHOOL_SCOPED_DELETABLE_ENTITIES = new Set([
@@ -3332,12 +3390,17 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   });
   await touchUserLastLogin(principal);
 
-  res.json({
+  const safePayload = sanitizeAuthPayloadForResponse({
     ...response,
     user: response.user
       ? { ...response.user, role: principal.role, permissions: principal.permissions }
       : response.user,
+  });
+
+  res.json({
+    ...safePayload,
     accessToken,
+    // Jeton de session top-level (contrat auth) — jamais embarqué dans `user`.
     refreshToken: refreshSession.token,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,
@@ -3601,11 +3664,32 @@ async function hydrateParentPrincipal(principal) {
   };
 }
 
+function rejectJwtInQueryString(req, res, next) {
+  const query = req.query ?? {};
+  if (query.token != null || query.access_token != null) {
+    return next(
+      new BusinessError(
+        401,
+        "JWT dans l'URL interdit. Utilisez Authorization: Bearer <token>.",
+      ),
+    );
+  }
+  return next();
+}
+
 function requireAuth(req, res, next) {
   (async () => {
+    // S2.1 — auth exclusivement via header Bearer (plus de fallback query).
+    if (req.query?.token != null || req.query?.access_token != null) {
+      throw new BusinessError(
+        401,
+        "JWT dans l'URL interdit. Utilisez Authorization: Bearer <token>.",
+      );
+    }
+
     const header = req.get("authorization") ?? "";
     const match = header.match(/^Bearer\s+(.+)$/i);
-    const token = match?.[1] ?? req.query.access_token;
+    const token = match?.[1];
 
     if (!token) {
       throw new BusinessError(401, "Authentification JWT requise");
@@ -3756,21 +3840,35 @@ async function savePresencesViaBackOfficeState(state, items = []) {
   for (const item of items) {
     const student = findStudent(state.students ?? [], item.studentId);
     const studentKeys = student ? buildScopedStudentIdSet([student]) : new Set([String(item.studentId ?? "").trim()]);
-    const existingIndex = nextPresences.findIndex(
-      (presence) =>
-        studentKeys.has(String(presence.studentId ?? "")) &&
-        samePresenceDay(presence.date, item.date),
-    );
+    // D3.5b : même clé logique que PG — établissement + élève + jour
+    const itemSchool = String(item.schoolCode ?? student?.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    const existingIndex = nextPresences.findIndex((presence) => {
+      const rowSchool = String(presence.schoolCode ?? "")
+        .trim()
+        .toUpperCase();
+      if (itemSchool && rowSchool && itemSchool !== rowSchool) return false;
+      return (
+        studentKeys.has(String(presence.studentId ?? "")) && samePresenceDay(presence.date, item.date)
+      );
+    });
+    const status = item.status;
+    const reason =
+      item.reason ??
+      (String(status ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("justifi")
+        ? "Absence justifiée"
+        : undefined);
     const entry = {
       id: item.id ?? item.publicId ?? `PRE-${item.date}-${String(item.studentId ?? "")}`,
       publicId: item.publicId ?? item.id ?? `PRE-${item.date}-${String(item.studentId ?? "")}`,
-      schoolCode: item.schoolCode,
+      schoolCode: itemSchool || item.schoolCode,
       studentId: student?.id ?? item.studentId,
       className: item.className,
       date: item.date,
       present: item.present,
-      status: item.status,
-      reason: item.reason,
+      status,
+      reason,
       savedAt: new Date().toISOString(),
     };
     if (existingIndex >= 0) {
@@ -3818,9 +3916,10 @@ function filterNotesForPrincipal(notes = [], evaluations = [], principal = {}) {
   if (!isParentOrStudentPrincipalRole(principal.role)) {
     return notes;
   }
+  const { isPublishedEvaluationStatus } = require("./lib/gradesCanonical");
   const publishedEvalIds = new Set(
     (evaluations ?? [])
-      .filter((row) => row.active !== false && row.status === "Publiée")
+      .filter((row) => row.active !== false && isPublishedEvaluationStatus(row.status))
       .map((row) => String(row.id)),
   );
   return (notes ?? []).filter((note) => {
@@ -3947,7 +4046,13 @@ initRepository()
     });
   })
   .catch((error) => {
-    console.error("Impossible d'initialiser le stockage Somafrik", error);
+    // S2.2 — ne jamais journaliser URI/mots de passe complets.
+    const safeMessage =
+      error instanceof DbConfigError
+        ? error.message
+        : sanitizeDbErrorMessage(error);
+    console.error("Impossible d'initialiser le stockage Somafrik");
+    console.error(safeMessage);
     process.exit(1);
   });
 
@@ -3956,12 +4061,16 @@ async function initRepository() {
 
   const { repository: active } = await initializeRepository({ repository });
   repository = active;
+  if (process.env.NODE_ENV === "production" && (repository.engine ?? "") === "memory") {
+    throw new DbConfigError("Base mémoire interdite en production.");
+  }
   auditService = new AuditService(repository);
   idempotencyService = new IdempotencyService(repository);
   app.locals.idempotencyService = idempotencyService;
 }
 
 function warnIfUnsafeConfiguration() {
+  assertDatabaseConfiguration();
   assertProductionSecrets();
   assertProductionSecurityConfiguration();
   assertProductionCors();

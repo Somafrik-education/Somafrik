@@ -1,10 +1,10 @@
 import { DoorOpen, Repeat } from "lucide-react";
-import { PagePlaceholder } from "../../components/ui/PagePlaceholder";
+import { ComingSoonState } from "../../design-system";
 
 export function PlanningRoomsPage() {
   return (
-    <PagePlaceholder
-      icon={DoorOpen}
+    <ComingSoonState
+      icon={<DoorOpen className="h-7 w-7" />}
       title="Salles"
       description="Gestion des salles et de leur occupation : capacité, équipements et disponibilités par créneau."
     />
@@ -13,8 +13,8 @@ export function PlanningRoomsPage() {
 
 export function PlanningSubstitutionsPage() {
   return (
-    <PagePlaceholder
-      icon={Repeat}
+    <ComingSoonState
+      icon={<Repeat className="h-7 w-7" />}
       title="Remplacements"
       description="Déclaration des absences enseignants et affectation des remplaçants, avec impact automatique sur l'emploi du temps."
     />
@@ -23,8 +23,8 @@ export function PlanningSubstitutionsPage() {
 
 export function TimetableByRoomPage() {
   return (
-    <PagePlaceholder
-      icon={DoorOpen}
+    <ComingSoonState
+      icon={<DoorOpen className="h-7 w-7" />}
       title="Emploi du temps par salle"
       description="Occupation d'une salle sur la semaine. Disponible une fois le module Salles activé."
     />

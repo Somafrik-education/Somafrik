@@ -1,9 +1,9 @@
 const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
 const seedData = require("../data");
+const { resolveDatabaseUrl } = require("../db/connectionConfig");
 
-const databaseUrl =
-  process.env.DATABASE_URL ?? "postgresql://somafrik:somafrik123@localhost:5432/somafrik";
+const databaseUrl = resolveDatabaseUrl();
 const pool = new Pool({ connectionString: databaseUrl });
 const defaultStudentPinHash = hashSecret("1234");
 const teacherPasswordHashes = new Map(

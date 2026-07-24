@@ -2,14 +2,19 @@ import { useMemo, useRef, useState } from "react";
 import { Database, DatabaseBackup, Download, FileSpreadsheet, Upload } from "lucide-react";
 import { useData } from "../../context/DataContext";
 import { useAuth } from "../../context/AuthContext";
-import { useToast } from "../../components/ui/Toast";
-import { useConfirm } from "../../components/ui/ConfirmDialog";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { canManageEstablishmentSettings } from "../../lib/permissions";
 import { getScopedEntityRows, type SchoolEntityKey } from "../../lib/entityModules";
 import { rowsToCsv, downloadCsv } from "../../lib/csv";
-import { Card, SectionHeader } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
+import {
+  Button,
+  Card,
+  DashboardLayout,
+  InlineAlert,
+  SectionHeader,
+  useConfirm,
+  useToast,
+} from "../../design-system";
 import type { BackOfficeState } from "../../types";
 
 type Row = Record<string, unknown>;
@@ -172,7 +177,15 @@ export function SettingsDataPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <DashboardLayout>
+      <DashboardLayout.Header>
+        <SectionHeader
+          title="Données et sauvegarde"
+          description="Exports CSV, sauvegarde et restauration JSON."
+        />
+      </DashboardLayout.Header>
+      <DashboardLayout.Content>
+      <div className="space-y-5">
       <Card className="p-6">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand">
@@ -271,13 +284,15 @@ export function SettingsDataPage() {
               {busy ? "Restauration…" : "Restaurer une sauvegarde"}
             </Button>
             {!canManage ? (
-              <p className="mt-2 text-xs text-muted">
-                Seul l'Admin School peut restaurer une sauvegarde.
-              </p>
+              <InlineAlert tone="warning" className="mt-2">
+                Seul l&apos;Admin School peut restaurer une sauvegarde.
+              </InlineAlert>
             ) : null}
           </div>
         </div>
       </Card>
-    </div>
+      </div>
+      </DashboardLayout.Content>
+    </DashboardLayout>
   );
 }

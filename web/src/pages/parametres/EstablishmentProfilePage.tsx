@@ -5,10 +5,18 @@ import { canManageEstablishmentSettings } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { SCHOOL_TYPES, validateSchoolForm } from "../../lib/schoolModule";
 import { establishmentsApi } from "../../lib/establishmentsApi";
-import { Card, SectionHeader } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
-import { Field, Input, Select } from "../../components/ui/Field";
-import { useToast } from "../../components/ui/Toast";
+import {
+  Button,
+  Card,
+  EmptyState,
+  FormField,
+  FormLayout,
+  InlineAlert,
+  Input,
+  SectionHeader,
+  Select,
+  useToast,
+} from "../../design-system";
 import type { School } from "../../types";
 
 function schoolToDraft(school: School): School {
@@ -26,7 +34,15 @@ function schoolToDraft(school: School): School {
   };
 }
 
-/** Profil établissement — identité, contacts et responsable légal. */
+/**
+ * Profil établissement — identité, contacts et responsable légal.
+ *
+ * D2.3 : migration UI vers FormLayout + primitives `@/design-system`.
+ * Logique métier / API / permissions inchangées.
+ *
+ * Patterns : page Formulaire (D1.3) · Layout FormLayout
+ * Toast : encore `components/ui` (overlay DS non livré).
+ */
 export function EstablishmentProfilePage() {
   const { state, refresh } = useData();
   const { activeSchool } = useActiveSchool();
@@ -43,15 +59,20 @@ export function EstablishmentProfilePage() {
 
   if (!activeSchool || !draft) {
     return (
-      <Card className="p-6">
-        <SectionHeader
-          title="Profil établissement"
-          description="Identité de l'établissement : logo, adresse, contacts, type, code et responsable légal."
-        />
-        <p className="mt-4 rounded-xl border border-dashed border-line bg-slate-50 p-6 text-center text-sm text-muted">
-          Aucun établissement actif. Sélectionnez un établissement pour modifier son profil.
-        </p>
-      </Card>
+      <FormLayout>
+        <FormLayout.Header>
+          <SectionHeader
+            title="Profil établissement"
+            description="Identité de l'établissement : logo, adresse, contacts, type, code et responsable légal."
+          />
+        </FormLayout.Header>
+        <FormLayout.Content>
+          <EmptyState
+            title="Aucun établissement actif"
+            description="Sélectionnez un établissement pour modifier son profil."
+          />
+        </FormLayout.Content>
+      </FormLayout>
     );
   }
 
@@ -100,150 +121,197 @@ export function EstablishmentProfilePage() {
   );
 
   return (
-    <Card className="p-6">
-      <SectionHeader
-        title="Profil établissement"
-        description="Identité de l'établissement : logo, adresse, contacts, type, code et responsable légal."
-      />
+    <form onSubmit={(event) => void handleSubmit(event)}>
+      <FormLayout>
+        <FormLayout.Header>
+          <SectionHeader
+            title="Profil établissement"
+            description="Identité de l'établissement : logo, adresse, contacts, type, code et responsable légal."
+          />
+        </FormLayout.Header>
 
-      {!canEdit ? (
-        <p className="mt-4 rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-ink">
-          Vous disposez d&apos;un accès en lecture seule. Seul l&apos;Admin School peut modifier le profil.
-        </p>
-      ) : null}
+        {!canEdit ? (
+          <FormLayout.Alerts>
+            <InlineAlert tone="warning" title="Lecture seule">
+              Vous disposez d&apos;un accès en lecture seule. Seul l&apos;Admin School peut modifier le profil.
+            </InlineAlert>
+          </FormLayout.Alerts>
+        ) : null}
 
-      <form className="mt-6 space-y-8" onSubmit={(event) => void handleSubmit(event)}>
-        <section className="space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-wide text-brand">Identité</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Nom de l'établissement" required>
-              <Input
-                value={draft.name}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                required
-                disabled={!canEdit || busy}
-              />
-            </Field>
-            <Field label="Type" required>
-              <Select
-                value={draft.type ?? "Collège"}
-                onChange={(e) => setDraft({ ...draft, type: e.target.value })}
-                options={typeOptions}
-                disabled={!canEdit || busy}
-              />
-            </Field>
-            <Field label="Code établissement" hint="Identifiant unique, non modifiable.">
-              <Input value={draft.code} readOnly disabled className="bg-slate-50 font-mono text-xs" />
-            </Field>
-            <Field label="Logo (URL)" hint="URL publique du logo de l'établissement.">
-              <Input
-                type="url"
-                value={draft.logoUrl ?? ""}
-                onChange={(e) => setDraft({ ...draft, logoUrl: e.target.value })}
-                placeholder="https://…"
-                disabled={!canEdit || busy}
-              />
-            </Field>
-            {draft.logoUrl ? (
-              <div className="sm:col-span-2">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Aperçu du logo</p>
-                <img
-                  src={draft.logoUrl}
-                  alt=""
-                  className="h-16 w-auto rounded border border-line bg-white object-contain p-1"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
+        <FormLayout.Content>
+          <Card className="space-y-8 p-6">
+            <section className="space-y-4" aria-labelledby="profile-identity">
+              <h3 id="profile-identity" className="text-xs font-black uppercase tracking-wide text-brand">
+                Identité
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Nom de l'établissement" htmlFor="profile-name" required>
+                  <Input
+                    id="profile-name"
+                    value={draft.name}
+                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    required
+                    disabled={!canEdit || busy}
+                  />
+                </FormField>
+                <FormField label="Type" htmlFor="profile-type" required>
+                  <Select
+                    id="profile-type"
+                    value={draft.type ?? "Collège"}
+                    onChange={(e) => setDraft({ ...draft, type: e.target.value })}
+                    options={typeOptions}
+                    disabled={!canEdit || busy}
+                  />
+                </FormField>
+                <FormField
+                  label="Code établissement"
+                  htmlFor="profile-code"
+                  hint="Identifiant unique, non modifiable."
+                >
+                  <Input
+                    id="profile-code"
+                    value={draft.code}
+                    readOnly
+                    disabled
+                    className="bg-slate-50 font-mono text-xs"
+                  />
+                </FormField>
+                <FormField
+                  label="Logo (URL)"
+                  htmlFor="profile-logo"
+                  hint="URL publique du logo de l'établissement."
+                >
+                  <Input
+                    id="profile-logo"
+                    type="url"
+                    value={draft.logoUrl ?? ""}
+                    onChange={(e) => setDraft({ ...draft, logoUrl: e.target.value })}
+                    placeholder="https://…"
+                    disabled={!canEdit || busy}
+                  />
+                </FormField>
+                {draft.logoUrl ? (
+                  <div className="sm:col-span-2">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Aperçu du logo</p>
+                    <img
+                      src={draft.logoUrl}
+                      alt=""
+                      className="h-16 w-auto rounded border border-line bg-white object-contain p-1"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-        </section>
+            </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-wide text-brand">Localisation</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Ville">
-              <Input value={draft.city ?? "—"} readOnly disabled className="bg-slate-50" />
-            </Field>
-            <Field label="Pays">
-              <Input value={draft.country ?? "—"} readOnly disabled className="bg-slate-50" />
-            </Field>
-            <div className="sm:col-span-2">
-              <Field label="Adresse">
-                <Input
-                  value={draft.address ?? ""}
-                  onChange={(e) => setDraft({ ...draft, address: e.target.value })}
-                  disabled={!canEdit || busy}
-                />
-              </Field>
-            </div>
-          </div>
-        </section>
+            <section className="space-y-4" aria-labelledby="profile-location">
+              <h3 id="profile-location" className="text-xs font-black uppercase tracking-wide text-brand">
+                Localisation
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Ville" htmlFor="profile-city">
+                  <Input id="profile-city" value={draft.city ?? "—"} readOnly disabled className="bg-slate-50" />
+                </FormField>
+                <FormField label="Pays" htmlFor="profile-country">
+                  <Input
+                    id="profile-country"
+                    value={draft.country ?? "—"}
+                    readOnly
+                    disabled
+                    className="bg-slate-50"
+                  />
+                </FormField>
+                <div className="sm:col-span-2">
+                  <FormField label="Adresse" htmlFor="profile-address">
+                    <Input
+                      id="profile-address"
+                      value={draft.address ?? ""}
+                      onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+                      disabled={!canEdit || busy}
+                    />
+                  </FormField>
+                </div>
+              </div>
+            </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-wide text-brand">Contacts</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Téléphone" required>
-              <Input
-                value={draft.phone ?? ""}
-                onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
-                required
-                disabled={!canEdit || busy}
-              />
-            </Field>
-            <Field label="Email" required>
-              <Input
-                type="email"
-                value={draft.email ?? ""}
-                onChange={(e) => setDraft({ ...draft, email: e.target.value })}
-                required
-                disabled={!canEdit || busy}
-              />
-            </Field>
-          </div>
-        </section>
+            <section className="space-y-4" aria-labelledby="profile-contacts">
+              <h3 id="profile-contacts" className="text-xs font-black uppercase tracking-wide text-brand">
+                Contacts
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Téléphone" htmlFor="profile-phone" required>
+                  <Input
+                    id="profile-phone"
+                    value={draft.phone ?? ""}
+                    onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+                    required
+                    disabled={!canEdit || busy}
+                  />
+                </FormField>
+                <FormField label="Email" htmlFor="profile-email" required>
+                  <Input
+                    id="profile-email"
+                    type="email"
+                    value={draft.email ?? ""}
+                    onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+                    required
+                    disabled={!canEdit || busy}
+                  />
+                </FormField>
+              </div>
+            </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xs font-black uppercase tracking-wide text-brand">Responsable légal</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Nom du responsable" required>
-              <Input
-                value={draft.principalName ?? ""}
-                onChange={(e) => setDraft({ ...draft, principalName: e.target.value })}
-                required
-                disabled={!canEdit || busy}
-              />
-            </Field>
-            <Field label="Téléphone du responsable">
-              <Input
-                value={draft.principalPhone ?? ""}
-                onChange={(e) => setDraft({ ...draft, principalPhone: e.target.value })}
-                disabled={!canEdit || busy}
-              />
-            </Field>
-            <div className="sm:col-span-2">
-              <Field label="Email du responsable">
-                <Input
-                  type="email"
-                  value={draft.principalEmail ?? ""}
-                  onChange={(e) => setDraft({ ...draft, principalEmail: e.target.value })}
-                  placeholder={draft.email || "identique à l'email établissement si vide"}
-                  disabled={!canEdit || busy}
-                />
-              </Field>
-            </div>
-          </div>
-        </section>
+            <section className="space-y-4" aria-labelledby="profile-principal">
+              <h3 id="profile-principal" className="text-xs font-black uppercase tracking-wide text-brand">
+                Responsable légal
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Nom du responsable" htmlFor="profile-principal-name" required>
+                  <Input
+                    id="profile-principal-name"
+                    value={draft.principalName ?? ""}
+                    onChange={(e) => setDraft({ ...draft, principalName: e.target.value })}
+                    required
+                    disabled={!canEdit || busy}
+                  />
+                </FormField>
+                <FormField label="Téléphone du responsable" htmlFor="profile-principal-phone">
+                  <Input
+                    id="profile-principal-phone"
+                    value={draft.principalPhone ?? ""}
+                    onChange={(e) => setDraft({ ...draft, principalPhone: e.target.value })}
+                    disabled={!canEdit || busy}
+                  />
+                </FormField>
+                <div className="sm:col-span-2">
+                  <FormField label="Email du responsable" htmlFor="profile-principal-email">
+                    <Input
+                      id="profile-principal-email"
+                      type="email"
+                      value={draft.principalEmail ?? ""}
+                      onChange={(e) => setDraft({ ...draft, principalEmail: e.target.value })}
+                      placeholder={draft.email || "identique à l'email établissement si vide"}
+                      disabled={!canEdit || busy}
+                    />
+                  </FormField>
+                </div>
+              </div>
+            </section>
+          </Card>
+        </FormLayout.Content>
 
         {canEdit ? (
-          <div className="flex justify-end border-t border-line pt-4">
-            <Button type="submit" disabled={busy}>
-              {busy ? "Enregistrement…" : "Enregistrer"}
-            </Button>
-          </div>
+          <FormLayout.StickyActions>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={busy}>
+                {busy ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+            </div>
+          </FormLayout.StickyActions>
         ) : null}
-      </form>
-    </Card>
+      </FormLayout>
+    </form>
   );
 }

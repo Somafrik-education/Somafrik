@@ -128,8 +128,12 @@ function HomeTabs() {
 }
 
 export default function AppNavigator() {
-  const { session } = useAuth();
+  const { session, bootstrapping } = useAuth();
   const role = session?.role;
+
+  if (bootstrapping) {
+    return <View style={{ flex: 1, backgroundColor: "#F8FAFC" }} />;
+  }
   const isSuperAdmin = role === "super_admin";
   const isCountryAdmin = role === "country_admin";
   const isSchoolAdmin = role === "school_admin";

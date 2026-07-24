@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { reportCards } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { getReportCardPdfUrl } from "../services/api";
+import { downloadReportCardPdf } from "../services/api";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function ReportCardsScreen() {
@@ -20,17 +20,17 @@ export default function ReportCardsScreen() {
   const rows = reportCards.filter((card) => visibleStudentIds.includes(card.studentId));
 
   const openPdf = async (studentId: string, period: string) => {
-    const url = getReportCardPdfUrl(studentId, period);
-
     try {
-      const canOpen = await Linking.canOpenURL(url);
+      // S2.1 — fetch Authorization: Bearer puis ouverture locale (plus de JWT en query).
+      const localUri = await downloadReportCardPdf(studentId, period);
+      const canOpen = await Linking.canOpenURL(localUri);
 
       if (!canOpen) {
         Alert.alert("Bulletin PDF", "Aucune application ne peut ouvrir ce PDF sur cet appareil.");
         return;
       }
 
-      await Linking.openURL(url);
+      await Linking.openURL(localUri);
     } catch (error) {
       Alert.alert(
         "Bulletin PDF",
