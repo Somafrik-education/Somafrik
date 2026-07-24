@@ -90,6 +90,9 @@ function createEnrollment(
     enrolledAt: null,
     validatedAt: null,
     endedAt: null,
+    transferDate: null,
+    destinationSchoolName: null,
+    closureDate: null,
     previousSchoolName: null,
     notes: null,
     schoolName: "Collège Test",
@@ -1099,6 +1102,7 @@ async function testC18bTransferAndClose() {
     "libellé CLOSED",
   );
 
+  const preexistingNotes = "Note métier préexistante — ne pas écraser";
   const enrollment = seedEditableEnrollment({
     enrollmentId: "E-C18B",
     studentId: "STU-C18B",
@@ -1109,6 +1113,7 @@ async function testC18bTransferAndClose() {
     className: "4e A",
     validatedAt: "2026-07-20",
     enrolledAt: "2026-07-21",
+    notes: preexistingNotes,
     version: 3,
   });
 
@@ -1151,14 +1156,19 @@ async function testC18bTransferAndClose() {
     denyRepo,
   );
   assertEqual(denied.success, false, "RBAC transfer refusé");
+  const deniedAgg = denyStore.enrollments.get("STU-C18B:E-C18B")!;
+  assertEqual(deniedAgg.status, "ENROLLED", "agrégat inchangé après refus RBAC");
+  assertEqual(deniedAgg.notes, preexistingNotes, "notes inchangées après refus RBAC");
+  assertEqual(deniedAgg.transferDate, null, "transferDate inchangé après refus");
   assertEqual(
-    denyStore.enrollments.get("STU-C18B:E-C18B")?.status,
-    "ENROLLED",
-    "agrégat inchangé après refus RBAC",
+    deniedAgg.destinationSchoolName,
+    null,
+    "destinationSchoolName inchangé après refus",
   );
+  assertEqual(deniedAgg.closureDate, null, "closureDate inchangé après refus");
   assertEqual(denyStore.auditLog.length, 0, "audit inchangé après refus RBAC");
 
-  // Date avant enrolledAt → refus, aucune mutation
+  // Date avant enrolledAt → refus, aucune mutation (nouveaux champs inclus)
   const earlyStore = createMockEditingStore({
     enrollments: [structuredClone(enrollment)],
   });
@@ -1179,14 +1189,18 @@ async function testC18bTransferAndClose() {
     earlyRepo,
   );
   assertEqual(early.success, false, "transfert refusé si date avant milestones");
+  const earlyAgg = earlyStore.enrollments.get("STU-C18B:E-C18B")!;
+  assertEqual(earlyAgg.version, 3, "version inchangée après échec date");
+  assertEqual(earlyAgg.notes, preexistingNotes, "notes inchangées après échec date");
+  assertEqual(earlyAgg.transferDate, null, "transferDate null après échec");
   assertEqual(
-    earlyStore.enrollments.get("STU-C18B:E-C18B")?.version,
-    3,
-    "version inchangée après échec date",
+    earlyAgg.destinationSchoolName,
+    null,
+    "destinationSchoolName null après échec",
   );
   assertEqual(earlyStore.auditLog.length, 0, "pas d'audit après échec");
 
-  // Transfert OK
+  // Transfert OK — notes strictement conservées, destination dédiée
   const transferStore = createMockEditingStore({
     enrollments: [structuredClone(enrollment)],
   });
@@ -1214,12 +1228,18 @@ async function testC18bTransferAndClose() {
       status: string;
       endedAt: string | null;
       notes: string | null;
+      transferDate: string | null;
+      destinationSchoolName: string | null;
+      closureDate: string | null;
       version: number;
       classId: string | null;
     };
     assertEqual(agg.status, "TRANSFERRED", "statut TRANSFERRED");
+    assertEqual(agg.transferDate, "2026-07-23", "transferDate persisté");
+    assertEqual(agg.destinationSchoolName, "Lycée Horizon", "destination dédiée");
     assertEqual(agg.endedAt, "2026-07-23", "endedAt = transferDate");
-    assertEqual(agg.notes, "Transfert vers : Lycée Horizon", "destination normalisée");
+    assertEqual(agg.notes, preexistingNotes, "notes strictement conservées");
+    assertEqual(agg.closureDate, null, "closureDate non posé au transfert");
     assertEqual(agg.classId, "CLS-4A", "pas de suppression physique des champs");
     assertEqual(agg.version, 4, "version incrémentée une fois");
     assertEqual(transferStore.auditLog.length, 1, "un seul événement d'audit");
@@ -1228,19 +1248,45 @@ async function testC18bTransferAndClose() {
       "Déménagement familial",
       "motif normalisé en audit",
     );
+    assert(
+      !(transferStore.auditLog[0]?.changedFields ?? []).includes("notes"),
+      "audit ne mute pas notes",
+    );
   }
+
+  // Persistance destination après « remount » (relecture store → record)
+  const remounted = fromEditableEnrollment(
+    transferStore.enrollments.get("STU-C18B:E-C18B")!,
+  );
+  assertEqual(
+    remounted.destinationSchoolName,
+    "Lycée Horizon",
+    "destination persistée après remount",
+  );
+  assertEqual(remounted.notes, preexistingNotes, "notes persistées après remount");
+  assertEqual(remounted.transferDate, "2026-07-23", "transferDate après remount");
 
   const historyTransfer = collectStudentHistoryRecord({
     studentId: "STU-C18B",
-    enrollments: [
-      fromEditableEnrollment(transferStore.enrollments.get("STU-C18B:E-C18B")!),
-    ],
+    enrollments: [remounted],
   });
+  const transferEvent = historyTransfer.events.find(
+    (event) => event.title === "Transfert d'inscription",
+  );
+  assert(Boolean(transferEvent), "historique transfert projeté");
+  assertEqual(
+    transferEvent?.description,
+    "Transfert vers : Lycée Horizon",
+    "historique lit destinationSchoolName (pas notes)",
+  );
+  assertEqual(
+    transferEvent?.metadata?.destinationSchoolName,
+    "Lycée Horizon",
+    "metadata destinationSchoolName",
+  );
   assert(
-    historyTransfer.events.some(
-      (event) => event.title === "Transfert d'inscription",
-    ),
-    "historique transfert projeté",
+    transferEvent?.description !== preexistingNotes,
+    "historique n'utilise pas notes comme destination",
   );
 
   // Pas de transition sortante depuis TRANSFERRED
@@ -1258,7 +1304,8 @@ async function testC18bTransferAndClose() {
   );
   assertEqual(back.success, false, "clôture refusée après transfert");
 
-  // Clôture depuis ENROLLED
+  // Clôture depuis ENROLLED — notes préexistantes conservées
+  const closeNotes = "Observations de clôture à conserver";
   const closeStore = createMockEditingStore({
     enrollments: [
       seedEditableEnrollment({
@@ -1271,6 +1318,7 @@ async function testC18bTransferAndClose() {
         className: "4e A",
         validatedAt: "2026-07-20",
         enrolledAt: "2026-07-21",
+        notes: closeNotes,
         version: 2,
       }),
     ],
@@ -1291,11 +1339,11 @@ async function testC18bTransferAndClose() {
     closeRepo,
   );
   assertEqual(closeNoReason.success, false, "raison obligatoire pour close");
-  assertEqual(
-    closeStore.enrollments.get("STU-CLOSE:E-CLOSE")?.status,
-    "ENROLLED",
-    "agrégat inchangé sans raison",
-  );
+  const refusedClose = closeStore.enrollments.get("STU-CLOSE:E-CLOSE")!;
+  assertEqual(refusedClose.status, "ENROLLED", "agrégat inchangé sans raison");
+  assertEqual(refusedClose.notes, closeNotes, "notes inchangées sans raison");
+  assertEqual(refusedClose.closureDate, null, "closureDate inchangé sans raison");
+  assertEqual(closeStore.auditLog.length, 0, "pas d'audit sans raison");
 
   const closed = await executeStudentUpdateCommand(
     {
@@ -1314,14 +1362,22 @@ async function testC18bTransferAndClose() {
     const agg = closed.updatedAggregate as {
       status: string;
       endedAt: string | null;
+      closureDate: string | null;
+      notes: string | null;
       className: string | null;
       version: number;
     };
     assertEqual(agg.status, "CLOSED", "statut CLOSED");
+    assertEqual(agg.closureDate, "2026-07-24", "closureDate persisté");
     assertEqual(agg.endedAt, "2026-07-24", "endedAt = closureDate");
+    assertEqual(agg.notes, closeNotes, "notes conservées à la clôture");
     assertEqual(agg.className, "4e A", "données conservées (pas de delete)");
     assertEqual(agg.version, 3, "version incrémentée une fois");
     assertEqual(closeStore.auditLog.length, 1, "un seul audit close");
+    assert(
+      !(closeStore.auditLog[0]?.changedFields ?? []).includes("notes"),
+      "audit close ne mute pas notes",
+    );
   }
 
   const historyClose = collectStudentHistoryRecord({

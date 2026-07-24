@@ -465,7 +465,8 @@ export function buildAssignEnrollmentClassChangeSet(
   };
 }
 
-export function formatTransferDestinationNote(
+/** Libellé d'historique / affichage — ne mute jamais enrollment.notes. */
+export function formatTransferDestinationLabel(
   destinationSchoolName: string,
 ): string {
   return `Transfert vers : ${destinationSchoolName.trim()}`;
@@ -496,13 +497,16 @@ export function buildTransferEnrollmentChangeSet(
   const items: StudentChange[] = [];
   pushChange(items, "status", current.status, nextStatusAfterTransfer());
   if (transferDate) {
-    pushChange(items, "transferDate", null, transferDate);
+    pushChange(items, "transferDate", current.transferDate, transferDate);
     pushChange(items, "endedAt", current.endedAt, transferDate);
   }
   if (destination) {
-    const nextNotes = formatTransferDestinationNote(destination);
-    pushChange(items, "destinationSchoolName", null, destination);
-    pushChange(items, "notes", current.notes, nextNotes);
+    pushChange(
+      items,
+      "destinationSchoolName",
+      current.destinationSchoolName,
+      destination,
+    );
   }
 
   return {
@@ -539,7 +543,7 @@ export function buildCloseEnrollmentChangeSet(
   const items: StudentChange[] = [];
   pushChange(items, "status", current.status, nextStatusAfterClose());
   if (closureDate) {
-    pushChange(items, "closureDate", null, closureDate);
+    pushChange(items, "closureDate", current.closureDate, closureDate);
     pushChange(items, "endedAt", current.endedAt, closureDate);
   }
 

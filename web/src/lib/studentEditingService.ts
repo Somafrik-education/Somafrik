@@ -17,7 +17,6 @@ import type {
 import type { StudentChangeSet } from "./studentEditingChangeSet";
 import {
   buildChangeSetForCommand,
-  formatTransferDestinationNote,
   listUnsupportedFields,
   normalizeAdministrativeChanges,
   normalizeCivilDate,
@@ -435,8 +434,10 @@ export function applyTransferEnrollment(
   return {
     ...current,
     status: nextStatusAfterTransfer(),
+    transferDate,
+    destinationSchoolName: destination,
     endedAt: transferDate,
-    notes: formatTransferDestinationNote(destination),
+    // notes métier inchangées — destination dans un champ dédié.
     version: current.version + 1,
     updatedAt,
   };
@@ -454,7 +455,9 @@ export function applyCloseEnrollment(
   return {
     ...current,
     status: nextStatusAfterClose(),
+    closureDate,
     endedAt: closureDate,
+    // notes métier inchangées.
     version: current.version + 1,
     updatedAt,
   };

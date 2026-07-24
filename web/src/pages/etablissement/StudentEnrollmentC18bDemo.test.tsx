@@ -134,6 +134,8 @@ function renderWorkspace(section = "inscription") {
   );
 }
 
+const PREEXISTING_NOTES = "Note métier préexistante C1.8b";
+
 function resetEnrolled() {
   dataState.current.studentEnrollments = [
     {
@@ -149,6 +151,10 @@ function resetEnrolled() {
       validatedAt: "2026-07-20",
       enrolledAt: "2026-07-21",
       endedAt: null,
+      transferDate: null,
+      destinationSchoolName: null,
+      closureDate: null,
+      notes: PREEXISTING_NOTES,
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-07-21T00:00:00.000Z",
     },
@@ -203,7 +209,7 @@ describe("C1.8b démo — transfer / close enrollment", () => {
     expect(screen.queryByTestId("enrollment-assign-confirm")).not.toBeInTheDocument();
   });
 
-  it("transfert ENROLLED → TRANSFERRED avec historique et remount", async () => {
+  it("transfert ENROLLED → TRANSFERRED avec destination en historique et remount", async () => {
     const user = userEvent.setup();
     renderWorkspace("inscription");
 
@@ -234,6 +240,10 @@ describe("C1.8b démo — transfer / close enrollment", () => {
     expect(
       within(history).getAllByText("Transfert d'inscription").length,
     ).toBeGreaterThan(0);
+    // Projection depuis destinationSchoolName dédié (pas depuis notes).
+    expect(
+      within(history).getAllByText("Transfert vers : Lycée Horizon").length,
+    ).toBeGreaterThan(0);
 
     cleanup();
     renderWorkspace("inscription");
@@ -241,5 +251,12 @@ describe("C1.8b démo — transfer / close enrollment", () => {
     expect(within(reopened).getAllByText("Transféré").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("enrollment-transfer-start")).not.toBeInTheDocument();
     expect(screen.queryByTestId("enrollment-close-start")).not.toBeInTheDocument();
+
+    cleanup();
+    renderWorkspace("historique");
+    const historyRemount = await screen.findByTestId("student-history-tab");
+    expect(
+      within(historyRemount).getAllByText("Transfert vers : Lycée Horizon").length,
+    ).toBeGreaterThan(0);
   });
 });

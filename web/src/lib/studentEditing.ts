@@ -197,6 +197,12 @@ export interface EditableEnrollment {
   validatedAt: string | null;
   enrolledAt: string | null;
   endedAt: string | null;
+  /** C1.8b — date civile du transfert (si TRANSFERRED). */
+  transferDate: string | null;
+  /** C1.8b — établissement cible (texte libre, pas de création auto). */
+  destinationSchoolName: string | null;
+  /** C1.8b — date civile de clôture (si CLOSED). */
+  closureDate: string | null;
   previousSchoolName: string | null;
   notes: string | null;
   schoolName: string | null;

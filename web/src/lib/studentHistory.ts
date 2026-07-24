@@ -439,15 +439,21 @@ function projectEnrollmentEvents(
           : enrollment.status === "CLOSED" || enrollment.status === "WITHDRAWN"
             ? "Clôture d'inscription"
             : "Inscription clôturée";
+      const destination = enrollment.destinationSchoolName?.trim() || null;
+      const description =
+        enrollment.status === "TRANSFERRED" && destination
+          ? `Transfert vers : ${destination}`
+          : getEnrollmentStatusPresentation(enrollment.status).label;
       events.push(
         createEvent({
           id: `HIST-ENR-ENDED-${enrollment.id}`,
           type: "STATUS_CHANGED",
-          occurredAt: enrollment.endedAt,
+          occurredAt:
+            (enrollment.status === "TRANSFERRED"
+              ? enrollment.transferDate
+              : enrollment.closureDate) ?? enrollment.endedAt,
           title: closedTitle,
-          description:
-            enrollment.notes ??
-            getEnrollmentStatusPresentation(enrollment.status).label,
+          description,
           severity: "IMPORTANT",
           sourceModule: "ENROLLMENT",
           actor: null,
@@ -455,6 +461,15 @@ function projectEnrollmentEvents(
           metadata: {
             enrollmentId: enrollment.id,
             status: enrollment.status,
+            ...(destination
+              ? { destinationSchoolName: destination }
+              : {}),
+            ...(enrollment.transferDate
+              ? { transferDate: enrollment.transferDate }
+              : {}),
+            ...(enrollment.closureDate
+              ? { closureDate: enrollment.closureDate }
+              : {}),
           },
         }),
       );
