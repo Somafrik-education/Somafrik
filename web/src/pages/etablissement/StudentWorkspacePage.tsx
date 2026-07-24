@@ -7,6 +7,7 @@ import {
   LoadingState,
   RecordLayout,
 } from "../../design-system";
+import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import { useStudentWorkspace } from "../../hooks/useStudentWorkspace";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
@@ -26,7 +27,10 @@ import { getStudentWorkspaceModule } from "../../lib/studentWorkspace";
 export function StudentWorkspacePage() {
   const { studentId = "", section } = useParams();
   const normalizedStudentId = studentId.trim();
-  const { workspace, loading, error } = useStudentWorkspace(normalizedStudentId);
+  const editing = useStudentEditingContext(normalizedStudentId);
+  const { workspace, loading, error } = useStudentWorkspace(normalizedStudentId, {
+    enrollmentOverride: editing.enrollmentRecords,
+  });
   const permissionCtx = usePermissionContext();
 
   if (!normalizedStudentId) {

@@ -1,10 +1,11 @@
 /**
- * Orchestration d'exécution des commandes C1.7.
+ * Orchestration d'exécution des commandes C1.7 / C1.8a.
  * Ne mute jamais l'historique : après succès, les agrégats mis à jour
  * pourront être re-projetés (C1.6).
  */
 
 import type {
+  EditableEnrollment,
   EditableGuardianContact,
   EditableStudentAdministrativeDetails,
   EditableStudentIdentity,
@@ -18,6 +19,7 @@ import {
   buildChangeSetForCommand,
   listUnsupportedFields,
   normalizeAdministrativeChanges,
+  normalizeEnrollmentClassChanges,
   normalizeGuardianContactChanges,
   normalizeIdentityChanges,
 } from "./studentEditingChangeSet";
@@ -28,12 +30,20 @@ import {
   permissionForCommand,
 } from "./studentEditingPermissions";
 import type { StudentWorkspaceCommandRepository } from "./studentEditingRepository";
-import { validateStudentWorkspaceCommand } from "./studentEditingValidation";
+import {
+  resolveSchoolClass,
+  validateStudentWorkspaceCommand,
+} from "./studentEditingValidation";
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
 } from "./studentEditing";
+import {
+  nextStatusAfterAssignClass,
+  nextStatusAfterValidate,
+} from "./studentEnrollmentTransitions";
 
 function failure(
   code: StudentCommandFailure["code"],
@@ -69,6 +79,7 @@ async function loadCurrent(
   | EditableStudentIdentity
   | EditableGuardianContact
   | EditableStudentAdministrativeDetails
+  | EditableEnrollment
   | null
 > {
   if (command.type === "UPDATE_STUDENT_IDENTITY") {
@@ -77,7 +88,31 @@ async function loadCurrent(
   if (command.type === "UPDATE_GUARDIAN_CONTACT") {
     return repository.getGuardianContact(command.studentId, command.relationId);
   }
+  if (
+    command.type === "VALIDATE_ENROLLMENT" ||
+    command.type === "ASSIGN_ENROLLMENT_CLASS"
+  ) {
+    return repository.getEnrollment(command.studentId, command.enrollmentId);
+  }
   return repository.getAdministrativeDetails(command.studentId);
+}
+
+function allowedFieldsForCommand(
+  command: StudentWorkspaceCommand,
+): readonly string[] | null {
+  if (command.type === "UPDATE_STUDENT_IDENTITY") {
+    return ALLOWED_IDENTITY_CHANGE_FIELDS;
+  }
+  if (command.type === "UPDATE_GUARDIAN_CONTACT") {
+    return ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS;
+  }
+  if (command.type === "UPDATE_STUDENT_ADMINISTRATIVE_DETAILS") {
+    return ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS;
+  }
+  if (command.type === "ASSIGN_ENROLLMENT_CLASS") {
+    return ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS;
+  }
+  return null;
 }
 
 /**
@@ -87,7 +122,7 @@ export async function executeStudentUpdateCommand(
   command: StudentWorkspaceCommand,
   context: StudentEditAuthorizationContext,
   repository: StudentWorkspaceCommandRepository,
-  options: { referenceDate?: Date } = {},
+  options: { referenceDate?: Date; now?: string } = {},
 ): Promise<StudentCommandResult> {
   const permission = permissionForCommand(command);
   if (!canUpdateStudentWorkspace(context, permission)) {
@@ -146,28 +181,31 @@ export async function executeStudentUpdateCommand(
       ? await repository.listGuardianContacts(command.studentId)
       : [];
 
-  const allowedFields =
-    command.type === "UPDATE_STUDENT_IDENTITY"
-      ? ALLOWED_IDENTITY_CHANGE_FIELDS
-      : command.type === "UPDATE_GUARDIAN_CONTACT"
-        ? ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS
-        : ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS;
-  const unsupported = listUnsupportedFields(
-    command.changes as Record<string, unknown>,
-    allowedFields,
-  );
-  if (unsupported.length > 0) {
-    return failure(
-      "UNSUPPORTED_FIELD",
-      unsupported.map((field) => ({
-        field,
-        code: "UNSUPPORTED_FIELD",
-        message: `Champ non autorisé : ${field}`,
-      })),
+  const schoolClasses =
+    command.type === "ASSIGN_ENROLLMENT_CLASS"
+      ? await repository.listSchoolClasses(current.schoolCode)
+      : [];
+
+  const allowedFields = allowedFieldsForCommand(command);
+  if (allowedFields && "changes" in command) {
+    const unsupported = listUnsupportedFields(
+      command.changes as Record<string, unknown>,
+      allowedFields,
     );
+    if (unsupported.length > 0) {
+      return failure(
+        "UNSUPPORTED_FIELD",
+        unsupported.map((field) => ({
+          field,
+          code: "UNSUPPORTED_FIELD",
+          message: `Champ non autorisé : ${field}`,
+        })),
+      );
+    }
   }
 
-  const changeSet = buildChangeSetForCommand(command, current);
+  const now = options.now ?? new Date().toISOString();
+  const changeSet = buildChangeSetForCommand(command, current, { now });
   if (changeSet.isEmpty) {
     return failure("NO_CHANGES", [
       {
@@ -191,7 +229,13 @@ export async function executeStudentUpdateCommand(
       command.type === "UPDATE_STUDENT_ADMINISTRATIVE_DETAILS"
         ? (current as EditableStudentAdministrativeDetails)
         : null,
+    enrollment:
+      command.type === "VALIDATE_ENROLLMENT" ||
+      command.type === "ASSIGN_ENROLLMENT_CLASS"
+        ? (current as EditableEnrollment)
+        : null,
     siblingGuardians: siblings,
+    schoolClasses,
     referenceDate: options.referenceDate,
     changeSet,
   });
@@ -212,6 +256,12 @@ export async function executeStudentUpdateCommand(
   }
   if (command.type === "UPDATE_GUARDIAN_CONTACT") {
     return repository.updateGuardianContact(command, context);
+  }
+  if (command.type === "VALIDATE_ENROLLMENT") {
+    return repository.validateEnrollment(command, context);
+  }
+  if (command.type === "ASSIGN_ENROLLMENT_CLASS") {
+    return repository.assignEnrollmentClass(command, context);
   }
   return repository.updateAdministrativeDetails(command, context);
 }
@@ -280,6 +330,60 @@ export function applyAdministrativeChanges(
       "preferredContactChannel" in changes
         ? changes.preferredContactChannel ?? null
         : current.preferredContactChannel,
+    version: current.version + 1,
+    updatedAt,
+  };
+}
+
+export function applyValidateEnrollment(
+  current: EditableEnrollment,
+  updatedAt: string,
+): EditableEnrollment {
+  return {
+    ...current,
+    status: nextStatusAfterValidate(),
+    validatedAt: current.validatedAt ?? updatedAt.slice(0, 10),
+    version: current.version + 1,
+    updatedAt,
+  };
+}
+
+export function applyAssignEnrollmentClass(
+  current: EditableEnrollment,
+  command: Extract<
+    StudentWorkspaceCommand,
+    { type: "ASSIGN_ENROLLMENT_CLASS" }
+  >,
+  updatedAt: string,
+  schoolClasses: readonly import("./studentEditing").SchoolClassCatalogEntry[],
+): EditableEnrollment {
+  const changes = normalizeEnrollmentClassChanges(command.changes);
+  const resolved = resolveSchoolClass(
+    {
+      classId: "classId" in changes ? changes.classId : current.classId,
+      className: "className" in changes ? changes.className : current.className,
+    },
+    schoolClasses,
+    current.schoolCode,
+  );
+
+  if (!resolved.ok) {
+    // La validation amont doit empêcher ce cas ; conserver l'agrégat inchangé
+    // côté structure pour éviter un état partiel.
+    return current;
+  }
+
+  const nextStatus =
+    current.status === "APPROVED" || current.status === "ENROLLED"
+      ? nextStatusAfterAssignClass(current.status)
+      : current.status;
+
+  return {
+    ...current,
+    classId: resolved.classId,
+    className: resolved.className,
+    status: nextStatus,
+    enrolledAt: current.enrolledAt ?? updatedAt.slice(0, 10),
     version: current.version + 1,
     updatedAt,
   };

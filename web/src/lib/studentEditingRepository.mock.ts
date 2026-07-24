@@ -1,33 +1,43 @@
 /**
- * Implémentation simulée du repository C1.7 — séparée de la logique métier.
+ * Implémentation simulée du repository C1.7 / C1.8a — séparée de la logique métier.
  * Ne pas importer ce fichier depuis la logique de validation / ChangeSet.
  */
 
 import type {
+  EditableEnrollment,
   EditableGuardianContact,
   EditableStudentAdministrativeDetails,
   EditableStudentIdentity,
+  SchoolClassCatalogEntry,
   StudentCommandResult,
   StudentEditAuthorizationContext,
 } from "./studentEditing";
 import { buildChangeSetForCommand } from "./studentEditingChangeSet";
 import type {
+  AssignEnrollmentClassCommand,
   UpdateGuardianContactCommand,
   UpdateStudentAdministrativeDetailsCommand,
   UpdateStudentIdentityCommand,
+  ValidateEnrollmentCommand,
 } from "./studentEditingCommands";
 import type { StudentWorkspaceCommandRepository } from "./studentEditingRepository";
 import {
   applyAdministrativeChanges,
+  applyAssignEnrollmentClass,
   applyGuardianContactChanges,
   applyIdentityChanges,
+  applyValidateEnrollment,
   createAuditEvent,
 } from "./studentEditingService";
+import type { StudentEnrollmentSource } from "./studentEnrollment";
+import type { StudentEnrollmentStatus } from "./studentEnrollmentStatus";
 
 export interface MockEditingStore {
   identities: Map<string, EditableStudentIdentity>;
   guardians: Map<string, EditableGuardianContact>;
   administrative: Map<string, EditableStudentAdministrativeDetails>;
+  enrollments: Map<string, EditableEnrollment>;
+  schoolClasses: Map<string, SchoolClassCatalogEntry>;
   auditLog: ReturnType<typeof createAuditEvent>[];
 }
 
@@ -36,12 +46,16 @@ export function createMockEditingStore(
     identities?: EditableStudentIdentity[];
     guardians?: EditableGuardianContact[];
     administrative?: EditableStudentAdministrativeDetails[];
+    enrollments?: EditableEnrollment[];
+    schoolClasses?: SchoolClassCatalogEntry[];
   },
 ): MockEditingStore {
   const store: MockEditingStore = {
     identities: new Map(),
     guardians: new Map(),
     administrative: new Map(),
+    enrollments: new Map(),
+    schoolClasses: new Map(),
     auditLog: [],
   };
   for (const item of seed?.identities ?? []) {
@@ -53,11 +67,24 @@ export function createMockEditingStore(
   for (const item of seed?.administrative ?? []) {
     store.administrative.set(item.studentId, structuredClone(item));
   }
+  for (const item of seed?.enrollments ?? []) {
+    store.enrollments.set(
+      enrollmentKey(item.studentId, item.enrollmentId),
+      structuredClone(item),
+    );
+  }
+  for (const item of seed?.schoolClasses ?? []) {
+    store.schoolClasses.set(item.id, structuredClone(item));
+  }
   return store;
 }
 
 function guardianKey(studentId: string, relationId: string): string {
   return `${studentId}:${relationId}`;
+}
+
+function enrollmentKey(studentId: string, enrollmentId: string): string {
+  return `${studentId}:${enrollmentId}`;
 }
 
 export function createMockStudentWorkspaceCommandRepository(
@@ -90,6 +117,21 @@ export function createMockStudentWorkspaceCommandRepository(
 
     async getAdministrativeDetails(studentId) {
       return store.administrative.get(studentId.trim()) ?? null;
+    },
+
+    async getEnrollment(studentId, enrollmentId) {
+      return (
+        store.enrollments.get(
+          enrollmentKey(studentId.trim(), enrollmentId.trim()),
+        ) ?? null
+      );
+    },
+
+    async listSchoolClasses(schoolCode) {
+      const school = schoolCode.trim().toLowerCase();
+      return [...store.schoolClasses.values()].filter(
+        (item) => item.schoolCode.trim().toLowerCase() === school,
+      );
     },
 
     async updateStudentIdentity(command, context) {
@@ -136,6 +178,46 @@ export function createMockStudentWorkspaceCommandRepository(
         now,
       });
     },
+
+    async validateEnrollment(command, context) {
+      return applyUpdate({
+        store,
+        context,
+        command,
+        load: () =>
+          store.enrollments.get(
+            enrollmentKey(command.studentId, command.enrollmentId),
+          ) ?? null,
+        apply: (current, at) => applyValidateEnrollment(current, at),
+        save: (next) =>
+          store.enrollments.set(
+            enrollmentKey(next.studentId, next.enrollmentId),
+            next,
+          ),
+        now,
+      });
+    },
+
+    async assignEnrollmentClass(command, context) {
+      const schoolClasses = [...store.schoolClasses.values()];
+      return applyUpdate({
+        store,
+        context,
+        command,
+        load: () =>
+          store.enrollments.get(
+            enrollmentKey(command.studentId, command.enrollmentId),
+          ) ?? null,
+        apply: (current, at) =>
+          applyAssignEnrollmentClass(current, command, at, schoolClasses),
+        save: (next) =>
+          store.enrollments.set(
+            enrollmentKey(next.studentId, next.enrollmentId),
+            next,
+          ),
+        now,
+      });
+    },
   };
 }
 
@@ -143,7 +225,9 @@ function applyUpdate<
   TCommand extends
     | UpdateStudentIdentityCommand
     | UpdateGuardianContactCommand
-    | UpdateStudentAdministrativeDetailsCommand,
+    | UpdateStudentAdministrativeDetailsCommand
+    | ValidateEnrollmentCommand
+    | AssignEnrollmentClassCommand,
   TAggregate extends {
     version: number;
     updatedAt: string;
@@ -191,7 +275,10 @@ function applyUpdate<
     };
   }
 
-  const changeSet = buildChangeSetForCommand(input.command, current as never);
+  const updatedAt = input.now();
+  const changeSet = buildChangeSetForCommand(input.command, current as never, {
+    now: updatedAt,
+  });
   if (changeSet.isEmpty) {
     return {
       success: false,
@@ -206,8 +293,22 @@ function applyUpdate<
     };
   }
 
-  const updatedAt = input.now();
   const next = input.apply(current, updatedAt);
+  // Garde transactionnelle : une application incomplète ne doit pas persister.
+  if (next.version !== current.version + 1) {
+    return {
+      success: false,
+      code: "VALIDATION_ERROR",
+      errors: [
+        {
+          field: null,
+          code: "APPLY_ABORTED",
+          message: "Application interrompue : aucun état intermédiaire enregistré.",
+        },
+      ],
+    };
+  }
+
   input.save(next);
 
   const auditEvent = createAuditEvent(
@@ -285,3 +386,45 @@ export function seedEditableAdministrative(
     ...partial,
   };
 }
+
+export function seedEditableEnrollment(
+  partial: Partial<EditableEnrollment> &
+    Pick<
+      EditableEnrollment,
+      "enrollmentId" | "studentId" | "schoolCode" | "academicYear" | "status"
+    >,
+): EditableEnrollment {
+  const createdAt = partial.createdAt ?? "2026-01-01T00:00:00.000Z";
+  return {
+    version: partial.version ?? 1,
+    updatedAt: partial.updatedAt ?? createdAt,
+    classId: partial.classId ?? null,
+    className: partial.className ?? null,
+    programId: partial.programId ?? null,
+    programName: partial.programName ?? null,
+    source: (partial.source ?? "SCHOOL_ADMINISTRATION") as StudentEnrollmentSource,
+    applicationReference: partial.applicationReference ?? null,
+    requestedAt: partial.requestedAt ?? null,
+    validatedAt: partial.validatedAt ?? null,
+    enrolledAt: partial.enrolledAt ?? null,
+    endedAt: partial.endedAt ?? null,
+    previousSchoolName: partial.previousSchoolName ?? null,
+    notes: partial.notes ?? null,
+    schoolName: partial.schoolName ?? null,
+    createdAt,
+    ...partial,
+  };
+}
+
+export function seedSchoolClass(
+  partial: Partial<SchoolClassCatalogEntry> &
+    Pick<SchoolClassCatalogEntry, "id" | "name" | "schoolCode">,
+): SchoolClassCatalogEntry {
+  return {
+    id: partial.id,
+    name: partial.name,
+    schoolCode: partial.schoolCode,
+  };
+}
+
+export type { StudentEnrollmentStatus };

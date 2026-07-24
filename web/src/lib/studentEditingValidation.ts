@@ -1,11 +1,14 @@
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
   type CommandValidationResult,
+  type EditableEnrollment,
   type EditableGuardianContact,
   type EditableStudentAdministrativeDetails,
   type EditableStudentIdentity,
+  type SchoolClassCatalogEntry,
   type StudentEditValidationError,
 } from "./studentEditing";
 import type { StudentWorkspaceCommand } from "./studentEditingCommands";
@@ -16,11 +19,17 @@ import {
   listUnsupportedFields,
   normalizeAdministrativeChanges,
   normalizeEmail,
+  normalizeEnrollmentClassChanges,
   normalizeGuardianContactChanges,
   normalizeIdentityChanges,
+  normalizeOptionalText,
   normalizePhone,
   type StudentChangeSet,
 } from "./studentEditingChangeSet";
+import {
+  canAssignClassEnrollmentStatus,
+  canValidateEnrollmentStatus,
+} from "./studentEnrollmentTransitions";
 import { parseCivilDate } from "./studentWorkspaceDates";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -52,10 +61,71 @@ export interface ValidateCommandOptions {
   /** Autres relations actives du même élève (pour unicité priority=1). */
   siblingGuardians?: readonly EditableGuardianContact[];
   administrative?: EditableStudentAdministrativeDetails | null;
+  enrollment?: EditableEnrollment | null;
+  /** Catalogue de classes de l'établissement (affectation). */
+  schoolClasses?: readonly SchoolClassCatalogEntry[];
   referenceDate?: Date;
   changeSet?: StudentChangeSet;
   /** false = la raison sera vérifiée à la confirmation (défaut true). */
   enforceReason?: boolean;
+}
+
+export function resolveSchoolClass(
+  changes: { classId?: string | null; className?: string | null },
+  catalog: readonly SchoolClassCatalogEntry[],
+  schoolCode: string,
+): { ok: true; classId: string | null; className: string | null } | {
+  ok: false;
+  code: string;
+  message: string;
+} {
+  const classId = normalizeOptionalText(changes.classId);
+  const className = normalizeOptionalText(changes.className);
+  const school = schoolCode.trim().toLowerCase();
+  const scoped = catalog.filter(
+    (item) => item.schoolCode.trim().toLowerCase() === school,
+  );
+
+  if (classId) {
+    const byId = scoped.find((item) => item.id === classId);
+    if (!byId) {
+      return {
+        ok: false,
+        code: "CLASS_NOT_FOUND",
+        message: "La classe indiquée n'existe pas dans cet établissement.",
+      };
+    }
+    return {
+      ok: true,
+      classId: byId.id,
+      className: className ?? byId.name,
+    };
+  }
+
+  if (className) {
+    const byName = scoped.find(
+      (item) =>
+        item.name.trim().toLowerCase() === className.trim().toLowerCase(),
+    );
+    if (scoped.length > 0 && !byName) {
+      return {
+        ok: false,
+        code: "CLASS_NOT_FOUND",
+        message: "Aucune classe ne correspond à ce libellé dans l'établissement.",
+      };
+    }
+    return {
+      ok: true,
+      classId: byName?.id ?? null,
+      className: byName?.name ?? className,
+    };
+  }
+
+  return {
+    ok: false,
+    code: "CLASS_REQUIRED",
+    message: "Une classe (identifiant ou libellé) est obligatoire.",
+  };
 }
 
 function validateIdentityCommand(
@@ -396,6 +466,143 @@ function validateAdministrativeCommand(
   return { valid: errors.length === 0, errors, warnings };
 }
 
+function validateValidateEnrollmentCommand(
+  command: Extract<StudentWorkspaceCommand, { type: "VALIDATE_ENROLLMENT" }>,
+  options: ValidateCommandOptions,
+): CommandValidationResult {
+  const errors: StudentEditValidationError[] = [];
+  const warnings: CommandValidationResult["warnings"] = [];
+  const current = options.enrollment;
+
+  if (!current || current.enrollmentId !== command.enrollmentId) {
+    return {
+      valid: false,
+      errors: [err(null, "NOT_FOUND", "Inscription introuvable.")],
+      warnings,
+    };
+  }
+
+  if (current.studentId !== command.studentId) {
+    errors.push(
+      err(null, "STUDENT_MISMATCH", "L'inscription n'appartient pas à cet élève."),
+    );
+  }
+
+  if (!canValidateEnrollmentStatus(current.status)) {
+    errors.push(
+      err(
+        "status",
+        "INVALID_TRANSITION",
+        `Validation interdite depuis le statut ${current.status}. Transitions autorisées depuis préinscrit / en examen / dossier incomplet uniquement.`,
+      ),
+    );
+  }
+
+  if (current.endedAt) {
+    errors.push(
+      err(null, "ENROLLMENT_CLOSED", "Inscription clôturée : validation impossible."),
+    );
+  }
+
+  const changeSet =
+    options.changeSet ?? buildChangeSetForCommand(command, current);
+
+  if (changeSet.isEmpty && errors.length === 0) {
+    errors.push(
+      err(null, "NO_CHANGES", "Aucun changement réel à enregistrer."),
+    );
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+function validateAssignEnrollmentClassCommand(
+  command: Extract<
+    StudentWorkspaceCommand,
+    { type: "ASSIGN_ENROLLMENT_CLASS" }
+  >,
+  options: ValidateCommandOptions,
+): CommandValidationResult {
+  const errors: StudentEditValidationError[] = [];
+  const warnings: CommandValidationResult["warnings"] = [];
+  const current = options.enrollment;
+
+  if (!current || current.enrollmentId !== command.enrollmentId) {
+    return {
+      valid: false,
+      errors: [err(null, "NOT_FOUND", "Inscription introuvable.")],
+      warnings,
+    };
+  }
+
+  if (current.studentId !== command.studentId) {
+    errors.push(
+      err(null, "STUDENT_MISMATCH", "L'inscription n'appartient pas à cet élève."),
+    );
+  }
+
+  if (!canAssignClassEnrollmentStatus(current.status)) {
+    errors.push(
+      err(
+        "status",
+        "INVALID_TRANSITION",
+        `Affectation interdite depuis le statut ${current.status}. Validez d'abord l'inscription.`,
+      ),
+    );
+  }
+
+  if (current.endedAt) {
+    errors.push(
+      err(
+        null,
+        "ENROLLMENT_CLOSED",
+        "Inscription clôturée : affectation impossible.",
+      ),
+    );
+  }
+
+  const unsupported = listUnsupportedFields(
+    command.changes as Record<string, unknown>,
+    ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  );
+  for (const field of unsupported) {
+    errors.push(
+      err(field, "UNSUPPORTED_FIELD", `Champ non autorisé : ${field}`),
+    );
+  }
+
+  const changes = normalizeEnrollmentClassChanges(command.changes);
+  const resolved = resolveSchoolClass(
+    {
+      classId: "classId" in changes ? changes.classId : current.classId,
+      className: "className" in changes ? changes.className : current.className,
+    },
+    options.schoolClasses ?? [],
+    current.schoolCode,
+  );
+
+  if (!resolved.ok) {
+    errors.push(err("classId", resolved.code, resolved.message));
+  } else if (
+    resolved.classId === current.classId &&
+    resolved.className === current.className &&
+    current.status === "ENROLLED"
+  ) {
+    // Pas de changement réel de classe ni de statut.
+  }
+
+  const changeSet =
+    options.changeSet ?? buildChangeSetForCommand(command, current);
+
+  if (changeSet.isEmpty && unsupported.length === 0 && errors.length === 0) {
+    errors.push(
+      err(null, "NO_CHANGES", "Aucun changement réel à enregistrer."),
+    );
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
 export function validateStudentWorkspaceCommand(
   command: StudentWorkspaceCommand,
   options: ValidateCommandOptions = {},
@@ -405,6 +612,12 @@ export function validateStudentWorkspaceCommand(
   }
   if (command.type === "UPDATE_GUARDIAN_CONTACT") {
     return validateGuardianCommand(command, options);
+  }
+  if (command.type === "VALIDATE_ENROLLMENT") {
+    return validateValidateEnrollmentCommand(command, options);
+  }
+  if (command.type === "ASSIGN_ENROLLMENT_CLASS") {
+    return validateAssignEnrollmentClassCommand(command, options);
   }
   return validateAdministrativeCommand(command, options);
 }

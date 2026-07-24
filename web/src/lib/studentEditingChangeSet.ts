@@ -1,9 +1,11 @@
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
   FIELD_LABELS,
   isSensitiveStudentField,
+  type EditableEnrollment,
   type EditableGuardianContact,
   type EditableStudentAdministrativeDetails,
   type EditableStudentIdentity,
@@ -12,11 +14,16 @@ import {
   type PreferredContactChannel,
 } from "./studentEditing";
 import type {
+  AssignEnrollmentClassCommand,
   StudentWorkspaceCommand,
   UpdateGuardianContactCommand,
   UpdateStudentAdministrativeDetailsCommand,
   UpdateStudentIdentityCommand,
 } from "./studentEditingCommands";
+import {
+  nextStatusAfterAssignClass,
+  nextStatusAfterValidate,
+} from "./studentEnrollmentTransitions";
 import { parseCivilDate } from "./studentWorkspaceDates";
 
 export interface StudentChange {
@@ -363,13 +370,106 @@ export function buildAdministrativeChangeSet(
   };
 }
 
+export function normalizeEnrollmentClassChanges(
+  changes: AssignEnrollmentClassCommand["changes"],
+): AssignEnrollmentClassCommand["changes"] {
+  const normalized: AssignEnrollmentClassCommand["changes"] = {};
+  if ("classId" in changes) {
+    normalized.classId = normalizeOptionalText(changes.classId);
+  }
+  if ("className" in changes) {
+    normalized.className = normalizeOptionalText(changes.className);
+  }
+  return normalized;
+}
+
+export function buildValidateEnrollmentChangeSet(
+  studentId: string,
+  current: EditableEnrollment,
+  validatedAt: string,
+): StudentChangeSet {
+  const items: StudentChange[] = [];
+  const nextStatus = nextStatusAfterValidate();
+  pushChange(items, "status", current.status, nextStatus);
+  pushChange(items, "validatedAt", current.validatedAt, validatedAt.slice(0, 10));
+
+  return {
+    commandType: "VALIDATE_ENROLLMENT",
+    studentId,
+    changes: items,
+    hasSensitiveChange: false,
+    requiresReason: false,
+    isEmpty: items.length === 0,
+  };
+}
+
+export function buildAssignEnrollmentClassChangeSet(
+  studentId: string,
+  current: EditableEnrollment,
+  rawChanges: AssignEnrollmentClassCommand["changes"],
+  enrolledAt: string,
+): StudentChangeSet {
+  const changes = normalizeEnrollmentClassChanges(rawChanges);
+  const unsupported = listUnsupportedFields(
+    changes as Record<string, unknown>,
+    ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  );
+  if (unsupported.length > 0) {
+    return {
+      commandType: "ASSIGN_ENROLLMENT_CLASS",
+      studentId,
+      changes: [],
+      hasSensitiveChange: false,
+      requiresReason: false,
+      isEmpty: true,
+    };
+  }
+
+  const items: StudentChange[] = [];
+  const nextClassId =
+    "classId" in changes ? changes.classId ?? null : current.classId;
+  const nextClassName =
+    "className" in changes ? changes.className ?? null : current.className;
+
+  if ("classId" in changes) {
+    pushChange(items, "classId", current.classId, nextClassId);
+  }
+  if ("className" in changes) {
+    pushChange(items, "className", current.className, nextClassName);
+  }
+
+  if (
+    current.status === "APPROVED" ||
+    current.status === "ENROLLED"
+  ) {
+    const nextStatus = nextStatusAfterAssignClass(current.status);
+    pushChange(items, "status", current.status, nextStatus);
+    if (!current.enrolledAt) {
+      pushChange(items, "enrolledAt", current.enrolledAt, enrolledAt.slice(0, 10));
+    }
+  }
+
+  return {
+    commandType: "ASSIGN_ENROLLMENT_CLASS",
+    studentId,
+    changes: items,
+    hasSensitiveChange: false,
+    requiresReason: false,
+    isEmpty: items.length === 0,
+  };
+}
+
 export function buildChangeSetForCommand(
   command: StudentWorkspaceCommand,
   current:
     | EditableStudentIdentity
     | EditableGuardianContact
-    | EditableStudentAdministrativeDetails,
+    | EditableStudentAdministrativeDetails
+    | EditableEnrollment,
+  options: { now?: string } = {},
 ): StudentChangeSet {
+  const now = options.now ?? new Date().toISOString();
+
   if (command.type === "UPDATE_STUDENT_IDENTITY") {
     return buildIdentityChangeSet(
       command.studentId,
@@ -382,6 +482,21 @@ export function buildChangeSetForCommand(
       command.studentId,
       current as EditableGuardianContact,
       command.changes,
+    );
+  }
+  if (command.type === "VALIDATE_ENROLLMENT") {
+    return buildValidateEnrollmentChangeSet(
+      command.studentId,
+      current as EditableEnrollment,
+      now,
+    );
+  }
+  if (command.type === "ASSIGN_ENROLLMENT_CLASS") {
+    return buildAssignEnrollmentClassChangeSet(
+      command.studentId,
+      current as EditableEnrollment,
+      command.changes,
+      now,
     );
   }
   return buildAdministrativeChangeSet(
@@ -399,4 +514,11 @@ export function formatChangeValue(
   return String(value);
 }
 
-export { MAX_TEXT, MAX_NOTES, ALLOWED_IDENTITY_CHANGE_FIELDS, ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS, ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS };
+export {
+  MAX_TEXT,
+  MAX_NOTES,
+  ALLOWED_IDENTITY_CHANGE_FIELDS,
+  ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
+  ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+};

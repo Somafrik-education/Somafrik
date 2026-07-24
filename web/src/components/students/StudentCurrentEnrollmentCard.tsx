@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { StudentEnrollmentViewModel } from "../../lib/studentEnrollmentViewModel";
 import type { EnrollmentTimelineStep } from "../../lib/studentEnrollmentViewModel";
 import { Card, SectionHeader, EmptyState } from "../../design-system";
@@ -8,6 +9,7 @@ interface StudentCurrentEnrollmentCardProps {
   enrollment: StudentEnrollmentViewModel | null;
   timeline: readonly EnrollmentTimelineStep[];
   schoolNameLabel: string;
+  actions?: ReactNode;
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -25,6 +27,7 @@ export function StudentCurrentEnrollmentCard({
   enrollment,
   timeline,
   schoolNameLabel,
+  actions,
 }: StudentCurrentEnrollmentCardProps) {
   if (!enrollment) {
     return (
@@ -77,9 +80,11 @@ export function StudentCurrentEnrollmentCard({
         </div>
       ) : null}
 
-      <p className="mt-8 text-xs text-muted">
-        Actions administratives à venir
-      </p>
+      {actions ?? (
+        <p className="mt-8 text-xs text-muted">
+          Actions administratives à venir
+        </p>
+      )}
     </Card>
   );
 }

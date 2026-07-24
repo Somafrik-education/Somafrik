@@ -10,6 +10,8 @@ export type StudentEditingPermission =
   | "student.identity.update"
   | "student.guardians.update"
   | "student.administrative.update"
+  | "student.enrollments.validate"
+  | "student.enrollments.assign-class"
   | "student.medical.update"
   | "student.medical.validate"
   | "student.documents.upload"
@@ -17,11 +19,13 @@ export type StudentEditingPermission =
   | "student.enrollments.update"
   | "student.archive";
 
-/** Permissions C1.7 actives. */
+/** Permissions C1.7 / C1.8a actives. */
 export const STUDENT_EDITING_PERMISSIONS = [
   "student.identity.update",
   "student.guardians.update",
   "student.administrative.update",
+  "student.enrollments.validate",
+  "student.enrollments.assign-class",
 ] as const satisfies readonly StudentEditingPermission[];
 
 /** Permissions futures — non accordées par le bridge Élèves:UPDATE. */
@@ -56,9 +60,9 @@ function hasBridgeUpdate(permissions: readonly string[]): boolean {
 /**
  * Permission d'édition dossier.
  *
- * - jetons granulaires `student.*.update` respectés lorsqu'ils sont présents ;
+ * - jetons granulaires `student.*` respectés lorsqu'ils sont présents ;
  * - bridge temporaire `Élèves:UPDATE` → uniquement identity / guardians / administrative ;
- * - jamais medical.update, documents.verify, archive via le bridge.
+ * - jamais medical.*, documents.*, archive, ni enrollment validate/assign via le bridge.
  */
 export function canUpdateStudentWorkspace(
   ctx: PermissionContext | StudentEditAuthorizationContext,
@@ -99,6 +103,10 @@ export function permissionForCommand(
       return "student.guardians.update";
     case "UPDATE_STUDENT_ADMINISTRATIVE_DETAILS":
       return "student.administrative.update";
+    case "VALIDATE_ENROLLMENT":
+      return "student.enrollments.validate";
+    case "ASSIGN_ENROLLMENT_CLASS":
+      return "student.enrollments.assign-class";
   }
 }
 

@@ -1,7 +1,16 @@
 /**
- * Vérifications C1.2 — inscription et parcours scolaire.
+ * Vérifications C1.2 / C1.8a — inscription et parcours scolaire.
  * Exécution : npm run verify:student-enrollment
  */
+import { fromEditableEnrollment } from "../src/lib/studentEditingAdapters";
+import { canUpdateStudentWorkspace } from "../src/lib/studentEditingPermissions";
+import {
+  createMockEditingStore,
+  createMockStudentWorkspaceCommandRepository,
+  seedEditableEnrollment,
+  seedSchoolClass,
+} from "../src/lib/studentEditingRepository.mock";
+import { executeStudentUpdateCommand } from "../src/lib/studentEditingService";
 import {
   assertSingleActiveEnrollmentPerYear,
   collectStudentEnrollmentRecords,
@@ -13,6 +22,13 @@ import {
   validateEnrollmentDateOrder,
   type StudentEnrollmentRecord,
 } from "../src/lib/studentEnrollment";
+import {
+  canAssignClassEnrollmentStatus,
+  canValidateEnrollmentStatus,
+  nextStatusAfterAssignClass,
+  nextStatusAfterValidate,
+} from "../src/lib/studentEnrollmentTransitions";
+import { collectStudentHistoryRecord } from "../src/lib/studentHistory";
 import {
   listEnrollmentStatusLabels,
   normalizeStudentEnrollmentStatus,
@@ -631,7 +647,223 @@ function testTimelineAndAlerts() {
   );
 }
 
-function main() {
+async function testC18aValidateAndAssignClass() {
+  assert(canValidateEnrollmentStatus("PRE_REGISTERED"), "validate depuis brouillon");
+  assert(canValidateEnrollmentStatus("PENDING_REVIEW"), "validate depuis en attente");
+  assert(canValidateEnrollmentStatus("INCOMPLETE"), "validate depuis incomplet");
+  assert(!canValidateEnrollmentStatus("APPROVED"), "pas de re-validation");
+  assert(!canValidateEnrollmentStatus("ENROLLED"), "pas de validate depuis inscrit");
+  assertEqual(nextStatusAfterValidate(), "APPROVED", "cible validation");
+
+  assert(canAssignClassEnrollmentStatus("APPROVED"), "assign depuis validé");
+  assert(canAssignClassEnrollmentStatus("ENROLLED"), "réaffectation");
+  assert(!canAssignClassEnrollmentStatus("PENDING_REVIEW"), "assign interdit avant validation");
+  assertEqual(nextStatusAfterAssignClass("APPROVED"), "ENROLLED", "cible affectation");
+
+  const enrollment = seedEditableEnrollment({
+    enrollmentId: "E-C18A",
+    studentId: "STU-C18A",
+    schoolCode: "CD-2026-0001",
+    academicYear: "2026-2027",
+    status: "PENDING_REVIEW",
+    requestedAt: "2026-05-01",
+    version: 1,
+  });
+  const schoolClass = seedSchoolClass({
+    id: "CLS-4A",
+    name: "4e A",
+    schoolCode: "CD-2026-0001",
+  });
+  const store = createMockEditingStore({
+    enrollments: [enrollment],
+    schoolClasses: [schoolClass],
+  });
+  const repo = createMockStudentWorkspaceCommandRepository(store, {
+    now: () => "2026-07-23T10:00:00.000Z",
+  });
+
+  const denied = await executeStudentUpdateCommand(
+    {
+      type: "VALIDATE_ENROLLMENT",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 1,
+    },
+    {
+      userId: "u-deny",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      permissions: ["Élèves:UPDATE", "Élèves:READ"],
+    },
+    repo,
+  );
+  assertEqual(denied.success, false, "RBAC validate refusé via bridge");
+  if (!denied.success) {
+    assertEqual(denied.code, "PERMISSION_DENIED", "code permission validate");
+  }
+  assertEqual(
+    store.enrollments.get("STU-C18A:E-C18A")?.status,
+    "PENDING_REVIEW",
+    "aucun état intermédiaire après refus",
+  );
+
+  assert(
+    canUpdateStudentWorkspace(
+      {
+        userId: "u-ok",
+        role: "Secrétaire",
+        schoolCode: "CD-2026-0001",
+        permissions: ["student.enrollments.validate"],
+      },
+      "student.enrollments.validate",
+    ),
+    "RBAC validate autorisé",
+  );
+
+  const validated = await executeStudentUpdateCommand(
+    {
+      type: "VALIDATE_ENROLLMENT",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 1,
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.validate"],
+    },
+    repo,
+  );
+  assert(validated.success, "validation OK");
+  if (validated.success) {
+    const agg = validated.updatedAggregate as {
+      status: string;
+      validatedAt: string | null;
+      version: number;
+    };
+    assertEqual(agg.status, "APPROVED", "statut VALIDÉ");
+    assertEqual(agg.validatedAt, "2026-07-23", "validatedAt posé");
+    assertEqual(agg.version, 2, "version incrémentée");
+    assert(
+      store.auditLog.some((item) => item.commandType === "VALIDATE_ENROLLMENT"),
+      "audit validate",
+    );
+  }
+
+  const assignDenied = await executeStudentUpdateCommand(
+    {
+      type: "ASSIGN_ENROLLMENT_CLASS",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 2,
+      changes: { classId: "CLS-4A", className: "4e A" },
+    },
+    {
+      userId: "u-deny",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.validate"],
+    },
+    repo,
+  );
+  assertEqual(assignDenied.success, false, "RBAC assign refusé sans jeton");
+
+  const assignMissingClass = await executeStudentUpdateCommand(
+    {
+      type: "ASSIGN_ENROLLMENT_CLASS",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 2,
+      changes: { classId: "CLS-UNKNOWN" },
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.assign-class"],
+    },
+    repo,
+  );
+  assertEqual(assignMissingClass.success, false, "classe inexistante refusée");
+  assertEqual(
+    store.enrollments.get("STU-C18A:E-C18A")?.status,
+    "APPROVED",
+    "statut inchangé si classe invalide",
+  );
+
+  const assigned = await executeStudentUpdateCommand(
+    {
+      type: "ASSIGN_ENROLLMENT_CLASS",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 2,
+      changes: { classId: "CLS-4A" },
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.assign-class"],
+    },
+    repo,
+  );
+  assert(assigned.success, "affectation OK");
+  if (assigned.success) {
+    const agg = assigned.updatedAggregate as {
+      status: string;
+      classId: string | null;
+      className: string | null;
+      enrolledAt: string | null;
+    };
+    assertEqual(agg.status, "ENROLLED", "statut AFFECTÉ/Inscrit");
+    assertEqual(agg.classId, "CLS-4A", "classId");
+    assertEqual(agg.className, "4e A", "className résolu");
+    assertEqual(agg.enrolledAt, "2026-07-23", "enrolledAt posé");
+  }
+
+  const invalidBack = await executeStudentUpdateCommand(
+    {
+      type: "VALIDATE_ENROLLMENT",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 3,
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.validate"],
+    },
+    repo,
+  );
+  assertEqual(invalidBack.success, false, "pas de retour arrière implicite");
+
+  const record = fromEditableEnrollment(
+    store.enrollments.get("STU-C18A:E-C18A")!,
+  );
+  const history = collectStudentHistoryRecord({
+    studentId: "STU-C18A",
+    enrollments: [record],
+  });
+  assert(
+    history.events.some((event) => event.type === "STATUS_CHANGED"),
+    "historique validation projeté",
+  );
+  assert(
+    history.events.some((event) => event.type === "CLASS_ASSIGNED"),
+    "historique affectation projeté",
+  );
+
+  const timeline = buildEnrollmentTimeline(record);
+  assertEqual(
+    timeline.find((step) => step.key === "class_assignment")?.state,
+    "completed",
+    "timeline affectation complétée",
+  );
+}
+
+async function main() {
   const tests = [
     ["sélection déterministe", testSelectCurrentEnrollmentDeterministic],
     ["récence vs ids alphabétiques", testRecencyBreaksTiesAgainstAlphabeticalIds],
@@ -643,14 +875,15 @@ function main() {
     ["permissions et données partielles", testPermissionsAndPartialData],
     ["multi-années et legacy", testMultiYearAndLegacyBridge],
     ["timeline et alertes", testTimelineAndAlerts],
+    ["C1.8a validate + assign + RBAC + audit", testC18aValidateAndAssignClass],
   ] as const;
 
   for (const [name, run] of tests) {
-    run();
+    await run();
     console.log(`OK — ${name}`);
   }
 
-  console.log(`\n${tests.length} suites validées — student enrollment C1.2`);
+  console.log(`\n${tests.length} suites validées — student enrollment C1.2 / C1.8a`);
 }
 
-main();
+void main();

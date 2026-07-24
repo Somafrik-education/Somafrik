@@ -175,6 +175,41 @@ export interface EditableStudentAdministrativeDetails {
   preferredContactChannel: PreferredContactChannel | null;
 }
 
+/**
+ * Snapshot versionné — inscription annuelle (C1.8a).
+ * Les mutations passent uniquement par VALIDATE_ENROLLMENT / ASSIGN_ENROLLMENT_CLASS.
+ */
+export interface EditableEnrollment {
+  enrollmentId: string;
+  studentId: string;
+  schoolCode: string;
+  academicYear: string;
+  version: number;
+  updatedAt: string;
+  status: import("./studentEnrollmentStatus").StudentEnrollmentStatus;
+  classId: string | null;
+  className: string | null;
+  programId: string | null;
+  programName: string | null;
+  source: import("./studentEnrollment").StudentEnrollmentSource;
+  applicationReference: string | null;
+  requestedAt: string | null;
+  validatedAt: string | null;
+  enrolledAt: string | null;
+  endedAt: string | null;
+  previousSchoolName: string | null;
+  notes: string | null;
+  schoolName: string | null;
+  createdAt: string;
+}
+
+/** Classe connue de l'établissement (catalogue pour affectation). */
+export interface SchoolClassCatalogEntry {
+  id: string;
+  name: string;
+  schoolCode: string;
+}
+
 export type StudentEditMode =
   | "READ"
   | "EDITING"
@@ -183,6 +218,12 @@ export type StudentEditMode =
   | "SUCCESS"
   | "CONFLICT"
   | "ERROR";
+
+/** Champs inscription autorisés dans ASSIGN_ENROLLMENT_CLASS. */
+export const ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS = [
+  "classId",
+  "className",
+] as const;
 
 export const FIELD_LABELS: Record<string, string> = {
   firstName: "Prénom",
@@ -200,4 +241,9 @@ export const FIELD_LABELS: Record<string, string> = {
   priority: "Priorité",
   administrativeNotes: "Notes administratives",
   preferredContactChannel: "Canal de contact préféré",
+  status: "Statut d'inscription",
+  validatedAt: "Date de validation",
+  enrolledAt: "Date d'inscription",
+  classId: "Identifiant de classe",
+  className: "Classe",
 };

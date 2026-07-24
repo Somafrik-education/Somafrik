@@ -1,14 +1,18 @@
 import type {
+  EditableEnrollment,
   EditableGuardianContact,
   EditableStudentAdministrativeDetails,
   EditableStudentIdentity,
+  SchoolClassCatalogEntry,
   StudentCommandResult,
   StudentEditAuthorizationContext,
 } from "./studentEditing";
 import type {
+  AssignEnrollmentClassCommand,
   UpdateGuardianContactCommand,
   UpdateStudentAdministrativeDetailsCommand,
   UpdateStudentIdentityCommand,
+  ValidateEnrollmentCommand,
 } from "./studentEditingCommands";
 
 /**
@@ -33,6 +37,13 @@ export interface StudentWorkspaceCommandRepository {
     studentId: string,
   ): Promise<EditableStudentAdministrativeDetails | null>;
 
+  getEnrollment(
+    studentId: string,
+    enrollmentId: string,
+  ): Promise<EditableEnrollment | null>;
+
+  listSchoolClasses(schoolCode: string): Promise<SchoolClassCatalogEntry[]>;
+
   updateStudentIdentity(
     command: UpdateStudentIdentityCommand,
     context: StudentEditAuthorizationContext,
@@ -47,4 +58,14 @@ export interface StudentWorkspaceCommandRepository {
     command: UpdateStudentAdministrativeDetailsCommand,
     context: StudentEditAuthorizationContext,
   ): Promise<StudentCommandResult<EditableStudentAdministrativeDetails>>;
+
+  validateEnrollment(
+    command: ValidateEnrollmentCommand,
+    context: StudentEditAuthorizationContext,
+  ): Promise<StudentCommandResult<EditableEnrollment>>;
+
+  assignEnrollmentClass(
+    command: AssignEnrollmentClassCommand,
+    context: StudentEditAuthorizationContext,
+  ): Promise<StudentCommandResult<EditableEnrollment>>;
 }
