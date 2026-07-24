@@ -59,6 +59,11 @@ interface SharedEditingSession {
 /** Une session mock par élève — partagée entre les onglets du dossier. */
 const sessionsByStudent = new Map<string, SharedEditingSession>();
 
+/** Réservé aux tests / démo — force un re-seed depuis le DataContext. */
+export function resetStudentEditingSessionsForTests(): void {
+  sessionsByStudent.clear();
+}
+
 function getSharedSession(studentId: string): SharedEditingSession {
   const key = studentId.trim() || "__empty__";
   let session = sessionsByStudent.get(key);
