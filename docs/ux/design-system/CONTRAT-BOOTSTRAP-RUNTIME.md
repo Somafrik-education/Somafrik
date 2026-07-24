@@ -1,7 +1,8 @@
 # Contrat — Filet bootstrap runtime (post P0 AUTH DOWN)
 
 **Base saine :** `885979ff` / merge PR #69 (HOTFIX-SYNC-01)  
-**Freeze Notes :** maintenu jusqu’à validation manuelle des 3 profils + bissection contrôlée  
+**Freeze Notes PG :** [KNOWN-ISSUE-NOTES-01](./KNOWN-ISSUE-NOTES-01.md) — sync enseignant bloquée (RBAC), outbox failed conservée  
+**Freeze merge :** #71 / #72 = sources d’analyse uniquement  
 
 ---
 
