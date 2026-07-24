@@ -37,6 +37,7 @@
     "verify:rbac-s1-4": "npm --prefix backend run verify:rbac-s1-4",
     "verify:jwt-header": "npm --prefix backend run verify:jwt-header",
     "verify:db-config": "npm --prefix backend run verify:db-config",
+    "verify:runtime-bootstrap": "npm --prefix backend run verify:runtime-bootstrap",
     "verify:mobile-security": "npm --prefix Mobile run verify:mobile-security",
     "audit:integrity": "node scripts/audit-data-integrity.js",
     "audit:sql-integrity": "node scripts/audit-sql-integrity.js",
