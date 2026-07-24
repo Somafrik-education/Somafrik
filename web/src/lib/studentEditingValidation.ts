@@ -74,7 +74,7 @@ export function resolveSchoolClass(
   changes: { classId?: string | null; className?: string | null },
   catalog: readonly SchoolClassCatalogEntry[],
   schoolCode: string,
-): { ok: true; classId: string | null; className: string | null } | {
+): { ok: true; classId: string; className: string } | {
   ok: false;
   code: string;
   message: string;
@@ -86,7 +86,18 @@ export function resolveSchoolClass(
     (item) => item.schoolCode.trim().toLowerCase() === school,
   );
 
+  // Contrat C1.8a : aucune affectation sans catalogue local canonique.
+  if (scoped.length === 0) {
+    return {
+      ok: false,
+      code: "CLASS_NOT_FOUND",
+      message:
+        "Aucune classe n'est disponible pour cet établissement. Créez une classe avant l'affectation.",
+    };
+  }
+
   if (classId) {
+    // Un classId présent hors établissement (autre schoolCode) est exclu via `scoped`.
     const byId = scoped.find((item) => item.id === classId);
     if (!byId) {
       return {
@@ -95,10 +106,11 @@ export function resolveSchoolClass(
         message: "La classe indiquée n'existe pas dans cet établissement.",
       };
     }
+    // Le libellé client ne peut jamais écraser le nom canonique du catalogue.
     return {
       ok: true,
       classId: byId.id,
-      className: className ?? byId.name,
+      className: byId.name,
     };
   }
 
@@ -107,7 +119,7 @@ export function resolveSchoolClass(
       (item) =>
         item.name.trim().toLowerCase() === className.trim().toLowerCase(),
     );
-    if (scoped.length > 0 && !byName) {
+    if (!byName) {
       return {
         ok: false,
         code: "CLASS_NOT_FOUND",
@@ -116,8 +128,8 @@ export function resolveSchoolClass(
     }
     return {
       ok: true,
-      classId: byName?.id ?? null,
-      className: byName?.name ?? className,
+      classId: byName.id,
+      className: byName.name,
     };
   }
 
