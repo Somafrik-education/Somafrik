@@ -1086,9 +1086,18 @@ async function testC18bTransferAndClose() {
   assert(canTransferEnrollmentStatus("ENROLLED"), "transfer depuis ENROLLED");
   assert(!canTransferEnrollmentStatus("APPROVED"), "transfer interdit avant affectation");
   assert(canCloseEnrollmentStatus("ENROLLED"), "close depuis ENROLLED");
-  assert(!canCloseEnrollmentStatus("PENDING_REVIEW"), "close interdit hors ENROLLED");
+  assert(canCloseEnrollmentStatus("APPROVED"), "close depuis APPROVED");
+  assert(!canCloseEnrollmentStatus("PRE_REGISTERED"), "close interdit depuis DRAFT");
+  assert(!canCloseEnrollmentStatus("TRANSFERRED"), "close interdit depuis TRANSFERRED");
+  assert(!canCloseEnrollmentStatus("CLOSED"), "close interdit depuis CLOSED");
+  assert(!canTransferEnrollmentStatus("TRANSFERRED"), "transfer interdit depuis TRANSFERRED");
   assertEqual(nextStatusAfterTransfer(), "TRANSFERRED", "cible transfert");
-  assertEqual(nextStatusAfterClose(), "WITHDRAWN", "CLOSED métier → WITHDRAWN");
+  assertEqual(nextStatusAfterClose(), "CLOSED", "cible clôture CLOSED");
+  assertEqual(
+    getEnrollmentStatusPresentation("CLOSED").label,
+    "Clôturé",
+    "libellé CLOSED",
+  );
 
   const enrollment = seedEditableEnrollment({
     enrollmentId: "E-C18B",
@@ -1103,7 +1112,20 @@ async function testC18bTransferAndClose() {
     version: 3,
   });
 
-  // RBAC transfer refusé
+  const authTransfer = {
+    userId: "u-ok",
+    role: "Secrétaire",
+    schoolCode: "CD-2026-0001",
+    permissions: ["student.enrollments.transfer"],
+  };
+  const authClose = {
+    userId: "u-ok",
+    role: "Secrétaire",
+    schoolCode: "CD-2026-0001",
+    permissions: ["student.enrollments.close"],
+  };
+
+  // RBAC transfer refusé (bridge Élèves:UPDATE n'accorde pas)
   const denyStore = createMockEditingStore({ enrollments: [enrollment] });
   const denyRepo = createMockStudentWorkspaceCommandRepository(denyStore, {
     now: () => "2026-07-24T10:00:00.000Z",
@@ -1114,7 +1136,10 @@ async function testC18bTransferAndClose() {
       studentId: "STU-C18B",
       enrollmentId: "E-C18B",
       expectedVersion: 3,
-      changes: { targetSchoolName: "Lycée Horizon" },
+      changes: {
+        transferDate: "2026-07-24",
+        destinationSchoolName: "Lycée Horizon",
+      },
       reason: "Déménagement",
     },
     {
@@ -1133,6 +1158,34 @@ async function testC18bTransferAndClose() {
   );
   assertEqual(denyStore.auditLog.length, 0, "audit inchangé après refus RBAC");
 
+  // Date avant enrolledAt → refus, aucune mutation
+  const earlyStore = createMockEditingStore({
+    enrollments: [structuredClone(enrollment)],
+  });
+  const earlyRepo = createMockStudentWorkspaceCommandRepository(earlyStore);
+  const early = await executeStudentUpdateCommand(
+    {
+      type: "TRANSFER_ENROLLMENT",
+      studentId: "STU-C18B",
+      enrollmentId: "E-C18B",
+      expectedVersion: 3,
+      changes: {
+        transferDate: "2026-07-19",
+        destinationSchoolName: "Lycée Horizon",
+      },
+      reason: "Trop tôt",
+    },
+    authTransfer,
+    earlyRepo,
+  );
+  assertEqual(early.success, false, "transfert refusé si date avant milestones");
+  assertEqual(
+    earlyStore.enrollments.get("STU-C18B:E-C18B")?.version,
+    3,
+    "version inchangée après échec date",
+  );
+  assertEqual(earlyStore.auditLog.length, 0, "pas d'audit après échec");
+
   // Transfert OK
   const transferStore = createMockEditingStore({
     enrollments: [structuredClone(enrollment)],
@@ -1146,15 +1199,13 @@ async function testC18bTransferAndClose() {
       studentId: "STU-C18B",
       enrollmentId: "E-C18B",
       expectedVersion: 3,
-      changes: { targetSchoolName: "Lycée Horizon" },
-      reason: "Déménagement familial",
+      changes: {
+        transferDate: "2026-07-23",
+        destinationSchoolName: "  Lycée Horizon  ",
+      },
+      reason: "  Déménagement familial  ",
     },
-    {
-      userId: "u-ok",
-      role: "Secrétaire",
-      schoolCode: "CD-2026-0001",
-      permissions: ["student.enrollments.transfer"],
-    },
+    authTransfer,
     transferRepo,
   );
   assert(transferred.success, "transfert OK");
@@ -1167,13 +1218,15 @@ async function testC18bTransferAndClose() {
       classId: string | null;
     };
     assertEqual(agg.status, "TRANSFERRED", "statut TRANSFERRED");
-    assertEqual(agg.endedAt, "2026-07-24", "endedAt posé");
-    assertEqual(agg.notes, "Transfert vers : Lycée Horizon", "destination notée");
+    assertEqual(agg.endedAt, "2026-07-23", "endedAt = transferDate");
+    assertEqual(agg.notes, "Transfert vers : Lycée Horizon", "destination normalisée");
     assertEqual(agg.classId, "CLS-4A", "pas de suppression physique des champs");
-    assertEqual(agg.version, 4, "version incrémentée");
-    assert(
-      transferStore.auditLog.some((item) => item.commandType === "TRANSFER_ENROLLMENT"),
-      "audit transfer",
+    assertEqual(agg.version, 4, "version incrémentée une fois");
+    assertEqual(transferStore.auditLog.length, 1, "un seul événement d'audit");
+    assertEqual(
+      transferStore.auditLog[0]?.reason,
+      "Déménagement familial",
+      "motif normalisé en audit",
     );
   }
 
@@ -1190,21 +1243,17 @@ async function testC18bTransferAndClose() {
     "historique transfert projeté",
   );
 
-  // Pas de retour arrière implicite
+  // Pas de transition sortante depuis TRANSFERRED
   const back = await executeStudentUpdateCommand(
     {
       type: "CLOSE_ENROLLMENT",
       studentId: "STU-C18B",
       enrollmentId: "E-C18B",
       expectedVersion: 4,
+      changes: { closureDate: "2026-07-24" },
       reason: "Tentative après transfert",
     },
-    {
-      userId: "u-ok",
-      role: "Secrétaire",
-      schoolCode: "CD-2026-0001",
-      permissions: ["student.enrollments.close"],
-    },
+    authClose,
     transferRepo,
   );
   assertEqual(back.success, false, "clôture refusée après transfert");
@@ -1220,6 +1269,7 @@ async function testC18bTransferAndClose() {
         status: "ENROLLED",
         classId: "CLS-4A",
         className: "4e A",
+        validatedAt: "2026-07-20",
         enrolledAt: "2026-07-21",
         version: 2,
       }),
@@ -1235,13 +1285,9 @@ async function testC18bTransferAndClose() {
       studentId: "STU-CLOSE",
       enrollmentId: "E-CLOSE",
       expectedVersion: 2,
+      changes: { closureDate: "2026-07-24" },
     },
-    {
-      userId: "u-ok",
-      role: "Secrétaire",
-      schoolCode: "CD-2026-0001",
-      permissions: ["student.enrollments.close"],
-    },
+    authClose,
     closeRepo,
   );
   assertEqual(closeNoReason.success, false, "raison obligatoire pour close");
@@ -1257,14 +1303,10 @@ async function testC18bTransferAndClose() {
       studentId: "STU-CLOSE",
       enrollmentId: "E-CLOSE",
       expectedVersion: 2,
+      changes: { closureDate: "2026-07-24" },
       reason: "Départ volontaire",
     },
-    {
-      userId: "u-ok",
-      role: "Secrétaire",
-      schoolCode: "CD-2026-0001",
-      permissions: ["student.enrollments.close"],
-    },
+    authClose,
     closeRepo,
   );
   assert(closed.success, "clôture OK");
@@ -1273,10 +1315,13 @@ async function testC18bTransferAndClose() {
       status: string;
       endedAt: string | null;
       className: string | null;
+      version: number;
     };
-    assertEqual(agg.status, "WITHDRAWN", "CLOSED → WITHDRAWN");
-    assertEqual(agg.endedAt, "2026-07-24", "endedAt clôture");
+    assertEqual(agg.status, "CLOSED", "statut CLOSED");
+    assertEqual(agg.endedAt, "2026-07-24", "endedAt = closureDate");
     assertEqual(agg.className, "4e A", "données conservées (pas de delete)");
+    assertEqual(agg.version, 3, "version incrémentée une fois");
+    assertEqual(closeStore.auditLog.length, 1, "un seul audit close");
   }
 
   const historyClose = collectStudentHistoryRecord({
@@ -1286,42 +1331,106 @@ async function testC18bTransferAndClose() {
     ],
   });
   assert(
-    historyClose.events.some((event) => event.title === "Inscription clôturée"),
+    historyClose.events.some((event) => event.title === "Clôture d'inscription"),
     "historique clôture projeté",
   );
 
-  // Transition invalide depuis APPROVED
-  const badStore = createMockEditingStore({
+  // APPROVED → CLOSED (jamais affectée)
+  const approvedStore = createMockEditingStore({
     enrollments: [
       seedEditableEnrollment({
-        enrollmentId: "E-BAD",
-        studentId: "STU-BAD",
+        enrollmentId: "E-APP",
+        studentId: "STU-APP",
         schoolCode: "CD-2026-0001",
         academicYear: "2026-2027",
         status: "APPROVED",
+        validatedAt: "2026-07-20",
         version: 1,
       }),
     ],
   });
-  const badRepo = createMockStudentWorkspaceCommandRepository(badStore);
+  const approvedRepo = createMockStudentWorkspaceCommandRepository(approvedStore);
+  const approvedClosed = await executeStudentUpdateCommand(
+    {
+      type: "CLOSE_ENROLLMENT",
+      studentId: "STU-APP",
+      enrollmentId: "E-APP",
+      expectedVersion: 1,
+      changes: { closureDate: "2026-07-22" },
+      reason: "Annulation avant affectation",
+    },
+    authClose,
+    approvedRepo,
+  );
+  assert(approvedClosed.success, "APPROVED → CLOSED OK");
+  assertEqual(
+    approvedStore.enrollments.get("STU-APP:E-APP")?.status,
+    "CLOSED",
+    "APPROVED clôturé",
+  );
+
+  // Transfer refusé depuis APPROVED
   const badTransfer = await executeStudentUpdateCommand(
     {
       type: "TRANSFER_ENROLLMENT",
-      studentId: "STU-BAD",
-      enrollmentId: "E-BAD",
+      studentId: "STU-APP",
+      enrollmentId: "E-APP",
       expectedVersion: 1,
-      changes: { targetSchoolName: "Autre" },
+      changes: {
+        transferDate: "2026-07-22",
+        destinationSchoolName: "Autre",
+      },
       reason: "test",
     },
-    {
-      userId: "u-ok",
-      role: "Secrétaire",
-      schoolCode: "CD-2026-0001",
-      permissions: ["student.enrollments.transfer"],
-    },
-    badRepo,
+    authTransfer,
+    createMockStudentWorkspaceCommandRepository(
+      createMockEditingStore({
+        enrollments: [
+          seedEditableEnrollment({
+            enrollmentId: "E-APP2",
+            studentId: "STU-APP2",
+            schoolCode: "CD-2026-0001",
+            academicYear: "2026-2027",
+            status: "APPROVED",
+            validatedAt: "2026-07-20",
+            version: 1,
+          }),
+        ],
+      }),
+    ),
   );
   assertEqual(badTransfer.success, false, "transfer refusé hors ENROLLED");
+
+  // Refus depuis WITHDRAWN (legacy) et CLOSED
+  for (const status of ["WITHDRAWN", "CLOSED", "TRANSFERRED"] as const) {
+    const termStore = createMockEditingStore({
+      enrollments: [
+        seedEditableEnrollment({
+          enrollmentId: `E-${status}`,
+          studentId: `STU-${status}`,
+          schoolCode: "CD-2026-0001",
+          academicYear: "2026-2027",
+          status,
+          endedAt: "2026-07-22",
+          version: 5,
+        }),
+      ],
+    });
+    const termRepo = createMockStudentWorkspaceCommandRepository(termStore);
+    const refuseClose = await executeStudentUpdateCommand(
+      {
+        type: "CLOSE_ENROLLMENT",
+        studentId: `STU-${status}`,
+        enrollmentId: `E-${status}`,
+        expectedVersion: 5,
+        changes: { closureDate: "2026-07-24" },
+        reason: "déjà terminé",
+      },
+      authClose,
+      termRepo,
+    );
+    assertEqual(refuseClose.success, false, `close refusé depuis ${status}`);
+  }
 }
 
 async function main() {

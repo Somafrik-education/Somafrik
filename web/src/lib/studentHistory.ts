@@ -436,7 +436,9 @@ function projectEnrollmentEvents(
       const closedTitle =
         enrollment.status === "TRANSFERRED"
           ? "Transfert d'inscription"
-          : "Inscription clôturée";
+          : enrollment.status === "CLOSED" || enrollment.status === "WITHDRAWN"
+            ? "Clôture d'inscription"
+            : "Inscription clôturée";
       events.push(
         createEvent({
           id: `HIST-ENR-ENDED-${enrollment.id}`,

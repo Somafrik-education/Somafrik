@@ -1,6 +1,7 @@
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
@@ -19,6 +20,7 @@ import {
   buildChangeSetForCommand,
   listUnsupportedFields,
   normalizeAdministrativeChanges,
+  normalizeCivilDate,
   normalizeEmail,
   normalizeEnrollmentClassChanges,
   normalizeGuardianContactChanges,
@@ -618,6 +620,36 @@ function validateAssignEnrollmentClassCommand(
   return { valid: errors.length === 0, errors, warnings };
 }
 
+function validateEndDateAgainstMilestones(
+  endDate: string,
+  current: EditableEnrollment,
+  field: string,
+): StudentEditValidationError[] {
+  const errors: StudentEditValidationError[] = [];
+  const validatedAt = normalizeCivilDate(current.validatedAt);
+  const enrolledAt = normalizeCivilDate(current.enrolledAt);
+
+  if (validatedAt && endDate < validatedAt) {
+    errors.push(
+      err(
+        field,
+        "DATE_BEFORE_VALIDATED",
+        "La date ne peut pas précéder la date de validation.",
+      ),
+    );
+  }
+  if (enrolledAt && endDate < enrolledAt) {
+    errors.push(
+      err(
+        field,
+        "DATE_BEFORE_ENROLLED",
+        "La date ne peut pas précéder la date d'inscription.",
+      ),
+    );
+  }
+  return errors;
+}
+
 function validateTransferEnrollmentCommand(
   command: Extract<StudentWorkspaceCommand, { type: "TRANSFER_ENROLLMENT" }>,
   options: ValidateCommandOptions,
@@ -666,22 +698,43 @@ function validateTransferEnrollmentCommand(
     );
   }
 
-  const target = normalizeOptionalText(command.changes.targetSchoolName);
-  if (!target) {
+  const destination = normalizeOptionalText(
+    command.changes.destinationSchoolName,
+  );
+  if (!destination) {
     errors.push(
       err(
-        "targetSchoolName",
+        "destinationSchoolName",
         "REQUIRED",
         "L'établissement de destination est obligatoire (informatif, sans création automatique).",
       ),
     );
-  } else if (target.length > MAX_TEXT) {
+  } else if (destination.length > MAX_TEXT) {
     errors.push(
-      err("targetSchoolName", "MAX_LENGTH", "Nom d'établissement trop long."),
+      err(
+        "destinationSchoolName",
+        "MAX_LENGTH",
+        "Nom d'établissement trop long.",
+      ),
     );
   }
 
-  if (!String(command.reason ?? "").trim()) {
+  const transferDate = normalizeCivilDate(command.changes.transferDate);
+  if (!transferDate) {
+    errors.push(
+      err(
+        "transferDate",
+        "INVALID_DATE",
+        "La date de transfert doit être une date civile valide (YYYY-MM-DD).",
+      ),
+    );
+  } else {
+    errors.push(
+      ...validateEndDateAgainstMilestones(transferDate, current, "transferDate"),
+    );
+  }
+
+  if (!normalizeOptionalText(command.reason)) {
     errors.push(
       err(
         "reason",
@@ -730,7 +783,7 @@ function validateCloseEnrollmentCommand(
       err(
         "status",
         "INVALID_TRANSITION",
-        `Clôture interdite depuis le statut ${current.status}. Seule une inscription ENROLLED peut être clôturée.`,
+        `Clôture interdite depuis le statut ${current.status}. Seules APPROVED et ENROLLED peuvent être clôturées.`,
       ),
     );
   }
@@ -741,7 +794,32 @@ function validateCloseEnrollmentCommand(
     );
   }
 
-  if (!String(command.reason ?? "").trim()) {
+  const unsupported = listUnsupportedFields(
+    command.changes as Record<string, unknown>,
+    ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS,
+  );
+  for (const field of unsupported) {
+    errors.push(
+      err(field, "UNSUPPORTED_FIELD", `Champ non autorisé : ${field}`),
+    );
+  }
+
+  const closureDate = normalizeCivilDate(command.changes.closureDate);
+  if (!closureDate) {
+    errors.push(
+      err(
+        "closureDate",
+        "INVALID_DATE",
+        "La date de clôture doit être une date civile valide (YYYY-MM-DD).",
+      ),
+    );
+  } else {
+    errors.push(
+      ...validateEndDateAgainstMilestones(closureDate, current, "closureDate"),
+    );
+  }
+
+  if (!normalizeOptionalText(command.reason)) {
     errors.push(
       err(
         "reason",
@@ -754,7 +832,7 @@ function validateCloseEnrollmentCommand(
   const changeSet =
     options.changeSet ?? buildChangeSetForCommand(command, current);
 
-  if (changeSet.isEmpty && errors.length === 0) {
+  if (changeSet.isEmpty && unsupported.length === 0 && errors.length === 0) {
     errors.push(
       err(null, "NO_CHANGES", "Aucun changement réel à enregistrer."),
     );

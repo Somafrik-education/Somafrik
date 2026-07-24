@@ -251,7 +251,7 @@ export function createMockStudentWorkspaceCommandRepository(
           store.enrollments.get(
             enrollmentKey(command.studentId, command.enrollmentId),
           ) ?? null,
-        apply: (current, at) => applyCloseEnrollment(current, at),
+        apply: (current, at) => applyCloseEnrollment(current, command, at),
         save: (next) =>
           store.enrollments.set(
             enrollmentKey(next.studentId, next.enrollmentId),

@@ -7,11 +7,13 @@
  *   PENDING_REVIEW / INCOMPLETE (en attente)
  *       ↓ VALIDATE_ENROLLMENT
  *   APPROVED (validé)
- *       ↓ ASSIGN_ENROLLMENT_CLASS
- *   ENROLLED + classe (affecté)
+ *       ↓ ASSIGN_ENROLLMENT_CLASS → ENROLLED + classe
+ *       ↓ CLOSE_ENROLLMENT        → CLOSED
+ *   ENROLLED
  *       ↓ TRANSFER_ENROLLMENT → TRANSFERRED
- *       ↓ CLOSE_ENROLLMENT    → WITHDRAWN (clôture / « CLOSED »)
+ *       ↓ CLOSE_ENROLLMENT    → CLOSED
  *
+ * Aucune transition sortante depuis TRANSFERRED / CLOSED.
  * Aucun retour arrière implicite. Aucune suppression physique.
  */
 
@@ -30,9 +32,23 @@ export const ASSIGN_CLASS_SOURCE_STATUSES = [
   "ENROLLED",
 ] as const satisfies readonly StudentEnrollmentStatus[];
 
-/** Statuts depuis lesquels transfert / clôture sont autorisés (C1.8b). */
-export const TRANSFER_OR_CLOSE_SOURCE_STATUSES = [
+/** Transfert : uniquement depuis ENROLLED. */
+export const TRANSFER_ENROLLMENT_SOURCE_STATUSES = [
   "ENROLLED",
+] as const satisfies readonly StudentEnrollmentStatus[];
+
+/**
+ * Clôture : ENROLLED, ou APPROVED (inscription validée jamais affectée).
+ */
+export const CLOSE_ENROLLMENT_SOURCE_STATUSES = [
+  "ENROLLED",
+  "APPROVED",
+] as const satisfies readonly StudentEnrollmentStatus[];
+
+/** Statuts terminaux sans transition sortante C1.8b. */
+export const TERMINAL_ENROLLMENT_STATUSES = [
+  "TRANSFERRED",
+  "CLOSED",
 ] as const satisfies readonly StudentEnrollmentStatus[];
 
 export type ValidateEnrollmentSourceStatus =
@@ -41,8 +57,11 @@ export type ValidateEnrollmentSourceStatus =
 export type AssignClassSourceStatus =
   (typeof ASSIGN_CLASS_SOURCE_STATUSES)[number];
 
-export type TransferOrCloseSourceStatus =
-  (typeof TRANSFER_OR_CLOSE_SOURCE_STATUSES)[number];
+export type TransferEnrollmentSourceStatus =
+  (typeof TRANSFER_ENROLLMENT_SOURCE_STATUSES)[number];
+
+export type CloseEnrollmentSourceStatus =
+  (typeof CLOSE_ENROLLMENT_SOURCE_STATUSES)[number];
 
 export function canValidateEnrollmentStatus(
   status: StudentEnrollmentStatus,
@@ -60,18 +79,24 @@ export function canAssignClassEnrollmentStatus(
 
 export function canTransferEnrollmentStatus(
   status: StudentEnrollmentStatus,
-): status is TransferOrCloseSourceStatus {
-  return (TRANSFER_OR_CLOSE_SOURCE_STATUSES as readonly string[]).includes(
+): status is TransferEnrollmentSourceStatus {
+  return (TRANSFER_ENROLLMENT_SOURCE_STATUSES as readonly string[]).includes(
     status,
   );
 }
 
 export function canCloseEnrollmentStatus(
   status: StudentEnrollmentStatus,
-): status is TransferOrCloseSourceStatus {
-  return (TRANSFER_OR_CLOSE_SOURCE_STATUSES as readonly string[]).includes(
+): status is CloseEnrollmentSourceStatus {
+  return (CLOSE_ENROLLMENT_SOURCE_STATUSES as readonly string[]).includes(
     status,
   );
+}
+
+export function isTerminalEnrollmentStatus(
+  status: StudentEnrollmentStatus,
+): boolean {
+  return (TERMINAL_ENROLLMENT_STATUSES as readonly string[]).includes(status);
 }
 
 /** Validation → APPROVED (Validé). */
@@ -95,10 +120,7 @@ export function nextStatusAfterTransfer(): "TRANSFERRED" {
   return "TRANSFERRED";
 }
 
-/**
- * Clôture (CLOSED métier) → WITHDRAWN (statut canonique existant « Désinscrit »).
- * Pas de nouveau code CLOSED pour éviter une duplication du domaine.
- */
-export function nextStatusAfterClose(): "WITHDRAWN" {
-  return "WITHDRAWN";
+/** Clôture → CLOSED (désinscription / annulation propre). */
+export function nextStatusAfterClose(): "CLOSED" {
+  return "CLOSED";
 }

@@ -26,6 +26,14 @@ interface StudentEnrollmentActionsProps {
 
 type BusyAction = "validate" | "assign" | "transfer" | "close" | null;
 
+function todayCivilDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export function StudentEnrollmentActions({
   enrollment,
   schoolClasses,
@@ -44,19 +52,23 @@ export function StudentEnrollmentActions({
   const [confirmValidate, setConfirmValidate] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmTransfer, setConfirmTransfer] = useState(false);
-  const [targetSchoolName, setTargetSchoolName] = useState("");
+  const [destinationSchoolName, setDestinationSchoolName] = useState("");
+  const [transferDate, setTransferDate] = useState(todayCivilDate);
+  const [closureDate, setClosureDate] = useState(todayCivilDate);
   const [transferReason, setTransferReason] = useState("");
   const [closeReason, setCloseReason] = useState("");
 
   const canShowValidate =
     canValidate &&
     enrollment != null &&
-    canValidateEnrollmentStatus(enrollment.status);
+    canValidateEnrollmentStatus(enrollment.status) &&
+    !enrollment.endedAt;
 
   const canShowAssign =
     canAssignClass &&
     enrollment != null &&
-    canAssignClassEnrollmentStatus(enrollment.status);
+    canAssignClassEnrollmentStatus(enrollment.status) &&
+    !enrollment.endedAt;
 
   const canShowTransfer =
     canTransfer &&
@@ -181,7 +193,7 @@ export function StudentEnrollmentActions({
           studentId: enrollment.studentId,
           enrollmentId: enrollment.enrollmentId,
           expectedVersion: enrollment.version,
-          changes: { targetSchoolName },
+          changes: { transferDate, destinationSchoolName },
           reason: transferReason,
         },
         authContext,
@@ -192,8 +204,9 @@ export function StudentEnrollmentActions({
         return;
       }
       setConfirmTransfer(false);
-      setTargetSchoolName("");
+      setDestinationSchoolName("");
       setTransferReason("");
+      setTransferDate(todayCivilDate());
       setSuccess("Inscription transférée. Aucune suppression physique.");
       onSuccess();
     } finally {
@@ -212,6 +225,7 @@ export function StudentEnrollmentActions({
           studentId: enrollment.studentId,
           enrollmentId: enrollment.enrollmentId,
           expectedVersion: enrollment.version,
+          changes: { closureDate },
           reason: closeReason,
         },
         authContext,
@@ -223,7 +237,8 @@ export function StudentEnrollmentActions({
       }
       setConfirmClose(false);
       setCloseReason("");
-      setSuccess("Inscription clôturée (désinscrit). Aucune suppression physique.");
+      setClosureDate(todayCivilDate());
+      setSuccess("Inscription clôturée. Aucune suppression physique.");
       onSuccess();
     } finally {
       setBusy(null);
@@ -343,14 +358,26 @@ export function StudentEnrollmentActions({
                   automatique à destination).
                 </p>
                 <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-ink">Date de transfert</span>
+                  <input
+                    type="date"
+                    className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                    value={transferDate}
+                    onChange={(event) => setTransferDate(event.target.value)}
+                    data-testid="enrollment-transfer-date"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
                   <span className="font-semibold text-ink">
                     Établissement de destination
                   </span>
                   <input
                     className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
-                    value={targetSchoolName}
-                    onChange={(event) => setTargetSchoolName(event.target.value)}
-                    data-testid="enrollment-transfer-target"
+                    value={destinationSchoolName}
+                    onChange={(event) =>
+                      setDestinationSchoolName(event.target.value)
+                    }
+                    data-testid="enrollment-transfer-destination"
                     placeholder="Ex. Lycée Horizon"
                   />
                 </label>
@@ -379,8 +406,9 @@ export function StudentEnrollmentActions({
                     disabled={busy != null}
                     onClick={() => {
                       setConfirmTransfer(false);
-                      setTargetSchoolName("");
+                      setDestinationSchoolName("");
                       setTransferReason("");
+                      setTransferDate(todayCivilDate());
                     }}
                   >
                     Annuler
@@ -406,9 +434,19 @@ export function StudentEnrollmentActions({
             ) : (
               <>
                 <p className="text-sm text-ink">
-                  Confirmer la clôture (statut Désinscrit)&nbsp;? L&apos;inscription
+                  Confirmer la clôture (statut Clôturé)&nbsp;? L&apos;inscription
                   reste conservée.
                 </p>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-ink">Date de clôture</span>
+                  <input
+                    type="date"
+                    className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                    value={closureDate}
+                    onChange={(event) => setClosureDate(event.target.value)}
+                    data-testid="enrollment-close-date"
+                  />
+                </label>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="font-semibold text-ink">Raison</span>
                   <input
@@ -436,6 +474,7 @@ export function StudentEnrollmentActions({
                     onClick={() => {
                       setConfirmClose(false);
                       setCloseReason("");
+                      setClosureDate(todayCivilDate());
                     }}
                   >
                     Annuler

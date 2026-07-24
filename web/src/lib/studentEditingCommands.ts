@@ -81,14 +81,16 @@ export interface TransferEnrollmentCommand {
   enrollmentId: string;
   expectedVersion: number;
   changes: {
-    /** Libellé de l'établissement de destination (informatif, pas de création). */
-    targetSchoolName: string;
+    /** Date civile du transfert (YYYY-MM-DD) → endedAt. */
+    transferDate: string;
+    /** Libellé de l'établissement de destination (texte libre, pas de création). */
+    destinationSchoolName: string;
   };
   reason?: string | null;
 }
 
 /**
- * C1.8b — Clôturer une inscription (CLOSED métier → WITHDRAWN).
+ * C1.8b — Clôturer une inscription (→ CLOSED).
  * Aucune suppression physique de l'agrégat.
  */
 export interface CloseEnrollmentCommand {
@@ -96,6 +98,10 @@ export interface CloseEnrollmentCommand {
   studentId: string;
   enrollmentId: string;
   expectedVersion: number;
+  changes: {
+    /** Date civile de clôture (YYYY-MM-DD) → endedAt. */
+    closureDate: string;
+  };
   reason?: string | null;
 }
 

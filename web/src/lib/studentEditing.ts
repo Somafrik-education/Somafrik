@@ -227,7 +227,13 @@ export const ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS = [
 
 /** Champs autorisés dans TRANSFER_ENROLLMENT. */
 export const ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS = [
-  "targetSchoolName",
+  "transferDate",
+  "destinationSchoolName",
+] as const;
+
+/** Champs autorisés dans CLOSE_ENROLLMENT. */
+export const ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS = [
+  "closureDate",
 ] as const;
 
 export const FIELD_LABELS: Record<string, string> = {
@@ -252,6 +258,8 @@ export const FIELD_LABELS: Record<string, string> = {
   endedAt: "Date de fin",
   classId: "Identifiant de classe",
   className: "Classe",
-  targetSchoolName: "Établissement de destination",
+  transferDate: "Date de transfert",
+  destinationSchoolName: "Établissement de destination",
+  closureDate: "Date de clôture",
   notes: "Notes d'inscription",
 };

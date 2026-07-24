@@ -134,31 +134,35 @@ function renderWorkspace(section = "inscription") {
   );
 }
 
-describe("C1.8b démo — close enrollment", () => {
+function resetEnrolled() {
+  dataState.current.studentEnrollments = [
+    {
+      id: ENROLLMENT_ID,
+      studentId: STUDENT_ID,
+      schoolCode: SCHOOL,
+      academicYear: "2026-2027",
+      status: "ENROLLED",
+      source: "SCHOOL_ADMINISTRATION",
+      classId: "CLS-4A",
+      className: "4e A",
+      requestedAt: "2026-05-01",
+      validatedAt: "2026-07-20",
+      enrolledAt: "2026-07-21",
+      endedAt: null,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-07-21T00:00:00.000Z",
+    },
+  ];
+}
+
+describe("C1.8b démo — transfer / close enrollment", () => {
   beforeEach(() => {
     cleanup();
     resetStudentEditingSessionsForTests();
-    dataState.current.studentEnrollments = [
-      {
-        id: ENROLLMENT_ID,
-        studentId: STUDENT_ID,
-        schoolCode: SCHOOL,
-        academicYear: "2026-2027",
-        status: "ENROLLED",
-        source: "SCHOOL_ADMINISTRATION",
-        classId: "CLS-4A",
-        className: "4e A",
-        requestedAt: "2026-05-01",
-        validatedAt: "2026-07-20",
-        enrolledAt: "2026-07-21",
-        endedAt: null,
-        createdAt: "2026-05-01T00:00:00.000Z",
-        updatedAt: "2026-07-21T00:00:00.000Z",
-      },
-    ];
+    resetEnrolled();
   });
 
-  it("clôture ENROLLED → WITHDRAWN avec historique et remount", async () => {
+  it("clôture ENROLLED → CLOSED avec historique et remount", async () => {
     const user = userEvent.setup();
     renderWorkspace("inscription");
 
@@ -166,8 +170,12 @@ describe("C1.8b démo — close enrollment", () => {
     expect(within(tab).getAllByText("Inscrit").length).toBeGreaterThan(0);
 
     await user.click(screen.getByTestId("enrollment-close-start"));
-    const reason = screen.getByTestId("enrollment-close-reason");
-    fireEvent.change(reason, { target: { value: "Depart volontaire" } });
+    fireEvent.change(screen.getByTestId("enrollment-close-date"), {
+      target: { value: "2026-07-23" },
+    });
+    fireEvent.change(screen.getByTestId("enrollment-close-reason"), {
+      target: { value: "Depart volontaire" },
+    });
     await user.click(screen.getByTestId("enrollment-close-confirm"));
 
     const alert = screen.queryByRole("alert");
@@ -175,23 +183,63 @@ describe("C1.8b démo — close enrollment", () => {
       throw new Error(`Clôture refusée: ${alert.textContent}`);
     }
 
-    // Statut dossier mis à jour (WITHDRAWN = Désinscrit) + conservation classe.
-    expect(
-      await within(tab).findAllByText("Désinscrit"),
-    ).not.toHaveLength(0);
+    expect(await within(tab).findAllByText("Clôturé")).not.toHaveLength(0);
     expect(within(tab).getAllByText("4e A").length).toBeGreaterThan(0);
 
     cleanup();
     renderWorkspace("historique");
     const history = await screen.findByTestId("student-history-tab");
     expect(
-      within(history).getAllByText("Inscription clôturée").length,
+      within(history).getAllByText("Clôture d'inscription").length,
     ).toBeGreaterThan(0);
 
     cleanup();
     renderWorkspace("inscription");
     const reopened = await screen.findByTestId("student-enrollment-tab");
-    expect(within(reopened).getAllByText("Désinscrit").length).toBeGreaterThan(0);
+    expect(within(reopened).getAllByText("Clôturé").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("enrollment-close-start")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("enrollment-transfer-start")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("enrollment-validate-start")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("enrollment-assign-confirm")).not.toBeInTheDocument();
+  });
+
+  it("transfert ENROLLED → TRANSFERRED avec historique et remount", async () => {
+    const user = userEvent.setup();
+    renderWorkspace("inscription");
+
+    const tab = await screen.findByTestId("student-enrollment-tab");
+    await user.click(screen.getByTestId("enrollment-transfer-start"));
+    fireEvent.change(screen.getByTestId("enrollment-transfer-date"), {
+      target: { value: "2026-07-23" },
+    });
+    fireEvent.change(screen.getByTestId("enrollment-transfer-destination"), {
+      target: { value: "Lycée Horizon" },
+    });
+    fireEvent.change(screen.getByTestId("enrollment-transfer-reason"), {
+      target: { value: "Demenagement familial" },
+    });
+    await user.click(screen.getByTestId("enrollment-transfer-confirm"));
+
+    const alert = screen.queryByRole("alert");
+    if (alert) {
+      throw new Error(`Transfert refusé: ${alert.textContent}`);
+    }
+
+    expect(await within(tab).findAllByText("Transféré")).not.toHaveLength(0);
+    expect(within(tab).getAllByText("4e A").length).toBeGreaterThan(0);
+
+    cleanup();
+    renderWorkspace("historique");
+    const history = await screen.findByTestId("student-history-tab");
+    expect(
+      within(history).getAllByText("Transfert d'inscription").length,
+    ).toBeGreaterThan(0);
+
+    cleanup();
+    renderWorkspace("inscription");
+    const reopened = await screen.findByTestId("student-enrollment-tab");
+    expect(within(reopened).getAllByText("Transféré").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("enrollment-transfer-start")).not.toBeInTheDocument();
     expect(screen.queryByTestId("enrollment-close-start")).not.toBeInTheDocument();
   });
 });

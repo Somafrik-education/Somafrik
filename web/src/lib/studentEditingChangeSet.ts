@@ -1,6 +1,7 @@
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
@@ -16,6 +17,7 @@ import {
 } from "./studentEditing";
 import type {
   AssignEnrollmentClassCommand,
+  CloseEnrollmentCommand,
   StudentWorkspaceCommand,
   TransferEnrollmentCommand,
   UpdateGuardianContactCommand,
@@ -463,15 +465,16 @@ export function buildAssignEnrollmentClassChangeSet(
   };
 }
 
-export function formatTransferDestinationNote(targetSchoolName: string): string {
-  return `Transfert vers : ${targetSchoolName.trim()}`;
+export function formatTransferDestinationNote(
+  destinationSchoolName: string,
+): string {
+  return `Transfert vers : ${destinationSchoolName.trim()}`;
 }
 
 export function buildTransferEnrollmentChangeSet(
   studentId: string,
   current: EditableEnrollment,
   rawChanges: TransferEnrollmentCommand["changes"],
-  endedAt: string,
 ): StudentChangeSet {
   const unsupported = listUnsupportedFields(
     rawChanges as Record<string, unknown>,
@@ -488,13 +491,17 @@ export function buildTransferEnrollmentChangeSet(
     };
   }
 
-  const target = normalizeOptionalText(rawChanges.targetSchoolName);
+  const destination = normalizeOptionalText(rawChanges.destinationSchoolName);
+  const transferDate = normalizeCivilDate(rawChanges.transferDate);
   const items: StudentChange[] = [];
   pushChange(items, "status", current.status, nextStatusAfterTransfer());
-  pushChange(items, "endedAt", current.endedAt, endedAt.slice(0, 10));
-  if (target) {
-    const nextNotes = formatTransferDestinationNote(target);
-    pushChange(items, "targetSchoolName", null, target);
+  if (transferDate) {
+    pushChange(items, "transferDate", null, transferDate);
+    pushChange(items, "endedAt", current.endedAt, transferDate);
+  }
+  if (destination) {
+    const nextNotes = formatTransferDestinationNote(destination);
+    pushChange(items, "destinationSchoolName", null, destination);
     pushChange(items, "notes", current.notes, nextNotes);
   }
 
@@ -504,18 +511,37 @@ export function buildTransferEnrollmentChangeSet(
     changes: items,
     hasSensitiveChange: false,
     requiresReason: true,
-    isEmpty: items.length === 0 || !target,
+    isEmpty: items.length === 0 || !destination || !transferDate,
   };
 }
 
 export function buildCloseEnrollmentChangeSet(
   studentId: string,
   current: EditableEnrollment,
-  endedAt: string,
+  rawChanges: CloseEnrollmentCommand["changes"],
 ): StudentChangeSet {
+  const unsupported = listUnsupportedFields(
+    rawChanges as Record<string, unknown>,
+    ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS,
+  );
+  if (unsupported.length > 0) {
+    return {
+      commandType: "CLOSE_ENROLLMENT",
+      studentId,
+      changes: [],
+      hasSensitiveChange: false,
+      requiresReason: true,
+      isEmpty: true,
+    };
+  }
+
+  const closureDate = normalizeCivilDate(rawChanges.closureDate);
   const items: StudentChange[] = [];
   pushChange(items, "status", current.status, nextStatusAfterClose());
-  pushChange(items, "endedAt", current.endedAt, endedAt.slice(0, 10));
+  if (closureDate) {
+    pushChange(items, "closureDate", null, closureDate);
+    pushChange(items, "endedAt", current.endedAt, closureDate);
+  }
 
   return {
     commandType: "CLOSE_ENROLLMENT",
@@ -523,7 +549,7 @@ export function buildCloseEnrollmentChangeSet(
     changes: items,
     hasSensitiveChange: false,
     requiresReason: true,
-    isEmpty: items.length === 0,
+    isEmpty: items.length === 0 || !closureDate,
   };
 }
 
@@ -572,14 +598,13 @@ export function buildChangeSetForCommand(
       command.studentId,
       current as EditableEnrollment,
       command.changes,
-      now,
     );
   }
   if (command.type === "CLOSE_ENROLLMENT") {
     return buildCloseEnrollmentChangeSet(
       command.studentId,
       current as EditableEnrollment,
-      now,
+      command.changes,
     );
   }
   return buildAdministrativeChangeSet(

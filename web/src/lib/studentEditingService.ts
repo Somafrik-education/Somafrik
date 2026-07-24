@@ -20,6 +20,7 @@ import {
   formatTransferDestinationNote,
   listUnsupportedFields,
   normalizeAdministrativeChanges,
+  normalizeCivilDate,
   normalizeEnrollmentClassChanges,
   normalizeGuardianContactChanges,
   normalizeIdentityChanges,
@@ -39,6 +40,7 @@ import {
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
@@ -72,7 +74,7 @@ function createAuditEvent(
     actorRole: context.role,
     occurredAt,
     changedFields: changeSet.changes.map((item) => item.field),
-    reason: command.reason ?? null,
+    reason: normalizeOptionalText(command.reason),
     visibility: "ADMIN",
   };
 }
@@ -121,6 +123,9 @@ function allowedFieldsForCommand(
   }
   if (command.type === "TRANSFER_ENROLLMENT") {
     return ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS;
+  }
+  if (command.type === "CLOSE_ENROLLMENT") {
+    return ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS;
   }
   return null;
 }
@@ -419,15 +424,19 @@ export function applyTransferEnrollment(
   command: Extract<StudentWorkspaceCommand, { type: "TRANSFER_ENROLLMENT" }>,
   updatedAt: string,
 ): EditableEnrollment {
-  const target = normalizeOptionalText(command.changes.targetSchoolName);
-  if (!target) {
+  const destination = normalizeOptionalText(
+    command.changes.destinationSchoolName,
+  );
+  const transferDate = normalizeCivilDate(command.changes.transferDate);
+  if (!destination || !transferDate) {
+    // Validation amont : aucune mutation partielle.
     return current;
   }
   return {
     ...current,
     status: nextStatusAfterTransfer(),
-    endedAt: current.endedAt ?? updatedAt.slice(0, 10),
-    notes: formatTransferDestinationNote(target),
+    endedAt: transferDate,
+    notes: formatTransferDestinationNote(destination),
     version: current.version + 1,
     updatedAt,
   };
@@ -435,12 +444,17 @@ export function applyTransferEnrollment(
 
 export function applyCloseEnrollment(
   current: EditableEnrollment,
+  command: Extract<StudentWorkspaceCommand, { type: "CLOSE_ENROLLMENT" }>,
   updatedAt: string,
 ): EditableEnrollment {
+  const closureDate = normalizeCivilDate(command.changes.closureDate);
+  if (!closureDate) {
+    return current;
+  }
   return {
     ...current,
     status: nextStatusAfterClose(),
-    endedAt: current.endedAt ?? updatedAt.slice(0, 10),
+    endedAt: closureDate,
     version: current.version + 1,
     updatedAt,
   };
