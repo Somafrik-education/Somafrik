@@ -51,6 +51,10 @@ jobs:
         env:
           VITE_API_URL: https://api.somafrik.app
 
+      - name: verify:student-enrollment (C1.2 / C1.8a)
+        working-directory: web
+        run: npm run verify:student-enrollment
+
       - name: Build image préproduction
         env:
           POSTGRES_DB: somafrik
