@@ -1,5 +1,6 @@
 import type { Person, Student } from "./studentDomain";
 import type {
+  EditableEnrollment,
   EditableGuardianContact,
   EditableStudentAdministrativeDetails,
   EditableStudentIdentity,
@@ -7,6 +8,7 @@ import type {
   StudentGender,
 } from "./studentEditing";
 import { normalizeGender, normalizePhone, normalizeEmail } from "./studentEditingChangeSet";
+import type { StudentEnrollmentRecord } from "./studentEnrollment";
 import type { StudentGuardianRelationRecord } from "./studentGuardian";
 
 function deriveVersion(updatedAt: string | null | undefined): number {
@@ -103,6 +105,64 @@ export function toEditableAdministrativeDetails(input: {
     updatedAt,
     administrativeNotes: input.administrativeNotes?.trim() || null,
     preferredContactChannel: input.preferredContactChannel ?? null,
+  };
+}
+
+export function toEditableEnrollment(
+  record: StudentEnrollmentRecord,
+  options: { version?: number } = {},
+): EditableEnrollment {
+  const updatedAt = record.updatedAt?.trim() || record.createdAt || new Date(0).toISOString();
+  return {
+    enrollmentId: record.id,
+    studentId: record.studentId,
+    schoolCode: record.schoolCode.trim(),
+    academicYear: record.academicYear,
+    version: options.version ?? deriveVersion(updatedAt),
+    updatedAt,
+    status: record.status,
+    classId: record.classId,
+    className: record.className,
+    programId: record.programId,
+    programName: record.programName,
+    source: record.source,
+    applicationReference: record.applicationReference,
+    requestedAt: record.requestedAt,
+    validatedAt: record.validatedAt,
+    enrolledAt: record.enrolledAt,
+    endedAt: record.endedAt,
+    previousSchoolName: record.previousSchoolName,
+    notes: record.notes,
+    schoolName: record.schoolName,
+    createdAt: record.createdAt,
+  };
+}
+
+/** Reprojection vers le record C1.2 (historique / view model). */
+export function fromEditableEnrollment(
+  editable: EditableEnrollment,
+): StudentEnrollmentRecord {
+  return {
+    id: editable.enrollmentId,
+    studentId: editable.studentId,
+    schoolCode: editable.schoolCode,
+    academicYear: editable.academicYear,
+    classId: editable.classId,
+    className: editable.className,
+    programId: editable.programId,
+    programName: editable.programName,
+    status: editable.status,
+    source: editable.source,
+    applicationReference: editable.applicationReference,
+    requestedAt: editable.requestedAt,
+    enrolledAt: editable.enrolledAt,
+    validatedAt: editable.validatedAt,
+    endedAt: editable.endedAt,
+    previousSchoolName: editable.previousSchoolName,
+    notes: editable.notes,
+    schoolName: editable.schoolName,
+    createdAt: editable.createdAt,
+    updatedAt: editable.updatedAt,
   };
 }
 

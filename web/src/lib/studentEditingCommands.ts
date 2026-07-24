@@ -49,9 +49,33 @@ export interface UpdateStudentAdministrativeDetailsCommand {
   reason?: string | null;
 }
 
+/** C1.8a — Valider une inscription (→ APPROVED). */
+export interface ValidateEnrollmentCommand {
+  type: "VALIDATE_ENROLLMENT";
+  studentId: string;
+  enrollmentId: string;
+  expectedVersion: number;
+  reason?: string | null;
+}
+
+/** C1.8a — Affecter une classe (→ ENROLLED + classe). */
+export interface AssignEnrollmentClassCommand {
+  type: "ASSIGN_ENROLLMENT_CLASS";
+  studentId: string;
+  enrollmentId: string;
+  expectedVersion: number;
+  changes: {
+    classId?: string | null;
+    className?: string | null;
+  };
+  reason?: string | null;
+}
+
 export type StudentWorkspaceCommand =
   | UpdateStudentIdentityCommand
   | UpdateGuardianContactCommand
-  | UpdateStudentAdministrativeDetailsCommand;
+  | UpdateStudentAdministrativeDetailsCommand
+  | ValidateEnrollmentCommand
+  | AssignEnrollmentClassCommand;
 
 export type StudentWorkspaceCommandType = StudentWorkspaceCommand["type"];

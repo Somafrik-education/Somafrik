@@ -111,10 +111,26 @@ function testPermissions() {
     !canUpdateStudentWorkspace(bridge, "student.archive"),
     "bridge n'accorde pas archive",
   );
+  assert(
+    !canUpdateStudentWorkspace(bridge, "student.enrollments.validate"),
+    "bridge n'accorde pas enrollments.validate",
+  );
+  assert(
+    !canUpdateStudentWorkspace(bridge, "student.enrollments.assign-class"),
+    "bridge n'accorde pas enrollments.assign-class",
+  );
 
   assert(
     STUDENT_EDITING_PERMISSIONS.includes("student.identity.update"),
     "catalogue C1.7",
+  );
+  assert(
+    STUDENT_EDITING_PERMISSIONS.includes("student.enrollments.validate"),
+    "catalogue C1.8a validate",
+  );
+  assert(
+    STUDENT_EDITING_PERMISSIONS.includes("student.enrollments.assign-class"),
+    "catalogue C1.8a assign-class",
   );
   assert(
     FUTURE_STUDENT_EDITING_PERMISSIONS.includes("student.medical.update"),

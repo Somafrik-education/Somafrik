@@ -1,7 +1,16 @@
 /**
- * Vérifications C1.2 — inscription et parcours scolaire.
+ * Vérifications C1.2 / C1.8a — inscription et parcours scolaire.
  * Exécution : npm run verify:student-enrollment
  */
+import { fromEditableEnrollment } from "../src/lib/studentEditingAdapters";
+import { canUpdateStudentWorkspace } from "../src/lib/studentEditingPermissions";
+import {
+  createMockEditingStore,
+  createMockStudentWorkspaceCommandRepository,
+  seedEditableEnrollment,
+  seedSchoolClass,
+} from "../src/lib/studentEditingRepository.mock";
+import { executeStudentUpdateCommand } from "../src/lib/studentEditingService";
 import {
   assertSingleActiveEnrollmentPerYear,
   collectStudentEnrollmentRecords,
@@ -13,6 +22,14 @@ import {
   validateEnrollmentDateOrder,
   type StudentEnrollmentRecord,
 } from "../src/lib/studentEnrollment";
+import {
+  canAssignClassEnrollmentStatus,
+  canValidateEnrollmentStatus,
+  nextStatusAfterAssignClass,
+  nextStatusAfterValidate,
+} from "../src/lib/studentEnrollmentTransitions";
+import { resolveSchoolClass } from "../src/lib/studentEditingValidation";
+import { collectStudentHistoryRecord } from "../src/lib/studentHistory";
 import {
   listEnrollmentStatusLabels,
   normalizeStudentEnrollmentStatus,
@@ -631,7 +648,437 @@ function testTimelineAndAlerts() {
   );
 }
 
-function main() {
+async function testC18aValidateAndAssignClass() {
+  assert(canValidateEnrollmentStatus("PRE_REGISTERED"), "validate depuis brouillon");
+  assert(canValidateEnrollmentStatus("PENDING_REVIEW"), "validate depuis en attente");
+  assert(canValidateEnrollmentStatus("INCOMPLETE"), "validate depuis incomplet");
+  assert(!canValidateEnrollmentStatus("APPROVED"), "pas de re-validation");
+  assert(!canValidateEnrollmentStatus("ENROLLED"), "pas de validate depuis inscrit");
+  assertEqual(nextStatusAfterValidate(), "APPROVED", "cible validation");
+
+  assert(canAssignClassEnrollmentStatus("APPROVED"), "assign depuis validé");
+  assert(canAssignClassEnrollmentStatus("ENROLLED"), "réaffectation");
+  assert(!canAssignClassEnrollmentStatus("PENDING_REVIEW"), "assign interdit avant validation");
+  assertEqual(nextStatusAfterAssignClass("APPROVED"), "ENROLLED", "cible affectation");
+
+  const enrollment = seedEditableEnrollment({
+    enrollmentId: "E-C18A",
+    studentId: "STU-C18A",
+    schoolCode: "CD-2026-0001",
+    academicYear: "2026-2027",
+    status: "PENDING_REVIEW",
+    requestedAt: "2026-05-01",
+    version: 1,
+  });
+  const schoolClass = seedSchoolClass({
+    id: "CLS-4A",
+    name: "4e A",
+    schoolCode: "CD-2026-0001",
+  });
+  const store = createMockEditingStore({
+    enrollments: [enrollment],
+    schoolClasses: [schoolClass],
+  });
+  const repo = createMockStudentWorkspaceCommandRepository(store, {
+    now: () => "2026-07-23T10:00:00.000Z",
+  });
+
+  const denied = await executeStudentUpdateCommand(
+    {
+      type: "VALIDATE_ENROLLMENT",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 1,
+    },
+    {
+      userId: "u-deny",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      permissions: ["Élèves:UPDATE", "Élèves:READ"],
+    },
+    repo,
+  );
+  assertEqual(denied.success, false, "RBAC validate refusé via bridge");
+  if (!denied.success) {
+    assertEqual(denied.code, "PERMISSION_DENIED", "code permission validate");
+  }
+  assertEqual(
+    store.enrollments.get("STU-C18A:E-C18A")?.status,
+    "PENDING_REVIEW",
+    "aucun état intermédiaire après refus",
+  );
+
+  assert(
+    canUpdateStudentWorkspace(
+      {
+        userId: "u-ok",
+        role: "Secrétaire",
+        schoolCode: "CD-2026-0001",
+        permissions: ["student.enrollments.validate"],
+      },
+      "student.enrollments.validate",
+    ),
+    "RBAC validate autorisé",
+  );
+
+  const validated = await executeStudentUpdateCommand(
+    {
+      type: "VALIDATE_ENROLLMENT",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 1,
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.validate"],
+    },
+    repo,
+  );
+  assert(validated.success, "validation OK");
+  if (validated.success) {
+    const agg = validated.updatedAggregate as {
+      status: string;
+      validatedAt: string | null;
+      version: number;
+    };
+    assertEqual(agg.status, "APPROVED", "statut VALIDÉ");
+    assertEqual(agg.validatedAt, "2026-07-23", "validatedAt posé");
+    assertEqual(agg.version, 2, "version incrémentée");
+    assert(
+      store.auditLog.some((item) => item.commandType === "VALIDATE_ENROLLMENT"),
+      "audit validate",
+    );
+  }
+
+  const assignDenied = await executeStudentUpdateCommand(
+    {
+      type: "ASSIGN_ENROLLMENT_CLASS",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 2,
+      changes: { classId: "CLS-4A", className: "4e A" },
+    },
+    {
+      userId: "u-deny",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.validate"],
+    },
+    repo,
+  );
+  assertEqual(assignDenied.success, false, "RBAC assign refusé sans jeton");
+
+  const assignMissingClass = await executeStudentUpdateCommand(
+    {
+      type: "ASSIGN_ENROLLMENT_CLASS",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 2,
+      changes: { classId: "CLS-UNKNOWN" },
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.assign-class"],
+    },
+    repo,
+  );
+  assertEqual(assignMissingClass.success, false, "classe inexistante refusée");
+  assertEqual(
+    store.enrollments.get("STU-C18A:E-C18A")?.status,
+    "APPROVED",
+    "statut inchangé si classe invalide",
+  );
+
+  const assigned = await executeStudentUpdateCommand(
+    {
+      type: "ASSIGN_ENROLLMENT_CLASS",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 2,
+      changes: { classId: "CLS-4A" },
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.assign-class"],
+    },
+    repo,
+  );
+  assert(assigned.success, "affectation OK");
+  if (assigned.success) {
+    const agg = assigned.updatedAggregate as {
+      status: string;
+      classId: string | null;
+      className: string | null;
+      enrolledAt: string | null;
+    };
+    assertEqual(agg.status, "ENROLLED", "statut AFFECTÉ/Inscrit");
+    assertEqual(agg.classId, "CLS-4A", "classId");
+    assertEqual(agg.className, "4e A", "className résolu");
+    assertEqual(agg.enrolledAt, "2026-07-23", "enrolledAt posé");
+  }
+
+  const invalidBack = await executeStudentUpdateCommand(
+    {
+      type: "VALIDATE_ENROLLMENT",
+      studentId: "STU-C18A",
+      enrollmentId: "E-C18A",
+      expectedVersion: 3,
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.validate"],
+    },
+    repo,
+  );
+  assertEqual(invalidBack.success, false, "pas de retour arrière implicite");
+
+  const record = fromEditableEnrollment(
+    store.enrollments.get("STU-C18A:E-C18A")!,
+  );
+  const history = collectStudentHistoryRecord({
+    studentId: "STU-C18A",
+    enrollments: [record],
+  });
+  assert(
+    history.events.some((event) => event.type === "STATUS_CHANGED"),
+    "historique validation projeté",
+  );
+  assert(
+    history.events.some((event) => event.type === "CLASS_ASSIGNED"),
+    "historique affectation projeté",
+  );
+
+  const timeline = buildEnrollmentTimeline(record);
+  assertEqual(
+    timeline.find((step) => step.key === "class_assignment")?.state,
+    "completed",
+    "timeline affectation complétée",
+  );
+
+  // classId valide + className contradictoire → libellé canonique du catalogue.
+  const reassignStore = createMockEditingStore({
+    enrollments: [
+      seedEditableEnrollment({
+        enrollmentId: "E-CANON",
+        studentId: "STU-CANON",
+        schoolCode: "CD-2026-0001",
+        academicYear: "2026-2027",
+        status: "APPROVED",
+        validatedAt: "2026-07-20",
+        version: 2,
+      }),
+    ],
+    schoolClasses: [
+      seedSchoolClass({
+        id: "CLS-5B",
+        name: "5e B",
+        schoolCode: "CD-2026-0001",
+      }),
+    ],
+  });
+  const reassignRepo = createMockStudentWorkspaceCommandRepository(reassignStore, {
+    now: () => "2026-07-23T12:00:00.000Z",
+  });
+  const canonical = await executeStudentUpdateCommand(
+    {
+      type: "ASSIGN_ENROLLMENT_CLASS",
+      studentId: "STU-CANON",
+      enrollmentId: "E-CANON",
+      expectedVersion: 2,
+      changes: { classId: "CLS-5B", className: "Nom Contredit Par Client" },
+    },
+    {
+      userId: "u-ok",
+      role: "Secrétaire",
+      schoolCode: "CD-2026-0001",
+      permissions: ["student.enrollments.assign-class"],
+    },
+    reassignRepo,
+  );
+  assert(canonical.success, "affectation avec nom contradictoire acceptée");
+  if (canonical.success) {
+    const agg = canonical.updatedAggregate as {
+      classId: string | null;
+      className: string | null;
+    };
+    assertEqual(agg.classId, "CLS-5B", "classId canonique");
+    assertEqual(agg.className, "5e B", "className catalogue, pas le client");
+  }
+}
+
+async function testC18aCanonicalClassCatalogRefusals() {
+  const emptyCatalog = resolveSchoolClass(
+    { className: "4e A" },
+    [],
+    "CD-2026-0001",
+  );
+  assertEqual(emptyCatalog.ok, false, "catalogue vide → refus");
+  if (!emptyCatalog.ok) {
+    assertEqual(emptyCatalog.code, "CLASS_NOT_FOUND", "code catalogue vide");
+  }
+
+  const catalog = [
+    seedSchoolClass({
+      id: "CLS-4A",
+      name: "4e A",
+      schoolCode: "CD-2026-0001",
+    }),
+    seedSchoolClass({
+      id: "CLS-OTHER",
+      name: "6e Z",
+      schoolCode: "CD-OTHER-9999",
+    }),
+  ];
+
+  const unknownLabel = resolveSchoolClass(
+    { className: "Classe Fantôme" },
+    catalog,
+    "CD-2026-0001",
+  );
+  assertEqual(unknownLabel.ok, false, "libellé inconnu → refus");
+  if (!unknownLabel.ok) {
+    assertEqual(unknownLabel.code, "CLASS_NOT_FOUND", "code libellé inconnu");
+  }
+
+  const otherSchoolById = resolveSchoolClass(
+    { classId: "CLS-OTHER" },
+    catalog,
+    "CD-2026-0001",
+  );
+  assertEqual(otherSchoolById.ok, false, "classe autre établissement → refus");
+  if (!otherSchoolById.ok) {
+    assertEqual(otherSchoolById.code, "CLASS_NOT_FOUND", "code autre établissement");
+  }
+
+  const otherSchoolByName = resolveSchoolClass(
+    { className: "6e Z" },
+    catalog,
+    "CD-2026-0001",
+  );
+  assertEqual(
+    otherSchoolByName.ok,
+    false,
+    "libellé d'un autre établissement → refus",
+  );
+
+  const validIdContradictoryName = resolveSchoolClass(
+    { classId: "CLS-4A", className: "Nom Contredit" },
+    catalog,
+    "CD-2026-0001",
+  );
+  assert(validIdContradictoryName.ok, "classId valide → succès");
+  if (validIdContradictoryName.ok) {
+    assertEqual(validIdContradictoryName.classId, "CLS-4A", "classId non nul");
+    assertEqual(
+      validIdContradictoryName.className,
+      "4e A",
+      "nom canonique catalogue",
+    );
+  }
+
+  // Refus commande : agrégat + audit inchangés.
+  async function assertAssignRefusalUnchanged(input: {
+    label: string;
+    schoolClasses: ReturnType<typeof seedSchoolClass>[];
+    changes: { classId?: string | null; className?: string | null };
+  }) {
+    const enrollment = seedEditableEnrollment({
+      enrollmentId: "E-REFUSE",
+      studentId: "STU-REFUSE",
+      schoolCode: "CD-2026-0001",
+      academicYear: "2026-2027",
+      status: "APPROVED",
+      validatedAt: "2026-07-20",
+      version: 2,
+      classId: null,
+      className: null,
+    });
+    const store = createMockEditingStore({
+      enrollments: [enrollment],
+      schoolClasses: input.schoolClasses,
+    });
+    const before = structuredClone(store.enrollments.get("STU-REFUSE:E-REFUSE")!);
+    const auditBefore = store.auditLog.length;
+    const repo = createMockStudentWorkspaceCommandRepository(store);
+    const result = await executeStudentUpdateCommand(
+      {
+        type: "ASSIGN_ENROLLMENT_CLASS",
+        studentId: "STU-REFUSE",
+        enrollmentId: "E-REFUSE",
+        expectedVersion: 2,
+        changes: input.changes,
+      },
+      {
+        userId: "u-ok",
+        role: "Secrétaire",
+        schoolCode: "CD-2026-0001",
+        permissions: ["student.enrollments.assign-class"],
+      },
+      repo,
+    );
+    assertEqual(result.success, false, `${input.label}: commande refusée`);
+    if (!result.success) {
+      assertEqual(result.code, "VALIDATION_ERROR", `${input.label}: code validation`);
+      assert(
+        result.errors.some((item) => item.code === "CLASS_NOT_FOUND"),
+        `${input.label}: CLASS_NOT_FOUND`,
+      );
+    }
+    const after = store.enrollments.get("STU-REFUSE:E-REFUSE")!;
+    assertEqual(after.status, before.status, `${input.label}: statut inchangé`);
+    assertEqual(after.version, before.version, `${input.label}: version inchangée`);
+    assertEqual(after.classId, before.classId, `${input.label}: classId inchangé`);
+    assertEqual(after.className, before.className, `${input.label}: className inchangé`);
+    assertEqual(
+      store.auditLog.length,
+      auditBefore,
+      `${input.label}: audit inchangé`,
+    );
+  }
+
+  await assertAssignRefusalUnchanged({
+    label: "catalogue vide + className",
+    schoolClasses: [],
+    changes: { className: "4e A" },
+  });
+  await assertAssignRefusalUnchanged({
+    label: "libellé inconnu",
+    schoolClasses: [
+      seedSchoolClass({
+        id: "CLS-4A",
+        name: "4e A",
+        schoolCode: "CD-2026-0001",
+      }),
+    ],
+    changes: { className: "Classe Fantôme" },
+  });
+  await assertAssignRefusalUnchanged({
+    label: "classe autre établissement",
+    schoolClasses: [
+      seedSchoolClass({
+        id: "CLS-LOCAL",
+        name: "4e A",
+        schoolCode: "CD-2026-0001",
+      }),
+      seedSchoolClass({
+        id: "CLS-FOREIGN",
+        name: "6e Z",
+        schoolCode: "CD-OTHER-9999",
+      }),
+    ],
+    changes: { classId: "CLS-FOREIGN", className: "6e Z" },
+  });
+}
+
+async function main() {
   const tests = [
     ["sélection déterministe", testSelectCurrentEnrollmentDeterministic],
     ["récence vs ids alphabétiques", testRecencyBreaksTiesAgainstAlphabeticalIds],
@@ -643,14 +1090,16 @@ function main() {
     ["permissions et données partielles", testPermissionsAndPartialData],
     ["multi-années et legacy", testMultiYearAndLegacyBridge],
     ["timeline et alertes", testTimelineAndAlerts],
+    ["C1.8a validate + assign + RBAC + audit", testC18aValidateAndAssignClass],
+    ["C1.8a catalogue classe canonique", testC18aCanonicalClassCatalogRefusals],
   ] as const;
 
   for (const [name, run] of tests) {
-    run();
+    await run();
     console.log(`OK — ${name}`);
   }
 
-  console.log(`\n${tests.length} suites validées — student enrollment C1.2`);
+  console.log(`\n${tests.length} suites validées — student enrollment C1.2 / C1.8a`);
 }
 
-main();
+void main();
