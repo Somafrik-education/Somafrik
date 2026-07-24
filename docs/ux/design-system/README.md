@@ -34,6 +34,8 @@
 | [RAPPORT-D3.6c-notes-toollayout.md](./RAPPORT-D3.6c-notes-toollayout.md) | D3.6c `/notes` → ToolLayout |
 | [CONTRAT-HOTFIX-SYNC-01.md](./CONTRAT-HOTFIX-SYNC-01.md) · [AUDIT-HOTFIX-SYNC-01.md](./AUDIT-HOTFIX-SYNC-01.md) · [RAPPORT-HOTFIX-SYNC-01.md](./RAPPORT-HOTFIX-SYNC-01.md) | HOTFIX-SYNC-01 sync non destructive |
 | [CONTRAT-HOTFIX-SYNC-02.md](./CONTRAT-HOTFIX-SYNC-02.md) · [RAPPORT-HOTFIX-SYNC-02.md](./RAPPORT-HOTFIX-SYNC-02.md) | HOTFIX-SYNC-02 rattachement évaluations |
+| [KNOWN-ISSUE-NOTES-01.md](./KNOWN-ISSUE-NOTES-01.md) | Dette critique — sync enseignant RBAC post-rollback #69 |
+| [CONTRAT-BOOTSTRAP-RUNTIME.md](./CONTRAT-BOOTSTRAP-RUNTIME.md) | Filet CI bootstrap runtime (post P0 AUTH) |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |
 | [PRIMITIVES.md](./PRIMITIVES.md) | API primitives |

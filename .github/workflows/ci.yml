@@ -62,26 +62,14 @@ jobs:
           VITE_SHOW_DEMO_ACCOUNTS: "false"
         run: docker compose -f docker-compose.preprod.yml build backend
 
-      - name: Smoke test backend boot + health (PostgreSQL)
+      - name: Bootstrap runtime guard (PostgreSQL préprod-like)
         working-directory: backend
         env:
           NODE_ENV: test
-          PORT: 5000
           JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
           SOMAFRIK_DB_REQUIRED: "true"
           SOMAFRIK_SKIP_DEMO_SEED: "true"
-        run: |
-          node server.js &
-          SERVER_PID=$!
-          for i in $(seq 1 20); do
-            if curl -sf http://127.0.0.1:5000/api/health > /dev/null; then
-              echo "Backend healthy"
-              kill $SERVER_PID
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Backend did not become healthy in time"
-          kill $SERVER_PID || true
-          exit 1
+          SOMAFRIK_BOOTSTRAP_REQUIRED: "true"
+          SOMAFRIK_BOOTSTRAP_PORT: "5057"
+        run: node scripts/verify-runtime-bootstrap.js
