@@ -432,11 +432,38 @@ function projectEnrollmentEvents(
       );
     }
 
+    if (enrollment.endedAt) {
+      const closedTitle =
+        enrollment.status === "TRANSFERRED"
+          ? "Transfert d'inscription"
+          : "Inscription clôturée";
+      events.push(
+        createEvent({
+          id: `HIST-ENR-ENDED-${enrollment.id}`,
+          type: "STATUS_CHANGED",
+          occurredAt: enrollment.endedAt,
+          title: closedTitle,
+          description:
+            enrollment.notes ??
+            getEnrollmentStatusPresentation(enrollment.status).label,
+          severity: "IMPORTANT",
+          sourceModule: "ENROLLMENT",
+          actor: null,
+          visibility: "STAFF",
+          metadata: {
+            enrollmentId: enrollment.id,
+            status: enrollment.status,
+          },
+        }),
+      );
+    }
+
     if (
       enrollment.updatedAt &&
       enrollment.updatedAt !== enrollment.createdAt &&
       enrollment.updatedAt !== enrollment.validatedAt &&
-      enrollment.updatedAt !== enrollment.enrolledAt
+      enrollment.updatedAt !== enrollment.enrolledAt &&
+      enrollment.updatedAt.slice(0, 10) !== (enrollment.endedAt ?? "").slice(0, 10)
     ) {
       events.push(
         createEvent({

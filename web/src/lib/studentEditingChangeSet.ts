@@ -1,6 +1,7 @@
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
   FIELD_LABELS,
@@ -16,12 +17,15 @@ import {
 import type {
   AssignEnrollmentClassCommand,
   StudentWorkspaceCommand,
+  TransferEnrollmentCommand,
   UpdateGuardianContactCommand,
   UpdateStudentAdministrativeDetailsCommand,
   UpdateStudentIdentityCommand,
 } from "./studentEditingCommands";
 import {
   nextStatusAfterAssignClass,
+  nextStatusAfterClose,
+  nextStatusAfterTransfer,
   nextStatusAfterValidate,
 } from "./studentEnrollmentTransitions";
 import { parseCivilDate } from "./studentWorkspaceDates";
@@ -459,6 +463,70 @@ export function buildAssignEnrollmentClassChangeSet(
   };
 }
 
+export function formatTransferDestinationNote(targetSchoolName: string): string {
+  return `Transfert vers : ${targetSchoolName.trim()}`;
+}
+
+export function buildTransferEnrollmentChangeSet(
+  studentId: string,
+  current: EditableEnrollment,
+  rawChanges: TransferEnrollmentCommand["changes"],
+  endedAt: string,
+): StudentChangeSet {
+  const unsupported = listUnsupportedFields(
+    rawChanges as Record<string, unknown>,
+    ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
+  );
+  if (unsupported.length > 0) {
+    return {
+      commandType: "TRANSFER_ENROLLMENT",
+      studentId,
+      changes: [],
+      hasSensitiveChange: false,
+      requiresReason: true,
+      isEmpty: true,
+    };
+  }
+
+  const target = normalizeOptionalText(rawChanges.targetSchoolName);
+  const items: StudentChange[] = [];
+  pushChange(items, "status", current.status, nextStatusAfterTransfer());
+  pushChange(items, "endedAt", current.endedAt, endedAt.slice(0, 10));
+  if (target) {
+    const nextNotes = formatTransferDestinationNote(target);
+    pushChange(items, "targetSchoolName", null, target);
+    pushChange(items, "notes", current.notes, nextNotes);
+  }
+
+  return {
+    commandType: "TRANSFER_ENROLLMENT",
+    studentId,
+    changes: items,
+    hasSensitiveChange: false,
+    requiresReason: true,
+    isEmpty: items.length === 0 || !target,
+  };
+}
+
+export function buildCloseEnrollmentChangeSet(
+  studentId: string,
+  current: EditableEnrollment,
+  endedAt: string,
+): StudentChangeSet {
+  const items: StudentChange[] = [];
+  pushChange(items, "status", current.status, nextStatusAfterClose());
+  pushChange(items, "endedAt", current.endedAt, endedAt.slice(0, 10));
+
+  return {
+    commandType: "CLOSE_ENROLLMENT",
+    studentId,
+    changes: items,
+    hasSensitiveChange: false,
+    requiresReason: true,
+    isEmpty: items.length === 0,
+  };
+}
+
 export function buildChangeSetForCommand(
   command: StudentWorkspaceCommand,
   current:
@@ -499,6 +567,21 @@ export function buildChangeSetForCommand(
       now,
     );
   }
+  if (command.type === "TRANSFER_ENROLLMENT") {
+    return buildTransferEnrollmentChangeSet(
+      command.studentId,
+      current as EditableEnrollment,
+      command.changes,
+      now,
+    );
+  }
+  if (command.type === "CLOSE_ENROLLMENT") {
+    return buildCloseEnrollmentChangeSet(
+      command.studentId,
+      current as EditableEnrollment,
+      now,
+    );
+  }
   return buildAdministrativeChangeSet(
     command.studentId,
     current as EditableStudentAdministrativeDetails,
@@ -521,4 +604,5 @@ export {
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
 };

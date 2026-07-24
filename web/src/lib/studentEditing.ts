@@ -225,6 +225,11 @@ export const ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS = [
   "className",
 ] as const;
 
+/** Champs autorisés dans TRANSFER_ENROLLMENT. */
+export const ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS = [
+  "targetSchoolName",
+] as const;
+
 export const FIELD_LABELS: Record<string, string> = {
   firstName: "Prénom",
   lastName: "Nom",
@@ -244,6 +249,9 @@ export const FIELD_LABELS: Record<string, string> = {
   status: "Statut d'inscription",
   validatedAt: "Date de validation",
   enrolledAt: "Date d'inscription",
+  endedAt: "Date de fin",
   classId: "Identifiant de classe",
   className: "Classe",
+  targetSchoolName: "Établissement de destination",
+  notes: "Notes d'inscription",
 };

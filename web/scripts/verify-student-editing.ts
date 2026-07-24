@@ -119,6 +119,14 @@ function testPermissions() {
     !canUpdateStudentWorkspace(bridge, "student.enrollments.assign-class"),
     "bridge n'accorde pas enrollments.assign-class",
   );
+  assert(
+    !canUpdateStudentWorkspace(bridge, "student.enrollments.transfer"),
+    "bridge n'accorde pas enrollments.transfer",
+  );
+  assert(
+    !canUpdateStudentWorkspace(bridge, "student.enrollments.close"),
+    "bridge n'accorde pas enrollments.close",
+  );
 
   assert(
     STUDENT_EDITING_PERMISSIONS.includes("student.identity.update"),

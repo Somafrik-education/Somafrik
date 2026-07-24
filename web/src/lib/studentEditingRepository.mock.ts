@@ -15,6 +15,8 @@ import type {
 import { buildChangeSetForCommand } from "./studentEditingChangeSet";
 import type {
   AssignEnrollmentClassCommand,
+  CloseEnrollmentCommand,
+  TransferEnrollmentCommand,
   UpdateGuardianContactCommand,
   UpdateStudentAdministrativeDetailsCommand,
   UpdateStudentIdentityCommand,
@@ -24,8 +26,10 @@ import type { StudentWorkspaceCommandRepository } from "./studentEditingReposito
 import {
   applyAdministrativeChanges,
   applyAssignEnrollmentClass,
+  applyCloseEnrollment,
   applyGuardianContactChanges,
   applyIdentityChanges,
+  applyTransferEnrollment,
   applyValidateEnrollment,
   createAuditEvent,
 } from "./studentEditingService";
@@ -218,6 +222,44 @@ export function createMockStudentWorkspaceCommandRepository(
         now,
       });
     },
+
+    async transferEnrollment(command, context) {
+      return applyUpdate({
+        store,
+        context,
+        command,
+        load: () =>
+          store.enrollments.get(
+            enrollmentKey(command.studentId, command.enrollmentId),
+          ) ?? null,
+        apply: (current, at) => applyTransferEnrollment(current, command, at),
+        save: (next) =>
+          store.enrollments.set(
+            enrollmentKey(next.studentId, next.enrollmentId),
+            next,
+          ),
+        now,
+      });
+    },
+
+    async closeEnrollment(command, context) {
+      return applyUpdate({
+        store,
+        context,
+        command,
+        load: () =>
+          store.enrollments.get(
+            enrollmentKey(command.studentId, command.enrollmentId),
+          ) ?? null,
+        apply: (current, at) => applyCloseEnrollment(current, at),
+        save: (next) =>
+          store.enrollments.set(
+            enrollmentKey(next.studentId, next.enrollmentId),
+            next,
+          ),
+        now,
+      });
+    },
   };
 }
 
@@ -227,7 +269,9 @@ function applyUpdate<
     | UpdateGuardianContactCommand
     | UpdateStudentAdministrativeDetailsCommand
     | ValidateEnrollmentCommand
-    | AssignEnrollmentClassCommand,
+    | AssignEnrollmentClassCommand
+    | TransferEnrollmentCommand
+    | CloseEnrollmentCommand,
   TAggregate extends {
     version: number;
     updatedAt: string;

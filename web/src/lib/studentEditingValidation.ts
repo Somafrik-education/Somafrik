@@ -1,6 +1,7 @@
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
   type CommandValidationResult,
@@ -28,6 +29,8 @@ import {
 } from "./studentEditingChangeSet";
 import {
   canAssignClassEnrollmentStatus,
+  canCloseEnrollmentStatus,
+  canTransferEnrollmentStatus,
   canValidateEnrollmentStatus,
 } from "./studentEnrollmentTransitions";
 import { parseCivilDate } from "./studentWorkspaceDates";
@@ -615,6 +618,151 @@ function validateAssignEnrollmentClassCommand(
   return { valid: errors.length === 0, errors, warnings };
 }
 
+function validateTransferEnrollmentCommand(
+  command: Extract<StudentWorkspaceCommand, { type: "TRANSFER_ENROLLMENT" }>,
+  options: ValidateCommandOptions,
+): CommandValidationResult {
+  const errors: StudentEditValidationError[] = [];
+  const warnings: CommandValidationResult["warnings"] = [];
+  const current = options.enrollment;
+
+  if (!current || current.enrollmentId !== command.enrollmentId) {
+    return {
+      valid: false,
+      errors: [err(null, "NOT_FOUND", "Inscription introuvable.")],
+      warnings,
+    };
+  }
+
+  if (current.studentId !== command.studentId) {
+    errors.push(
+      err(null, "STUDENT_MISMATCH", "L'inscription n'appartient pas à cet élève."),
+    );
+  }
+
+  if (!canTransferEnrollmentStatus(current.status)) {
+    errors.push(
+      err(
+        "status",
+        "INVALID_TRANSITION",
+        `Transfert interdit depuis le statut ${current.status}. Seule une inscription ENROLLED peut être transférée.`,
+      ),
+    );
+  }
+
+  if (current.endedAt) {
+    errors.push(
+      err(null, "ENROLLMENT_CLOSED", "Inscription déjà clôturée : transfert impossible."),
+    );
+  }
+
+  const unsupported = listUnsupportedFields(
+    command.changes as Record<string, unknown>,
+    ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
+  );
+  for (const field of unsupported) {
+    errors.push(
+      err(field, "UNSUPPORTED_FIELD", `Champ non autorisé : ${field}`),
+    );
+  }
+
+  const target = normalizeOptionalText(command.changes.targetSchoolName);
+  if (!target) {
+    errors.push(
+      err(
+        "targetSchoolName",
+        "REQUIRED",
+        "L'établissement de destination est obligatoire (informatif, sans création automatique).",
+      ),
+    );
+  } else if (target.length > MAX_TEXT) {
+    errors.push(
+      err("targetSchoolName", "MAX_LENGTH", "Nom d'établissement trop long."),
+    );
+  }
+
+  if (!String(command.reason ?? "").trim()) {
+    errors.push(
+      err(
+        "reason",
+        "REASON_REQUIRED",
+        "Une raison est requise pour le transfert d'inscription.",
+      ),
+    );
+  }
+
+  const changeSet =
+    options.changeSet ?? buildChangeSetForCommand(command, current);
+
+  if (changeSet.isEmpty && unsupported.length === 0 && errors.length === 0) {
+    errors.push(
+      err(null, "NO_CHANGES", "Aucun changement réel à enregistrer."),
+    );
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+function validateCloseEnrollmentCommand(
+  command: Extract<StudentWorkspaceCommand, { type: "CLOSE_ENROLLMENT" }>,
+  options: ValidateCommandOptions,
+): CommandValidationResult {
+  const errors: StudentEditValidationError[] = [];
+  const warnings: CommandValidationResult["warnings"] = [];
+  const current = options.enrollment;
+
+  if (!current || current.enrollmentId !== command.enrollmentId) {
+    return {
+      valid: false,
+      errors: [err(null, "NOT_FOUND", "Inscription introuvable.")],
+      warnings,
+    };
+  }
+
+  if (current.studentId !== command.studentId) {
+    errors.push(
+      err(null, "STUDENT_MISMATCH", "L'inscription n'appartient pas à cet élève."),
+    );
+  }
+
+  if (!canCloseEnrollmentStatus(current.status)) {
+    errors.push(
+      err(
+        "status",
+        "INVALID_TRANSITION",
+        `Clôture interdite depuis le statut ${current.status}. Seule une inscription ENROLLED peut être clôturée.`,
+      ),
+    );
+  }
+
+  if (current.endedAt) {
+    errors.push(
+      err(null, "ENROLLMENT_CLOSED", "Inscription déjà clôturée."),
+    );
+  }
+
+  if (!String(command.reason ?? "").trim()) {
+    errors.push(
+      err(
+        "reason",
+        "REASON_REQUIRED",
+        "Une raison est requise pour clôturer l'inscription.",
+      ),
+    );
+  }
+
+  const changeSet =
+    options.changeSet ?? buildChangeSetForCommand(command, current);
+
+  if (changeSet.isEmpty && errors.length === 0) {
+    errors.push(
+      err(null, "NO_CHANGES", "Aucun changement réel à enregistrer."),
+    );
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
 export function validateStudentWorkspaceCommand(
   command: StudentWorkspaceCommand,
   options: ValidateCommandOptions = {},
@@ -630,6 +778,12 @@ export function validateStudentWorkspaceCommand(
   }
   if (command.type === "ASSIGN_ENROLLMENT_CLASS") {
     return validateAssignEnrollmentClassCommand(command, options);
+  }
+  if (command.type === "TRANSFER_ENROLLMENT") {
+    return validateTransferEnrollmentCommand(command, options);
+  }
+  if (command.type === "CLOSE_ENROLLMENT") {
+    return validateCloseEnrollmentCommand(command, options);
   }
   return validateAdministrativeCommand(command, options);
 }
