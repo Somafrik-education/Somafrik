@@ -422,17 +422,18 @@ Aucune correction avant clôture de la Phase 0 et accord CTO sur le plan.
 - [x] Scénarios existants vs manquants
 - [x] Risques provisoires
 - [x] Plan V1–V7
-- [ ] Revue CTO du diagnostic
+- [x] Revue CTO du diagnostic — **validée**
 
-### V1 — Chaîne métier intégrée (automatisée)
+### V1 — Chaîne métier intégrée (automatisée) — **EXÉCUTÉE**
 
-Objectif : matérialiser le scénario Classe → Enseignant → Affectation → Évaluation → Notes → reload.
+Objectif : matérialiser le scénario Classe → Élève → Enseignant → Matière → Affectation → Évaluation → Notes → reload.
 
 Actions :
 
-1. Exécuter `verify-e2e-0004`, `0006`, `0008`, `0013` / `0028` sur environnement contrôlé
-2. Compléter **uniquement** les tests nécessaires pour figer comportements/défauts (pas de refactor)
-3. Documenter résultats dans ce fichier (§ Résultats fonctionnels)
+1. [x] Ajouter `npm run verify:pre-e1-v1` (caractérisation, sans correction métier)
+2. [x] Exécuter sur PostgreSQL local dédié
+3. [x] Documenter résultats (§ **V1 — Validation de la chaîne intégrée**)
+4. [x] Recommandation V2 : **BLOQUER**
 
 ### V2 — Modèle de données & intégrité
 
