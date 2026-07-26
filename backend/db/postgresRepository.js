@@ -680,10 +680,13 @@ class PostgresRepository {
   async saveBackOfficeState(payload) {
     await this.init();
     const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
+    const { mergeStudentAndNotesSyncAck } = require("../lib/studentsBoPersistence");
+    // HOTFIX-PRE-E1-01 : élèves/inscriptions PG avant sync notes (POST /api/notes résolvable).
     // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
     // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async () => {
+      const studentSync = await this.syncStudentsDomainFromBackOffice(payload ?? {});
       const syncResult = await persistBackOfficeAfterNotesSync({
         payload: payload ?? {},
         syncFn: async (body) => this.syncNotesDomainFromBackOffice(body),
@@ -698,19 +701,7 @@ class PostgresRepository {
           );
         },
       });
-      syncAck = {
-        accepted: [
-          ...((syncResult?.accepted?.evaluations ?? []).map((id) => ({
-            entity: "evaluations",
-            id: String(id),
-          })) ?? []),
-          ...((syncResult?.accepted?.notes ?? []).map((id) => ({
-            entity: "notes",
-            id: String(id),
-          })) ?? []),
-        ],
-        rejected: syncResult?.rejected ?? [],
-      };
+      syncAck = mergeStudentAndNotesSyncAck(studentSync, syncResult);
     });
     this.cachedDataset = null;
     this.lastSyncAck = syncAck;
@@ -1028,15 +1019,16 @@ class PostgresRepository {
     }
     const score = gradeStatus === "graded" ? Number(scoreRaw) : null;
 
-    const student = await this.one(
-      `SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
-       FROM students st
-       JOIN schools s ON s.id = st.school_id
-       LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
-       LEFT JOIN classes cl ON cl.id = e.class_id
-       WHERE st.student_code = $1 OR st.id::text = $1`,
-      [String(payload.studentId)],
-    );
+    // HOTFIX-PRE-E1-01 : résolution par identifiants stables (+ matérialisation BO), jamais par nom.
+    const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
+      evaluation.school_id,
+    ]);
+    const lookupSchoolCode = String(
+      payload.schoolCode ?? evaluationSchool?.school_code ?? "",
+    )
+      .trim()
+      .toUpperCase();
+    const student = await this.resolveStudentForGrade(payload.studentId, lookupSchoolCode);
     if (!student) {
       const error = new Error("Eleve introuvable");
       error.statusCode = 404;
@@ -1633,7 +1625,7 @@ class PostgresRepository {
     );
   }
 
-  async ensureClassForSchool(schoolId, className) {
+  async ensureClassForSchool(schoolId, className, context = {}) {
     const normalizedClassName = String(className ?? "").trim();
     if (!normalizedClassName) return null;
 
@@ -1641,7 +1633,9 @@ class PostgresRepository {
     if (existing?.id) return existing.id;
 
     const state = (await this.getBackOfficeState()) ?? {};
-    const backOfficeClass = (Array.isArray(state.classes) ? state.classes : []).find(
+    const contextClasses = Array.isArray(context.classes) ? context.classes : [];
+    const stateClasses = Array.isArray(state.classes) ? state.classes : [];
+    const backOfficeClass = [...contextClasses, ...stateClasses].find(
       (row) => this.normalizeComparableText(row.name) === this.normalizeComparableText(normalizedClassName),
     );
     const academicYear = await this.getCurrentAcademicYear(schoolId);
@@ -1685,7 +1679,7 @@ class PostgresRepository {
     );
   }
 
-  async ensureSchoolFromBackOfficeRecord(schoolCode) {
+  async ensureSchoolFromBackOfficeRecord(schoolCode, context = {}) {
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
     if (!normalized || normalized === "*") return null;
 
@@ -1693,7 +1687,9 @@ class PostgresRepository {
     if (existing) return existing;
 
     const state = (await this.getBackOfficeState()) ?? {};
-    const backOfficeSchool = (Array.isArray(state.schools) ? state.schools : []).find(
+    const contextSchools = Array.isArray(context.schools) ? context.schools : [];
+    const stateSchools = Array.isArray(state.schools) ? state.schools : [];
+    const backOfficeSchool = [...contextSchools, ...stateSchools].find(
       (row) => String(row.code ?? "").trim().toUpperCase() === normalized,
     );
     if (!backOfficeSchool) return null;
@@ -1731,26 +1727,129 @@ class PostgresRepository {
     );
   }
 
-  async materializeBackOfficeStudent(record) {
-    const schoolCode = String(record.schoolCode ?? "").trim().toUpperCase();
-    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
+  /**
+   * HOTFIX-PRE-E1-01 — Sync BO students[] → PG students + enrollments.
+   * No-op si `students` absent (PUT partiel). Rejets métier sans throw global.
+   */
+  async syncStudentsDomainFromBackOffice(payload = {}) {
+    const {
+      shouldSyncStudentsFromPayload,
+      validateStudentSyncRecord,
+    } = require("../lib/studentsBoPersistence");
+    const accepted = { students: [], enrollments: [] };
+    const rejected = [];
+    if (!shouldSyncStudentsFromPayload(payload)) {
+      return { synced: true, accepted, rejected, studentCount: 0, enrollmentCount: 0 };
+    }
+
+    const context = {
+      schools: Array.isArray(payload.schools) ? payload.schools : [],
+      classes: Array.isArray(payload.classes) ? payload.classes : [],
+    };
+
+    for (const record of payload.students) {
+      const validation = validateStudentSyncRecord(record);
+      const stableId = validation.ok ? validation.studentCode : String(record?.id ?? "").trim();
+      try {
+        if (!validation.ok) {
+          const error = new Error(validation.error);
+          error.statusCode = 400;
+          error.code = validation.code;
+          throw error;
+        }
+        const result = await this.materializeBackOfficeStudent(record, context);
+        if (!result?.studentId) {
+          const error = new Error("Échec de matérialisation élève (établissement introuvable)");
+          error.statusCode = 400;
+          error.code = "STUDENT_SYNC_MATERIALIZE_FAILED";
+          throw error;
+        }
+        accepted.students.push(validation.studentCode);
+        if (result.enrollment) {
+          accepted.enrollments.push(validation.studentCode);
+        }
+      } catch (error) {
+        if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+        rejected.push({
+          entity: "students",
+          id: stableId || undefined,
+          code: error?.code,
+          error: error?.message ?? "Échec de synchronisation de l'élève",
+        });
+      }
+    }
+
+    this.cachedDataset = null;
+    return {
+      synced: rejected.length === 0,
+      accepted,
+      rejected,
+      studentCount: accepted.students.length,
+      enrollmentCount: accepted.enrollments.length,
+    };
+  }
+
+  /**
+   * HOTFIX-PRE-E1-01 — Résolution élève pour POST /api/notes.
+   * Lookup `student_code` / UUID uniquement ; matérialisation BO si besoin.
+   * Pas de recherche nominale.
+   */
+  async resolveStudentForGrade(studentKey, schoolCode) {
+    const key = String(studentKey ?? "").trim();
+    if (!key) return null;
+    const scopedCode =
+      schoolCode && schoolCode !== "*" ? String(schoolCode).trim().toUpperCase() : "";
+
+    let { row: student, backOfficeStudent } = await this.queryStudentWithClass(key, scopedCode);
+
+    if (!student && backOfficeStudent) {
+      const boSchool = String(backOfficeStudent.schoolCode ?? "")
+        .trim()
+        .toUpperCase();
+      if (scopedCode && boSchool && boSchool !== scopedCode) {
+        return null;
+      }
+      const materialized = await this.materializeBackOfficeStudent(backOfficeStudent);
+      if (materialized?.studentId) {
+        ({ row: student } = await this.queryStudentWithClass(key, scopedCode));
+      }
+    }
+
+    return student;
+  }
+
+  async materializeBackOfficeStudent(record, context = {}) {
+    const { resolveStableStudentCode } = require("../lib/studentsBoPersistence");
+    const schoolCode = String(record.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode, context);
     if (!school) return null;
 
-    const matricule = String(record.matricule ?? record.publicId ?? record.id ?? "").trim();
+    const matricule = resolveStableStudentCode(record);
     if (!matricule) return null;
 
-    const nameParts = String(record.name ?? "").trim().split(/\s+/).filter(Boolean);
+    const nameParts = String(record.name ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
     const firstName = String(record.firstName ?? nameParts[0] ?? "Eleve").trim();
     const lastName = String(record.lastName ?? nameParts.slice(1).join(" ") ?? "Somafrik").trim();
 
-    const row = await this.one(
+    // Isolation multi-tenant : ne jamais écraser un student_code d'un autre établissement.
+    let row = await this.one(
       `INSERT INTO students (school_id, student_code, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
        VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, $9)
        ON CONFLICT (student_code) DO UPDATE SET
          first_name = EXCLUDED.first_name,
          last_name = EXCLUDED.last_name,
+         gender = EXCLUDED.gender,
+         birth_date = EXCLUDED.birth_date,
          parent_phone = EXCLUDED.parent_phone,
-         parent_email = EXCLUDED.parent_email
+         parent_email = EXCLUDED.parent_email,
+         status = EXCLUDED.status,
+         updated_at = NOW()
+       WHERE students.school_id = EXCLUDED.school_id
        RETURNING id, school_id`,
       [
         school.id,
@@ -1759,18 +1858,46 @@ class PostgresRepository {
         lastName,
         record.gender ?? "Non renseigné",
         this.parseDate(record.birthDate),
-        record.parentPhone ?? "",
-        record.parentEmail ?? "",
+        record.parentPhone ?? record.phone ?? "",
+        record.parentEmail ?? record.email ?? "",
         record.archived ? "archived" : "active",
       ],
     );
 
+    if (!row) {
+      const existing = await this.one(
+        `SELECT id, school_id FROM students WHERE student_code = $1 LIMIT 1`,
+        [matricule],
+      );
+      if (existing && String(existing.school_id) !== String(school.id)) {
+        const error = new Error("Conflit d'identifiant élève entre établissements");
+        error.statusCode = 409;
+        error.code = "STUDENT_TENANT_CONFLICT";
+        throw error;
+      }
+      row = existing;
+    }
+    if (!row) return null;
+    if (String(row.school_id) !== String(school.id)) {
+      const error = new Error("Conflit d'identifiant élève entre établissements");
+      error.statusCode = 409;
+      error.code = "STUDENT_TENANT_CONFLICT";
+      throw error;
+    }
+
     const className = String(record.className ?? "").trim();
-    const classId = await this.ensureClassForSchool(school.id, className);
+    const classId = await this.ensureClassForSchool(school.id, className, context);
+    let enrollment = false;
     if (classId) {
       await this.ensureActiveEnrollment(school.id, row.id, classId);
+      enrollment = true;
     }
-    return row.id;
+    return {
+      studentId: row.id,
+      schoolId: school.id,
+      classId: classId ?? null,
+      enrollment,
+    };
   }
 
   async resolveStudentForAttendance(payload, principal = {}) {
@@ -1788,9 +1915,12 @@ class PostgresRepository {
     }
 
     if (!student && backOfficeStudent) {
-      const materializedId = await this.materializeBackOfficeStudent(backOfficeStudent);
-      if (materializedId) {
-        ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(materializedId, schoolCode));
+      const materialized = await this.materializeBackOfficeStudent(backOfficeStudent);
+      if (materialized?.studentId) {
+        ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(
+          payload.studentId,
+          schoolCode,
+        ));
       }
     }
 
