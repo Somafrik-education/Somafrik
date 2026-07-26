@@ -38,6 +38,14 @@ L’audit V1 a prouvé que les élèves créés via `PUT /api/backoffice/state` 
 
 ---
 
-## 4. Arrêt
+## 4. Dette connue (hors Correctif 1 — pas de changement de modèle)
+
+| ID | Sévérité | Constat | Action |
+|----|----------|---------|--------|
+| **PRE-E1-STUDENT-CODE-SCOPE** | **MAJOR** | Le schéma actuel traite `student_code` comme **globalement unique** (`UNIQUE` sur `students.student_code`). | **V2** devra arbitrer entre unicité globale et unicité composite `(school_id, student_code)`. Aucune migration dans ce hotfix. |
+
+---
+
+## 5. Arrêt
 
 Livraison Correctif 1 uniquement — **revue CTO requise** avant tout Correctif 2.
