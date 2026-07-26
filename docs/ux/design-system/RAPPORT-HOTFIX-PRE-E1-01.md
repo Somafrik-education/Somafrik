@@ -46,6 +46,18 @@ L’audit V1 a prouvé que les élèves créés via `PUT /api/backoffice/state` 
 
 ---
 
-## 5. Arrêt
+## 5. Re-run V1 (post-merge)
 
-Livraison Correctif 1 uniquement — **revue CTO requise** avant tout Correctif 2.
+Après merge dans `develop`, re-run `npm run verify:pre-e1-v1` :
+
+- Bilan : [`docs/audits/BILAN-PRE-E1-V1-RERUN-HOTFIX-01.md`](../../audits/BILAN-PRE-E1-V1-RERUN-HOTFIX-01.md)
+- Preuve machine nouvelle : `docs/audits/evidence/pre-e1-v1-rerun-hotfix-pre-e1-01-results.json`
+- Preuve historique V1 (PR #84) : **non modifiée**
+- PG-01c ✅ ; POST-01 passe de `404 Eleve introuvable` à `403` (hors Correctif 1)
+- V2 / E1 / HOTFIX-PRE-E1-02 : toujours bloqués
+
+---
+
+## 6. Arrêt
+
+Livraison Correctif 1 + bilan re-run V1 — **nouvel arbitrage CTO** avant Correctif 2.
