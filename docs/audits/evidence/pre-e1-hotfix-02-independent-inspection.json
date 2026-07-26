@@ -1,0 +1,366 @@
+{
+  "kind": "INDEPENDENT_INSPECTION",
+  "subject": "HOTFIX-PRE-E1-02 / PR #87+#88",
+  "notACtoValidation": true,
+  "generatedAt": "2026-07-26T14:54:41.942Z",
+  "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_pre_e1_inspect",
+  "apiBase": "http://127.0.0.1:5107/api",
+  "observations": [
+    {
+      "id": "BOOT",
+      "title": "Backend PG healthy",
+      "status": "PASS",
+      "detail": null,
+      "evidence": null
+    },
+    {
+      "id": "SESS-01",
+      "title": "JWT enseignant porte classNames non vide après login BO",
+      "status": "PASS",
+      "detail": "classNames=[\"5ème A\",\"6ème A\",\"6ème B\"] role=Enseignant",
+      "evidence": {
+        "jwtKeys": [
+          "sub",
+          "identifier",
+          "contactId",
+          "role",
+          "schoolCode",
+          "countryCode",
+          "countryScope",
+          "permissions",
+          "mustChangePassword",
+          "studentIds",
+          "classNames",
+          "authSource",
+          "sessionId",
+          "typ",
+          "iss",
+          "iat",
+          "exp"
+        ],
+        "teacherLoginStatus": 404
+      }
+    },
+    {
+      "id": "SESS-01b",
+      "title": "JWT classNames inclut la classe de la chaîne d'inspection (pas seulement seed démo)",
+      "status": "FAIL",
+      "detail": "expectedClass=INSP-1785077664278 jwt=[\"5ème A\",\"6ème A\",\"6ème B\"]",
+      "evidence": null
+    },
+    {
+      "id": "SESS-02",
+      "title": "Enseignant ne peut pas PUT teachers/assignments/rolePermissions",
+      "status": "PASS",
+      "detail": "HTTP 403 \"Permission insuffisante pour modifier ces données.\"",
+      "evidence": null
+    },
+    {
+      "id": "PUT-00",
+      "title": "Construction session évaluation+notes (client rules)",
+      "status": "PASS",
+      "detail": "ok",
+      "evidence": null
+    },
+    {
+      "id": "PUT-01",
+      "title": "PUT state enseignant évaluations+notes accepté",
+      "status": "PASS",
+      "detail": "HTTP 200 \"\"",
+      "evidence": null
+    },
+    {
+      "id": "PG-TEACHERS",
+      "title": "Lignes teachers PG présentes pour l'école A",
+      "status": "PASS",
+      "detail": "count=1 codes=CD-2026-0051-ENS-0001",
+      "evidence": {
+        "teachers": [
+          {
+            "id": "a0c74ce2-4907-4a8d-80d9-f8159057777e",
+            "teacher_code": "CD-2026-0051-ENS-0001",
+            "user_id": null,
+            "school_code": "CD-2026-0051"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ID-DUAL",
+      "title": "Coexistence / matérialisation TEACHER-* et TEACHERS-* en PG",
+      "status": "OBSERVED",
+      "detail": "TEACHERS-*=false TEACHER-*=false n=1",
+      "evidence": {
+        "boTeachersId": "TEACHERS-1785077670429-equ6l6",
+        "boParasiteId": "TEACHER-1785077664278",
+        "pgCodes": [
+          "CD-2026-0051-ENS-0001"
+        ]
+      }
+    },
+    {
+      "id": "PG-ASSIGN",
+      "title": "teacher_assignments PG liés classe+matière",
+      "status": "FAIL",
+      "detail": "[]",
+      "evidence": null
+    },
+    {
+      "id": "PG-ENROLL",
+      "title": "enrollments PG pour les 2 élèves",
+      "status": "PASS",
+      "detail": "count=2",
+      "evidence": null
+    },
+    {
+      "id": "PG-EVAL",
+      "title": "evaluations.teacher_id non null",
+      "status": "PASS",
+      "detail": "teacher_id=a0c74ce2-4907-4a8d-80d9-f8159057777e",
+      "evidence": null
+    },
+    {
+      "id": "PG-GRADES",
+      "title": "2 grades PG après PUT",
+      "status": "PASS",
+      "detail": "count=2",
+      "evidence": null
+    },
+    {
+      "id": "ID-EVAL-TEACHER",
+      "title": "evaluation.teacher_id pointe vers TEACHERS-* (affectation) plutôt que parasite TEACHER-*",
+      "status": "FAIL",
+      "detail": "teacher_code=CD-2026-0051-ENS-0001",
+      "evidence": null
+    },
+    {
+      "id": "POST-NOMINAL",
+      "title": "POST /api/notes autorisé pour affectation correcte",
+      "status": "PASS",
+      "detail": "HTTP 201 \"\"",
+      "evidence": null
+    },
+    {
+      "id": "NEG-HORS-CLASSE",
+      "title": "403 élève hors classe (élève réel autre classe, même école)",
+      "status": "FAIL",
+      "detail": "HTTP 400 \"La note ne correspond pas à la classe de l'évaluation.\"",
+      "evidence": null
+    },
+    {
+      "id": "NEG-MATIERE",
+      "title": "403 matière non affectée (Physique)",
+      "status": "FAIL",
+      "detail": "HTTP 400 \"La note ne correspond pas à la matière de l'évaluation.\"",
+      "evidence": null
+    },
+    {
+      "id": "NEG-ISO-AB",
+      "title": "403 isolation enseignant A → élève établissement B",
+      "status": "PASS",
+      "detail": "HTTP 400 \"L'élève et l'évaluation doivent appartenir au même établissement.\"",
+      "evidence": null
+    },
+    {
+      "id": "IDEM-SAME",
+      "title": "Même en-tête idempotence : pas de ligne supplémentaire",
+      "status": "PASS",
+      "detail": "avant=2 après1=2 après2=2 HTTP 201/201",
+      "evidence": null
+    },
+    {
+      "id": "IDEM-DIFF",
+      "title": "En-tête différent + même payload : pas de ligne supplémentaire (upsert métier)",
+      "status": "PASS",
+      "detail": "count=2 HTTP 201",
+      "evidence": null
+    },
+    {
+      "id": "IDEM-NONE",
+      "title": "Sans en-tête : pas de ligne supplémentaire",
+      "status": "PASS",
+      "detail": "count=2 HTTP 201",
+      "evidence": null
+    },
+    {
+      "id": "IDEM-CONC",
+      "title": "Appels concurrents même en-tête : pas de lignes supplémentaires",
+      "status": "PASS",
+      "detail": "count=2 statuses=201,201,201",
+      "evidence": null
+    },
+    {
+      "id": "RESTART-JSON",
+      "title": "Notes JSON présentes après redémarrage backend",
+      "status": "PASS",
+      "detail": "before=2 after=2",
+      "evidence": null
+    },
+    {
+      "id": "RESTART-PG",
+      "title": "Grades PG inchangés après redémarrage",
+      "status": "PASS",
+      "detail": "before=2 after=2",
+      "evidence": null
+    },
+    {
+      "id": "RESTART-SOT",
+      "title": "Cohérence JSON notes vs PG grades après restart",
+      "status": "PASS",
+      "detail": "json=2 pg=2",
+      "evidence": null
+    },
+    {
+      "id": "META-UNIT-STUB",
+      "title": "Suite verify:pre-e1-hotfix-02 utilise un stub mémoire (pas de PG réel)",
+      "status": "GAP",
+      "detail": "pedagogyStaffSyncRepository.test.js → createInjectablePostgresRepository / repo.tables.*",
+      "evidence": null
+    },
+    {
+      "id": "META-V1-ASSERT",
+      "title": "DUP-01 V1 n'exige pas clé différente ni concurrence ; idsUnchanged calculé mais non gating",
+      "status": "GAP",
+      "detail": "voir scripts/verify-pre-e1-v1.js — idemOk sans idsUnchangedWithKey ; pas IDEM-DIFF/CONC",
+      "evidence": null
+    }
+  ],
+  "pgSnapshots": {
+    "afterPut": {
+      "teachers": [
+        {
+          "id": "a0c74ce2-4907-4a8d-80d9-f8159057777e",
+          "teacher_code": "CD-2026-0051-ENS-0001",
+          "user_id": null,
+          "school_code": "CD-2026-0051"
+        }
+      ],
+      "assignments": [],
+      "enrollments": [
+        {
+          "id": "a8c2e75b-d167-49d3-915e-78b4f2e615be",
+          "student_code": "STUDENTS-1785077667772-7k3u9v",
+          "class_name": "INSP-1785077664278"
+        },
+        {
+          "id": "ee720c02-5e09-44cd-9fe6-f073d88a71bb",
+          "student_code": "STUDENTS-1785077669070-zvtxrs",
+          "class_name": "INSP-1785077664278"
+        }
+      ],
+      "evaluations": [
+        {
+          "id": "d1630aec-7e80-42ac-ae3f-65be4e6d20ad",
+          "legacy_json_id": "EVAL-1785077671380-85gdfc",
+          "teacher_id": "a0c74ce2-4907-4a8d-80d9-f8159057777e",
+          "title": "Inspect PUT 1785077664278",
+          "status": "published"
+        }
+      ],
+      "grades": [
+        {
+          "id": "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "student_id": "26c6d316-9490-4bb3-9c4a-c4bc5cbef6ba",
+          "score": "11.00",
+          "evaluation_id": "d1630aec-7e80-42ac-ae3f-65be4e6d20ad"
+        },
+        {
+          "id": "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2",
+          "student_id": "c81bbced-a044-4477-8a8d-3e9725bf51bc",
+          "score": "14.50",
+          "evaluation_id": "d1630aec-7e80-42ac-ae3f-65be4e6d20ad"
+        }
+      ]
+    },
+    "idempotency": {
+      "before": {
+        "count": 2,
+        "ids": [
+          "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2"
+        ],
+        "rows": [
+          {
+            "id": "11738421-0d74-450e-97e1-e3159c7eb9b2",
+            "student_id": "26c6d316-9490-4bb3-9c4a-c4bc5cbef6ba",
+            "score": "11.00"
+          },
+          {
+            "id": "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2",
+            "student_id": "c81bbced-a044-4477-8a8d-3e9725bf51bc",
+            "score": "16.00"
+          }
+        ]
+      },
+      "afterFirstSameHeader": {
+        "status": 201,
+        "count": 2,
+        "ids": [
+          "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2"
+        ]
+      },
+      "afterSecondSameHeader": {
+        "status": 201,
+        "count": 2,
+        "ids": [
+          "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2"
+        ]
+      },
+      "afterDifferentHeader": {
+        "status": 201,
+        "count": 2,
+        "ids": [
+          "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2"
+        ]
+      },
+      "afterNoHeader": {
+        "status": 201,
+        "count": 2,
+        "ids": [
+          "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2"
+        ]
+      },
+      "concurrent": {
+        "statuses": [
+          201,
+          201,
+          201
+        ],
+        "count": 2,
+        "ids": [
+          "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2"
+        ]
+      }
+    },
+    "afterRestart": {
+      "jsonNotesCount": 2,
+      "pgGrades": [
+        {
+          "id": "11738421-0d74-450e-97e1-e3159c7eb9b2",
+          "score": "11.00"
+        },
+        {
+          "id": "1a46fae0-29c9-4eaa-84a0-c2d08b8f6cd2",
+          "score": "13.00"
+        }
+      ],
+      "evaluation": {
+        "id": "d1630aec-7e80-42ac-ae3f-65be4e6d20ad",
+        "teacher_id": "a0c74ce2-4907-4a8d-80d9-f8159057777e"
+      }
+    }
+  },
+  "summary": {
+    "total": 26,
+    "pass": 18,
+    "fail": 5,
+    "gapOrObserved": 3,
+    "ctoDecision": "NOT_CLAIMED",
+    "note": "Rapport Cursor ≠ validation CTO. Ce fichier est une affirmation d'inspection à arbitrer."
+  }
+}
