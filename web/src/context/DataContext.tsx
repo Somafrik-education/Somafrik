@@ -14,6 +14,7 @@ import { SYNC_INTERVAL_MS } from "../lib/constants";
 import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
+import { stripClientAuditLogFromPutPayload } from "../lib/stripClientAuditLog";
 import {
   enqueuePatchMutations,
   formatOutboxFailureMessage,
@@ -211,9 +212,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       persistJournal(workingOutbox);
 
       try {
-        const payload = usePartial
+        const rawPayload = usePartial
           ? (annotatedPatch as Partial<BackOfficeState>)
           : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
+        // HOTFIX-RBAC-ADMIN-01 : jamais envoyer auditLog (non writable client → 403).
+        const payload = stripClientAuditLogFromPutPayload(
+          rawPayload as Record<string, unknown>,
+        ) as Partial<BackOfficeState>;
         const saved = await api.put<Partial<BackOfficeState> & { syncAck?: SyncAck }>(
           "/backoffice/state",
           payload,

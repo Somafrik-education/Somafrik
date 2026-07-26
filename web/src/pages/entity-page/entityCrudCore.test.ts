@@ -139,7 +139,10 @@ describe("entityCrudCore (D2.8c)", () => {
   });
 
   it("expose les libellés d’audit et les clés auditées", () => {
-    expect(isAuditedEntityKey("classes")).toBe(true);
+    // HOTFIX-RBAC-ADMIN-01 : classes/teachers/assignments hors audit client.
+    expect(isAuditedEntityKey("students")).toBe(true);
+    expect(isAuditedEntityKey("classes")).toBe(false);
+    expect(isAuditedEntityKey("teachers")).toBe(false);
     expect(isAuditedEntityKey("contacts")).toBe(false);
     expect(auditEntityLabel("classes", { name: "6ème A" })).toBe("6ème A");
     expect(auditEntityLabel("students", { name: "Diallo", firstName: "Awa" })).toBe(
@@ -154,39 +157,38 @@ describe("entityCrudCore (D2.8c)", () => {
     ).toBe("K. · Maths · 6ème A");
   });
 
-  it("audit générique create / update / delete + ignore hors clés communes", () => {
+  it("audit générique : students uniquement · classes/teachers hors client (RBAC-ADMIN-01)", () => {
     const state = baseState();
     expect(
       appendGenericMutationAudit(state.auditLog, "contacts", admin, { id: "x" }, false),
     ).toBeUndefined();
+    // HOTFIX-RBAC-ADMIN-01 : plus d'auditLog client pour classes / teachers.
+    expect(
+      appendGenericMutationAudit(
+        state.auditLog,
+        "classes",
+        admin,
+        { id: "c9", name: "5ème B", schoolCode: "SCH-001" },
+        false,
+      ),
+    ).toBeUndefined();
+    expect(
+      appendGenericDeleteAudit(
+        state.auditLog,
+        "teachers",
+        admin,
+        { id: "t1", name: "Sow", firstName: "Ibra", schoolCode: "SCH-001" },
+      ),
+    ).toBeUndefined();
 
     const createLog = appendGenericMutationAudit(
       state.auditLog,
-      "classes",
+      "students",
       admin,
-      { id: "c9", name: "5ème B", schoolCode: "SCH-001" },
+      { id: "s9", name: "Ada", schoolCode: "SCH-001" },
       false,
     );
-    expect(createLog?.[0]?.action).toBe("classes.create");
-    expect(createLog?.[0]?.entityLabel).toBe("5ème B");
-
-    const updateLog = appendGenericMutationAudit(
-      state.auditLog,
-      "classes",
-      admin,
-      { id: "c1", name: "6ème A", schoolCode: "SCH-001" },
-      true,
-    );
-    expect(updateLog?.[0]?.action).toBe("classes.update");
-
-    const deleteLog = appendGenericDeleteAudit(
-      state.auditLog,
-      "teachers",
-      admin,
-      { id: "t1", name: "Sow", firstName: "Ibra", schoolCode: "SCH-001" },
-    );
-    expect(deleteLog?.[0]?.action).toBe("teachers.delete");
-    expect(deleteLog?.[0]?.entityLabel).toBe("Sow Ibra");
+    expect(createLog?.[0]?.action).toBe("students.create");
     expect(state.auditLog).toEqual([]);
   });
 

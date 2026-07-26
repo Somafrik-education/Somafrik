@@ -36,6 +36,7 @@
 | [CONTRAT-HOTFIX-SYNC-02.md](./CONTRAT-HOTFIX-SYNC-02.md) · [RAPPORT-HOTFIX-SYNC-02.md](./RAPPORT-HOTFIX-SYNC-02.md) | HOTFIX-SYNC-02 rattachement évaluations |
 | [CONTRAT-HOTFIX-SYNC-03.md](./CONTRAT-HOTFIX-SYNC-03.md) · [RAPPORT-HOTFIX-SYNC-03.md](./RAPPORT-HOTFIX-SYNC-03.md) | HOTFIX-SYNC-03 RBAC enseignant Notes |
 | [KNOWN-ISSUE-NOTES-01.md](./KNOWN-ISSUE-NOTES-01.md) | Clôturée par SYNC-03 — sync enseignant RBAC |
+| [CONTRAT-HOTFIX-RBAC-ADMIN-01.md](./CONTRAT-HOTFIX-RBAC-ADMIN-01.md) · [RAPPORT-HOTFIX-RBAC-ADMIN-01.md](./RAPPORT-HOTFIX-RBAC-ADMIN-01.md) | HOTFIX-RBAC-ADMIN-01 classes/enseignants sans auditLog client |
 | [CONTRAT-BOOTSTRAP-RUNTIME.md](./CONTRAT-BOOTSTRAP-RUNTIME.md) | Filet CI bootstrap runtime (post P0 AUTH) |
 | [SUIVI-MIGRATIONS.md](./SUIVI-MIGRATIONS.md) | Tableau officiel de suivi |
 | [MIGRATION.md](./MIGRATION.md) | Coexistence legacy / DS |

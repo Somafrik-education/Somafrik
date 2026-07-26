@@ -196,9 +196,8 @@ describe("teacherAssignmentWorkflow (D2.8d1)", () => {
     expect(plan.successMessage).toBe("Affectation créée");
     expect(plan.resetEditingAssignment).toEqual(emptyEditingAssignment("t1"));
     expect(plan.refreshTeacherContext.id).toBe("t1");
-    expect((plan.patch.auditLog as Array<{ action: string }> | undefined)?.[0]?.action).toBe(
-      "assignments.create",
-    );
+    // HOTFIX-RBAC-ADMIN-01 : pas d'auditLog client dans le patch.
+    expect(plan.patch.auditLog).toBeUndefined();
 
     const created = (plan.patch.assignments as Record<string, unknown>[]).find(
       (row) => String(row.subject) === "Français",
@@ -214,7 +213,7 @@ describe("teacherAssignmentWorkflow (D2.8d1)", () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it("modification générique : audit update", () => {
+  it("modification générique : succès sans auditLog client", () => {
     const state = baseState();
     const plan = buildTeacherAssignmentSubmitPlan(deps(state), {
       editingAssignment: {
@@ -233,9 +232,7 @@ describe("teacherAssignmentWorkflow (D2.8d1)", () => {
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
     expect(plan.successMessage).toBe("Affectation modifiée");
-    expect((plan.patch.auditLog as Array<{ action: string }> | undefined)?.[0]?.action).toBe(
-      "assignments.update",
-    );
+    expect(plan.patch.auditLog).toBeUndefined();
   });
 
   it("delete confirm copy inclut classe et matière", () => {
@@ -265,7 +262,7 @@ describe("teacherAssignmentWorkflow (D2.8d1)", () => {
     );
   });
 
-  it("delete happy path : conserve rows post-delete + embed teacher + audit", () => {
+  it("delete happy path : conserve rows post-delete + embed teacher sans auditLog", () => {
     const state = baseState();
     const snapshot = structuredClone(state.assignments);
     const plan = buildTeacherAssignmentDeletePlan(deps(state), {
@@ -284,9 +281,7 @@ describe("teacherAssignmentWorkflow (D2.8d1)", () => {
     if (!plan.ok) return;
     expect(plan.successMessage).toBe("Affectation retirée");
     expect(plan.clearEditingIfId).toBe("a1");
-    expect((plan.patch.auditLog as Array<{ action: string }> | undefined)?.[0]?.action).toBe(
-      "assignments.delete",
-    );
+    expect(plan.patch.auditLog).toBeUndefined();
     expect((plan.patch.assignments as unknown[]).map((r) => (r as { id: string }).id)).toEqual([
       "a-foreign",
     ]);

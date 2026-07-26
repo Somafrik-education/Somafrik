@@ -37,13 +37,12 @@ export const ENTITY_OUT_OF_SCOPE_DELETE_MESSAGE =
   "Suppression refusée : élément hors périmètre ou introuvable.";
 export const ENTITY_DELETED_MESSAGE = "Élément supprimé";
 
-/** Entités « données sensibles » tracées au journal d'audit (WEB-ME-006 / SEC-ME-003). */
-export const AUDITED_ENTITY_KEYS = new Set<SchoolEntityKey>([
-  "classes",
-  "students",
-  "teachers",
-  "assignments",
-]);
+/**
+ * Entités encore auditées via patch client (legacy UI).
+ * HOTFIX-RBAC-ADMIN-01 : `classes` / `teachers` / `assignments` sont audités
+ * uniquement côté serveur — ne plus les inclure ici (auditLog client → 403).
+ */
+export const AUDITED_ENTITY_KEYS = new Set<SchoolEntityKey>(["students"]);
 
 export function isAuditedEntityKey(key: SchoolEntityKey): boolean {
   return AUDITED_ENTITY_KEYS.has(key);

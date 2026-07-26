@@ -3063,6 +3063,21 @@ const CRITICAL_AUDIT_COLLECTIONS = [
   { key: "payments", entityType: "payment", label: (row) => row.publicId ?? row.id },
   { key: "bulletins", entityType: "bulletin", label: (row) => row.studentName ?? row.id },
   { key: "rolePermissions", entityType: "role_permissions", label: (row) => row.role ?? row.id },
+  // HOTFIX-RBAC-ADMIN-01 — audit classes/enseignants/affectations côté serveur (jamais via auditLog client).
+  { key: "classes", entityType: "class", label: (row) => row.name ?? row.id },
+  {
+    key: "teachers",
+    entityType: "teacher",
+    label: (row) =>
+      `${row.lastName ?? ""} ${row.firstName ?? ""}`.trim() || row.name || row.publicId || row.id,
+  },
+  {
+    key: "assignments",
+    entityType: "assignment",
+    label: (row) =>
+      [row.teacherName, row.subject ?? row.course, row.className].filter(Boolean).join(" · ") ||
+      row.id,
+  },
 ];
 
 async function auditCriticalStateChanges(req, beforeState = {}, afterState = {}) {

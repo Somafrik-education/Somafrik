@@ -35,6 +35,7 @@
     "check:suspension": "node scripts/verify-suspension.js",
     "verify:sanitize-user-responses": "npm --prefix backend run verify:sanitize-user-responses",
     "verify:rbac-s1-4": "npm --prefix backend run verify:rbac-s1-4",
+    "verify:rbac-admin-01": "npm --prefix backend run verify:rbac-admin-01",
     "verify:jwt-header": "npm --prefix backend run verify:jwt-header",
     "verify:db-config": "npm --prefix backend run verify:db-config",
     "verify:runtime-bootstrap": "npm --prefix backend run verify:runtime-bootstrap",
