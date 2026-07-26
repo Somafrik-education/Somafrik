@@ -63,6 +63,11 @@ export interface StudentEnrollmentRecord {
   validatedAt: string | null;
   endedAt: string | null;
 
+  /** C1.8b — champs structurés de fin d'inscription. */
+  transferDate: string | null;
+  destinationSchoolName: string | null;
+  closureDate: string | null;
+
   previousSchoolName: string | null;
   notes: string | null;
 
@@ -186,6 +191,9 @@ export function toStudentEnrollmentRecord(
     enrolledAt?: unknown;
     validatedAt?: unknown;
     endedAt?: unknown;
+    transferDate?: unknown;
+    destinationSchoolName?: unknown;
+    closureDate?: unknown;
     notes?: unknown;
     previousSchoolName?: unknown;
   };
@@ -223,6 +231,9 @@ export function toStudentEnrollmentRecord(
     enrolledAt,
     validatedAt: normalizeOptional(raw.validatedAt),
     endedAt,
+    transferDate: normalizeOptional(raw.transferDate),
+    destinationSchoolName: normalizeOptional(raw.destinationSchoolName),
+    closureDate: normalizeOptional(raw.closureDate),
     previousSchoolName:
       normalizeOptional(raw.previousSchoolName) ??
       normalizeOptional(enrollment.previousSchool),
@@ -277,6 +288,9 @@ export function deriveEnrollmentFromLegacyStudent(
     enrolledAt: enrollmentDate,
     validatedAt: null,
     endedAt: normalizeOptional(student.exitDate),
+    transferDate: null,
+    destinationSchoolName: null,
+    closureDate: null,
     previousSchoolName: normalizeOptional(student.previousSchool),
     notes: normalizeOptional(student.observations),
     schoolName: normalizeOptional(options.schoolName),

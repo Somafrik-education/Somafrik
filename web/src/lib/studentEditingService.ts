@@ -19,9 +19,11 @@ import {
   buildChangeSetForCommand,
   listUnsupportedFields,
   normalizeAdministrativeChanges,
+  normalizeCivilDate,
   normalizeEnrollmentClassChanges,
   normalizeGuardianContactChanges,
   normalizeIdentityChanges,
+  normalizeOptionalText,
 } from "./studentEditingChangeSet";
 import type { StudentWorkspaceCommand } from "./studentEditingCommands";
 import {
@@ -37,11 +39,15 @@ import {
 import {
   ALLOWED_ADMINISTRATIVE_CHANGE_FIELDS,
   ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS,
+  ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS,
   ALLOWED_GUARDIAN_CONTACT_CHANGE_FIELDS,
   ALLOWED_IDENTITY_CHANGE_FIELDS,
 } from "./studentEditing";
 import {
   nextStatusAfterAssignClass,
+  nextStatusAfterClose,
+  nextStatusAfterTransfer,
   nextStatusAfterValidate,
 } from "./studentEnrollmentTransitions";
 
@@ -67,7 +73,7 @@ function createAuditEvent(
     actorRole: context.role,
     occurredAt,
     changedFields: changeSet.changes.map((item) => item.field),
-    reason: command.reason ?? null,
+    reason: normalizeOptionalText(command.reason),
     visibility: "ADMIN",
   };
 }
@@ -90,7 +96,9 @@ async function loadCurrent(
   }
   if (
     command.type === "VALIDATE_ENROLLMENT" ||
-    command.type === "ASSIGN_ENROLLMENT_CLASS"
+    command.type === "ASSIGN_ENROLLMENT_CLASS" ||
+    command.type === "TRANSFER_ENROLLMENT" ||
+    command.type === "CLOSE_ENROLLMENT"
   ) {
     return repository.getEnrollment(command.studentId, command.enrollmentId);
   }
@@ -112,7 +120,24 @@ function allowedFieldsForCommand(
   if (command.type === "ASSIGN_ENROLLMENT_CLASS") {
     return ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS;
   }
+  if (command.type === "TRANSFER_ENROLLMENT") {
+    return ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS;
+  }
+  if (command.type === "CLOSE_ENROLLMENT") {
+    return ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS;
+  }
   return null;
+}
+
+function isEnrollmentCommand(
+  command: StudentWorkspaceCommand,
+): boolean {
+  return (
+    command.type === "VALIDATE_ENROLLMENT" ||
+    command.type === "ASSIGN_ENROLLMENT_CLASS" ||
+    command.type === "TRANSFER_ENROLLMENT" ||
+    command.type === "CLOSE_ENROLLMENT"
+  );
 }
 
 /**
@@ -229,11 +254,9 @@ export async function executeStudentUpdateCommand(
       command.type === "UPDATE_STUDENT_ADMINISTRATIVE_DETAILS"
         ? (current as EditableStudentAdministrativeDetails)
         : null,
-    enrollment:
-      command.type === "VALIDATE_ENROLLMENT" ||
-      command.type === "ASSIGN_ENROLLMENT_CLASS"
-        ? (current as EditableEnrollment)
-        : null,
+    enrollment: isEnrollmentCommand(command)
+      ? (current as EditableEnrollment)
+      : null,
     siblingGuardians: siblings,
     schoolClasses,
     referenceDate: options.referenceDate,
@@ -262,6 +285,12 @@ export async function executeStudentUpdateCommand(
   }
   if (command.type === "ASSIGN_ENROLLMENT_CLASS") {
     return repository.assignEnrollmentClass(command, context);
+  }
+  if (command.type === "TRANSFER_ENROLLMENT") {
+    return repository.transferEnrollment(command, context);
+  }
+  if (command.type === "CLOSE_ENROLLMENT") {
+    return repository.closeEnrollment(command, context);
   }
   return repository.updateAdministrativeDetails(command, context);
 }
@@ -384,6 +413,51 @@ export function applyAssignEnrollmentClass(
     className: resolved.className,
     status: nextStatus,
     enrolledAt: current.enrolledAt ?? updatedAt.slice(0, 10),
+    version: current.version + 1,
+    updatedAt,
+  };
+}
+
+export function applyTransferEnrollment(
+  current: EditableEnrollment,
+  command: Extract<StudentWorkspaceCommand, { type: "TRANSFER_ENROLLMENT" }>,
+  updatedAt: string,
+): EditableEnrollment {
+  const destination = normalizeOptionalText(
+    command.changes.destinationSchoolName,
+  );
+  const transferDate = normalizeCivilDate(command.changes.transferDate);
+  if (!destination || !transferDate) {
+    // Validation amont : aucune mutation partielle.
+    return current;
+  }
+  return {
+    ...current,
+    status: nextStatusAfterTransfer(),
+    transferDate,
+    destinationSchoolName: destination,
+    endedAt: transferDate,
+    // notes métier inchangées — destination dans un champ dédié.
+    version: current.version + 1,
+    updatedAt,
+  };
+}
+
+export function applyCloseEnrollment(
+  current: EditableEnrollment,
+  command: Extract<StudentWorkspaceCommand, { type: "CLOSE_ENROLLMENT" }>,
+  updatedAt: string,
+): EditableEnrollment {
+  const closureDate = normalizeCivilDate(command.changes.closureDate);
+  if (!closureDate) {
+    return current;
+  }
+  return {
+    ...current,
+    status: nextStatusAfterClose(),
+    closureDate,
+    endedAt: closureDate,
+    // notes métier inchangées.
     version: current.version + 1,
     updatedAt,
   };

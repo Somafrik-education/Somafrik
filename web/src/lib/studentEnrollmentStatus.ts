@@ -11,6 +11,7 @@ export type StudentEnrollmentStatus =
   | "ENROLLED"
   | "SUSPENDED"
   | "WITHDRAWN"
+  | "CLOSED"
   | "TRANSFERRED"
   | "COMPLETED"
   | "GRADUATED"
@@ -36,6 +37,7 @@ export const STUDENT_ENROLLMENT_STATUSES = [
   "ENROLLED",
   "SUSPENDED",
   "WITHDRAWN",
+  "CLOSED",
   "TRANSFERRED",
   "COMPLETED",
   "GRADUATED",
@@ -60,6 +62,7 @@ const STATUS_PRESENTATION: Record<
   ENROLLED: { label: "Inscrit", tone: "success" },
   SUSPENDED: { label: "Suspendu", tone: "warning" },
   WITHDRAWN: { label: "Désinscrit", tone: "danger" },
+  CLOSED: { label: "Clôturé", tone: "danger" },
   TRANSFERRED: { label: "Transféré", tone: "neutral" },
   COMPLETED: { label: "Année terminée", tone: "neutral" },
   GRADUATED: { label: "Diplômé", tone: "success" },
@@ -102,6 +105,13 @@ const LEGACY_STATUS_ALIASES: Record<string, StudentEnrollmentStatus> = {
   annule: "WITHDRAWN",
   "annulé": "WITHDRAWN",
   "annulã©": "WITHDRAWN",
+
+  closed: "CLOSED",
+  cloture: "CLOSED",
+  "clôturé": "CLOSED",
+  "clôturée": "CLOSED",
+  "clã´turã©": "CLOSED",
+  "clã´turã©e": "CLOSED",
 
   transferred: "TRANSFERRED",
   transfere: "TRANSFERRED",
@@ -194,6 +204,9 @@ export function normalizeStudentEnrollmentStatus(
   }
   if (folded.includes("transfert") || folded.includes("transfer")) {
     return "TRANSFERRED";
+  }
+  if (folded.includes("clotur") || folded === "closed") {
+    return "CLOSED";
   }
   if (folded.includes("annul")) {
     return "WITHDRAWN";

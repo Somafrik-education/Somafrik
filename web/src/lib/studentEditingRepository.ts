@@ -9,6 +9,8 @@ import type {
 } from "./studentEditing";
 import type {
   AssignEnrollmentClassCommand,
+  CloseEnrollmentCommand,
+  TransferEnrollmentCommand,
   UpdateGuardianContactCommand,
   UpdateStudentAdministrativeDetailsCommand,
   UpdateStudentIdentityCommand,
@@ -66,6 +68,16 @@ export interface StudentWorkspaceCommandRepository {
 
   assignEnrollmentClass(
     command: AssignEnrollmentClassCommand,
+    context: StudentEditAuthorizationContext,
+  ): Promise<StudentCommandResult<EditableEnrollment>>;
+
+  transferEnrollment(
+    command: TransferEnrollmentCommand,
+    context: StudentEditAuthorizationContext,
+  ): Promise<StudentCommandResult<EditableEnrollment>>;
+
+  closeEnrollment(
+    command: CloseEnrollmentCommand,
     context: StudentEditAuthorizationContext,
   ): Promise<StudentCommandResult<EditableEnrollment>>;
 }

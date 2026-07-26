@@ -32,6 +32,8 @@ export function StudentEnrollmentTab({
             schoolClasses={editing.schoolClasses}
             canValidate={editing.canValidateEnrollment}
             canAssignClass={editing.canAssignEnrollmentClass}
+            canTransfer={editing.canTransferEnrollment}
+            canClose={editing.canCloseEnrollment}
             authContext={editing.authContext}
             repository={editing.repository}
             onSuccess={editing.refreshFromStore}

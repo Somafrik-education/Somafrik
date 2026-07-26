@@ -432,11 +432,55 @@ function projectEnrollmentEvents(
       );
     }
 
+    if (enrollment.endedAt) {
+      const closedTitle =
+        enrollment.status === "TRANSFERRED"
+          ? "Transfert d'inscription"
+          : enrollment.status === "CLOSED" || enrollment.status === "WITHDRAWN"
+            ? "Clôture d'inscription"
+            : "Inscription clôturée";
+      const destination = enrollment.destinationSchoolName?.trim() || null;
+      const description =
+        enrollment.status === "TRANSFERRED" && destination
+          ? `Transfert vers : ${destination}`
+          : getEnrollmentStatusPresentation(enrollment.status).label;
+      events.push(
+        createEvent({
+          id: `HIST-ENR-ENDED-${enrollment.id}`,
+          type: "STATUS_CHANGED",
+          occurredAt:
+            (enrollment.status === "TRANSFERRED"
+              ? enrollment.transferDate
+              : enrollment.closureDate) ?? enrollment.endedAt,
+          title: closedTitle,
+          description,
+          severity: "IMPORTANT",
+          sourceModule: "ENROLLMENT",
+          actor: null,
+          visibility: "STAFF",
+          metadata: {
+            enrollmentId: enrollment.id,
+            status: enrollment.status,
+            ...(destination
+              ? { destinationSchoolName: destination }
+              : {}),
+            ...(enrollment.transferDate
+              ? { transferDate: enrollment.transferDate }
+              : {}),
+            ...(enrollment.closureDate
+              ? { closureDate: enrollment.closureDate }
+              : {}),
+          },
+        }),
+      );
+    }
+
     if (
       enrollment.updatedAt &&
       enrollment.updatedAt !== enrollment.createdAt &&
       enrollment.updatedAt !== enrollment.validatedAt &&
-      enrollment.updatedAt !== enrollment.enrolledAt
+      enrollment.updatedAt !== enrollment.enrolledAt &&
+      enrollment.updatedAt.slice(0, 10) !== (enrollment.endedAt ?? "").slice(0, 10)
     ) {
       events.push(
         createEvent({

@@ -197,6 +197,12 @@ export interface EditableEnrollment {
   validatedAt: string | null;
   enrolledAt: string | null;
   endedAt: string | null;
+  /** C1.8b — date civile du transfert (si TRANSFERRED). */
+  transferDate: string | null;
+  /** C1.8b — établissement cible (texte libre, pas de création auto). */
+  destinationSchoolName: string | null;
+  /** C1.8b — date civile de clôture (si CLOSED). */
+  closureDate: string | null;
   previousSchoolName: string | null;
   notes: string | null;
   schoolName: string | null;
@@ -225,6 +231,17 @@ export const ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS = [
   "className",
 ] as const;
 
+/** Champs autorisés dans TRANSFER_ENROLLMENT. */
+export const ALLOWED_ENROLLMENT_TRANSFER_CHANGE_FIELDS = [
+  "transferDate",
+  "destinationSchoolName",
+] as const;
+
+/** Champs autorisés dans CLOSE_ENROLLMENT. */
+export const ALLOWED_ENROLLMENT_CLOSE_CHANGE_FIELDS = [
+  "closureDate",
+] as const;
+
 export const FIELD_LABELS: Record<string, string> = {
   firstName: "Prénom",
   lastName: "Nom",
@@ -244,6 +261,11 @@ export const FIELD_LABELS: Record<string, string> = {
   status: "Statut d'inscription",
   validatedAt: "Date de validation",
   enrolledAt: "Date d'inscription",
+  endedAt: "Date de fin",
   classId: "Identifiant de classe",
   className: "Classe",
+  transferDate: "Date de transfert",
+  destinationSchoolName: "Établissement de destination",
+  closureDate: "Date de clôture",
+  notes: "Notes d'inscription",
 };
