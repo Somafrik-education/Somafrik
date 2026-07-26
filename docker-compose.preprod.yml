@@ -39,7 +39,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requis}
       APP_ENV: ${APP_ENV:-preproduction}
       SOMAFRIK_API_ONLY: "true"
