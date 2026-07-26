@@ -1,17 +1,25 @@
 /**
- * HOTFIX-PRE-E1-02 — Sync BO → PG enseignants + affectations.
+ * HOTFIX-PRE-E1-02 / 02B — Sync BO → PG enseignants + affectations.
  *
  * Contrat : docs/ux/design-system/CONTRAT-HOTFIX-PRE-E1-02.md
+ * Rectificatif 02B : docs/ux/design-system/CONTRAT-HOTFIX-PRE-E1-02B.md
  *
- * Mapping stable :
- *   teacher_code ← publicId ?? id
+ * Mapping stable (02B) :
+ *   teacher_code ← id TEACHERS-* (canonique) ; sinon TEACHER-* ; sinon publicId/id
  *   assignment   ← teacherId + className + subject/course + schoolCode + année
  *
  * Interdit : résolution nominale d'enseignant pour notes/évaluations.
  */
 
 function resolveStableTeacherCode(record = {}) {
-  return String(record.publicId ?? record.id ?? record.teacherCode ?? record.teacher_code ?? "").trim();
+  const id = String(record.id ?? "").trim();
+  const publicId = String(record.publicId ?? "").trim();
+  const legacy = String(record.teacherCode ?? record.teacher_code ?? "").trim();
+  // HOTFIX-PRE-E1-02B : ne pas laisser un publicId ENS-* écraser l'id pédagogique TEACHERS-*.
+  if (/^TEACHERS-/i.test(id)) return id;
+  if (/^TEACHERS-/i.test(publicId)) return publicId;
+  if (/^TEACHER-/i.test(id) && !/^TEACHERS-/i.test(id)) return id;
+  return publicId || id || legacy;
 }
 
 function resolveAssignmentSubject(record = {}) {

@@ -27,6 +27,7 @@
     "verify:notes-sync": "node backend/lib/gradesBoPersistence.test.js && node backend/lib/evaluationAttachment.test.js && node backend/lib/evaluationSyncRepository.test.js && node backend/lib/teacherNotesWriteAccess.test.js",
     "verify:students-sync": "node backend/lib/studentsBoPersistence.test.js && node backend/lib/studentsSyncRepository.test.js",
     "verify:pre-e1-hotfix-02": "node backend/lib/pedagogyStaffBoPersistence.test.js && node backend/lib/pedagogyStaffSyncRepository.test.js && node backend/lib/evaluationAttachment.test.js",
+    "verify:pre-e1-hotfix-02b": "node backend/lib/pedagogyStaffBoPersistence.test.js && node backend/lib/backofficeDedupe.teachers.test.js && node backend/lib/pedagogyStaffSyncRepository.test.js && node scripts/verify-pre-e1-hotfix-02b.js",
     "verify:pre-e1-v1": "node scripts/verify-pre-e1-v1.js",
     "audit:pre-e1-notes-authz-causality": "node scripts/audit-pre-e1-notes-authz-causality.js",
     "inspect:pre-e1-hotfix-02": "node scripts/inspect-pre-e1-hotfix-02-independent.js",

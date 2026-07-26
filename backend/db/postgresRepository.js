@@ -706,7 +706,8 @@ class PostgresRepository {
       syncAck = mergePreE1SyncAck(studentSync, staffSync, syncResult);
     });
     this.cachedDataset = null;
-    this.lastSyncAck = syncAck;
+    // syncAck est retourné avec le résultat de cette opération uniquement —
+    // ne pas le stocker sur l'instance (fuite inter-requêtes / cross-tenant).
     const state = await this.getBackOfficeState();
     return { ...state, syncAck };
   }
@@ -2074,6 +2075,143 @@ class PostgresRepository {
     return null;
   }
 
+  /**
+   * HOTFIX-PRE-E1-02B — Matérialise l'utilisateur PG lié à la fiche enseignant BO
+   * pour que teachers.user_id soit non null (user_code = id BO ou identifier).
+   *
+   * Isolation multi-tenant / rôle :
+   * - inexistant → INSERT (role TEACHER)
+   * - même établissement + rôle enseignant compatible → UPDATE contrôlé
+   *   (jamais forcer role/status/school_id)
+   * - même établissement + rôle non enseignant → REJET TEACHER_USER_ROLE_CONFLICT
+   * - autre établissement → REJET TEACHER_USER_TENANT_CONFLICT
+   */
+  isTeacherCompatiblePgRole(role) {
+    return String(role ?? "").trim().toUpperCase() === "TEACHER";
+  }
+
+  async ensurePgUserForBackOfficeTeacher(record = {}, schoolId, context = {}) {
+    const contextUsers = Array.isArray(context.users) ? context.users : [];
+    const state = (await this.getBackOfficeState()) ?? {};
+    const boUsers = [...contextUsers, ...(Array.isArray(state.users) ? state.users : [])];
+    const schoolRow = schoolId
+      ? await this.one(`SELECT school_code FROM schools WHERE id = $1 LIMIT 1`, [schoolId])
+      : null;
+    const schoolCode = String(record.schoolCode ?? schoolRow?.school_code ?? "")
+      .trim()
+      .toUpperCase();
+    const sameSchool = (user) => {
+      const userSchool = String(user?.schoolCode ?? "")
+        .trim()
+        .toUpperCase();
+      return !schoolCode || !userSchool || userSchool === schoolCode;
+    };
+
+    // Correspondance forte (id) vs souple (identifier/email) — la souple est
+    // forcément scopée établissement : ENS-0001 n'est pas globalement unique.
+    const strongKeys = new Set(
+      [record.userId, record.contactId]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
+    const softKeys = new Set(
+      [record.identifier, record.publicId, record.email]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
+    const linked =
+      boUsers.find((user) =>
+        [user.id, user.publicId, user.contactId]
+          .map((value) => String(value ?? "").trim())
+          .some((key) => key && strongKeys.has(key)),
+      ) ??
+      boUsers.find(
+        (user) =>
+          sameSchool(user) &&
+          [user.identifier, user.email, user.publicId]
+            .map((value) => String(value ?? "").trim())
+            .some((key) => key && softKeys.has(key)),
+      );
+
+    // Ne jamais laisser un match soft (identifier) écraser le userId explicite
+    // de la fiche enseignant — évite le rattachement cross-tenant via ENS-*.
+    const userCode = String(
+      record.userId ?? linked?.id ?? record.identifier ?? linked?.identifier ?? "",
+    ).trim();
+    if (!userCode) return null;
+
+    const firstName =
+      String(linked?.firstName ?? record.firstName ?? "").trim() || "Enseignant";
+    const lastName =
+      String(linked?.lastName ?? record.lastName ?? record.name ?? "").trim() || userCode;
+    const email = String(linked?.email ?? record.email ?? "").trim() || null;
+    const phone = String(linked?.phone ?? record.phone ?? "").trim() || null;
+
+    // Lookup global par user_code — ne pas dépendre de l'unicité « de fait ».
+    const existing = await this.one(
+      `SELECT id, school_id, role, status, user_code
+       FROM users
+       WHERE user_code = $1
+       LIMIT 1`,
+      [userCode],
+    );
+
+    if (!existing) {
+      const inserted = await this.one(
+        `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 'TEACHER', 'active')
+         RETURNING id`,
+        [schoolId, userCode, firstName, lastName, email, phone],
+      );
+      return inserted?.id ?? null;
+    }
+
+    if (
+      existing.school_id != null &&
+      String(existing.school_id) !== String(schoolId)
+    ) {
+      const error = new Error(
+        "Conflit multi-tenant: user_code déjà rattaché à un autre établissement",
+      );
+      error.statusCode = 409;
+      error.code = "TEACHER_USER_TENANT_CONFLICT";
+      throw error;
+    }
+
+    if (!this.isTeacherCompatiblePgRole(existing.role)) {
+      const error = new Error(
+        "Conflit de rôle: compte existant non enseignant — liaison teachers.user_id refusée",
+      );
+      error.statusCode = 409;
+      error.code = "TEACHER_USER_ROLE_CONFLICT";
+      throw error;
+    }
+
+    // Même établissement (ou school_id NULL) + rôle TEACHER : mise à jour contrôlée —
+    // ne jamais forcer role/status, ni déplacer school_id vers un autre tenant.
+    const updated = await this.one(
+      `UPDATE users
+       SET first_name = COALESCE(NULLIF($2, ''), first_name),
+           last_name = COALESCE(NULLIF($3, ''), last_name),
+           email = COALESCE($4, email),
+           phone = COALESCE($5, phone),
+           school_id = COALESCE(school_id, $6)
+       WHERE id = $1
+         AND (school_id IS NULL OR school_id = $6)
+       RETURNING id, school_id, role`,
+      [existing.id, firstName, lastName, email, phone, schoolId],
+    );
+    if (!updated) {
+      const error = new Error(
+        "Conflit multi-tenant: impossible de lier l'utilisateur enseignant à cet établissement",
+      );
+      error.statusCode = 409;
+      error.code = "TEACHER_USER_TENANT_CONFLICT";
+      throw error;
+    }
+    return updated.id;
+  }
+
   async materializeBackOfficeTeacher(record, context = {}) {
     const { resolveStableTeacherCode } = require("../lib/pedagogyStaffBoPersistence");
     const schoolCode = String(record.schoolCode ?? "")
@@ -2085,7 +2223,9 @@ class PostgresRepository {
     const teacherCode = resolveStableTeacherCode(record);
     if (!teacherCode) return null;
 
-    const userId = await this.resolvePgUserIdForTeacher(record, school.id, context);
+    const userId =
+      (await this.ensurePgUserForBackOfficeTeacher(record, school.id, context)) ??
+      (await this.resolvePgUserIdForTeacher(record, school.id, context));
     const speciality = String(record.mainSubject ?? record.speciality ?? record.subject ?? "").trim();
 
     let row = await this.one(
@@ -2496,9 +2636,9 @@ class PostgresRepository {
     });
 
     const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, student.school_id);
-    pushStep(trace, { gate: "pg_teacher_lookup", keys: lookupKeys });
+    pushStep(trace, { gate: "pg_teacher_lookup", lookupValues: lookupKeys });
     let pgTeacherFound = false;
-    for (const key of lookupKeys) {
+    for (const lookupValue of lookupKeys) {
       const teacher = await this.one(
         `SELECT t.id, t.teacher_code
          FROM teachers t
@@ -2511,14 +2651,14 @@ class PostgresRepository {
              OR t.id::text = $2
            )
          LIMIT 1`,
-        [student.school_id, key],
+        [student.school_id, lookupValue],
       );
       if (!teacher?.id) continue;
       pgTeacherFound = true;
       pushStep(trace, {
         gate: "pg_teacher_lookup",
         result: "hit",
-        key,
+        lookupValue,
         teacherId: teacher.id,
         teacherCode: teacher.teacher_code,
       });
@@ -2552,7 +2692,11 @@ class PostgresRepository {
       }
     }
     if (!pgTeacherFound) {
-      pushStep(trace, { gate: "pg_teacher_lookup", result: "miss", keys: lookupKeys });
+      pushStep(trace, {
+        gate: "pg_teacher_lookup",
+        result: "miss",
+        lookupValues: lookupKeys,
+      });
     }
 
     pushStep(trace, { gate: "fallback_bo_class", entering: true });
@@ -2605,9 +2749,12 @@ class PostgresRepository {
       principal,
       evaluation.school_id,
     );
-    pushStep(trace, { gate: "pg_teacher_lookup_for_evaluation", keys: lookupKeys });
+    pushStep(trace, {
+      gate: "pg_teacher_lookup_for_evaluation",
+      lookupValues: lookupKeys,
+    });
     let pgTeacherFound = false;
-    for (const key of lookupKeys) {
+    for (const lookupValue of lookupKeys) {
       const teacher = await this.one(
         `SELECT t.id, t.teacher_code
          FROM teachers t
@@ -2620,14 +2767,14 @@ class PostgresRepository {
              OR t.id::text = $2
            )
          LIMIT 1`,
-        [evaluation.school_id, key],
+        [evaluation.school_id, lookupValue],
       );
       if (!teacher?.id) continue;
       pgTeacherFound = true;
       pushStep(trace, {
         gate: "pg_teacher_lookup_for_evaluation",
         result: "hit",
-        key,
+        lookupValue,
         teacherId: teacher.id,
         teacherCode: teacher.teacher_code,
       });
@@ -2666,7 +2813,7 @@ class PostgresRepository {
       pushStep(trace, {
         gate: "pg_teacher_lookup_for_evaluation",
         result: "miss",
-        keys: lookupKeys,
+        lookupValues: lookupKeys,
       });
     }
 

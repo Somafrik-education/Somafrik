@@ -1,0 +1,823 @@
+{
+  "hotfix": "HOTFIX-PRE-E1-02B",
+  "notClosingAudit": true,
+  "generatedAt": "2026-07-26T15:51:38.201Z",
+  "results": [
+    {
+      "id": "PG-TEACHER-CODE",
+      "title": "teacher PG avec teacher_code TEACHERS-*",
+      "ok": true,
+      "detail": "codes=TEACHERS-1785081088209-bsz3bu"
+    },
+    {
+      "id": "PG-TEACHER-USER",
+      "title": "teachers.user_id non null",
+      "ok": true,
+      "detail": "user_ids=fb3af728-f76c-44e6-ba8e-93459e91e362"
+    },
+    {
+      "id": "PG-ASSIGN",
+      "title": "teacher_assignment PG active classe+matière",
+      "ok": true,
+      "detail": "[{\"id\":\"65ce8713-d6df-4a98-95bc-0a6f51b5b5f2\",\"teacher_code\":\"TEACHERS-1785081088209-bsz3bu\",\"class_name\":\"HF02B-1785081082943\",\"subject_name\":\"Mathématiques\",\"status\":\"active\",\"school_id\":\"c33b27de-03eb-4aa2-99b9-f8cf3e2bc0ab\",\"class_id\":\""
+    },
+    {
+      "id": "PUT-NOTES",
+      "title": "PUT évaluations+notes enseignant",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "id": "POST-PG-AUTHZ",
+      "title": "POST autorisé via pg_teacher_assignment (classe+matière)",
+      "ok": true,
+      "detail": "HTTP 201 grantedBy=class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+    },
+    {
+      "id": "02B-LINK-01",
+      "title": "teacher.user_id correspond au user BO attendu",
+      "ok": true,
+      "detail": "{\"teacher_code\":\"TEACHERS-1785081088209-bsz3bu\",\"user_id\":\"fb3af728-f76c-44e6-ba8e-93459e91e362\",\"user_code\":\"USERS-41ig68kr\",\"user_school_id\":\"c33b27de-03eb-4aa2-99b9-f8cf3e2bc0ab\",\"school_code\":\"CD-2026-0051\"}"
+    },
+    {
+      "id": "02B-REPLAY-01",
+      "title": "Plusieurs synchronisations identiques → 1 user, 1 teacher, 1 assignment",
+      "ok": true,
+      "detail": "before={\"teachers\":1,\"users\":1,\"assignments\":1} after={\"teachers\":1,\"users\":1,\"assignments\":1} teacherRow=true assignmentRow=true"
+    },
+    {
+      "id": "02B-ROLE-01",
+      "title": "Compte PARENT inchangé + aucun teacher.user_id + TEACHER_USER_ROLE_CONFLICT",
+      "ok": true,
+      "detail": "role=PARENT syncRejected=true teacherRows=[]"
+    },
+    {
+      "id": "02B-TENANT-01",
+      "title": "Compte école A inchangé + aucun lien école B + TEACHER_USER_TENANT_CONFLICT observé",
+      "ok": true,
+      "detail": "schoolABefore=c33b27de-03eb-4aa2-99b9-f8cf3e2bc0ab after=c33b27de-03eb-4aa2-99b9-f8cf3e2bc0ab syncRejected=true teacherB=null rejected=[{\"entity\":\"teachers\",\"id\":\"TEACHERS-1785081093883-1nfh5g\",\"code\":\"TEACHER_USER_TENANT_CONFLICT\",\"error\":\"Conflit multi-tenant: user_code déjà rattaché à un autre établissement\"},{\"entity\":\"teachers\",\"id\":\"TEACHERS-1785081091384-p09h7z\",\"code\":\"TEACHER_USER_ROLE_CONFLICT\",\"error\":\"Conflit de rôle: compte existant non enseignant — liaison teachers.user_id refusée\"}]"
+    },
+    {
+      "id": "02B-ACK-ISOLATION-01",
+      "title": "PUT concurrent A (rejet) / B (benign) → réponse B sans ACK-A",
+      "ok": true,
+      "detail": "ackAMarker=true ackBLeak=false codesA=TEACHER_USER_ROLE_CONFLICT,TEACHER_USER_TENANT_CONFLICT ackB={\"accepted\":[{\"entity\":\"students\",\"id\":\"ELE-0001\"},{\"entity\":\"students\",\"id\":\"ELE-0002\"},{\"entity\":\"students\",\"id\":\"ELE-0003\"},{\"entity\":\"students\",\"id\":\"ELE-0004\"},{\"entity\":\"students\",\"id\":\"ELE-0005\"},{\"entity\":\"students\",\"id\":\"ELE-0006\"}"
+    },
+    {
+      "id": "BO-NEUTRALIZED",
+      "title": "Affectation BO retirée, assignment PG toujours active",
+      "ok": true,
+      "detail": "boGone=true pgN=1"
+    },
+    {
+      "id": "POST-WITHOUT-BO",
+      "title": "POST 201 via PG après neutralisation BO",
+      "ok": true,
+      "detail": "HTTP 201 grantedBy=class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+    },
+    {
+      "id": "FALLBACK-DOC",
+      "title": "Sans assignment PG + BO conservé : fallback BO encore actif (observé)",
+      "ok": true,
+      "detail": "HTTP 201 grantedBy=class:bo_assignment_match+evaluation:bo_assignment fallbackUsed=true"
+    }
+  ],
+  "evidence": {
+    "pg": {
+      "afterStaffSync": {
+        "teachers": [
+          {
+            "id": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacher_code": "TEACHERS-1785081088209-bsz3bu",
+            "user_id": "fb3af728-f76c-44e6-ba8e-93459e91e362"
+          }
+        ],
+        "assignments": [
+          {
+            "id": "65ce8713-d6df-4a98-95bc-0a6f51b5b5f2",
+            "teacher_code": "TEACHERS-1785081088209-bsz3bu",
+            "class_name": "HF02B-1785081082943",
+            "subject_name": "Mathématiques",
+            "status": "active",
+            "school_id": "c33b27de-03eb-4aa2-99b9-f8cf3e2bc0ab",
+            "class_id": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subject_id": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          }
+        ]
+      }
+    },
+    "posts": [
+      {
+        "phase": "nominal",
+        "status": 201,
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+      },
+      {
+        "phase": "bo_neutralized",
+        "status": 201,
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+      },
+      {
+        "phase": "pg_removed_bo_kept",
+        "status": 201,
+        "grantedBy": "class:bo_assignment_match+evaluation:bo_assignment"
+      }
+    ],
+    "traces": [
+      {
+        "kind": "NOTES_AUTHZ_CAUSALITY",
+        "notACtoValidation": true,
+        "startedAt": "2026-07-26T15:51:30.066Z",
+        "route": "POST /api/notes",
+        "principal": {
+          "sub": "USERS-41ig68kr",
+          "role": "Enseignant",
+          "schoolCode": "CD-2026-0051",
+          "classNames": [
+            "5ème A",
+            "6ème A",
+            "6ème B"
+          ],
+          "identifier": "ENS-0001"
+        },
+        "payload": {
+          "studentId": "STUDENTS-1785081085360-32zw7w",
+          "className": "HF02B-1785081082943",
+          "subject": "Mathématiques",
+          "schoolCode": "CD-2026-0051",
+          "evaluationId": "EVAL-1785081089450-xb6jat"
+        },
+        "steps": [
+          {
+            "at": "2026-07-26T15:51:30.066Z",
+            "gate": "school_scope",
+            "principalSchool": "CD-2026-0051",
+            "lookupSchoolCode": "CD-2026-0051"
+          },
+          {
+            "at": "2026-07-26T15:51:30.066Z",
+            "gate": "school_scope",
+            "result": "pass"
+          },
+          {
+            "at": "2026-07-26T15:51:30.066Z",
+            "gate": "jwt_classNames",
+            "result": "miss",
+            "jwtClassNames": [
+              "5ème A",
+              "6ème A",
+              "6ème B"
+            ],
+            "studentClassName": "HF02B-1785081082943"
+          },
+          {
+            "at": "2026-07-26T15:51:30.073Z",
+            "gate": "pg_teacher_lookup",
+            "lookupValues": [
+              "USERS-41ig68kr",
+              "ENS-0001",
+              "CD-2026-0001-ENS-0001",
+              "USR-2026-000004",
+              "d6e94256-8383-4d38-a62d-ac3c2b4955e5",
+              "TEACHER-1785081087730",
+              "CD-2026-0051-ENS-0001",
+              "TEACHER-1785081088237",
+              "fb3af728-f76c-44e6-ba8e-93459e91e362",
+              "TEACHERS-1785081088209-bsz3bu",
+              "undefined"
+            ]
+          },
+          {
+            "at": "2026-07-26T15:51:30.073Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "USERS-41ig68kr",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:30.074Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081087730",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081088237",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "teacherCode": "TEACHER-1785081088237"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "fb3af728-f76c-44e6-ba8e-93459e91e362",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "TEACHERS-1785081088209-bsz3bu",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "pg_teacher_assignment",
+            "result": "allow",
+            "via": "pg_teacher_assignment",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:30.075Z",
+            "gate": "student_class",
+            "result": "allow",
+            "via": "pg_teacher_assignment"
+          },
+          {
+            "at": "2026-07-26T15:51:30.082Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "lookupValues": [
+              "USERS-41ig68kr",
+              "ENS-0001",
+              "CD-2026-0001-ENS-0001",
+              "USR-2026-000004",
+              "d6e94256-8383-4d38-a62d-ac3c2b4955e5",
+              "TEACHER-1785081087730",
+              "CD-2026-0051-ENS-0001",
+              "TEACHER-1785081088237",
+              "fb3af728-f76c-44e6-ba8e-93459e91e362",
+              "TEACHERS-1785081088209-bsz3bu",
+              "undefined"
+            ]
+          },
+          {
+            "at": "2026-07-26T15:51:30.082Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "USERS-41ig68kr",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:30.082Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081087730",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081088237",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "teacherCode": "TEACHER-1785081088237"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "fb3af728-f76c-44e6-ba8e-93459e91e362",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "TEACHERS-1785081088209-bsz3bu",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "allow",
+            "via": "pg_teacher_assignment",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:30.083Z",
+            "gate": "evaluation_subject",
+            "result": "allow",
+            "via": "pg_teacher_assignment"
+          }
+        ],
+        "decision": "ALLOW",
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment",
+        "finishedAt": "2026-07-26T15:51:30.083Z",
+        "denyReason": null
+      },
+      {
+        "kind": "NOTES_AUTHZ_CAUSALITY",
+        "notACtoValidation": true,
+        "startedAt": "2026-07-26T15:51:36.571Z",
+        "route": "POST /api/notes",
+        "principal": {
+          "sub": "USERS-41ig68kr",
+          "role": "Enseignant",
+          "schoolCode": "CD-2026-0051",
+          "classNames": [
+            "5ème A",
+            "6ème A",
+            "6ème B"
+          ],
+          "identifier": "ENS-0001"
+        },
+        "payload": {
+          "studentId": "STUDENTS-1785081085360-32zw7w",
+          "className": "HF02B-1785081082943",
+          "subject": "Mathématiques",
+          "schoolCode": "CD-2026-0051",
+          "evaluationId": "EVAL-1785081089450-xb6jat"
+        },
+        "steps": [
+          {
+            "at": "2026-07-26T15:51:36.571Z",
+            "gate": "school_scope",
+            "principalSchool": "CD-2026-0051",
+            "lookupSchoolCode": "CD-2026-0051"
+          },
+          {
+            "at": "2026-07-26T15:51:36.571Z",
+            "gate": "school_scope",
+            "result": "pass"
+          },
+          {
+            "at": "2026-07-26T15:51:36.571Z",
+            "gate": "jwt_classNames",
+            "result": "miss",
+            "jwtClassNames": [
+              "5ème A",
+              "6ème A",
+              "6ème B"
+            ],
+            "studentClassName": "HF02B-1785081082943"
+          },
+          {
+            "at": "2026-07-26T15:51:36.578Z",
+            "gate": "pg_teacher_lookup",
+            "lookupValues": [
+              "USERS-41ig68kr",
+              "ENS-0001",
+              "CD-2026-0001-ENS-0001",
+              "USR-2026-000004",
+              "d6e94256-8383-4d38-a62d-ac3c2b4955e5",
+              "TEACHER-1785081087730",
+              "CD-2026-0051-ENS-0001",
+              "TEACHER-1785081088237",
+              "fb3af728-f76c-44e6-ba8e-93459e91e362",
+              "TEACHERS-1785081088209-bsz3bu",
+              "undefined",
+              "TEACHERS-1785081093883-1nfh5g"
+            ]
+          },
+          {
+            "at": "2026-07-26T15:51:36.579Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "USERS-41ig68kr",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:36.579Z",
+            "gate": "pg_teacher_assignment",
+            "result": "allow",
+            "via": "pg_teacher_assignment",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:36.579Z",
+            "gate": "student_class",
+            "result": "allow",
+            "via": "pg_teacher_assignment"
+          },
+          {
+            "at": "2026-07-26T15:51:36.585Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "lookupValues": [
+              "USERS-41ig68kr",
+              "ENS-0001",
+              "CD-2026-0001-ENS-0001",
+              "USR-2026-000004",
+              "d6e94256-8383-4d38-a62d-ac3c2b4955e5",
+              "TEACHER-1785081087730",
+              "CD-2026-0051-ENS-0001",
+              "TEACHER-1785081088237",
+              "fb3af728-f76c-44e6-ba8e-93459e91e362",
+              "TEACHERS-1785081088209-bsz3bu",
+              "undefined",
+              "TEACHERS-1785081093883-1nfh5g"
+            ]
+          },
+          {
+            "at": "2026-07-26T15:51:36.586Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "USERS-41ig68kr",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:36.586Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "allow",
+            "via": "pg_teacher_assignment",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:36.586Z",
+            "gate": "evaluation_subject",
+            "result": "allow",
+            "via": "pg_teacher_assignment"
+          }
+        ],
+        "decision": "ALLOW",
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment",
+        "finishedAt": "2026-07-26T15:51:36.586Z",
+        "denyReason": null
+      },
+      {
+        "kind": "NOTES_AUTHZ_CAUSALITY",
+        "notACtoValidation": true,
+        "startedAt": "2026-07-26T15:51:37.358Z",
+        "route": "POST /api/notes",
+        "principal": {
+          "sub": "USERS-41ig68kr",
+          "role": "Enseignant",
+          "schoolCode": "CD-2026-0051",
+          "classNames": [
+            "5ème A",
+            "6ème A",
+            "6ème B"
+          ],
+          "identifier": "ENS-0001"
+        },
+        "payload": {
+          "studentId": "STUDENTS-1785081085360-32zw7w",
+          "className": "HF02B-1785081082943",
+          "subject": "Mathématiques",
+          "schoolCode": "CD-2026-0051",
+          "evaluationId": "EVAL-1785081089450-xb6jat"
+        },
+        "steps": [
+          {
+            "at": "2026-07-26T15:51:37.358Z",
+            "gate": "school_scope",
+            "principalSchool": "CD-2026-0051",
+            "lookupSchoolCode": "CD-2026-0051"
+          },
+          {
+            "at": "2026-07-26T15:51:37.358Z",
+            "gate": "school_scope",
+            "result": "pass"
+          },
+          {
+            "at": "2026-07-26T15:51:37.358Z",
+            "gate": "jwt_classNames",
+            "result": "miss",
+            "jwtClassNames": [
+              "5ème A",
+              "6ème A",
+              "6ème B"
+            ],
+            "studentClassName": "HF02B-1785081082943"
+          },
+          {
+            "at": "2026-07-26T15:51:37.365Z",
+            "gate": "pg_teacher_lookup",
+            "lookupValues": [
+              "USERS-41ig68kr",
+              "ENS-0001",
+              "CD-2026-0001-ENS-0001",
+              "USR-2026-000004",
+              "d6e94256-8383-4d38-a62d-ac3c2b4955e5",
+              "TEACHER-1785081087730",
+              "CD-2026-0051-ENS-0001",
+              "TEACHER-1785081088237",
+              "fb3af728-f76c-44e6-ba8e-93459e91e362",
+              "TEACHERS-1785081088209-bsz3bu",
+              "undefined",
+              "TEACHERS-1785081093883-1nfh5g"
+            ]
+          },
+          {
+            "at": "2026-07-26T15:51:37.366Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "USERS-41ig68kr",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:37.366Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081087730",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081088237",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "teacherCode": "TEACHER-1785081088237"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "fb3af728-f76c-44e6-ba8e-93459e91e362",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "teacherCode": "TEACHER-1785081088237"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_lookup",
+            "result": "hit",
+            "lookupValue": "TEACHERS-1785081088209-bsz3bu",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:37.367Z",
+            "gate": "pg_teacher_assignment",
+            "result": "miss",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d"
+          },
+          {
+            "at": "2026-07-26T15:51:37.368Z",
+            "gate": "fallback_bo_class",
+            "entering": true
+          },
+          {
+            "at": "2026-07-26T15:51:37.374Z",
+            "gate": "fallback_bo_class",
+            "linkedTeacherIds": [
+              "CD-2026-0001-ENS-0001",
+              "TEACHER-1785081087730",
+              "TEACHER-1785081088237",
+              "TEACHERS-1785081088209-bsz3bu",
+              "TEACHERS-1785081093883-1nfh5g"
+            ],
+            "assignmentCount": 2
+          },
+          {
+            "at": "2026-07-26T15:51:37.374Z",
+            "gate": "fallback_bo_class",
+            "result": "allow",
+            "via": "bo_assignment_match",
+            "assignmentId": "ASSIGN-1785081088209-08g5es",
+            "teacherId": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:37.374Z",
+            "gate": "student_class",
+            "result": "allow",
+            "via": "bo_assignment_match"
+          },
+          {
+            "at": "2026-07-26T15:51:37.381Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "lookupValues": [
+              "USERS-41ig68kr",
+              "ENS-0001",
+              "CD-2026-0001-ENS-0001",
+              "USR-2026-000004",
+              "d6e94256-8383-4d38-a62d-ac3c2b4955e5",
+              "TEACHER-1785081087730",
+              "CD-2026-0051-ENS-0001",
+              "TEACHER-1785081088237",
+              "fb3af728-f76c-44e6-ba8e-93459e91e362",
+              "TEACHERS-1785081088209-bsz3bu",
+              "undefined",
+              "TEACHERS-1785081093883-1nfh5g"
+            ]
+          },
+          {
+            "at": "2026-07-26T15:51:37.381Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "USERS-41ig68kr",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:37.381Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:37.381Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081087730",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "teacherCode": "TEACHER-1785081087730"
+          },
+          {
+            "at": "2026-07-26T15:51:37.381Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "261da3a0-b5ac-4c85-b4a7-90bc38a48444",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:37.382Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "TEACHER-1785081088237",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "teacherCode": "TEACHER-1785081088237"
+          },
+          {
+            "at": "2026-07-26T15:51:37.382Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:37.382Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "fb3af728-f76c-44e6-ba8e-93459e91e362",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "teacherCode": "TEACHER-1785081088237"
+          },
+          {
+            "at": "2026-07-26T15:51:37.382Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "51806ccc-13ea-41f9-84bd-fa68eb2c88f8",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:37.382Z",
+            "gate": "pg_teacher_lookup_for_evaluation",
+            "result": "hit",
+            "lookupValue": "TEACHERS-1785081088209-bsz3bu",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "teacherCode": "TEACHERS-1785081088209-bsz3bu"
+          },
+          {
+            "at": "2026-07-26T15:51:37.382Z",
+            "gate": "pg_teacher_assignment_subject",
+            "result": "miss",
+            "teacherId": "1637a517-7afe-4483-a06e-a68e88490fd1",
+            "classId": "2d599ccb-65f6-46c1-8968-20d8100fef2d",
+            "subjectId": "a8b21636-9fe3-412e-affd-ace9bdd6f524"
+          },
+          {
+            "at": "2026-07-26T15:51:37.389Z",
+            "gate": "fallback_bo_evaluation",
+            "entering": true,
+            "linkedTeacherIds": [
+              "TEACHER-1785081087730",
+              "TEACHER-1785081088237",
+              "TEACHERS-1785081088209-bsz3bu",
+              "TEACHERS-1785081093883-1nfh5g"
+            ],
+            "className": "HF02B-1785081082943",
+            "subjectName": "Mathématiques"
+          },
+          {
+            "at": "2026-07-26T15:51:37.389Z",
+            "gate": "fallback_bo_evaluation",
+            "result": "allow",
+            "via": "bo_assignment",
+            "teacherId": "TEACHER-1785081087730",
+            "assignmentId": "ASSIGN-1785081088209-08g5es"
+          },
+          {
+            "at": "2026-07-26T15:51:37.389Z",
+            "gate": "evaluation_subject",
+            "result": "allow",
+            "via": "bo_assignment"
+          }
+        ],
+        "decision": "ALLOW",
+        "grantedBy": "class:bo_assignment_match+evaluation:bo_assignment",
+        "finishedAt": "2026-07-26T15:51:37.389Z",
+        "denyReason": null
+      }
+    ]
+  },
+  "summary": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0
+  }
+}

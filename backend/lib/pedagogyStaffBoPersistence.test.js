@@ -12,11 +12,17 @@ const {
 } = require("./pedagogyStaffBoPersistence");
 
 function run() {
+  // HOTFIX-PRE-E1-02B : id TEACHERS-* canonique même si publicId ENS-* présent.
   assert.strictEqual(
-    resolveStableTeacherCode({ id: "TEACHERS-1", publicId: "PUB-T" }),
-    "PUB-T",
+    resolveStableTeacherCode({ id: "TEACHERS-1", publicId: "CD-2026-0051-ENS-0001" }),
+    "TEACHERS-1",
   );
   assert.strictEqual(resolveStableTeacherCode({ id: "TEACHERS-1" }), "TEACHERS-1");
+  assert.strictEqual(
+    resolveStableTeacherCode({ id: "TEACHER-9", publicId: "CD-2026-0051-ENS-0001" }),
+    "TEACHER-9",
+  );
+  assert.strictEqual(resolveStableTeacherCode({ publicId: "PUB-T" }), "PUB-T");
 
   const okTeacher = validateTeacherSyncRecord({
     id: "TEACHERS-1",

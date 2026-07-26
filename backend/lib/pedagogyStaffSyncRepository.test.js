@@ -204,6 +204,22 @@ function createInjectablePostgresRepository() {
       return [row];
     }
 
+    if (
+      upper.includes("FROM USERS") &&
+      upper.includes("WHERE USER_CODE = $1") &&
+      upper.includes("SELECT ID, SCHOOL_ID, ROLE")
+    ) {
+      return tables.users
+        .filter((row) => eq(row.user_code, params[0]))
+        .slice(0, 1)
+        .map((row) => ({
+          id: row.id,
+          school_id: row.school_id,
+          role: row.role,
+          status: row.status,
+          user_code: row.user_code,
+        }));
+    }
     if (upper.startsWith("SELECT ID FROM USERS")) {
       return tables.users
         .filter(
@@ -212,7 +228,38 @@ function createInjectablePostgresRepository() {
             eq(row.user_code, params[0]) ||
             lower(row.email) === lower(params[0]),
         )
-        .slice(0, 1);
+        .slice(0, 1)
+        .map((row) => ({ id: row.id }));
+    }
+    // HOTFIX-PRE-E1-02B — ensurePgUserForBackOfficeTeacher (INSERT only, no cross-tenant upsert)
+    if (upper.startsWith("INSERT INTO USERS")) {
+      const row = {
+        id: nextId(),
+        school_id: params[0],
+        user_code: params[1],
+        first_name: params[2],
+        last_name: params[3],
+        email: params[4],
+        phone: params[5],
+        role: "TEACHER",
+        status: "active",
+      };
+      if (tables.users.some((item) => eq(item.user_code, row.user_code))) {
+        throw Object.assign(new Error("duplicate user_code"), { code: "23505" });
+      }
+      tables.users.push(row);
+      return [{ id: row.id }];
+    }
+    if (upper.startsWith("UPDATE USERS") && upper.includes("RETURNING ID, SCHOOL_ID, ROLE")) {
+      const row = tables.users.find((item) => eq(item.id, params[0]));
+      if (!row) return [];
+      if (row.school_id != null && !eq(row.school_id, params[5])) return [];
+      row.first_name = params[1] || row.first_name;
+      row.last_name = params[2] || row.last_name;
+      row.email = params[3] ?? row.email;
+      row.phone = params[4] ?? row.phone;
+      row.school_id = row.school_id ?? params[5];
+      return [{ id: row.id, school_id: row.school_id, role: row.role }];
     }
 
     if (upper.startsWith("SELECT * FROM TEACHERS WHERE SCHOOL_ID") && upper.includes("TEACHER_CODE")) {
@@ -610,6 +657,8 @@ async function run() {
   assert.ok(staffSaved.syncAck.accepted.some((row) => row.entity === "teachers"));
   assert.ok(staffSaved.syncAck.accepted.some((row) => row.entity === "assignments"));
   assert.strictEqual(repo.tables.teachers.length, 1);
+  assert.strictEqual(repo.tables.teachers[0].teacher_code, "TEACHERS-A-1");
+  assert.ok(repo.tables.teachers[0].user_id, "teachers.user_id non null (02B)");
   assert.strictEqual(repo.tables.teacher_assignments.length, 1);
   assert.strictEqual(repo.tables.students.length, 1);
   assert.strictEqual(repo.tables.enrollments.length, 1);
@@ -724,6 +773,179 @@ async function run() {
     conflict = error.code === "TEACHER_TENANT_CONFLICT";
   }
   assert.ok(conflict, "conflit tenant enseignant");
+
+  // 5) HOTFIX-PRE-E1-02B — isolation ensurePgUserForBackOfficeTeacher
+  const same = (a, b) => String(a ?? "") === String(b ?? "");
+  const userInA = repo.tables.users.find((row) => same(row.user_code, "USERS-T-1"));
+  assert.ok(userInA, "user matérialisé pour enseignant A");
+  assert.strictEqual(String(userInA.school_id), String(schoolAId));
+  const schoolAIdBefore = userInA.school_id;
+  const roleBefore = userInA.role;
+
+  let userTenantConflict = false;
+  try {
+    await repo.ensurePgUserForBackOfficeTeacher(
+      {
+        id: "TEACHERS-B-SHARED",
+        userId: "USERS-T-1",
+        schoolCode: "SCH-B",
+        firstName: "Intrus",
+        lastName: "B",
+      },
+      schoolBId,
+      { users: [{ id: "USERS-T-1", identifier: "ENS-0001", firstName: "Intrus", lastName: "B" }] },
+    );
+  } catch (error) {
+    userTenantConflict = error.code === "TEACHER_USER_TENANT_CONFLICT";
+  }
+  assert.ok(userTenantConflict, "02B-TENANT-01: collision user_code → rejet");
+  assert.strictEqual(
+    String(repo.tables.users.find((row) => same(row.user_code, "USERS-T-1")).school_id),
+    String(schoolAIdBefore),
+    "02B-TENANT-01: school_id école A inchangé",
+  );
+
+  // Collision identifier ENS-0001 entre établissements : ne pas voler le user A
+  // en le matérialisant sous l'école B via un match soft non scopé.
+  const demoSchoolId = "33333333-3333-4333-8333-333333333333";
+  repo.tables.schools.push({ id: demoSchoolId, school_code: "SCH-DEMO", name: "Démo" });
+  const stolen = await repo.ensurePgUserForBackOfficeTeacher(
+    {
+      id: "TEACHER-DEMO-ENS",
+      // pas de userId explicite — uniquement identifier partagé
+      identifier: "ENS-0001",
+      schoolCode: "SCH-DEMO",
+      firstName: "Demo",
+      lastName: "Twin",
+    },
+    demoSchoolId,
+    {
+      users: [
+        {
+          id: "USERS-T-1",
+          identifier: "ENS-0001",
+          schoolCode: "SCH-A",
+          firstName: "Prof",
+          lastName: "Alpha",
+        },
+        {
+          id: "USERS-DEMO-ENS",
+          identifier: "ENS-0001",
+          schoolCode: "SCH-DEMO",
+          firstName: "Demo",
+          lastName: "Twin",
+        },
+      ],
+    },
+  );
+  assert.strictEqual(
+    String(stolen),
+    String(repo.tables.users.find((row) => same(row.user_code, "USERS-DEMO-ENS")).id),
+    "02B-TENANT-SOFT: match identifier scopé même école",
+  );
+  assert.strictEqual(
+    String(repo.tables.users.find((row) => same(row.user_code, "USERS-T-1")).school_id),
+    String(schoolAIdBefore),
+    "02B-TENANT-SOFT: user école A non déplacé par ENS-0001 démo",
+  );
+
+  const parentUserId = "00000000-0000-4000-8000-000000000088";
+  repo.tables.users.push({
+    id: parentUserId,
+    school_id: schoolAId,
+    user_code: "USERS-PARENT-KEEP",
+    first_name: "Parent",
+    last_name: "Keep",
+    email: "parent-keep@example.com",
+    phone: null,
+    role: "PARENT",
+    status: "active",
+  });
+  let roleConflict = false;
+  try {
+    await repo.ensurePgUserForBackOfficeTeacher(
+      {
+        id: "TEACHERS-PARENT-LINK",
+        userId: "USERS-PARENT-KEEP",
+        schoolCode: "SCH-A",
+        firstName: "Parent",
+        lastName: "Keep",
+      },
+      schoolAId,
+      {
+        users: [
+          {
+            id: "USERS-PARENT-KEEP",
+            identifier: "PAR-KEEP",
+            firstName: "Parent",
+            lastName: "Keep",
+            role: "Parent",
+            schoolCode: "SCH-A",
+          },
+        ],
+      },
+    );
+  } catch (error) {
+    roleConflict = error.code === "TEACHER_USER_ROLE_CONFLICT";
+  }
+  assert.ok(roleConflict, "02B-ROLE-01: TEACHER_USER_ROLE_CONFLICT");
+  assert.strictEqual(
+    repo.tables.users.find((row) => same(row.user_code, "USERS-PARENT-KEEP")).role,
+    "PARENT",
+    "02B-ROLE-01: rôle PARENT inchangé",
+  );
+  assert.ok(
+    !repo.tables.teachers.some((row) => same(row.user_id, parentUserId)),
+    "02B-ROLE-01: aucun teachers.user_id vers le compte PARENT",
+  );
+  assert.strictEqual(roleBefore, "TEACHER");
+
+  const usersBeforeReplay = repo.tables.users.length;
+  const teachersBeforeReplay = repo.tables.teachers.length;
+  const assignmentsBeforeReplay = repo.tables.teacher_assignments.length;
+  await repo.saveBackOfficeState({
+    schools: [{ code: "SCH-A", name: "École A" }],
+    classes: [{ id: "CLS-A", name: "6e A", schoolCode: "SCH-A" }],
+    courses: [{ id: "COURSE-M", name: "Mathématiques", schoolCode: "SCH-A" }],
+    teachers: [teacher],
+    assignments: [assignment],
+    students: [student],
+    users: [{ id: "USERS-T-1", identifier: "ENS-A", firstName: "Prof", lastName: "Alpha" }],
+  });
+  await repo.saveBackOfficeState({
+    schools: [{ code: "SCH-A", name: "École A" }],
+    classes: [{ id: "CLS-A", name: "6e A", schoolCode: "SCH-A" }],
+    courses: [{ id: "COURSE-M", name: "Mathématiques", schoolCode: "SCH-A" }],
+    teachers: [teacher],
+    assignments: [assignment],
+    students: [student],
+    users: [{ id: "USERS-T-1", identifier: "ENS-A", firstName: "Prof", lastName: "Alpha" }],
+  });
+  assert.strictEqual(
+    repo.tables.users.filter((row) => same(row.user_code, "USERS-T-1")).length,
+    1,
+    "02B-REPLAY-01: 1 user",
+  );
+  assert.strictEqual(
+    repo.tables.teachers.filter((row) => same(row.teacher_code, "TEACHERS-A-1")).length,
+    1,
+    "02B-REPLAY-01: 1 teacher",
+  );
+  assert.strictEqual(
+    repo.tables.teacher_assignments.length,
+    assignmentsBeforeReplay,
+    "02B-REPLAY-01: pas de duplication assignment",
+  );
+  assert.ok(repo.tables.users.length >= usersBeforeReplay);
+  assert.ok(repo.tables.teachers.length >= teachersBeforeReplay);
+
+  const linkedTeacher = repo.tables.teachers.find((row) => same(row.teacher_code, "TEACHERS-A-1"));
+  const linkedUser = repo.tables.users.find((row) => same(row.user_code, "USERS-T-1"));
+  assert.strictEqual(
+    String(linkedTeacher.user_id),
+    String(linkedUser.id),
+    "02B-LINK-01: teacher.user_id = user BO matérialisé",
+  );
 
   console.log("pedagogyStaffSyncRepository.test.js : OK");
 }
