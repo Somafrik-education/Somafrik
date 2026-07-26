@@ -4,8 +4,9 @@
  * 1) teacher PG : teacher_code canonique TEACHERS-* + user_id non null
  * 2) teacher_assignment PG active (school/class/subject)
  * 3) POST grantedBy = class:pg_teacher_assignment+evaluation:pg_teacher_assignment
- * 4) Après neutralisation affectation BO : POST toujours 201 via PG
- * 5) Après suppression assignment PG (BO conservé) : documenter fallback
+ * 4) Isolation : 02B-LINK / REPLAY / ROLE / TENANT
+ * 5) Après neutralisation affectation BO : POST toujours 201 via PG
+ * 6) Après suppression assignment PG (BO conservé) : documenter fallback
  *
  *   npm run verify:pre-e1-hotfix-02b
  */
