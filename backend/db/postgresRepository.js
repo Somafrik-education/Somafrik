@@ -2636,9 +2636,9 @@ class PostgresRepository {
     });
 
     const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, student.school_id);
-    pushStep(trace, { gate: "pg_teacher_lookup", keys: lookupKeys });
+    pushStep(trace, { gate: "pg_teacher_lookup", lookupValues: lookupKeys });
     let pgTeacherFound = false;
-    for (const key of lookupKeys) {
+    for (const lookupValue of lookupKeys) {
       const teacher = await this.one(
         `SELECT t.id, t.teacher_code
          FROM teachers t
@@ -2651,14 +2651,14 @@ class PostgresRepository {
              OR t.id::text = $2
            )
          LIMIT 1`,
-        [student.school_id, key],
+        [student.school_id, lookupValue],
       );
       if (!teacher?.id) continue;
       pgTeacherFound = true;
       pushStep(trace, {
         gate: "pg_teacher_lookup",
         result: "hit",
-        key,
+        lookupValue,
         teacherId: teacher.id,
         teacherCode: teacher.teacher_code,
       });
@@ -2692,7 +2692,11 @@ class PostgresRepository {
       }
     }
     if (!pgTeacherFound) {
-      pushStep(trace, { gate: "pg_teacher_lookup", result: "miss", keys: lookupKeys });
+      pushStep(trace, {
+        gate: "pg_teacher_lookup",
+        result: "miss",
+        lookupValues: lookupKeys,
+      });
     }
 
     pushStep(trace, { gate: "fallback_bo_class", entering: true });
@@ -2745,9 +2749,12 @@ class PostgresRepository {
       principal,
       evaluation.school_id,
     );
-    pushStep(trace, { gate: "pg_teacher_lookup_for_evaluation", keys: lookupKeys });
+    pushStep(trace, {
+      gate: "pg_teacher_lookup_for_evaluation",
+      lookupValues: lookupKeys,
+    });
     let pgTeacherFound = false;
-    for (const key of lookupKeys) {
+    for (const lookupValue of lookupKeys) {
       const teacher = await this.one(
         `SELECT t.id, t.teacher_code
          FROM teachers t
@@ -2760,14 +2767,14 @@ class PostgresRepository {
              OR t.id::text = $2
            )
          LIMIT 1`,
-        [evaluation.school_id, key],
+        [evaluation.school_id, lookupValue],
       );
       if (!teacher?.id) continue;
       pgTeacherFound = true;
       pushStep(trace, {
         gate: "pg_teacher_lookup_for_evaluation",
         result: "hit",
-        key,
+        lookupValue,
         teacherId: teacher.id,
         teacherCode: teacher.teacher_code,
       });
@@ -2806,7 +2813,7 @@ class PostgresRepository {
       pushStep(trace, {
         gate: "pg_teacher_lookup_for_evaluation",
         result: "miss",
-        keys: lookupKeys,
+        lookupValues: lookupKeys,
       });
     }
 

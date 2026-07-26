@@ -8,3 +8,11 @@ useDefault = true
 
 # Les fichiers d'exemple / modèles peuvent contenir des placeholders non secrets.
 # Ajouter des allowlists ciblées ici uniquement si un faux positif est confirmé.
+
+[allowlist]
+description = "Preuves d'audit authz notes : champs lookupValue (anciennement key/keys) = identifiants métier, pas des secrets API"
+paths = [
+  '''docs/audits/evidence/notes-authz-trace.*\.jsonl''',
+  '''docs/audits/evidence/pre-e1-hotfix-02b-results\.json''',
+  '''docs/audits/evidence/pre-e1-notes-authz-causality\.json''',
+]
