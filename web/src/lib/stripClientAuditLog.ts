@@ -6,6 +6,10 @@
 export function stripClientAuditLogFromPutPayload<T extends Record<string, unknown>>(
   payload: T,
 ): Omit<T, "auditLog"> {
-  const { auditLog: _ignored, ...rest } = payload;
+  if (!Object.prototype.hasOwnProperty.call(payload, "auditLog")) {
+    return payload;
+  }
+  const rest = { ...payload };
+  delete rest.auditLog;
   return rest;
 }
