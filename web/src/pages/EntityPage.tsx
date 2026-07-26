@@ -21,7 +21,6 @@ import {
   appendGenericDeleteAudit,
   appendGenericMutationAudit,
   applyEntitySchoolScope,
-  auditEntityLabel,
   deleteEntityFromState,
   ENTITY_DELETED_MESSAGE,
   ENTITY_OUT_OF_SCOPE_DELETE_MESSAGE,
@@ -119,7 +118,7 @@ import { normalize, isSchoolAdminRole } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
-import { appendAuditLog, auditActor, makeAuditEntry } from "../lib/audit";
+import { appendAuditLog } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
@@ -967,21 +966,8 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
         showToast(result.error, "error");
         return;
       }
-      const classPatch: Partial<BackOfficeState> = {
-        ...result.patch,
-        auditLog: appendAuditLog(
-          state.auditLog,
-          makeAuditEntry({
-            ...auditActor(scopeUser),
-            action: "classes.delete",
-            entityType: "classes",
-            entityId: String(row.id ?? ""),
-            entityLabel: auditEntityLabel("classes", row) || undefined,
-            schoolCode: String(row.schoolCode ?? "") || undefined,
-          }),
-        ),
-      };
-      await applyPlan({ patch: classPatch, successMessage: "Classe supprimée" });
+      // HOTFIX-RBAC-ADMIN-01 : pas d'auditLog client (audit serveur uniquement).
+      await applyPlan({ patch: result.patch, successMessage: "Classe supprimée" });
       return;
     }
 

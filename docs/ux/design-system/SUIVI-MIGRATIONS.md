@@ -83,7 +83,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
 | Présences | ✅ / 🔒 | — | D3.5a/b clos (`d3.5b`) | Chrome DS / ToolLayout 🔒 · pas de D3.5c |
 | Notes | ✅ / ⏳ | `ToolLayout` | D3.6a/b/c clos (`d3.6c`) | `/notes` ToolLayout ; Résultats 🔒 ; Bulletins D3.7 🔒 |
-| Sync / outbox | ⏳ | — | SYNC-01/02 ✅ · SYNC-03 RBAC enseignant Notes | SYNC-04 (SAVEPOINT / GRADE_*) encore isolé |
+| Sync / outbox | ⏳ | — | SYNC-01/02/03 ✅ · RBAC-ADMIN-01 classes/enseignants | SYNC-04 (SAVEPOINT / GRADE_*) encore isolé |
 | Finance (opérations) | 🔒 | — | 0 % | Oui |
 | RH | 🔒 | — | 0 % | Oui |
 
@@ -108,6 +108,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - HOTFIX-SYNC-01 : intégrité non destructive sync — [CONTRAT](./CONTRAT-HOTFIX-SYNC-01.md) · [AUDIT](./AUDIT-HOTFIX-SYNC-01.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-01.md). Tag `hotfix-sync-01` @ `885979ff`. Non-perte OK · **base saine runtime post-P0**.
 - HOTFIX-SYNC-02 : rattachement évaluations PG — [CONTRAT](./CONTRAT-HOTFIX-SYNC-02.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-02.md). Ensure classe/matière/année · `syncError` visible · test ACK accepted → PG.
 - HOTFIX-SYNC-03 : autorisation métier enseignant evaluations/notes — [CONTRAT](./CONTRAT-HOTFIX-SYNC-03.md) · [RAPPORT](./RAPPORT-HOTFIX-SYNC-03.md). Pas d’élargissement global `/backoffice/state` · `teacherId` session · rejet autres clés · Notes UI sans `auditLog` client. Clôture [KNOWN-ISSUE-NOTES-01](./KNOWN-ISSUE-NOTES-01.md).
+- HOTFIX-RBAC-ADMIN-01 : classes / enseignants sans `auditLog` client — [CONTRAT](./CONTRAT-HOTFIX-RBAC-ADMIN-01.md) · [RAPPORT](./RAPPORT-HOTFIX-RBAC-ADMIN-01.md). Filet DataContext · audit serveur · Admin School 200 / `auditLog` 403.
 - Bootstrap runtime CI : [CONTRAT-BOOTSTRAP-RUNTIME.md](./CONTRAT-BOOTSTRAP-RUNTIME.md) · PR #73. **SYNC-04** encore isolé.
 - D3.2c : membres / élèves d’une classe — `ClassStudentsPage` → EntityPage + `classScope` — [RAPPORT](./RAPPORT-D3.2c-membres-classe.md).
 - D2.8a : extraction colonnes EntityPage — [AUDIT](./AUDIT-D2.8-entitypage-remainder.md) · [RAPPORT](./RAPPORT-D2.8a-colonnes-entitypage.md).
