@@ -40,28 +40,25 @@
 | Idempotence / replay | `02B-REPLAY-01` | ✅ |
 | Fallback BO encore documenté (observé) | `FALLBACK-DOC` | ✅ `fallbackUsed=true` |
 
-**Résumé harness :** 13/13 (preuve machine ci-dessus — ≠ clôture CTO).
+**Résumé harness :** 13/13 (preuve machine). Clôture formelle CTO séparée (2026-07-27).
 
 ---
 
-## 3. Hors scope
+## 3. Hors scope (à la date du rejeu)
 
 - Nouveau correctif fonctionnel
-- Clôture HOTFIX-02 / audit Pré-E1
 - Ouverture V2 / E1
 - Convergence d’identité `TEACHER-*` / `TEACHERS-*` (dette lifecycle)
 - Modification des preuves historiques PR #84 / #89
 
 ---
 
-## 4. Décision CTO (revue PR #91)
+## 4. Décision CTO
 
-| Décision | Statut |
-|----------|--------|
-| Contenu de preuve PR #91 | **APPROUVÉ** |
-| Undraft / merge doc | **AUTORISÉ** après CI/Security verts |
-| HOTFIX-PRE-E1-02B | **CLOS TECHNIQUEMENT** |
-| HOTFIX-02 | **CORRECTION DÉMONTRÉE** — clôture formelle en attente rejeu CTO/CI |
-| Prochain gate | Exécution contrôlée du harness depuis `develop@fc953883`, puis enregistrement explicite de clôture |
+| Étape | Décision |
+|-------|----------|
+| Revue PR #91 (preuve) | Contenu **APPROUVÉ** · merge doc autorisé |
+| Clôture formelle (2026-07-27) | HOTFIX-02B **CLOS** · HOTFIX-02 **CLOS** — voir [`DECISION-CTO-CLOTURE-HOTFIX-02.md`](./DECISION-CTO-CLOTURE-HOTFIX-02.md) |
+| Gel `WAIT_FOR_INDEPENDENT_REPLAY` | **LEVÉ** (revue technique CTO fait foi) |
 
-Gouvernance maintenue : Audit **OUVERT** · V2 **BLOQUÉE** · E1 **NO-GO** · PR #84 Draft · dette IDENTITY **OUVERTE**.
+Gouvernance maintenue hors HOTFIX-02 : Audit **OUVERT** · V2 **BLOQUÉE** · E1 **NO-GO** · PR #84 Draft · dette IDENTITY **OUVERTE**.

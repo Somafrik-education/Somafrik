@@ -4,20 +4,20 @@
 **Contrat :** [CONTRAT-HOTFIX-PRE-E1-02.md](./CONTRAT-HOTFIX-PRE-E1-02.md)  
 **Prérequis :** HOTFIX-PRE-E1-01 mergé (`develop`)  
 
-### Rectificatif CTO / inspection (#89) — causalité
+### Rectificatif CTO / inspection (#89) — causalité (historique)
 
-| Position | Statut |
-|----------|--------|
+| Position (à #89) | Statut |
+|------------------|--------|
 | Audit Pré-E1 | **OUVERT** |
-| HOTFIX-PRE-E1-02 | **Fonctionnel**, **causalité non démontrée** |
+| HOTFIX-PRE-E1-02 | **Fonctionnel**, **causalité non démontrée** (à ce stade) |
 | V2 / E1 / PR #84 | BLOQUÉE / NO-GO / Draft |
 
-Preuve instrumentée (`SOMAFRIK_AUTHZ_TRACE=1`) : le `POST /api/notes` nominal réussit via  
+Preuve instrumentée (#89) : le `POST /api/notes` nominal réussissait via  
 `grantedBy = class:bo_assignment_match+evaluation:bo_assignment`  
-alors que `teacher_assignments` PG est **vide** et JWT `classNames` **rate** la classe opérationnelle.
+alors que `teacher_assignments` PG était **vide**.
 
-→ **Ne pas** lire ce rapport comme preuve que la cause racine a été éliminée par la sync PG.  
-Détail : [`docs/audits/INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md`](../../audits/INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md).
+→ Ce constat a motivé **HOTFIX-PRE-E1-02B** (PR #90).  
+**Clôture formelle HOTFIX-02 (2026-07-27) :** [`DECISION-CTO-CLOTURE-HOTFIX-02.md`](../../audits/DECISION-CTO-CLOTURE-HOTFIX-02.md) — HOTFIX-02 **CLOS** ; Audit Pré-E1 **OUVERT** ; V2 **BLOQUÉE** ; E1 **NO-GO**.
 
 ---
 
@@ -135,4 +135,6 @@ Re-run V1 depuis `develop` :
 - Bilan : [`docs/audits/BILAN-PRE-E1-V1-RERUN-HOTFIX-02.md`](../../audits/BILAN-PRE-E1-V1-RERUN-HOTFIX-02.md)
 - Résultat : **33/33** · 0 anomalie BLOCKER/CRITICAL
 
-**V2 et E1 restent bloqués** jusqu’à arbitrage CTO explicite. PR #84 reste Draft.
+**HOTFIX-02 : CLOS** (décision CTO 2026-07-27).  
+**V2 et E1 restent bloqués** (autres sujets Audit Pré-E1). PR #84 reste Draft.  
+Dette **PRE-E1-IDENTITY-LIFECYCLE** : **OUVERTE**.
