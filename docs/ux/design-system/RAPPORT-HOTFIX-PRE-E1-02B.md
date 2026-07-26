@@ -62,7 +62,11 @@ Preuve : `docs/audits/evidence/pre-e1-hotfix-02b-results.json`
 
 ---
 
-## 5. Arrêt
+## 5. Post-merge
 
-Livraison en **PR Draft** — **CHANGEMENTS REQUIS** traités ; re-diff pour autorisation merge CTO.  
-**N’autorise pas** clôture audit / V2 / E1 / undraft sans validation CTO.
+PR #90 **mergée** dans `develop` (`fc953883`, head `85ff0fe4`).
+
+Rejeu consolidé indépendant : [`BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md`](../../audits/BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md)  
+Preuve : [`pre-e1-hotfix-02b-rejeu-post-merge-results.json`](../../audits/evidence/pre-e1-hotfix-02b-rejeu-post-merge-results.json)
+
+**HOTFIX-02 reste à requalifier** (CTO). Audit **OUVERT** · V2 **BLOQUÉE** · E1 **NO-GO**.
