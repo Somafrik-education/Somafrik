@@ -259,6 +259,28 @@ if (process.env.SOMAFRIK_E2E === "true" || process.env.SOMAFRIK_DISABLE_LOGIN_LO
   }));
 }
 
+// Audit causalité Pré-E1 — exposé uniquement si SOMAFRIK_AUTHZ_TRACE=1 (≠ validation CTO).
+if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
+  app.get(
+    "/api/debug/notes-authz-trace",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (
+        !["Super Administrateur Somafrik", "Admin School", "Enseignant"].includes(
+          req.principal?.role,
+        )
+      ) {
+        throw new BusinessError(403, "Accès debug refusé.");
+      }
+      res.json({
+        kind: "NOTES_AUTHZ_CAUSALITY_LAST",
+        notACtoValidation: true,
+        trace: repository.lastNotesAuthzTrace ?? null,
+      });
+    }),
+  );
+}
+
 app.get("/api/schools", asyncHandler(async (_req, res) => {
   const { platformSchools } = await getRuntime();
   res.json(platformSchools);

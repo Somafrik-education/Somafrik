@@ -330,6 +330,20 @@ function createInjectablePostgresRepository() {
       });
     }
 
+    // Authz / audit trace : SELECT t.id[, t.teacher_code] FROM teachers t LEFT JOIN users…
+    if (
+      upper.includes("FROM TEACHERS T") &&
+      upper.includes("LEFT JOIN USERS") &&
+      upper.includes("T.TEACHER_CODE = $2")
+    ) {
+      return tables.teachers
+        .filter(
+          (row) =>
+            eq(row.school_id, params[0]) &&
+            (eq(row.teacher_code, params[1]) || eq(row.id, params[1]) || eq(row.user_id, params[1])),
+        )
+        .map((row) => ({ id: row.id, teacher_code: row.teacher_code }));
+    }
     if (upper.includes("SELECT T.ID FROM TEACHERS T")) {
       return tables.teachers
         .filter(

@@ -5,6 +5,12 @@
 **Base :** `develop` — PR Draft **distincte**  
 **Hors périmètre :** V2 · E1 Bulletins · migration générale `className`/`subject` · preuves V1 historiques  
 
+### Rectificatif post-inspection (#89)
+
+Objectif contrat §1.2 (cohérence PG `teacher_assignments`) : **non démontré** sur le chemin réel du POST réussi.  
+Trace causalité : ALLOW via **fallback snapshot BackOffice**, pas via `teacher_assignments` PG.  
+Voir `docs/audits/INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md`.
+
 ---
 
 ## 1. Objectifs

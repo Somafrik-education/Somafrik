@@ -1,10 +1,23 @@
 # Rapport HOTFIX-PRE-E1-02 — Cohérence affectations / évaluations / notes
 
 **Type :** Hotfix pré-E1 (Correctif 2)  
-**Décision CTO :** HOTFIX-02 validé fonctionnellement · PR #87 approuvée sous conditions · V2 bloquée · E1 NO-GO · PR #84 Draft  
 **Contrat :** [CONTRAT-HOTFIX-PRE-E1-02.md](./CONTRAT-HOTFIX-PRE-E1-02.md)  
 **Prérequis :** HOTFIX-PRE-E1-01 mergé (`develop`)  
-**Commit tête (gates) :** `43e99ff1` (+ commits documentation / preuve DUP-01)
+
+### Rectificatif CTO / inspection (#89) — causalité
+
+| Position | Statut |
+|----------|--------|
+| Audit Pré-E1 | **OUVERT** |
+| HOTFIX-PRE-E1-02 | **Fonctionnel**, **causalité non démontrée** |
+| V2 / E1 / PR #84 | BLOQUÉE / NO-GO / Draft |
+
+Preuve instrumentée (`SOMAFRIK_AUTHZ_TRACE=1`) : le `POST /api/notes` nominal réussit via  
+`grantedBy = class:bo_assignment_match+evaluation:bo_assignment`  
+alors que `teacher_assignments` PG est **vide** et JWT `classNames` **rate** la classe opérationnelle.
+
+→ **Ne pas** lire ce rapport comme preuve que la cause racine a été éliminée par la sync PG.  
+Détail : [`docs/audits/INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md`](../../audits/INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md).
 
 ---
 
@@ -42,17 +55,18 @@ Après HOTFIX-01, les élèves sont en PG mais :
 
 ## 3. Tableau CTO
 
-| Objectif | Résultat |
-|----------|----------|
-| Cause racine 403 corrigée sans affaiblir RBAC | Oui (classe + matière + établissement) |
-| Cohérence PG assignments / enrollments / evaluations | Oui |
-| `evaluations.teacher_id` alimenté | Oui |
+| Objectif | Résultat (relecture inspection) |
+|----------|----------------------------------|
+| POST nominal + gardes négatives (comportement) | Oui — **fonctionnel** |
+| Cause racine éliminée via `teacher_assignments` PG | **Non démontré** — ALLOW via fallback BO |
+| Cohérence PG assignments sur scénario notes | **Non démontré** (0 assignment PG observé) |
+| `evaluations.teacher_id` non null | Oui (souvent `ENS-*`, pas `TEACHERS-*`) |
 | Notes PUT → `grades` | Oui |
-| JSON notes = PG grades (scénario V1) | Oui (smoke local 33/33) |
+| JSON notes = PG grades (scénario V1) | Oui (33/33 reproductible) |
 | Isolation multi-tenant | Oui (ISO-02 403) |
-| Suite `verify:pre-e1-hotfix-02` | Oui |
-| **DUP-01** | Voir §3.1 — pas seulement « 2 grades » |
-| V2 / E1 / preuves V1 | **Toujours bloqués / non modifiées** |
+| Suite `verify:pre-e1-hotfix-02` | Oui — **stub mémoire**, pas PG réel |
+| **DUP-01** | Voir §3.1 |
+| V2 / E1 / preuves V1 | **Bloqués / non modifiées** |
 
 ### 3.1 Preuve DUP-01 (clarification)
 
