@@ -239,4 +239,8 @@ Secrets · Security · TypeScript · Lint · Tests · Audit · Lint et build
 | [ROADMAP.md](./ROADMAP.md) | Phases produit |
 | [DECISIONS.md](./DECISIONS.md) | ADR |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Workflow Git / qualité |
+| [TESTING.md](./TESTING.md) | Stratégie de tests & gates |
+| [SECURITY.md](./SECURITY.md) | RBAC, JWT, audit, secrets |
+| [OPERATIONS.md](./OPERATIONS.md) | Runbook déploiement / incidents |
+| [DATABASE.md](./DATABASE.md) | Schéma PG, conventions, migrations |
 | [../ux/design-system/SUIVI-MIGRATIONS.md](../ux/design-system/SUIVI-MIGRATIONS.md) | Suivi DS granulaire |

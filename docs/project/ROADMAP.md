@@ -5,7 +5,9 @@
 **Branche de référence :** `develop`  
 **Suivi Design System granulaire :** [../ux/design-system/SUIVI-MIGRATIONS.md](../ux/design-system/SUIVI-MIGRATIONS.md)
 
-Toute PR fonctionnelle doit référencer une **phase** (A–J) et, si applicable, une **release** ([RELEASES.md](./RELEASES.md)).
+**Pilotage :** produit ([ROADMAP](./ROADMAP.md)) · technique ([ARCHITECTURE](./ARCHITECTURE.md)) · décisions ([DECISIONS](./DECISIONS.md)) · tests ([TESTING](./TESTING.md)) · sécurité ([SECURITY](./SECURITY.md)) · ops ([OPERATIONS](./OPERATIONS.md)) · data ([DATABASE](./DATABASE.md))
+
+Toute PR fonctionnelle doit référencer une **phase** (A–J) et, si applicable, une **release** ([RELEASES.md](./RELEASES.md)). Voir aussi la règle doc dans [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ---
 

@@ -13,7 +13,9 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Added
 
-- Gouvernance documentaire officielle sous `docs/project/` (ROADMAP, ARCHITECTURE, CHANGELOG, RELEASES, CONTRIBUTING, DECISIONS).
+- Gouvernance documentaire officielle sous `docs/project/` (ROADMAP, ARCHITECTURE, CHANGELOG, RELEASES, CONTRIBUTING, DECISIONS) — PR #82.
+- Extension gouvernance SaaS : [TESTING.md](./TESTING.md), [SECURITY.md](./SECURITY.md), [OPERATIONS.md](./OPERATIONS.md), [DATABASE.md](./DATABASE.md).
+- Règle CONTRIBUTING : PR fonctionnelle incomplète sans mise à jour doc de gouvernance lorsque nécessaire.
 
 ---
 
