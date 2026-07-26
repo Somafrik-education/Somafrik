@@ -212,7 +212,33 @@ function createInjectablePostgresRepository() {
             eq(row.user_code, params[0]) ||
             lower(row.email) === lower(params[0]),
         )
-        .slice(0, 1);
+        .slice(0, 1)
+        .map((row) => ({ id: row.id }));
+    }
+    // HOTFIX-PRE-E1-02B — ensurePgUserForBackOfficeTeacher
+    if (upper.startsWith("INSERT INTO USERS")) {
+      const row = {
+        id: nextId(),
+        school_id: params[0],
+        user_code: params[1],
+        first_name: params[2],
+        last_name: params[3],
+        email: params[4],
+        phone: params[5],
+        role: "TEACHER",
+        status: "active",
+      };
+      const existing = tables.users.find((item) => eq(item.user_code, row.user_code));
+      if (existing) {
+        existing.school_id = row.school_id ?? existing.school_id;
+        existing.first_name = row.first_name || existing.first_name;
+        existing.last_name = row.last_name || existing.last_name;
+        existing.email = row.email ?? existing.email;
+        existing.phone = row.phone ?? existing.phone;
+        return [{ id: existing.id }];
+      }
+      tables.users.push(row);
+      return [{ id: row.id }];
     }
 
     if (upper.startsWith("SELECT * FROM TEACHERS WHERE SCHOOL_ID") && upper.includes("TEACHER_CODE")) {
@@ -610,6 +636,8 @@ async function run() {
   assert.ok(staffSaved.syncAck.accepted.some((row) => row.entity === "teachers"));
   assert.ok(staffSaved.syncAck.accepted.some((row) => row.entity === "assignments"));
   assert.strictEqual(repo.tables.teachers.length, 1);
+  assert.strictEqual(repo.tables.teachers[0].teacher_code, "TEACHERS-A-1");
+  assert.ok(repo.tables.teachers[0].user_id, "teachers.user_id non null (02B)");
   assert.strictEqual(repo.tables.teacher_assignments.length, 1);
   assert.strictEqual(repo.tables.students.length, 1);
   assert.strictEqual(repo.tables.enrollments.length, 1);

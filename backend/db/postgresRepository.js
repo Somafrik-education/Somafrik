@@ -2074,6 +2074,59 @@ class PostgresRepository {
     return null;
   }
 
+  /**
+   * HOTFIX-PRE-E1-02B — Matérialise l'utilisateur PG lié à la fiche enseignant BO
+   * pour que teachers.user_id soit non null (user_code = id BO ou identifier).
+   */
+  async ensurePgUserForBackOfficeTeacher(record = {}, schoolId, context = {}) {
+    const existing = await this.resolvePgUserIdForTeacher(record, schoolId, context);
+    if (existing) return existing;
+
+    const contextUsers = Array.isArray(context.users) ? context.users : [];
+    const state = (await this.getBackOfficeState()) ?? {};
+    const boUsers = [...contextUsers, ...(Array.isArray(state.users) ? state.users : [])];
+    const recordKeys = new Set(
+      [record.userId, record.contactId, record.identifier, record.publicId, record.email]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
+    const linked = boUsers.find((user) =>
+      [user.id, user.publicId, user.identifier, user.email, user.contactId]
+        .map((value) => String(value ?? "").trim())
+        .some((key) => key && recordKeys.has(key)),
+    );
+
+    const userCode = String(
+      linked?.id ?? record.userId ?? linked?.identifier ?? record.identifier ?? "",
+    ).trim();
+    if (!userCode) return null;
+
+    const firstName = String(
+      linked?.firstName ?? record.firstName ?? "",
+    ).trim() || "Enseignant";
+    const lastName = String(
+      linked?.lastName ?? record.lastName ?? record.name ?? "",
+    ).trim() || userCode;
+    const email = String(linked?.email ?? record.email ?? "").trim() || null;
+    const phone = String(linked?.phone ?? record.phone ?? "").trim() || null;
+
+    const row = await this.one(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 'TEACHER', 'active')
+       ON CONFLICT (user_code) DO UPDATE SET
+         school_id = COALESCE(EXCLUDED.school_id, users.school_id),
+         first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), users.first_name),
+         last_name = COALESCE(NULLIF(EXCLUDED.last_name, ''), users.last_name),
+         email = COALESCE(EXCLUDED.email, users.email),
+         phone = COALESCE(EXCLUDED.phone, users.phone),
+         role = 'TEACHER',
+         status = 'active'
+       RETURNING id`,
+      [schoolId, userCode, firstName, lastName, email, phone],
+    );
+    return row?.id ?? null;
+  }
+
   async materializeBackOfficeTeacher(record, context = {}) {
     const { resolveStableTeacherCode } = require("../lib/pedagogyStaffBoPersistence");
     const schoolCode = String(record.schoolCode ?? "")
@@ -2085,7 +2138,9 @@ class PostgresRepository {
     const teacherCode = resolveStableTeacherCode(record);
     if (!teacherCode) return null;
 
-    const userId = await this.resolvePgUserIdForTeacher(record, school.id, context);
+    const userId =
+      (await this.ensurePgUserForBackOfficeTeacher(record, school.id, context)) ??
+      (await this.resolvePgUserIdForTeacher(record, school.id, context));
     const speciality = String(record.mainSubject ?? record.speciality ?? record.subject ?? "").trim();
 
     let row = await this.one(
