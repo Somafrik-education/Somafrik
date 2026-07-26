@@ -97,11 +97,27 @@ async function resolveEvaluationAttachments(evaluation = {}, deps = {}, options 
   const periodName = String(evaluation.period ?? "Trimestre 1").trim() || "Trimestre 1";
   const term = await deps.ensureTerm?.(academicYear.id, periodName);
 
+  // HOTFIX-PRE-E1-02 : résolution enseignant par identifiant stable / affectation, jamais par nom.
   const teacherCode = String(evaluation.teacherId ?? evaluation.teacher_code ?? "").trim();
-  const teacher =
-    (teacherCode ? await deps.findTeacherByCode?.(school.id, teacherCode) : null) ??
-    (await deps.findAnyTeacher?.(school.id)) ??
-    null;
+  let teacher = teacherCode ? await deps.findTeacherByCode?.(school.id, teacherCode) : null;
+
+  if (!teacher && teacherCode && ensure && deps.ensureTeacher) {
+    teacher = await deps.ensureTeacher(school.id, teacherCode, context);
+  }
+
+  if (!teacher && ensure && deps.findTeacherByAssignment) {
+    teacher = await deps.findTeacherByAssignment(
+      school.id,
+      schoolClass.id,
+      subject.id,
+      teacherCode,
+      context,
+    );
+  }
+
+  if (!teacher) {
+    teacher = (await deps.findAnyTeacher?.(school.id)) ?? null;
+  }
 
   return {
     school,

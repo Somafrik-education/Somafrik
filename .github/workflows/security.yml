@@ -159,6 +159,7 @@ jobs:
           npm run verify:mobile-security
           npm run verify:notes-sync
           npm run verify:students-sync
+          npm run verify:pre-e1-hotfix-02
           npm run check
           npm --prefix web test -- --run src/lib/syncOutbox.test.ts src/lib/backofficeStateMerge.test.ts
 

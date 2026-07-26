@@ -863,7 +863,16 @@ async function runScenarios(runtime) {
     );
   }
 
-  // Double soumission POST (idempotency key)
+  // Double soumission POST — preuve DUP-01 détaillée (comptages + IDs + avec/sans clé)
+  const listGradesForEval = async () =>
+    pgEvalId
+      ? await pgQuery(
+          `SELECT id, student_id, score FROM grades WHERE evaluation_id = $1 ORDER BY id`,
+          [pgEvalId],
+        )
+      : [];
+  const gradeIds = (rows) => rows.map((g) => g.id);
+  const gradesBeforeIdem = await listGradesForEval();
   const idemKey = `pre-e1-v1-${stamp}`;
   const firstIdem = await request("/notes", {
     method: "POST",
@@ -871,25 +880,65 @@ async function runScenarios(runtime) {
     headers: { "Idempotency-Key": idemKey },
     body: { ...postBody, value: 15 },
   });
+  const gradesAfterFirstIdem = await listGradesForEval();
   const secondIdem = await request("/notes", {
     method: "POST",
     token: teacherToken,
     headers: { "Idempotency-Key": idemKey },
     body: { ...postBody, value: 15 },
   });
-  const gradesAfterIdem = pgEvalId
-    ? await pgQuery(`SELECT id, score FROM grades WHERE evaluation_id = $1`, [pgEvalId])
-    : [];
+  const gradesAfterSecondIdem = await listGradesForEval();
+  const replayWithoutKey = await request("/notes", {
+    method: "POST",
+    token: teacherToken,
+    body: { ...postBody, value: 15 },
+  });
+  const gradesAfterNoKey = await listGradesForEval();
+  const beforeCount = gradesBeforeIdem.length;
+  const afterFirstCount = gradesAfterFirstIdem.length;
+  const afterSecondCount = gradesAfterSecondIdem.length;
+  const afterNoKeyCount = gradesAfterNoKey.length;
+  const noExtraWithKey =
+    afterFirstCount === beforeCount && afterSecondCount === beforeCount;
+  const noExtraWithoutKey = afterNoKeyCount === beforeCount;
+  const idsUnchangedWithKey =
+    JSON.stringify(gradeIds(gradesAfterSecondIdem).sort()) ===
+    JSON.stringify(gradeIds(gradesBeforeIdem).sort());
   evidence.postgresSnapshots.afterIdempotency = {
-    firstStatus: firstIdem.status,
-    secondStatus: secondIdem.status,
-    gradeCount: gradesAfterIdem.length,
+    evaluationId: pgEvalId,
+    idempotencyKey: idemKey,
+    before: {
+      count: beforeCount,
+      ids: gradeIds(gradesBeforeIdem),
+      rows: gradesBeforeIdem,
+    },
+    afterFirstPostSameKey: {
+      status: firstIdem.status,
+      count: afterFirstCount,
+      ids: gradeIds(gradesAfterFirstIdem),
+      rows: gradesAfterFirstIdem,
+    },
+    afterSecondPostSameKey: {
+      status: secondIdem.status,
+      count: afterSecondCount,
+      ids: gradeIds(gradesAfterSecondIdem),
+      rows: gradesAfterSecondIdem,
+    },
+    afterReplayWithoutKey: {
+      status: replayWithoutKey.status,
+      count: afterNoKeyCount,
+      ids: gradeIds(gradesAfterNoKey),
+      rows: gradesAfterNoKey,
+    },
+    noExtraRowWithSameKey: noExtraWithKey,
+    noExtraRowWithoutKey: noExtraWithoutKey,
+    idsPreservedWithSameKey: idsUnchangedWithKey,
   };
   if (firstIdem.status >= 400) {
     record(
       "DUP-01",
       "Double soumission POST (Idempotency-Key) sans duplication grade",
-      "POST utilisable + <=2 grades",
+      "POST utilisable + 0 ligne supplémentaire (avec et sans clé)",
       `HTTP ${firstIdem.status}/${secondIdem.status}`,
       false,
       {
@@ -898,17 +947,21 @@ async function runScenarios(runtime) {
       },
     );
   } else {
+    const secondOk = secondIdem.status === 201 || secondIdem.status === 200;
+    const noKeyOk = replayWithoutKey.status === 201 || replayWithoutKey.status === 200;
     const idemOk =
-      (secondIdem.status === 201 || secondIdem.status === 200) && gradesAfterIdem.length <= 2;
+      secondOk && noKeyOk && noExtraWithKey && noExtraWithoutKey && beforeCount >= 1;
     record(
       "DUP-01",
       "Double soumission POST (Idempotency-Key) sans duplication grade",
-      "<=2 grades / eval",
-      `${gradesAfterIdem.length} (HTTP ${firstIdem.status}/${secondIdem.status})`,
+      "même effectif avant/après (clé + sans clé)",
+      `avant=${beforeCount} après1=${afterFirstCount} après2(clé)=${afterSecondCount} sansClé=${afterNoKeyCount} HTTP ${firstIdem.status}/${secondIdem.status}/${replayWithoutKey.status}`,
       idemOk,
       {
         severity: "CRITICAL",
-        detail: gradesAfterIdem.length > 2 ? "Duplication détectée" : null,
+        detail: idemOk
+          ? `ids=${gradeIds(gradesAfterNoKey).join(",") || "(aucun)"} ; même Idempotency-Key=${idemKey} ; rejeu sans clé sans ligne supplémentaire`
+          : `Duplication ou échec HTTP — ids avant=${gradeIds(gradesBeforeIdem).join(",")} après=${gradeIds(gradesAfterNoKey).join(",")}`,
       },
     );
   }
@@ -1324,11 +1377,14 @@ async function main() {
     recommendation,
   };
 
-  // Re-run post HOTFIX-PRE-E1-01 : ne pas écraser la preuve historique V1
-  // (docs/audits/evidence/pre-e1-v1-results.json reste sur PR #84).
+  // Ne pas écraser les preuves historiques :
+  // - PR #84 : pre-e1-v1-results.json
+  // - re-run HOTFIX-01 : pre-e1-v1-rerun-hotfix-pre-e1-01-results.json
+  // Définir SOMAFRIK_PRE_E1_EVIDENCE_FILE pour chaque re-run dédié.
   const reportPath = path.join(
     EVIDENCE_DIR,
-    process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE || "pre-e1-v1-rerun-hotfix-pre-e1-01-results.json",
+    process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE ||
+      "pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
   );
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.log(`\nRapport: ${reportPath}`);
@@ -1350,7 +1406,7 @@ main().catch((error) => {
       path.join(
         EVIDENCE_DIR,
         process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE ||
-          "pre-e1-v1-rerun-hotfix-pre-e1-01-results.json",
+          "pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
       ),
       JSON.stringify(
         {

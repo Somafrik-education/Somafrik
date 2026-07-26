@@ -123,6 +123,7 @@ npm run verify:rbac-s1-4          # si touch RBAC
 npm run verify:rbac-admin-01     # si touch classes/enseignants/auditLog
 npm run verify:notes-sync        # si touch Notes/sync
 npm run verify:students-sync     # si touch sync élèves/inscriptions PG
+npm run verify:pre-e1-hotfix-02  # si touch sync enseignants/affectations/notes PG
 npm run verify:runtime-bootstrap # si touch bootstrap / auth runtime
 ```
 
