@@ -23,7 +23,6 @@ import { classNamesMatch } from "../lib/classRules";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
 import {
   allGrades,
-  appendGradeAuditLog,
   canDeleteEvaluation,
   canEditEvaluation,
   correctValidatedGrade,
@@ -138,7 +137,6 @@ export function GradesEvaluationsPage() {
     evaluations?: Evaluation[];
     notes?: unknown[];
     bulletins?: unknown[];
-    auditLog?: unknown[];
   }) {
     setBusy(true);
     try {
@@ -169,14 +167,9 @@ export function GradesEvaluationsPage() {
       nextEvaluations = [...current, evaluation];
     }
 
+    // HOTFIX-SYNC-03 : ne pas envoyer auditLog (non writable client → 403 RBAC).
     const persisted = await persistState({
       evaluations: nextEvaluations,
-      auditLog: appendGradeAuditLog(
-        state.auditLog,
-        exists ? "evaluation.update" : "evaluation.create",
-        scopeUser,
-        { evaluationId: evaluation.id, title: evaluation.title },
-      ),
     });
     if (!persisted.ok) {
       // Conservée localement (outbox failed) — ne pas afficher un succès trompeur.
@@ -204,9 +197,6 @@ export function GradesEvaluationsPage() {
     );
     await persistState({
       evaluations: next,
-      auditLog: appendGradeAuditLog(state.auditLog, "evaluation.deactivate", scopeUser, {
-        evaluationId: evaluation.id,
-      }),
     });
     showToast("Évaluation désactivée");
   }
@@ -227,9 +217,6 @@ export function GradesEvaluationsPage() {
     await persistState({
       evaluations: nextEvaluations,
       notes: gradesToLegacyNotes(nextGrades),
-      auditLog: appendGradeAuditLog(state.auditLog, "evaluation.validate", scopeUser, {
-        evaluationId: evaluation.id,
-      }),
     });
     showToast("Notes validées");
   }
@@ -254,9 +241,6 @@ export function GradesEvaluationsPage() {
     await persistState({
       evaluations: nextEvaluations,
       bulletins,
-      auditLog: appendGradeAuditLog(state.auditLog, "evaluation.publish", scopeUser, {
-        evaluationId: evaluation.id,
-      }),
     });
     showToast("Évaluation publiée — bulletins mis à jour");
   }
@@ -280,9 +264,6 @@ export function GradesEvaluationsPage() {
     }
     await persistState({
       notes: gradesToLegacyNotes(result.grades),
-      auditLog: appendGradeAuditLog(state.auditLog, "grade.correct", scopeUser, {
-        gradeId: correctionGrade.id,
-      }),
     });
     setCorrectionGrade(null);
     setCorrectionValue("");
@@ -313,9 +294,6 @@ export function GradesEvaluationsPage() {
       }));
     const csv = rowsToCsv(rows, columns);
     downloadCsv(`notes-${code}-${period}`, csv);
-    void persistState({
-      auditLog: appendGradeAuditLog(state.auditLog, "grades.export", scopeUser, { period }),
-    });
     showToast("Export CSV généré");
   }
 
