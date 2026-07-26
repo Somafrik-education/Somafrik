@@ -35,9 +35,19 @@ Promesse technique de #87 (sync PG des affectations) **non satisfaite**.
 - Dedupe BO teachers : ne pas fusionner `TEACHERS-*` / `TEACHER-*` via `identifier` login.
 - `resolveStableTeacherCode` : préférer `TEACHERS-*`.
 - `ensurePgUserForBackOfficeTeacher` avant insert teacher.
+- Isolation multi-tenant de l’upsert user (voir §3.1).
 - Suite `npm run verify:pre-e1-hotfix-02b`.
 
 **Interdit :** affaiblir RBAC ; clôturer l’audit ; ouvrir V2 ; élargir à la refonte IDENTITY complète.
+
+### 3.1 Isolation `ensurePgUserForBackOfficeTeacher` (bloquant CTO)
+
+| Cas | Comportement |
+|-----|--------------|
+| Utilisateur inexistant | `INSERT` (role `TEACHER`) |
+| Même établissement | `UPDATE` contrôlé (noms/email/phone) — **jamais** forcer `role` / `status` / déplacer `school_id` |
+| Autre établissement | **REJET** `TEACHER_USER_TENANT_CONFLICT` |
+| Match soft `identifier` / email | **scopé** au même `schoolCode` ; `record.userId` prime toujours |
 
 ---
 
@@ -48,5 +58,14 @@ npm run verify:pre-e1-hotfix-02b
 npm run verify:pre-e1-hotfix-02
 npm run check
 ```
+
+### 4.1 Contrôles isolation obligatoires
+
+| Id | Attendu |
+|----|---------|
+| `02B-TENANT-01` | Même `user_code` école B → aucun déplacement du compte école A ; sync rejetée / sans lien |
+| `02B-ROLE-01` | Compte existant non enseignant → rôle non écrasé |
+| `02B-REPLAY-01` | Plusieurs sync identiques → 1 user, 1 teacher, 1 assignment |
+| `02B-LINK-01` | `teacher.user_id` = user BO attendu |
 
 Preuve machine : `docs/audits/evidence/pre-e1-hotfix-02b-results.json`

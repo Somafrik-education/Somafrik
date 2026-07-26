@@ -508,6 +508,211 @@ async function main() {
       `HTTP ${post1.status} grantedBy=${trace1?.grantedBy}`,
     );
 
+    const linkRows = await pgQuery(
+      `SELECT t.teacher_code, t.user_id, u.user_code, u.school_id AS user_school_id, s.school_code
+       FROM teachers t
+       JOIN users u ON u.id = t.user_id
+       JOIN schools s ON s.id = t.school_id
+       WHERE s.school_code = $1 AND t.teacher_code = $2`,
+      [school.schoolCode, chain.teachersRecord.id],
+    );
+    record(
+      "02B-LINK-01",
+      "teacher.user_id correspond au user BO attendu",
+      linkRows.length === 1 &&
+        String(linkRows[0].user_code) === String(chain.teacherUser.id),
+      JSON.stringify(linkRows[0] ?? null),
+    );
+
+    // 02B-REPLAY-01 — plusieurs PUT staff identiques
+    const countsBefore = await pgQuery(
+      `SELECT
+         (SELECT count(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id
+           WHERE s.school_code = $1 AND t.teacher_code = $2) AS teachers,
+         (SELECT count(*)::int FROM users u WHERE u.user_code = $3) AS users,
+         (SELECT count(*)::int FROM teacher_assignments ta
+           JOIN teachers t ON t.id = ta.teacher_id
+           JOIN schools s ON s.id = t.school_id
+           WHERE s.school_code = $1 AND t.teacher_code = $2) AS assignments`,
+      [school.schoolCode, chain.teachersRecord.id, chain.teacherUser.id],
+    );
+    const stateReplay = await getState(school.adminToken);
+    const teacherRow = (stateReplay.teachers ?? []).find(
+      (row) => String(row.id) === String(chain.teachersRecord.id),
+    );
+    const assignmentRow = (stateReplay.assignments ?? []).find(
+      (row) => String(row.id) === String(chain.assignment.id),
+    );
+    await putStateKeys(school.adminToken, {
+      teachers: stateReplay.teachers,
+      assignments: stateReplay.assignments,
+      users: stateReplay.users,
+    });
+    await putStateKeys(school.adminToken, {
+      teachers: stateReplay.teachers,
+      assignments: stateReplay.assignments,
+      users: stateReplay.users,
+    });
+    const countsAfter = await pgQuery(
+      `SELECT
+         (SELECT count(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id
+           WHERE s.school_code = $1 AND t.teacher_code = $2) AS teachers,
+         (SELECT count(*)::int FROM users u WHERE u.user_code = $3) AS users,
+         (SELECT count(*)::int FROM teacher_assignments ta
+           JOIN teachers t ON t.id = ta.teacher_id
+           JOIN schools s ON s.id = t.school_id
+           WHERE s.school_code = $1 AND t.teacher_code = $2) AS assignments`,
+      [school.schoolCode, chain.teachersRecord.id, chain.teacherUser.id],
+    );
+    record(
+      "02B-REPLAY-01",
+      "Plusieurs synchronisations identiques → 1 user, 1 teacher, 1 assignment",
+      Number(countsAfter[0]?.teachers) === 1 &&
+        Number(countsAfter[0]?.users) === 1 &&
+        Number(countsAfter[0]?.assignments) === 1 &&
+        Number(countsAfter[0]?.teachers) === Number(countsBefore[0]?.teachers) &&
+        Number(countsAfter[0]?.users) === Number(countsBefore[0]?.users) &&
+        Number(countsAfter[0]?.assignments) === Number(countsBefore[0]?.assignments),
+      `before=${JSON.stringify(countsBefore[0])} after=${JSON.stringify(countsAfter[0])} teacherRow=${Boolean(teacherRow)} assignmentRow=${Boolean(assignmentRow)}`,
+    );
+
+    // 02B-ROLE-01 — compte existant non enseignant, même école
+    const roleUserCode = `USERS-ROLE-${stamp}`;
+    const insertedRoleUser = await pgQuery(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+       SELECT s.id, $2, 'Keep', 'Role', $3, NULL, NULL, NULL, 'PARENT', 'active'
+       FROM schools s WHERE s.school_code = $1
+       RETURNING id, role, school_id`,
+      [school.schoolCode, roleUserCode, `role-${stamp}@somafrik.app`],
+    );
+    const roleTeacherId = newId("TEACHERS");
+    const stateRole = await getState(school.adminToken);
+    await putStateKeys(school.adminToken, {
+      users: [
+        {
+          id: roleUserCode,
+          identifier: `ROLE-${stamp}`,
+          firstName: "Keep",
+          lastName: "Role",
+          role: "Parent",
+          schoolCode: school.schoolCode,
+          status: "Actif",
+        },
+        ...(stateRole.users ?? []),
+      ],
+      teachers: [
+        {
+          id: roleTeacherId,
+          userId: roleUserCode,
+          identifier: `ROLE-${stamp}`,
+          firstName: "Keep",
+          lastName: "Role",
+          schoolCode: school.schoolCode,
+          mainSubject: chain.subject,
+        },
+        ...(stateRole.teachers ?? []),
+      ],
+    });
+    const roleAfter = await pgQuery(
+      `SELECT role, school_id FROM users WHERE user_code = $1`,
+      [roleUserCode],
+    );
+    record(
+      "02B-ROLE-01",
+      "Compte existant non enseignant → rôle non écrasé silencieusement",
+      roleAfter[0]?.role === "PARENT" &&
+        String(roleAfter[0]?.school_id) === String(insertedRoleUser[0]?.school_id),
+      `role=${roleAfter[0]?.role}`,
+    );
+
+    // 02B-TENANT-01 — même user_code dans école B
+    const schoolB = await setupSchool(superToken, stamp + 77);
+    const userABefore = await pgQuery(
+      `SELECT id, school_id, role, user_code FROM users WHERE user_code = $1`,
+      [chain.teacherUser.id],
+    );
+    const stateB = await getState(schoolB.adminToken);
+    const tenantTeacherId = newId("TEACHERS");
+    const tenantPut = await putStateKeys(schoolB.adminToken, {
+      users: [
+        {
+          id: chain.teacherUser.id,
+          identifier: chain.teacherUser.identifier,
+          firstName: "Intrus",
+          lastName: "Tenant",
+          role: "Enseignant",
+          schoolCode: schoolB.schoolCode,
+          status: "Actif",
+        },
+        ...(stateB.users ?? []),
+      ],
+      teachers: [
+        {
+          id: tenantTeacherId,
+          userId: chain.teacherUser.id,
+          identifier: chain.teacherUser.identifier,
+          firstName: "Intrus",
+          lastName: "Tenant",
+          schoolCode: schoolB.schoolCode,
+          mainSubject: chain.subject,
+        },
+        ...(stateB.teachers ?? []),
+      ],
+      assignments: [
+        {
+          id: newId("ASSIGN"),
+          teacherId: tenantTeacherId,
+          className: "X-B",
+          subject: chain.subject,
+          course: chain.subject,
+          schoolCode: schoolB.schoolCode,
+        },
+        ...(stateB.assignments ?? []),
+      ],
+      classes: [
+        {
+          id: newId("CLASS"),
+          name: "X-B",
+          schoolCode: schoolB.schoolCode,
+          level: "5ème",
+          academicYear: "2025-2026",
+          status: "Active",
+        },
+        ...(stateB.classes ?? []),
+      ],
+    });
+    const userAAfter = await pgQuery(
+      `SELECT id, school_id, role, user_code FROM users WHERE user_code = $1`,
+      [chain.teacherUser.id],
+    );
+    const teacherB = await pgQuery(
+      `SELECT t.teacher_code, t.user_id, s.school_code
+       FROM teachers t JOIN schools s ON s.id = t.school_id
+       WHERE t.teacher_code = $1`,
+      [tenantTeacherId],
+    );
+    const syncRejected =
+      Array.isArray(tenantPut?.syncAck?.rejected) &&
+      tenantPut.syncAck.rejected.some(
+        (row) =>
+          row.entity === "teachers" &&
+          (row.code === "TEACHER_USER_TENANT_CONFLICT" ||
+            String(row.error || "").includes("multi-tenant")),
+      );
+    // sanitize peut strip syncAck — fallback: school A inchangé + pas de lien user A sur teacher B
+    const tenantOk =
+      String(userAAfter[0]?.school_id) === String(userABefore[0]?.school_id) &&
+      String(userAAfter[0]?.role) === String(userABefore[0]?.role) &&
+      (teacherB.length === 0 ||
+        teacherB[0].user_id == null ||
+        String(teacherB[0].user_id) !== String(userABefore[0]?.id));
+    record(
+      "02B-TENANT-01",
+      "Même user_code école B → aucun déplacement compte école A",
+      tenantOk,
+      `schoolABefore=${userABefore[0]?.school_id} after=${userAAfter[0]?.school_id} syncRejected=${syncRejected} teacherB=${JSON.stringify(teacherB[0] ?? null)}`,
+    );
+
     // Neutraliser affectation BO (conserver PG)
     const stateBeforeNeutral = await getState(school.adminToken);
     await putStateKeys(school.adminToken, {
