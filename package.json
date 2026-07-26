@@ -57,6 +57,7 @@
     "verify:e2e-0004": "node scripts/verify-e2e-0004-classes-config.js",
     "verify:e2e-0006": "node scripts/verify-e2e-0006-teacher-assignment.js",
     "verify:e2e-0008": "node scripts/verify-e2e-0008-grades-chain.js",
+    "verify:pre-e1-v1": "node scripts/verify-pre-e1-v1.js",
     "verify:e2e-0009": "node scripts/verify-e2e-0009-fees-tariffs-chain.js",
     "verify:e2e-0010": "node scripts/verify-e2e-0010-mobile-welcome-screen.js",
     "verify:e2e-0017": "node scripts/verify-e2e-0017-mobile-login-journey.js",

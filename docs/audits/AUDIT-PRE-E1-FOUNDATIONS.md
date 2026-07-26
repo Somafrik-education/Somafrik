@@ -1,12 +1,14 @@
 # AUDIT-PRE-E1 — Consolidation classes, enseignants, affectations et notes
 
-**Statut :** Phase 0 — Diagnostic initial (cartographie)  
-**Décision GO / NO-GO E1 :** ⏳ **Différée** — aucune exécution de gate complète dans cette livraison  
+**Statut :** Phase 0 ✅ validée CTO · **V1 exécutée** · V2–V7 non autorisées  
+**Décision GO / NO-GO E1 :** 🔒 **Toujours bloquée** (hors périmètre V1)  
+**Recommandation V2 :** **BLOQUER V2** (anomalies BLOCKER/CRITICAL prouvées)  
 **Date :** 2026-07-26  
 **Branche :** `cursor/audit-pre-e1-foundations-8ed4`  
 **Base :** `develop` @ `a93ea9e7`  
-**Périmètre code :** lecture seule — **aucune correction applicative** dans cette PR  
-**Correspondance produit :** E1 = ouverture **Bulletins** (roadmap Phase E / lot D3.7 / release v1.1)
+**Périmètre code :** audit + tests de caractérisation uniquement — **aucune correction métier**  
+**Correspondance produit :** E1 = ouverture **Bulletins** (roadmap Phase E / lot D3.7 / release v1.1)  
+**Preuve machine :** [`docs/audits/evidence/pre-e1-v1-results.json`](./evidence/pre-e1-v1-results.json)
 
 > Contexte CTO : la gouvernance documentaire est en place. Avant d’ouvrir les bulletins, valider la chaîne métier  
 > **Classe → Enseignant → Affectation → Évaluation → Note**.
@@ -498,24 +500,175 @@ Compléter dans ce document :
 
 ---
 
+## V1 — Validation de la chaîne intégrée
+
+**Autorisation CTO :** Phase 0 validée · V1 seule autorisée · E1 toujours bloquée · PR #84 reste Draft  
+**Exécuté le :** 2026-07-26T13:51:36Z (UTC)  
+**Moteur observé :** `postgresql`  
+**Base dédiée :** `postgresql://somafrik:***@127.0.0.1:5432/somafrik_pre_e1_v1`  
+**API :** `http://127.0.0.1:5101/api` (backend spawné par le script)
+
+### Commandes exécutées
+
+```bash
+# Prérequis infra locale (agent cloud sans Docker)
+sudo apt-get install -y postgresql postgresql-contrib
+sudo pg_ctlcluster 16 main start
+sudo -u postgres psql -c "CREATE USER somafrik WITH PASSWORD 'somafrik' SUPERUSER;"
+sudo -u postgres psql -c "CREATE DATABASE somafrik OWNER somafrik;"
+
+# Gate V1
+npm run verify:pre-e1-v1
+# équivalent : node scripts/verify-pre-e1-v1.js
+```
+
+Variables implicites du script : `DATABASE_URL` (défaut `…/somafrik_pre_e1_v1`), `SOMAFRIK_PRE_E1_PORT=5101`.
+
+### Tests ajoutés
+
+| Fichier | Rôle |
+|---------|------|
+| `scripts/verify-pre-e1-v1.js` | Scénario intégré A/B + PUT/POST + PG + négatifs + isolation |
+| `package.json` → `verify:pre-e1-v1` | Point d’entrée recommandé |
+| `docs/audits/evidence/pre-e1-v1-results.json` | Preuve machine (résultats + snapshots) |
+
+**Aucune règle métier modifiée** pour faire passer les tests.
+
+### Scénario nominal couvert
+
+```
+Établissement A (+ B pour isolation)
+→ Classe A
+→ 2 élèves
+→ Enseignant + compte
+→ Matière Mathématiques
+→ Affectation enseignant/classe/matière
+→ Évaluation publiée
+→ 2 notes via PUT /api/backoffice/state
+→ Nouveau login admin (rechargement)
+→ Tentative note via POST /api/notes
+→ Relecture GET /api/notes
+→ Contrôles PG
+→ Cas négatifs + isolation A/B
+```
+
+### Scénarios passés / échoués
+
+**Résumé machine :** 27/33 passés · **6 échoués** · 6 anomalies
+
+| ID | Scénario | Résultat |
+|----|----------|----------|
+| BOOT-01 | Backend healthy (PG) | ✅ |
+| AUTH-01..03 | Superadmin / établissements / enseignant | ✅ |
+| CHAIN-01 | Classe + 2 élèves + enseignant + matière + affectation | ✅ |
+| PUT-01/02 | Évaluation + notes via `PUT /api/backoffice/state` | ✅ |
+| RELOAD-01/02 | Persistance JSON après nouveau login | ✅ |
+| REL-01/02 | `className`/`subject` + `evaluationId` JSON | ✅ |
+| PG-01 | Évaluation synchronisée en PG | ✅ |
+| PG-01b | `evaluations.teacher_id` non null | ❌ |
+| PG-01c | Élèves chaîne présents en PG | ❌ |
+| PG-02 | Grades PG liés après PUT | ❌ |
+| POST-01 | Note via `POST /api/notes` → 201 | ❌ |
+| API-01 | `GET /api/notes` admin A | ✅ (lit le JSON) |
+| DUP-01 | Idempotency POST sans duplication | ❌ (POST 404) |
+| DUP-02 | Double PUT state → toujours 2 notes JSON | ✅ |
+| NEG-01..05 | Négatif / >max / hors classe / matière / eval inexistante | ✅ |
+| ISO-01..03 | Isolation A/B state + POST cross + affectation cross | ✅ |
+| REL-03/04 | teacherId / affectation textuelle | ✅ (JSON) |
+| SOT-01 | Compteurs JSON notes == grades PG | ❌ |
+| INFO-01 | Règle client `validateGradeValue(-1)` | ✅ |
+
+### Données observées — JSON vs PostgreSQL
+
+#### JSON (`GET /api/backoffice/state` après reload)
+
+- Évaluation `EVAL-…` persistée avec `className`, `subject`, `period`, `teacherId` textuel/legacy.
+- **2 notes** avec `evaluationId` renseigné, scores saisis (ex. 14.5 / 11).
+- `GET /api/notes` renvoie ces notes (source hydratée depuis le snapshot BO, pas depuis `grades`).
+
+#### PostgreSQL (requêtes directes dans le script)
+
+| Table | Observation V1 |
+|-------|----------------|
+| `evaluations` | **1 ligne** créée (`legacy_json_id` = id JSON, classe/matière/term OK) |
+| `evaluations.teacher_id` | **`NULL`** |
+| `students` (école A) | **0 ligne** pour les élèves créés via state |
+| `grades` | **0 ligne** pour l’évaluation V1 |
+| `teacher_assignments` | non peuplé de façon utilisable pour POST (chaîne JSON seule) |
+
+Extrait preuve (`pre-e1-v1-results.json` → `evidence.sourceOfTruth.observed`) :
+
+- `jsonNotesForEval: 2`
+- `pgGradesForEval: 0`
+- `divergence: true`
+- `pgEvaluationRow.teacher_id: null`
+
+### Source de vérité réellement observée
+
+| Chemin | Comportement observé |
+|--------|----------------------|
+| `PUT /api/backoffice/state` (évaluations) | Persiste JSON **et** crée la ligne `evaluations` PG |
+| `PUT /api/backoffice/state` (notes) | Persiste JSON **uniquement** — **pas** de `grades` PG |
+| `POST /api/notes` | Déclare PG canonique (`upsertGrade`) mais échoue **`404 Eleve introuvable`** car élèves absents de PG |
+| `GET /api/notes` | Succès via hydratation BO JSON |
+
+**Verdict SOT V1 :** la source de vérité *effective* des notes web reste le **JSON BackOffice**. PostgreSQL n’est **pas** synchronisé pour les grades créés par PUT state, et le chemin REST canonique est **cassé** pour une chaîne créée via state (élèves non matérialisés en PG).  
+→ **Incompatible avec un calcul bulletin fiable sur PG** tant que non corrigé.
+
+### Anomalies classées (preuve reproductible)
+
+| ID | Sévérité | Constat | Preuve | Reproduction |
+|----|----------|---------|--------|--------------|
+| V1-PG-01c | **BLOCKER** | Élèves créés via state absents de `students` PG | `0 PG / 0 match` ; ids `STUDENTS-…` | `npm run verify:pre-e1-v1` → PG-01c |
+| V1-POST-01 | **BLOCKER** | `POST /api/notes` → **404** `Eleve introuvable` | body `{"message":"Eleve introuvable"}` | Même run → POST-01 |
+| V1-PG-01b | **CRITICAL** | `evaluations.teacher_id` = `NULL` après sync | snapshot PG `teacher_id: null` | PG-01b |
+| V1-PG-02 | **CRITICAL** | 0 `grades` après PUT notes (JSON=2) | `grades: []` | PG-02 |
+| V1-DUP-01 | **CRITICAL** | Idempotence POST non prouvable (POST down) | HTTP 404/404 | DUP-01 |
+| V1-SOT-01 | **CRITICAL** | Divergence JSON/PG notes | `json=2 pg=0` | SOT-01 |
+
+**Observation additionnelle (MAJOR, non bloquante seule) :** `evaluation.teacherId` JSON (`TEACHER-…`) ≠ `assignment.teacherId` (`TEACHERS-…`) après relecture state — double identité enseignant.
+
+### Ce qui est déjà solide (ne pas régresser)
+
+- Chaîne création admin **JSON** : classe → 2 élèves → enseignant → affectation → évaluation → notes.
+- Persistance JSON après **nouveau login**.
+- Isolation multi-tenant A/B (state) : **0 fuite** classes/évaluations/notes.
+- Refus cross-tenant écriture notes / affectation.
+- Validations négatives note (`<0`, `>max`) et garde-fous enseignant (matière non affectée → 403 sur PUT).
+
+### Recommandation pour lancer ou bloquer V2
+
+| Décision | **BLOQUER V2** |
+|----------|----------------|
+| Motif | 2× BLOCKER + 4× CRITICAL sur la matérialisation PG de la chaîne notes |
+| E1 Bulletins | **Toujours bloquée** |
+| Correctifs | **Hors V1** — PR séparées après arbitrage CTO ; ne pas « réparer » silencieusement dans l’audit |
+| V2 | Réautoriser seulement après correction (ou arbitration explicite) des BLOCKER V1-PG-01c / V1-POST-01 et re-run vert de `verify:pre-e1-v1` |
+
+---
+
 ## 12. Livrables & contraintes PR
 
 | Livrable | Statut |
 |----------|--------|
-| Document `docs/audits/AUDIT-PRE-E1-FOUNDATIONS.md` | ✅ Phase 0 |
-| PR Draft dédiée | ✅ (cette branche) |
-| Séparation d’avec PR documentaire gouvernance (#83 / docs project) | ✅ branche distincte |
+| Document `docs/audits/AUDIT-PRE-E1-FOUNDATIONS.md` | ✅ Phase 0 + **V1** |
+| Preuve `docs/audits/evidence/pre-e1-v1-results.json` | ✅ |
+| Script `npm run verify:pre-e1-v1` | ✅ |
+| PR Draft dédiée | ✅ (#84) — **reste Draft** |
+| Séparation d’avec PR documentaire gouvernance | ✅ |
 | Pas de feature / pas de gros refactor / pas d’UX non nécessaire | ✅ |
 | Undraft / merge | ❌ uniquement après validation CTO explicite |
-| Correctifs | ❌ hors Phase 0 — PR séparées après anomalies documentées |
+| Correctifs métier | ❌ interdits pendant V1 — PR ultérieures |
+| V2–V7 / E1 | ❌ non démarrés |
 
 ---
 
 ## 13. Prochaine action demandée au CTO
 
-1. Valider la cartographie et le plan V1–V7  
-2. Autoriser l’exécution V1 (tests + compléments strictement nécessaires)  
-3. Ne pas ouvrir le développement Bulletins tant que V7 n’a pas produit GO / GO conditionnel / NO-GO
+1. Prendre connaissance des **6 anomalies V1** (surtout BLOCKER élèves/PG + POST notes).  
+2. Décider : PR correctives ciblées **avant** toute V2, ou arbitration documentée.  
+3. **Ne pas** ouvrir E1 Bulletins.  
+4. **Ne pas** lancer V2 tant que `verify:pre-e1-v1` n’est pas re-joué vert (ou dérogation CTO écrite).
 
 ---
 
@@ -524,4 +677,6 @@ Compléter dans ce document :
 | Date | Événement |
 |------|-----------|
 | 2026-07-26 | Phase 0 — cartographie initiale sur `develop` @ `a93ea9e7` ; aucune correction code |
+| 2026-07-26 | Phase 0 validée CTO ; V1 autorisée |
+| 2026-07-26 | V1 exécutée (`verify:pre-e1-v1`) — 27/33 OK ; **BLOQUER V2** ; E1 inchangée ; aucune correction métier |
 )
