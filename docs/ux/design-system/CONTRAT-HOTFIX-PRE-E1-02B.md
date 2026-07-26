@@ -50,7 +50,8 @@ Promesse technique de #87 (sync PG des affectations) **non satisfaite**.
 | Autre établissement | **REJET** `TEACHER_USER_TENANT_CONFLICT` |
 | Match soft `identifier` / email | **scopé** au même `schoolCode` ; `record.userId` prime toujours |
 
-Les rejets `TEACHER_USER_*_CONFLICT` doivent être **observables** dans `PUT /api/backoffice/state` via `syncAck.rejected` (pas masqués par sanitize).
+Les rejets `TEACHER_USER_*_CONFLICT` doivent être **observables** dans `PUT /api/backoffice/state` via `syncAck.rejected` (pas masqués par sanitize).  
+`syncAck` doit provenir **uniquement** du résultat de la requête courante — **interdit** de lire `repository.lastSyncAck` (état mutable partagé).
 
 ---
 
@@ -70,6 +71,7 @@ npm run check
 | `02B-ROLE-01` | `users.role` reste `PARENT` + aucun `teachers.user_id` vers ce compte + `TEACHER_USER_ROLE_CONFLICT` dans `syncAck.rejected` |
 | `02B-REPLAY-01` | Plusieurs sync identiques → 1 user, 1 teacher, 1 assignment |
 | `02B-LINK-01` | `teacher.user_id` = user BO attendu |
+| `02B-ACK-ISOLATION-01` | PUT concurrent A (rejet) / B → réponse B ne contient jamais ACK-A |
 | `FALLBACK-DOC` | Observé (`fallbackUsed`) — pas un vert inconditionnel |
 
 Preuve machine : `docs/audits/evidence/pre-e1-hotfix-02b-results.json`

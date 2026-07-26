@@ -30,7 +30,7 @@
 L’upsert `ON CONFLICT (user_code) DO UPDATE` pouvait déplacer `school_id`, forcer `role=TEACHER` et réactiver le statut.  
 Remplacé par : lookup global → INSERT / UPDATE contrôlé même tenant + rôle `TEACHER` / **REJET** `TEACHER_USER_TENANT_CONFLICT` / **REJET** `TEACHER_USER_ROLE_CONFLICT` (compte non enseignant — pas de `teachers.user_id`).  
 Match soft `identifier` (ex. `ENS-0001`) **scopé** établissement ; `record.userId` prioritaire.  
-`PUT /api/backoffice/state` rattache `syncAck` à la réponse pour rendre les rejets observables.
+`PUT /api/backoffice/state` rattache `saved.syncAck` (contexte requête) — **sans** fallback `repository.lastSyncAck`.
 
 ---
 
@@ -44,10 +44,11 @@ Match soft `identifier` (ex. `ENS-0001`) **scopé** établissement ; `record.use
 | POST `grantedBy=class:pg_teacher_assignment+evaluation:pg_teacher_assignment` | ✅ |
 | `02B-LINK-01` | ✅ |
 | `02B-REPLAY-01` | ✅ |
-| `02B-ROLE-01` | ✅ |
-| `02B-TENANT-01` | ✅ |
+| `02B-ROLE-01` | ✅ PARENT inchangé + pas de lien + `TEACHER_USER_ROLE_CONFLICT` observé |
+| `02B-TENANT-01` | ✅ A inchangé + pas de lien B + `TEACHER_USER_TENANT_CONFLICT` observé |
+| `02B-ACK-ISOLATION-01` | ✅ PUT concurrent A/B — réponse B sans ACK-A |
 | POST après neutralisation BO (PG seul) | ✅ 201 via PG |
-| Sans PG + BO conservé | **Documenté** : fallback BO encore ALLOW (volontairement non fermé ici) |
+| `FALLBACK-DOC` | ✅ `fallbackUsed=true` (observé, pas vert inconditionnel) |
 
 Preuve : `docs/audits/evidence/pre-e1-hotfix-02b-results.json`
 

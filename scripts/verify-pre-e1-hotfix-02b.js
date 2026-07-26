@@ -4,7 +4,7 @@
  * 1) teacher PG : teacher_code canonique TEACHERS-* + user_id non null
  * 2) teacher_assignment PG active (school/class/subject)
  * 3) POST grantedBy = class:pg_teacher_assignment+evaluation:pg_teacher_assignment
- * 4) Isolation : 02B-LINK / REPLAY / ROLE / TENANT
+ * 4) Isolation : 02B-LINK / REPLAY / ROLE / TENANT / ACK-ISOLATION
  * 5) Après neutralisation affectation BO : POST toujours 201 via PG
  * 6) Après suppression assignment PG (BO conservé) : documenter fallback
  *
@@ -731,6 +731,82 @@ async function main() {
       "Compte école A inchangé + aucun lien école B + TEACHER_USER_TENANT_CONFLICT observé",
       tenantOk && syncRejected,
       `schoolABefore=${userABefore[0]?.school_id} after=${userAAfter[0]?.school_id} syncRejected=${syncRejected} teacherB=${JSON.stringify(teacherB[0] ?? null)} rejected=${JSON.stringify((tenantPut?.syncAck?.rejected || []).filter((r) => r.entity === "teachers").slice(0, 3))}`,
+    );
+
+    // 02B-ACK-ISOLATION-01 — syncAck strictement lié à la requête (pas de lastSyncAck global)
+    const ackMarkerTeacherId = newId("TEACHERS");
+    const ackMarkers = {
+      teacherId: ackMarkerTeacherId,
+      codes: ["TEACHER_USER_ROLE_CONFLICT", "TEACHER_USER_TENANT_CONFLICT"],
+    };
+    const stateAForAck = await getState(school.adminToken);
+    const stateBForAck = await getState(schoolB.adminToken);
+    const putAAck = request("/backoffice/state", {
+      method: "PUT",
+      token: school.adminToken,
+      body: {
+        teachers: [
+          {
+            id: ackMarkerTeacherId,
+            userId: roleUserCode,
+            identifier: `ACK-ISO-${stamp}`,
+            firstName: "Ack",
+            lastName: "Leak",
+            schoolCode: school.schoolCode,
+            mainSubject: chain.subject,
+          },
+          ...(stateAForAck.teachers ?? []),
+        ],
+      },
+    });
+    const putBAck = request("/backoffice/state", {
+      method: "PUT",
+      token: schoolB.adminToken,
+      body: {
+        classes: [
+          {
+            id: newId("CLASS"),
+            name: `ACK-ISO-B-${stamp}`,
+            schoolCode: schoolB.schoolCode,
+            level: "5ème",
+            academicYear: "2025-2026",
+            status: "Active",
+          },
+          ...(stateBForAck.classes ?? []),
+        ],
+      },
+    });
+    const [resAAck, resBAck] = await Promise.all([putAAck, putBAck]);
+    if (resAAck.status !== 200 || resBAck.status !== 200) {
+      throw new Error(
+        `02B-ACK-ISOLATION put fail A=${resAAck.status} B=${resBAck.status}`,
+      );
+    }
+    const ackARejected = resAAck.data?.syncAck?.rejected ?? [];
+    const ackBRaw = JSON.stringify(resBAck.data?.syncAck ?? null);
+    const ackAHasMarker =
+      Array.isArray(ackARejected) &&
+      ackARejected.some(
+        (row) =>
+          String(row.id) === String(ackMarkerTeacherId) &&
+          row.code === "TEACHER_USER_ROLE_CONFLICT",
+      );
+    // B peut avoir ses propres rejets — interdit seulement les marqueurs de la requête A.
+    const ackBLeaksA =
+      ackBRaw.includes(String(ackMarkerTeacherId)) ||
+      ackBRaw.includes(String(roleUserCode)) ||
+      (Array.isArray(resBAck.data?.syncAck?.rejected) &&
+        resBAck.data.syncAck.rejected.some(
+          (row) => String(row.id ?? "") === String(ackMarkerTeacherId),
+        ));
+    record(
+      "02B-ACK-ISOLATION-01",
+      "PUT concurrent A (rejet) / B (benign) → réponse B sans ACK-A",
+      resAAck.status === 200 &&
+        resBAck.status === 200 &&
+        ackAHasMarker &&
+        !ackBLeaksA,
+      `ackAMarker=${ackAHasMarker} ackBLeak=${ackBLeaksA} codesA=${ackMarkers.codes.join(",")} ackB=${ackBRaw.slice(0, 240)}`,
     );
 
     // Neutraliser affectation BO (conserver PG)

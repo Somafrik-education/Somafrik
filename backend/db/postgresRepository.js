@@ -706,7 +706,8 @@ class PostgresRepository {
       syncAck = mergePreE1SyncAck(studentSync, staffSync, syncResult);
     });
     this.cachedDataset = null;
-    this.lastSyncAck = syncAck;
+    // syncAck est retourné avec le résultat de cette opération uniquement —
+    // ne pas le stocker sur l'instance (fuite inter-requêtes / cross-tenant).
     const state = await this.getBackOfficeState();
     return { ...state, syncAck };
   }
