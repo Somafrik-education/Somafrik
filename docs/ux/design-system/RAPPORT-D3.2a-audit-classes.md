@@ -65,4 +65,4 @@ Actualiser l’audit Classes après clôture D2.8 et livraison D3.2b/c, puis **v
 | Code applicatif modifié | Non |
 | Audit à jour post-D2.8e | Oui |
 | Sous-lots verrouillés | Oui |
-| Suite | Instruction CTO explicite (fiche produit ou autre module D3) |
+| Suite | **D3.2 clos** (tag `d3.2a` @ `045ef54e`) — prochain lot roadmap sur instruction CTO |

@@ -19,7 +19,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | Infra | D2.8e — Nettoyage final | ✅ | — | Assembleur EntityPage (modales UI conservées) |
 | Élèves | Fiche / workspace | ✅ | `RecordLayout` | StatusBadge ; nav onglets custom |
 | Élèves | Liste (D3.1b) | ✅ | `ListLayout` via `EntityListShell` | Modales/colonnes EntityPage |
-| Classes métier | D3.2a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.2-classes.md) post-D2.8e |
+| Classes métier | D3.2a — Audit / verrouillage | ✅ | — | [AUDIT](./AUDIT-D3.2-classes.md) · tag `d3.2a` · **D3.2 clos** |
 | Classes métier | Fiche Classe | 🔒 | `RecordLayout` (cible) | **Fiche absente** (prérequis produit) |
 | Classes métier | D3.2b — Liste | ✅ | `ListLayout` via `EntityListShell` | Modales EntityPage ; pas de fiche |
 | Classes métier | D3.2c — Membres / élèves | ✅ | `ListLayout` via `EntityListShell` | classScope EntityPage ; modales |
@@ -78,7 +78,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 | DataTable | ⏳ | — | 0 % | ui legacy |
 | Élèves — fiche / workspace | ✅ | `RecordLayout` | Fiche DS | StatusBadge ; onglets |
 | Élèves — liste | ✅ | `ListLayout` | D3.1b `StudentsListPage` | Modales EntityPage |
-| Classes (module métier) | ✅ / 🔒 | `ListLayout` | D3.2a audit + D3.2b/c | Fiche absente 🔒 ; modales EntityPage |
+| Classes (module métier) | ✅ clos | `ListLayout` | D3.2a–c (tag `d3.2a`) | Fiche absente 🔒 ; modales EntityPage |
 | Enseignants | ✅ / ⏳ | `ListLayout` | Liste D3.3 | Fiche absente ; modales EntityPage |
 | Parents / Responsables | ✅ / 🔒 | — | D3.4a + D3.4b clos (`d3.4b`) | Liste / fiche / chrome DS 🔒 |
 | Présences | ✅ / 🔒 | — | D3.5a/b clos (`d3.5b`) | Chrome DS / ToolLayout 🔒 · pas de D3.5c |
@@ -94,6 +94,7 @@ Mettre à jour ce tableau à chaque PR de migration ou de stabilisation.
 - D3.1b : liste Élèves — `StudentsListPage` → EntityPage — [RAPPORT](./RAPPORT-D3.1b-liste-eleves.md).
 - D3.2 : audit historique — [RAPPORT](./RAPPORT-D3.2-classes.md).
 - D3.2a : audit / verrouillage post-D2.8e — [AUDIT](./AUDIT-D3.2-classes.md) · [RAPPORT](./RAPPORT-D3.2a-audit-classes.md). Tag clôture D2.8e : `d2.8e` @ `4a5684b8`.
+- D3.2 **clos** — tag `d3.2a` @ `045ef54e` (merge PR #59). Suite roadmap : instruction CTO explicite (candidats 🔒 : Parents / Responsables, Présences, Notes, Finance, RH ; ou fiche Classe produit).
 - D2.7 : chrome EntityPage — [AUDIT](./AUDIT-D2.7-entitypage.md) · [ARCHITECTURE](./ARCHITECTURE-D2.7-entitypage.md) · [RAPPORT](./RAPPORT-D2.7-entitypage.md).
 - D3.2b : liste Classes — [RAPPORT](./RAPPORT-D3.2b-liste-classes.md).
 - D3.3 : liste Enseignants — [RAPPORT](./RAPPORT-D3.3-enseignants.md).
