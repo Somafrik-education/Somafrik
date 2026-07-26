@@ -293,6 +293,44 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
     const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
     response.user = { ...response.user, children };
   }
+  // HOTFIX-PRE-E1-02 : enrichir la session enseignant avec affectations BO (IDs stables),
+  // sans élargir les droits — alimente principal.classNames pour les gardes notes.
+  if (response?.user?.role === "Enseignant") {
+    const state = await getAuthoritativeBackOfficeState();
+    const {
+      resolveTeacherAssignments,
+      resolveTeacherAssignedClasses,
+    } = require("./services/authService");
+    const userId = String(response.user.id ?? "").trim();
+    const identifier = String(response.user.identifier ?? "").trim().toLowerCase();
+    const linkedTeachers = (state.teachers ?? []).filter((row) => {
+      const ids = [row.userId, row.id, row.publicId, row.contactId].map((value) =>
+        String(value ?? "").trim(),
+      );
+      if (userId && ids.includes(userId)) return true;
+      return identifier && String(row.identifier ?? "").trim().toLowerCase() === identifier;
+    });
+    const teacher =
+      linkedTeachers.find(
+        (row) => resolveTeacherAssignments(row, response.user, state.assignments ?? []).length > 0,
+      ) ??
+      linkedTeachers[0] ??
+      null;
+    if (teacher) {
+      const assignments = resolveTeacherAssignments(teacher, response.user, state.assignments ?? []);
+      const assignedClasses = resolveTeacherAssignedClasses(
+        teacher,
+        response.user,
+        state.assignments ?? [],
+      );
+      response.user = {
+        ...response.user,
+        assignments,
+        assignedClasses,
+        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
+      };
+    }
+  }
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
 }));
 
@@ -393,10 +431,39 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
   });
-  const safeUser = {
+  let safeUser = {
     ...sanitizeUserForResponse(updatedUser),
     mustChangePassword: false,
   };
+  // HOTFIX-PRE-E1-02 : ne pas perdre assignedClasses après change-password.
+  if (safeUser.role === "Enseignant") {
+    const state = await getAuthoritativeBackOfficeState();
+    const {
+      resolveTeacherAssignments,
+      resolveTeacherAssignedClasses,
+    } = require("./services/authService");
+    const userId = String(safeUser.id ?? req.principal.sub ?? "").trim();
+    const linkedTeachers = (state.teachers ?? []).filter((row) =>
+      [row.userId, row.id, row.publicId, row.contactId].some(
+        (value) => String(value ?? "").trim() === userId,
+      ),
+    );
+    const teacher =
+      linkedTeachers.find(
+        (row) => resolveTeacherAssignments(row, safeUser, state.assignments ?? []).length > 0,
+      ) ??
+      linkedTeachers[0] ??
+      null;
+    if (teacher) {
+      const assignments = resolveTeacherAssignments(teacher, safeUser, state.assignments ?? []);
+      safeUser = {
+        ...safeUser,
+        assignments,
+        assignedClasses: resolveTeacherAssignedClasses(teacher, safeUser, state.assignments ?? []),
+        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
+      };
+    }
+  }
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(
     { user: safeUser },
@@ -1295,10 +1362,12 @@ async function getRuntime() {
   applyStoredUserOverlay(dataset, storedState);
   const mergedStudents = mergeRowsByIdentity(dataset.students ?? [], storedState?.students ?? []);
   const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
+  const mergedTeachers = mergeRowsByIdentity(dataset.teachers ?? [], storedState?.teachers ?? []);
   const authService = new AuthService({
     school: dataset.school,
     schools: dataset.platformSchools,
-    teachers: dataset.teachers,
+    // HOTFIX-PRE-E1-02 : enseignants BO + PG pour résoudre assignedClasses à la connexion mobile.
+    teachers: mergedTeachers,
     students: mergedStudents,
     relations: mergedRelations,
     userAccounts: dataset.userAccounts,

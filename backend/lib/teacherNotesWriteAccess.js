@@ -46,20 +46,25 @@ function evaluateTeacherNotesTouchedKeys(touchedKeys = []) {
 function resolveTeacherRecord(principal, state = {}) {
   const userId = String(principal?.sub ?? principal?.id ?? "").trim();
   const teachers = Array.isArray(state.teachers) ? state.teachers : [];
-  return (
-    teachers.find((teacher) => {
-      const ids = [teacher.id, teacher.publicId, teacher.userId, teacher.contactId]
-        .map((value) => String(value ?? "").trim())
-        .filter(Boolean);
-      return userId && ids.includes(userId);
-    }) ??
-    teachers.find((teacher) => {
-      const email = normalizeText(teacher.email);
-      const identifier = normalizeText(principal?.identifier ?? principal?.email);
-      return email && identifier && email === identifier;
-    }) ??
-    null
-  );
+  const linked = teachers.filter((teacher) => {
+    const ids = [teacher.id, teacher.publicId, teacher.userId, teacher.contactId]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    return userId && ids.includes(userId);
+  });
+  const byIdentifier = teachers.filter((teacher) => {
+    const email = normalizeText(teacher.email);
+    const identifier = normalizeText(principal?.identifier ?? principal?.email);
+    return email && identifier && email === identifier;
+  });
+  const candidates = linked.length ? linked : byIdentifier;
+  if (!candidates.length) return null;
+  // HOTFIX-PRE-E1-02 : préférer la fiche qui matche une affectation (TEACHERS- vs TEACHER-).
+  const withAssignments = candidates.find((teacher) => {
+    const assignments = resolveTeacherAssignments(teacher, principal, state.assignments ?? []);
+    return assignments.length > 0;
+  });
+  return withAssignments ?? candidates[0];
 }
 
 function resolveSessionTeacherId(principal, state = {}) {
