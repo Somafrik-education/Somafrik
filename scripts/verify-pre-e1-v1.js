@@ -1377,11 +1377,14 @@ async function main() {
     recommendation,
   };
 
-  // Re-run post HOTFIX-PRE-E1-01 : ne pas écraser la preuve historique V1
-  // (docs/audits/evidence/pre-e1-v1-results.json reste sur PR #84).
+  // Ne pas écraser les preuves historiques :
+  // - PR #84 : pre-e1-v1-results.json
+  // - re-run HOTFIX-01 : pre-e1-v1-rerun-hotfix-pre-e1-01-results.json
+  // Définir SOMAFRIK_PRE_E1_EVIDENCE_FILE pour chaque re-run dédié.
   const reportPath = path.join(
     EVIDENCE_DIR,
-    process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE || "pre-e1-v1-rerun-hotfix-pre-e1-01-results.json",
+    process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE ||
+      "pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
   );
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.log(`\nRapport: ${reportPath}`);
@@ -1403,7 +1406,7 @@ main().catch((error) => {
       path.join(
         EVIDENCE_DIR,
         process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE ||
-          "pre-e1-v1-rerun-hotfix-pre-e1-01-results.json",
+          "pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
       ),
       JSON.stringify(
         {
