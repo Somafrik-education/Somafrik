@@ -2078,11 +2078,17 @@ class PostgresRepository {
    * HOTFIX-PRE-E1-02B — Matérialise l'utilisateur PG lié à la fiche enseignant BO
    * pour que teachers.user_id soit non null (user_code = id BO ou identifier).
    *
-   * Isolation multi-tenant :
+   * Isolation multi-tenant / rôle :
    * - inexistant → INSERT (role TEACHER)
-   * - même établissement → UPDATE contrôlé (jamais forcer role/status/school_id)
+   * - même établissement + rôle enseignant compatible → UPDATE contrôlé
+   *   (jamais forcer role/status/school_id)
+   * - même établissement + rôle non enseignant → REJET TEACHER_USER_ROLE_CONFLICT
    * - autre établissement → REJET TEACHER_USER_TENANT_CONFLICT
    */
+  isTeacherCompatiblePgRole(role) {
+    return String(role ?? "").trim().toUpperCase() === "TEACHER";
+  }
+
   async ensurePgUserForBackOfficeTeacher(record = {}, schoolId, context = {}) {
     const contextUsers = Array.isArray(context.users) ? context.users : [];
     const state = (await this.getBackOfficeState()) ?? {};
@@ -2171,8 +2177,17 @@ class PostgresRepository {
       throw error;
     }
 
-    // Même établissement (ou school_id NULL) : mise à jour contrôlée — ne jamais
-    // forcer role/status, ni déplacer school_id vers un autre tenant.
+    if (!this.isTeacherCompatiblePgRole(existing.role)) {
+      const error = new Error(
+        "Conflit de rôle: compte existant non enseignant — liaison teachers.user_id refusée",
+      );
+      error.statusCode = 409;
+      error.code = "TEACHER_USER_ROLE_CONFLICT";
+      throw error;
+    }
+
+    // Même établissement (ou school_id NULL) + rôle TEACHER : mise à jour contrôlée —
+    // ne jamais forcer role/status, ni déplacer school_id vers un autre tenant.
     const updated = await this.one(
       `UPDATE users
        SET first_name = COALESCE(NULLIF($2, ''), first_name),

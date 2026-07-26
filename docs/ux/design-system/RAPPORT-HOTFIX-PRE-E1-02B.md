@@ -28,8 +28,9 @@
 ### 2.1 Correctif isolation (revue CTO)
 
 L’upsert `ON CONFLICT (user_code) DO UPDATE` pouvait déplacer `school_id`, forcer `role=TEACHER` et réactiver le statut.  
-Remplacé par : lookup global → INSERT / UPDATE contrôlé même tenant / **REJET** `TEACHER_USER_TENANT_CONFLICT` autre tenant.  
-Match soft `identifier` (ex. `ENS-0001`) **scopé** établissement ; `record.userId` prioritaire (évite vol cross-tenant via démo).
+Remplacé par : lookup global → INSERT / UPDATE contrôlé même tenant + rôle `TEACHER` / **REJET** `TEACHER_USER_TENANT_CONFLICT` / **REJET** `TEACHER_USER_ROLE_CONFLICT` (compte non enseignant — pas de `teachers.user_id`).  
+Match soft `identifier` (ex. `ENS-0001`) **scopé** établissement ; `record.userId` prioritaire.  
+`PUT /api/backoffice/state` rattache `syncAck` à la réponse pour rendre les rejets observables.
 
 ---
 

@@ -588,7 +588,7 @@ async function main() {
     );
     const roleTeacherId = newId("TEACHERS");
     const stateRole = await getState(school.adminToken);
-    await putStateKeys(school.adminToken, {
+    const rolePut = await putStateKeys(school.adminToken, {
       users: [
         {
           id: roleUserCode,
@@ -615,15 +615,35 @@ async function main() {
       ],
     });
     const roleAfter = await pgQuery(
-      `SELECT role, school_id FROM users WHERE user_code = $1`,
+      `SELECT id, role, school_id FROM users WHERE user_code = $1`,
       [roleUserCode],
+    );
+    const roleTeacherRows = await pgQuery(
+      `SELECT t.teacher_code, t.user_id
+       FROM teachers t
+       WHERE t.teacher_code = $1 OR t.user_id = $2`,
+      [roleTeacherId, insertedRoleUser[0]?.id],
+    );
+    const roleSyncRejected =
+      Array.isArray(rolePut?.syncAck?.rejected) &&
+      rolePut.syncAck.rejected.some(
+        (row) =>
+          row.entity === "teachers" &&
+          (row.code === "TEACHER_USER_ROLE_CONFLICT" ||
+            String(row.error || "").includes("non enseignant")),
+      );
+    const roleNoTeacherLink = roleTeacherRows.every(
+      (row) =>
+        row.user_id == null || String(row.user_id) !== String(insertedRoleUser[0]?.id),
     );
     record(
       "02B-ROLE-01",
-      "Compte existant non enseignant → rôle non écrasé silencieusement",
+      "Compte PARENT inchangé + aucun teacher.user_id + TEACHER_USER_ROLE_CONFLICT",
       roleAfter[0]?.role === "PARENT" &&
-        String(roleAfter[0]?.school_id) === String(insertedRoleUser[0]?.school_id),
-      `role=${roleAfter[0]?.role}`,
+        String(roleAfter[0]?.school_id) === String(insertedRoleUser[0]?.school_id) &&
+        roleNoTeacherLink &&
+        roleSyncRejected,
+      `role=${roleAfter[0]?.role} syncRejected=${roleSyncRejected} teacherRows=${JSON.stringify(roleTeacherRows)}`,
     );
 
     // 02B-TENANT-01 — même user_code dans école B
@@ -700,7 +720,6 @@ async function main() {
           (row.code === "TEACHER_USER_TENANT_CONFLICT" ||
             String(row.error || "").includes("multi-tenant")),
       );
-    // sanitize peut strip syncAck — fallback: school A inchangé + pas de lien user A sur teacher B
     const tenantOk =
       String(userAAfter[0]?.school_id) === String(userABefore[0]?.school_id) &&
       String(userAAfter[0]?.role) === String(userABefore[0]?.role) &&
@@ -709,9 +728,9 @@ async function main() {
         String(teacherB[0].user_id) !== String(userABefore[0]?.id));
     record(
       "02B-TENANT-01",
-      "Même user_code école B → aucun déplacement compte école A",
-      tenantOk,
-      `schoolABefore=${userABefore[0]?.school_id} after=${userAAfter[0]?.school_id} syncRejected=${syncRejected} teacherB=${JSON.stringify(teacherB[0] ?? null)}`,
+      "Compte école A inchangé + aucun lien école B + TEACHER_USER_TENANT_CONFLICT observé",
+      tenantOk && syncRejected,
+      `schoolABefore=${userABefore[0]?.school_id} after=${userAAfter[0]?.school_id} syncRejected=${syncRejected} teacherB=${JSON.stringify(teacherB[0] ?? null)} rejected=${JSON.stringify((tenantPut?.syncAck?.rejected || []).filter((r) => r.entity === "teachers").slice(0, 3))}`,
     );
 
     // Neutraliser affectation BO (conserver PG)
@@ -784,8 +803,8 @@ async function main() {
       post3.status === 201 && String(trace3?.grantedBy || "").includes("bo_assignment");
     record(
       "FALLBACK-DOC",
-      "Sans assignment PG + BO conservé : fallback BO encore actif (documenté)",
-      true,
+      "Sans assignment PG + BO conservé : fallback BO encore actif (observé)",
+      fallbackUsed,
       `HTTP ${post3.status} grantedBy=${trace3?.grantedBy} fallbackUsed=${fallbackUsed}`,
     );
   } finally {

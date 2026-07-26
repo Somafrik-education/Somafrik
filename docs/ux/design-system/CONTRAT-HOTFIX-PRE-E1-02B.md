@@ -45,9 +45,12 @@ Promesse technique de #87 (sync PG des affectations) **non satisfaite**.
 | Cas | Comportement |
 |-----|--------------|
 | Utilisateur inexistant | `INSERT` (role `TEACHER`) |
-| Même établissement | `UPDATE` contrôlé (noms/email/phone) — **jamais** forcer `role` / `status` / déplacer `school_id` |
+| Même établissement + rôle `TEACHER` | `UPDATE` contrôlé (noms/email/phone) — **jamais** forcer `role` / `status` / déplacer `school_id` |
+| Même établissement + rôle non enseignant | **REJET** `TEACHER_USER_ROLE_CONFLICT` — **aucun** `teachers.user_id` vers ce compte |
 | Autre établissement | **REJET** `TEACHER_USER_TENANT_CONFLICT` |
 | Match soft `identifier` / email | **scopé** au même `schoolCode` ; `record.userId` prime toujours |
+
+Les rejets `TEACHER_USER_*_CONFLICT` doivent être **observables** dans `PUT /api/backoffice/state` via `syncAck.rejected` (pas masqués par sanitize).
 
 ---
 
@@ -63,9 +66,10 @@ npm run check
 
 | Id | Attendu |
 |----|---------|
-| `02B-TENANT-01` | Même `user_code` école B → aucun déplacement du compte école A ; sync rejetée / sans lien |
-| `02B-ROLE-01` | Compte existant non enseignant → rôle non écrasé |
+| `02B-TENANT-01` | Compte école A inchangé + aucun lien école B + `TEACHER_USER_TENANT_CONFLICT` **obligatoirement** dans `syncAck.rejected` |
+| `02B-ROLE-01` | `users.role` reste `PARENT` + aucun `teachers.user_id` vers ce compte + `TEACHER_USER_ROLE_CONFLICT` dans `syncAck.rejected` |
 | `02B-REPLAY-01` | Plusieurs sync identiques → 1 user, 1 teacher, 1 assignment |
 | `02B-LINK-01` | `teacher.user_id` = user BO attendu |
+| `FALLBACK-DOC` | Observé (`fallbackUsed`) — pas un vert inconditionnel |
 
 Preuve machine : `docs/audits/evidence/pre-e1-hotfix-02b-results.json`

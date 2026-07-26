@@ -849,44 +849,54 @@ async function run() {
     "02B-TENANT-SOFT: user école A non déplacé par ENS-0001 démo",
   );
 
-  const adminUserId = "00000000-0000-4000-8000-000000000088";
+  const parentUserId = "00000000-0000-4000-8000-000000000088";
   repo.tables.users.push({
-    id: adminUserId,
+    id: parentUserId,
     school_id: schoolAId,
-    user_code: "USERS-ADMIN-KEEP",
-    first_name: "Admin",
+    user_code: "USERS-PARENT-KEEP",
+    first_name: "Parent",
     last_name: "Keep",
-    email: "admin-keep@example.com",
+    email: "parent-keep@example.com",
     phone: null,
-    role: "ADMIN",
+    role: "PARENT",
     status: "active",
   });
-  const linkedAdmin = await repo.ensurePgUserForBackOfficeTeacher(
-    {
-      id: "TEACHERS-ADMIN-LINK",
-      userId: "USERS-ADMIN-KEEP",
-      schoolCode: "SCH-A",
-      firstName: "Admin",
-      lastName: "Keep",
-    },
-    schoolAId,
-    {
-      users: [
-        {
-          id: "USERS-ADMIN-KEEP",
-          identifier: "ADM-KEEP",
-          firstName: "Admin",
-          lastName: "Keep",
-          role: "Admin School",
-        },
-      ],
-    },
-  );
-  assert.strictEqual(String(linkedAdmin), String(adminUserId));
+  let roleConflict = false;
+  try {
+    await repo.ensurePgUserForBackOfficeTeacher(
+      {
+        id: "TEACHERS-PARENT-LINK",
+        userId: "USERS-PARENT-KEEP",
+        schoolCode: "SCH-A",
+        firstName: "Parent",
+        lastName: "Keep",
+      },
+      schoolAId,
+      {
+        users: [
+          {
+            id: "USERS-PARENT-KEEP",
+            identifier: "PAR-KEEP",
+            firstName: "Parent",
+            lastName: "Keep",
+            role: "Parent",
+            schoolCode: "SCH-A",
+          },
+        ],
+      },
+    );
+  } catch (error) {
+    roleConflict = error.code === "TEACHER_USER_ROLE_CONFLICT";
+  }
+  assert.ok(roleConflict, "02B-ROLE-01: TEACHER_USER_ROLE_CONFLICT");
   assert.strictEqual(
-    repo.tables.users.find((row) => same(row.user_code, "USERS-ADMIN-KEEP")).role,
-    "ADMIN",
-    "02B-ROLE-01: rôle non enseignant non écrasé",
+    repo.tables.users.find((row) => same(row.user_code, "USERS-PARENT-KEEP")).role,
+    "PARENT",
+    "02B-ROLE-01: rôle PARENT inchangé",
+  );
+  assert.ok(
+    !repo.tables.teachers.some((row) => same(row.user_id, parentUserId)),
+    "02B-ROLE-01: aucun teachers.user_id vers le compte PARENT",
   );
   assert.strictEqual(roleBefore, "TEACHER");
 

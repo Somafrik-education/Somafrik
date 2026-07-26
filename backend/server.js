@@ -1265,7 +1265,16 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     classes: saved.classes?.length ?? 0,
     roles: Object.keys(saved.rolePermissions ?? {}).length,
   });
-  res.json(scopedBackOfficeStateForResponse(saved, req.principal));
+  // HOTFIX-SYNC-01 / PRE-E1-02B : syncAck doit rester observable côté client.
+  // sanitizeBackOfficeState reconstruit un whitelist sans syncAck — le rattacher ici
+  // (sans le persister dans le snapshot BO).
+  const response = scopedBackOfficeStateForResponse(saved, req.principal);
+  if (saved?.syncAck && typeof saved.syncAck === "object") {
+    response.syncAck = saved.syncAck;
+  } else if (repository.lastSyncAck && typeof repository.lastSyncAck === "object") {
+    response.syncAck = repository.lastSyncAck;
+  }
+  res.json(response);
 }));
 
 app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
