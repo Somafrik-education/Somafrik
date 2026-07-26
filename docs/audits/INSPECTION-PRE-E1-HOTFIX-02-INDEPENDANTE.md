@@ -1,162 +1,162 @@
-# Inspection indépendante — HOTFIX-PRE-E1-02 (PR #87 / #88)
+# Inspection indépendante — HOTFIX-PRE-E1-02 (PR #87 / #88 / #89)
 
 **Statut :** AFFIRMATIONS D’INSPECTION — **≠ validation CTO**  
-**Règle appliquée :** Rapport Cursor ≠ validation CTO  
-**Gouvernance :** Audit Pré-E1 **NON CLOS** · V2 **BLOQUÉE** · E1 **NO-GO** · PR #84 **Draft**  
-**HOTFIX-PRE-E1-02 :** mergé dans `develop` (`f8999ebe`), **pas validé indépendamment** par ce document  
+**Règle :** Rapport Cursor ≠ validation CTO  
+**Audit Pré-E1 :** **OUVERT**  
+**HOTFIX-PRE-E1-01 :** corrigé  
+**HOTFIX-PRE-E1-02 :** **fonctionnel**, **causalité non démontrée** (voir §0)  
+**V2 :** BLOQUÉE · **E1 :** NO-GO · **PR #84 :** Draft  
 
-**Code inspecté :** `develop` @ `f2210763`  
-**Preuves machine :**
+**PR #89 :** pièce centrale d’inspection (pas une correction métier de production).  
+**Code de base :** `develop` + instrumentation diagnostic gated `SOMAFRIK_AUTHZ_TRACE=1`.
+
+**Preuves :**
+- [`evidence/pre-e1-notes-authz-causality.json`](./evidence/pre-e1-notes-authz-causality.json)
+- [`evidence/notes-authz-trace.jsonl`](./evidence/notes-authz-trace.jsonl)
 - [`evidence/pre-e1-hotfix-02-independent-inspection.json`](./evidence/pre-e1-hotfix-02-independent-inspection.json)
-- [`evidence/pre-e1-v1-independent-replay-after-87.json`](./evidence/pre-e1-v1-independent-replay-after-87.json) (rejeu `verify:pre-e1-v1`)
-- Harness : `scripts/inspect-pre-e1-hotfix-02-independent.js`
+- [`evidence/pre-e1-v1-independent-replay-after-87.json`](./evidence/pre-e1-v1-independent-replay-after-87.json)
+
+**Harness :**
+- `scripts/audit-pre-e1-notes-authz-causality.js`
+- `scripts/inspect-pre-e1-hotfix-02-independent.js`
+- Trace runtime : `backend/lib/notesAuthzTrace.js` (+ hooks `postgresRepository` / `GET /api/debug/notes-authz-trace`)
 
 ---
 
-## 1. Diff réel
+## 0. Audit de causalité — Pourquoi le POST réussit-il ?
 
-### PR #87 (`2be00d39…f8999ebe`) — +1937 / −89
+### Question unique
 
-| Zone | Nature |
-|------|--------|
-| `postgresRepository.js` | Sync staff + gardes établissement/classe/matière + `collectTeacherLookupKeys*` |
-| `pedagogyStaffBoPersistence.js` (+ tests) | Mapping / validation sync |
-| `pedagogyStaffSyncRepository.test.js` | Suite « verify:pre-e1-hotfix-02 » |
-| `evaluationAttachment.js` | Résolution teacher + **fallback `findAnyTeacher` conservé** |
-| `teacherNotesWriteAccess.js` | Préférence fiche avec affectations |
-| `server.js` | Enrichissement session login / change-password |
-| `verify-pre-e1-v1.js` | DUP-01 plus détaillé (comptages) |
-| Docs contrat/rapport | Affirmations livraison |
+Identifier la source réellement utilisée à l’autorisation de `POST /api/notes` :
 
-### PR #88 — docs + preuve + renommage champs DUP-01 (gitleaks)
+PostgreSQL `teacher_assignments` ? Snapshot BackOffice ? JWT `classNames` ? Fusion ? Fallback implicite ?
 
-Pas de correction métier. Contient le bilan Cursor 33/33 (à traiter comme affirmation).
+### Chemin instrumenté (run `audit-pre-e1-notes-authz-causality.js`)
 
----
+```
+POST /api/notes  →  201
+teacher principal
+↓
+JWT classNames ?          → MISS (classes seed démo ≠ classe opérationnelle)
+↓
+teacher PG trouvé ?       → HIT (CD-2026-0051-ENS-0001, user_id null)
+↓
+teacher_assignment PG ?   → MISS (0 lignes pour l'école)
+↓
+fallback BO classe ?      → ALLOW via bo_assignment_match
+↓
+fallback BO matière ?     → ALLOW via bo_assignment
+↓
+autorisation accordée
+grantedBy = class:bo_assignment_match+evaluation:bo_assignment
+```
 
-## 2. Les tests unitaires hotfix-02 ne touchent pas PostgreSQL
+### Verdict de causalité
 
-**CONFIRMED**
+| Source | Utilisée pour ALLOW ? |
+|--------|------------------------|
+| PostgreSQL `teacher_assignments` | **NON** |
+| Snapshot BackOffice (`assignments`) | **OUI** (classe + matière) |
+| JWT `assignedClasses` / `classNames` | **NON** (miss explicite) |
+| Fusion des trois | **NON** — BO seul après échecs JWT/PG |
 
-`pedagogyStaffSyncRepository.test.js` construit un `createInjectablePostgresRepository()` :
-- `Object.create(PostgresRepository.prototype)`
-- `pool.query` stub vide
-- assertions sur `repo.tables.teachers|teacher_assignments|…` en mémoire
+- **conclusion machine :** `CAUSE_APPARENTE_FALLBACK_BO`
+- **matchesHotfix02Narrative :** `false`
+- **PG au moment du POST :** `teachers=1 (ENS-*)`, `assignments=0`
 
-→ `npm run verify:pre-e1-hotfix-02` **ne prouve pas** la matérialisation PG réelle.
+### Conséquence pour les rapports antérieurs
 
----
+Les bilans #87/#88 qui attribuent le déblocage à la **matérialisation PG des affectations** sont **infirmés sur la causalité**, même si le comportement fonctionnel (POST 201, gardes négatives) est réel.
 
-## 3. Assertions V1 : pas d’affaiblissement grossier, mais angles morts
+Le hotfix est donc au mieux :
 
-| Point | Constat |
-|-------|---------|
-| Critères POST/PG/NEG/ISO | **Non assouplis** vs pré-#87 (mêmes sévérités) |
-| DUP-01 | **Renforcé** (comptages avant/après + sans clé) vs ancien `<=2 grades` |
-| GAP | `idsUnchanged*` calculé mais **non utilisé dans `idemOk`** |
-| GAP | Pas de test « clé différente » ni « concurrence » dans V1 |
-| GAP | V1 **ne SELECT jamais** `teachers` / `teacher_assignments` |
-| GAP | V1 NEG accepte `400\|403\|404` — ne prouve pas exclusivement la garde 403 |
-
----
-
-## 4. Reproduction `verify:pre-e1-v1` depuis base propre
-
-**Rejoué indépendamment :** **33/33** (fichier `pre-e1-v1-independent-replay-after-87.json`).
-
-Le score est **reproductible**. Il n’implique pas que la cause racine « assignments PG » soit démontrée.
-
-### Inspection PG pendant / après ce 33/33 (école A `CD-2026-0051`)
-
-| Table | Observation |
-|-------|-------------|
-| `teachers` | **1** ligne : `teacher_code=CD-2026-0051-ENS-0001`, **`user_id` NULL** |
-| `teacher_assignments` | **`[]` vide** |
-| `evaluations.teacher_id` | non null → pointe vers cet `ENS-0001` |
-| `grades` | 2 lignes (cohérent SOT) |
-| `enrollments` | présents (HOTFIX-01) |
-
-**FAIL / RISK majeur :** le scénario vert n’a **pas** matérialisé les affectations BO (`TEACHERS-*`) en `teacher_assignments`.  
-`PG-01b` passe parce que `teacher_id` est non null — or le code PG est un **`ENS-*` auto**, pas l’identité BO.
-
-### Identités TEACHER-* / TEACHERS-* (cas réel du run 33/33)
-
-| Couche | Valeur observée |
-|--------|-----------------|
-| JSON évaluation `teacherId` (REL-03) | `TEACHER-…` |
-| JSON affectation `teacherId` (REL-04) | `TEACHERS-…` |
-| PG `teachers.teacher_code` | `CD-2026-0051-ENS-0001` |
-
-→ La double identité **persiste dans le run vert** ; PG n’ancre ni `TEACHER-*` ni `TEACHERS-*`.
-
-Probable chemin d’attache évaluation : `evaluationAttachment.findAnyTeacher` / `ensureTeacher` → code `ENS-*`, pas sync staff BO.
+> **fonctionnel par fallback BackOffice**,  
+> **pas prouvé comme correction de la cause racine PG**.
 
 ---
 
-## 5. Inspection indépendante (hors suite V1)
+## 1. Diff réel (#87 / #88)
 
-Harness `inspect-pre-e1-hotfix-02-independent.js` — résumé observé :
+### PR #87 — sync staff + gardes + session
 
-| ID | Statut | Lecture |
-|----|--------|---------|
-| SESS-01 | PASS | JWT `classNames` non vide |
-| **SESS-01b** | **FAIL** | JWT = classes **seed démo** (`5ème A`…) — **pas** la classe de chaîne |
-| SESS-02 | PASS | PUT enseignant `teachers`/`assignments`/`rolePermissions` → **403** |
-| PG-TEACHERS / PG-GRADES / PG-ENROLL / PG-EVAL | PASS | Lignes existent ; `teacher_id` non null |
-| **PG-ASSIGN** | **FAIL** | `teacher_assignments` école A **vide** |
-| ID-DUAL / ID-EVAL-TEACHER | OBSERVED/FAIL | Pas de `TEACHERS-*` en PG ; `ENS-*` |
-| POST-NOMINAL | PASS | 201 malgré assignments PG vides / JWT sans classe chaîne |
-| NEG hors-classe / matière (setup inspect) | FAIL vs attente 403 stricte | **400** cohérence évaluation (autre chemin) — rejet existe, **pas le même code** que V1 |
-| NEG ISO A/B | PASS | refus (400/403) |
-| IDEM-SAME / DIFF / NONE / CONC | PASS | Pas de ligne grade supplémentaire |
-| RESTART-JSON / PG / SOT | PASS | Cohérence après kill/restart backend |
-| META-UNIT-STUB / META-V1-ASSERT | GAP | Voir §2–3 |
+Ajoute bien un chemin PG `teacher_assignments`, **et** des fallbacks BO / JWT.  
+Le chemin PG peut être mort dans le scénario nominal si la sync staff n’a pas produit de lignes.
 
-**Lecture sécurité nominale :** POST autorisé + 403 V1 reproductibles **ne démontrent pas** que la garde s’appuie sur `teacher_assignments` PG. Le fallback BO (`teacherCanAccessClassFromBackOffice` / affectations JSON) peut porter le scénario.
+### PR #88 — docs / preuve 33/33
+
+Affirmations Cursor ; ne prouve pas la causalité PG.
+
+### PR #89 — inspection + trace
+
+Ne « corrige » pas le métier notes ; instrumente et documente le mécanisme réel.
 
 ---
 
-## 6. Idempotence (indépendante)
+## 2. Tests unitaires hotfix-02 ≠ PostgreSQL
 
-Sur grades PG (effectif baseline = 2) :
-
-| Cas | Résultat observé |
-|-----|------------------|
-| Même en-tête | count stable, IDs stables |
-| En-tête différent, même payload | count stable (upsert métier) |
-| Sans en-tête | count stable |
-| 3 appels concurrents même en-tête | count stable |
-
-**PASS technique** sur non-duplication de lignes. Ne clôt pas l’audit métier.
+**CONFIRMED** — `pedagogyStaffSyncRepository.test.js` = stub mémoire (`repo.tables.*`).
 
 ---
 
-## 7. Session / escalation
+## 3. Assertions V1
 
-- Enrichissement `assignedClasses` côté serveur à login / change-password : **confirmé dans le diff**.
-- Enseignant **ne peut pas** s’auto-attribuer droits via PUT state : **403** (PASS).
-- **FAIL associé :** le JWT observé porte des classes démo, pas la classe opérationnelle — surface d’ambiguïté IDENTITY-LIFECYCLE toujours ouverte.
+- Non assouplies globalement ; DUP-01 renforcé.
+- **GAP :** V1 ne SELECT jamais `teacher_assignments`.
+- **33/33 reproductible** sans prouver la cause PG (voir inspection PG : assignments vides, `ENS-*`).
 
 ---
 
-## 8. Synthèse pour arbitrage CTO
+## 4. Identités TEACHER-* / TEACHERS-* / ENS-*
 
-| Affirmation Cursor (bilans #87/#88) | Verdict d’inspection |
-|-------------------------------------|----------------------|
-| Sync teachers/assignments PG avant notes | **NON DÉMONTRÉ** sur runs réels (assignments vides ; codes `ENS-*`) |
-| Cause 403 corrigée via affectations PG | **PARTIEL / AMBIGU** — succès via chemins BO / `ENS-*` possibles |
-| `verify:pre-e1-hotfix-02` prouve PG | **FAUX** — stub mémoire |
-| 33/33 | **REPRODUCTIBLE** mais **insuffisant** comme preuve d’architecture |
-| DUP-01 / restart / anti-escalation PUT | **Orientés PASS** sous inspection |
-| Identités TEACHER / TEACHERS unifiées | **FAUX** — divergence JSON + absentes en PG |
-| Audit clos / V2 ouvrable | **NON** — hors périmètre ; gouvernance CTO |
+Observé sur runs verts / causalité :
 
-### Décision demandée (hors agent)
+| Couche | Identité |
+|--------|----------|
+| Affectation BO | souvent `TEACHERS-*` ou match via `TEACHER-*` |
+| JWT / lookup keys | mélange USERS / ENS / TEACHER / seed |
+| PG `teachers.teacher_code` | `CD-…-ENS-0001` (`user_id` null) |
 
-Ce document **n’autorise pas** :
-- clôture de l’audit Pré-E1 ;
-- ouverture V2 ;
-- GO E1 Bulletins ;
-- undraft PR #84.
+→ Dette **PRE-E1-IDENTITY-LIFECYCLE** confirmée empiriquement.
 
-Prochain arbitrage Pré-E1 : **après** revue humaine de #87/#88 à la lumière de ces observations.
+---
+
+## 5. Autres contrôles d’inspection (rappel)
+
+| Contrôle | Résultat |
+|----------|----------|
+| Idempotence (même/différente/sans clé + concurrence) | PASS (pas de ligne grade en plus) |
+| Anti-escalation PUT enseignant | PASS (403) |
+| Restart JSON ↔ PG | PASS |
+| Sync `teacher_assignments` PG sur scénario nominal | **FAIL / absent** |
+
+---
+
+## 6. Correction documentaire requise
+
+Le rapport HOTFIX-02 doit cesser d’affirmer, sans réserve :
+
+- « Cohérence PG assignments » comme résultat acquis du scénario notes ;
+- « Cause racine 403 corrigée » **via** affectations PG.
+
+Formulation conforme à l’inspection :
+
+- HOTFIX-02 : **fonctionnel** (POST nominal + refus négatifs observés) ;
+- causalité du ALLOW : **fallback snapshot BackOffice** (preuve instrumentée) ;
+- matérialisation PG des affectations : **non démontrée** sur le chemin réel du POST.
+
+Voir rectificatif dans `docs/ux/design-system/RAPPORT-HOTFIX-PRE-E1-02.md`.
+
+---
+
+## 7. Synthèse pour arbitrage CTO
+
+| Affirmation | Verdict inspection |
+|-------------|-------------------|
+| POST réussit grâce à `teacher_assignments` PG | **FAUX** (trace) |
+| POST réussit grâce au JWT classNames opérationnel | **FAUX** (miss) |
+| POST réussit grâce au fallback BO | **VRAI** (trace `grantedBy`) |
+| Hotfix « fonctionnel » | **VRAI** (comportement) |
+| Cause racine PG éliminée | **NON DÉMONTRÉ** |
+| Clôture audit / ouverture V2 | **NON** |
+
+**Décision non prise par cet agent.** Prochaine étape : revue CTO des diffs #87/#88/#89 sous l’angle *mécanisme réel vs récit*.
