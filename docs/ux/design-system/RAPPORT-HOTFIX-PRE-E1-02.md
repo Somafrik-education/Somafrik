@@ -1,9 +1,10 @@
 # Rapport HOTFIX-PRE-E1-02 — Cohérence affectations / évaluations / notes
 
 **Type :** Hotfix pré-E1 (Correctif 2)  
-**Décision CTO :** HOTFIX-02 autorisé · V2 bloquée · E1 NO-GO · PR #84 Draft  
+**Décision CTO :** HOTFIX-02 validé fonctionnellement · PR #87 approuvée sous conditions · V2 bloquée · E1 NO-GO · PR #84 Draft  
 **Contrat :** [CONTRAT-HOTFIX-PRE-E1-02.md](./CONTRAT-HOTFIX-PRE-E1-02.md)  
-**Prérequis :** HOTFIX-PRE-E1-01 mergé (`develop`)
+**Prérequis :** HOTFIX-PRE-E1-01 mergé (`develop`)  
+**Commit tête (gates) :** `43e99ff1` (+ commits documentation / preuve DUP-01)
 
 ---
 
@@ -35,6 +36,7 @@ Après HOTFIX-01, les élèves sont en PG mais :
 | `server.js` | Enrichissement session BackOffice + change-password ; merge teachers BO/PG AuthService |
 | Docs | Contrat + ce rapport |
 | Tests | `npm run verify:pre-e1-hotfix-02` |
+| Preuve DUP-01 | Comptages grades avant / après chaque POST (clé + sans clé) dans `verify:pre-e1-v1` |
 
 ---
 
@@ -49,12 +51,43 @@ Après HOTFIX-01, les élèves sont en PG mais :
 | JSON notes = PG grades (scénario V1) | Oui (smoke local 33/33) |
 | Isolation multi-tenant | Oui (ISO-02 403) |
 | Suite `verify:pre-e1-hotfix-02` | Oui |
-| **DUP-01** | **Oui — prouvé** : double POST `Idempotency-Key` → HTTP 201/201 et **2** grades (pas de duplication) |
+| **DUP-01** | Voir §3.1 — pas seulement « 2 grades » |
 | V2 / E1 / preuves V1 | **Toujours bloqués / non modifiées** |
+
+### 3.1 Preuve DUP-01 (clarification)
+
+Un total de **2 grades** après double POST n’est **pas** suffisant à lui seul (1 grade × 2 élèves). La preuve exige :
+
+| Étape | Attendu |
+|-------|---------|
+| Grades **avant** le double POST | N (baseline, typiquement 2 = 1/élève) |
+| Après **1er** POST (même `Idempotency-Key`) | N inchangé ; mêmes `id` de lignes |
+| Après **2e** POST (même `Idempotency-Key`) | N inchangé ; HTTP 201/200 ; pas de ligne supplémentaire |
+| Rejeu **sans** `Idempotency-Key` | N inchangé ; upsert in-place ; pas de ligne supplémentaire |
+| Identifiants | Documentés dans `evidence.postgresSnapshots.afterIdempotency` |
+
+Le harness `verify:pre-e1-v1` enregistre désormais ces comptages et IDs explicitement.
 
 ---
 
-## 4. Smoke V1 (local, non historique)
+## 4. Gates pré-merge (dernier commit PR #87)
+
+| Gate | Résultat |
+|------|----------|
+| `npm run verify:pre-e1-hotfix-02` | ✅ |
+| `npm run verify:students-sync` | ✅ |
+| `npm run verify:notes-sync` | ✅ |
+| `npm run check` | ✅ |
+| CI (PR #87) | ✅ |
+| Security (PR #87) | ✅ |
+| Branche à jour avec `develop` | ✅ (`develop` ancestor) |
+| Conversations de revue bloquantes | Aucune |
+| Preuves V1 historiques | Intactes |
+| RBAC | Non assoupli (établissement + classe + matière) |
+
+---
+
+## 5. Smoke V1 (local, non historique)
 
 Exécuté sur le code de cette branche (preuve **non** écrite dans `pre-e1-v1-results.json`) :
 
@@ -67,7 +100,22 @@ Les preuves historiques (PR #84 + re-run HOTFIX-01) restent intactes.
 
 ---
 
-## 5. Arrêt
+## 6. Dette architecturale conservée (hors scope PR #87)
 
-Livraison Correctif 2 en **PR Draft** — **revue CTO requise** avant undraft / merge.  
-Malgré le smoke 33/33, **V2 et E1 restent bloqués** jusqu’à arbitrage explicite.
+| ID | Sévérité | Constat |
+|----|----------|---------|
+| **PRE-E1-STUDENT-CODE-SCOPE** | MAJOR | `student_code` globalement UNIQUE (HOTFIX-01) |
+| **PRE-E1-IDENTITY-LIFECYCLE** | **MAJOR** | Les identités BackOffice, utilisateur/session et PostgreSQL possèdent encore plusieurs cycles de création/modification. V2 devra définir les identifiants et points d’écriture canoniques pour enseignants, élèves, utilisateurs associés, et références JSON ↔ PostgreSQL ; et réduire les doubles points de création/modification. |
+
+Le hotfix corrige la chaîne opérationnelle (sync teachers/assignments, gardes, notes) **sans** résoudre cette architecture générale. **Ne pas élargir PR #87** pour ce sujet.
+
+---
+
+## 7. Arrêt / suite conditionnelle CTO
+
+1. Undraft PR #87 → merge `develop` (si gates distants verts).  
+2. Re-run `npm run verify:pre-e1-v1` depuis `develop`.  
+3. Nouvelle preuve + bilan distincts (ne pas modifier les historiques).  
+4. **Arrêt** pour arbitrage CTO.
+
+**V2 et E1 restent bloqués** jusqu’à arbitrage explicite. PR #84 reste Draft.
