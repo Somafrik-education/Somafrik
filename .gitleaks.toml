@@ -14,5 +14,6 @@ description = "Preuves d'audit authz notes : champs lookupValue (anciennement ke
 paths = [
   '''docs/audits/evidence/notes-authz-trace.*\.jsonl''',
   '''docs/audits/evidence/pre-e1-hotfix-02b-results\.json''',
+  '''docs/audits/evidence/pre-e1-hotfix-02b-rejeu-post-merge-results\.json''',
   '''docs/audits/evidence/pre-e1-notes-authz-causality\.json''',
 ]
