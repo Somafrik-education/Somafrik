@@ -111,11 +111,14 @@ Le hotfix corrige la chaîne opérationnelle (sync teachers/assignments, gardes,
 
 ---
 
-## 7. Arrêt / suite conditionnelle CTO
+## 7. Post-merge
 
-1. Undraft PR #87 → merge `develop` (si gates distants verts).  
-2. Re-run `npm run verify:pre-e1-v1` depuis `develop`.  
-3. Nouvelle preuve + bilan distincts (ne pas modifier les historiques).  
-4. **Arrêt** pour arbitrage CTO.
+PR #87 undraftée puis mergée dans `develop` (`f8999ebe`).
 
-**V2 et E1 restent bloqués** jusqu’à arbitrage explicite. PR #84 reste Draft.
+Re-run V1 depuis `develop` :
+
+- Preuve : [`docs/audits/evidence/pre-e1-v1-rerun-hotfix-pre-e1-02-results.json`](../../audits/evidence/pre-e1-v1-rerun-hotfix-pre-e1-02-results.json)
+- Bilan : [`docs/audits/BILAN-PRE-E1-V1-RERUN-HOTFIX-02.md`](../../audits/BILAN-PRE-E1-V1-RERUN-HOTFIX-02.md)
+- Résultat : **33/33** · 0 anomalie BLOCKER/CRITICAL
+
+**V2 et E1 restent bloqués** jusqu’à arbitrage CTO explicite. PR #84 reste Draft.
