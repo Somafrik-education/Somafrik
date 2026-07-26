@@ -54,7 +54,14 @@
 
 ---
 
-## 4. Décision attendue (CTO)
+## 4. Décision CTO (revue PR #91)
 
-Rejeu consolidé fourni pour **requalification** HOTFIX-02.  
-Sans arbitrage CTO explicite : Audit **OUVERT**, HOTFIX-02 **non clos**, V2 **BLOQUÉE**, E1 **NO-GO**.
+| Décision | Statut |
+|----------|--------|
+| Contenu de preuve PR #91 | **APPROUVÉ** |
+| Undraft / merge doc | **AUTORISÉ** après CI/Security verts |
+| HOTFIX-PRE-E1-02B | **CLOS TECHNIQUEMENT** |
+| HOTFIX-02 | **CORRECTION DÉMONTRÉE** — clôture formelle en attente rejeu CTO/CI |
+| Prochain gate | Exécution contrôlée du harness depuis `develop@fc953883`, puis enregistrement explicite de clôture |
+
+Gouvernance maintenue : Audit **OUVERT** · V2 **BLOQUÉE** · E1 **NO-GO** · PR #84 Draft · dette IDENTITY **OUVERTE**.
