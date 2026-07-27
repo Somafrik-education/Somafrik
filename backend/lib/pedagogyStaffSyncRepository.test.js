@@ -690,6 +690,9 @@ async function run() {
     scale: 20,
     coefficient: 1,
     evaluationCoefficient: 1,
+    // Lot 2 — sync notes via Admin School exige une clé enseignant explicite
+    authorId: "TEACHERS-A-1",
+    teacherId: "TEACHERS-A-1",
   };
 
   const notesSaved = await repo.saveBackOfficeState({

@@ -89,7 +89,7 @@
       "id": "AC-N6",
       "title": "Admin + clé = evaluation.teacher_id → 201",
       "status": "PASS",
-      "detail": "HTTP 201 key=TEACHERS-1785171944233-ar6km4o7",
+      "detail": "HTTP 201 teacherCode=TEACHERS-1785171944233-ar6km4o7",
       "extra": null
     },
     {

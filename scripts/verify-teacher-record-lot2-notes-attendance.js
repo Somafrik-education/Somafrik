@@ -681,7 +681,7 @@ async function main() {
       "AC-N6",
       "Admin + clé = evaluation.teacher_id → 201",
       postAdminKey.status === 201,
-      `HTTP ${postAdminKey.status} key=${matchingKey}`,
+      `HTTP ${postAdminKey.status} teacherCode=${matchingKey}`,
     );
 
     const gradesAfterAdmin = await pgQuery(
