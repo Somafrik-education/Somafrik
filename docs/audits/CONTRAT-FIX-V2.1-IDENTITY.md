@@ -4,21 +4,23 @@
 **Cadrage validé :** [`PLAN-CORRECTIF-MINIMAL-PRE-E1-V2-IDENTITY-LIFECYCLE.md`](./PLAN-CORRECTIF-MINIMAL-PRE-E1-V2-IDENTITY-LIFECYCLE.md) (PR #97 · `0644442a`)  
 **Option CTO :** **Hybride A+C bornée**  
 **Anomalie :** MAJOR CONFIRMÉE — revalidation CTO  
-**Statut :** trois règles CTO intégrées (déterminisme · historique TEACHER-only · fallback eval) — **en attente de revalidation CTO** avant undraft/merge  
+**Statut :** trois règles CTO intégrées + correctifs revalidation PR #99 (§4.1.b bulk · §4.1.c multi-TEACHER-* · séparation preuves historiques) — **Draft code · undraft/merge NON autorisés** jusqu’à revalidation CTO  
 
 | Élément | Statut |
 |---------|--------|
 | Architecture A+C bornée | **VALIDÉE** |
 | Périmètre fonctionnel | **VALIDÉ** |
 | Déterminisme du canon | **Corrigé** (§4.1 — règle CTO) |
+| Sync bulk vs écriture liée | **Contractualisé** (§4.1.b) |
+| Historique multi-TEACHER-* | **Contractualisé** (§4.1.c — pas de `twins[0]`) |
 | Historique TEACHER-only | **Corrigé** (§3.2 / AC-HIST-02) |
 | Fallback évaluation | **Tranché** (§5.2 — refus structuré, pas de user_id seul) |
-| Implémentation | **INTERDITE** jusqu’à revalidation + merge de ce contrat |
+| Preuves historiques V1/02B | **Intactes** (adaptations = artefacts `*-fix-adapted-*` / `*-post-fix-v21-*`) |
+| Implémentation | **PR #99 Draft** — en attente revalidation CTO |
 | Migration / backfill / DELETE jumeaux | **INTERDITS** |
 | E1 | **NO-GO** |
 | HOTFIX-01/02/02B | **CLOS** |
 | Preuves brutes #95/#96 | **Lecture seule** |
-| PR code | **Interdite** avant revalidation CTO de ce contrat |
 
 ---
 
@@ -162,6 +164,24 @@ Entrée : user, établissement S, collection teachers[] (même schoolCode)
 ```
 
 Le correctif **ne doit pas** masquer une ambiguïté en choisissant arbitrairement une identité.
+
+#### 4.1.b — Sync bulk `PUT /backoffice/state` (règle CTO revalidation PR #99)
+
+| Cas | Comportement |
+|-----|--------------|
+| Écriture qui **nécessite ou modifie** l’identité enseignant ambiguë (user et/ou fiche `teachers` liée touchée / changée dans le PUT) | **`TEACHER_CANON_AMBIGUOUS`** — refus structuré |
+| PUT **totalement étranger** à cet enseignant (ses users/teachers inchangés dans le diff du PUT) | Continuer **sans modifier** ses fiches ; skip tracé `TEACHER_CANON_AMBIGUOUS_SKIPPED_UNRELATED` |
+| Résolution directe (`resolveCanonicalTeachersRow` / `upsertTeacherFromUser` hors bulk non lié) | Toujours erreur structurée si ambigu |
+
+**Interdit :** absorber silencieusement `TEACHER_CANON_AMBIGUOUS` lorsqu’une écriture concerne l’enseignant ambigu.
+
+#### 4.1.c — Historique multi-`TEACHER-*` (sans `TEACHERS-*`)
+
+| Cas | Comportement |
+|-----|--------------|
+| Exactement **1** `TEACHER-*` lié | Mise à jour conservatrice autorisée (pas de création `TEACHERS-*`) |
+| **Plusieurs** `TEACHER-*` liés | **Aucune** mutation automatique ; no-op tracé `TEACHER_HISTORICAL_MULTI_TWIN` (ou erreur structurée) |
+| **Interdit** | `twins[0]` / premier élément / ordre de tableau |
 
 Lien PG attendu lorsque le canon est déterminé :  
 `teachers.teacher_code = canon`, `user_id` = user PG, `school_id` = établissement.  

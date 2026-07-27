@@ -91,7 +91,30 @@ function createMemoryDeps(seed = {}) {
       },
       findTeacherByCode: async (schoolId, code) =>
         teachers.find((row) => row.school_id === schoolId && row.teacher_code === code) ?? null,
-      findAnyTeacher: async (schoolId) => teachers.find((row) => row.school_id === schoolId) ?? null,
+      ensureTeacher: async (schoolId, code) => {
+        const existing = teachers.find(
+          (row) => row.school_id === schoolId && row.teacher_code === code,
+        );
+        if (existing) return existing;
+        if (seed.ensureTeacherCodes?.includes(code)) {
+          const row = {
+            id: `pg-${code}`,
+            school_id: schoolId,
+            teacher_code: code,
+          };
+          teachers.push(row);
+          return row;
+        }
+        return null;
+      },
+      findTeacherByExactAssignment: async (schoolId, classId, subjectId, code) =>
+        teachers.find(
+          (row) =>
+            row.school_id === schoolId &&
+            row.teacher_code === code &&
+            row.class_id === classId &&
+            row.subject_id === subjectId,
+        ) ?? null,
     },
   };
 }
@@ -170,6 +193,97 @@ async function run() {
   assert.ok(ERRORS.CLASS_MISSING("6e A").message.includes("6e A"));
   assert.ok(ERRORS.SUBJECT_MISSING("Physique").message.includes("Physique"));
   assert.ok(ERRORS.YEAR_MISSING().code === "EVAL_ATTACHMENT_YEAR");
+
+  // FIX V2.1 §5.2 — sans teacherId : pas de findAnyTeacher opportuniste
+  const noTeacher = await resolveEvaluationAttachments(
+    {
+      schoolCode: "SCH-001",
+      className: "6e A",
+      subject: "Mathématiques",
+      period: "T1",
+    },
+    createMemoryDeps({
+      schools: { "SCH-001": { id: "s1", school_code: "SCH-001" } },
+      teachers: [{ id: "t-any", school_id: "s1", teacher_code: "TEACHER-ANY" }],
+    }).deps,
+    { ensure: true },
+  );
+  assert.strictEqual(noTeacher.teacher, null, "pas de choix opportuniste d'enseignant");
+
+  // teacherId exact → résolution
+  const withTeacher = await resolveEvaluationAttachments(
+    {
+      schoolCode: "SCH-001",
+      className: "6e A",
+      subject: "Mathématiques",
+      period: "T1",
+      teacherId: "TEACHERS-exact",
+    },
+    createMemoryDeps({
+      schools: { "SCH-001": { id: "s1", school_code: "SCH-001" } },
+      teachers: [{ id: "t1", school_id: "s1", teacher_code: "TEACHERS-exact" }],
+    }).deps,
+    { ensure: true },
+  );
+  assert.strictEqual(withTeacher.teacher.teacher_code, "TEACHERS-exact");
+
+  // teacherId inconnu → refus structuré (pas de fallback)
+  await assert.rejects(
+    () =>
+      resolveEvaluationAttachments(
+        {
+          schoolCode: "SCH-001",
+          className: "6e A",
+          subject: "Mathématiques",
+          period: "T1",
+          teacherId: "TEACHERS-missing",
+        },
+        createMemoryDeps({
+          schools: { "SCH-001": { id: "s1", school_code: "SCH-001" } },
+          teachers: [{ id: "t-other", school_id: "s1", teacher_code: "TEACHER-other" }],
+        }).deps,
+        { ensure: true },
+      ),
+    (error) => {
+      assert.strictEqual(error.code, "EVAL_TEACHER_UNRESOLVED");
+      return true;
+    },
+  );
+
+  // requireTeacher sans teacherId
+  await assert.rejects(
+    () =>
+      resolveEvaluationAttachments(
+        {
+          schoolCode: "SCH-001",
+          className: "6e A",
+          subject: "Mathématiques",
+          period: "T1",
+        },
+        createMemoryDeps({
+          schools: { "SCH-001": { id: "s1", school_code: "SCH-001" } },
+        }).deps,
+        { ensure: true, requireTeacher: true },
+      ),
+    (error) => error.code === "EVAL_TEACHER_REQUIRED",
+  );
+
+  // Matérialisation exacte via ensureTeacher
+  const materialized = await resolveEvaluationAttachments(
+    {
+      schoolCode: "SCH-001",
+      className: "6e A",
+      subject: "Mathématiques",
+      period: "T1",
+      teacherId: "TEACHERS-new",
+    },
+    createMemoryDeps({
+      schools: { "SCH-001": { id: "s1", school_code: "SCH-001" } },
+      ensureTeacherCodes: ["TEACHERS-new"],
+    }).deps,
+    { ensure: true },
+  );
+  assert.strictEqual(materialized.teacher.teacher_code, "TEACHERS-new");
 
   console.log("evaluationAttachment.test.js : OK");
 }

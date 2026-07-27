@@ -2838,14 +2838,32 @@ function mergeScopedBackOfficeState(
     scopedCurrent,
     touchedKeys,
   );
+  const mergedAssignmentsForSync = mergeScopedEntityIfTouched(
+    "assignments",
+    current,
+    scopedRequested,
+    scopedCurrent,
+    touchedKeys,
+  );
   const teacherSync =
     usersTouched || teachersTouched
-      ? userTeacherSyncService.syncTeachersFromUserAccounts({
-          ...current,
-          users: mergedUsers,
-          teachers: mergedTeachers,
-          contacts: mergedContacts,
-        })
+      ? userTeacherSyncService.syncTeachersFromUserAccounts(
+          {
+            ...current,
+            users: mergedUsers,
+            teachers: mergedTeachers,
+            contacts: mergedContacts,
+            // §4.1 — départage multi-TEACHERS-* via affectations du même PUT
+            assignments: mergedAssignmentsForSync,
+          },
+          {
+            // §4.1.b — distinguer PUT étranger vs écriture identitaire
+            previousUsers: current.users ?? [],
+            previousTeachers: current.teachers ?? [],
+            usersTouched,
+            teachersTouched,
+          },
+        )
       : null;
   const syncedTeachers = teacherSync?.teachers ?? current.teachers;
   const syncedContacts = teacherSync?.contacts ?? mergedContacts;
@@ -2906,13 +2924,7 @@ function mergeScopedBackOfficeState(
           scopedCurrent.courses,
         )
       : current.courses,
-    assignments: mergeScopedEntityIfTouched(
-      "assignments",
-      current,
-      scopedRequested,
-      scopedCurrent,
-      touchedKeys,
-    ),
+    assignments: mergedAssignmentsForSync,
     courseSchedules: mergeScopedEntityIfTouched(
       "courseSchedules",
       current,
@@ -4184,7 +4196,10 @@ app.use((error, _req, res, _next) => {
     if (error.statusCode >= 500) {
       console.error(error);
     }
-    return res.status(error.statusCode).json({ message: error.message });
+    return res.status(error.statusCode).json({
+      message: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 
   console.error(error);

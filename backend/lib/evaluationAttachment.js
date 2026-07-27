@@ -43,6 +43,16 @@ const ERRORS = {
     attachmentError("EVAL_ATTACHMENT_CLASS", "Classe obligatoire pour l'évaluation"),
   SUBJECT_NAME_REQUIRED: () =>
     attachmentError("EVAL_ATTACHMENT_SUBJECT", "Matiere obligatoire pour l'évaluation"),
+  TEACHER_REQUIRED: () =>
+    attachmentError(
+      "EVAL_TEACHER_REQUIRED",
+      "Identifiant enseignant (teacherId TEACHERS-*) obligatoire pour l'évaluation",
+    ),
+  TEACHER_UNRESOLVED: (teacherCode) =>
+    attachmentError(
+      "EVAL_TEACHER_UNRESOLVED",
+      `Enseignant introuvable pour l'évaluation${teacherCode ? ` (« ${teacherCode} »)` : ""}`,
+    ),
 };
 
 /**
@@ -97,26 +107,34 @@ async function resolveEvaluationAttachments(evaluation = {}, deps = {}, options 
   const periodName = String(evaluation.period ?? "Trimestre 1").trim() || "Trimestre 1";
   const term = await deps.ensureTerm?.(academicYear.id, periodName);
 
-  // HOTFIX-PRE-E1-02 : résolution enseignant par identifiant stable / affectation, jamais par nom.
+  // FIX V2.1 IDENTITY §5.2 — lookup exact → matérialisation exacte → refus structuré.
+  // Interdit : findAnyTeacher, ORDER BY created_at, choix par user_id seul.
   const teacherCode = String(evaluation.teacherId ?? evaluation.teacher_code ?? "").trim();
-  let teacher = teacherCode ? await deps.findTeacherByCode?.(school.id, teacherCode) : null;
+  const requireTeacher = options.requireTeacher === true;
 
-  if (!teacher && teacherCode && ensure && deps.ensureTeacher) {
-    teacher = await deps.ensureTeacher(school.id, teacherCode, context);
-  }
+  let teacher = null;
+  if (!teacherCode) {
+    if (requireTeacher) throw ERRORS.TEACHER_REQUIRED();
+  } else {
+    teacher = (await deps.findTeacherByCode?.(school.id, teacherCode)) ?? null;
 
-  if (!teacher && ensure && deps.findTeacherByAssignment) {
-    teacher = await deps.findTeacherByAssignment(
-      school.id,
-      schoolClass.id,
-      subject.id,
-      teacherCode,
-      context,
-    );
-  }
+    if (!teacher && ensure && deps.ensureTeacher) {
+      teacher = (await deps.ensureTeacher(school.id, teacherCode, context)) ?? null;
+    }
 
-  if (!teacher) {
-    teacher = (await deps.findAnyTeacher?.(school.id)) ?? null;
+    // Aide limitée : même teacher_code explicite + affectation active (pas de filet « n'importe qui »).
+    if (!teacher && ensure && deps.findTeacherByExactAssignment && teacherCode) {
+      teacher =
+        (await deps.findTeacherByExactAssignment(
+          school.id,
+          schoolClass.id,
+          subject.id,
+          teacherCode,
+          context,
+        )) ?? null;
+    }
+
+    if (!teacher) throw ERRORS.TEACHER_UNRESOLVED(teacherCode);
   }
 
   return {
