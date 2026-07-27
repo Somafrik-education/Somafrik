@@ -102,7 +102,7 @@ Contact enseignant + compte user (identifier ENS-*)
 | ID | `PRE-E1-IDENTITY-LIFECYCLE` |
 | Sévérité documentée antérieure | MAJOR |
 | Caractérisation V2.1 | **Maintenue MAJOR — confirmée** |
-| Anomalies / écarts démontrés | (1) Multiplicité stable `TEACHER-*` / `TEACHERS-*` sans fusion · (2) Divergence `evaluation.teacherId` JSON (`TEACHERS-*`) vs `evaluations.teacher_id` PG (`TEACHER-*`) |
+| Écarts démontrés (preuve) | `Q4/ID-04` jumeaux non fusionnés · `Q7` divergence evaluation JSON↔PG |
 | Faits non pathologiques observés | Affectation PG alignée `TEACHERS-*` · `user_id` session cohérent · POST notes 201 via `pg_teacher_assignment` · idempotence sync canonique |
 | `PRE-E1-STUDENT-CODE-SCOPE` | **Non tranché** (ID-06 contexte) |
 | Correctif | **Non démarré** · **non autorisé** par ce rapport |
