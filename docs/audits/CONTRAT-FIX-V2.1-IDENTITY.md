@@ -163,6 +163,24 @@ Entrée : user, établissement S, collection teachers[] (même schoolCode)
 
 Le correctif **ne doit pas** masquer une ambiguïté en choisissant arbitrairement une identité.
 
+#### 4.1.b — Sync bulk `PUT /backoffice/state` (règle CTO revalidation PR #99)
+
+| Cas | Comportement |
+|-----|--------------|
+| Écriture qui **nécessite ou modifie** l’identité enseignant ambiguë (user et/ou fiche `teachers` liée touchée / changée dans le PUT) | **`TEACHER_CANON_AMBIGUOUS`** — refus structuré |
+| PUT **totalement étranger** à cet enseignant (ses users/teachers inchangés dans le diff du PUT) | Continuer **sans modifier** ses fiches ; skip tracé `TEACHER_CANON_AMBIGUOUS_SKIPPED_UNRELATED` |
+| Résolution directe (`resolveCanonicalTeachersRow` / `upsertTeacherFromUser` hors bulk non lié) | Toujours erreur structurée si ambigu |
+
+**Interdit :** absorber silencieusement `TEACHER_CANON_AMBIGUOUS` lorsqu’une écriture concerne l’enseignant ambigu.
+
+#### 4.1.c — Historique multi-`TEACHER-*` (sans `TEACHERS-*`)
+
+| Cas | Comportement |
+|-----|--------------|
+| Exactement **1** `TEACHER-*` lié | Mise à jour conservatrice autorisée (pas de création `TEACHERS-*`) |
+| **Plusieurs** `TEACHER-*` liés | **Aucune** mutation automatique ; no-op tracé `TEACHER_HISTORICAL_MULTI_TWIN` (ou erreur structurée) |
+| **Interdit** | `twins[0]` / premier élément / ordre de tableau |
+
 Lien PG attendu lorsque le canon est déterminé :  
 `teachers.teacher_code = canon`, `user_id` = user PG, `school_id` = établissement.  
 `user_id` **vérifie** le lien ; il **ne sert pas** à départager plusieurs rows `TEACHERS-*`.

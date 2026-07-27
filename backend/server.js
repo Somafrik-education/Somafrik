@@ -2847,14 +2847,23 @@ function mergeScopedBackOfficeState(
   );
   const teacherSync =
     usersTouched || teachersTouched
-      ? userTeacherSyncService.syncTeachersFromUserAccounts({
-          ...current,
-          users: mergedUsers,
-          teachers: mergedTeachers,
-          contacts: mergedContacts,
-          // §4.1 — départage multi-TEACHERS-* via affectations du même PUT
-          assignments: mergedAssignmentsForSync,
-        })
+      ? userTeacherSyncService.syncTeachersFromUserAccounts(
+          {
+            ...current,
+            users: mergedUsers,
+            teachers: mergedTeachers,
+            contacts: mergedContacts,
+            // §4.1 — départage multi-TEACHERS-* via affectations du même PUT
+            assignments: mergedAssignmentsForSync,
+          },
+          {
+            // §4.1.b — distinguer PUT étranger vs écriture identitaire
+            previousUsers: current.users ?? [],
+            previousTeachers: current.teachers ?? [],
+            usersTouched,
+            teachersTouched,
+          },
+        )
       : null;
   const syncedTeachers = teacherSync?.teachers ?? current.teachers;
   const syncedContacts = teacherSync?.contacts ?? mergedContacts;

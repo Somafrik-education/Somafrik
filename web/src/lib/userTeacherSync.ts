@@ -29,18 +29,6 @@ export function isTeacherUserRole(role?: string): boolean {
   return key === "enseignant" || key === "teacher" || key.includes("prof");
 }
 
-function teacherMatchesUser(teacher: Row, user: UserAccount): boolean {
-  if (user.id && String(teacher.userId ?? "") === String(user.id)) {
-    return true;
-  }
-  if (teacher.userId && String(teacher.userId) !== String(user.id ?? "")) {
-    return false;
-  }
-  const userIdentifier = normalize(String(user.identifier ?? ""));
-  const teacherIdentifier = normalize(String(teacher.identifier ?? ""));
-  return Boolean(userIdentifier && userIdentifier === teacherIdentifier);
-}
-
 function teachersLinkedByUserId(teachers: Row[], user: UserAccount, schoolCode: string): Row[] {
   const userId = String(user.id ?? "").trim();
   if (!userId) return [];
@@ -179,27 +167,36 @@ export function upsertTeacherFromUser(
     return replaceTeacher(teachers, canon.id, buildTeacherRow(user, canon));
   }
 
-  // AC-HIST-02 : historique TEACHER-* seul → ne pas créer TEACHERS-*
+  // AC-HIST-02 / §4.1.c : historique TEACHER-* seul
   if (twinOnlyLinked(teachers, user, schoolCode)) {
-    const twins = teachersLinkedByUserId(teachers, user, schoolCode).filter((teacher) =>
-      isTeacherTwinCode(teacher.id),
-    );
-    const existingTwin =
-      twins.find((teacher) => teacherMatchesUser(teacher, user)) ?? twins[0];
-    if (existingTwin) {
-      return replaceTeacher(teachers, existingTwin.id, buildTeacherRow(user, existingTwin));
+    const twinsById = new Map<string, Row>();
+    for (const teacher of teachersLinkedByUserId(teachers, user, schoolCode)) {
+      if (!isTeacherTwinCode(teacher.id)) continue;
+      const id = String(teacher.id ?? "").trim();
+      if (id && !twinsById.has(id)) twinsById.set(id, teacher);
     }
+    const twins = [...twinsById.values()];
+    if (twins.length === 1 && twins[0]) {
+      return replaceTeacher(teachers, twins[0].id, buildTeacherRow(user, twins[0]));
+    }
+    // Plusieurs TEACHER-* : no-op (pas de twins[0])
     return teachers;
   }
 
-  const linked = teachersLinkedByUserId(teachers, user, schoolCode);
+  const linkedById = new Map<string, Row>();
+  for (const teacher of teachersLinkedByUserId(teachers, user, schoolCode)) {
+    const id = String(teacher.id ?? "").trim();
+    if (id && !linkedById.has(id)) linkedById.set(id, teacher);
+  }
+  const linked = [...linkedById.values()];
   if (linked.length === 0) {
     return [buildTeacherRow(user), ...teachers];
   }
-
-  const match = linked.find((teacher) => teacherMatchesUser(teacher, user)) ?? linked[0];
-  if (!match) return teachers;
-  return replaceTeacher(teachers, match.id, buildTeacherRow(user, match));
+  if (linked.length === 1 && linked[0]) {
+    return replaceTeacher(teachers, linked[0].id, buildTeacherRow(user, linked[0]));
+  }
+  // Plusieurs fiches liées non départageables → no-op
+  return teachers;
 }
 
 /** Synchronise toutes les fiches enseignants à partir des comptes utilisateurs. */
@@ -208,14 +205,8 @@ export function syncTeachersFromUserAccounts(state: BackOfficeState): Row[] {
   const assignments = (state.assignments ?? []) as Row[];
   for (const user of state.users ?? []) {
     if (!isTeacherUserRole(user.role)) continue;
-    try {
-      teachers = upsertTeacherFromUser(teachers, user, { assignments });
-    } catch (error) {
-      if ((error as { code?: string })?.code === "TEACHER_CANON_AMBIGUOUS") {
-        continue;
-      }
-      throw error;
-    }
+    // Côté client : strict — TEACHER_CANON_AMBIGUOUS n'est pas absorbée
+    teachers = upsertTeacherFromUser(teachers, user, { assignments });
   }
   return teachers;
 }

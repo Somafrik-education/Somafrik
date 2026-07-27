@@ -1,6 +1,6 @@
 /**
  * FIX V2.1 IDENTITY — unit tests UserTeacherSyncService
- * CONTRAT-FIX-V2.1-IDENTITY.md §4.1 / §3.2 / AC-HIST-02
+ * CONTRAT-FIX-V2.1-IDENTITY.md §4.1 / §4.1.b / §4.1.c / AC-HIST-02
  */
 const assert = require("assert");
 const {
@@ -8,6 +8,7 @@ const {
   resolveCanonicalTeachersRow,
   isTeachersCode,
   isTeacherTwinCode,
+  isIdentityRelatedWrite,
 } = require("../services/userTeacherSyncService");
 
 const service = new UserTeacherSyncService();
@@ -89,7 +90,7 @@ function run() {
     assert.strictEqual(next.length, 2, "pas de fusion / suppression historique");
   }
 
-  // AC-HIST-02 : TEACHER-* seul → pas de création TEACHERS-*
+  // AC-HIST-02 : un seul TEACHER-* → update conservatrice, pas de TEACHERS-*
   {
     const teachers = [
       {
@@ -106,6 +107,23 @@ function run() {
     assert.ok(isTeacherTwinCode(next[0].id));
     assert.ok(!next.some((t) => isTeachersCode(t.id)));
     assert.strictEqual(next[0].name, "StillLegacy");
+  }
+
+  // §4.1.c — plusieurs TEACHER-* : no-op tracé, pas de twins[0]
+  {
+    const teachers = [
+      { id: "TEACHER-a", userId: "USERS-1", schoolCode: "SCH-001", name: "A" },
+      { id: "TEACHER-b", userId: "USERS-1", schoolCode: "SCH-001", name: "B" },
+    ];
+    const skips = [];
+    const next = service.upsertTeacherFromUser(teachers, teacherUser({ lastName: "X" }), { skips });
+    assert.strictEqual(next.length, 2);
+    assert.strictEqual(next.find((t) => t.id === "TEACHER-a").name, "A");
+    assert.strictEqual(next.find((t) => t.id === "TEACHER-b").name, "B");
+    assert.ok(!next.some((t) => isTeachersCode(t.id)));
+    assert.strictEqual(skips.length, 1);
+    assert.strictEqual(skips[0].code, "TEACHER_HISTORICAL_MULTI_TWIN");
+    assert.strictEqual(skips[0].action, "noop");
   }
 
   // Historique jumelé : réutilise TEACHERS-*, ne crée pas, ne fusionne pas
@@ -140,22 +158,74 @@ function run() {
     assert.ok(next.some((t) => isTeachersCode(t.id) && t.schoolCode === "SCH-001"));
   }
 
-  // Bulk sync : ambiguïté historique → skip (pas de choix silencieux, pas de fail PUT)
+  // §4.1.b — PUT étranger : skip tracé, fiches inchangées
   {
     const teachers = [
       { id: "TEACHERS-a", userId: "USERS-1", schoolCode: "SCH-001" },
       { id: "TEACHERS-b", userId: "USERS-1", schoolCode: "SCH-001" },
     ];
-    const synced = service.syncTeachersFromUserAccounts({
-      users: [teacherUser()],
-      teachers,
-      contacts: [],
-      assignments: [],
-    });
+    const synced = service.syncTeachersFromUserAccounts(
+      {
+        users: [teacherUser()],
+        teachers,
+        contacts: [],
+        assignments: [],
+      },
+      {
+        previousUsers: [teacherUser()],
+        previousTeachers: teachers,
+        nextUsers: [teacherUser()],
+        nextTeachers: teachers,
+        usersTouched: true,
+        teachersTouched: true,
+      },
+    );
     assert.strictEqual(synced.teachers.length, 2, "historique multi inchangé");
     assert.deepStrictEqual(
       synced.teachers.map((t) => t.id).sort(),
       ["TEACHERS-a", "TEACHERS-b"],
+    );
+    assert.ok(
+      synced.skips.some((s) => s.code === "TEACHER_CANON_AMBIGUOUS_SKIPPED_UNRELATED"),
+    );
+  }
+
+  // §4.1.b — écriture liée (nouveau TEACHERS-* injecté) → throw
+  {
+    const previousTeachers = [
+      { id: "TEACHERS-a", userId: "USERS-1", schoolCode: "SCH-001" },
+    ];
+    const nextTeachers = [
+      { id: "TEACHERS-a", userId: "USERS-1", schoolCode: "SCH-001" },
+      { id: "TEACHERS-b", userId: "USERS-1", schoolCode: "SCH-001" },
+    ];
+    assert.ok(
+      isIdentityRelatedWrite(teacherUser(), {
+        previousUsers: [teacherUser()],
+        previousTeachers,
+        nextUsers: [teacherUser()],
+        nextTeachers,
+        usersTouched: false,
+        teachersTouched: true,
+      }),
+    );
+    assert.throws(
+      () =>
+        service.syncTeachersFromUserAccounts(
+          {
+            users: [teacherUser()],
+            teachers: nextTeachers,
+            contacts: [],
+            assignments: [],
+          },
+          {
+            previousUsers: [teacherUser()],
+            previousTeachers,
+            usersTouched: false,
+            teachersTouched: true,
+          },
+        ),
+      (error) => error.code === "TEACHER_CANON_AMBIGUOUS",
     );
   }
 

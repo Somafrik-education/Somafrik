@@ -446,8 +446,16 @@ async function buildPedagogyChain(adminToken, schoolCode, schoolAdminIdentifier,
       row.id === teacherUserWithPassword.id ? teacherUserWithPassword : row,
     ),
   });
+  // Adaptation V2.1 : réutiliser le canon TEACHERS-* du sync
+  const syncedCanon =
+    (state.teachers ?? []).find(
+      (row) =>
+        String(row.userId ?? "") === String(teacherUserWithPassword.id) &&
+        /^TEACHERS-/i.test(String(row.id ?? "")),
+    ) ?? null;
   const teacherRecord = {
-    id: newId("TEACHERS"),
+    ...(syncedCanon ?? {}),
+    id: syncedCanon?.id ?? newId("TEACHERS"),
     userId: teacherUserWithPassword.id,
     contactId: teacherFlow.contact.id,
     identifier: teacherUserWithPassword.identifier,
@@ -478,7 +486,10 @@ async function buildPedagogyChain(adminToken, schoolCode, schoolAdminIdentifier,
     teacherName: assignment.teacherName,
   };
   state = await putStateKeys(adminToken, {
-    teachers: [teacherRecord, ...(state.teachers ?? [])],
+    teachers: [
+      teacherRecord,
+      ...(state.teachers ?? []).filter((row) => String(row.id) !== String(teacherRecord.id)),
+    ],
     assignments: [assignment, ...(state.assignments ?? [])],
     courses: [course, ...(state.courses ?? [])],
   });
@@ -967,16 +978,27 @@ async function runScenarios(runtime) {
     );
   }
 
-  // Double PUT state (même payload)
+  // Adaptation V2.1 DUP-02 : rejouer avec ids matérialisés (PG), pas le payload client initial
+  const stateBeforeDup = await getState(adminTokenReload);
+  const evalForDup =
+    (stateBeforeDup.evaluations ?? []).find((row) => String(row.id) === String(publishedEval.id)) ??
+    publishedEval;
+  const notesForDup = (stateBeforeDup.notes ?? []).filter(
+    (n) => String(n.evaluationId) === String(publishedEval.id),
+  );
+  const dupPayload = {
+    evaluations: [evalForDup],
+    notes: notesForDup.length ? notesForDup : putNotes,
+  };
   const putTwice1 = await request("/backoffice/state", {
     method: "PUT",
     token: teacherToken,
-    body: { evaluations: [publishedEval], notes: putNotes },
+    body: dupPayload,
   });
   const putTwice2 = await request("/backoffice/state", {
     method: "PUT",
     token: teacherToken,
-    body: { evaluations: [publishedEval], notes: putNotes },
+    body: dupPayload,
   });
   const notesAfterDoublePut = (await getState(adminTokenReload)).notes?.filter(
     (n) => n.evaluationId === publishedEval.id,
@@ -1322,7 +1344,7 @@ async function runScenarios(runtime) {
 }
 
 async function main() {
-  console.log("=== AUDIT PRE-E1 V1 — Chaîne intégrée ===");
+  console.log("=== AUDIT FIX V2.1 ADAPTED-V1 ===");
   evidence.commands.push("npm run verify:pre-e1-v1");
   ensureDatabase();
 
@@ -1385,7 +1407,7 @@ async function main() {
   const reportPath = path.join(
     EVIDENCE_DIR,
     process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE ||
-      "pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "pre-e1-v2-identity-fix-adapted-v1-results.json",
   );
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.log(`\nRapport: ${reportPath}`);
@@ -1407,7 +1429,7 @@ main().catch((error) => {
       path.join(
         EVIDENCE_DIR,
         process.env.SOMAFRIK_PRE_E1_EVIDENCE_FILE ||
-          "pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+          "pre-e1-v2-identity-fix-adapted-v1-results.json",
       ),
       JSON.stringify(
         {

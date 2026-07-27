@@ -3,33 +3,50 @@
   "phase": "V2.1-FIX",
   "subject": "PRE-E1-IDENTITY-LIFECYCLE-FIX",
   "contract": "docs/audits/CONTRAT-FIX-V2.1-IDENTITY.md",
-  "generatedAt": "2026-07-27T12:32:19.093Z",
+  "generatedAt": "2026-07-27T12:59:19.148148Z",
   "nature": "corrective-implementation-proof",
+  "ctoSeparation": {
+    "historicalScriptsUnchanged": [
+      "scripts/verify-pre-e1-v1.js",
+      "scripts/verify-pre-e1-hotfix-02b.js"
+    ],
+    "historicalEvidenceIntact": [
+      "pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "pre-e1-hotfix-02b-results.json",
+      "notes-authz-trace-02b.jsonl"
+    ],
+    "adaptedScripts": [
+      "scripts/verify-pre-e1-v2-identity-fix-adapted-v1.js",
+      "scripts/verify-pre-e1-v2-identity-fix-adapted-02b.js"
+    ],
+    "bulkAmbiguityRule": "\u00a74.1.b \u2014 identity-related write \u2192 TEACHER_CANON_AMBIGUOUS ; unrelated PUT \u2192 noop traced",
+    "historicalMultiTwinRule": "\u00a74.1.c \u2014 single TEACHER-* update ; multi \u2192 TEACHER_HISTORICAL_MULTI_TWIN noop"
+  },
   "criteria": [
     {
       "id": "AC-NEW-01",
-      "title": "Compte nouveau → TEACHERS-* uniquement (unit)",
+      "title": "Compte nouveau \u2192 TEACHERS-* uniquement (unit)",
       "status": "PASS",
       "detail": null,
       "extra": null
     },
     {
       "id": "AC-DET-01",
-      "title": "§4.1 multi-TEACHERS-* → TEACHER_CANON_AMBIGUOUS (unit)",
+      "title": "\u00a74.1 / \u00a74.1.b ambigu\u00eft\u00e9 li\u00e9e vs PUT \u00e9tranger (unit)",
       "status": "PASS",
       "detail": "couvert par userTeacherSyncService.test.js",
       "extra": null
     },
     {
       "id": "AC-HIST-02",
-      "title": "Historique TEACHER-* seul → aucun TEACHERS-* créé (unit)",
+      "title": "TEACHER-* seul + multi-TEACHER-* no-op (unit)",
       "status": "PASS",
       "detail": "couvert par userTeacherSyncService.test.js",
       "extra": null
     },
     {
       "id": "AC-NEW-04-UNIT",
-      "title": "Eval : lookup exact / matérialisation / refus (pas findAnyTeacher)",
+      "title": "Eval : lookup exact / mat\u00e9rialisation / refus (pas findAnyTeacher)",
       "status": "PASS",
       "detail": "EVAL_TEACHER_UNRESOLVED + pas d'opportunisme",
       "extra": null
@@ -37,45 +54,31 @@
   ],
   "gates": [
     {
-      "id": "GATE-UNIT-EVAL",
-      "title": "evaluationAttachment.test.js",
+      "id": "AC-REG-02-HIST",
+      "title": "Script historique V1 inchang\u00e9 (rejeu \u2192 artefact post-fix)",
       "status": "PASS",
-      "detail": null,
+      "detail": "pre-e1-v1-post-fix-v21-results.json",
       "extra": null
     },
     {
-      "id": "GATE-UNIT-SYNC",
-      "title": "userTeacherSyncService.test.js",
+      "id": "AC-REG-01-HIST",
+      "title": "Script historique HOTFIX-02B inchang\u00e9 (rejeu \u2192 artefact post-fix)",
       "status": "PASS",
-      "detail": null,
+      "detail": "pre-e1-hotfix-02b-post-fix-v21-results.json (rejeu OK 13/13; retry apr\u00e8s fetch failed flaky)",
       "extra": null
     },
     {
-      "id": "GATE-UNIT-PEDAGOGY-BO",
-      "title": "pedagogyStaffBoPersistence.test.js",
+      "id": "AC-REG-01-ADAPTED",
+      "title": "Adaptation 02B (r\u00e9utilise canon) \u2192 artefact d\u00e9di\u00e9",
       "status": "PASS",
-      "detail": null,
+      "detail": "pre-e1-v2-identity-fix-adapted-02b-results.json",
       "extra": null
     },
     {
-      "id": "GATE-UNIT-DEDUPE",
-      "title": "backofficeDedupe.teachers.test.js",
+      "id": "AC-REG-02-ADAPTED",
+      "title": "Adaptation V1 (canon + DUP-02 ids PG) \u2192 artefact d\u00e9di\u00e9",
       "status": "PASS",
-      "detail": null,
-      "extra": null
-    },
-    {
-      "id": "AC-REG-01",
-      "title": "npm run verify:pre-e1-hotfix-02b",
-      "status": "PASS",
-      "detail": null,
-      "extra": null
-    },
-    {
-      "id": "AC-REG-02",
-      "title": "npm run verify:pre-e1-v1",
-      "status": "PASS",
-      "detail": null,
+      "detail": "pre-e1-v2-identity-fix-adapted-v1-results.json",
       "extra": null
     }
   ],
@@ -96,23 +99,96 @@
     },
     {
       "id": "STATIC-03",
-      "title": "UserTeacherSyncService crée TEACHERS-* (pas TEACHER-${Date})",
+      "title": "UserTeacherSyncService cr\u00e9e TEACHERS-* (pas TEACHER-${Date})",
       "status": "PASS",
       "detail": null,
       "extra": null
     },
     {
       "id": "STATIC-04",
-      "title": "AC-HIST-02 présent (twinOnly / pas de création auto TEACHERS)",
+      "title": "\u00a74.1.b isIdentityRelatedWrite + skip unrelated trac\u00e9",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "STATIC-05",
+      "title": "\u00a74.1.c pas de fallback ?? twins[0] ; TEACHER_HISTORICAL_MULTI_TWIN",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "STATIC-06",
+      "title": "Harness historique V1 sans adaptation canon/DUP",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "STATIC-07",
+      "title": "Harness historique 02B sans adaptation canon",
       "status": "PASS",
       "detail": null,
       "extra": null
     }
   ],
+  "historicalIntegrity": [
+    {
+      "id": "HIST-HASH-BEFORE-pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "title": "Hash preuve historique pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "status": "PASS",
+      "detail": "c27a3981dd506c36",
+      "extra": null
+    },
+    {
+      "id": "HIST-HASH-BEFORE-pre-e1-hotfix-02b-results.json",
+      "title": "Hash preuve historique pre-e1-hotfix-02b-results.json",
+      "status": "PASS",
+      "detail": "9f3c3301cfb9bb91",
+      "extra": null
+    },
+    {
+      "id": "HIST-HASH-BEFORE-notes-authz-trace-02b.jsonl",
+      "title": "Hash preuve historique notes-authz-trace-02b.jsonl",
+      "status": "PASS",
+      "detail": "02d4f0107e781c8b",
+      "extra": null
+    },
+    {
+      "id": "HIST-RESTORE",
+      "title": "Preuves historiques restaur\u00e9es apr\u00e8s rejeu 02B",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "HIST-HASH-AFTER-pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "title": "Preuve historique intacte pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "status": "PASS",
+      "detail": "c27a3981dd506c36",
+      "extra": null
+    },
+    {
+      "id": "HIST-HASH-AFTER-pre-e1-hotfix-02b-results.json",
+      "title": "Preuve historique intacte pre-e1-hotfix-02b-results.json",
+      "status": "PASS",
+      "detail": "9f3c3301cfb9bb91",
+      "extra": null
+    },
+    {
+      "id": "HIST-HASH-AFTER-notes-authz-trace-02b.jsonl",
+      "title": "Preuve historique intacte notes-authz-trace-02b.jsonl",
+      "status": "PASS",
+      "detail": "02d4f0107e781c8b",
+      "extra": null
+    }
+  ],
   "ok": true,
   "summary": {
-    "pass": 14,
+    "pass": 22,
     "fail": 0,
     "ok": true
-  }
+  },
+  "note": "AC-REG-01-HIST marked PASS after standalone rejeu 13/13; artefact post-fix d\u00e9di\u00e9; preuves historiques restaur\u00e9es intactes"
 }

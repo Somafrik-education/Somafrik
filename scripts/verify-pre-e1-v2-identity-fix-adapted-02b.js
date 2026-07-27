@@ -18,8 +18,8 @@ const { Pool } = require(path.join(__dirname, "..", "backend", "node_modules", "
 const ROOT = path.join(__dirname, "..");
 const BACKEND_DIR = path.join(ROOT, "backend");
 const EVIDENCE_DIR = path.join(ROOT, "docs", "audits", "evidence");
-const TRACE_FILE = path.join(EVIDENCE_DIR, "notes-authz-trace-02b.jsonl");
-const OUT_FILE = path.join(EVIDENCE_DIR, "pre-e1-hotfix-02b-results.json");
+const TRACE_FILE = path.join(EVIDENCE_DIR, "notes-authz-trace-v2-identity-fix-adapted-02b.jsonl");
+const OUT_FILE = path.join(EVIDENCE_DIR, "pre-e1-v2-identity-fix-adapted-02b-results.json");
 const DATABASE_URL =
   process.env.DATABASE_URL ||
   "postgresql://somafrik:somafrik@127.0.0.1:5432/somafrik_pre_e1_02b";
@@ -318,8 +318,16 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
       row.id === teacherUser.id ? teacherUser : row,
     ),
   });
+  // Adaptation V2.1 : réutiliser le canon TEACHERS-* du sync (pas de second id)
+  const syncedCanon =
+    (state.teachers ?? []).find(
+      (row) =>
+        String(row.userId ?? "") === String(teacherUser.id) &&
+        /^TEACHERS-/i.test(String(row.id ?? "")),
+    ) ?? null;
   const teachersRecord = {
-    id: newId("TEACHERS"),
+    ...(syncedCanon ?? {}),
+    id: syncedCanon?.id ?? newId("TEACHERS"),
     userId: teacherUser.id,
     contactId: teacherFlow.contact.id,
     identifier: teacherUser.identifier,
@@ -340,7 +348,10 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
     academicYear: "2025-2026",
   };
   await putStateKeys(adminToken, {
-    teachers: [teachersRecord, ...(state.teachers ?? [])],
+    teachers: [
+      teachersRecord,
+      ...(state.teachers ?? []).filter((row) => String(row.id) !== String(teachersRecord.id)),
+    ],
     assignments: [assignment, ...(state.assignments ?? [])],
     courses: [
       {
@@ -365,7 +376,7 @@ async function lastTrace(token) {
 }
 
 async function main() {
-  console.log("=== VERIFY HOTFIX-PRE-E1-02B ===");
+  console.log("=== VERIFY FIX V2.1 ADAPTED-02B ===");
   ensureDatabase();
   const child = startBackend();
   const evidence = { pg: {}, posts: [], traces: [] };
