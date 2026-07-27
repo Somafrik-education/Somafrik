@@ -100,15 +100,26 @@ feat(eleves): C1.8a — valider inscription et affecter une classe
 
 ## 5. Documentation (obligatoire)
 
-| Changement | Documents à mettre à jour |
-|------------|---------------------------|
-| Fonctionnalité / phase | [ROADMAP.md](./ROADMAP.md), [CHANGELOG.md](./CHANGELOG.md) |
-| Architecture / sous-système | [ARCHITECTURE.md](./ARCHITECTURE.md) |
-| Décision durable | [DECISIONS.md](./DECISIONS.md) |
-| Jalon version | [RELEASES.md](./RELEASES.md) |
+### Règle de gouvernance
+
+> **Aucune PR fonctionnelle n’est considérée comme terminée tant que la documentation de gouvernance n’est pas mise à jour lorsque cela est nécessaire.**
+
+Ainsi, la documentation évolue **au même rythme** que le code.
+
+| Changement | Document à mettre à jour |
+|------------|--------------------------|
+| Nouvelle fonctionnalité / phase | [ROADMAP.md](./ROADMAP.md) |
+| Nouvelle release / jalon version | [RELEASES.md](./RELEASES.md) |
+| Changement observable pour l’utilisateur | [CHANGELOG.md](./CHANGELOG.md) |
+| Décision d’architecture | [DECISIONS.md](./DECISIONS.md) |
+| Évolution d’architecture / sous-système | [ARCHITECTURE.md](./ARCHITECTURE.md) |
+| Stratégie de tests / gates | [TESTING.md](./TESTING.md) |
+| Contrôle sécurité / secrets / RBAC | [SECURITY.md](./SECURITY.md) |
+| Déploiement / incident / runbook | [OPERATIONS.md](./OPERATIONS.md) |
+| Schéma / migration / contraintes PG | [DATABASE.md](./DATABASE.md) |
 | Lot Design System | `docs/ux/design-system/SUIVI-MIGRATIONS.md` + contrat/rapport |
 
-Une PR qui change le comportement **sans** doc est considérée incomplète.
+Une PR qui change le comportement **sans** la doc requise est **incomplète** et ne doit pas être mergée.
 
 ---
 

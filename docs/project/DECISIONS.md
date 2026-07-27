@@ -101,10 +101,10 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | | |
 |--|--|
 | **Date** | 2026-07-26 |
-| **Décision** | `docs/project/` est la gouvernance officielle. Toute évolution fonctionnelle met à jour ROADMAP / CHANGELOG (et DECISIONS / RELEASES / ARCHITECTURE si concerné). |
+| **Décision** | `docs/project/` est la gouvernance officielle. Toute évolution fonctionnelle met à jour ROADMAP / CHANGELOG (et DECISIONS / RELEASES / ARCHITECTURE / TESTING / SECURITY / OPERATIONS / DATABASE si concerné). Aucune PR fonctionnelle n’est terminée sans cette mise à jour lorsque nécessaire. |
 | **Contexte** | Croissance du produit et des agents ; décisions perdues dans les fils de chat. |
 | **Alternatives** | Wiki externe seul ; Notion exclusif ; README unique. |
-| **Impact** | PR incomplète sans doc ; onboarding < 1 h via ARCHITECTURE + ROADMAP ; traçabilité phase ↔ release ↔ ADR. |
+| **Impact** | PR incomplète sans doc ; onboarding < 1 h via ARCHITECTURE + ROADMAP ; traçabilité phase ↔ release ↔ ADR ; runbooks ops/sécurité/tests versionnés. |
 | **Statut** | Acceptée |
 
 ---
