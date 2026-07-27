@@ -147,7 +147,8 @@ Extensions **autorisées uniquement** si nécessaire à la preuve V2.1 :
 > **Bornage CTO (PR #95) :** ID-04A et ID-04B sont obligatoires.  
 > Préservation d’une anomalie injectée ≠ création nominale.  
 > Q4 doit séparer **création** et **non-convergence** ; Q7 doit indiquer si la divergence existe **sans** fixture ou **seulement avec**.  
-> Sévérité globale tant que non revalidé : **MAJOR PROVISOIRE** (pas « MAJOR confirmée » globale).
+> **Revalidation CTO (2026-07-27) :** caractérisation **VALIDÉE** · `PRE-E1-IDENTITY-LIFECYCLE` = **MAJOR CONFIRMÉE — décision CTO**.  
+> Correctif métier / plan correctif : **non autorisés** à ce stade.
 
 #### Réserve CTO — ID-06 (2026-07-27)
 

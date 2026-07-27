@@ -1077,8 +1077,9 @@ async function main() {
     const synthesis = {
       debtId: "PRE-E1-IDENTITY-LIFECYCLE",
       severityDocumented: "MAJOR",
-      severityGlobal: "MAJOR_PROVISOIRE",
-      characterization: "bornée_CTO",
+      severityGlobal: "MAJOR_CONFIRMEE_DECISION_CTO",
+      severityLabel: "MAJOR CONFIRMÉE — décision CTO",
+      characterization: "validee_CTO_bornee",
       results: {
         nonConvergencePreexistingOrInjected: nonConvergenceConfirmed
           ? "CONFIRMÉE"
@@ -1094,12 +1095,19 @@ async function main() {
         q7DivergenceWithoutFixture: q7NominalStatus,
       },
       factualSummary:
-        "Sous état jumelé injecté (ID-04B), le système ne fusionne pas TEACHER-* / TEACHERS-* et la divergence evaluation JSON↔PG peut apparaître. La création nominale spontanée d’un jumeau (ID-04A) est classée séparément et ne doit pas être déduite de la fixture. Sévérité globale : MAJOR PROVISOIRE jusqu’à bornage CTO final.",
+        "ID-04A : PUT contact+user crée TEACHER-* ; fiche pédagogique ajoute TEACHERS-* ; coexistence sans injection harness. ID-04B : non-fusion sous jumeau injecté. Divergence evaluation JSON↔PG confirmée en nominal et sous fixture. Sévérité : MAJOR CONFIRMÉE — décision CTO (revalidation). Correctif non autorisé à ce stade.",
+      ctoRevalidation: {
+        date: "2026-07-27",
+        characterization: "VALIDEE",
+        bounding: "SATISFAIT",
+        correctivePlan: "NON_AUTORISE",
+        implementation: "INTERDITE",
+      },
       noCorrectivePlanAuthorized: true,
-      noMergeClaimOfMajorConfirmed: true,
+      noMergeClaimOfMajorConfirmed: false,
       studentCodeScope: "hors périmètre décisionnel (ID-06 contexte seulement)",
       nextStepAllowed:
-        "Revue CTO après ce bornage — aucun correctif proposé ni commencé",
+        "Après merge : dossier de cadrage plan correctif minimal V2.1 OU contrat prochain sujet V2 — arbitrage CTO ; pas d’implémentation",
     };
 
     const payload = {
