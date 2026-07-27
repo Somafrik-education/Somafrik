@@ -138,9 +138,16 @@ Extensions **autorisées uniquement** si nécessaire à la preuve V2.1 :
 | **ID-01** | Création / sync enseignant BO nominal (post-02B) | Snapshot : ids JSON `teachers[]` · `teacher_code` PG · `users.user_code` · `teachers.user_id` |
 | **ID-02** | Affectation classe+matière puis lecture `teacher_assignments` | `assignment.teacherId` JSON vs `teachers.id` / `teacher_code` PG |
 | **ID-03** | Auth enseignant + `POST /api/notes` nominal | Identité JWT / lookup · `grantedBy` · `evaluations.teacher_id` |
-| **ID-04** | Présence éventuelle d’un jumeau `TEACHER-*` à côté de `TEACHERS-*` | Comptage fiches · dedupe · non-fusion |
+| **ID-04** | Présence éventuelle d’un jumeau `TEACHER-*` à côté de `TEACHERS-*` | Voir **ID-04A** / **ID-04B** (bornage CTO) |
+| **ID-04A** | Parcours **nominal sans** création manuelle de jumeau | Observer si `TEACHER-*` apparaît spontanément (point d’écriture à tracer) |
+| **ID-04B** | État **préexistant** avec jumeau injecté | Vérifier persistance / non-fusion et effets (dont Q7) |
 | **ID-05** | Replay sync identique (idempotence identité) | Pas de 3ᵉ fiche / pas de nouveau `teachers` row injustifié |
 | **ID-06** | Comparaison élève (**borne / contexte**) | `students.student_code` vs id JSON — constat contextuel uniquement |
+
+> **Bornage CTO (PR #95) :** ID-04A et ID-04B sont obligatoires.  
+> Préservation d’une anomalie injectée ≠ création nominale.  
+> Q4 doit séparer **création** et **non-convergence** ; Q7 doit indiquer si la divergence existe **sans** fixture ou **seulement avec**.  
+> Sévérité globale tant que non revalidé : **MAJOR PROVISOIRE** (pas « MAJOR confirmée » globale).
 
 #### Réserve CTO — ID-06 (2026-07-27)
 

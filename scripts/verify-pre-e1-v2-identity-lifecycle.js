@@ -2,11 +2,15 @@
  * AUDIT PRE-E1 V2.1 — Caractérisation PRE-E1-IDENTITY-LIFECYCLE
  *
  * Aucune correction métier. Produit une preuve machine + classifications
- * confirmé / infirmé / indéterminé pour Q1–Q7 et ID-01…ID-06.
+ * confirmé / infirmé / indéterminé pour Q1–Q7 et ID-01…ID-06
+ * (ID-04 scindé en ID-04A nominal / ID-04B fixture jumelle).
  *
  *   npm run verify:pre-e1-v2-identity
  *
  * Base attendue : develop post-094d5017 / post merge contrat V2.1.
+ *
+ * Distinction CTO :
+ *   Préservation d'une anomalie injectée ≠ création nominale de l'anomalie
  */
 const fs = require("fs");
 const path = require("path");
@@ -57,11 +61,15 @@ const questions = [];
 const evidence = {
   baseCommitHint: "post-094d5017 / develop@contrat-V2.1",
   schoolCode: null,
+  phases: { nominal: {}, fixture: {} },
   identities: {},
   postgres: {},
   posts: [],
   traces: [],
   studentContext: null,
+  bounding: {
+    note: "ID-04A = sans injection manuelle de jumeau ; ID-04B = jumeau injecté",
+  },
 };
 
 function classify(bucket, id, title, classification, detail = null, extra = null) {
@@ -271,7 +279,7 @@ async function setupSchool(superToken, stamp) {
   };
 }
 
-async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) {
+async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp, { injectTwin = false } = {}) {
   let state = await getState(adminToken);
   const className = `V21-${stamp}`;
   const subject = "Mathématiques";
@@ -324,7 +332,10 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
     studentIds.push(student.id);
   }
 
+  // --- Snapshot avant toute fiche teachers pédagogique (points d'écriture contact/user) ---
   state = await getState(adminToken);
+  const teachersBeforeContact = (state.teachers ?? []).map((t) => t.id);
+
   const teacherFlow = saveContactWithOptionalUserAccount(
     {
       id: newId("CONTACT"),
@@ -352,12 +363,20 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
   };
   const teacherPatch = { ...teacherFlow.patch };
   delete teacherPatch.auditLog;
+
+  // Point d'écriture A : contact + user (peut créer spontanément une fiche TEACHER-*)
   state = await putStateKeys(adminToken, {
     ...teacherPatch,
     users: teacherFlow.patch.users.map((row) =>
       row.id === teacherUser.id ? teacherUser : row,
     ),
   });
+  state = await getState(adminToken);
+  const teachersAfterContact = (state.teachers ?? []).filter(
+    (row) =>
+      String(row.userId) === String(teacherUser.id) ||
+      normalize(row.identifier) === normalize(teacherUser.identifier),
+  );
 
   const teachersRecord = {
     id: newId("TEACHERS"),
@@ -370,19 +389,24 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
     schoolCode,
     mainSubject: subject,
   };
-  // Jumeau TEACHER-* (même user / identifier) — fixture d'observation ID-04, sans fusion métier
-  const twinTeacher = {
-    id: `TEACHER-${stamp}`,
-    userId: teacherUser.id,
-    contactId: teacherFlow.contact.id,
-    identifier: teacherUser.identifier,
-    publicId: teacherUser.publicId || teacherUser.identifier,
-    firstName: teacherUser.firstName,
-    lastName: teacherUser.lastName,
-    name: teacherUser.lastName,
-    schoolCode,
-    mainSubject: subject,
-  };
+
+  // Point d'écriture B : fiche pédagogique TEACHERS-* + affectation (sans jumeau injecté en 04A)
+  const twinTeacher = injectTwin
+    ? {
+        id: `TEACHER-INJECT-${stamp}`,
+        userId: teacherUser.id,
+        contactId: teacherFlow.contact.id,
+        identifier: teacherUser.identifier,
+        publicId: teacherUser.publicId || teacherUser.identifier,
+        firstName: teacherUser.firstName,
+        lastName: teacherUser.lastName,
+        name: teacherUser.lastName,
+        schoolCode,
+        mainSubject: subject,
+        _harnessInjected: true,
+      }
+    : null;
+
   const assignment = {
     id: newId("ASSIGN"),
     teacherId: teachersRecord.id,
@@ -393,8 +417,13 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
     schoolCode,
     academicYear: "2025-2026",
   };
+
+  const teachersPayload = injectTwin
+    ? [teachersRecord, twinTeacher, ...(state.teachers ?? [])]
+    : [teachersRecord, ...(state.teachers ?? [])];
+
   await putStateKeys(adminToken, {
-    teachers: [teachersRecord, twinTeacher, ...(state.teachers ?? [])],
+    teachers: teachersPayload,
     assignments: [assignment, ...(state.assignments ?? [])],
     courses: [
       {
@@ -410,6 +439,7 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
       ...(state.courses ?? []),
     ],
   });
+
   return {
     className,
     subject,
@@ -419,6 +449,20 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
     teachersRecord,
     twinTeacher,
     assignment,
+    injectTwin: Boolean(injectTwin),
+    writeTrace: {
+      teachersBeforeContact,
+      afterContactUserPut: teachersAfterContact.map((t) => ({
+        id: t.id,
+        userId: t.userId,
+        identifier: t.identifier,
+        sourceHint: "put_state_after_contact_user_account",
+      })),
+      pedagogicalPut: {
+        teachersId: teachersRecord.id,
+        injectedTwinId: twinTeacher?.id ?? null,
+      },
+    },
   };
 }
 
@@ -435,8 +479,140 @@ function isTeacherTwinCode(code) {
   return /^TEACHER-/i.test(s) && !/^TEACHERS-/i.test(s);
 }
 
+function teachersForActor(state, teacherUser) {
+  return (state.teachers ?? []).filter(
+    (row) =>
+      String(row.userId) === String(teacherUser.id) ||
+      normalize(row.identifier) === normalize(teacherUser.identifier),
+  );
+}
+
+async function pgTeachersForActor(schoolCode, teacherUserId, extraCodes = []) {
+  const codes = extraCodes.filter(Boolean);
+  if (codes.length === 0) {
+    return pgQuery(
+      `SELECT t.id, t.teacher_code, t.user_id, u.user_code, u.role
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       JOIN schools s ON s.id = t.school_id
+       WHERE s.school_code = $1 AND u.user_code = $2`,
+      [schoolCode, teacherUserId],
+    );
+  }
+  return pgQuery(
+      `SELECT t.id, t.teacher_code, t.user_id, u.user_code, u.role
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       JOIN schools s ON s.id = t.school_id
+       WHERE s.school_code = $1
+         AND (u.user_code = $2 OR t.teacher_code = ANY($3::text[]))`,
+      [schoolCode, teacherUserId, codes],
+    );
+}
+
+async function fetchEvalTeacherRows(schoolCode, evaluationId) {
+  let evalRows = await pgQuery(
+    `SELECT e.id, e.teacher_id, t.teacher_code
+     FROM evaluations e
+     LEFT JOIN teachers t ON t.id = e.teacher_id
+     JOIN schools s ON s.id = e.school_id
+     WHERE s.school_code = $1
+     ORDER BY e.created_at DESC NULLS LAST
+     LIMIT 8`,
+    [schoolCode],
+  ).catch(() => []);
+  if (evaluationId) {
+    const exact = evalRows.filter(
+      (row) => String(row.id) === String(evaluationId) || String(row.id).includes(String(evaluationId).slice(-8)),
+    );
+    if (exact.length) return exact;
+  }
+  return evalRows;
+}
+
+async function runNotesPath(school, chain, stamp, phaseLabel) {
+  const teacherToken = await login(
+    chain.teacherUser.identifier,
+    TEACHER_PASSWORD,
+    school.schoolCode,
+  );
+  const jwt = decodeJwtPayload(teacherToken);
+  let state = await getState(school.adminToken);
+  const storedTeacher =
+    (state.teachers ?? []).find((row) => String(row.id) === String(chain.teachersRecord.id)) ??
+    chain.teachersRecord;
+  const putSession = buildGradeEntrySession({
+    state,
+    author: {
+      id: chain.teacherUser.id,
+      identifier: chain.teacherUser.identifier,
+      firstName: chain.teacherUser.firstName,
+      lastName: chain.teacherUser.lastName,
+      role: "Enseignant",
+      schoolCode: school.schoolCode,
+    },
+    evaluationInput: {
+      schoolCode: school.schoolCode,
+      className: chain.className,
+      subject: chain.subject,
+      period: chain.period,
+      evaluationType: "Devoir",
+      title: `V21 ${phaseLabel} ${stamp}`,
+      date: todayPeriodDate(),
+      scale: 20,
+      coefficient: 1,
+      teacherId: storedTeacher.id,
+      teacherName: `${storedTeacher.firstName ?? ""} ${storedTeacher.lastName ?? ""}`.trim(),
+      status: "Publiée",
+    },
+    studentGrades: [
+      { studentId: chain.studentIds[0], value: 14 },
+      { studentId: chain.studentIds[1], value: 11 },
+    ],
+  });
+  if (!putSession.ok) throw new Error(putSession.error);
+  const putRes = await request("/backoffice/state", {
+    method: "PUT",
+    token: teacherToken,
+    body: {
+      evaluations: [putSession.evaluation],
+      notes: gradesToLegacyNotes(putSession.grades),
+    },
+  });
+  const student1 = (await getState(school.adminToken)).students?.find(
+    (row) => row.id === chain.studentIds[0],
+  );
+  const postBody = {
+    studentId: student1?.matricule ?? student1?.publicId ?? chain.studentIds[0],
+    subject: chain.subject,
+    className: chain.className,
+    schoolCode: school.schoolCode,
+    value: 16,
+    scale: 20,
+    coefficient: 1,
+    evaluationCoefficient: 1,
+    evaluationId: putSession.evaluation.id,
+    period: chain.period,
+    date: todayPeriodDate(),
+  };
+  const post1 = await request("/notes", { method: "POST", token: teacherToken, body: postBody });
+  const trace1 = await lastTrace(teacherToken);
+  const evalRows = await fetchEvalTeacherRows(school.schoolCode, putSession.evaluation.id);
+  return {
+    putStatus: putRes.status,
+    postStatus: post1.status,
+    grantedBy: trace1?.grantedBy ?? null,
+    jwt,
+    trace: trace1,
+    putSession,
+    evalRows,
+    jsonEvalTeacherId: putSession.evaluation?.teacherId ?? null,
+    jsonAssignmentTeacherId: chain.assignment.teacherId,
+  };
+}
+
 async function main() {
-  console.log("=== AUDIT PRE-E1 V2.1 — IDENTITY-LIFECYCLE (caractérisation) ===");
+  console.log("=== AUDIT PRE-E1 V2.1 — IDENTITY-LIFECYCLE (caractérisation bornée) ===");
   ensureDatabase();
   const child = startBackend();
   let harnessOk = true;
@@ -449,79 +625,56 @@ async function main() {
     } catch {
       superToken = await login(SUPERADMIN_ID, "1234");
     }
-    const stamp = Date.now();
-    const school = await setupSchool(superToken, stamp);
-    evidence.schoolCode = school.schoolCode;
-    const chain = await buildChain(
-      school.adminToken,
-      school.schoolCode,
-      school.schoolAdminIdentifier,
-      stamp,
+
+    // =====================================================================
+    // PHASE A — parcours nominal SANS injection manuelle de jumeau (ID-04A)
+    // =====================================================================
+    const stampA = Date.now();
+    const schoolA = await setupSchool(superToken, stampA);
+    evidence.schoolCode = schoolA.schoolCode;
+    const chainA = await buildChain(
+      schoolA.adminToken,
+      schoolA.schoolCode,
+      schoolA.schoolAdminIdentifier,
+      stampA,
+      { injectTwin: false },
     );
 
-    // ---------- ID-01 : snapshot après sync staff ----------
-    let state = await getState(school.adminToken);
-    const jsonTeachersForUser = (state.teachers ?? []).filter(
-      (row) =>
-        String(row.userId) === String(chain.teacherUser.id) ||
-        normalize(row.identifier) === normalize(chain.teacherUser.identifier),
-    );
-    const pgTeachers = await pgQuery(
-      `SELECT t.id, t.teacher_code, t.user_id, u.user_code, u.role
-       FROM teachers t
-       LEFT JOIN users u ON u.id = t.user_id
-       JOIN schools s ON s.id = t.school_id
-       WHERE s.school_code = $1
-         AND (t.teacher_code = $2 OR t.teacher_code = $3 OR u.user_code = $4)`,
-      [
-        school.schoolCode,
-        chain.teachersRecord.id,
-        chain.twinTeacher.id,
-        chain.teacherUser.id,
-      ],
-    );
-    const pgUsers = await pgQuery(
+    let stateA = await getState(schoolA.adminToken);
+    const jsonA = teachersForActor(stateA, chainA.teacherUser);
+    const pgA = await pgTeachersForActor(schoolA.schoolCode, chainA.teacherUser.id, [
+      chainA.teachersRecord.id,
+    ]);
+    const pgUsersA = await pgQuery(
       `SELECT id, user_code, role, school_id FROM users WHERE user_code = $1`,
-      [chain.teacherUser.id],
+      [chainA.teacherUser.id],
     );
-    evidence.identities.afterSync = {
-      boUser: {
-        id: chain.teacherUser.id,
-        identifier: chain.teacherUser.identifier,
-        role: chain.teacherUser.role,
-      },
-      jsonTeachers: jsonTeachersForUser.map((t) => ({
-        id: t.id,
-        userId: t.userId,
-        identifier: t.identifier,
-        publicId: t.publicId ?? null,
-      })),
-      pgTeachers,
-      pgUsers,
-    };
-    evidence.postgres.afterSync = { teachers: pgTeachers, users: pgUsers };
+    const pgCanonicalA = pgA.find(
+      (t) => String(t.teacher_code) === String(chainA.teachersRecord.id),
+    );
+    const spontaneousTwinsA = jsonA.filter((t) => isTeacherTwinCode(t.id));
+    const hasTeachersA = jsonA.some((t) => isTeachersCode(t.id));
+    const hasSpontaneousTwinA = spontaneousTwinsA.length > 0;
 
-    const hasTeachersJson = jsonTeachersForUser.some((t) => isTeachersCode(t.id));
-    const hasTwinJson = jsonTeachersForUser.some((t) => isTeacherTwinCode(t.id));
-    const pgCanonical = pgTeachers.find((t) => String(t.teacher_code) === String(chain.teachersRecord.id));
+    evidence.phases.nominal = {
+      writeTrace: chainA.writeTrace,
+      jsonTeachers: jsonA.map((t) => ({ id: t.id, userId: t.userId, identifier: t.identifier })),
+      pgTeachers: pgA,
+      pgUsers: pgUsersA,
+      spontaneousTeacherStarIds: spontaneousTwinsA.map((t) => t.id),
+      pedagogicalTeachersId: chainA.teachersRecord.id,
+    };
+
     classify(
       scenarios,
       "ID-01",
-      "Création / sync enseignant BO — snapshot multi-couches",
-      hasTeachersJson && pgCanonical && pgCanonical.user_id
-        ? "confirmé"
-        : "indéterminé",
-      `jsonTeachers=${jsonTeachersForUser.map((t) => t.id).join(",")} pgCodes=${pgTeachers
-        .map((t) => t.teacher_code)
-        .join(",")} user_id=${pgCanonical?.user_id ?? null}`,
-      {
-        meaning:
-          "confirmé = cycle nominal observable (fiche TEACHERS-* JSON + teacher PG + user_id) — pas une anomalie",
-      },
+      "Création / sync enseignant BO — snapshot multi-couches (nominal)",
+      hasTeachersA && pgCanonicalA && pgCanonicalA.user_id ? "confirmé" : "indéterminé",
+      `json=${jsonA.map((t) => t.id).join(",")} pg=${pgA.map((t) => t.teacher_code).join(",")} user_id=${pgCanonicalA?.user_id ?? null}`,
+      { phase: "nominal", meaning: "cycle TEACHERS-* + user_id observable" },
     );
 
-    // ---------- ID-02 : affectation JSON vs PG ----------
-    const pgAssignments = await pgQuery(
+    const pgAssignmentsA = await pgQuery(
       `SELECT ta.id, t.teacher_code, c.name AS class_name, sub.name AS subject_name, ta.status
        FROM teacher_assignments ta
        JOIN teachers t ON t.id = ta.teacher_id
@@ -529,446 +682,424 @@ async function main() {
        JOIN subjects sub ON sub.id = ta.subject_id
        JOIN schools s ON s.id = t.school_id
        WHERE s.school_code = $1 AND t.teacher_code = $2`,
-      [school.schoolCode, chain.teachersRecord.id],
+      [schoolA.schoolCode, chainA.teachersRecord.id],
     );
-    evidence.postgres.assignments = pgAssignments;
-    const jsonAssignment = (state.assignments ?? []).find(
-      (row) => String(row.id) === String(chain.assignment.id),
+    const jsonAssignmentA = (stateA.assignments ?? []).find(
+      (row) => String(row.id) === String(chainA.assignment.id),
     );
-    const assignAligned =
-      jsonAssignment &&
-      String(jsonAssignment.teacherId) === String(chain.teachersRecord.id) &&
-      pgAssignments.some(
+    const assignAlignedA =
+      jsonAssignmentA &&
+      String(jsonAssignmentA.teacherId) === String(chainA.teachersRecord.id) &&
+      pgAssignmentsA.some(
         (row) =>
-          row.class_name === chain.className &&
-          row.subject_name === chain.subject &&
-          row.status === "active" &&
-          String(row.teacher_code) === String(chain.teachersRecord.id),
+          row.class_name === chainA.className &&
+          row.subject_name === chainA.subject &&
+          row.status === "active",
       );
+    evidence.postgres.assignmentsNominal = pgAssignmentsA;
     classify(
       scenarios,
       "ID-02",
-      "Affectation JSON teacherId vs teacher_assignments PG",
-      assignAligned ? "confirmé" : "indéterminé",
-      `json.teacherId=${jsonAssignment?.teacherId} pg=${JSON.stringify(pgAssignments).slice(0, 220)}`,
-      {
-        meaning:
-          "confirmé = alignement observé sur TEACHERS-* pour l'affectation active (fait SoT local)",
-      },
+      "Affectation JSON teacherId vs teacher_assignments PG (nominal)",
+      assignAlignedA ? "confirmé" : "indéterminé",
+      `json.teacherId=${jsonAssignmentA?.teacherId} pg=${JSON.stringify(pgAssignmentsA).slice(0, 220)}`,
+      { phase: "nominal" },
     );
 
-    // ---------- ID-03 : auth + POST notes ----------
-    const teacherToken = await login(
-      chain.teacherUser.identifier,
-      TEACHER_PASSWORD,
-      school.schoolCode,
-    );
-    const jwt = decodeJwtPayload(teacherToken);
-    const me = await request("/backoffice/me", { token: teacherToken }).catch(() => ({
-      status: 0,
-      data: null,
-    }));
-    state = await getState(school.adminToken);
-    const storedTeacher =
-      (state.teachers ?? []).find((row) => String(row.id) === String(chain.teachersRecord.id)) ??
-      chain.teachersRecord;
-    const putSession = buildGradeEntrySession({
-      state,
-      author: {
-        id: chain.teacherUser.id,
-        identifier: chain.teacherUser.identifier,
-        firstName: chain.teacherUser.firstName,
-        lastName: chain.teacherUser.lastName,
-        role: "Enseignant",
-        schoolCode: school.schoolCode,
-      },
-      evaluationInput: {
-        schoolCode: school.schoolCode,
-        className: chain.className,
-        subject: chain.subject,
-        period: chain.period,
-        evaluationType: "Devoir",
-        title: `V21 PUT ${stamp}`,
-        date: todayPeriodDate(),
-        scale: 20,
-        coefficient: 1,
-        teacherId: storedTeacher.id,
-        teacherName: `${storedTeacher.firstName ?? ""} ${storedTeacher.lastName ?? ""}`.trim(),
-        status: "Publiée",
-      },
-      studentGrades: [
-        { studentId: chain.studentIds[0], value: 14 },
-        { studentId: chain.studentIds[1], value: 11 },
-      ],
-    });
-    if (!putSession.ok) throw new Error(putSession.error);
-    const putRes = await request("/backoffice/state", {
-      method: "PUT",
-      token: teacherToken,
-      body: {
-        evaluations: [putSession.evaluation],
-        notes: gradesToLegacyNotes(putSession.grades),
-      },
-    });
-    const student1 = (await getState(school.adminToken)).students?.find(
-      (row) => row.id === chain.studentIds[0],
-    );
-    const postBody = {
-      studentId: student1?.matricule ?? student1?.publicId ?? chain.studentIds[0],
-      subject: chain.subject,
-      className: chain.className,
-      schoolCode: school.schoolCode,
-      value: 16,
-      scale: 20,
-      coefficient: 1,
-      evaluationCoefficient: 1,
-      evaluationId: putSession.evaluation.id,
-      period: chain.period,
-      date: todayPeriodDate(),
-    };
-    const post1 = await request("/notes", { method: "POST", token: teacherToken, body: postBody });
-    const trace1 = await lastTrace(teacherToken);
-    evidence.posts.push({ status: post1.status, grantedBy: trace1?.grantedBy });
-    evidence.traces.push({
-      grantedBy: trace1?.grantedBy ?? null,
-      lookupValues: trace1?.lookupValues ?? trace1?.keys ?? null,
-      teacherId: trace1?.teacherId ?? null,
-    });
-    evidence.identities.session = {
+    const notesA = await runNotesPath(schoolA, chainA, stampA, "NOMINAL");
+    evidence.posts.push({ phase: "nominal", status: notesA.postStatus, grantedBy: notesA.grantedBy });
+    evidence.traces.push({ phase: "nominal", grantedBy: notesA.grantedBy });
+    evidence.postgres.evaluationsNominal = notesA.evalRows;
+    evidence.identities.sessionNominal = {
       jwt: {
-        sub: jwt.sub ?? jwt.id ?? null,
-        identifier: jwt.identifier ?? jwt.userCode ?? null,
-        role: jwt.role ?? null,
-        schoolCode: jwt.schoolCode ?? null,
-        classNames: jwt.classNames ?? jwt.assignedClasses ?? null,
+        sub: notesA.jwt.sub ?? notesA.jwt.id ?? null,
+        identifier: notesA.jwt.identifier ?? notesA.jwt.userCode ?? null,
+        role: notesA.jwt.role ?? null,
       },
-      meStatus: me.status,
-      meUser: me.data?.user
-        ? {
-            id: me.data.user.id,
-            identifier: me.data.user.identifier,
-            role: me.data.user.role,
-          }
-        : null,
     };
-    const evalPg = await pgQuery(
-      `SELECT id, teacher_id FROM evaluations WHERE id::text = $1 OR external_id = $1 LIMIT 5`,
-      [putSession.evaluation.id],
-    ).catch(async () =>
-      pgQuery(
-        `SELECT e.id, e.teacher_id, t.teacher_code
-         FROM evaluations e
-         LEFT JOIN teachers t ON t.id = e.teacher_id
-         JOIN schools s ON s.id = e.school_id
-         WHERE s.school_code = $1
-         ORDER BY e.created_at DESC NULLS LAST
-         LIMIT 5`,
-        [school.schoolCode],
-      ).catch(() => []),
-    );
-    let evalRows = evalPg;
-    if (!evalRows.length || !evalRows[0]?.teacher_code) {
-      evalRows = await pgQuery(
-        `SELECT e.id, e.teacher_id, t.teacher_code
-         FROM evaluations e
-         LEFT JOIN teachers t ON t.id = e.teacher_id
-         JOIN schools s ON s.id = e.school_id
-         WHERE s.school_code = $1
-         ORDER BY e.created_at DESC NULLS LAST
-         LIMIT 5`,
-        [school.schoolCode],
-      );
-    }
-    evidence.postgres.evaluations = evalRows;
-    const postOk = post1.status === 201;
     classify(
       scenarios,
       "ID-03",
-      "Auth enseignant + POST /api/notes — identités JWT / grantedBy / evaluation.teacher_id",
-      postOk ? "confirmé" : "indéterminé",
-      `HTTP ${post1.status} grantedBy=${trace1?.grantedBy} jwt.identifier=${jwt.identifier ?? jwt.userCode ?? jwt.sub} evalTeacher=${JSON.stringify(evalRows[0] ?? null)}`,
-      {
-        meaning:
-          "confirmé = parcours notes exécutable avec identités capturées (observation, pas verdict d'unicité)",
-      },
+      "Auth enseignant + POST /api/notes (nominal)",
+      notesA.postStatus === 201 ? "confirmé" : "indéterminé",
+      `HTTP ${notesA.postStatus} grantedBy=${notesA.grantedBy} eval=${JSON.stringify(notesA.evalRows[0] ?? null)}`,
+      { phase: "nominal" },
     );
 
-    // ---------- ID-04 : jumeaux TEACHER-* / TEACHERS-* ----------
-    state = await getState(school.adminToken);
-    const twinsJson = (state.teachers ?? []).filter(
-      (row) =>
-        String(row.userId) === String(chain.teacherUser.id) ||
-        normalize(row.identifier) === normalize(chain.teacherUser.identifier),
-    );
-    const twinIds = twinsJson.map((t) => t.id);
-    const bothPresentJson =
-      twinIds.some(isTeachersCode) && twinIds.some(isTeacherTwinCode);
-    const pgTwinCodes = await pgQuery(
-      `SELECT teacher_code, user_id FROM teachers t
-       JOIN schools s ON s.id = t.school_id
-       WHERE s.school_code = $1 AND (teacher_code = $2 OR teacher_code = $3)`,
-      [school.schoolCode, chain.teachersRecord.id, chain.twinTeacher.id],
-    );
-    evidence.identities.twins = { json: twinIds, pg: pgTwinCodes };
-    // Re-PUT pour confirmer non-fusion après dedupe serveur
-    await putStateKeys(school.adminToken, {
-      teachers: state.teachers,
-      assignments: state.assignments,
-      users: state.users,
-    });
-    const afterDedupe = await getState(school.adminToken);
-    const afterIds = (afterDedupe.teachers ?? [])
-      .filter(
-        (row) =>
-          String(row.userId) === String(chain.teacherUser.id) ||
-          normalize(row.identifier) === normalize(chain.teacherUser.identifier),
-      )
-      .map((t) => t.id);
-    const stillBoth =
-      afterIds.some(isTeachersCode) && afterIds.some(isTeacherTwinCode);
+    // ID-04A — création nominale (sans injection)
     classify(
       scenarios,
-      "ID-04",
-      "Jumeaux TEACHER-* et TEACHERS-* coexistent sans fusion",
-      stillBoth || bothPresentJson ? "confirmé" : "infirmé",
-      `before=${twinIds.join(",")} afterDedupe=${afterIds.join(",")} pg=${pgTwinCodes
-        .map((r) => r.teacher_code)
-        .join(",")}`,
+      "ID-04A",
+      "Parcours nominal sans injection — un jumeau TEACHER-* apparaît-il spontanément avec TEACHERS-* ?",
+      hasSpontaneousTwinA && hasTeachersA
+        ? "confirmé"
+        : !hasSpontaneousTwinA && hasTeachersA
+          ? "infirmé"
+          : "indéterminé",
+      `afterContact=${JSON.stringify(chainA.writeTrace.afterContactUserPut)} afterPedagogy=${jsonA
+        .map((t) => t.id)
+        .join(",")} spontaneousTwins=${spontaneousTwinsA.map((t) => t.id).join(",") || "(none)"}`,
       {
+        phase: "nominal",
         meaning:
-          "confirmé = écart d'identité multi-fiches reproductible (dette IDENTITY) ; infirmé = convergence observée",
+          "confirmé = création spontanée observée ; infirmé = seul TEACHERS-* (ou pas de TEACHER-*) après flux contact→user→TEACHERS-* ; indéterminé = inconclusive",
+        injectTwin: false,
       },
     );
 
-    // ---------- ID-05 : replay sync ----------
-    const countsBefore = await pgQuery(
+    // Q7 nominal — divergence sans fixture injectée
+    const evalCodeA = notesA.evalRows[0]?.teacher_code ?? null;
+    const jsonEvalA = notesA.jsonEvalTeacherId;
+    const divergenceNominal =
+      String(jsonEvalA) === String(chainA.teachersRecord.id) &&
+      evalCodeA != null &&
+      isTeacherTwinCode(evalCodeA);
+    const convergenceNominal =
+      String(jsonEvalA) === String(chainA.teachersRecord.id) &&
+      evalCodeA != null &&
+      String(evalCodeA) === String(chainA.teachersRecord.id);
+    classify(
+      scenarios,
+      "ID-04A-Q7",
+      "Divergence evaluation JSON↔PG sur parcours nominal (sans jumeau injecté)",
+      divergenceNominal ? "confirmé" : convergenceNominal ? "infirmé" : "indéterminé",
+      `evaluation.teacherId=${jsonEvalA} pg.teacher_code=${evalCodeA}`,
+      {
+        phase: "nominal",
+        meaning:
+          "confirmé = divergence sans injection ; infirmé = convergence TEACHERS-* ; indéterminé = autre cas",
+      },
+    );
+
+    // ID-05 replay sur nominal
+    const countsBeforeA = await pgQuery(
       `SELECT
          (SELECT count(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id
            WHERE s.school_code = $1 AND t.teacher_code = $2) AS teachers_canonical,
-         (SELECT count(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id
-           WHERE s.school_code = $1 AND t.teacher_code = $3) AS teachers_twin,
-         (SELECT count(*)::int FROM users u WHERE u.user_code = $4) AS users,
+         (SELECT count(*)::int FROM users u WHERE u.user_code = $3) AS users,
          (SELECT count(*)::int FROM teacher_assignments ta
            JOIN teachers t ON t.id = ta.teacher_id
            JOIN schools s ON s.id = t.school_id
            WHERE s.school_code = $1 AND t.teacher_code = $2) AS assignments`,
-      [
-        school.schoolCode,
-        chain.teachersRecord.id,
-        chain.twinTeacher.id,
-        chain.teacherUser.id,
-      ],
+      [schoolA.schoolCode, chainA.teachersRecord.id, chainA.teacherUser.id],
     );
-    const stateReplay = await getState(school.adminToken);
-    await putStateKeys(school.adminToken, {
-      teachers: stateReplay.teachers,
-      assignments: stateReplay.assignments,
-      users: stateReplay.users,
+    const stateReplayA = await getState(schoolA.adminToken);
+    await putStateKeys(schoolA.adminToken, {
+      teachers: stateReplayA.teachers,
+      assignments: stateReplayA.assignments,
+      users: stateReplayA.users,
     });
-    await putStateKeys(school.adminToken, {
-      teachers: stateReplay.teachers,
-      assignments: stateReplay.assignments,
-      users: stateReplay.users,
+    await putStateKeys(schoolA.adminToken, {
+      teachers: stateReplayA.teachers,
+      assignments: stateReplayA.assignments,
+      users: stateReplayA.users,
     });
-    const countsAfter = await pgQuery(
+    const countsAfterA = await pgQuery(
       `SELECT
          (SELECT count(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id
            WHERE s.school_code = $1 AND t.teacher_code = $2) AS teachers_canonical,
-         (SELECT count(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id
-           WHERE s.school_code = $1 AND t.teacher_code = $3) AS teachers_twin,
-         (SELECT count(*)::int FROM users u WHERE u.user_code = $4) AS users,
+         (SELECT count(*)::int FROM users u WHERE u.user_code = $3) AS users,
          (SELECT count(*)::int FROM teacher_assignments ta
            JOIN teachers t ON t.id = ta.teacher_id
            JOIN schools s ON s.id = t.school_id
            WHERE s.school_code = $1 AND t.teacher_code = $2) AS assignments`,
-      [
-        school.schoolCode,
-        chain.teachersRecord.id,
-        chain.twinTeacher.id,
-        chain.teacherUser.id,
-      ],
+      [schoolA.schoolCode, chainA.teachersRecord.id, chainA.teacherUser.id],
     );
-    evidence.postgres.replay = { before: countsBefore[0], after: countsAfter[0] };
-    const stable =
-      Number(countsAfter[0]?.teachers_canonical) === Number(countsBefore[0]?.teachers_canonical) &&
-      Number(countsAfter[0]?.users) === Number(countsBefore[0]?.users) &&
-      Number(countsAfter[0]?.assignments) === Number(countsBefore[0]?.assignments) &&
-      Number(countsAfter[0]?.teachers_canonical) === 1 &&
-      Number(countsAfter[0]?.users) === 1 &&
-      Number(countsAfter[0]?.assignments) === 1;
+    evidence.postgres.replayNominal = { before: countsBeforeA[0], after: countsAfterA[0] };
+    const stableA =
+      Number(countsAfterA[0]?.teachers_canonical) === 1 &&
+      Number(countsAfterA[0]?.users) === 1 &&
+      Number(countsAfterA[0]?.assignments) === 1 &&
+      Number(countsAfterA[0]?.teachers_canonical) === Number(countsBeforeA[0]?.teachers_canonical);
     classify(
       scenarios,
       "ID-05",
-      "Replay sync identique — pas de prolifération injustifiée sur identité canonique",
-      stable ? "confirmé" : "indéterminé",
-      `before=${JSON.stringify(countsBefore[0])} after=${JSON.stringify(countsAfter[0])}`,
-      {
-        meaning:
-          "confirmé = idempotence sur TEACHERS-*/user/assignment (fait) ; ne tranche pas la dette jumeaux",
-      },
+      "Replay sync identique — idempotence identité canonique (nominal)",
+      stableA ? "confirmé" : "indéterminé",
+      `before=${JSON.stringify(countsBeforeA[0])} after=${JSON.stringify(countsAfterA[0])}`,
+      { phase: "nominal" },
     );
 
-    // ---------- ID-06 : comparaison élève BORNE (contexte) ----------
-    state = await getState(school.adminToken);
-    const jsonStudent = (state.students ?? []).find((row) => row.id === chain.studentIds[0]);
+    // ID-06 contexte
+    stateA = await getState(schoolA.adminToken);
+    const jsonStudent = (stateA.students ?? []).find((row) => row.id === chainA.studentIds[0]);
     const pgStudents = await pgQuery(
-      `SELECT st.id, st.student_code, st.school_id
-       FROM students st
-       JOIN schools s ON s.id = st.school_id
-       WHERE s.school_code = $1
-       LIMIT 10`,
-      [school.schoolCode],
+      `SELECT st.id, st.student_code FROM students st
+       JOIN schools s ON s.id = st.school_id WHERE s.school_code = $1 LIMIT 10`,
+      [schoolA.schoolCode],
     );
     evidence.studentContext = {
       jsonStudent: jsonStudent
-        ? {
-            id: jsonStudent.id,
-            matricule: jsonStudent.matricule ?? null,
-            publicId: jsonStudent.publicId ?? null,
-            className: jsonStudent.className ?? null,
-          }
+        ? { id: jsonStudent.id, matricule: jsonStudent.matricule ?? null }
         : null,
-      pgStudents: pgStudents.map((s) => ({
-        id: s.id,
-        student_code: s.student_code,
-      })),
+      pgStudents: pgStudents.map((s) => ({ id: s.id, student_code: s.student_code })),
       note: "Contexte uniquement — hors décision PRE-E1-STUDENT-CODE-SCOPE",
     };
     classify(
       scenarios,
       "ID-06",
-      "Comparaison élève bornée (contexte) — pas de décision student_code",
+      "Comparaison élève bornée (contexte)",
       "contexte",
-      `json.id=${jsonStudent?.id} json.matricule=${jsonStudent?.matricule ?? jsonStudent?.publicId} pgCodes=${pgStudents
-        .map((s) => s.student_code)
+      `json.id=${jsonStudent?.id} pgCodes=${pgStudents.map((s) => s.student_code).join(",")}`,
+      { meaning: "Réserve CTO student_code" },
+    );
+
+    // =====================================================================
+    // PHASE B — état avec jumeau injecté (ID-04B) — école distincte
+    // =====================================================================
+    const stampB = Date.now() + 11;
+    const schoolB = await setupSchool(superToken, stampB);
+    const chainB = await buildChain(
+      schoolB.adminToken,
+      schoolB.schoolCode,
+      schoolB.schoolAdminIdentifier,
+      stampB,
+      { injectTwin: true },
+    );
+    let stateB = await getState(schoolB.adminToken);
+    const jsonB = teachersForActor(stateB, chainB.teacherUser);
+    const idsBeforeDedupeB = jsonB.map((t) => t.id);
+    await putStateKeys(schoolB.adminToken, {
+      teachers: stateB.teachers,
+      assignments: stateB.assignments,
+      users: stateB.users,
+    });
+    stateB = await getState(schoolB.adminToken);
+    const jsonBAfter = teachersForActor(stateB, chainB.teacherUser);
+    const idsAfterDedupeB = jsonBAfter.map((t) => t.id);
+    const bothAfterB =
+      idsAfterDedupeB.some(isTeachersCode) && idsAfterDedupeB.some(isTeacherTwinCode);
+    const injectedStillPresent = idsAfterDedupeB.includes(chainB.twinTeacher.id);
+    const pgB = await pgTeachersForActor(schoolB.schoolCode, chainB.teacherUser.id, [
+      chainB.teachersRecord.id,
+      chainB.twinTeacher.id,
+    ]);
+    evidence.phases.fixture = {
+      writeTrace: chainB.writeTrace,
+      injectedTwinId: chainB.twinTeacher.id,
+      jsonBeforeDedupe: idsBeforeDedupeB,
+      jsonAfterDedupe: idsAfterDedupeB,
+      pgTeachers: pgB,
+    };
+
+    classify(
+      scenarios,
+      "ID-04B",
+      "État préexistant avec jumeau injecté — persistance / non-fusion après dedupe",
+      bothAfterB && injectedStillPresent ? "confirmé" : "infirmé",
+      `injected=${chainB.twinTeacher.id} before=${idsBeforeDedupeB.join(",")} afterDedupe=${idsAfterDedupeB.join(",")} pg=${pgB
+        .map((r) => r.teacher_code)
         .join(",")}`,
       {
+        phase: "fixture",
         meaning:
-          "Réserve CTO : ni caractérisation complète STUDENT-CODE-SCOPE, ni arbitrage UNIQUE, ni modif modèle",
+          "confirmé = non-convergence sous état jumelé préexistant/injecté (≠ création nominale)",
+        injectTwin: true,
       },
     );
 
-    // ---------- Questions Q1–Q7 ----------
-    const distinctTeacherIds = new Set(afterIds.length ? afterIds : twinIds);
+    const notesB = await runNotesPath(schoolB, chainB, stampB, "FIXTURE");
+    evidence.posts.push({ phase: "fixture", status: notesB.postStatus, grantedBy: notesB.grantedBy });
+    evidence.postgres.evaluationsFixture = notesB.evalRows;
+    const evalCodeB = notesB.evalRows[0]?.teacher_code ?? null;
+    const jsonEvalB = notesB.jsonEvalTeacherId;
+    const divergenceFixture =
+      String(jsonEvalB) === String(chainB.teachersRecord.id) &&
+      evalCodeB != null &&
+      isTeacherTwinCode(evalCodeB);
+    const convergenceFixture =
+      String(jsonEvalB) === String(chainB.teachersRecord.id) &&
+      String(evalCodeB) === String(chainB.teachersRecord.id);
+    classify(
+      scenarios,
+      "ID-04B-Q7",
+      "Divergence evaluation JSON↔PG sous fixture jumelle injectée",
+      divergenceFixture ? "confirmé" : convergenceFixture ? "infirmé" : "indéterminé",
+      `evaluation.teacherId=${jsonEvalB} pg.teacher_code=${evalCodeB}`,
+      {
+        phase: "fixture",
+        meaning: "confirmé = divergence observée lorsque des jumeaux sont déjà présents",
+      },
+    );
+
+    // ---------- Questions bornées ----------
     const writePoints = [
-      "PUT /api/backoffice/state (users via contact+account)",
-      "PUT /api/backoffice/state (teachers TEACHERS-* + twin TEACHER-*)",
-      "PUT /api/backoffice/state (assignments → sync teacher_assignments)",
+      "PUT contact+user account (peut créer TEACHER-* spontané — à observer en 04A)",
+      "PUT teachers TEACHERS-* pédagogique + assignment",
+      "PUT teachers TEACHER-* injecté (04B seulement — fixture harness)",
       "login JWT (identifier ENS/user)",
-      "POST /api/notes (authz + evaluations.teacher_id)",
+      "POST /api/notes → evaluations.teacher_id",
     ];
     evidence.identities.writePoints = writePoints;
 
     classify(
       questions,
       "Q1",
-      "Combien d’identités distinctes pour un enseignant opérationnel ?",
-      distinctTeacherIds.size >= 2 ? "confirmé" : distinctTeacherIds.size === 1 ? "infirmé" : "indéterminé",
-      `nJsonTeacherIds=${distinctTeacherIds.size} ids=[${[...distinctTeacherIds].join(",")}] + user=${chain.teacherUser.id} + pgTeachers=${pgTeachers.length}`,
+      "Combien d’identités distinctes (nominal vs fixture) ?",
+      "confirmé",
+      `nominal.json=${jsonA.map((t) => t.id).join(",") || "(none)"} n=${jsonA.length} ; fixture.afterDedupe=${idsAfterDedupeB.join(",")} n=${idsAfterDedupeB.length}`,
+      {
+        meaning:
+          "Inventaire factuel des deux phases — ne fuse pas création et préservation",
+      },
     );
     classify(
       questions,
       "Q2",
-      "Points d’écriture qui créent/mutent chaque identité ?",
-      writePoints.length >= 3 ? "confirmé" : "indéterminé",
+      "Points d’écriture exacts (sans / avec injection) ?",
+      "confirmé",
       writePoints.join(" · "),
+      {
+        nominalAfterContact: chainA.writeTrace.afterContactUserPut,
+        fixtureInjectedId: chainB.twinTeacher.id,
+      },
     );
-    const canonicalCandidate = chain.teachersRecord.id;
-    const assignmentUsesCanonical =
-      String(jsonAssignment?.teacherId) === String(canonicalCandidate);
     classify(
       questions,
       "Q3",
-      "Existe-t-il une identité canonique de fait après HOTFIX-02B ?",
-      assignmentUsesCanonical && pgCanonical ? "confirmé" : "indéterminé",
-      `candidatAffectation=${canonicalCandidate} pg.teacher_code=${pgCanonical?.teacher_code ?? null} (canonique de fait pour affectation/PG — jumeau JSON toujours présent)`,
+      "Identité canonique de fait pour affectation (TEACHERS-*) ?",
+      assignAlignedA && pgCanonicalA ? "confirmé" : "indéterminé",
+      `candidat=${chainA.teachersRecord.id} pg=${pgCanonicalA?.teacher_code ?? null}`,
     );
+
+    // Q4 scindée
+    const q4CreateClass = hasSpontaneousTwinA && hasTeachersA
+      ? "confirmé"
+      : !hasSpontaneousTwinA && hasTeachersA
+        ? "infirmé"
+        : "indéterminé";
+    classify(
+      questions,
+      "Q4-CREATE",
+      "Création nominale des jumeaux TEACHER-* + TEACHERS-* (sans injection) ?",
+      q4CreateClass,
+      `spontaneous=${spontaneousTwinsA.map((t) => t.id).join(",") || "(none)"} pedagogy=${chainA.teachersRecord.id}`,
+      {
+        mapsToScenario: "ID-04A",
+        meaning: "INDÉTERMINÉE/confirmée/infirmée selon apparition spontanée — pas la fixture",
+      },
+    );
+    classify(
+      questions,
+      "Q4-PRESERVE",
+      "Non-convergence d’identités préexistantes / injectées ?",
+      bothAfterB && injectedStillPresent ? "confirmé" : "infirmé",
+      `injected=${chainB.twinTeacher.id} retained=${injectedStillPresent}`,
+      {
+        mapsToScenario: "ID-04B",
+        meaning: "CONFIRMÉE si les jumeaux injectés ne sont pas fusionnés",
+      },
+    );
+    // Q4 synthèse (bornée)
     classify(
       questions,
       "Q4",
-      "Les jumeaux TEACHER-* / TEACHERS-* restent-ils deux fiches après sync ?",
-      stillBoth || bothPresentJson ? "confirmé" : "infirmé",
-      `afterDedupe=[${afterIds.join(",")}]`,
-    );
-    const teacherCodeStable =
-      pgCanonical && String(pgCanonical.teacher_code) === String(chain.teachersRecord.id);
-    classify(
-      questions,
-      "Q5",
-      "teacher_code PG aligné sur id pédagogique BO TEACHERS-* ?",
-      teacherCodeStable ? "confirmé" : "infirmé",
-      `expected=${chain.teachersRecord.id} obtained=${pgCanonical?.teacher_code ?? null}`,
-    );
-    const sessionUserCode =
-      evidence.identities.session?.meUser?.id ||
-      jwt.sub ||
-      jwt.id ||
-      chain.teacherUser.id;
-    const userIdMatchesSession =
-      pgCanonical &&
-      pgUsers[0] &&
-      String(pgCanonical.user_id) === String(pgUsers[0].id) &&
-      String(pgUsers[0].user_code) === String(chain.teacherUser.id);
-    classify(
-      questions,
-      "Q6",
-      "teachers.user_id pointe-t-il vers le user de session du POST notes ?",
-      userIdMatchesSession && postOk ? "confirmé" : "indéterminé",
-      `pg.user_id=${pgCanonical?.user_id} users.user_code=${pgUsers[0]?.user_code} sessionHint=${sessionUserCode}`,
-    );
-    const evalTeacherCode = evalRows[0]?.teacher_code ?? null;
-    const jsonEvalTeacherId = putSession.evaluation?.teacherId;
-    const jsonPointsCanonical =
-      String(jsonAssignment?.teacherId) === String(chain.teachersRecord.id) &&
-      String(jsonEvalTeacherId) === String(chain.teachersRecord.id);
-    const pgEvalMatchesCanonical =
-      evalTeacherCode != null &&
-      String(evalTeacherCode) === String(chain.teachersRecord.id);
-    const pgEvalMatchesTwin =
-      evalTeacherCode != null && isTeacherTwinCode(evalTeacherCode);
-    // Écart redouté : JSON canonique TEACHERS-* mais evaluation PG rattachée à un TEACHER-* 
-    const divergenceJsonVsPg = jsonPointsCanonical && pgEvalMatchesTwin;
-    const fullConvergence = jsonPointsCanonical && pgEvalMatchesCanonical && assignAligned;
-    classify(
-      questions,
-      "Q7",
-      "Références JSON (assignment/evaluation.teacherId) vs identité PG ?",
-      divergenceJsonVsPg ? "confirmé" : fullConvergence ? "infirmé" : "indéterminé",
-      `assignment.teacherId=${jsonAssignment?.teacherId} evaluation.teacherId=${jsonEvalTeacherId} pgEval=${JSON.stringify(evalRows[0] ?? null)}`,
+      "Synthèse Q4 — création vs non-convergence (ne pas fusionner les verdicts)",
+      "indéterminé",
+      `création=${q4CreateClass} ; non-convergence=${bothAfterB && injectedStillPresent ? "confirmé" : "infirmé"}`,
       {
-        meaning: divergenceJsonVsPg
-          ? "confirmé = écart reproductible JSON TEACHERS-* vs evaluations.teacher_id → TEACHER-*"
-          : fullConvergence
-            ? "infirmé = convergence JSON↔PG sur TEACHERS-*"
-            : "indéterminé",
+        creation: q4CreateClass,
+        nonConvergence: bothAfterB && injectedStillPresent ? "confirmé" : "infirmé",
+        ctoBounding:
+          "Non-convergence préexistante CONFIRMÉE ; création nominale selon Q4-CREATE (souvent INDÉTERMINÉE/infirmée)",
       },
     );
 
-    // ---------- Synthèse dette (factuelle) ----------
-    const twinsConfirmed = questions.some(
-      (q) => q.id === "Q4" && q.classification === "confirmé",
+    classify(
+      questions,
+      "Q5",
+      "teacher_code PG aligné sur TEACHERS-* pour le row d’affectation ?",
+      pgCanonicalA && String(pgCanonicalA.teacher_code) === String(chainA.teachersRecord.id)
+        ? "confirmé"
+        : "infirmé",
+      `expected=${chainA.teachersRecord.id} obtained=${pgCanonicalA?.teacher_code ?? null}`,
     );
-    const evalDivergenceConfirmed = questions.some(
-      (q) => q.id === "Q7" && q.classification === "confirmé",
+    const userMatchA =
+      pgCanonicalA &&
+      pgUsersA[0] &&
+      String(pgCanonicalA.user_id) === String(pgUsersA[0].id) &&
+      notesA.postStatus === 201;
+    classify(
+      questions,
+      "Q6",
+      "teachers.user_id (canonique) ↔ user de session POST notes ?",
+      userMatchA ? "confirmé" : "indéterminé",
+      `pg.user_id=${pgCanonicalA?.user_id} user_code=${pgUsersA[0]?.user_code}`,
     );
-    const identityGapConfirmed = twinsConfirmed || evalDivergenceConfirmed;
+
+    classify(
+      questions,
+      "Q7-NOMINAL",
+      "Divergence JSON↔PG evaluations sans fixture jumelle ?",
+      divergenceNominal ? "confirmé" : convergenceNominal ? "infirmé" : "indéterminé",
+      `json=${jsonEvalA} pg=${evalCodeA}`,
+      { phase: "nominal", mapsToScenario: "ID-04A-Q7" },
+    );
+    classify(
+      questions,
+      "Q7-FIXTURE",
+      "Divergence JSON↔PG evaluations sous fixture jumelle ?",
+      divergenceFixture ? "confirmé" : convergenceFixture ? "infirmé" : "indéterminé",
+      `json=${jsonEvalB} pg=${evalCodeB}`,
+      { phase: "fixture", mapsToScenario: "ID-04B-Q7" },
+    );
+    classify(
+      questions,
+      "Q7",
+      "Synthèse Q7 — borner la causalité de la divergence",
+      "indéterminé",
+      `sans_fixture=${divergenceNominal ? "confirmé" : convergenceNominal ? "infirmé" : "indéterminé"} ; sous_fixture=${divergenceFixture ? "confirmé" : convergenceFixture ? "infirmé" : "indéterminé"}`,
+      {
+        withoutFixture: divergenceNominal
+          ? "confirmé"
+          : convergenceNominal
+            ? "infirmé"
+            : "indéterminé",
+        withFixture: divergenceFixture
+          ? "confirmé"
+          : convergenceFixture
+            ? "infirmé"
+            : "indéterminé",
+        ctoBounding:
+          "Divergence Q7 sous fixture jumelle à lire via Q7-FIXTURE ; ne pas généraliser sans Q7-NOMINAL",
+      },
+    );
+
+    const nonConvergenceConfirmed = bothAfterB && injectedStillPresent;
+    const creationStatus = q4CreateClass;
+    const q7FixtureConfirmed = divergenceFixture;
+    const q7NominalStatus = divergenceNominal
+      ? "confirmé"
+      : convergenceNominal
+        ? "infirmé"
+        : "indéterminé";
+
     const synthesis = {
       debtId: "PRE-E1-IDENTITY-LIFECYCLE",
       severityDocumented: "MAJOR",
-      characterization: identityGapConfirmed
-        ? "maintenue_MAJOR_confirmée"
-        : "indéterminée",
-      factualSummary: identityGapConfirmed
-        ? "Écarts multi-couches reproductibles : (1) fiches JSON TEACHER-* et TEACHERS-* coexistent sans fusion pour le même user/identifier ; (2) assignment/evaluation JSON ancrés TEACHERS-* alors que evaluations.teacher_id PG peut résoudre vers TEACHER-* ; affectation PG et teachers.user_id restent cohérents sur le chemin TEACHERS-*/session."
-        : "Les preuves V2.1 n’ont pas permis de confirmer un écart multi-fiches stable.",
-      confirmedGaps: [
-        twinsConfirmed ? "Q4/ID-04 jumeaux non fusionnés" : null,
-        evalDivergenceConfirmed ? "Q7 divergence evaluation JSON↔PG" : null,
-      ].filter(Boolean),
+      severityGlobal: "MAJOR_PROVISOIRE",
+      characterization: "bornée_CTO",
+      results: {
+        nonConvergencePreexistingOrInjected: nonConvergenceConfirmed
+          ? "CONFIRMÉE"
+          : "NON_CONFIRMÉE",
+        nominalTwinCreation: creationStatus === "confirmé"
+          ? "CONFIRMÉE"
+          : creationStatus === "infirmé"
+            ? "INFIRMÉE"
+            : "INDÉTERMINÉE",
+        q7DivergenceUnderTwinFixture: q7FixtureConfirmed
+          ? "CONFIRMÉE"
+          : "NON_CONFIRMÉE",
+        q7DivergenceWithoutFixture: q7NominalStatus,
+      },
+      factualSummary:
+        "Sous état jumelé injecté (ID-04B), le système ne fusionne pas TEACHER-* / TEACHERS-* et la divergence evaluation JSON↔PG peut apparaître. La création nominale spontanée d’un jumeau (ID-04A) est classée séparément et ne doit pas être déduite de la fixture. Sévérité globale : MAJOR PROVISOIRE jusqu’à bornage CTO final.",
       noCorrectivePlanAuthorized: true,
+      noMergeClaimOfMajorConfirmed: true,
       studentCodeScope: "hors périmètre décisionnel (ID-06 contexte seulement)",
       nextStepAllowed:
-        "Un plan correctif minimal pourra être soumis séparément à validation CTO — non inclus et non autorisé dans cette PR de caractérisation",
+        "Revue CTO après ce bornage — aucun correctif proposé ni commencé",
     };
 
     const payload = {
@@ -978,8 +1109,13 @@ async function main() {
       generatedAt: new Date().toISOString(),
       apiBase: API_BASE,
       database: DATABASE_URL.replace(/:[^:@/]+@/, ":***@"),
-      nature: "characterization-only",
+      nature: "characterization-only-bounded",
       implementation: "forbidden",
+      ctoBounding: {
+        injectedTwinPreservationIsNotNominalCreation: true,
+        id04A: "nominal without manual twin",
+        id04B: "preexisting/injected twin",
+      },
       scenarios,
       questions,
       evidence,
@@ -998,14 +1134,16 @@ async function main() {
           ]),
         ),
       },
-      putNotesHttp: putRes.status,
     };
 
     fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
     fs.writeFileSync(OUT_FILE, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
     console.log(`\nPreuve écrite : ${path.relative(ROOT, OUT_FILE)}`);
-    console.log(`Synthèse dette : ${synthesis.characterization}`);
-    console.log("Harness caractérisation : OK (exit 0 — aucune correction appliquée)");
+    console.log(`Sévérité globale : ${synthesis.severityGlobal}`);
+    console.log(
+      `Création nominale : ${synthesis.results.nominalTwinCreation} | Non-convergence : ${synthesis.results.nonConvergencePreexistingOrInjected} | Q7 fixture : ${synthesis.results.q7DivergenceUnderTwinFixture}`,
+    );
+    console.log("Harness caractérisation bornée : OK (exit 0 — aucune correction)");
   } catch (error) {
     harnessOk = false;
     console.error("Échec harness V2.1:", error);
