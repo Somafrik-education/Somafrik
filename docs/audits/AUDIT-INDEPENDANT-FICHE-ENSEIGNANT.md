@@ -7,9 +7,10 @@
 | **Base** | `develop` @ `9dcf4ba1200f6cea10bf17fc097c073aa201e546` |
 | **Date** | 2026-07-27 |
 | **Méthode** | État réel du code / contrats / schéma / tests — **pas** les comptes rendus Cursor comme preuve |
-| **Correctifs** | **NON AUTORISÉS** |
+| **Correctifs** | **INTERDITS** (cadrage documentaire seul autorisé post-décision) |
 | **E1** | **NO-GO** |
-| **Prochain sujet V2** | **SUSPENDU** jusqu’à décision CTO sur ce rapport |
+| **Prochain sujet V2 / voie 2** | **SUSPENDU** |
+| **Décision CTO** | Cycle de vie complet **NO-GO** · création nominale Web/backend **GO sous réserves** |
 | **Preuve machine** | [`evidence/independent-teacher-record-audit-results.json`](./evidence/independent-teacher-record-audit-results.json) |
 
 > Rapport Cursor ≠ validation CTO. Ce document est une pièce d’audit pour décision CTO.

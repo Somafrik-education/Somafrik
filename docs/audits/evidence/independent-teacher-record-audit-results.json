@@ -18,22 +18,61 @@
   ],
   "governance": {
     "nextV2Subject": "SUSPENDED",
-    "teacherRecordFix": "NOT_AUTHORIZED",
+    "voie2": "SUSPENDED",
+    "teacherRecordImplementation": "FORBIDDEN",
+    "correctiveFramingPrOnly": true,
+    "v21Reopen": false,
     "refactor": "NOT_AUTHORIZED",
     "twinMigration": "NOT_AUTHORIZED",
     "historicalEvidenceMutation": "FORBIDDEN",
-    "e1": "NO_GO"
+    "e1": "NO_GO",
+    "pr103Circuit": "verdict_aligned_then_undraft_then_merge_authorized"
   },
   "limits": {
     "postgresqlLive": false,
     "reason": "pg_isready unavailable in audit environment; no live HTTP/PG replay",
-    "rbacRuntimeMatrix": "INDETERMINATE_WITHOUT_LIVE_DUMP"
+    "rbacRuntimeMatrix": "INDETERMINATE_WITHOUT_LIVE_DUMP",
+    "ctoNote": "Static findings remain valid; any future fix requires dedicated runtime proof before merge"
   },
   "verdict": {
-    "teacherRecord": "GO_SOUS_RESERVES",
+    "teacherRecordFullLifecycle": "NO_GO",
+    "webBackendNominalCanonicalCreate": "GO_SOUS_RESERVES",
+    "mobileTeacher": "NO_GO",
+    "notesAttendanceFallbackAttribution": "NO_GO",
+    "pedagogicalDeactivation": "NO_GO",
     "e1": "NO_GO",
-    "rationale": "Web+backend TEACHERS-* canon is formalized and unit-tested, but CRITICAL/MAJOR anomalies remain on Mobile twin creation, grade teacher fallback, pedagogical deactivation, silent ambiguity skips, and Web/backend rule drift."
+    "v21WebBackendCanon": "VALIDATED_NOT_REOPENED",
+    "proposedAuditVerdictSuperseded": "GO_SOUS_RESERVES_FULL_LIFECYCLE_REJECTED_BY_CTO",
+    "rationale": "Three CRITICAL findings on active paths (Mobile TEACHER-* creation, opportunistic grade/attendance teacher attribution, unreliable pedagogical deactivation) prevent declaring the teacher record globally ready. Web/backend nominal TEACHERS-* create remains GO under reserves.",
+    "ctoDecisionAt": "2026-07-27"
   },
+  "ctoClassification": [
+    {
+      "finding": "Mobile still creates TEACHER-*",
+      "decision": "CRITICAL_CONFIRMED",
+      "ids": ["C-04", "Q1"]
+    },
+    {
+      "finding": "ORDER BY created_at LIMIT 1 fallback",
+      "decision": "CRITICAL_CONFIRMED",
+      "ids": ["C-05", "Q9"]
+    },
+    {
+      "finding": "Incomplete pedagogical deactivation",
+      "decision": "CRITICAL_CONFIRMED",
+      "ids": ["C-06", "Q4"]
+    },
+    {
+      "finding": "Skips not returned to client",
+      "decision": "MAJOR_CONFIRMED",
+      "ids": ["C-07", "Q11"]
+    },
+    {
+      "finding": "Web/backend divergences and stale E2E",
+      "decision": "MAJOR_CONFIRMED",
+      "ids": ["C-10", "C-11", "Q3", "Q12"]
+    }
+  ],
   "producerConsumerMap": [
     {
       "producer": "web/EntityPage teachers create",
