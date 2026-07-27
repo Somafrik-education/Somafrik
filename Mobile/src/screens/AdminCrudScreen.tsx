@@ -26,6 +26,7 @@ import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
 import { CONTACT_PROVISIONING_HINT, entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
+  applyTeacherSyncUiAfterUserSave,
   createTeacherRecordId,
   isTeacherUserRole,
   upsertTeacherFromUser,
@@ -547,27 +548,21 @@ export default function AdminCrudScreen({ route }: Props) {
           }
           throw error;
         }
-        if (skips.length) {
-          Alert.alert(
-            "Identité enseignant",
-            skips.map((skip) => `${skip.message}\nCode: ${skip.code}`).join("\n\n"),
-          );
-        }
-        const syncedTeacher = syncedTeachers.find(
-          (teacher) =>
-            String(teacher.userId ?? "") === String(userItem.id) ||
-            normalize(String(teacher.identifier ?? "")) ===
-              normalize(String(userItem.identifier ?? "")),
-        );
-        if (syncedTeacher) {
-          const existsInTeachers = teachersData.some(
-            (teacher) => String(teacher.id) === String(syncedTeacher.id),
-          );
-          if (existsInTeachers) {
-            updateItem("teachers", syncedTeacher);
-          } else {
-            createItem("teachers", syncedTeacher);
-          }
+
+        const uiResult = applyTeacherSyncUiAfterUserSave({
+          teachersBefore: teachersData,
+          user: userItem,
+          syncedTeachers,
+          skips,
+          createTeacher: (teacher) => createItem("teachers", teacher as any),
+          updateTeacher: (teacher) => updateItem("teachers", teacher as any),
+        });
+
+        // AC-M7 UI : skip multi-twin → alerte + arrêt immédiat (0 create/update fiche)
+        if (uiResult.stopped) {
+          Alert.alert("Identité enseignant", uiResult.operatorMessage ?? "Mutation enseignant bloquée.");
+          setVisible(false);
+          return;
         }
       }
     }

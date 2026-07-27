@@ -1,12 +1,12 @@
 {
   "subject": "TEACHER-RECORD-LOT1-MOBILE-IDENTITY",
   "contract": "docs/audits/CONTRAT-FIX-TEACHER-RECORD-LOT1-MOBILE-IDENTITY.md",
-  "generatedAt": "2026-07-27T16:01:32.870Z",
+  "generatedAt": "2026-07-27T16:22:53.452Z",
   "mobileCodeExecuted": true,
   "t1ServerSkipsAck": "DEFERRED_TO_LOT2",
   "t1ServerSkipsAckReason": "PR code Lot 1 ne modifie pas server.js ni le contrat de réponse PUT — T1 identitySyncAck.skips[] reporté au Lot 2",
   "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_lot1_mobile",
-  "apiBase": "http://127.0.0.1:5125/api",
+  "apiBase": "http://127.0.0.1:5126/api",
   "gates": [
     {
       "id": "AC-G1",
@@ -23,6 +23,25 @@
       "extra": null
     },
     {
+      "id": "AC-M7-UI",
+      "title": "Parcours UI multi-twin : 0 create/update fiche",
+      "status": "PASS",
+      "detail": "{\"helperNoop\":true,\"uiTeacherCreateCalls\":0,\"uiTeacherUpdateCalls\":0,\"teacherIdsBefore\":[\"TEACHER-MT-1\",\"TEACHER-MT-2\"],\"teacherIdsAfter\":[\"TEACHER-MT-1\",\"TEACHER-MT-2\"]}",
+      "extra": {
+        "helperNoop": true,
+        "uiTeacherCreateCalls": 0,
+        "uiTeacherUpdateCalls": 0,
+        "teacherIdsBefore": [
+          "TEACHER-MT-1",
+          "TEACHER-MT-2"
+        ],
+        "teacherIdsAfter": [
+          "TEACHER-MT-1",
+          "TEACHER-MT-2"
+        ]
+      }
+    },
+    {
       "id": "AC-NR1",
       "title": "Non-régression backend userTeacherSyncService (V2.1)",
       "status": "PASS",
@@ -33,14 +52,14 @@
       "id": "AC-M1-MOBILE",
       "title": "Vrai upsertTeacherFromUser Mobile → TEACHERS-*",
       "status": "PASS",
-      "detail": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "detail": "TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c",
       "extra": null
     },
     {
       "id": "AC-M1-PERSIST",
       "title": "Backend accepte état Mobile sans nouvelle identité divergente",
       "status": "PASS",
-      "detail": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "detail": "TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c",
       "extra": null
     },
     {
@@ -54,28 +73,28 @@
       "id": "AC-M1-PG",
       "title": "PostgreSQL teacher_code = id Mobile TEACHERS-*",
       "status": "PASS",
-      "detail": "[{\"teacher_code\":\"TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2\",\"has_user\":true}]",
+      "detail": "[{\"teacher_code\":\"TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c\",\"has_user\":true}]",
       "extra": null
     },
     {
       "id": "AC-M2-MOBILE",
       "title": "Réutilisation canon TEACHERS-* par vrai helper",
       "status": "PASS",
-      "detail": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "detail": "TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c",
       "extra": null
     },
     {
       "id": "AC-M2-PERSIST",
       "title": "PUT réutilise le même id (0 nouveau)",
       "status": "PASS",
-      "detail": "id=TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2 count=1",
+      "detail": "id=TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c count=1",
       "extra": null
     },
     {
       "id": "AC-M6",
       "title": "Générateur CRUD Mobile → TEACHERS-*",
       "status": "PASS",
-      "detail": "TEACHERS-d871b55f-8e07-401b-8d60-facaab8d8d52",
+      "detail": "TEACHERS-11fb13d9-abb9-4ac8-b8f9-149d2302ffbb",
       "extra": null
     },
     {
@@ -143,7 +162,7 @@
       "mobileCodeExecuted": true,
       "teachers": [
         {
-          "id": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+          "id": "TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c",
           "userId": "USERS-L1-M1",
           "publicId": "CD-2026-0051-ENS-0101",
           "identifier": "ENS-0101",
@@ -174,19 +193,19 @@
           "identifier": "ENS-0101",
           "status": "Actif",
           "permissions": [],
-          "createdAt": "2026-07-27T16:01:41.857Z",
+          "createdAt": "2026-07-27T16:23:02.201Z",
           "createdBy": "lot1",
           "history": []
         }
       ],
-      "newId": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2"
+      "newId": "TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c"
     },
     {
       "id": "AC-M2-mobile",
       "mobileCodeExecuted": true,
       "teachers": [
         {
-          "id": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+          "id": "TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c",
           "userId": "USERS-L1-M1",
           "schoolCode": "CD-2026-0051",
           "identifier": "ENS-0101",
@@ -202,13 +221,13 @@
           "assignedClasses": []
         }
       ],
-      "reusedId": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "reusedId": "TEACHERS-2d6ce618-3569-413b-9b33-30fdfb91fe5c",
       "name": "Reused"
     },
     {
       "id": "AC-M6",
       "mobileCodeExecuted": true,
-      "crudId": "TEACHERS-d871b55f-8e07-401b-8d60-facaab8d8d52"
+      "crudId": "TEACHERS-11fb13d9-abb9-4ac8-b8f9-149d2302ffbb"
     },
     {
       "id": "TEACHER-HIST-L1",
@@ -262,5 +281,18 @@
       ]
     }
   ],
-  "ok": true
+  "ok": true,
+  "acM7UiProof": {
+    "helperNoop": true,
+    "uiTeacherCreateCalls": 0,
+    "uiTeacherUpdateCalls": 0,
+    "teacherIdsBefore": [
+      "TEACHER-MT-1",
+      "TEACHER-MT-2"
+    ],
+    "teacherIdsAfter": [
+      "TEACHER-MT-1",
+      "TEACHER-MT-2"
+    ]
+  }
 }

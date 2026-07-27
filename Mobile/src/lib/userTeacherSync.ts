@@ -292,6 +292,110 @@ export function upsertTeacherFromUser(
   return teachers;
 }
 
+/** Skips identité qui interdisent toute mutation UI de fiche enseignant. */
+export function isTeacherIdentityMutationBlocked(skips: TeacherIdentitySkip[] = []): boolean {
+  return skips.some(
+    (skip) =>
+      skip.code === "TEACHER_HISTORICAL_MULTI_TWIN" || skip.code === "TEACHER_LINK_AMBIGUOUS",
+  );
+}
+
+export type TeacherSyncUiStoreResult = {
+  helperNoop: boolean;
+  stopped: boolean;
+  stopCode: string | null;
+  operatorMessage: string | null;
+  uiTeacherCreateCalls: number;
+  uiTeacherUpdateCalls: number;
+  teacherIdsBefore: string[];
+  teacherIdsAfter: string[];
+};
+
+/**
+ * Parcours UI réel post-upsert (AdminCrud) — testable.
+ * Sur TEACHER_HISTORICAL_MULTI_TWIN / TEACHER_LINK_AMBIGUOUS :
+ * alerte + arrêt immédiat → 0 create / 0 update.
+ */
+export function applyTeacherSyncUiAfterUserSave(options: {
+  teachersBefore: Row[];
+  user: UserAccount;
+  syncedTeachers: Row[];
+  skips?: TeacherIdentitySkip[];
+  createTeacher: (teacher: Row) => void;
+  updateTeacher: (teacher: Row) => void;
+}): TeacherSyncUiStoreResult {
+  const teachersBefore = options.teachersBefore ?? [];
+  const teacherIdsBefore = teachersBefore.map((row) => String(row.id ?? "")).filter(Boolean);
+  const skips = options.skips ?? [];
+
+  if (isTeacherIdentityMutationBlocked(skips)) {
+    const blocking = skips.find(
+      (skip) =>
+        skip.code === "TEACHER_HISTORICAL_MULTI_TWIN" || skip.code === "TEACHER_LINK_AMBIGUOUS",
+    );
+    return {
+      helperNoop: true,
+      stopped: true,
+      stopCode: blocking?.code ?? "TEACHER_IDENTITY_SKIP",
+      operatorMessage: blocking
+        ? `${blocking.message}\nCode: ${blocking.code}`
+        : "Mutation enseignant bloquée.",
+      uiTeacherCreateCalls: 0,
+      uiTeacherUpdateCalls: 0,
+      teacherIdsBefore,
+      teacherIdsAfter: [...teacherIdsBefore],
+    };
+  }
+
+  let createCalls = 0;
+  let updateCalls = 0;
+  const user = options.user;
+  const syncedTeacher = options.syncedTeachers.find(
+    (teacher) =>
+      String(teacher.userId ?? "") === String(user.id ?? "") ||
+      normalize(String(teacher.identifier ?? "")) === normalize(String(user.identifier ?? "")),
+  );
+
+  if (syncedTeacher) {
+    const existsInTeachers = teachersBefore.some(
+      (teacher) => String(teacher.id) === String(syncedTeacher.id),
+    );
+    if (existsInTeachers) {
+      options.updateTeacher(syncedTeacher);
+      updateCalls += 1;
+    } else {
+      options.createTeacher(syncedTeacher);
+      createCalls += 1;
+    }
+  }
+
+  // Après mutation autorisée, les ids « after » sont dérivés du store simulé par les callbacks ;
+  // pour le cas nominal on reconstruit depuis syncedTeachers / before.
+  const teacherIdsAfter =
+    createCalls || updateCalls
+      ? (() => {
+          const byId = new Map(
+            teachersBefore.map((row) => [String(row.id ?? ""), row] as const).filter(([id]) => id),
+          );
+          if (syncedTeacher) {
+            byId.set(String(syncedTeacher.id), syncedTeacher);
+          }
+          return [...byId.keys()];
+        })()
+      : [...teacherIdsBefore];
+
+  return {
+    helperNoop: false,
+    stopped: false,
+    stopCode: null,
+    operatorMessage: null,
+    uiTeacherCreateCalls: createCalls,
+    uiTeacherUpdateCalls: updateCalls,
+    teacherIdsBefore,
+    teacherIdsAfter,
+  };
+}
+
 export {
   isTeachersCode,
   isTeacherTwinCode,

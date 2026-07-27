@@ -293,6 +293,27 @@ async function main() {
     unit.status === 0,
     unit.status === 0 ? "OK" : unit.stderr || unit.stdout,
   );
+  // Extraire la preuve AC-M7-UI du stdout unitaire
+  const m7UiLine = String(unit.stdout || "")
+    .split(/\n/)
+    .find((line) => line.includes("AC-M7-UI proof"));
+  if (m7UiLine) {
+    try {
+      const proof = JSON.parse(m7UiLine.replace(/^AC-M7-UI proof\s*/, ""));
+      results.acM7UiProof = proof;
+      const m7UiOk =
+        proof.helperNoop === true &&
+        proof.uiTeacherCreateCalls === 0 &&
+        proof.uiTeacherUpdateCalls === 0 &&
+        JSON.stringify(proof.teacherIdsBefore) === JSON.stringify(["TEACHER-MT-1", "TEACHER-MT-2"]) &&
+        JSON.stringify(proof.teacherIdsAfter) === JSON.stringify(["TEACHER-MT-1", "TEACHER-MT-2"]);
+      record("AC-M7-UI", "Parcours UI multi-twin : 0 create/update fiche", m7UiOk, JSON.stringify(proof), proof);
+    } catch (error) {
+      record("AC-M7-UI", "Parcours UI multi-twin : 0 create/update fiche", false, String(error));
+    }
+  } else {
+    record("AC-M7-UI", "Parcours UI multi-twin : 0 create/update fiche", false, "preuve absente du stdout unitaire");
+  }
 
   const backendUnit = spawnSync(
     process.execPath,

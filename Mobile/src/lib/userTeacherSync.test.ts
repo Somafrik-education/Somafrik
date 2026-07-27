@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import {
+  applyTeacherSyncUiAfterUserSave,
   createTeacherRecordId,
   isTeacherUserRole,
   upsertTeacherFromUser,
@@ -74,7 +75,7 @@ function run() {
     assert.ok(!next.some((row) => /^TEACHERS-/i.test(String(row.id))));
   }
 
-  // AC-M7 multi-twin no-op + skip
+  // AC-M7 helper multi-twin no-op + skip
   {
     const teachers: Row[] = [
       { id: "TEACHER-A", userId: "USERS-1", schoolCode: "CD-2026-0001", identifier: "ENS-0001" },
@@ -89,6 +90,53 @@ function run() {
     assert.equal(skips.length, 1);
     assert.equal(skips[0].code, "TEACHER_HISTORICAL_MULTI_TWIN");
     assert.equal(skips[0].action, "noop");
+  }
+
+  // AC-M7 UI parcours complet — 0 createItem / 0 updateItem
+  {
+    const teachersBefore: Row[] = [
+      { id: "TEACHER-MT-1", userId: "USERS-1", schoolCode: "CD-2026-0001", identifier: "ENS-0001" },
+      { id: "TEACHER-MT-2", userId: "USERS-1", schoolCode: "CD-2026-0001", identifier: "ENS-0001" },
+    ];
+    const skips: TeacherIdentitySkip[] = [];
+    const user = teacherUser();
+    const syncedTeachers = upsertTeacherFromUser(teachersBefore, user, { skips });
+    assert.equal(skips[0]?.code, "TEACHER_HISTORICAL_MULTI_TWIN");
+
+    let createCalls = 0;
+    let updateCalls = 0;
+    const ui = applyTeacherSyncUiAfterUserSave({
+      teachersBefore,
+      user,
+      syncedTeachers,
+      skips,
+      createTeacher: () => {
+        createCalls += 1;
+      },
+      updateTeacher: () => {
+        updateCalls += 1;
+      },
+    });
+
+    const proof = {
+      helperNoop: ui.helperNoop,
+      uiTeacherCreateCalls: ui.uiTeacherCreateCalls,
+      uiTeacherUpdateCalls: ui.uiTeacherUpdateCalls,
+      teacherIdsBefore: ui.teacherIdsBefore,
+      teacherIdsAfter: ui.teacherIdsAfter,
+    };
+    assert.deepEqual(proof, {
+      helperNoop: true,
+      uiTeacherCreateCalls: 0,
+      uiTeacherUpdateCalls: 0,
+      teacherIdsBefore: ["TEACHER-MT-1", "TEACHER-MT-2"],
+      teacherIdsAfter: ["TEACHER-MT-1", "TEACHER-MT-2"],
+    });
+    assert.equal(createCalls, 0);
+    assert.equal(updateCalls, 0);
+    assert.equal(ui.stopped, true);
+    assert.equal(ui.stopCode, "TEACHER_HISTORICAL_MULTI_TWIN");
+    console.log("AC-M7-UI proof", JSON.stringify(proof));
   }
 
   // AC-M5a ambiguous
