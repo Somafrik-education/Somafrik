@@ -1,0 +1,266 @@
+{
+  "subject": "TEACHER-RECORD-LOT1-MOBILE-IDENTITY",
+  "contract": "docs/audits/CONTRAT-FIX-TEACHER-RECORD-LOT1-MOBILE-IDENTITY.md",
+  "generatedAt": "2026-07-27T16:01:32.870Z",
+  "mobileCodeExecuted": true,
+  "t1ServerSkipsAck": "DEFERRED_TO_LOT2",
+  "t1ServerSkipsAckReason": "PR code Lot 1 ne modifie pas server.js ni le contrat de réponse PUT — T1 identitySyncAck.skips[] reporté au Lot 2",
+  "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_lot1_mobile",
+  "apiBase": "http://127.0.0.1:5125/api",
+  "gates": [
+    {
+      "id": "AC-G1",
+      "title": "Garde génération Mobile obligatoire",
+      "status": "PASS",
+      "detail": "PASS",
+      "extra": null
+    },
+    {
+      "id": "UNIT-MOBILE",
+      "title": "Unit tests exécutant le vrai module Mobile",
+      "status": "PASS",
+      "detail": "OK",
+      "extra": null
+    },
+    {
+      "id": "AC-NR1",
+      "title": "Non-régression backend userTeacherSyncService (V2.1)",
+      "status": "PASS",
+      "detail": "PASS",
+      "extra": null
+    },
+    {
+      "id": "AC-M1-MOBILE",
+      "title": "Vrai upsertTeacherFromUser Mobile → TEACHERS-*",
+      "status": "PASS",
+      "detail": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "extra": null
+    },
+    {
+      "id": "AC-M1-PERSIST",
+      "title": "Backend accepte état Mobile sans nouvelle identité divergente",
+      "status": "PASS",
+      "detail": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "extra": null
+    },
+    {
+      "id": "AC-M3",
+      "title": "Aucun nouveau TEACHER-* après persistance (user M1)",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "AC-M1-PG",
+      "title": "PostgreSQL teacher_code = id Mobile TEACHERS-*",
+      "status": "PASS",
+      "detail": "[{\"teacher_code\":\"TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2\",\"has_user\":true}]",
+      "extra": null
+    },
+    {
+      "id": "AC-M2-MOBILE",
+      "title": "Réutilisation canon TEACHERS-* par vrai helper",
+      "status": "PASS",
+      "detail": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "extra": null
+    },
+    {
+      "id": "AC-M2-PERSIST",
+      "title": "PUT réutilise le même id (0 nouveau)",
+      "status": "PASS",
+      "detail": "id=TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2 count=1",
+      "extra": null
+    },
+    {
+      "id": "AC-M6",
+      "title": "Générateur CRUD Mobile → TEACHERS-*",
+      "status": "PASS",
+      "detail": "TEACHERS-d871b55f-8e07-401b-8d60-facaab8d8d52",
+      "extra": null
+    },
+    {
+      "id": "AC-M4",
+      "title": "Twin historique seul : pas d'auto-TEACHERS-*",
+      "status": "PASS",
+      "detail": "TEACHER-HIST-L1",
+      "extra": null
+    },
+    {
+      "id": "AC-M5a",
+      "title": "Mobile bloque ambiguïté avant envoi (TEACHER_CANON_AMBIGUOUS)",
+      "status": "PASS",
+      "detail": "TEACHER_CANON_AMBIGUOUS",
+      "extra": null
+    },
+    {
+      "id": "AC-M5b",
+      "title": "Payload ambigu serveur → HTTP 409 + code, sans mutation utile",
+      "status": "PASS",
+      "detail": "status=409 code=TEACHER_CANON_AMBIGUOUS before=1 after=1 msg=Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté",
+      "extra": {
+        "response": {
+          "status": 409,
+          "code": "TEACHER_CANON_AMBIGUOUS",
+          "message": "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté"
+        },
+        "afterIds": [
+          "TEACHERS-AMB-1"
+        ]
+      }
+    },
+    {
+      "id": "AC-M7",
+      "title": "Multi-TEACHER-* → no-op + skip visible",
+      "status": "PASS",
+      "detail": "{\"code\":\"TEACHER_HISTORICAL_MULTI_TWIN\",\"userId\":\"USERS-L1-MT\",\"schoolCode\":\"CD-2026-0051\",\"twinIds\":[\"TEACHER-MT-1\",\"TEACHER-MT-2\"],\"action\":\"noop\",\"message\":\"Plusieurs fiches historiques TEACHER-* pour ce compte : aucune mutation automatique (pas de choix arbitraire).\"}",
+      "extra": null
+    },
+    {
+      "id": "MOBILE_CODE_EXECUTED",
+      "title": "mobileCodeExecuted: true (condition obligatoire)",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "AC-NR2",
+      "title": "Aucune migration/fusion historique dans cette PR (revue déclarative)",
+      "status": "PASS",
+      "detail": "pas de SQL migration / pas de merge TEACHER-*",
+      "extra": null
+    },
+    {
+      "id": "T1-SERVER",
+      "title": "identitySyncAck.skips[] serveur reporté Lot 2",
+      "status": "PASS",
+      "detail": "PR code Lot 1 ne modifie pas server.js ni le contrat de réponse PUT — T1 identitySyncAck.skips[] reporté au Lot 2",
+      "extra": null
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "AC-M1-mobile",
+      "mobileCodeExecuted": true,
+      "teachers": [
+        {
+          "id": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+          "userId": "USERS-L1-M1",
+          "publicId": "CD-2026-0051-ENS-0101",
+          "identifier": "ENS-0101",
+          "schoolCode": "CD-2026-0051",
+          "name": "MobileCreate",
+          "firstName": "Awa",
+          "gender": "Féminin",
+          "phone": "+243810000101",
+          "email": "",
+          "status": "Actif",
+          "password": "",
+          "assignments": [],
+          "assignedClasses": []
+        }
+      ],
+      "users": [
+        {
+          "id": "USERS-L1-M1",
+          "publicId": "CD-2026-0051-ENS-0101",
+          "lastName": "MobileCreate",
+          "firstName": "Awa",
+          "gender": "Féminin",
+          "phone": "+243810000101",
+          "role": "Enseignant",
+          "scopeLevel": "Établissement",
+          "schoolCode": "CD-2026-0051",
+          "accessChannel": "Application",
+          "identifier": "ENS-0101",
+          "status": "Actif",
+          "permissions": [],
+          "createdAt": "2026-07-27T16:01:41.857Z",
+          "createdBy": "lot1",
+          "history": []
+        }
+      ],
+      "newId": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2"
+    },
+    {
+      "id": "AC-M2-mobile",
+      "mobileCodeExecuted": true,
+      "teachers": [
+        {
+          "id": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+          "userId": "USERS-L1-M1",
+          "schoolCode": "CD-2026-0051",
+          "identifier": "ENS-0101",
+          "publicId": "CD-2026-0051-ENS-0101",
+          "status": "Actif",
+          "name": "Reused",
+          "firstName": "Awa",
+          "gender": "Féminin",
+          "phone": "+243810000101",
+          "email": "",
+          "password": "",
+          "assignments": [],
+          "assignedClasses": []
+        }
+      ],
+      "reusedId": "TEACHERS-1b95e36f-730d-4c9e-b2a0-5546992639d2",
+      "name": "Reused"
+    },
+    {
+      "id": "AC-M6",
+      "mobileCodeExecuted": true,
+      "crudId": "TEACHERS-d871b55f-8e07-401b-8d60-facaab8d8d52"
+    },
+    {
+      "id": "TEACHER-HIST-L1",
+      "mobileCodeExecuted": true,
+      "teachers": [
+        {
+          "id": "TEACHER-HIST-L1",
+          "userId": "USERS-L1-HIST",
+          "schoolCode": "CD-2026-0051",
+          "identifier": "ENS-0202",
+          "status": "Actif",
+          "publicId": "CD-2026-0051-ENS-0202",
+          "name": "Historic",
+          "firstName": "Twin",
+          "gender": "Masculin",
+          "phone": "+243810000202",
+          "email": "",
+          "password": "",
+          "assignments": [],
+          "assignedClasses": []
+        }
+      ],
+      "createdTeachersPrefix": false
+    },
+    {
+      "id": "AC-M5a",
+      "mobileCodeExecuted": true,
+      "blocked": true,
+      "code": "TEACHER_CANON_AMBIGUOUS",
+      "message": "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté"
+    },
+    {
+      "id": "AC-M7",
+      "mobileCodeExecuted": true,
+      "ids": [
+        "TEACHER-MT-1",
+        "TEACHER-MT-2"
+      ],
+      "skips": [
+        {
+          "code": "TEACHER_HISTORICAL_MULTI_TWIN",
+          "userId": "USERS-L1-MT",
+          "schoolCode": "CD-2026-0051",
+          "twinIds": [
+            "TEACHER-MT-1",
+            "TEACHER-MT-2"
+          ],
+          "action": "noop",
+          "message": "Plusieurs fiches historiques TEACHER-* pour ce compte : aucune mutation automatique (pas de choix arbitraire)."
+        }
+      ]
+    }
+  ],
+  "ok": true
+}
