@@ -1144,23 +1144,44 @@ class PostgresRepository {
     }
 
     // Lot 2 — auteur pédagogique déterministe (jamais inventé via created_at / premier de l'école).
-    // Si l'évaluation porte déjà un teacher_id exact, on le réutilise.
-    // Sinon : Enseignant → résolution par affectation ; admin/direction → clé explicite scopée école.
-    let teacherId = evaluation.teacher_id ?? null;
-    if (!teacherId) {
-      const isEnseignant = principal.role === "Enseignant";
-      const teacherKey = isEnseignant
-        ? String(principal.sub ?? "").trim()
-        : this.extractExplicitTeacherKey(payload);
-      if (!isEnseignant && !teacherKey) {
+    // Rôle d'abord : admin/direction exige TOUJOURS une clé explicite (même si evaluation.teacher_id).
+    // Enseignant : résolution par affectation ; evaluation.teacher_id reste source déterministe si déjà présent.
+    const isEnseignant = principal.role === "Enseignant";
+    let teacherId = null;
+    if (!isEnseignant) {
+      const explicitKey = this.extractExplicitTeacherKey(payload);
+      if (!explicitKey) {
         throw this.teacherUnresolvedError(
           "GRADE_TEACHER_UNRESOLVED",
           "Clé enseignant explicite requise pour attribuer une note (admin/direction).",
         );
       }
+      const explicitTeacher = await this.resolveUniqueTeacherInSchool(
+        evaluation.school_id,
+        explicitKey,
+      );
+      if (!explicitTeacher) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Enseignant introuvable ou ambigu pour la note.",
+        );
+      }
+      if (
+        evaluation.teacher_id &&
+        String(evaluation.teacher_id) !== String(explicitTeacher.id)
+      ) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Clé enseignant divergente de l'enseignant de l'évaluation.",
+        );
+      }
+      teacherId = explicitTeacher.id;
+    } else if (evaluation.teacher_id) {
+      teacherId = evaluation.teacher_id;
+    } else {
       const teacher = await this.findTeacherForGrade(
         evaluation.school_id,
-        teacherKey,
+        String(principal.sub ?? "").trim(),
         evaluation.class_id,
         evaluation.subject_id,
         principal.role,

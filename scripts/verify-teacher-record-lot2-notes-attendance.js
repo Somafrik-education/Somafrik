@@ -590,22 +590,45 @@ async function main() {
       JSON.stringify({ gradeRows, linkedTeacherId: linkedTeacher.id }),
     );
 
-    // AC-N1 — Admin without explicit teacher key, evaluation WITHOUT teacher_id
-    // Create a second evaluation via admin without teacherId — then try note without key.
-    // Simpler: POST note as admin without teacherId/authorId on an evaluation that has no teacher.
-    // Use evaluation with teacher stripped in PG if needed — or create eval without teacher via attachment ensure.
+    // Prefer the canon actually linked to the teacher user after sync
+    const stateForKeys = await getState(school.adminToken);
+    const canonTeacher =
+      (stateForKeys.teachers ?? []).find(
+        (row) => String(row.userId) === String(chain.teacherUser.id),
+      ) ?? chain.teachersRecord;
 
-    // Create evaluation without teacherId through admin PUT of a minimal eval shell is hard.
-    // Instead: admin POST /notes without authorId/teacherId — if eval already has teacher_id,
-    // Lot 2 reuses evaluation.teacher_id (deterministic). So for AC-N1 we need eval without teacher.
-    // Force: clear evaluation.teacher_id in PG then admin posts without key.
-    await pgQuery(
-      `UPDATE evaluations SET teacher_id = NULL
-       WHERE legacy_json_id = $1 OR id::text = $1`,
+    // Resolve PG evaluation.teacher_id (must be set after teacher PUT)
+    const evalPgBefore = await pgQuery(
+      `SELECT e.id::text AS id, e.teacher_id::text AS teacher_id, t.teacher_code
+       FROM evaluations e
+       LEFT JOIN teachers t ON t.id = e.teacher_id
+       WHERE e.legacy_json_id = $1 OR e.id::text = $1
+       LIMIT 1`,
       [putSession.evaluation.id],
     );
+    const evalTeacherId = evalPgBefore[0]?.teacher_id ?? null;
+    const evalTeacherCode = evalPgBefore[0]?.teacher_code ?? null;
+    record(
+      "AC-N1-PRECOND",
+      "Évaluation préliée avec teacher_id (précondition scénarios admin)",
+      Boolean(evalTeacherId),
+      JSON.stringify(evalPgBefore),
+    );
 
-    const postAdminNoKey = await request("/notes", {
+    const countGrades = async () => {
+      const rows = await pgQuery(
+        `SELECT COUNT(*)::int AS n
+         FROM grades g
+         JOIN schools s ON s.id = g.school_id
+         WHERE s.school_code = $1`,
+        [school.schoolCode],
+      );
+      return Number(rows[0]?.n ?? 0);
+    };
+    const gradesBeforeN1 = await countGrades();
+
+    // AC-N1b — Admin SANS clé, évaluation AVEC teacher_id → 409, aucune note créée
+    const postAdminNoKeyWithEvalTeacher = await request("/notes", {
       method: "POST",
       token: school.adminToken,
       body: {
@@ -622,23 +645,19 @@ async function main() {
         date: todayPeriodDate(),
       },
     });
+    const gradesAfterN1 = await countGrades();
     record(
       "AC-N1",
-      "Admin sans clé enseignant → 409 GRADE_TEACHER_UNRESOLVED",
-      postAdminNoKey.status === 409 &&
-        postAdminNoKey.data?.code === "GRADE_TEACHER_UNRESOLVED",
-      `HTTP ${postAdminNoKey.status} code=${postAdminNoKey.data?.code}`,
-      postAdminNoKey.data,
+      "Admin sans clé + évaluation préliée → 409 GRADE_TEACHER_UNRESOLVED, 0 mutation",
+      postAdminNoKeyWithEvalTeacher.status === 409 &&
+        postAdminNoKeyWithEvalTeacher.data?.code === "GRADE_TEACHER_UNRESOLVED" &&
+        gradesAfterN1 === gradesBeforeN1,
+      `HTTP ${postAdminNoKeyWithEvalTeacher.status} code=${postAdminNoKeyWithEvalTeacher.data?.code} grades ${gradesBeforeN1}→${gradesAfterN1}`,
+      postAdminNoKeyWithEvalTeacher.data,
     );
 
-    // Prefer the canon actually linked to the teacher user after sync
-    const stateForKeys = await getState(school.adminToken);
-    const canonTeacher =
-      (stateForKeys.teachers ?? []).find(
-        (row) => String(row.userId) === String(chain.teacherUser.id),
-      ) ?? chain.teachersRecord;
-
-    // AC-N6 — Admin with explicit teacher key → 201
+    // AC-N6 — Admin avec clé correspondant à evaluation.teacher_id → 201
+    const matchingKey = evalTeacherCode || canonTeacher.id;
     const postAdminKey = await request("/notes", {
       method: "POST",
       token: school.adminToken,
@@ -654,15 +673,15 @@ async function main() {
         evaluationId: putSession.evaluation.id,
         period: chain.period,
         date: todayPeriodDate(),
-        teacherId: canonTeacher.id,
-        authorId: canonTeacher.id,
+        teacherId: matchingKey,
+        authorId: matchingKey,
       },
     });
     record(
       "AC-N6",
-      "Admin + clé explicite unique → 201",
+      "Admin + clé = evaluation.teacher_id → 201",
       postAdminKey.status === 201,
-      `HTTP ${postAdminKey.status} ${JSON.stringify(postAdminKey.data)?.slice(0, 180)}`,
+      `HTTP ${postAdminKey.status} key=${matchingKey}`,
     );
 
     const gradesAfterAdmin = await pgQuery(
@@ -677,10 +696,140 @@ async function main() {
     );
     record(
       "AC-N6-PG",
-      "Note admin → teacher_code = clé fournie",
-      String(gradesAfterAdmin[0]?.teacher_code) === String(canonTeacher.id),
-      JSON.stringify({ gradesAfterAdmin, expected: canonTeacher.id }),
+      "Note admin → teacher_code = clé fournie (= eval)",
+      String(gradesAfterAdmin[0]?.teacher_code) === String(matchingKey),
+      JSON.stringify({ gradesAfterAdmin, expected: matchingKey }),
     );
+
+    // AC-N1-DIVERGE — Admin avec clé d'un AUTRE enseignant de l'école → 409
+    const otherTeacherId = `TEACHERS-OTHER-${stamp}`;
+    await putStateKeys(school.adminToken, {
+      teachers: [
+        {
+          id: otherTeacherId,
+          schoolCode: school.schoolCode,
+          firstName: "Autre",
+          lastName: "Prof",
+          name: "Prof",
+          status: "Actif",
+          mainSubject: chain.subject,
+        },
+        ...((await getState(school.adminToken)).teachers ?? []).filter(
+          (t) => String(t.id) !== otherTeacherId,
+        ),
+      ],
+    });
+    // Ensure other teacher materialized in PG
+    const otherPg = await pgQuery(
+      `SELECT t.id::text AS id, t.teacher_code
+       FROM teachers t JOIN schools s ON s.id = t.school_id
+       WHERE s.school_code = $1 AND t.teacher_code = $2
+       LIMIT 1`,
+      [school.schoolCode, otherTeacherId],
+    );
+    const gradesBeforeDiverge = await countGrades();
+    const postDiverge = await request("/notes", {
+      method: "POST",
+      token: school.adminToken,
+      body: {
+        studentId: studentKey,
+        subject: chain.subject,
+        className: chain.className,
+        schoolCode: school.schoolCode,
+        value: 8,
+        scale: 20,
+        coefficient: 1,
+        evaluationCoefficient: 1,
+        evaluationId: putSession.evaluation.id,
+        period: chain.period,
+        date: todayPeriodDate(),
+        teacherId: otherTeacherId,
+        authorId: otherTeacherId,
+      },
+    });
+    const gradesAfterDiverge = await countGrades();
+    record(
+      "AC-N1-DIVERGE",
+      "Admin clé ≠ evaluation.teacher_id → 409, 0 mutation",
+      postDiverge.status === 409 &&
+        postDiverge.data?.code === "GRADE_TEACHER_UNRESOLVED" &&
+        gradesAfterDiverge === gradesBeforeDiverge &&
+        otherPg.length === 1,
+      `HTTP ${postDiverge.status} code=${postDiverge.data?.code} otherPg=${JSON.stringify(otherPg)} grades ${gradesBeforeDiverge}→${gradesAfterDiverge}`,
+      postDiverge.data,
+    );
+
+    // AC-N1-SCOPE — Admin avec clé d'une autre école → 409
+    const foreignKey = `TEACHERS-FOREIGN-${stamp}`;
+    const gradesBeforeScope = await countGrades();
+    const postForeign = await request("/notes", {
+      method: "POST",
+      token: school.adminToken,
+      body: {
+        studentId: studentKey,
+        subject: chain.subject,
+        className: chain.className,
+        schoolCode: school.schoolCode,
+        value: 7,
+        scale: 20,
+        coefficient: 1,
+        evaluationCoefficient: 1,
+        evaluationId: putSession.evaluation.id,
+        period: chain.period,
+        date: todayPeriodDate(),
+        teacherId: foreignKey,
+        authorId: foreignKey,
+      },
+    });
+    const gradesAfterScope = await countGrades();
+    record(
+      "AC-N1-SCOPE",
+      "Admin clé hors école (non résolue) → 409, 0 mutation",
+      postForeign.status === 409 &&
+        postForeign.data?.code === "GRADE_TEACHER_UNRESOLVED" &&
+        gradesAfterScope === gradesBeforeScope,
+      `HTTP ${postForeign.status} code=${postForeign.data?.code} grades ${gradesBeforeScope}→${gradesAfterScope}`,
+      postForeign.data,
+    );
+
+    // AC-N1-NULL-EVAL — aussi sans clé quand evaluation.teacher_id est NULL
+    await pgQuery(
+      `UPDATE evaluations SET teacher_id = NULL
+       WHERE legacy_json_id = $1 OR id::text = $1`,
+      [putSession.evaluation.id],
+    );
+    const postAdminNoKeyNullEval = await request("/notes", {
+      method: "POST",
+      token: school.adminToken,
+      body: {
+        studentId: studentKey,
+        subject: chain.subject,
+        className: chain.className,
+        schoolCode: school.schoolCode,
+        value: 6,
+        scale: 20,
+        coefficient: 1,
+        evaluationCoefficient: 1,
+        evaluationId: putSession.evaluation.id,
+        period: chain.period,
+        date: todayPeriodDate(),
+      },
+    });
+    record(
+      "AC-N1-NULL-EVAL",
+      "Admin sans clé + evaluation.teacher_id NULL → 409",
+      postAdminNoKeyNullEval.status === 409 &&
+        postAdminNoKeyNullEval.data?.code === "GRADE_TEACHER_UNRESOLVED",
+      `HTTP ${postAdminNoKeyNullEval.status} code=${postAdminNoKeyNullEval.data?.code}`,
+    );
+    // Restore eval teacher for downstream présence tests that don't depend on it
+    if (evalTeacherId) {
+      await pgQuery(
+        `UPDATE evaluations SET teacher_id = $2::uuid
+         WHERE legacy_json_id = $1 OR id::text = $1`,
+        [putSession.evaluation.id, evalTeacherId],
+      );
+    }
 
     // AC-N3 — Présences
     const presenceNoKey = await request("/presences", {

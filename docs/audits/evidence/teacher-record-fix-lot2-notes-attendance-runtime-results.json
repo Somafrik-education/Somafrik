@@ -1,7 +1,7 @@
 {
   "subject": "TEACHER-RECORD-LOT2-NOTES-ATTENDANCE-IDENTITY-ACK",
   "contract": "docs/audits/CONTRAT-FIX-TEACHER-RECORD-LOT2-NOTES-ATTENDANCE.md",
-  "generatedAt": "2026-07-27T16:51:03.819Z",
+  "generatedAt": "2026-07-27T17:05:58.087Z",
   "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_lot2_notes",
   "apiBase": "http://127.0.0.1:5122/api",
   "gates": [
@@ -58,21 +58,28 @@
       "id": "AC-N2",
       "title": "Enseignant + affectation → POST /notes 201",
       "status": "PASS",
-      "detail": "HTTP 201 {\"id\":\"f6e43885-5618-42f7-9ba3-c82645eb5057\",\"schoolId\":\"633228ae-3c23-438d-8a9e-eaff8b1c4746\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785171051752-t6bxcb\",\"className\":\"",
+      "detail": "HTTP 201 {\"id\":\"985b1acb-bab1-4796-ae4b-a5443279ffef\",\"schoolId\":\"2dbefbc7-54f1-48e1-9ef7-945d45bfcb48\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785171943233-wnmlpv\",\"className\":\"",
       "extra": null
     },
     {
       "id": "AC-N2-PG",
       "title": "grades.teacher_id = canon enseignant attendu (lié user/affectation)",
       "status": "PASS",
-      "detail": "{\"gradeRows\":[{\"id\":\"f6e43885-5618-42f7-9ba3-c82645eb5057\",\"teacher_code\":\"TEACHERS-1785171052779-04mqfpak\",\"user_id\":\"09325bdc-a806-4a79-aeff-f87444aeef28\"}],\"linkedTeacherId\":\"TEACHERS-1785171052779-04mqfpak\"}",
+      "detail": "{\"gradeRows\":[{\"id\":\"985b1acb-bab1-4796-ae4b-a5443279ffef\",\"teacher_code\":\"TEACHERS-1785171944233-ar6km4o7\",\"user_id\":\"ce177a2e-5f11-448b-bcee-46aae72da80c\"}],\"linkedTeacherId\":\"TEACHERS-1785171944233-ar6km4o7\"}",
+      "extra": null
+    },
+    {
+      "id": "AC-N1-PRECOND",
+      "title": "Évaluation préliée avec teacher_id (précondition scénarios admin)",
+      "status": "PASS",
+      "detail": "[{\"id\":\"63d3ec03-3d02-4e95-ae34-59fba10f1e2e\",\"teacher_id\":\"18d009cb-1b8b-4f16-be9f-0c41478993ec\",\"teacher_code\":\"TEACHERS-1785171944233-ar6km4o7\"}]",
       "extra": null
     },
     {
       "id": "AC-N1",
-      "title": "Admin sans clé enseignant → 409 GRADE_TEACHER_UNRESOLVED",
+      "title": "Admin sans clé + évaluation préliée → 409 GRADE_TEACHER_UNRESOLVED, 0 mutation",
       "status": "PASS",
-      "detail": "HTTP 409 code=GRADE_TEACHER_UNRESOLVED",
+      "detail": "HTTP 409 code=GRADE_TEACHER_UNRESOLVED grades 1→1",
       "extra": {
         "message": "Clé enseignant explicite requise pour attribuer une note (admin/direction).",
         "code": "GRADE_TEACHER_UNRESOLVED"
@@ -80,16 +87,43 @@
     },
     {
       "id": "AC-N6",
-      "title": "Admin + clé explicite unique → 201",
+      "title": "Admin + clé = evaluation.teacher_id → 201",
       "status": "PASS",
-      "detail": "HTTP 201 {\"id\":\"f6e43885-5618-42f7-9ba3-c82645eb5057\",\"schoolId\":\"633228ae-3c23-438d-8a9e-eaff8b1c4746\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785171051752-t6bxcb\",\"className\":\"",
+      "detail": "HTTP 201 key=TEACHERS-1785171944233-ar6km4o7",
       "extra": null
     },
     {
       "id": "AC-N6-PG",
-      "title": "Note admin → teacher_code = clé fournie",
+      "title": "Note admin → teacher_code = clé fournie (= eval)",
       "status": "PASS",
-      "detail": "{\"gradesAfterAdmin\":[{\"teacher_code\":\"TEACHERS-1785171052779-04mqfpak\"}],\"expected\":\"TEACHERS-1785171052779-04mqfpak\"}",
+      "detail": "{\"gradesAfterAdmin\":[{\"teacher_code\":\"TEACHERS-1785171944233-ar6km4o7\"}],\"expected\":\"TEACHERS-1785171944233-ar6km4o7\"}",
+      "extra": null
+    },
+    {
+      "id": "AC-N1-DIVERGE",
+      "title": "Admin clé ≠ evaluation.teacher_id → 409, 0 mutation",
+      "status": "PASS",
+      "detail": "HTTP 409 code=GRADE_TEACHER_UNRESOLVED otherPg=[{\"id\":\"ffaac065-21db-4b2a-b733-9113ca5e693b\",\"teacher_code\":\"TEACHERS-OTHER-71940676\"}] grades 1→1",
+      "extra": {
+        "message": "Clé enseignant divergente de l'enseignant de l'évaluation.",
+        "code": "GRADE_TEACHER_UNRESOLVED"
+      }
+    },
+    {
+      "id": "AC-N1-SCOPE",
+      "title": "Admin clé hors école (non résolue) → 409, 0 mutation",
+      "status": "PASS",
+      "detail": "HTTP 409 code=GRADE_TEACHER_UNRESOLVED grades 1→1",
+      "extra": {
+        "message": "Enseignant introuvable ou ambigu pour la note.",
+        "code": "GRADE_TEACHER_UNRESOLVED"
+      }
+    },
+    {
+      "id": "AC-N1-NULL-EVAL",
+      "title": "Admin sans clé + evaluation.teacher_id NULL → 409",
+      "status": "PASS",
+      "detail": "HTTP 409 code=GRADE_TEACHER_UNRESOLVED",
       "extra": null
     },
     {
@@ -120,16 +154,16 @@
       "id": "AC-T1-01",
       "title": "PUT multi-twin historique → identitySyncAck.skips contient TEACHER_HISTORICAL_MULTI_TWIN",
       "status": "PASS",
-      "detail": "{\"skips\":[{\"code\":\"TEACHER_HISTORICAL_MULTI_TWIN\",\"userId\":\"USERS-L2-TWIN-71049177\",\"schoolCode\":\"CD-2026-0051\",\"twinIds\":[\"TEACHER-TW1-71049177\",\"TEACHER-TW2-71049177\"],\"action\":\"noop\"}]}",
+      "detail": "{\"skips\":[{\"code\":\"TEACHER_HISTORICAL_MULTI_TWIN\",\"userId\":\"USERS-L2-TWIN-71940676\",\"schoolCode\":\"CD-2026-0051\",\"twinIds\":[\"TEACHER-TW1-71940676\",\"TEACHER-TW2-71940676\"],\"action\":\"noop\"}]}",
       "extra": {
         "skips": [
           {
             "code": "TEACHER_HISTORICAL_MULTI_TWIN",
-            "userId": "USERS-L2-TWIN-71049177",
+            "userId": "USERS-L2-TWIN-71940676",
             "schoolCode": "CD-2026-0051",
             "twinIds": [
-              "TEACHER-TW1-71049177",
-              "TEACHER-TW2-71049177"
+              "TEACHER-TW1-71940676",
+              "TEACHER-TW2-71940676"
             ],
             "action": "noop"
           }
@@ -157,8 +191,8 @@
   "scenarios": [
     {
       "schoolCode": "CD-2026-0051",
-      "teacherId": "TEACHERS-1785171053560-bxk5w8",
-      "evaluationId": "EVAL-1785171056043-lih3sz"
+      "teacherId": "TEACHERS-1785171945039-nikofx",
+      "evaluationId": "EVAL-1785171947611-bs9qd9"
     }
   ],
   "ok": true
