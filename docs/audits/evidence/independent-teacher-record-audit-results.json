@@ -1,0 +1,413 @@
+{
+  "kind": "INDEPENDENT_AUDIT",
+  "subject": "TEACHER-RECORD-FULL-REVIEW",
+  "title": "Audit indépendant — fiche enseignant (cycle de vie complet)",
+  "notACtoValidation": true,
+  "cursorReportIsNotProof": true,
+  "generatedAt": "2026-07-27T14:40:00.000Z",
+  "baseBranch": "develop",
+  "baseCommit": "9dcf4ba1200f6cea10bf17fc097c073aa201e546",
+  "baseCommitSubject": "Merge pull request #102 from Somafrik/cursor/pre-e1-v2-2-student-code-characterization-04e8",
+  "method": [
+    "inventory_teacher_surfaces",
+    "independent_code_read",
+    "web_backend_pg_mobile_compare",
+    "unit_test_execution",
+    "gap_and_scenario_search",
+    "classification"
+  ],
+  "governance": {
+    "nextV2Subject": "SUSPENDED",
+    "teacherRecordFix": "NOT_AUTHORIZED",
+    "refactor": "NOT_AUTHORIZED",
+    "twinMigration": "NOT_AUTHORIZED",
+    "historicalEvidenceMutation": "FORBIDDEN",
+    "e1": "NO_GO"
+  },
+  "limits": {
+    "postgresqlLive": false,
+    "reason": "pg_isready unavailable in audit environment; no live HTTP/PG replay",
+    "rbacRuntimeMatrix": "INDETERMINATE_WITHOUT_LIVE_DUMP"
+  },
+  "verdict": {
+    "teacherRecord": "GO_SOUS_RESERVES",
+    "e1": "NO_GO",
+    "rationale": "Web+backend TEACHERS-* canon is formalized and unit-tested, but CRITICAL/MAJOR anomalies remain on Mobile twin creation, grade teacher fallback, pedagogical deactivation, silent ambiguity skips, and Web/backend rule drift."
+  },
+  "producerConsumerMap": [
+    {
+      "producer": "web/EntityPage teachers create",
+      "consumer": "backoffice.teachers[]",
+      "idFormat": "TEACHERS-{uuid|ts}"
+    },
+    {
+      "producer": "web+backend userTeacherSync",
+      "consumer": "backoffice.teachers[]",
+      "idFormat": "TEACHERS-*"
+    },
+    {
+      "producer": "Mobile userTeacherSync",
+      "consumer": "backoffice.teachers[]",
+      "idFormat": "TEACHER-*"
+    },
+    {
+      "producer": "PUT /api/backoffice/state",
+      "consumer": "JSON persist + pedagogy staff PG sync",
+      "idFormat": "teacher_code = JSON id"
+    },
+    {
+      "producer": "evaluations[].teacherId",
+      "consumer": "evaluations.teacher_id UUID",
+      "resolution": "exact teacher_code lookup"
+    },
+    {
+      "producer": "POST notes (non-teacher principal)",
+      "consumer": "grades.teacher_id",
+      "resolution": "assignment match OR first teacher by created_at"
+    }
+  ],
+  "identityMatrix": {
+    "account": { "format": "USERS-*", "pg": "users.user_code UNIQUE global" },
+    "login": { "format": "ENS-#### / {SCHOOL}-ENS-####", "scope": "school soft-match" },
+    "canonFiche": { "format": "TEACHERS-*", "pg": "teachers.teacher_code UNIQUE global", "userId": "nullable" },
+    "historicalTwin": { "format": "TEACHER-*", "autoUpgradeToTeachers": false },
+    "assignmentBo": { "key": "teacherId+class+subject+schoolCode" },
+    "assignmentPg": { "key": "teacher_id+class_id+subject_id+year+role", "statusOnUpsert": "always active" },
+    "evaluation": { "json": "teacherId code", "pg": "teacher_id UUID nullable" },
+    "grade": { "jsonAuthorId": "often user/SYSTEM", "pgReadAuthorId": "teacher_code", "pgTeacherId": "NOT NULL" }
+  },
+  "mandatoryQuestions": [
+    {
+      "id": "Q1",
+      "question": "Un seul canon TEACHERS-* pour chaque nouveau compte enseignant et établissement ?",
+      "status": "CONFIRMÉ",
+      "severity": "Mobile crée TEACHER-*",
+      "severitySeverity": "CRITICAL",
+      "evidence": [
+        "backend/services/userTeacherSyncService.js:340-347",
+        "Mobile/src/lib/userTeacherSync.ts:13-15"
+      ]
+    },
+    {
+      "id": "Q2",
+      "question": "Fiche sans compte / compte sans fiche ?",
+      "status": "CONFIRMÉ",
+      "detail": "Both directions possible; teachers.user_id nullable",
+      "evidence": ["backend/db/schema.sql:141-151"]
+    },
+    {
+      "id": "Q3",
+      "question": "Web et backend appliquent-ils les mêmes règles ?",
+      "status": "INFIRMÉ",
+      "detail": "Aligned on age and TEACHERS canon; divergences on role 'teacher', deletion blockers, ambiguity strictness",
+      "evidence": [
+        "web/src/lib/userTeacherSync.ts:27-29",
+        "backend/services/userTeacherSyncService.js:32-34",
+        "web/src/lib/teacherRules.ts:185"
+      ]
+    },
+    {
+      "id": "Q4",
+      "question": "Désactivation compte désactive-t-elle les capacités pédagogiques ?",
+      "status": "INFIRMÉ",
+      "severity": "ANOMALIE REPRODUCTIBLE",
+      "severitySeverity": "CRITICAL",
+      "detail": "Login blocked when account Suspendu; fiche Suspendu does not block assignments; sync overwrites Inactif; PG materialize mostly active",
+      "evidence": [
+        "backend/lib/dataIntegrityRules.js:418-420",
+        "backend/services/userTeacherSyncService.js:256",
+        "backend/db/postgresRepository.js:2240"
+      ]
+    },
+    {
+      "id": "Q5",
+      "question": "Suppression/mutation peut-elle laisser orphelins ?",
+      "status": "CONFIRMÉ",
+      "detail": "UI blockers exist; contact purge cleans assignments not evaluations; no FK CASCADE on teachers",
+      "evidence": [
+        "web/src/lib/teacherRules.ts:185",
+        "backend/db/schema.sql:183-237"
+      ]
+    },
+    {
+      "id": "Q6",
+      "question": "Changement d'établissement ?",
+      "status": "CONFIRMÉ",
+      "detail": "Refused in PG via TEACHER_TENANT_CONFLICT; JSON schoolCode mutation possible for Super Admin → partial divergence",
+      "evidence": ["backend/db/postgresRepository.js:2248-2253"]
+    },
+    {
+      "id": "Q7",
+      "question": "Plusieurs fiches légitimes même école / multi-écoles ?",
+      "status": "CONFIRMÉ",
+      "detail": "Multi-school via separate schoolCode OK; multi TEACHERS-* same user+school = ambiguity",
+      "evidence": ["backend/services/userTeacherSyncService.js:168-192"]
+    },
+    {
+      "id": "Q8",
+      "question": "Affectations actives déterminent toujours le canon sans ambiguïté ?",
+      "status": "INFIRMÉ",
+      "detail": "Only when exactly one candidate has an active assignment; else TEACHER_CANON_AMBIGUOUS",
+      "evidence": ["backend/services/userTeacherSyncService.js:173-192"]
+    },
+    {
+      "id": "Q9",
+      "question": "Notes/évals nouvelles utilisent-elles le même enseignant JSON et PG ?",
+      "status": "INFIRMÉ",
+      "anomaly": "ANOMALIE REPRODUCTIBLE",
+      "anomalySeverity": "CRITICAL",
+      "detail": "Evaluations exact resolve; non-teacher grade path falls back to first school teacher by created_at",
+      "evidence": [
+        "backend/lib/evaluationAttachment.js:46-55",
+        "backend/db/postgresRepository.js:4363-4366"
+      ]
+    },
+    {
+      "id": "Q10",
+      "question": "Fallback historique peut-il autoriser via fiche non active ?",
+      "status": "CONFIRMÉ",
+      "anomaly": "ANOMALIE REPRODUCTIBLE",
+      "anomalySeverity": "MAJOR",
+      "detail": "teacherNotesWriteAccess resolves TEACHERS/TEACHER candidates without status filter",
+      "evidence": ["backend/lib/teacherNotesWriteAccess.js:46-67"]
+    },
+    {
+      "id": "Q11",
+      "question": "Erreurs d'ambiguïté remontées à l'utilisateur ?",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "anomalySeverity": "MAJOR",
+      "detail": "Linked write throws 409; unrelated skips never returned in PUT response",
+      "evidence": [
+        "backend/services/userTeacherSyncService.js:395-407",
+        "backend/server.js:2868-2869"
+      ]
+    },
+    {
+      "id": "Q12",
+      "question": "Tests couvrent-ils parcours UI réels ?",
+      "status": "INFIRMÉ",
+      "detail": "Backend unit sync solid; Web list/workflow unit only; Mobile none; E2E contacts-only stale vs Web",
+      "evidence": [
+        "web/src/lib/entityModules.ts:45-51",
+        "scripts/e2e-contacts-rules.js:7-12",
+        "web/src/pages/etablissement/TeachersListPage.test.tsx"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "C-01",
+      "title": "Canon TEACHERS-* Web/backend sync",
+      "status": "CONFIRMÉ",
+      "severity": null,
+      "files": ["backend/services/userTeacherSyncService.js", "web/src/lib/userTeacherSync.ts"]
+    },
+    {
+      "id": "C-02",
+      "title": "Historical TEACHER-* conservation AC-HIST-02",
+      "status": "CONFIRMÉ",
+      "severity": null,
+      "files": ["backend/services/userTeacherSyncService.js"]
+    },
+    {
+      "id": "C-03",
+      "title": "Fiche without account and account without fiche",
+      "status": "CONFIRMÉ",
+      "severity": "INFORMATION",
+      "files": ["backend/db/schema.sql"]
+    },
+    {
+      "id": "C-04",
+      "title": "Mobile still creates TEACHER-*",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "severity": "CRITICAL",
+      "files": ["Mobile/src/lib/userTeacherSync.ts"],
+      "lines": ["13-15"],
+      "reproStatic": "Call upsertTeacherFromUser for Enseignant without existing fiche → id starts with TEACHER- not TEACHERS-"
+    },
+    {
+      "id": "C-05",
+      "title": "findTeacherForGrade / attendance created_at fallback",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "severity": "CRITICAL",
+      "files": ["backend/db/postgresRepository.js"],
+      "lines": ["4363-4366", "4394"],
+      "reproStatic": "Non-Enseignant principal without assignment match → SELECT teachers WHERE school_id ORDER BY created_at LIMIT 1"
+    },
+    {
+      "id": "C-06",
+      "title": "Incomplete pedagogical deactivation",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "severity": "CRITICAL",
+      "files": [
+        "backend/lib/dataIntegrityRules.js",
+        "backend/services/userTeacherSyncService.js",
+        "backend/db/postgresRepository.js"
+      ],
+      "reproStatic": "teacher.status=Suspendu passes validateAssignmentWrite; materialize maps non-archived to active"
+    },
+    {
+      "id": "C-07",
+      "title": "Sync skips not exposed to PUT client",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "severity": "MAJOR",
+      "files": ["backend/server.js"],
+      "lines": ["2868-2869"],
+      "reproStatic": "teacherSync.skips computed but discarded; response has no identity skips array"
+    },
+    {
+      "id": "C-08",
+      "title": "PG assignments always upserted active",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "severity": "MAJOR",
+      "files": ["backend/db/postgresRepository.js"],
+      "lines": ["2336-2341"]
+    },
+    {
+      "id": "C-09",
+      "title": "Tenant defenses + global teacher_code UNIQUE debt",
+      "status": "CONFIRMÉ",
+      "severity": "MAJOR",
+      "classificationNote": "DEFENSE_CONFIRMED_WITH_MODEL_DEBT",
+      "files": ["backend/db/schema.sql", "backend/db/postgresRepository.js"]
+    },
+    {
+      "id": "C-10",
+      "title": "isTeacherUserRole divergence for exact 'teacher'",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "severity": "MAJOR",
+      "files": [
+        "web/src/lib/userTeacherSync.ts",
+        "backend/services/userTeacherSyncService.js"
+      ]
+    },
+    {
+      "id": "C-11",
+      "title": "Web direct create open; E2E contacts-only stale",
+      "status": "DETTE DOCUMENTAIRE",
+      "severity": "MAJOR",
+      "files": ["web/src/lib/entityModules.ts", "scripts/e2e-contacts-rules.js"]
+    },
+    {
+      "id": "C-12",
+      "title": "Deletion dependency blockers Web-only",
+      "status": "CONFIRMÉ",
+      "severity": "MAJOR",
+      "files": ["web/src/lib/teacherRules.ts", "backend/lib/dataIntegrityRules.js"]
+    },
+    {
+      "id": "C-13",
+      "title": "contactRegistrySync off PUT path + divergent ENS",
+      "status": "DETTE DOCUMENTAIRE",
+      "severity": "MAJOR",
+      "runtimeUsage": "INDETERMINATE",
+      "files": ["backend/lib/contactRegistrySync.js"]
+    },
+    {
+      "id": "C-14",
+      "title": "Notes authz can resolve inactive/historical twin",
+      "status": "ANOMALIE REPRODUCTIBLE",
+      "severity": "MAJOR",
+      "files": ["backend/lib/teacherNotesWriteAccess.js"]
+    },
+    {
+      "id": "C-15",
+      "title": "No civil-identity duplicate guard on teacher fiche",
+      "status": "CONFIRMÉ",
+      "severity": "MINOR",
+      "files": ["web/src/lib/entityModules.ts", "backend/lib/dataIntegrityRules.js"]
+    },
+    {
+      "id": "C-16",
+      "title": "RBAC defaults Admin/Direction/Enseignant + Mobile stricter",
+      "status": "CONFIRMÉ",
+      "severity": "INFORMATION",
+      "files": ["web/src/lib/permissions.ts", "Mobile/src/screens/AdminCrudScreen.tsx"]
+    }
+  ],
+  "scenarios": {
+    "nominal": ["N1-web-create-TEACHERS", "N2-user-sync-creates-fiche", "N3-hist-twin-no-autoupgrade", "N4-assignment-breaks-tie", "N5-eval-exact-resolve", "N6-school-admin-delete-denied", "N7-cross-school-assignment-denied"],
+    "negative": ["X1-ambiguous-linked-409", "X2-ambiguous-unrelated-silent-skip", "X3-suspendu-assignment-allowed", "X4-sync-overwrites-inactif", "X5-admin-grade-first-teacher", "X6-mobile-TEACHER-prefix", "X7-role-teacher-server-ignore", "X8-api-delete-without-ui-blockers", "X9-school-transfer-pg-conflict", "X10-contact-purge-eval-orphans"]
+  },
+  "contractGaps": [
+    {
+      "expected": "Multi-surface TEACHERS-* canon",
+      "actual": "Mobile emits TEACHER-*",
+      "gap": true
+    },
+    {
+      "expected": "Structured ambiguity visible to operator",
+      "actual": "Throw on linked write; silent skips otherwise",
+      "gap": true
+    },
+    {
+      "expected": "No silent created_at identity choice (V2.1 spirit)",
+      "actual": "Honored in userTeacherSync; violated in findTeacherForGrade/attendance",
+      "gap": true
+    },
+    {
+      "expected": "Contacts-only teacher create (stale E2E/comments)",
+      "actual": "entityCreateViaContactsOnly returns false",
+      "gap": true
+    },
+    {
+      "expected": "Deactivation blocks further assignment",
+      "actual": "Only inactif/archived blocked; Suspendu allowed",
+      "gap": true
+    },
+    {
+      "expected": "JSON↔PG assignment status convergence",
+      "actual": "PG upsert forces active",
+      "gap": true
+    }
+  ],
+  "historicalDebtsStillActive": [
+    "TEACHER-* twins conserved without auto-merge",
+    "Temporary multi-match via active assignment",
+    "Dual-store JSON BackOffice + PostgreSQL",
+    "contactRegistrySync script path",
+    "Global UNIQUE teacher_code",
+    "Notes authz BO assignment fallback surface"
+  ],
+  "e1Risks": [
+    {
+      "id": "E1-R1",
+      "title": "Incorrect grade teacher attribution",
+      "severity": "BLOCKER",
+      "linkedFindings": ["C-05"]
+    },
+    {
+      "id": "E1-R2",
+      "title": "Unresolved operator-visible canon ambiguity",
+      "severity": "CRITICAL",
+      "linkedFindings": ["C-07"]
+    },
+    {
+      "id": "E1-R3",
+      "title": "Mobile/historical twins in aggregates",
+      "severity": "CRITICAL",
+      "linkedFindings": ["C-04", "C-14"]
+    },
+    {
+      "id": "E1-R4",
+      "title": "Phantom active PG assignments",
+      "severity": "MAJOR",
+      "linkedFindings": ["C-08"]
+    },
+    {
+      "id": "E1-R5",
+      "title": "Test confidence gap vs real UI journeys",
+      "severity": "MAJOR",
+      "linkedFindings": ["C-11"]
+    }
+  ],
+  "unitTestsExecuted": {
+    "command": "node --test backend/services/userTeacherSyncService.test.js backend/lib/backofficeDedupe.teachers.test.js backend/lib/evaluationAttachment.test.js backend/lib/teacherNotesWriteAccess.test.js backend/lib/pedagogyStaffBoPersistence.test.js",
+    "result": "PASS",
+    "tests": 5,
+    "failures": 0,
+    "note": "Confirms unit sync/attachment behavior; does not cover C-04 Mobile, C-05 grade fallback, C-06 deactivation, C-07 skip surfacing, or UI journeys"
+  },
+  "reportPath": "docs/audits/AUDIT-INDEPENDANT-FICHE-ENSEIGNANT.md",
+  "historicalEvidenceUntouched": true
+}
