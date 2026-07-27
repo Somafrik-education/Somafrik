@@ -1,0 +1,459 @@
+{
+  "audit": "PRE-E1",
+  "phase": "V2.1",
+  "subject": "PRE-E1-IDENTITY-LIFECYCLE",
+  "generatedAt": "2026-07-27T07:06:45.123Z",
+  "apiBase": "http://127.0.0.1:5112/api",
+  "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_pre_e1_v2_identity",
+  "nature": "characterization-only-bounded",
+  "implementation": "forbidden",
+  "ctoBounding": {
+    "injectedTwinPreservationIsNotNominalCreation": true,
+    "id04A": "nominal without manual twin",
+    "id04B": "preexisting/injected twin"
+  },
+  "scenarios": [
+    {
+      "id": "ID-01",
+      "title": "Création / sync enseignant BO — snapshot multi-couches (nominal)",
+      "classification": "confirmé",
+      "detail": "json=TEACHER-1785135991811,TEACHERS-1785135992326-due141 pg=TEACHER-1785135991811,TEACHERS-1785135992326-due141 user_id=836fb42a-1a32-48d6-9560-5c10dd00a443",
+      "extra": {
+        "phase": "nominal",
+        "meaning": "cycle TEACHERS-* + user_id observable"
+      }
+    },
+    {
+      "id": "ID-02",
+      "title": "Affectation JSON teacherId vs teacher_assignments PG (nominal)",
+      "classification": "confirmé",
+      "detail": "json.teacherId=TEACHERS-1785135992326-due141 pg=[{\"id\":\"a07117eb-ad8c-46c9-bcab-bf293ee724f2\",\"teacher_code\":\"TEACHERS-1785135992326-due141\",\"class_name\":\"V21-1785135986759\",\"subject_name\":\"Mathématiques\",\"status\":\"active\"}]",
+      "extra": {
+        "phase": "nominal"
+      }
+    },
+    {
+      "id": "ID-03",
+      "title": "Auth enseignant + POST /api/notes (nominal)",
+      "classification": "confirmé",
+      "detail": "HTTP 201 grantedBy=class:pg_teacher_assignment+evaluation:pg_teacher_assignment eval={\"id\":\"9bfae086-28cf-4955-a344-9141562547e5\",\"teacher_id\":\"01e61a39-1f32-4827-83d5-1c483754abf5\",\"teacher_code\":\"TEACHER-1785135991811\"}",
+      "extra": {
+        "phase": "nominal"
+      }
+    },
+    {
+      "id": "ID-04A",
+      "title": "Parcours nominal sans injection — un jumeau TEACHER-* apparaît-il spontanément avec TEACHERS-* ?",
+      "classification": "confirmé",
+      "detail": "afterContact=[{\"id\":\"TEACHER-1785135991811\",\"userId\":\"USERS-o71s0d5m\",\"identifier\":\"ENS-0001\",\"sourceHint\":\"put_state_after_contact_user_account\"}] afterPedagogy=TEACHER-1785135991811,TEACHERS-1785135992326-due141 spontaneousTwins=TEACHER-1785135991811",
+      "extra": {
+        "phase": "nominal",
+        "meaning": "confirmé = création spontanée observée ; infirmé = seul TEACHERS-* (ou pas de TEACHER-*) après flux contact→user→TEACHERS-* ; indéterminé = inconclusive",
+        "injectTwin": false
+      }
+    },
+    {
+      "id": "ID-04A-Q7",
+      "title": "Divergence evaluation JSON↔PG sur parcours nominal (sans jumeau injecté)",
+      "classification": "confirmé",
+      "detail": "evaluation.teacherId=TEACHERS-1785135992326-due141 pg.teacher_code=TEACHER-1785135991811",
+      "extra": {
+        "phase": "nominal",
+        "meaning": "confirmé = divergence sans injection ; infirmé = convergence TEACHERS-* ; indéterminé = autre cas"
+      }
+    },
+    {
+      "id": "ID-05",
+      "title": "Replay sync identique — idempotence identité canonique (nominal)",
+      "classification": "confirmé",
+      "detail": "before={\"teachers_canonical\":1,\"users\":1,\"assignments\":1} after={\"teachers_canonical\":1,\"users\":1,\"assignments\":1}",
+      "extra": {
+        "phase": "nominal"
+      }
+    },
+    {
+      "id": "ID-06",
+      "title": "Comparaison élève bornée (contexte)",
+      "classification": "contexte",
+      "detail": "json.id=STUDENTS-1785135989325-k8nlh8 pgCodes=STUDENTS-1785135989325-k8nlh8,STUDENTS-1785135990806-f2bg4y",
+      "extra": {
+        "meaning": "Réserve CTO student_code"
+      }
+    },
+    {
+      "id": "ID-04B",
+      "title": "État préexistant avec jumeau injecté — persistance / non-fusion après dedupe",
+      "classification": "confirmé",
+      "detail": "injected=TEACHER-INJECT-1785135995543 before=TEACHER-1785136001645,TEACHER-INJECT-1785135995543,TEACHERS-1785136002241-wklnzh afterDedupe=TEACHER-1785136001645,TEACHER-INJECT-1785135995543,TEACHERS-1785136002241-wklnzh pg=TEACHER-1785136001645,TEACHER-INJECT-1785135995543,TEACHERS-1785136002241-wklnzh",
+      "extra": {
+        "phase": "fixture",
+        "meaning": "confirmé = non-convergence sous état jumelé préexistant/injecté (≠ création nominale)",
+        "injectTwin": true
+      }
+    },
+    {
+      "id": "ID-04B-Q7",
+      "title": "Divergence evaluation JSON↔PG sous fixture jumelle injectée",
+      "classification": "confirmé",
+      "detail": "evaluation.teacherId=TEACHERS-1785136002241-wklnzh pg.teacher_code=TEACHER-1785136001645",
+      "extra": {
+        "phase": "fixture",
+        "meaning": "confirmé = divergence observée lorsque des jumeaux sont déjà présents"
+      }
+    }
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "title": "Combien d’identités distinctes (nominal vs fixture) ?",
+      "classification": "confirmé",
+      "detail": "nominal.json=TEACHER-1785135991811,TEACHERS-1785135992326-due141 n=2 ; fixture.afterDedupe=TEACHER-1785136001645,TEACHER-INJECT-1785135995543,TEACHERS-1785136002241-wklnzh n=3",
+      "extra": {
+        "meaning": "Inventaire factuel des deux phases — ne fuse pas création et préservation"
+      }
+    },
+    {
+      "id": "Q2",
+      "title": "Points d’écriture exacts (sans / avec injection) ?",
+      "classification": "confirmé",
+      "detail": "PUT contact+user account (peut créer TEACHER-* spontané — à observer en 04A) · PUT teachers TEACHERS-* pédagogique + assignment · PUT teachers TEACHER-* injecté (04B seulement — fixture harness) · login JWT (identifier ENS/user) · POST /api/notes → evaluations.teacher_id",
+      "extra": {
+        "nominalAfterContact": [
+          {
+            "id": "TEACHER-1785135991811",
+            "userId": "USERS-o71s0d5m",
+            "identifier": "ENS-0001",
+            "sourceHint": "put_state_after_contact_user_account"
+          }
+        ],
+        "fixtureInjectedId": "TEACHER-INJECT-1785135995543"
+      }
+    },
+    {
+      "id": "Q3",
+      "title": "Identité canonique de fait pour affectation (TEACHERS-*) ?",
+      "classification": "confirmé",
+      "detail": "candidat=TEACHERS-1785135992326-due141 pg=TEACHERS-1785135992326-due141",
+      "extra": null
+    },
+    {
+      "id": "Q4-CREATE",
+      "title": "Création nominale des jumeaux TEACHER-* + TEACHERS-* (sans injection) ?",
+      "classification": "confirmé",
+      "detail": "spontaneous=TEACHER-1785135991811 pedagogy=TEACHERS-1785135992326-due141",
+      "extra": {
+        "mapsToScenario": "ID-04A",
+        "meaning": "INDÉTERMINÉE/confirmée/infirmée selon apparition spontanée — pas la fixture"
+      }
+    },
+    {
+      "id": "Q4-PRESERVE",
+      "title": "Non-convergence d’identités préexistantes / injectées ?",
+      "classification": "confirmé",
+      "detail": "injected=TEACHER-INJECT-1785135995543 retained=true",
+      "extra": {
+        "mapsToScenario": "ID-04B",
+        "meaning": "CONFIRMÉE si les jumeaux injectés ne sont pas fusionnés"
+      }
+    },
+    {
+      "id": "Q4",
+      "title": "Synthèse Q4 — création vs non-convergence (ne pas fusionner les verdicts)",
+      "classification": "indéterminé",
+      "detail": "création=confirmé ; non-convergence=confirmé",
+      "extra": {
+        "creation": "confirmé",
+        "nonConvergence": "confirmé",
+        "ctoBounding": "Non-convergence préexistante CONFIRMÉE ; création nominale selon Q4-CREATE (souvent INDÉTERMINÉE/infirmée)"
+      }
+    },
+    {
+      "id": "Q5",
+      "title": "teacher_code PG aligné sur TEACHERS-* pour le row d’affectation ?",
+      "classification": "confirmé",
+      "detail": "expected=TEACHERS-1785135992326-due141 obtained=TEACHERS-1785135992326-due141",
+      "extra": null
+    },
+    {
+      "id": "Q6",
+      "title": "teachers.user_id (canonique) ↔ user de session POST notes ?",
+      "classification": "confirmé",
+      "detail": "pg.user_id=836fb42a-1a32-48d6-9560-5c10dd00a443 user_code=USERS-o71s0d5m",
+      "extra": null
+    },
+    {
+      "id": "Q7-NOMINAL",
+      "title": "Divergence JSON↔PG evaluations sans fixture jumelle ?",
+      "classification": "confirmé",
+      "detail": "json=TEACHERS-1785135992326-due141 pg=TEACHER-1785135991811",
+      "extra": {
+        "phase": "nominal",
+        "mapsToScenario": "ID-04A-Q7"
+      }
+    },
+    {
+      "id": "Q7-FIXTURE",
+      "title": "Divergence JSON↔PG evaluations sous fixture jumelle ?",
+      "classification": "confirmé",
+      "detail": "json=TEACHERS-1785136002241-wklnzh pg=TEACHER-1785136001645",
+      "extra": {
+        "phase": "fixture",
+        "mapsToScenario": "ID-04B-Q7"
+      }
+    },
+    {
+      "id": "Q7",
+      "title": "Synthèse Q7 — borner la causalité de la divergence",
+      "classification": "indéterminé",
+      "detail": "sans_fixture=confirmé ; sous_fixture=confirmé",
+      "extra": {
+        "withoutFixture": "confirmé",
+        "withFixture": "confirmé",
+        "ctoBounding": "Divergence Q7 sous fixture jumelle à lire via Q7-FIXTURE ; ne pas généraliser sans Q7-NOMINAL"
+      }
+    }
+  ],
+  "evidence": {
+    "baseCommitHint": "post-094d5017 / develop@contrat-V2.1",
+    "schoolCode": "CD-2026-0051",
+    "phases": {
+      "nominal": {
+        "writeTrace": {
+          "teachersBeforeContact": [],
+          "afterContactUserPut": [
+            {
+              "id": "TEACHER-1785135991811",
+              "userId": "USERS-o71s0d5m",
+              "identifier": "ENS-0001",
+              "sourceHint": "put_state_after_contact_user_account"
+            }
+          ],
+          "pedagogicalPut": {
+            "teachersId": "TEACHERS-1785135992326-due141",
+            "injectedTwinId": null
+          }
+        },
+        "jsonTeachers": [
+          {
+            "id": "TEACHER-1785135991811",
+            "userId": "USERS-o71s0d5m",
+            "identifier": "ENS-0001"
+          },
+          {
+            "id": "TEACHERS-1785135992326-due141",
+            "userId": "USERS-o71s0d5m",
+            "identifier": "ENS-0001"
+          }
+        ],
+        "pgTeachers": [
+          {
+            "id": "01e61a39-1f32-4827-83d5-1c483754abf5",
+            "teacher_code": "TEACHER-1785135991811",
+            "user_id": "836fb42a-1a32-48d6-9560-5c10dd00a443",
+            "user_code": "USERS-o71s0d5m",
+            "role": "TEACHER"
+          },
+          {
+            "id": "82e0e58f-a3b3-416c-b9c1-f36bb35f567b",
+            "teacher_code": "TEACHERS-1785135992326-due141",
+            "user_id": "836fb42a-1a32-48d6-9560-5c10dd00a443",
+            "user_code": "USERS-o71s0d5m",
+            "role": "TEACHER"
+          }
+        ],
+        "pgUsers": [
+          {
+            "id": "836fb42a-1a32-48d6-9560-5c10dd00a443",
+            "user_code": "USERS-o71s0d5m",
+            "role": "TEACHER",
+            "school_id": "050a18a9-47af-4da8-9734-28f012a35902"
+          }
+        ],
+        "spontaneousTeacherStarIds": [
+          "TEACHER-1785135991811"
+        ],
+        "pedagogicalTeachersId": "TEACHERS-1785135992326-due141"
+      },
+      "fixture": {
+        "writeTrace": {
+          "teachersBeforeContact": [],
+          "afterContactUserPut": [
+            {
+              "id": "TEACHER-1785136001645",
+              "userId": "USERS-xa1t330i",
+              "identifier": "ENS-0001",
+              "sourceHint": "put_state_after_contact_user_account"
+            }
+          ],
+          "pedagogicalPut": {
+            "teachersId": "TEACHERS-1785136002241-wklnzh",
+            "injectedTwinId": "TEACHER-INJECT-1785135995543"
+          }
+        },
+        "injectedTwinId": "TEACHER-INJECT-1785135995543",
+        "jsonBeforeDedupe": [
+          "TEACHER-1785136001645",
+          "TEACHER-INJECT-1785135995543",
+          "TEACHERS-1785136002241-wklnzh"
+        ],
+        "jsonAfterDedupe": [
+          "TEACHER-1785136001645",
+          "TEACHER-INJECT-1785135995543",
+          "TEACHERS-1785136002241-wklnzh"
+        ],
+        "pgTeachers": [
+          {
+            "id": "4261365c-ffbd-4f6f-8118-e64e9b9a03af",
+            "teacher_code": "TEACHER-1785136001645",
+            "user_id": "f6aee755-6c4a-4c46-ac01-3b4d928d9519",
+            "user_code": "USERS-xa1t330i",
+            "role": "TEACHER"
+          },
+          {
+            "id": "5ed6933a-0439-4c07-8408-f34d102823f9",
+            "teacher_code": "TEACHER-INJECT-1785135995543",
+            "user_id": "f6aee755-6c4a-4c46-ac01-3b4d928d9519",
+            "user_code": "USERS-xa1t330i",
+            "role": "TEACHER"
+          },
+          {
+            "id": "24ec48c9-5df2-4413-96aa-eb05e94d3206",
+            "teacher_code": "TEACHERS-1785136002241-wklnzh",
+            "user_id": "f6aee755-6c4a-4c46-ac01-3b4d928d9519",
+            "user_code": "USERS-xa1t330i",
+            "role": "TEACHER"
+          }
+        ]
+      }
+    },
+    "identities": {
+      "sessionNominal": {
+        "jwt": {
+          "sub": "USERS-o71s0d5m",
+          "identifier": "ENS-0001",
+          "role": "Enseignant"
+        }
+      },
+      "writePoints": [
+        "PUT contact+user account (peut créer TEACHER-* spontané — à observer en 04A)",
+        "PUT teachers TEACHERS-* pédagogique + assignment",
+        "PUT teachers TEACHER-* injecté (04B seulement — fixture harness)",
+        "login JWT (identifier ENS/user)",
+        "POST /api/notes → evaluations.teacher_id"
+      ]
+    },
+    "postgres": {
+      "assignmentsNominal": [
+        {
+          "id": "a07117eb-ad8c-46c9-bcab-bf293ee724f2",
+          "teacher_code": "TEACHERS-1785135992326-due141",
+          "class_name": "V21-1785135986759",
+          "subject_name": "Mathématiques",
+          "status": "active"
+        }
+      ],
+      "evaluationsNominal": [
+        {
+          "id": "9bfae086-28cf-4955-a344-9141562547e5",
+          "teacher_id": "01e61a39-1f32-4827-83d5-1c483754abf5",
+          "teacher_code": "TEACHER-1785135991811"
+        }
+      ],
+      "replayNominal": {
+        "before": {
+          "teachers_canonical": 1,
+          "users": 1,
+          "assignments": 1
+        },
+        "after": {
+          "teachers_canonical": 1,
+          "users": 1,
+          "assignments": 1
+        }
+      },
+      "evaluationsFixture": [
+        {
+          "id": "0b51f4c6-c2c1-4b8a-8d21-5148c4d6afd3",
+          "teacher_id": "4261365c-ffbd-4f6f-8118-e64e9b9a03af",
+          "teacher_code": "TEACHER-1785136001645"
+        }
+      ]
+    },
+    "posts": [
+      {
+        "phase": "nominal",
+        "status": 201,
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+      },
+      {
+        "phase": "fixture",
+        "status": 201,
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+      }
+    ],
+    "traces": [
+      {
+        "phase": "nominal",
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+      }
+    ],
+    "studentContext": {
+      "jsonStudent": {
+        "id": "STUDENTS-1785135989325-k8nlh8",
+        "matricule": "STUDENTS-1785135989325-k8nlh8"
+      },
+      "pgStudents": [
+        {
+          "id": "fb3f9034-ea7f-4ca7-81ad-fe188b9a0f32",
+          "student_code": "STUDENTS-1785135989325-k8nlh8"
+        },
+        {
+          "id": "823cf6dd-ce67-43bd-9a6b-b94b76d06c79",
+          "student_code": "STUDENTS-1785135990806-f2bg4y"
+        }
+      ],
+      "note": "Contexte uniquement — hors décision PRE-E1-STUDENT-CODE-SCOPE"
+    },
+    "bounding": {
+      "note": "ID-04A = sans injection manuelle de jumeau ; ID-04B = jumeau injecté"
+    }
+  },
+  "synthesis": {
+    "debtId": "PRE-E1-IDENTITY-LIFECYCLE",
+    "severityDocumented": "MAJOR",
+    "severityGlobal": "MAJOR_CONFIRMEE_DECISION_CTO",
+    "characterization": "validee_CTO_bornee",
+    "results": {
+      "nonConvergencePreexistingOrInjected": "CONFIRMÉE",
+      "nominalTwinCreation": "CONFIRMÉE",
+      "q7DivergenceUnderTwinFixture": "CONFIRMÉE",
+      "q7DivergenceWithoutFixture": "confirmé"
+    },
+    "factualSummary": "ID-04A : PUT contact+user crée TEACHER-* ; fiche pédagogique ajoute TEACHERS-* ; coexistence sans injection harness. ID-04B : non-fusion sous jumeau injecté. Divergence evaluation JSON↔PG confirmée en nominal et sous fixture. Sévérité : MAJOR CONFIRMÉE — décision CTO (revalidation). Correctif non autorisé à ce stade.",
+    "noCorrectivePlanAuthorized": true,
+    "noMergeClaimOfMajorConfirmed": false,
+    "studentCodeScope": "hors périmètre décisionnel (ID-06 contexte seulement)",
+    "nextStepAllowed": "Après merge : dossier de cadrage plan correctif minimal V2.1 OU contrat prochain sujet V2 — arbitrage CTO ; pas d’implémentation",
+    "severityLabel": "MAJOR CONFIRMÉE — décision CTO",
+    "ctoRevalidation": {
+      "date": "2026-07-27",
+      "characterization": "VALIDEE",
+      "bounding": "SATISFAIT",
+      "correctivePlan": "NON_AUTORISE",
+      "implementation": "INTERDITE"
+    }
+  },
+  "summary": {
+    "scenarios": {
+      "confirmé": 8,
+      "infirmé": 0,
+      "indéterminé": 0,
+      "contexte": 1
+    },
+    "questions": {
+      "confirmé": 9,
+      "infirmé": 0,
+      "indéterminé": 2
+    }
+  }
+}
