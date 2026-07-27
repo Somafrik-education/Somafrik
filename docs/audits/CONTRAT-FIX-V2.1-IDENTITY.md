@@ -4,15 +4,21 @@
 **Cadrage validé :** [`PLAN-CORRECTIF-MINIMAL-PRE-E1-V2-IDENTITY-LIFECYCLE.md`](./PLAN-CORRECTIF-MINIMAL-PRE-E1-V2-IDENTITY-LIFECYCLE.md) (PR #97 · `0644442a`)  
 **Option CTO :** **Hybride A+C bornée**  
 **Anomalie :** MAJOR CONFIRMÉE — revalidation CTO  
-**Statut :** en attente de **validation CTO explicite** avant toute PR de code  
+**Statut :** trois règles CTO intégrées (déterminisme · historique TEACHER-only · fallback eval) — **en attente de revalidation CTO** avant undraft/merge  
 
 | Élément | Statut |
 |---------|--------|
-| Implémentation | **INTERDITE** jusqu’à aval CTO de **ce** contrat |
+| Architecture A+C bornée | **VALIDÉE** |
+| Périmètre fonctionnel | **VALIDÉ** |
+| Déterminisme du canon | **Corrigé** (§4.1 — règle CTO) |
+| Historique TEACHER-only | **Corrigé** (§3.2 / AC-HIST-02) |
+| Fallback évaluation | **Tranché** (§5.2 — refus structuré, pas de user_id seul) |
+| Implémentation | **INTERDITE** jusqu’à revalidation + merge de ce contrat |
 | Migration / backfill / DELETE jumeaux | **INTERDITS** |
 | E1 | **NO-GO** |
 | HOTFIX-01/02/02B | **CLOS** |
 | Preuves brutes #95/#96 | **Lecture seule** |
+| PR code | **Interdite** avant revalidation CTO de ce contrat |
 
 ---
 
@@ -83,52 +89,92 @@ Le **backend** recrée / ajoute un `TEACHER-*` au merge state → **double sourc
 
 ### 3.2 Après (comportement contractuel)
 
-Pour un user rôle enseignant, école `S`, à la sync :
+Le sync générique distingue **comptes nouveaux** (après activation du correctif) et **comptes historiques**.
+
+#### A. Compte **nouveau** (création / sync post-correctif)
 
 | Cas | Comportement requis |
 |-----|---------------------|
-| Existe déjà une fiche `TEACHERS-*` liée (`userId` = user **ou** même `identifier` + même `schoolCode`) | **Réutiliser** cette fiche — **ne pas** créer de nouvelle |
-| Existe seulement un jumeau historique `TEACHER-*` lié au user | **Ne pas** le supprimer ; pour **nouvelle** identité pédagogique manquante : créer **`TEACHERS-*`** et y poser `userId` ; **ne pas** créer un second `TEACHER-*` |
-| Aucune fiche liée | Créer **une** fiche `id = TEACHERS-<uuid|stamp>`, `userId = user.id`, `schoolCode = S` |
+| Exactement une fiche `TEACHERS-*` liée (`userId` exact + même établissement) | **Réutiliser** — ne pas en créer une autre |
+| Plusieurs fiches `TEACHERS-*` liées | Appliquer §4.1 (déterminisme) — **jamais** un choix silencieux |
+| Aucune fiche `TEACHERS-*` liée | Créer **une** fiche `id = TEACHERS-<uuid>`, `userId = user.id`, `schoolCode = S` |
 | Fiche `TEACHERS-*` d’un **autre** user | Ne pas réutiliser (isolation) |
 
-**Interdit après correctif :**
+**Interdit** pour un compte nouveau : créer un id `TEACHER-*` (non `TEACHERS-`).
 
-- `id` commençant par `TEACHER-` **sans** `S` (i.e. non `TEACHERS-`) pour toute **nouvelle** création issue du sync user.  
-- Créer un `TEACHER-*` « parallèle » alors qu’un `TEACHERS-*` lié au compte existe.
+#### B. Compte **historique** ne possédant que `TEACHER-*` (pas de `TEACHERS-*`)
+
+| Action | Statut |
+|--------|--------|
+| Création automatique d’un `TEACHERS-*` par le sync générique | **INTERDITE** |
+| Fusion / suppression du `TEACHER-*` | **INTERDITE** |
+| Comportement historique (multi-match authz, accès notes) | **CONSERVÉ** |
+| Traitement / convergence vers `TEACHERS-*` | **Lot de consolidation ultérieur** (hors ce correctif) |
+
+> Le sync générique **ne doit pas** créer de nouveau jumeau sur une donnée historique TEACHER-only.  
+> Cela corrige la contradiction « historique inchangé » vs « créer un TEACHERS-* si seul TEACHER-* ».
+
+#### C. Compte historique déjà jumelé (`TEACHER-*` + `TEACHERS-*`)
+
+- Aucune fusion / DELETE.  
+- Sync : **ne pas** créer d’identité supplémentaire.  
+- Réutilisation du canon pour **nouvelles** écritures pédagogiques / evaluations : selon §4.1 si un `TEACHERS-*` unique (ou unique via assignment active) est déterminable ; sinon erreur structurée sur les **nouvelles** écritures ambiguës — sans toucher aux rows historiques.
 
 ### 3.3 Alignement web ↔ backend
 
 | Couche | Règle |
 |--------|-------|
 | Web `newTeacherId()` | Conserver préfixe `TEACHERS-*` |
-| Backend `buildTeacherFromUser` | **Même** convention `TEACHERS-*` + mêmes règles de match / réutilisation |
-| Match | Priorité : `userId` exact → sinon `identifier` + `schoolCode` ; parmi plusieurs matchs, préférer `TEACHERS-*` |
+| Backend `buildTeacherFromUser` | **Même** convention `TEACHERS-*` **uniquement** pour comptes nouveaux (§3.2.A) |
+| Match / sélection | **Uniquement** l’algorithme déterministe §4.1 — pas de « préférer TEACHERS-* » informel |
 
 ---
 
-## 4. Règle de réutilisation de `TEACHERS-*`
+## 4. Règle de réutilisation de `TEACHERS-*` (déterminisme CTO)
 
-### 4.1 Définition du canon
+### 4.1 Algorithme imposé — sélection du canon
+
+Cette décision est **fixée dans le contrat** — **pas** laissée à l’implémentation.
 
 ```text
-canonicalTeacherId(user, school) =
-  teachers[] row where
-    schoolCode = school
-    AND userId = user.id
-    AND id matches /^TEACHERS-/i
-  (si plusieurs : la plus ancienne stable / celle référencée par une assignment active — à fixer en implémentation de façon déterministe et testée)
+Entrée : user, établissement S, collection teachers[] (même schoolCode)
+
+1. Filtrer les fiches où :
+     userId exact = user.id
+     AND même établissement S
+     AND id matches /^TEACHERS-/i
+
+2. Si exactement 1 fiche → la réutiliser (canon)
+
+3. Si plusieurs fiches :
+     a. Parmi elles, retenir celles référencées par au moins une
+        affectation active (assignments / teacher_assignments status=active)
+        pour cet établissement
+     b. Si exactement 1 candidate → la réutiliser
+     c. Si 0 ou >1 candidates → ERREUR STRUCTURÉE
+        (ex. TEACHER_CANON_AMBIGUOUS) — ne pas continuer silencieusement
+
+4. INTERDIT :
+     - choisir sur created_at
+     - « première ligne » / ordre de tableau
+     - ORDER BY implicite
+     - tout tie-break arbitraire qui masque l’ambiguïté
 ```
 
-Lien PG : row `teachers` avec `teacher_code = canonicalTeacherId`, `user_id` = UUID user PG, `school_id` = établissement.
+Le correctif **ne doit pas** masquer une ambiguïté en choisissant arbitrairement une identité.
+
+Lien PG attendu lorsque le canon est déterminé :  
+`teachers.teacher_code = canon`, `user_id` = user PG, `school_id` = établissement.  
+`user_id` **vérifie** le lien ; il **ne sert pas** à départager plusieurs rows `TEACHERS-*`.
 
 ### 4.2 Création pédagogique / affectations
 
 | Action UI / API | Règle |
 |-----------------|-------|
-| Créer enseignant + compte | Une seule fiche `TEACHERS-*` ; assignments pointent dessus |
-| Ajouter affectation | `assignment.teacherId = canonicalTeacherId` |
-| Sync PG assignments | Inchangé fonctionnellement (02B) tant que `teacherId` est `TEACHERS-*` |
+| Créer enseignant + compte **nouveau** | Une seule fiche `TEACHERS-*` via §4.1 / §3.2.A |
+| Ajouter affectation (parcours neuf) | `assignment.teacherId = canon` déterminé par §4.1 ; si erreur structurée → refuser l’écriture |
+| Sync PG assignments | Inchangé fonctionnellement (02B) tant que `teacherId` est le canon `TEACHERS-*` |
+| Compte historique TEACHER-only | Pas de création auto `TEACHERS-*` (§3.2.B) |
 
 ### 4.3 Option C bornée (rappel)
 
@@ -136,7 +182,7 @@ Lien PG : row `teachers` avec `teacher_code = canonicalTeacherId`, `user_id` = U
 |----------|------------------|
 | Renseigner / maintenir `teachers.user_id` | Nouvelle table link |
 | S’appuyer sur `school_id` / `schoolCode` | `canonicalTeacherId` additionnel |
-| Préférer `TEACHERS-*` à la lecture/écriture nouvelle | `UNIQUE(school_id, user_id)` SQL |
+| Canon `TEACHERS-*` via §4.1 | `UNIQUE(school_id, user_id)` SQL |
 
 ---
 
@@ -152,21 +198,42 @@ Pour toute évaluation **créée après** le correctif (parcours nominal neuf) :
 | PG `teachers.teacher_code` du `evaluations.teacher_id` | **même** `TEACHERS-*` |
 | `teacher_assignments` actives | sur ce même teacher PG |
 
-### 5.2 Chaîne de résolution (contrat)
+### 5.2 Chaîne de résolution — **règle CTO tranchée** (lot minimal)
 
-Dans `evaluationAttachment` / deps repository, pour une **nouvelle** écriture :
+Pour une **nouvelle** écriture d’évaluation :
 
-1. Lire `evaluation.teacherId` (doit être `TEACHERS-*` si clients conformes).  
-2. `findTeacherByCode(school, teacherId)`.  
-3. Sinon `ensureTeacher` → `materializeBackOfficeTeacher` sur la fiche BO **`TEACHERS-*`** liée (pas un jumeau).  
-4. Sinon `findTeacherByAssignment(..., preferredTeacherCode=TEACHERS-*)`.  
-5. **`findAnyTeacher` (ORDER BY created_at)** : **interdit** comme fallback pour les **nouvelles** écritures du lot minimal (c’est un suspect fort de Q7 : premier row = souvent `TEACHER-*`). Remplacer par refus structuré **ou** résolution strictement via user_id → `TEACHERS-*`.
+```text
+evaluation.teacherId  (attendu : TEACHERS-*)
+    │
+    ├─1─ Recherche exacte teachers PG :
+    │      teacher_code = evaluation.teacherId
+    │      AND school_id = établissement
+    │
+    ├─2─ Si absent : matérialisation exacte de CETTE même fiche BO
+    │      (même id TEACHERS-*) via ensureTeacher / materializeBackOfficeTeacher
+    │      — pas une autre fiche, pas un jumeau
+    │
+    └─3─ Sinon : REFUS STRUCTURÉ
+           (ex. EVAL_TEACHER_UNRESOLVED / EVAL_TEACHER_REQUIRED)
+```
+
+| Autorisé | **Interdit** |
+|----------|--------------|
+| Lookup exact `teacher_code` + établissement | `findAnyTeacher` |
+| Matérialisation de la **même** fiche `TEACHERS-*` | `ORDER BY created_at` / première ligne |
+| Refus structuré si non résolu | Sélection implicite par `user_id` seul |
+| Vérifier a posteriori que `user_id` du row matérialisé correspond au compte (contrôle de lien) | Utiliser `user_id` pour **choisir** entre plusieurs rows |
+
+`user_id` sert à **vérifier** le lien canonique, **pas** à arbitrer entre plusieurs identités.
+
+`findTeacherByAssignment` avec preferred code exact `TEACHERS-*` reste acceptable **uniquement** comme aide si le code demandé est déjà le canon explicite du payload — pas comme filet « n’importe quel teacher de la classe ».
 
 ### 5.3 Historique
 
 - Ne pas backfiller les evaluations existantes.  
 - Authz multi-fiches : **conservée** pour lectures / accès notes des enseignants déjà jumelés.  
-- Ne **pas** étendre la création de nouveaux jumeaux « pour que le multi-match fonctionne ».
+- Ne **pas** étendre la création de nouveaux jumeaux « pour que le multi-match fonctionne ».  
+- Compte historique TEACHER-only : pas de création auto `TEACHERS-*` (§3.2.B / AC-HIST-02).
 
 ---
 
@@ -190,16 +257,18 @@ Dans `evaluationAttachment` / deps repository, pour une **nouvelle** écriture :
 | **AC-REG-03** | Isolation tenant + rôle TEACHER inchangés (pas d’assouplissement) |
 | **AC-REG-04** | Idempotence sync staff (pas de prolifération sur re-PUT) |
 
-### 6.3 Historique — AC-HIST-01
+### 6.3 Historique — AC-HIST-*
 
 | Id | Critère |
 |----|---------|
 | **AC-HIST-01** | Enseignant avec jumeaux **préexistants** : conserve l’accès notes (POST/PUT autorisé selon affectation) via multi-match temporaire — **aucune** fusion/DELETE |
+| **AC-HIST-02** | Rejeu du sync sur un compte historique **TEACHER-* seul** → **aucun** nouveau `TEACHERS-*` créé ; pas de fusion ; pas de suppression |
 
 ### 6.4 Preuve machine dédiée (nouvelle)
 
 - Script / extension : ex. `npm run verify:pre-e1-v2-identity-fix` (nom indicatif)  
 - Artefact **nouveau** : `docs/audits/evidence/pre-e1-v2-identity-fix-results.json`  
+- Couvrir explicitement : déterminisme §4.1 (cas multi-`TEACHERS-*` → erreur), AC-HIST-02, refus structuré eval (pas de `findAnyTeacher`)  
 - **Ne pas** modifier `pre-e1-v2-identity-lifecycle-results.json`
 
 Caractérisation V2.1 existante : peut rester en filet ; adapter si assertions deviennent obsolètes **sans** réécrire l’historique des runs #95/#96.
@@ -251,11 +320,11 @@ Toute consolidation ultérieure = **lot séparé** + analyse données + aval CTO
 
 ### 9.3 Ordre d’implémentation interne (dans la PR code, pas des merges séparés)
 
-1. Tests de caractérisation / red (AC-NEW) reproduisant le double id.  
-2. `UserTeacherSyncService` + alignement web.  
-3. Résolution evaluations (retrait `findAnyTeacher` dangereux pour nouveaux flux).  
+1. Tests de caractérisation / red (AC-NEW, AC-HIST-02, ambiguïté canon → erreur).  
+2. `UserTeacherSyncService` + alignement web (§3.2 / §4.1).  
+3. Résolution evaluations : retrait `findAnyTeacher` ; lookup exact + refus structuré (§5.2).  
 4. Gates 02b / v1 / fix harness.  
-5. Rapport preuve + checklist AC-HIST-01.
+5. Rapport preuve + checklist AC-HIST-01 / AC-HIST-02.
 
 ---
 
@@ -267,20 +336,21 @@ Toute consolidation ultérieure = **lot séparé** + analyse données + aval CTO
 - POST notes nominal + refus hors périmètre  
 - Pas d’orphelins **nouveaux**  
 - Pas d’affaiblissement RBAC  
+- **Pas de sélection arbitraire d’identité** (created_at / première ligne / user_id seul)  
 
 ---
 
-## 11. Critères d’acceptation du **contrat** (revue CTO)
+## 11. Critères d’acceptation du **contrat** (revalidation CTO)
 
-Ce contrat est **accepté** si :
+Ce contrat est **accepté pour merge** si :
 
-1. Option A+C bornée et périmètre (prévention + eval nouvelles) sont fidèles à l’arbitrage #97.  
-2. Fichiers/fonctions listés sont suffisants et bornés.  
-3. Avant/après sync + résolution eval sont testables.  
-4. AC-NEW/REG/HIST et rollback sont explicites.  
+1. Option A+C bornée et périmètre (prévention + eval nouvelles) restent fidèles à l’arbitrage #97.  
+2. **Déterminisme §4.1** est explicite (plus aucune phrase « à fixer en implémentation »).  
+3. **Historique TEACHER-only** : pas de création auto `TEACHERS-*` + **AC-HIST-02**.  
+4. **Fallback eval** tranché : lookup exact → matérialisation exacte → **refus structuré** ; pas de `findAnyTeacher` / pas de choix par `user_id` seul.  
 5. Aucun code n’accompagne la PR du contrat.
 
-**Après acceptation :** une **PR Draft code** distincte pourra être ouverte — **pas avant**.
+**Après revalidation CTO + merge :** une **PR Draft code** distincte pourra être ouverte — **pas avant**.
 
 ---
 
@@ -291,7 +361,8 @@ Ce contrat est **accepté** si :
 | Plan cadrage + §0.1 arbitrage | PR #97 |
 | Rapport / preuve caractérisation | PR #95/#96 |
 | `CONTRAT-HOTFIX-PRE-E1-02B.md` | Canon `TEACHERS-*` sync PG / isolation |
+| Revue CTO PR #98 (trois règles) | Déterminisme · TEACHER-only · fallback eval |
 
 ---
 
-**Fin du contrat FIX V2.1 — aucun code · aucune migration · en attente d’aval CTO.**
+**Fin du contrat FIX V2.1 — aucun code · aucune migration · en attente de revalidation CTO.**
