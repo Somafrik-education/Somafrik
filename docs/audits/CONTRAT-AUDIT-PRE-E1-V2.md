@@ -140,7 +140,20 @@ Extensions **autorisées uniquement** si nécessaire à la preuve V2.1 :
 | **ID-03** | Auth enseignant + `POST /api/notes` nominal | Identité JWT / lookup · `grantedBy` · `evaluations.teacher_id` |
 | **ID-04** | Présence éventuelle d’un jumeau `TEACHER-*` à côté de `TEACHERS-*` | Comptage fiches · dedupe · non-fusion |
 | **ID-05** | Replay sync identique (idempotence identité) | Pas de 3ᵉ fiche / pas de nouveau `teachers` row injustifié |
-| **ID-06** | Comparaison élève (borne) | `students.student_code` vs id JSON — **constat uniquement**, sans arbitrer le scope UNIQUE |
+| **ID-06** | Comparaison élève (**borne / contexte**) | `students.student_code` vs id JSON — constat contextuel uniquement |
+
+#### Réserve CTO — ID-06 (2026-07-27)
+
+ID-06 peut rester dans le contrat **uniquement** comme comparaison bornée. Il ne devra :
+
+- **ni** caractériser complètement `PRE-E1-STUDENT-CODE-SCOPE` ;
+- **ni** produire une décision sur l’unicité de `student_code` ;
+- **ni** entraîner une modification du modèle étudiant.
+
+Toute observation sur les élèves devra être classée comme **contexte** (`INFORMATION`) ou **transmise** à un futur contrat V2 dédié `PRE-E1-STUDENT-CODE-SCOPE`.  
+ID-06 **n’entre pas** dans la synthèse de confirmation/infirmation de la dette IDENTITY enseignant.
+
+**Décision CTO :** CONTRAT V2.1 **ACCEPTÉ** · caractérisation **AUTORISÉE** · implémentation **INTERDITE** · E1 **NO-GO**.
 
 ---
 
