@@ -4,10 +4,10 @@
 **Lot :** **V2.2**  
 **Sujet :** **`PRE-E1-STUDENT-CODE-SCOPE`**  
 **Criticité documentée (historique) :** **MAJOR**  
-**Statut :** Contrat défini — caractérisation **à exécuter** (pas commencée dans cette PR)  
+**Statut :** Contrat **ACCEPTÉ CTO** (2026-07-27) — caractérisation **AUTORISÉE** (PR Draft distincte)  
 **Base :** `develop` @ `0e7d559a` (post clôture technique FIX V2.1 · PR #100)  
 **Date :** 2026-07-27  
-**Autorisation CTO :** ouverture V2.2 — 2026-07-27  
+**Autorisation CTO :** ouverture V2.2 — 2026-07-27 · **acceptation contrat** — 2026-07-27  
 
 **Prédécesseurs :**  
 - Audit V2 ouvert · [`CONTRAT-AUDIT-PRE-E1-V2.md`](./CONTRAT-AUDIT-PRE-E1-V2.md)  
@@ -28,17 +28,54 @@
 | HOTFIX-01 / 02 / 02B | **CLOS** — ne pas rouvrir |
 | FIX V2.1 IDENTITY | **CLOS TECHNIQUEMENT** — ne pas rouvrir |
 | Consolidation jumeaux enseignants | **DIFFÉRÉE / NON AUTORISÉE** |
-| Correctif `student_code` | **Interdit** tant qu’aucune anomalie n’est **démontrée** puis validée CTO |
+| Correctif `student_code` | **INTERDIT** (même après acceptation du contrat) |
+| Modification `UNIQUE` | **INTERDITE** |
+| Migration / backfill | **INTERDITS** |
+| Régénération des codes | **INTERDITE** |
 
 ### Méthode obligatoire
 
-1. Exécuter la caractérisation selon ce contrat  
-2. Produire preuves machine **dédiées V2.2** (nouveaux artefacts)  
+1. Exécuter la caractérisation selon ce contrat **et** les règles d’interprétation §0.1 / §0.2  
+2. Produire preuves machine **dédiées V2.2** (nouveaux scripts + artefacts — preuves historiques **lecture seule**)  
 3. Classer chaque question / scénario : **confirmé** · **infirmé** · **indéterminé**  
-4. **Seulement après** preuve d’anomalie : soumettre un **cadrage correctif minimal** à validation CTO  
+4. **Seulement après** preuve d’anomalie **pathologique** (pas le seul fait UNIQUE) : soumettre un **cadrage correctif minimal** à validation CTO — **PR distincte**  
 
-**Aucun correctif ne commence directement.**
+**Aucun correctif ne commence directement. Aucun cadrage correctif dans la PR de caractérisation.**
 
+### 0.1 Règle CTO — Unicité globale ≠ anomalie automatique
+
+La présence d’un `UNIQUE(student_code)` global peut être **confirmée comme fait de schéma**, mais elle **ne suffit pas, seule**, à confirmer une dette **MAJOR**.
+
+| Notion | Définition |
+|--------|------------|
+| **Fait** | `student_code` est globalement unique en PostgreSQL |
+| **Anomalie** | Cette portée provoque un **conflit reproductible** avec un **comportement métier légitime et attendu** |
+
+Avant tout verdict pathologique, la caractérisation doit démontrer **les trois** :
+
+1. Que le **même code** peut **légitimement** être produit dans **deux établissements** ;  
+2. Que ce code **n’est pas censé** être un identifiant **global Somafrik** ;  
+3. Que le conflit entraîne un **rejet**, une **incohérence** ou une **perte fonctionnelle** observable.
+
+Sans ces trois démonstrations, Q1 peut être **confirmé** (fait UNIQUE) tout en maintenant la dette **indéterminée** ou **non pathologique** au regard de §6.1.
+
+### 0.2 Règle CTO — Transfert simulé (SC-06) strictement isolé
+
+SC-06 **ne devra jamais** modifier une fixture utilisée par les autres scénarios.
+
+| Exigence | Détail |
+|----------|--------|
+| Élève dédié | Un enregistrement **réservé au transfert** uniquement |
+| Snapshot avant | État JSON + PG **avant** la tentative |
+| Tentative | Changement d’établissement **isolé** |
+| Snapshots après | JSON + PG **après** — conserver tels quels |
+| Nettoyage / correctif | **Aucun** |
+
+Séparer explicitement (ces opérations **ne sont pas équivalentes**) :
+
+1. Changement du `schoolCode` d’une **même fiche technique** ;  
+2. Création d’une **nouvelle inscription** dans une autre école ;  
+3. Création d’une **nouvelle identité élève** représentant éventuellement la même personne.
 ---
 
 ## 1. Motifs de sélection (décision CTO)
@@ -165,7 +202,7 @@ Chaque scénario produit une entrée dans la preuve machine dédiée V2.2.
 | **SC-03** | Collision **inter-écoles** | École A matérialise code `C` ; école B tente le même `C` | HTTP/ACK/`STUDENT_TENANT_CONFLICT` / row count |
 | **SC-04** | Collision **intra-école** | Deux records BO même code stable, même `schoolCode` | 1 vs N rows PG · ACK rejected |
 | **SC-05** | Notes / résolution | Élève sync + `POST /api/notes` (ou PUT notes) | `grades.student_id` = UUID de la row attendue · isolation |
-| **SC-06** | Transfert simulé | PUT change `schoolCode` d’un élève déjà en PG | Comportement school_id / conflit / nouvelle identité |
+| **SC-06** | Transfert simulé **isolé** | Élève **dédié** (≠ fixtures SC-01…05/07/08) → snapshot avant → tentative changement établissement → snapshots JSON+PG après → **aucun** nettoyage | Distinguer : (1) même fiche `schoolCode` (2) nouvelle inscription autre école (3) nouvelle identité — comportement school_id / conflit / nouvelle row |
 | **SC-07** | Réinscription année | 2ᵉ enrollment même `student_id`, autre `academic_year_id` | UNIQUE enrollments respecté · code inchangé |
 | **SC-08** | Replay sync | Double PUT / sync identique | Idempotence : pas de prolifération de rows |
 
@@ -195,10 +232,10 @@ Chaque question Q1–Q7 et chaque scénario SC-01…SC-08 reçoit **une** classe
 
 | Synthèse | Condition |
 |----------|-----------|
-| **Maintenue MAJOR (confirmée)** | Écart de portée / collision / divergence SoT **confirmé** (ex. UNIQUE globale incompatible avec isolation métier attendue, ou collision inter-écoles pathologique) |
+| **Maintenue MAJOR (confirmée)** | Anomalie **pathologique** au sens §0.1 : collision / rejet / perte **reproductible** avec comportement métier **légitime** attendu — **pas** le seul fait `UNIQUE(student_code)` |
 | **Requalifiée** | Uniquement sur faits prouvés + validation CTO |
 | **Infirmée** | Tous les écarts redoutés du contrat sont **infirmés** |
-| **Indéterminée** | Trop de Q/SC en indéterminé → pas de cadrage correctif |
+| **Indéterminée** | Trop de Q/SC en indéterminé, **ou** UNIQUE confirmée **sans** les trois démonstrations §0.1 → pas de cadrage correctif |
 
 ### 6.2 Sévérité (si anomalie confirmée)
 
@@ -267,12 +304,14 @@ La sévérité historique « MAJOR » n’est **pas** une preuve ; elle peut êt
 
 ## 11. Acceptation du contrat
 
-| Rôle | Attendu |
-|------|---------|
-| Cursor | Produire ce contrat (PR Draft docs-only) |
-| CTO | Valider le contrat **avant** exécution de la caractérisation V2.2 |
-| Caractérisation | **Interdite** tant que ce contrat n’est pas accepté CTO |
+| Rôle | Attendu | Statut |
+|------|---------|--------|
+| Cursor | Produire ce contrat (PR Draft docs-only) | Fait · PR #101 |
+| CTO | Valider le contrat **avant** exécution de la caractérisation V2.2 | **ACCEPTÉ** 2026-07-27 |
+| Règles §0.1 / §0.2 | Consignées dans le contrat avant merge | **Oui** (cette révision) |
+| Caractérisation | PR Draft **distincte** : harness + preuve + rapport Q1–Q7 / SC-01…SC-08 + verdict factuel — **sans** cadrage correctif | **AUTORISÉE** après merge de ce contrat |
+| Correctif `student_code` / UNIQUE / migration / regen / E1 | | **INTERDITS** |
 
 ---
 
-**Fin du contrat V2.2 — audit uniquement · aucune migration · E1 NO-GO.**
+**Fin du contrat V2.2 — ACCEPTÉ CTO · caractérisation autorisée (PR séparée) · aucune migration · E1 NO-GO.**
