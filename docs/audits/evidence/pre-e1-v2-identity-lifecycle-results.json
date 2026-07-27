@@ -421,7 +421,7 @@
   "synthesis": {
     "debtId": "PRE-E1-IDENTITY-LIFECYCLE",
     "severityDocumented": "MAJOR",
-    "severityGlobal": "MAJOR_CONFIRMEE_DECISION_CTO",
+    "severityGlobal": "MAJOR_CONFIRMEE_REVALIDATION_CTO",
     "characterization": "validee_CTO_bornee",
     "results": {
       "nonConvergencePreexistingOrInjected": "CONFIRMÉE",
@@ -429,12 +429,12 @@
       "q7DivergenceUnderTwinFixture": "CONFIRMÉE",
       "q7DivergenceWithoutFixture": "confirmé"
     },
-    "factualSummary": "ID-04A : PUT contact+user crée TEACHER-* ; fiche pédagogique ajoute TEACHERS-* ; coexistence sans injection harness. ID-04B : non-fusion sous jumeau injecté. Divergence evaluation JSON↔PG confirmée en nominal et sous fixture. Sévérité : MAJOR CONFIRMÉE — décision CTO (revalidation). Correctif non autorisé à ce stade.",
+    "factualSummary": "ID-04A : PUT contact+user crée TEACHER-* ; fiche pédagogique ajoute TEACHERS-* ; coexistence sans injection harness. ID-04B : non-fusion sous jumeau injecté. Divergence evaluation JSON↔PG confirmée en nominal et sous fixture. Sévérité : MAJOR CONFIRMÉE — revalidation CTO. Correctif non autorisé à ce stade.",
     "noCorrectivePlanAuthorized": true,
     "noMergeClaimOfMajorConfirmed": false,
     "studentCodeScope": "hors périmètre décisionnel (ID-06 contexte seulement)",
     "nextStepAllowed": "Après merge : dossier de cadrage plan correctif minimal V2.1 OU contrat prochain sujet V2 — arbitrage CTO ; pas d’implémentation",
-    "severityLabel": "MAJOR CONFIRMÉE — décision CTO",
+    "severityLabel": "MAJOR CONFIRMÉE — revalidation CTO",
     "ctoRevalidation": {
       "date": "2026-07-27",
       "characterization": "VALIDEE",

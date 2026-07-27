@@ -1077,8 +1077,8 @@ async function main() {
     const synthesis = {
       debtId: "PRE-E1-IDENTITY-LIFECYCLE",
       severityDocumented: "MAJOR",
-      severityGlobal: "MAJOR_CONFIRMEE_DECISION_CTO",
-      severityLabel: "MAJOR CONFIRMÉE — décision CTO",
+      severityGlobal: "MAJOR_CONFIRMEE_REVALIDATION_CTO",
+      severityLabel: "MAJOR CONFIRMÉE — revalidation CTO",
       characterization: "validee_CTO_bornee",
       results: {
         nonConvergencePreexistingOrInjected: nonConvergenceConfirmed
@@ -1095,7 +1095,7 @@ async function main() {
         q7DivergenceWithoutFixture: q7NominalStatus,
       },
       factualSummary:
-        "ID-04A : PUT contact+user crée TEACHER-* ; fiche pédagogique ajoute TEACHERS-* ; coexistence sans injection harness. ID-04B : non-fusion sous jumeau injecté. Divergence evaluation JSON↔PG confirmée en nominal et sous fixture. Sévérité : MAJOR CONFIRMÉE — décision CTO (revalidation). Correctif non autorisé à ce stade.",
+        "ID-04A : PUT contact+user crée TEACHER-* ; fiche pédagogique ajoute TEACHERS-* ; coexistence sans injection harness. ID-04B : non-fusion sous jumeau injecté. Divergence evaluation JSON↔PG confirmée en nominal et sous fixture. Sévérité : MAJOR CONFIRMÉE — revalidation CTO (revalidation). Correctif non autorisé à ce stade.",
       ctoRevalidation: {
         date: "2026-07-27",
         characterization: "VALIDEE",

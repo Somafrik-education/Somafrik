@@ -16,7 +16,7 @@
 |-------|----------|
 | Caractérisation V2.1 | **VALIDÉE** |
 | Bornage probatoire | **SATISFAIT** |
-| `PRE-E1-IDENTITY-LIFECYCLE` | **MAJOR CONFIRMÉE — décision CTO** |
+| `PRE-E1-IDENTITY-LIFECYCLE` | **MAJOR CONFIRMÉE — revalidation CTO** |
 | Correctif métier | **INTERDIT** |
 | Plan correctif | **NON AUTORISÉ À CE STADE** |
 | BLOCKER / CRITICAL | **Non** |
@@ -76,7 +76,7 @@ Distinction respectée : **préservation injectée ≠ création nominale** — 
 | Non-convergence des identités | **CONFIRMÉE** |
 | Divergence JSON ↔ PostgreSQL nominale | **CONFIRMÉE** |
 | Divergence sous fixture | **CONFIRMÉE** |
-| `PRE-E1-IDENTITY-LIFECYCLE` | **MAJOR CONFIRMÉE — décision CTO** |
+| `PRE-E1-IDENTITY-LIFECYCLE` | **MAJOR CONFIRMÉE — revalidation CTO** |
 
 ### Phase nominale (faits validés)
 
@@ -132,7 +132,7 @@ PUT /api/backoffice/state  (fiche pédagogique)
 | Champ | Valeur |
 |-------|--------|
 | ID | `PRE-E1-IDENTITY-LIFECYCLE` |
-| Sévérité | **MAJOR CONFIRMÉE — décision CTO** |
+| Sévérité | **MAJOR CONFIRMÉE — revalidation CTO** |
 | Correctif | **Interdit** à ce stade |
 | Plan correctif | **Non autorisé** à ce stade |
 | Prochain livrable possible | Dossier de **cadrage** d’un plan correctif minimal V2.1 **ou** contrat du prochain sujet V2 — **arbitrage CTO** ; **pas** d’implémentation |
