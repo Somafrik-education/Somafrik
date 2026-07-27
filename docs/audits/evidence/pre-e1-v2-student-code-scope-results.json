@@ -1,0 +1,1379 @@
+{
+  "audit": "PRE-E1",
+  "phase": "V2.2",
+  "subject": "PRE-E1-STUDENT-CODE-SCOPE",
+  "generatedAt": "2026-07-27T14:10:02.338Z",
+  "apiBase": "http://127.0.0.1:5113/api",
+  "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_pre_e1_v2_student_code",
+  "nature": "characterization-only",
+  "implementation": "forbidden",
+  "correctiveFramingInThisPr": false,
+  "contract": "docs/audits/CONTRAT-AUDIT-PRE-E1-V2-STUDENT-CODE-SCOPE.md",
+  "ctoRulesApplied": [
+    "0.1-unique-not-auto-anomaly",
+    "0.2-sc06-isolated-transfer"
+  ],
+  "scenarios": [
+    {
+      "id": "SC-01",
+      "title": "Inventaire schéma students (UNIQUE / index)",
+      "classification": "confirmé",
+      "detail": "unique=[\"UNIQUE (student_code)\"] composite_school_code=false",
+      "extra": {
+        "uniqueCols": [
+          {
+            "conname": "students_student_code_key",
+            "def": "UNIQUE (student_code)"
+          }
+        ],
+        "indexes": [
+          "idx_students_school_id",
+          "idx_students_school_search",
+          "students_pkey",
+          "students_student_code_key"
+        ]
+      }
+    },
+    {
+      "id": "SC-02",
+      "title": "Création nominale 1 élève / 1 école → student_code = f(matricule??publicId??id)",
+      "classification": "confirmé",
+      "detail": "code=STUDENTS-1785161381667-9ztj11 pgRows=1 school=CD-2026-0051",
+      "extra": null
+    },
+    {
+      "id": "SC-03",
+      "title": "Collision inter-écoles même student_code",
+      "classification": "confirmé",
+      "detail": "pgRows=1 STUDENT_TENANT_CONFLICT=1 boDup=true",
+      "extra": {
+        "rejectedB": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ],
+        "pgSharedAfterB": [
+          {
+            "id": "95def6af-9dee-4861-bd75-3342fd674f76",
+            "student_code": "MAT-SHARED-V22-61374722",
+            "school_id": "4524928c-43e4-4538-9e6b-0d52185e5578",
+            "first_name": "SharedA",
+            "last_name": "",
+            "school_code": "CD-2026-0051",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC-04",
+      "title": "Collision intra-école deux fiches BO → même student_code",
+      "classification": "confirmé",
+      "detail": "pgRows=1 (1=dédup ON CONFLICT same school ; >1=prolifération)",
+      "extra": {
+        "pgIntra": [
+          {
+            "id": "1fe7ae8a-0393-40df-9b5e-460d13b546f2",
+            "student_code": "MAT-INTRA-V22-61374722",
+            "school_id": "4524928c-43e4-4538-9e6b-0d52185e5578",
+            "first_name": "Intra1",
+            "last_name": "",
+            "school_code": "CD-2026-0051",
+            "status": "active"
+          }
+        ],
+        "rejected": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC-05",
+      "title": "Notes : grades.student_id = UUID PG résolu par student_code de l'école",
+      "classification": "confirmé",
+      "detail": "put=200 post=201 grades=1 crossTenantRows=0",
+      "extra": {
+        "gradeRows": [
+          {
+            "id": "d17df44a-3dc2-43e8-9741-1a3f7d05487b",
+            "student_id": "9db4c465-374b-431a-9a69-10965b4f2958",
+            "score": "16.00",
+            "student_code": "STUDENTS-1785161381667-9ztj11",
+            "school_code": "CD-2026-0051"
+          }
+        ],
+        "postCode": null
+      }
+    },
+    {
+      "id": "SC-06",
+      "title": "Transfert simulé isolé (même fiche schoolCode) — snapshots avant/après, aucun nettoyage",
+      "classification": "confirmé",
+      "detail": "beforeSchool=CD-2026-0053 afterPgRows=1 afterSchool=CD-2026-0053 rejected=STUDENT_TENANT_CONFLICT fixturesIntact=true",
+      "extra": {
+        "before": {
+          "json": {
+            "id": "STUDENTS-1785161394750-8u63rf",
+            "name": "X61374722",
+            "email": "xfer-61374722@somafrik.app",
+            "phone": "+243 825 374722",
+            "gender": "Non renseigné",
+            "archived": false,
+            "publicId": "STUDENTS-1785161394750-8u63rf",
+            "birthDate": "",
+            "className": "V22XSRC-61374722",
+            "contactId": "CONTACT-1785161393314-449ufc",
+            "firstName": "Transfer",
+            "matricule": "STUDENTS-1785161394750-8u63rf",
+            "schoolCode": "CD-2026-0053"
+          },
+          "pg": [
+            {
+              "id": "2941a3f0-8cb1-439e-9899-2cdf3d872198",
+              "student_code": "STUDENTS-1785161394750-8u63rf",
+              "school_id": "fda9076d-8030-4a4d-bdb0-cd65000fe10a",
+              "first_name": "Transfer",
+              "last_name": "",
+              "school_code": "CD-2026-0053",
+              "status": "active"
+            }
+          ]
+        },
+        "after": {
+          "operation": "same_fiche_schoolCode_change",
+          "payloadSchoolCodeAttempted": "CD-2026-0052",
+          "syncAckRejectedStudents": [
+            {
+              "entity": "students",
+              "id": "MAT-SHARED-V22-61374722",
+              "code": "STUDENT_TENANT_CONFLICT",
+              "error": "Conflit d'identifiant élève entre établissements"
+            },
+            {
+              "entity": "students",
+              "id": "STUDENTS-1785161394750-8u63rf",
+              "code": "STUDENT_TENANT_CONFLICT",
+              "error": "Conflit d'identifiant élève entre établissements"
+            }
+          ],
+          "syncAck": {
+            "acceptedStudents": 55,
+            "rejectedStudents": [
+              {
+                "entity": "students",
+                "id": "MAT-SHARED-V22-61374722",
+                "code": "STUDENT_TENANT_CONFLICT",
+                "error": "Conflit d'identifiant élève entre établissements"
+              },
+              {
+                "entity": "students",
+                "id": "STUDENTS-1785161394750-8u63rf",
+                "code": "STUDENT_TENANT_CONFLICT",
+                "error": "Conflit d'identifiant élève entre établissements"
+              }
+            ]
+          },
+          "jsonScoped": null,
+          "json": {
+            "id": "STUDENTS-1785161394750-8u63rf",
+            "name": "X61374722",
+            "email": "xfer-61374722@somafrik.app",
+            "phone": "+243 825 374722",
+            "gender": "Non renseigné",
+            "archived": false,
+            "publicId": "STUDENTS-1785161394750-8u63rf",
+            "birthDate": "",
+            "className": "V22XTGT-61374722",
+            "contactId": "CONTACT-1785161393314-449ufc",
+            "firstName": "Transfer",
+            "matricule": "STUDENTS-1785161394750-8u63rf",
+            "schoolCode": "CD-2026-0052"
+          },
+          "pg": [
+            {
+              "id": "2941a3f0-8cb1-439e-9899-2cdf3d872198",
+              "student_code": "STUDENTS-1785161394750-8u63rf",
+              "school_id": "fda9076d-8030-4a4d-bdb0-cd65000fe10a",
+              "first_name": "Transfer",
+              "last_name": "",
+              "school_code": "CD-2026-0053",
+              "status": "active"
+            }
+          ],
+          "rejected": [
+            {
+              "entity": "students",
+              "id": "STUDENTS-1785161394750-8u63rf",
+              "code": "STUDENT_TENANT_CONFLICT",
+              "error": "Conflit d'identifiant élève entre établissements"
+            }
+          ],
+          "note": "Aucun nettoyage. Opérations (2) nouvelle inscription et (3) nouvelle identité non exécutées ici — non équivalentes (§0.2). PUT via superadmin pour observer le changement schoolCode sans filtre établissement."
+        },
+        "fixturesIntact": true,
+        "distinguishedOperations": {
+          "1_same_fiche_schoolCode": "exécuté",
+          "2_new_enrollment_other_school": "non_exécuté_séparé",
+          "3_new_student_identity": "non_exécuté_séparé"
+        }
+      }
+    },
+    {
+      "id": "SC-07",
+      "title": "Réinscription autre année — code stable / UNIQUE enrollments",
+      "classification": "confirmé",
+      "detail": "enrollments=2 code stable",
+      "extra": {
+        "yearsBefore": [
+          {
+            "id": "ebde6125-8a84-4a66-8abc-de1ab3ff0e31",
+            "academic_year_id": "bc1ca49c-569c-4517-9f6a-1b5e91c27b4b",
+            "name": "2026-2027",
+            "is_current": true,
+            "status": "active"
+          }
+        ],
+        "yearsAfter": [
+          {
+            "id": "ebde6125-8a84-4a66-8abc-de1ab3ff0e31",
+            "academic_year_id": "bc1ca49c-569c-4517-9f6a-1b5e91c27b4b",
+            "name": "2026-2027",
+            "status": "active"
+          },
+          {
+            "id": "957c4804-2244-4816-a8bc-c9998745d930",
+            "academic_year_id": "928eaeb4-389e-43c7-8399-7e60dbe331b7",
+            "name": "2026-2027-V22-61374722",
+            "status": "active"
+          }
+        ],
+        "insertErr": null,
+        "codeUnchanged": true
+      }
+    },
+    {
+      "id": "SC-08",
+      "title": "Replay sync double PUT — pas de prolifération rows",
+      "classification": "confirmé",
+      "detail": "before=1 after=1",
+      "extra": null
+    }
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "title": "Contrainte unicité effective student_code",
+      "classification": "confirmé",
+      "detail": "UNIQUE(student_code) globale ; pas de UNIQUE (school_id, student_code)",
+      "extra": {
+        "uniqueDefs": [
+          "UNIQUE (student_code)"
+        ],
+        "hasCompositeSchoolCodeUnique": false
+      }
+    },
+    {
+      "id": "Q2",
+      "title": "Chaîne priorité matricule ?? publicId ?? id + stabilité re-PUT",
+      "classification": "confirmé",
+      "detail": "priority=MAT-P/PUB-P/ID-P stableRePut=true",
+      "extra": null
+    },
+    {
+      "id": "Q3",
+      "title": "Même student_code pour deux school_id ?",
+      "classification": "confirmé",
+      "detail": "Non — STUDENT_TENANT_CONFLICT ; une seule row PG",
+      "extra": {
+        "rejectedCodes": [
+          "STUDENT_TENANT_CONFLICT"
+        ]
+      }
+    },
+    {
+      "id": "Q4",
+      "title": "Deux élèves intra-école même code → 1 row ou N ?",
+      "classification": "confirmé",
+      "detail": "Convergence vers 1 row (ON CONFLICT same school update)",
+      "extra": null
+    },
+    {
+      "id": "Q5",
+      "title": "Notes référencent UUID PG de l'école de l'évaluation ?",
+      "classification": "confirmé",
+      "detail": "grades.student_id aligné ; pas de résolution cross-tenant",
+      "extra": null
+    },
+    {
+      "id": "Q6",
+      "title": "Changement schoolCode (même fiche) : comportement PG",
+      "classification": "confirmé",
+      "detail": "jsonSchoolChanged=true pgSchool=CD-2026-0053 pgRows=1 rejected=STUDENT_TENANT_CONFLICT",
+      "extra": {
+        "interpretation": "Mesure factuelle opération (1) seulement — pas d'équivalence avec nouvelle inscription ou nouvelle identité"
+      }
+    },
+    {
+      "id": "Q7",
+      "title": "Divergence JSON↔PG identifiant élève en parcours nominal",
+      "classification": "infirmé",
+      "detail": "json.id=STUDENTS-1785161381667-9ztj11 matricule=STUDENTS-1785161381667-9ztj11 pg.student_code=STUDENTS-1785161381667-9ztj11 divergenceForcedFields=false",
+      "extra": null
+    }
+  ],
+  "evidence": {
+    "baseCommitHint": "develop@38ad6793 / contrat V2.2 ACCEPTÉ",
+    "ctoRules": {
+      "0.1": "UNIQUE globale = fait ; anomalie = conflit reproductible avec métier légitime (3 démonstrations)",
+      "0.2": "SC-06 élève dédié, snapshots avant/après, aucun nettoyage ; 3 opérations non équivalentes"
+    },
+    "schools": {
+      "A": "CD-2026-0051",
+      "B": "CD-2026-0052",
+      "XFER": "CD-2026-0053"
+    },
+    "producers": {
+      "nominal": {
+        "json": {
+          "id": "STUDENTS-1785161381667-9ztj11",
+          "matricule": "STUDENTS-1785161381667-9ztj11",
+          "publicId": "STUDENTS-1785161381667-9ztj11",
+          "schoolCode": "CD-2026-0051"
+        },
+        "resolvedStableCode": "STUDENTS-1785161381667-9ztj11",
+        "pg": [
+          {
+            "id": "9db4c465-374b-431a-9a69-10965b4f2958",
+            "student_code": "STUDENTS-1785161381667-9ztj11",
+            "school_id": "4524928c-43e4-4538-9e6b-0d52185e5578",
+            "first_name": "Nominal",
+            "last_name": "",
+            "school_code": "CD-2026-0051",
+            "status": "active"
+          }
+        ],
+        "syncAck": {
+          "acceptedCount": 152,
+          "acceptedStudentsSample": [
+            {
+              "entity": "students",
+              "id": "STUDENTS-1785161381667-9ztj11"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0001"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0002"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0003"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0004"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0005"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0006"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0007"
+            }
+          ],
+          "rejectedStudents": [],
+          "rejectedOtherCount": 87
+        }
+      },
+      "priorityChain": {
+        "mapMatricule": "MAT-P",
+        "mapPublic": "PUB-P",
+        "mapId": "ID-P"
+      },
+      "rePut": {
+        "syncAck": {
+          "acceptedCount": 152,
+          "acceptedStudentsSample": [
+            {
+              "entity": "students",
+              "id": "STUDENTS-1785161381667-9ztj11"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0001"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0002"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0003"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0004"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0005"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0006"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0007"
+            }
+          ],
+          "rejectedStudents": [],
+          "rejectedOtherCount": 87
+        },
+        "pgAfterRePut": [
+          {
+            "id": "9db4c465-374b-431a-9a69-10965b4f2958",
+            "student_code": "STUDENTS-1785161381667-9ztj11",
+            "school_id": "4524928c-43e4-4538-9e6b-0d52185e5578",
+            "first_name": "NominalMaj",
+            "last_name": "",
+            "school_code": "CD-2026-0051",
+            "status": "active"
+          }
+        ]
+      },
+      "interSchool": {
+        "sharedMatricule": "MAT-SHARED-V22-61374722",
+        "schoolA": {
+          "studentId": "STUDENTS-1785161383642-vurrjn",
+          "syncAck": {
+            "acceptedCount": 154,
+            "acceptedStudentsSample": [
+              {
+                "entity": "students",
+                "id": "MAT-SHARED-V22-61374722"
+              },
+              {
+                "entity": "students",
+                "id": "STUDENTS-1785161381667-9ztj11"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0001"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0002"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0003"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0004"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0005"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0006"
+              }
+            ],
+            "rejectedStudents": [],
+            "rejectedOtherCount": 87
+          },
+          "pg": [
+            {
+              "id": "95def6af-9dee-4861-bd75-3342fd674f76",
+              "student_code": "MAT-SHARED-V22-61374722",
+              "school_id": "4524928c-43e4-4538-9e6b-0d52185e5578",
+              "first_name": "SharedA",
+              "last_name": "",
+              "school_code": "CD-2026-0051",
+              "status": "active"
+            }
+          ]
+        },
+        "schoolB": {
+          "studentId": "STUDENTS-1785161385103-3dl0hj",
+          "syncAck": {
+            "acceptedCount": 155,
+            "acceptedStudentsSample": [
+              {
+                "entity": "students",
+                "id": "ELE-0001"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0002"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0003"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0004"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0005"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0006"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0007"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0008"
+              }
+            ],
+            "rejectedStudents": [
+              {
+                "entity": "students",
+                "id": "MAT-SHARED-V22-61374722",
+                "code": "STUDENT_TENANT_CONFLICT",
+                "error": "Conflit d'identifiant élève entre établissements"
+              }
+            ],
+            "rejectedOtherCount": 87
+          },
+          "pg": [
+            {
+              "id": "95def6af-9dee-4861-bd75-3342fd674f76",
+              "student_code": "MAT-SHARED-V22-61374722",
+              "school_id": "4524928c-43e4-4538-9e6b-0d52185e5578",
+              "first_name": "SharedA",
+              "last_name": "",
+              "school_code": "CD-2026-0051",
+              "status": "active"
+            }
+          ]
+        },
+        "tenantConflicts": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      "intraSchool": {
+        "intraCode": "MAT-INTRA-V22-61374722",
+        "first": {
+          "id": "STUDENTS-1785161386604-nhsjwr",
+          "syncAck": {
+            "acceptedCount": 157,
+            "acceptedStudentsSample": [
+              {
+                "entity": "students",
+                "id": "MAT-INTRA-V22-61374722"
+              },
+              {
+                "entity": "students",
+                "id": "STUDENTS-1785161381667-9ztj11"
+              },
+              {
+                "entity": "students",
+                "id": "STUDENTS-1785161383642-vurrjn"
+              },
+              {
+                "entity": "students",
+                "id": "MAT-SHARED-V22-61374722"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0001"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0002"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0003"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0004"
+              }
+            ],
+            "rejectedStudents": [
+              {
+                "entity": "students",
+                "id": "MAT-SHARED-V22-61374722",
+                "code": "STUDENT_TENANT_CONFLICT",
+                "error": "Conflit d'identifiant élève entre établissements"
+              }
+            ],
+            "rejectedOtherCount": 87
+          }
+        },
+        "second": {
+          "id": "STUDENTS-1785161387626-ddfd21",
+          "syncAck": {
+            "acceptedCount": 157,
+            "acceptedStudentsSample": [
+              {
+                "entity": "students",
+                "id": "MAT-INTRA-V22-61374722"
+              },
+              {
+                "entity": "students",
+                "id": "STUDENTS-1785161381667-9ztj11"
+              },
+              {
+                "entity": "students",
+                "id": "STUDENTS-1785161383642-vurrjn"
+              },
+              {
+                "entity": "students",
+                "id": "MAT-SHARED-V22-61374722"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0001"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0002"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0003"
+              },
+              {
+                "entity": "students",
+                "id": "ELE-0004"
+              }
+            ],
+            "rejectedStudents": [
+              {
+                "entity": "students",
+                "id": "MAT-SHARED-V22-61374722",
+                "code": "STUDENT_TENANT_CONFLICT",
+                "error": "Conflit d'identifiant élève entre établissements"
+              }
+            ],
+            "rejectedOtherCount": 87
+          }
+        },
+        "pg": [
+          {
+            "id": "1fe7ae8a-0393-40df-9b5e-460d13b546f2",
+            "student_code": "MAT-INTRA-V22-61374722",
+            "school_id": "4524928c-43e4-4538-9e6b-0d52185e5578",
+            "first_name": "Intra1",
+            "last_name": "",
+            "school_code": "CD-2026-0051",
+            "status": "active"
+          }
+        ]
+      },
+      "notes": {
+        "putStatus": 200,
+        "postStatus": 201,
+        "postData": {
+          "id": "d17df44a-3dc2-43e8-9741-1a3f7d05487b",
+          "schoolId": "4524928c-43e4-4538-9e6b-0d52185e5578",
+          "schoolCode": "CD-2026-0051",
+          "studentId": "STUDENTS-1785161381667-9ztj11",
+          "className": "V22A-61374722",
+          "subject": "Mathématiques",
+          "value": 16,
+          "score": 16,
+          "coefficient": 2,
+          "date": "27-07-2026",
+          "evaluationId": "EVAL-1785161391690-4nyfvj",
+          "evaluationTitle": "Eval V22 61374722",
+          "evaluationType": "Devoir",
+          "period": "Trimestre 1",
+          "scale": 20,
+          "evaluationCoefficient": 1,
+          "gradeStatus": "Saisie",
+          "status": "Saisie",
+          "comment": "",
+          "version": 2,
+          "authorId": "TEACHERS-1785161388179-sf5fucji",
+          "enteredAt": "27-07-2026",
+          "audit": [
+            {
+              "authorId": "TEACHERS-1785161388179-sf5fucji",
+              "newValue": 16,
+              "date": "27-07-2026"
+            }
+          ]
+        },
+        "gradeRows": [
+          {
+            "id": "d17df44a-3dc2-43e8-9741-1a3f7d05487b",
+            "student_id": "9db4c465-374b-431a-9a69-10965b4f2958",
+            "score": "16.00",
+            "student_code": "STUDENTS-1785161381667-9ztj11",
+            "school_code": "CD-2026-0051"
+          }
+        ],
+        "crossSchoolResolveEmpty": true,
+        "jsonStudentId": "STUDENTS-1785161381667-9ztj11",
+        "pgStudentCode": "STUDENTS-1785161381667-9ztj11"
+      }
+    },
+    "pathology01": {
+      "sameCodeInTwoSchoolsBoAccepted": true,
+      "intendedAsGlobalSomafrikId": {
+        "defaultContactMatriculeEqualsStudentsId": true,
+        "boJsonAllowsDuplicateMatriculeAcrossSchools": true,
+        "noGlobalMatriculeAllocatorInResolveStableStudentCode": true,
+        "fieldName": "matricule",
+        "verdictCandidate": "non_global_par_intention_métier_matricule_scolaire",
+        "verdict": "indéterminé",
+        "noteCto": "Absence de garde BO ≠ légitimité métier. Défaut STUDENTS-* = contre-indice fort. Preuve complémentaire requise."
+      },
+      "observableRejectOrLoss": true
+    },
+    "sc06": {
+      "isolated": true,
+      "transferStudentId": "STUDENTS-1785161394750-8u63rf",
+      "before": {
+        "json": {
+          "id": "STUDENTS-1785161394750-8u63rf",
+          "name": "X61374722",
+          "email": "xfer-61374722@somafrik.app",
+          "phone": "+243 825 374722",
+          "gender": "Non renseigné",
+          "archived": false,
+          "publicId": "STUDENTS-1785161394750-8u63rf",
+          "birthDate": "",
+          "className": "V22XSRC-61374722",
+          "contactId": "CONTACT-1785161393314-449ufc",
+          "firstName": "Transfer",
+          "matricule": "STUDENTS-1785161394750-8u63rf",
+          "schoolCode": "CD-2026-0053"
+        },
+        "pg": [
+          {
+            "id": "2941a3f0-8cb1-439e-9899-2cdf3d872198",
+            "student_code": "STUDENTS-1785161394750-8u63rf",
+            "school_id": "fda9076d-8030-4a4d-bdb0-cd65000fe10a",
+            "first_name": "Transfer",
+            "last_name": "",
+            "school_code": "CD-2026-0053",
+            "status": "active"
+          }
+        ]
+      },
+      "after": {
+        "operation": "same_fiche_schoolCode_change",
+        "payloadSchoolCodeAttempted": "CD-2026-0052",
+        "syncAckRejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          },
+          {
+            "entity": "students",
+            "id": "STUDENTS-1785161394750-8u63rf",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ],
+        "syncAck": {
+          "acceptedStudents": 55,
+          "rejectedStudents": [
+            {
+              "entity": "students",
+              "id": "MAT-SHARED-V22-61374722",
+              "code": "STUDENT_TENANT_CONFLICT",
+              "error": "Conflit d'identifiant élève entre établissements"
+            },
+            {
+              "entity": "students",
+              "id": "STUDENTS-1785161394750-8u63rf",
+              "code": "STUDENT_TENANT_CONFLICT",
+              "error": "Conflit d'identifiant élève entre établissements"
+            }
+          ]
+        },
+        "jsonScoped": null,
+        "json": {
+          "id": "STUDENTS-1785161394750-8u63rf",
+          "name": "X61374722",
+          "email": "xfer-61374722@somafrik.app",
+          "phone": "+243 825 374722",
+          "gender": "Non renseigné",
+          "archived": false,
+          "publicId": "STUDENTS-1785161394750-8u63rf",
+          "birthDate": "",
+          "className": "V22XTGT-61374722",
+          "contactId": "CONTACT-1785161393314-449ufc",
+          "firstName": "Transfer",
+          "matricule": "STUDENTS-1785161394750-8u63rf",
+          "schoolCode": "CD-2026-0052"
+        },
+        "pg": [
+          {
+            "id": "2941a3f0-8cb1-439e-9899-2cdf3d872198",
+            "student_code": "STUDENTS-1785161394750-8u63rf",
+            "school_id": "fda9076d-8030-4a4d-bdb0-cd65000fe10a",
+            "first_name": "Transfer",
+            "last_name": "",
+            "school_code": "CD-2026-0053",
+            "status": "active"
+          }
+        ],
+        "rejected": [
+          {
+            "entity": "students",
+            "id": "STUDENTS-1785161394750-8u63rf",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ],
+        "note": "Aucun nettoyage. Opérations (2) nouvelle inscription et (3) nouvelle identité non exécutées ici — non équivalentes (§0.2). PUT via superadmin pour observer le changement schoolCode sans filtre établissement."
+      },
+      "transferStudentCode": "STUDENTS-1785161394750-8u63rf"
+    },
+    "postgres": {
+      "schema": {
+        "uniqueCols": [
+          {
+            "conname": "students_student_code_key",
+            "def": "UNIQUE (student_code)"
+          }
+        ],
+        "indexes": [
+          {
+            "indexname": "idx_students_school_id",
+            "indexdef": "CREATE INDEX idx_students_school_id ON public.students USING btree (school_id)"
+          },
+          {
+            "indexname": "idx_students_school_search",
+            "indexdef": "CREATE INDEX idx_students_school_search ON public.students USING btree (school_id, student_code, first_name, last_name)"
+          },
+          {
+            "indexname": "students_pkey",
+            "indexdef": "CREATE UNIQUE INDEX students_pkey ON public.students USING btree (id)"
+          },
+          {
+            "indexname": "students_student_code_key",
+            "indexdef": "CREATE UNIQUE INDEX students_student_code_key ON public.students USING btree (student_code)"
+          }
+        ],
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "school_id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "student_code",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "character_maximum_length": 64
+          },
+          {
+            "column_name": "first_name",
+            "data_type": "text",
+            "is_nullable": "NO",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "last_name",
+            "data_type": "text",
+            "is_nullable": "NO",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "gender",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "birth_date",
+            "data_type": "date",
+            "is_nullable": "YES",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "birth_place",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "photo_url",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "parent_phone",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "parent_email",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "status",
+            "data_type": "text",
+            "is_nullable": "NO",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp with time zone",
+            "is_nullable": "NO",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "updated_at",
+            "data_type": "timestamp with time zone",
+            "is_nullable": "NO",
+            "character_maximum_length": null
+          }
+        ]
+      }
+    },
+    "syncAcks": [
+      {
+        "at": "2026-07-27T14:09:35.819Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:37.227Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:38.625Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:39.666Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:40.147Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:40.644Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:41.132Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:41.667Z",
+        "status": 200,
+        "acceptedStudents": 50,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:42.154Z",
+        "status": 200,
+        "acceptedStudents": 51,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:42.631Z",
+        "status": 200,
+        "acceptedStudents": 51,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:43.142Z",
+        "status": 200,
+        "acceptedStudents": 51,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:43.642Z",
+        "status": 200,
+        "acceptedStudents": 51,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:44.103Z",
+        "status": 200,
+        "acceptedStudents": 52,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:44.577Z",
+        "status": 200,
+        "acceptedStudents": 52,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:45.103Z",
+        "status": 200,
+        "acceptedStudents": 52,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:45.585Z",
+        "status": 200,
+        "acceptedStudents": 54,
+        "rejectedStudents": []
+      },
+      {
+        "at": "2026-07-27T14:09:46.072Z",
+        "status": 200,
+        "acceptedStudents": 53,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:46.604Z",
+        "status": 200,
+        "acceptedStudents": 53,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:47.088Z",
+        "status": 200,
+        "acceptedStudents": 54,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:47.579Z",
+        "status": 200,
+        "acceptedStudents": 54,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:48.095Z",
+        "status": 200,
+        "acceptedStudents": 54,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:48.987Z",
+        "status": 200,
+        "acceptedStudents": 55,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:50.287Z",
+        "status": 200,
+        "acceptedStudents": 55,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:53.164Z",
+        "status": 200,
+        "syncAck": {
+          "acceptedCount": 265,
+          "acceptedStudentsSample": [
+            {
+              "entity": "students",
+              "id": "ELE-0001"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0002"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0003"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0004"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0005"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0006"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0007"
+            },
+            {
+              "entity": "students",
+              "id": "ELE-0008"
+            }
+          ],
+          "rejectedStudents": [
+            {
+              "entity": "students",
+              "id": "MAT-SHARED-V22-61374722",
+              "code": "STUDENT_TENANT_CONFLICT",
+              "error": "Conflit d'identifiant élève entre établissements"
+            }
+          ],
+          "rejectedOtherCount": 87
+        },
+        "path": "SC-05-put-evaluations-notes"
+      },
+      {
+        "at": "2026-07-27T14:09:54.750Z",
+        "status": 200,
+        "acceptedStudents": 55,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:56.240Z",
+        "status": 200,
+        "acceptedStudents": 56,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:57.751Z",
+        "status": 200,
+        "acceptedStudents": 56,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:09:59.260Z",
+        "status": 200,
+        "acceptedStudents": 55,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          },
+          {
+            "entity": "students",
+            "id": "STUDENTS-1785161394750-8u63rf",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:10:00.855Z",
+        "status": 200,
+        "acceptedStudents": 55,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          },
+          {
+            "entity": "students",
+            "id": "STUDENTS-1785161394750-8u63rf",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      },
+      {
+        "at": "2026-07-27T14:10:02.331Z",
+        "status": 200,
+        "acceptedStudents": 55,
+        "rejectedStudents": [
+          {
+            "entity": "students",
+            "id": "MAT-SHARED-V22-61374722",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          },
+          {
+            "entity": "students",
+            "id": "STUDENTS-1785161394750-8u63rf",
+            "code": "STUDENT_TENANT_CONFLICT",
+            "error": "Conflit d'identifiant élève entre établissements"
+          }
+        ]
+      }
+    ]
+  },
+  "synthesis": {
+    "debtId": "PRE-E1-STUDENT-CODE-SCOPE",
+    "severityDocumented": "MAJOR",
+    "severityRetained": "MAJOR_PROVISOIRE",
+    "ctoRevalidation": {
+      "date": "2026-07-27",
+      "technicalCharacterization": "VALIDEE",
+      "majorDefinitive": "NON_VALIDE",
+      "undraftMerge": "NON_AUTORISES_EN_LETAT",
+      "classificationOnlyRevision": true,
+      "note": "Correction classification sans rejeu complet (mandat CTO)."
+    },
+    "levels": {
+      "schemaFact": {
+        "label": "Fait de schéma",
+        "uniqueStudentCodeGlobal": true,
+        "uniqueSchoolStudentCodeComposite": false,
+        "postgresScope": "globale",
+        "classification": "confirmé"
+      },
+      "technicalEffect": {
+        "label": "Effet technique",
+        "interSchoolCollision": "confirmé",
+        "effect": "STUDENT_TENANT_CONFLICT + absence PG second établissement",
+        "crossTenantOverwrite": "non_observé",
+        "classification": "confirmé"
+      },
+      "businessQualification": {
+        "label": "Qualification métier",
+        "matriculeIntentLocalVsGlobal": "indéterminé",
+        "localScopeIncompatibility": "provisoire",
+        "note": "Injection harness MAT-SHARED-* prouve absence de garde BO, pas une situation métier légitime. Preuve complémentaire requise.",
+        "classification": "indéterminé"
+      }
+    },
+    "pathology01": {
+      "demo1_legitimateSameCodeInTwoSchools": "non_établi",
+      "demo1_detail": "BO accepte doublon injecté (absence de garde) — ne démontre pas un producteur nominal légitime",
+      "demo1_boAcceptsInjectedDuplicate": "confirmé",
+      "demo2_notIntendedAsGlobalSomafrikId": "indéterminé",
+      "demo2_detail": "Contre-indice : défaut contactRegistrySync matricule=STUDENTS-*. Indices seuls insuffisants (décision CTO).",
+      "demo3_observableRejectOrLoss": "confirmé",
+      "allThreeRequiredForPathologicalMajor": false,
+      "pathologicalMajorConfirmed": false
+    },
+    "effectiveScope": {
+      "postgres": "globale (UNIQUE student_code)",
+      "backOfficeJson": "pas d’unicité matricule inter-écoles observée (garde absente)",
+      "syncBehavior": "isolation via STUDENT_TENANT_CONFLICT (pas d’écrasement cross-tenant)"
+    },
+    "debtVerdict": "MAJOR_PROVISOIRE",
+    "debtSynthesis": {
+      "status": "MAJOR_PROVISOIRE",
+      "note": "PRE-E1-STUDENT-CODE-SCOPE — portée globale et conflit inter-écoles confirmés ; incompatibilité métier et sévérité MAJOR provisoires."
+    },
+    "correctiveFraming": "INTERDIT_DANS_CETTE_PR",
+    "noUniqueChange": true,
+    "noMigration": true,
+    "noCodeRegen": true,
+    "e1": "NO-GO"
+  },
+  "ctoClassificationRevision": {
+    "at": "2026-07-27T14:20:11.650Z",
+    "from": "MAJOR_CONFIRMEE_AU_SENS_0_1 / MAJOR_CONFIRMEE_PATHOLOGIQUE",
+    "to": "MAJOR_PROVISOIRE",
+    "fullReplay": false
+  }
+}
