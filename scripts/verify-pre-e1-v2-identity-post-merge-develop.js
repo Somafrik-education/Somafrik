@@ -8,7 +8,8 @@
  * Produit : docs/audits/evidence/pre-e1-v2-identity-fix-post-merge-develop-results.json
  *           + artefacts *-post-merge-develop-*
  *
- * Clôture technique V2.1 : NON déclarée ici — soumise à décision CTO.
+ * Clôture technique V2.1 : prononcée par décision CTO
+ *   (docs/audits/DECISION-CTO-CLOTURE-FIX-V2.1-IDENTITY.md) — dette consolidation hors scope.
  */
 const fs = require("fs");
 const path = require("path");
@@ -36,7 +37,8 @@ const results = {
   validatedHead: "0b1131ec23103e1fa8be4f3f47467812f76bded8",
   generatedAt: new Date().toISOString(),
   nature: "post-merge-replay-on-develop",
-  closure: "NOT_DECLARED — pending CTO decision",
+  closure:
+    "FIX V2.1 IDENTITY — CLÔTURÉ TECHNIQUEMENT by CTO decision after post-merge replay on develop@3fd7790f",
   gates: [],
   historicalIntegrity: [],
   ok: true,

@@ -6,7 +6,17 @@
   "validatedHead": "0b1131ec23103e1fa8be4f3f47467812f76bded8",
   "generatedAt": "2026-07-27T13:11:05.079Z",
   "nature": "post-merge-replay-on-develop",
-  "closure": "NOT_DECLARED — pending CTO decision",
+  "closure": "FIX V2.1 IDENTITY — CLÔTURÉ TECHNIQUEMENT by CTO decision after post-merge replay on develop@3fd7790f",
+  "closureDecision": {
+    "status": "TECHNICALLY_CLOSED",
+    "decidedAt": "2026-07-27",
+    "developMergeCommit": "3fd7790feef595e1f37915623038cbdf58c83234",
+    "validatedHead": "0b1131ec23103e1fa8be4f3f47467812f76bded8",
+    "document": "docs/audits/DECISION-CTO-CLOTURE-FIX-V2.1-IDENTITY.md",
+    "historicalConsolidation": "DEFERRED_NOT_AUTHORIZED",
+    "e1": "NO-GO",
+    "auditV2": "STILL_OPEN"
+  },
   "gates": [
     {
       "id": "POST-MERGE-01",
