@@ -1,0 +1,165 @@
+{
+  "subject": "TEACHER-RECORD-LOT2-NOTES-ATTENDANCE-IDENTITY-ACK",
+  "contract": "docs/audits/CONTRAT-FIX-TEACHER-RECORD-LOT2-NOTES-ATTENDANCE.md",
+  "generatedAt": "2026-07-27T16:51:03.819Z",
+  "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_lot2_notes",
+  "apiBase": "http://127.0.0.1:5122/api",
+  "gates": [
+    {
+      "id": "AC-N4",
+      "title": "Garde anti-fallback notes/présences",
+      "status": "PASS",
+      "detail": "PASS",
+      "extra": null
+    },
+    {
+      "id": "AC-T1-04",
+      "title": "Non-régression garde Lot 1 Mobile",
+      "status": "PASS",
+      "detail": "PASS",
+      "extra": null
+    },
+    {
+      "id": "AC-NR1",
+      "title": "Non-régression backend userTeacherSyncService (V2.1)",
+      "status": "PASS",
+      "detail": "PASS",
+      "extra": null
+    },
+    {
+      "id": "AC-N5",
+      "title": "Éval attachment exacte inchangée (unit)",
+      "status": "PASS",
+      "detail": "PASS",
+      "extra": null
+    },
+    {
+      "id": "AC-T1-02-SUPER",
+      "title": "PUT SuperAdmin → identitySyncAck.skips tableau (éventuellement vide)",
+      "status": "PASS",
+      "detail": "{\"skips\":[]}",
+      "extra": null
+    },
+    {
+      "id": "AC-T1-02",
+      "title": "PUT nominal → identitySyncAck.skips = []",
+      "status": "PASS",
+      "detail": "{\"skips\":[]}",
+      "extra": null
+    },
+    {
+      "id": "AC-N2-PUT",
+      "title": "Enseignant PUT notes/évaluations 200",
+      "status": "PASS",
+      "detail": "HTTP 200",
+      "extra": null
+    },
+    {
+      "id": "AC-N2",
+      "title": "Enseignant + affectation → POST /notes 201",
+      "status": "PASS",
+      "detail": "HTTP 201 {\"id\":\"f6e43885-5618-42f7-9ba3-c82645eb5057\",\"schoolId\":\"633228ae-3c23-438d-8a9e-eaff8b1c4746\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785171051752-t6bxcb\",\"className\":\"",
+      "extra": null
+    },
+    {
+      "id": "AC-N2-PG",
+      "title": "grades.teacher_id = canon enseignant attendu (lié user/affectation)",
+      "status": "PASS",
+      "detail": "{\"gradeRows\":[{\"id\":\"f6e43885-5618-42f7-9ba3-c82645eb5057\",\"teacher_code\":\"TEACHERS-1785171052779-04mqfpak\",\"user_id\":\"09325bdc-a806-4a79-aeff-f87444aeef28\"}],\"linkedTeacherId\":\"TEACHERS-1785171052779-04mqfpak\"}",
+      "extra": null
+    },
+    {
+      "id": "AC-N1",
+      "title": "Admin sans clé enseignant → 409 GRADE_TEACHER_UNRESOLVED",
+      "status": "PASS",
+      "detail": "HTTP 409 code=GRADE_TEACHER_UNRESOLVED",
+      "extra": {
+        "message": "Clé enseignant explicite requise pour attribuer une note (admin/direction).",
+        "code": "GRADE_TEACHER_UNRESOLVED"
+      }
+    },
+    {
+      "id": "AC-N6",
+      "title": "Admin + clé explicite unique → 201",
+      "status": "PASS",
+      "detail": "HTTP 201 {\"id\":\"f6e43885-5618-42f7-9ba3-c82645eb5057\",\"schoolId\":\"633228ae-3c23-438d-8a9e-eaff8b1c4746\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785171051752-t6bxcb\",\"className\":\"",
+      "extra": null
+    },
+    {
+      "id": "AC-N6-PG",
+      "title": "Note admin → teacher_code = clé fournie",
+      "status": "PASS",
+      "detail": "{\"gradesAfterAdmin\":[{\"teacher_code\":\"TEACHERS-1785171052779-04mqfpak\"}],\"expected\":\"TEACHERS-1785171052779-04mqfpak\"}",
+      "extra": null
+    },
+    {
+      "id": "AC-N3-REFUSE",
+      "title": "Admin présence sans clé → 409 ATTENDANCE_TEACHER_UNRESOLVED",
+      "status": "PASS",
+      "detail": "HTTP 409 code=ATTENDANCE_TEACHER_UNRESOLVED",
+      "extra": {
+        "message": "Clé enseignant explicite requise pour attribuer une présence (admin/direction).",
+        "code": "ATTENDANCE_TEACHER_UNRESOLVED"
+      }
+    },
+    {
+      "id": "AC-N3",
+      "title": "Admin présence + clé explicite → 201",
+      "status": "PASS",
+      "detail": "HTTP 201",
+      "extra": null
+    },
+    {
+      "id": "AC-N3-TEACHER",
+      "title": "Enseignant présence (parcours inchangé) → 201",
+      "status": "PASS",
+      "detail": "HTTP 201",
+      "extra": null
+    },
+    {
+      "id": "AC-T1-01",
+      "title": "PUT multi-twin historique → identitySyncAck.skips contient TEACHER_HISTORICAL_MULTI_TWIN",
+      "status": "PASS",
+      "detail": "{\"skips\":[{\"code\":\"TEACHER_HISTORICAL_MULTI_TWIN\",\"userId\":\"USERS-L2-TWIN-71049177\",\"schoolCode\":\"CD-2026-0051\",\"twinIds\":[\"TEACHER-TW1-71049177\",\"TEACHER-TW2-71049177\"],\"action\":\"noop\"}]}",
+      "extra": {
+        "skips": [
+          {
+            "code": "TEACHER_HISTORICAL_MULTI_TWIN",
+            "userId": "USERS-L2-TWIN-71049177",
+            "schoolCode": "CD-2026-0051",
+            "twinIds": [
+              "TEACHER-TW1-71049177",
+              "TEACHER-TW2-71049177"
+            ],
+            "action": "noop"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-T1-03",
+      "title": "Ambiguïté canon → 409 TEACHER_CANON_AMBIGUOUS ou skip non fatal exposé",
+      "status": "PASS",
+      "detail": "HTTP 409 code=TEACHER_CANON_AMBIGUOUS ack=undefined",
+      "extra": {
+        "message": "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté",
+        "code": "TEACHER_CANON_AMBIGUOUS"
+      }
+    },
+    {
+      "id": "AC-NR2",
+      "title": "Aucune migration/backfill (revue : pas de SQL migration dans PR)",
+      "status": "PASS",
+      "detail": "pas de fichier migration ajouté",
+      "extra": null
+    }
+  ],
+  "scenarios": [
+    {
+      "schoolCode": "CD-2026-0051",
+      "teacherId": "TEACHERS-1785171053560-bxk5w8",
+      "evaluationId": "EVAL-1785171056043-lih3sz"
+    }
+  ],
+  "ok": true
+}

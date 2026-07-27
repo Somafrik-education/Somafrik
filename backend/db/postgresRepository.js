@@ -1143,25 +1143,36 @@ class PostgresRepository {
       this._activeNotesAuthzTrace = null;
     }
 
-    const teacher =
-      (await this.findTeacherForGrade(
+    // Lot 2 — auteur pédagogique déterministe (jamais inventé via created_at / premier de l'école).
+    // Si l'évaluation porte déjà un teacher_id exact, on le réutilise.
+    // Sinon : Enseignant → résolution par affectation ; admin/direction → clé explicite scopée école.
+    let teacherId = evaluation.teacher_id ?? null;
+    if (!teacherId) {
+      const isEnseignant = principal.role === "Enseignant";
+      const teacherKey = isEnseignant
+        ? String(principal.sub ?? "").trim()
+        : this.extractExplicitTeacherKey(payload);
+      if (!isEnseignant && !teacherKey) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Clé enseignant explicite requise pour attribuer une note (admin/direction).",
+        );
+      }
+      const teacher = await this.findTeacherForGrade(
         evaluation.school_id,
-        principal.sub,
+        teacherKey,
         evaluation.class_id,
         evaluation.subject_id,
         principal.role,
-      )) ??
-      (options.allowMissingTeacher
-        ? await this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [
-            evaluation.school_id,
-          ])
-        : null);
-    if (!teacher && !evaluation.teacher_id) {
-      const error = new Error("Enseignant introuvable");
-      error.statusCode = 400;
-      throw error;
+      );
+      if (!teacher) {
+        throw this.teacherUnresolvedError(
+          "GRADE_TEACHER_UNRESOLVED",
+          "Enseignant introuvable ou ambigu pour la note.",
+        );
+      }
+      teacherId = teacher.id;
     }
-    const teacherId = evaluation.teacher_id ?? teacher.id;
 
     let existing = await this.one(
       `SELECT * FROM grades
@@ -2954,7 +2965,30 @@ class PostgresRepository {
       throw error;
     }
 
-    const teacher = await this.findTeacherForAttendance(student.school_id, principal.sub, student.class_id, principal.role);
+    const isEnseignant = principal.role === "Enseignant";
+    const teacherKey = isEnseignant
+      ? String(principal.sub ?? "").trim()
+      : this.extractExplicitTeacherKey(payload);
+    if (!isEnseignant && !teacherKey) {
+      throw this.teacherUnresolvedError(
+        "ATTENDANCE_TEACHER_UNRESOLVED",
+        "Clé enseignant explicite requise pour attribuer une présence (admin/direction).",
+      );
+    }
+    const teacher = await this.findTeacherForAttendance(
+      student.school_id,
+      teacherKey,
+      student.class_id,
+      principal.role,
+    );
+    // Enseignant : parcours inchangé (teacher_id nullable si pas de match fiche).
+    // Admin/direction : refus 409 si non résolu / ambigu — jamais d'auteur inventé.
+    if (!isEnseignant && !teacher) {
+      throw this.teacherUnresolvedError(
+        "ATTENDANCE_TEACHER_UNRESOLVED",
+        "Enseignant introuvable ou ambigu pour la présence.",
+      );
+    }
     const status = this.toAttendanceStatus(payload.status, payload.present);
     // D3.5b : Justifié = absence justifiée (pas de justificatif documentaire)
     const reason =
@@ -3260,7 +3294,8 @@ class PostgresRepository {
       const studentId = studentIds.get(note.studentId);
       const classId = student ? classIds.get(student.className) : null;
       const subjectId = subjectIds.get(note.subject);
-      const teacherId = teacherIds.get(note.authorId) ?? [...teacherIds.values()][0];
+      // Lot 2 — seed démo : pas d'auteur inventé (premier teacher) si authorId absent/non mappé.
+      const teacherId = teacherIds.get(note.authorId);
       if (!studentId || !classId || !subjectId || !teacherId) continue;
       await client.query(
         `INSERT INTO grades (school_id, student_id, class_id, subject_id, teacher_id, term_id, grade_type, score, max_score, coefficient, comment)
@@ -4316,7 +4351,58 @@ class PostgresRepository {
     return grade ? this.mapGrade(grade) : null;
   }
 
+  /**
+   * Lot 2 — erreur structurée attribution enseignant (notes / présences).
+   * HTTP 409 : conflit d'état/résolution métier (contrat CTO).
+   */
+  teacherUnresolvedError(code, message) {
+    const error = new Error(message);
+    error.statusCode = 409;
+    error.code = code;
+    return error;
+  }
+
+  /** Clé enseignant explicite depuis payload (admin/direction). */
+  extractExplicitTeacherKey(payload = {}) {
+    return String(
+      payload.teacherId ??
+        payload.authorId ??
+        payload.teacher_code ??
+        payload.teacherCode ??
+        "",
+    ).trim();
+  }
+
+  /**
+   * Lot 2 — résolution unique scopée école (0 ou >1 → null = unresolved/ambiguous).
+   * Aucun ORDER BY created_at / premier de l'école.
+   */
+  async resolveUniqueTeacherInSchool(schoolId, teacherKey) {
+    const key = String(teacherKey ?? "").trim();
+    if (!key || !schoolId) return null;
+    const rows = await this.all(
+      `SELECT t.*
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       WHERE t.school_id = $1
+         AND (
+           t.teacher_code = $2
+           OR u.user_code = $2
+           OR u.id::text = $2
+           OR t.id::text = $2
+         )`,
+      [schoolId, key],
+    );
+    if (!rows || rows.length !== 1) return null;
+    return rows[0];
+  }
+
   async findTeacherForGrade(schoolId, teacherCode, classId, subjectId, principalRole) {
+    // Lot 2 — admin/direction : clé explicite unique scopée école uniquement.
+    if (principalRole !== "Enseignant") {
+      return this.resolveUniqueTeacherInSchool(schoolId, teacherCode);
+    }
+
     // HOTFIX-PRE-E1-02 : tenter toutes les clés stables du principal (userId, teacher_code BO…).
     const lookupKeys = new Set();
     const add = (value) => {
@@ -4324,13 +4410,11 @@ class PostgresRepository {
       if (text) lookupKeys.add(text);
     };
     add(teacherCode);
-    if (principalRole === "Enseignant") {
-      for (const key of await this.collectTeacherLookupKeysForPrincipal(
-        { sub: teacherCode, role: principalRole },
-        schoolId,
-      )) {
-        add(key);
-      }
+    for (const key of await this.collectTeacherLookupKeysForPrincipal(
+      { sub: teacherCode, role: principalRole },
+      schoolId,
+    )) {
+      add(key);
     }
 
     let assignedTeacher = null;
@@ -4356,42 +4440,34 @@ class PostgresRepository {
       if (assignedTeacher) break;
     }
 
-    if (principalRole === "Enseignant") {
-      return assignedTeacher;
-    }
-
-    return (
-      assignedTeacher ??
-      this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [schoolId])
-    );
+    return assignedTeacher;
   }
 
   async findTeacherForAttendance(schoolId, teacherCode, classId, principalRole) {
-    const lookupCode = String(teacherCode ?? "").trim();
-    const assignedTeacher = lookupCode
-      ? await this.one(
-          `SELECT t.*
-           FROM teachers t
-           LEFT JOIN users u ON u.id = t.user_id
-           LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.class_id = $3
-           WHERE t.school_id = $1
-             AND (
-               t.teacher_code = $2
-               OR u.user_code = $2
-               OR u.id::text = $2
-               OR t.id::text = $2
-             )
-           ORDER BY CASE WHEN ta.id IS NULL THEN 1 ELSE 0 END, t.created_at
-           LIMIT 1`,
-          [schoolId, lookupCode, classId],
-        )
-      : null;
-
-    if (principalRole === "Enseignant") {
-      return assignedTeacher;
+    // Lot 2 — admin/direction : clé explicite unique scopée école uniquement.
+    if (principalRole !== "Enseignant") {
+      return this.resolveUniqueTeacherInSchool(schoolId, teacherCode);
     }
 
-    return assignedTeacher ?? this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [schoolId]);
+    const lookupCode = String(teacherCode ?? "").trim();
+    if (!lookupCode) return null;
+    // Parcours Enseignant inchangé : match par clé + préférence affectation classe.
+    return this.one(
+      `SELECT t.*
+       FROM teachers t
+       LEFT JOIN users u ON u.id = t.user_id
+       LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.class_id = $3
+       WHERE t.school_id = $1
+         AND (
+           t.teacher_code = $2
+           OR u.user_code = $2
+           OR u.id::text = $2
+           OR t.id::text = $2
+         )
+       ORDER BY CASE WHEN ta.id IS NULL THEN 1 ELSE 0 END, t.created_at
+       LIMIT 1`,
+      [schoolId, lookupCode, classId],
+    );
   }
 
   mentionForScore(score) {
