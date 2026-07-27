@@ -3,13 +3,54 @@
 **Type :** dossier de cadrage (analyse + proposition) — **aucune implémentation**  
 **Autorisation CTO :** cadrage **AUTORISÉ** · implémentation **INTERDITE** · migration de données **INTERDITE**  
 **Anomalie :** `PRE-E1-IDENTITY-LIFECYCLE` — **MAJOR CONFIRMÉE — revalidation CTO**  
+**Arbitrage CTO option cible (2026-07-27) :** **HYBRIDE A+C BORNÉE** — voir §0.1  
 **Preuves de caractérisation (lecture seule) :** PR #95 / #96 · [`RAPPORT-AUDIT-PRE-E1-V2-IDENTITY-LIFECYCLE.md`](./RAPPORT-AUDIT-PRE-E1-V2-IDENTITY-LIFECYCLE.md) · [`evidence/pre-e1-v2-identity-lifecycle-results.json`](./evidence/pre-e1-v2-identity-lifecycle-results.json)  
 **Base :** `develop` @ `3175f433`  
 **Date :** 2026-07-27  
 
-> Ce document **ne choisit pas** l’option cible de façon exécutoire.  
-> L’option retenue et le périmètre d’implémentation exigent un **nouvel arbitrage CTO explicite**.  
-> Les preuves brutes `scenarios` / `questions` des PR #95/#96 **ne sont pas modifiées**.
+> Les preuves brutes `scenarios` / `questions` des PR #95/#96 **ne sont pas modifiées**.  
+> L’implémentation exige un **contrat** [`CONTRAT-FIX-V2.1-IDENTITY.md`](./CONTRAT-FIX-V2.1-IDENTITY.md) puis un **nouvel aval CTO** avant toute PR code.
+
+---
+
+## 0.1 Arbitrage CTO — option cible (VALIDÉ)
+
+| Champ | Décision |
+|-------|----------|
+| Option retenue | **Hybride A+C bornée** |
+| Identité pédagogique canonique | **`TEACHERS-*`** |
+| Lien compte ↔ enseignant | **`teachers.user_id`** + `school_id` / `schoolCode` + canon `TEACHERS-*` |
+| Nouvelles créations | **Prévention obligatoire** des jumeaux |
+| Identités historiques | **Conservées** — pas de fusion / migration |
+| Option B | **Rejetée** pour le premier lot |
+| Table `user_teacher_link` / `canonicalTeacherId` / contrainte SQL nouvelle | **Différés** |
+| `UNIQUE(school_id, user_id)` | **Non autorisée** dans le premier lot |
+| Périmètre lot minimal | Prévention jumeaux **+** alignement nouvelles évaluations (**un seul gate** AC-NEW-01…04) |
+| Authz multi-fiches | **Conservée** pour l’historique uniquement — **pas** étendue aux nouvelles créations |
+| Cadrage PR #97 | **VALIDÉ** · merge autorisé |
+| Implémentation | **TOUJOURS INTERDITE** jusqu’à validation du contrat FIX |
+
+### Bornage Option C (lot minimal)
+
+Option C **ne signifie pas** encore nouvelle table ni migration de schéma.  
+Le lien explicite s’appuie d’abord sur le champ **existant** `teachers.user_id`, scopé établissement, vers l’identité pédagogique canonique `TEACHERS-*`.
+
+### Périmètre fonctionnel du futur lot (un seul gate)
+
+1. **Prévention** — le flux contact+user ne crée plus un `TEACHER-*` parallèle lorsqu’une identité pédagogique existe ; la création pédagogique réutilise le canon lié au compte.  
+2. **Alignement nouvelles évaluations** — `evaluation.teacherId` JSON · `evaluations.teacher_id` PG · `teacher_assignments` résolvent tous vers le même `TEACHERS-*`.
+
+Ces deux volets **ne sont pas** séparables en correctifs indépendants (sinon Q7 resterait partiellement active).
+
+### Données existantes (gel)
+
+| Opération | Statut |
+|-----------|--------|
+| Fusion / DELETE | **INTERDITS** |
+| Backfill `evaluations.teacher_id` | **INTERDIT** |
+| Réécriture `assignments.teacherId` | **INTERDITE** |
+| Authz multi-fiches temporaire | **CONSERVÉE** (historique) |
+| Accès notes existant | **À PRÉSERVER** |
 
 ---
 
@@ -18,13 +59,13 @@
 | Élément | Statut |
 |---------|--------|
 | Caractérisation V2.1 | VALIDÉE |
-| Cadrage plan correctif minimal | **AUTORISÉ** (ce dossier) |
-| Implémentation du correctif | **INTERDITE** |
+| Cadrage plan correctif minimal | **VALIDÉ** (arbitrage §0.1) |
+| Implémentation du correctif | **INTERDITE** (attendre contrat + aval) |
 | Migration de données | **INTERDITE** |
 | Modification preuves brutes #95/#96 | **INTERDITE** |
 | E1 | **NO-GO** |
 | HOTFIX-01 / 02 / 02B | **CLOS** — ne pas rouvrir |
-| Contrat prochain sujet V2 | **Différé** jusqu’à examen de ce cadrage |
+| Contrat prochain sujet V2 | **Différé** |
 
 ---
 
@@ -201,6 +242,12 @@ Introduire un lien premier-classe (ex. `teachers.user_id` déjà présent + **co
 2. **Cadre durable :** Option **C** (contrainte / mapping explicite user↔teacher) comme socle, sans migration destructive.  
 3. **Éviter Option B** comme premier correctif (coût / régression 02B).
 
+### → Décision CTO (enregistrée §0.1)
+
+**Hybride A+C bornée** retenue. Option B rejetée.  
+Option C limitée à `teachers.user_id` + scope établissement (pas de nouvelle table / contrainte UNIQUE dans le premier lot).  
+Lot minimal = prévention **et** alignement nouvelles évaluations (AC-NEW-01…04, un seul gate).
+
 ---
 
 ## 6. Impacts par surface
@@ -314,25 +361,28 @@ Suggestion : `docs/audits/evidence/pre-e1-v2-identity-fix-*.json` — **nouveau*
 
 ---
 
-## 11. Questions ouvertes pour l’arbitrage CTO
+## 11. Questions ouvertes — statut après arbitrage CTO
 
-1. Option cible retenue : **A**, **C**, ou **hybride A+C** (recommandation de cadrage) ?  
-2. Le lot minimal inclut-il **uniquement** la prévention (§4.1), ou aussi l’alignement d’écriture evaluations pour nouveaux flux (§ FIX-2) ?  
-3. Autorise-t-on une contrainte PG `UNIQUE(school_id, user_id)` filtrée (teachers actifs) sans backfill ?  
-4. Les jumeaux historiques restent-ils supportés via multi-match authz jusqu’à un lot migration dédié ?  
-5. Faut-il un contrat d’implémentation séparé (`CONTRAT-HOTFIX-…` / `CONTRAT-FIX-V2.1-IDENTITY`) avant toute PR code ?
+| # | Question | Décision CTO |
+|---|----------|--------------|
+| 1 | Option A / C / hybride ? | **Hybride A+C bornée** |
+| 2 | Prévention seule ou + alignement evaluations ? | **Les deux**, un seul gate AC-NEW-01…04 |
+| 3 | `UNIQUE(school_id, user_id)` ? | **Non** — lot consolidation ultérieur |
+| 4 | Multi-match authz historiques ? | **Oui**, temporaire ; **pas** pour nouvelles créations |
+| 5 | Contrat d’implémentation avant code ? | **Oui** — `CONTRAT-FIX-V2.1-IDENTITY.md` |
 
 ---
 
-## 12. Recommandation de cadrage (non exécutoire)
+## 12. Recommandation — devenue décision
 
-| Élément | Proposition |
-|---------|-------------|
-| Option | **Hybride : A (canon pédagogique `TEACHERS-*`) + C (lien explicite user↔teacher)** |
-| Périmètre minimal | **Prévention des nouveaux jumeaux** + résolution d’écriture evaluations alignée sur le canon pour **nouveaux** parcours |
-| Existants | **Gel** (pas de migration) + authz multi-fiches conservée |
-| Sévérité | MAJOR confirmée — **pas** BLOCKER/CRITICAL |
-| Prochaine étape | Arbitrage CTO sur §11 → contrat d’implémentation → seulement alors PR code |
+| Élément | Statut |
+|---------|--------|
+| Option | **Hybride A+C bornée** (décision CTO) |
+| Canon pédagogique | `TEACHERS-*` |
+| Lien | `teachers.user_id` scopé établissement |
+| Périmètre minimal | Prévention jumeaux + alignement nouvelles évaluations |
+| Existants | Gel + multi-match historique |
+| Prochaine étape | Contrat d’implémentation → **aval CTO** → seulement alors PR code |
 
 ---
 
