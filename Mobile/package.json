@@ -13,6 +13,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "test:user-teacher-sync": "npx --yes tsx src/lib/userTeacherSync.test.ts",
     "verify:mobile-security": "node scripts/verify-mobile-security.js"
   },
   "dependencies": {

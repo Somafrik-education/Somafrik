@@ -25,7 +25,13 @@ import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
 import { CONTACT_PROVISIONING_HINT, entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import { isTeacherUserRole, upsertTeacherFromUser } from "../lib/userTeacherSync";
+import {
+  applyTeacherSyncUiAfterUserSave,
+  createTeacherRecordId,
+  isTeacherUserRole,
+  upsertTeacherFromUser,
+  type TeacherIdentitySkip,
+} from "../lib/userTeacherSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 
@@ -525,22 +531,39 @@ export default function AdminCrudScreen({ route }: Props) {
     if (entity === "users") {
       const userItem = nextItem as UserAccount;
       if (isTeacherUserRole(userItem.role)) {
-      const syncedTeachers = upsertTeacherFromUser(teachersData, userItem);
-      const syncedTeacher = syncedTeachers.find(
-        (teacher) =>
-          String(teacher.userId ?? "") === String(userItem.id) ||
-          normalize(String(teacher.identifier ?? "")) === normalize(String(userItem.identifier ?? ""))
-      );
-      if (syncedTeacher) {
-        const existsInTeachers = teachersData.some(
-          (teacher) => String(teacher.id) === String(syncedTeacher.id)
-        );
-        if (existsInTeachers) {
-          updateItem("teachers", syncedTeacher);
-        } else {
-          createItem("teachers", syncedTeacher);
+        const skips: TeacherIdentitySkip[] = [];
+        let syncedTeachers;
+        try {
+          syncedTeachers = upsertTeacherFromUser(teachersData, userItem, {
+            assignments: assignmentsData,
+            skips,
+          });
+        } catch (error: any) {
+          if (error?.code === "TEACHER_CANON_AMBIGUOUS") {
+            Alert.alert(
+              "Ambiguïté enseignant",
+              `${String(error.message)}\n\nCode: TEACHER_CANON_AMBIGUOUS`,
+            );
+            return;
+          }
+          throw error;
         }
-      }
+
+        const uiResult = applyTeacherSyncUiAfterUserSave({
+          teachersBefore: teachersData,
+          user: userItem,
+          syncedTeachers,
+          skips,
+          createTeacher: (teacher) => createItem("teachers", teacher as any),
+          updateTeacher: (teacher) => updateItem("teachers", teacher as any),
+        });
+
+        // AC-M7 UI : skip multi-twin → alerte + arrêt immédiat (0 create/update fiche)
+        if (uiResult.stopped) {
+          Alert.alert("Identité enseignant", uiResult.operatorMessage ?? "Mutation enseignant bloquée.");
+          setVisible(false);
+          return;
+        }
       }
     }
 
@@ -2064,6 +2087,10 @@ function splitList(value?: string) {
 }
 
 function createInternalId(prefix: string) {
+  // Lot 1 — nouvelles fiches enseignant : canon TEACHERS-* uniquement
+  if (String(prefix ?? "").trim().toLowerCase() === "teachers") {
+    return createTeacherRecordId();
+  }
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
