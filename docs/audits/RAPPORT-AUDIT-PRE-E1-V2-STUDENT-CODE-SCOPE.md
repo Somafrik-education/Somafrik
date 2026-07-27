@@ -6,6 +6,7 @@
 **Preuve machine :** [`evidence/pre-e1-v2-student-code-scope-results.json`](./evidence/pre-e1-v2-student-code-scope-results.json)  
 **Commande :** `npm run verify:pre-e1-v2-student-code`  
 **Date preuve :** 2026-07-27  
+**Revalidation CTO classification :** 2026-07-27 — caractérisation technique **VALIDÉE** · MAJOR définitif **NON VALIDÉ**
 
 ---
 
@@ -23,29 +24,71 @@
 
 ---
 
-## 1. Verdict factuel (portée & dette)
+## 1. Décision CTO — trois niveaux (obligatoire)
 
-| Question | Verdict |
-|----------|---------|
-| Portée **PostgreSQL** de `student_code` | **Globale** — `UNIQUE (student_code)` confirmé ; pas de UNIQUE `(school_id, student_code)` |
-| Portée **BO JSON** | Pas d’unicité inter-écoles sur `matricule` — doublon accepté en state |
-| Comportement sync | Isolation via `STUDENT_TENANT_CONFLICT` (pas d’écrasement cross-tenant) |
-| Fait de schéma UNIQUE | **Confirmé** (≠ anomalie à lui seul) |
-| Dette `PRE-E1-STUDENT-CODE-SCOPE` au sens §0.1 | **MAJOR confirmée pathologique** — les **trois** démonstrations §0.1 sont réunies (demo2 par indices, avec contre-indice documenté) |
+> Séparer **fait de schéma**, **effet technique** et **qualification métier**.  
+> Ne pas confondre injection harness `MAT-SHARED-*` avec production nominale légitime.
 
-### 1.1 Application §0.1
+### 1.1 Fait de schéma
 
-| Démonstration | Résultat | Preuve |
-|---------------|----------|--------|
-| 1. Même code **légitimement produit** dans deux établissements | **Confirmé** | BO accepte `MAT-SHARED-V22-*` sur école A et B (SC-03) |
-| 2. Code **non censé** être un identifiant global Somafrik | **Confirmé par indices** | Champ `matricule`, pas d’allocateur global, doublon BO inter-écoles ; **contre-indice** : défaut `contactRegistrySync` → `matricule = STUDENTS-*` |
-| 3. Conflit → rejet / perte observable | **Confirmé** | Sync B → `STUDENT_TENANT_CONFLICT` ; **1 seule** row PG ; élève B absent de PG |
+| Item | Classification |
+|------|----------------|
+| `student_code` globalement unique en PostgreSQL | **CONFIRMÉ** |
+| `UNIQUE (student_code)` | **CONFIRMÉ** |
+| `UNIQUE (school_id, student_code)` | **ABSENT** |
+| Portée PostgreSQL | **GLOBALE** |
 
-> Le fait UNIQUE seul ne constitue pas la dette. La pathologie retenue est le **conflit reproductible** entre production multi-établissements d’un même matricule et la contrainte globale + rejet sync.
+### 1.2 Effet technique
+
+| Item | Classification |
+|------|----------------|
+| Collision inter-écoles (même code, deux `school_id`) | **CONFIRMÉE** |
+| Effet | `STUDENT_TENANT_CONFLICT` + **absence** de row PG pour le second établissement |
+| Écrasement cross-tenant | **NON OBSERVÉ** |
+| Collision intra-école | **Convergence** vers une row PG |
+| Notes / `grades.student_id` (nominal) | **ALIGNÉS** |
+| Transfert simulé même fiche (SC-06) | **Divergence JSON ↔ PG CONFIRMÉE** |
+| Replay sync | **IDEMPOTENT** |
+| Q7 divergence nominale d’identifiant | **INFIRMÉE** |
+
+### 1.3 Qualification métier
+
+| Item | Classification |
+|------|----------------|
+| Intention métier du matricule (local vs global Somafrik) | **INDÉTERMINÉE** |
+| Incompatibilité métier « portée locale attendue » | **PROVISOIRE** |
+| Sévérité globale | **MAJOR PROVISOIRE** |
+
+**Pourquoi demo §0.1-2 n’est pas close :**  
+le flux nominal contact produit `matricule = STUDENTS-*` (identifiant technique à allure **globale**). L’acceptation BO de deux valeurs **injectées** identiques (`MAT-SHARED-*`) prouve une **absence de garde BO**, pas qu’une telle collision soit une situation métier **légitime** attendue. Une preuve complémentaire indépendante est requise (voir §8).
+
+### 1.4 Verdict global (formulation CTO)
+
+> **`PRE-E1-STUDENT-CODE-SCOPE` — portée globale et conflit inter-écoles confirmés ; incompatibilité métier et sévérité MAJOR provisoires.**
+
+| Statut | Décision |
+|--------|----------|
+| Caractérisation technique | **VALIDÉE** |
+| Verdict MAJOR définitif / pathologique | **NON VALIDÉ** |
+| Undraft / merge PR #102 | **NON AUTORISÉS** en l’état tant que la formulation antérieure n’est pas corrigée (cette révision) ; merge ultérieur = arbitrage CTO |
+| Correctif / cadrage | **INTERDITS** |
+| E1 | **NO-GO** |
 
 ---
 
-## 2. Matrice Q1–Q7
+## 2. Application §0.1 (relecture CTO)
+
+| Démonstration | Résultat | Lecture |
+|---------------|----------|---------|
+| 1. Même code **légitimement** produit dans deux établissements | **Non établi** | SC-03 montre injection + absence de garde BO ; **≠** producteur nominal légitime |
+| 2. Code **non censé** être un identifiant global Somafrik | **Indéterminé** | Indices ambigus ; contre-indice fort : défaut `STUDENTS-*` |
+| 3. Conflit → rejet / perte observable | **Confirmé** | `STUDENT_TENANT_CONFLICT` ; 1 row PG ; élève B absent |
+
+→ Les trois démonstrations **ne sont pas** réunies → **pas** de « MAJOR confirmée pathologique ».
+
+---
+
+## 3. Matrice Q1–Q7
 
 | # | Classification | Synthèse |
 |---|---------------|----------|
@@ -59,61 +102,57 @@
 
 ---
 
-## 3. Matrice SC-01…SC-08
+## 4. Matrice SC-01…SC-08
 
 | ID | Classification | Mesure clé |
 |----|---------------|------------|
-| **SC-01** | **confirmé** | Introspection PG : `UNIQUE (student_code)` ; index `idx_students_school_search` non unique |
+| **SC-01** | **confirmé** | Introspection PG : `UNIQUE (student_code)` ; index non unique école |
 | **SC-02** | **confirmé** | 1 élève / 1 école → `student_code = resolveStableStudentCode(...)` |
-| **SC-03** | **confirmé** | Inter-écoles : 1 row PG + `STUDENT_TENANT_CONFLICT` sur B |
+| **SC-03** | **confirmé** *(effet technique)* | Inter-écoles : 1 row PG + `STUDENT_TENANT_CONFLICT` sur B — **sans** conclure à la légitimité métier du doublon |
 | **SC-04** | **confirmé** | Intra-école 2 fiches → 1 row PG |
 | **SC-05** | **confirmé** | PUT eval/notes 200 + POST `/api/notes` 201 ; 1 grade aligné |
-| **SC-06** | **confirmé** | Élève **dédié** ; snapshot avant/après ; fixtures autres SC intactes ; **aucun nettoyage** |
+| **SC-06** | **confirmé** | Élève **dédié** ; snapshot avant/après ; fixtures intactes ; **aucun nettoyage** |
 | **SC-07** | **confirmé** | 2ᵉ enrollment autre année OK ; `student_code` inchangé |
 | **SC-08** | **confirmé** | Double PUT sync → toujours 1 row |
 
-### 3.1 SC-06 — transfert isolé (§0.2)
+### 4.1 SC-06 — transfert isolé (§0.2)
 
 | Exigence | Observé |
 |----------|---------|
 | Élève dédié (école XFER) | Oui |
 | Snapshot avant | JSON + PG école source |
-| Tentative | Opération **(1)** seule : même fiche, `schoolCode` → école B (via superadmin) |
-| Snapshot après | JSON : `schoolCode` = B ; PG : `school_code` = source ; reject `STUDENT_TENANT_CONFLICT` sur l’id dédié |
+| Tentative | Opération **(1)** seule : même fiche, `schoolCode` → école B |
+| Snapshot après | JSON : `schoolCode` = B ; PG : école source ; `STUDENT_TENANT_CONFLICT` sur l’id dédié |
 | Nettoyage | Aucun |
-| Fixtures SC-02…05 | Intactes (`fixturesIntact=true`) |
-| Opérations (2) / (3) | **Non exécutées** — explicitement non équivalentes |
-
-**Effet SoT :** divergence JSON↔PG sur l’établissement après tentative de transfert par changement de `schoolCode` sur la même fiche.
+| Fixtures SC-02…05 | Intactes |
+| Opérations (2) / (3) | **Non exécutées** — non équivalentes |
 
 ---
 
-## 4. Producteurs → `student_code` → références
+## 5. Producteurs → `student_code` → références
 
 ```
 Contact BO (linkContactToOperationalRecord)
-  └─ défaut : matricule = publicId = id (STUDENTS-*)
+  └─ défaut : matricule = publicId = id (STUDENTS-*)   ← allure d’identifiant global
 PUT /backoffice/state (students[])
   └─ resolveStableStudentCode = matricule ?? publicId ?? id
        └─ materializeBackOfficeStudent
-            └─ INSERT … ON CONFLICT (student_code) DO UPDATE
-                 WHERE students.school_id = EXCLUDED.school_id
-                 sinon STUDENT_TENANT_CONFLICT (409 / ACK rejected)
+            └─ ON CONFLICT (student_code) … WHERE school_id = EXCLUDED.school_id
+                 sinon STUDENT_TENANT_CONFLICT
 
-Notes : resolveStudentForGrade(studentId/code, schoolCode)
-  └─ grades.student_id = UUID students.id (scopé école)
+Notes : resolveStudentForGrade(…) → grades.student_id = UUID students.id (scopé école)
 ```
 
 | Producteur | Rôle observé |
 |------------|--------------|
-| Création BO / contact | Génère `STUDENTS-*` ; `matricule` overridable |
-| Sync PG | Écrit / met à jour sous UNIQUE global + garde école |
-| Seed runtime | Codes `ELE-*` présents ; hors collision des scénarios dédiés |
-| API notes | Résolution par code/UUID **scopée école** |
+| Création BO / contact | Génère `STUDENTS-*` ; `matricule` overridable (sans unicité BO inter-écoles) |
+| Sync PG | UNIQUE global + garde école |
+| Seed | `ELE-*` ; hors collision des scénarios dédiés |
+| API notes | Résolution scopée école |
 
 ---
 
-## 5. Collisions
+## 6. Collisions (effet technique uniquement)
 
 | Type | Résultat |
 |------|----------|
@@ -123,22 +162,36 @@ Notes : resolveStudentForGrade(studentId/code, schoolCode)
 
 ---
 
-## 6. Synthèse dette (sans cadrage)
+## 7. Synthèse dette (sans cadrage)
 
 | Champ | Valeur |
 |-------|--------|
 | Dette | `PRE-E1-STUDENT-CODE-SCOPE` |
-| Sévérité documentée | MAJOR |
-| Verdict caractérisation | **MAJOR confirmée** au sens §0.1 (pathologie = conflit métier reproductible, pas le seul UNIQUE) |
-| Demo2 | Indices + contre-indice `STUDENTS-*` — **arbitrage intention CTO** possible sans invalider demo1+demo3 |
-| Correctif / cadrage | **NON inclus** · **NON autorisé** dans cette PR |
+| Sévérité documentée (historique) | MAJOR |
+| Sévérité retenue (CTO) | **MAJOR PROVISOIRE** |
+| Verdict | Portée globale + conflit inter-écoles **confirmés** ; incompatibilité métier **provisoire** |
+| Intention matricule | **Indéterminée** |
+| Correctif / cadrage | **INTERDITS** |
 | UNIQUE / migration / regen | **INTERDITS** |
 | E1 | **NO-GO** |
-| Suite | Décision CTO : valider la caractérisation · autoriser ou non un **cadrage correctif séparé** |
 
 ---
 
-## 7. Livrables de cette PR
+## 8. Preuve complémentaire acceptable (hors cette révision)
+
+Pour lever le caractère **provisoire** de la MAJOR / incompatibilité métier, **au moins un** des éléments suivants :
+
+1. Deux établissements générant **naturellement** le même matricule via un **flux nominal** existant ;  
+2. Une **règle métier** ou **contrat fonctionnel** définissant le matricule comme **local** à l’établissement ;  
+3. Un **générateur** de matricules démontré comme **compteur local** non préfixé par l’école ;  
+4. Un **import officiellement supporté** où les matricules sont explicitement locaux ;  
+5. Une **documentation produit ou réglementaire** imposant la conservation d’un matricule local à l’onboarding.
+
+> Une simple injection `MAT-SHARED-*` dans deux fixtures **ne suffit pas**.
+
+---
+
+## 9. Livrables de cette PR
 
 | Livrable | Chemin |
 |----------|--------|
@@ -149,4 +202,4 @@ Notes : resolveStudentForGrade(studentId/code, schoolCode)
 
 ---
 
-**Fin du rapport V2.2 — caractérisation uniquement · pas de cadrage correctif · E1 NO-GO.**
+**Fin du rapport V2.2 — caractérisation technique validée · MAJOR provisoire · pas de cadrage · E1 NO-GO.**

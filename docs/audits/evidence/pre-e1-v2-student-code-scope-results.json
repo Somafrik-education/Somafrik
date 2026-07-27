@@ -748,7 +748,9 @@
         "boJsonAllowsDuplicateMatriculeAcrossSchools": true,
         "noGlobalMatriculeAllocatorInResolveStableStudentCode": true,
         "fieldName": "matricule",
-        "verdictCandidate": "non_global_par_intention_métier_matricule_scolaire"
+        "verdictCandidate": "non_global_par_intention_métier_matricule_scolaire",
+        "verdict": "indéterminé",
+        "noteCto": "Absence de garde BO ≠ légitimité métier. Défaut STUDENTS-* = contre-indice fort. Preuve complémentaire requise."
       },
       "observableRejectOrLoss": true
     },
@@ -1310,31 +1312,68 @@
   "synthesis": {
     "debtId": "PRE-E1-STUDENT-CODE-SCOPE",
     "severityDocumented": "MAJOR",
-    "schemaFact": {
-      "uniqueStudentCodeGlobal": true,
-      "classification": "confirmé"
+    "severityRetained": "MAJOR_PROVISOIRE",
+    "ctoRevalidation": {
+      "date": "2026-07-27",
+      "technicalCharacterization": "VALIDEE",
+      "majorDefinitive": "NON_VALIDE",
+      "undraftMerge": "NON_AUTORISES_EN_LETAT",
+      "classificationOnlyRevision": true,
+      "note": "Correction classification sans rejeu complet (mandat CTO)."
+    },
+    "levels": {
+      "schemaFact": {
+        "label": "Fait de schéma",
+        "uniqueStudentCodeGlobal": true,
+        "uniqueSchoolStudentCodeComposite": false,
+        "postgresScope": "globale",
+        "classification": "confirmé"
+      },
+      "technicalEffect": {
+        "label": "Effet technique",
+        "interSchoolCollision": "confirmé",
+        "effect": "STUDENT_TENANT_CONFLICT + absence PG second établissement",
+        "crossTenantOverwrite": "non_observé",
+        "classification": "confirmé"
+      },
+      "businessQualification": {
+        "label": "Qualification métier",
+        "matriculeIntentLocalVsGlobal": "indéterminé",
+        "localScopeIncompatibility": "provisoire",
+        "note": "Injection harness MAT-SHARED-* prouve absence de garde BO, pas une situation métier légitime. Preuve complémentaire requise.",
+        "classification": "indéterminé"
+      }
     },
     "pathology01": {
-      "demo1_sameCodeProducedInTwoSchools": "confirmé",
-      "demo2_notIntendedAsGlobalSomafrikId": "confirmé_par_indices",
-      "demo2_detail": "Indices : champ matricule, absence d’allocateur global, BO accepte doublon inter-écoles. Contre-indice : défaut contactRegistrySync matricule=STUDENTS-* (id technique).",
+      "demo1_legitimateSameCodeInTwoSchools": "non_établi",
+      "demo1_detail": "BO accepte doublon injecté (absence de garde) — ne démontre pas un producteur nominal légitime",
+      "demo1_boAcceptsInjectedDuplicate": "confirmé",
+      "demo2_notIntendedAsGlobalSomafrikId": "indéterminé",
+      "demo2_detail": "Contre-indice : défaut contactRegistrySync matricule=STUDENTS-*. Indices seuls insuffisants (décision CTO).",
       "demo3_observableRejectOrLoss": "confirmé",
-      "allThreeRequiredForPathologicalMajor": true
+      "allThreeRequiredForPathologicalMajor": false,
+      "pathologicalMajorConfirmed": false
     },
     "effectiveScope": {
       "postgres": "globale (UNIQUE student_code)",
-      "backOfficeJson": "pas d’unicité matricule inter-écoles observée",
+      "backOfficeJson": "pas d’unicité matricule inter-écoles observée (garde absente)",
       "syncBehavior": "isolation via STUDENT_TENANT_CONFLICT (pas d’écrasement cross-tenant)"
     },
-    "debtVerdict": "MAJOR_CONFIRMEE_AU_SENS_0_1",
+    "debtVerdict": "MAJOR_PROVISOIRE",
     "debtSynthesis": {
-      "status": "MAJOR_CONFIRMEE_PATHOLOGIQUE",
-      "note": "Les trois démonstrations §0.1 sont réunies : BO accepte le même matricule dans deux écoles ; le code n’est pas alloué comme identifiant global Somafrik (matricule overridable, pas d’allocateur global) ; sync école B rejetée (STUDENT_TENANT_CONFLICT) avec absence de row PG pour B."
+      "status": "MAJOR_PROVISOIRE",
+      "note": "PRE-E1-STUDENT-CODE-SCOPE — portée globale et conflit inter-écoles confirmés ; incompatibilité métier et sévérité MAJOR provisoires."
     },
     "correctiveFraming": "INTERDIT_DANS_CETTE_PR",
     "noUniqueChange": true,
     "noMigration": true,
     "noCodeRegen": true,
     "e1": "NO-GO"
+  },
+  "ctoClassificationRevision": {
+    "at": "2026-07-27T14:20:11.650Z",
+    "from": "MAJOR_CONFIRMEE_AU_SENS_0_1 / MAJOR_CONFIRMEE_PATHOLOGIQUE",
+    "to": "MAJOR_PROVISOIRE",
+    "fullReplay": false
   }
 }

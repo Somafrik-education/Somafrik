@@ -1070,54 +1070,78 @@ async function main() {
       `json.id=${jsonId} matricule=${nominal.student.matricule} pg.student_code=${pgCode} divergenceForcedFields=${divergence}`,
     );
 
-    // ---------- Synthèse §0.1 / dette ----------
-    const demo1 = Boolean(evidence.pathology01.sameCodeInTwoSchoolsBoAccepted);
-    const demo2Intent = evidence.pathology01.intendedAsGlobalSomafrikId;
-    const demo2 =
-      Boolean(demo2Intent?.boJsonAllowsDuplicateMatriculeAcrossSchools) &&
-      Boolean(demo2Intent?.noGlobalMatriculeAllocatorInResolveStableStudentCode);
+    // ---------- Synthèse §0.1 / dette (classification CTO 2026-07-27) ----------
+    // Trois niveaux obligatoires : fait de schéma / effet technique / qualification métier.
+    // Injection MAT-SHARED-* ≠ production nominale légitime (demo1 non établie).
+    // Intention matricule local vs global : INDÉTERMINÉE (contre-indice STUDENTS-*).
+    const boAcceptsDuplicate = Boolean(evidence.pathology01.sameCodeInTwoSchoolsBoAccepted);
     const demo3 = Boolean(evidence.pathology01.observableRejectOrLoss);
+    evidence.pathology01.intendedAsGlobalSomafrikId = {
+      ...(evidence.pathology01.intendedAsGlobalSomafrikId || {}),
+      boJsonAllowsDuplicateMatriculeAcrossSchools: boAcceptsDuplicate,
+      defaultContactMatriculeEqualsStudentsId: true,
+      verdict: "indéterminé",
+      noteCto:
+        "Absence de garde BO ≠ légitimité métier. Défaut STUDENTS-* = contre-indice fort. Preuve complémentaire requise.",
+    };
 
-    const allThreePathology = demo1 && demo2 && demo3;
-    const debtSynthesis = allThreePathology
-      ? {
-          status: "MAJOR_CONFIRMEE_PATHOLOGIQUE",
-          note:
-            "Les trois démonstrations §0.1 sont réunies : BO accepte le même matricule dans deux écoles ; le code n’est pas alloué comme identifiant global Somafrik (matricule overridable, pas d’allocateur global) ; sync école B rejetée (STUDENT_TENANT_CONFLICT) avec absence de row PG pour B.",
-        }
-      : {
-          status: "FAIT_UNIQUE_SANS_VERDICT_PATHOLOGIQUE_COMPLET",
-          note:
-            "UNIQUE globale confirmée comme fait. Verdict pathologique MAJOR conditionné aux 3 démonstrations §0.1 — voir pathology01.",
-        };
-
-    // Si demo2 est interprétable comme « intention indéterminée » (défaut STUDENTS-* global),
-    // on borne : le fait UNIQUE + rejet est confirmé ; la dette MAJOR pathologique reste
-    // soumise à arbitrage CTO sur l’intention métier du matricule.
     const synthesis = {
       debtId: "PRE-E1-STUDENT-CODE-SCOPE",
       severityDocumented: "MAJOR",
-      schemaFact: {
-        uniqueStudentCodeGlobal: hasGlobalStudentCodeUnique,
-        classification: "confirmé",
+      severityRetained: "MAJOR_PROVISOIRE",
+      ctoRevalidation: {
+        date: "2026-07-27",
+        technicalCharacterization: "VALIDEE",
+        majorDefinitive: "NON_VALIDE",
+        undraftMerge: "NON_AUTORISES_EN_LETAT",
+      },
+      levels: {
+        schemaFact: {
+          label: "Fait de schéma",
+          uniqueStudentCodeGlobal: hasGlobalStudentCodeUnique,
+          uniqueSchoolStudentCodeComposite: hasCompositeSchoolCodeUnique,
+          postgresScope: "globale",
+          classification: hasGlobalStudentCodeUnique ? "confirmé" : "indéterminé",
+        },
+        technicalEffect: {
+          label: "Effet technique",
+          interSchoolCollision: demo3 ? "confirmé" : "indéterminé",
+          effect: demo3 ? "STUDENT_TENANT_CONFLICT + absence PG second établissement" : null,
+          crossTenantOverwrite: "non_observé",
+          classification: demo3 ? "confirmé" : "indéterminé",
+        },
+        businessQualification: {
+          label: "Qualification métier",
+          matriculeIntentLocalVsGlobal: "indéterminé",
+          localScopeIncompatibility: "provisoire",
+          note:
+            "Injection harness MAT-SHARED-* prouve absence de garde BO, pas une situation métier légitime. Preuve complémentaire §8 rapport requise.",
+          classification: "indéterminé",
+        },
       },
       pathology01: {
-        demo1_sameCodeProducedInTwoSchools: demo1 ? "confirmé" : "infirmé",
-        demo2_notIntendedAsGlobalSomafrikId: demo2 ? "confirmé_par_indices" : "indéterminé",
+        demo1_legitimateSameCodeInTwoSchools: "non_établi",
+        demo1_detail:
+          "BO accepte doublon injecté (absence de garde) — ne démontre pas un producteur nominal légitime",
+        demo1_boAcceptsInjectedDuplicate: boAcceptsDuplicate ? "confirmé" : "infirmé",
+        demo2_notIntendedAsGlobalSomafrikId: "indéterminé",
         demo2_detail:
-          "Indices : champ matricule, absence d’allocateur global, BO accepte doublon inter-écoles. Contre-indice : défaut contactRegistrySync matricule=STUDENTS-* (id technique).",
+          "Contre-indice : défaut contactRegistrySync matricule=STUDENTS-*. Indices seuls insuffisants (décision CTO).",
         demo3_observableRejectOrLoss: demo3 ? "confirmé" : "infirmé",
-        allThreeRequiredForPathologicalMajor: allThreePathology,
+        allThreeRequiredForPathologicalMajor: false,
+        pathologicalMajorConfirmed: false,
       },
       effectiveScope: {
         postgres: "globale (UNIQUE student_code)",
-        backOfficeJson: "pas d’unicité matricule inter-écoles observée",
+        backOfficeJson: "pas d’unicité matricule inter-écoles observée (garde absente)",
         syncBehavior: "isolation via STUDENT_TENANT_CONFLICT (pas d’écrasement cross-tenant)",
       },
-      debtVerdict: allThreePathology
-        ? "MAJOR_CONFIRMEE_AU_SENS_0_1"
-        : "INDETERMINEE_OU_FAIT_SEUL_INSUFFISANT",
-      debtSynthesis,
+      debtVerdict: "MAJOR_PROVISOIRE",
+      debtSynthesis: {
+        status: "MAJOR_PROVISOIRE",
+        note:
+          "PRE-E1-STUDENT-CODE-SCOPE — portée globale et conflit inter-écoles confirmés ; incompatibilité métier et sévérité MAJOR provisoires.",
+      },
       correctiveFraming: "INTERDIT_DANS_CETTE_PR",
       noUniqueChange: true,
       noMigration: true,
