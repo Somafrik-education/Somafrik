@@ -33,6 +33,7 @@
     "verify:pre-e1-v2-identity-fix": "node scripts/verify-pre-e1-v2-identity-fix.js",
     "verify:pre-e1-v2-identity-fix-adapted-02b": "node scripts/verify-pre-e1-v2-identity-fix-adapted-02b.js",
     "verify:pre-e1-v2-identity-fix-adapted-v1": "node scripts/verify-pre-e1-v2-identity-fix-adapted-v1.js",
+    "verify:pre-e1-v2-identity-post-merge": "node scripts/verify-pre-e1-v2-identity-post-merge-develop.js",
     "audit:pre-e1-notes-authz-causality": "node scripts/audit-pre-e1-notes-authz-causality.js",
     "inspect:pre-e1-hotfix-02": "node scripts/inspect-pre-e1-hotfix-02-independent.js",
     "typecheck:backend": "node --check backend/server.js && node --check backend/db/postgresRepository.js && node --check BackOffice/app.js",

@@ -1,7 +1,7 @@
 {
   "audit": "PRE-E1",
   "phase": "V1",
-  "generatedAt": "2026-07-27T13:14:34.895Z",
+  "generatedAt": "2026-07-27T13:11:45.501Z",
   "apiBase": "http://127.0.0.1:5101/api",
   "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_pre_e1_v1",
   "engine": "postgresql",
@@ -40,7 +40,7 @@
       "obtained": "2",
       "ok": true,
       "severity": null,
-      "detail": "class=V1-A-5906 students=STUDENTS-1785158039724-cbmrrp,STUDENTS-1785158040683-6m8tha"
+      "detail": "class=V1-A-1408 students=STUDENTS-1785157875115-pr3idt,STUDENTS-1785157876084-6w2d37"
     },
     {
       "id": "AUTH-03",
@@ -67,13 +67,13 @@
       "obtained": "200",
       "ok": true,
       "severity": null,
-      "detail": "{\"schools\":[{\"id\":\"8d18e670-5f68-426e-be12-a98ed4699fbb\",\"city\":\"Kinshasa\",\"code\":\"CD-2026-0051\",\"name\":\"E2E School 1785158035906\",\"type\":\"Collège\",\"email\":\"e2e-1785158035906@somafrik.app\",\"force\":true,\"phone\":\"+243 810 035906\",\"slogan\":\"Excellence et Innovation\",\"status\":\"Actif\",\"address\":\"\",\"country\":\"République Démocratique du Congo\",\"logoUrl\":\"\",\"website\":\"\",\"currency\":\"CDF\",\"language\":\"França"
+      "detail": "{\"schools\":[{\"id\":\"dc216e8a-2948-4e6b-9d87-a8b0478115de\",\"city\":\"Kinshasa\",\"code\":\"CD-2026-0051\",\"name\":\"E2E School 1785157871408\",\"type\":\"Collège\",\"email\":\"e2e-1785157871408@somafrik.app\",\"force\":true,\"phone\":\"+243 810 871408\",\"slogan\":\"Excellence et Innovation\",\"status\":\"Actif\",\"address\":\"\",\"country\":\"République Démocratique du Congo\",\"logoUrl\":\"\",\"website\":\"\",\"currency\":\"CDF\",\"language\":\"França"
     },
     {
       "id": "RELOAD-01",
       "title": "Persistance évaluation après nouveau login admin",
-      "expected": "EVAL-1785158045403-2aso3r",
-      "obtained": "EVAL-1785158045403-2aso3r",
+      "expected": "EVAL-1785157880537-m8evmj",
+      "obtained": "EVAL-1785157880537-m8evmj",
       "ok": true,
       "severity": null,
       "detail": null
@@ -90,8 +90,8 @@
     {
       "id": "REL-01",
       "title": "Liens textuels className/subject conservés (JSON)",
-      "expected": "V1-A-5906|Mathématiques",
-      "obtained": "V1-A-5906|Mathématiques",
+      "expected": "V1-A-1408|Mathématiques",
+      "obtained": "V1-A-1408|Mathématiques",
       "ok": true,
       "severity": null,
       "detail": null
@@ -99,8 +99,8 @@
     {
       "id": "REL-02",
       "title": "evaluation_id présent sur notes JSON",
-      "expected": "EVAL-1785158045403-2aso3r",
-      "obtained": "EVAL-1785158045403-2aso3r",
+      "expected": "EVAL-1785157880537-m8evmj",
+      "obtained": "EVAL-1785157880537-m8evmj",
       "ok": true,
       "severity": null,
       "detail": null
@@ -118,7 +118,7 @@
       "id": "PG-01b",
       "title": "Évaluation PG porte teacher_id non null",
       "expected": "teacher_id UUID",
-      "obtained": "27dd731d-69c4-4de2-abae-795bda7aa0dc",
+      "obtained": "6c3f6da4-91fb-430a-9220-d376183647e3",
       "ok": true,
       "severity": null,
       "detail": "Sans teacher_id PG, rattachement enseignant du bulletin ambigu"
@@ -139,7 +139,7 @@
       "obtained": "2",
       "ok": true,
       "severity": null,
-      "detail": "evaluation_id=94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293"
+      "detail": "evaluation_id=8cef70ca-28ef-440e-a946-b8edb4a0e853"
     },
     {
       "id": "POST-01",
@@ -148,7 +148,7 @@
       "obtained": "201",
       "ok": true,
       "severity": null,
-      "detail": "{\"id\":\"fd804d0d-2bf1-4b34-bb82-1524260236da\",\"schoolId\":\"8d18e670-5f68-426e-be12-a98ed4699fbb\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785158039724-cbmrrp\",\"className\":\"V1-A-5906\",\"subject\":\"Mathématiques\",\"value\":16,\"score\":16,\"coefficient\":2,\"date\":\"27-07-2026\",\"evaluationId\":\"EVAL-1785158045403-2aso3r\",\"evaluationTitle\":\"Devoir V1 PUT 1785158035906\",\"evaluationType\":\"Devoir\",\"period\":\"Trimestre 1\",\"scale\":20,\"evaluationCoefficient\":1,\"gradeStatus\":\"Saisie\",\"status\":\"Saisie\",\"commen"
+      "detail": "{\"id\":\"2a8dea8b-0e97-46f4-bf11-9b884ddf7262\",\"schoolId\":\"dc216e8a-2948-4e6b-9d87-a8b0478115de\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785157875115-pr3idt\",\"className\":\"V1-A-1408\",\"subject\":\"Mathématiques\",\"value\":16,\"score\":16,\"coefficient\":2,\"date\":\"27-07-2026\",\"evaluationId\":\"EVAL-1785157880537-m8evmj\",\"evaluationTitle\":\"Devoir V1 PUT 1785157871408\",\"evaluationType\":\"Devoir\",\"period\":\"Trimestre 1\",\"scale\":20,\"evaluationCoefficient\":1,\"gradeStatus\":\"Saisie\",\"status\":\"Saisie\",\"commen"
     },
     {
       "id": "API-01",
@@ -175,16 +175,16 @@
       "obtained": "avant=2 après1=2 après2(clé)=2 sansClé=2 HTTP 201/201/201",
       "ok": true,
       "severity": null,
-      "detail": "ids=96c58dd3-3138-40af-b6af-5ea437290637,fd804d0d-2bf1-4b34-bb82-1524260236da ; même en-tête idempotence=pre-e1-v1-1785158035906 ; rejeu sans en-tête sans ligne supplémentaire"
+      "detail": "ids=2a8dea8b-0e97-46f4-bf11-9b884ddf7262,6d57d935-5b21-41a7-ba69-09a0ebecfb58 ; même en-tête idempotence=pre-e1-v1-1785157871408 ; rejeu sans en-tête sans ligne supplémentaire"
     },
     {
       "id": "DUP-02",
       "title": "Double PUT state sans explosion de notes JSON",
       "expected": "2 notes / eval",
       "obtained": "2",
-      "ok": true,
-      "severity": null,
-      "detail": "HTTP 200/200"
+      "ok": false,
+      "severity": "MAJOR",
+      "detail": "HTTP 400/400"
     },
     {
       "id": "NEG-01",
@@ -220,7 +220,7 @@
       "obtained": "403",
       "ok": true,
       "severity": null,
-      "detail": "\"Permission insuffisante : non affecté à V1-A-5906 / Physique.\""
+      "detail": "\"Permission insuffisante : non affecté à V1-A-1408 / Physique.\""
     },
     {
       "id": "NEG-04",
@@ -271,7 +271,7 @@
       "id": "REL-03",
       "title": "Évaluation porte teacherId (identifiant)",
       "expected": "teacherId non vide",
-      "obtained": "TEACHERS-1785158041727-rz5n1z3d",
+      "obtained": "TEACHERS-1785157877080-v2vsj7qb",
       "ok": true,
       "severity": null,
       "detail": null
@@ -280,7 +280,7 @@
       "id": "REL-04",
       "title": "Affectation porte teacherId + className + subject",
       "expected": "id+textuels",
-      "obtained": "TEACHERS-1785158041727-rz5n1z3d|V1-A-5906|Mathématiques",
+      "obtained": "TEACHERS-1785157877894-j5j1tw|V1-A-1408|Mathématiques",
       "ok": true,
       "severity": null,
       "detail": null
@@ -304,52 +304,62 @@
       "detail": null
     }
   ],
-  "anomalies": [],
+  "anomalies": [
+    {
+      "id": "V1-DUP-02",
+      "title": "Double PUT state sans explosion de notes JSON",
+      "severity": "MAJOR",
+      "expected": "2 notes / eval",
+      "obtained": "2",
+      "detail": "HTTP 400/400",
+      "reproducible": "HTTP 400/400"
+    }
+  ],
   "evidence": {
     "jsonSnapshots": {
       "afterPutReload": {
         "evaluation": {
-          "id": "EVAL-1785158045403-2aso3r",
-          "className": "V1-A-5906",
+          "id": "EVAL-1785157880537-m8evmj",
+          "className": "V1-A-1408",
           "subject": "Mathématiques",
           "schoolCode": "CD-2026-0051",
-          "teacherId": "TEACHERS-1785158041727-rz5n1z3d",
+          "teacherId": "TEACHERS-1785157877080-v2vsj7qb",
           "period": "Trimestre 1"
         },
         "notes": [
           {
-            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-            "studentId": "STUDENTS-1785158039724-cbmrrp",
+            "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "studentId": "STUDENTS-1785157875115-pr3idt",
             "value": 14.5,
-            "evaluationId": "EVAL-1785158045403-2aso3r",
-            "className": "V1-A-5906",
+            "evaluationId": "EVAL-1785157880537-m8evmj",
+            "className": "V1-A-1408",
             "subject": "Mathématiques",
             "schoolCode": "CD-2026-0051"
           },
           {
-            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-            "studentId": "STUDENTS-1785158040683-6m8tha",
+            "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+            "studentId": "STUDENTS-1785157876084-6w2d37",
             "value": 11,
-            "evaluationId": "EVAL-1785158045403-2aso3r",
-            "className": "V1-A-5906",
+            "evaluationId": "EVAL-1785157880537-m8evmj",
+            "className": "V1-A-1408",
             "subject": "Mathématiques",
             "schoolCode": "CD-2026-0051"
           }
         ]
       },
       "postNotesResponse": {
-        "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-        "schoolId": "8d18e670-5f68-426e-be12-a98ed4699fbb",
+        "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+        "schoolId": "dc216e8a-2948-4e6b-9d87-a8b0478115de",
         "schoolCode": "CD-2026-0051",
-        "studentId": "STUDENTS-1785158039724-cbmrrp",
-        "className": "V1-A-5906",
+        "studentId": "STUDENTS-1785157875115-pr3idt",
+        "className": "V1-A-1408",
         "subject": "Mathématiques",
         "value": 16,
         "score": 16,
         "coefficient": 2,
         "date": "27-07-2026",
-        "evaluationId": "EVAL-1785158045403-2aso3r",
-        "evaluationTitle": "Devoir V1 PUT 1785158035906",
+        "evaluationId": "EVAL-1785157880537-m8evmj",
+        "evaluationTitle": "Devoir V1 PUT 1785157871408",
         "evaluationType": "Devoir",
         "period": "Trimestre 1",
         "scale": 20,
@@ -358,11 +368,11 @@
         "status": "Saisie",
         "comment": "",
         "version": 3,
-        "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+        "authorId": "TEACHERS-1785157877080-v2vsj7qb",
         "enteredAt": "27-07-2026",
         "audit": [
           {
-            "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+            "authorId": "TEACHERS-1785157877080-v2vsj7qb",
             "newValue": 16,
             "date": "27-07-2026"
           }
@@ -374,18 +384,18 @@
         "matching": 2,
         "sample": [
           {
-            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-            "schoolId": "8d18e670-5f68-426e-be12-a98ed4699fbb",
+            "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+            "schoolId": "dc216e8a-2948-4e6b-9d87-a8b0478115de",
             "schoolCode": "CD-2026-0051",
-            "studentId": "STUDENTS-1785158040683-6m8tha",
-            "className": "V1-A-5906",
+            "studentId": "STUDENTS-1785157876084-6w2d37",
+            "className": "V1-A-1408",
             "subject": "Mathématiques",
             "value": 11,
             "score": 11,
             "coefficient": 2,
             "date": "27-07-2026",
-            "evaluationId": "EVAL-1785158045403-2aso3r",
-            "evaluationTitle": "Devoir V1 PUT 1785158035906",
+            "evaluationId": "EVAL-1785157880537-m8evmj",
+            "evaluationTitle": "Devoir V1 PUT 1785157871408",
             "evaluationType": "Devoir",
             "period": "Trimestre 1",
             "scale": 20,
@@ -394,29 +404,29 @@
             "status": "Saisie",
             "comment": "",
             "version": 2,
-            "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+            "authorId": "TEACHERS-1785157877080-v2vsj7qb",
             "enteredAt": "27-07-2026",
             "audit": [
               {
-                "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+                "authorId": "TEACHERS-1785157877080-v2vsj7qb",
                 "newValue": 11,
                 "date": "27-07-2026"
               }
             ]
           },
           {
-            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-            "schoolId": "8d18e670-5f68-426e-be12-a98ed4699fbb",
+            "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "schoolId": "dc216e8a-2948-4e6b-9d87-a8b0478115de",
             "schoolCode": "CD-2026-0051",
-            "studentId": "STUDENTS-1785158039724-cbmrrp",
-            "className": "V1-A-5906",
+            "studentId": "STUDENTS-1785157875115-pr3idt",
+            "className": "V1-A-1408",
             "subject": "Mathématiques",
             "value": 16,
             "score": 16,
             "coefficient": 2,
             "date": "27-07-2026",
-            "evaluationId": "EVAL-1785158045403-2aso3r",
-            "evaluationTitle": "Devoir V1 PUT 1785158035906",
+            "evaluationId": "EVAL-1785157880537-m8evmj",
+            "evaluationTitle": "Devoir V1 PUT 1785157871408",
             "evaluationType": "Devoir",
             "period": "Trimestre 1",
             "scale": 20,
@@ -425,11 +435,11 @@
             "status": "Saisie",
             "comment": "",
             "version": 3,
-            "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+            "authorId": "TEACHERS-1785157877080-v2vsj7qb",
             "enteredAt": "27-07-2026",
             "audit": [
               {
-                "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+                "authorId": "TEACHERS-1785157877080-v2vsj7qb",
                 "newValue": 16,
                 "date": "27-07-2026"
               }
@@ -447,56 +457,56 @@
       "afterPut": {
         "evaluations": [
           {
-            "id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
-            "legacy_json_id": "EVAL-1785158045403-2aso3r",
-            "title": "Devoir V1 PUT 1785158035906",
+            "id": "8cef70ca-28ef-440e-a946-b8edb4a0e853",
+            "legacy_json_id": "EVAL-1785157880537-m8evmj",
+            "title": "Devoir V1 PUT 1785157871408",
             "max_score": "20.00",
             "coefficient": "1.00",
             "status": "published",
-            "class_name": "V1-A-5906",
+            "class_name": "V1-A-1408",
             "subject_name": "Mathématiques",
-            "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc",
-            "term_id": "b491fa3f-7bb7-4ffa-aee2-f715d5ad3adc",
-            "school_id": "8d18e670-5f68-426e-be12-a98ed4699fbb"
+            "teacher_id": "6c3f6da4-91fb-430a-9220-d376183647e3",
+            "term_id": "a9379f9d-8222-45f8-a12c-a4aa787812c3",
+            "school_id": "dc216e8a-2948-4e6b-9d87-a8b0478115de"
           }
         ],
         "grades": [
           {
-            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
-            "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
-            "score": "14.50",
-            "max_score": "20.00",
-            "grade_status": "graded",
-            "subject_id": "d5c8bd37-548a-452c-a4ce-de57dddcd08e",
-            "class_id": "25c191ff-bb74-425a-8eb0-4ba84eaf9fb8",
-            "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc"
-          },
-          {
-            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
-            "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+            "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+            "evaluation_id": "8cef70ca-28ef-440e-a946-b8edb4a0e853",
+            "student_id": "5205e91a-f42e-4694-8cf6-0d78c602782d",
             "score": "11.00",
             "max_score": "20.00",
             "grade_status": "graded",
-            "subject_id": "d5c8bd37-548a-452c-a4ce-de57dddcd08e",
-            "class_id": "25c191ff-bb74-425a-8eb0-4ba84eaf9fb8",
-            "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc"
+            "subject_id": "0afc26ff-20d1-4217-8a6f-b2013b90ab0a",
+            "class_id": "9397fb0b-d1ba-4ae3-929e-b0dff87a6a1c",
+            "teacher_id": "6c3f6da4-91fb-430a-9220-d376183647e3"
+          },
+          {
+            "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "evaluation_id": "8cef70ca-28ef-440e-a946-b8edb4a0e853",
+            "student_id": "9e286027-dd44-4571-8a92-b2d722a61b5a",
+            "score": "14.50",
+            "max_score": "20.00",
+            "grade_status": "graded",
+            "subject_id": "0afc26ff-20d1-4217-8a6f-b2013b90ab0a",
+            "class_id": "9397fb0b-d1ba-4ae3-929e-b0dff87a6a1c",
+            "teacher_id": "6c3f6da4-91fb-430a-9220-d376183647e3"
           }
         ]
       },
       "studentsSchoolA": [
         {
-          "id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
-          "student_code": "STUDENTS-1785158039724-cbmrrp",
-          "first_name": "V1A17851580359060",
+          "id": "5205e91a-f42e-4694-8cf6-0d78c602782d",
+          "student_code": "STUDENTS-1785157876084-6w2d37",
+          "first_name": "V1A17851578714081",
           "last_name": "",
           "school_code": "CD-2026-0051"
         },
         {
-          "id": "3401a363-e891-464b-bc97-fdfaed4d6293",
-          "student_code": "STUDENTS-1785158040683-6m8tha",
-          "first_name": "V1A17851580359061",
+          "id": "9e286027-dd44-4571-8a92-b2d722a61b5a",
+          "student_code": "STUDENTS-1785157875115-pr3idt",
+          "first_name": "V1A17851578714080",
           "last_name": "",
           "school_code": "CD-2026-0051"
         }
@@ -504,17 +514,17 @@
       "afterPost": {
         "grades": [
           {
-            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
-            "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+            "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "evaluation_id": "8cef70ca-28ef-440e-a946-b8edb4a0e853",
+            "student_id": "9e286027-dd44-4571-8a92-b2d722a61b5a",
             "score": "16.00",
             "max_score": "20.00",
             "grade_status": "graded"
           },
           {
-            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
-            "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+            "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+            "evaluation_id": "8cef70ca-28ef-440e-a946-b8edb4a0e853",
+            "student_id": "5205e91a-f42e-4694-8cf6-0d78c602782d",
             "score": "11.00",
             "max_score": "20.00",
             "grade_status": "graded"
@@ -522,24 +532,24 @@
         ]
       },
       "afterIdempotency": {
-        "evaluationId": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
-        "replayHeaderValue": "pre-e1-v1-1785158035906",
+        "evaluationId": "8cef70ca-28ef-440e-a946-b8edb4a0e853",
+        "replayHeaderValue": "pre-e1-v1-1785157871408",
         "before": {
           "count": 2,
           "ids": [
-            "96c58dd3-3138-40af-b6af-5ea437290637",
-            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+            "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "6d57d935-5b21-41a7-ba69-09a0ebecfb58"
           ],
           "rows": [
             {
-              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
-              "score": "11.00"
+              "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+              "student_id": "9e286027-dd44-4571-8a92-b2d722a61b5a",
+              "score": "16.00"
             },
             {
-              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
-              "score": "16.00"
+              "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+              "student_id": "5205e91a-f42e-4694-8cf6-0d78c602782d",
+              "score": "11.00"
             }
           ]
         },
@@ -547,19 +557,19 @@
           "status": 201,
           "count": 2,
           "ids": [
-            "96c58dd3-3138-40af-b6af-5ea437290637",
-            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+            "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "6d57d935-5b21-41a7-ba69-09a0ebecfb58"
           ],
           "rows": [
             {
-              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
-              "score": "11.00"
+              "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+              "student_id": "9e286027-dd44-4571-8a92-b2d722a61b5a",
+              "score": "15.00"
             },
             {
-              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
-              "score": "15.00"
+              "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+              "student_id": "5205e91a-f42e-4694-8cf6-0d78c602782d",
+              "score": "11.00"
             }
           ]
         },
@@ -567,19 +577,19 @@
           "status": 201,
           "count": 2,
           "ids": [
-            "96c58dd3-3138-40af-b6af-5ea437290637",
-            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+            "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "6d57d935-5b21-41a7-ba69-09a0ebecfb58"
           ],
           "rows": [
             {
-              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
-              "score": "11.00"
+              "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+              "student_id": "9e286027-dd44-4571-8a92-b2d722a61b5a",
+              "score": "15.00"
             },
             {
-              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
-              "score": "15.00"
+              "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+              "student_id": "5205e91a-f42e-4694-8cf6-0d78c602782d",
+              "score": "11.00"
             }
           ]
         },
@@ -587,19 +597,19 @@
           "status": 201,
           "count": 2,
           "ids": [
-            "96c58dd3-3138-40af-b6af-5ea437290637",
-            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+            "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+            "6d57d935-5b21-41a7-ba69-09a0ebecfb58"
           ],
           "rows": [
             {
-              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
-              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
-              "score": "11.00"
+              "id": "2a8dea8b-0e97-46f4-bf11-9b884ddf7262",
+              "student_id": "9e286027-dd44-4571-8a92-b2d722a61b5a",
+              "score": "15.00"
             },
             {
-              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
-              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
-              "score": "15.00"
+              "id": "6d57d935-5b21-41a7-ba69-09a0ebecfb58",
+              "student_id": "5205e91a-f42e-4694-8cf6-0d78c602782d",
+              "score": "11.00"
             }
           ]
         },
@@ -616,17 +626,17 @@
         "jsonNotesForEval": 2,
         "pgGradesForEval": 2,
         "pgEvaluationRow": {
-          "id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
-          "legacy_json_id": "EVAL-1785158045403-2aso3r",
-          "title": "Devoir V1 PUT 1785158035906",
+          "id": "8cef70ca-28ef-440e-a946-b8edb4a0e853",
+          "legacy_json_id": "EVAL-1785157880537-m8evmj",
+          "title": "Devoir V1 PUT 1785157871408",
           "max_score": "20.00",
           "coefficient": "1.00",
           "status": "published",
-          "class_name": "V1-A-5906",
+          "class_name": "V1-A-1408",
           "subject_name": "Mathématiques",
-          "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc",
-          "term_id": "b491fa3f-7bb7-4ffa-aee2-f715d5ad3adc",
-          "school_id": "8d18e670-5f68-426e-be12-a98ed4699fbb"
+          "teacher_id": "6c3f6da4-91fb-430a-9220-d376183647e3",
+          "term_id": "a9379f9d-8222-45f8-a12c-a4aa787812c3",
+          "school_id": "dc216e8a-2948-4e6b-9d87-a8b0478115de"
         },
         "divergence": false
       }
@@ -640,13 +650,13 @@
   },
   "summary": {
     "total": 33,
-    "passed": 33,
-    "failed": 0,
-    "anomalies": 0
+    "passed": 32,
+    "failed": 1,
+    "anomalies": 1
   },
   "recommendation": {
     "launchV2": true,
-    "decision": "V2 AUTORISABLE",
-    "rationale": "Chaîne V1 verte sans BLOCKER/CRITICAL. V2 peut démarrer sur instruction CTO."
+    "decision": "V2 AUTORISABLE AVEC RÉSERVES",
+    "rationale": "Chaîne nominale prouvée avec anomalies MAJOR documentées. V2 peut approfondir le modèle, sans ouvrir E1."
   }
 }
