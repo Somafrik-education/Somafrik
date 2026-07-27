@@ -16,25 +16,50 @@
 
 ---
 
-## 0. Verdict
+## 0. Verdict CTO (corrigé)
 
-| Objet | Verdict |
-|-------|---------|
-| **Fiche enseignant (cycle de vie complet)** | **GO SOUS RÉSERVES** |
-| **E1 Bulletins** | **NO-GO** (gouvernance + dépendances fiche non closes) |
-| **Voie 2 / correctifs fiche** | **SUSPENDUS** — attendre décision CTO |
+> La cartographie et les cinq anomalies prioritaires de l’audit sont **retenues** comme base de gouvernance.  
+> Le verdict initial « GO SOUS RÉSERVES » sur le cycle de vie complet est **rejeté** comme incohérent avec trois CRITICAL sur chemins actifs.
 
-### Motif du verdict
+| Composant | Verdict CTO |
+|-----------|-------------|
+| **Création nominale canonique Web/backend** | **GO SOUS RÉSERVES** |
+| **Cycle de vie complet de la fiche enseignant** | **NO-GO** |
+| **Mobile enseignant** | **NO-GO** |
+| **Notes / présences avec attribution fallback** | **NO-GO** |
+| **Désactivation pédagogique** | **NO-GO** |
+| **E1 Bulletins** | **NO-GO** |
+| **Voie 2** | **SUSPENDUE** |
 
-Le parcours **Web + backend** formalise un canon pédagogique `TEACHERS-*` (résolution déterministe, ambiguïté structurée `TEACHER_CANON_AMBIGUOUS`, conservation historique `TEACHER-*` sans auto-upgrade). Les tests unitaires backend de sync identité **passent** sur `develop`.
+### Formulation retenue
 
-Cependant, l’audit indépendant constate des **anomalies CRITICAL / MAJOR** qui empêchent un GO franc sur toute la chaîne de vie :
+**Fiche enseignant — NO-GO sur le cycle de vie complet ; création nominale Web/backend GO sous réserves.**
 
-1. Attribution notes / présences non-enseignant via `ORDER BY created_at LIMIT 1`
-2. Désactivation pédagogique incomplète (`Suspendu` ≠ garde affectation ; sync écrase `Inactif` ; PG matérialise quasi-toujours `active`)
-3. Mobile produit encore `TEACHER-*` (hors canon)
-4. Skips d’ambiguïté / multi-twins **non remontés** au client PUT
-5. Écarts Web ↔ backend ↔ scripts (rôle `"teacher"`, contacts-only E2E stale, ENS divergents)
+Le canon `TEACHERS-*` corrigé en V2.1 reste **validé** pour les flux Web/backend couverts. Cette décision **ne rouvre pas V2.1** : elle constate des surfaces périphériques non closes par ce lot.
+
+### Classification CTO des constats
+
+| Constat | Décision |
+|---------|----------|
+| Mobile produit encore `TEACHER-*` | **CRITICAL CONFIRMÉE** |
+| Fallback `ORDER BY created_at LIMIT 1` | **CRITICAL CONFIRMÉE** |
+| Désactivation pédagogique incomplète | **CRITICAL CONFIRMÉE** |
+| Skips non retournés au client | **MAJOR CONFIRMÉE** |
+| Divergences Web/backend et E2E obsolète | **MAJOR CONFIRMÉE** |
+
+### Motif (identité · intégrité auteur · contrôle d’accès)
+
+Les trois CRITICAL touchent respectivement :
+
+1. **Identité** — création Mobile hors canon (`TEACHER-*`)
+2. **Intégrité de l’auteur pédagogique** — attribution opportuniste notes/présences
+3. **Contrôle d’accès métier** — désactivation pédagogique non fiable
+
+La fiche enseignant **ne peut pas** être déclarée globalement prête.
+
+### Limite d’audit (rappel CTO)
+
+Aucun rejeu PostgreSQL/HTTP complet n’a été exécuté. Cette limite **n’invalide pas** les constats statiques ; tout futur correctif devra fournir une **preuve runtime dédiée** avant merge.
 
 ---
 
@@ -370,24 +395,30 @@ Ces tests **confirment** le comportement unitaire sync/attachment ; ils **ne cou
 
 ---
 
-## 11. Gouvernance (rappel, non modifié par cet audit)
+## 11. Gouvernance post-décision CTO
 
 | Élément | Statut |
 |---------|--------|
-| Prochain sujet V2 | **SUSPENDU** |
-| Correctif fiche enseignant | **NON AUTORISÉ** (sans aval CTO post-rapport) |
-| Refactor / migration jumeaux | **NON AUTORISÉ** |
+| Prochain sujet V2 / voie 2 | **SUSPENDUE** |
+| Réouverture V2.1 | **NON** |
+| Implémentation correctif fiche | **INTERDITE** (cadrage documentaire seul autorisé) |
+| Migration / fusion historique | **INTERDITES** |
 | Modification preuves historiques | **INTERDITE** |
 | E1 | **NO-GO** |
+| PR #103 | Mise en cohérence verdict → undraft → merge autorisé |
+
+Suite autorisée : PR Draft documentaire  
+[`PLAN-CORRECTIF-MINIMAL-TEACHER-RECORD-BLOCKERS.md`](./PLAN-CORRECTIF-MINIMAL-TEACHER-RECORD-BLOCKERS.md)  
+(trois lots ordonnés + exigences transverses MAJOR — **sans code**).
 
 ---
 
-## 12. Décision attendue du CTO
+## 12. Décision CTO — enregistrée
 
-Options suggérées (hors exécution) :
-
-1. **Accepter GO SOUS RÉSERVES** + prioriser un plan correctif minimal borné (C-05, C-06, C-04, C-07) avant toute reprise voie 2  
-2. **Requalifier NO-GO fiche** si Mobile ou attribution notes sont considérés bloquants absolus  
-3. **Demander caractérisation live PG** (environnement avec base) pour C-05 / C-08 avant arbitrage sévérité finale  
-
-Aucun correctif n’est proposé en patch dans ce lot — conformément à la gouvernance d’audit.
+| Champ | Valeur |
+|-------|--------|
+| Cartographie + 5 anomalies prioritaires | **Retenues** |
+| Verdict cycle de vie complet | **NO-GO** |
+| Création nominale Web/backend | **GO SOUS RÉSERVES** |
+| Canon V2.1 Web/backend | **Validé** — lot V2.1 **non rouvert** |
+| Preuve runtime future | **Obligatoire** avant merge de tout correctif |
