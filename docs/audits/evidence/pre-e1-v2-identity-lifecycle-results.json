@@ -1,0 +1,346 @@
+{
+  "audit": "PRE-E1",
+  "phase": "V2.1",
+  "subject": "PRE-E1-IDENTITY-LIFECYCLE",
+  "generatedAt": "2026-07-27T06:51:50.261Z",
+  "apiBase": "http://127.0.0.1:5112/api",
+  "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_pre_e1_v2_identity",
+  "nature": "characterization-only",
+  "implementation": "forbidden",
+  "scenarios": [
+    {
+      "id": "ID-01",
+      "title": "Création / sync enseignant BO — snapshot multi-couches",
+      "classification": "confirmé",
+      "detail": "jsonTeachers=TEACHER-1785135106017,TEACHER-1785135101103,TEACHERS-1785135106498-ffn1a7 pgCodes=TEACHER-1785135106017,TEACHERS-1785135106498-ffn1a7,TEACHER-1785135101103 user_id=131fd96f-d723-4aed-bfef-daaed3d91c1f",
+      "extra": {
+        "meaning": "confirmé = cycle nominal observable (fiche TEACHERS-* JSON + teacher PG + user_id) — pas une anomalie"
+      }
+    },
+    {
+      "id": "ID-02",
+      "title": "Affectation JSON teacherId vs teacher_assignments PG",
+      "classification": "confirmé",
+      "detail": "json.teacherId=TEACHERS-1785135106498-ffn1a7 pg=[{\"id\":\"adf83320-f088-43a2-bcf8-5b16357db6ff\",\"teacher_code\":\"TEACHERS-1785135106498-ffn1a7\",\"class_name\":\"V21-1785135101103\",\"subject_name\":\"Mathématiques\",\"status\":\"active\"}]",
+      "extra": {
+        "meaning": "confirmé = alignement observé sur TEACHERS-* pour l'affectation active (fait SoT local)"
+      }
+    },
+    {
+      "id": "ID-03",
+      "title": "Auth enseignant + POST /api/notes — identités JWT / grantedBy / evaluation.teacher_id",
+      "classification": "confirmé",
+      "detail": "HTTP 201 grantedBy=class:pg_teacher_assignment+evaluation:pg_teacher_assignment jwt.identifier=ENS-0001 evalTeacher={\"id\":\"b3550f11-5360-433b-ae30-e0ab8db4c052\",\"teacher_id\":\"ea3f00c9-864d-4c4d-8c49-0ac94309a750\",\"teacher_code\":\"TEACHER-1785135106017\"}",
+      "extra": {
+        "meaning": "confirmé = parcours notes exécutable avec identités capturées (observation, pas verdict d'unicité)"
+      }
+    },
+    {
+      "id": "ID-04",
+      "title": "Jumeaux TEACHER-* et TEACHERS-* coexistent sans fusion",
+      "classification": "confirmé",
+      "detail": "before=TEACHER-1785135106017,TEACHER-1785135101103,TEACHERS-1785135106498-ffn1a7 afterDedupe=TEACHER-1785135106017,TEACHER-1785135101103,TEACHERS-1785135106498-ffn1a7 pg=TEACHER-1785135101103,TEACHERS-1785135106498-ffn1a7",
+      "extra": {
+        "meaning": "confirmé = écart d'identité multi-fiches reproductible (dette IDENTITY) ; infirmé = convergence observée"
+      }
+    },
+    {
+      "id": "ID-05",
+      "title": "Replay sync identique — pas de prolifération injustifiée sur identité canonique",
+      "classification": "confirmé",
+      "detail": "before={\"teachers_canonical\":1,\"teachers_twin\":1,\"users\":1,\"assignments\":1} after={\"teachers_canonical\":1,\"teachers_twin\":1,\"users\":1,\"assignments\":1}",
+      "extra": {
+        "meaning": "confirmé = idempotence sur TEACHERS-*/user/assignment (fait) ; ne tranche pas la dette jumeaux"
+      }
+    },
+    {
+      "id": "ID-06",
+      "title": "Comparaison élève bornée (contexte) — pas de décision student_code",
+      "classification": "contexte",
+      "detail": "json.id=STUDENTS-1785135103582-9r547h json.matricule=STUDENTS-1785135103582-9r547h pgCodes=STUDENTS-1785135103582-9r547h,STUDENTS-1785135105039-hqcnwv",
+      "extra": {
+        "meaning": "Réserve CTO : ni caractérisation complète STUDENT-CODE-SCOPE, ni arbitrage UNIQUE, ni modif modèle"
+      }
+    }
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "title": "Combien d’identités distinctes pour un enseignant opérationnel ?",
+      "classification": "confirmé",
+      "detail": "nJsonTeacherIds=3 ids=[TEACHER-1785135106017,TEACHER-1785135101103,TEACHERS-1785135106498-ffn1a7] + user=USERS-og1s321l + pgTeachers=3",
+      "extra": null
+    },
+    {
+      "id": "Q2",
+      "title": "Points d’écriture qui créent/mutent chaque identité ?",
+      "classification": "confirmé",
+      "detail": "PUT /api/backoffice/state (users via contact+account) · PUT /api/backoffice/state (teachers TEACHERS-* + twin TEACHER-*) · PUT /api/backoffice/state (assignments → sync teacher_assignments) · login JWT (identifier ENS/user) · POST /api/notes (authz + evaluations.teacher_id)",
+      "extra": null
+    },
+    {
+      "id": "Q3",
+      "title": "Existe-t-il une identité canonique de fait après HOTFIX-02B ?",
+      "classification": "confirmé",
+      "detail": "candidatAffectation=TEACHERS-1785135106498-ffn1a7 pg.teacher_code=TEACHERS-1785135106498-ffn1a7 (canonique de fait pour affectation/PG — jumeau JSON toujours présent)",
+      "extra": null
+    },
+    {
+      "id": "Q4",
+      "title": "Les jumeaux TEACHER-* / TEACHERS-* restent-ils deux fiches après sync ?",
+      "classification": "confirmé",
+      "detail": "afterDedupe=[TEACHER-1785135106017,TEACHER-1785135101103,TEACHERS-1785135106498-ffn1a7]",
+      "extra": null
+    },
+    {
+      "id": "Q5",
+      "title": "teacher_code PG aligné sur id pédagogique BO TEACHERS-* ?",
+      "classification": "confirmé",
+      "detail": "expected=TEACHERS-1785135106498-ffn1a7 obtained=TEACHERS-1785135106498-ffn1a7",
+      "extra": null
+    },
+    {
+      "id": "Q6",
+      "title": "teachers.user_id pointe-t-il vers le user de session du POST notes ?",
+      "classification": "confirmé",
+      "detail": "pg.user_id=131fd96f-d723-4aed-bfef-daaed3d91c1f users.user_code=USERS-og1s321l sessionHint=USERS-og1s321l",
+      "extra": null
+    },
+    {
+      "id": "Q7",
+      "title": "Références JSON (assignment/evaluation.teacherId) vs identité PG ?",
+      "classification": "confirmé",
+      "detail": "assignment.teacherId=TEACHERS-1785135106498-ffn1a7 evaluation.teacherId=TEACHERS-1785135106498-ffn1a7 pgEval={\"id\":\"b3550f11-5360-433b-ae30-e0ab8db4c052\",\"teacher_id\":\"ea3f00c9-864d-4c4d-8c49-0ac94309a750\",\"teacher_code\":\"TEACHER-1785135106017\"}",
+      "extra": {
+        "meaning": "confirmé = écart reproductible JSON TEACHERS-* vs evaluations.teacher_id → TEACHER-*"
+      }
+    }
+  ],
+  "evidence": {
+    "baseCommitHint": "post-094d5017 / develop@contrat-V2.1",
+    "schoolCode": "CD-2026-0051",
+    "identities": {
+      "afterSync": {
+        "boUser": {
+          "id": "USERS-og1s321l",
+          "identifier": "ENS-0001",
+          "role": "Enseignant"
+        },
+        "jsonTeachers": [
+          {
+            "id": "TEACHER-1785135106017",
+            "userId": "USERS-og1s321l",
+            "identifier": "ENS-0001",
+            "publicId": "CD-2026-0051-ENS-0001"
+          },
+          {
+            "id": "TEACHER-1785135101103",
+            "userId": "USERS-og1s321l",
+            "identifier": "ENS-0001",
+            "publicId": "ENS-0001"
+          },
+          {
+            "id": "TEACHERS-1785135106498-ffn1a7",
+            "userId": "USERS-og1s321l",
+            "identifier": "ENS-0001",
+            "publicId": "undefined"
+          }
+        ],
+        "pgTeachers": [
+          {
+            "id": "ea3f00c9-864d-4c4d-8c49-0ac94309a750",
+            "teacher_code": "TEACHER-1785135106017",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER"
+          },
+          {
+            "id": "5588ce9a-ffd3-475f-adc2-23060d81edbc",
+            "teacher_code": "TEACHERS-1785135106498-ffn1a7",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER"
+          },
+          {
+            "id": "f4c68cee-e261-498d-b345-de7fc3e246f0",
+            "teacher_code": "TEACHER-1785135101103",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER"
+          }
+        ],
+        "pgUsers": [
+          {
+            "id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER",
+            "school_id": "10607048-96dd-4968-9e02-d425f1a7e2a3"
+          }
+        ]
+      },
+      "session": {
+        "jwt": {
+          "sub": "USERS-og1s321l",
+          "identifier": "ENS-0001",
+          "role": "Enseignant",
+          "schoolCode": "CD-2026-0051",
+          "classNames": [
+            "5ème A",
+            "6ème A",
+            "6ème B"
+          ]
+        },
+        "meStatus": 404,
+        "meUser": null
+      },
+      "twins": {
+        "json": [
+          "TEACHER-1785135106017",
+          "TEACHER-1785135101103",
+          "TEACHERS-1785135106498-ffn1a7"
+        ],
+        "pg": [
+          {
+            "teacher_code": "TEACHER-1785135101103",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f"
+          },
+          {
+            "teacher_code": "TEACHERS-1785135106498-ffn1a7",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f"
+          }
+        ]
+      },
+      "writePoints": [
+        "PUT /api/backoffice/state (users via contact+account)",
+        "PUT /api/backoffice/state (teachers TEACHERS-* + twin TEACHER-*)",
+        "PUT /api/backoffice/state (assignments → sync teacher_assignments)",
+        "login JWT (identifier ENS/user)",
+        "POST /api/notes (authz + evaluations.teacher_id)"
+      ]
+    },
+    "postgres": {
+      "afterSync": {
+        "teachers": [
+          {
+            "id": "ea3f00c9-864d-4c4d-8c49-0ac94309a750",
+            "teacher_code": "TEACHER-1785135106017",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER"
+          },
+          {
+            "id": "5588ce9a-ffd3-475f-adc2-23060d81edbc",
+            "teacher_code": "TEACHERS-1785135106498-ffn1a7",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER"
+          },
+          {
+            "id": "f4c68cee-e261-498d-b345-de7fc3e246f0",
+            "teacher_code": "TEACHER-1785135101103",
+            "user_id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER"
+          }
+        ],
+        "users": [
+          {
+            "id": "131fd96f-d723-4aed-bfef-daaed3d91c1f",
+            "user_code": "USERS-og1s321l",
+            "role": "TEACHER",
+            "school_id": "10607048-96dd-4968-9e02-d425f1a7e2a3"
+          }
+        ]
+      },
+      "assignments": [
+        {
+          "id": "adf83320-f088-43a2-bcf8-5b16357db6ff",
+          "teacher_code": "TEACHERS-1785135106498-ffn1a7",
+          "class_name": "V21-1785135101103",
+          "subject_name": "Mathématiques",
+          "status": "active"
+        }
+      ],
+      "evaluations": [
+        {
+          "id": "b3550f11-5360-433b-ae30-e0ab8db4c052",
+          "teacher_id": "ea3f00c9-864d-4c4d-8c49-0ac94309a750",
+          "teacher_code": "TEACHER-1785135106017"
+        }
+      ],
+      "replay": {
+        "before": {
+          "teachers_canonical": 1,
+          "teachers_twin": 1,
+          "users": 1,
+          "assignments": 1
+        },
+        "after": {
+          "teachers_canonical": 1,
+          "teachers_twin": 1,
+          "users": 1,
+          "assignments": 1
+        }
+      }
+    },
+    "posts": [
+      {
+        "status": 201,
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment"
+      }
+    ],
+    "traces": [
+      {
+        "grantedBy": "class:pg_teacher_assignment+evaluation:pg_teacher_assignment",
+        "lookupValues": null,
+        "teacherId": null
+      }
+    ],
+    "studentContext": {
+      "jsonStudent": {
+        "id": "STUDENTS-1785135103582-9r547h",
+        "matricule": "STUDENTS-1785135103582-9r547h",
+        "publicId": "STUDENTS-1785135103582-9r547h",
+        "className": "V21-1785135101103"
+      },
+      "pgStudents": [
+        {
+          "id": "930c8c96-9928-4ca1-ac5a-eeb3c628a3e9",
+          "student_code": "STUDENTS-1785135103582-9r547h"
+        },
+        {
+          "id": "7bb07188-3dbb-4ef5-aeae-93f0f14ee56f",
+          "student_code": "STUDENTS-1785135105039-hqcnwv"
+        }
+      ],
+      "note": "Contexte uniquement — hors décision PRE-E1-STUDENT-CODE-SCOPE"
+    }
+  },
+  "synthesis": {
+    "debtId": "PRE-E1-IDENTITY-LIFECYCLE",
+    "severityDocumented": "MAJOR",
+    "characterization": "maintenue_MAJOR_confirmée",
+    "factualSummary": "Écarts multi-couches reproductibles : (1) fiches JSON TEACHER-* et TEACHERS-* coexistent sans fusion pour le même user/identifier ; (2) assignment/evaluation JSON ancrés TEACHERS-* alors que evaluations.teacher_id PG peut résoudre vers TEACHER-* ; affectation PG et teachers.user_id restent cohérents sur le chemin TEACHERS-*/session.",
+    "confirmedGaps": [
+      "Q4/ID-04 jumeaux non fusionnés",
+      "Q7 divergence evaluation JSON↔PG"
+    ],
+    "noCorrectivePlanAuthorized": true,
+    "studentCodeScope": "hors périmètre décisionnel (ID-06 contexte seulement)",
+    "nextStepAllowed": "Un plan correctif minimal pourra être soumis séparément à validation CTO — non inclus et non autorisé dans cette PR de caractérisation"
+  },
+  "summary": {
+    "scenarios": {
+      "confirmé": 5,
+      "infirmé": 0,
+      "indéterminé": 0,
+      "contexte": 1
+    },
+    "questions": {
+      "confirmé": 7,
+      "infirmé": 0,
+      "indéterminé": 0
+    }
+  },
+  "putNotesHttp": 200
+}

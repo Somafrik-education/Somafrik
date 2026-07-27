@@ -16,4 +16,6 @@ paths = [
   '''docs/audits/evidence/pre-e1-hotfix-02b-results\.json''',
   '''docs/audits/evidence/pre-e1-hotfix-02b-rejeu-post-merge-results\.json''',
   '''docs/audits/evidence/pre-e1-notes-authz-causality\.json''',
+  '''docs/audits/evidence/pre-e1-v2-identity-lifecycle-results\.json''',
+  '''docs/audits/evidence/notes-authz-trace-v2-identity\.jsonl''',
 ]
