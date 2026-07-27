@@ -451,13 +451,6 @@ async function main() {
 
   ensureDatabase();
   const child = startBackend();
-  let backendLog = "";
-  child.stdout.on("data", (chunk) => {
-    backendLog += String(chunk);
-  });
-  child.stderr.on("data", (chunk) => {
-    backendLog += String(chunk);
-  });
 
   try {
     await waitForHealth();
