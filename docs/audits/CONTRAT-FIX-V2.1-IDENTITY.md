@@ -4,7 +4,7 @@
 **Cadrage validé :** [`PLAN-CORRECTIF-MINIMAL-PRE-E1-V2-IDENTITY-LIFECYCLE.md`](./PLAN-CORRECTIF-MINIMAL-PRE-E1-V2-IDENTITY-LIFECYCLE.md) (PR #97 · `0644442a`)  
 **Option CTO :** **Hybride A+C bornée**  
 **Anomalie :** MAJOR CONFIRMÉE — revalidation CTO  
-**Statut :** trois règles CTO intégrées + correctifs revalidation PR #99 (§4.1.b bulk · §4.1.c multi-TEACHER-* · séparation preuves historiques) — **Draft code · undraft/merge NON autorisés** jusqu’à revalidation CTO  
+**Statut :** **CLÔTURÉ TECHNIQUEMENT** — décision CTO après rejeu post-merge `develop@3fd7790f` (PR #99 head `0b1131ec` · preuve PR #100)  
 
 | Élément | Statut |
 |---------|--------|
@@ -15,12 +15,15 @@
 | Historique multi-TEACHER-* | **Contractualisé** (§4.1.c — pas de `twins[0]`) |
 | Historique TEACHER-only | **Corrigé** (§3.2 / AC-HIST-02) |
 | Fallback évaluation | **Tranché** (§5.2 — refus structuré, pas de user_id seul) |
-| Preuves historiques V1/02B | **Intactes** (adaptations = artefacts `*-fix-adapted-*` / `*-post-fix-v21-*`) |
-| Implémentation | **PR #99 Draft** — en attente revalidation CTO |
-| Migration / backfill / DELETE jumeaux | **INTERDITS** |
+| Preuves historiques V1/02B | **Intactes** |
+| Implémentation | **MERGÉE** (PR #99 → `3fd7790f`) |
+| Rejeu post-merge | **PASS** (11/11) |
+| Clôture technique V2.1 | **PRONONCÉE** ([`DECISION-CTO-CLOTURE-FIX-V2.1-IDENTITY.md`](./DECISION-CTO-CLOTURE-FIX-V2.1-IDENTITY.md)) |
+| Migration / backfill / DELETE jumeaux | **INTERDITS** (dette différée) |
 | E1 | **NO-GO** |
 | HOTFIX-01/02/02B | **CLOS** |
 | Preuves brutes #95/#96 | **Lecture seule** |
+| Audit V2 | **TOUJOURS OUVERT** |
 
 ---
 
