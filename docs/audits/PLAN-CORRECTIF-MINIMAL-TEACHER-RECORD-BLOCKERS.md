@@ -1,10 +1,11 @@
 # Plan correctif minimal — bloqueurs fiche enseignant
 
 **Type :** cadrage correctif documentaire — **aucune implémentation**  
-**Autorisation CTO :** cadrage Draft **AUTORISÉ** · implémentation **INTERDITE** · migration / fusion historique **INTERDITES**  
-**Source :** décision CTO sur audit [`AUDIT-INDEPENDANT-FICHE-ENSEIGNANT.md`](./AUDIT-INDEPENDANT-FICHE-ENSEIGNANT.md) (PR #103) · [`evidence/independent-teacher-record-audit-results.json`](./evidence/independent-teacher-record-audit-results.json)  
-**Base de référence :** `develop` @ `9dcf4ba` (état audité)  
+**Autorisation CTO :** architecture **VALIDÉE SOUS CORRECTIONS** · revalidation CTO après ce commit · implémentation **INTERDITE** · contrat d’implémentation **PAS ENCORE AUTORISÉ**  
+**Source :** décision CTO sur audit [`AUDIT-INDEPENDANT-FICHE-ENSEIGNANT.md`](./AUDIT-INDEPENDANT-FICHE-ENSEIGNANT.md) (PR #103 **MERGÉE**) · [`evidence/independent-teacher-record-audit-results.json`](./evidence/independent-teacher-record-audit-results.json)  
+**Base de référence :** `develop` @ `54b40c06` (post-merge #103) — audit d’origine sur `9dcf4ba`  
 **Date :** 2026-07-27  
+**PR :** #104 (Draft)
 
 > Rapport Cursor ≠ validation CTO.  
 > Ce document **ne corrige pas** le code. Il borne les lots, les critères d’acceptation et les preuves runtime exigées avant tout merge d’implémentation.
@@ -15,27 +16,32 @@
 
 | Élément | Statut |
 |---------|--------|
+| PR #103 (audit indépendant) | **MERGÉE** · validée |
+| Plan #104 | **ARCHITECTURE VALIDÉE SOUS CORRECTIONS** — attendre revalidation CTO |
+| Contrat d’implémentation | **PAS ENCORE AUTORISÉ** |
 | Audit indépendant fiche enseignant | **Retenu** (cartographie + 5 anomalies) |
 | Verdict cycle de vie complet | **NO-GO** |
 | Création nominale Web/backend `TEACHERS-*` | **GO SOUS RÉSERVES** (V2.1 **validé**, **non rouvert**) |
 | Voie 2 | **SUSPENDUE** |
 | Réouverture V2.1 | **NON** |
-| Implémentation | **INTERDITE** jusqu’à aval CTO post-contrat |
+| Implémentation code | **INTERDITE** |
 | Migration / fusion jumeaux historiques | **INTERDITES** |
 | E1 | **NO-GO** |
 | Preuve runtime (PG/HTTP) | **OBLIGATOIRE** avant merge de tout lot code |
 
 ### Périmètre autorisé de ce livrable
 
-- Séparation en **trois lots ordonnés** (bloqueurs CRITICAL)
+- Séparation en **trois lots ordonnés** (bloqueurs CRITICAL) — **une PR code distincte par lot**
 - Exigences **transverses** pour les deux MAJOR
 - Points d’écriture, critères d’acceptation, hors-périmètre, preuves
+- Décisions CTO sur matrice de statuts, réactivation et affectations (ci-dessous)
 
 ### Hors périmètre absolu
 
 - Patch code, refactor, changement de schéma
 - Fusion / DELETE / backfill des `TEACHER-*` historiques
 - Réouverture du contrat FIX V2.1
+- Regroupement des trois CRITICAL dans une PR code unique
 - Tout sujet voie 2 non listé ci-dessous
 - Bulletins / E1
 
@@ -54,6 +60,68 @@
 
 ---
 
+## 0.2 Décisions CTO consignées (2026-07-27)
+
+### D1 — Ordre des lots — **VALIDÉ**
+
+| Ordre | Lot | Contenu |
+|-------|-----|---------|
+| 1 | Identité Mobile | Canon `TEACHERS-*` exclusive |
+| 2 | Attribution notes / présences | Exact ou refus structuré |
+| 3 | Statut pédagogique | Matrice compte ↔ fiche ↔ affectations ↔ PG |
+
+**Règle d’exécution :** chaque lot = **une PR code distincte**, avec **son propre contrat** et **sa propre preuve runtime**.  
+**Interdit :** regrouper les trois CRITICAL dans une PR unique.
+
+### D2 — Matrice canonique des statuts — **VALIDÉE**
+
+| Compte | Fiche pédagogique | Résultat |
+|--------|-------------------|----------|
+| Actif | Actif | Capacités selon RBAC et affectations |
+| Actif | Inactif manuel | **Inactif conservé** ; **aucun réveil automatique** par sync |
+| Suspendu ou Inactif | Quel que soit l’état actif précédent | Fiche dérivée **non active** ; **aucune** nouvelle affectation ni écriture |
+| Supprimé | Toute fiche liée | **Aucune écriture** ; **pas** de suppression automatique de l’historique |
+| Tout état | Archived | État **terminal** ; **jamais** réactivé par sync |
+
+**Priorité imposée (du plus fort au plus faible) :**
+
+1. `archived`
+2. inactif pédagogique manuel
+3. compte suspendu / inactif / supprimé
+4. actif
+
+**Conséquences sync / matérialisation :**
+
+- Le sync compte → fiche **ne doit jamais** écraser silencieusement :
+  - `Inactif` → `Actif`
+  - `archived` → un autre état
+  - une suspension par une matérialisation PG par défaut (`active`)
+
+### D3 — Réactivation — **VALIDÉE**
+
+Une réactivation est **autorisée uniquement** par une **action administrative explicite** sur la fiche pédagogique, avec un **compte lui-même actif**.
+
+**Ne constitue pas** une réactivation explicite :
+
+- un simple PUT identique
+- une connexion
+- un sync générique compte → fiche
+
+### D4 — Affectations existantes — **VALIDÉE**
+
+Lorsqu’une fiche devient suspendue, inactive ou archivée :
+
+| Règle | Obligation |
+|-------|------------|
+| Nouvelles affectations | **Aucune** nouvelle affectation **active** |
+| Affectations actives existantes | Passées à un état **non actif**, **non destructif**, dans le cadre de la transition (même fiche + même établissement) |
+| DELETE / backfill global | **Interdits** |
+| Historique | **Consultable** |
+
+Le **contrat du lot 3** fixera le statut cible exact (ex. `inactive`) et sa **représentation identique** dans le BO et PostgreSQL.
+
+---
+
 ## 1. Anomalies retenues (base de gouvernance)
 
 | ID audit | Constat | Sévérité CTO | Lot |
@@ -64,8 +132,9 @@
 | C-07 / Q11 | Skips / ambiguïtés non remontés au client | **MAJOR CONFIRMÉE** | **Transverse T1** |
 | C-10 / C-11 / Q3 / Q12 | Divergences Web/backend/Mobile + E2E obsolètes | **MAJOR CONFIRMÉE** | **Transverse T2** |
 
-Ordre d’exécution imposé : **Lot 1 → Lot 2 → Lot 3**.  
-T1 et T2 sont **exigences transverses** : à intégrer dans chaque lot code (pas de lot « cosmétique » isolé qui laisse les CRITICAL ouverts).
+Ordre d’exécution **VALIDÉ CTO** : **Lot 1 → Lot 2 → Lot 3**.  
+Chaque lot = **PR code distincte** + **contrat dédié** + **preuve runtime dédiée** (D1).  
+T1 et T2 sont **exigences transverses** : à intégrer dans les lots code (pas de lot « cosmétique » isolé qui laisse les CRITICAL ouverts).
 
 ---
 
@@ -175,35 +244,51 @@ Définir et appliquer un **état canonique** entre compte, fiche, affectations e
 | Affectations PG upsert toujours `status = 'active'` | `materializeBackOfficeAssignment` |
 | Authz notes : pas de filtre statut fiche | `teacherNotesWriteAccess.js` |
 
-### 4.3 État canonique cible (cadrage — à figer en contrat avant code)
+### 4.3 État canonique cible — **VALIDÉ CTO** (D2 / D3 / D4)
 
-Proposition de matrice (à valider CTO dans le contrat d’implémentation) :
+Matrice opérationnelle (voir aussi §0.2) :
 
-| État compte (`users.status`) | État fiche (`teachers[].status`) | Nouvelles affectations | Nouvelles notes/évals (écriture) | PG `teachers.status` | PG `teacher_assignments.status` |
-|------------------------------|----------------------------------|------------------------|----------------------------------|----------------------|----------------------------------|
-| Actif | Actif | Autorisées | Selon RBAC + affectation | `active` | suit BO (active/inactive) |
-| Suspendu / Inactif / Supprimé | Suspendu ou Inactif (dérivé) | **Refusées** | **Refusées** (hors lecture) | `suspended` / `inactive` | **pas** de nouvel upsert `active` ; désactivation des actives du scope si défini au contrat |
-| Actif | Inactif pédagogique manuel | **Refusées** | **Refusées** | `inactive` | idem |
-| — | archived | **Refusées** | **Refusées** | `archived` | idem |
+| Compte | Fiche pédagogique | Nouvelles affectations | Nouvelles écritures notes/évals | Sync compte→fiche | PG `teachers.status` |
+|--------|-------------------|------------------------|----------------------------------|-------------------|----------------------|
+| Actif | Actif | Selon RBAC | Selon RBAC + affectation | Maj profil autorisée | `active` |
+| Actif | Inactif manuel | **Refusées** | **Refusées** | **Préserve Inactif** (pas de réveil) | `inactive` |
+| Suspendu / Inactif | Dérivée non active | **Refusées** | **Refusées** | Dérive fiche non active | `suspended` / `inactive` |
+| Supprimé | Liée | **Refusées** | **Refusées** | Pas de delete historique | non-actif (pas de purge) |
+| * | Archived | **Refusées** | **Refusées** | **Jamais** réactivé par sync | `archived` (terminal) |
 
-Règles non négociables du cadrage :
+**Priorité de résolution :** `archived` → inactif manuel → compte suspendu/inactif/supprimé → actif.
 
-1. **Un seul vocabulaire** normalisé compte ↔ fiche ↔ PG (table de mapping explicite dans le futur contrat).
-2. Sync user→fiche **ne doit plus** réactiver silencieusement une fiche volontairement inactive lorsque le métier l’interdit (préciser dans le contrat : override admin vs préservation).
-3. `Suspendu` **et** `Inactif` bloquent **nouvelles** affectations et **nouvelles** écritures pédagogiques.
-4. Matérialisation PG ne doit pas écraser un statut non-actif en `active` par défaut.
-5. Pas de migration de masse des historiques — seulement le comportement des **nouvelles** opérations + éventuelle désactivation **non destructive** des affectations actives du même enseignant (si le contrat le prescrit ; sinon report explicite).
+**Réactivation (D3) :** uniquement action administrative **explicite** sur la fiche, compte actif. PUT identique / login / sync générique ≠ réactivation.
+
+**Affectations existantes (D4) :** à la transition fiche → suspendue / inactive / archived :
+
+1. bloquer toute nouvelle affectation active ;
+2. passer les affectations **actives** de cette fiche **dans cet établissement** à un état non actif **non destructif** ;
+3. aucun DELETE, aucun backfill global ;
+4. historique consultable.
+
+Le contrat lot 3 fixera le libellé exact du statut cible (ex. `inactive`) **identique** BO ↔ PostgreSQL.
+
+Règles non négociables :
+
+1. Vocabulaire normalisé compte ↔ fiche ↔ PG (mapping explicite dans le contrat lot 3).
+2. Sync ne réactive jamais silencieusement (`Inactif`→`Actif`, `archived`→autre, suspension écrasée par PG `active`).
+3. `Suspendu` **et** `Inactif` **et** `archived` bloquent nouvelles affectations et nouvelles écritures.
+4. Transition d’affectations actives → non actives **non destructive** (D4).
+5. Pas de migration / fusion historique des jumeaux `TEACHER-*`.
 
 ### 4.4 Critères d’acceptation (Lot 3)
 
 | ID | Critère | Preuve exigée |
 |----|---------|---------------|
 | AC-S1 | Fiche `Suspendu` → nouvelle affectation refusée (Web + PUT) | Runtime |
-| AC-S2 | Fiche `Inactif` → nouvelle affectation refusée ; sync user Actif **ne** force **pas** Actif si règle de préservation retenue | Runtime + unit |
-| AC-S3 | Compte Suspendu → pas de session / pas d’écriture notes | Runtime (déjà partiel) + garde pédagogique |
-| AC-S4 | Matérialisation PG d’une fiche Suspendu/Inactif ≠ `active` | Runtime PG |
-| AC-S5 | Upsert affectation BO inactive ne force plus PG `active` (ou refuse) | Runtime PG |
-| AC-S6 | Authz notes refuse écriture si fiche/compte non actifs (selon matrice) | Runtime |
+| AC-S2 | Fiche `Inactif` manuel + compte Actif → Inactif **conservé** après sync ; pas de réveil | Runtime + unit |
+| AC-S3 | Compte Suspendu/Inactif/Supprimé → aucune nouvelle écriture pédagogique | Runtime |
+| AC-S4 | Fiche `archived` → jamais réactivée par sync / matérialisation | Runtime PG |
+| AC-S5 | Matérialisation PG d’une fiche non active ≠ `active` par défaut | Runtime PG |
+| AC-S6 | Transition fiche non active → affectations actives du même établissement passées non actives (non destructif) | Runtime BO + PG |
+| AC-S7 | Réactivation seulement via action admin explicite + compte actif ; PUT/sync/login seuls ne réactivent pas | Runtime négatif |
+| AC-S8 | Authz notes refuse écriture si fiche/compte non actifs (matrice D2) | Runtime |
 
 ### 4.5 Hors lot 3
 
@@ -255,13 +340,16 @@ La limite de l’audit #103 (pas de rejeu PG/HTTP) **n’invalide pas** les cons
 
 | Étape | Nature | Condition |
 |-------|--------|-----------|
-| 0 | Ce plan (Draft docs) | **En cours** |
-| 1 | Contrat d’implémentation (docs) par lot ou contrat unique borné | Aval CTO sur ce plan |
-| 2 | PR code Lot 1 (+ amorces T1/T2) | Aval contrat + preuve runtime |
-| 3 | PR code Lot 2 (+ T1 si incomplet) | Lot 1 mergé / non-régression |
-| 4 | PR code Lot 3 (+ T1/T2 complets) | Lots 1–2 mergés |
-| 5 | Requalification CTO cycle de vie fiche | Preuves lots 1–3 + transverses |
+| 0 | Ce plan (Draft docs #104) | Architecture validée sous corrections — **revalidation CTO** |
+| 1a | Contrat docs **Lot 1** seul | Aval CTO sur #104 + autorisation contrat |
+| 1b | PR code Lot 1 + preuve runtime Lot 1 | Aval contrat Lot 1 |
+| 2a | Contrat docs **Lot 2** seul | Lot 1 mergé |
+| 2b | PR code Lot 2 + preuve runtime Lot 2 | Aval contrat Lot 2 |
+| 3a | Contrat docs **Lot 3** seul (statut cible affectations BO↔PG) | Lot 2 mergé |
+| 3b | PR code Lot 3 + preuve runtime Lot 3 | Aval contrat Lot 3 |
+| 4 | Requalification CTO cycle de vie fiche | Preuves lots 1–3 + T1/T2 |
 
+**Interdit :** une seule PR code regroupant lots 1+2+3.  
 **Voie 2** reste **suspendue** jusqu’à décision CTO distincte après requalification.
 
 ---
@@ -272,17 +360,24 @@ La limite de l’audit #103 (pas de rejeu PG/HTTP) **n’invalide pas** les cons
 |--------|-------------------|
 | Mobile et Web divergent encore après lot 1 partiel | AC-M* + T2.1 obligatoires dans la même vague Mobile |
 | Refus notes admin casse workflows légitimes | Contrat lot 2 doit préciser comment l’opérateur **fournit** l’enseignant (champ obligatoire / sélection) |
-| Sync statut casse fiches démo | Matrice §4.3 figée avant code ; pas de backfill destructif |
+| Sync statut casse fiches démo | Matrice D2 figée ; pas de backfill destructif ; D4 non destructif |
+| Réactivation accidentelle via PUT/sync | D3 — garde explicite + tests négatifs AC-S7 |
 | Élargissement furtif à V2.1 / jumeaux | Interdiction explicite ; revue PR = docs d’abord |
 
 ---
 
-## 9. Décision demandée au CTO (sur ce cadrage)
+## 9. Décisions CTO — enregistrées
 
-| Question | Options |
-|----------|---------|
-| Valider l’ordre Lot 1 → 2 → 3 + transverses T1/T2 ? | Oui / Ajuster |
-| Matrice statut §4.3 (préservation `Inactif` vs override sync) ? | Trancher avant contrat code |
-| Autoriser ensuite la rédaction du **contrat d’implémentation** (docs only) ? | Oui / Non |
+| Point ouvert | Décision |
+|--------------|----------|
+| Ordre Lot 1 → 2 → 3 + PR distinctes | **VALIDÉ** (D1) |
+| Matrice statuts + priorité archived→…→actif | **VALIDÉE** (D2) |
+| Préservation Inactif manuel / archived | **VALIDÉE** (D2) |
+| Réactivation explicite admin seulement | **VALIDÉE** (D3) |
+| Transition affectations actives → non actives non destructive | **VALIDÉE** (D4) ; libellé exact dans contrat lot 3 |
+| Contrat d’implémentation | **PAS ENCORE AUTORISÉ** |
+| Implémentation code | **INTERDITE** |
 
-**Implémentation :** toujours **INTERDITE** tant que contrat + aval + preuve runtime ne sont pas acquis.
+**Prochaine étape gouvernance :** revalidation CTO de #104 (après CI verts) → puis seulement autorisation éventuelle des contrats par lot.
+
+**Implémentation :** toujours **INTERDITE** tant que contrat du lot + aval + preuve runtime ne sont pas acquis.
