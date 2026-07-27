@@ -47,7 +47,7 @@ Critères **AC-NEW-01…04** = **un seul gate fonctionnel** (non séparables).
 | `web/src/lib/userTeacherSync.ts` | `newTeacherId`, `buildTeacherRow`, `upsertTeacherFromUser`, `syncSingleUserToTeachers` | Client : génère déjà `TEACHERS-*` — **aligner règles de réutilisation** avec le backend |
 | `web/src/pages/entity-page/contactAccountWorkflow.ts` | appels `syncSingleUserToTeachers` | Parcours contact+compte |
 | `backend/lib/pedagogyStaffBoPersistence.js` | `resolveStableTeacherCode` | Conserver préférence `TEACHERS-*` (02B) |
-| `backend/db/postgresRepository.js` | `materializeBackOfficeTeacher`, `ensurePgUserForBackOfficeTeacher`, deps `ensureTeacher` / `findTeacherByCode` / `findTeacherByAssignment` / **`findAnyTeacher`** (évaluation) | Matérialisation PG + résolution `evaluations.teacher_id` |
+| `backend/db/postgresRepository.js` | `materializeBackOfficeTeacher`, `ensurePgUserForBackOfficeTeacher`, `findTeacherByCode`, `ensureTeacher` ; **retirer** l’usage de `findAnyTeacher` pour les **nouvelles** evaluations | Matérialisation PG + résolution exacte |
 | `backend/lib/evaluationAttachment.js` | `resolveEvaluationAttachments` (bloc teacher ~L100–120) | Chaîne de résolution enseignant pour eval |
 
 ### 2.2 Probables / à confirmer en revue de diff (toujours dans le lot si touchés)
@@ -293,6 +293,7 @@ Caractérisation V2.1 existante : peut rester en filet ; adapter si assertions d
 Le lot **ne doit pas** :
 
 - fusionner ou supprimer `TEACHER-*` / `TEACHERS-*` existants ;  
+- **créer automatiquement** un `TEACHERS-*` sur un compte historique TEACHER-only (AC-HIST-02) ;  
 - backfiller `evaluations.teacher_id` ;  
 - réécrire `assignments.teacherId` historiques ;  
 - ajouter contrainte SQL risquant d’échouer sur jumeaux présents ;  
