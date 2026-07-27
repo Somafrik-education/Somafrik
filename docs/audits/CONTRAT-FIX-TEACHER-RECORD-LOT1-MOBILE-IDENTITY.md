@@ -6,12 +6,14 @@
 **Audit source :** [`AUDIT-INDEPENDANT-FICHE-ENSEIGNANT.md`](./AUDIT-INDEPENDANT-FICHE-ENSEIGNANT.md) (PR #103 · `54b40c06`) — constat **C-04 CRITICAL CONFIRMÉE**  
 **Base :** `develop` @ `d51b0211`  
 **Date :** 2026-07-27  
+**PR contrat :** #105 (Draft) · head à mettre à jour  
 
 | Élément | Statut |
 |---------|--------|
-| Architecture plan #104 | **VALIDÉE DÉFINITIVEMENT** |
-| Contrat Lot 1 (ce document) | **SOUMIS** — attendre validation CTO explicite |
-| Implémentation code Lot 1 | **INTERDITE** jusqu’à validation de ce contrat |
+| Architecture Lot 1 | **VALIDÉE** (CTO) |
+| Contrat (forme) | **AJUSTEMENTS INTÉGRÉS** — revalidation CTO documentaire |
+| Implémentation code Lot 1 | **INTERDITE** jusqu’à validation explicite de ce contrat |
+| Undraft / merge #105 | **Non autorisés** tant que revalidation CTO non prononcée |
 | Contrats Lots 2 et 3 | **Interdits** avant clôture Lot 1 |
 | Migration / fusion `TEACHER-*` historiques | **INTERDITES** |
 | Réouverture V2.1 | **NON** |
@@ -33,7 +35,7 @@ Après correctif Lot 1, sur **toute surface Mobile** qui crée ou synchronise un
 4. Multi-`TEACHERS-*` liés au même compte+école : **refus structuré** `TEACHER_CANON_AMBIGUOUS` (pas de `findIndex` silencieux).
 5. Les jumeaux / données historiques existants restent **intacts**.
 
-Critères **AC-M1…AC-M5** = **un seul gate fonctionnel** du Lot 1 (non séparables).
+Critères **AC-M1…AC-M6** + gates ci-dessous = **un seul gate fonctionnel** du Lot 1 (non séparables).
 
 ---
 
@@ -58,9 +60,10 @@ Critères **AC-M1…AC-M5** = **un seul gate fonctionnel** du Lot 1 (non sépara
 
 | Fichier | Symboles / zones | Rôle |
 |---------|------------------|------|
-| `Mobile/src/lib/userTeacherSync.ts` | `newTeacherId`, `buildTeacherRow`, `upsertTeacherFromUser`, `teacherMatchesUser`, `isTeacherUserRole` | **Cause racine** : `TEACHER-${Date.now()}-…` ; pas de résolution canon |
-| `Mobile/src/screens/AdminCrudScreen.tsx` | save users → `upsertTeacherFromUser` (~L528) ; `createInternalId` (~L2066) pour entity `teachers` | CRUD / sync déclencheurs |
+| `Mobile/src/lib/userTeacherSync.ts` | `newTeacherId`, `buildTeacherRow`, `upsertTeacherFromUser`, résolution canon, ambiguïté | **Cause racine** : `TEACHER-${Date.now()}-…` ; pas de résolution canon |
+| `Mobile/src/screens/AdminCrudScreen.tsx` | save users → `upsertTeacherFromUser` ; `createInternalId` pour entity `teachers` | CRUD / sync déclencheurs |
 | `Mobile/src/screens/TeachersScreen.tsx` | create gate / navigation | Ne pas court-circuiter le canon |
+| `Mobile/src/lib/contactProvisioning.ts` | Gate create | Ne pas réintroduire un id / préfixe legacy |
 
 ### 3.2 Alignement obligatoire (miroir V2.1)
 
@@ -77,9 +80,9 @@ La logique Mobile de résolution doit être un **miroir fonctionnel** de :
 
 | Fichier | Motif |
 |---------|-------|
-| `Mobile/src/lib/contactProvisioning.ts` | Gate create ; ne pas réintroduire un id legacy |
-| Tests Mobile unitaires (à créer) | AC-M1, AC-M3, AC-M4, ambiguïté |
-| Harness runtime (script sous `scripts/`) | Preuve PUT state avec payload issu des règles Mobile |
+| Tests Mobile unitaires (à créer) | AC-M1…M6, HIST-02, ambiguïté locale |
+| Harness runtime (script sous `scripts/`) | **Doit importer / exécuter le vrai code Mobile** puis PUT (§8) |
+| `backend/server.js` | Uniquement si la PR code Lot 1 modifie le contrat de réponse PUT (T1 serveur) |
 
 ### 3.4 Explicitement hors touch (Lot 1)
 
@@ -87,7 +90,7 @@ La logique Mobile de résolution doit être un **miroir fonctionnel** de :
 |------|-------|
 | `backend/db/postgresRepository.js` findTeacherForGrade / attendance | Lot 2 |
 | `backend/lib/dataIntegrityRules.js` statuts affectation | Lot 3 |
-| `backend/services/userTeacherSyncService.js` logique statut Actif/Suspendu | Lot 3 (sauf si strictement nécessaire pour exporter un helper **identité** sans changer le statut) |
+| `backend/services/userTeacherSyncService.js` logique statut Actif/Suspendu | Lot 3 (sauf export helper **identité** sans changer le statut) |
 | Migrations SQL | Interdit |
 | `backofficeDedupe.js` fusion historique | Interdit |
 
@@ -95,22 +98,22 @@ La logique Mobile de résolution doit être un **miroir fonctionnel** de :
 
 ## 4. Comportement avant / après
 
-### 4.1 Sync compte → fiche (`upsertTeacherFromUser`)
+### 4.1 Sync compte → fiche (`upsertTeacherFromUser` — **vrai helper Mobile**)
 
 | Cas | Avant (develop) | Après Lot 1 |
 |-----|-----------------|-------------|
 | Aucune fiche liée, rôle enseignant | Crée `TEACHER-*` | Crée **un** `TEACHERS-*` |
 | Une fiche `TEACHERS-*` liée `userId`+école | `findIndex` / match soft | **Réutilise** le canon |
 | Une fiche `TEACHER-*` seule liée | Maj id conservé `TEACHER-*` | **Idem** AC-HIST-02 — pas d’auto-`TEACHERS-*` |
-| Plusieurs `TEACHER-*` liés | Premier match silencieux | **No-op** tracé (aligné `TEACHER_HISTORICAL_MULTI_TWIN`) — pas de choix `twins[0]` |
-| Plusieurs `TEACHERS-*` liés, 0 ou ≥2 affectations actives départageantes | Premier match | **Throw** / erreur `TEACHER_CANON_AMBIGUOUS` |
+| Plusieurs `TEACHER-*` liés | Premier match silencieux | **No-op** + trace / journal opérateur (`TEACHER_HISTORICAL_MULTI_TWIN`) — **jamais** `twins[0]`, **jamais** création `TEACHERS-*` |
+| Plusieurs `TEACHERS-*` liés, 0 ou ≥2 affectations actives départageantes | Premier match | **Blocage** `TEACHER_CANON_AMBIGUOUS` |
 | Plusieurs `TEACHERS-*`, exactement 1 avec affectation active | Non géré | Canon = fiche affectée (même règle §4.1 V2.1) |
 
-### 4.2 CRUD fiche enseignant Mobile
+### 4.2 CRUD fiche enseignant Mobile (**vrai générateur**)
 
 | Cas | Avant | Après |
 |-----|-------|-------|
-| `createInternalId("teachers")` / préfixe entity | `teachers-{ts}-…` (minuscule / non canon) | Id **`TEACHERS-*`** uniquement |
+| Générateur create (`createInternalId` / équivalent teachers) | `teachers-{ts}-…` (non canon) | Id **`TEACHERS-*`** uniquement |
 | Édition fiche existante `TEACHER-*` | Conserve id | **Conserve** id (pas d’upgrade auto) |
 | Édition fiche `TEACHERS-*` | Conserve id | Conserve id |
 
@@ -118,102 +121,204 @@ La logique Mobile de résolution doit être un **miroir fonctionnel** de :
 
 | Interdit après Lot 1 | Autorisé |
 |----------------------|----------|
-| `TEACHER-{ts}-{rand}` pour **nouvelles** fiches | `TEACHERS-{uuid\|ts-rand}` |
-| Choisir silencieusement parmi plusieurs canons | Erreur structurée |
+| `TEACHER-*` pour **nouvelles** fiches | `TEACHERS-{uuid\|ts-rand}` |
+| `teachers-*` / tout préfixe non canonique pour **nouvelle** fiche | — |
+| Choix silencieux parmi plusieurs canons | Erreur structurée |
 
 ---
 
-## 5. Ambiguïté et surface d’erreur
+## 5. Ambiguïté, multi-twins et surface d’erreur
 
-| Code | Quand | Propagation Mobile |
-|------|-------|--------------------|
-| `TEACHER_CANON_AMBIGUOUS` | Multi-`TEACHERS-*` non départageables | Bloquer la sauvegarde locale / PUT ; message opérateur + code |
-| `TEACHER_HISTORICAL_MULTI_TWIN` | Multi-`TEACHER-*` seuls | No-op identité ; **ne pas** inventer un canon ; tracer (voir T1 si ACK serveur) |
+### 5.1 `TEACHER_CANON_AMBIGUOUS` — **OBLIGATOIRE Lot 1** (deux niveaux)
+
+| Niveau | Comportement attendu | Preuve |
+|--------|----------------------|--------|
+| **A — Mobile avant envoi** | Le vrai code Mobile détecte l’ambiguïté → **sauvegarde bloquée**, code `TEACHER_CANON_AMBIGUOUS` **visible** à l’opérateur | Unit + harness appelant le helper / parcours CRUD |
+| **B — Payload ambigu atteint le serveur** | HTTP **409**, **même code** structuré, **aucune mutation** des fiches de cet enseignant | Runtime HTTP/PG |
+
+AC-M5 exige **A et B** (indissociables).
+
+### 5.2 `TEACHER_HISTORICAL_MULTI_TWIN` — **OBLIGATOIRE Lot 1**
+
+| Comportement | Obligation |
+|--------------|------------|
+| Résultat | **No-op** identité |
+| Interdit | Choix arbitraire (`twins[0]`) ; création automatique `TEACHERS-*` |
+| Visibilité | Trace / journal opérateur **visible** côté Mobile |
+
+### 5.3 Autres codes
+
+| Code | Quand | Propagation |
+|------|-------|-------------|
 | `TEACHER_CANON_REQUIRED` | Nouvelle fiche sans préfixe `TEACHERS-*` | Garde défensive |
 
-Si le PUT atteint le backend V2.1 : le serveur reste source de vérité pour le merge ; Mobile ne doit **pas** envoyer un nouvel id `TEACHER-*` qui créerait un jumeau avant même le merge.
+Mobile ne doit **pas** envoyer un nouvel id `TEACHER-*` qui créerait un jumeau avant le merge serveur.
 
 ---
 
-## 6. Exigences transverses dans le Lot 1
+## 6. Exigences transverses (T1 / T2) — décisions CTO figées
 
-### T1 (amorçage)
+### 6.1 T1 — **tranché**
+
+| Exigence | Décision Lot 1 |
+|----------|----------------|
+| `TEACHER_CANON_AMBIGUOUS` local Mobile → blocage sauvegarde + code visible opérateur | **OBLIGATOIRE Lot 1** |
+| `TEACHER_HISTORICAL_MULTI_TWIN` local Mobile → no-op + trace/journal opérateur | **OBLIGATOIRE Lot 1** |
+| `identitySyncAck.skips[]` côté serveur (réponse PUT) | **OBLIGATOIRE dans Lot 1 uniquement si** la PR code Lot 1 modifie `server.js` **ou** le contrat de réponse PUT ; **sinon** → **report explicite et enregistré au Lot 2** (pas au Lot 3 par défaut) |
+
+Justification du report Lot 2 (si applicable) : les lots 1 puis 2 consomment déjà les écritures Mobile et notes/présences ; reporter T1 serveur au Lot 3 serait trop tardif.
+
+Si report Lot 2 : la PR code Lot 1 **et** l’evidence runtime doivent porter une mention explicite  
+`T1_SERVER_SKIPS_ACK=DEFERRED_TO_LOT2`.
+
+### 6.2 T2 — périmètre Mobile Lot 1
 
 | Exigence | Lot 1 |
 |----------|-------|
-| Exposer `identitySyncAck.skips[]` sur PUT | **Recommandé** si le harness runtime Lot 1 touche `server.js` ; **sinon** report explicite au plus tard avant clôture Lot 3 |
-| Mobile affiche / journalise l’erreur `TEACHER_CANON_AMBIGUOUS` | **Obligatoire** (AC-M5) |
-
-### T2 (périmètre Mobile)
-
-| Exigence | Lot 1 |
-|----------|-------|
-| T2.1 `isTeacherUserRole` | Mobile reste aligné Web (`enseignant` \| `teacher` \| `prof*`). Alignement backend exact `"teacher"` = dette T2 globale (peut être traité en amorce backend **sans** élargir au Lot 2/3) |
-| T2.3 E2E contacts-only | Remplacer / neutraliser les assertions qui exigent encore contacts-only **si** touchées ; a minima **ne pas** ajouter de nouveaux E2E artificiels `TEACHER-*` |
-| Journey réel Mobile | Harness runtime prouvant AC-M1…M3 (payload conforme règles Mobile → PUT) |
+| T2.1 `isTeacherUserRole` | Mobile reste aligné Web (`enseignant` \| `teacher` \| `prof*`). Alignement backend exact `"teacher"` = dette T2 (amorce backend autorisée **sans** ouvrir Lots 2/3) |
+| T2.3 E2E contacts-only | Ne pas ajouter d’E2E artificiels `TEACHER-*` ; neutraliser assertions contacts-only **si** touchées |
+| Journey | **Vrai code Mobile** → état → PUT → JSON+PG (§8) — **obligatoire** |
 
 ---
 
-## 7. Critères d’acceptation (gate unique)
+## 7. Critères d’acceptation
 
 | ID | Critère | Preuve |
 |----|---------|--------|
-| **AC-M1** | Sync Mobile Enseignant sans fiche → id `^TEACHERS-` | Unit Mobile + **runtime** |
-| **AC-M2** | Compte déjà lié à un `TEACHERS-*` → même id, 0 nouveau | Runtime |
-| **AC-M3** | Aucun **nouveau** `TEACHER-*` produit par sync/CRUD Mobile | Grep + runtime négatif |
-| **AC-M4** | Twin historique seul → pas d’auto-`TEACHERS-*` | Unit (= AC-HIST-02) |
-| **AC-M5** | Multi-canon → erreur `TEACHER_CANON_AMBIGUOUS` visible | Runtime / unit throw |
-| **AC-M6** | CRUD create fiche → `TEACHERS-*` ; edit `TEACHER-*` conserve id | Unit / revue |
-| **AC-NR1** | Non-régression : backend/Web V2.1 tests sync identité toujours verts | CI |
+| **AC-M1** | Le **vrai** `upsertTeacherFromUser` Mobile, sans fiche → id `^TEACHERS-` | Unit Mobile **exécutant le module** + runtime §8 |
+| **AC-M2** | Compte déjà lié à un `TEACHERS-*` → même id, 0 nouveau (vrai helper) | Runtime §8 |
+| **AC-M3** | Aucun **nouveau** `TEACHER-*` après sync/CRUD Mobile + persistance | Garde §9 + runtime négatif JSON+PG |
+| **AC-M4** | Twin historique seul → pas d’auto-`TEACHERS-*` (vrai helper) | Unit (= AC-HIST-02) |
+| **AC-M5a** | Ambiguïté détectée **Mobile avant envoi** → sauvegarde bloquée, code visible | Unit / harness Mobile |
+| **AC-M5b** | Payload ambigu au serveur → HTTP 409, même code, **aucune mutation** | Runtime HTTP/PG |
+| **AC-M6** | **Vrai** générateur CRUD create → `TEACHERS-*` ; edit `TEACHER-*` conserve id | Unit / harness CRUD Mobile |
+| **AC-M7** | Multi-`TEACHER-*` → no-op + journal/trace opérateur (pas de choix arbitraire) | Unit Mobile |
+| **AC-G1** | Garde de génération **obligatoire** PASS (§9) | CI gate |
+| **AC-NR1** | Non-régression Web/backend V2.1 sync identité | CI |
 | **AC-NR2** | Aucune migration / fusion historique dans le diff | Revue PR |
-
-**Gate Lot 1 = PASS** ssi AC-M1…M6 + AC-NR1…NR2 + evidence runtime publiée.
 
 ---
 
-## 8. Preuve runtime obligatoire
+## 8. Preuve runtime — **deux étapes indissociables**
+
+Un payload fabriqué directement par le script **ne constitue pas** une preuve Lot 1.  
+Le **runtime HTTP seul ne remplace pas** le test du code Mobile.
+
+### 8.1 Chaîne obligatoire
+
+```
+1) Appel du VRAI helper Mobile / parcours CRUD Mobile
+      → upsertTeacherFromUser (module Mobile réel)
+      et/ou générateur CRUD enseignant réel (AdminCrud / équivalent)
+2) État teachers[] (et users liés) PRODUIT par Mobile
+3) Envoi de CET état au backend (PUT /api/backoffice/state)
+4) Vérification JSON BackOffice + PostgreSQL
+```
+
+### 8.2 Le gate doit prouver
+
+| # | Preuve |
+|---|--------|
+| 1 | Le véritable `upsertTeacherFromUser` Mobile **produit ou réutilise** le bon identifiant |
+| 2 | Le véritable générateur CRUD enseignant Mobile produit `TEACHERS-*` |
+| 3 | Le backend **accepte** cet état **sans créer** de nouvelle identité divergente |
+| 4 | **Aucun** `TEACHER-*` **nouveau** n’apparaît après persistance (JSON + PG `teacher_code`) |
+
+### 8.3 Artefact
 
 | Champ | Valeur |
 |-------|--------|
 | Artefact | `docs/audits/evidence/teacher-record-fix-lot1-mobile-runtime-results.json` |
-| Environnement | Backend + PostgreSQL (DB jetable) + harness |
-| Scénarios min. | AC-M1, AC-M2, AC-M3 (négatif), AC-M4, AC-M5 |
-| Contenu | HTTP status, codes erreur, `teachers[].id` avant/après, absence de nouveau `TEACHER-*` |
+| Environnement | Backend + PostgreSQL (DB jetable) + harness important le **vrai** code Mobile |
+| Scénarios min. | AC-M1, AC-M2, AC-M3, AC-M4, AC-M5a, AC-M5b, AC-M6 |
+| Contenu | Étape Mobile (ids produits), HTTP status, codes erreur, `teachers[].id` avant/après, rows PG, flag `mobileCodeExecuted: true` |
+| Interdit | `mobileCodeExecuted: false` ou payload handcrafté sans appel helper/CRUD Mobile |
 | Règle merge | **Aucun merge** code Lot 1 sans ce fichier **PASS** |
-
-Limite rappelée de l’audit #103 : les constats statiques restent valides ; le merge code exige la preuve runtime dédiée.
 
 ---
 
-## 9. Plan de tests
+## 9. Garde de génération — **gate obligatoire**
+
+### 9.1 Formulation
+
+> Toute expression de **génération** Mobile produisant `TEACHER-*`, `teachers-*` ou un préfixe **non canonique** pour une **nouvelle** fiche fait **échouer** le gate Lot 1.
+
+### 9.2 Couverture minimale (fichiers)
+
+- `Mobile/src/lib/userTeacherSync.ts`
+- `Mobile/src/screens/AdminCrudScreen.tsx`
+- `Mobile/src/screens/TeachersScreen.tsx`
+- `Mobile/src/lib/contactProvisioning.ts`
+
+### 9.3 Autorisé (ne fait pas échouer la garde)
+
+| Usage | Exemple |
+|-------|---------|
+| Lecture / match d’ids historiques | Comparaison `/^TEACHER-/i` pour AC-HIST-02 |
+| Édition conservatrice | Conserver un id `TEACHER-*` existant |
+| Fixtures / tests AC-HIST-02 | Données de test en lecture |
+
+### 9.4 Exécution
+
+| Champ | Valeur |
+|-------|--------|
+| Nature | Script CI **obligatoire** (grep / AST / allowlist) dans la PR code Lot 1 |
+| Résultat | FAIL CI si génération non canonique détectée hors allowlist lecture/fixture |
+| Statut contrat | **Plus optionnel** |
+
+---
+
+## 10. Plan de tests
 
 | Couche | Contenu |
 |--------|---------|
-| Unit Mobile | Nouveau fichier test `userTeacherSync` : create TEACHERS, reuse canon, HIST-02, ambiguous throw |
-| Unit backend existants | `userTeacherSyncService.test.js` — non-régression CI |
-| Runtime | Script `scripts/verify-teacher-record-lot1-mobile-identity.js` (nom indicatif) |
-| Garde | Grep CI optionnel : `Mobile/**` ne contient plus `TEACHER-\$\{` / `TEACHER-`+\`Date` pour **génération** (les fixtures historiques `TEACHER-` en lecture restent OK) |
+| Unit Mobile | Tests **important** `Mobile/src/lib/userTeacherSync.ts` (+ générateur CRUD) : TEACHERS create, reuse, HIST-02, multi-twin no-op+trace, ambiguous block |
+| Unit backend | `userTeacherSyncService.test.js` — non-régression V2.1 |
+| Runtime | Harness §8 (Mobile réel → PUT → JSON+PG) |
+| Garde | Gate CI §9 **obligatoire** |
+| Ambiguïté serveur | AC-M5b : PUT ambigu → 409 sans mutation |
 
 ---
 
-## 10. Séquence PR (après validation de ce contrat)
+## 11. Gate final Lot 1 = PASS
+
+```
+AC-M1 … AC-M6
++ AC-M5a et AC-M5b (ambiguïté locale ET serveur)
++ AC-M7 (multi-TEACHER-* no-op + journal)
++ AC-G1 (garde de génération obligatoire)
++ AC-NR1 (non-régression Web/backend V2.1)
++ AC-NR2 (aucune migration/fusion historique)
++ tests exécutant le VRAI code Mobile
++ runtime HTTP/PG depuis l’état PRODUIT par Mobile
+= PASS Lot 1
+```
+
+---
+
+## 12. Séquence PR (après validation de ce contrat)
 
 | Étape | Nature | Condition |
 |-------|--------|-----------|
-| A | Validation CTO **explicite** de ce contrat | — |
-| B | PR code Lot 1 (Draft puis undraft) | Aval A |
-| C | Evidence runtime jointe / PR docs associée | Avant merge B |
+| A | Validation CTO **explicite** de ce contrat (revalidation documentaire) | Ajustements intégrés |
+| B | PR code Lot 1 (Draft puis undraft) | Aval A — **pas avant** |
+| C | Evidence runtime §8 + garde §9 PASS | Avant merge B |
 | D | Merge Lot 1 | CI + evidence PASS + aval CTO merge |
 | E | Contrat Lot 2 | **Seulement après** D |
+| F | Si `T1_SERVER_SKIPS_ACK=DEFERRED_TO_LOT2` | Obligation reprise dans le contrat Lot 2 |
 
 ---
 
-## 11. Décision demandée au CTO
+## 13. Décisions CTO déjà tranchées (rappel)
 
-| Question | Attendu |
-|----------|---------|
-| Valider ce contrat Lot 1 (périmètre Mobile identité + AC-M*) ? | Oui / Ajuster |
-| Autoriser ensuite la PR **code** Lot 1 ? | **Oui seulement après** validation contrat |
-| T1 skips ACK : amorce Lot 1 ou report Lot 3 au plus tard ? | Trancher si non couvert en B |
+| Point | Décision |
+|-------|----------|
+| Architecture Lot 1 | **VALIDÉE** |
+| Runtime via vrai code Mobile (2 étapes) | **Obligatoire** (correction 1) |
+| Garde génération CI | **Obligatoire** (correction 2) |
+| T1 local Mobile (ambiguous + multi-twin) | **Obligatoire Lot 1** (correction 3) |
+| T1 `identitySyncAck.skips[]` serveur | Conditionnel Lot 1 / sinon **report Lot 2** enregistré |
+| PR code Lot 1 | **NON ENCORE AUTORISÉE** |
+| Undraft / merge #105 | Après revalidation CTO documentaire seulement |
 
-**Implémentation code :** **INTERDITE** jusqu’à validation explicite de ce contrat.
+**Implémentation code :** **INTERDITE** jusqu’à validation explicite de ce contrat ajusté.
