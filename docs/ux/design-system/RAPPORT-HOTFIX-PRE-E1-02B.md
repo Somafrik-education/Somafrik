@@ -56,19 +56,18 @@ Preuve : `docs/audits/evidence/pre-e1-hotfix-02b-results.json`
 
 ## 4. Dette ouverte
 
-- **PRE-E1-IDENTITY-LIFECYCLE** : `TEACHER-*` et `TEACHERS-*` restent deux fiches (déduplication volontaire, pas de convergence d’identité).
-- HOTFIX-02 **NON CLOS** tant que revue CTO / undraft non autorisés.
+- **PRE-E1-IDENTITY-LIFECYCLE** : `TEACHER-*` et `TEACHERS-*` restent deux fiches (déduplication volontaire, pas de convergence d’identité). **N’empêche pas** la clôture HOTFIX-02.
 - Audit Pré-E1 **OUVERT** · V2 **BLOQUÉE** · E1 **NO-GO**.
 
 ---
 
-## 5. Post-merge
+## 5. Post-merge et clôture
 
-PR #90 **mergée** dans `develop` (`fc953883`, head `85ff0fe4`).
+PR #90 **mergée** (`fc953883`) · PR #91 **mergée** (`45f55a9e`).
 
-Rejeu consolidé indépendant : [`BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md`](../../audits/BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md)  
-Preuve : [`pre-e1-hotfix-02b-rejeu-post-merge-results.json`](../../audits/evidence/pre-e1-hotfix-02b-rejeu-post-merge-results.json)
+Bilan : [`BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md`](../../audits/BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md)  
+Décision CTO : [`DECISION-CTO-CLOTURE-HOTFIX-02.md`](../../audits/DECISION-CTO-CLOTURE-HOTFIX-02.md)
 
-**HOTFIX-PRE-E1-02B : CLOS TECHNIQUEMENT.**  
-**HOTFIX-02 : CORRECTION DÉMONTRÉE** — clôture formelle en attente rejeu CTO/CI indépendant.  
+**HOTFIX-PRE-E1-02B : CLOS.**  
+**HOTFIX-02 : CLOS.**  
 Audit **OUVERT** · V2 **BLOQUÉE** · E1 **NO-GO** · dette IDENTITY **OUVERTE**.
