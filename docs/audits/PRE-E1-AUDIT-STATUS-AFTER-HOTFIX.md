@@ -3,7 +3,7 @@
 **Type :** dossier de cadrage (gouvernance) — **aucune implémentation**  
 **Date :** 2026-07-27  
 **Base code de référence :** `develop` @ `8c570584` (merge PR #92 — clôture formelle HOTFIX-02)  
-**Décideur attendu :** CTO (choix du prochain lot **après** examen de ce document)
+**Arbitrage CTO :** **Option A** — Audit V2 **autorisé** (phase d’audit, non de développement) — 2026-07-27
 
 ---
 
@@ -78,12 +78,13 @@ recommendation: {
 | V1-DUP-01 | CRITICAL | Idempotence non prouvable | **CLOS** | Comptages + IDs stables ([bilan HOTFIX-02](./BILAN-PRE-E1-V1-RERUN-HOTFIX-02.md) §4) |
 | Matérialisation PG teachers/assignments + isolation | (cause 02B) | HOTFIX-02B | **CLOS** | Gate 02B 13/13 + décision CTO |
 
-### 1.4 Gouvernance Audit / produit (inchangée jusqu’à nouvel arbitrage)
+### 1.4 Gouvernance Audit / produit
 
-| Élément | Statut au 2026-07-27 |
-|---------|----------------------|
+| Élément | Statut au 2026-07-27 (après Option A) |
+|---------|----------------------------------------|
 | Audit Pré-E1 | **OUVERT** |
-| V2 (phase audit « modèle de données & intégrité ») | **BLOQUÉE** *(par décision gouvernance, pas par anomalie V1 ouverte)* |
+| HOTFIX-01 / 02 / 02B | **CLOS** — ne pas rouvrir |
+| V2 (phase audit « modèle de données & intégrité ») | **AUTORISÉE** (Option A CTO) — phase d’**audit**, pas de développement |
 | E1 Bulletins | **NO-GO** |
 | PR #84 (audit foundations / preuves V1 historiques) | **Draft** — artefacts historiques **intacts** |
 | Document foundations (branche audit) | Contient encore la recommandation historique **BLOQUER V2** (27/33) — **périmé** au regard des rejeux post-HOTFIX ; ne pas réécrire les preuves |
@@ -102,12 +103,12 @@ Classification utilisée :
 
 ### 2.1 Inventaire prioritaire (ouverts)
 
-| ID | Criticité | Nature | Statut | Bloque l’ouverture de V2 ? | Preuves associées |
-|----|-----------|--------|--------|----------------------------|-------------------|
-| **GATE-CTO-AUTHORIZE-V2** | **BLOCKER** *(gouvernance)* | Absence d’autorisation CTO écrite pour démarrer la phase V2 | **OUVERT** | **OUI — seul blocker effectif aujourd’hui** | [`DECISION-CTO-CLOTURE-HOTFIX-02.md`](./DECISION-CTO-CLOTURE-HOTFIX-02.md) (« V2 BLOQUÉE — autres sujets ») · bilans HF02/02B · harness qui exige encore « instruction CTO » |
-| **PRE-E1-IDENTITY-LIFECYCLE** | **MAJOR** | Cycles multiples BackOffice ↔ user/session ↔ PG (`TEACHER-*` / `TEACHERS-*` / `ENS-*`) ; pas de convergence d’identité | **OUVERT** | **NON** | Rapports HF02/02B · [`INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md`](./INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md) §4 · décision CTO : n’empêche pas la clôture HF02 |
-| **PRE-E1-STUDENT-CODE-SCOPE** | **MAJOR** | `students.student_code` UNIQUE global ; arbitrage `(school_id, student_code)` reporté | **OUVERT** (différé V2) | **NON** | [`RAPPORT-HOTFIX-PRE-E1-01.md`](../ux/design-system/RAPPORT-HOTFIX-PRE-E1-01.md) · bilan re-run HF01 |
-| **PRE-E1-AUTHZ-FALLBACK-BO** | **MAJOR** *(observabilité / dette)* | Fallback authz snapshot BO encore **observé** (`fallbackUsed=true`) même après chemin PG prouvé | **OUVERT** (documenté, non clos comme anomalie V1) | **NON** pour ouvrir V2 ; **oui** comme sujet d’intégrité à caractériser en V2/V4 | Gate `FALLBACK-DOC` · [`RAPPORT-HOTFIX-PRE-E1-02B.md`](../ux/design-system/RAPPORT-HOTFIX-PRE-E1-02B.md) · preuve rejeu 02B |
+| ID | Criticité | Nature | Statut | Empêche l’ouverture de V2 ? | Preuves associées |
+|----|-----------|--------|--------|-----------------------------|-------------------|
+| **GATE-CTO-AUTHORIZE-V2** | **Gouvernance** | Autorisation CTO pour démarrer la phase V2 | **TRANCHÉE — Option A** | N/A (décision prise) — voir §3 | Arbitrage CTO 2026-07-27 (ce dossier) · [`DECISION-CTO-OUVERTURE-AUDIT-V2.md`](./DECISION-CTO-OUVERTURE-AUDIT-V2.md) |
+| **PRE-E1-IDENTITY-LIFECYCLE** | **MAJOR** | Cycles multiples BackOffice ↔ user/session ↔ PG (`TEACHER-*` / `TEACHERS-*` / `ENS-*`) ; pas de convergence d’identité | **OUVERT** → périmètre V2 | **NON** (à elle seule ne justifie pas un nouveau hotfix) | Rapports HF02/02B · [`INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md`](./INSPECTION-PRE-E1-HOTFIX-02-INDEPENDANTE.md) §4 · décision CTO |
+| **PRE-E1-STUDENT-CODE-SCOPE** | **MAJOR** | `students.student_code` UNIQUE global ; arbitrage `(school_id, student_code)` reporté | **OUVERT** → périmètre V2 | **NON** | [`RAPPORT-HOTFIX-PRE-E1-01.md`](../ux/design-system/RAPPORT-HOTFIX-PRE-E1-01.md) · bilan re-run HF01 |
+| **PRE-E1-AUTHZ-FALLBACK-BO** | **MAJOR** *(observabilité / dette)* | Fallback authz snapshot BO encore **observé** (`fallbackUsed=true`) même après chemin PG prouvé | **OUVERT** → caractériser en V2/V4 | **NON** | Gate `FALLBACK-DOC` · [`RAPPORT-HOTFIX-PRE-E1-02B.md`](../ux/design-system/RAPPORT-HOTFIX-PRE-E1-02B.md) · preuve rejeu 02B |
 | **PR-84-HISTORICAL-STALE-REC** | **INFORMATION** | Recommandation « BLOQUER V2 » figée sur preuves 27/33 | **OUVERT** (doc historique) | **NON** (ne pas réécrire) | Branche `cursor/audit-pre-e1-foundations-8ed4` · `AUDIT-PRE-E1-FOUNDATIONS.md` |
 
 ### 2.2 Hypothèses Phase 0 (R-01…R-14) — pas des blockers V1 ouverts
@@ -120,7 +121,7 @@ Le document foundations liste des risques provisoires (ex. bus `PUT /api/backoff
 | Elles n’ont **pas** été reconfirmées comme anomalies V1 ouvertes après les HOTFIX | Elles **ne remplacent pas** un inventaire d’anomalies prouvées |
 | Plusieurs chevauchent le périmètre V2 (« source de vérité », intégrité, orphelins) | À **prouver ou infirmer** pendant V2, pas via un nouveau HOTFIX-02 |
 
-**Conclusion :** aucun R-0x ne constitue aujourd’hui un blocker technique **prouvé** empêchant l’ouverture de V2 plus prioritaire que la dette IDENTITY.
+**Conclusion :** aucun R-0x ne constitue, dans le périmètre de ce dossier, un blocker technique **prouvé** plus prioritaire que la dette IDENTITY pour empêcher l’ouverture de V2.
 
 ### 2.3 Sujets explicitement clos (ne pas rouvrir)
 
@@ -132,7 +133,7 @@ Le document foundations liste des risques provisoires (ex. bus `PUT /api/backoff
 
 ---
 
-## 3. Quel sujet empêche effectivement l’ouverture de V2 ?
+## 3. Ouverture de V2 — lecture de ce dossier
 
 ### 3.1 Condition technique historique (foundations)
 
@@ -142,15 +143,18 @@ La condition écrite pour réautoriser V2 était :
 
 **État actuel :** condition **satisfaite** (33/33, 0 anomalie BLOCKER/CRITICAL ; harness `V2 AUTORISABLE`).
 
-### 3.2 Blocker effectif restant
+### 3.2 Formulation retenue (réserve CTO)
 
-| Question | Réponse |
-|----------|---------|
-| Existe-t-il encore une anomalie V1 **BLOCKER/CRITICAL** ouverte ? | **Non** (preuves rejeu) |
-| Qu’est-ce qui maintient V2 « BLOQUÉE » ? | **Décision de gouvernance CTO** (`GATE-CTO-AUTHORIZE-V2`) |
-| Un correctif métier est-il requis **avant** d’ouvrir V2 ? | **Non** d’après les preuves disponibles |
+> **Aucun blocker technique V1 n’a été identifié dans ce dossier comme empêchant l’ouverture de V2.**  
+> **L’ouverture de V2 relève désormais d’une décision de gouvernance CTO.**
 
-Autrement dit : le seul item qui **empêche effectivement** l’ouverture de V2 est l’**autorisation CTO** de démarrer la phase d’audit V2 — pas une dette MAJOR, pas IDENTITY, pas un HOTFIX résiduel.
+Cette formulation reflète le périmètre d’un **état des lieux** : elle ne affirme pas de manière absolue qu’aucun autre sujet hors inventaire ne pourrait exister ; elle constate l’absence, dans ce dossier, de blocker technique V1 empêchant V2.
+
+| Question | Réponse (périmètre dossier) |
+|----------|----------------------------|
+| Anomalie V1 **BLOCKER/CRITICAL** ouverte identifiée ici ? | **Non** (preuves rejeu) |
+| Correctif métier requis **avant** d’ouvrir V2 d’après ce dossier ? | **Non** |
+| Qui tranche l’ouverture de V2 ? | **CTO** (gouvernance) |
 
 ---
 
@@ -161,75 +165,57 @@ Autrement dit : le seul item qui **empêche effectivement** l’ouverture de V2 
 | Sévérité documentée | **MAJOR** (jamais requalifiée BLOCKER par CTO) |
 | Empêche clôture HOTFIX-02 ? | **Non** (décision CTO explicite) |
 | Empêche rejeu V1 vert ? | **Non** (33/33 avec dualité `TEACHER-*` / `TEACHERS-*` encore présente) |
-| Alignement avec le plan V2 foundations | **Oui** — V2 = « Modèle de données & intégrité » : source de vérité, identifiants, orphelins, références JSON↔PG |
-| Existe-t-il un blocker technique plus prioritaire *avant* V2 ? | **Non** identifié après inventaire |
+| Alignement avec le plan V2 foundations | **Oui** — V2 = « Modèle de données & intégrité » |
+| Justifie un nouveau hotfix à elle seule ? | **Non** (arbitrage CTO) |
+| Blocker technique plus prioritaire *avant* V2 identifié dans ce dossier ? | **Non** |
 
-**Verdict :** `PRE-E1-IDENTITY-LIFECYCLE` **relève bien de V2** (dette structurante à traiter / arbitrer dans la phase modèle de données).  
+**Verdict (validé CTO) :** `PRE-E1-IDENTITY-LIFECYCLE` **relève de V2**.  
 Ce n’est **pas** un prérequis HOTFIX supplémentaire avant d’ouvrir V2.
 
-Même lecture pour `PRE-E1-STUDENT-CODE-SCOPE` (MAJOR, déjà différé V2) et pour la caractérisation du fallback BO (`PRE-E1-AUTHZ-FALLBACK-BO`) en V2/V4.
+Même lecture pour `PRE-E1-STUDENT-CODE-SCOPE` et pour la caractérisation du fallback BO (`PRE-E1-AUTHZ-FALLBACK-BO`) en V2/V4.
 
 ---
 
-## 5. Ordre de priorité recommandé
+## 5. Ordre de priorité (après Option A)
 
 | Rang | ID | Criticité | Action attendue |
 |------|----|-----------|-----------------|
-| **P0** | `GATE-CTO-AUTHORIZE-V2` | BLOCKER (gouvernance) | CTO : autoriser **ou** refuser explicitement le démarrage de la phase Audit V2 |
-| **P1** *(dans V2, si ouverte)* | `PRE-E1-IDENTITY-LIFECYCLE` | MAJOR | Définir identifiants / points d’écriture canoniques (enseignants, élèves, users, JSON↔PG) |
+| **P0** | Ouverture Audit V2 | Gouvernance | **Décidée — Option A** |
+| **P1** *(dans V2)* | `PRE-E1-IDENTITY-LIFECYCLE` | MAJOR | Caractériser / prouver ; identifiants & points d’écriture canoniques |
 | **P1** *(dans V2)* | Intégrité SoT JSON↔PG / orphelins (agenda R-02, R-03, R-07…) | CRITICAL *provisoire Phase 0* | Prouver ou infirmer sous protocole V2 |
 | **P2** *(dans V2)* | `PRE-E1-STUDENT-CODE-SCOPE` | MAJOR | Arbitrer unicité `student_code` |
 | **P2** *(V2/V4)* | `PRE-E1-AUTHZ-FALLBACK-BO` | MAJOR | Caractériser dépendance résiduelle au fallback BO vs chemin PG |
 | **P3** | Phases V3–V7 du plan foundations | — | Après V2, selon résultats |
 | **Hors file** | HOTFIX-02 / 02B | — | **Ne pas rouvrir** |
-| **Hors file** | Développement Bulletins / métier E1 | — | **Interdit** tant que le gate suivant n’est pas choisi et exécuté |
+| **Hors file** | Développement Bulletins / métier E1 | — | **Interdit** — V2 = audit uniquement |
 
 ---
 
-## 6. Recommandation argumentée du prochain lot
+## 6. Recommandation et arbitrage CTO
 
-### Recommandation
+### 6.1 Recommandation du dossier (avant arbitrage)
 
 **Prochain lot : ouverture officielle de l’Audit Pré-E1 — phase V2**  
 (« Modèle de données & intégrité »), **sans** correctif HOTFIX préalable et **sans** développement métier.
 
-### Motifs
+### 6.2 Arbitrage CTO — Option A (retenue)
 
-1. **Les anomalies V1 BLOCKER/CRITICAL qui motivaient « BLOQUER V2 » sont closes**, avec rejeu machine 33/33 et gate 02B 13/13.  
-2. **Aucun blocker technique prouvé** plus prioritaire qu’IDENTITY n’apparaît dans l’inventaire post-HOTFIX.  
-3. **IDENTITY est MAJOR et déjà rattachée à V2** par les bilans HF01/HF02/02B et la décision de clôture CTO.  
-4. Ouvrir un lot correctif « IDENTITY » *avant* V2 reviendrait à **repartir d’une hypothèse** et à élargir le périmètre HOTFIX — contraire à la clôture formelle.  
-5. Le plan foundations définit déjà le contenu V2 (SoT, contraintes, orphelins, structuration bulletin) : c’est le cadre naturel pour IDENTITY + STUDENT-CODE-SCOPE + caractérisation du fallback.
+| Champ | Décision |
+|-------|----------|
+| **Option** | **A — Autoriser V2** |
+| **Nature** | Phase d’**audit**, non de développement |
+| **Périmètre** | Modèle de données · Intégrité · Source of Truth · `PRE-E1-IDENTITY-LIFECYCLE` · `student_code` · autres risques documentés à caractériser |
+| **Contraintes** | Aucune implémentation métier ; uniquement caractérisation, preuves et contrats ; **chaque anomalie devra être démontrée avant toute proposition de correction** |
+| **HOTFIX-01/02/02B** | Restent **clos** — ne pas rouvrir |
+| Décision formelle | [`DECISION-CTO-OUVERTURE-AUDIT-V2.md`](./DECISION-CTO-OUVERTURE-AUDIT-V2.md) |
 
-### Ce que ce lot V2 n’est pas
+### 6.3 Ce que V2 n’est pas
 
 | N’est pas | Pourquoi |
 |-----------|----------|
-| Un HOTFIX-02C | HOTFIX-02 est clos ; pas de nouvelle anomalie V1 ouverte |
+| Un HOTFIX-02C | HOTFIX-02 est clos ; pas de nouvelle anomalie V1 ouverte dans ce dossier |
 | Une implémentation Bulletins / E1 | E1 reste NO-GO jusqu’à V7 |
 | Une réécriture de PR #84 / preuves historiques | Les preuves restent archives ; V2 produit ses propres preuves |
-
-### Alternatives écartées (et pourquoi)
-
-| Alternative | Pourquoi non retenue comme P0 |
-|-------------|-------------------------------|
-| Lot correctif IDENTITY avant V2 | Sévérité MAJOR ; non bloquante pour HF02 ni pour harness V1 ; périmètre = V2 |
-| Lot correctif `student_code` scope | Idem — déjà différé V2 |
-| Suppression immédiate du fallback BO | Observé et documenté ; chemin PG prouvé ; caractérisation d’abord (V2/V4) |
-| Relancer HOTFIX-02 | Interdit sauf nouvelle anomalie |
-| Ouvrir E1 / développement métier | NO-GO ; Audit encore ouvert |
-
-### Décision demandée au CTO
-
-Choisir **une** des options suivantes (et une seule) :
-
-| Option | Effet |
-|--------|-------|
-| **A — Autoriser V2** *(recommandé)* | Ouvre officiellement la phase Audit V2 ; IDENTITY & dettes MAJOR y entrent comme sujets d’audit (pas comme HOTFIX) |
-| **B — Refuser V2** | Exiger un lot alternatif **nommé** avec anomalie/preuve BLOCKER non couverte par ce dossier |
-| **C — Dérogation documentée** | Si le CTO estime qu’un sujet MAJOR doit être traité hors cadre V2 : écrire le périmètre, la criticité requalifiée, et l’interdiction explicite de toucher HOTFIX-02 |
-
-Tant que A/B/C n’est pas tranché, **aucun développement métier** et **aucune PR de correction** ne doivent démarrer.
 
 ---
 
@@ -237,6 +223,7 @@ Tant que A/B/C n’est pas tranché, **aucun développement métier** et **aucun
 
 | Document / artefact | Rôle |
 |---------------------|------|
+| [`DECISION-CTO-OUVERTURE-AUDIT-V2.md`](./DECISION-CTO-OUVERTURE-AUDIT-V2.md) | Arbitrage Option A — ouverture V2 |
 | [`DECISION-CTO-CLOTURE-HOTFIX-02.md`](./DECISION-CTO-CLOTURE-HOTFIX-02.md) | Clôture formelle HF02 / 02B |
 | [`BILAN-PRE-E1-V1-RERUN-HOTFIX-02.md`](./BILAN-PRE-E1-V1-RERUN-HOTFIX-02.md) | Rejeu V1 33/33 |
 | [`BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md`](./BILAN-PRE-E1-HOTFIX-02B-REJEU-POST-MERGE.md) | Rejeu 02B 13/13 |
@@ -255,9 +242,9 @@ Tant que A/B/C n’est pas tranché, **aucun développement métier** et **aucun
 | Question | Réponse courte |
 |----------|----------------|
 | État Audit Pré-E1 | **OUVERT** ; HOTFIX-01/02/02B **CLOS** ; V1 technique **verte** |
-| Blockers techniques V1 encore ouverts | **Aucun** |
-| Blocker qui empêche V2 | **`GATE-CTO-AUTHORIZE-V2`** (gouvernance) |
-| IDENTITY | **MAJOR → V2** ; pas prioritaire *avant* V2 |
-| Prochain lot recommandé | **Autoriser Audit V2** (cadrage/audit uniquement) |
+| Blockers techniques V1 identifiés dans ce dossier comme empêchant V2 | **Aucun** |
+| Ouverture de V2 | **Décision de gouvernance CTO** → **Option A retenue** |
+| IDENTITY | **MAJOR → V2** ; ne justifie pas un nouveau hotfix à elle seule |
+| Prochain lot | **Audit V2** (caractérisation / preuves / contrats — pas de métier) |
 
 **Fin du dossier de cadrage.**
