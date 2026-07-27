@@ -195,8 +195,15 @@ function createInjectablePostgresRepository() {
         (row) => eq(row.school_id, params[0]) && eq(row.teacher_code, params[1]),
       );
     }
+    if (upper.includes("FROM TEACHERS T") && upper.includes("JOIN TEACHER_ASSIGNMENTS")) {
+      // HOTFIX-PRE-E1-02 : affectation non ambiguë — aucune ligne dans ce test SYNC-02.
+      return [];
+    }
     if (upper.includes("FROM TEACHERS") && upper.includes("ORDER BY CREATED_AT")) {
       return tables.teachers.filter((row) => eq(row.school_id, params[0]));
+    }
+    if (upper.startsWith("SELECT * FROM TEACHERS WHERE ID")) {
+      return tables.teachers.filter((row) => eq(row.id, params[0]));
     }
 
     if (upper.includes("FROM EVALUATIONS WHERE SCHOOL_ID") && upper.includes("LEGACY_JSON_ID")) {

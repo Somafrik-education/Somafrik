@@ -270,8 +270,16 @@ function dedupeBackOfficeState(state = {}) {
     ),
     dedupeRows(
       next.teachers ?? [],
-      (row) =>
-        `${normalize(row.schoolCode)}|${normalize(row.identifier ?? row.publicId ?? row.id)}`,
+      (row) => {
+        const school = normalize(row.schoolCode);
+        const id = String(row.id ?? "").trim();
+        // HOTFIX-PRE-E1-02B : ne pas fusionner TEACHERS-* avec jumeau ENS/TEACHER-*
+        // via l'identifier de login (ENS-0001) — chaque id pédagogique reste distinct.
+        if (/^TEACHERS-/i.test(id) || /^TEACHER-/i.test(id)) {
+          return `${school}|id:${normalize(id)}`;
+        }
+        return `${school}|${normalize(row.identifier ?? row.publicId ?? row.id)}`;
+      },
       "teachers",
     ),
     dedupeRows(

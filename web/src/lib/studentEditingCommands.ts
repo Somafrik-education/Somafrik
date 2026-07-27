@@ -71,11 +71,47 @@ export interface AssignEnrollmentClassCommand {
   reason?: string | null;
 }
 
+/**
+ * C1.8b — Transférer une inscription (→ TRANSFERRED).
+ * Ne crée pas l'élève dans l'établissement cible.
+ */
+export interface TransferEnrollmentCommand {
+  type: "TRANSFER_ENROLLMENT";
+  studentId: string;
+  enrollmentId: string;
+  expectedVersion: number;
+  changes: {
+    /** Date civile du transfert (YYYY-MM-DD) → endedAt. */
+    transferDate: string;
+    /** Libellé de l'établissement de destination (texte libre, pas de création). */
+    destinationSchoolName: string;
+  };
+  reason?: string | null;
+}
+
+/**
+ * C1.8b — Clôturer une inscription (→ CLOSED).
+ * Aucune suppression physique de l'agrégat.
+ */
+export interface CloseEnrollmentCommand {
+  type: "CLOSE_ENROLLMENT";
+  studentId: string;
+  enrollmentId: string;
+  expectedVersion: number;
+  changes: {
+    /** Date civile de clôture (YYYY-MM-DD) → endedAt. */
+    closureDate: string;
+  };
+  reason?: string | null;
+}
+
 export type StudentWorkspaceCommand =
   | UpdateStudentIdentityCommand
   | UpdateGuardianContactCommand
   | UpdateStudentAdministrativeDetailsCommand
   | ValidateEnrollmentCommand
-  | AssignEnrollmentClassCommand;
+  | AssignEnrollmentClassCommand
+  | TransferEnrollmentCommand
+  | CloseEnrollmentCommand;
 
 export type StudentWorkspaceCommandType = StudentWorkspaceCommand["type"];

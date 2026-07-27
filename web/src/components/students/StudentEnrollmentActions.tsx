@@ -7,6 +7,8 @@ import type { SchoolClassCatalogEntry } from "../../lib/studentEditing";
 import { executeStudentUpdateCommand } from "../../lib/studentEditingService";
 import {
   canAssignClassEnrollmentStatus,
+  canCloseEnrollmentStatus,
+  canTransferEnrollmentStatus,
   canValidateEnrollmentStatus,
 } from "../../lib/studentEnrollmentTransitions";
 
@@ -15,9 +17,21 @@ interface StudentEnrollmentActionsProps {
   schoolClasses: readonly SchoolClassCatalogEntry[];
   canValidate: boolean;
   canAssignClass: boolean;
+  canTransfer: boolean;
+  canClose: boolean;
   authContext: StudentEditAuthorizationContext;
   repository: StudentWorkspaceCommandRepository;
   onSuccess: () => void;
+}
+
+type BusyAction = "validate" | "assign" | "transfer" | "close" | null;
+
+function todayCivilDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 export function StudentEnrollmentActions({
@@ -25,25 +39,48 @@ export function StudentEnrollmentActions({
   schoolClasses,
   canValidate,
   canAssignClass,
+  canTransfer,
+  canClose,
   authContext,
   repository,
   onSuccess,
 }: StudentEnrollmentActionsProps) {
-  const [busy, setBusy] = useState<"validate" | "assign" | null>(null);
+  const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState("");
   const [confirmValidate, setConfirmValidate] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmTransfer, setConfirmTransfer] = useState(false);
+  const [destinationSchoolName, setDestinationSchoolName] = useState("");
+  const [transferDate, setTransferDate] = useState(todayCivilDate);
+  const [closureDate, setClosureDate] = useState(todayCivilDate);
+  const [transferReason, setTransferReason] = useState("");
+  const [closeReason, setCloseReason] = useState("");
 
   const canShowValidate =
     canValidate &&
     enrollment != null &&
-    canValidateEnrollmentStatus(enrollment.status);
+    canValidateEnrollmentStatus(enrollment.status) &&
+    !enrollment.endedAt;
 
   const canShowAssign =
     canAssignClass &&
     enrollment != null &&
-    canAssignClassEnrollmentStatus(enrollment.status);
+    canAssignClassEnrollmentStatus(enrollment.status) &&
+    !enrollment.endedAt;
+
+  const canShowTransfer =
+    canTransfer &&
+    enrollment != null &&
+    canTransferEnrollmentStatus(enrollment.status) &&
+    !enrollment.endedAt;
+
+  const canShowClose =
+    canClose &&
+    enrollment != null &&
+    canCloseEnrollmentStatus(enrollment.status) &&
+    !enrollment.endedAt;
 
   const classOptions = useMemo(
     () =>
@@ -57,13 +94,25 @@ export function StudentEnrollmentActions({
     return null;
   }
 
-  if (!canShowValidate && !canShowAssign) {
+  if (!canShowValidate && !canShowAssign && !canShowTransfer && !canShowClose) {
     return (
-      <p className="mt-8 text-xs text-muted" data-testid="enrollment-actions-locked">
-        {canValidate || canAssignClass
-          ? "Aucune action disponible pour le statut actuel."
-          : "Actions administratives réservées (permissions validate / assign-class)."}
-      </p>
+      <div className="mt-8 border-t border-line pt-6" data-testid="enrollment-actions-locked">
+        {error ? (
+          <p className="mb-3 text-sm text-danger" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p className="mb-3 text-sm font-medium text-ink" role="status">
+            {success}
+          </p>
+        ) : null}
+        <p className="text-xs text-muted">
+          {canValidate || canAssignClass || canTransfer || canClose
+            ? "Aucune action disponible pour le statut actuel."
+            : "Actions administratives réservées (permissions validate / assign-class / transfer / close)."}
+        </p>
+      </div>
     );
   }
 
@@ -133,12 +182,75 @@ export function StudentEnrollmentActions({
     }
   };
 
+  const runTransfer = async () => {
+    setBusy("transfer");
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await executeStudentUpdateCommand(
+        {
+          type: "TRANSFER_ENROLLMENT",
+          studentId: enrollment.studentId,
+          enrollmentId: enrollment.enrollmentId,
+          expectedVersion: enrollment.version,
+          changes: { transferDate, destinationSchoolName },
+          reason: transferReason,
+        },
+        authContext,
+        repository,
+      );
+      if (!result.success) {
+        setError(result.errors[0]?.message ?? "Transfert refusé.");
+        return;
+      }
+      setConfirmTransfer(false);
+      setDestinationSchoolName("");
+      setTransferReason("");
+      setTransferDate(todayCivilDate());
+      setSuccess("Inscription transférée. Aucune suppression physique.");
+      onSuccess();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runClose = async () => {
+    setBusy("close");
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await executeStudentUpdateCommand(
+        {
+          type: "CLOSE_ENROLLMENT",
+          studentId: enrollment.studentId,
+          enrollmentId: enrollment.enrollmentId,
+          expectedVersion: enrollment.version,
+          changes: { closureDate },
+          reason: closeReason,
+        },
+        authContext,
+        repository,
+      );
+      if (!result.success) {
+        setError(result.errors[0]?.message ?? "Clôture refusée.");
+        return;
+      }
+      setConfirmClose(false);
+      setCloseReason("");
+      setClosureDate(todayCivilDate());
+      setSuccess("Inscription clôturée. Aucune suppression physique.");
+      onSuccess();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="mt-8 border-t border-line pt-6" data-testid="enrollment-actions">
       <h3 className="text-sm font-bold text-ink">Actions administratives</h3>
       <p className="mt-1 text-xs text-muted">
-        Transitions explicites : validation puis affectation de classe. Aucun
-        retour arrière implicite.
+        Transitions explicites : validation, affectation, transfert ou clôture.
+        Aucun retour arrière implicite ni suppression physique.
       </p>
 
       {error ? (
@@ -225,6 +337,152 @@ export function StudentEnrollmentActions({
           <p className="text-xs text-muted">
             Aucune classe n&apos;est disponible pour cet établissement.
           </p>
+        ) : null}
+
+        {canShowTransfer ? (
+          <div className="flex flex-col gap-2" data-testid="enrollment-transfer-panel">
+            {!confirmTransfer ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy != null}
+                onClick={() => setConfirmTransfer(true)}
+                data-testid="enrollment-transfer-start"
+              >
+                Transférer l&apos;inscription
+              </Button>
+            ) : (
+              <>
+                <p className="text-sm text-ink">
+                  Transfert vers un autre établissement (pas de création
+                  automatique à destination).
+                </p>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-ink">Date de transfert</span>
+                  <input
+                    type="date"
+                    className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                    value={transferDate}
+                    onChange={(event) => setTransferDate(event.target.value)}
+                    data-testid="enrollment-transfer-date"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-ink">
+                    Établissement de destination
+                  </span>
+                  <input
+                    className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                    value={destinationSchoolName}
+                    onChange={(event) =>
+                      setDestinationSchoolName(event.target.value)
+                    }
+                    data-testid="enrollment-transfer-destination"
+                    placeholder="Ex. Lycée Horizon"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-ink">Raison</span>
+                  <input
+                    className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                    value={transferReason}
+                    onChange={(event) => setTransferReason(event.target.value)}
+                    data-testid="enrollment-transfer-reason"
+                    placeholder="Motif du transfert"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={busy != null}
+                    onClick={() => void runTransfer()}
+                    data-testid="enrollment-transfer-confirm"
+                  >
+                    {busy === "transfer" ? "Transfert…" : "Confirmer le transfert"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy != null}
+                    onClick={() => {
+                      setConfirmTransfer(false);
+                      setDestinationSchoolName("");
+                      setTransferReason("");
+                      setTransferDate(todayCivilDate());
+                    }}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {canShowClose ? (
+          <div className="flex flex-col gap-2" data-testid="enrollment-close-panel">
+            {!confirmClose ? (
+              <Button
+                type="button"
+                variant="danger"
+                disabled={busy != null}
+                onClick={() => setConfirmClose(true)}
+                data-testid="enrollment-close-start"
+              >
+                Clôturer l&apos;inscription
+              </Button>
+            ) : (
+              <>
+                <p className="text-sm text-ink">
+                  Confirmer la clôture (statut Clôturé)&nbsp;? L&apos;inscription
+                  reste conservée.
+                </p>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-ink">Date de clôture</span>
+                  <input
+                    type="date"
+                    className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                    value={closureDate}
+                    onChange={(event) => setClosureDate(event.target.value)}
+                    data-testid="enrollment-close-date"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-ink">Raison</span>
+                  <input
+                    className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                    value={closeReason}
+                    onChange={(event) => setCloseReason(event.target.value)}
+                    data-testid="enrollment-close-reason"
+                    placeholder="Motif de clôture"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={busy != null}
+                    onClick={() => void runClose()}
+                    data-testid="enrollment-close-confirm"
+                  >
+                    {busy === "close" ? "Clôture…" : "Confirmer la clôture"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy != null}
+                    onClick={() => {
+                      setConfirmClose(false);
+                      setCloseReason("");
+                      setClosureDate(todayCivilDate());
+                    }}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         ) : null}
       </div>
     </div>

@@ -1,14 +1,14 @@
 /**
  * D2.8d1 — Workflow d’affectations enseignants (modale Enseignants).
  *
- * Périmètre : prepare / validate / merge / delete / audit plan pour la modale
+ * Périmètre : prepare / validate / merge / delete plan pour la modale
  * d’affectations. Aucun hook ni contexte React.
+ * HOTFIX-RBAC-ADMIN-01 : pas d’auditLog client (audit serveur).
  *
  * Hors lot : paiements, contacts, relations, rendu modale, buildPedagogyPatch
  * (injecté), autres workflows D2.8d*.
  */
 import type { BackOfficeState, SessionUser } from "../../types";
-import { appendAuditLog, auditActor, makeAuditEntry } from "../../lib/audit";
 import {
   listTeacherAssignments,
   prepareAssignmentForSave,
@@ -18,7 +18,6 @@ import { getScopedEntityRows, type SchoolEntityKey } from "../../lib/entityModul
 import { scopedClasses, scopedCourses, scopedTeachers } from "../../lib/establishment";
 import {
   applyEntitySchoolScope,
-  auditEntityLabel,
   deleteEntityFromState,
   mergeEntityIntoState,
   prepareEntityRowForSave,
@@ -235,17 +234,7 @@ export function buildTeacherAssignmentSubmitPlan(
     ) as BackOfficeState["assignments"];
   }
 
-  patch.auditLog = appendAuditLog(
-    state.auditLog,
-    makeAuditEntry({
-      ...auditActor(scopeUser),
-      action: exists ? "assignments.update" : "assignments.create",
-      entityType: "assignments",
-      entityId: targetId,
-      entityLabel: auditEntityLabel("assignments", nextItem) || undefined,
-      schoolCode: String(nextItem.schoolCode ?? "") || undefined,
-    }),
-  );
+  // HOTFIX-RBAC-ADMIN-01 : pas d'auditLog client (audit serveur uniquement).
 
   return {
     ok: true,
@@ -317,17 +306,7 @@ export function buildTeacherAssignmentDeletePlan(
     ) as BackOfficeState["teachers"];
   }
 
-  patch.auditLog = appendAuditLog(
-    state.auditLog,
-    makeAuditEntry({
-      ...auditActor(scopeUser),
-      action: "assignments.delete",
-      entityType: "assignments",
-      entityId: String(assignment.id ?? ""),
-      entityLabel: auditEntityLabel("assignments", assignment) || undefined,
-      schoolCode: String(assignment.schoolCode ?? "") || undefined,
-    }),
-  );
+  // HOTFIX-RBAC-ADMIN-01 : pas d'auditLog client (audit serveur uniquement).
 
   return {
     ok: true,

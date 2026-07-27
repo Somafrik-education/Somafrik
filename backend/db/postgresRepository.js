@@ -680,10 +680,15 @@ class PostgresRepository {
   async saveBackOfficeState(payload) {
     await this.init();
     const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
+    const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
+    // HOTFIX-PRE-E1-01 : élèves/inscriptions PG avant sync notes.
+    // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
     // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
     // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async () => {
+      const studentSync = await this.syncStudentsDomainFromBackOffice(payload ?? {});
+      const staffSync = await this.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
       const syncResult = await persistBackOfficeAfterNotesSync({
         payload: payload ?? {},
         syncFn: async (body) => this.syncNotesDomainFromBackOffice(body),
@@ -698,22 +703,11 @@ class PostgresRepository {
           );
         },
       });
-      syncAck = {
-        accepted: [
-          ...((syncResult?.accepted?.evaluations ?? []).map((id) => ({
-            entity: "evaluations",
-            id: String(id),
-          })) ?? []),
-          ...((syncResult?.accepted?.notes ?? []).map((id) => ({
-            entity: "notes",
-            id: String(id),
-          })) ?? []),
-        ],
-        rejected: syncResult?.rejected ?? [],
-      };
+      syncAck = mergePreE1SyncAck(studentSync, staffSync, syncResult);
     });
     this.cachedDataset = null;
-    this.lastSyncAck = syncAck;
+    // syncAck est retourné avec le résultat de cette opération uniquement —
+    // ne pas le stocker sur l'instance (fuite inter-requêtes / cross-tenant).
     const state = await this.getBackOfficeState();
     return { ...state, syncAck };
   }
@@ -1028,15 +1022,16 @@ class PostgresRepository {
     }
     const score = gradeStatus === "graded" ? Number(scoreRaw) : null;
 
-    const student = await this.one(
-      `SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
-       FROM students st
-       JOIN schools s ON s.id = st.school_id
-       LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
-       LEFT JOIN classes cl ON cl.id = e.class_id
-       WHERE st.student_code = $1 OR st.id::text = $1`,
-      [String(payload.studentId)],
-    );
+    // HOTFIX-PRE-E1-01 : résolution par identifiants stables (+ matérialisation BO), jamais par nom.
+    const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
+      evaluation.school_id,
+    ]);
+    const lookupSchoolCode = String(
+      payload.schoolCode ?? evaluationSchool?.school_code ?? "",
+    )
+      .trim()
+      .toUpperCase();
+    const student = await this.resolveStudentForGrade(payload.studentId, lookupSchoolCode);
     if (!student) {
       const error = new Error("Eleve introuvable");
       error.statusCode = 404;
@@ -1048,14 +1043,104 @@ class PostgresRepository {
       throw error;
     }
 
-    if (
-      principal.role === "Enseignant" &&
-      !(principal.classNames ?? []).includes(student.class_name) &&
-      !options.allowMissingTeacher
-    ) {
-      const error = new Error("Accès refusé: élève hors classe affectée.");
-      error.statusCode = 403;
-      throw error;
+    // HOTFIX-PRE-E1-02 : gardes enseignant — établissement + classe + matière/affectation.
+    // Ne pas affaiblir le RBAC.
+    // Audit causalité (SOMAFRIK_AUTHZ_TRACE=1) : tracer la source réelle d'autorisation.
+    const {
+      isEnabled: authzTraceEnabled,
+      createNotesAuthzTrace,
+      pushStep,
+      finalizeTrace,
+      persistTrace,
+    } = require("../lib/notesAuthzTrace");
+    const authzTrace = authzTraceEnabled()
+      ? createNotesAuthzTrace({ principal, payload })
+      : null;
+    this._activeNotesAuthzTrace = authzTrace;
+    let classAccessVia = null;
+    let evaluationAccessVia = null;
+    if (principal.role === "Enseignant" && !options.allowMissingTeacher) {
+      const principalSchool = String(principal.schoolCode ?? "")
+        .trim()
+        .toUpperCase();
+      pushStep(authzTrace, {
+        gate: "school_scope",
+        principalSchool,
+        lookupSchoolCode,
+      });
+      if (
+        principalSchool &&
+        principalSchool !== "*" &&
+        lookupSchoolCode &&
+        principalSchool !== lookupSchoolCode
+      ) {
+        const denied = finalizeTrace(authzTrace, {
+          allowed: false,
+          denyReason: "school_mismatch",
+        });
+        this.lastNotesAuthzTrace = denied;
+        persistTrace(denied);
+        this._activeNotesAuthzTrace = null;
+        const error = new Error("Accès refusé: établissement hors périmètre.");
+        error.statusCode = 403;
+        throw error;
+      }
+      pushStep(authzTrace, { gate: "school_scope", result: "pass" });
+      const classAccess = await this.teacherCanAccessStudentClass(principal, student);
+      classAccessVia = this._lastTeacherClassAccessVia ?? (classAccess ? "unknown" : null);
+      pushStep(authzTrace, {
+        gate: "student_class",
+        result: classAccess ? "allow" : "deny",
+        via: classAccessVia,
+      });
+      if (!classAccess) {
+        const denied = finalizeTrace(authzTrace, {
+          allowed: false,
+          denyReason: "student_class",
+        });
+        this.lastNotesAuthzTrace = denied;
+        persistTrace(denied);
+        this._activeNotesAuthzTrace = null;
+        const error = new Error("Accès refusé: élève hors classe affectée.");
+        error.statusCode = 403;
+        throw error;
+      }
+      const evaluationAccess = await this.teacherCanAccessEvaluation(
+        principal,
+        evaluation,
+        student,
+      );
+      evaluationAccessVia = this._lastTeacherEvaluationAccessVia ?? (evaluationAccess ? "unknown" : null);
+      pushStep(authzTrace, {
+        gate: "evaluation_subject",
+        result: evaluationAccess ? "allow" : "deny",
+        via: evaluationAccessVia,
+      });
+      if (!evaluationAccess) {
+        const denied = finalizeTrace(authzTrace, {
+          allowed: false,
+          denyReason: "evaluation_subject",
+        });
+        this.lastNotesAuthzTrace = denied;
+        persistTrace(denied);
+        this._activeNotesAuthzTrace = null;
+        const error = new Error("Accès refusé: matière non affectée.");
+        error.statusCode = 403;
+        throw error;
+      }
+      const grantedBy = `class:${classAccessVia}+evaluation:${evaluationAccessVia}`;
+      const allowed = finalizeTrace(authzTrace, { allowed: true, grantedBy });
+      this.lastNotesAuthzTrace = allowed;
+      persistTrace(allowed);
+      this._activeNotesAuthzTrace = null;
+    } else if (authzTrace) {
+      const skipped = finalizeTrace(authzTrace, {
+        allowed: true,
+        grantedBy: "non_teacher_or_allowMissingTeacher",
+      });
+      this.lastNotesAuthzTrace = skipped;
+      persistTrace(skipped);
+      this._activeNotesAuthzTrace = null;
     }
 
     const teacher =
@@ -1346,12 +1431,62 @@ class PostgresRepository {
             `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
             [schoolId, code],
           ),
-        findAnyTeacher: (schoolId) =>
-          this.one(`SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1`, [
-            schoolId,
-          ]),
+        ensureTeacher: async (schoolId, code, ctx) => {
+          const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
+          const state = (await this.getBackOfficeState()) ?? {};
+          // Matérialisation exacte de LA même fiche (même id / teacher_code) — pas un jumeau.
+          const boTeacher =
+            teachers.find(
+              (row) =>
+                String(row.id ?? "").trim() === String(code) ||
+                String(row.publicId ?? "").trim() === String(code),
+            ) ??
+            (state.teachers ?? []).find(
+              (row) =>
+                String(row.id ?? "").trim() === String(code) ||
+                String(row.publicId ?? "").trim() === String(code),
+            );
+          if (!boTeacher) return null;
+          if (
+            String(boTeacher.id ?? "").trim() !== String(code) &&
+            String(boTeacher.publicId ?? "").trim() !== String(code)
+          ) {
+            return null;
+          }
+          const school = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
+          const materialized = await this.materializeBackOfficeTeacher(
+            {
+              ...boTeacher,
+              schoolCode: boTeacher.schoolCode ?? school?.school_code,
+            },
+            ctx,
+          );
+          return materialized?.teacherId
+            ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
+            : null;
+        },
+        // FIX V2.1 §5.2 — uniquement teacher_code explicite + affectation ; pas de filet opportuniste.
+        findTeacherByExactAssignment: (schoolId, classId, subjectId, preferredTeacherCode) => {
+          if (!preferredTeacherCode) return null;
+          return this.one(
+            `SELECT t.*
+             FROM teachers t
+             JOIN teacher_assignments ta ON ta.teacher_id = t.id
+             WHERE t.school_id = $1
+               AND t.teacher_code = $2
+               AND ta.class_id = $3
+               AND ta.subject_id = $4
+               AND ta.status = 'active'
+             LIMIT 1`,
+            [schoolId, preferredTeacherCode, classId, subjectId],
+          );
+        },
       },
-      { ensure: options.ensure !== false, context },
+      {
+        ensure: options.ensure !== false,
+        context,
+        requireTeacher: options.requireTeacher === true,
+      },
     );
 
     // academicYear / periodName reserved for term resolution side-effects above
@@ -1633,7 +1768,7 @@ class PostgresRepository {
     );
   }
 
-  async ensureClassForSchool(schoolId, className) {
+  async ensureClassForSchool(schoolId, className, context = {}) {
     const normalizedClassName = String(className ?? "").trim();
     if (!normalizedClassName) return null;
 
@@ -1641,7 +1776,9 @@ class PostgresRepository {
     if (existing?.id) return existing.id;
 
     const state = (await this.getBackOfficeState()) ?? {};
-    const backOfficeClass = (Array.isArray(state.classes) ? state.classes : []).find(
+    const contextClasses = Array.isArray(context.classes) ? context.classes : [];
+    const stateClasses = Array.isArray(state.classes) ? state.classes : [];
+    const backOfficeClass = [...contextClasses, ...stateClasses].find(
       (row) => this.normalizeComparableText(row.name) === this.normalizeComparableText(normalizedClassName),
     );
     const academicYear = await this.getCurrentAcademicYear(schoolId);
@@ -1685,7 +1822,7 @@ class PostgresRepository {
     );
   }
 
-  async ensureSchoolFromBackOfficeRecord(schoolCode) {
+  async ensureSchoolFromBackOfficeRecord(schoolCode, context = {}) {
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
     if (!normalized || normalized === "*") return null;
 
@@ -1693,7 +1830,9 @@ class PostgresRepository {
     if (existing) return existing;
 
     const state = (await this.getBackOfficeState()) ?? {};
-    const backOfficeSchool = (Array.isArray(state.schools) ? state.schools : []).find(
+    const contextSchools = Array.isArray(context.schools) ? context.schools : [];
+    const stateSchools = Array.isArray(state.schools) ? state.schools : [];
+    const backOfficeSchool = [...contextSchools, ...stateSchools].find(
       (row) => String(row.code ?? "").trim().toUpperCase() === normalized,
     );
     if (!backOfficeSchool) return null;
@@ -1731,26 +1870,548 @@ class PostgresRepository {
     );
   }
 
-  async materializeBackOfficeStudent(record) {
-    const schoolCode = String(record.schoolCode ?? "").trim().toUpperCase();
-    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
+  /**
+   * HOTFIX-PRE-E1-01 — Sync BO students[] → PG students + enrollments.
+   * No-op si `students` absent (PUT partiel). Rejets métier sans throw global.
+   */
+  async syncStudentsDomainFromBackOffice(payload = {}) {
+    const {
+      shouldSyncStudentsFromPayload,
+      validateStudentSyncRecord,
+    } = require("../lib/studentsBoPersistence");
+    const accepted = { students: [], enrollments: [] };
+    const rejected = [];
+    if (!shouldSyncStudentsFromPayload(payload)) {
+      return { synced: true, accepted, rejected, studentCount: 0, enrollmentCount: 0 };
+    }
+
+    const context = {
+      schools: Array.isArray(payload.schools) ? payload.schools : [],
+      classes: Array.isArray(payload.classes) ? payload.classes : [],
+    };
+
+    for (const record of payload.students) {
+      const validation = validateStudentSyncRecord(record);
+      const stableId = validation.ok ? validation.studentCode : String(record?.id ?? "").trim();
+      try {
+        if (!validation.ok) {
+          const error = new Error(validation.error);
+          error.statusCode = 400;
+          error.code = validation.code;
+          throw error;
+        }
+        const result = await this.materializeBackOfficeStudent(record, context);
+        if (!result?.studentId) {
+          const error = new Error("Échec de matérialisation élève (établissement introuvable)");
+          error.statusCode = 400;
+          error.code = "STUDENT_SYNC_MATERIALIZE_FAILED";
+          throw error;
+        }
+        accepted.students.push(validation.studentCode);
+        if (result.enrollment) {
+          accepted.enrollments.push(validation.studentCode);
+        }
+      } catch (error) {
+        if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+        rejected.push({
+          entity: "students",
+          id: stableId || undefined,
+          code: error?.code,
+          error: error?.message ?? "Échec de synchronisation de l'élève",
+        });
+      }
+    }
+
+    this.cachedDataset = null;
+    return {
+      synced: rejected.length === 0,
+      accepted,
+      rejected,
+      studentCount: accepted.students.length,
+      enrollmentCount: accepted.enrollments.length,
+    };
+  }
+
+  /**
+   * HOTFIX-PRE-E1-02 — Sync BO teachers[] / assignments[] → PG.
+   * No-op si collections absentes. Rejets métier sans throw global.
+   */
+  async syncPedagogyStaffDomainFromBackOffice(payload = {}) {
+    const {
+      shouldSyncTeachersFromPayload,
+      shouldSyncAssignmentsFromPayload,
+      validateTeacherSyncRecord,
+      validateAssignmentSyncRecord,
+    } = require("../lib/pedagogyStaffBoPersistence");
+
+    const accepted = { teachers: [], assignments: [] };
+    const rejected = [];
+    const context = {
+      schools: Array.isArray(payload.schools) ? payload.schools : [],
+      classes: Array.isArray(payload.classes) ? payload.classes : [],
+      teachers: Array.isArray(payload.teachers) ? payload.teachers : [],
+      courses: Array.isArray(payload.courses) ? payload.courses : [],
+      subjects: Array.isArray(payload.subjects) ? payload.subjects : [],
+      users: Array.isArray(payload.users) ? payload.users : [],
+    };
+
+    if (shouldSyncTeachersFromPayload(payload)) {
+      for (const record of payload.teachers) {
+        const validation = validateTeacherSyncRecord(record);
+        const stableId = validation.ok ? validation.teacherCode : String(record?.id ?? "").trim();
+        try {
+          if (!validation.ok) {
+            const error = new Error(validation.error);
+            error.statusCode = 400;
+            error.code = validation.code;
+            throw error;
+          }
+          const result = await this.materializeBackOfficeTeacher(record, context);
+          if (!result?.teacherId) {
+            const error = new Error("Échec de matérialisation enseignant (établissement introuvable)");
+            error.statusCode = 400;
+            error.code = "TEACHER_SYNC_MATERIALIZE_FAILED";
+            throw error;
+          }
+          accepted.teachers.push(validation.teacherCode);
+        } catch (error) {
+          if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+          rejected.push({
+            entity: "teachers",
+            id: stableId || undefined,
+            code: error?.code,
+            error: error?.message ?? "Échec de synchronisation de l'enseignant",
+          });
+        }
+      }
+    }
+
+    if (shouldSyncAssignmentsFromPayload(payload)) {
+      for (const record of payload.assignments) {
+        const validation = validateAssignmentSyncRecord(record);
+        const stableId = validation.ok
+          ? validation.assignmentKey
+          : String(record?.id ?? "").trim();
+        try {
+          if (!validation.ok) {
+            const error = new Error(validation.error);
+            error.statusCode = 400;
+            error.code = validation.code;
+            throw error;
+          }
+          const result = await this.materializeBackOfficeAssignment(record, context);
+          if (!result?.assignmentId) {
+            const error = new Error("Échec de matérialisation affectation");
+            error.statusCode = 400;
+            error.code = "ASSIGNMENT_SYNC_MATERIALIZE_FAILED";
+            throw error;
+          }
+          accepted.assignments.push(validation.assignmentKey);
+        } catch (error) {
+          if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
+          rejected.push({
+            entity: "assignments",
+            id: stableId || undefined,
+            code: error?.code,
+            error: error?.message ?? "Échec de synchronisation de l'affectation",
+          });
+        }
+      }
+    }
+
+    this.cachedDataset = null;
+    return {
+      synced: rejected.length === 0,
+      accepted,
+      rejected,
+      teacherCount: accepted.teachers.length,
+      assignmentCount: accepted.assignments.length,
+    };
+  }
+
+  async resolvePgUserIdForTeacher(record = {}, schoolId, context = {}) {
+    const candidates = new Set();
+    const add = (value) => {
+      const text = String(value ?? "").trim();
+      if (text) candidates.add(text);
+    };
+    add(record.userId);
+    add(record.contactId);
+    add(record.identifier);
+    add(record.publicId);
+    add(record.email);
+
+    const contextUsers = Array.isArray(context.users) ? context.users : [];
+    const state = (await this.getBackOfficeState()) ?? {};
+    const boUsers = [...contextUsers, ...(Array.isArray(state.users) ? state.users : [])];
+    const linked = boUsers.find((user) => {
+      const keys = [user.id, user.publicId, user.identifier, user.email, user.contactId].map((v) =>
+        String(v ?? "").trim(),
+      );
+      return keys.some((key) => key && candidates.has(key));
+    });
+    if (linked) {
+      add(linked.id);
+      add(linked.publicId);
+      add(linked.identifier);
+    }
+
+    for (const key of candidates) {
+      const row = await this.one(
+        `SELECT id FROM users
+         WHERE (id::text = $1 OR user_code = $1 OR LOWER(TRIM(email)) = LOWER(TRIM($1)))
+           AND ($2::uuid IS NULL OR school_id = $2 OR school_id IS NULL)
+         LIMIT 1`,
+        [key, schoolId],
+      );
+      if (row?.id) return row.id;
+    }
+    return null;
+  }
+
+  /**
+   * HOTFIX-PRE-E1-02B — Matérialise l'utilisateur PG lié à la fiche enseignant BO
+   * pour que teachers.user_id soit non null (user_code = id BO ou identifier).
+   *
+   * Isolation multi-tenant / rôle :
+   * - inexistant → INSERT (role TEACHER)
+   * - même établissement + rôle enseignant compatible → UPDATE contrôlé
+   *   (jamais forcer role/status/school_id)
+   * - même établissement + rôle non enseignant → REJET TEACHER_USER_ROLE_CONFLICT
+   * - autre établissement → REJET TEACHER_USER_TENANT_CONFLICT
+   */
+  isTeacherCompatiblePgRole(role) {
+    return String(role ?? "").trim().toUpperCase() === "TEACHER";
+  }
+
+  async ensurePgUserForBackOfficeTeacher(record = {}, schoolId, context = {}) {
+    const contextUsers = Array.isArray(context.users) ? context.users : [];
+    const state = (await this.getBackOfficeState()) ?? {};
+    const boUsers = [...contextUsers, ...(Array.isArray(state.users) ? state.users : [])];
+    const schoolRow = schoolId
+      ? await this.one(`SELECT school_code FROM schools WHERE id = $1 LIMIT 1`, [schoolId])
+      : null;
+    const schoolCode = String(record.schoolCode ?? schoolRow?.school_code ?? "")
+      .trim()
+      .toUpperCase();
+    const sameSchool = (user) => {
+      const userSchool = String(user?.schoolCode ?? "")
+        .trim()
+        .toUpperCase();
+      return !schoolCode || !userSchool || userSchool === schoolCode;
+    };
+
+    // Correspondance forte (id) vs souple (identifier/email) — la souple est
+    // forcément scopée établissement : ENS-0001 n'est pas globalement unique.
+    const strongKeys = new Set(
+      [record.userId, record.contactId]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
+    const softKeys = new Set(
+      [record.identifier, record.publicId, record.email]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
+    const linked =
+      boUsers.find((user) =>
+        [user.id, user.publicId, user.contactId]
+          .map((value) => String(value ?? "").trim())
+          .some((key) => key && strongKeys.has(key)),
+      ) ??
+      boUsers.find(
+        (user) =>
+          sameSchool(user) &&
+          [user.identifier, user.email, user.publicId]
+            .map((value) => String(value ?? "").trim())
+            .some((key) => key && softKeys.has(key)),
+      );
+
+    // Ne jamais laisser un match soft (identifier) écraser le userId explicite
+    // de la fiche enseignant — évite le rattachement cross-tenant via ENS-*.
+    const userCode = String(
+      record.userId ?? linked?.id ?? record.identifier ?? linked?.identifier ?? "",
+    ).trim();
+    if (!userCode) return null;
+
+    const firstName =
+      String(linked?.firstName ?? record.firstName ?? "").trim() || "Enseignant";
+    const lastName =
+      String(linked?.lastName ?? record.lastName ?? record.name ?? "").trim() || userCode;
+    const email = String(linked?.email ?? record.email ?? "").trim() || null;
+    const phone = String(linked?.phone ?? record.phone ?? "").trim() || null;
+
+    // Lookup global par user_code — ne pas dépendre de l'unicité « de fait ».
+    const existing = await this.one(
+      `SELECT id, school_id, role, status, user_code
+       FROM users
+       WHERE user_code = $1
+       LIMIT 1`,
+      [userCode],
+    );
+
+    if (!existing) {
+      const inserted = await this.one(
+        `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 'TEACHER', 'active')
+         RETURNING id`,
+        [schoolId, userCode, firstName, lastName, email, phone],
+      );
+      return inserted?.id ?? null;
+    }
+
+    if (
+      existing.school_id != null &&
+      String(existing.school_id) !== String(schoolId)
+    ) {
+      const error = new Error(
+        "Conflit multi-tenant: user_code déjà rattaché à un autre établissement",
+      );
+      error.statusCode = 409;
+      error.code = "TEACHER_USER_TENANT_CONFLICT";
+      throw error;
+    }
+
+    if (!this.isTeacherCompatiblePgRole(existing.role)) {
+      const error = new Error(
+        "Conflit de rôle: compte existant non enseignant — liaison teachers.user_id refusée",
+      );
+      error.statusCode = 409;
+      error.code = "TEACHER_USER_ROLE_CONFLICT";
+      throw error;
+    }
+
+    // Même établissement (ou school_id NULL) + rôle TEACHER : mise à jour contrôlée —
+    // ne jamais forcer role/status, ni déplacer school_id vers un autre tenant.
+    const updated = await this.one(
+      `UPDATE users
+       SET first_name = COALESCE(NULLIF($2, ''), first_name),
+           last_name = COALESCE(NULLIF($3, ''), last_name),
+           email = COALESCE($4, email),
+           phone = COALESCE($5, phone),
+           school_id = COALESCE(school_id, $6)
+       WHERE id = $1
+         AND (school_id IS NULL OR school_id = $6)
+       RETURNING id, school_id, role`,
+      [existing.id, firstName, lastName, email, phone, schoolId],
+    );
+    if (!updated) {
+      const error = new Error(
+        "Conflit multi-tenant: impossible de lier l'utilisateur enseignant à cet établissement",
+      );
+      error.statusCode = 409;
+      error.code = "TEACHER_USER_TENANT_CONFLICT";
+      throw error;
+    }
+    return updated.id;
+  }
+
+  async materializeBackOfficeTeacher(record, context = {}) {
+    const { resolveStableTeacherCode } = require("../lib/pedagogyStaffBoPersistence");
+    const schoolCode = String(record.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode, context);
     if (!school) return null;
 
-    const matricule = String(record.matricule ?? record.publicId ?? record.id ?? "").trim();
+    const teacherCode = resolveStableTeacherCode(record);
+    if (!teacherCode) return null;
+
+    const userId =
+      (await this.ensurePgUserForBackOfficeTeacher(record, school.id, context)) ??
+      (await this.resolvePgUserIdForTeacher(record, school.id, context));
+    const speciality = String(record.mainSubject ?? record.speciality ?? record.subject ?? "").trim();
+
+    let row = await this.one(
+      `INSERT INTO teachers (school_id, user_id, teacher_code, speciality, status)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (teacher_code) DO UPDATE SET
+         speciality = COALESCE(NULLIF(EXCLUDED.speciality, ''), teachers.speciality),
+         user_id = COALESCE(EXCLUDED.user_id, teachers.user_id),
+         status = EXCLUDED.status,
+         updated_at = NOW()
+       WHERE teachers.school_id = EXCLUDED.school_id
+       RETURNING id, school_id, teacher_code`,
+      [
+        school.id,
+        userId,
+        teacherCode,
+        speciality,
+        record.archived ? "archived" : "active",
+      ],
+    );
+
+    if (!row) {
+      const existing = await this.one(
+        `SELECT id, school_id, teacher_code FROM teachers WHERE teacher_code = $1 LIMIT 1`,
+        [teacherCode],
+      );
+      if (existing && String(existing.school_id) !== String(school.id)) {
+        const error = new Error("Conflit d'identifiant enseignant entre établissements");
+        error.statusCode = 409;
+        error.code = "TEACHER_TENANT_CONFLICT";
+        throw error;
+      }
+      row = existing;
+    }
+    if (!row) return null;
+    return { teacherId: row.id, teacherCode: row.teacher_code, schoolId: school.id };
+  }
+
+  async materializeBackOfficeAssignment(record, context = {}) {
+    const { validateAssignmentSyncRecord } = require("../lib/pedagogyStaffBoPersistence");
+    const validation = validateAssignmentSyncRecord(record);
+    if (!validation.ok) {
+      const error = new Error(validation.error);
+      error.statusCode = 400;
+      error.code = validation.code;
+      throw error;
+    }
+
+    const school = await this.ensureSchoolFromBackOfficeRecord(validation.schoolCode, context);
+    if (!school) {
+      const error = new Error("Établissement introuvable pour l'affectation");
+      error.statusCode = 400;
+      error.code = "ASSIGNMENT_SYNC_SCHOOL_MISSING";
+      throw error;
+    }
+
+    let teacher = await this.one(
+      `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
+      [school.id, validation.teacherCode],
+    );
+    if (!teacher) {
+      const boTeacher =
+        (context.teachers ?? []).find(
+          (row) =>
+            String(row.id ?? "").trim() === validation.teacherCode ||
+            String(row.publicId ?? "").trim() === validation.teacherCode,
+        ) ??
+        ((await this.getBackOfficeState())?.teachers ?? []).find(
+          (row) =>
+            String(row.id ?? "").trim() === validation.teacherCode ||
+            String(row.publicId ?? "").trim() === validation.teacherCode,
+        );
+      if (boTeacher) {
+        const materialized = await this.materializeBackOfficeTeacher(
+          { ...boTeacher, schoolCode: boTeacher.schoolCode ?? validation.schoolCode },
+          context,
+        );
+        if (materialized?.teacherId) {
+          teacher = await this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId]);
+        }
+      }
+    }
+    if (!teacher) {
+      const error = new Error(`Enseignant introuvable pour l'affectation (${validation.teacherCode})`);
+      error.statusCode = 400;
+      error.code = "ASSIGNMENT_SYNC_TEACHER_MISSING";
+      throw error;
+    }
+
+    const classId = await this.ensureClassForSchool(school.id, validation.className, context);
+    if (!classId) {
+      const error = new Error(`Classe introuvable pour l'affectation (${validation.className})`);
+      error.statusCode = 400;
+      error.code = "ASSIGNMENT_SYNC_CLASS_MISSING";
+      throw error;
+    }
+
+    const subject = await this.ensureSubjectForSchool(school.id, validation.subjectName, context);
+    if (!subject?.id) {
+      const error = new Error(`Matière introuvable pour l'affectation (${validation.subjectName})`);
+      error.statusCode = 400;
+      error.code = "ASSIGNMENT_SYNC_SUBJECT_MISSING";
+      throw error;
+    }
+
+    const academicYear = await this.getCurrentAcademicYear(school.id);
+    if (!academicYear) {
+      const error = new Error("Année scolaire introuvable pour l'affectation");
+      error.statusCode = 400;
+      error.code = "ASSIGNMENT_SYNC_YEAR_MISSING";
+      throw error;
+    }
+
+    const row = await this.one(
+      `INSERT INTO teacher_assignments (
+         school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status
+       ) VALUES ($1, $2, $3, $4, $5, 'primary', 'active')
+       ON CONFLICT (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+       DO UPDATE SET status = 'active', updated_at = NOW()
+       RETURNING id`,
+      [school.id, teacher.id, classId, subject.id, academicYear.id],
+    );
+
+    return {
+      assignmentId: row?.id ?? null,
+      teacherId: teacher.id,
+      classId,
+      subjectId: subject.id,
+    };
+  }
+
+  /**
+   * HOTFIX-PRE-E1-01 — Résolution élève pour POST /api/notes.
+   * Lookup `student_code` / UUID uniquement ; matérialisation BO si besoin.
+   * Pas de recherche nominale.
+   */
+  async resolveStudentForGrade(studentKey, schoolCode) {
+    const key = String(studentKey ?? "").trim();
+    if (!key) return null;
+    const scopedCode =
+      schoolCode && schoolCode !== "*" ? String(schoolCode).trim().toUpperCase() : "";
+
+    let { row: student, backOfficeStudent } = await this.queryStudentWithClass(key, scopedCode);
+
+    if (!student && backOfficeStudent) {
+      const boSchool = String(backOfficeStudent.schoolCode ?? "")
+        .trim()
+        .toUpperCase();
+      if (scopedCode && boSchool && boSchool !== scopedCode) {
+        return null;
+      }
+      const materialized = await this.materializeBackOfficeStudent(backOfficeStudent);
+      if (materialized?.studentId) {
+        ({ row: student } = await this.queryStudentWithClass(key, scopedCode));
+      }
+    }
+
+    return student;
+  }
+
+  async materializeBackOfficeStudent(record, context = {}) {
+    const { resolveStableStudentCode } = require("../lib/studentsBoPersistence");
+    const schoolCode = String(record.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode, context);
+    if (!school) return null;
+
+    const matricule = resolveStableStudentCode(record);
     if (!matricule) return null;
 
-    const nameParts = String(record.name ?? "").trim().split(/\s+/).filter(Boolean);
+    const nameParts = String(record.name ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
     const firstName = String(record.firstName ?? nameParts[0] ?? "Eleve").trim();
     const lastName = String(record.lastName ?? nameParts.slice(1).join(" ") ?? "Somafrik").trim();
 
-    const row = await this.one(
+    // Isolation multi-tenant : ne jamais écraser un student_code d'un autre établissement.
+    let row = await this.one(
       `INSERT INTO students (school_id, student_code, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
        VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, $9)
        ON CONFLICT (student_code) DO UPDATE SET
          first_name = EXCLUDED.first_name,
          last_name = EXCLUDED.last_name,
+         gender = EXCLUDED.gender,
+         birth_date = EXCLUDED.birth_date,
          parent_phone = EXCLUDED.parent_phone,
-         parent_email = EXCLUDED.parent_email
+         parent_email = EXCLUDED.parent_email,
+         status = EXCLUDED.status,
+         updated_at = NOW()
+       WHERE students.school_id = EXCLUDED.school_id
        RETURNING id, school_id`,
       [
         school.id,
@@ -1759,18 +2420,46 @@ class PostgresRepository {
         lastName,
         record.gender ?? "Non renseigné",
         this.parseDate(record.birthDate),
-        record.parentPhone ?? "",
-        record.parentEmail ?? "",
+        record.parentPhone ?? record.phone ?? "",
+        record.parentEmail ?? record.email ?? "",
         record.archived ? "archived" : "active",
       ],
     );
 
+    if (!row) {
+      const existing = await this.one(
+        `SELECT id, school_id FROM students WHERE student_code = $1 LIMIT 1`,
+        [matricule],
+      );
+      if (existing && String(existing.school_id) !== String(school.id)) {
+        const error = new Error("Conflit d'identifiant élève entre établissements");
+        error.statusCode = 409;
+        error.code = "STUDENT_TENANT_CONFLICT";
+        throw error;
+      }
+      row = existing;
+    }
+    if (!row) return null;
+    if (String(row.school_id) !== String(school.id)) {
+      const error = new Error("Conflit d'identifiant élève entre établissements");
+      error.statusCode = 409;
+      error.code = "STUDENT_TENANT_CONFLICT";
+      throw error;
+    }
+
     const className = String(record.className ?? "").trim();
-    const classId = await this.ensureClassForSchool(school.id, className);
+    const classId = await this.ensureClassForSchool(school.id, className, context);
+    let enrollment = false;
     if (classId) {
       await this.ensureActiveEnrollment(school.id, row.id, classId);
+      enrollment = true;
     }
-    return row.id;
+    return {
+      studentId: row.id,
+      schoolId: school.id,
+      classId: classId ?? null,
+      enrollment,
+    };
   }
 
   async resolveStudentForAttendance(payload, principal = {}) {
@@ -1788,9 +2477,12 @@ class PostgresRepository {
     }
 
     if (!student && backOfficeStudent) {
-      const materializedId = await this.materializeBackOfficeStudent(backOfficeStudent);
-      if (materializedId) {
-        ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(materializedId, schoolCode));
+      const materialized = await this.materializeBackOfficeStudent(backOfficeStudent);
+      if (materialized?.studentId) {
+        ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(
+          payload.studentId,
+          schoolCode,
+        ));
       }
     }
 
@@ -1814,22 +2506,33 @@ class PostgresRepository {
   }
 
   async teacherCanAccessClassFromBackOffice(principal, student) {
+    const { pushStep } = require("../lib/notesAuthzTrace");
+    const trace = this._activeNotesAuthzTrace;
     const state = (await this.getBackOfficeState()) ?? {};
     const className = String(student.class_name ?? "").trim();
-    if (!className) return false;
+    if (!className) {
+      pushStep(trace, { gate: "fallback_bo_class", result: "deny", reason: "empty_class_name" });
+      return false;
+    }
 
     const { assignmentMatchesTeacher } = require("../services/authService");
     const principalSub = String(principal.sub ?? "").trim();
     const principalIdentifier = this.normalizeComparableText(principal.identifier);
-    const teacher =
-      (state.teachers ?? []).find((row) => {
-        if (principalSub && String(row.userId ?? "") === principalSub) return true;
-        if (principalSub && String(row.id ?? "") === principalSub) return true;
-        if (principalIdentifier && this.normalizeComparableText(row.identifier) === principalIdentifier) {
-          return true;
-        }
-        return false;
-      }) ?? null;
+    // HOTFIX-PRE-E1-02 : toutes les fiches liées (évite TEACHER- vs TEACHERS-).
+    const linkedTeachers = (state.teachers ?? []).filter((row) => {
+      if (principalSub && [row.userId, row.id, row.publicId].some((v) => String(v ?? "").trim() === principalSub)) {
+        return true;
+      }
+      if (principalIdentifier && this.normalizeComparableText(row.identifier) === principalIdentifier) {
+        return true;
+      }
+      return false;
+    });
+    pushStep(trace, {
+      gate: "fallback_bo_class",
+      linkedTeacherIds: linkedTeachers.map((row) => row.id),
+      assignmentCount: (state.assignments ?? []).length,
+    });
 
     const user = {
       id: principalSub,
@@ -1841,48 +2544,377 @@ class PostgresRepository {
 
     for (const assignment of state.assignments ?? []) {
       if (!this.classNamesInclude([assignment.className], className)) continue;
-      if (assignmentMatchesTeacher(assignment, teacher ?? {}, user)) return true;
+      for (const teacher of linkedTeachers) {
+        if (assignmentMatchesTeacher(assignment, teacher, user)) {
+          this._lastTeacherClassAccessVia = "bo_assignment_match";
+          pushStep(trace, {
+            gate: "fallback_bo_class",
+            result: "allow",
+            via: "bo_assignment_match",
+            assignmentId: assignment.id ?? null,
+            teacherId: teacher.id ?? null,
+          });
+          return true;
+        }
+      }
+      const assignmentTeacherId = String(assignment.teacherId ?? "").trim();
+      if (
+        assignmentTeacherId &&
+        linkedTeachers.some((teacher) =>
+          [teacher.id, teacher.publicId].some((value) => String(value ?? "").trim() === assignmentTeacherId),
+        )
+      ) {
+        this._lastTeacherClassAccessVia = "bo_assignment_teacher_id";
+        pushStep(trace, {
+          gate: "fallback_bo_class",
+          result: "allow",
+          via: "bo_assignment_teacher_id",
+          assignmentId: assignment.id ?? null,
+          assignmentTeacherId,
+        });
+        return true;
+      }
     }
 
-    for (const assignment of teacher?.assignments ?? []) {
-      if (this.classNamesInclude([assignment.className], className)) return true;
+    for (const teacher of linkedTeachers) {
+      for (const assignment of teacher?.assignments ?? []) {
+        if (this.classNamesInclude([assignment.className], className)) {
+          this._lastTeacherClassAccessVia = "bo_teacher_embedded_assignment";
+          pushStep(trace, {
+            gate: "fallback_bo_class",
+            result: "allow",
+            via: "bo_teacher_embedded_assignment",
+            teacherId: teacher.id ?? null,
+          });
+          return true;
+        }
+      }
     }
 
-    return this.classNamesInclude(principal.classNames, className);
+    const jwtHit = this.classNamesInclude(principal.classNames, className);
+    this._lastTeacherClassAccessVia = jwtHit ? "jwt_classNames" : null;
+    pushStep(trace, {
+      gate: "fallback_bo_class",
+      result: jwtHit ? "allow" : "deny",
+      via: jwtHit ? "jwt_classNames" : null,
+      jwtClassNames: principal.classNames ?? [],
+      studentClassName: className,
+    });
+    return jwtHit;
   }
 
   async teacherCanAccessStudentClass(principal, student) {
-    if (principal.role !== "Enseignant") return true;
-    if (this.classNamesInclude(principal.classNames, student.class_name)) return true;
+    const { pushStep } = require("../lib/notesAuthzTrace");
+    const trace = this._activeNotesAuthzTrace;
+    this._lastTeacherClassAccessVia = null;
+    if (principal.role !== "Enseignant") {
+      this._lastTeacherClassAccessVia = "non_teacher";
+      return true;
+    }
+    if (this.classNamesInclude(principal.classNames, student.class_name)) {
+      this._lastTeacherClassAccessVia = "jwt_classNames";
+      pushStep(trace, {
+        gate: "pg_or_jwt_class",
+        result: "allow",
+        via: "jwt_classNames",
+        jwtClassNames: principal.classNames ?? [],
+        studentClassName: student.class_name,
+      });
+      return true;
+    }
+    pushStep(trace, {
+      gate: "jwt_classNames",
+      result: "miss",
+      jwtClassNames: principal.classNames ?? [],
+      studentClassName: student.class_name,
+    });
 
-    const teacher = await this.one(
-      `SELECT t.id
-       FROM teachers t
-       LEFT JOIN users u ON u.id = t.user_id
-       WHERE t.school_id = $1
-         AND (
-           t.teacher_code = $2
-           OR u.user_code = $2
-           OR u.id::text = $2
-           OR t.id::text = $2
-         )
-       LIMIT 1`,
-      [student.school_id, String(principal.sub ?? principal.publicId ?? principal.identifier ?? "")],
+    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, student.school_id);
+    pushStep(trace, { gate: "pg_teacher_lookup", lookupValues: lookupKeys });
+    let pgTeacherFound = false;
+    for (const lookupValue of lookupKeys) {
+      const teacher = await this.one(
+        `SELECT t.id, t.teacher_code
+         FROM teachers t
+         LEFT JOIN users u ON u.id = t.user_id
+         WHERE t.school_id = $1
+           AND (
+             t.teacher_code = $2
+             OR u.user_code = $2
+             OR u.id::text = $2
+             OR t.id::text = $2
+           )
+         LIMIT 1`,
+        [student.school_id, lookupValue],
+      );
+      if (!teacher?.id) continue;
+      pgTeacherFound = true;
+      pushStep(trace, {
+        gate: "pg_teacher_lookup",
+        result: "hit",
+        lookupValue,
+        teacherId: teacher.id,
+        teacherCode: teacher.teacher_code,
+      });
+      if (teacher?.id && student.class_id) {
+        const assignment = await this.one(
+          `SELECT 1 AS ok
+           FROM teacher_assignments ta
+           WHERE ta.teacher_id = $1
+             AND ta.class_id = $2
+             AND ta.status = 'active'
+           LIMIT 1`,
+          [teacher.id, student.class_id],
+        );
+        if (assignment) {
+          this._lastTeacherClassAccessVia = "pg_teacher_assignment";
+          pushStep(trace, {
+            gate: "pg_teacher_assignment",
+            result: "allow",
+            via: "pg_teacher_assignment",
+            teacherId: teacher.id,
+            classId: student.class_id,
+          });
+          return true;
+        }
+        pushStep(trace, {
+          gate: "pg_teacher_assignment",
+          result: "miss",
+          teacherId: teacher.id,
+          classId: student.class_id,
+        });
+      }
+    }
+    if (!pgTeacherFound) {
+      pushStep(trace, {
+        gate: "pg_teacher_lookup",
+        result: "miss",
+        lookupValues: lookupKeys,
+      });
+    }
+
+    pushStep(trace, { gate: "fallback_bo_class", entering: true });
+    return this.teacherCanAccessClassFromBackOffice(principal, student);
+  }
+
+  /**
+   * HOTFIX-PRE-E1-02 — Enseignant autorisé sur l'évaluation (classe + matière).
+   * PG teacher_assignments, sinon affectation BO, sinon teacher_id évaluation.
+   */
+  async teacherCanAccessEvaluation(principal, evaluation, student) {
+    const { pushStep } = require("../lib/notesAuthzTrace");
+    const trace = this._activeNotesAuthzTrace;
+    this._lastTeacherEvaluationAccessVia = null;
+    if (principal.role !== "Enseignant") {
+      this._lastTeacherEvaluationAccessVia = "non_teacher";
+      return true;
+    }
+    if (!evaluation?.class_id || !evaluation?.subject_id) {
+      pushStep(trace, {
+        gate: "evaluation_subject",
+        result: "deny",
+        reason: "missing_class_or_subject_id",
+      });
+      return false;
+    }
+
+    const principalSchool = String(principal.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (principalSchool && principalSchool !== "*") {
+      const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
+        evaluation.school_id,
+      ]);
+      const evaluationSchoolCode = String(evaluationSchool?.school_code ?? "")
+        .trim()
+        .toUpperCase();
+      if (evaluationSchoolCode && evaluationSchoolCode !== principalSchool) {
+        pushStep(trace, {
+          gate: "evaluation_school",
+          result: "deny",
+          principalSchool,
+          evaluationSchoolCode,
+        });
+        return false;
+      }
+    }
+
+    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(
+      principal,
+      evaluation.school_id,
     );
-    if (teacher?.id && student.class_id) {
+    pushStep(trace, {
+      gate: "pg_teacher_lookup_for_evaluation",
+      lookupValues: lookupKeys,
+    });
+    let pgTeacherFound = false;
+    for (const lookupValue of lookupKeys) {
+      const teacher = await this.one(
+        `SELECT t.id, t.teacher_code
+         FROM teachers t
+         LEFT JOIN users u ON u.id = t.user_id
+         WHERE t.school_id = $1
+           AND (
+             t.teacher_code = $2
+             OR u.user_code = $2
+             OR u.id::text = $2
+             OR t.id::text = $2
+           )
+         LIMIT 1`,
+        [evaluation.school_id, lookupValue],
+      );
+      if (!teacher?.id) continue;
+      pgTeacherFound = true;
+      pushStep(trace, {
+        gate: "pg_teacher_lookup_for_evaluation",
+        result: "hit",
+        lookupValue,
+        teacherId: teacher.id,
+        teacherCode: teacher.teacher_code,
+      });
+      // Exiger l'affectation classe+matière (ne pas se fier seul à evaluation.teacher_id).
       const assignment = await this.one(
         `SELECT 1 AS ok
          FROM teacher_assignments ta
          WHERE ta.teacher_id = $1
            AND ta.class_id = $2
+           AND ta.subject_id = $3
            AND ta.status = 'active'
          LIMIT 1`,
-        [teacher.id, student.class_id],
+        [teacher.id, evaluation.class_id, evaluation.subject_id],
       );
-      if (assignment) return true;
+      if (assignment) {
+        this._lastTeacherEvaluationAccessVia = "pg_teacher_assignment";
+        pushStep(trace, {
+          gate: "pg_teacher_assignment_subject",
+          result: "allow",
+          via: "pg_teacher_assignment",
+          teacherId: teacher.id,
+          classId: evaluation.class_id,
+          subjectId: evaluation.subject_id,
+        });
+        return true;
+      }
+      pushStep(trace, {
+        gate: "pg_teacher_assignment_subject",
+        result: "miss",
+        teacherId: teacher.id,
+        classId: evaluation.class_id,
+        subjectId: evaluation.subject_id,
+      });
+    }
+    if (!pgTeacherFound) {
+      pushStep(trace, {
+        gate: "pg_teacher_lookup_for_evaluation",
+        result: "miss",
+        lookupValues: lookupKeys,
+      });
     }
 
-    return this.teacherCanAccessClassFromBackOffice(principal, student);
+    // Fallback BO : affectation classe + matière (ID enseignant stable), même école.
+    const state = (await this.getBackOfficeState()) ?? {};
+    const className = String(student?.class_name ?? "").trim();
+    const subjectRow = await this.one(`SELECT name FROM subjects WHERE id = $1`, [
+      evaluation.subject_id,
+    ]);
+    const subjectName = String(subjectRow?.name ?? "").trim();
+    if (!className || !subjectName) {
+      pushStep(trace, {
+        gate: "fallback_bo_evaluation",
+        result: "deny",
+        reason: "missing_class_or_subject_name",
+      });
+      return false;
+    }
+
+    const { resolveTeacherAssignments } = require("../services/authService");
+    const principalSub = String(principal.sub ?? "").trim();
+    const linkedTeachers = (state.teachers ?? []).filter((row) =>
+      [row.userId, row.id, row.publicId].some((value) => String(value ?? "").trim() === principalSub),
+    );
+    const schoolCode = String(principal.schoolCode ?? "").trim().toUpperCase();
+    pushStep(trace, {
+      gate: "fallback_bo_evaluation",
+      entering: true,
+      linkedTeacherIds: linkedTeachers.map((row) => row.id),
+      className,
+      subjectName,
+    });
+    for (const teacher of linkedTeachers) {
+      const assignments = resolveTeacherAssignments(teacher, principal, state.assignments ?? []);
+      const matched = assignments.find((assignment) => {
+        const assignmentSchool = String(assignment.schoolCode ?? "").trim().toUpperCase();
+        if (schoolCode && assignmentSchool && schoolCode !== "*" && schoolCode !== assignmentSchool) {
+          return false;
+        }
+        return (
+          this.classNamesInclude([assignment.className], className) &&
+          this.normalizeComparableText(assignment.course ?? assignment.subject) ===
+            this.normalizeComparableText(subjectName)
+        );
+      });
+      if (matched) {
+        this._lastTeacherEvaluationAccessVia = "bo_assignment";
+        pushStep(trace, {
+          gate: "fallback_bo_evaluation",
+          result: "allow",
+          via: "bo_assignment",
+          teacherId: teacher.id,
+          assignmentId: matched.id ?? null,
+        });
+        return true;
+      }
+    }
+    pushStep(trace, { gate: "fallback_bo_evaluation", result: "deny" });
+    return false;
+  }
+
+  /**
+   * HOTFIX-PRE-E1-02 — Clés stables enseignant pour le principal (jamais par nom seul).
+   */
+  async collectTeacherLookupKeysForPrincipal(principal = {}, schoolId = null) {
+    const keys = new Set();
+    const add = (value) => {
+      const text = String(value ?? "").trim();
+      if (text) keys.add(text);
+    };
+    add(principal.sub);
+    add(principal.publicId);
+    add(principal.identifier);
+
+    const state = (await this.getBackOfficeState()) ?? {};
+    const principalSub = String(principal.sub ?? "").trim();
+    const principalIdentifier = this.normalizeComparableText(principal.identifier);
+    const linkedTeachers = (state.teachers ?? []).filter((row) => {
+      if (principalSub && [row.userId, row.id, row.publicId].some((v) => String(v ?? "").trim() === principalSub)) {
+        return true;
+      }
+      if (principalIdentifier && this.normalizeComparableText(row.identifier) === principalIdentifier) {
+        return true;
+      }
+      return false;
+    });
+    for (const boTeacher of linkedTeachers) {
+      add(boTeacher.id);
+      add(boTeacher.publicId);
+      add(boTeacher.userId);
+      add(boTeacher.identifier);
+    }
+
+    if (schoolId && principalSub) {
+      const byUser = await this.one(
+        `SELECT t.teacher_code
+         FROM teachers t
+         LEFT JOIN users u ON u.id = t.user_id
+         WHERE t.school_id = $1
+           AND (u.id::text = $2 OR u.user_code = $2 OR t.teacher_code = $2)
+         LIMIT 1`,
+        [schoolId, principalSub],
+      );
+      add(byUser?.teacher_code);
+    }
+
+    return [...keys];
   }
 
   async upsertAttendanceBatch(payload = {}, principal = {}) {
@@ -3285,25 +4317,53 @@ class PostgresRepository {
   }
 
   async findTeacherForGrade(schoolId, teacherCode, classId, subjectId, principalRole) {
-    const assignedTeacher = teacherCode
-      ? await this.one(
-          `SELECT t.*
-           FROM teachers t
-           JOIN teacher_assignments ta ON ta.teacher_id = t.id
-           WHERE t.school_id = $1
-             AND t.teacher_code = $2
-             AND ta.class_id = $3
-             AND ta.subject_id = $4
-           LIMIT 1`,
-          [schoolId, String(teacherCode), classId, subjectId]
-        )
-      : null;
+    // HOTFIX-PRE-E1-02 : tenter toutes les clés stables du principal (userId, teacher_code BO…).
+    const lookupKeys = new Set();
+    const add = (value) => {
+      const text = String(value ?? "").trim();
+      if (text) lookupKeys.add(text);
+    };
+    add(teacherCode);
+    if (principalRole === "Enseignant") {
+      for (const key of await this.collectTeacherLookupKeysForPrincipal(
+        { sub: teacherCode, role: principalRole },
+        schoolId,
+      )) {
+        add(key);
+      }
+    }
+
+    let assignedTeacher = null;
+    for (const key of lookupKeys) {
+      assignedTeacher = await this.one(
+        `SELECT t.*
+         FROM teachers t
+         JOIN teacher_assignments ta ON ta.teacher_id = t.id
+         LEFT JOIN users u ON u.id = t.user_id
+         WHERE t.school_id = $1
+           AND (
+             t.teacher_code = $2
+             OR u.user_code = $2
+             OR u.id::text = $2
+             OR t.id::text = $2
+           )
+           AND ta.class_id = $3
+           AND ta.subject_id = $4
+           AND ta.status = 'active'
+         LIMIT 1`,
+        [schoolId, key, classId, subjectId],
+      );
+      if (assignedTeacher) break;
+    }
 
     if (principalRole === "Enseignant") {
       return assignedTeacher;
     }
 
-    return assignedTeacher ?? this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [schoolId]);
+    return (
+      assignedTeacher ??
+      this.one("SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1", [schoolId])
+    );
   }
 
   async findTeacherForAttendance(schoolId, teacherCode, classId, principalRole) {

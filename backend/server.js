@@ -70,6 +70,12 @@ const {
 } = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
 const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
+const {
+  isTeacherNotesPrincipal,
+  evaluateTeacherNotesTouchedKeys,
+  prepareTeacherNotesWritePayload,
+  teacherHasNotesWritePermission,
+} = require("./lib/teacherNotesWriteAccess");
 
 const establishmentService = new EstablishmentService();
 const unpaidService = new UnpaidService();
@@ -253,6 +259,28 @@ if (process.env.SOMAFRIK_E2E === "true" || process.env.SOMAFRIK_DISABLE_LOGIN_LO
   }));
 }
 
+// Audit causalité Pré-E1 — exposé uniquement si SOMAFRIK_AUTHZ_TRACE=1 (≠ validation CTO).
+if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
+  app.get(
+    "/api/debug/notes-authz-trace",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (
+        !["Super Administrateur Somafrik", "Admin School", "Enseignant"].includes(
+          req.principal?.role,
+        )
+      ) {
+        throw new BusinessError(403, "Accès debug refusé.");
+      }
+      res.json({
+        kind: "NOTES_AUTHZ_CAUSALITY_LAST",
+        notACtoValidation: true,
+        trace: repository.lastNotesAuthzTrace ?? null,
+      });
+    }),
+  );
+}
+
 app.get("/api/schools", asyncHandler(async (_req, res) => {
   const { platformSchools } = await getRuntime();
   res.json(platformSchools);
@@ -286,6 +314,44 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
       req.body?.schoolCode;
     const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
     response.user = { ...response.user, children };
+  }
+  // HOTFIX-PRE-E1-02 : enrichir la session enseignant avec affectations BO (IDs stables),
+  // sans élargir les droits — alimente principal.classNames pour les gardes notes.
+  if (response?.user?.role === "Enseignant") {
+    const state = await getAuthoritativeBackOfficeState();
+    const {
+      resolveTeacherAssignments,
+      resolveTeacherAssignedClasses,
+    } = require("./services/authService");
+    const userId = String(response.user.id ?? "").trim();
+    const identifier = String(response.user.identifier ?? "").trim().toLowerCase();
+    const linkedTeachers = (state.teachers ?? []).filter((row) => {
+      const ids = [row.userId, row.id, row.publicId, row.contactId].map((value) =>
+        String(value ?? "").trim(),
+      );
+      if (userId && ids.includes(userId)) return true;
+      return identifier && String(row.identifier ?? "").trim().toLowerCase() === identifier;
+    });
+    const teacher =
+      linkedTeachers.find(
+        (row) => resolveTeacherAssignments(row, response.user, state.assignments ?? []).length > 0,
+      ) ??
+      linkedTeachers[0] ??
+      null;
+    if (teacher) {
+      const assignments = resolveTeacherAssignments(teacher, response.user, state.assignments ?? []);
+      const assignedClasses = resolveTeacherAssignedClasses(
+        teacher,
+        response.user,
+        state.assignments ?? [],
+      );
+      response.user = {
+        ...response.user,
+        assignments,
+        assignedClasses,
+        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
+      };
+    }
   }
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
 }));
@@ -387,10 +453,39 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
   });
-  const safeUser = {
+  let safeUser = {
     ...sanitizeUserForResponse(updatedUser),
     mustChangePassword: false,
   };
+  // HOTFIX-PRE-E1-02 : ne pas perdre assignedClasses après change-password.
+  if (safeUser.role === "Enseignant") {
+    const state = await getAuthoritativeBackOfficeState();
+    const {
+      resolveTeacherAssignments,
+      resolveTeacherAssignedClasses,
+    } = require("./services/authService");
+    const userId = String(safeUser.id ?? req.principal.sub ?? "").trim();
+    const linkedTeachers = (state.teachers ?? []).filter((row) =>
+      [row.userId, row.id, row.publicId, row.contactId].some(
+        (value) => String(value ?? "").trim() === userId,
+      ),
+    );
+    const teacher =
+      linkedTeachers.find(
+        (row) => resolveTeacherAssignments(row, safeUser, state.assignments ?? []).length > 0,
+      ) ??
+      linkedTeachers[0] ??
+      null;
+    if (teacher) {
+      const assignments = resolveTeacherAssignments(teacher, safeUser, state.assignments ?? []);
+      safeUser = {
+        ...safeUser,
+        assignments,
+        assignedClasses: resolveTeacherAssignedClasses(teacher, safeUser, state.assignments ?? []),
+        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
+      };
+    }
+  }
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(
     { user: safeUser },
@@ -1080,23 +1175,51 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
-  const requestedState = sanitizeBackOfficeState(rawBody);
+
+  // HOTFIX-SYNC-03 — Enseignant : evaluations/notes uniquement, teacherId session, affectation.
+  let effectiveBody = rawBody;
+  let effectiveTouchedKeys = touchedKeys;
+  if (isTeacherNotesPrincipal(req.principal)) {
+    const prepared = prepareTeacherNotesWritePayload(rawBody, req.principal, currentState);
+    if (!prepared.ok) {
+      throw new BusinessError(403, prepared.message ?? "Permission insuffisante pour modifier ces données.");
+    }
+    effectiveBody = prepared.payload;
+    effectiveTouchedKeys = Object.keys(prepared.payload);
+  }
+
+  const requestedState = sanitizeBackOfficeState(effectiveBody);
   const { validateWritePayload } = require("./services/dataIntegrityService");
-  const integrityCheck = validateWritePayload(currentState, requestedState, touchedKeys);
+  const integrityCheck = validateWritePayload(currentState, requestedState, effectiveTouchedKeys);
   if (!integrityCheck.ok) {
     throw new BusinessError(400, integrityCheck.errors[0]?.message ?? "Données incohérentes.");
   }
-  const credentialErrors = validateIntroducedAccountSecrets(currentState, requestedState, touchedKeys);
+  const credentialErrors = validateIntroducedAccountSecrets(
+    currentState,
+    requestedState,
+    effectiveTouchedKeys,
+  );
   if (credentialErrors.length) {
     const first = credentialErrors[0];
     throw new BusinessError(400, first.message);
   }
-  const nextState = mergeScopedBackOfficeState(
-    currentState,
-    requestedState,
-    req.principal,
-    touchedKeys,
-  );
+
+  let nextState;
+  if (isTeacherNotesPrincipal(req.principal)) {
+    // Fusion métier déjà réalisée (préserve les lignes des autres enseignants).
+    nextState = {
+      ...currentState,
+      ...(effectiveBody.evaluations ? { evaluations: effectiveBody.evaluations } : {}),
+      ...(effectiveBody.notes ? { notes: effectiveBody.notes } : {}),
+    };
+  } else {
+    nextState = mergeScopedBackOfficeState(
+      currentState,
+      requestedState,
+      req.principal,
+      effectiveTouchedKeys,
+    );
+  }
   const hydratedCourses = pedagogyGovernanceService.hydrateCoursesFromAssignments(
     nextState.courses ?? [],
     nextState.assignments ?? [],
@@ -1142,7 +1265,13 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     classes: saved.classes?.length ?? 0,
     roles: Object.keys(saved.rolePermissions ?? {}).length,
   });
-  res.json(scopedBackOfficeStateForResponse(saved, req.principal));
+  // HOTFIX-SYNC-01 / PRE-E1-02B : syncAck observable, strictement lié à cette requête.
+  // Ne jamais lire repository.lastSyncAck (état mutable partagé → fuite inter-requêtes).
+  const response = scopedBackOfficeStateForResponse(saved, req.principal);
+  if (saved?.syncAck && typeof saved.syncAck === "object") {
+    response.syncAck = saved.syncAck;
+  }
+  res.json(response);
 }));
 
 app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
@@ -1261,10 +1390,12 @@ async function getRuntime() {
   applyStoredUserOverlay(dataset, storedState);
   const mergedStudents = mergeRowsByIdentity(dataset.students ?? [], storedState?.students ?? []);
   const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
+  const mergedTeachers = mergeRowsByIdentity(dataset.teachers ?? [], storedState?.teachers ?? []);
   const authService = new AuthService({
     school: dataset.school,
     schools: dataset.platformSchools,
-    teachers: dataset.teachers,
+    // HOTFIX-PRE-E1-02 : enseignants BO + PG pour résoudre assignedClasses à la connexion mobile.
+    teachers: mergedTeachers,
     students: mergedStudents,
     relations: mergedRelations,
     userAccounts: dataset.userAccounts,
@@ -1604,6 +1735,8 @@ function getWebPlatformWritableEntities(principal) {
   if (
     permissions.has("Notes:CREATE") ||
     permissions.has("Notes:UPDATE") ||
+    permissions.has("Notes:CRUD") ||
+    permissions.has("Evaluations:CRUD") ||
     permissions.has("Modifier notes")
   ) {
     allowed.add("notes");
@@ -1630,6 +1763,18 @@ function assertBackOfficeWriter(principal, touchedKeys = []) {
   const { canAccessBackOfficeRole, canAccessWebPlatformRole } = require("./lib/establishmentRoles");
   if (!principal) {
     throw new BusinessError(403, "Accès plateforme non autorisé");
+  }
+
+  // HOTFIX-SYNC-03 — Enseignant : uniquement evaluations + notes (pas d'élargissement BO).
+  if (isTeacherNotesPrincipal(principal)) {
+    const decision = evaluateTeacherNotesTouchedKeys(touchedKeys);
+    if (!decision.ok) {
+      throw new BusinessError(403, "Permission insuffisante pour modifier ces données.");
+    }
+    if (!teacherHasNotesWritePermission(principal)) {
+      throw new BusinessError(403, "Permission insuffisante pour modifier les notes.");
+    }
+    return;
   }
 
   if (canAccessBackOfficeRole(principal.role)) {
@@ -1687,8 +1832,11 @@ function assertCanManageNotes(principal) {
     permissions.has("ALL_PRIVILEGES") ||
     permissions.has("COUNTRY_PRIVILEGES") ||
     permissions.has("Modifier notes") ||
+    permissions.has("Modifier notes") ||
     permissions.has("Notes:CREATE") ||
-    permissions.has("Notes:UPDATE")
+    permissions.has("Notes:UPDATE") ||
+    permissions.has("Notes:CRUD") ||
+    permissions.has("Evaluations:CRUD")
   ) {
     return;
   }
@@ -2690,14 +2838,32 @@ function mergeScopedBackOfficeState(
     scopedCurrent,
     touchedKeys,
   );
+  const mergedAssignmentsForSync = mergeScopedEntityIfTouched(
+    "assignments",
+    current,
+    scopedRequested,
+    scopedCurrent,
+    touchedKeys,
+  );
   const teacherSync =
     usersTouched || teachersTouched
-      ? userTeacherSyncService.syncTeachersFromUserAccounts({
-          ...current,
-          users: mergedUsers,
-          teachers: mergedTeachers,
-          contacts: mergedContacts,
-        })
+      ? userTeacherSyncService.syncTeachersFromUserAccounts(
+          {
+            ...current,
+            users: mergedUsers,
+            teachers: mergedTeachers,
+            contacts: mergedContacts,
+            // §4.1 — départage multi-TEACHERS-* via affectations du même PUT
+            assignments: mergedAssignmentsForSync,
+          },
+          {
+            // §4.1.b — distinguer PUT étranger vs écriture identitaire
+            previousUsers: current.users ?? [],
+            previousTeachers: current.teachers ?? [],
+            usersTouched,
+            teachersTouched,
+          },
+        )
       : null;
   const syncedTeachers = teacherSync?.teachers ?? current.teachers;
   const syncedContacts = teacherSync?.contacts ?? mergedContacts;
@@ -2758,13 +2924,7 @@ function mergeScopedBackOfficeState(
           scopedCurrent.courses,
         )
       : current.courses,
-    assignments: mergeScopedEntityIfTouched(
-      "assignments",
-      current,
-      scopedRequested,
-      scopedCurrent,
-      touchedKeys,
-    ),
+    assignments: mergedAssignmentsForSync,
     courseSchedules: mergeScopedEntityIfTouched(
       "courseSchedules",
       current,
@@ -3012,6 +3172,21 @@ const CRITICAL_AUDIT_COLLECTIONS = [
   { key: "payments", entityType: "payment", label: (row) => row.publicId ?? row.id },
   { key: "bulletins", entityType: "bulletin", label: (row) => row.studentName ?? row.id },
   { key: "rolePermissions", entityType: "role_permissions", label: (row) => row.role ?? row.id },
+  // HOTFIX-RBAC-ADMIN-01 — audit classes/enseignants/affectations côté serveur (jamais via auditLog client).
+  { key: "classes", entityType: "class", label: (row) => row.name ?? row.id },
+  {
+    key: "teachers",
+    entityType: "teacher",
+    label: (row) =>
+      `${row.lastName ?? ""} ${row.firstName ?? ""}`.trim() || row.name || row.publicId || row.id,
+  },
+  {
+    key: "assignments",
+    entityType: "assignment",
+    label: (row) =>
+      [row.teacherName, row.subject ?? row.course, row.className].filter(Boolean).join(" · ") ||
+      row.id,
+  },
 ];
 
 async function auditCriticalStateChanges(req, beforeState = {}, afterState = {}) {
@@ -4021,7 +4196,10 @@ app.use((error, _req, res, _next) => {
     if (error.statusCode >= 500) {
       console.error(error);
     }
-    return res.status(error.statusCode).json({ message: error.message });
+    return res.status(error.statusCode).json({
+      message: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 
   console.error(error);

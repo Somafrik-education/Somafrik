@@ -1,0 +1,96 @@
+{
+  "audit": "PRE-E1",
+  "phase": "V2.1-FIX-POST-MERGE",
+  "subject": "PRE-E1-IDENTITY-LIFECYCLE-FIX",
+  "developMergeCommit": "3fd7790feef595e1f37915623038cbdf58c83234",
+  "validatedHead": "0b1131ec23103e1fa8be4f3f47467812f76bded8",
+  "generatedAt": "2026-07-27T13:11:05.079Z",
+  "nature": "post-merge-replay-on-develop",
+  "closure": "FIX V2.1 IDENTITY — CLÔTURÉ TECHNIQUEMENT by CTO decision after post-merge replay on develop@3fd7790f",
+  "closureDecision": {
+    "status": "TECHNICALLY_CLOSED",
+    "decidedAt": "2026-07-27",
+    "developMergeCommit": "3fd7790feef595e1f37915623038cbdf58c83234",
+    "validatedHead": "0b1131ec23103e1fa8be4f3f47467812f76bded8",
+    "document": "docs/audits/DECISION-CTO-CLOTURE-FIX-V2.1-IDENTITY.md",
+    "historicalConsolidation": "DEFERRED_NOT_AUTHORIZED",
+    "e1": "NO-GO",
+    "auditV2": "STILL_OPEN"
+  },
+  "gates": [
+    {
+      "id": "POST-MERGE-01",
+      "title": "develop contient le head validé 0b1131ec",
+      "status": "PASS",
+      "detail": "HEAD=3fd7790feef595e1f37915623038cbdf58c83234"
+    },
+    {
+      "id": "UNIT-SYNC",
+      "title": "userTeacherSyncService.test.js",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "id": "UNIT-EVAL",
+      "title": "evaluationAttachment.test.js",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "id": "HIST-V1",
+      "title": "verify:pre-e1-v1 (script historique) → post-merge artifact",
+      "status": "PASS",
+      "detail": "pre-e1-v1-post-merge-develop-results.json"
+    },
+    {
+      "id": "HIST-02B",
+      "title": "verify:pre-e1-hotfix-02b (script historique) → post-merge artifact",
+      "status": "PASS",
+      "detail": "pre-e1-hotfix-02b-post-merge-develop-results.json"
+    },
+    {
+      "id": "ADAPTED-02B",
+      "title": "verify adapted-02b post-merge",
+      "status": "PASS",
+      "detail": "pre-e1-v2-identity-fix-adapted-02b-post-merge-develop-results.json"
+    },
+    {
+      "id": "ADAPTED-V1",
+      "title": "verify adapted-v1 post-merge",
+      "status": "PASS",
+      "detail": "pre-e1-v2-identity-fix-adapted-v1-post-merge-develop-results.json"
+    }
+  ],
+  "historicalIntegrity": [
+    {
+      "id": "HIST-RESTORE",
+      "title": "Preuves historiques restaurées",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "id": "HIST-INTACT-pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "title": "Preuve historique intacte pre-e1-v1-rerun-hotfix-pre-e1-02-results.json",
+      "status": "PASS",
+      "detail": "c27a3981dd506c36"
+    },
+    {
+      "id": "HIST-INTACT-pre-e1-hotfix-02b-results.json",
+      "title": "Preuve historique intacte pre-e1-hotfix-02b-results.json",
+      "status": "PASS",
+      "detail": "9f3c3301cfb9bb91"
+    },
+    {
+      "id": "HIST-INTACT-notes-authz-trace-02b.jsonl",
+      "title": "Preuve historique intacte notes-authz-trace-02b.jsonl",
+      "status": "PASS",
+      "detail": "02d4f0107e781c8b"
+    }
+  ],
+  "ok": true,
+  "summary": {
+    "pass": 11,
+    "fail": 0,
+    "ok": true
+  }
+}

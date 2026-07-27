@@ -107,6 +107,9 @@ export interface StudentEnrollment {
   enrolledAt?: string | null;
   validatedAt?: string | null;
   endedAt?: string | null;
+  transferDate?: string | null;
+  destinationSchoolName?: string | null;
+  closureDate?: string | null;
   notes?: string | null;
   isRepeating?: boolean;
   previousSchool?: string;
@@ -322,6 +325,7 @@ export const ENROLLMENT_STATUS = {
   ENROLLED: "ENROLLED",
   SUSPENDED: "SUSPENDED",
   WITHDRAWN: "WITHDRAWN",
+  CLOSED: "CLOSED",
   TRANSFERRED: "TRANSFERRED",
   EXITED: "WITHDRAWN",
   CANCELLED: "WITHDRAWN",

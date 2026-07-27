@@ -11,21 +11,91 @@ function newTeacherId(): string {
   return `TEACHERS-${Date.now()}`;
 }
 
+function isTeachersCode(id?: unknown): boolean {
+  return /^TEACHERS-/i.test(String(id ?? "").trim());
+}
+
+function isTeacherTwinCode(id?: unknown): boolean {
+  const s = String(id ?? "").trim();
+  return /^TEACHER-/i.test(s) && !/^TEACHERS-/i.test(s);
+}
+
+function sameSchool(teacherSchool: unknown, schoolCode: string): boolean {
+  return normalize(String(teacherSchool ?? "")) === normalize(schoolCode);
+}
+
 export function isTeacherUserRole(role?: string): boolean {
   const key = normalize(role ?? "");
   return key === "enseignant" || key === "teacher" || key.includes("prof");
 }
 
-function teacherMatchesUser(teacher: Row, user: UserAccount): boolean {
-  if (user.id && String(teacher.userId ?? "") === String(user.id)) {
-    return true;
+function teachersLinkedByUserId(teachers: Row[], user: UserAccount, schoolCode: string): Row[] {
+  const userId = String(user.id ?? "").trim();
+  if (!userId) return [];
+  return teachers.filter(
+    (teacher) =>
+      String(teacher.userId ?? "").trim() === userId && sameSchool(teacher.schoolCode, schoolCode),
+  );
+}
+
+function teachersCodeLinked(teachers: Row[], user: UserAccount, schoolCode: string): Row[] {
+  return teachersLinkedByUserId(teachers, user, schoolCode).filter((teacher) =>
+    isTeachersCode(teacher.id),
+  );
+}
+
+function twinOnlyLinked(teachers: Row[], user: UserAccount, schoolCode: string): boolean {
+  const linked = teachersLinkedByUserId(teachers, user, schoolCode);
+  if (!linked.length) return false;
+  const hasTeachers = linked.some((teacher) => isTeachersCode(teacher.id));
+  const hasTwin = linked.some((teacher) => isTeacherTwinCode(teacher.id));
+  return hasTwin && !hasTeachers;
+}
+
+/**
+ * Canon TEACHERS-* : userId + établissement, puis affectation active unique.
+ * Ambiguïté → erreur structurée (pas de created_at / premier élément).
+ */
+export function resolveCanonicalTeachersRow(
+  teachers: Row[],
+  user: UserAccount,
+  schoolCode: string,
+  assignments: Row[] = [],
+): Row | null {
+  const candidates = teachersCodeLinked(teachers, user, schoolCode);
+  // Même id répété dans le tableau ≠ pluralité d'identités
+  const byId = new Map<string, Row>();
+  for (const teacher of candidates) {
+    const id = String(teacher.id ?? "").trim();
+    if (!id) continue;
+    if (!byId.has(id)) byId.set(id, teacher);
   }
-  if (teacher.userId && String(teacher.userId) !== String(user.id ?? "")) {
-    return false;
-  }
-  const userIdentifier = normalize(String(user.identifier ?? ""));
-  const teacherIdentifier = normalize(String(teacher.identifier ?? ""));
-  return Boolean(userIdentifier && userIdentifier === teacherIdentifier);
+  const unique = [...byId.values()];
+  if (unique.length === 0) return null;
+  if (unique.length === 1) return unique[0] ?? null;
+
+  const activeTeacherIds = new Set(
+    assignments
+      .filter((assignment) => {
+        if (!sameSchool(assignment.schoolCode, schoolCode)) return false;
+        const status = normalize(String(assignment.status ?? "active"));
+        return status === "" || status === "active" || status === "actif";
+      })
+      .map((assignment) => String(assignment.teacherId ?? "").trim())
+      .filter(Boolean),
+  );
+
+  const viaAssignment = unique.filter((teacher) =>
+    activeTeacherIds.has(String(teacher.id ?? "").trim()),
+  );
+  if (viaAssignment.length === 1) return viaAssignment[0] ?? null;
+
+  const error = new Error(
+    "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté",
+  ) as Error & { code?: string; statusCode?: number };
+  error.code = "TEACHER_CANON_AMBIGUOUS";
+  error.statusCode = 409;
+  throw error;
 }
 
 function buildTeacherRow(user: UserAccount, existing?: Row): Row {
@@ -65,8 +135,22 @@ function buildTeacherRow(user: UserAccount, existing?: Row): Row {
   };
 }
 
+function replaceTeacher(teachers: Row[], previousId: unknown, row: Row): Row[] {
+  const next = [...teachers];
+  const index = next.findIndex((teacher) => String(teacher.id) === String(previousId));
+  if (index >= 0) {
+    next[index] = row;
+    return next;
+  }
+  return [row, ...next];
+}
+
 /** Crée ou met à jour la fiche enseignant liée à un compte utilisateur. */
-export function upsertTeacherFromUser(teachers: Row[], user: UserAccount): Row[] {
+export function upsertTeacherFromUser(
+  teachers: Row[],
+  user: UserAccount,
+  options: { assignments?: Row[] } = {},
+): Row[] {
   if (!isTeacherUserRole(user.role)) {
     return teachers;
   }
@@ -76,24 +160,53 @@ export function upsertTeacherFromUser(teachers: Row[], user: UserAccount): Row[]
     return teachers;
   }
 
-  const next = [...teachers];
-  const index = next.findIndex((teacher) => teacherMatchesUser(teacher, user));
-  const row = buildTeacherRow(user, index >= 0 ? next[index] : undefined);
+  const assignments = options.assignments ?? [];
+  const canon = resolveCanonicalTeachersRow(teachers, user, schoolCode, assignments);
 
-  if (index >= 0) {
-    next[index] = row;
-    return next;
+  if (canon) {
+    return replaceTeacher(teachers, canon.id, buildTeacherRow(user, canon));
   }
 
-  return [row, ...next];
+  // AC-HIST-02 / §4.1.c : historique TEACHER-* seul
+  if (twinOnlyLinked(teachers, user, schoolCode)) {
+    const twinsById = new Map<string, Row>();
+    for (const teacher of teachersLinkedByUserId(teachers, user, schoolCode)) {
+      if (!isTeacherTwinCode(teacher.id)) continue;
+      const id = String(teacher.id ?? "").trim();
+      if (id && !twinsById.has(id)) twinsById.set(id, teacher);
+    }
+    const twins = [...twinsById.values()];
+    if (twins.length === 1 && twins[0]) {
+      return replaceTeacher(teachers, twins[0].id, buildTeacherRow(user, twins[0]));
+    }
+    // Plusieurs TEACHER-* : no-op (pas de twins[0])
+    return teachers;
+  }
+
+  const linkedById = new Map<string, Row>();
+  for (const teacher of teachersLinkedByUserId(teachers, user, schoolCode)) {
+    const id = String(teacher.id ?? "").trim();
+    if (id && !linkedById.has(id)) linkedById.set(id, teacher);
+  }
+  const linked = [...linkedById.values()];
+  if (linked.length === 0) {
+    return [buildTeacherRow(user), ...teachers];
+  }
+  if (linked.length === 1 && linked[0]) {
+    return replaceTeacher(teachers, linked[0].id, buildTeacherRow(user, linked[0]));
+  }
+  // Plusieurs fiches liées non départageables → no-op
+  return teachers;
 }
 
 /** Synchronise toutes les fiches enseignants à partir des comptes utilisateurs. */
 export function syncTeachersFromUserAccounts(state: BackOfficeState): Row[] {
   let teachers = [...((state.teachers ?? []) as Row[])];
+  const assignments = (state.assignments ?? []) as Row[];
   for (const user of state.users ?? []) {
     if (!isTeacherUserRole(user.role)) continue;
-    teachers = upsertTeacherFromUser(teachers, user);
+    // Côté client : strict — TEACHER_CANON_AMBIGUOUS n'est pas absorbée
+    teachers = upsertTeacherFromUser(teachers, user, { assignments });
   }
   return teachers;
 }
@@ -112,7 +225,9 @@ export function syncSingleUserToTeachers(
     return { teachers: (state.teachers ?? []) as Row[] };
   }
   return {
-    teachers: upsertTeacherFromUser((state.teachers ?? []) as Row[], user),
+    teachers: upsertTeacherFromUser((state.teachers ?? []) as Row[], user, {
+      assignments: (state.assignments ?? []) as Row[],
+    }),
   };
 }
 
@@ -180,7 +295,7 @@ export function parseTeacherProvisioningSelection(
   const normalized = String(value ?? "").trim();
   if (!normalized) return null;
   const match = /^(contact|user):(.+)$/i.exec(normalized);
-  if (match?.[1] && match[2]) {
+  if (match?.[1] && match?.[2]) {
     return { kind: match[1].toLowerCase() as "contact" | "user", id: match[2] };
   }
   return { kind: "contact", id: normalized };

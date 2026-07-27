@@ -1,0 +1,652 @@
+{
+  "audit": "PRE-E1",
+  "phase": "V1",
+  "generatedAt": "2026-07-27T13:14:34.895Z",
+  "apiBase": "http://127.0.0.1:5101/api",
+  "database": "postgresql://somafrik:***@127.0.0.1:5432/somafrik_pre_e1_v1",
+  "engine": "postgresql",
+  "results": [
+    {
+      "id": "BOOT-01",
+      "title": "Backend healthy",
+      "expected": "200",
+      "obtained": "200",
+      "ok": true,
+      "severity": null,
+      "detail": "database=postgresql"
+    },
+    {
+      "id": "AUTH-01",
+      "title": "Superadmin connecté",
+      "expected": "token",
+      "obtained": "token",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "AUTH-02",
+      "title": "Établissements A et B créés",
+      "expected": "2 codes",
+      "obtained": "CD-2026-0051,CD-2026-0052",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "CHAIN-01",
+      "title": "Classe A + 2 élèves + enseignant + matière + affectation",
+      "expected": "2 élèves",
+      "obtained": "2",
+      "ok": true,
+      "severity": null,
+      "detail": "class=V1-A-5906 students=STUDENTS-1785158039724-cbmrrp,STUDENTS-1785158040683-6m8tha"
+    },
+    {
+      "id": "AUTH-03",
+      "title": "Enseignant A connecté",
+      "expected": "token",
+      "obtained": "token",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "PUT-01",
+      "title": "Construction session évaluation+notes (client rules)",
+      "expected": "ok",
+      "obtained": "ok",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "PUT-02",
+      "title": "Note écrite via PUT /api/backoffice/state",
+      "expected": "200",
+      "obtained": "200",
+      "ok": true,
+      "severity": null,
+      "detail": "{\"schools\":[{\"id\":\"8d18e670-5f68-426e-be12-a98ed4699fbb\",\"city\":\"Kinshasa\",\"code\":\"CD-2026-0051\",\"name\":\"E2E School 1785158035906\",\"type\":\"Collège\",\"email\":\"e2e-1785158035906@somafrik.app\",\"force\":true,\"phone\":\"+243 810 035906\",\"slogan\":\"Excellence et Innovation\",\"status\":\"Actif\",\"address\":\"\",\"country\":\"République Démocratique du Congo\",\"logoUrl\":\"\",\"website\":\"\",\"currency\":\"CDF\",\"language\":\"França"
+    },
+    {
+      "id": "RELOAD-01",
+      "title": "Persistance évaluation après nouveau login admin",
+      "expected": "EVAL-1785158045403-2aso3r",
+      "obtained": "EVAL-1785158045403-2aso3r",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "RELOAD-02",
+      "title": "Persistance 2 notes après rechargement state",
+      "expected": "2",
+      "obtained": "2",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "REL-01",
+      "title": "Liens textuels className/subject conservés (JSON)",
+      "expected": "V1-A-5906|Mathématiques",
+      "obtained": "V1-A-5906|Mathématiques",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "REL-02",
+      "title": "evaluation_id présent sur notes JSON",
+      "expected": "EVAL-1785158045403-2aso3r",
+      "obtained": "EVAL-1785158045403-2aso3r",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "PG-01",
+      "title": "Évaluation synchronisée en PostgreSQL après PUT state",
+      "expected": ">=1 row",
+      "obtained": "1",
+      "ok": true,
+      "severity": null,
+      "detail": "Source de vérité PG pour E1"
+    },
+    {
+      "id": "PG-01b",
+      "title": "Évaluation PG porte teacher_id non null",
+      "expected": "teacher_id UUID",
+      "obtained": "27dd731d-69c4-4de2-abae-795bda7aa0dc",
+      "ok": true,
+      "severity": null,
+      "detail": "Sans teacher_id PG, rattachement enseignant du bulletin ambigu"
+    },
+    {
+      "id": "PG-01c",
+      "title": "Élèves de la chaîne présents en PostgreSQL (lookup POST /notes)",
+      "expected": "2",
+      "obtained": "2 PG / 2 match ids JSON",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "PG-02",
+      "title": "Notes présentes en PG liées à evaluation_id (après PUT)",
+      "expected": "2",
+      "obtained": "2",
+      "ok": true,
+      "severity": null,
+      "detail": "evaluation_id=94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293"
+    },
+    {
+      "id": "POST-01",
+      "title": "Note écrite via POST /api/notes",
+      "expected": "201",
+      "obtained": "201",
+      "ok": true,
+      "severity": null,
+      "detail": "{\"id\":\"fd804d0d-2bf1-4b34-bb82-1524260236da\",\"schoolId\":\"8d18e670-5f68-426e-be12-a98ed4699fbb\",\"schoolCode\":\"CD-2026-0051\",\"studentId\":\"STUDENTS-1785158039724-cbmrrp\",\"className\":\"V1-A-5906\",\"subject\":\"Mathématiques\",\"value\":16,\"score\":16,\"coefficient\":2,\"date\":\"27-07-2026\",\"evaluationId\":\"EVAL-1785158045403-2aso3r\",\"evaluationTitle\":\"Devoir V1 PUT 1785158035906\",\"evaluationType\":\"Devoir\",\"period\":\"Trimestre 1\",\"scale\":20,\"evaluationCoefficient\":1,\"gradeStatus\":\"Saisie\",\"status\":\"Saisie\",\"commen"
+    },
+    {
+      "id": "API-01",
+      "title": "Relecture GET /api/notes (admin A)",
+      "expected": "200 + notes chaîne",
+      "obtained": "200/2",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "PG-03",
+      "title": "POST /api/notes reflété en PG (score 16)",
+      "expected": "score=16 présent",
+      "obtained": "oui",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "DUP-01",
+      "title": "Double soumission POST (Idempotency-Key) sans duplication grade",
+      "expected": "même effectif avant/après (clé + sans clé)",
+      "obtained": "avant=2 après1=2 après2(clé)=2 sansClé=2 HTTP 201/201/201",
+      "ok": true,
+      "severity": null,
+      "detail": "ids=96c58dd3-3138-40af-b6af-5ea437290637,fd804d0d-2bf1-4b34-bb82-1524260236da ; même en-tête idempotence=pre-e1-v1-1785158035906 ; rejeu sans en-tête sans ligne supplémentaire"
+    },
+    {
+      "id": "DUP-02",
+      "title": "Double PUT state sans explosion de notes JSON",
+      "expected": "2 notes / eval",
+      "obtained": "2",
+      "ok": true,
+      "severity": null,
+      "detail": "HTTP 200/200"
+    },
+    {
+      "id": "NEG-01",
+      "title": "Note négative refusée",
+      "expected": "400|403|404",
+      "obtained": "400",
+      "ok": true,
+      "severity": null,
+      "detail": "\"Le score doit être entre 0 et 20.\""
+    },
+    {
+      "id": "NEG-02",
+      "title": "Note > maximum refusée",
+      "expected": "400|403|404",
+      "obtained": "400",
+      "ok": true,
+      "severity": null,
+      "detail": "\"Le score doit être entre 0 et 20.\""
+    },
+    {
+      "id": "NEG-03",
+      "title": "Élève hors classe de l'évaluation refusé",
+      "expected": "400|403|404",
+      "obtained": "403",
+      "ok": true,
+      "severity": null,
+      "detail": "\"Accès refusé: élève hors classe affectée.\""
+    },
+    {
+      "id": "NEG-04a",
+      "title": "PUT évaluation matière non affectée (Physique) — refus attendu enseignant",
+      "expected": "403|400",
+      "obtained": "403",
+      "ok": true,
+      "severity": null,
+      "detail": "\"Permission insuffisante : non affecté à V1-A-5906 / Physique.\""
+    },
+    {
+      "id": "NEG-04",
+      "title": "POST note matière non affectée (Physique) refusé pour enseignant",
+      "expected": "400|403|404",
+      "obtained": "403",
+      "ok": true,
+      "severity": null,
+      "detail": "\"Accès refusé: matière non affectée.\""
+    },
+    {
+      "id": "NEG-05",
+      "title": "POST note avec evaluationId inexistant refusé",
+      "expected": "400|404",
+      "obtained": "400",
+      "ok": true,
+      "severity": null,
+      "detail": "\"Évaluation introuvable : note orpheline refusée.\""
+    },
+    {
+      "id": "ISO-01",
+      "title": "Admin A ne voit pas classes/évaluations/notes de B (state)",
+      "expected": "0 fuites",
+      "obtained": "classes=0,evals=0,notes=0",
+      "ok": true,
+      "severity": null,
+      "detail": "Fuite multi-tenant = NO-GO E1"
+    },
+    {
+      "id": "ISO-02",
+      "title": "Enseignant A ne peut pas noter un élève de B",
+      "expected": "400|403|404",
+      "obtained": "403",
+      "ok": true,
+      "severity": null,
+      "detail": "\"Accès refusé: établissement hors périmètre.\""
+    },
+    {
+      "id": "ISO-03",
+      "title": "Affectation enseignant A → classe B refusée ou non persistée pour admin A",
+      "expected": "refus ou non visible",
+      "obtained": "HTTP 400, kept=false",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "REL-03",
+      "title": "Évaluation porte teacherId (identifiant)",
+      "expected": "teacherId non vide",
+      "obtained": "TEACHERS-1785158041727-rz5n1z3d",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "REL-04",
+      "title": "Affectation porte teacherId + className + subject",
+      "expected": "id+textuels",
+      "obtained": "TEACHERS-1785158041727-rz5n1z3d|V1-A-5906|Mathématiques",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "SOT-01",
+      "title": "Cohérence compteurs notes JSON vs grades PG pour l'évaluation V1",
+      "expected": "égaux",
+      "obtained": "json=2 pg=2",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    },
+    {
+      "id": "INFO-01",
+      "title": "Règle client validateGradeValue(-1)",
+      "expected": "erreur",
+      "obtained": "La note ne peut pas être négative.",
+      "ok": true,
+      "severity": null,
+      "detail": null
+    }
+  ],
+  "anomalies": [],
+  "evidence": {
+    "jsonSnapshots": {
+      "afterPutReload": {
+        "evaluation": {
+          "id": "EVAL-1785158045403-2aso3r",
+          "className": "V1-A-5906",
+          "subject": "Mathématiques",
+          "schoolCode": "CD-2026-0051",
+          "teacherId": "TEACHERS-1785158041727-rz5n1z3d",
+          "period": "Trimestre 1"
+        },
+        "notes": [
+          {
+            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+            "studentId": "STUDENTS-1785158039724-cbmrrp",
+            "value": 14.5,
+            "evaluationId": "EVAL-1785158045403-2aso3r",
+            "className": "V1-A-5906",
+            "subject": "Mathématiques",
+            "schoolCode": "CD-2026-0051"
+          },
+          {
+            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+            "studentId": "STUDENTS-1785158040683-6m8tha",
+            "value": 11,
+            "evaluationId": "EVAL-1785158045403-2aso3r",
+            "className": "V1-A-5906",
+            "subject": "Mathématiques",
+            "schoolCode": "CD-2026-0051"
+          }
+        ]
+      },
+      "postNotesResponse": {
+        "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+        "schoolId": "8d18e670-5f68-426e-be12-a98ed4699fbb",
+        "schoolCode": "CD-2026-0051",
+        "studentId": "STUDENTS-1785158039724-cbmrrp",
+        "className": "V1-A-5906",
+        "subject": "Mathématiques",
+        "value": 16,
+        "score": 16,
+        "coefficient": 2,
+        "date": "27-07-2026",
+        "evaluationId": "EVAL-1785158045403-2aso3r",
+        "evaluationTitle": "Devoir V1 PUT 1785158035906",
+        "evaluationType": "Devoir",
+        "period": "Trimestre 1",
+        "scale": 20,
+        "evaluationCoefficient": 1,
+        "gradeStatus": "Saisie",
+        "status": "Saisie",
+        "comment": "",
+        "version": 3,
+        "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+        "enteredAt": "27-07-2026",
+        "audit": [
+          {
+            "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+            "newValue": 16,
+            "date": "27-07-2026"
+          }
+        ]
+      },
+      "getNotes": {
+        "status": 200,
+        "total": 2,
+        "matching": 2,
+        "sample": [
+          {
+            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+            "schoolId": "8d18e670-5f68-426e-be12-a98ed4699fbb",
+            "schoolCode": "CD-2026-0051",
+            "studentId": "STUDENTS-1785158040683-6m8tha",
+            "className": "V1-A-5906",
+            "subject": "Mathématiques",
+            "value": 11,
+            "score": 11,
+            "coefficient": 2,
+            "date": "27-07-2026",
+            "evaluationId": "EVAL-1785158045403-2aso3r",
+            "evaluationTitle": "Devoir V1 PUT 1785158035906",
+            "evaluationType": "Devoir",
+            "period": "Trimestre 1",
+            "scale": 20,
+            "evaluationCoefficient": 1,
+            "gradeStatus": "Saisie",
+            "status": "Saisie",
+            "comment": "",
+            "version": 2,
+            "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+            "enteredAt": "27-07-2026",
+            "audit": [
+              {
+                "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+                "newValue": 11,
+                "date": "27-07-2026"
+              }
+            ]
+          },
+          {
+            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+            "schoolId": "8d18e670-5f68-426e-be12-a98ed4699fbb",
+            "schoolCode": "CD-2026-0051",
+            "studentId": "STUDENTS-1785158039724-cbmrrp",
+            "className": "V1-A-5906",
+            "subject": "Mathématiques",
+            "value": 16,
+            "score": 16,
+            "coefficient": 2,
+            "date": "27-07-2026",
+            "evaluationId": "EVAL-1785158045403-2aso3r",
+            "evaluationTitle": "Devoir V1 PUT 1785158035906",
+            "evaluationType": "Devoir",
+            "period": "Trimestre 1",
+            "scale": 20,
+            "evaluationCoefficient": 1,
+            "gradeStatus": "Saisie",
+            "status": "Saisie",
+            "comment": "",
+            "version": 3,
+            "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+            "enteredAt": "27-07-2026",
+            "audit": [
+              {
+                "authorId": "TEACHERS-1785158041727-rz5n1z3d",
+                "newValue": 16,
+                "date": "27-07-2026"
+              }
+            ]
+          }
+        ]
+      },
+      "isolation": {
+        "leakedEvals": 0,
+        "leakedNotes": 0,
+        "leakedClasses": 0
+      }
+    },
+    "postgresSnapshots": {
+      "afterPut": {
+        "evaluations": [
+          {
+            "id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
+            "legacy_json_id": "EVAL-1785158045403-2aso3r",
+            "title": "Devoir V1 PUT 1785158035906",
+            "max_score": "20.00",
+            "coefficient": "1.00",
+            "status": "published",
+            "class_name": "V1-A-5906",
+            "subject_name": "Mathématiques",
+            "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc",
+            "term_id": "b491fa3f-7bb7-4ffa-aee2-f715d5ad3adc",
+            "school_id": "8d18e670-5f68-426e-be12-a98ed4699fbb"
+          }
+        ],
+        "grades": [
+          {
+            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
+            "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+            "score": "14.50",
+            "max_score": "20.00",
+            "grade_status": "graded",
+            "subject_id": "d5c8bd37-548a-452c-a4ce-de57dddcd08e",
+            "class_id": "25c191ff-bb74-425a-8eb0-4ba84eaf9fb8",
+            "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc"
+          },
+          {
+            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
+            "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+            "score": "11.00",
+            "max_score": "20.00",
+            "grade_status": "graded",
+            "subject_id": "d5c8bd37-548a-452c-a4ce-de57dddcd08e",
+            "class_id": "25c191ff-bb74-425a-8eb0-4ba84eaf9fb8",
+            "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc"
+          }
+        ]
+      },
+      "studentsSchoolA": [
+        {
+          "id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+          "student_code": "STUDENTS-1785158039724-cbmrrp",
+          "first_name": "V1A17851580359060",
+          "last_name": "",
+          "school_code": "CD-2026-0051"
+        },
+        {
+          "id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+          "student_code": "STUDENTS-1785158040683-6m8tha",
+          "first_name": "V1A17851580359061",
+          "last_name": "",
+          "school_code": "CD-2026-0051"
+        }
+      ],
+      "afterPost": {
+        "grades": [
+          {
+            "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
+            "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+            "score": "16.00",
+            "max_score": "20.00",
+            "grade_status": "graded"
+          },
+          {
+            "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+            "evaluation_id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
+            "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+            "score": "11.00",
+            "max_score": "20.00",
+            "grade_status": "graded"
+          }
+        ]
+      },
+      "afterIdempotency": {
+        "evaluationId": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
+        "replayHeaderValue": "pre-e1-v1-1785158035906",
+        "before": {
+          "count": 2,
+          "ids": [
+            "96c58dd3-3138-40af-b6af-5ea437290637",
+            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+          ],
+          "rows": [
+            {
+              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+              "score": "11.00"
+            },
+            {
+              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+              "score": "16.00"
+            }
+          ]
+        },
+        "afterFirstPostSameHeader": {
+          "status": 201,
+          "count": 2,
+          "ids": [
+            "96c58dd3-3138-40af-b6af-5ea437290637",
+            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+          ],
+          "rows": [
+            {
+              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+              "score": "11.00"
+            },
+            {
+              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+              "score": "15.00"
+            }
+          ]
+        },
+        "afterSecondPostSameHeader": {
+          "status": 201,
+          "count": 2,
+          "ids": [
+            "96c58dd3-3138-40af-b6af-5ea437290637",
+            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+          ],
+          "rows": [
+            {
+              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+              "score": "11.00"
+            },
+            {
+              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+              "score": "15.00"
+            }
+          ]
+        },
+        "afterReplayWithoutHeader": {
+          "status": 201,
+          "count": 2,
+          "ids": [
+            "96c58dd3-3138-40af-b6af-5ea437290637",
+            "fd804d0d-2bf1-4b34-bb82-1524260236da"
+          ],
+          "rows": [
+            {
+              "id": "96c58dd3-3138-40af-b6af-5ea437290637",
+              "student_id": "3401a363-e891-464b-bc97-fdfaed4d6293",
+              "score": "11.00"
+            },
+            {
+              "id": "fd804d0d-2bf1-4b34-bb82-1524260236da",
+              "student_id": "523f6232-ec5e-4175-9d7a-1194fd0b08cd",
+              "score": "15.00"
+            }
+          ]
+        },
+        "noExtraRowWithSameHeader": true,
+        "noExtraRowWithoutHeader": true,
+        "idsPreservedWithSameHeader": true
+      }
+    },
+    "sourceOfTruth": {
+      "putPath": "PUT /api/backoffice/state → saveBackOfficeState → sync evaluations/grades PG (si OK)",
+      "postPath": "POST /api/notes → repository.upsertGrade (PG canonique déclaré D3.6b)",
+      "observed": {
+        "engine": "postgresql",
+        "jsonNotesForEval": 2,
+        "pgGradesForEval": 2,
+        "pgEvaluationRow": {
+          "id": "94729a1f-c5d3-4fd1-bbf4-2bdc68cc7293",
+          "legacy_json_id": "EVAL-1785158045403-2aso3r",
+          "title": "Devoir V1 PUT 1785158035906",
+          "max_score": "20.00",
+          "coefficient": "1.00",
+          "status": "published",
+          "class_name": "V1-A-5906",
+          "subject_name": "Mathématiques",
+          "teacher_id": "27dd731d-69c4-4de2-abae-795bda7aa0dc",
+          "term_id": "b491fa3f-7bb7-4ffa-aee2-f715d5ad3adc",
+          "school_id": "8d18e670-5f68-426e-be12-a98ed4699fbb"
+        },
+        "divergence": false
+      }
+    },
+    "commands": [
+      "npm run verify:pre-e1-v1",
+      "ensureDatabase via psql",
+      "spawn backend PORT=5101 DATABASE_URL=...",
+      "login superadmin + setupSchoolForV1 A/B"
+    ]
+  },
+  "summary": {
+    "total": 33,
+    "passed": 33,
+    "failed": 0,
+    "anomalies": 0
+  },
+  "recommendation": {
+    "launchV2": true,
+    "decision": "V2 AUTORISABLE",
+    "rationale": "Chaîne V1 verte sans BLOCKER/CRITICAL. V2 peut démarrer sur instruction CTO."
+  }
+}

@@ -43,6 +43,8 @@ export interface StudentEditingContextValue {
   canUpdateAdministrative: boolean;
   canValidateEnrollment: boolean;
   canAssignEnrollmentClass: boolean;
+  canTransferEnrollment: boolean;
+  canCloseEnrollment: boolean;
   /** Inscriptions C1.2 reconstruites depuis le store (overlay dossier). */
   enrollmentRecords: StudentEnrollmentRecord[];
   /** À appeler après un succès d'édition pour relire le store mock. */
@@ -137,6 +139,14 @@ export function useStudentEditingContext(
       permissionCtx,
       "student.enrollments.assign-class",
     );
+    const canTransferEnrollment = canUpdateStudentWorkspace(
+      permissionCtx,
+      "student.enrollments.transfer",
+    );
+    const canCloseEnrollment = canUpdateStudentWorkspace(
+      permissionCtx,
+      "student.enrollments.close",
+    );
 
     if (!student) {
       return {
@@ -152,6 +162,8 @@ export function useStudentEditingContext(
         canUpdateAdministrative,
         canValidateEnrollment,
         canAssignEnrollmentClass,
+        canTransferEnrollment,
+        canCloseEnrollment,
         enrollmentRecords: [],
         refreshFromStore,
       };
@@ -256,6 +268,8 @@ export function useStudentEditingContext(
       canUpdateAdministrative,
       canValidateEnrollment,
       canAssignEnrollmentClass,
+      canTransferEnrollment,
+      canCloseEnrollment,
       enrollmentRecords: enrollments.map(fromEditableEnrollment),
       refreshFromStore,
     };

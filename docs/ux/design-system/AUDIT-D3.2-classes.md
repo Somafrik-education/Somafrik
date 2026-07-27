@@ -179,4 +179,5 @@ Ces branches restent dans l’assembleur ; **ne pas les extraire sous l’étiqu
 | CI / Security | Verts (docs-only) |
 | UX / API / métier | Aucun changement |
 
-**Suite après validation CTO :** uniquement sur instruction explicite — typiquement ouverture produit fiche Classe, ou autre module D3 (hors réouverture D2.8f / D2.9).
+**Clôture :** lot D3.2 **clos** — tag `d3.2a` @ `045ef54e` (merge PR #59).  
+**Suite :** uniquement sur instruction CTO explicite — fiche Classe produit, ou autre module D3 🔒 (Parents / Présences / Notes / …) ; hors réouverture D2.8f / D2.9.
