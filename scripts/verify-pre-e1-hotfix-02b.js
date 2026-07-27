@@ -318,8 +318,17 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
       row.id === teacherUser.id ? teacherUser : row,
     ),
   });
+  // FIX V2.1 IDENTITY — réutiliser le TEACHERS-* créé par le sync contact+user
+  // (AC-NEW-02) ; ne pas injecter un second id lié au même userId.
+  const syncedCanon =
+    (state.teachers ?? []).find(
+      (row) =>
+        String(row.userId ?? "") === String(teacherUser.id) &&
+        /^TEACHERS-/i.test(String(row.id ?? "")),
+    ) ?? null;
   const teachersRecord = {
-    id: newId("TEACHERS"),
+    ...(syncedCanon ?? {}),
+    id: syncedCanon?.id ?? newId("TEACHERS"),
     userId: teacherUser.id,
     contactId: teacherFlow.contact.id,
     identifier: teacherUser.identifier,
@@ -340,7 +349,10 @@ async function buildChain(adminToken, schoolCode, schoolAdminIdentifier, stamp) 
     academicYear: "2025-2026",
   };
   await putStateKeys(adminToken, {
-    teachers: [teachersRecord, ...(state.teachers ?? [])],
+    teachers: [
+      teachersRecord,
+      ...(state.teachers ?? []).filter((row) => String(row.id) !== String(teachersRecord.id)),
+    ],
     assignments: [assignment, ...(state.assignments ?? [])],
     courses: [
       {

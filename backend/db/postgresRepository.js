@@ -1434,6 +1434,7 @@ class PostgresRepository {
         ensureTeacher: async (schoolId, code, ctx) => {
           const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
           const state = (await this.getBackOfficeState()) ?? {};
+          // Matérialisation exacte de LA même fiche (même id / teacher_code) — pas un jumeau.
           const boTeacher =
             teachers.find(
               (row) =>
@@ -1446,6 +1447,12 @@ class PostgresRepository {
                 String(row.publicId ?? "").trim() === String(code),
             );
           if (!boTeacher) return null;
+          if (
+            String(boTeacher.id ?? "").trim() !== String(code) &&
+            String(boTeacher.publicId ?? "").trim() !== String(code)
+          ) {
+            return null;
+          }
           const school = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
           const materialized = await this.materializeBackOfficeTeacher(
             {
@@ -1458,41 +1465,28 @@ class PostgresRepository {
             ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
             : null;
         },
-        findTeacherByAssignment: async (schoolId, classId, subjectId, preferredTeacherCode) => {
-          if (preferredTeacherCode) {
-            const byCode = await this.one(
-              `SELECT t.*
-               FROM teachers t
-               JOIN teacher_assignments ta ON ta.teacher_id = t.id
-               WHERE t.school_id = $1
-                 AND t.teacher_code = $2
-                 AND ta.class_id = $3
-                 AND ta.subject_id = $4
-                 AND ta.status = 'active'
-               LIMIT 1`,
-              [schoolId, preferredTeacherCode, classId, subjectId],
-            );
-            if (byCode) return byCode;
-          }
-          // Affectation non ambiguë uniquement (une seule ligne active classe+matière).
-          const rows = await this.all(
+        // FIX V2.1 §5.2 — uniquement teacher_code explicite + affectation ; pas de filet opportuniste.
+        findTeacherByExactAssignment: (schoolId, classId, subjectId, preferredTeacherCode) => {
+          if (!preferredTeacherCode) return null;
+          return this.one(
             `SELECT t.*
              FROM teachers t
              JOIN teacher_assignments ta ON ta.teacher_id = t.id
              WHERE t.school_id = $1
-               AND ta.class_id = $2
-               AND ta.subject_id = $3
-               AND ta.status = 'active'`,
-            [schoolId, classId, subjectId],
+               AND t.teacher_code = $2
+               AND ta.class_id = $3
+               AND ta.subject_id = $4
+               AND ta.status = 'active'
+             LIMIT 1`,
+            [schoolId, preferredTeacherCode, classId, subjectId],
           );
-          return rows.length === 1 ? rows[0] : null;
         },
-        findAnyTeacher: (schoolId) =>
-          this.one(`SELECT * FROM teachers WHERE school_id = $1 ORDER BY created_at LIMIT 1`, [
-            schoolId,
-          ]),
       },
-      { ensure: options.ensure !== false, context },
+      {
+        ensure: options.ensure !== false,
+        context,
+        requireTeacher: options.requireTeacher === true,
+      },
     );
 
     // academicYear / periodName reserved for term resolution side-effects above

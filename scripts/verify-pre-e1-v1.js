@@ -446,8 +446,16 @@ async function buildPedagogyChain(adminToken, schoolCode, schoolAdminIdentifier,
       row.id === teacherUserWithPassword.id ? teacherUserWithPassword : row,
     ),
   });
+  // FIX V2.1 IDENTITY — réutiliser le TEACHERS-* créé par le sync (AC-NEW-02)
+  const syncedCanon =
+    (state.teachers ?? []).find(
+      (row) =>
+        String(row.userId ?? "") === String(teacherUserWithPassword.id) &&
+        /^TEACHERS-/i.test(String(row.id ?? "")),
+    ) ?? null;
   const teacherRecord = {
-    id: newId("TEACHERS"),
+    ...(syncedCanon ?? {}),
+    id: syncedCanon?.id ?? newId("TEACHERS"),
     userId: teacherUserWithPassword.id,
     contactId: teacherFlow.contact.id,
     identifier: teacherUserWithPassword.identifier,
@@ -478,7 +486,10 @@ async function buildPedagogyChain(adminToken, schoolCode, schoolAdminIdentifier,
     teacherName: assignment.teacherName,
   };
   state = await putStateKeys(adminToken, {
-    teachers: [teacherRecord, ...(state.teachers ?? [])],
+    teachers: [
+      teacherRecord,
+      ...(state.teachers ?? []).filter((row) => String(row.id) !== String(teacherRecord.id)),
+    ],
     assignments: [assignment, ...(state.assignments ?? [])],
     courses: [course, ...(state.courses ?? [])],
   });
@@ -967,16 +978,28 @@ async function runScenarios(runtime) {
     );
   }
 
-  // Double PUT state (même payload)
+  // Double PUT state — réutiliser les notes/évaluations déjà matérialisées (ids PG),
+  // pas le payload client initial (sinon faux positif « note déjà existante »).
+  const stateBeforeDup = await getState(adminTokenReload);
+  const evalForDup =
+    (stateBeforeDup.evaluations ?? []).find((row) => String(row.id) === String(publishedEval.id)) ??
+    publishedEval;
+  const notesForDup = (stateBeforeDup.notes ?? []).filter(
+    (n) => String(n.evaluationId) === String(publishedEval.id),
+  );
+  const dupPayload = {
+    evaluations: [evalForDup],
+    notes: notesForDup.length ? notesForDup : putNotes,
+  };
   const putTwice1 = await request("/backoffice/state", {
     method: "PUT",
     token: teacherToken,
-    body: { evaluations: [publishedEval], notes: putNotes },
+    body: dupPayload,
   });
   const putTwice2 = await request("/backoffice/state", {
     method: "PUT",
     token: teacherToken,
-    body: { evaluations: [publishedEval], notes: putNotes },
+    body: dupPayload,
   });
   const notesAfterDoublePut = (await getState(adminTokenReload)).notes?.filter(
     (n) => n.evaluationId === publishedEval.id,

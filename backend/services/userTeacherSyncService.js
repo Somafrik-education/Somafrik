@@ -1,5 +1,10 @@
 /**
  * Synchronisation compte utilisateur (rôle Enseignant) → fiche teachers[].
+ *
+ * FIX V2.1 IDENTITY — CONTRAT-FIX-V2.1-IDENTITY.md
+ * - Canon pédagogique : TEACHERS-*
+ * - Historique TEACHER-* seul : pas de création auto TEACHERS-* (AC-HIST-02)
+ * - Ambiguïté multi-TEACHERS-* : erreur structurée (pas de created_at)
  */
 
 function normalize(value) {
@@ -10,9 +15,29 @@ function normalize(value) {
     .toLowerCase();
 }
 
+function isTeachersCode(id) {
+  return /^TEACHERS-/i.test(String(id ?? "").trim());
+}
+
+function isTeacherTwinCode(id) {
+  const s = String(id ?? "").trim();
+  return /^TEACHER-/i.test(s) && !/^TEACHERS-/i.test(s);
+}
+
+function sameSchool(teacherSchool, schoolCode) {
+  return normalize(teacherSchool) === normalize(schoolCode);
+}
+
 function isTeacherUserRole(role) {
   const key = normalize(role);
   return key === "enseignant" || key.includes("prof");
+}
+
+function syncError(code, message, statusCode = 409) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  return error;
 }
 
 function teacherMatchesUser(teacher, user) {
@@ -26,6 +51,70 @@ function teacherMatchesUser(teacher, user) {
   }
   const linkedUserId = String(teacher.userId ?? "");
   return !linkedUserId || linkedUserId === String(user.id ?? "");
+}
+
+function teachersLinkedByUserId(teachers, user, schoolCode) {
+  const userId = String(user?.id ?? "").trim();
+  if (!userId) return [];
+  return (teachers ?? []).filter(
+    (teacher) =>
+      String(teacher.userId ?? "").trim() === userId &&
+      sameSchool(teacher.schoolCode, schoolCode),
+  );
+}
+
+function teachersCodeLinked(teachers, user, schoolCode) {
+  return teachersLinkedByUserId(teachers, user, schoolCode).filter((teacher) =>
+    isTeachersCode(teacher.id),
+  );
+}
+
+function twinOnlyLinked(teachers, user, schoolCode) {
+  const linked = teachersLinkedByUserId(teachers, user, schoolCode);
+  if (!linked.length) return false;
+  const hasTeachers = linked.some((teacher) => isTeachersCode(teacher.id));
+  const hasTwin = linked.some((teacher) => isTeacherTwinCode(teacher.id));
+  return hasTwin && !hasTeachers;
+}
+
+/**
+ * §4.1 — sélection déterministe du canon TEACHERS-*.
+ * @returns {object|null} fiche canon ou null si aucune
+ * @throws TEACHER_CANON_AMBIGUOUS
+ */
+function resolveCanonicalTeachersRow(teachers, user, schoolCode, assignments = []) {
+  const linked = teachersCodeLinked(teachers, user, schoolCode);
+  // Même id répété dans le tableau ≠ pluralité d'identités
+  const byId = new Map();
+  for (const teacher of linked) {
+    const id = String(teacher.id ?? "").trim();
+    if (!id) continue;
+    if (!byId.has(id)) byId.set(id, teacher);
+  }
+  const candidates = [...byId.values()];
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const activeTeacherIds = new Set(
+    (assignments ?? [])
+      .filter((assignment) => {
+        if (!sameSchool(assignment.schoolCode, schoolCode)) return false;
+        const status = normalize(assignment.status ?? "active");
+        return status === "" || status === "active" || status === "actif";
+      })
+      .map((assignment) => String(assignment.teacherId ?? "").trim())
+      .filter(Boolean),
+  );
+
+  const viaAssignment = candidates.filter((teacher) =>
+    activeTeacherIds.has(String(teacher.id ?? "").trim()),
+  );
+  if (viaAssignment.length === 1) return viaAssignment[0];
+
+  throw syncError(
+    "TEACHER_CANON_AMBIGUOUS",
+    "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté",
+  );
 }
 
 function nextTeacherLoginId(schoolCode, teachers) {
@@ -54,7 +143,11 @@ function nextTeacherLoginId(schoolCode, teachers) {
   };
 }
 
-function buildTeacherFromUser(user, existing) {
+function newTeachersId() {
+  return `TEACHERS-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildTeacherFromUser(user, existing, { forceNewTeachersId = false } = {}) {
   const schoolCode = String(user.schoolCode ?? "").trim();
   const ids = existing?.identifier
     ? { identifier: existing.identifier, publicId: existing.publicId }
@@ -64,9 +157,16 @@ function buildTeacherFromUser(user, existing) {
   const resolvedPublicId = String(user.publicId ?? ids.publicId);
   const contactId = String(user.contactId ?? existing?.contactId ?? "").trim();
 
+  let id;
+  if (existing?.id && !forceNewTeachersId) {
+    id = String(existing.id);
+  } else {
+    id = newTeachersId();
+  }
+
   return {
     ...(existing ?? {}),
-    id: String(existing?.id ?? `TEACHER-${Date.now()}`),
+    id,
     userId: user.id,
     contactId: contactId || undefined,
     publicId: resolvedPublicId,
@@ -100,8 +200,23 @@ function linkTeacherToContact(contacts = [], user, teacher) {
   });
 }
 
+function replaceTeacher(teachers, previousId, row) {
+  const next = [...teachers];
+  const index = next.findIndex((teacher) => String(teacher.id) === String(previousId));
+  if (index >= 0) {
+    next[index] = row;
+    return next;
+  }
+  return [row, ...next];
+}
+
 class UserTeacherSyncService {
-  upsertTeacherFromUser(teachers = [], user) {
+  /**
+   * @param {object[]} teachers
+   * @param {object} user
+   * @param {{ assignments?: object[] }} [options]
+   */
+  upsertTeacherFromUser(teachers = [], user, options = {}) {
     if (!isTeacherUserRole(user?.role)) {
       return teachers;
     }
@@ -110,26 +225,77 @@ class UserTeacherSyncService {
       return teachers;
     }
 
-    const next = [...teachers];
-    const index = next.findIndex((teacher) => teacherMatchesUser(teacher, user));
-    const row = buildTeacherFromUser(user, index >= 0 ? next[index] : undefined);
+    const assignments = options.assignments ?? [];
+    const canon = resolveCanonicalTeachersRow(teachers, user, schoolCode, assignments);
 
-    if (index >= 0) {
-      next[index] = row;
-      return next;
+    // Canon TEACHERS-* déterminé → réutiliser uniquement
+    if (canon) {
+      const row = buildTeacherFromUser(user, canon);
+      return replaceTeacher(teachers, canon.id, row);
     }
 
-    return [row, ...next];
+    // AC-HIST-02 : historique TEACHER-* seul → ne pas créer TEACHERS-*
+    if (twinOnlyLinked(teachers, user, schoolCode)) {
+      const twins = teachersLinkedByUserId(teachers, user, schoolCode).filter((teacher) =>
+        isTeacherTwinCode(teacher.id),
+      );
+      // Mettre à jour le premier twin matché pour préserver le comportement historique
+      // (pas de nouvelle identité). Ordre non utilisé pour choisir un canon TEACHERS-*.
+      const existingTwin =
+        twins.find((teacher) => teacherMatchesUser(teacher, user)) ?? twins[0];
+      if (existingTwin) {
+        const row = buildTeacherFromUser(user, existingTwin);
+        return replaceTeacher(teachers, existingTwin.id, row);
+      }
+      return teachers;
+    }
+
+    // Compte nouveau : aucune fiche liée → créer un seul TEACHERS-*
+    const linked = teachersLinkedByUserId(teachers, user, schoolCode);
+    if (linked.length === 0) {
+      const row = buildTeacherFromUser(user, undefined, { forceNewTeachersId: true });
+      if (!isTeachersCode(row.id)) {
+        throw syncError("TEACHER_CANON_REQUIRED", "Nouvelle fiche enseignant doit être TEACHERS-*");
+      }
+      return [row, ...teachers];
+    }
+
+    // Fiches liées non TEACHERS-* non twin-only (cas résiduel) : ne pas créer de jumeau
+    const match = linked.find((teacher) => teacherMatchesUser(teacher, user)) ?? linked[0];
+    const row = buildTeacherFromUser(user, match);
+    return replaceTeacher(teachers, match.id, row);
   }
 
   syncTeachersFromUserAccounts(state = {}) {
     let teachers = Array.isArray(state.teachers) ? [...state.teachers] : [];
     let contacts = Array.isArray(state.contacts) ? [...state.contacts] : [];
     const users = Array.isArray(state.users) ? state.users : [];
+    const assignments = Array.isArray(state.assignments) ? state.assignments : [];
     for (const user of users) {
       if (!isTeacherUserRole(user.role)) continue;
-      teachers = this.upsertTeacherFromUser(teachers, user);
-      const index = teachers.findIndex((teacher) => teacherMatchesUser(teacher, user));
+      try {
+        teachers = this.upsertTeacherFromUser(teachers, user, { assignments });
+      } catch (error) {
+        // Historique multi-TEACHERS-* : ne pas choisir silencieusement, ne pas
+        // bloquer un PUT bulk non lié (les écritures qui exigent un canon
+        // appellent resolveCanonicalTeachersRow et reçoivent l'erreur).
+        if (error?.code === "TEACHER_CANON_AMBIGUOUS") {
+          continue;
+        }
+        throw error;
+      }
+      let index = -1;
+      try {
+        const canon = resolveCanonicalTeachersRow(teachers, user, user.schoolCode, assignments);
+        if (canon) {
+          index = teachers.findIndex((teacher) => String(teacher.id) === String(canon.id));
+        }
+      } catch {
+        index = -1;
+      }
+      if (index < 0) {
+        index = teachers.findIndex((teacher) => teacherMatchesUser(teacher, user));
+      }
       if (index < 0) continue;
       const teacher = teachers[index];
       const contactId = String(user.contactId ?? teacher.contactId ?? "").trim();
@@ -142,4 +308,12 @@ class UserTeacherSyncService {
   }
 }
 
-module.exports = { UserTeacherSyncService, isTeacherUserRole };
+module.exports = {
+  UserTeacherSyncService,
+  isTeacherUserRole,
+  isTeachersCode,
+  isTeacherTwinCode,
+  resolveCanonicalTeachersRow,
+  twinOnlyLinked,
+  syncError,
+};

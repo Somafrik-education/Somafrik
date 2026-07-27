@@ -1,0 +1,118 @@
+{
+  "audit": "PRE-E1",
+  "phase": "V2.1-FIX",
+  "subject": "PRE-E1-IDENTITY-LIFECYCLE-FIX",
+  "contract": "docs/audits/CONTRAT-FIX-V2.1-IDENTITY.md",
+  "generatedAt": "2026-07-27T12:32:19.093Z",
+  "nature": "corrective-implementation-proof",
+  "criteria": [
+    {
+      "id": "AC-NEW-01",
+      "title": "Compte nouveau → TEACHERS-* uniquement (unit)",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "AC-DET-01",
+      "title": "§4.1 multi-TEACHERS-* → TEACHER_CANON_AMBIGUOUS (unit)",
+      "status": "PASS",
+      "detail": "couvert par userTeacherSyncService.test.js",
+      "extra": null
+    },
+    {
+      "id": "AC-HIST-02",
+      "title": "Historique TEACHER-* seul → aucun TEACHERS-* créé (unit)",
+      "status": "PASS",
+      "detail": "couvert par userTeacherSyncService.test.js",
+      "extra": null
+    },
+    {
+      "id": "AC-NEW-04-UNIT",
+      "title": "Eval : lookup exact / matérialisation / refus (pas findAnyTeacher)",
+      "status": "PASS",
+      "detail": "EVAL_TEACHER_UNRESOLVED + pas d'opportunisme",
+      "extra": null
+    }
+  ],
+  "gates": [
+    {
+      "id": "GATE-UNIT-EVAL",
+      "title": "evaluationAttachment.test.js",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "GATE-UNIT-SYNC",
+      "title": "userTeacherSyncService.test.js",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "GATE-UNIT-PEDAGOGY-BO",
+      "title": "pedagogyStaffBoPersistence.test.js",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "GATE-UNIT-DEDUPE",
+      "title": "backofficeDedupe.teachers.test.js",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "AC-REG-01",
+      "title": "npm run verify:pre-e1-hotfix-02b",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "AC-REG-02",
+      "title": "npm run verify:pre-e1-v1",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    }
+  ],
+  "staticChecks": [
+    {
+      "id": "STATIC-01",
+      "title": "evaluationAttachment n'appelle pas findAnyTeacher",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "STATIC-02",
+      "title": "postgresRepository upsertEvaluation n'enregistre plus findAnyTeacher",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "STATIC-03",
+      "title": "UserTeacherSyncService crée TEACHERS-* (pas TEACHER-${Date})",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    },
+    {
+      "id": "STATIC-04",
+      "title": "AC-HIST-02 présent (twinOnly / pas de création auto TEACHERS)",
+      "status": "PASS",
+      "detail": null,
+      "extra": null
+    }
+  ],
+  "ok": true,
+  "summary": {
+    "pass": 14,
+    "fail": 0,
+    "ok": true
+  }
+}
