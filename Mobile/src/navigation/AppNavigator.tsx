@@ -56,12 +56,12 @@ export type RootStackParamList = {
   RoleSelection: undefined;
   Login: {
     school: {
-      id: string;
+      id?: string;
       publicId?: string;
       code: string;
       name: string;
       city: string;
-      slogan: string;
+      slogan?: string;
       logoUrl?: string;
     };
     accessIdentifier?: string;

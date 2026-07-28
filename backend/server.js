@@ -10,6 +10,7 @@ const { BackOfficeAccessService } = require("./services/backOfficeAccessService"
 const { hashSecret } = require("./services/credentialService");
 const { validatePasswordPolicy, validateAccountSecret, validateIntroducedAccountSecrets } = require("./lib/userAccountRules");
 const { GradeBookService } = require("./services/gradeBookService");
+const { toPublicSchool } = require("./lib/publicSchool");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
 const { createPostgresRepository, initializeRepository } = require("./db/repositoryFactory");
@@ -283,7 +284,7 @@ if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
 
 app.get("/api/schools", asyncHandler(async (_req, res) => {
   const { platformSchools } = await getRuntime();
-  res.json(platformSchools);
+  res.json(platformSchools.map(toPublicSchool));
 }));
 
 app.get("/api/schools/:code", asyncHandler(async (req, res) => {
@@ -299,7 +300,7 @@ app.get("/api/schools/:code", asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Code etablissement invalide" });
   }
 
-  res.json(foundSchool);
+  res.json(toPublicSchool(foundSchool));
 }));
 
 app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {

@@ -54,7 +54,7 @@ type LoginPayload = {
 };
 
 export type SchoolInfo = {
-  id: string;
+  id?: string;
   publicId?: string;
   code: string;
   name: string;
@@ -66,7 +66,7 @@ export type SchoolInfo = {
   email?: string;
   website?: string;
   currency?: string;
-  slogan: string;
+  slogan?: string;
   status?: string;
   logoUrl?: string;
   schoolYear?: string;
