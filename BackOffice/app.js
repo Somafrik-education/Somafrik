@@ -1135,21 +1135,21 @@ function renderSchools() {
     .map(
       (school) => `
         <tr>
-          <td><strong>${school.name}</strong><br><small>${school.type}</small></td>
-          <td>${school.code}</td>
-          <td>${school.country}</td>
-          <td>${school.city}</td>
-          <td><span class="status">${school.status}</span></td>
-          <td>${school.subscriptionPlan}<br><small>${school.subscriptionEndDate}</small></td>
+          <td><strong>${escapeHtml(school.name)}</strong><br><small>${escapeHtml(school.type)}</small></td>
+          <td>${escapeHtml(school.code)}</td>
+          <td>${escapeHtml(school.country)}</td>
+          <td>${escapeHtml(school.city)}</td>
+          <td><span class="status">${escapeHtml(school.status)}</span></td>
+          <td>${escapeHtml(school.subscriptionPlan)}<br><small>${escapeHtml(school.subscriptionEndDate)}</small></td>
           <td>
             <div class="row-actions">
               ${
                 school.validationStatus === "En attente"
-                  ? `<button class="icon-action" type="button" data-action="validate-school" data-id="${school.code}">Valider</button>`
-                  : `<button class="icon-action" type="button" data-action="inspect-school" data-id="${school.code}">Voir</button>`
+                  ? `<button class="icon-action" type="button" data-action="validate-school" data-id="${escapeHtml(school.code)}">Valider</button>`
+                  : `<button class="icon-action" type="button" data-action="inspect-school" data-id="${escapeHtml(school.code)}">Voir</button>`
               }
-              <button class="icon-action" type="button" data-action="edit-school" data-id="${school.code}">Modifier</button>
-              <button class="icon-action ${school.status === "Suspendu" ? "" : "danger"}" type="button" data-action="toggle-school" data-id="${school.code}">
+              <button class="icon-action" type="button" data-action="edit-school" data-id="${escapeHtml(school.code)}">Modifier</button>
+              <button class="icon-action ${school.status === "Suspendu" ? "" : "danger"}" type="button" data-action="toggle-school" data-id="${escapeHtml(school.code)}">
                 ${school.status === "Suspendu" ? "Réactiver" : "Suspendre"}
               </button>
             </div>
@@ -1184,7 +1184,10 @@ function renderSchoolFilters() {
 function renderSelectOptions(select, values, emptyLabel) {
   const current = select.value;
   const options = [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
-  select.innerHTML = [`<option value="">${emptyLabel}</option>`, ...options.map((value) => `<option value="${value}">${value}</option>`)].join("");
+  select.innerHTML = [
+    `<option value="">${escapeHtml(emptyLabel)}</option>`,
+    ...options.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`),
+  ].join("");
   select.value = options.includes(current) ? current : "";
 }
 
@@ -1207,16 +1210,16 @@ function renderCountries() {
     .map(
       (country) => `
         <tr>
-          <td><strong>${country.name}</strong><br><small>Admin : ${country.administratorId || "À affecter"}</small></td>
-          <td>${country.code}</td>
-          <td>${country.phonePrefix}</td>
-          <td>${country.currency}</td>
-          <td>${country.timezone}</td>
-          <td><span class="status ${getStatusClass(country.status)}">${country.status}</span></td>
+          <td><strong>${escapeHtml(country.name)}</strong><br><small>Admin : ${escapeHtml(country.administratorId || "À affecter")}</small></td>
+          <td>${escapeHtml(country.code)}</td>
+          <td>${escapeHtml(country.phonePrefix)}</td>
+          <td>${escapeHtml(country.currency)}</td>
+          <td>${escapeHtml(country.timezone)}</td>
+          <td><span class="status ${getStatusClass(country.status)}">${escapeHtml(country.status)}</span></td>
           <td>
             <div class="row-actions">
-              <button class="icon-action" type="button" data-action="assign-country-admin" data-id="${country.id}">Admin</button>
-              <button class="icon-action ${country.status === "Suspendu" ? "" : "danger"}" type="button" data-action="toggle-country" data-id="${country.id}">
+              <button class="icon-action" type="button" data-action="assign-country-admin" data-id="${escapeHtml(country.id)}">Admin</button>
+              <button class="icon-action ${country.status === "Suspendu" ? "" : "danger"}" type="button" data-action="toggle-country" data-id="${escapeHtml(country.id)}">
                 ${country.status === "Suspendu" ? "Réactiver" : "Suspendre"}
               </button>
             </div>
@@ -1234,16 +1237,16 @@ function renderSubscriptions() {
     .map(
       (subscription) => `
         <tr>
-          <td><strong>${subscription.schoolCode}</strong><br><small>${subscription.status}</small></td>
-          <td>${subscription.country}</td>
-          <td>${subscription.plan}</td>
-          <td>${subscription.monthlyPrice} ${subscription.currency}</td>
-          <td>${subscription.endDate}</td>
-          <td><span class="status ${getPaymentClass(subscription.paymentStatus)}">${subscription.paymentStatus}</span></td>
+          <td><strong>${escapeHtml(subscription.schoolCode)}</strong><br><small>${escapeHtml(subscription.status)}</small></td>
+          <td>${escapeHtml(subscription.country)}</td>
+          <td>${escapeHtml(subscription.plan)}</td>
+          <td>${escapeHtml(subscription.monthlyPrice)} ${escapeHtml(subscription.currency)}</td>
+          <td>${escapeHtml(subscription.endDate)}</td>
+          <td><span class="status ${getPaymentClass(subscription.paymentStatus)}">${escapeHtml(subscription.paymentStatus)}</span></td>
           <td>
             <div class="row-actions">
-              <button class="icon-action" type="button" data-action="renew-subscription" data-id="${subscription.id}">Renouveler</button>
-              <button class="icon-action" type="button" data-action="remind-subscription" data-id="${subscription.id}">Relancer</button>
+              <button class="icon-action" type="button" data-action="renew-subscription" data-id="${escapeHtml(subscription.id)}">Renouveler</button>
+              <button class="icon-action" type="button" data-action="remind-subscription" data-id="${escapeHtml(subscription.id)}">Relancer</button>
             </div>
           </td>
         </tr>
@@ -1261,14 +1264,14 @@ function renderNotifications() {
       (notification) => `
         <article class="notification-item">
           <div>
-            <strong>${notification.title}</strong>
-            <p>${notification.type} • ${notification.priority} • ${(notification.channels ?? []).join(", ")}</p>
-            <p>${notification.message}</p>
+            <strong>${escapeHtml(notification.title)}</strong>
+            <p>${escapeHtml(notification.type)} • ${escapeHtml(notification.priority)} • ${escapeHtml((notification.channels ?? []).join(", "))}</p>
+            <p>${escapeHtml(notification.message)}</p>
           </div>
           <div class="row-actions">
-            <span class="status ${notification.status === "Non lu" ? "status-warning" : ""}">${notification.status}</span>
-            <button class="icon-action" type="button" data-action="read-notification" data-id="${notification.id}">Lu</button>
-            <button class="icon-action danger" type="button" data-action="archive-notification" data-id="${notification.id}">Archiver</button>
+            <span class="status ${notification.status === "Non lu" ? "status-warning" : ""}">${escapeHtml(notification.status)}</span>
+            <button class="icon-action" type="button" data-action="read-notification" data-id="${escapeHtml(notification.id)}">Lu</button>
+            <button class="icon-action danger" type="button" data-action="archive-notification" data-id="${escapeHtml(notification.id)}">Archiver</button>
           </div>
         </article>
       `
@@ -3367,8 +3370,8 @@ function openSchoolDetail(school) {
     <div class="detail-section">
       <strong>Actions</strong>
       <div class="row-actions detail-actions">
-        <button class="icon-action" type="button" data-action="edit-school" data-id="${school.code}">Modifier</button>
-        <button class="icon-action ${school.status === "Suspendu" ? "" : "danger"}" type="button" data-action="toggle-school" data-id="${school.code}">
+        <button class="icon-action" type="button" data-action="edit-school" data-id="${escapeHtml(school.code)}">Modifier</button>
+        <button class="icon-action ${school.status === "Suspendu" ? "" : "danger"}" type="button" data-action="toggle-school" data-id="${escapeHtml(school.code)}">
           ${school.status === "Suspendu" ? "Réactiver" : "Suspendre"}
         </button>
       </div>
@@ -3608,8 +3611,8 @@ function addOneYearDate(value) {
 function renderDetailItem(label, value) {
   return `
     <article class="detail-item">
-      <span>${label}</span>
-      <strong>${value}</strong>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
     </article>
   `;
 }
