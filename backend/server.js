@@ -1272,6 +1272,12 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   if (saved?.syncAck && typeof saved.syncAck === "object") {
     response.syncAck = saved.syncAck;
   }
+  // Lot 2 / T1 — identitySyncAck.skips[] toujours présent (tableau, éventuellement vide).
+  // Extraire AVANT sanitize/save : sanitizeBackOfficeState ne persiste pas ce champ.
+  const rawSkips = nextStateWithCourses?.identitySyncAck?.skips;
+  response.identitySyncAck = {
+    skips: Array.isArray(rawSkips) ? rawSkips : [],
+  };
   res.json(response);
 }));
 
@@ -2696,54 +2702,58 @@ function mergeScopedBackOfficeState(
       return finalize ? finalize(mergedRows, current[entity] ?? [], principal) : mergedRows;
     };
 
-    return applyDeletedRows({
-      ...current,
-      ...requested,
-      schools: mergeEntity("schools", finalizeSuperAdminSchoolValidation),
-      users: mergeEntity("users", finalizeSuperAdminUserValidation),
-      countries: mergeEntity("countries"),
-      contacts: mergeEntity("contacts"),
-      relations: mergeEntity("relations"),
-      subscriptions: mergeEntity("subscriptions"),
-      notifications: mergeEntity("notifications"),
-      students: mergeEntity("students"),
-      teachers: mergeEntity("teachers"),
-      classes: mergeEntity("classes"),
-      courses: mergeEntity("courses"),
-      assignments: mergeEntity("assignments"),
-      courseSchedules: mergeEntity("courseSchedules"),
-      payments: mergeEntity("payments"),
-      paymentStatuses: mergeEntity("paymentStatuses"),
-      feeGrids: mergeEntity("feeGrids"),
-      schoolFeeItems: mergeEntity("schoolFeeItems"),
-      studentFees: mergeEntity("studentFees"),
-      feeTariffHistory: mergeEntity("feeTariffHistory"),
-      presences: mergeEntity("presences"),
-      notes: mergeEntity("notes"),
-      evaluations: mergeEntity("evaluations"),
-      exams: mergeEntity("exams"),
-      bulletins: mergeEntity("bulletins"),
-      documents: mergeEntity("documents"),
-      announcements: mergeEntity("announcements"),
-      messages: mergeEntity("messages"),
-      rolePermissions: {
-        ...current.rolePermissions,
-        ...(requested.rolePermissions ?? {}),
-      },
-      academicConfigs: mergeAcademicConfigs(
-        current.academicConfigs,
-        requested.academicConfigs ?? {},
-        true,
-      ),
-      dashboardChartConfig: sanitizeDashboardChartConfig(
-        requested.dashboardChartConfig ?? current.dashboardChartConfig,
-      ),
-      deletedRows: mergeDeletedRows(
-        current.deletedRows,
-        detectDeletedRows(current, requested, deletionScope),
-      ),
-      updatedAt: new Date().toISOString(),
-    });
+    return {
+      ...applyDeletedRows({
+        ...current,
+        ...requested,
+        schools: mergeEntity("schools", finalizeSuperAdminSchoolValidation),
+        users: mergeEntity("users", finalizeSuperAdminUserValidation),
+        countries: mergeEntity("countries"),
+        contacts: mergeEntity("contacts"),
+        relations: mergeEntity("relations"),
+        subscriptions: mergeEntity("subscriptions"),
+        notifications: mergeEntity("notifications"),
+        students: mergeEntity("students"),
+        teachers: mergeEntity("teachers"),
+        classes: mergeEntity("classes"),
+        courses: mergeEntity("courses"),
+        assignments: mergeEntity("assignments"),
+        courseSchedules: mergeEntity("courseSchedules"),
+        payments: mergeEntity("payments"),
+        paymentStatuses: mergeEntity("paymentStatuses"),
+        feeGrids: mergeEntity("feeGrids"),
+        schoolFeeItems: mergeEntity("schoolFeeItems"),
+        studentFees: mergeEntity("studentFees"),
+        feeTariffHistory: mergeEntity("feeTariffHistory"),
+        presences: mergeEntity("presences"),
+        notes: mergeEntity("notes"),
+        evaluations: mergeEntity("evaluations"),
+        exams: mergeEntity("exams"),
+        bulletins: mergeEntity("bulletins"),
+        documents: mergeEntity("documents"),
+        announcements: mergeEntity("announcements"),
+        messages: mergeEntity("messages"),
+        rolePermissions: {
+          ...current.rolePermissions,
+          ...(requested.rolePermissions ?? {}),
+        },
+        academicConfigs: mergeAcademicConfigs(
+          current.academicConfigs,
+          requested.academicConfigs ?? {},
+          true,
+        ),
+        dashboardChartConfig: sanitizeDashboardChartConfig(
+          requested.dashboardChartConfig ?? current.dashboardChartConfig,
+        ),
+        deletedRows: mergeDeletedRows(
+          current.deletedRows,
+          detectDeletedRows(current, requested, deletionScope),
+        ),
+        updatedAt: new Date().toISOString(),
+      }),
+      // Lot 2 / T1 — ephemeral (non persisté par sanitizeBackOfficeState)
+      identitySyncAck: { skips: [] },
+    };
   }
 
   if (principal.role === "Admin Pays") {
@@ -2757,7 +2767,8 @@ function mergeScopedBackOfficeState(
       detectDeletedRows(scopedCurrent, scopedRequested, countryDeletionScope),
     );
 
-    return applyDeletedRows({
+    return {
+      ...applyDeletedRows({
       ...current,
       schools: applyCountryAdminSchoolValidation(
         mergeScopedEntityIfTouched("schools", current, scopedRequested, scopedCurrent, touchedKeys),
@@ -2800,7 +2811,10 @@ function mergeScopedBackOfficeState(
       rolePermissions: current.rolePermissions,
       deletedRows,
       updatedAt: new Date().toISOString(),
-    });
+    }),
+      // Lot 2 / T1 — ephemeral
+      identitySyncAck: { skips: [] },
+    };
   }
 
   const scopedCurrent = scopeBackOfficeState(current, principal);
@@ -2868,6 +2882,7 @@ function mergeScopedBackOfficeState(
       : null;
   const syncedTeachers = teacherSync?.teachers ?? current.teachers;
   const syncedContacts = teacherSync?.contacts ?? mergedContacts;
+  const identitySyncSkips = Array.isArray(teacherSync?.skips) ? teacherSync.skips : [];
   const mergedCourses = mergeScopedEntityIfTouched(
     "courses",
     current,
@@ -2876,7 +2891,8 @@ function mergeScopedBackOfficeState(
     touchedKeys,
   );
 
-  return applyDeletedRows({
+  return {
+    ...applyDeletedRows({
     ...current,
     schools: mergeScopedEntityIfTouched("schools", current, scopedRequested, scopedCurrent, touchedKeys),
     users: mergedUsers,
@@ -3020,7 +3036,10 @@ function mergeScopedBackOfficeState(
       : current.auditLog,
     deletedRows,
     updatedAt: new Date().toISOString(),
-  });
+  }),
+    // Lot 2 / T1 — propager skips sync (ephemeral, non persisté)
+    identitySyncAck: { skips: identitySyncSkips },
+  };
 }
 
 /** Fusionne le journal d'audit (SEC-004) client + serveur, dédupliqué par id, plafonné à 200. */
