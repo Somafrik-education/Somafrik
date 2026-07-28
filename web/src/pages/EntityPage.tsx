@@ -112,7 +112,11 @@ import {
   parentChildBundleToForm,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
-import { validateTeacherDeletion, validateTeacherSchoolEntry } from "../lib/teacherRules";
+import {
+  validateTeacherDeletion,
+  validateTeacherIdentityDuplicate,
+  validateTeacherSchoolEntry,
+} from "../lib/teacherRules";
 import { markAllAnnouncementsRead } from "../lib/announcementsRead";
 import { normalize, isSchoolAdminRole } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
@@ -614,6 +618,15 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
       const entryError = validateTeacherSchoolEntry(workingItem);
       if (entryError) {
         showToast(entryError, "error");
+        return;
+      }
+      const identityError = validateTeacherIdentityDuplicate(
+        workingItem,
+        getScopedEntityRows("teachers", scopeUser, state),
+        editing.id ? String(editing.id) : undefined,
+      );
+      if (identityError) {
+        showToast(identityError, "error");
         return;
       }
     }
