@@ -162,7 +162,7 @@ jobs:
           npm run verify:pre-e1-hotfix-02
           node backend/lib/backofficeDedupe.teachers.test.js
           npm run check
-          npm --prefix web test -- --run src/lib/syncOutbox.test.ts src/lib/backofficeStateMerge.test.ts
+          npm --prefix web test
 
       - name: Bootstrap runtime guard (PostgreSQL préprod-like)
         env:

@@ -41,6 +41,38 @@ export function validateTeacherSchoolEntry(teacher: Row): string | null {
   return null;
 }
 
+/** Empêche la création répétée d'une même identité civile dans un établissement. */
+export function validateTeacherIdentityDuplicate(
+  candidate: Row,
+  teachers: Row[],
+  excludedId?: string,
+): string | null {
+  const normalizedPersonName = (value: unknown) =>
+    normalize(String(value ?? "")).replace(/\s+/g, " ");
+  const schoolCode = normalize(String(candidate.schoolCode ?? ""));
+  const name = normalizedPersonName(candidate.name);
+  const firstName = normalizedPersonName(candidate.firstName);
+  const birthDate = String(candidate.birthDate ?? "").trim();
+  if (!schoolCode || !name || !firstName) return null;
+
+  const duplicate = teachers.find((teacher) => {
+    if (excludedId && String(teacher.id ?? "") === excludedId) return false;
+    if (
+      normalize(String(teacher.schoolCode ?? "")) !== schoolCode ||
+      normalizedPersonName(teacher.name) !== name ||
+      normalizedPersonName(teacher.firstName) !== firstName
+    ) {
+      return false;
+    }
+    const existingBirthDate = String(teacher.birthDate ?? "").trim();
+    return !birthDate || !existingBirthDate || birthDate === existingBirthDate;
+  });
+
+  return duplicate
+    ? "Une fiche enseignant portant les mêmes nom et prénom existe déjà dans cet établissement. Modifiez la fiche existante ou renseignez des dates de naissance différentes s'il s'agit d'homonymes."
+    : null;
+}
+
 export interface TeacherDeletionBlocker {
   kind: string;
   label: string;

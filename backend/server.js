@@ -8,7 +8,12 @@ require("dotenv").config();
 const { AuthService, BusinessError } = require("./services/authService");
 const { BackOfficeAccessService } = require("./services/backOfficeAccessService");
 const { hashSecret } = require("./services/credentialService");
-const { validatePasswordPolicy, validateAccountSecret, validateIntroducedAccountSecrets } = require("./lib/userAccountRules");
+const {
+  validatePasswordPolicy,
+  validateAccountSecret,
+  validateIntroducedAccountSecrets,
+  validateIntroducedCivilIdentityConflicts,
+} = require("./lib/userAccountRules");
 const { GradeBookService } = require("./services/gradeBookService");
 const { toPublicSchool } = require("./lib/publicSchool");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
@@ -1203,6 +1208,14 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
   if (credentialErrors.length) {
     const first = credentialErrors[0];
     throw new BusinessError(400, first.message);
+  }
+  const identityErrors = validateIntroducedCivilIdentityConflicts(
+    currentState,
+    requestedState,
+    effectiveTouchedKeys,
+  );
+  if (identityErrors.length) {
+    throw new BusinessError(409, identityErrors[0].message);
   }
 
   let nextState;

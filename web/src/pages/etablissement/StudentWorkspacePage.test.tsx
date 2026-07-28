@@ -39,6 +39,12 @@ vi.mock("../../hooks/useStudentWorkspace", () => ({
   }),
 }));
 
+vi.mock("../../hooks/useStudentEditingContext", () => ({
+  useStudentEditingContext: () => ({
+    enrollmentRecords: [],
+  }),
+}));
+
 vi.mock("../../lib/usePermissionContext", () => ({
   usePermissionContext: () => ({ user: { role: "Admin School" } }),
 }));

@@ -423,6 +423,31 @@ export interface ValidateUserAccountOptions {
   teachers?: unknown[];
 }
 
+function findDuplicateCivilIdentity(users: UserAccount[], candidate: UserAccount): UserAccount | undefined {
+  const normalizedPersonName = (value: unknown) => normalize(String(value ?? "")).replace(/\s+/g, " ");
+  const firstName = normalizedPersonName(candidate.firstName);
+  const lastName = normalizedPersonName(candidate.lastName);
+  const schoolCode = normalize(candidate.schoolCode);
+  const role = normalize(candidate.role);
+  const birthDate = String(candidate.birthDate ?? "").trim();
+  if (!firstName || !lastName || !schoolCode || !role) return undefined;
+
+  return users.find((user) => {
+    if (String(user.id ?? "") === String(candidate.id ?? "")) return false;
+    if (
+      normalizedPersonName(user.firstName) !== firstName ||
+      normalizedPersonName(user.lastName) !== lastName ||
+      normalize(user.schoolCode) !== schoolCode ||
+      normalize(user.role) !== role
+    ) {
+      return false;
+    }
+    const existingBirthDate = String(user.birthDate ?? "").trim();
+    // Deux dates de naissance différentes permettent de distinguer de vrais homonymes.
+    return !birthDate || !existingBirthDate || birthDate === existingBirthDate;
+  });
+}
+
 export function validateUserAccount(
   user: UserAccount,
   users: UserAccount[],
@@ -442,6 +467,10 @@ export function validateUserAccount(
   }
   if (!user.identifier?.trim()) {
     return "Identifiant obligatoire.";
+  }
+  const duplicateIdentity = findDuplicateCivilIdentity(users, user);
+  if (duplicateIdentity) {
+    return "Un compte portant les mêmes nom, prénom et rôle existe déjà dans cet établissement. Modifiez le compte existant ou renseignez des dates de naissance différentes s'il s'agit d'homonymes.";
   }
   const identifier = user.identifier.trim();
   const duplicate = findDuplicateLoginIdentifier(users, user);
