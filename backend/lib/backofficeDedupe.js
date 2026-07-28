@@ -135,148 +135,6 @@ function dedupeById(rows = []) {
   };
 }
 
-function isBlankValue(value) {
-  if (value === null || value === undefined) return true;
-  if (typeof value === "string") return value.trim().length === 0;
-  if (Array.isArray(value)) return value.length === 0;
-  return false;
-}
-
-function mergeMissingTeacherFields(preferred = {}, rows = []) {
-  const merged = { ...preferred };
-  for (const row of rows) {
-    for (const [key, value] of Object.entries(row ?? {})) {
-      if (isBlankValue(merged[key]) && !isBlankValue(value)) {
-        merged[key] = value;
-      }
-    }
-  }
-  merged.id = preferred.id;
-  return merged;
-}
-
-function teacherCivilIdentity(row = {}) {
-  const schoolCode = normalize(row.schoolCode);
-  const name = normalize(row.name ?? row.lastName).replace(/\s+/g, " ");
-  const firstName = normalize(row.firstName).replace(/\s+/g, " ");
-  if (!schoolCode || !name || !firstName) return null;
-  return {
-    baseKey: `${schoolCode}|${name}|${firstName}`,
-    birthDate: String(row.birthDate ?? "").trim(),
-  };
-}
-
-function teacherReferenceCount(state = {}, teacher = {}) {
-  const aliases = new Set(
-    [teacher.id, teacher.publicId, teacher.identifier]
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean),
-  );
-  if (!aliases.size) return 0;
-
-  let count = 0;
-  for (const rows of Object.values(state)) {
-    if (!Array.isArray(rows)) continue;
-    for (const row of rows) {
-      if (
-        aliases.has(String(row?.teacherId ?? "").trim()) ||
-        aliases.has(String(row?.authorId ?? "").trim())
-      ) {
-        count += 1;
-      }
-    }
-  }
-  return count;
-}
-
-function teacherPreferenceScore(state, teacher) {
-  return (
-    teacherReferenceCount(state, teacher) * 1000 +
-    (String(teacher.userId ?? "").trim() ? 100 : 0) +
-    (String(teacher.contactId ?? "").trim() ? 50 : 0) +
-    rowScore(teacher)
-  );
-}
-
-function remapTeacherReferences(state = {}, aliases = new Map()) {
-  if (!aliases.size) return state;
-  const next = { ...state };
-
-  for (const [entity, rows] of Object.entries(state)) {
-    if (!Array.isArray(rows) || entity === "teachers") continue;
-    next[entity] = rows.map((row) => {
-      if (!row || typeof row !== "object") return row;
-      const teacherId = String(row.teacherId ?? "").trim();
-      const authorId = String(row.authorId ?? "").trim();
-      const mappedTeacherId = aliases.get(teacherId);
-      const mappedAuthorId = aliases.get(authorId);
-      if (!mappedTeacherId && !mappedAuthorId) return row;
-      return {
-        ...row,
-        ...(mappedTeacherId ? { teacherId: mappedTeacherId } : {}),
-        ...(mappedAuthorId ? { authorId: mappedAuthorId } : {}),
-      };
-    });
-  }
-
-  return next;
-}
-
-function dedupeTeacherCivilIdentities(state = {}) {
-  const teachers = Array.isArray(state.teachers) ? state.teachers : [];
-  const groups = [];
-  const passthrough = [];
-
-  for (const teacher of teachers) {
-    const identity = teacherCivilIdentity(teacher);
-    if (!identity) {
-      passthrough.push(teacher);
-      continue;
-    }
-
-    let group = groups.find(
-      (candidate) =>
-        candidate.baseKey === identity.baseKey &&
-        (!candidate.birthDate ||
-          !identity.birthDate ||
-          candidate.birthDate === identity.birthDate),
-    );
-    if (!group) {
-      group = { ...identity, rows: [] };
-      groups.push(group);
-    } else if (!group.birthDate && identity.birthDate) {
-      group.birthDate = identity.birthDate;
-    }
-    group.rows.push(teacher);
-  }
-
-  const aliases = new Map();
-  const deduped = [...passthrough];
-  let removed = 0;
-
-  for (const group of groups) {
-    const preferred = [...group.rows].sort(
-      (left, right) =>
-        teacherPreferenceScore(state, right) - teacherPreferenceScore(state, left),
-    )[0];
-    const preferredId = String(preferred.id ?? "").trim();
-    deduped.push(mergeMissingTeacherFields(preferred, group.rows));
-
-    for (const duplicate of group.rows) {
-      if (duplicate === preferred) continue;
-      removed += 1;
-      if (!preferredId) continue;
-      for (const alias of [duplicate.id, duplicate.publicId, duplicate.identifier]) {
-        const key = String(alias ?? "").trim();
-        if (key) aliases.set(key, preferredId);
-      }
-    }
-  }
-
-  const remapped = remapTeacherReferences({ ...state, teachers: deduped }, aliases);
-  return { state: remapped, removed };
-}
-
 function weekdayFromIso(iso) {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? 0 : date.getDay();
@@ -365,13 +223,6 @@ function dedupeBackOfficeState(state = {}) {
       idPass[entity] = result.removed;
       next[entity] = result.rows;
     }
-  }
-
-  const teacherIdentityPass = dedupeTeacherCivilIdentities(next);
-  next = teacherIdentityPass.state;
-  if (teacherIdentityPass.removed > 0) {
-    report.byEntity["teachers:civil-identity"] = teacherIdentityPass.removed;
-    report.totalRemoved += teacherIdentityPass.removed;
   }
 
   const semantic = [
@@ -543,7 +394,6 @@ function dedupeBackOfficeState(state = {}) {
 
 module.exports = {
   dedupeBackOfficeState,
-  dedupeTeacherCivilIdentities,
   dedupeCourseSchedules,
   repairMassDeletedRows,
   pruneStaleDeletedRows,
