@@ -2,6 +2,7 @@
  * Provisionnement compte utilisateur depuis un contact (aligné web/src/lib/contacts.ts).
  */
 const { rolePermissions } = require("../data");
+const { randomBytes } = require("crypto");
 const { findDuplicateLoginIdentifier } = require("./userAccountRules");
 
 const INTERNAL_ROLE_DEFAULT_PERMISSIONS = {
@@ -64,7 +65,8 @@ function generateUserIdentifier(users = [], role) {
 }
 
 function generateTemporaryPassword() {
-  return `SF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const bytes = randomBytes(16);
+  return `SF-${bytes.toString("hex").toUpperCase()}-${String(bytes[0]).padStart(3, "0")}`;
 }
 
 function generateContactUserId(users = []) {

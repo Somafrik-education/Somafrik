@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -2265,7 +2266,11 @@ function getRoleDefaults(role?: string, schoolCode = "") {
 }
 
 function generateTemporaryPassword() {
-  return `SF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const bytes = Crypto.getRandomValues(new Uint8Array(16));
+  const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+  return `SF-${token}-${String(bytes[0]).padStart(3, "0")}`;
 }
 
 function generateUserIdentifier(usersData: any[], role?: string) {

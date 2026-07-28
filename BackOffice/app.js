@@ -3635,7 +3635,12 @@ function formatDate(date) {
 }
 
 function generateTemporaryPassword() {
-  return `SF-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+  return `SF-${token}-${String(bytes[0]).padStart(3, "0")}`;
 }
 
 function normalize(value) {
