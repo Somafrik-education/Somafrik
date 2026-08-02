@@ -88,6 +88,32 @@ function uniqueByTeacherId(rows = []) {
   return [...byId.values()];
 }
 
+function reliableCandidates(teachers, user, schoolCode, key) {
+  const scoped = (teachers ?? []).filter((teacher) => sameSchool(teacher.schoolCode, schoolCode));
+  if (key === "contactId") {
+    const contactId = normalize(user?.contactId);
+    if (!contactId) return [];
+    return uniqueByTeacherId(scoped.filter((teacher) => normalize(teacher.contactId) === contactId));
+  }
+  const identifiers = new Set(
+    [user?.identifier, user?.publicId].map(normalize).filter(Boolean),
+  );
+  if (!identifiers.size) return [];
+  return uniqueByTeacherId(
+    scoped.filter((teacher) =>
+      [teacher.identifier, teacher.publicId].map(normalize).some((value) => identifiers.has(value)),
+    ),
+  );
+}
+
+function requireUniqueCandidate(candidates, user, schoolCode, resolutionKey) {
+  if (candidates.length <= 1) return candidates[0] ?? null;
+  throw syncError(
+    "TEACHER_CANON_AMBIGUOUS",
+    `Plusieurs fiches enseignant correspondent par ${resolutionKey} dans l'établissement`,
+  );
+}
+
 /**
  * §4.1.b — une écriture « liée » à l'identité enseignant de ce user.
  * PUT totalement étranger → false (ambiguïté peut être ignorée sans mutation).
@@ -167,28 +193,31 @@ function isIdentityRelatedWrite(user, options = {}) {
  */
 function resolveCanonicalTeachersRow(teachers, user, schoolCode, assignments = []) {
   const candidates = uniqueByTeacherId(teachersCodeLinked(teachers, user, schoolCode));
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
+  const byUserId = requireUniqueCandidate(candidates, user, schoolCode, "userId");
+  if (byUserId) return byUserId;
 
-  const activeTeacherIds = new Set(
-    (assignments ?? [])
-      .filter((assignment) => {
-        if (!sameSchool(assignment.schoolCode, schoolCode)) return false;
-        const status = normalize(assignment.status ?? "active");
-        return status === "" || status === "active" || status === "actif";
-      })
-      .map((assignment) => String(assignment.teacherId ?? "").trim())
-      .filter(Boolean),
+  const byContactId = requireUniqueCandidate(
+    reliableCandidates(teachers, user, schoolCode, "contactId"),
+    user,
+    schoolCode,
+    "contactId",
   );
+  if (byContactId) return byContactId;
 
-  const viaAssignment = candidates.filter((teacher) =>
-    activeTeacherIds.has(String(teacher.id ?? "").trim()),
-  );
-  if (viaAssignment.length === 1) return viaAssignment[0];
-
-  throw syncError(
-    "TEACHER_CANON_AMBIGUOUS",
-    "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté",
+  const byIdentifierCandidates = reliableCandidates(teachers, user, schoolCode, "identifier");
+  if (
+    byIdentifierCandidates.length > 1 &&
+    byIdentifierCandidates.every((teacher) =>
+      isTeacherTwinCode(teacher.id) && String(teacher.userId ?? "") === String(user.id ?? ""),
+    )
+  ) {
+    return null;
+  }
+  return requireUniqueCandidate(
+    byIdentifierCandidates,
+    user,
+    schoolCode,
+    "identifiant métier",
   );
 }
 
@@ -222,11 +251,15 @@ function newTeachersId() {
   return `TEACHERS-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function buildTeacherFromUser(user, existing, { forceNewTeachersId = false } = {}) {
+function buildTeacherFromUser(
+  user,
+  existing,
+  { forceNewTeachersId = false, existingTeachers = [] } = {},
+) {
   const schoolCode = String(user.schoolCode ?? "").trim();
   const ids = existing?.identifier
     ? { identifier: existing.identifier, publicId: existing.publicId }
-    : nextTeacherLoginId(schoolCode, []);
+    : nextTeacherLoginId(schoolCode, existingTeachers);
 
   const resolvedIdentifier = String(user.identifier ?? ids.identifier);
   const resolvedPublicId = String(user.publicId ?? ids.publicId);
@@ -340,7 +373,10 @@ class UserTeacherSyncService {
     // Compte nouveau : aucune fiche liée → créer un seul TEACHERS-*
     const linked = uniqueByTeacherId(teachersLinkedByUserId(teachers, user, schoolCode));
     if (linked.length === 0) {
-      const row = buildTeacherFromUser(user, undefined, { forceNewTeachersId: true });
+      const row = buildTeacherFromUser(user, undefined, {
+        forceNewTeachersId: true,
+        existingTeachers: teachers,
+      });
       if (!isTeachersCode(row.id)) {
         throw syncError("TEACHER_CANON_REQUIRED", "Nouvelle fiche enseignant doit être TEACHERS-*");
       }

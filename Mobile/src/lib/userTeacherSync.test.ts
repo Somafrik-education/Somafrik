@@ -37,6 +37,34 @@ function teacherUser(overrides: Record<string, unknown> = {}) {
 }
 
 function run() {
+  // P0 : contactId unique et identifiant métier unique réutilisent le canon.
+  {
+    const contact = upsertTeacherFromUser(
+      [{ id: "TEACHERS-contact", contactId: "CONTACT-1", schoolCode: "CD-2026-0001" }],
+      teacherUser({ id: "USERS-new", contactId: "CONTACT-1" }),
+    );
+    assert.equal(contact.length, 1);
+    assert.equal(contact[0]?.id, "TEACHERS-contact");
+
+    const identifier = upsertTeacherFromUser(
+      [{ id: "TEACHERS-identifier", identifier: "ENS-0001", schoolCode: "CD-2026-0001" }],
+      teacherUser(),
+    );
+    assert.equal(identifier.length, 1);
+    assert.equal(identifier[0]?.id, "TEACHERS-identifier");
+  }
+
+  // P0 : dix syncs sont idempotentes.
+  {
+    let teachers: Row[] = [];
+    const user = teacherUser({ contactId: "CONTACT-1" });
+    for (let index = 0; index < 10; index += 1) teachers = upsertTeacherFromUser(teachers, user);
+    assert.equal(teachers.length, 1);
+    const id = teachers[0]?.id;
+    teachers = upsertTeacherFromUser(teachers, user);
+    assert.equal(teachers[0]?.id, id);
+  }
+
   // AC-M1
   {
     const next = upsertTeacherFromUser([], teacherUser());
@@ -151,7 +179,7 @@ function run() {
     );
   }
 
-  // Tie-break via assignment
+  // P0 : aucune affectation ne permet de choisir arbitrairement un canon
   {
     const teachers: Row[] = [
       { id: "TEACHERS-1", userId: "USERS-1", schoolCode: "CD-2026-0001" },
@@ -160,8 +188,10 @@ function run() {
     const assignments: Row[] = [
       { teacherId: "TEACHERS-2", schoolCode: "CD-2026-0001", status: "active", className: "6ème A" },
     ];
-    const canon = resolveCanonicalTeachersRow(teachers, teacherUser(), "CD-2026-0001", assignments);
-    assert.equal(String(canon?.id), "TEACHERS-2");
+    assert.throws(
+      () => resolveCanonicalTeachersRow(teachers, teacherUser(), "CD-2026-0001", assignments),
+      (error: any) => error?.code === "TEACHER_CANON_AMBIGUOUS",
+    );
   }
 
   // AC-M6 generator

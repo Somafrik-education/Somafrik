@@ -337,13 +337,33 @@ export function getLinkableContactOptions(
 }
 
 /** Retrouve une fiche existante par contactId, sinon par nom + prénom (dans le même établissement). */
-function findFicheIndex(rows: Row[], contact: Row, contactId: string, schoolCode: string): number {
+function findFicheIndex(
+  rows: Row[],
+  contact: Row,
+  contactId: string,
+  schoolCode: string,
+  allowNameFallback = true,
+): number {
   if (contactId) {
-    const byContact = rows.findIndex(
-      (row) => normalize(String(row.contactId ?? "")) === normalize(contactId),
-    );
-    if (byContact >= 0) return byContact;
+    const byContact = rows
+      .map((row, index) => ({ row, index }))
+      .filter(
+        ({ row }) =>
+          normalize(String(row.contactId ?? "")) === normalize(contactId) &&
+          (allowNameFallback || normalize(String(row.schoolCode ?? "")) === normalize(schoolCode)),
+      );
+    if (byContact.length > 1) {
+      const error = new Error(
+        "Plusieurs fiches enseignant correspondent au même contact dans l'établissement",
+      ) as Error & { code?: string; statusCode?: number };
+      error.code = "TEACHER_CANON_AMBIGUOUS";
+      error.statusCode = 409;
+      throw error;
+    }
+    const match = byContact[0];
+    if (match) return match.index;
   }
+  if (!allowNameFallback) return -1;
   const lastName = normalize(String(contact.lastName ?? ""));
   const firstName = normalize(String(contact.firstName ?? ""));
   const school = normalize(schoolCode);
@@ -444,7 +464,8 @@ export function linkContactToOperationalRecord(
 
   if (TEACHER_CONTACT_TYPES.has(contactType)) {
     const teachers = [...((state.teachers ?? []) as Row[])];
-    const idx = findFicheIndex(teachers, contact, contactId, schoolCode);
+    // Un nom/prénom n'est jamais une clé canonique enseignant suffisante.
+    const idx = findFicheIndex(teachers, contact, contactId, schoolCode, false);
     if (idx >= 0) {
       const existing = teachers[idx];
       teachers[idx] = {
