@@ -97,6 +97,41 @@ function uniqueByTeacherId(rows: Row[] = []): Row[] {
   return [...byId.values()];
 }
 
+function reliableCandidates(
+  teachers: Row[],
+  user: UserAccount,
+  schoolCode: string,
+  key: "contactId" | "identifier",
+): Row[] {
+  const scoped = teachers.filter((teacher) => sameSchool(teacher.schoolCode, schoolCode));
+  if (key === "contactId") {
+    const contactId = normalize(String((user as UserAccount & { contactId?: string }).contactId ?? ""));
+    if (!contactId) return [];
+    return uniqueByTeacherId(
+      scoped.filter((teacher) => normalize(String(teacher.contactId ?? "")) === contactId),
+    );
+  }
+  const identifiers = new Set(
+    [user.identifier, user.publicId].map((value) => normalize(String(value ?? ""))).filter(Boolean),
+  );
+  if (!identifiers.size) return [];
+  return uniqueByTeacherId(
+    scoped.filter((teacher) =>
+      [teacher.identifier, teacher.publicId]
+        .map((value) => normalize(String(value ?? "")))
+        .some((value) => identifiers.has(value)),
+    ),
+  );
+}
+
+function requireUniqueCandidate(candidates: Row[], resolutionKey: string): Row | null {
+  if (candidates.length <= 1) return candidates[0] ?? null;
+  throw syncError(
+    "TEACHER_CANON_AMBIGUOUS",
+    `Plusieurs fiches enseignant correspondent par ${resolutionKey} dans l'établissement`,
+  );
+}
+
 /**
  * Canon TEACHERS-* : userId + établissement, puis affectation active unique.
  * Ambiguïté → TEACHER_CANON_AMBIGUOUS.
@@ -107,29 +142,29 @@ export function resolveCanonicalTeachersRow(
   schoolCode: string,
   assignments: Row[] = [],
 ): Row | null {
-  const candidates = uniqueByTeacherId(teachersCodeLinked(teachers, user, schoolCode));
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0] ?? null;
-
-  const activeTeacherIds = new Set(
-    assignments
-      .filter((assignment) => {
-        if (!sameSchool(assignment.schoolCode, schoolCode)) return false;
-        const status = normalize(String(assignment.status ?? "active"));
-        return status === "" || status === "active" || status === "actif";
-      })
-      .map((assignment) => String(assignment.teacherId ?? "").trim())
-      .filter(Boolean),
+  void assignments;
+  const byUserId = requireUniqueCandidate(
+    uniqueByTeacherId(teachersCodeLinked(teachers, user, schoolCode)),
+    "userId",
   );
-
-  const viaAssignment = candidates.filter((teacher) =>
-    activeTeacherIds.has(String(teacher.id ?? "").trim()),
+  if (byUserId) return byUserId;
+  const byContactId = requireUniqueCandidate(
+    reliableCandidates(teachers, user, schoolCode, "contactId"),
+    "contactId",
   );
-  if (viaAssignment.length === 1) return viaAssignment[0] ?? null;
-
-  throw syncError(
-    "TEACHER_CANON_AMBIGUOUS",
-    "Plusieurs identités pédagogiques TEACHERS-* pour ce compte ; impossible de choisir un canon sans ambiguïté",
+  if (byContactId) return byContactId;
+  const byIdentifierCandidates = reliableCandidates(teachers, user, schoolCode, "identifier");
+  if (
+    byIdentifierCandidates.length > 1 &&
+    byIdentifierCandidates.every((teacher) =>
+      isTeacherTwinCode(teacher.id) && String(teacher.userId ?? "") === String(user.id ?? ""),
+    )
+  ) {
+    return null;
+  }
+  return requireUniqueCandidate(
+    byIdentifierCandidates,
+    "identifiant métier",
   );
 }
 
@@ -176,11 +211,16 @@ function resolveSyncedStatus(user: UserAccount, existing?: Row): string {
   return user.status === "Suspendu" ? "Suspendu" : "Actif";
 }
 
-function buildTeacherRow(user: UserAccount, existing?: Row, forceNewTeachersId = false): Row {
+function buildTeacherRow(
+  user: UserAccount,
+  existing?: Row,
+  forceNewTeachersId = false,
+  existingTeachers: Row[] = [],
+): Row {
   const schoolCode = String(user.schoolCode ?? "").trim();
   const ids = existing?.identifier
     ? { identifier: String(existing.identifier), publicId: String(existing.publicId ?? "") }
-    : nextTeacherLoginId(schoolCode, []);
+    : nextTeacherLoginId(schoolCode, existingTeachers);
 
   let id: string;
   if (existing?.id && !forceNewTeachersId) {
@@ -196,6 +236,7 @@ function buildTeacherRow(user: UserAccount, existing?: Row, forceNewTeachersId =
     ...(existing ?? {}),
     id,
     userId: user.id,
+    contactId: (user as UserAccount & { contactId?: string }).contactId ?? existing?.contactId,
     publicId: String(user.publicId ?? ids.publicId),
     identifier: String(user.identifier ?? ids.identifier),
     schoolCode,
@@ -274,7 +315,7 @@ export function upsertTeacherFromUser(
 
   const linked = uniqueByTeacherId(teachersLinkedByUserId(teachers, user, schoolCode));
   if (linked.length === 0) {
-    const row = buildTeacherRow(user, undefined, true);
+    const row = buildTeacherRow(user, undefined, true, teachers);
     return [row, ...teachers];
   }
   if (linked.length === 1 && linked[0]) {
