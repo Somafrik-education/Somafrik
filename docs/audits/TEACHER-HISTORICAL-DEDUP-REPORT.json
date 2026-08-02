@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-02T23:11:16.351Z",
-  "source": "postgres:backoffice_state@2026-08-02T22:57:23.557Z",
+  "generatedAt": "2026-08-02T23:28:06.214Z",
+  "source": "postgres:backoffice_state@2026-08-02T23:11:35.485Z",
   "readOnly": true,
   "totals": {
     "teachers": 61,
@@ -119,15 +119,15 @@
             ],
             "postgresEvaluations": [
               {
-                "rowId": "900c42c5-55fe-4497-932d-d2b41dd2cd7a",
-                "field": "teacherId"
-              },
-              {
                 "rowId": "0b49e04c-fc77-4539-83b3-ce935e42eb86",
                 "field": "teacherId"
               },
               {
                 "rowId": "7e2aa7d6-9921-4723-b613-6b89b4ad7162",
+                "field": "teacherId"
+              },
+              {
+                "rowId": "900c42c5-55fe-4497-932d-d2b41dd2cd7a",
                 "field": "teacherId"
               }
             ]
@@ -869,10 +869,1510 @@
       "danglingReferencesAfterSimulation": 0
     }
   },
-  "snapshotHash": "88ef0f2dbf33643f668c229a8ec0ea87adfdcc08f92ec4212ee301552ef3c171",
+  "snapshotHash": "9ccd75d2fa130b7bb0534c33d4b9272697e10ed25adfd8c65e2fea4e5f54645d",
   "sourceInventory": {
     "backofficeTeachers": 61,
     "postgresTeachers": 61,
     "unionTeachers": 61
+  },
+  "phaseA2": {
+    "phase": "A2_MANUAL_ASSISTED_READ_ONLY",
+    "generatedAt": "2026-08-02T23:28:06.218Z",
+    "applyAllowed": false,
+    "groups": [
+      {
+        "groupId": "GROUP-0001",
+        "finalClassificationA2": "CONFIRMED_DUPLICATE_REFERENCE_SPLIT",
+        "samePersonDemonstrated": true,
+        "canonicalDecision": "CTO_ARBITRATION_REQUIRED",
+        "civilIdentity": {
+          "teacherRecords": [
+            {
+              "teacherId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+              "codeType": "TEACHERS",
+              "schoolCode": "CD-2026-0001",
+              "userId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "contactId": "",
+              "identifier": "",
+              "publicId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+              "name": "Etienne LUPUNGU",
+              "firstName": "Etienne",
+              "birthDate": "",
+              "references": {
+                "users": [
+                  {
+                    "rowId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                    "field": "id"
+                  }
+                ],
+                "postgresGrades": [
+                  {
+                    "rowId": "007f05da-f42e-47b7-82e4-d8aec888cc99",
+                    "field": "teacherId"
+                  }
+                ],
+                "postgresEvaluations": [
+                  {
+                    "rowId": "ce9bb5ce-3c65-49b1-a1ed-5577095d82ab",
+                    "field": "teacherId"
+                  },
+                  {
+                    "rowId": "24802b88-41db-42b8-a881-b2a416da8449",
+                    "field": "teacherId"
+                  }
+                ]
+              },
+              "referenceCounts": {
+                "users": 1,
+                "postgresGrades": 1,
+                "postgresEvaluations": 2
+              },
+              "referenceTotal": 4
+            },
+            {
+              "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+              "codeType": "TEACHERS",
+              "schoolCode": "CD-2026-0001",
+              "userId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "contactId": "",
+              "identifier": "",
+              "publicId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+              "name": "Etienne LUPUNGU",
+              "firstName": "Etienne",
+              "birthDate": "",
+              "references": {
+                "users": [
+                  {
+                    "rowId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                    "field": "id"
+                  }
+                ],
+                "classes": [
+                  {
+                    "rowId": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f",
+                    "field": "teacherId"
+                  },
+                  {
+                    "rowId": "CLASSES-a39d51f8-0aa1-4ce2-933b-a0e64e4ba530",
+                    "field": "teacherId"
+                  }
+                ],
+                "courses": [
+                  {
+                    "rowId": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                    "field": "teacherId"
+                  },
+                  {
+                    "rowId": "CLASSES-ad5bacb8-9427-4640-bd31-dfd5dda7c338-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                    "field": "teacherId"
+                  }
+                ],
+                "postgresEvaluations": [
+                  {
+                    "rowId": "0b49e04c-fc77-4539-83b3-ce935e42eb86",
+                    "field": "teacherId"
+                  },
+                  {
+                    "rowId": "7e2aa7d6-9921-4723-b613-6b89b4ad7162",
+                    "field": "teacherId"
+                  },
+                  {
+                    "rowId": "900c42c5-55fe-4497-932d-d2b41dd2cd7a",
+                    "field": "teacherId"
+                  }
+                ]
+              },
+              "referenceCounts": {
+                "users": 1,
+                "classes": 2,
+                "courses": 2,
+                "postgresEvaluations": 3
+              },
+              "referenceTotal": 8
+            }
+          ],
+          "logicalUserIds": [
+            "43b64560-dfeb-4bca-8040-68cc935591cd"
+          ],
+          "backofficeAccounts": [
+            {
+              "id": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "role": "Enseignant",
+              "email": null,
+              "phone": null,
+              "gender": "",
+              "status": "Actif",
+              "history": [
+                "Compte chargé depuis PostgreSQL"
+              ],
+              "lastName": "LUPUNGU",
+              "photoUrl": "",
+              "publicId": "8e363f4c-3c8b-4018-85ad-206f3bfa351f",
+              "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+              "createdAt": "27-07-2026",
+              "createdBy": "PostgreSQL",
+              "firstName": "Etienne",
+              "identifier": "8e363f4c-3c8b-4018-85ad-206f3bfa351f",
+              "schoolCode": "CD-2026-0001",
+              "scopeLevel": "Établissement",
+              "countryCode": "CD",
+              "lastLoginAt": "",
+              "permissions": [
+                "Voir élèves",
+                "Modifier notes",
+                "Faire appel",
+                "Messages parents",
+                "Classes:READ",
+                "Élèves:READ",
+                "Présences:READ",
+                "Présences:CREATE",
+                "Présences:UPDATE",
+                "Présences:DELETE",
+                "Présences:SUSPEND",
+                "Notes:READ",
+                "Notes:CREATE",
+                "Notes:UPDATE",
+                "Notes:DELETE",
+                "Notes:SUSPEND",
+                "Bulletins:READ",
+                "Notifications:READ",
+                "Messages:READ",
+                "Messages:CREATE",
+                "Messages:UPDATE",
+                "Messages:DELETE",
+                "Messages:SUSPEND",
+                "Documents:READ",
+                "Rapports:READ",
+                "Années Académiques:READ",
+                "Matières:READ",
+                "Examens:READ"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "secondaryRoles": [],
+              "temporaryPassword": "",
+              "mustChangePassword": false
+            },
+            {
+              "id": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "role": "Enseignant",
+              "email": "",
+              "phone": "",
+              "gender": "Masculin",
+              "status": "Actif",
+              "history": [
+                "Compte chargé depuis PostgreSQL"
+              ],
+              "lastName": "Ghislain",
+              "photoUrl": "",
+              "publicId": "CD-2026-0001-43B64560-DFEB-4BCA-8040-68CC935591CD",
+              "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+              "birthDate": "15-03-1990",
+              "createdAt": "27-07-2026",
+              "createdBy": "PostgreSQL",
+              "firstName": "Papy",
+              "identifier": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "schoolCode": "CD-2026-0001",
+              "scopeLevel": "Établissement",
+              "countryCode": "CD",
+              "lastLoginAt": "",
+              "permissions": [
+                "Voir élèves",
+                "Modifier notes",
+                "Faire appel",
+                "Messages parents",
+                "Classes:READ",
+                "Élèves:READ",
+                "Présences:READ",
+                "Présences:CREATE",
+                "Présences:UPDATE",
+                "Présences:DELETE",
+                "Présences:SUSPEND",
+                "Notes:READ",
+                "Notes:CREATE",
+                "Notes:UPDATE",
+                "Notes:DELETE",
+                "Notes:SUSPEND",
+                "Bulletins:READ",
+                "Notifications:READ",
+                "Messages:READ",
+                "Messages:CREATE",
+                "Messages:UPDATE",
+                "Messages:DELETE",
+                "Messages:SUSPEND",
+                "Documents:READ",
+                "Rapports:READ",
+                "Années Académiques:READ",
+                "Matières:READ",
+                "Examens:READ"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "secondaryRoles": [],
+              "temporaryPassword": "",
+              "mustChangePassword": false,
+              "hasTemporaryPassword": false
+            }
+          ],
+          "postgresTeachers": [
+            {
+              "id": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+              "teacherCode": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+              "schoolCode": "CD-2026-0001",
+              "postgresUserId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "status": "active",
+              "postgresId": "657e6063-2fad-4cc1-bc19-94ef28d82d92",
+              "speciality": "",
+              "hireDate": null,
+              "createdAt": {},
+              "updatedAt": {}
+            },
+            {
+              "id": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+              "teacherCode": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+              "schoolCode": "CD-2026-0001",
+              "postgresUserId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "status": "active",
+              "postgresId": "9583d5ec-324e-47cd-a0cf-338cedd69860",
+              "speciality": "",
+              "hireDate": null,
+              "createdAt": {},
+              "updatedAt": {}
+            }
+          ],
+          "postgresAccounts": [
+            {
+              "id": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "userCode": "8e363f4c-3c8b-4018-85ad-206f3bfa351f",
+              "firstName": "Etienne",
+              "lastName": "LUPUNGU",
+              "email": null,
+              "phone": null,
+              "role": "TEACHER",
+              "status": "deleted",
+              "createdAt": {},
+              "updatedAt": {},
+              "schoolCode": "CD-2026-0001"
+            },
+            {
+              "id": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "userCode": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "firstName": "Etienne",
+              "lastName": "LUPUNGU",
+              "email": null,
+              "phone": null,
+              "role": "TEACHER",
+              "status": "deleted",
+              "createdAt": {},
+              "updatedAt": {},
+              "schoolCode": "CD-2026-0001"
+            }
+          ]
+        },
+        "relationProof": [
+          {
+            "left": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+            "right": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+            "signals": [
+              "userId"
+            ]
+          }
+        ],
+        "crossGroupIdentifierWarning": null,
+        "referenceInventory": {
+          "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1": {
+            "users": [
+              {
+                "rowId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                "field": "id",
+                "record": {
+                  "id": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                  "role": "Enseignant",
+                  "email": null,
+                  "phone": null,
+                  "gender": "",
+                  "status": "Actif",
+                  "history": [
+                    "Compte chargé depuis PostgreSQL"
+                  ],
+                  "lastName": "LUPUNGU",
+                  "photoUrl": "",
+                  "publicId": "8e363f4c-3c8b-4018-85ad-206f3bfa351f",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "createdAt": "27-07-2026",
+                  "createdBy": "PostgreSQL",
+                  "firstName": "Etienne",
+                  "identifier": "8e363f4c-3c8b-4018-85ad-206f3bfa351f",
+                  "schoolCode": "CD-2026-0001",
+                  "scopeLevel": "Établissement",
+                  "countryCode": "CD",
+                  "lastLoginAt": "",
+                  "permissions": [
+                    "Voir élèves",
+                    "Modifier notes",
+                    "Faire appel",
+                    "Messages parents",
+                    "Classes:READ",
+                    "Élèves:READ",
+                    "Présences:READ",
+                    "Présences:CREATE",
+                    "Présences:UPDATE",
+                    "Présences:DELETE",
+                    "Présences:SUSPEND",
+                    "Notes:READ",
+                    "Notes:CREATE",
+                    "Notes:UPDATE",
+                    "Notes:DELETE",
+                    "Notes:SUSPEND",
+                    "Bulletins:READ",
+                    "Notifications:READ",
+                    "Messages:READ",
+                    "Messages:CREATE",
+                    "Messages:UPDATE",
+                    "Messages:DELETE",
+                    "Messages:SUSPEND",
+                    "Documents:READ",
+                    "Rapports:READ",
+                    "Années Académiques:READ",
+                    "Matières:READ",
+                    "Examens:READ"
+                  ],
+                  "countryScope": "République Démocratique du Congo (RDC)",
+                  "accessChannel": "Application",
+                  "secondaryRoles": [],
+                  "temporaryPassword": "",
+                  "mustChangePassword": false
+                }
+              }
+            ],
+            "postgresGrades": [
+              {
+                "rowId": "007f05da-f42e-47b7-82e4-d8aec888cc99",
+                "field": "teacherId",
+                "record": {
+                  "id": "007f05da-f42e-47b7-82e4-d8aec888cc99",
+                  "teacherId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1"
+                }
+              }
+            ],
+            "postgresEvaluations": [
+              {
+                "rowId": "ce9bb5ce-3c65-49b1-a1ed-5577095d82ab",
+                "field": "teacherId",
+                "record": {
+                  "id": "ce9bb5ce-3c65-49b1-a1ed-5577095d82ab",
+                  "teacherId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1"
+                }
+              },
+              {
+                "rowId": "24802b88-41db-42b8-a881-b2a416da8449",
+                "field": "teacherId",
+                "record": {
+                  "id": "24802b88-41db-42b8-a881-b2a416da8449",
+                  "teacherId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1"
+                }
+              }
+            ]
+          },
+          "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c": {
+            "users": [
+              {
+                "rowId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                "field": "id",
+                "record": {
+                  "id": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                  "role": "Enseignant",
+                  "email": null,
+                  "phone": null,
+                  "gender": "",
+                  "status": "Actif",
+                  "history": [
+                    "Compte chargé depuis PostgreSQL"
+                  ],
+                  "lastName": "LUPUNGU",
+                  "photoUrl": "",
+                  "publicId": "8e363f4c-3c8b-4018-85ad-206f3bfa351f",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "createdAt": "27-07-2026",
+                  "createdBy": "PostgreSQL",
+                  "firstName": "Etienne",
+                  "identifier": "8e363f4c-3c8b-4018-85ad-206f3bfa351f",
+                  "schoolCode": "CD-2026-0001",
+                  "scopeLevel": "Établissement",
+                  "countryCode": "CD",
+                  "lastLoginAt": "",
+                  "permissions": [
+                    "Voir élèves",
+                    "Modifier notes",
+                    "Faire appel",
+                    "Messages parents",
+                    "Classes:READ",
+                    "Élèves:READ",
+                    "Présences:READ",
+                    "Présences:CREATE",
+                    "Présences:UPDATE",
+                    "Présences:DELETE",
+                    "Présences:SUSPEND",
+                    "Notes:READ",
+                    "Notes:CREATE",
+                    "Notes:UPDATE",
+                    "Notes:DELETE",
+                    "Notes:SUSPEND",
+                    "Bulletins:READ",
+                    "Notifications:READ",
+                    "Messages:READ",
+                    "Messages:CREATE",
+                    "Messages:UPDATE",
+                    "Messages:DELETE",
+                    "Messages:SUSPEND",
+                    "Documents:READ",
+                    "Rapports:READ",
+                    "Années Académiques:READ",
+                    "Matières:READ",
+                    "Examens:READ"
+                  ],
+                  "countryScope": "République Démocratique du Congo (RDC)",
+                  "accessChannel": "Application",
+                  "secondaryRoles": [],
+                  "temporaryPassword": "",
+                  "mustChangePassword": false
+                }
+              }
+            ],
+            "classes": [
+              {
+                "rowId": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f",
+                "field": "teacherId",
+                "record": {
+                  "id": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f",
+                  "name": "1ère A",
+                  "level": "1ère",
+                  "track": "Générale",
+                  "publicId": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+                  "schoolCode": "CD-2026-0001"
+                }
+              },
+              {
+                "rowId": "CLASSES-a39d51f8-0aa1-4ce2-933b-a0e64e4ba530",
+                "field": "teacherId",
+                "record": {
+                  "id": "CLASSES-a39d51f8-0aa1-4ce2-933b-a0e64e4ba530",
+                  "name": "3ème A",
+                  "level": "3ème",
+                  "track": "Générale",
+                  "publicId": "CLASSES-a39d51f8-0aa1-4ce2-933b-a0e64e4ba530",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+                  "schoolCode": "CD-2026-0001"
+                }
+              }
+            ],
+            "courses": [
+              {
+                "rowId": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                "field": "teacherId",
+                "record": {
+                  "id": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                  "name": "Mathématiques",
+                  "publicId": "CLASSES-a187280c-edce-427e-a2fe-8352ad09197f-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "className": "1ère A",
+                  "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+                  "schoolCode": "CD-2026-0002",
+                  "coefficient": 1,
+                  "teacherName": "Etienne LUPUNGU"
+                }
+              },
+              {
+                "rowId": "CLASSES-ad5bacb8-9427-4640-bd31-dfd5dda7c338-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                "field": "teacherId",
+                "record": {
+                  "id": "CLASSES-ad5bacb8-9427-4640-bd31-dfd5dda7c338-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                  "name": "Mathématiques",
+                  "publicId": "CLASSES-ad5bacb8-9427-4640-bd31-dfd5dda7c338-COURSE-16675ED4-0970-4835-B3AA-AAED769CBC58",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "className": "2ème A",
+                  "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+                  "schoolCode": "CD-2026-0002",
+                  "coefficient": 1,
+                  "teacherName": "Etienne LUPUNGU"
+                }
+              }
+            ],
+            "postgresEvaluations": [
+              {
+                "rowId": "0b49e04c-fc77-4539-83b3-ce935e42eb86",
+                "field": "teacherId",
+                "record": {
+                  "id": "0b49e04c-fc77-4539-83b3-ce935e42eb86",
+                  "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c"
+                }
+              },
+              {
+                "rowId": "7e2aa7d6-9921-4723-b613-6b89b4ad7162",
+                "field": "teacherId",
+                "record": {
+                  "id": "7e2aa7d6-9921-4723-b613-6b89b4ad7162",
+                  "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c"
+                }
+              },
+              {
+                "rowId": "900c42c5-55fe-4497-932d-d2b41dd2cd7a",
+                "field": "teacherId",
+                "record": {
+                  "id": "900c42c5-55fe-4497-932d-d2b41dd2cd7a",
+                  "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c"
+                }
+              }
+            ]
+          }
+        },
+        "candidateMatrix": [
+          {
+            "candidateTeacherId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+            "linkedIdentity": {
+              "logicalUserId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "civilName": "etienne lupungu"
+            },
+            "businessReferences": {
+              "users": 1,
+              "postgresGrades": 1,
+              "postgresEvaluations": 2
+            },
+            "identifierConsistency": {
+              "identifier": "",
+              "publicId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+              "sharesReliableUserId": true
+            },
+            "potentialLossesWithoutRepointing": 7
+          },
+          {
+            "candidateTeacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+            "linkedIdentity": {
+              "logicalUserId": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "civilName": "etienne lupungu"
+            },
+            "businessReferences": {
+              "users": 1,
+              "classes": 2,
+              "courses": 2,
+              "postgresEvaluations": 3
+            },
+            "identifierConsistency": {
+              "identifier": "",
+              "publicId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+              "sharesReliableUserId": true
+            },
+            "potentialLossesWithoutRepointing": 3
+          }
+        ],
+        "reconciliationSimulations": [
+          {
+            "canonicalTeacherId": "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
+            "duplicateTeacherIds": [
+              "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c"
+            ],
+            "referencesToRepoint": {
+              "classes": 2,
+              "courses": 2,
+              "postgresEvaluations": 3
+            },
+            "referenceCount": 7,
+            "invariants": {
+              "notesLost": 0,
+              "attendanceLost": 0,
+              "evaluationsLost": 0,
+              "assignmentsLost": 0,
+              "danglingReferences": 0,
+              "userAccountsChanged": 0,
+              "newTeachers": 0
+            },
+            "mode": "SIMULATION_ONLY_NO_MUTATION"
+          },
+          {
+            "canonicalTeacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+            "duplicateTeacherIds": [
+              "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1"
+            ],
+            "referencesToRepoint": {
+              "postgresGrades": 1,
+              "postgresEvaluations": 2
+            },
+            "referenceCount": 3,
+            "invariants": {
+              "notesLost": 0,
+              "attendanceLost": 0,
+              "evaluationsLost": 0,
+              "assignmentsLost": 0,
+              "danglingReferences": 0,
+              "userAccountsChanged": 0,
+              "newTeachers": 0
+            },
+            "mode": "SIMULATION_ONLY_NO_MUTATION"
+          }
+        ]
+      },
+      {
+        "groupId": "GROUP-0002",
+        "finalClassificationA2": "AMBIGUOUS_IDENTITY_CROSS_LINK",
+        "samePersonDemonstrated": false,
+        "canonicalDecision": "NO_CANON_ALLOWED",
+        "civilIdentity": {
+          "teacherRecords": [
+            {
+              "teacherId": "TEACHERS-3a94b3c9-ad41-49e9-996f-b1fe62e7f6c1",
+              "codeType": "TEACHERS",
+              "schoolCode": "CD-2026-0001",
+              "userId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "contactId": "",
+              "identifier": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "publicId": "CD-2026-0001-43B64560-DFEB-4BCA-8040-68CC935591CD",
+              "name": "Ghislain",
+              "firstName": "Papy",
+              "birthDate": "15-03-1990",
+              "references": {
+                "users": [
+                  {
+                    "rowId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+                    "field": "id"
+                  }
+                ]
+              },
+              "referenceCounts": {
+                "users": 1
+              },
+              "referenceTotal": 1
+            },
+            {
+              "teacherId": "TEACHERS-bad5646f-d53a-43b8-b2c1-fa87e6d719dd",
+              "codeType": "TEACHERS",
+              "schoolCode": "CD-2026-0001",
+              "userId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "contactId": "",
+              "identifier": "",
+              "publicId": "TEACHERS-bad5646f-d53a-43b8-b2c1-fa87e6d719dd",
+              "name": "Etienne LUPUNGU",
+              "firstName": "Etienne",
+              "birthDate": "",
+              "references": {
+                "users": [
+                  {
+                    "rowId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+                    "field": "id"
+                  }
+                ]
+              },
+              "referenceCounts": {
+                "users": 1
+              },
+              "referenceTotal": 1
+            }
+          ],
+          "logicalUserIds": [
+            "745d78af-4420-43c6-9432-6ffca2f59cc5"
+          ],
+          "backofficeAccounts": [
+            {
+              "id": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "role": "Enseignant",
+              "email": "",
+              "phone": "",
+              "gender": "Masculin",
+              "status": "Actif",
+              "history": [
+                "Compte chargé depuis PostgreSQL"
+              ],
+              "lastName": "Ghislain",
+              "photoUrl": "",
+              "publicId": "CD-2026-0001-43B64560-DFEB-4BCA-8040-68CC935591CD",
+              "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+              "birthDate": "15-03-1990",
+              "createdAt": "27-07-2026",
+              "createdBy": "PostgreSQL",
+              "firstName": "Papy",
+              "identifier": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "schoolCode": "CD-2026-0001",
+              "scopeLevel": "Établissement",
+              "countryCode": "CD",
+              "lastLoginAt": "",
+              "permissions": [
+                "Voir élèves",
+                "Modifier notes",
+                "Faire appel",
+                "Messages parents",
+                "Classes:READ",
+                "Élèves:READ",
+                "Présences:READ",
+                "Présences:CREATE",
+                "Présences:UPDATE",
+                "Présences:DELETE",
+                "Présences:SUSPEND",
+                "Notes:READ",
+                "Notes:CREATE",
+                "Notes:UPDATE",
+                "Notes:DELETE",
+                "Notes:SUSPEND",
+                "Bulletins:READ",
+                "Notifications:READ",
+                "Messages:READ",
+                "Messages:CREATE",
+                "Messages:UPDATE",
+                "Messages:DELETE",
+                "Messages:SUSPEND",
+                "Documents:READ",
+                "Rapports:READ",
+                "Années Académiques:READ",
+                "Matières:READ",
+                "Examens:READ"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "secondaryRoles": [],
+              "temporaryPassword": "",
+              "mustChangePassword": false,
+              "hasTemporaryPassword": false
+            },
+            {
+              "id": "88312da1-1d53-4e43-bd8a-f9200e8492b7",
+              "role": "Enseignant",
+              "email": null,
+              "phone": null,
+              "gender": "",
+              "status": "Actif",
+              "history": [
+                "Compte chargé depuis PostgreSQL"
+              ],
+              "lastName": "LUPUNGU",
+              "photoUrl": "",
+              "publicId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+              "createdAt": "27-07-2026",
+              "createdBy": "PostgreSQL",
+              "firstName": "Etienne",
+              "identifier": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "schoolCode": "CD-2026-0001",
+              "scopeLevel": "Établissement",
+              "countryCode": "CD",
+              "lastLoginAt": "",
+              "permissions": [
+                "Voir élèves",
+                "Modifier notes",
+                "Faire appel",
+                "Messages parents",
+                "Classes:READ",
+                "Élèves:READ",
+                "Présences:READ",
+                "Présences:CREATE",
+                "Présences:UPDATE",
+                "Présences:DELETE",
+                "Présences:SUSPEND",
+                "Notes:READ",
+                "Notes:CREATE",
+                "Notes:UPDATE",
+                "Notes:DELETE",
+                "Notes:SUSPEND",
+                "Bulletins:READ",
+                "Notifications:READ",
+                "Messages:READ",
+                "Messages:CREATE",
+                "Messages:UPDATE",
+                "Messages:DELETE",
+                "Messages:SUSPEND",
+                "Documents:READ",
+                "Rapports:READ",
+                "Années Académiques:READ",
+                "Matières:READ",
+                "Examens:READ"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "secondaryRoles": [],
+              "temporaryPassword": "",
+              "mustChangePassword": false
+            }
+          ],
+          "postgresTeachers": [
+            {
+              "id": "TEACHERS-3a94b3c9-ad41-49e9-996f-b1fe62e7f6c1",
+              "teacherCode": "TEACHERS-3a94b3c9-ad41-49e9-996f-b1fe62e7f6c1",
+              "schoolCode": "CD-2026-0001",
+              "postgresUserId": "88312da1-1d53-4e43-bd8a-f9200e8492b7",
+              "status": "active",
+              "postgresId": "b33da034-4fa2-46bb-9562-78b6283b25a1",
+              "speciality": "",
+              "hireDate": null,
+              "createdAt": {},
+              "updatedAt": {}
+            },
+            {
+              "id": "TEACHERS-bad5646f-d53a-43b8-b2c1-fa87e6d719dd",
+              "teacherCode": "TEACHERS-bad5646f-d53a-43b8-b2c1-fa87e6d719dd",
+              "schoolCode": "CD-2026-0001",
+              "postgresUserId": "88312da1-1d53-4e43-bd8a-f9200e8492b7",
+              "status": "active",
+              "postgresId": "f4cafbe5-7ac2-4272-8766-f361027cb935",
+              "speciality": "",
+              "hireDate": null,
+              "createdAt": {},
+              "updatedAt": {}
+            }
+          ],
+          "postgresAccounts": [
+            {
+              "id": "88312da1-1d53-4e43-bd8a-f9200e8492b7",
+              "userCode": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "firstName": "Papy",
+              "lastName": "Ghislain",
+              "email": null,
+              "phone": null,
+              "role": "TEACHER",
+              "status": "active",
+              "createdAt": {},
+              "updatedAt": {},
+              "schoolCode": "CD-2026-0001"
+            },
+            {
+              "id": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+              "userCode": "43b64560-dfeb-4bca-8040-68cc935591cd",
+              "firstName": "Etienne",
+              "lastName": "LUPUNGU",
+              "email": null,
+              "phone": null,
+              "role": "TEACHER",
+              "status": "deleted",
+              "createdAt": {},
+              "updatedAt": {},
+              "schoolCode": "CD-2026-0001"
+            }
+          ]
+        },
+        "relationProof": [
+          {
+            "left": "TEACHERS-3a94b3c9-ad41-49e9-996f-b1fe62e7f6c1",
+            "right": "TEACHERS-bad5646f-d53a-43b8-b2c1-fa87e6d719dd",
+            "signals": [
+              "userId"
+            ]
+          }
+        ],
+        "crossGroupIdentifierWarning": "identifier/publicId reprend 43b64560-dfeb-4bca-8040-68cc935591cd, userId logique de GROUP-0001 ; aucune relation canonique autorisée",
+        "referenceInventory": {
+          "TEACHERS-3a94b3c9-ad41-49e9-996f-b1fe62e7f6c1": {
+            "users": [
+              {
+                "rowId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+                "field": "id",
+                "record": {
+                  "id": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+                  "role": "Enseignant",
+                  "email": "",
+                  "phone": "",
+                  "gender": "Masculin",
+                  "status": "Actif",
+                  "history": [
+                    "Compte chargé depuis PostgreSQL"
+                  ],
+                  "lastName": "Ghislain",
+                  "photoUrl": "",
+                  "publicId": "CD-2026-0001-43B64560-DFEB-4BCA-8040-68CC935591CD",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "birthDate": "15-03-1990",
+                  "createdAt": "27-07-2026",
+                  "createdBy": "PostgreSQL",
+                  "firstName": "Papy",
+                  "identifier": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                  "schoolCode": "CD-2026-0001",
+                  "scopeLevel": "Établissement",
+                  "countryCode": "CD",
+                  "lastLoginAt": "",
+                  "permissions": [
+                    "Voir élèves",
+                    "Modifier notes",
+                    "Faire appel",
+                    "Messages parents",
+                    "Classes:READ",
+                    "Élèves:READ",
+                    "Présences:READ",
+                    "Présences:CREATE",
+                    "Présences:UPDATE",
+                    "Présences:DELETE",
+                    "Présences:SUSPEND",
+                    "Notes:READ",
+                    "Notes:CREATE",
+                    "Notes:UPDATE",
+                    "Notes:DELETE",
+                    "Notes:SUSPEND",
+                    "Bulletins:READ",
+                    "Notifications:READ",
+                    "Messages:READ",
+                    "Messages:CREATE",
+                    "Messages:UPDATE",
+                    "Messages:DELETE",
+                    "Messages:SUSPEND",
+                    "Documents:READ",
+                    "Rapports:READ",
+                    "Années Académiques:READ",
+                    "Matières:READ",
+                    "Examens:READ"
+                  ],
+                  "countryScope": "République Démocratique du Congo (RDC)",
+                  "accessChannel": "Application",
+                  "secondaryRoles": [],
+                  "temporaryPassword": "",
+                  "mustChangePassword": false,
+                  "hasTemporaryPassword": false
+                }
+              }
+            ]
+          },
+          "TEACHERS-bad5646f-d53a-43b8-b2c1-fa87e6d719dd": {
+            "users": [
+              {
+                "rowId": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+                "field": "id",
+                "record": {
+                  "id": "745d78af-4420-43c6-9432-6ffca2f59cc5",
+                  "role": "Enseignant",
+                  "email": "",
+                  "phone": "",
+                  "gender": "Masculin",
+                  "status": "Actif",
+                  "history": [
+                    "Compte chargé depuis PostgreSQL"
+                  ],
+                  "lastName": "Ghislain",
+                  "photoUrl": "",
+                  "publicId": "CD-2026-0001-43B64560-DFEB-4BCA-8040-68CC935591CD",
+                  "schoolId": "0bc59149-1a7b-49e7-962f-b254103ca184",
+                  "birthDate": "15-03-1990",
+                  "createdAt": "27-07-2026",
+                  "createdBy": "PostgreSQL",
+                  "firstName": "Papy",
+                  "identifier": "43b64560-dfeb-4bca-8040-68cc935591cd",
+                  "schoolCode": "CD-2026-0001",
+                  "scopeLevel": "Établissement",
+                  "countryCode": "CD",
+                  "lastLoginAt": "",
+                  "permissions": [
+                    "Voir élèves",
+                    "Modifier notes",
+                    "Faire appel",
+                    "Messages parents",
+                    "Classes:READ",
+                    "Élèves:READ",
+                    "Présences:READ",
+                    "Présences:CREATE",
+                    "Présences:UPDATE",
+                    "Présences:DELETE",
+                    "Présences:SUSPEND",
+                    "Notes:READ",
+                    "Notes:CREATE",
+                    "Notes:UPDATE",
+                    "Notes:DELETE",
+                    "Notes:SUSPEND",
+                    "Bulletins:READ",
+                    "Notifications:READ",
+                    "Messages:READ",
+                    "Messages:CREATE",
+                    "Messages:UPDATE",
+                    "Messages:DELETE",
+                    "Messages:SUSPEND",
+                    "Documents:READ",
+                    "Rapports:READ",
+                    "Années Académiques:READ",
+                    "Matières:READ",
+                    "Examens:READ"
+                  ],
+                  "countryScope": "République Démocratique du Congo (RDC)",
+                  "accessChannel": "Application",
+                  "secondaryRoles": [],
+                  "temporaryPassword": "",
+                  "mustChangePassword": false,
+                  "hasTemporaryPassword": false
+                }
+              }
+            ]
+          }
+        },
+        "candidateMatrix": [],
+        "reconciliationSimulations": []
+      },
+      {
+        "groupId": "GROUP-0003",
+        "finalClassificationA2": "IDENTIFIER_COLLISION_NOT_DUPLICATE",
+        "samePersonDemonstrated": false,
+        "canonicalDecision": "NO_CANON_ALLOWED",
+        "civilIdentity": {
+          "teacherRecords": [
+            {
+              "teacherId": "TEACHERS-a40a415a-ceda-4ffa-9a66-f2d17c476567",
+              "codeType": "TEACHERS",
+              "schoolCode": "CD-2026-0002",
+              "userId": "04e2e402-e681-46b3-bab1-5245158ee194",
+              "contactId": "",
+              "identifier": "ENS-0002",
+              "publicId": "CD-2026-0002-ENS-0001",
+              "name": "Laurelle",
+              "firstName": "Mathieu",
+              "birthDate": "",
+              "references": {
+                "users": [
+                  {
+                    "rowId": "04e2e402-e681-46b3-bab1-5245158ee194",
+                    "field": "id"
+                  }
+                ]
+              },
+              "referenceCounts": {
+                "users": 1
+              },
+              "referenceTotal": 1
+            },
+            {
+              "teacherId": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692",
+              "codeType": "TEACHERS",
+              "schoolCode": "CD-2026-0002",
+              "userId": "a2c95657-c55a-42da-a883-05a72a23205c",
+              "contactId": "",
+              "identifier": "ENS-0001",
+              "publicId": "CD-2026-0002-ENS-0001",
+              "name": "KIMWEMWE",
+              "firstName": "Jean pierre",
+              "birthDate": "",
+              "references": {
+                "users": [
+                  {
+                    "rowId": "a2c95657-c55a-42da-a883-05a72a23205c",
+                    "field": "id"
+                  }
+                ],
+                "assignments": [
+                  {
+                    "rowId": "ASSIGNMENT-0eb8961b-b556-4324-9887-da638305935b",
+                    "field": "teacherId"
+                  }
+                ],
+                "postgresTeacherAssignments": [
+                  {
+                    "rowId": "2ecce024-fab8-4af8-9cc5-60ee766b44e2",
+                    "field": "teacherId"
+                  }
+                ],
+                "postgresAttendance": [
+                  {
+                    "rowId": "905d0340-4388-4b6e-9abb-ae18e562c798",
+                    "field": "teacherId"
+                  },
+                  {
+                    "rowId": "a007b08c-2fb7-4fdc-bdec-8886328eb3b9",
+                    "field": "teacherId"
+                  },
+                  {
+                    "rowId": "f4c4eca7-e523-44aa-9151-502b7c84a68d",
+                    "field": "teacherId"
+                  }
+                ]
+              },
+              "referenceCounts": {
+                "users": 1,
+                "assignments": 1,
+                "postgresTeacherAssignments": 1,
+                "postgresAttendance": 3
+              },
+              "referenceTotal": 6
+            }
+          ],
+          "logicalUserIds": [
+            "04e2e402-e681-46b3-bab1-5245158ee194",
+            "a2c95657-c55a-42da-a883-05a72a23205c"
+          ],
+          "backofficeAccounts": [
+            {
+              "id": "6f094bf5-9f94-4a33-9904-fbdc3c4fcfbc",
+              "role": "Enseignant",
+              "email": null,
+              "phone": null,
+              "gender": "",
+              "status": "Actif",
+              "history": [
+                "Compte chargé depuis PostgreSQL"
+              ],
+              "lastName": "KIMWEMWE",
+              "photoUrl": "",
+              "publicId": "a2c95657-c55a-42da-a883-05a72a23205c",
+              "schoolId": "cfefafbf-f1e7-4238-a8a7-40be6e82901f",
+              "createdAt": "28-07-2026",
+              "createdBy": "PostgreSQL",
+              "firstName": "Jean pierre",
+              "identifier": "a2c95657-c55a-42da-a883-05a72a23205c",
+              "schoolCode": "CD-2026-0002",
+              "scopeLevel": "Établissement",
+              "countryCode": "CD",
+              "lastLoginAt": "",
+              "permissions": [
+                "Voir élèves",
+                "Modifier notes",
+                "Faire appel",
+                "Messages parents",
+                "Classes:READ",
+                "Élèves:READ",
+                "Présences:READ",
+                "Présences:CREATE",
+                "Présences:UPDATE",
+                "Présences:DELETE",
+                "Présences:SUSPEND",
+                "Notes:READ",
+                "Notes:CREATE",
+                "Notes:UPDATE",
+                "Notes:DELETE",
+                "Notes:SUSPEND",
+                "Bulletins:READ",
+                "Notifications:READ",
+                "Messages:READ",
+                "Messages:CREATE",
+                "Messages:UPDATE",
+                "Messages:DELETE",
+                "Messages:SUSPEND",
+                "Documents:READ",
+                "Rapports:READ",
+                "Années Académiques:READ",
+                "Matières:READ",
+                "Examens:READ"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "secondaryRoles": [],
+              "temporaryPassword": "",
+              "mustChangePassword": true
+            },
+            {
+              "id": "b289794e-9a35-4951-83e5-f14e8877767c",
+              "role": "Enseignant",
+              "email": null,
+              "phone": null,
+              "gender": "",
+              "status": "Actif",
+              "history": [
+                "Compte chargé depuis PostgreSQL"
+              ],
+              "lastName": "Laurelle",
+              "photoUrl": "",
+              "publicId": "04e2e402-e681-46b3-bab1-5245158ee194",
+              "schoolId": "cfefafbf-f1e7-4238-a8a7-40be6e82901f",
+              "createdAt": "28-07-2026",
+              "createdBy": "PostgreSQL",
+              "firstName": "Mathieu",
+              "identifier": "04e2e402-e681-46b3-bab1-5245158ee194",
+              "schoolCode": "CD-2026-0002",
+              "scopeLevel": "Établissement",
+              "countryCode": "CD",
+              "lastLoginAt": "",
+              "permissions": [
+                "Voir élèves",
+                "Modifier notes",
+                "Faire appel",
+                "Messages parents",
+                "Classes:READ",
+                "Élèves:READ",
+                "Présences:READ",
+                "Présences:CREATE",
+                "Présences:UPDATE",
+                "Présences:DELETE",
+                "Présences:SUSPEND",
+                "Notes:READ",
+                "Notes:CREATE",
+                "Notes:UPDATE",
+                "Notes:DELETE",
+                "Notes:SUSPEND",
+                "Bulletins:READ",
+                "Notifications:READ",
+                "Messages:READ",
+                "Messages:CREATE",
+                "Messages:UPDATE",
+                "Messages:DELETE",
+                "Messages:SUSPEND",
+                "Documents:READ",
+                "Rapports:READ",
+                "Années Académiques:READ",
+                "Matières:READ",
+                "Examens:READ"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "secondaryRoles": [],
+              "temporaryPassword": "",
+              "mustChangePassword": false
+            },
+            {
+              "id": "04e2e402-e681-46b3-bab1-5245158ee194",
+              "role": "Enseignant",
+              "email": "",
+              "phone": "",
+              "gender": "Féminin",
+              "status": "Actif",
+              "history": [
+                "Compte créé avec identifiant ENS-0002 et mot de passe temporaire SF-4NT1HZ",
+                "Connexion réussie le 2026-07-28"
+              ],
+              "lastName": "Laurelle",
+              "createdAt": "2026-07-28T13:29:42.832Z",
+              "createdBy": "ADM-0002",
+              "firstName": "Mathieu",
+              "identifier": "ENS-0002",
+              "schoolCode": "CD-2026-0002",
+              "scopeLevel": "Établissement",
+              "lastLoginAt": "2026-07-28T13:30:29.482Z",
+              "permissions": [
+                "Élèves:CREATE",
+                "Élèves:DELETE",
+                "Élèves:READ",
+                "Élèves:SUSPEND",
+                "Élèves:UPDATE"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "temporaryPassword": "SF-4NT1HZ",
+              "mustChangePassword": true,
+              "hasTemporaryPassword": true
+            },
+            {
+              "id": "a2c95657-c55a-42da-a883-05a72a23205c",
+              "role": "Enseignant",
+              "email": "",
+              "phone": "",
+              "gender": "Masculin",
+              "status": "Actif",
+              "history": [
+                "Compte créé avec identifiant ENS-0001 et mot de passe temporaire SF-XO9M29",
+                "Connexion réussie le 2026-07-28"
+              ],
+              "lastName": "KIMWEMWE",
+              "createdAt": "2026-07-28T13:15:01.030Z",
+              "createdBy": "ADM-0002",
+              "firstName": "Jean pierre",
+              "identifier": "ENS-0001",
+              "schoolCode": "CD-2026-0002",
+              "scopeLevel": "Établissement",
+              "lastLoginAt": "2026-07-28T13:39:30.668Z",
+              "permissions": [
+                "Élèves:CREATE",
+                "Élèves:DELETE",
+                "Élèves:READ",
+                "Élèves:SUSPEND",
+                "Élèves:UPDATE"
+              ],
+              "countryScope": "République Démocratique du Congo (RDC)",
+              "accessChannel": "Application",
+              "temporaryPassword": "",
+              "mustChangePassword": false,
+              "hasTemporaryPassword": false
+            }
+          ],
+          "postgresTeachers": [
+            {
+              "id": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692",
+              "teacherCode": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692",
+              "schoolCode": "CD-2026-0002",
+              "postgresUserId": "6f094bf5-9f94-4a33-9904-fbdc3c4fcfbc",
+              "status": "active",
+              "postgresId": "33f70073-3773-4034-b370-61d54c9c2c0c",
+              "speciality": "",
+              "hireDate": null,
+              "createdAt": {},
+              "updatedAt": {}
+            },
+            {
+              "id": "TEACHERS-a40a415a-ceda-4ffa-9a66-f2d17c476567",
+              "teacherCode": "TEACHERS-a40a415a-ceda-4ffa-9a66-f2d17c476567",
+              "schoolCode": "CD-2026-0002",
+              "postgresUserId": "b289794e-9a35-4951-83e5-f14e8877767c",
+              "status": "active",
+              "postgresId": "21093789-27cb-4ce9-ac18-005ce66317d0",
+              "speciality": "",
+              "hireDate": null,
+              "createdAt": {},
+              "updatedAt": {}
+            }
+          ],
+          "postgresAccounts": [
+            {
+              "id": "6f094bf5-9f94-4a33-9904-fbdc3c4fcfbc",
+              "userCode": "a2c95657-c55a-42da-a883-05a72a23205c",
+              "firstName": "Jean pierre",
+              "lastName": "KIMWEMWE",
+              "email": null,
+              "phone": null,
+              "role": "TEACHER",
+              "status": "active",
+              "createdAt": {},
+              "updatedAt": {},
+              "schoolCode": "CD-2026-0002"
+            },
+            {
+              "id": "b289794e-9a35-4951-83e5-f14e8877767c",
+              "userCode": "04e2e402-e681-46b3-bab1-5245158ee194",
+              "firstName": "Mathieu",
+              "lastName": "Laurelle",
+              "email": null,
+              "phone": null,
+              "role": "TEACHER",
+              "status": "active",
+              "createdAt": {},
+              "updatedAt": {},
+              "schoolCode": "CD-2026-0002"
+            }
+          ]
+        },
+        "relationProof": [
+          {
+            "left": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692",
+            "right": "TEACHERS-a40a415a-ceda-4ffa-9a66-f2d17c476567",
+            "signals": [
+              "publicId"
+            ]
+          }
+        ],
+        "crossGroupIdentifierWarning": null,
+        "referenceInventory": {
+          "TEACHERS-a40a415a-ceda-4ffa-9a66-f2d17c476567": {
+            "users": [
+              {
+                "rowId": "04e2e402-e681-46b3-bab1-5245158ee194",
+                "field": "id",
+                "record": {
+                  "id": "04e2e402-e681-46b3-bab1-5245158ee194",
+                  "role": "Enseignant",
+                  "email": "",
+                  "phone": "",
+                  "gender": "Féminin",
+                  "status": "Actif",
+                  "history": [
+                    "Compte créé avec identifiant ENS-0002 et mot de passe temporaire SF-4NT1HZ",
+                    "Connexion réussie le 2026-07-28"
+                  ],
+                  "lastName": "Laurelle",
+                  "createdAt": "2026-07-28T13:29:42.832Z",
+                  "createdBy": "ADM-0002",
+                  "firstName": "Mathieu",
+                  "identifier": "ENS-0002",
+                  "schoolCode": "CD-2026-0002",
+                  "scopeLevel": "Établissement",
+                  "lastLoginAt": "2026-07-28T13:30:29.482Z",
+                  "permissions": [
+                    "Élèves:CREATE",
+                    "Élèves:DELETE",
+                    "Élèves:READ",
+                    "Élèves:SUSPEND",
+                    "Élèves:UPDATE"
+                  ],
+                  "countryScope": "République Démocratique du Congo (RDC)",
+                  "accessChannel": "Application",
+                  "temporaryPassword": "SF-4NT1HZ",
+                  "mustChangePassword": true,
+                  "hasTemporaryPassword": true
+                }
+              }
+            ]
+          },
+          "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692": {
+            "users": [
+              {
+                "rowId": "a2c95657-c55a-42da-a883-05a72a23205c",
+                "field": "id",
+                "record": {
+                  "id": "a2c95657-c55a-42da-a883-05a72a23205c",
+                  "role": "Enseignant",
+                  "email": "",
+                  "phone": "",
+                  "gender": "Masculin",
+                  "status": "Actif",
+                  "history": [
+                    "Compte créé avec identifiant ENS-0001 et mot de passe temporaire SF-XO9M29",
+                    "Connexion réussie le 2026-07-28"
+                  ],
+                  "lastName": "KIMWEMWE",
+                  "createdAt": "2026-07-28T13:15:01.030Z",
+                  "createdBy": "ADM-0002",
+                  "firstName": "Jean pierre",
+                  "identifier": "ENS-0001",
+                  "schoolCode": "CD-2026-0002",
+                  "scopeLevel": "Établissement",
+                  "lastLoginAt": "2026-07-28T13:39:30.668Z",
+                  "permissions": [
+                    "Élèves:CREATE",
+                    "Élèves:DELETE",
+                    "Élèves:READ",
+                    "Élèves:SUSPEND",
+                    "Élèves:UPDATE"
+                  ],
+                  "countryScope": "République Démocratique du Congo (RDC)",
+                  "accessChannel": "Application",
+                  "temporaryPassword": "",
+                  "mustChangePassword": false,
+                  "hasTemporaryPassword": false
+                }
+              }
+            ],
+            "assignments": [
+              {
+                "rowId": "ASSIGNMENT-0eb8961b-b556-4324-9887-da638305935b",
+                "field": "teacherId",
+                "record": {
+                  "id": "ASSIGNMENT-0eb8961b-b556-4324-9887-da638305935b",
+                  "room": "",
+                  "course": "Mathématiques",
+                  "period": "Trimestre 3",
+                  "subject": "Mathématiques",
+                  "className": "1ère A",
+                  "teacherId": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692",
+                  "schoolCode": "CD-2026-0002",
+                  "teacherName": "Jean pierre KIMWEMWE"
+                }
+              }
+            ],
+            "postgresTeacherAssignments": [
+              {
+                "rowId": "2ecce024-fab8-4af8-9cc5-60ee766b44e2",
+                "field": "teacherId",
+                "record": {
+                  "id": "2ecce024-fab8-4af8-9cc5-60ee766b44e2",
+                  "teacherId": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692"
+                }
+              }
+            ],
+            "postgresAttendance": [
+              {
+                "rowId": "905d0340-4388-4b6e-9abb-ae18e562c798",
+                "field": "teacherId",
+                "record": {
+                  "id": "905d0340-4388-4b6e-9abb-ae18e562c798",
+                  "teacherId": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692"
+                }
+              },
+              {
+                "rowId": "a007b08c-2fb7-4fdc-bdec-8886328eb3b9",
+                "field": "teacherId",
+                "record": {
+                  "id": "a007b08c-2fb7-4fdc-bdec-8886328eb3b9",
+                  "teacherId": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692"
+                }
+              },
+              {
+                "rowId": "f4c4eca7-e523-44aa-9151-502b7c84a68d",
+                "field": "teacherId",
+                "record": {
+                  "id": "f4c4eca7-e523-44aa-9151-502b7c84a68d",
+                  "teacherId": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692"
+                }
+              }
+            ]
+          }
+        },
+        "candidateMatrix": [],
+        "reconciliationSimulations": []
+      }
+    ]
   }
 }

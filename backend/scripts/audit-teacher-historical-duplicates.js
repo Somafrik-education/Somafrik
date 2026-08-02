@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { auditTeacherDuplicates } = require("../lib/teacherHistoricalDuplicateAudit");
+const { buildPhaseA2 } = require("../lib/teacherHistoricalDuplicateA2");
 
 function parseArgs(argv) {
   const options = { dryRun: true };
@@ -46,10 +47,18 @@ async function loadFromDatabase(envName) {
     const backofficeTeachers = (rawState.teachers ?? []).length;
     const state = JSON.parse(JSON.stringify(rawState));
     const postgresTeachers = await client.query(
-      `SELECT t.teacher_code AS id, s.school_code AS "schoolCode", t.user_id::text AS "userId",
-              t.status, t.id::text AS "postgresId"
+      `SELECT t.teacher_code AS id, t.teacher_code AS "teacherCode", s.school_code AS "schoolCode",
+              t.user_id::text AS "postgresUserId", t.status, t.id::text AS "postgresId",
+              t.speciality, t.hire_date AS "hireDate", t.created_at AS "createdAt", t.updated_at AS "updatedAt"
          FROM teachers t
          JOIN schools s ON s.id = t.school_id`,
+    );
+    const postgresUsers = await client.query(
+      `SELECT u.id::text AS id, u.user_code AS "userCode", u.first_name AS "firstName",
+              u.last_name AS "lastName", u.email, u.phone, u.role, u.status,
+              u.created_at AS "createdAt", u.updated_at AS "updatedAt", s.school_code AS "schoolCode"
+         FROM users u
+         JOIN schools s ON s.id = u.school_id`,
     );
     const teachersById = new Map(
       (state.teachers ?? []).map((teacher) => [String(teacher.id ?? "").trim(), teacher]),
@@ -77,6 +86,10 @@ async function loadFromDatabase(envName) {
         backofficeTeachers,
         postgresTeachers: postgresTeachers.rows.length,
         unionTeachers: state.teachers.length,
+      },
+      a2Context: {
+        postgresTeachers: postgresTeachers.rows,
+        postgresUsers: postgresUsers.rows,
       },
     };
   } finally {
@@ -150,6 +163,48 @@ function markdown(report) {
       `- \`${item.duplicateTeacherId}\` → \`${item.canonicalTeacherId}\` : ${item.referenceTotal} référence(s) à déplacer (${Object.entries(item.referencesToMove).map(([key, count]) => `${key}:${count}`).join(", ") || "aucune"}).`,
     );
   }
+  if (report.phaseA2) {
+    lines.push("", "## Phase A2 — arbitrage assisté read-only", "");
+    for (const group of report.phaseA2.groups) {
+      lines.push(
+        `### ${group.groupId} — ${group.finalClassificationA2}`,
+        "",
+        `- Même personne démontrée : **${group.samePersonDemonstrated ? "oui" : "non"}**`,
+        `- Décision canon : **${group.canonicalDecision}**`,
+      );
+      if (group.crossGroupIdentifierWarning) lines.push(`- Alerte : ${group.crossGroupIdentifierWarning}`);
+      lines.push("", "#### Comptes et identité civile", "");
+      for (const teacher of group.civilIdentity.teacherRecords) {
+        const identity = `${teacher.firstName ?? ""} ${teacher.name ?? ""}`.trim();
+        lines.push(`- teacherId=${teacher.teacherId}; identité=${identity}; userId=${teacher.userId ?? ""}; identifier=${teacher.identifier ?? ""}; publicId=${teacher.publicId ?? ""}; naissance=${teacher.birthDate || "non renseignée"}.`);
+      }
+      for (const account of group.civilIdentity.postgresAccounts) {
+        const identity = `${account.firstName ?? ""} ${account.lastName ?? ""}`.trim();
+        lines.push(`- Compte PostgreSQL id=${account.id}; code=${account.userCode ?? ""}; identité=${identity}; email=${account.email || "non renseigné"}; téléphone=${account.phone || "non renseigné"}; statut=${account.status ?? ""}; créé=${account.createdAt ?? "n/a"}; modifié=${account.updatedAt ?? "n/a"}.`);
+      }
+      for (const teacher of group.civilIdentity.postgresTeachers) {
+        lines.push(`- Fiche PostgreSQL teacherId=${teacher.teacherCode}; postgresId=${teacher.postgresId}; compte lié=${teacher.postgresUserId}; statut=${teacher.status}; créé=${teacher.createdAt ?? "n/a"}; modifié=${teacher.updatedAt ?? "n/a"} (dates informatives uniquement).`);
+      }
+      lines.push("", "#### Matrice des canons candidats", "");
+      if (!group.candidateMatrix.length) lines.push("Aucun canon autorisé : identité insuffisante ou collision démontrée.", "");
+      else {
+        lines.push(
+          "| candidateTeacherId | identité liée | références métier | cohérence identifiants | pertes potentielles sans repointage |",
+          "|---|---|---|---|---|",
+        );
+        for (const candidate of group.candidateMatrix) {
+          lines.push(
+            `| ${candidate.candidateTeacherId} | ${candidate.linkedIdentity.civilName} / ${candidate.linkedIdentity.logicalUserId} | ${Object.entries(candidate.businessReferences).map(([key, value]) => `${key}:${value}`).join(", ") || "0"} | userId partagé=${candidate.identifierConsistency.sharesReliableUserId}; identifier=${candidate.identifierConsistency.identifier || "vide"}; publicId=${candidate.identifierConsistency.publicId || "vide"} | ${candidate.potentialLossesWithoutRepointing} |`,
+          );
+        }
+        lines.push("", "#### Simulations", "");
+        for (const simulation of group.reconciliationSimulations) {
+          lines.push(`- Canon candidat ${simulation.canonicalTeacherId} : ${simulation.referenceCount} référence(s) à repointer (${Object.entries(simulation.referencesToRepoint).map(([key, value]) => `${key}:${value}`).join(", ") || "aucune"}); notes perdues=0, présences perdues=0, évaluations perdues=0, affectations perdues=0, références pendantes=0, comptes modifiés=0, nouveaux enseignants=0.`);
+        }
+        lines.push("");
+      }
+    }
+  }
   lines.push(
     "",
     "## Résultat du dry-run",
@@ -180,6 +235,7 @@ async function main() {
   });
   report.snapshotHash = loaded.snapshotHash;
   report.sourceInventory = loaded.sourceInventory ?? null;
+  report.phaseA2 = buildPhaseA2(report, loaded.state, loaded.a2Context ?? {});
   const jsonOutput = absolute(options.jsonOutput, "docs/audits/TEACHER-HISTORICAL-DEDUP-REPORT.json");
   const markdownOutput = absolute(options.markdownOutput, "docs/audits/TEACHER-HISTORICAL-DEDUP-REPORT.md");
   fs.mkdirSync(path.dirname(jsonOutput), { recursive: true });
