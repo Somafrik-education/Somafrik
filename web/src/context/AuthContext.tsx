@@ -23,7 +23,7 @@ interface AuthContextValue {
   session: Session | null;
   isAuthenticated: boolean;
   login: (input: LoginInput) => Promise<Session>;
-  logout: () => void;
+  logout: () => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   setSession: (session: Session | null) => void;
 }
@@ -118,8 +118,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [setSession],
   );
 
-  const logout = useCallback(() => {
-    setSession(null);
+  const logout = useCallback(async () => {
+    try {
+      if (sessionRef.current?.accessToken) {
+        await api.post("/auth/logout");
+      }
+    } catch {
+      // La session locale doit toujours être fermée, même si l'API est indisponible.
+    } finally {
+      setSession(null);
+    }
   }, [setSession]);
 
   const value = useMemo<AuthContextValue>(
