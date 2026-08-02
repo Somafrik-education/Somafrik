@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-02T23:39:38.185Z",
-  "source": "postgres:backoffice_state@2026-08-02T23:39:22.472Z",
+  "generatedAt": "2026-08-02T23:54:42.845Z",
+  "source": "postgres:backoffice_state@2026-08-02T23:53:59.735Z",
   "readOnly": true,
   "totals": {
     "teachers": 59,
@@ -607,7 +607,7 @@
       "danglingReferencesAfterSimulation": 0
     }
   },
-  "snapshotHash": "484dd9610e395ff967ad09fb5ac0122d7b455af45895bd3f08b52c2d25c74448",
+  "snapshotHash": "b1527114366733de7afdd07109fa13806bb9e89765523e805f528539612f9740",
   "sourceInventory": {
     "backofficeTeachers": 59,
     "postgresTeachers": 59,
@@ -615,7 +615,7 @@
   },
   "phaseA2": {
     "phase": "A2_MANUAL_ASSISTED_READ_ONLY",
-    "generatedAt": "2026-08-02T23:39:38.185Z",
+    "generatedAt": "2026-08-02T23:54:42.846Z",
     "applyAllowed": false,
     "groups": []
   }

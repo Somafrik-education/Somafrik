@@ -1,8 +1,8 @@
 # Audit read-only — doublons historiques enseignants
 
-- Généré : 2026-08-02T23:39:38.185Z
-- Source : postgres:backoffice_state@2026-08-02T23:39:22.472Z
-- Hash snapshot SHA-256 : `484dd9610e395ff967ad09fb5ac0122d7b455af45895bd3f08b52c2d25c74448`
+- Généré : 2026-08-02T23:54:42.845Z
+- Source : postgres:backoffice_state@2026-08-02T23:53:59.735Z
+- Hash snapshot SHA-256 : `b1527114366733de7afdd07109fa13806bb9e89765523e805f528539612f9740`
 - Mode : **DRY-RUN READ-ONLY**
 
 ## Synthèse

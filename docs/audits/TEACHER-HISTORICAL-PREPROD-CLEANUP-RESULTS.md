@@ -57,3 +57,5 @@ Aucun user n'a été supprimé.
 - SHA-256 snapshot final : `484dd9610e395ff967ad09fb5ac0122d7b455af45895bd3f08b52c2d25c74448`.
 
 Les preuves machine sont disponibles dans `docs/audits/evidence/teacher-historical-preprod-cleanup-*.json` et `teacher-historical-preprod-final-audit.*`.
+
+La revalidation exhaustive des 59 fiches et la synchronisation globale x10 sont consignées dans `docs/audits/POST-CLEANUP-FULL-AUDIT.md` et `docs/audits/evidence/POST-CLEANUP-FULL-AUDIT.json`.
