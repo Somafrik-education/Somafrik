@@ -1,0 +1,622 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-02T23:39:38.185Z",
+  "source": "postgres:backoffice_state@2026-08-02T23:39:22.472Z",
+  "readOnly": true,
+  "totals": {
+    "teachers": 59,
+    "suspectGroups": 0,
+    "reliableDuplicateGroups": 0,
+    "safeDuplicateGroups": 0,
+    "safeDuplicateRecords": 0,
+    "ambiguousGroups": 0,
+    "homonymPossibleGroups": 0,
+    "referenceSplitGroups": 0,
+    "orphanRecords": 0
+  },
+  "groups": [],
+  "standalone": [
+    {
+      "teacherId": "TEACHERS-1785161599992-clof8998",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1,
+        "postgresTeacherAssignments": 2,
+        "postgresAttendance": 5
+      },
+      "referenceTotal": 8
+    },
+    {
+      "teacherId": "TEACHERS-3a94b3c9-ad41-49e9-996f-b1fe62e7f6c1",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-beb4064e-3dbe-4ee9-a09b-c1653b5ed692",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1,
+        "assignments": 1,
+        "postgresTeacherAssignments": 1,
+        "postgresAttendance": 3
+      },
+      "referenceTotal": 6
+    },
+    {
+      "teacherId": "TEACHERS-a40a415a-ceda-4ffa-9a66-f2d17c476567",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-0d30e225-d1f3-4c9e-92d2-509bdcb18a2c",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785190208028-2865vq2p",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243438415-wz6io99y",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243447620-0skgxo5u",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243469875-xkxhbu71",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243476545-gnyq3wt8",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243484853-9y5x42u6",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243490485-b6xphe8u",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243500698-etsj4uxz",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243513175-pvu5tg4c",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243528434-yfbk6hoq",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243536780-58d8tptq",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243545568-tpc93557",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243553282-oi6pdvuf",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243572088-ano0nr9t",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243585811-uper9bkk",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243596602-e4fi6gyz",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243608793-zwaj153l",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243617934-ahqmpsx4",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243627196-1h5amwpe",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243634167-l2k8z8n1",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243640490-v3n3gp3w",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243646875-l9bmo3em",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243704751-8tb5wuej",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785243723188-0mag491z",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785244000014-5m7s0a3a",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785244085293-a38jtzk7",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785244141813-o8nxyitl",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785244323411-5ur5m7ud",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785244501211-efiz6o1j",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785244717006-hyvym1vd",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785244717007-dwgimq8w",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245383186-0oox4r8d",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245383186-cbkifq19",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245543776-mi3k80sa",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245543776-r5132g1w",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245543780-242la859",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245814581-hbglanvn",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245814581-xpofsgde",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785245814583-zwjbtlfv",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785246649668-664yq0kd",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785246649668-umdj8fdt",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785246649669-xp0vc2bd",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248864207-6s0hl8c0",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248864207-c2h9ywcm",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248864207-ubdtg27w",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248870887-8jvudkbi",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248870887-frqu0a8t",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248870887-wf50ahky",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248908700-9kfzlvab",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248908700-jdm3r3pr",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-1785248908700-wz9drlx3",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-5707ff31-ac8a-4441-914f-63b4a62d0b8c",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1,
+        "classes": 2,
+        "courses": 2,
+        "postgresGrades": 1,
+        "postgresEvaluations": 5
+      },
+      "referenceTotal": 11
+    },
+    {
+      "teacherId": "TEACHERS-6580e7e4-5820-48b4-a279-38876c4b2cf9",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    },
+    {
+      "teacherId": "TEACHERS-d612f19c-a85f-48af-b1f0-c03b29353827",
+      "classification": "NO_ACTION",
+      "referenceCounts": {
+        "users": 1
+      },
+      "referenceTotal": 1
+    }
+  ],
+  "reconciliationPlan": [],
+  "dryRun": {
+    "enabled": true,
+    "teacherCountBefore": 59,
+    "teacherCountAfter": 59,
+    "safeDuplicates": 0,
+    "recordsThatWouldBeRemovedOrArchived": [],
+    "referencesThatWouldMove": 0,
+    "collectionCountsBefore": {
+      "exams": 0,
+      "notes": 0,
+      "users": 97,
+      "classes": 6,
+      "courses": 3,
+      "schools": 2,
+      "auditLog": 2,
+      "contacts": 0,
+      "feeGrids": 0,
+      "messages": 0,
+      "payments": 2,
+      "students": 6,
+      "teachers": 59,
+      "bulletins": 0,
+      "countries": 1,
+      "documents": 0,
+      "presences": 8,
+      "relations": 0,
+      "assignments": 1,
+      "evaluations": 0,
+      "studentFees": 0,
+      "announcements": 0,
+      "notifications": 1,
+      "subscriptions": 2,
+      "schoolFeeItems": 0,
+      "courseSchedules": 0,
+      "paymentStatuses": 0,
+      "feeTariffHistory": 0,
+      "paymentReminders": 0,
+      "subscriptionOffers": 4,
+      "subscriptionAuditLog": 0,
+      "subscriptionInvoices": 0,
+      "subscriptionPayments": 0,
+      "subscriptionDiscounts": 0,
+      "postgresTeacherAssignments": 3,
+      "postgresGrades": 1,
+      "postgresAttendance": 8,
+      "postgresEvaluations": 5
+    },
+    "collectionCountsAfter": {
+      "exams": 0,
+      "notes": 0,
+      "users": 97,
+      "classes": 6,
+      "courses": 3,
+      "schools": 2,
+      "auditLog": 2,
+      "contacts": 0,
+      "feeGrids": 0,
+      "messages": 0,
+      "payments": 2,
+      "students": 6,
+      "teachers": 59,
+      "bulletins": 0,
+      "countries": 1,
+      "documents": 0,
+      "presences": 8,
+      "relations": 0,
+      "assignments": 1,
+      "evaluations": 0,
+      "studentFees": 0,
+      "announcements": 0,
+      "notifications": 1,
+      "subscriptions": 2,
+      "schoolFeeItems": 0,
+      "courseSchedules": 0,
+      "paymentStatuses": 0,
+      "feeTariffHistory": 0,
+      "paymentReminders": 0,
+      "subscriptionOffers": 4,
+      "subscriptionAuditLog": 0,
+      "subscriptionInvoices": 0,
+      "subscriptionPayments": 0,
+      "subscriptionDiscounts": 0,
+      "postgresTeacherAssignments": 3,
+      "postgresGrades": 1,
+      "postgresAttendance": 8,
+      "postgresEvaluations": 5
+    },
+    "domainCountsBefore": {
+      "assignments": 4,
+      "grades": 1,
+      "attendance": 16,
+      "evaluations": 5
+    },
+    "domainCountsAfter": {
+      "assignments": 4,
+      "grades": 1,
+      "attendance": 16,
+      "evaluations": 5
+    },
+    "invariants": {
+      "teacherCount": true,
+      "assignmentsCount": true,
+      "gradesCount": true,
+      "attendanceCount": true,
+      "evaluationsCount": true,
+      "danglingReferencesAfterSimulation": 0
+    }
+  },
+  "snapshotHash": "484dd9610e395ff967ad09fb5ac0122d7b455af45895bd3f08b52c2d25c74448",
+  "sourceInventory": {
+    "backofficeTeachers": 59,
+    "postgresTeachers": 59,
+    "unionTeachers": 59
+  },
+  "phaseA2": {
+    "phase": "A2_MANUAL_ASSISTED_READ_ONLY",
+    "generatedAt": "2026-08-02T23:39:38.185Z",
+    "applyAllowed": false,
+    "groups": []
+  }
+}
