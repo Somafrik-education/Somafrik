@@ -43,6 +43,7 @@
     "test:teacher-historical-preprod-cleanup": "node backend/lib/teacherHistoricalPreprodCleanup.test.js",
     "audit:teacher-post-cleanup-full": "node backend/scripts/audit-teacher-post-cleanup-full.js --dry-run",
     "test:teacher-post-cleanup-full": "node backend/lib/teacherPostCleanupFullAudit.test.js",
+    "test:teacher-canonical-identity": "node backend/lib/teacherCanonicalIdentity.test.js && node backend/lib/teacherPostCleanupFullAudit.test.js",
     "audit:pre-e1-notes-authz-causality": "node scripts/audit-pre-e1-notes-authz-causality.js",
     "inspect:pre-e1-hotfix-02": "node scripts/inspect-pre-e1-hotfix-02-independent.js",
     "typecheck:backend": "node --check backend/server.js && node --check backend/db/postgresRepository.js && node --check BackOffice/app.js",

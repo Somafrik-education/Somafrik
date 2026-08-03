@@ -1,5 +1,7 @@
 "use strict";
 
+const { buildUserIndex, resolveCanonicalIdentity } = require("./teacherCanonicalIdentity");
+
 const REMOVED_TEACHER_IDS = new Set([
   "TEACHERS-08537fff-7579-419e-b4b5-dfd6aa0580a1",
   "TEACHERS-bad5646f-d53a-43b8-b2c1-fa87e6d719dd",
@@ -89,6 +91,7 @@ function buildFullAudit(state, postgresUsers = [], postgresTeachers = [], postgr
   const users = state.users ?? [];
   const teacherUserIds = new Set(teachers.map((teacher) => normalize(teacher.userId)).filter(Boolean));
   const postgresUsersById = new Map(postgresUsers.map((user) => [normalize(user.id), user]));
+  const canonicalIdentityIndex = buildUserIndex(postgresUsers);
   const postgresTeacherUserIds = new Set(postgresTeachers.map((teacher) => normalize(teacher.postgresUserId)).filter(Boolean));
   const teacherAccounts = users.filter((user) => ["enseignant", "teacher"].includes(normalize(user.role)));
   const accountClassifications = teacherAccounts.map((user) => {
@@ -117,6 +120,30 @@ function buildFullAudit(state, postgresUsers = [], postgresTeachers = [], postgr
   );
   const boReferences = collectBackofficeReferences(state, validTeacherIds);
   const canonicalUsers = teachers.map((teacher) => users.find((user) => normalize(user.id) === normalize(teacher.userId))).filter(Boolean);
+  const canonicalResolutionErrors = [];
+  const canonicalGroupsByKey = new Map();
+  for (const teacher of teachers) {
+    try {
+      const canonicalIdentity = resolveCanonicalIdentity(teacher.userId, canonicalIdentityIndex);
+      const schoolCode = String(teacher.schoolCode ?? "").trim().toUpperCase();
+      if (!schoolCode) throw Object.assign(new Error("Code établissement absent"), { code: "CANONICAL_IDENTITY_SCHOOL_MISSING" });
+      const key = `${schoolCode}|${canonicalIdentity}`;
+      const group = canonicalGroupsByKey.get(key) ?? { schoolCode, canonicalIdentity, teacherIds: [] };
+      group.teacherIds.push(String(teacher.id));
+      canonicalGroupsByKey.set(key, group);
+    } catch (error) {
+      canonicalResolutionErrors.push({
+        teacherId: String(teacher.id ?? ""),
+        userId: String(teacher.userId ?? ""),
+        schoolCode: String(teacher.schoolCode ?? ""),
+        code: error.code ?? "CANONICAL_IDENTITY_ERROR",
+        path: error.details?.path ?? [],
+      });
+    }
+  }
+  const canonicalIdentityGroups = [...canonicalGroupsByKey.values()].sort((left, right) =>
+    `${left.schoolCode}|${left.canonicalIdentity}`.localeCompare(`${right.schoolCode}|${right.canonicalIdentity}`),
+  );
   return {
     counts: {
       teachers: teachers.length,
@@ -125,6 +152,8 @@ function buildFullAudit(state, postgresUsers = [], postgresTeachers = [], postgr
       postgresUsers: postgresUsers.length,
       postgresTeacherAccounts: postgresUsers.filter((user) => normalize(user.role) === "teacher").length,
       canonicalTeacherAccounts: new Set(canonicalUsers.map((user) => normalize(user.id))).size,
+      canonicalTeacherIdentities: canonicalIdentityGroups.length,
+      canonicalIdentityResolutionErrors: canonicalResolutionErrors.length,
     },
     collisions: {
       userId: duplicateKeys(teachers, "userId"),
@@ -148,6 +177,12 @@ function buildFullAudit(state, postgresUsers = [], postgresTeachers = [], postgr
       .filter((teacher) => !postgresUsersById.has(normalize(teacher.postgresUserId)))
       .map((teacher) => String(teacher.teacherCode)),
     civilIdentitySuspicions: civilSuspicions(teachers),
+    canonicalIdentityAudit: {
+      groupBy: "schoolCode + canonicalIdentity",
+      groups: canonicalIdentityGroups,
+      duplicateGroups: canonicalIdentityGroups.filter((group) => group.teacherIds.length > 1),
+      resolutionErrors: canonicalResolutionErrors,
+    },
     references: {
       backofficeDangling: boReferences.dangling,
       backofficeToRemovedIds: boReferences.removed,

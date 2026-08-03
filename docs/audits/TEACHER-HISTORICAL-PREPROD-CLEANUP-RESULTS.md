@@ -1,5 +1,11 @@
 # Nettoyage des doublons enseignants — préproduction
 
+> **Statut CTO : historique uniquement.** L'opération de nettoyage de la PR #115
+> reste documentée, mais sa conclusion « 0 doublon » est invalidée. Les prochains
+> contrôles doivent résoudre toute la chaîne d'aliases vers `ENS-*` et regrouper
+> par `schoolCode + canonicalIdentity`. Aucune nouvelle suppression massive ne
+> doit être déduite de ce rapport.
+
 ## Périmètre et sécurité
 
 - Environnement : **préproduction uniquement**.

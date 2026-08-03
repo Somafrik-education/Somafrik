@@ -5,9 +5,10 @@ const { buildFullAudit, aliasChain } = require("./teacherPostCleanupFullAudit");
 
 const pgUsers = [
   { id: "P1", userCode: "U1", role: "TEACHER", status: "active" },
+  { id: "U1", userCode: "ENS-1", role: "TEACHER", status: "active" },
   { id: "OLD", userCode: "NONE", role: "TEACHER", status: "deleted" },
 ];
-assert.deepStrictEqual(aliasChain("P1", new Map(pgUsers.map((user) => [user.id.toLowerCase(), user]))), ["P1", "U1"]);
+assert.deepStrictEqual(aliasChain("P1", new Map(pgUsers.map((user) => [user.id.toLowerCase(), user]))), ["P1", "U1", "ENS-1"]);
 const report = buildFullAudit(
   {
     teachers: [{ id: "T1", schoolCode: "S1", userId: "U1", identifier: "ENS-1", publicId: "S1-ENS-1" }],
@@ -23,6 +24,9 @@ const report = buildFullAudit(
   { dangling: {}, removedIds: {} },
 );
 assert.strictEqual(report.counts.canonicalTeacherAccounts, 1);
+assert.strictEqual(report.counts.canonicalTeacherIdentities, 1);
+assert.strictEqual(report.counts.canonicalIdentityResolutionErrors, 0);
+assert.deepStrictEqual(report.canonicalIdentityAudit.groups, [{ schoolCode: "S1", canonicalIdentity: "ENS-1", teacherIds: ["T1"] }]);
 assert.deepStrictEqual(report.collisions.userId, []);
 assert.strictEqual(report.accounts.incoherentBackoffice.length, 0);
 assert.deepStrictEqual(report.references.backofficeDangling, []);

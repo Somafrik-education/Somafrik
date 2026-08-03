@@ -1,11 +1,31 @@
 # POST-CLEANUP-FULL-AUDIT — enseignants préproduction
 
+> **Conclusion invalidée — P0 identité canonique.** Ce document reste la trace
+> historique de l'opération de nettoyage de la PR #115, mais ses affirmations
+> « 59 identités canoniques » et « 0 doublon » ne constituent pas un audit fiable.
+> Le contrôle regroupait les fiches sur leurs identifiants techniques immédiats et
+> non sur la fin de la chaîne d'aliases (par exemple UUID-D → UUID-C → UUID-B →
+> UUID-A → ENS-0001). Aucune nouvelle suppression massive n'est autorisée sur la
+> base de ces résultats.
+
+## Audit de remplacement requis
+
+Le nouvel audit est strictement en lecture seule. Il résout chaque `teacher.userId`
+avec `resolveCanonicalIdentity(user)`, exige un canon métier `ENS-*`, puis regroupe
+les fiches par `schoolCode + canonicalIdentity`. Il publie séparément les groupes
+de plusieurs fiches et les chaînes impossibles à résoudre. Le nombre réel
+d'enseignants uniques ne doit plus être présumé égal à 59 : il est donné par le
+nombre de groupes canoniques entièrement résolus.
+
+Commande : `npm run audit:teacher-post-cleanup-full`. Le script ne possède plus de
+mode d'écriture ni de synchronisation globale.
+
 ## Périmètre exhaustif
 
 - 59 fiches enseignants Backoffice/PostgreSQL.
 - 97 lignes users Backoffice, dont 92 au rôle enseignant.
 - 91 users PostgreSQL, dont 90 au rôle enseignant.
-- 59 identités enseignantes canoniques après résolution des aliases BO/PostgreSQL.
+- 59 identités enseignantes prétendument canoniques selon la méthode désormais invalidée.
 
 Les 92 lignes BO se répartissent en 59 comptes directement liés, 19 aliases PostgreSQL résolus vers ces comptes et 14 comptes supprimés sans teacher attendu. Côté PostgreSQL : 59 comptes directement liés, 17 aliases résolus et 14 comptes supprimés sans teacher attendu. Aucun compte actif incohérent n'est resté sans correspondance.
 
