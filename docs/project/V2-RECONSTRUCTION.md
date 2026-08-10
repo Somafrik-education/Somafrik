@@ -6,15 +6,15 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1a — AuthPrincipal + `can()`
+**Lot courant :** gouvernance V2 — clean start (#123)
 
 ---
 
 ## 1. Décision
 
-Somafrik V2 est construit à côté du runtime actuel puis reçoit les capacités métier une par une. Le dépôt, l'historique Git, les règles métier, les données, les tests et les correctifs fiables sont conservés.
+Somafrik V2 est construit à côté du runtime actuel puis reçoit les capacités métier une par une. Le dépôt, l'historique Git, les règles métier validées, les tests et les correctifs fiables sont conservés comme acquis techniques. **Aucune donnée métier du runtime legacy n'est reprise dans la V2.**
 
-Le runtime legacy reste actif jusqu'à ce qu'une capacité V2 atteigne la parité et franchisse son gate de préproduction. Aucun fichier legacy n'est supprimé par défaut.
+La V2 démarre sur une base métier neuve selon la politique de données de la section 5. Le runtime legacy reste actif pendant la transition, puis ses données sont isolées en archive ou en lecture seule. Aucun fichier legacy n'est supprimé par défaut, mais aucun module V2 ne doit dépendre de ses données.
 
 ## 2. Pourquoi ce chantier
 
@@ -28,7 +28,7 @@ La base `develop` montre plusieurs générations techniques en exploitation simu
 | Couplage | Web et Mobile consomment encore `GET/PUT /api/backoffice/state` |
 | Livraison | Plusieurs travaux peuvent toucher les mêmes monolithes et augmenter les conflits |
 
-Ces constats justifient une nouvelle structure, pas une perte des acquis fonctionnels.
+Ces constats justifient une nouvelle structure, sans réutilisation des données métier historiques.
 
 ## 3. Architecture cible de transition
 
@@ -40,10 +40,10 @@ apps/
 packages/
   domain/     invariants métier sans framework
   auth/       identité, sessions, autorisations
-  database/   ports, PostgreSQL, migrations versionnées
+  database/   ports, PostgreSQL, migrations de schéma versionnées
   shared/     primitives techniques minimales
 tests/
-  v2/         intégration et preuves de parité
+  v2/         intégration et preuves des parcours V2
 ```
 
 Direction des dépendances :
@@ -56,37 +56,60 @@ domain → aucune infrastructure
 shared → aucune règle métier
 ```
 
-Les nouveaux modules V2 ne doivent importer aucun fichier de `backend/`, `web/`, `Mobile/` ou `BackOffice/`. Une compatibilité temporaire devra passer par un adaptateur explicite, réversible et couvert par un contrat.
+Les nouveaux modules V2 ne doivent importer aucun fichier de `backend/`, `web/`, `Mobile/` ou `BackOffice/`. Une compatibilité temporaire d'interface doit passer par un adaptateur explicite, réversible et couvert par un contrat ; elle ne peut ni importer, ni lire, ni réconcilier des données métier legacy dans la V2.
 
 ## 4. Invariants non négociables
 
 1. Tenant scope explicite sur toute opération : plateforme, pays ou établissement.
 2. RBAC fail-closed ; aucun droit implicite en cas de rôle ou principal inconnu.
-3. PostgreSQL devient la seule source de vérité de chaque domaine migré.
+3. PostgreSQL V2 est la seule source de vérité des données créées par les parcours V2.
 4. Aucune nouvelle dépendance V2 à `/api/backoffice/state` ou `backoffice_state`.
 5. Authentification par en-tête Bearer ; aucun secret ou JWT dans l'URL, le dépôt ou les réponses.
 6. Synchronisation non destructive avec ACK explicite pour les parcours hors ligne.
 7. Identité métier distincte de l'inscription annuelle et de l'affectation.
-8. Suppression legacy uniquement après parité, migration, rollback documenté et validation CTO.
+8. Aucune donnée legacy ne peut être importée, copiée, transformée, mappée, réconciliée, rejouée ou backfillée dans la V2.
+9. Les migrations versionnées de schéma V2 sont autorisées ; les migrations de données legacy vers V2 sont interdites.
+10. Les données legacy restent isolées en archive ou lecture seule jusqu'à leur retrait validé par le CTO.
 
 Le script `npm run verify:v2-foundation` rend la frontière 4 et la présence de la structure cible vérifiables dès le premier lot.
 
-## 5. Lots de migration
+## 5. Politique des données V2 — clean start
+
+La base métier V2 démarre vide. L'interdiction de reprise couvre notamment :
+
+- établissements et configurations métier ;
+- utilisateurs et comptes historiques ;
+- enseignants, élèves et responsables ;
+- classes, inscriptions, affectations et matières ;
+- années scolaires, examens, notes, bulletins et présences ;
+- paiements, abonnements, annonces et notifications ;
+- journaux métier et snapshots `backoffice_state`.
+
+L'état initial autorisé contient uniquement :
+
+- le schéma V2 et les métadonnées de migrations de schéma ;
+- les référentiels techniques neufs indispensables ;
+- les rôles et permissions canoniques V2 ;
+- un super-admin de bootstrap créé à neuf.
+
+Les seeds de démonstration et les seeds issus de données métier legacy sont interdits. Les établissements, comptes et autres données métier sont créés à neuf par les parcours V2. Le legacy peut rester consultable séparément pour les besoins opérationnels, légaux ou d'audit, sans dépendance de lecture ou d'écriture depuis la V2.
+
+## 6. Lots de construction
 
 | Lot | Contenu | Gate de sortie |
 |---|---|---|
 | V2.0 | Structure, frontières, premier invariant tenant | Guard + tests domaine + CI verts |
 | V2.1a | Rôles canoniques, `AuthPrincipal`, `can()` fail-closed | Tests auth + guard frontières + CI verts |
-| V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats historiques + 401/403/200 + compatibilité login |
-| V2.2 | Accès PostgreSQL et migrations versionnées | Migration idempotente + rollback + isolation tenant |
-| V2.3 | Élèves et inscriptions annuelles | Parité CRUD/transfert/clôture + intégrité des données |
-| V2.4 | Enseignants et affectations | Canon unique + idempotence + homonymes préservés |
-| V2.5 | Adaptateurs web/mobile | Parcours critiques + outbox/ACK + accessibilité |
-| V2.6 | Cutover contrôlé | Préprod stable + observabilité + Go CTO explicite |
+| V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
+| V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
+| V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
+| V2.4 | Enseignants et affectations créés à neuf | Canon unique + idempotence + homonymes préservés |
+| V2.5 | Adaptateurs web/mobile V2 | Parcours critiques + outbox/ACK + accessibilité |
+| V2.6 | Cutover contrôlé vers une V2 indépendante | Préprod neuve stable + legacy isolé + observabilité + Go CTO explicite |
 
-Chaque lot est fractionné en petites PR à objectif unique. Aucun lot ne donne l'autorisation de supprimer le précédent.
+Chaque lot est fractionné en petites PR à objectif unique. Aucun lot n'autorise l'import de données legacy, le backfill ou la suppression non validée du précédent.
 
-## 6. Périmètre exact de V2.0
+## 7. Périmètre exact de V2.0
 
 Inclus :
 
@@ -105,7 +128,7 @@ Hors périmètre :
 - déploiement V2 ;
 - suppression, déplacement ou renommage d'un fichier legacy.
 
-## 7. Gate de merge V2.0
+## 8. Gate de merge V2.0
 
 - [x] diff GitHub indépendant relu par le CTO ;
 - [x] PR en brouillon jusqu'à stabilisation du périmètre ;
@@ -115,7 +138,7 @@ Hors périmètre :
 - [x] aucun conflit non résolu avec `develop` ;
 - [x] décision CTO explicite avant passage Ready puis merge.
 
-## 8. Périmètre exact de V2.1a
+## 9. Périmètre exact de V2.1a
 
 Inclus :
 
@@ -135,7 +158,7 @@ Hors périmètre :
 - matrice rôle ↔ tenant ;
 - clients web/mobile et runtime legacy.
 
-## 9. Gate de merge V2.1a
+## 10. Gate de merge V2.1a
 
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
@@ -144,4 +167,14 @@ Hors périmètre :
 - [ ] aucune modification de runtime ni de schéma ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucun alias legacy ni droit implicite introduit ;
+- [ ] décision CTO explicite avant passage Ready puis merge.
+
+## 11. Gate de gouvernance clean start
+
+- [x] issue de décision CTO créée (#123) ;
+- [ ] diff GitHub indépendant relu par le CTO ;
+- [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [ ] diff limité à la documentation de reconstruction ;
+- [ ] aucune modification de code métier, runtime, schéma ou donnée ;
+- [ ] aucune formulation n'autorise une reprise de données legacy ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
