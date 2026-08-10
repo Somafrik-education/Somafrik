@@ -12,7 +12,13 @@ export class TenantScopeValidationError extends Error {
   }
 }
 
-const ALLOWED_FIELDS = new Set(["kind", "countryCode", "schoolCode"]);
+const ALLOWED_FIELDS = Object.freeze(
+  Object.assign(Object.create(null), {
+    kind: true,
+    countryCode: true,
+    schoolCode: true,
+  }),
+);
 
 function assertOrdinaryObject(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -34,7 +40,7 @@ function requireOwnField(input, field) {
 function rejectUnexpectedOwnKeys(input) {
   const unexpectedFields = [];
   for (const key of Reflect.ownKeys(input)) {
-    if (typeof key === "symbol" || !ALLOWED_FIELDS.has(key)) {
+    if (typeof key === "symbol" || !Object.hasOwn(ALLOWED_FIELDS, key)) {
       unexpectedFields[unexpectedFields.length] = typeof key === "symbol" ? String(key) : key;
     }
   }

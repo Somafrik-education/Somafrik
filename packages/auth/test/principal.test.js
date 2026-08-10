@@ -242,8 +242,17 @@ test("rejects permissions arrays with redefined map, holes, or inherited entries
   Object.setPrototypeOf(sparseInherited, { 0: "students:delete" });
   assert.throws(
     () => createAuthPrincipal(baseInput({ permissions: sparseInherited })),
-    /permissions\[0\] is required as an own property/,
+    /permissions must be a dense own-keyed array/,
   );
+
+  const enormousSparse = [];
+  enormousSparse.length = 100_000_000;
+  const startedAt = Date.now();
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: enormousSparse })),
+    /permissions length must be <= 256/,
+  );
+  assert.ok(Date.now() - startedAt < 250);
 
   const withHiddenPermissionMeta = ["notes:write"];
   Object.defineProperty(withHiddenPermissionMeta, "hidden", {

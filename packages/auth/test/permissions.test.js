@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { can, createAuthPrincipal } from "../src/index.js";
+import { can, createAuthPrincipal, isCanonicalRole } from "../src/index.js";
 
 function principalWith(permissions, overrides = {}) {
   return createAuthPrincipal({
@@ -205,6 +205,25 @@ test("still accepts an ordinary exact and valid principal object", () => {
   assert.equal(can(principal, "notes:read"), false);
 });
 
+test("authorization decisions ignore mutated Array.prototype.includes and Set.prototype.has", () => {
+  const originalIncludes = Array.prototype.includes;
+  const originalHas = Set.prototype.has;
+  Array.prototype.includes = () => true;
+  Set.prototype.has = () => true;
+
+  try {
+    assert.equal(isCanonicalRole("not_a_role"), false);
+    assert.equal(isCanonicalRole("teacher"), true);
+
+    const principal = principalWith(["notes:write"]);
+    assert.equal(can(principal, "notes:write"), true);
+    assert.equal(can(principal, "students:delete"), false);
+  } finally {
+    Array.prototype.includes = originalIncludes;
+    Set.prototype.has = originalHas;
+  }
+});
+
 test("returns false without throwing for forged permissions and tenant scopes", () => {
   const redefinedMap = ["students:delete"];
   Object.defineProperty(redefinedMap, "map", {
@@ -236,6 +255,21 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         role: "super_admin",
         tenantScope: { kind: "platform" },
         permissions: sparseInherited,
+      },
+      "students:delete",
+    ),
+    false,
+  );
+
+  const enormousSparse = [];
+  enormousSparse.length = 100_000_000;
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "super_admin",
+        tenantScope: { kind: "platform" },
+        permissions: enormousSparse,
       },
       "students:delete",
     ),

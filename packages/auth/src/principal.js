@@ -11,7 +11,15 @@ class AuthPrincipalValidationError extends Error {
 }
 
 const REQUIRED_FIELDS = Object.freeze(["userId", "role", "tenantScope", "permissions"]);
-const ALLOWED_FIELDS = new Set(REQUIRED_FIELDS);
+const ALLOWED_FIELDS = Object.freeze(
+  Object.assign(Object.create(null), {
+    userId: true,
+    role: true,
+    tenantScope: true,
+    permissions: true,
+  }),
+);
+const MAX_PERMISSIONS_LENGTH = 256;
 
 function assertPlainObject(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -28,7 +36,7 @@ function requireOwnField(input, field) {
 function rejectUnexpectedOwnKeys(input) {
   const unexpectedFields = [];
   for (const key of Reflect.ownKeys(input)) {
-    if (typeof key === "symbol" || !ALLOWED_FIELDS.has(key)) {
+    if (typeof key === "symbol" || !Object.hasOwn(ALLOWED_FIELDS, key)) {
       unexpectedFields[unexpectedFields.length] = typeof key === "symbol" ? String(key) : key;
     }
   }
@@ -58,6 +66,17 @@ function requireCanonicalRole(value) {
   return value;
 }
 
+function isCanonicalArrayIndexKey(key, length) {
+  if (typeof key !== "string" || length <= 0) {
+    return false;
+  }
+  if (!/^(0|[1-9]\d*)$/.test(key)) {
+    return false;
+  }
+  const index = Number(key);
+  return Number.isSafeInteger(index) && index >= 0 && index < length;
+}
+
 function requirePermissions(value) {
   if (!Array.isArray(value)) {
     throw new AuthPrincipalValidationError("permissions must be an array");
@@ -72,21 +91,27 @@ function requirePermissions(value) {
   if (typeof length !== "number" || !Number.isInteger(length) || length < 0) {
     throw new AuthPrincipalValidationError("permissions length must be a non-negative integer");
   }
-
-  const allowedIndexKeys = new Set();
-  for (let index = 0; index < length; index += 1) {
-    allowedIndexKeys.add(String(index));
+  if (length > MAX_PERMISSIONS_LENGTH) {
+    throw new AuthPrincipalValidationError(
+      `permissions length must be <= ${MAX_PERMISSIONS_LENGTH}`,
+    );
   }
 
+  let indexCount = 0;
   for (const key of Reflect.ownKeys(value)) {
     if (key === "length") {
       continue;
     }
-    if (typeof key === "symbol" || !allowedIndexKeys.has(key)) {
+    if (typeof key === "symbol" || !isCanonicalArrayIndexKey(key, length)) {
       throw new AuthPrincipalValidationError(
         `unsupported permissions own keys: ${typeof key === "symbol" ? String(key) : key}`,
       );
     }
+    indexCount += 1;
+  }
+
+  if (indexCount !== length) {
+    throw new AuthPrincipalValidationError("permissions must be a dense own-keyed array");
   }
 
   const permissions = new Array(length);
@@ -112,8 +137,8 @@ function requirePermissions(value) {
 export function createAuthPrincipal(input) {
   assertPlainObject(input);
 
-  for (const field of REQUIRED_FIELDS) {
-    requireOwnField(input, field);
+  for (let index = 0; index < REQUIRED_FIELDS.length; index += 1) {
+    requireOwnField(input, Reflect.get(REQUIRED_FIELDS, String(index)));
   }
 
   rejectUnexpectedOwnKeys(input);
