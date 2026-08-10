@@ -77,7 +77,8 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:runtime-bootstrap` | `init` → health → login 401 |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
-| `npm run verify:v2-foundation` | Structure V2, frontières legacy et invariants domaine initiaux |
+| `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |
+| `npm run test:v2-auth` | Rôles canoniques, `AuthPrincipal` immuable et `can()` fail-closed |
 | `npm run typecheck` · `npm run lint` | Qualité statique |
 | `npm run audit:ci` | Vulnérabilités **critical** |
 

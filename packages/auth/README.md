@@ -1,5 +1,25 @@
 # Auth Somafrik V2
 
-Ce package portera les règles d'identité, de session et d'autorisation de Somafrik V2.
+Package d'autorisation pur de Somafrik V2. Il ne dépend d'Express, PostgreSQL, JWT, sessions ni des clients.
 
-Il dépendra du domaine et du code partagé, sans accès direct à Express, PostgreSQL ou aux clients. Son implémentation est réservée au lot V2.1, après inventaire des identités historiques et définition des contrats de compatibilité.
+## Lot V2.1a — AuthPrincipal + `can()`
+
+API publique :
+
+- `CANONICAL_ROLES` — liste immuable des dix rôles V2 ;
+- `isCanonicalRole(role)` — acceptation exacte, sans alias legacy ;
+- `createAuthPrincipal(input)` — contrat immuable `{ userId, role, tenantScope, permissions }` ;
+- `can(principal, permission)` — autorisation fail-closed par correspondance exacte.
+
+## Règles retenues
+
+- `tenantScope` est validé par `@somafrik/domain-v2` ;
+- `permissions: []` est valide et signifie aucun droit ;
+- aucun droit implicite pour `super_admin` ;
+- aucun fallback `Voir tableau de bord` ;
+- `*`, `ALL_PRIVILEGES` et `COUNTRY_PRIVILEGES` ne sont jamais des wildcards ;
+- aucune normalisation ni matrice rôle ↔ tenant dans ce lot.
+
+## Hors périmètre V2.1a
+
+Login, refresh, logout, JWT, sessions, HTTP, PostgreSQL, adaptateurs legacy, provisioning, hash credentials, lockout, résolution d'établissement actif.

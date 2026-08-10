@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.0 — fondation et frontières
+**Lot courant :** V2.1a — AuthPrincipal + `can()`
 
 ---
 
@@ -76,7 +76,8 @@ Le script `npm run verify:v2-foundation` rend la frontière 4 et la présence de
 | Lot | Contenu | Gate de sortie |
 |---|---|---|
 | V2.0 | Structure, frontières, premier invariant tenant | Guard + tests domaine + CI verts |
-| V2.1 | Identités, utilisateurs, sessions, RBAC | Contrats historiques + 401/403/200 + compatibilité login |
+| V2.1a | Rôles canoniques, `AuthPrincipal`, `can()` fail-closed | Tests auth + guard frontières + CI verts |
+| V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats historiques + 401/403/200 + compatibilité login |
 | V2.2 | Accès PostgreSQL et migrations versionnées | Migration idempotente + rollback + isolation tenant |
 | V2.3 | Élèves et inscriptions annuelles | Parité CRUD/transfert/clôture + intégrité des données |
 | V2.4 | Enseignants et affectations | Canon unique + idempotence + homonymes préservés |
@@ -106,10 +107,40 @@ Hors périmètre :
 
 ## 7. Gate de merge V2.0
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation` vert ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime ni de schéma ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 8. Périmètre exact de V2.1a
+
+Inclus :
+
+- package `@somafrik/auth-v2` ;
+- liste immuable des dix rôles canoniques V2 ;
+- contrat immuable `AuthPrincipal` (`userId`, `role`, `tenantScope`, `permissions`) ;
+- évaluation fail-closed `can(principal, permission)` par correspondance exacte ;
+- tests unitaires du package auth ;
+- câblage `npm run test:v2-auth` dans le gate V2.
+
+Hors périmètre :
+
+- JWT, login, refresh, logout, sessions ;
+- endpoints HTTP et codes 401/403/200 ;
+- PostgreSQL, migrations, schéma ;
+- alias ou normalisation des rôles legacy ;
+- matrice rôle ↔ tenant ;
+- clients web/mobile et runtime legacy.
+
+## 9. Gate de merge V2.1a
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
-- [ ] `npm run verify:v2-foundation` vert ;
+- [ ] `npm run verify:v2-foundation` et `npm run test:v2-auth` verts ;
 - [ ] typecheck, lint, tests et sécurité existants verts ;
 - [ ] aucune modification de runtime ni de schéma ;
-- [ ] aucun conflit non résolu avec `develop` ;
+- [ ] aucun alias legacy ni droit implicite introduit ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
