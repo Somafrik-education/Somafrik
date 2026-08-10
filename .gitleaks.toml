@@ -10,7 +10,7 @@ useDefault = true
 # Ajouter des allowlists ciblées ici uniquement si un faux positif est confirmé.
 
 [allowlist]
-description = "Preuves d'audit authz notes : champs lookupValue / key / teacherCode = identifiants métier, pas des secrets API"
+description = "Preuves d'audit authz notes : champs lookupValue (anciennement key/keys) = identifiants métier, pas des secrets API"
 paths = [
   '''docs/audits/evidence/notes-authz-trace.*\.jsonl''',
   '''docs/audits/evidence/pre-e1-hotfix-02b-results\.json''',
@@ -18,8 +18,4 @@ paths = [
   '''docs/audits/evidence/pre-e1-notes-authz-causality\.json''',
   '''docs/audits/evidence/pre-e1-v2-identity-lifecycle-results\.json''',
   '''docs/audits/evidence/notes-authz-trace-v2-identity\.jsonl''',
-  # Faux positif confirmé (generic-api-key) : trace runtime "HTTP 201 key=<teacherCode>"
-  # = identifiant métier enseignant, pas un secret. Corrigé en teacherCode= sur develop ;
-  # subsiste dans l'historique de branches lot2 scannées par gitleaks (fetch-depth 0).
-  '''docs/audits/evidence/teacher-record-fix-lot2-notes-attendance-runtime-results\.json''',
 ]
