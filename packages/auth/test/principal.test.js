@@ -144,7 +144,11 @@ test("rejects missing, invalid, or empty permission entries", () => {
   const withoutPermissions = {
     userId: "user-001",
     role: "teacher",
-    tenantScope: { kind: "platform" },
+    tenantScope: {
+      kind: "school",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+    },
   };
   assert.throws(() => createAuthPrincipal(withoutPermissions), /permissions is required/);
   assert.throws(() => createAuthPrincipal(baseInput({ permissions: null })), /permissions/);
@@ -223,7 +227,11 @@ test("accepts an ordinary object and Object.create(null) with exact own fields",
   const nullProto = Object.create(null);
   nullProto.userId = "user-001";
   nullProto.role = "teacher";
-  nullProto.tenantScope = { kind: "platform" };
+  nullProto.tenantScope = {
+    kind: "school",
+    countryCode: "CD",
+    schoolCode: "CD-2026-0001",
+  };
   nullProto.permissions = ["notes:write"];
 
   const principal = createAuthPrincipal(nullProto);
@@ -309,7 +317,11 @@ try {
   createAuthPrincipal({
     userId: "user-001",
     role: "teacher",
-    tenantScope: { kind: "platform" },
+    tenantScope: {
+      kind: "school",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+    },
     permissions,
   });
   process.exit(2);
