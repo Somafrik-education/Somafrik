@@ -1,0 +1,22 @@
+{
+  "name": "Somafrik dev (PostgreSQL + API + Web)",
+  "user": "ubuntu",
+  "install": "bash scripts/cloud/install.sh",
+  "start": "bash scripts/cloud/start.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "bash scripts/cloud/run-backend.sh",
+      "description": "Express API on :5000 backed by PostgreSQL (health: /api/health)."
+    },
+    {
+      "name": "web",
+      "command": "bash scripts/cloud/run-web.sh",
+      "description": "Vite web dev server on :5173 (proxies /api to the backend)."
+    }
+  ],
+  "ports": [
+    { "name": "backend api", "port": 5000 },
+    { "name": "web dev", "port": 5173 }
+  ]
+}
