@@ -16,7 +16,8 @@ PG_CLUSTER="${SOMAFRIK_PG_CLUSTER:-main}"
 PG_BIN="/usr/lib/postgresql/${PG_VERSION}/bin"
 
 # Connection parameters (aligned with docker-compose defaults). Any of these can
-# be overridden; run-backend.sh consumes the same variables.
+# be overridden; run-backend.sh consumes the same variables. The cluster is
+# configured to actually listen on ${PG_PORT}.
 PG_USER="${POSTGRES_USER:-somafrik}"
 PG_PASSWORD="${POSTGRES_PASSWORD:-somafrik123}"
 PG_DB="${POSTGRES_DB:-somafrik}"
@@ -24,6 +25,22 @@ PG_PORT="${POSTGRES_PORT:-5432}"
 
 cluster_exists() {
   pg_lsclusters -h 2>/dev/null | awk '{print $1"/"$2}' | grep -qx "${PG_VERSION}/${PG_CLUSTER}"
+}
+
+cluster_port() {
+  sudo pg_conftool "${PG_VERSION}" "${PG_CLUSTER}" show port 2>/dev/null | awk '{print $NF}'
+}
+
+# Make the cluster actually listen on ${PG_PORT}. Restart if it is already
+# running on a different port so the change takes effect immediately.
+ensure_cluster_port() {
+  local current
+  current="$(cluster_port)"
+  if [ -n "${current}" ] && [ "${current}" != "${PG_PORT}" ]; then
+    echo "==> [install] Reconfiguring cluster port ${current} -> ${PG_PORT}"
+    sudo pg_conftool "${PG_VERSION}" "${PG_CLUSTER}" set port "${PG_PORT}"
+    sudo pg_ctlcluster "${PG_VERSION}" "${PG_CLUSTER}" restart 2>/dev/null || true
+  fi
 }
 
 echo "==> [install] Ensuring PostgreSQL ${PG_VERSION} is available"
@@ -35,10 +52,12 @@ if [ ! -x "${PG_BIN}/pg_ctl" ]; then
     "postgresql-${PG_VERSION}" "postgresql-client-${PG_VERSION}"
 fi
 
-echo "==> [install] Ensuring cluster ${PG_VERSION}/${PG_CLUSTER} exists"
+echo "==> [install] Ensuring cluster ${PG_VERSION}/${PG_CLUSTER} on port ${PG_PORT}"
 if ! cluster_exists; then
-  sudo pg_createcluster "${PG_VERSION}" "${PG_CLUSTER}" >/dev/null 2>&1 || true
+  # Create the cluster directly on the requested port.
+  sudo pg_createcluster --port "${PG_PORT}" "${PG_VERSION}" "${PG_CLUSTER}" >/dev/null 2>&1 || true
 fi
+ensure_cluster_port
 
 echo "==> [install] Installing Node dependencies (root, backend, web, Mobile)"
 npm run install:all
@@ -50,11 +69,12 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-echo "==> [install] Provisioning role '${PG_USER}' and database '${PG_DB}'"
+echo "==> [install] Provisioning role '${PG_USER}' and database '${PG_DB}' on port ${PG_PORT}"
 # Safe provisioning: values are passed as psql variables and quoted with
 # format(%I/%L) via \gexec — never interpolated into SQL text. This prevents
 # SQL injection / breakage when identifiers or passwords contain quotes.
-sudo -u postgres psql -v ON_ERROR_STOP=1 \
+# -p targets the cluster's actual port so a custom port is honoured end-to-end.
+sudo -u postgres psql -p "${PG_PORT}" -v ON_ERROR_STOP=1 \
   --set=pguser="${PG_USER}" \
   --set=pgpass="${PG_PASSWORD}" \
   --set=pgdb="${PG_DB}" <<'SQL'
@@ -72,4 +92,4 @@ WHERE EXISTS (SELECT 1 FROM pg_database WHERE datname = :'pgdb')
 \gexec
 SQL
 
-echo "==> [install] Done"
+echo "==> [install] Done (port ${PG_PORT})"

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Cloud Agent start phase for Somafrik.
-# Per-boot reconciliation: bring the PostgreSQL cluster online and wait until it
-# accepts connections, then return. The backend/web dev servers run as terminals.
+# Per-boot reconciliation: bring the PostgreSQL cluster online (on the configured
+# port) and wait until it accepts connections, then return. The backend/web dev
+# servers run as terminals.
 set -euo pipefail
 
 PG_VERSION="${SOMAFRIK_PG_VERSION:-16}"
@@ -13,9 +14,21 @@ cluster_exists() {
   pg_lsclusters -h 2>/dev/null | awk '{print $1"/"$2}' | grep -qx "${PG_VERSION}/${PG_CLUSTER}"
 }
 
-echo "==> [start] Ensuring cluster ${PG_VERSION}/${PG_CLUSTER} exists"
+cluster_port() {
+  sudo pg_conftool "${PG_VERSION}" "${PG_CLUSTER}" show port 2>/dev/null | awk '{print $NF}'
+}
+
+echo "==> [start] Ensuring cluster ${PG_VERSION}/${PG_CLUSTER} exists on port ${PG_PORT}"
 if ! cluster_exists && [ -x "${PG_BIN}/pg_ctl" ]; then
-  sudo pg_createcluster "${PG_VERSION}" "${PG_CLUSTER}" >/dev/null 2>&1 || true
+  sudo pg_createcluster --port "${PG_PORT}" "${PG_VERSION}" "${PG_CLUSTER}" >/dev/null 2>&1 || true
+fi
+
+# Reconcile the listening port before (re)starting so the backend can reach it.
+current_port="$(cluster_port)"
+if [ -n "${current_port}" ] && [ "${current_port}" != "${PG_PORT}" ]; then
+  echo "==> [start] Reconfiguring cluster port ${current_port} -> ${PG_PORT}"
+  sudo pg_conftool "${PG_VERSION}" "${PG_CLUSTER}" set port "${PG_PORT}"
+  sudo pg_ctlcluster "${PG_VERSION}" "${PG_CLUSTER}" restart 2>/dev/null || true
 fi
 
 echo "==> [start] Starting PostgreSQL ${PG_VERSION}/${PG_CLUSTER} cluster"
