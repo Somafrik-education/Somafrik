@@ -153,9 +153,18 @@ test("rejects missing, invalid, or empty permission entries", () => {
   assert.throws(() => createAuthPrincipal(withoutPermissions), /permissions is required/);
   assert.throws(() => createAuthPrincipal(baseInput({ permissions: null })), /permissions/);
   assert.throws(() => createAuthPrincipal(baseInput({ permissions: "notes:read" })), /permissions/);
-  assert.throws(() => createAuthPrincipal(baseInput({ permissions: [""] })), /permissions\[0\]/);
-  assert.throws(() => createAuthPrincipal(baseInput({ permissions: ["  "] })), /permissions\[0\]/);
-  assert.throws(() => createAuthPrincipal(baseInput({ permissions: [1] })), /permissions\[0\]/);
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: [""] })),
+    /permissions\[0\] must be a canonical permission token/,
+  );
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: ["  "] })),
+    /permissions\[0\] must be a canonical permission token/,
+  );
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: [1] })),
+    /permissions\[0\] must be a canonical permission token/,
+  );
 });
 
 test("rejects unexpected principal fields", () => {
@@ -281,12 +290,12 @@ test("rejects permissions arrays with redefined map, holes, or inherited entries
 test("accepts a dense permissions array with 257 valid entries", () => {
   const permissions = new Array(257);
   for (let index = 0; index < 257; index += 1) {
-    permissions[index] = `perm:${index}`;
+    permissions[index] = `item_${index}:read`;
   }
 
   const principal = createAuthPrincipal(baseInput({ permissions }));
   assert.equal(principal.permissions.length, 257);
-  assert.equal(Reflect.get(principal.permissions, "256"), "perm:256");
+  assert.equal(Reflect.get(principal.permissions, "256"), "item_256:read");
 });
 
 test("rejects numeric accessor descriptors and never invokes their getters", () => {

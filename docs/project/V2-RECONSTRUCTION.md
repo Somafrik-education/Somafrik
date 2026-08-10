@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1b — compatibilité rôle ↔ tenant
+**Lot courant :** V2.1c — contrat strict des permissions V2
 
 ---
 
@@ -101,6 +101,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.0 | Structure, frontières, premier invariant tenant | Guard + tests domaine + CI verts |
 | V2.1a | Rôles canoniques, `AuthPrincipal`, `can()` fail-closed | Tests auth + guard frontières + CI verts |
 | V2.1b | Compatibilité stricte rôle ↔ `tenantScope` | Matrice exhaustive + tests auth + CI verts |
+| V2.1c | Jetons de permission canoniques `<resource>:<action>` | Tests auth syntaxe/doublons + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -202,6 +203,39 @@ Hors périmètre :
 
 ## 13. Gate de merge V2.1b
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucun alias legacy ni droit implicite introduit ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 14. Périmètre exact de V2.1c
+
+Inclus :
+
+- format canonique obligatoire `<resource>:<action>` pour tout jeton de permission ;
+- segments en minuscules ASCII, chiffres, `_` ou `-`, démarrant par une lettre ;
+- unicité stricte des permissions dans un `AuthPrincipal` ;
+- refus fail-closed des wildcards, espaces, casse incorrecte et valeurs non-string ;
+- `can()` refuse toute permission demandée non canonique, sans exception ;
+- conservation de l'ordre fourni et copie immuable.
+
+Hors périmètre :
+
+- catalogue de permissions métier ;
+- matrice rôle → permissions ;
+- permission implicite ou dérivée du rôle ;
+- wildcards ou normalisation silencieuse ;
+- JWT, login, sessions, HTTP ;
+- PostgreSQL, migrations, seeds, données legacy ;
+- clients web/mobile et runtime legacy.
+
+## 15. Gate de merge V2.1c
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
@@ -209,5 +243,5 @@ Hors périmètre :
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucun alias legacy ni droit implicite introduit ;
+- [ ] aucun catalogue métier ni matrice rôle → permissions introduits ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

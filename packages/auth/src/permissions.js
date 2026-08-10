@@ -1,8 +1,5 @@
+import { isCanonicalPermissionToken } from "./permission-token.js";
 import { createAuthPrincipal } from "./principal.js";
-
-function isExactPermissionToken(permission) {
-  return typeof permission === "string" && permission.trim() !== "";
-}
 
 function listContainsExactPermission(permissions, permission) {
   const lengthDescriptor = Reflect.getOwnPropertyDescriptor(permissions, "length");
@@ -21,7 +18,7 @@ function listContainsExactPermission(permissions, permission) {
 }
 
 export function can(principal, permission) {
-  if (!isExactPermissionToken(permission)) {
+  if (!isCanonicalPermissionToken(permission)) {
     return false;
   }
 
