@@ -32,7 +32,7 @@ const REQUIRED_KIND_BY_ROLE = Object.freeze(
 
 const SCOPE_KINDS = Object.freeze(["platform", "country", "school"]);
 
-function principalInput(role, scopeKind, permissions = ["notes:write"]) {
+function principalInput(role, scopeKind, permissions = ["users:update"]) {
   return {
     userId: "user-001",
     role,
@@ -98,16 +98,16 @@ test("rejects the explicit incompatible CTO cases", () => {
 });
 
 test("can returns false for incompatible role and tenant scope without throwing", () => {
-  assert.equal(can(principalInput("super_admin", "school"), "notes:write"), false);
-  assert.equal(can(principalInput("country_admin", "platform"), "notes:write"), false);
-  assert.equal(can(principalInput("teacher", "country"), "notes:write"), false);
-  assert.equal(can(principalInput("school_admin", "platform"), "notes:write"), false);
+  assert.equal(can(principalInput("super_admin", "school"), "users:update"), false);
+  assert.equal(can(principalInput("country_admin", "platform"), "users:update"), false);
+  assert.equal(can(principalInput("teacher", "country"), "users:update"), false);
+  assert.equal(can(principalInput("school_admin", "platform"), "users:update"), false);
 });
 
 test("exact permissions still work for a compatible principal", () => {
-  const principal = createAuthPrincipal(principalInput("teacher", "school", ["notes:write"]));
-  assert.equal(can(principal, "notes:write"), true);
-  assert.equal(can(principal, "students:delete"), false);
+  const principal = createAuthPrincipal(principalInput("teacher", "school", ["users:update"]));
+  assert.equal(can(principal, "users:update"), true);
+  assert.equal(can(principal, "users:disable"), false);
 });
 
 test("unknown roles and legacy aliases remain rejected", () => {
@@ -140,11 +140,11 @@ test("role tenant checks ignore mutated Array.prototype.includes and Set.prototy
       () => createAuthPrincipal(principalInput("teacher", "platform")),
       /incompatible with tenant scope kind/,
     );
-    assert.equal(can(principalInput("teacher", "platform"), "notes:write"), false);
+    assert.equal(can(principalInput("teacher", "platform"), "users:update"), false);
 
-    const principal = createAuthPrincipal(principalInput("teacher", "school", ["notes:write"]));
-    assert.equal(can(principal, "notes:write"), true);
-    assert.equal(can(principal, "students:delete"), false);
+    const principal = createAuthPrincipal(principalInput("teacher", "school", ["users:update"]));
+    assert.equal(can(principal, "users:update"), true);
+    assert.equal(can(principal, "users:disable"), false);
   } finally {
     Array.prototype.includes = originalIncludes;
     Set.prototype.has = originalHas;

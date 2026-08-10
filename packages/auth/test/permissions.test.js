@@ -18,11 +18,11 @@ function principalWith(permissions, overrides = {}) {
 }
 
 test("returns true only for an exact permission match", () => {
-  const principal = principalWith(["notes:write", "presences:read"]);
+  const principal = principalWith(["users:update", "schools:read"]);
 
-  assert.equal(can(principal, "notes:write"), true);
-  assert.equal(can(principal, "presences:read"), true);
-  assert.equal(can(principal, "notes:read"), false);
+  assert.equal(can(principal, "users:update"), true);
+  assert.equal(can(principal, "schools:read"), true);
+  assert.equal(can(principal, "users:read"), false);
 });
 
 test("is case-sensitive and never normalizes permission tokens", () => {
@@ -34,8 +34,8 @@ test("is case-sensitive and never normalizes permission tokens", () => {
       error.code === "AUTH_PRINCIPAL_INVALID",
   );
 
-  const principal = principalWith(["notes:write"]);
-  assert.equal(can(principal, "notes:write"), true);
+  const principal = principalWith(["users:update"]);
+  assert.equal(can(principal, "users:update"), true);
   assert.equal(can(principal, "Notes:Write"), false);
   assert.equal(can(principal, "NOTES:WRITE"), false);
 });
@@ -53,7 +53,7 @@ test("does not grant implicit rights to super_admin", () => {
   });
 
   assert.equal(can(principal, "ALL_PRIVILEGES"), false);
-  assert.equal(can(principal, "students:delete"), false);
+  assert.equal(can(principal, "users:disable"), false);
 });
 
 test("never treats privilege markers as wildcards", () => {
@@ -61,17 +61,17 @@ test("never treats privilege markers as wildcards", () => {
   assert.throws(() => principalWith(["ALL_PRIVILEGES"]), /canonical permission token/);
   assert.throws(() => principalWith(["COUNTRY_PRIVILEGES"]), /canonical permission token/);
 
-  const principal = principalWith(["notes:write"]);
+  const principal = principalWith(["users:update"]);
   assert.equal(can(principal, "*"), false);
   assert.equal(can(principal, "notes:*"), false);
   assert.equal(can(principal, "*:read"), false);
   assert.equal(can(principal, "ALL_PRIVILEGES"), false);
   assert.equal(can(principal, "COUNTRY_PRIVILEGES"), false);
-  assert.equal(can(principal, "notes:write"), true);
+  assert.equal(can(principal, "users:update"), true);
 });
 
 test("fails closed for absent, empty, or invalid requested permissions", () => {
-  const principal = principalWith(["notes:write"]);
+  const principal = principalWith(["users:update"]);
 
   assert.equal(can(principal, undefined), false);
   assert.equal(can(principal, null), false);
@@ -81,18 +81,18 @@ test("fails closed for absent, empty, or invalid requested permissions", () => {
 });
 
 test("fails closed for absent or malformed principals without throwing", () => {
-  assert.equal(can(null, "notes:write"), false);
-  assert.equal(can(undefined, "notes:write"), false);
-  assert.equal(can("teacher", "notes:write"), false);
+  assert.equal(can(null, "users:update"), false);
+  assert.equal(can(undefined, "users:update"), false);
+  assert.equal(can("teacher", "users:update"), false);
   assert.equal(
     can(
       {
         userId: "user-001",
         role: "unknown_role",
         tenantScope: { kind: "platform" },
-        permissions: ["notes:write"],
+        permissions: ["users:update"],
       },
-      "notes:write",
+      "users:update",
     ),
     false,
   );
@@ -102,9 +102,9 @@ test("fails closed for absent or malformed principals without throwing", () => {
         userId: "user-001",
         role: "teacher",
         tenantScope: { kind: "country" },
-        permissions: ["notes:write"],
+        permissions: ["users:update"],
       },
-      "notes:write",
+      "users:update",
     ),
     false,
   );
@@ -118,9 +118,9 @@ test("fails closed for absent or malformed principals without throwing", () => {
           countryCode: "CD",
           schoolCode: "CD-2026-0001",
         },
-        permissions: "notes:write",
+        permissions: "users:update",
       },
-      "notes:write",
+      "users:update",
     ),
     false,
   );
@@ -130,9 +130,9 @@ test("fails closed for absent or malformed principals without throwing", () => {
         userId: "   ",
         role: "teacher",
         tenantScope: { kind: "platform" },
-        permissions: ["notes:write"],
+        permissions: ["users:update"],
       },
-      "notes:write",
+      "users:update",
     ),
     false,
   );
@@ -143,10 +143,10 @@ test("rejects a principal whose four fields are only inherited", () => {
     userId: "attacker",
     role: "super_admin",
     tenantScope: { kind: "platform" },
-    permissions: ["students:delete"],
+    permissions: ["users:disable"],
   });
 
-  assert.equal(can(forged, "students:delete"), false);
+  assert.equal(can(forged, "users:disable"), false);
 });
 
 test("rejects a principal that carries an extra own field", () => {
@@ -156,10 +156,10 @@ test("rejects a principal that carries an extra own field", () => {
         userId: "user-001",
         role: "teacher",
         tenantScope: { kind: "platform" },
-        permissions: ["notes:write"],
+        permissions: ["users:update"],
         sessionId: "session-1",
       },
-      "notes:write",
+      "users:update",
     ),
     false,
   );
@@ -174,14 +174,14 @@ test("returns false without throwing for hostile getters and invalid proxies", (
       throw new Error("hostile getter");
     },
   };
-  assert.equal(can(hostileGetter, "notes:write"), false);
+  assert.equal(can(hostileGetter, "users:update"), false);
 
   const invalidProxy = new Proxy(
     {
       userId: "user-001",
       role: "teacher",
       tenantScope: { kind: "platform" },
-      permissions: ["notes:write"],
+      permissions: ["users:update"],
     },
     {
       ownKeys() {
@@ -192,7 +192,7 @@ test("returns false without throwing for hostile getters and invalid proxies", (
       },
     },
   );
-  assert.equal(can(invalidProxy, "notes:write"), false);
+  assert.equal(can(invalidProxy, "users:update"), false);
 });
 
 test("still accepts an ordinary exact and valid principal object", () => {
@@ -204,11 +204,11 @@ test("still accepts an ordinary exact and valid principal object", () => {
       countryCode: "CD",
       schoolCode: "CD-2026-0001",
     },
-    permissions: ["notes:write"],
+    permissions: ["users:update"],
   };
 
-  assert.equal(can(principal, "notes:write"), true);
-  assert.equal(can(principal, "notes:read"), false);
+  assert.equal(can(principal, "users:update"), true);
+  assert.equal(can(principal, "users:read"), false);
 });
 
 test("authorization decisions ignore mutated Array.prototype.includes and Set.prototype.has", () => {
@@ -221,9 +221,9 @@ test("authorization decisions ignore mutated Array.prototype.includes and Set.pr
     assert.equal(isCanonicalRole("not_a_role"), false);
     assert.equal(isCanonicalRole("teacher"), true);
 
-    const principal = principalWith(["notes:write"]);
-    assert.equal(can(principal, "notes:write"), true);
-    assert.equal(can(principal, "students:delete"), false);
+    const principal = principalWith(["users:update"]);
+    assert.equal(can(principal, "users:update"), true);
+    assert.equal(can(principal, "users:disable"), false);
   } finally {
     Array.prototype.includes = originalIncludes;
     Set.prototype.has = originalHas;
@@ -231,10 +231,10 @@ test("authorization decisions ignore mutated Array.prototype.includes and Set.pr
 });
 
 test("returns false without throwing for forged permissions and tenant scopes", () => {
-  const redefinedMap = ["students:delete"];
+  const redefinedMap = ["users:disable"];
   Object.defineProperty(redefinedMap, "map", {
     value() {
-      return ["students:delete"];
+      return ["users:disable"];
     },
     enumerable: true,
   });
@@ -246,14 +246,14 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         tenantScope: { kind: "platform" },
         permissions: redefinedMap,
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
 
   const sparseInherited = [];
   sparseInherited.length = 1;
-  Object.setPrototypeOf(sparseInherited, { 0: "students:delete" });
+  Object.setPrototypeOf(sparseInherited, { 0: "users:disable" });
   assert.equal(
     can(
       {
@@ -262,7 +262,7 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         tenantScope: { kind: "platform" },
         permissions: sparseInherited,
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
@@ -277,7 +277,7 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         tenantScope: { kind: "platform" },
         permissions: enormousSparse,
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
@@ -287,7 +287,7 @@ test("returns false without throwing for forged permissions and tenant scopes", 
   Object.defineProperty(accessorPermissions, "0", {
     get() {
       getterCalls += 1;
-      return "students:delete";
+      return "users:disable";
     },
     enumerable: true,
     configurable: true,
@@ -300,7 +300,7 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         tenantScope: { kind: "platform" },
         permissions: accessorPermissions,
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
@@ -337,7 +337,7 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         tenantScope: { kind: "platform" },
         permissions: hugeLengthProxy,
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
@@ -349,9 +349,9 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         userId: "user-001",
         role: "super_admin",
         tenantScope: inheritedKindScope,
-        permissions: ["students:delete"],
+        permissions: ["users:disable"],
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
@@ -364,9 +364,9 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         userId: "user-001",
         role: "country_admin",
         tenantScope: inheritedCountryScope,
-        permissions: ["students:delete"],
+        permissions: ["users:disable"],
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
@@ -379,9 +379,9 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         userId: "user-001",
         role: "super_admin",
         tenantScope: scopeWithSymbol,
-        permissions: ["students:delete"],
+        permissions: ["users:disable"],
       },
-      "students:delete",
+      "users:disable",
     ),
     false,
   );
