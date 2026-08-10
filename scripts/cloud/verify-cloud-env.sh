@@ -109,9 +109,12 @@ if [ -f "${REPO_ROOT}/${EVID_REL}" ]; then
 else
   echo '{ "results": [] }' > "${TMPD}/${EVID_REL}"
 fi
-# Append a distinct fake secret (different from the historical business
-# identifier) to the evidence file, then confirm gitleaks still flags it.
-printf '\n{"injected":"AKIAZ4Q7R2M9K1P3T6V8","api_key":"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"}\n' \
+# Build a distinct fake secret AT RUNTIME (random) so this committed test script
+# never contains a matchable secret literal itself. Different from the historical
+# business identifier; must still be flagged by gitleaks inside the evidence file.
+fake_aws="AKIA$(LC_ALL=C tr -dc 'A-Z0-9' </dev/urandom | head -c 16)"
+fake_api="$(openssl rand -hex 20 2>/dev/null || (LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 40))"
+printf '\n{"injected":"%s","api_key":"%s"}\n' "${fake_aws}" "${fake_api}" \
   >> "${TMPD}/${EVID_REL}"
 gitleaks detect --no-git --source "${TMPD}" --config "${REPO_ROOT}/.gitleaks.toml" \
   --redact --no-banner --exit-code 1 >/tmp/vce_gl_inject.log 2>&1
