@@ -49,7 +49,7 @@ function baseInput(permissions, overrides = {}) {
   };
 }
 
-function assertInvalidPermission(permissions, requestedPermission = "notes:write") {
+function assertInvalidPermission(permissions, requestedPermission = "users:update") {
   assert.throws(
     () => createAuthPrincipal(baseInput(permissions)),
     (error) =>
@@ -60,18 +60,17 @@ function assertInvalidPermission(permissions, requestedPermission = "notes:write
   assert.equal(can(baseInput(permissions), requestedPermission), false);
 }
 
-test("accepts canonical permission tokens", () => {
-  const permissions = [
-    "students:read",
-    "notes:write",
-    "school-users:manage",
-    "reports_advanced:read",
-  ];
+test("accepts canonical catalogued permission tokens", () => {
+  const permissions = ["schools:read", "users:update", "roles:assign", "sessions:revoke"];
   const principal = createAuthPrincipal(baseInput(permissions));
   assert.deepEqual(principal.permissions, permissions);
   assert.equal(Object.isFrozen(principal), true);
   assert.equal(Object.isFrozen(principal.permissions), true);
-  assert.equal(can(principal, "school-users:manage"), true);
+  assert.equal(can(principal, "roles:assign"), true);
+  assert.throws(
+    () => createAuthPrincipal(baseInput(["school-users:manage"])),
+    /catalogued auth permission/,
+  );
 });
 
 test("rejects the CTO-listed invalid permission formats", () => {
@@ -93,38 +92,56 @@ test("rejects the CTO-listed invalid permission formats", () => {
 
   for (let index = 0; index < invalidTokens.length; index += 1) {
     const token = Reflect.get(invalidTokens, String(index));
-    assertInvalidPermission([token], "notes:write");
-    assert.equal(can(baseInput(["notes:write"]), token), false);
+    assertInvalidPermission([token], "users:update");
+    assert.equal(can(baseInput(["users:update"]), token), false);
   }
 
-  assertInvalidPermission([1], "notes:write");
-  assertInvalidPermission([null], "notes:write");
+  assertInvalidPermission([1], "users:update");
+  assertInvalidPermission([null], "users:update");
 });
 
 test("rejects exact duplicates and keeps near-duplicates distinct", () => {
   assert.throws(
-    () => createAuthPrincipal(baseInput(["notes:write", "notes:write"])),
+    () => createAuthPrincipal(baseInput(["users:update", "users:update"])),
     /duplicates an earlier permission token/,
   );
 
-  const principal = createAuthPrincipal(baseInput(["notes:write", "notes:read"]));
-  assert.deepEqual(principal.permissions, ["notes:write", "notes:read"]);
-  assert.equal(can(principal, "notes:write"), true);
-  assert.equal(can(principal, "notes:read"), true);
+  const principal = createAuthPrincipal(baseInput(["users:update", "users:read"]));
+  assert.deepEqual(principal.permissions, ["users:update", "users:read"]);
+  assert.equal(can(principal, "users:update"), true);
+  assert.equal(can(principal, "users:read"), true);
 });
 
-test("accepts an empty permissions list and a dense list of 257 unique tokens", () => {
+test("accepts an empty permissions list and a dense list of all catalogued tokens", () => {
   const emptyPrincipal = createAuthPrincipal(baseInput([]));
   assert.deepEqual(emptyPrincipal.permissions, []);
 
-  const permissions = new Array(257);
-  for (let index = 0; index < 257; index += 1) {
-    permissions[index] = `item_${index}:read`;
-  }
-  const principal = createAuthPrincipal(baseInput(permissions));
-  assert.equal(principal.permissions.length, 257);
-  assert.equal(can(principal, "item_0:read"), true);
-  assert.equal(can(principal, "item_256:read"), true);
+  const permissions = [
+    "platform:manage",
+    "countries:create",
+    "countries:read",
+    "countries:update",
+    "countries:disable",
+    "schools:create",
+    "schools:read",
+    "schools:update",
+    "schools:disable",
+    "users:create",
+    "users:read",
+    "users:update",
+    "users:disable",
+    "roles:assign",
+    "sessions:revoke",
+  ];
+  const principal = createAuthPrincipal(
+    baseInput(permissions, {
+      role: "super_admin",
+      tenantScope: { kind: "platform" },
+    }),
+  );
+  assert.equal(principal.permissions.length, 15);
+  assert.equal(can(principal, "platform:manage"), true);
+  assert.equal(can(principal, "sessions:revoke"), true);
 });
 
 test("rejects accessor descriptors without invoking getters", () => {
@@ -133,7 +150,7 @@ test("rejects accessor descriptors without invoking getters", () => {
   Object.defineProperty(permissions, "0", {
     get() {
       getterCalls += 1;
-      return "students:delete";
+      return "users:disable";
     },
     enumerable: true,
     configurable: true,
@@ -144,14 +161,14 @@ test("rejects accessor descriptors without invoking getters", () => {
     /permissions\[0\] must be a data property/,
   );
   assert.equal(getterCalls, 0);
-  assert.equal(can(baseInput(permissions), "students:delete"), false);
+  assert.equal(can(baseInput(permissions), "users:disable"), false);
   assert.equal(getterCalls, 0);
 });
 
 test("rejects enormous sparse arrays and hostile proxies without mass traversal", () => {
   const enormousSparse = [];
   enormousSparse.length = 4294967295;
-  assert.equal(can(baseInput(enormousSparse), "students:delete"), false);
+  assert.equal(can(baseInput(enormousSparse), "users:disable"), false);
 
   const script = `
 import { createAuthPrincipal } from ${JSON.stringify(authIndexUrl)};
@@ -207,10 +224,10 @@ try {
       return Array.prototype;
     },
   });
-  assert.equal(can(baseInput(hugeLengthProxy), "students:delete"), false);
+  assert.equal(can(baseInput(hugeLengthProxy), "users:disable"), false);
 });
 
-test("duplicate detection ignores Object.prototype pollution and keeps constructor tokens distinct", () => {
+test("duplicate detection ignores Object.prototype pollution and rejects constructor tokens", () => {
   const hadConstructor = Object.hasOwn(Object.prototype, "constructor");
   const previousConstructor = Object.prototype.constructor;
   const originalIncludes = Array.prototype.includes;
@@ -221,16 +238,23 @@ test("duplicate detection ignores Object.prototype pollution and keeps construct
   Set.prototype.has = () => true;
 
   try {
-    const principal = createAuthPrincipal(
-      baseInput(["constructor:read", "tostring:read", "notes:write"]),
+    assert.throws(
+      () => createAuthPrincipal(baseInput(["constructor:read"])),
+      /catalogued auth permission/,
     );
-    assert.deepEqual(principal.permissions, ["constructor:read", "tostring:read", "notes:write"]);
-    assert.equal(can(principal, "constructor:read"), true);
-    assert.equal(can(principal, "tostring:read"), true);
-    assert.equal(can(principal, "students:delete"), false);
+    assert.throws(
+      () => createAuthPrincipal(baseInput(["tostring:read"])),
+      /catalogued auth permission/,
+    );
+    assert.equal(can(baseInput(["users:update"]), "constructor:read"), false);
+    assert.equal(can(baseInput(["users:update"]), "tostring:read"), false);
+
+    const principal = createAuthPrincipal(baseInput(["users:update", "users:read"]));
+    assert.equal(can(principal, "users:update"), true);
+    assert.equal(can(principal, "users:disable"), false);
 
     assert.throws(
-      () => createAuthPrincipal(baseInput(["constructor:read", "constructor:read"])),
+      () => createAuthPrincipal(baseInput(["users:update", "users:update"])),
       /duplicates an earlier permission token/,
     );
   } finally {
@@ -249,10 +273,10 @@ test("V2.1b role and tenant matrix remains enforced with canonical permissions",
       userId: "user-001",
       role,
       tenantScope: Reflect.get(SCOPE_FIXTURES, requiredKind),
-      permissions: ["notes:write"],
+      permissions: ["users:update"],
     });
     assert.equal(principal.role, role);
-    assert.equal(can(principal, "notes:write"), true);
+    assert.equal(can(principal, "users:update"), true);
 
     for (let scopeIndex = 0; scopeIndex < SCOPE_KINDS.length; scopeIndex += 1) {
       const scopeKind = Reflect.get(SCOPE_KINDS, String(scopeIndex));
@@ -265,7 +289,7 @@ test("V2.1b role and tenant matrix remains enforced with canonical permissions",
             userId: "user-001",
             role,
             tenantScope: Reflect.get(SCOPE_FIXTURES, scopeKind),
-            permissions: ["notes:write"],
+            permissions: ["users:update"],
           }),
         /incompatible with tenant scope kind/,
       );
@@ -275,9 +299,9 @@ test("V2.1b role and tenant matrix remains enforced with canonical permissions",
             userId: "user-001",
             role,
             tenantScope: Reflect.get(SCOPE_FIXTURES, scopeKind),
-            permissions: ["notes:write"],
+            permissions: ["users:update"],
           },
-          "notes:write",
+          "users:update",
         ),
         false,
       );

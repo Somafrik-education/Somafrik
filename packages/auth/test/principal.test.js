@@ -19,7 +19,7 @@ function baseInput(overrides = {}) {
       countryCode: "CD",
       schoolCode: "CD-2026-0001",
     },
-    permissions: ["students:read"],
+    permissions: ["schools:read"],
     ...overrides,
   };
 }
@@ -68,11 +68,11 @@ test("creates an immutable principal with a school tenant scope", () => {
 });
 
 test("copies permissions defensively and keeps an empty permissions list valid", () => {
-  const sourcePermissions = ["notes:write"];
+  const sourcePermissions = ["users:update"];
   const principal = createAuthPrincipal(baseInput({ permissions: sourcePermissions }));
 
-  sourcePermissions.push("notes:delete");
-  assert.deepEqual(principal.permissions, ["notes:write"]);
+  sourcePermissions.push("users:read");
+  assert.deepEqual(principal.permissions, ["users:update"]);
   assert.equal(Object.isFrozen(principal.permissions), true);
 
   const emptyPrincipal = createAuthPrincipal(baseInput({ permissions: [] }));
@@ -152,7 +152,7 @@ test("rejects missing, invalid, or empty permission entries", () => {
   };
   assert.throws(() => createAuthPrincipal(withoutPermissions), /permissions is required/);
   assert.throws(() => createAuthPrincipal(baseInput({ permissions: null })), /permissions/);
-  assert.throws(() => createAuthPrincipal(baseInput({ permissions: "notes:read" })), /permissions/);
+  assert.throws(() => createAuthPrincipal(baseInput({ permissions: "users:read" })), /permissions/);
   assert.throws(
     () => createAuthPrincipal(baseInput({ permissions: [""] })),
     /permissions\[0\] must be a canonical permission token/,
@@ -185,14 +185,14 @@ test("rejects inherited userId, role, or tenantScope values", () => {
     role: "super_admin",
     tenantScope: { kind: "platform" },
   });
-  inheritedIdentity.permissions = ["students:delete"];
+  inheritedIdentity.permissions = ["users:disable"];
 
   assert.throws(() => createAuthPrincipal(inheritedIdentity), /userId is required as an own property/);
 
   const inheritedRoleOnly = {
     userId: "user-001",
     tenantScope: { kind: "platform" },
-    permissions: ["students:delete"],
+    permissions: ["users:disable"],
   };
   Object.setPrototypeOf(inheritedRoleOnly, { role: "super_admin" });
   assert.throws(() => createAuthPrincipal(inheritedRoleOnly), /role is required as an own property/);
@@ -200,7 +200,7 @@ test("rejects inherited userId, role, or tenantScope values", () => {
   const inheritedScopeOnly = {
     userId: "user-001",
     role: "teacher",
-    permissions: ["students:delete"],
+    permissions: ["users:disable"],
   };
   Object.setPrototypeOf(inheritedScopeOnly, { tenantScope: { kind: "platform" } });
   assert.throws(
@@ -241,15 +241,15 @@ test("accepts an ordinary object and Object.create(null) with exact own fields",
     countryCode: "CD",
     schoolCode: "CD-2026-0001",
   };
-  nullProto.permissions = ["notes:write"];
+  nullProto.permissions = ["users:update"];
 
   const principal = createAuthPrincipal(nullProto);
-  assert.deepEqual(principal.permissions, ["notes:write"]);
+  assert.deepEqual(principal.permissions, ["users:update"]);
   assert.equal(Object.isFrozen(principal), true);
 });
 
 test("rejects permissions arrays with redefined map, holes, or inherited entries", () => {
-  const withRedefinedMap = ["students:delete"];
+  const withRedefinedMap = ["users:disable"];
   Object.defineProperty(withRedefinedMap, "map", {
     value() {
       return [];
@@ -263,13 +263,13 @@ test("rejects permissions arrays with redefined map, holes, or inherited entries
 
   const sparseInherited = [];
   sparseInherited.length = 1;
-  Object.setPrototypeOf(sparseInherited, { 0: "students:delete" });
+  Object.setPrototypeOf(sparseInherited, { 0: "users:disable" });
   assert.throws(
     () => createAuthPrincipal(baseInput({ permissions: sparseInherited })),
     /permissions must be a dense own-keyed array/,
   );
 
-  const withHiddenPermissionMeta = ["notes:write"];
+  const withHiddenPermissionMeta = ["users:update"];
   Object.defineProperty(withHiddenPermissionMeta, "hidden", {
     value: "secret",
     enumerable: false,
@@ -279,7 +279,7 @@ test("rejects permissions arrays with redefined map, holes, or inherited entries
     /unsupported permissions own keys: hidden/,
   );
 
-  const withSymbolPermissionMeta = ["notes:write"];
+  const withSymbolPermissionMeta = ["users:update"];
   withSymbolPermissionMeta[Symbol("extra")] = "nope";
   assert.throws(
     () => createAuthPrincipal(baseInput({ permissions: withSymbolPermissionMeta })),
@@ -287,15 +287,34 @@ test("rejects permissions arrays with redefined map, holes, or inherited entries
   );
 });
 
-test("accepts a dense permissions array with 257 valid entries", () => {
-  const permissions = new Array(257);
-  for (let index = 0; index < 257; index += 1) {
-    permissions[index] = `item_${index}:read`;
-  }
+test("accepts a dense permissions array with all catalogued entries", () => {
+  const permissions = [
+    "platform:manage",
+    "countries:create",
+    "countries:read",
+    "countries:update",
+    "countries:disable",
+    "schools:create",
+    "schools:read",
+    "schools:update",
+    "schools:disable",
+    "users:create",
+    "users:read",
+    "users:update",
+    "users:disable",
+    "roles:assign",
+    "sessions:revoke",
+  ];
 
-  const principal = createAuthPrincipal(baseInput({ permissions }));
-  assert.equal(principal.permissions.length, 257);
-  assert.equal(Reflect.get(principal.permissions, "256"), "item_256:read");
+  const principal = createAuthPrincipal(
+    baseInput({
+      role: "super_admin",
+      tenantScope: { kind: "platform" },
+      permissions,
+    }),
+  );
+  assert.equal(principal.permissions.length, 15);
+  assert.equal(Reflect.get(principal.permissions, "14"), "sessions:revoke");
 });
 
 test("rejects numeric accessor descriptors and never invokes their getters", () => {
@@ -304,7 +323,7 @@ test("rejects numeric accessor descriptors and never invokes their getters", () 
   Object.defineProperty(permissions, "0", {
     get() {
       getterCalls += 1;
-      return "students:delete";
+      return "users:disable";
     },
     enumerable: true,
     configurable: true,

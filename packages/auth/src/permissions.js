@@ -1,3 +1,4 @@
+import { isCataloguedAuthPermission } from "./permission-catalog.js";
 import { isCanonicalPermissionToken } from "./permission-token.js";
 import { createAuthPrincipal } from "./principal.js";
 
@@ -19,6 +20,9 @@ function listContainsExactPermission(permissions, permission) {
 
 export function can(principal, permission) {
   if (!isCanonicalPermissionToken(permission)) {
+    return false;
+  }
+  if (!isCataloguedAuthPermission(permission)) {
     return false;
   }
 

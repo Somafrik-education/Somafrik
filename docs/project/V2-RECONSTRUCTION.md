@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1c — contrat strict des permissions V2
+**Lot courant :** V2.1d — catalogue fermé des permissions d’identité
 
 ---
 
@@ -102,6 +102,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1a | Rôles canoniques, `AuthPrincipal`, `can()` fail-closed | Tests auth + guard frontières + CI verts |
 | V2.1b | Compatibilité stricte rôle ↔ `tenantScope` | Matrice exhaustive + tests auth + CI verts |
 | V2.1c | Jetons de permission canoniques `<resource>:<action>` | Tests auth syntaxe/doublons + CI verts |
+| V2.1d | Catalogue fermé des permissions d’identité/administration | Tests catalogue + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -236,6 +237,36 @@ Hors périmètre :
 
 ## 15. Gate de merge V2.1c
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucun catalogue métier ni matrice rôle → permissions introduits ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 16. Périmètre exact de V2.1d
+
+Inclus :
+
+- catalogue fermé immuable `AUTH_PERMISSION_CATALOG` (15 jetons d’identité/administration) ;
+- export `isCataloguedAuthPermission(permission)` ;
+- `createAuthPrincipal()` n’accepte que des jetons canoniques, catalogués et uniques ;
+- `can()` fail-closed hors catalogue ;
+- tests du catalogue et non-régression V2.1b/V2.1c.
+
+Hors périmètre :
+
+- matrice rôle → permissions ;
+- catalogue des futurs domaines métier (notes, paiements, élèves, etc.) — ajoutés uniquement par leurs lots dédiés ;
+- JWT, login, sessions, HTTP ;
+- PostgreSQL, migrations, seeds, données legacy ;
+- clients web/mobile et runtime legacy.
+
+## 17. Gate de merge V2.1d
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
@@ -243,5 +274,5 @@ Hors périmètre :
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucun catalogue métier ni matrice rôle → permissions introduits ;
+- [ ] aucune matrice rôle → permissions introduite ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

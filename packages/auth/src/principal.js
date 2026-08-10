@@ -1,5 +1,6 @@
 import { TENANT_SCOPE_KIND, createTenantScope } from "../../domain/src/index.js";
 
+import { isCataloguedAuthPermission } from "./permission-catalog.js";
 import { isCanonicalPermissionToken } from "./permission-token.js";
 import { isCanonicalRole } from "./roles.js";
 
@@ -118,6 +119,11 @@ function requirePermissionValue(permission, index) {
   if (!isCanonicalPermissionToken(permission)) {
     throw new AuthPrincipalValidationError(
       `permissions[${index}] must be a canonical permission token`,
+    );
+  }
+  if (!isCataloguedAuthPermission(permission)) {
+    throw new AuthPrincipalValidationError(
+      `permissions[${index}] must be a catalogued auth permission`,
     );
   }
   return permission;
