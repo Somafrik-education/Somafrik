@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createAuthPrincipal } from "../src/index.js";
+
+const authIndexUrl = pathToFileURL(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/index.js"),
+).href;
 
 function baseInput(overrides = {}) {
   return {
@@ -245,15 +252,6 @@ test("rejects permissions arrays with redefined map, holes, or inherited entries
     /permissions must be a dense own-keyed array/,
   );
 
-  const enormousSparse = [];
-  enormousSparse.length = 100_000_000;
-  const startedAt = Date.now();
-  assert.throws(
-    () => createAuthPrincipal(baseInput({ permissions: enormousSparse })),
-    /permissions length must be <= 256/,
-  );
-  assert.ok(Date.now() - startedAt < 250);
-
   const withHiddenPermissionMeta = ["notes:write"];
   Object.defineProperty(withHiddenPermissionMeta, "hidden", {
     value: "secret",
@@ -270,4 +268,65 @@ test("rejects permissions arrays with redefined map, holes, or inherited entries
     () => createAuthPrincipal(baseInput({ permissions: withSymbolPermissionMeta })),
     /unsupported permissions own keys/,
   );
+});
+
+test("accepts a dense permissions array with 257 valid entries", () => {
+  const permissions = new Array(257);
+  for (let index = 0; index < 257; index += 1) {
+    permissions[index] = `perm:${index}`;
+  }
+
+  const principal = createAuthPrincipal(baseInput({ permissions }));
+  assert.equal(principal.permissions.length, 257);
+  assert.equal(Reflect.get(principal.permissions, "256"), "perm:256");
+});
+
+test("rejects numeric accessor descriptors and never invokes their getters", () => {
+  let getterCalls = 0;
+  const permissions = [];
+  Object.defineProperty(permissions, "0", {
+    get() {
+      getterCalls += 1;
+      return "students:delete";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions })),
+    /permissions\[0\] must be a data property/,
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test("rejects an enormous sparse permissions length in a child process with timeout", () => {
+  const script = `
+import { createAuthPrincipal } from ${JSON.stringify(authIndexUrl)};
+const permissions = [];
+permissions.length = 4294967295;
+try {
+  createAuthPrincipal({
+    userId: "user-001",
+    role: "teacher",
+    tenantScope: { kind: "platform" },
+    permissions,
+  });
+  process.exit(2);
+} catch (error) {
+  if (error && /dense own-keyed array/.test(String(error.message))) {
+    process.exit(0);
+  }
+  process.exit(3);
+}
+`;
+
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    encoding: "utf8",
+    timeout: 2000,
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 0);
 });

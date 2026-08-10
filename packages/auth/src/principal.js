@@ -19,7 +19,6 @@ const ALLOWED_FIELDS = Object.freeze(
     permissions: true,
   }),
 );
-const MAX_PERMISSIONS_LENGTH = 256;
 
 function assertPlainObject(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -66,6 +65,15 @@ function requireCanonicalRole(value) {
   return value;
 }
 
+function isDataDescriptor(descriptor) {
+  return (
+    Boolean(descriptor) &&
+    Object.hasOwn(descriptor, "value") &&
+    !Object.hasOwn(descriptor, "get") &&
+    !Object.hasOwn(descriptor, "set")
+  );
+}
+
 function isCanonicalArrayIndexKey(key, length) {
   if (typeof key !== "string" || length <= 0) {
     return false;
@@ -75,6 +83,16 @@ function isCanonicalArrayIndexKey(key, length) {
   }
   const index = Number(key);
   return Number.isSafeInteger(index) && index >= 0 && index < length;
+}
+
+function requirePermissionValue(permission, index) {
+  if (typeof permission !== "string") {
+    throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
+  }
+  if (permission.trim() === "") {
+    throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
+  }
+  return permission;
 }
 
 function requirePermissions(value) {
@@ -87,18 +105,20 @@ function requirePermissions(value) {
   }
 
   const lengthDescriptor = Reflect.getOwnPropertyDescriptor(value, "length");
-  const length = lengthDescriptor ? lengthDescriptor.value : undefined;
+  if (!isDataDescriptor(lengthDescriptor)) {
+    throw new AuthPrincipalValidationError("permissions length must be a data property");
+  }
+
+  const length = lengthDescriptor.value;
   if (typeof length !== "number" || !Number.isInteger(length) || length < 0) {
     throw new AuthPrincipalValidationError("permissions length must be a non-negative integer");
   }
-  if (length > MAX_PERMISSIONS_LENGTH) {
-    throw new AuthPrincipalValidationError(
-      `permissions length must be <= ${MAX_PERMISSIONS_LENGTH}`,
-    );
-  }
 
+  const ownKeys = Reflect.ownKeys(value);
+  const indexKeys = [];
   let indexCount = 0;
-  for (const key of Reflect.ownKeys(value)) {
+
+  for (const key of ownKeys) {
     if (key === "length") {
       continue;
     }
@@ -107,6 +127,7 @@ function requirePermissions(value) {
         `unsupported permissions own keys: ${typeof key === "symbol" ? String(key) : key}`,
       );
     }
+    indexKeys[indexCount] = key;
     indexCount += 1;
   }
 
@@ -115,20 +136,17 @@ function requirePermissions(value) {
   }
 
   const permissions = new Array(length);
-  for (let index = 0; index < length; index += 1) {
-    const indexKey = String(index);
-    if (!Object.hasOwn(value, indexKey)) {
-      throw new AuthPrincipalValidationError(`permissions[${index}] is required as an own property`);
+  for (let offset = 0; offset < indexCount; offset += 1) {
+    const indexKey = indexKeys[offset];
+    const descriptor = Reflect.getOwnPropertyDescriptor(value, indexKey);
+    if (!isDataDescriptor(descriptor)) {
+      throw new AuthPrincipalValidationError(
+        `permissions[${indexKey}] must be a data property`,
+      );
     }
 
-    const permission = Reflect.get(value, indexKey);
-    if (typeof permission !== "string") {
-      throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
-    }
-    if (permission.trim() === "") {
-      throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
-    }
-    permissions[index] = permission;
+    const index = Number(indexKey);
+    permissions[index] = requirePermissionValue(descriptor.value, index);
   }
 
   return Object.freeze(permissions);

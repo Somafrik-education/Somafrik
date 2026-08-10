@@ -262,7 +262,7 @@ test("returns false without throwing for forged permissions and tenant scopes", 
   );
 
   const enormousSparse = [];
-  enormousSparse.length = 100_000_000;
+  enormousSparse.length = 4294967295;
   assert.equal(
     can(
       {
@@ -270,6 +270,66 @@ test("returns false without throwing for forged permissions and tenant scopes", 
         role: "super_admin",
         tenantScope: { kind: "platform" },
         permissions: enormousSparse,
+      },
+      "students:delete",
+    ),
+    false,
+  );
+
+  let getterCalls = 0;
+  const accessorPermissions = [];
+  Object.defineProperty(accessorPermissions, "0", {
+    get() {
+      getterCalls += 1;
+      return "students:delete";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "super_admin",
+        tenantScope: { kind: "platform" },
+        permissions: accessorPermissions,
+      },
+      "students:delete",
+    ),
+    false,
+  );
+  assert.equal(getterCalls, 0);
+
+  const hugeLengthProxy = new Proxy([], {
+    get(target, property) {
+      if (property === "length") return 4294967295;
+      return Reflect.get(target, property);
+    },
+    ownKeys() {
+      return ["length"];
+    },
+    getOwnPropertyDescriptor(_target, property) {
+      if (property === "length") {
+        return {
+          configurable: true,
+          enumerable: false,
+          writable: true,
+          value: 4294967295,
+        };
+      }
+      return undefined;
+    },
+    getPrototypeOf() {
+      return Array.prototype;
+    },
+  });
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "super_admin",
+        tenantScope: { kind: "platform" },
+        permissions: hugeLengthProxy,
       },
       "students:delete",
     ),
