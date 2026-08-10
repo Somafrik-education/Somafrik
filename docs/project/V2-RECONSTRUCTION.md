@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** gouvernance V2 — clean start (#123)
+**Lot courant :** V2.1b — compatibilité rôle ↔ tenant
 
 ---
 
@@ -100,6 +100,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 |---|---|---|
 | V2.0 | Structure, frontières, premier invariant tenant | Guard + tests domaine + CI verts |
 | V2.1a | Rôles canoniques, `AuthPrincipal`, `can()` fail-closed | Tests auth + guard frontières + CI verts |
+| V2.1b | Compatibilité stricte rôle ↔ `tenantScope` | Matrice exhaustive + tests auth + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -160,21 +161,53 @@ Hors périmètre :
 
 ## 10. Gate de merge V2.1a
 
-- [ ] diff GitHub indépendant relu par le CTO ;
-- [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
-- [ ] `npm run verify:v2-foundation` et `npm run test:v2-auth` verts ;
-- [ ] typecheck, lint, tests et sécurité existants verts ;
-- [ ] aucune modification de runtime ni de schéma ;
-- [ ] aucun conflit non résolu avec `develop` ;
-- [ ] aucun alias legacy ni droit implicite introduit ;
-- [ ] décision CTO explicite avant passage Ready puis merge.
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation` et `npm run test:v2-auth` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime ni de schéma ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucun alias legacy ni droit implicite introduit ;
+- [x] décision CTO explicite avant passage Ready puis merge.
 
 ## 11. Gate de gouvernance clean start
 
 - [x] issue de décision CTO créée (#123) ;
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] diff limité à la documentation de reconstruction ;
+- [x] aucune modification de code métier, runtime, schéma ou donnée ;
+- [x] aucune formulation n'autorise une reprise de données legacy ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 12. Périmètre exact de V2.1b
+
+Inclus :
+
+- validation stricte de la compatibilité rôle canonique ↔ `tenantScope` dans `@somafrik/auth-v2` ;
+- matrice CTO : `super_admin`→platform, `country_admin`→country, tous les autres rôles→school ;
+- refus `AuthPrincipalValidationError` / `AUTH_PRINCIPAL_INVALID` pour toute combinaison incompatible ;
+- `can()` fail-closed sur les principaux incompatibles ;
+- tests unitaires de matrice exhaustive.
+
+Hors périmètre :
+
+- JWT, login, refresh, logout, sessions ;
+- endpoints HTTP ;
+- PostgreSQL, migrations, schéma, seeds ;
+- permissions métier détaillées ;
+- alias ou normalisation des rôles legacy ;
+- lecture, copie, transformation, réconciliation ou migration de données legacy ;
+- clients web/mobile et runtime legacy.
+
+## 13. Gate de merge V2.1b
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
-- [ ] diff limité à la documentation de reconstruction ;
-- [ ] aucune modification de code métier, runtime, schéma ou donnée ;
-- [ ] aucune formulation n'autorise une reprise de données legacy ;
+- [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [ ] typecheck, lint, tests et sécurité existants verts ;
+- [ ] aucune modification de runtime, schéma ou donnée ;
+- [ ] aucun conflit non résolu avec `develop` ;
+- [ ] aucune donnée legacy lue ou migrée ;
+- [ ] aucun alias legacy ni droit implicite introduit ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

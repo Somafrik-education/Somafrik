@@ -1,4 +1,4 @@
-import { createTenantScope } from "../../domain/src/index.js";
+import { TENANT_SCOPE_KIND, createTenantScope } from "../../domain/src/index.js";
 
 import { isCanonicalRole } from "./roles.js";
 
@@ -17,6 +17,20 @@ const ALLOWED_FIELDS = Object.freeze(
     role: true,
     tenantScope: true,
     permissions: true,
+  }),
+);
+const ROLE_REQUIRED_SCOPE_KIND = Object.freeze(
+  Object.assign(Object.create(null), {
+    super_admin: TENANT_SCOPE_KIND.PLATFORM,
+    country_admin: TENANT_SCOPE_KIND.COUNTRY,
+    school_admin: TENANT_SCOPE_KIND.SCHOOL,
+    principal: TENANT_SCOPE_KIND.SCHOOL,
+    prefet: TENANT_SCOPE_KIND.SCHOOL,
+    secretary: TENANT_SCOPE_KIND.SCHOOL,
+    accountant: TENANT_SCOPE_KIND.SCHOOL,
+    teacher: TENANT_SCOPE_KIND.SCHOOL,
+    parent: TENANT_SCOPE_KIND.SCHOOL,
+    student: TENANT_SCOPE_KIND.SCHOOL,
   }),
 );
 
@@ -63,6 +77,20 @@ function requireCanonicalRole(value) {
     throw new AuthPrincipalValidationError(`unsupported auth principal role: ${String(value)}`);
   }
   return value;
+}
+
+function assertRoleCompatibleWithTenantScope(role, tenantScope) {
+  if (!Object.hasOwn(ROLE_REQUIRED_SCOPE_KIND, role)) {
+    throw new AuthPrincipalValidationError(`unsupported auth principal role: ${String(role)}`);
+  }
+
+  const requiredKind = Reflect.get(ROLE_REQUIRED_SCOPE_KIND, role);
+  const actualKind = Reflect.get(tenantScope, "kind");
+  if (actualKind !== requiredKind) {
+    throw new AuthPrincipalValidationError(
+      `role ${role} is incompatible with tenant scope kind ${String(actualKind)}`,
+    );
+  }
 }
 
 function isDataDescriptor(descriptor) {
@@ -164,6 +192,7 @@ export function createAuthPrincipal(input) {
   const userId = requireUserId(Reflect.get(input, "userId"));
   const role = requireCanonicalRole(Reflect.get(input, "role"));
   const tenantScope = createTenantScope(Reflect.get(input, "tenantScope"));
+  assertRoleCompatibleWithTenantScope(role, tenantScope);
   const permissions = requirePermissions(Reflect.get(input, "permissions"));
 
   return Object.freeze({
