@@ -26,10 +26,17 @@ test("returns true only for an exact permission match", () => {
 });
 
 test("is case-sensitive and never normalizes permission tokens", () => {
-  const principal = principalWith(["Notes:Write"]);
+  assert.throws(
+    () => principalWith(["Notes:Write"]),
+    (error) =>
+      error &&
+      error.name === "AuthPrincipalValidationError" &&
+      error.code === "AUTH_PRINCIPAL_INVALID",
+  );
 
-  assert.equal(can(principal, "Notes:Write"), true);
-  assert.equal(can(principal, "notes:write"), false);
+  const principal = principalWith(["notes:write"]);
+  assert.equal(can(principal, "notes:write"), true);
+  assert.equal(can(principal, "Notes:Write"), false);
   assert.equal(can(principal, "NOTES:WRITE"), false);
 });
 
@@ -50,18 +57,17 @@ test("does not grant implicit rights to super_admin", () => {
 });
 
 test("never treats privilege markers as wildcards", () => {
-  const starPrincipal = principalWith(["*"]);
-  const allPrivilegesPrincipal = principalWith(["ALL_PRIVILEGES"]);
-  const countryPrivilegesPrincipal = principalWith(["COUNTRY_PRIVILEGES"]);
+  assert.throws(() => principalWith(["*"]), /canonical permission token/);
+  assert.throws(() => principalWith(["ALL_PRIVILEGES"]), /canonical permission token/);
+  assert.throws(() => principalWith(["COUNTRY_PRIVILEGES"]), /canonical permission token/);
 
-  assert.equal(can(starPrincipal, "students:read"), false);
-  assert.equal(can(starPrincipal, "*"), true);
-
-  assert.equal(can(allPrivilegesPrincipal, "students:read"), false);
-  assert.equal(can(allPrivilegesPrincipal, "ALL_PRIVILEGES"), true);
-
-  assert.equal(can(countryPrivilegesPrincipal, "schools:read"), false);
-  assert.equal(can(countryPrivilegesPrincipal, "COUNTRY_PRIVILEGES"), true);
+  const principal = principalWith(["notes:write"]);
+  assert.equal(can(principal, "*"), false);
+  assert.equal(can(principal, "notes:*"), false);
+  assert.equal(can(principal, "*:read"), false);
+  assert.equal(can(principal, "ALL_PRIVILEGES"), false);
+  assert.equal(can(principal, "COUNTRY_PRIVILEGES"), false);
+  assert.equal(can(principal, "notes:write"), true);
 });
 
 test("fails closed for absent, empty, or invalid requested permissions", () => {

@@ -1,5 +1,6 @@
 import { TENANT_SCOPE_KIND, createTenantScope } from "../../domain/src/index.js";
 
+import { isCanonicalPermissionToken } from "./permission-token.js";
 import { isCanonicalRole } from "./roles.js";
 
 class AuthPrincipalValidationError extends Error {
@@ -114,11 +115,10 @@ function isCanonicalArrayIndexKey(key, length) {
 }
 
 function requirePermissionValue(permission, index) {
-  if (typeof permission !== "string") {
-    throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
-  }
-  if (permission.trim() === "") {
-    throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
+  if (!isCanonicalPermissionToken(permission)) {
+    throw new AuthPrincipalValidationError(
+      `permissions[${index}] must be a canonical permission token`,
+    );
   }
   return permission;
 }
@@ -163,6 +163,7 @@ function requirePermissions(value) {
     throw new AuthPrincipalValidationError("permissions must be a dense own-keyed array");
   }
 
+  const seen = Object.create(null);
   const permissions = new Array(length);
   for (let offset = 0; offset < indexCount; offset += 1) {
     const indexKey = indexKeys[offset];
@@ -174,7 +175,14 @@ function requirePermissions(value) {
     }
 
     const index = Number(indexKey);
-    permissions[index] = requirePermissionValue(descriptor.value, index);
+    const permission = requirePermissionValue(descriptor.value, index);
+    if (Object.hasOwn(seen, permission)) {
+      throw new AuthPrincipalValidationError(
+        `permissions[${index}] duplicates an earlier permission token`,
+      );
+    }
+    seen[permission] = true;
+    permissions[index] = permission;
   }
 
   return Object.freeze(permissions);
