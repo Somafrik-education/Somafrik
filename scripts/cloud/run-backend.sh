@@ -13,18 +13,13 @@ export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:5000,http://127.0.0.1:5000
 
 # --- Database connection -----------------------------------------------------
 # Thread any custom PostgreSQL parameters through to the backend. If DATABASE_URL
-# is provided we honour it verbatim; otherwise we hand the backend the discrete
-# POSTGRES_* variables (the same ones install.sh provisions). The backend
-# (backend/db/connectionConfig.js) URL-encodes discrete credentials safely, so
-# passwords/identifiers with special characters do not need manual escaping.
-PG_HOST="${POSTGRES_HOST:-127.0.0.1}"
-PG_PORT="${POSTGRES_PORT:-5432}"
-PG_USER="${POSTGRES_USER:-somafrik}"
-PG_PASSWORD="${POSTGRES_PASSWORD:-somafrik123}"
-PG_DB="${POSTGRES_DB:-somafrik}"
-
-# Resolve the readiness-probe target from the *effective* DB config so we never
-# wait on 127.0.0.1:5432 when a remote DATABASE_URL (or a custom port) is used.
+# is provided we honour it verbatim; otherwise we hand the backend discrete
+# variables. The readiness probe is resolved with the *exact same precedence* the
+# backend uses (backend/db/connectionConfig.js): DATABASE_URL first, then
+# DB_* overriding POSTGRES_*, then defaults. This guarantees the probe checks the
+# very database Express connects to (never a stale 127.0.0.1:5432 or a different
+# host when DB_* and POSTGRES_* disagree). Discrete credentials are URL-encoded
+# by the backend, so special characters need no manual escaping.
 PROBE_ARGS=()
 if [ -n "${DATABASE_URL:-}" ]; then
   export DATABASE_URL
@@ -37,12 +32,23 @@ if [ -n "${DATABASE_URL:-}" ]; then
   PROBE_ARGS=( -d "${DATABASE_URL}" )
   echo "==> [backend] Using provided DATABASE_URL (probe target ${PROBE_HOST}:${PROBE_PORT})"
 else
-  export POSTGRES_HOST="$PG_HOST" POSTGRES_PORT="$PG_PORT" \
-         POSTGRES_USER="$PG_USER" POSTGRES_PASSWORD="$PG_PASSWORD" POSTGRES_DB="$PG_DB"
-  PROBE_HOST="$PG_HOST"
-  PROBE_PORT="$PG_PORT"
-  PROBE_ARGS=( -h "$PG_HOST" -p "$PG_PORT" )
-  echo "==> [backend] DB via discrete POSTGRES_* (probe target ${PROBE_HOST}:${PROBE_PORT})"
+  # Effective discrete config, DB_* winning over POSTGRES_* (matches connectionConfig).
+  EFF_HOST="${DB_HOST:-${POSTGRES_HOST:-127.0.0.1}}"
+  EFF_PORT="${DB_PORT:-${POSTGRES_PORT:-5432}}"
+  EFF_USER="${DB_USER:-${POSTGRES_USER:-somafrik}}"
+  EFF_PASSWORD="${DB_PASSWORD:-${POSTGRES_PASSWORD:-somafrik123}}"
+  EFF_DB="${DB_NAME:-${POSTGRES_DB:-somafrik}}"
+  # Provide a complete discrete config for the backend without shadowing any
+  # user-provided DB_* (which keep priority in connectionConfig).
+  export POSTGRES_HOST="${POSTGRES_HOST:-$EFF_HOST}"
+  export POSTGRES_PORT="${POSTGRES_PORT:-$EFF_PORT}"
+  export POSTGRES_USER="${POSTGRES_USER:-$EFF_USER}"
+  export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$EFF_PASSWORD}"
+  export POSTGRES_DB="${POSTGRES_DB:-$EFF_DB}"
+  PROBE_HOST="$EFF_HOST"
+  PROBE_PORT="$EFF_PORT"
+  PROBE_ARGS=( -h "$EFF_HOST" -p "$EFF_PORT" )
+  echo "==> [backend] DB via discrete (DB_* over POSTGRES_*) probe target ${PROBE_HOST}:${PROBE_PORT}"
 fi
 
 export SOMAFRIK_DB_REQUIRED="${SOMAFRIK_DB_REQUIRED:-true}"
