@@ -10,11 +10,31 @@ class AuthPrincipalValidationError extends Error {
   }
 }
 
-const ALLOWED_FIELDS = new Set(["userId", "role", "tenantScope", "permissions"]);
+const REQUIRED_FIELDS = Object.freeze(["userId", "role", "tenantScope", "permissions"]);
+const ALLOWED_FIELDS = new Set(REQUIRED_FIELDS);
 
 function assertPlainObject(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new AuthPrincipalValidationError("auth principal must be an object");
+  }
+}
+
+function requireOwnField(input, field) {
+  if (!Object.hasOwn(input, field)) {
+    throw new AuthPrincipalValidationError(`${field} is required as an own property`);
+  }
+}
+
+function rejectUnexpectedOwnKeys(input) {
+  const unexpectedFields = Reflect.ownKeys(input).filter((key) => {
+    return typeof key === "symbol" || !ALLOWED_FIELDS.has(key);
+  });
+
+  if (unexpectedFields.length > 0) {
+    const labels = unexpectedFields.map((key) => (typeof key === "symbol" ? String(key) : key));
+    throw new AuthPrincipalValidationError(
+      `unsupported auth principal fields: ${labels.sort().join(", ")}`,
+    );
   }
 }
 
@@ -56,16 +76,11 @@ function requirePermissions(value) {
 export function createAuthPrincipal(input) {
   assertPlainObject(input);
 
-  const unexpectedFields = Object.keys(input).filter((field) => !ALLOWED_FIELDS.has(field));
-  if (unexpectedFields.length > 0) {
-    throw new AuthPrincipalValidationError(
-      `unsupported auth principal fields: ${unexpectedFields.sort().join(", ")}`,
-    );
+  for (const field of REQUIRED_FIELDS) {
+    requireOwnField(input, field);
   }
 
-  if (!Object.prototype.hasOwnProperty.call(input, "permissions")) {
-    throw new AuthPrincipalValidationError("permissions is required");
-  }
+  rejectUnexpectedOwnKeys(input);
 
   const userId = requireUserId(input.userId);
   const role = requireCanonicalRole(input.role);

@@ -142,5 +142,6 @@ Hors périmètre :
 - [ ] `npm run verify:v2-foundation` et `npm run test:v2-auth` verts ;
 - [ ] typecheck, lint, tests et sécurité existants verts ;
 - [ ] aucune modification de runtime ni de schéma ;
+- [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucun alias legacy ni droit implicite introduit ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

@@ -158,3 +158,68 @@ test("rejects unexpected principal fields", () => {
     /unsupported auth principal fields: sessionId/,
   );
 });
+
+test("rejects inherited userId, role, or tenantScope values", () => {
+  const inheritedIdentity = Object.create({
+    userId: "attacker",
+    role: "super_admin",
+    tenantScope: { kind: "platform" },
+  });
+  inheritedIdentity.permissions = ["students:delete"];
+
+  assert.throws(() => createAuthPrincipal(inheritedIdentity), /userId is required as an own property/);
+
+  const inheritedRoleOnly = {
+    userId: "user-001",
+    tenantScope: { kind: "platform" },
+    permissions: ["students:delete"],
+  };
+  Object.setPrototypeOf(inheritedRoleOnly, { role: "super_admin" });
+  assert.throws(() => createAuthPrincipal(inheritedRoleOnly), /role is required as an own property/);
+
+  const inheritedScopeOnly = {
+    userId: "user-001",
+    role: "teacher",
+    permissions: ["students:delete"],
+  };
+  Object.setPrototypeOf(inheritedScopeOnly, { tenantScope: { kind: "platform" } });
+  assert.throws(
+    () => createAuthPrincipal(inheritedScopeOnly),
+    /tenantScope is required as an own property/,
+  );
+});
+
+test("rejects non-enumerable and Symbol extra own properties", () => {
+  const withHiddenField = baseInput();
+  Object.defineProperty(withHiddenField, "hidden", {
+    value: "secret",
+    enumerable: false,
+  });
+  assert.throws(
+    () => createAuthPrincipal(withHiddenField),
+    /unsupported auth principal fields: hidden/,
+  );
+
+  const withSymbolField = baseInput();
+  const marker = Symbol("extra");
+  withSymbolField[marker] = "nope";
+  assert.throws(
+    () => createAuthPrincipal(withSymbolField),
+    /unsupported auth principal fields/,
+  );
+});
+
+test("accepts an ordinary object and Object.create(null) with exact own fields", () => {
+  const ordinary = createAuthPrincipal(baseInput({ permissions: [] }));
+  assert.equal(ordinary.role, "school_admin");
+
+  const nullProto = Object.create(null);
+  nullProto.userId = "user-001";
+  nullProto.role = "teacher";
+  nullProto.tenantScope = { kind: "platform" };
+  nullProto.permissions = ["notes:write"];
+
+  const principal = createAuthPrincipal(nullProto);
+  assert.deepEqual(principal.permissions, ["notes:write"]);
+  assert.equal(Object.isFrozen(principal), true);
+});

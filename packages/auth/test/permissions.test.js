@@ -131,3 +131,76 @@ test("fails closed for absent or malformed principals without throwing", () => {
     false,
   );
 });
+
+test("rejects a principal whose four fields are only inherited", () => {
+  const forged = Object.create({
+    userId: "attacker",
+    role: "super_admin",
+    tenantScope: { kind: "platform" },
+    permissions: ["students:delete"],
+  });
+
+  assert.equal(can(forged, "students:delete"), false);
+});
+
+test("rejects a principal that carries an extra own field", () => {
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "teacher",
+        tenantScope: { kind: "platform" },
+        permissions: ["notes:write"],
+        sessionId: "session-1",
+      },
+      "notes:write",
+    ),
+    false,
+  );
+});
+
+test("returns false without throwing for hostile getters and invalid proxies", () => {
+  const hostileGetter = {
+    userId: "user-001",
+    role: "teacher",
+    tenantScope: { kind: "platform" },
+    get permissions() {
+      throw new Error("hostile getter");
+    },
+  };
+  assert.equal(can(hostileGetter, "notes:write"), false);
+
+  const invalidProxy = new Proxy(
+    {
+      userId: "user-001",
+      role: "teacher",
+      tenantScope: { kind: "platform" },
+      permissions: ["notes:write"],
+    },
+    {
+      ownKeys() {
+        throw new Error("hostile proxy");
+      },
+      get() {
+        throw new Error("hostile proxy");
+      },
+    },
+  );
+  assert.equal(can(invalidProxy, "notes:write"), false);
+});
+
+test("still accepts an ordinary exact and valid principal object", () => {
+  const principal = {
+    userId: "user-001",
+    role: "teacher",
+    tenantScope: {
+      kind: "school",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+    },
+    permissions: ["notes:write"],
+  };
+
+  assert.equal(can(principal, "notes:write"), true);
+  assert.equal(can(principal, "notes:read"), false);
+});
