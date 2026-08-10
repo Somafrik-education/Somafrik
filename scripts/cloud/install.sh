@@ -9,6 +9,47 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# --- Node.js >= 22.12.0 (required by every workspace's package.json "engines") -
+REQUIRED_NODE="${SOMAFRIK_REQUIRED_NODE:-22.12.0}"
+
+# True when $1 (found) >= $2 (required), compared as semver via `sort -V`.
+node_version_ge() {
+  [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]
+}
+
+ensure_node() {
+  local current=""
+  command -v node >/dev/null 2>&1 && current="$(node --version 2>/dev/null | sed 's/^v//')"
+  if [ -n "${current}" ] && node_version_ge "${current}" "${REQUIRED_NODE}"; then
+    echo "==> [install] Node ${current} OK (>= ${REQUIRED_NODE})"
+    return 0
+  fi
+  # Try to activate the pinned version via nvm (reads .nvmrc = ${REQUIRED_NODE}).
+  local nvm_sh="${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+  if [ -s "${nvm_sh}" ]; then
+    # shellcheck disable=SC1090
+    . "${nvm_sh}"
+    nvm install >/dev/null 2>&1 || true
+    nvm use >/dev/null 2>&1 || true
+    current="$(node --version 2>/dev/null | sed 's/^v//')"
+    if [ -n "${current}" ] && node_version_ge "${current}" "${REQUIRED_NODE}"; then
+      echo "==> [install] Node ${current} activé via nvm (>= ${REQUIRED_NODE})"
+      return 0
+    fi
+  fi
+  echo "ERROR: Node >= ${REQUIRED_NODE} requis par les workspaces (trouvé: ${current:-absent})." >&2
+  echo "       Installez Node ${REQUIRED_NODE} (voir .nvmrc) puis relancez l'installation." >&2
+  return 1
+}
+
+echo "==> [install] Ensuring Node >= ${REQUIRED_NODE}"
+ensure_node
+
+# Test hook: validate only the Node guarantee, then stop (no PG / npm work).
+if [ "${SOMAFRIK_CHECK_NODE_ONLY:-0}" = "1" ]; then
+  exit 0
+fi
+
 # PostgreSQL cluster identity (overridable). The major version is pinned to 16
 # to match CI (`postgres:16`) and docker-compose.
 PG_VERSION="${SOMAFRIK_PG_VERSION:-16}"
