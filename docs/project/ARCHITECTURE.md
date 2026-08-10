@@ -1,7 +1,7 @@
 # Architecture — Somafrik
 
 **Statut :** référence technique officielle  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-08-10
 **Compléments :** [../preproduction.md](../preproduction.md) · [../ci-cd-security.md](../ci-cd-security.md) · [../ux/design-system/README.md](../ux/design-system/README.md)
 
 ---
@@ -16,6 +16,12 @@ Somafrik est un monorepo :
 | `backend/` | API HTTP | Express + PostgreSQL |
 | `Mobile/` | Applications métier | Expo / React Native |
 | `BackOffice/` | Legacy servi par l’API | HTML/JS (dépréciation progressive) |
+
+### 1.1 Architecture V2 en transition
+
+La reconstruction contrôlée ajoute `apps/`, `packages/` et `tests/v2/` à côté du runtime actuel. Ces modules restent isolés du legacy et ne deviennent actifs qu'après migration par capacité, preuve de parité et gate CTO.
+
+Le contrat complet, l'ordre des lots et les interdictions figurent dans [V2-RECONSTRUCTION.md](./V2-RECONSTRUCTION.md). L'architecture existante décrite ci-dessous reste le runtime officiel tant qu'aucun cutover n'est validé.
 
 ```mermaid
 flowchart LR

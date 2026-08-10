@@ -1,7 +1,7 @@
 # Stratégie de tests — Somafrik
 
 **Statut :** référence qualité & gates  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-08-10
 **Liens :** [RELEASES.md](./RELEASES.md) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -77,6 +77,7 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:runtime-bootstrap` | `init` → health → login 401 |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
+| `npm run verify:v2-foundation` | Structure V2, frontières legacy et invariants domaine initiaux |
 | `npm run typecheck` · `npm run lint` | Qualité statique |
 | `npm run audit:ci` | Vulnérabilités **critical** |
 
