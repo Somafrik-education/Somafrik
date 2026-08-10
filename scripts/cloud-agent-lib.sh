@@ -77,6 +77,18 @@ ENV
     echo "   .env already present; leaving as-is."
   fi
 
+  # The web app requires VITE_API_URL at runtime (web/src/lib/apiUrl.ts throws
+  # otherwise). In native dev the Vite proxy forwards /api to the local backend.
+  if [ ! -f "$REPO_ROOT/web/.env" ]; then
+    cat > "$REPO_ROOT/web/.env" <<ENV
+VITE_API_URL=http://localhost:5000
+VITE_API_TARGET=http://localhost:5000
+VITE_ENABLE_MARKETPLACE=false
+VITE_SHOW_DEMO_ACCOUNTS=true
+ENV
+    echo "   Wrote web/.env"
+  fi
+
   if [ ! -f "$REPO_ROOT/Mobile/.env.local" ] && [ -f "$REPO_ROOT/Mobile/.env.example" ]; then
     cat > "$REPO_ROOT/Mobile/.env.local" <<ENV
 LAN_IP=127.0.0.1
