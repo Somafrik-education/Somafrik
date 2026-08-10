@@ -42,7 +42,7 @@ const SCOPE_KINDS = Object.freeze(["platform", "country", "school"]);
 function baseInput(permissions, overrides = {}) {
   return {
     userId: "user-001",
-    role: "teacher",
+    role: "school_admin",
     tenantScope: Reflect.get(SCOPE_FIXTURES, "school"),
     permissions,
     ...overrides,
@@ -273,10 +273,10 @@ test("V2.1b role and tenant matrix remains enforced with canonical permissions",
       userId: "user-001",
       role,
       tenantScope: Reflect.get(SCOPE_FIXTURES, requiredKind),
-      permissions: ["users:update"],
+      permissions: [],
     });
     assert.equal(principal.role, role);
-    assert.equal(can(principal, "users:update"), true);
+    assert.equal(can(principal, "users:update"), false);
 
     for (let scopeIndex = 0; scopeIndex < SCOPE_KINDS.length; scopeIndex += 1) {
       const scopeKind = Reflect.get(SCOPE_KINDS, String(scopeIndex));
@@ -289,7 +289,7 @@ test("V2.1b role and tenant matrix remains enforced with canonical permissions",
             userId: "user-001",
             role,
             tenantScope: Reflect.get(SCOPE_FIXTURES, scopeKind),
-            permissions: ["users:update"],
+            permissions: [],
           }),
         /incompatible with tenant scope kind/,
       );
@@ -299,7 +299,7 @@ test("V2.1b role and tenant matrix remains enforced with canonical permissions",
             userId: "user-001",
             role,
             tenantScope: Reflect.get(SCOPE_FIXTURES, scopeKind),
-            permissions: ["users:update"],
+            permissions: [],
           },
           "users:update",
         ),

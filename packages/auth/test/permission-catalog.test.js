@@ -59,7 +59,7 @@ const SCOPE_KINDS = Object.freeze(["platform", "country", "school"]);
 function principalInput(permissions, overrides = {}) {
   return {
     userId: "user-001",
-    role: "teacher",
+    role: "school_admin",
     tenantScope: Reflect.get(SCOPE_FIXTURES, "school"),
     permissions,
     ...overrides,
@@ -93,7 +93,12 @@ test("exposes the exact immutable closed auth permission catalog", () => {
 test("createAuthPrincipal accepts every catalogued permission and rejects out-of-catalog tokens", () => {
   for (let index = 0; index < AUTH_PERMISSION_CATALOG.length; index += 1) {
     const token = Reflect.get(AUTH_PERMISSION_CATALOG, String(index));
-    const principal = createAuthPrincipal(principalInput([token]));
+    const principal = createAuthPrincipal(
+      principalInput([token], {
+        role: "super_admin",
+        tenantScope: Reflect.get(SCOPE_FIXTURES, "platform"),
+      }),
+    );
     assert.deepEqual(principal.permissions, [token]);
     assert.equal(Object.isFrozen(principal), true);
     assert.equal(Object.isFrozen(principal.permissions), true);
@@ -167,10 +172,10 @@ test("role and tenant matrix remains enforced with catalogued permissions only",
       userId: "user-001",
       role,
       tenantScope: Reflect.get(SCOPE_FIXTURES, requiredKind),
-      permissions: ["users:read"],
+      permissions: [],
     });
     assert.equal(principal.role, role);
-    assert.equal(can(principal, "users:read"), true);
+    assert.equal(can(principal, "users:read"), false);
 
     for (let scopeIndex = 0; scopeIndex < SCOPE_KINDS.length; scopeIndex += 1) {
       const scopeKind = Reflect.get(SCOPE_KINDS, String(scopeIndex));
@@ -183,7 +188,7 @@ test("role and tenant matrix remains enforced with catalogued permissions only",
             userId: "user-001",
             role,
             tenantScope: Reflect.get(SCOPE_FIXTURES, scopeKind),
-            permissions: ["users:read"],
+            permissions: [],
           }),
         /incompatible with tenant scope kind/,
       );
@@ -193,7 +198,7 @@ test("role and tenant matrix remains enforced with catalogued permissions only",
             userId: "user-001",
             role,
             tenantScope: Reflect.get(SCOPE_FIXTURES, scopeKind),
-            permissions: ["users:read"],
+            permissions: [],
           },
           "users:read",
         ),

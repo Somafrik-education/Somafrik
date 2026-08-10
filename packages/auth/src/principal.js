@@ -2,6 +2,7 @@ import { TENANT_SCOPE_KIND, createTenantScope } from "../../domain/src/index.js"
 
 import { isCataloguedAuthPermission } from "./permission-catalog.js";
 import { isCanonicalPermissionToken } from "./permission-token.js";
+import { isPermissionAllowedForRole } from "./role-permission-matrix.js";
 import { isCanonicalRole } from "./roles.js";
 
 class AuthPrincipalValidationError extends Error {
@@ -115,7 +116,7 @@ function isCanonicalArrayIndexKey(key, length) {
   return Number.isSafeInteger(index) && index >= 0 && index < length;
 }
 
-function requirePermissionValue(permission, index) {
+function requirePermissionValue(permission, index, role) {
   if (!isCanonicalPermissionToken(permission)) {
     throw new AuthPrincipalValidationError(
       `permissions[${index}] must be a canonical permission token`,
@@ -126,10 +127,15 @@ function requirePermissionValue(permission, index) {
       `permissions[${index}] must be a catalogued auth permission`,
     );
   }
+  if (!isPermissionAllowedForRole(role, permission)) {
+    throw new AuthPrincipalValidationError(
+      `permissions[${index}] is not allowed for role ${role}`,
+    );
+  }
   return permission;
 }
 
-function requirePermissions(value) {
+function requirePermissions(value, role) {
   if (!Array.isArray(value)) {
     throw new AuthPrincipalValidationError("permissions must be an array");
   }
@@ -181,7 +187,7 @@ function requirePermissions(value) {
     }
 
     const index = Number(indexKey);
-    const permission = requirePermissionValue(descriptor.value, index);
+    const permission = requirePermissionValue(descriptor.value, index, role);
     if (Object.hasOwn(seen, permission)) {
       throw new AuthPrincipalValidationError(
         `permissions[${index}] duplicates an earlier permission token`,
@@ -207,7 +213,7 @@ export function createAuthPrincipal(input) {
   const role = requireCanonicalRole(Reflect.get(input, "role"));
   const tenantScope = createTenantScope(Reflect.get(input, "tenantScope"));
   assertRoleCompatibleWithTenantScope(role, tenantScope);
-  const permissions = requirePermissions(Reflect.get(input, "permissions"));
+  const permissions = requirePermissions(Reflect.get(input, "permissions"), role);
 
   return Object.freeze({
     userId,
