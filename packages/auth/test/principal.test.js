@@ -223,3 +223,42 @@ test("accepts an ordinary object and Object.create(null) with exact own fields",
   assert.deepEqual(principal.permissions, ["notes:write"]);
   assert.equal(Object.isFrozen(principal), true);
 });
+
+test("rejects permissions arrays with redefined map, holes, or inherited entries", () => {
+  const withRedefinedMap = ["students:delete"];
+  Object.defineProperty(withRedefinedMap, "map", {
+    value() {
+      return [];
+    },
+    enumerable: true,
+  });
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: withRedefinedMap })),
+    /unsupported permissions own keys: map/,
+  );
+
+  const sparseInherited = [];
+  sparseInherited.length = 1;
+  Object.setPrototypeOf(sparseInherited, { 0: "students:delete" });
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: sparseInherited })),
+    /permissions\[0\] is required as an own property/,
+  );
+
+  const withHiddenPermissionMeta = ["notes:write"];
+  Object.defineProperty(withHiddenPermissionMeta, "hidden", {
+    value: "secret",
+    enumerable: false,
+  });
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: withHiddenPermissionMeta })),
+    /unsupported permissions own keys: hidden/,
+  );
+
+  const withSymbolPermissionMeta = ["notes:write"];
+  withSymbolPermissionMeta[Symbol("extra")] = "nope";
+  assert.throws(
+    () => createAuthPrincipal(baseInput({ permissions: withSymbolPermissionMeta })),
+    /unsupported permissions own keys/,
+  );
+});

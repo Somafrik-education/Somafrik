@@ -204,3 +204,85 @@ test("still accepts an ordinary exact and valid principal object", () => {
   assert.equal(can(principal, "notes:write"), true);
   assert.equal(can(principal, "notes:read"), false);
 });
+
+test("returns false without throwing for forged permissions and tenant scopes", () => {
+  const redefinedMap = ["students:delete"];
+  Object.defineProperty(redefinedMap, "map", {
+    value() {
+      return ["students:delete"];
+    },
+    enumerable: true,
+  });
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "super_admin",
+        tenantScope: { kind: "platform" },
+        permissions: redefinedMap,
+      },
+      "students:delete",
+    ),
+    false,
+  );
+
+  const sparseInherited = [];
+  sparseInherited.length = 1;
+  Object.setPrototypeOf(sparseInherited, { 0: "students:delete" });
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "super_admin",
+        tenantScope: { kind: "platform" },
+        permissions: sparseInherited,
+      },
+      "students:delete",
+    ),
+    false,
+  );
+
+  const inheritedKindScope = Object.create({ kind: "platform" });
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "super_admin",
+        tenantScope: inheritedKindScope,
+        permissions: ["students:delete"],
+      },
+      "students:delete",
+    ),
+    false,
+  );
+
+  const inheritedCountryScope = Object.create({ countryCode: "CD" });
+  inheritedCountryScope.kind = "country";
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "country_admin",
+        tenantScope: inheritedCountryScope,
+        permissions: ["students:delete"],
+      },
+      "students:delete",
+    ),
+    false,
+  );
+
+  const scopeWithSymbol = { kind: "platform" };
+  scopeWithSymbol[Symbol("extra")] = "nope";
+  assert.equal(
+    can(
+      {
+        userId: "user-001",
+        role: "super_admin",
+        tenantScope: scopeWithSymbol,
+        permissions: ["students:delete"],
+      },
+      "students:delete",
+    ),
+    false,
+  );
+});

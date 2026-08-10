@@ -26,14 +26,17 @@ function requireOwnField(input, field) {
 }
 
 function rejectUnexpectedOwnKeys(input) {
-  const unexpectedFields = Reflect.ownKeys(input).filter((key) => {
-    return typeof key === "symbol" || !ALLOWED_FIELDS.has(key);
-  });
+  const unexpectedFields = [];
+  for (const key of Reflect.ownKeys(input)) {
+    if (typeof key === "symbol" || !ALLOWED_FIELDS.has(key)) {
+      unexpectedFields[unexpectedFields.length] = typeof key === "symbol" ? String(key) : key;
+    }
+  }
 
   if (unexpectedFields.length > 0) {
-    const labels = unexpectedFields.map((key) => (typeof key === "symbol" ? String(key) : key));
+    unexpectedFields.sort();
     throw new AuthPrincipalValidationError(
-      `unsupported auth principal fields: ${labels.sort().join(", ")}`,
+      `unsupported auth principal fields: ${unexpectedFields.join(", ")}`,
     );
   }
 }
@@ -60,17 +63,50 @@ function requirePermissions(value) {
     throw new AuthPrincipalValidationError("permissions must be an array");
   }
 
-  const permissions = value.map((permission, index) => {
+  if (!Object.hasOwn(value, "length")) {
+    throw new AuthPrincipalValidationError("permissions length is required as an own property");
+  }
+
+  const lengthDescriptor = Reflect.getOwnPropertyDescriptor(value, "length");
+  const length = lengthDescriptor ? lengthDescriptor.value : undefined;
+  if (typeof length !== "number" || !Number.isInteger(length) || length < 0) {
+    throw new AuthPrincipalValidationError("permissions length must be a non-negative integer");
+  }
+
+  const allowedIndexKeys = new Set();
+  for (let index = 0; index < length; index += 1) {
+    allowedIndexKeys.add(String(index));
+  }
+
+  for (const key of Reflect.ownKeys(value)) {
+    if (key === "length") {
+      continue;
+    }
+    if (typeof key === "symbol" || !allowedIndexKeys.has(key)) {
+      throw new AuthPrincipalValidationError(
+        `unsupported permissions own keys: ${typeof key === "symbol" ? String(key) : key}`,
+      );
+    }
+  }
+
+  const permissions = new Array(length);
+  for (let index = 0; index < length; index += 1) {
+    const indexKey = String(index);
+    if (!Object.hasOwn(value, indexKey)) {
+      throw new AuthPrincipalValidationError(`permissions[${index}] is required as an own property`);
+    }
+
+    const permission = Reflect.get(value, indexKey);
     if (typeof permission !== "string") {
       throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
     }
     if (permission.trim() === "") {
       throw new AuthPrincipalValidationError(`permissions[${index}] must be a non-empty string`);
     }
-    return permission;
-  });
+    permissions[index] = permission;
+  }
 
-  return Object.freeze(permissions.slice());
+  return Object.freeze(permissions);
 }
 
 export function createAuthPrincipal(input) {
@@ -82,10 +118,10 @@ export function createAuthPrincipal(input) {
 
   rejectUnexpectedOwnKeys(input);
 
-  const userId = requireUserId(input.userId);
-  const role = requireCanonicalRole(input.role);
-  const tenantScope = createTenantScope(input.tenantScope);
-  const permissions = requirePermissions(input.permissions);
+  const userId = requireUserId(Reflect.get(input, "userId"));
+  const role = requireCanonicalRole(Reflect.get(input, "role"));
+  const tenantScope = createTenantScope(Reflect.get(input, "tenantScope"));
+  const permissions = requirePermissions(Reflect.get(input, "permissions"));
 
   return Object.freeze({
     userId,
