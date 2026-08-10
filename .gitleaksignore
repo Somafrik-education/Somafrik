@@ -1,1 +1,14 @@
+# Empreintes gitleaks ignorées — NARROW, par fingerprint exact (commit:fichier:règle:ligne).
+# Aucune exclusion de chemin : tout autre secret, même dans ces fichiers ou à une
+# autre ligne/commit, reste détecté.
+#
+# 1) Preuve d'audit lot2 : "HTTP 201 key=<teacherCode>" = identifiant métier
+#    (renommé teacherCode= sur develop), pas un secret API.
 619a0ed10f8213ad307ca204b43770c1df06a2bf:docs/audits/evidence/teacher-record-fix-lot2-notes-attendance-runtime-results.json:generic-api-key:92
+#
+# 2) Fixtures de TEST (faux secrets non fonctionnels) introduites par le commit
+#    01a7ebc6 dans scripts/cloud/verify-cloud-env.sh. Le fichier courant les génère
+#    à l'exécution (aucun littéral committé) ; ces findings ne subsistent que dans
+#    ce commit historique immuable.
+01a7ebc679e2bafd68d001f5a5cb3024518dd88c:scripts/cloud/verify-cloud-env.sh:aws-access-token:114
+01a7ebc679e2bafd68d001f5a5cb3024518dd88c:scripts/cloud/verify-cloud-env.sh:generic-api-key:114
