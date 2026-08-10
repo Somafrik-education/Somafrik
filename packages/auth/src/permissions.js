@@ -1,6 +1,7 @@
 import { isCataloguedAuthPermission } from "./permission-catalog.js";
 import { isCanonicalPermissionToken } from "./permission-token.js";
 import { createAuthPrincipal } from "./principal.js";
+import { isPermissionAllowedForRole } from "./role-permission-matrix.js";
 
 function listContainsExactPermission(permissions, permission) {
   const lengthDescriptor = Reflect.getOwnPropertyDescriptor(permissions, "length");
@@ -28,6 +29,9 @@ export function can(principal, permission) {
 
   try {
     const validated = createAuthPrincipal(principal);
+    if (!isPermissionAllowedForRole(validated.role, permission)) {
+      return false;
+    }
     return listContainsExactPermission(validated.permissions, permission);
   } catch {
     return false;

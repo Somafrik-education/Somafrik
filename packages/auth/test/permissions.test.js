@@ -6,7 +6,7 @@ import { can, createAuthPrincipal, isCanonicalRole } from "../src/index.js";
 function principalWith(permissions, overrides = {}) {
   return createAuthPrincipal({
     userId: "user-001",
-    role: "teacher",
+    role: "school_admin",
     tenantScope: {
       kind: "school",
       countryCode: "CD",
@@ -198,7 +198,7 @@ test("returns false without throwing for hostile getters and invalid proxies", (
 test("still accepts an ordinary exact and valid principal object", () => {
   const principal = {
     userId: "user-001",
-    role: "teacher",
+    role: "school_admin",
     tenantScope: {
       kind: "school",
       countryCode: "CD",

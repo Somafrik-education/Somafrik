@@ -32,7 +32,7 @@ const REQUIRED_KIND_BY_ROLE = Object.freeze(
 
 const SCOPE_KINDS = Object.freeze(["platform", "country", "school"]);
 
-function principalInput(role, scopeKind, permissions = ["users:update"]) {
+function principalInput(role, scopeKind, permissions = []) {
   return {
     userId: "user-001",
     role,
@@ -105,7 +105,9 @@ test("can returns false for incompatible role and tenant scope without throwing"
 });
 
 test("exact permissions still work for a compatible principal", () => {
-  const principal = createAuthPrincipal(principalInput("teacher", "school", ["users:update"]));
+  const principal = createAuthPrincipal(
+    principalInput("school_admin", "school", ["users:update"]),
+  );
   assert.equal(can(principal, "users:update"), true);
   assert.equal(can(principal, "users:disable"), false);
 });
@@ -142,7 +144,9 @@ test("role tenant checks ignore mutated Array.prototype.includes and Set.prototy
     );
     assert.equal(can(principalInput("teacher", "platform"), "users:update"), false);
 
-    const principal = createAuthPrincipal(principalInput("teacher", "school", ["users:update"]));
+    const principal = createAuthPrincipal(
+      principalInput("school_admin", "school", ["users:update"]),
+    );
     assert.equal(can(principal, "users:update"), true);
     assert.equal(can(principal, "users:disable"), false);
   } finally {

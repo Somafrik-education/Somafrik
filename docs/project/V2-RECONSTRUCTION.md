@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1d — catalogue fermé des permissions d’identité
+**Lot courant :** V2.1e — matrice fermée rôle → permissions d’identité
 
 ---
 
@@ -103,6 +103,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1b | Compatibilité stricte rôle ↔ `tenantScope` | Matrice exhaustive + tests auth + CI verts |
 | V2.1c | Jetons de permission canoniques `<resource>:<action>` | Tests auth syntaxe/doublons + CI verts |
 | V2.1d | Catalogue fermé des permissions d’identité/administration | Tests catalogue + CI verts |
+| V2.1e | Matrice fermée rôle → permissions d’identité/administration | Matrice exhaustive 48/102 + tests auth + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -267,6 +268,55 @@ Hors périmètre :
 
 ## 17. Gate de merge V2.1d
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucune matrice rôle → permissions introduite ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 18. Périmètre exact de V2.1e
+
+Inclus :
+
+- matrice fermée et immuable rôle canonique → permissions d’identité/administration autorisées ;
+- `createAuthPrincipal()` n’accepte une permission que si elle est canonique, cataloguée (V2.1d), autorisée pour le rôle (V2.1e) et unique ;
+- `can()` fail-closed si le principal porte une permission interdite pour son rôle ;
+- pour un principal valide, `can()` n’accorde un droit que s’il est catalogué, autorisé pour le rôle **et** effectivement porté ;
+- la matrice est une limite maximale : elle n’attribue jamais automatiquement une permission ;
+- listes vides valides pour chacun des dix rôles ;
+- rôles sans permission administrative (`accountant`, `teacher`, `parent`, `student`) : aucune permission du catalogue d’identité ; futures permissions métier réservées aux lots métier correspondants ;
+- tests exhaustifs : 48 combinaisons autorisées et 102 refusées (10 rôles × 15 permissions).
+
+Matrice exacte :
+
+| Rôle | Permissions autorisées |
+|---|---|
+| `super_admin` | les 15 du catalogue |
+| `country_admin` | `countries:read`, `countries:update`, `schools:create`, `schools:read`, `schools:update`, `schools:disable`, `users:create`, `users:read`, `users:update`, `users:disable`, `roles:assign`, `sessions:revoke` |
+| `school_admin` | `schools:read`, `schools:update`, `users:create`, `users:read`, `users:update`, `users:disable`, `roles:assign`, `sessions:revoke` |
+| `principal` | `schools:read`, `users:create`, `users:read`, `users:update`, `users:disable`, `roles:assign`, `sessions:revoke` |
+| `secretary` | `schools:read`, `users:create`, `users:read`, `users:update` |
+| `prefet` | `schools:read`, `users:read` |
+| `accountant` | aucune |
+| `teacher` | aucune |
+| `parent` | aucune |
+| `student` | aucune |
+
+Hors périmètre :
+
+- élargissement du catalogue V2.1d ;
+- permissions métier (notes, paiements, élèves, etc.) ;
+- héritage entre rôles, wildcards, alias legacy ou normalisation silencieuse ;
+- JWT, login, sessions, HTTP ;
+- PostgreSQL, migrations, seeds, données legacy ;
+- clients web/mobile et runtime legacy.
+
+## 19. Gate de merge V2.1e
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
@@ -274,5 +324,6 @@ Hors périmètre :
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucune matrice rôle → permissions introduite ;
+- [ ] aucune attribution automatique de permission depuis la matrice ;
+- [ ] aucun élargissement du catalogue V2.1d ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

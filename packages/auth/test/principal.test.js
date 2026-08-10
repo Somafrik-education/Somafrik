@@ -235,7 +235,7 @@ test("accepts an ordinary object and Object.create(null) with exact own fields",
 
   const nullProto = Object.create(null);
   nullProto.userId = "user-001";
-  nullProto.role = "teacher";
+  nullProto.role = "school_admin";
   nullProto.tenantScope = {
     kind: "school",
     countryCode: "CD",
