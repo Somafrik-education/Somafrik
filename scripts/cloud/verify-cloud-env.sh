@@ -134,6 +134,40 @@ fi
 
 echo
 echo "========================================================================"
+echo "TEST 4 — install.sh garantit Node >= 22.12.0"
+echo "========================================================================"
+if SOMAFRIK_CHECK_NODE_ONLY=1 bash "${HERE}/install.sh" >/tmp/vce_node_ok.log 2>&1; then
+  ok "Node courant accepté ($(node --version 2>/dev/null))"
+else
+  bad "Node courant rejeté à tort"; tail -3 /tmp/vce_node_ok.log
+fi
+NODE_SHIM_DIR="$(mktemp -d)"
+printf '#!/usr/bin/env bash\necho "v20.0.0"\n' > "${NODE_SHIM_DIR}/node"
+chmod +x "${NODE_SHIM_DIR}/node"
+if PATH="${NODE_SHIM_DIR}:${PATH}" NVM_DIR=/nonexistent SOMAFRIK_CHECK_NODE_ONLY=1 \
+     bash "${HERE}/install.sh" >/tmp/vce_node_old.log 2>&1; then
+  bad "Node v20 accepté à tort (garantie absente)"
+else
+  ok "Node v20 rejeté ($(grep -m1 ERROR /tmp/vce_node_old.log || echo 'exit != 0'))"
+fi
+rm -rf "${NODE_SHIM_DIR}"
+
+echo
+echo "========================================================================"
+echo "TEST 5 — La sonde suit la précédence backend (DB_* > POSTGRES_*)"
+echo "========================================================================"
+t_pref="$(env -u DATABASE_URL DB_HOST=10.1.2.3 DB_PORT=7000 \
+  POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=6543 SOMAFRIK_PROBE_ONLY=1 \
+  bash "${HERE}/run-backend.sh" 2>/dev/null | sed -n 's/^PROBE_TARGET //p')"
+[ "${t_pref}" = "10.1.2.3:7000" ] && ok "sonde → 10.1.2.3:7000 (DB_* prioritaire sur POSTGRES_*)" || bad "sonde → ${t_pref} (attendu 10.1.2.3:7000)"
+be_target="$(cd "${REPO_ROOT}/backend" && env -u DATABASE_URL \
+  DB_HOST=10.1.2.3 DB_PORT=7000 DB_USER=u DB_PASSWORD=p DB_NAME=d \
+  POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=6543 \
+  node -e 'const{resolveDatabaseConfig}=require("./db/connectionConfig.js");const c=resolveDatabaseConfig(process.env);console.log(c.host+":"+c.port)' 2>/dev/null)"
+[ "${be_target}" = "10.1.2.3:7000" ] && ok "backend résout la même cible 10.1.2.3:7000 (sonde alignée)" || bad "backend → ${be_target} (désaligné)"
+
+echo
+echo "========================================================================"
 echo "RÉSULTAT : ${PASS} PASS / ${FAIL} FAIL"
 echo "========================================================================"
 [ "${FAIL}" -eq 0 ]
