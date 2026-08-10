@@ -35,7 +35,7 @@ Ces noms doivent être cochés comme **required status checks** dans la protecti
 | **Security** | `npm run verify:db-config` + `npm run verify:mobile-security` |
 | **TypeScript** | `npm run typecheck` + `cd Mobile && npx tsc --noEmit` |
 | **Lint** | `npm run lint` (web ESLint) |
-| **Tests** | Suite verify existante (jwt, rbac, sanitize, db-config, mobile-security, `npm run check`) — fail-fast |
+| **Tests** | Suite verify existante (fondation V2, jwt, rbac, sanitize, db-config, mobile-security, `npm run check`) — fail-fast |
 | **Audit** | `npm run audit:ci` (`npm audit --omit=dev`, fail si critical) |
 | **Lint et build** | Job existant de `ci.yml` (recommandé aussi en required) |
 
@@ -79,6 +79,7 @@ cd Mobile && npx tsc --noEmit
 npm run lint
 
 # Suite verify (tests automatisés existants, hors e2e lourds)
+npm run verify:v2-foundation
 npm run verify:jwt-header
 npm run verify:rbac-s1-4
 npm run verify:sanitize-user-responses

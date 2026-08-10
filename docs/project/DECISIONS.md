@@ -1,7 +1,7 @@
 # Décisions d’architecture (ADR simplifié) — Somafrik
 
 **Statut :** registre officiel des décisions durables  
-**Dernière mise à jour :** 2026-07-26
+**Dernière mise à jour :** 2026-08-10
 
 Format obligatoire pour chaque entrée :
 
@@ -105,6 +105,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | **Contexte** | Croissance du produit et des agents ; décisions perdues dans les fils de chat. |
 | **Alternatives** | Wiki externe seul ; Notion exclusif ; README unique. |
 | **Impact** | PR incomplète sans doc ; onboarding < 1 h via ARCHITECTURE + ROADMAP ; traçabilité phase ↔ release ↔ ADR ; runbooks ops/sécurité/tests versionnés. |
+| **Statut** | Acceptée |
+
+---
+
+## ADR-008 — Reconstruction contrôlée par capacités
+
+| | |
+|--|--|
+| **Date** | 2026-08-10 |
+| **Décision** | Construire Somafrik V2 à côté du runtime actuel dans `apps/`, `packages/` et `tests/v2/`, puis migrer une capacité à la fois. Le legacy reste actif jusqu'à parité, migration, rollback documenté, gate préproduction et validation CTO. |
+| **Contexte** | La coexistence de plusieurs générations d'applications, du snapshot JSON et de PostgreSQL concentre les changements dans de gros fichiers et augmente conflits et régressions. Les règles métier, tests et données fiables doivent cependant être conservés. |
+| **Alternatives** | Continuer uniquement les correctifs dans les monolithes ; supprimer l'existant et effectuer une réécriture « big bang » ; créer un second dépôt sans historique commun. |
+| **Impact** | Frontières V2 automatisées ; aucune nouvelle dépendance au snapshot global ; petites PR par capacité ; aucune suppression legacy avant preuve de parité ; contrat détaillé dans [V2-RECONSTRUCTION.md](./V2-RECONSTRUCTION.md). |
 | **Statut** | Acceptée |
 
 ---

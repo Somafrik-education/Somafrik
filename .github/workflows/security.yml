@@ -152,6 +152,7 @@ jobs:
       - name: Existing automated verify suite (fail-fast)
         run: |
           set -euo pipefail
+          npm run verify:v2-foundation
           npm run verify:jwt-header
           npm run verify:rbac-s1-4
           npm run verify:sanitize-user-responses
