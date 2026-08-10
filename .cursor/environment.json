@@ -1,0 +1,16 @@
+{
+  "name": "Somafrik (native dev)",
+  "install": "bash scripts/cloud-agent-install.sh",
+  "start": "bash scripts/cloud-agent-start.sh",
+  "terminals": [
+    {
+      "name": "backend (API + PostgreSQL)",
+      "command": "npm run backend:pg"
+    },
+    {
+      "name": "web (Vite dev)",
+      "command": "npm run dev"
+    }
+  ],
+  "ports": [5000, 5173, 5432]
+}
