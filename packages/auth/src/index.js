@@ -8,5 +8,6 @@ export {
   createAuthIdentity,
   isAuthIdentityActive,
 } from "./identity.js";
+export { createAuthSession, isAuthSessionActive } from "./session.js";
 export { createAuthPrincipal } from "./principal.js";
 export { can } from "./permissions.js";
