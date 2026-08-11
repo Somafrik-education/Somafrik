@@ -1944,14 +1944,25 @@ Interdictions : lecture d’environnement, `Date.now()`, horloge implicite, char
 Le futur orchestrateur devra respecter exactement :
 
 1. appeler `decodeJwtCompactStrict(compactToken)` ;
-2. si `null`, retourner `null` ;
+2. continuer **uniquement** si le résultat est un objet conforme au contrat de sortie exact du décodeur (propriétés exactes `protectedHeader`, `payload`, `signingInput`, `signature`) ; tout autre résultat — y compris `null`, une valeur inattendue, un objet incomplet/hostile ou un throw capturé — → retourner `null` ;
 3. appeler `isJwtClaimsPolicySatisfied(protectedHeader, payload, expectedIssuer, evaluationTime)` ;
-4. si `false`, retourner `null` ;
+4. continuer **uniquement** si `result === true` ; tout autre résultat — y compris `false`, une valeur inattendue/hostile (`"true"`, `1`, objet, etc.) ou un throw capturé — → retourner `null` ;
 5. appeler `resolveJwtRs256VerificationKey(protectedHeader.kid, keyCandidates)` ;
-6. si `null`, retourner `null` ;
+6. continuer **uniquement** si le résultat est une `CryptoKey` conforme au contrat de sortie exact du résolveur ; tout autre résultat — y compris `null`, une valeur inattendue/hostile ou un throw capturé — → retourner `null` ;
 7. appeler `verifyJwtRs256Signature(signingInput, signature, verificationKey)` ;
-8. si `false` ou rejet capturé, retourner `null` ;
+8. réussir **uniquement** si `result === true` ; tout autre résultat — y compris `false`, une valeur inattendue/hostile, un rejet de promesse capturé ou un throw capturé — → retourner `null` ;
 9. retourner un **nouvel** objet contenant uniquement `{ sub, sid, jti }`.
+
+#### Prédicats de succès exacts (obligatoires)
+
+| Brique | Continuer / réussir uniquement si |
+|---|---|
+| `decodeJwtCompactStrict` | objet de sortie exact du contrat V2.1r (pas seulement « non-`null` ») |
+| `isJwtClaimsPolicySatisfied` | `result === true` |
+| `resolveJwtRs256VerificationKey` | `CryptoKey` exacte du contrat V2.1v (pas seulement « non-`null` ») |
+| `verifyJwtRs256Signature` | `result === true` |
+
+Toute valeur différente de ces prédicats constitue un **résultat inattendu d’une brique** et retourne `null` (aligné sur les tests normatifs V2.1x).
 
 ### Réutilisation obligatoire
 
@@ -1969,7 +1980,7 @@ Valeurs reprises **sans transformation** depuis le payload validé. Aucune propr
 
 ### Fail-closed et protection globale
 
-Toute anomalie retourne `null` : JWT compact invalide, décodage refusé, header/claims/temps invalides, `kid` absent/ambigu/inactif/hostile, clé absente ou incompatible, signature invalide, brique qui lève ou rejette, entrée hostile, résultat inattendu d’une brique.
+Toute anomalie retourne `null` : JWT compact invalide, décodage refusé, header/claims/temps invalides, `kid` absent/ambigu/inactif/hostile, clé absente ou incompatible, signature invalide, brique qui lève ou rejette, entrée hostile, **résultat inattendu d’une brique** (toute valeur ne satisfaisant pas le prédicat de succès exact ci-dessus).
 
 Le contrat impose un **bloc de protection global** autour de l’orchestration, tout en conservant les retours fail-closed propres aux briques existantes.
 
@@ -1990,16 +2001,17 @@ Le contrat impose un **bloc de protection global** autour de l’orchestration, 
 
 - JWT RS256 valide, claims valides, `kid` unique actif → objet exact `{ sub, sid, jti }` ;
 - preuve de l’ordre exact des quatre appels ;
-- valeurs `sub`/`sid`/`jti` restituées sans normalisation.
+- valeurs `sub`/`sid`/`jti` restituées sans normalisation ;
+- preuve que les étapes 2, 4, 6 et 8 appliquent les prédicats exacts (`=== true` pour claims et RS256 ; contrat de sortie exact pour décodage et résolution).
 
 #### Échec par étape
 
-- `decodeJwtCompactStrict` retourne `null` ;
-- `isJwtClaimsPolicySatisfied` retourne `false` ;
-- `resolveJwtRs256VerificationKey` retourne `null` ;
-- `verifyJwtRs256Signature` retourne `false` ;
+- `decodeJwtCompactStrict` retourne `null` ou tout résultat ne respectant pas son contrat de sortie exact ;
+- `isJwtClaimsPolicySatisfied` retourne une valeur différente de `true` (y compris `false`, `"true"`, `1`) ;
+- `resolveJwtRs256VerificationKey` retourne `null` ou tout résultat qui n’est pas une `CryptoKey` conforme ;
+- `verifyJwtRs256Signature` retourne une valeur différente de `true` (y compris `false`, `"true"`, `1`) ;
 - chacune des quatre briques lève ou rejette ;
-- résultat inattendu ou hostile d’une brique.
+- résultat inattendu ou hostile d’une brique (aligné sur les étapes 2, 4, 6 et 8).
 
 #### Arrêt du pipeline
 
@@ -2008,7 +2020,8 @@ Prouver que :
 - après échec du décodage, aucune autre brique n’est appelée ;
 - après échec des claims, aucune résolution ni crypto n’est appelée ;
 - après échec de `kid`, aucune crypto n’est appelée ;
-- la vérification RS256 est toujours la dernière étape pré-session.
+- la vérification RS256 est toujours la dernière étape pré-session ;
+- un résultat inattendu à une étape arrête immédiatement le pipeline.
 
 #### Confidentialité
 
