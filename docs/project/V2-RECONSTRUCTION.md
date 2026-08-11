@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1p — implémentation pure du contrôle structurel des claims JWT
+**Lot courant :** V2.1q — contrat de décodage JWT compact sécurisé
 
 ---
 
@@ -115,6 +115,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1n | Implémentation pure du contrôle temporel JWT (`apps/api`) | `isJwtTemporalPolicySatisfied` fail-closed + CI verts |
 | V2.1o | Contrat strict de structure et de claims JWT d’accès | Décision CTO documentée + CI verts |
 | V2.1p | Implémentation pure du contrôle structurel des claims JWT (`apps/api`) | `isJwtClaimsPolicySatisfied` fail-closed + CI verts |
+| V2.1q | Contrat de décodage JWT compact sécurisé (documentation) | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -1117,22 +1118,267 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat structurel V
 
 ## 41. Gate de merge V2.1p
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] export public limité à `isJwtClaimsPolicySatisfied` ;
+- [x] header limité exactement à `alg`, `typ` et `kid` ;
+- [x] payload limité exactement aux huit claims obligatoires ;
+- [x] propriétés supplémentaires, héritées, symboles et accesseurs refusés ;
+- [x] objets et valeurs hostiles traités fail-closed ;
+- [x] formats `kid`, `sub`, `sid` et `jti` appliqués strictement ;
+- [x] `iss` et `expectedIssuer` validés puis comparés exactement ;
+- [x] `aud` string exacte `somafrik-api-v2` ;
+- [x] contrôle temporel délégué à V2.1n sans duplication ;
+- [x] aucune horloge implicite ;
+- [x] aucun décodage, parsing ou contrôle cryptographique JWT ;
+- [x] aucune dépendance ajoutée ;
+- [x] tests normatifs et cas limites verts ;
+- [x] non-régression API/auth/domaine ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 42. Périmètre exact de V2.1q
+
+Lot **documentation uniquement**. Aucune bibliothèque JWT, aucun décodeur, aucune vérification cryptographique, aucune clé, aucun secret, aucun middleware, aucune route et aucun changement de runtime, schéma ou donnée.
+
+Objectif : contractualiser le **décodage strict** d’un JWT compact **avant** toute vérification cryptographique. L’implémentation pure est réservée à un lot ultérieur (V2.1r).
+
+### Export documentaire exact
+
+Future fonction pure :
+
+```text
+decodeJwtCompactStrict(compactToken)
+```
+
+Résultat attendu en cas de succès structurel :
+
+```text
+{
+  protectedHeader,
+  payload,
+  signingInput, // string exacte "header.payload"
+  signature     // Uint8Array, byteLength >= 1
+}
+```
+
+Toute anomalie → `null`. Aucune exception sortante.
+
+### Entrée — `compactToken`
+
+- type exact `string` ;
+- non vide ;
+- longueur maximale **4096** caractères ;
+- fournie explicitement ;
+- aucune coercition, normalisation, trim ou valeur par défaut.
+
+Doivent notamment être refusés : `null`, `undefined`, non-string, string vide, longueur > 4096, tableaux, objets, valeurs hostiles.
+
+### Forme compacte exacte
+
+Le jeton compact doit contenir **exactement trois** segments **non vides**, séparés par **exactement deux** points (`.`) :
+
+```text
+<header>.<payload>.<signature>
+```
+
+Doivent être refusés :
+
+- moins ou plus de trois segments ;
+- segment vide (`..`, `.abc.`, etc.) ;
+- séparateur autre que `.` ;
+- points supplémentaires ;
+- espaces, contrôles ou Unicode hors alphabet Base64URL dans un segment.
+
+### Alphabet Base64URL canonique
+
+Chaque segment doit être composé uniquement de :
+
+```text
+A-Z a-z 0-9 - _
+```
+
+Interdits dans tout segment :
+
+- `+` et `/` (alphabet Base64 classique) ;
+- `=` (padding) ;
+- espaces, tabulations, contrôles ;
+- tout caractère Unicode hors ASCII autorisé ;
+- toute forme non canonique ou normalisée.
+
+### Canonicalité Base64URL stricte
+
+L’alphabet autorisé ne suffit pas. Pour **chaque** segment (`header`, `payload`, `signature`), le futur décodeur doit appliquer cumulativement :
+
+1. `segment.length % 4 !== 1` — sinon `null` (longueur Base64URL invalide) ;
+2. décodage Base64URL **strict** (échec → `null`) ;
+3. réencodage Base64URL **sans padding** des octets obtenus ;
+4. égalité exacte `réencodé === segment` initial.
+
+Conséquences obligatoires :
+
+- tout encodage avec bits résiduels non nuls qu’un décodeur permissif pourrait accepter est refusé ;
+- tout padding implicite, variante d’alphabet ou forme non canonique est refusé ;
+- aucun segment n’est accepté uniquement parce que le décodage a produit des octets.
+
+### Décodage UTF-8 strict
+
+Après décodage Base64URL **canonique** des segments header et payload :
+
+- interprétation UTF-8 **stricte** ;
+- aucun remplacement silencieux par `U+FFFD` ;
+- toute séquence UTF-8 invalide → `null`.
+
+### Parse JSON sécurisé — header et payload
+
+Les octets décodés de header et payload doivent produire des **objets JSON ordinaires** :
+
+- objets uniquement à la racine (pas de tableau racine, pas de primitive racine, pas de `null` racine) ;
+- détection et refus des **clés JSON dupliquées** **avant** la création des objets JavaScript ;
+- le refus des clés dupliquées s’applique à **tous les niveaux d’imbrication** JSON (racine et objets imbriqués), pas seulement à la racine ;
+- prototypes admissibles futurs limités à `Object.prototype` ou `null` ;
+- refus des prototypes spéciaux, instances de classe, tableaux, Map/Set/Date/RegExp ;
+- aucune propriété héritée introduite par le parseur ;
+- aucune coercition ni valeur par défaut.
+
+#### Clés JSON dangereuses — liste exacte minimale
+
+Doivent être refusées à **tous les niveaux d’imbrication** JSON (racine et objets imbriqués), dès qu’elles apparaissent comme noms de clés :
+
+- `__proto__`
+- `prototype`
+- `constructor`
+
+Toute autre forme hostile observable au parse reste refusée fail-closed. La détection des clés dupliquées et des clés dangereuses est une responsabilité **explicite** de ce futur décodeur (contrairement à V2.1p qui reçoit des objets déjà construits).
+
+### `signingInput`
+
+Conservé **byte-for-byte** sous la forme exacte :
+
+```text
+<headerSegment>.<payloadSegment>
+```
+
+Aucun réencodage, aucune normalisation, aucune reconstruction depuis les objets parsés.
+
+### `signature`
+
+Type JavaScript exact obligatoire :
+
+```text
+signature: Uint8Array
+```
+
+Contraintes :
+
+- instance exacte de `Uint8Array` (pas d’alias texte, pas de `Array` de nombres, pas de `Buffer` exposé comme API publique, pas de représentation Base64URL conservée) ;
+- obtenue par décodage Base64URL **canonique** du troisième segment ;
+- `byteLength >= 1` (non vide) ;
+- **aucune** vérification cryptographique dans V2.1q ni dans le futur décodeur V2.1r de ce contrat ;
+- la signature est uniquement exposée pour un vérificateur cryptographique ultérieur hors périmètre.
+
+### Sémantique du succès
+
+Un résultat non-`null` signifie uniquement :
+
+**STRUCTURALLY_DECODED**
+
+Il ne signifie jamais :
+
+- authentification ;
+- autorisation ;
+- signature RS256 valide ;
+- `kid` résolu ;
+- claims conformes à V2.1o/V2.1p ;
+- session ou identité valides.
+
+Le futur pipeline pourra ensuite enchaîner `isJwtClaimsPolicySatisfied` et la vérification cryptographique ; **V2.1q n’appelle aucun** de ces contrôles.
+
+### Algorithme décisionnel documentaire
+
+Retourner `null` si **au moins une** condition suivante est vraie :
+
+1. `compactToken` n’est pas une string non vide de longueur ≤ 4096 ;
+2. la forme n’est pas exactement trois segments non vides séparés par deux points ;
+3. un segment contient un caractère hors alphabet Base64URL canonique ;
+4. un segment viole `segment.length % 4 !== 1`, échoue au décodage strict, ou diffère de son réencodage Base64URL sans padding ;
+5. le décodage Base64URL produit une charge vide là où des octets sont requis ;
+6. le décodage UTF-8 du header ou du payload n’est pas strictement valide ;
+7. le JSON du header ou du payload n’est pas un objet ordinaire à la racine ;
+8. des clés JSON dupliquées sont détectées à n’importe quel niveau d’imbrication ;
+9. une clé dangereuse `__proto__`, `prototype` ou `constructor` apparaît à n’importe quel niveau ;
+10. le JSON racine est un tableau, une primitive, `null` ou une forme spéciale ;
+11. `signingInput` ne peut pas être conservé exactement comme `segment1.segment2` ;
+12. la signature n’est pas un `Uint8Array` non vide ;
+13. une valeur a été convertie, normalisée, remplacée ou une exception interne n’a pas été capturée.
+
+Sinon retourner `{ protectedHeader, payload, signingInput, signature }` avec `signature instanceof Uint8Array`.
+
+### Exemples normatifs
+
+| Cas | Résultat |
+|---|---|
+| JWT compact exact à trois segments Base64URL canoniques, objets JSON ordinaires | `{ protectedHeader, payload, signingInput, signature: Uint8Array }` |
+| entrée non-string | `null` |
+| string vide | `null` |
+| longueur > 4096 | `null` |
+| deux segments seulement | `null` |
+| quatre segments | `null` |
+| segment vide | `null` |
+| caractère `+` ou `/` dans un segment | `null` |
+| padding `=` dans un segment | `null` |
+| `segment.length % 4 === 1` | `null` |
+| décodage permissif possible mais réencodage ≠ segment | `null` |
+| espace ou Unicode dans un segment | `null` |
+| UTF-8 invalide après décodage | `null` |
+| JSON racine tableau ou primitive | `null` |
+| clés JSON dupliquées à la racine | `null` |
+| clés JSON dupliquées dans un objet imbriqué | `null` |
+| clé `__proto__`, `prototype` ou `constructor` (racine ou imbriquée) | `null` |
+| signature Base64URL décodant vers zéro octet | `null` |
+
+Tout résultat non-`null` reste uniquement structurel : ni authentification ni autorisation.
+
+### Non-régression
+
+Conservées sans élargissement :
+
+- politiques JWT V2.1l à V2.1p ;
+- RS256 comme algorithme d’accès obligatoire au niveau politique (non vérifié ici) ;
+- aucun rôle, tenant, droit ou permission dans le JWT ;
+- matrice 48/102 inchangée ;
+- clés privées hors dépôt ;
+- aucun JWT complet dans les logs, URLs ou réponses.
+
+### Hors périmètre de V2.1q
+
+- bibliothèque JWT ;
+- vérification RS256 ou toute cryptographie ;
+- clé publique, privée, JWKS, secret ou résolution de `kid` ;
+- appel à `isJwtClaimsPolicySatisfied` ;
+- middleware, route, login, refresh, session ou horloge ;
+- changement du legacy, du schéma, des données ou de la matrice 48/102 ;
+- implémentation runtime (réservée à V2.1r après GO CTO sur ce contrat).
+
+## 43. Gate de merge V2.1q
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] export public limité à `isJwtClaimsPolicySatisfied` ;
-- [ ] header limité exactement à `alg`, `typ` et `kid` ;
-- [ ] payload limité exactement aux huit claims obligatoires ;
-- [ ] propriétés supplémentaires, héritées, symboles et accesseurs refusés ;
-- [ ] objets et valeurs hostiles traités fail-closed ;
-- [ ] formats `kid`, `sub`, `sid` et `jti` appliqués strictement ;
-- [ ] `iss` et `expectedIssuer` validés puis comparés exactement ;
-- [ ] `aud` string exacte `somafrik-api-v2` ;
-- [ ] contrôle temporel délégué à V2.1n sans duplication ;
-- [ ] aucune horloge implicite ;
-- [ ] aucun décodage, parsing ou contrôle cryptographique JWT ;
-- [ ] aucune dépendance ajoutée ;
-- [ ] tests normatifs et cas limites verts ;
-- [ ] non-régression API/auth/domaine ;
+- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [ ] export documentaire `decodeJwtCompactStrict(compactToken)` défini ;
+- [ ] entrée string ≤ 4096 et forme exacte à trois segments documentées ;
+- [ ] alphabet Base64URL canonique sans `+`, `/`, `=` documenté ;
+- [ ] canonicalité Base64URL (`length % 4 !== 1`, décodage strict, réencodage sans padding, égalité exacte) documentée ;
+- [ ] UTF-8 strict sans remplacement `U+FFFD` documenté ;
+- [ ] objets JSON ordinaires et refus des clés dupliquées à tous les niveaux documentés ;
+- [ ] clés dangereuses exactes `__proto__`, `prototype`, `constructor` documentées à tous les niveaux ;
+- [ ] `signingInput` byte-for-byte `segment1.segment2` documenté ;
+- [ ] `signature: Uint8Array` non vide sans vérification cryptographique documentée ;
+- [ ] résultat structurel uniquement — jamais authentification ni autorisation ;
+- [ ] aucune bibliothèque ou implémentation JWT introduite ;
+- [ ] aucun secret, aucune clé et aucun JWT introduit ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
