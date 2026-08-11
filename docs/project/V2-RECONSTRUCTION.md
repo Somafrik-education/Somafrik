@@ -2089,35 +2089,41 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat d’orchestr
 - retour exact : `Promise<{ sub, sid, jti } | null>` ; non-`null` = **TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE** uniquement — jamais session, identité, permission ou accès ;
 - ordre obligatoire : `decodeJwtCompactStrict` → `isJwtClaimsPolicySatisfied` → `resolveJwtRs256VerificationKey` → `verifyJwtRs256Signature` ;
 - prédicats exacts : décodage = objet de sortie exact V2.1r ; claims = `=== true` ; kid = `CryptoKey` exacte V2.1v ; RS256 = `=== true` ;
-- résultat = nouvel objet ordinaire limité à `sub`, `sid`, `jti` sans transformation ;
-- **aucun throw** ni promesse rejetée sortante ; aucune mutation ; aucune horloge implicite ; aucune cryptographie directe (`subtle.verify` non appelé hors brique V2.1t) ;
+- arrêt immédiat après chaque échec ; protection fail-closed globale ; aucune exception ni promesse rejetée sortante ;
+- résultat = nouvel objet ordinaire limité à `sub`, `sid`, `jti` sans transformation ; aucun token, header, payload complet, `kid`, signature, `signingInput` ou `CryptoKey` exposé ;
+- imports **statiques directs** depuis les quatre modules sources ; **aucun** seam/export de test ; **aucun** état global mutable de briques ;
+- aucune duplication des briques ; aucune horloge/configuration implicite ; aucune cryptographie directe (`subtle.verify` hors brique V2.1t) ;
 - aucune session, autorisation, PEM/JWK/JWKS, réseau, KMS, cache, secret ou dépendance ajoutée.
 
 ### Hors périmètre de V2.1x
 
 - validation de session ; identité ; RBAC ; middleware ; routes ;
 - duplication des briques existantes ; modification de leurs API ;
+- seam ou export de test ; injection/remplacement des briques ;
 - modification de `packages/auth` ou de la matrice 48/102.
 
 ## 57. Gate de merge V2.1x
 
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [ ] diff limité aux quatre fichiers autorisés ;
 - [ ] export public limité à `verifyJwtAccessTokenCryptographically` ;
-- [ ] retour exact `Promise<{ sub, sid, jti } | null>` et sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` ;
+- [ ] aucun export/seam de test et aucun état global mutable de briques ;
+- [ ] retour exact `Promise<{ sub, sid, jti } | null>` ;
+- [ ] sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` ;
 - [ ] ordre décodage → claims/temps → kid → RS256 respecté ;
-- [ ] prédicats de succès exacts appliqués à chaque étape ;
-- [ ] arrêt immédiat du pipeline après chaque échec ;
-- [ ] quatre exports existants réutilisés sans duplication ;
+- [ ] quatre briques existantes réutilisées sans duplication ;
+- [ ] prédicats de succès exacts appliqués ;
+- [ ] arrêt immédiat après chaque échec ;
+- [ ] aucune exception ni promesse rejetée sortante ;
 - [ ] résultat limité exactement à `sub`, `sid` et `jti` ;
 - [ ] aucune session ou autorisation incluse ;
-- [ ] aucune exception ni promesse rejetée sortante ;
-- [ ] aucune horloge implicite, variable d’environnement ou journalisation ;
-- [ ] aucun PEM/JWK/JWKS, réseau, KMS, cache, clé ou secret ajouté ;
+- [ ] aucun token, signature, `signingInput`, `kid` ou `CryptoKey` exposé ;
+- [ ] aucune horloge ou configuration implicite ;
+- [ ] aucun PEM/JWK/JWKS, réseau, KMS, cache ou clé ajouté ;
 - [ ] aucune dépendance ajoutée ;
-- [ ] tests normatifs et cas limites verts ;
-- [ ] non-régression API/auth/domaine ;
+- [ ] tests API/auth/domaine verts ;
 - [ ] matrice 48/102 inchangée ;
-- [ ] aucune modification de runtime, schéma ou donnée ;
+- [ ] aucune modification de schéma, migration ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

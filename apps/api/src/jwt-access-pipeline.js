@@ -12,31 +12,68 @@ const DECODED_KEYS = [
   "signature",
 ];
 
-const DEFAULT_BRICKS = Object.freeze({
-  decodeJwtCompactStrict,
-  isJwtClaimsPolicySatisfied,
-  resolveJwtRs256VerificationKey,
-  verifyJwtRs256Signature,
-});
-
-/** @type {typeof DEFAULT_BRICKS} */
-let bricks = { ...DEFAULT_BRICKS };
-
 /**
- * Test-only seam to observe call order. Not part of the public API surface
- * and must not be re-exported from `index.js`.
- *
- * @param {Partial<typeof DEFAULT_BRICKS>} nextBricks
- * @returns {() => void} restore function
+ * @param {object} object
+ * @param {string} key
+ * @returns {boolean}
  */
-export function __setJwtAccessPipelineBricksForTests(nextBricks) {
-  bricks = { ...DEFAULT_BRICKS, ...nextBricks };
-  return () => {
-    bricks = { ...DEFAULT_BRICKS };
-  };
+function isOwnDataProperty(object, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key);
+  return (
+    descriptor !== undefined &&
+    Object.hasOwn(descriptor, "value") &&
+    !Object.hasOwn(descriptor, "get") &&
+    !Object.hasOwn(descriptor, "set")
+  );
 }
 
 /**
+ * @param {object} object
+ * @param {string} key
+ * @returns {unknown}
+ */
+function ownDataValue(object, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key);
+  return descriptor === undefined ? undefined : descriptor.value;
+}
+
+/**
+ * Shape check for V2.1r decoded object fields (header/payload).
+ * Does not re-decode JSON and does not re-apply claims policy.
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isDecoderProducedObject(value) {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  if (types.isProxy(value) || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return false;
+  }
+
+  if (Object.getOwnPropertySymbols(value).length !== 0) {
+    return false;
+  }
+
+  const names = Object.getOwnPropertyNames(value);
+  for (let index = 0; index < names.length; index += 1) {
+    if (!isOwnDataProperty(value, names[index])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Exact V2.1r decoder success predicate — output contract only.
+ *
  * @param {unknown} value
  * @returns {boolean}
  */
@@ -48,35 +85,36 @@ function isExactDecodedJwt(value) {
     return false;
   }
 
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return false;
+  }
+
+  if (Object.getOwnPropertySymbols(value).length !== 0) {
+    return false;
+  }
+
   const names = Object.getOwnPropertyNames(value);
   if (names.length !== DECODED_KEYS.length) {
     return false;
   }
+
   for (let index = 0; index < DECODED_KEYS.length; index += 1) {
-    if (!Object.hasOwn(value, DECODED_KEYS[index])) {
+    const key = DECODED_KEYS[index];
+    if (!Object.hasOwn(value, key) || !isOwnDataProperty(value, key)) {
       return false;
     }
   }
 
-  const protectedHeader = value.protectedHeader;
-  const payload = value.payload;
-  const signingInput = value.signingInput;
-  const signature = value.signature;
+  const protectedHeader = ownDataValue(value, "protectedHeader");
+  const payload = ownDataValue(value, "payload");
+  const signingInput = ownDataValue(value, "signingInput");
+  const signature = ownDataValue(value, "signature");
 
-  if (
-    protectedHeader === null ||
-    typeof protectedHeader !== "object" ||
-    Array.isArray(protectedHeader) ||
-    types.isProxy(protectedHeader)
-  ) {
+  if (!isDecoderProducedObject(protectedHeader)) {
     return false;
   }
-  if (
-    payload === null ||
-    typeof payload !== "object" ||
-    Array.isArray(payload) ||
-    types.isProxy(payload)
-  ) {
+  if (!isDecoderProducedObject(payload)) {
     return false;
   }
   if (typeof signingInput !== "string") {
@@ -139,14 +177,19 @@ export async function verifyJwtAccessTokenCryptographically(
   keyCandidates,
 ) {
   try {
-    const decoded = bricks.decodeJwtCompactStrict(compactToken);
+    const decoded = decodeJwtCompactStrict(compactToken);
     if (!isExactDecodedJwt(decoded)) {
       return null;
     }
 
-    const claimsSatisfied = bricks.isJwtClaimsPolicySatisfied(
-      decoded.protectedHeader,
-      decoded.payload,
+    const protectedHeader = ownDataValue(decoded, "protectedHeader");
+    const payload = ownDataValue(decoded, "payload");
+    const signingInput = ownDataValue(decoded, "signingInput");
+    const signature = ownDataValue(decoded, "signature");
+
+    const claimsSatisfied = isJwtClaimsPolicySatisfied(
+      protectedHeader,
+      payload,
       expectedIssuer,
       evaluationTime,
     );
@@ -154,17 +197,17 @@ export async function verifyJwtAccessTokenCryptographically(
       return null;
     }
 
-    const verificationKey = bricks.resolveJwtRs256VerificationKey(
-      decoded.protectedHeader.kid,
+    const verificationKey = resolveJwtRs256VerificationKey(
+      ownDataValue(protectedHeader, "kid"),
       keyCandidates,
     );
     if (!isExactCryptoKeyResult(verificationKey)) {
       return null;
     }
 
-    const signatureValid = await bricks.verifyJwtRs256Signature(
-      decoded.signingInput,
-      decoded.signature,
+    const signatureValid = await verifyJwtRs256Signature(
+      signingInput,
+      signature,
       verificationKey,
     );
     if (signatureValid !== true) {
@@ -172,9 +215,9 @@ export async function verifyJwtAccessTokenCryptographically(
     }
 
     return {
-      sub: decoded.payload.sub,
-      sid: decoded.payload.sid,
-      jti: decoded.payload.jti,
+      sub: ownDataValue(payload, "sub"),
+      sid: ownDataValue(payload, "sid"),
+      jti: ownDataValue(payload, "jti"),
     };
   } catch {
     return null;

@@ -13,10 +13,6 @@ import {
   verifyJwtAccessTokenCryptographically,
   verifyJwtRs256Signature,
 } from "../src/index.js";
-import {
-  __setJwtAccessPipelineBricksForTests,
-  verifyJwtAccessTokenCryptographically as verifyFromModule,
-} from "../src/jwt-access-pipeline.js";
 
 const ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -107,7 +103,28 @@ function candidate(verificationKey, overrides = {}) {
   };
 }
 
-test("accepts a valid RS256 JWT and returns exact sub sid jti", async () => {
+function pipelineSource() {
+  return readFileSync(
+    new URL("../src/jwt-access-pipeline.js", import.meta.url),
+    "utf8",
+  );
+}
+
+async function withVerifySpy(run) {
+  const originalVerify = globalThis.crypto.subtle.verify;
+  let verifyCalls = 0;
+  globalThis.crypto.subtle.verify = async (...args) => {
+    verifyCalls += 1;
+    return originalVerify.apply(globalThis.crypto.subtle, args);
+  };
+  try {
+    return await run(() => verifyCalls);
+  } finally {
+    globalThis.crypto.subtle.verify = originalVerify;
+  }
+}
+
+test("accepts a valid RS256 JWT and returns exact new { sub, sid, jti }", async () => {
   const { publicKey, privateKey } = await generateRs256Pair();
   const { token } = await buildSignedToken(
     NOMINAL_HEADER,
@@ -133,6 +150,10 @@ test("accepts a valid RS256 JWT and returns exact sub sid jti", async () => {
     "sid",
     "sub",
   ]);
+  assert.equal(Object.getOwnPropertySymbols(result).length, 0);
+
+  const decoded = decodeJwtCompactStrict(token);
+  assert.notEqual(result, decoded.payload);
 });
 
 test("returns sub sid jti without normalization", async () => {
@@ -157,423 +178,405 @@ test("returns sub sid jti without normalization", async () => {
   });
 });
 
-test("calls the four bricks in exact order on success", async () => {
-  const { publicKey, privateKey } = await generateRs256Pair();
-  const { token } = await buildSignedToken(
-    NOMINAL_HEADER,
-    NOMINAL_PAYLOAD,
-    privateKey,
-  );
-  const order = [];
-  const restore = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict(compactToken) {
-      order.push("decode");
-      return decodeJwtCompactStrict(compactToken);
-    },
-    isJwtClaimsPolicySatisfied(...args) {
-      order.push("claims");
-      return isJwtClaimsPolicySatisfied(...args);
-    },
-    resolveJwtRs256VerificationKey(...args) {
-      order.push("kid");
-      return resolveJwtRs256VerificationKey(...args);
-    },
-    async verifyJwtRs256Signature(...args) {
-      order.push("rs256");
-      return verifyJwtRs256Signature(...args);
-    },
-  });
+test("rejects invalid or hostile compact tokens without cryptography", async () => {
+  const { publicKey } = await generateRs256Pair();
+  const candidates = [candidate(publicKey)];
 
-  try {
-    const result = await verifyFromModule(
-      token,
-      EXPECTED_ISSUER,
-      EVALUATION_TIME,
-      [candidate(publicKey)],
-    );
-    assert.deepEqual(result, {
-      sub: "USR-2026-0001",
-      sid: "SID-2026-0001",
-      jti: "JTI-2026-0001",
-    });
-    assert.deepEqual(order, ["decode", "claims", "kid", "rs256"]);
-  } finally {
-    restore();
-  }
-});
-
-test("stops after decode failure without calling later bricks", async () => {
-  const order = [];
-  const restore = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict() {
-      order.push("decode");
-      return null;
-    },
-    isJwtClaimsPolicySatisfied() {
-      order.push("claims");
-      return true;
-    },
-    resolveJwtRs256VerificationKey() {
-      order.push("kid");
-      return {};
-    },
-    async verifyJwtRs256Signature() {
-      order.push("rs256");
-      return true;
-    },
-  });
-
-  try {
-    assert.equal(
-      await verifyFromModule("bad", EXPECTED_ISSUER, EVALUATION_TIME, []),
+  await withVerifySpy(async (getCalls) => {
+    for (const token of [
+      undefined,
       null,
-    );
-    assert.deepEqual(order, ["decode"]);
-  } finally {
-    restore();
-  }
-});
-
-test("stops after claims failure without kid or crypto", async () => {
-  const order = [];
-  const restore = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict(compactToken) {
-      order.push("decode");
-      return decodeJwtCompactStrict(compactToken);
-    },
-    isJwtClaimsPolicySatisfied() {
-      order.push("claims");
-      return false;
-    },
-    resolveJwtRs256VerificationKey() {
-      order.push("kid");
-      return {};
-    },
-    async verifyJwtRs256Signature() {
-      order.push("rs256");
-      return true;
-    },
-  });
-
-  try {
-    const { publicKey, privateKey } = await generateRs256Pair();
-    const { token } = await buildSignedToken(
-      NOMINAL_HEADER,
-      NOMINAL_PAYLOAD,
-      privateKey,
-    );
-    assert.equal(
-      await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-        candidate(publicKey),
-      ]),
-      null,
-    );
-    assert.deepEqual(order, ["decode", "claims"]);
-  } finally {
-    restore();
-  }
-});
-
-test("stops after kid failure without crypto and keeps RS256 last", async () => {
-  const order = [];
-  const restore = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict(compactToken) {
-      order.push("decode");
-      return decodeJwtCompactStrict(compactToken);
-    },
-    isJwtClaimsPolicySatisfied(...args) {
-      order.push("claims");
-      return isJwtClaimsPolicySatisfied(...args);
-    },
-    resolveJwtRs256VerificationKey() {
-      order.push("kid");
-      return null;
-    },
-    async verifyJwtRs256Signature() {
-      order.push("rs256");
-      return true;
-    },
-  });
-
-  try {
-    const { publicKey, privateKey } = await generateRs256Pair();
-    const { token } = await buildSignedToken(
-      NOMINAL_HEADER,
-      NOMINAL_PAYLOAD,
-      privateKey,
-    );
-    assert.equal(
-      await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-        candidate(publicKey),
-      ]),
-      null,
-    );
-    assert.deepEqual(order, ["decode", "claims", "kid"]);
-  } finally {
-    restore();
-  }
-});
-
-test("applies exact success predicates for each brick", async () => {
-  const { publicKey, privateKey } = await generateRs256Pair();
-  const { token } = await buildSignedToken(
-    NOMINAL_HEADER,
-    NOMINAL_PAYLOAD,
-    privateKey,
-  );
-  const realDecoded = decodeJwtCompactStrict(token);
-
-  const unexpectedDecodeCases = [
-    null,
-    undefined,
-    true,
-    1,
-    "decoded",
-    [],
-    { protectedHeader: realDecoded.protectedHeader },
-    {
-      ...realDecoded,
-      extra: true,
-    },
-    new Proxy(realDecoded, {}),
-  ];
-  for (const unexpected of unexpectedDecodeCases) {
-    const restore = __setJwtAccessPipelineBricksForTests({
-      decodeJwtCompactStrict: () => unexpected,
-      isJwtClaimsPolicySatisfied: () => true,
-      resolveJwtRs256VerificationKey: () => publicKey,
-      verifyJwtRs256Signature: async () => true,
-    });
-    try {
-      assert.equal(
-        await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-          candidate(publicKey),
-        ]),
-        null,
-      );
-    } finally {
-      restore();
-    }
-  }
-
-  for (const unexpected of [false, "true", 1, {}, null, undefined]) {
-    const restore = __setJwtAccessPipelineBricksForTests({
-      decodeJwtCompactStrict: () => realDecoded,
-      isJwtClaimsPolicySatisfied: () => unexpected,
-      resolveJwtRs256VerificationKey: () => publicKey,
-      verifyJwtRs256Signature: async () => true,
-    });
-    try {
-      assert.equal(
-        await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-          candidate(publicKey),
-        ]),
-        null,
-      );
-    } finally {
-      restore();
-    }
-  }
-
-  for (const unexpected of [
-    null,
-    undefined,
-    true,
-    1,
-    {},
-    new Proxy(publicKey, {}),
-  ]) {
-    const restore = __setJwtAccessPipelineBricksForTests({
-      decodeJwtCompactStrict: () => realDecoded,
-      isJwtClaimsPolicySatisfied: () => true,
-      resolveJwtRs256VerificationKey: () => unexpected,
-      verifyJwtRs256Signature: async () => true,
-    });
-    try {
-      assert.equal(
-        await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-          candidate(publicKey),
-        ]),
-        null,
-      );
-    } finally {
-      restore();
-    }
-  }
-
-  for (const unexpected of [false, "true", 1, {}, null, undefined]) {
-    const restore = __setJwtAccessPipelineBricksForTests({
-      decodeJwtCompactStrict: () => realDecoded,
-      isJwtClaimsPolicySatisfied: () => true,
-      resolveJwtRs256VerificationKey: () => publicKey,
-      verifyJwtRs256Signature: async () => unexpected,
-    });
-    try {
-      assert.equal(
-        await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-          candidate(publicKey),
-        ]),
-        null,
-      );
-    } finally {
-      restore();
-    }
-  }
-});
-
-test("returns null when a brick throws or rejects", async () => {
-  const { publicKey, privateKey } = await generateRs256Pair();
-  const { token } = await buildSignedToken(
-    NOMINAL_HEADER,
-    NOMINAL_PAYLOAD,
-    privateKey,
-  );
-  const realDecoded = decodeJwtCompactStrict(token);
-
-  const throwingDecode = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict() {
-      throw new Error("decode boom");
-    },
-  });
-  try {
-    assert.equal(
-      await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-        candidate(publicKey),
-      ]),
-      null,
-    );
-  } finally {
-    throwingDecode();
-  }
-
-  const throwingClaims = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict: () => realDecoded,
-    isJwtClaimsPolicySatisfied() {
-      throw new Error("claims boom");
-    },
-  });
-  try {
-    assert.equal(
-      await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-        candidate(publicKey),
-      ]),
-      null,
-    );
-  } finally {
-    throwingClaims();
-  }
-
-  const throwingKid = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict: () => realDecoded,
-    isJwtClaimsPolicySatisfied: () => true,
-    resolveJwtRs256VerificationKey() {
-      throw new Error("kid boom");
-    },
-  });
-  try {
-    assert.equal(
-      await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-        candidate(publicKey),
-      ]),
-      null,
-    );
-  } finally {
-    throwingKid();
-  }
-
-  const rejectingRs256 = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict: () => realDecoded,
-    isJwtClaimsPolicySatisfied: () => true,
-    resolveJwtRs256VerificationKey: () => publicKey,
-    async verifyJwtRs256Signature() {
-      throw new Error("rs256 boom");
-    },
-  });
-  try {
-    assert.equal(
-      await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-        candidate(publicKey),
-      ]),
-      null,
-    );
-  } finally {
-    rejectingRs256();
-  }
-
-  const rejectingPromise = __setJwtAccessPipelineBricksForTests({
-    decodeJwtCompactStrict: () => realDecoded,
-    isJwtClaimsPolicySatisfied: () => true,
-    resolveJwtRs256VerificationKey: () => publicKey,
-    verifyJwtRs256Signature: async () => Promise.reject(new Error("reject")),
-  });
-  try {
-    assert.equal(
-      await verifyFromModule(token, EXPECTED_ISSUER, EVALUATION_TIME, [
-        candidate(publicKey),
-      ]),
-      null,
-    );
-  } finally {
-    rejectingPromise();
-  }
-});
-
-test("returns null for invalid compact claims kid and signature failures", async () => {
-  const { publicKey, privateKey } = await generateRs256Pair();
-  const { publicKey: otherPublic } = await generateRs256Pair();
-
-  assert.equal(
-    await verifyJwtAccessTokenCryptographically(
+      1,
+      {},
+      "",
+      "a.b",
       "not-a-jwt",
-      EXPECTED_ISSUER,
-      EVALUATION_TIME,
-      [candidate(publicKey)],
-    ),
-    null,
-  );
+      "@@@.@@@.@@@",
+    ]) {
+      assert.equal(
+        await verifyJwtAccessTokenCryptographically(
+          token,
+          EXPECTED_ISSUER,
+          EVALUATION_TIME,
+          candidates,
+        ),
+        null,
+      );
+    }
+    assert.equal(getCalls(), 0);
+  });
+});
 
-  const badClaimsPayload = { ...NOMINAL_PAYLOAD, aud: "other-api" };
-  const badClaims = await buildSignedToken(
-    NOMINAL_HEADER,
-    badClaimsPayload,
-    privateKey,
-  );
-  assert.equal(
-    await verifyJwtAccessTokenCryptographically(
-      badClaims.token,
-      EXPECTED_ISSUER,
-      EVALUATION_TIME,
-      [candidate(publicKey)],
-    ),
-    null,
-  );
+test("rejects invalid claims and temporal cases without kid resolution crypto", async () => {
+  const { publicKey, privateKey } = await generateRs256Pair();
+  const candidates = [candidate(publicKey)];
 
+  const cases = [
+    { ...NOMINAL_PAYLOAD, iss: "https://other.example" },
+    { ...NOMINAL_PAYLOAD, aud: "other-api" },
+    { ...NOMINAL_PAYLOAD, sub: "bad/sub" },
+    { ...NOMINAL_PAYLOAD, sid: "" },
+    { ...NOMINAL_PAYLOAD, jti: "jti with space" },
+    { ...NOMINAL_PAYLOAD, exp: EVALUATION_TIME },
+    { ...NOMINAL_PAYLOAD, nbf: EVALUATION_TIME + 31, exp: EVALUATION_TIME + 931 },
+  ];
+
+  await withVerifySpy(async (getCalls) => {
+    for (const payload of cases) {
+      const { token } = await buildSignedToken(
+        NOMINAL_HEADER,
+        payload,
+        privateKey,
+      );
+      assert.equal(
+        await verifyJwtAccessTokenCryptographically(
+          token,
+          EXPECTED_ISSUER,
+          EVALUATION_TIME,
+          candidates,
+        ),
+        null,
+      );
+    }
+
+    const badAlg = await buildSignedToken(
+      { ...NOMINAL_HEADER, alg: "HS256" },
+      NOMINAL_PAYLOAD,
+      privateKey,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        badAlg.token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        candidates,
+      ),
+      null,
+    );
+
+    const badTyp = await buildSignedToken(
+      { ...NOMINAL_HEADER, typ: "jwt" },
+      NOMINAL_PAYLOAD,
+      privateKey,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        badTyp.token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        candidates,
+      ),
+      null,
+    );
+
+    const { token } = await buildSignedToken(
+      NOMINAL_HEADER,
+      NOMINAL_PAYLOAD,
+      privateKey,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        Number.NaN,
+        candidates,
+      ),
+      null,
+    );
+
+    assert.equal(getCalls(), 0);
+  });
+});
+
+test("rejects kid resolution failures without RS256 cryptography", async () => {
+  const { publicKey, privateKey } = await generateRs256Pair();
+  const { publicKey: otherKey } = await generateRs256Pair();
   const { token } = await buildSignedToken(
     NOMINAL_HEADER,
     NOMINAL_PAYLOAD,
     privateKey,
   );
-  assert.equal(
-    await verifyJwtAccessTokenCryptographically(
-      token,
-      EXPECTED_ISSUER,
-      EVALUATION_TIME,
-      [candidate(publicKey, { status: "inactive" })],
-    ),
-    null,
+
+  await withVerifySpy(async (getCalls) => {
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [],
+      ),
+      null,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey, { status: "inactive" })],
+      ),
+      null,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [
+          candidate(publicKey, { status: "active" }),
+          candidate(otherKey, { status: "inactive" }),
+        ],
+      ),
+      null,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey, { kid: "KEY-2026.01" })],
+      ),
+      null,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        new Proxy([candidate(publicKey)], {}),
+      ),
+      null,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [new Proxy(candidate(publicKey), {})],
+      ),
+      null,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(/** @type {CryptoKey} */ (new Proxy(publicKey, {})))],
+      ),
+      null,
+    );
+
+    const tooMany = [];
+    for (let index = 0; index < 257; index += 1) {
+      tooMany.push(candidate(publicKey, { kid: `k-${index}` }));
+    }
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        tooMany,
+      ),
+      null,
+    );
+
+    assert.equal(getCalls(), 0);
+  });
+});
+
+test("rejects invalid signatures and incompatible keys after kid resolution", async () => {
+  const { publicKey, privateKey } = await generateRs256Pair();
+  const { publicKey: wrongPublic } = await generateRs256Pair();
+  const { token, signingInput } = await buildSignedToken(
+    NOMINAL_HEADER,
+    NOMINAL_PAYLOAD,
+    privateKey,
   );
+
+  await withVerifySpy(async (getCalls) => {
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(wrongPublic)],
+      ),
+      null,
+    );
+    assert.ok(getCalls() >= 1);
+
+    const parts = token.split(".");
+    const alteredSig = `${parts[0]}.${parts[1]}.${parts[2].slice(0, -2)}aa`;
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        alteredSig,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey)],
+      ),
+      null,
+    );
+
+    const alteredInput = await buildSignedToken(
+      NOMINAL_HEADER,
+      { ...NOMINAL_PAYLOAD, jti: "JTI-2026-0002" },
+      privateKey,
+    );
+    // Reuse original signature bytes with a different signing input by splicing.
+    const mixed = `${alteredInput.signingInput}.${token.split(".")[2]}`;
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        mixed,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey)],
+      ),
+      null,
+    );
+    assert.notEqual(alteredInput.signingInput, signingInput);
+
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(privateKey)],
+      ),
+      null,
+    );
+  });
+});
+
+test("statically proves brick order predicates stop conditions and no test seam", () => {
+  const source = pipelineSource();
+
+  assert.equal(source.includes("__setJwtAccessPipelineBricksForTests"), false);
+  assert.equal(source.includes("DEFAULT_BRICKS"), false);
+  assert.equal(/\blet\s+bricks\b/.test(source), false);
+  assert.equal(/\bvar\s+bricks\b/.test(source), false);
+  assert.equal(/\bbricks\s*=/.test(source), false);
+
+  assert.match(
+    source,
+    /import\s+\{\s*decodeJwtCompactStrict\s*\}\s+from\s+"\.\/jwt-compact-decoder\.js"/,
+  );
+  assert.match(
+    source,
+    /import\s+\{\s*isJwtClaimsPolicySatisfied\s*\}\s+from\s+"\.\/jwt-claims-policy\.js"/,
+  );
+  assert.match(
+    source,
+    /import\s+\{\s*resolveJwtRs256VerificationKey\s*\}\s+from\s+"\.\/jwt-kid-resolver\.js"/,
+  );
+  assert.match(
+    source,
+    /import\s+\{\s*verifyJwtRs256Signature\s*\}\s+from\s+"\.\/jwt-rs256-verifier\.js"/,
+  );
+  assert.equal(source.includes('from "./index.js"'), false);
+
+  const decodeCall = source.indexOf("decodeJwtCompactStrict(compactToken)");
+  const claimsCall = source.indexOf("isJwtClaimsPolicySatisfied(");
+  const kidCall = source.indexOf("resolveJwtRs256VerificationKey(");
+  const rs256Call = source.indexOf("await verifyJwtRs256Signature(");
+  assert.ok(decodeCall > 0);
+  assert.ok(claimsCall > decodeCall);
+  assert.ok(kidCall > claimsCall);
+  assert.ok(rs256Call > kidCall);
+
+  const afterDecode = source.slice(decodeCall, claimsCall);
+  assert.equal(afterDecode.includes("return null"), true);
+  assert.equal(afterDecode.includes("isExactDecodedJwt"), true);
+
+  const afterClaims = source.slice(claimsCall, kidCall);
+  assert.equal(afterClaims.includes("!== true"), true);
+  assert.equal(afterClaims.includes("return null"), true);
+
+  const afterKid = source.slice(kidCall, rs256Call);
+  assert.equal(afterKid.includes("return null"), true);
+
+  const afterRs256 = source.slice(rs256Call);
+  assert.equal(afterRs256.includes("!== true"), true);
+  assert.equal(afterRs256.includes("return null"), true);
+
+  assert.equal(source.includes("subtle.verify"), false);
+  assert.equal(source.includes("Date.now"), false);
+  assert.equal(source.includes("process.env"), false);
+  assert.equal(source.includes("console."), false);
+  assert.equal(source.includes("importKey"), false);
+  assert.equal(source.includes("JWKS"), false);
+
+  const exportMatches = source.match(/^export\s+/gm) || [];
+  assert.equal(exportMatches.length, 1);
   assert.equal(
-    await verifyJwtAccessTokenCryptographically(
-      token,
-      EXPECTED_ISSUER,
-      EVALUATION_TIME,
-      [candidate(otherPublic)],
-    ),
-    null,
+    source.includes("export async function verifyJwtAccessTokenCryptographically"),
+    true,
   );
 });
 
-test("result contains only sub sid jti and never mutates inputs", async () => {
+test("observable pipeline stop: decode claims kid failures never call subtle.verify", async () => {
+  const { publicKey, privateKey } = await generateRs256Pair();
+  const { token } = await buildSignedToken(
+    NOMINAL_HEADER,
+    NOMINAL_PAYLOAD,
+    privateKey,
+  );
+
+  await withVerifySpy(async (getCalls) => {
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        "bad.token.value",
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey)],
+      ),
+      null,
+    );
+    assert.equal(getCalls(), 0);
+
+    const badClaims = await buildSignedToken(
+      NOMINAL_HEADER,
+      { ...NOMINAL_PAYLOAD, aud: "wrong" },
+      privateKey,
+    );
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        badClaims.token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey)],
+      ),
+      null,
+    );
+    assert.equal(getCalls(), 0);
+
+    assert.equal(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey, { status: "inactive" })],
+      ),
+      null,
+    );
+    assert.equal(getCalls(), 0);
+
+    assert.deepEqual(
+      await verifyJwtAccessTokenCryptographically(
+        token,
+        EXPECTED_ISSUER,
+        EVALUATION_TIME,
+        [candidate(publicKey)],
+      ),
+      {
+        sub: "USR-2026-0001",
+        sid: "SID-2026-0001",
+        jti: "JTI-2026-0001",
+      },
+    );
+    assert.ok(getCalls() >= 1);
+  });
+});
+
+test("result confidentiality and input immutability", async () => {
   const { publicKey, privateKey } = await generateRs256Pair();
   const { token } = await buildSignedToken(
     NOMINAL_HEADER,
@@ -583,7 +586,7 @@ test("result contains only sub sid jti and never mutates inputs", async () => {
   const candidates = [candidate(publicKey)];
   const tokenCopy = token;
   const issuerCopy = EXPECTED_ISSUER;
-  const candidatesSnapshot = JSON.stringify(
+  const snapshot = JSON.stringify(
     candidates.map((entry) => ({
       kid: entry.kid,
       status: entry.status,
@@ -597,14 +600,27 @@ test("result contains only sub sid jti and never mutates inputs", async () => {
     EVALUATION_TIME,
     candidates,
   );
+
   assert.deepEqual(Object.keys(result).sort(), ["jti", "sid", "sub"]);
-  assert.equal("kid" in result, false);
-  assert.equal("iss" in result, false);
-  assert.equal("signature" in result, false);
-  assert.equal("signingInput" in result, false);
-  assert.equal("protectedHeader" in result, false);
-  assert.equal("payload" in result, false);
-  assert.equal("verificationKey" in result, false);
+  for (const forbidden of [
+    "kid",
+    "iss",
+    "aud",
+    "iat",
+    "nbf",
+    "exp",
+    "alg",
+    "typ",
+    "signature",
+    "signingInput",
+    "protectedHeader",
+    "payload",
+    "verificationKey",
+    "token",
+  ]) {
+    assert.equal(forbidden in result, false);
+  }
+
   assert.equal(token, tokenCopy);
   assert.equal(EXPECTED_ISSUER, issuerCopy);
   assert.equal(
@@ -615,7 +631,7 @@ test("result contains only sub sid jti and never mutates inputs", async () => {
         sameKey: entry.verificationKey === publicKey,
       })),
     ),
-    candidatesSnapshot,
+    snapshot,
   );
 });
 
@@ -645,7 +661,7 @@ test("never rejects the returned promise for hostile inputs", async () => {
   }
 });
 
-test("public API non-regression without session PEM JWKS or JWT libs", async () => {
+test("public API non-regression without session PEM JWKS seam or JWT libs", async () => {
   const require = createRequire(import.meta.url);
   const apiPackage = require("../package.json");
   assert.equal(apiPackage.dependencies, undefined);
@@ -658,24 +674,19 @@ test("public API non-regression without session PEM JWKS or JWT libs", async () 
   assert.equal(typeof resolveJwtRs256VerificationKey, "function");
   assert.equal(typeof verifyJwtRs256Signature, "function");
   assert.equal(typeof verifyJwtAccessTokenCryptographically, "function");
+
+  const indexModule = await import("../src/index.js");
   assert.equal(
-    Object.hasOwn(
-      await import("../src/index.js"),
-      "__setJwtAccessPipelineBricksForTests",
-    ),
+    Object.hasOwn(indexModule, "__setJwtAccessPipelineBricksForTests"),
     false,
   );
-
-  const source = readFileSync(
-    new URL("../src/jwt-access-pipeline.js", import.meta.url),
-    "utf8",
+  assert.equal(
+    Object.hasOwn(indexModule, "verifyJwtAccessTokenCryptographically"),
+    true,
   );
-  assert.equal(source.includes("subtle.verify"), false);
-  assert.equal(source.includes("importKey"), false);
-  assert.equal(source.includes("jsonwebtoken"), false);
-  assert.equal(source.includes("jose"), false);
-  assert.equal(source.includes("JWKS"), false);
-  assert.equal(source.includes("Date.now"), false);
-  assert.equal(source.includes("process.env"), false);
-  assert.equal(source.includes("console."), false);
+
+  const pipelineModule = await import("../src/jwt-access-pipeline.js");
+  assert.deepEqual(Object.keys(pipelineModule).sort(), [
+    "verifyJwtAccessTokenCryptographically",
+  ]);
 });
