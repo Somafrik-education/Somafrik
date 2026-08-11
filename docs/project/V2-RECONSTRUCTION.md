@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1s — contrat de vérification RS256 pure
+**Lot courant :** V2.1t — implémentation pure du vérificateur RS256
 
 ---
 
@@ -118,6 +118,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1q | Contrat de décodage JWT compact sécurisé (documentation) | Décision CTO documentée + CI verts |
 | V2.1r | Implémentation pure du décodeur JWT compact strict (`apps/api`) | `decodeJwtCompactStrict` fail-closed + CI verts |
 | V2.1s | Contrat de vérification RS256 pure (documentation) | Décision CTO documentée + CI verts |
+| V2.1t | Implémentation pure du vérificateur RS256 (`apps/api`) | `verifyJwtRs256Signature` fail-closed + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -1576,17 +1577,66 @@ Conservées sans élargissement :
 
 ## 47. Gate de merge V2.1s
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] export documentaire `verifyJwtRs256Signature(signingInput, signature, verificationKey)` défini ;
+- [x] retour exact `Promise<boolean>` et sémantique `SIGNATURE_VALID` documentés ;
+- [x] contraintes strictes de `signingInput`, `signature` et `verificationKey` documentées ;
+- [x] appel imposé à `crypto.subtle.verify` avec `RSASSA-PKCS1-v1_5` documenté ;
+- [x] modulus 2048/3072/4096, exposant 65537 et hash SHA-256 documentés ;
+- [x] aucune résolution de `kid` ni import PEM/JWK/JWKS introduits ;
+- [x] aucune bibliothèque ou implémentation JWT runtime introduite ;
+- [x] aucun secret, aucune clé privée et aucun JWT introduit ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 48. Périmètre exact de V2.1t
+
+Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat de vérification RS256 V2.1s.
+
+### Export public exact
+
+- fichier : `apps/api/src/jwt-rs256-verifier.js` ;
+- export unique ajouté : `verifyJwtRs256Signature(signingInput, signature, verificationKey)` ;
+- réexport depuis `apps/api/src/index.js` ;
+- les exports existants restent inchangés.
+
+### Contrat d’exécution
+
+- retour `Promise<boolean>` ; `true` = **SIGNATURE_VALID** uniquement ; anomalies → `false` ; **aucune** exception ni promesse rejetée vers l’appelant ;
+- `signingInput` : string 1..4094, exactement deux segments Base64URL canoniques (bits résiduels inclus) ;
+- `signature` : `constructor === Uint8Array`, `byteLength >= 1` ; `Buffer`/texte/tableaux/`ArrayBuffer`/`DataView` refusés ; aucune mutation ;
+- `verificationKey` : `CryptoKey` publique, usage `verify`, `RSASSA-PKCS1-v1_5`, hash `SHA-256`, exposant 65537, modulus 2048/3072/4096 ;
+- appel unique : `await globalThis.crypto.subtle.verify({ name: "RSASSA-PKCS1-v1_5" }, verificationKey, signature, new TextEncoder().encode(signingInput))` ;
+- l’algorithme n’est jamais lu depuis le JWT ni depuis une entrée externe ;
+- **aucun** import PEM/JWK/JWKS, aucune résolution de `kid`, aucun appel à `decodeJwtCompactStrict` ou `isJwtClaimsPolicySatisfied`.
+
+### Hors périmètre de V2.1t
+
+- import PEM, JWK ou JWKS ; résolution, rotation, stockage ou cache de `kid` ;
+- clé privée ou signature de JWT ;
+- pipeline complet JWT ; session, identité, middleware, routes, login, refresh ou logout ;
+- réseau, KMS, environnement, legacy, schéma ou données ; matrice 48/102.
+
+## 49. Gate de merge V2.1t
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] export documentaire `verifyJwtRs256Signature(signingInput, signature, verificationKey)` défini ;
-- [ ] retour exact `Promise<boolean>` et sémantique `SIGNATURE_VALID` documentés ;
-- [ ] contraintes strictes de `signingInput`, `signature` et `verificationKey` documentées ;
-- [ ] appel imposé à `crypto.subtle.verify` avec `RSASSA-PKCS1-v1_5` documenté ;
-- [ ] modulus 2048/3072/4096, exposant 65537 et hash SHA-256 documentés ;
-- [ ] aucune résolution de `kid` ni import PEM/JWK/JWKS introduits ;
-- [ ] aucune bibliothèque ou implémentation JWT runtime introduite ;
-- [ ] aucun secret, aucune clé privée et aucun JWT introduit ;
+- [ ] export public limité à `verifyJwtRs256Signature` ;
+- [ ] validation stricte de `signingInput`, `signature` et `verificationKey` ;
+- [ ] modulus 2048/3072/4096 acceptés ; 1024 et exposants ≠ 65537 refusés ;
+- [ ] RSA-PSS, ECDSA, HMAC, SHA ≠ SHA-256 et clés privées refusés ;
+- [ ] appel unique à `crypto.subtle.verify` avec algorithme fixe ;
+- [ ] aucune exception ni promesse rejetée vers l’appelant ;
+- [ ] aucune mutation des entrées ;
+- [ ] aucune résolution de `kid` ni import PEM/JWK/JWKS ;
+- [ ] aucune dépendance ajoutée ;
+- [ ] clés de test éphémères uniquement, jamais versionnées ;
+- [ ] tests normatifs et cas limites verts ;
+- [ ] non-régression API/auth/domaine ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
