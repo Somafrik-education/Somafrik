@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1y — contrat de liaison JWT ↔ session
+**Lot courant :** V2.1z — cycle de vie de jti et prévention du rejeu
 
 ---
 
@@ -124,6 +124,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1w | Contrat du pipeline JWT d’accès pré-session (documentation) | Décision CTO documentée + CI verts |
 | V2.1x | Implémentation pure du pipeline JWT d’accès pré-session (`apps/api`) | `verifyJwtAccessTokenCryptographically` fail-closed + CI verts |
 | V2.1y | Contrat de liaison JWT ↔ session (documentation) | Décision CTO documentée + CI verts |
+| V2.1z | Contrat du cycle de vie de `jti` et prévention du rejeu (documentation) | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -2312,26 +2313,237 @@ Résultat validé limité à : `sub`, `sid`, `jti`, `principal`.
 
 ## 59. Gate de merge V2.1y
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR conservée Draft jusqu’à stabilisation ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] V2.1x correctement clôturé ;
+- [x] future API `validateJwtBoundAuthSession` contractualisée ;
+- [x] aucun export runtime ajouté ;
+- [x] sémantique `JWT_BOUND_ACTIVE_SESSION` documentée ;
+- [x] liaison exacte `sid` ↔ `sessionId` documentée ;
+- [x] liaison exacte `sub` ↔ `identity.userId` documentée ;
+- [x] cohérence `principal.userId` ↔ `identity.userId` documentée ;
+- [x] principal exclusivement issu de la session validée ;
+- [x] absence actuelle de représentation canonique de `jti` reconnue ;
+- [x] implémentation bloquée fail-closed tant que `jti` n’est pas contractualisé ;
+- [x] temps JWT et session explicitement distingués ;
+- [x] même instant exigé dans le futur orchestrateur supérieur ;
+- [x] résolution de session strictement postérieure à RS256 ;
+- [x] autorisation strictement postérieure à la liaison de session ;
+- [x] aucun runtime, test, repository, schéma ou donnée ajouté ;
+- [x] aucune dépendance, clé ou secret ajouté ;
+- [x] matrice 48/102 inchangée ;
+- [x] V2.1 global conservé non terminé ;
+- [x] aucun conflit avec `develop` ;
+- [x] décision CTO explicite avant Ready puis merge.
+
+### Clôture documentaire V2.1y
+
+- PR fusionnée : **#148** ;
+- head validé : `9536cde99d524a99ac00d4db593b7fd297169410` ;
+- merge commit : `d4dac09795f4c14a3f09b76fbf60e53ba2e50e46`.
+
+V2.1y avait explicitement **bloqué** la signature complète de `validateJwtBoundAuthSession` jusqu’au contrat canonique de `jti`. V2.1z lève ce blocage documentaire sans réécrire le reste du contrat V2.1y.
+
+## 60. Périmètre exact de V2.1z
+
+Lot **documentation uniquement**. Aucune implémentation runtime, aucun export, aucun test runtime, aucun repository, aucun schéma et aucun accès aux données.
+
+Objectif : définir la représentation canonique et le cycle de vie du `jti` nécessaires pour lever le blocage fail-closed consigné par V2.1y.
+
+### Décision d’architecture — `AuthSessionAccessToken`
+
+Enregistrement canonique **distinct** de `AuthSession` :
+
+```text
+AuthSessionAccessToken
+{
+  sessionId: string,
+  jti: string,
+  status: "active" | "revoked",
+  issuedAt: string,
+  expiresAt: string,
+  revokedAt: string | null
+}
+```
+
+Décisions obligatoires :
+
+- `jti` identifie un JWT d’accès unique ;
+- `AuthSession` reste le modèle canonique de session ;
+- `AuthSessionAccessToken` représente l’état serveur du JWT lié à la session ;
+- `sid` ne remplace jamais `jti` ;
+- le payload JWT n’est jamais la source de vérité de l’état serveur ;
+- le principal reste exclusivement issu de la session ;
+- le modèle ne contient jamais le JWT compact, sa signature ou son payload ;
+- aucune donnée legacy n’est utilisée.
+
+**Aucun** runtime de ce modèle dans V2.1z.
+
+### Invariants stricts
+
+#### `sessionId`
+
+- string non vide conforme à l’identifiant canonique de session ;
+- comparaison exacte avec `AuthSession.sessionId` ;
+- aucune coercition ou normalisation.
+
+#### `jti`
+
+- string non vide ;
+- sans espace de bord ni caractère de contrôle ;
+- longueur maximale explicite de **128** caractères ;
+- comparaison exacte et sensible à la casse ;
+- unicité globale dans le futur stockage canonique V2 ;
+- aucune génération déterministe depuis `userId`, `sid`, temps ou secret ;
+- génération cryptographiquement aléatoire par un composant futur ;
+- aucun `jti` fourni par le client hors JWT signé.
+
+#### `status`
+
+Valeurs exactes : `active` | `revoked`. Aucune autre valeur, casse, alias ou fallback.
+
+#### Temps
+
+`issuedAt`, `expiresAt` et `revokedAt` utilisent le format ISO UTC canonique déjà retenu pour les sessions.
+
+Exiger :
+
+- `issuedAt < expiresAt` ;
+- token actif ⇒ `revokedAt === null` ;
+- token révoqué ⇒ `revokedAt` canonique et `revokedAt >= issuedAt` ;
+- temporellement admissible seulement si `issuedAt <= evaluationTime < expiresAt` ;
+- aucune horloge implicite ; aucun `Date.now()` ; aucune valeur par défaut ; aucun arrondi silencieux.
+
+### Politique de multiplicité
+
+**Décision CTO :** une session ne peut avoir qu’**un seul** JWT d’accès actif à un instant donné.
+
+Lors de l’émission ou rotation future d’un nouveau JWT pour la même session :
+
+1. le précédent enregistrement actif doit être révoqué ;
+2. un nouveau `jti` unique doit être généré ;
+3. le nouvel enregistrement devient actif ;
+4. l’opération doit être **atomique** ;
+5. l’ancien JWT doit échouer dès que son `jti` n’est plus actif.
+
+Interdire : plusieurs `jti` actifs simultanément pour une même session ; réactivation d’un `jti` révoqué ; réutilisation d’un ancien `jti` ; remplacement silencieux sans révocation ; succès en cas de plusieurs résultats actifs.
+
+**Limite reconnue :** cette politique invalide les anciens tokens après rotation, mais un bearer token actif volé peut toujours être rejoué jusqu’à révocation ou expiration. Aucune prétention de protection absolue contre le vol du token.
+
+### Révocation
+
+Déclencheurs futurs : logout ; révocation de session ; désactivation de l’identité ; rotation du JWT d’accès ; incident de sécurité ou révocation administrative ; expiration (rend le token inactif même sans mutation implicite).
+
+Règles : révocation idempotente ; aucune réactivation ; révocation de session ⇒ aucun token associé ne peut être accepté ; token révoqué ⇒ session non authentifiée pour ce JWT ; expiration ne doit jamais prolonger ou renouveler la session ; aucune mutation implicite pendant une simple validation.
+
+### Port futur de résolution
+
+```text
+resolveAuthSessionAccessTokenByJti(jti) → Promise<AuthSessionAccessToken | null>
+```
+
+Le port devra être : injecté explicitement ; borné par `jti` exact ; consulté uniquement **après** validation cryptographique RS256 ; sans environnement implicite ; sans accès legacy ; fail-closed sur absence, doublon, valeur hostile, throw ou rejet ; sans exposer le résultat brut à l’appelant HTTP.
+
+**Aucun** repository créé par V2.1z.
+
+### Évolution de `validateJwtBoundAuthSession`
+
+V2.1y avait bloqué la signature complète jusqu’au contrat `jti`. La signature normative future est :
+
+```text
+validateJwtBoundAuthSession(
+  cryptographicallyAdmissibleToken,
+  authSession,
+  authSessionAccessToken,
+  sessionEvaluationTime
+) → Promise<{ sub, sid, jti, principal } | null>
+```
+
+Le succès `JWT_BOUND_ACTIVE_SESSION` exige exactement :
+
+1. résultat cryptographique V2.1x conforme ;
+2. `AuthSession` conforme ;
+3. session active au temps explicite ;
+4. `AuthSessionAccessToken` conforme ;
+5. token serveur `status === "active"` ;
+6. token serveur temporellement actif ;
+7. claim `sid === AuthSession.sessionId` ;
+8. claim `sub === AuthSession.identity.userId` ;
+9. `AuthSession.principal.userId === AuthSession.identity.userId` ;
+10. claim `jti === AuthSessionAccessToken.jti` ;
+11. `AuthSessionAccessToken.sessionId === AuthSession.sessionId`.
+
+Toute divergence → `null`, sans exception sortante. **Aucun export runtime** dans V2.1z.
+
+### Ordre normatif
+
+```text
+Bearer credential
+  → décodage JWT strict
+  → claims et temps JWT
+  → résolution kid
+  → vérification RS256
+  → TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE
+  → résolution du token serveur par jti
+  → résolution de la session par sid
+  → validation du token serveur
+  → validation de la session
+  → liaison exacte jti / sid / sub
+  → JWT_BOUND_ACTIVE_SESSION
+  → autorisation par permission
+  → mapping HTTP 200 / 401 / 403
+```
+
+Aucune consultation de session ou d’état `jti` avant RS256. Aucune autorisation avant liaison complète. Tout échec `jti`/session est une erreur d’**authentification**, pas d’autorisation.
+
+### Confidentialité
+
+Ne jamais exposer : JWT compact ; signature ou `signingInput` ; header ou payload complet ; `kid` ou `CryptoKey` ; valeur brute du repository ; session complète ; historique interne des `jti` ; raison détaillée de révocation ; clé ou secret.
+
+Résultat réussi limité exactement à `{ sub, sid, jti, principal }`.
+
+### Annonce V2.1aa
+
+Prochain lot imposé : **V2.1aa — implémentation du modèle et du validateur JWT ↔ session**.
+
+Ce lot devra implémenter et tester : `AuthSessionAccessToken` ; validation stricte et immutabilité ; statut actif/révoqué ; validation temporelle explicite ; liaison `jti`/`sid`/`sub`/session ; `validateJwtBoundAuthSession` ; cas nominaux et hostiles.
+
+Le repository persistant, l’émission/rotation et l’intégration HTTP restent dans des lots suivants clairement bornés.
+
+**Règle anti-enlisement :** après V2.1z, aucun nouveau contrat documentaire intermédiaire ne doit être créé avant l’implémentation V2.1aa, sauf défaut bloquant découvert par le diff CTO indépendant.
+
+### Hors périmètre de V2.1z
+
+- JavaScript runtime ; nouvel export ; test runtime ; repository ;
+- PostgreSQL, migration, schéma ou donnée ; génération réelle de `jti` ;
+- émission ou signature JWT ; rotation ou refresh runtime ; route ou middleware ; login ou logout runtime ;
+- cache, réseau ou KMS ; dépendance ou variable d’environnement ; `Date.now()` ;
+- clé, secret, PEM, JWK ou JWKS ; modification legacy ; modification de la matrice 48/102.
+
+## 61. Gate de merge V2.1z
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR conservée Draft jusqu’à stabilisation ;
 - [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] V2.1x correctement clôturé ;
-- [ ] future API `validateJwtBoundAuthSession` contractualisée ;
-- [ ] aucun export runtime ajouté ;
-- [ ] sémantique `JWT_BOUND_ACTIVE_SESSION` documentée ;
-- [ ] liaison exacte `sid` ↔ `sessionId` documentée ;
-- [ ] liaison exacte `sub` ↔ `identity.userId` documentée ;
-- [ ] cohérence `principal.userId` ↔ `identity.userId` documentée ;
-- [ ] principal exclusivement issu de la session validée ;
-- [ ] absence actuelle de représentation canonique de `jti` reconnue ;
-- [ ] implémentation bloquée fail-closed tant que `jti` n’est pas contractualisé ;
-- [ ] temps JWT et session explicitement distingués ;
-- [ ] même instant exigé dans le futur orchestrateur supérieur ;
-- [ ] résolution de session strictement postérieure à RS256 ;
-- [ ] autorisation strictement postérieure à la liaison de session ;
-- [ ] aucun runtime, test, repository, schéma ou donnée ajouté ;
+- [ ] V2.1y correctement clôturé ;
+- [ ] `AuthSessionAccessToken` contractualisé ;
+- [ ] `jti` unique et lié explicitement à `sessionId` ;
+- [ ] un seul `jti` actif par session contractualisé ;
+- [ ] rotation atomique et révocation de l’ancien `jti` documentées ;
+- [ ] réactivation et réutilisation d’un `jti` interdites ;
+- [ ] cycle `active`/`revoked` documenté ;
+- [ ] politique temporelle explicite documentée ;
+- [ ] port `resolveAuthSessionAccessTokenByJti` contractualisé ;
+- [ ] signature future `validateJwtBoundAuthSession` complétée ;
+- [ ] liaison exacte `jti`/`sid`/`sub`/session documentée ;
+- [ ] principal exclusivement issu de la session ;
+- [ ] ordre RS256 → état `jti` → session → autorisation respecté ;
+- [ ] limites réelles de la prévention du rejeu reconnues ;
+- [ ] aucun runtime, export, test, repository, schéma ou donnée ajouté ;
 - [ ] aucune dépendance, clé ou secret ajouté ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] V2.1 global conservé non terminé ;
+- [ ] V2.1aa imposé comme prochain lot d’implémentation ;
 - [ ] aucun conflit avec `develop` ;
 - [ ] décision CTO explicite avant Ready puis merge.
