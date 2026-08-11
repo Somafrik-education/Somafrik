@@ -1156,7 +1156,12 @@ decodeJwtCompactStrict(compactToken)
 Résultat attendu en cas de succès structurel :
 
 ```text
-{ protectedHeader, payload, signingInput, signature }
+{
+  protectedHeader,
+  payload,
+  signingInput, // string exacte "header.payload"
+  signature     // Uint8Array, byteLength >= 1
+}
 ```
 
 Toute anomalie → `null`. Aucune exception sortante.
@@ -1203,9 +1208,24 @@ Interdits dans tout segment :
 - tout caractère Unicode hors ASCII autorisé ;
 - toute forme non canonique ou normalisée.
 
+### Canonicalité Base64URL stricte
+
+L’alphabet autorisé ne suffit pas. Pour **chaque** segment (`header`, `payload`, `signature`), le futur décodeur doit appliquer cumulativement :
+
+1. `segment.length % 4 !== 1` — sinon `null` (longueur Base64URL invalide) ;
+2. décodage Base64URL **strict** (échec → `null`) ;
+3. réencodage Base64URL **sans padding** des octets obtenus ;
+4. égalité exacte `réencodé === segment` initial.
+
+Conséquences obligatoires :
+
+- tout encodage avec bits résiduels non nuls qu’un décodeur permissif pourrait accepter est refusé ;
+- tout padding implicite, variante d’alphabet ou forme non canonique est refusé ;
+- aucun segment n’est accepté uniquement parce que le décodage a produit des octets.
+
 ### Décodage UTF-8 strict
 
-Après décodage Base64URL des segments header et payload :
+Après décodage Base64URL **canonique** des segments header et payload :
 
 - interprétation UTF-8 **stricte** ;
 - aucun remplacement silencieux par `U+FFFD` ;
@@ -1215,15 +1235,23 @@ Après décodage Base64URL des segments header et payload :
 
 Les octets décodés de header et payload doivent produire des **objets JSON ordinaires** :
 
-- objets uniquement (pas de tableau racine, pas de primitive racine, pas de `null` racine) ;
+- objets uniquement à la racine (pas de tableau racine, pas de primitive racine, pas de `null` racine) ;
 - détection et refus des **clés JSON dupliquées** **avant** la création des objets JavaScript ;
+- le refus des clés dupliquées s’applique à **tous les niveaux d’imbrication** JSON (racine et objets imbriqués), pas seulement à la racine ;
 - prototypes admissibles futurs limités à `Object.prototype` ou `null` ;
 - refus des prototypes spéciaux, instances de classe, tableaux, Map/Set/Date/RegExp ;
-- refus des clés dangereuses et des formes hostiles observables au parse ;
 - aucune propriété héritée introduite par le parseur ;
 - aucune coercition ni valeur par défaut.
 
-La détection des clés dupliquées est une responsabilité **explicite** de ce futur décodeur (contrairement à V2.1p qui reçoit des objets déjà construits).
+#### Clés JSON dangereuses — liste exacte minimale
+
+Doivent être refusées à **tous les niveaux d’imbrication** JSON (racine et objets imbriqués), dès qu’elles apparaissent comme noms de clés :
+
+- `__proto__`
+- `prototype`
+- `constructor`
+
+Toute autre forme hostile observable au parse reste refusée fail-closed. La détection des clés dupliquées et des clés dangereuses est une responsabilité **explicite** de ce futur décodeur (contrairement à V2.1p qui reçoit des objets déjà construits).
 
 ### `signingInput`
 
@@ -1237,8 +1265,17 @@ Aucun réencodage, aucune normalisation, aucune reconstruction depuis les objets
 
 ### `signature`
 
-- décodée en **octets** (bytes) depuis le troisième segment Base64URL ;
-- non vide ;
+Type JavaScript exact obligatoire :
+
+```text
+signature: Uint8Array
+```
+
+Contraintes :
+
+- instance exacte de `Uint8Array` (pas d’alias texte, pas de `Array` de nombres, pas de `Buffer` exposé comme API publique, pas de représentation Base64URL conservée) ;
+- obtenue par décodage Base64URL **canonique** du troisième segment ;
+- `byteLength >= 1` (non vide) ;
 - **aucune** vérification cryptographique dans V2.1q ni dans le futur décodeur V2.1r de ce contrat ;
 - la signature est uniquement exposée pour un vérificateur cryptographique ultérieur hors périmètre.
 
@@ -1266,22 +1303,24 @@ Retourner `null` si **au moins une** condition suivante est vraie :
 1. `compactToken` n’est pas une string non vide de longueur ≤ 4096 ;
 2. la forme n’est pas exactement trois segments non vides séparés par deux points ;
 3. un segment contient un caractère hors alphabet Base64URL canonique ;
-4. le décodage Base64URL échoue ou produit une charge vide là où des octets sont requis ;
-5. le décodage UTF-8 du header ou du payload n’est pas strictement valide ;
-6. le JSON du header ou du payload n’est pas un objet ordinaire ;
-7. des clés JSON dupliquées sont détectées ;
-8. le JSON racine est un tableau, une primitive, `null` ou une forme spéciale ;
-9. `signingInput` ne peut pas être conservé exactement comme `segment1.segment2` ;
-10. la signature décodée est vide ou invalide ;
-11. une valeur a été convertie, normalisée, remplacée ou une exception interne n’a pas été capturée.
+4. un segment viole `segment.length % 4 !== 1`, échoue au décodage strict, ou diffère de son réencodage Base64URL sans padding ;
+5. le décodage Base64URL produit une charge vide là où des octets sont requis ;
+6. le décodage UTF-8 du header ou du payload n’est pas strictement valide ;
+7. le JSON du header ou du payload n’est pas un objet ordinaire à la racine ;
+8. des clés JSON dupliquées sont détectées à n’importe quel niveau d’imbrication ;
+9. une clé dangereuse `__proto__`, `prototype` ou `constructor` apparaît à n’importe quel niveau ;
+10. le JSON racine est un tableau, une primitive, `null` ou une forme spéciale ;
+11. `signingInput` ne peut pas être conservé exactement comme `segment1.segment2` ;
+12. la signature n’est pas un `Uint8Array` non vide ;
+13. une valeur a été convertie, normalisée, remplacée ou une exception interne n’a pas été capturée.
 
-Sinon retourner `{ protectedHeader, payload, signingInput, signature }`.
+Sinon retourner `{ protectedHeader, payload, signingInput, signature }` avec `signature instanceof Uint8Array`.
 
 ### Exemples normatifs
 
 | Cas | Résultat |
 |---|---|
-| JWT compact exact à trois segments Base64URL valides, objets JSON ordinaires | `{ protectedHeader, payload, signingInput, signature }` |
+| JWT compact exact à trois segments Base64URL canoniques, objets JSON ordinaires | `{ protectedHeader, payload, signingInput, signature: Uint8Array }` |
 | entrée non-string | `null` |
 | string vide | `null` |
 | longueur > 4096 | `null` |
@@ -1290,10 +1329,14 @@ Sinon retourner `{ protectedHeader, payload, signingInput, signature }`.
 | segment vide | `null` |
 | caractère `+` ou `/` dans un segment | `null` |
 | padding `=` dans un segment | `null` |
+| `segment.length % 4 === 1` | `null` |
+| décodage permissif possible mais réencodage ≠ segment | `null` |
 | espace ou Unicode dans un segment | `null` |
 | UTF-8 invalide après décodage | `null` |
 | JSON racine tableau ou primitive | `null` |
-| clés JSON dupliquées dans header ou payload | `null` |
+| clés JSON dupliquées à la racine | `null` |
+| clés JSON dupliquées dans un objet imbriqué | `null` |
+| clé `__proto__`, `prototype` ou `constructor` (racine ou imbriquée) | `null` |
 | signature Base64URL décodant vers zéro octet | `null` |
 
 Tout résultat non-`null` reste uniquement structurel : ni authentification ni autorisation.
@@ -1327,10 +1370,12 @@ Conservées sans élargissement :
 - [ ] export documentaire `decodeJwtCompactStrict(compactToken)` défini ;
 - [ ] entrée string ≤ 4096 et forme exacte à trois segments documentées ;
 - [ ] alphabet Base64URL canonique sans `+`, `/`, `=` documenté ;
+- [ ] canonicalité Base64URL (`length % 4 !== 1`, décodage strict, réencodage sans padding, égalité exacte) documentée ;
 - [ ] UTF-8 strict sans remplacement `U+FFFD` documenté ;
-- [ ] objets JSON ordinaires et refus des clés dupliquées documentés ;
+- [ ] objets JSON ordinaires et refus des clés dupliquées à tous les niveaux documentés ;
+- [ ] clés dangereuses exactes `__proto__`, `prototype`, `constructor` documentées à tous les niveaux ;
 - [ ] `signingInput` byte-for-byte `segment1.segment2` documenté ;
-- [ ] signature en octets non vide sans vérification cryptographique documentée ;
+- [ ] `signature: Uint8Array` non vide sans vérification cryptographique documentée ;
 - [ ] résultat structurel uniquement — jamais authentification ni autorisation ;
 - [ ] aucune bibliothèque ou implémentation JWT introduite ;
 - [ ] aucun secret, aucune clé et aucun JWT introduit ;
