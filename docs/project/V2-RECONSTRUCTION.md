@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1j — adaptateur HTTP pur des décisions d’autorisation
+**Lot courant :** V2.1k — extraction stricte du credential Bearer
 
 ---
 
@@ -109,6 +109,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1h | Contrat immuable de révocation de session V2 | Tests révocation idempotente + non-régression auth + CI verts |
 | V2.1i | Contrat pur de décision d’autorisation session + permission | Tests AUTHORIZED/UNAUTHENTICATED/FORBIDDEN + CI verts |
 | V2.1j | Adaptateur HTTP pur des décisions d’autorisation (`apps/api`) | Mapping 200/401/403 fail-closed + CI verts |
+| V2.1k | Extraction stricte du credential Bearer (`apps/api`) | Tests Bearer fail-closed + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -513,6 +514,44 @@ Hors périmètre :
 
 ## 29. Gate de merge V2.1j
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de `packages/auth` ;
+- [x] aucune modification de runtime legacy, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucun middleware/route/JWT introduit ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 30. Périmètre exact de V2.1k
+
+Inclus :
+
+- export `extractBearerCredential(authorizationHeader)` dans `apps/api` ;
+- entrée obligatoirement `string` ;
+- schéma `Bearer` insensible à la casse (HTTP) ;
+- exactement un espace ASCII entre schéma et credential ;
+- credential non vide, longueur ≤ 4096 ;
+- caractères RFC Bearer : lettres, chiffres, `-._~+/` et `=` terminaux éventuels ;
+- aucun espace, tabulation, contrôle Unicode, virgule ou en-tête multiple ;
+- aucune normalisation du credential ;
+- entrée invalide ou hostile → `null`, sans exception ;
+- aucun secret dans les logs ou messages d’erreur.
+
+Hors périmètre :
+
+- validation ou décodage JWT ;
+- signature, claims, expiration ou issuer ;
+- middleware Express et routes ;
+- token dans query string, cookie ou corps HTTP ;
+- création/recherche de session ;
+- login, refresh et logout ;
+- runtime et données legacy.
+
+## 31. Gate de merge V2.1k
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
@@ -521,5 +560,5 @@ Hors périmètre :
 - [ ] aucune modification de runtime legacy, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucun middleware/route/JWT introduit ;
+- [ ] aucun JWT decode/verify ni middleware/route introduit ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

@@ -18,4 +18,13 @@ Adaptateur pur `authorizationDecisionToHttpStatus(decision)` :
 - `FORBIDDEN` → 403 ;
 - décision inconnue ou invalide → 401 fail-closed.
 
-Aucun middleware, route, JWT ou corps HTTP n'est introduit dans ce lot.
+## Lot V2.1k
+
+Extraction stricte `extractBearerCredential(authorizationHeader)` :
+
+- schéma `Bearer` insensible à la casse ;
+- exactement un espace ASCII avant le credential ;
+- credential RFC Bearer exact, sans normalisation ;
+- entrée invalide ou hostile → `null`.
+
+Aucun middleware, route, JWT ou corps HTTP n'est introduit dans ces lots.
