@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1i — contrat pur de décision d’autorisation
+**Lot courant :** V2.1j — adaptateur HTTP pur des décisions d’autorisation
 
 ---
 
@@ -108,6 +108,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1g | Contrat immuable de session d’autorisation V2 | Tests session + liaison identité/principal + CI verts |
 | V2.1h | Contrat immuable de révocation de session V2 | Tests révocation idempotente + non-régression auth + CI verts |
 | V2.1i | Contrat pur de décision d’autorisation session + permission | Tests AUTHORIZED/UNAUTHENTICATED/FORBIDDEN + CI verts |
+| V2.1j | Adaptateur HTTP pur des décisions d’autorisation (`apps/api`) | Mapping 200/401/403 fail-closed + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -478,13 +479,47 @@ Hors périmètre :
 
 ## 27. Gate de merge V2.1i
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucun mapping HTTP 401/403/200 introduit ;
+- [x] aucun élargissement du catalogue ou de la matrice 48/102 ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 28. Périmètre exact de V2.1j
+
+Inclus :
+
+- adaptateur HTTP pur dans `apps/api` : `authorizationDecisionToHttpStatus(decision)` ;
+- mapping exact : `AUTHORIZED`→200, `UNAUTHENTICATED`→401, `FORBIDDEN`→403 ;
+- décision inconnue ou invalide → 401 fail-closed ;
+- réutilisation de `AUTHORIZATION_DECISION` depuis `@somafrik/auth-v2` sans recopier les chaînes ;
+- aucun throw vers l’appelant ; aucune mutation ; aucun statut implicite 200 ;
+- `packages/auth` reste indépendant du transport HTTP.
+
+Hors périmètre :
+
+- middleware Express et routes ;
+- corps JSON ou headers HTTP ;
+- extraction `Authorization: Bearer` ;
+- JWT, login, refresh et logout ;
+- recherche ou persistance des sessions ;
+- contrats utilisateurs ;
+- runtime et données legacy.
+
+## 29. Gate de merge V2.1j
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
-- [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
 - [ ] typecheck, lint, tests et sécurité existants verts ;
-- [ ] aucune modification de runtime, schéma ou donnée ;
+- [ ] aucune modification de `packages/auth` ;
+- [ ] aucune modification de runtime legacy, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucun mapping HTTP 401/403/200 introduit ;
-- [ ] aucun élargissement du catalogue ou de la matrice 48/102 ;
+- [ ] aucun middleware/route/JWT introduit ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
