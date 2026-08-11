@@ -4350,6 +4350,34 @@ class PostgresRepository {
     return this.one("SELECT * FROM schools WHERE school_code = $1", [String(code ?? "").trim().toUpperCase()]);
   }
 
+  /**
+   * Classes métier — délégation au repository PostgreSQL dédié.
+   */
+  getClassesRepository() {
+    if (!this._classesRepository) {
+      const { createClassesRepository } = require("./classesRepository");
+      this._classesRepository = createClassesRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+      });
+    }
+    return this._classesRepository;
+  }
+
+  listSchoolClasses(schoolCode) {
+    return this.getClassesRepository().listBySchoolCode(schoolCode);
+  }
+
+  createSchoolClass(body, schoolCode) {
+    return this.getClassesRepository().create(body, schoolCode);
+  }
+
+  updateSchoolClass(classCode, schoolCode, body) {
+    return this.getClassesRepository().update(classCode, schoolCode, body);
+  }
+
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,

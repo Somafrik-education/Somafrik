@@ -39,6 +39,10 @@ const REPOSITORY_METHODS = Object.freeze([
   "getExamsV2",
   "getDocumentsV2",
   "getAdvancedReportsV2",
+  // Classes métier (CRUD établissement)
+  "listSchoolClasses",
+  "createSchoolClass",
+  "updateSchoolClass",
 ]);
 
 /**

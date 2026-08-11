@@ -517,32 +517,36 @@ app.get("/api/school", requireAuth, asyncHandler(async (_req, res) => {
   res.json(school);
 }));
 
-app.get("/api/classes", requireAuth, asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const { classes, students, teachers, presences } = state;
-  const scope = deriveSchoolScope(req.principal, state);
-  const scopedClasses = tenantScopeService.filterRows(classes, req.principal, scope);
-  const scopedStudents = tenantScopeService.filterRows(students, req.principal, scope);
-  const result = scopedClasses.map((item) => {
-    const classStudents = scopedStudents.filter((student) => student.className === item.name);
-    const teacher = teachers.find((teacherItem) => teacherItem.id === item.teacherId);
-    const classPresences = presences.filter((presence) =>
-      classStudents.some((student) => student.id === presence.studentId)
-    );
-    const presentCount = classPresences.filter((presence) => presence.present || presence.status === "Retard").length;
-    const presenceRate = classPresences.length
-      ? Math.round((presentCount / classPresences.length) * 100)
-      : 0;
+app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listSchoolClasses(schoolCode);
+  res.json(rows);
+}));
 
-    return {
-      ...item,
-      teacher: teacher?.name ?? "Non assigne",
-      students: classStudents.length,
-      presenceRate,
-    };
-  });
+app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createSchoolClass(req.body ?? {}, schoolCode);
+  await auditService.record(req, "create_class", "class", created.classCode, created);
+  res.status(201).json(created);
+}));
 
-  res.json(result);
+app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/classes/:classCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateSchoolClass(req.params.classCode, schoolCode, req.body ?? {});
+  await auditService.record(req, "update_class", "class", updated.classCode, updated);
+  res.json(updated);
 }));
 
 app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {

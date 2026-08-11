@@ -687,10 +687,122 @@ class FallbackRepository {
         countries: seedData.countries.length,
         schools: seedData.platformSchools.length,
         students: seedData.students.length,
-        teachers: seedData.teachers.length,
-        activeSubscriptions: seedData.subscriptions.filter((item) => item.status === "Actif").length,
       },
     };
+  }
+
+  async listSchoolClasses(schoolCode) {
+    const code = String(schoolCode ?? "").trim().toUpperCase();
+    const rows = this._managedClasses ?? [];
+    return rows.filter((row) => String(row.schoolCode).toUpperCase() === code);
+  }
+
+  async createSchoolClass(body, schoolCode) {
+    const { generateClassCode, validateCreateClassInput, createHttpError } =
+      require("../lib/classesManagement");
+    if (!this._managedClasses) this._managedClasses = [];
+    if (!this._managedAcademicYears) {
+      this._managedAcademicYears = [
+        {
+          id: "AY-DEMO",
+          school_id: seedData.school.id,
+          school_code: seedData.school.code,
+          name: "2025-2026",
+        },
+      ];
+    }
+
+    const input = validateCreateClassInput(body, schoolCode);
+    let academicYear = this._managedAcademicYears.find(
+      (item) => item.name === input.academicYearName && item.school_code === input.schoolCode,
+    );
+    if (!academicYear && input.academicYearName === "2025-2026") {
+      academicYear = {
+        id: `AY-${input.schoolCode}-2025-2026`,
+        school_id: `school-${input.schoolCode}`,
+        school_code: input.schoolCode,
+        name: "2025-2026",
+      };
+      this._managedAcademicYears.push(academicYear);
+    }
+    if (!academicYear) {
+      throw createHttpError(400, "Année scolaire introuvable pour cet établissement.");
+    }
+
+    const duplicate = this._managedClasses.find(
+      (row) =>
+        row.schoolCode === input.schoolCode &&
+        row.academicYearName === academicYear.name &&
+        String(row.name).trim().toLowerCase() === input.name.toLowerCase(),
+    );
+    if (duplicate) {
+      throw createHttpError(
+        409,
+        `La classe « ${input.name} » existe déjà pour cette année scolaire dans l'établissement.`,
+      );
+    }
+
+    const classCode = generateClassCode(input.schoolCode);
+    const row = {
+      id: classCode,
+      publicId: classCode,
+      classCode,
+      name: input.name,
+      level: input.level ?? "",
+      section: input.section ?? "",
+      track: input.section ?? "",
+      status: input.status,
+      schoolCode: input.schoolCode,
+      academicYearId: academicYear.id,
+      academicYearName: academicYear.name,
+      schoolYear: academicYear.name,
+      students: 0,
+      teacher: "Non assigne",
+      presenceRate: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this._managedClasses.push(row);
+    return clone(row);
+  }
+
+  async updateSchoolClass(classCode, schoolCode, body) {
+    const { validateUpdateClassInput, requireClassCodeParam, createHttpError } =
+      require("../lib/classesManagement");
+    if (!this._managedClasses) this._managedClasses = [];
+    const code = requireClassCodeParam(classCode);
+    const patch = validateUpdateClassInput(body);
+    const current = this._managedClasses.find((row) => row.classCode === code);
+    if (!current) {
+      throw createHttpError(404, "Classe introuvable.");
+    }
+    if (String(current.schoolCode) !== String(schoolCode)) {
+      throw createHttpError(403, "Accès refusé à une classe d'un autre établissement.");
+    }
+    if (patch.name) {
+      const duplicate = this._managedClasses.find(
+        (row) =>
+          row.classCode !== code &&
+          row.schoolCode === current.schoolCode &&
+          row.academicYearName === current.academicYearName &&
+          String(row.name).trim().toLowerCase() === patch.name.toLowerCase(),
+      );
+      if (duplicate) {
+        throw createHttpError(
+          409,
+          `La classe « ${patch.name} » existe déjà pour cette année scolaire dans l'établissement.`,
+        );
+      }
+      current.name = patch.name;
+    }
+    if (Object.hasOwn(patch, "level")) current.level = patch.level ?? "";
+    if (Object.hasOwn(patch, "section")) {
+      current.section = patch.section ?? "";
+      current.track = current.section;
+    }
+    if (patch.status) current.status = patch.status;
+    current.updatedAt = new Date().toISOString();
+    return clone(current);
   }
 }
 
