@@ -131,7 +131,8 @@ function isValidIssuerString(value) {
     return false;
   }
 
-  if (value.charCodeAt(0) === 0x20 || value.charCodeAt(length - 1) === 0x20) {
+  // Refuse any Unicode whitespace at the borders (not only ASCII U+0020).
+  if (/^\p{White_Space}/u.test(value) || /\p{White_Space}$/u.test(value)) {
     return false;
   }
 

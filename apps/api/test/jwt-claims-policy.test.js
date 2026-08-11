@@ -287,6 +287,28 @@ test("validates expectedIssuer and iss with exact equality and bounds", () => {
     validPayload({ iss: `${EXPECTED_ISSUER} ` }),
     `${EXPECTED_ISSUER} `,
   );
+  for (const space of ["\u00A0", "\u2003", "\u3000"]) {
+    assertRejected(
+      validHeader(),
+      validPayload({ iss: `${space}${EXPECTED_ISSUER}` }),
+      `${space}${EXPECTED_ISSUER}`,
+    );
+    assertRejected(
+      validHeader(),
+      validPayload({ iss: `${EXPECTED_ISSUER}${space}` }),
+      `${EXPECTED_ISSUER}${space}`,
+    );
+    assertRejected(
+      validHeader(),
+      validPayload({ iss: EXPECTED_ISSUER }),
+      `${space}${EXPECTED_ISSUER}`,
+    );
+    assertRejected(
+      validHeader(),
+      validPayload({ iss: `${space}${EXPECTED_ISSUER}` }),
+      EXPECTED_ISSUER,
+    );
+  }
   assertRejected(
     validHeader(),
     validPayload({ iss: EXPECTED_ISSUER.toUpperCase() }),
