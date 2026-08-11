@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1z — cycle de vie de jti et prévention du rejeu
+**Lot courant :** V2.1aa — AuthSessionAccessToken et liaison JWT ↔ session
 
 ---
 
@@ -2588,22 +2588,141 @@ Correctif **documentation uniquement**, autorisé par la règle anti-enlisement 
 
 ### Gate du correctif
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR conservée Draft jusqu’à stabilisation ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] commentaire P2 de la PR #149 traité ;
+- [x] format `jti` aligné sur V2.1o ;
+- [x] regex `^[A-Za-z0-9._:-]{1,128}$` documentée ;
+- [x] claim JWT `jti` et `AuthSessionAccessToken.jti` alignés ;
+- [x] Unicode, espaces, slash et antislash interdits ;
+- [x] aucune coercition ou normalisation ;
+- [x] comparaison exacte et sensible à la casse ;
+- [x] invariants d’unicité, rotation et révocation inchangés ;
+- [x] aucun runtime, export ou test ajouté ;
+- [x] aucun repository, schéma ou donnée ajouté ;
+- [x] aucune dépendance, clé ou secret ajouté ;
+- [x] matrice 48/102 inchangée ;
+- [x] V2.1 global conservé non terminé ;
+- [x] V2.1aa maintenu comme prochain lot ;
+- [x] aucun conflit avec `develop` ;
+- [x] décision CTO explicite avant Ready puis merge.
+
+### Clôture documentaire du correctif V2.1z (format `jti`)
+
+- PR fusionnée : **#150** ;
+- head validé : `9a8c24fbc8052f6e4b9cd7f32bc408bca8d2d68b` ;
+- merge commit : `60b67415a343a34a879c7b8b63a19d82063ceea2` ;
+- déblocage : **V2.1aa** peut démarrer.
+
+## 63. Périmètre exact de V2.1aa
+
+Lot d’implémentation **pure** dans `@somafrik/auth-v2` des contrats V2.1y / V2.1z : modèle `AuthSessionAccessToken` et validateur `validateJwtBoundAuthSession`.
+
+### Exports publics exacts
+
+- fichier modèle : `packages/auth/src/session-access-token.js` ;
+  - `AUTH_SESSION_ACCESS_TOKEN_STATUS` ;
+  - `createAuthSessionAccessToken` ;
+  - `isAuthSessionAccessTokenActive` ;
+- fichier liaison : `packages/auth/src/jwt-session-binding.js` ;
+  - `validateJwtBoundAuthSession` ;
+- réexports depuis `packages/auth/src/index.js` ;
+- les exports existants restent inchangés ;
+- **aucune** fonction de révocation d’`AuthSessionAccessToken` dans ce lot.
+
+### Contrat d’exécution — `AuthSessionAccessToken`
+
+Forme exacte :
+
+```text
+{
+  sessionId: string,
+  jti: string,
+  status: "active" | "revoked",
+  issuedAt: string,
+  expiresAt: string,
+  revokedAt: string | null
+}
+```
+
+Règles runtime :
+
+- `jti` : `^[A-Za-z0-9._:-]{1,128}$` (même alphabet que le claim JWT V2.1o) ;
+- `sessionId` : mêmes règles canoniques que `AuthSession.sessionId` ;
+- timestamps ISO UTC canoniques (millisecondes `.xxxZ`) ;
+- actif ⇒ `revokedAt === null` ; révoqué ⇒ `revokedAt >= issuedAt` ;
+- temporellement actif seulement si `issuedAt <= evaluationTime < expiresAt` ;
+- objets gelés ; aucune horloge implicite ; aucun `Date.now()` ;
+- aucun `Proxy` accepté (transparent ou hostile) ; `types.isProxy` fail-closed ;
+- aucune génération de `jti` ; aucun repository ; aucune I/O.
+
+### Contrat d’exécution — `validateJwtBoundAuthSession`
+
+```text
+validateJwtBoundAuthSession(
+  cryptographicallyAdmissibleToken,
+  authSession,
+  authSessionAccessToken,
+  sessionEvaluationTime
+) → Promise<{ sub, sid, jti, principal } | null>
+```
+
+- non-`null` = **JWT_BOUND_ACTIVE_SESSION** uniquement ;
+- les **11** contrôles V2.1z sont exigés exactement ;
+- `cryptographicallyAdmissibleToken.sub` / `.sid` / `.jti` doivent chacun satisfaire `^[A-Za-z0-9._:-]{1,128}$` (fail-closed) ;
+- aucun `Proxy` accepté sur les entrées objet (transparent ou hostile) ;
+- `isAuthSessionActive(...) === true` et `isAuthSessionAccessTokenActive(...) === true` ;
+- principal **exclusivement** issu de la session validée ;
+- aucune exception ni promesse rejetée sortante ;
+- aucune répétition des politiques claims / temps JWT / kid / RS256 ;
+- aucun repository, HTTP, PEM, crypto, réseau, cache ou dépendance ajoutée.
+
+### Fichiers du lot
+
+1. `packages/auth/src/session-access-token.js`
+2. `packages/auth/src/jwt-session-binding.js`
+3. `packages/auth/src/index.js`
+4. `packages/auth/test/session-access-token.test.js`
+5. `packages/auth/test/jwt-session-binding.test.js`
+6. `docs/project/V2-RECONSTRUCTION.md`
+
+### Hors périmètre de V2.1aa
+
+- `revokeAuthSessionAccessToken` et toute API de révocation du token d’accès ;
+- `resolveAuthSessionAccessTokenByJti` (repository) ;
+- émission / signature / rotation JWT ; login / logout / refresh HTTP ;
+- middleware, routes, mapping HTTP ;
+- PostgreSQL, migration, schéma, donnée ;
+- PEM/JWK/JWKS, réseau, KMS, cache, secrets ;
+- dépendance ajoutée ; `Date.now()` ; variable d’environnement ;
+- modification de la matrice 48/102.
+
+### Annonce du lot suivant
+
+Prochain lot imposé : **V2.1ab — orchestration post-RS256 et ports de résolution injectés**.
+
+## 64. Gate de merge V2.1aa
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR conservée Draft jusqu’à stabilisation ;
-- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] commentaire P2 de la PR #149 traité ;
-- [ ] format `jti` aligné sur V2.1o ;
-- [ ] regex `^[A-Za-z0-9._:-]{1,128}$` documentée ;
-- [ ] claim JWT `jti` et `AuthSessionAccessToken.jti` alignés ;
-- [ ] Unicode, espaces, slash et antislash interdits ;
-- [ ] aucune coercition ou normalisation ;
-- [ ] comparaison exacte et sensible à la casse ;
-- [ ] invariants d’unicité, rotation et révocation inchangés ;
-- [ ] aucun runtime, export ou test ajouté ;
-- [ ] aucun repository, schéma ou donnée ajouté ;
+- [ ] diff limité aux six fichiers du lot ;
+- [ ] correctif #150 / format `jti` correctement clôturé ;
+- [ ] `AuthSessionAccessToken` implémenté (create / active ; **sans** revoke) ;
+- [ ] format `jti` runtime aligné sur `^[A-Za-z0-9._:-]{1,128}$` ;
+- [ ] `sub` / `sid` / `jti` du résultat cryptographique validés sur le même alphabet ;
+- [ ] aucun `Proxy` accepté (transparent ou hostile) sur modèle et liaison ;
+- [ ] `validateJwtBoundAuthSession` implémenté (signature Promise) ;
+- [ ] succès = `JWT_BOUND_ACTIVE_SESSION` uniquement ;
+- [ ] les 11 liaisons V2.1z couvertes par tests nominaux et hostiles ;
+- [ ] principal exclusivement issu de la session ;
+- [ ] aucune exception ni promesse rejetée sortante ;
+- [ ] aucune API de révocation d’`AuthSessionAccessToken` ;
+- [ ] fichiers nommés `session-access-token.js` / `session-access-token.test.js` ;
+- [ ] prochain lot annoncé exactement : V2.1ab — orchestration post-RS256 et ports de résolution injectés ;
+- [ ] aucun repository, schéma, donnée, HTTP ou crypto ajouté ;
 - [ ] aucune dépendance, clé ou secret ajouté ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] V2.1 global conservé non terminé ;
-- [ ] V2.1aa maintenu comme prochain lot ;
 - [ ] aucun conflit avec `develop` ;
 - [ ] décision CTO explicite avant Ready puis merge.
