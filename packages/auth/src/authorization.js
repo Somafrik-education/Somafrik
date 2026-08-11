@@ -9,16 +9,15 @@ export const AUTHORIZATION_DECISION = Object.freeze({
 
 export function evaluateSessionAuthorization(session, permission, now) {
   try {
-    if (!isAuthSessionActive(session, now)) {
+    const validated = createAuthSession(session);
+
+    if (!isAuthSessionActive(validated, now)) {
       return AUTHORIZATION_DECISION.UNAUTHENTICATED;
     }
 
-    const validated = createAuthSession(session);
-    if (can(validated.principal, permission)) {
-      return AUTHORIZATION_DECISION.AUTHORIZED;
-    }
-
-    return AUTHORIZATION_DECISION.FORBIDDEN;
+    return can(validated.principal, permission)
+      ? AUTHORIZATION_DECISION.AUTHORIZED
+      : AUTHORIZATION_DECISION.FORBIDDEN;
   } catch {
     return AUTHORIZATION_DECISION.UNAUTHENTICATED;
   }

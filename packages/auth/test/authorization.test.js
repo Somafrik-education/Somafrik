@@ -268,6 +268,87 @@ test("never throws on hostile inputs and never mutates the session", () => {
   assert.deepEqual(session.principal.permissions, snapshot.permissions);
 });
 
+test("stateful proxy cannot authorize by switching to a revoked or expired session", () => {
+  const activeWithoutPermission = sessionInput({
+    principal: principalInput({ permissions: ["schools:read"] }),
+  });
+  const revokedWithPermission = sessionInput({
+    principal: principalInput({ permissions: ["users:read"] }),
+    revokedAt: "2026-08-11T10:30:00.000Z",
+  });
+  const expiredWithPermission = sessionInput({
+    principal: principalInput({ permissions: ["users:read"] }),
+    issuedAt: "2026-08-11T08:00:00.000Z",
+    expiresAt: "2026-08-11T09:00:00.000Z",
+  });
+
+  function createSwitchingProxy(firstView, secondView) {
+    let sessionIdReads = 0;
+    return new Proxy(firstView, {
+      getOwnPropertyDescriptor(_target, prop) {
+        if (prop === "sessionId") {
+          sessionIdReads += 1;
+        }
+        const source = sessionIdReads <= 1 ? firstView : secondView;
+        return Reflect.getOwnPropertyDescriptor(source, prop);
+      },
+      ownKeys() {
+        const source = sessionIdReads <= 1 ? firstView : secondView;
+        return Reflect.ownKeys(source);
+      },
+      has(_target, prop) {
+        const source = sessionIdReads <= 1 ? firstView : secondView;
+        return Object.hasOwn(source, prop);
+      },
+      get(_target, prop, receiver) {
+        const source = sessionIdReads <= 1 ? firstView : secondView;
+        return Reflect.get(source, prop, receiver);
+      },
+      getPrototypeOf() {
+        return Object.prototype;
+      },
+    });
+  }
+
+  const revokedSwitch = createSwitchingProxy(
+    activeWithoutPermission,
+    revokedWithPermission,
+  );
+  assert.equal(
+    evaluateSessionAuthorization(revokedSwitch, "users:read", NOW_ACTIVE),
+    AUTHORIZATION_DECISION.FORBIDDEN,
+  );
+
+  const expiredSwitch = createSwitchingProxy(
+    activeWithoutPermission,
+    expiredWithPermission,
+  );
+  assert.equal(
+    evaluateSessionAuthorization(expiredSwitch, "users:read", NOW_ACTIVE),
+    AUTHORIZATION_DECISION.FORBIDDEN,
+  );
+
+  const revokedFirst = createSwitchingProxy(
+    revokedWithPermission,
+    activeWithoutPermission,
+  );
+  assert.equal(
+    evaluateSessionAuthorization(revokedFirst, "users:read", NOW_ACTIVE),
+    AUTHORIZATION_DECISION.UNAUTHENTICATED,
+  );
+
+  const expiredFirst = createSwitchingProxy(
+    expiredWithPermission,
+    sessionInput({
+      principal: principalInput({ permissions: ["users:read"] }),
+    }),
+  );
+  assert.equal(
+    evaluateSessionAuthorization(expiredFirst, "users:read", NOW_ACTIVE),
+    AUTHORIZATION_DECISION.UNAUTHENTICATED,
+  );
+});
+
 test("authorization decisions ignore prototype pollution", () => {
   const hadAuthorized = Object.hasOwn(Object.prototype, "AUTHORIZED");
   const previousAuthorized = Object.prototype.AUTHORIZED;
