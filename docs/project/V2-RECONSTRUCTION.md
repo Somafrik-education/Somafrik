@@ -1647,7 +1647,22 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat de vérifica
 
 Lot **documentation uniquement**. Aucune implémentation runtime, aucun PEM/JWK/JWKS, aucun réseau, aucun cache, aucune clé réelle ou privée, aucune cryptographie, aucun middleware et aucun changement de runtime, schéma ou donnée.
 
-Objectif : contractualiser la **résolution stricte de `kid`** vers une unique `CryptoKey` publique active compatible RS256, après décodage, validation des claims et vérification RS256. C’est la dernière brique JWT explicitement différée avant l’implémentation pure **V2.1v**.
+Objectif : contractualiser la **résolution stricte de `kid`** vers une unique `CryptoKey` publique active compatible RS256, **après le décodage strict et avant la vérification cryptographique RS256**. C’est la dernière brique JWT explicitement différée avant l’implémentation pure **V2.1v**.
+
+### Place dans le pipeline JWT d’accès
+
+Ordre obligatoire du futur pipeline :
+
+```text
+décodage strict
+  → validation structurelle / temporelle
+  → résolution de kid
+  → vérification RS256
+  → validation de session
+  → autorisation
+```
+
+La clé issue de `resolveJwtRs256VerificationKey` est **nécessaire avant** `verifyJwtRs256Signature`. Toute formulation plaçant la résolution de `kid` après la vérification cryptographique est incorrecte.
 
 ### Export documentaire exact
 
@@ -1759,7 +1774,8 @@ Conservées sans élargissement :
 
 - politiques et implémentations JWT V2.1l à V2.1t ;
 - format `kid` V2.1o ;
-- séparation décodage / claims / temporel / crypto / résolution `kid` ;
+- séparation décodage / claims / temporel / résolution `kid` / crypto ;
+- pipeline d’accès : décodage → validation structurelle/temporelle → résolution de `kid` → vérification RS256 → session → autorisation ;
 - aucun rôle, tenant, droit ou permission dans le JWT ;
 - matrice 48/102 inchangée ;
 - clés privées hors dépôt ;
