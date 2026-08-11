@@ -238,3 +238,52 @@ export function isAuthSessionActive(session, now) {
     return false;
   }
 }
+
+function cloneValidatedSession(session, revokedAt) {
+  return createAuthSession({
+    sessionId: session.sessionId,
+    identity: session.identity,
+    principal: session.principal,
+    issuedAt: session.issuedAt,
+    expiresAt: session.expiresAt,
+    revokedAt,
+  });
+}
+
+function revokeAuthSessionUnchecked(session, revokedAt) {
+  let validated;
+  try {
+    validated = createAuthSession(session);
+  } catch {
+    throw new AuthSessionValidationError("auth session is invalid");
+  }
+
+  const canonicalRevokedAt = requireCanonicalUtcTimestamp(revokedAt, "revokedAt");
+  if (canonicalRevokedAt < validated.issuedAt) {
+    throw new AuthSessionValidationError("revokedAt must be greater than or equal to issuedAt");
+  }
+
+  if (validated.revokedAt !== null) {
+    if (validated.revokedAt === canonicalRevokedAt) {
+      return cloneValidatedSession(validated, validated.revokedAt);
+    }
+    throw new AuthSessionValidationError("session already revoked");
+  }
+
+  return cloneValidatedSession(validated, canonicalRevokedAt);
+}
+
+export function revokeAuthSession(session, revokedAt) {
+  try {
+    return revokeAuthSessionUnchecked(session, revokedAt);
+  } catch (error) {
+    if (
+      error &&
+      error.name === "AuthSessionValidationError" &&
+      error.code === "AUTH_SESSION_INVALID"
+    ) {
+      throw error;
+    }
+    throw new AuthSessionValidationError("auth session is invalid");
+  }
+}

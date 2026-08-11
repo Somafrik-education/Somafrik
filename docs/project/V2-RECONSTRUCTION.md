@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1g — contrat de session d’autorisation V2
+**Lot courant :** V2.1h — contrat de révocation de session V2
 
 ---
 
@@ -106,6 +106,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1e | Matrice fermée rôle → permissions d’identité/administration | Matrice exhaustive 48/102 + tests auth + CI verts |
 | V2.1f | Contrat immuable d’identité utilisateur V2 | Tests identité + non-régression auth + CI verts |
 | V2.1g | Contrat immuable de session d’autorisation V2 | Tests session + liaison identité/principal + CI verts |
+| V2.1h | Contrat immuable de révocation de session V2 | Tests révocation idempotente + non-régression auth + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -407,6 +408,39 @@ La permission cataloguée `sessions:revoke` reste un jeton d’autorisation : el
 
 ## 23. Gate de merge V2.1g
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucune horloge implicite ni génération de token/JWT ;
+- [x] aucune persistence ni endpoint de session ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 24. Périmètre exact de V2.1h
+
+Inclus :
+
+- export public `revokeAuthSession(session, revokedAt)` ;
+- validation fail-closed de la session existante via le contrat V2.1g ;
+- `revokedAt` obligatoire, ISO 8601 UTC canonique, ≥ `issuedAt` ;
+- conservation de la première révocation : même timestamp → idempotent ; timestamp différent → rejet ;
+- retour d’une nouvelle session profondément immuable ; session source jamais modifiée ;
+- `isAuthSessionActive()` retourne `false` pour toute session révoquée.
+
+Hors périmètre :
+
+- endpoint HTTP de logout ;
+- JWT, access token ou refresh token ;
+- stockage PostgreSQL ou mémoire ;
+- contrôle de la permission `sessions:revoke` ;
+- révocation globale de toutes les sessions ;
+- runtime et données legacy.
+
+## 25. Gate de merge V2.1h
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
@@ -414,6 +448,6 @@ La permission cataloguée `sessions:revoke` reste un jeton d’autorisation : el
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucune horloge implicite ni génération de token/JWT ;
-- [ ] aucune persistence ni endpoint de session ;
+- [ ] aucune persistence ni endpoint de logout ;
+- [ ] aucune vérification automatique de la permission `sessions:revoke` ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
