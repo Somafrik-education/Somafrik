@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1k — extraction stricte du credential Bearer
+**Lot courant :** V2.1l — politique JWT d’accès RS256
 
 ---
 
@@ -110,6 +110,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1i | Contrat pur de décision d’autorisation session + permission | Tests AUTHORIZED/UNAUTHENTICATED/FORBIDDEN + CI verts |
 | V2.1j | Adaptateur HTTP pur des décisions d’autorisation (`apps/api`) | Mapping 200/401/403 fail-closed + CI verts |
 | V2.1k | Extraction stricte du credential Bearer (`apps/api`) | Tests Bearer fail-closed + CI verts |
+| V2.1l | Politique JWT d’accès RS256 (documentation) | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -552,13 +553,85 @@ Hors périmètre :
 
 ## 31. Gate de merge V2.1k
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de `packages/auth` ;
+- [x] aucune modification de runtime legacy, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucun JWT decode/verify ni middleware/route introduit ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 32. Périmètre exact de V2.1l
+
+Lot **documentation uniquement**. Aucune bibliothèque JWT, aucun code de signature/vérification, aucun middleware, aucune route et aucun changement legacy.
+
+### Politique JWT d’accès V2
+
+Algorithme et enveloppe :
+
+- algorithme obligatoire : **RS256** ;
+- header JWT obligatoire, exact : `alg`, `typ`, `kid` ;
+- `alg` doit valoir exactement `RS256` ; toute autre valeur ou absence est refusée ;
+- `typ` doit valoir exactement `"JWT"` ; toute autre valeur, alias legacy ou absence est refusée ;
+- `kid` :
+  - obligatoirement de type `string` et non vide ;
+  - comparaison exacte avec l’identifiant d’une clé publique **active** de vérification ;
+  - `kid` inconnu, retiré, ambigu, non-string, vide ou absent → refus fail-closed.
+
+Claims obligatoires :
+
+| Claim | Rôle |
+|---|---|
+| `iss` | émetteur V2 — valeur attendue fournie par configuration sécurisée ; comparaison exacte, sans normalisation ; absente, vide ou différente → refus |
+| `aud` | audience cible — valeur exacte `somafrik-api-v2` |
+| `sub` | identifiant d’identité utilisateur (`userId`) |
+| `sid` | identifiant de session d’autorisation V2 |
+| `iat` | instant d’émission |
+| `nbf` | début de validité |
+| `exp` | expiration |
+| `jti` | identifiant unique du jeton |
+
+Contraintes temporelles et d’audience :
+
+- audience obligatoire : `somafrik-api-v2` (comparaison exacte, sans normalisation) ;
+- durée de vie maximale : **15 minutes** (`exp - iat ≤ 900` secondes) ;
+- tolérance d’horloge : **30 secondes** pour `nbf` / `exp` ;
+- `nbf` ≤ instant d’évaluation (+ tolérance) ; `exp` > instant d’évaluation (− tolérance).
+
+Séparation des responsabilités :
+
+- le JWT **ne contient aucun** rôle, tenant, permission ou droit ;
+- l’autorisation est **reconstruite** depuis la session d’autorisation V2 liée par `sid` (identité active + principal validé) ;
+- `sub` doit correspondre au `userId` de l’identité/session résolue ; toute discordance est refusée ;
+- la révocation ou l’expiration de session invalide l’accès même si le JWT est encore dans sa fenêtre temporelle.
+
+Gestion des clés :
+
+- clés **privées hors dépôt** (secrets d’environnement / KMS) ;
+- rotation par `kid` ; une clé active unique par `kid` ; les jetons signés avec un `kid` retiré, inconnu ou ambigu sont refusés ;
+- aucune clé privée, secret ou JWT complet dans le dépôt, les logs, les URLs ou les réponses.
+
+### Hors périmètre de V2.1l
+
+- implémentation de signature, vérification ou décodage JWT ;
+- bibliothèque JWT ;
+- middleware Express et routes ;
+- login, refresh, logout ;
+- persistance ou recherche de session ;
+- runtime et données legacy.
+
+## 33. Gate de merge V2.1l
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
 - [ ] typecheck, lint, tests et sécurité existants verts ;
-- [ ] aucune modification de `packages/auth` ;
-- [ ] aucune modification de runtime legacy, schéma ou donnée ;
+- [ ] diff limité à la documentation de reconstruction ;
+- [ ] `typ === "JWT"`, `iss` exact depuis config sécurisée, et `kid` string non vide lié à une clé active sont explicitement définis ;
+- [ ] aucune bibliothèque, code JWT, middleware, route ou changement legacy ;
+- [ ] aucun secret ou clé privée introduit dans le dépôt ;
 - [ ] aucun conflit non résolu avec `develop` ;
-- [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucun JWT decode/verify ni middleware/route introduit ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
