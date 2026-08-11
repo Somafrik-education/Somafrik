@@ -778,8 +778,8 @@ Paramètres : `evaluationTime = 1_000_000` ; tolérance = **30** secondes.
 | futur dans tolérance | 1 000 030 | 1 000 030 | 1 000 900 | accepté temporellement |
 | iat trop futur | 1 000 031 | 1 000 031 | 1 000 900 | refus |
 | nbf trop futur | 1 000 000 | 1 000 031 | 1 000 900 | refus |
-| expiré à la borne | 999 000 | 999 000 | 999 970 | refus |
-| juste dans tolérance d’expiration | 999 001 | 999 001 | 999 971 | accepté temporellement |
+| expiré à la borne | 999 070 | 999 070 | 999 970 | refus |
+| juste dans tolérance d’expiration | 999 071 | 999 071 | 999 971 | accepté temporellement |
 | durée nulle | 1 000 000 | 1 000 000 | 1 000 000 | refus |
 | durée supérieure à 900 | 1 000 000 | 1 000 000 | 1 000 901 | refus |
 | nbf antérieur à iat | 1 000 000 | 999 999 | 1 000 900 | refus |
