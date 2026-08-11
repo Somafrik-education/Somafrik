@@ -2621,15 +2621,15 @@ Lot d’implémentation **pure** dans `@somafrik/auth-v2` des contrats V2.1y / V
 
 ### Exports publics exacts
 
-- fichier modèle : `packages/auth/src/access-token.js` ;
+- fichier modèle : `packages/auth/src/session-access-token.js` ;
   - `AUTH_SESSION_ACCESS_TOKEN_STATUS` ;
   - `createAuthSessionAccessToken` ;
   - `isAuthSessionAccessTokenActive` ;
-  - `revokeAuthSessionAccessToken` ;
 - fichier liaison : `packages/auth/src/jwt-session-binding.js` ;
   - `validateJwtBoundAuthSession` ;
 - réexports depuis `packages/auth/src/index.js` ;
-- les exports existants restent inchangés.
+- les exports existants restent inchangés ;
+- **aucune** fonction de révocation d’`AuthSessionAccessToken` dans ce lot.
 
 ### Contrat d’exécution — `AuthSessionAccessToken`
 
@@ -2669,6 +2669,7 @@ validateJwtBoundAuthSession(
 
 - non-`null` = **JWT_BOUND_ACTIVE_SESSION** uniquement ;
 - les **11** contrôles V2.1z sont exigés exactement ;
+- `cryptographicallyAdmissibleToken.sub` / `.sid` / `.jti` doivent chacun satisfaire `^[A-Za-z0-9._:-]{1,128}$` (fail-closed) ;
 - `isAuthSessionActive(...) === true` et `isAuthSessionAccessTokenActive(...) === true` ;
 - principal **exclusivement** issu de la session validée ;
 - aucune exception ni promesse rejetée sortante ;
@@ -2677,15 +2678,16 @@ validateJwtBoundAuthSession(
 
 ### Fichiers du lot
 
-1. `packages/auth/src/access-token.js`
+1. `packages/auth/src/session-access-token.js`
 2. `packages/auth/src/jwt-session-binding.js`
 3. `packages/auth/src/index.js`
-4. `packages/auth/test/access-token.test.js`
+4. `packages/auth/test/session-access-token.test.js`
 5. `packages/auth/test/jwt-session-binding.test.js`
 6. `docs/project/V2-RECONSTRUCTION.md`
 
 ### Hors périmètre de V2.1aa
 
+- `revokeAuthSessionAccessToken` et toute API de révocation du token d’accès ;
 - `resolveAuthSessionAccessTokenByJti` (repository) ;
 - émission / signature / rotation JWT ; login / logout / refresh HTTP ;
 - middleware, routes, mapping HTTP ;
@@ -2696,7 +2698,7 @@ validateJwtBoundAuthSession(
 
 ### Annonce du lot suivant
 
-Après V2.1aa : lots bornés pour le port de résolution par `jti`, l’émission/rotation atomique, puis l’orchestration HTTP post-`JWT_BOUND_ACTIVE_SESSION`. Aucun de ces sujets n’est inclus ici.
+Prochain lot imposé : **V2.1ab — orchestration post-RS256 et ports de résolution injectés**.
 
 ## 64. Gate de merge V2.1aa
 
@@ -2704,13 +2706,17 @@ Après V2.1aa : lots bornés pour le port de résolution par `jti`, l’émissio
 - [ ] PR conservée Draft jusqu’à stabilisation ;
 - [ ] diff limité aux six fichiers du lot ;
 - [ ] correctif #150 / format `jti` correctement clôturé ;
-- [ ] `AuthSessionAccessToken` implémenté (create / active / revoke) ;
+- [ ] `AuthSessionAccessToken` implémenté (create / active ; **sans** revoke) ;
 - [ ] format `jti` runtime aligné sur `^[A-Za-z0-9._:-]{1,128}$` ;
+- [ ] `sub` / `sid` / `jti` du résultat cryptographique validés sur le même alphabet ;
 - [ ] `validateJwtBoundAuthSession` implémenté (signature Promise) ;
 - [ ] succès = `JWT_BOUND_ACTIVE_SESSION` uniquement ;
 - [ ] les 11 liaisons V2.1z couvertes par tests nominaux et hostiles ;
 - [ ] principal exclusivement issu de la session ;
 - [ ] aucune exception ni promesse rejetée sortante ;
+- [ ] aucune API de révocation d’`AuthSessionAccessToken` ;
+- [ ] fichiers nommés `session-access-token.js` / `session-access-token.test.js` ;
+- [ ] prochain lot annoncé exactement : V2.1ab — orchestration post-RS256 et ports de résolution injectés ;
 - [ ] aucun repository, schéma, donnée, HTTP ou crypto ajouté ;
 - [ ] aucune dépendance, clé ou secret ajouté ;
 - [ ] matrice 48/102 inchangée ;

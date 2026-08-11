@@ -7,7 +7,6 @@ import {
   createAuthSession,
   createAuthSessionAccessToken,
   revokeAuthSession,
-  revokeAuthSessionAccessToken,
   validateJwtBoundAuthSession,
 } from "../src/index.js";
 
@@ -129,6 +128,30 @@ test("rejects hostile cryptographicallyAdmissibleToken shapes", async () => {
   await assertBindingNull(withAccessor, session, accessToken);
 });
 
+test("rejects cryptographicallyAdmissibleToken ids outside ^[A-Za-z0-9._:-]{1,128}$", async () => {
+  const session = createAuthSession(sessionInput());
+  const accessToken = createAuthSessionAccessToken(accessTokenInput());
+
+  const hostileIds = [
+    "",
+    "a".repeat(129),
+    "bad/id",
+    "bad\\id",
+    "bad id",
+    "id\u00e9",
+    "id\n",
+    "id\u0000",
+    " id",
+    "id ",
+  ];
+
+  for (const hostile of hostileIds) {
+    await assertBindingNull(cryptoToken({ sub: hostile }), session, accessToken);
+    await assertBindingNull(cryptoToken({ sid: hostile }), session, accessToken);
+    await assertBindingNull(cryptoToken({ jti: hostile }), session, accessToken);
+  }
+});
+
 test("rejects inactive, revoked, or invalid sessions", async () => {
   const accessToken = createAuthSessionAccessToken(accessTokenInput());
   const crypto = cryptoToken();
@@ -150,12 +173,6 @@ test("rejects inactive, revoked, or invalid AuthSessionAccessToken", async () =>
   await assertBindingNull(crypto, session, { ...accessTokenInput(), jti: "bad/jti" });
   await assertBindingNull(crypto, session, accessTokenInput(), "2026-08-11T09:00:00.000Z");
   await assertBindingNull(crypto, session, accessTokenInput(), EXPIRES_AT);
-
-  const revoked = revokeAuthSessionAccessToken(
-    createAuthSessionAccessToken(accessTokenInput()),
-    REVOKED_AT,
-  );
-  await assertBindingNull(crypto, session, revoked);
 
   await assertBindingNull(
     crypto,

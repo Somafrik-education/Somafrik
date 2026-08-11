@@ -5,7 +5,6 @@ import {
   AUTH_SESSION_ACCESS_TOKEN_STATUS,
   createAuthSessionAccessToken,
   isAuthSessionAccessTokenActive,
-  revokeAuthSessionAccessToken,
 } from "../src/index.js";
 
 const ISSUED_AT = "2026-08-11T10:00:00.000Z";
@@ -150,56 +149,7 @@ test("rejects non-canonical evaluation times without throwing", () => {
   assert.equal(isAuthSessionAccessTokenActive(token, null), false);
 });
 
-test("revokes an active token into a new frozen revoked token", () => {
-  const source = createAuthSessionAccessToken(accessTokenInput());
-  assert.equal(isAuthSessionAccessTokenActive(source, NOW_ACTIVE), true);
-
-  const revoked = revokeAuthSessionAccessToken(source, REVOKED_AT);
-
-  assert.notEqual(revoked, source);
-  assert.equal(source.status, "active");
-  assert.equal(source.revokedAt, null);
-  assert.equal(revoked.status, "revoked");
-  assert.equal(revoked.revokedAt, REVOKED_AT);
-  assert.equal(revoked.jti, source.jti);
-  assert.equal(Object.isFrozen(revoked), true);
-  assert.equal(isAuthSessionAccessTokenActive(revoked, NOW_ACTIVE), false);
-});
-
-test("preserves idempotent revocation for the same timestamp", () => {
-  const source = createAuthSessionAccessToken(accessTokenInput());
-  const first = revokeAuthSessionAccessToken(source, REVOKED_AT);
-  const second = revokeAuthSessionAccessToken(first, REVOKED_AT);
-
-  assert.deepEqual(second, first);
-  assert.notEqual(second, first);
-});
-
-test("rejects a second revocation with a different timestamp", () => {
-  const source = createAuthSessionAccessToken(accessTokenInput());
-  const first = revokeAuthSessionAccessToken(source, REVOKED_AT);
-
-  assert.throws(
-    () => revokeAuthSessionAccessToken(first, "2026-08-11T10:45:00.000Z"),
-    (error) =>
-      error &&
-      error.name === "AuthSessionAccessTokenValidationError" &&
-      error.code === "AUTH_SESSION_ACCESS_TOKEN_INVALID",
-  );
-});
-
-test("rejects revoke with revokedAt before issuedAt", () => {
-  const source = createAuthSessionAccessToken(accessTokenInput());
-  assert.throws(
-    () => revokeAuthSessionAccessToken(source, "2026-08-11T09:00:00.000Z"),
-    (error) =>
-      error &&
-      error.name === "AuthSessionAccessTokenValidationError" &&
-      error.code === "AUTH_SESSION_ACCESS_TOKEN_INVALID",
-  );
-});
-
-test("creates a revoked token when status and revokedAt are coherent", () => {
+test("treats a structurally revoked token as inactive without a revoke API", () => {
   const token = createAuthSessionAccessToken(
     accessTokenInput({
       status: AUTH_SESSION_ACCESS_TOKEN_STATUS.REVOKED,
@@ -207,5 +157,12 @@ test("creates a revoked token when status and revokedAt are coherent", () => {
     }),
   );
   assert.equal(token.status, "revoked");
+  assert.equal(token.revokedAt, REVOKED_AT);
   assert.equal(isAuthSessionAccessTokenActive(token, NOW_ACTIVE), false);
+});
+
+test("does not export revokeAuthSessionAccessToken", async () => {
+  const indexModule = await import("../src/index.js");
+  assert.equal(Object.hasOwn(indexModule, "revokeAuthSessionAccessToken"), false);
+  assert.equal(typeof indexModule.revokeAuthSessionAccessToken, "undefined");
 });

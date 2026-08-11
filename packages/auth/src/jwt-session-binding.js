@@ -2,10 +2,11 @@ import {
   AUTH_SESSION_ACCESS_TOKEN_STATUS,
   createAuthSessionAccessToken,
   isAuthSessionAccessTokenActive,
-} from "./access-token.js";
+} from "./session-access-token.js";
 import { createAuthSession, isAuthSessionActive } from "./session.js";
 
 const CRYPTO_TOKEN_KEYS = Object.freeze(["sub", "sid", "jti"]);
+const TOKEN_ID_MAX_LENGTH = 128;
 
 function isDataDescriptor(descriptor) {
   return (
@@ -61,7 +62,36 @@ function hasExactOwnDataKeys(value, expectedKeys) {
 }
 
 /**
- * Exact TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE shape from V2.1x.
+ * Exact alphabet shared with JWT claim ids and AuthSessionAccessToken.jti:
+ * ^[A-Za-z0-9._:-]{1,128}$
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isStrictAsciiTokenId(value) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const length = value.length;
+  if (length < 1 || length > TOKEN_ID_MAX_LENGTH) {
+    return false;
+  }
+  for (let index = 0; index < length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    const isUpper = codeUnit >= 65 && codeUnit <= 90;
+    const isLower = codeUnit >= 97 && codeUnit <= 122;
+    const isDigit = codeUnit >= 48 && codeUnit <= 57;
+    const isAllowedPunctuation =
+      codeUnit === 46 || codeUnit === 95 || codeUnit === 58 || codeUnit === 45;
+    if (!isUpper && !isLower && !isDigit && !isAllowedPunctuation) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Exact TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE shape from V2.1x,
+ * with fail-closed id alphabet for sub / sid / jti.
  * Does not re-run claims / temporal / kid / RS256 policies.
  * @param {unknown} value
  * @returns {value is { sub: string, sid: string, jti: string }}
@@ -74,7 +104,7 @@ function isCryptographicallyAdmissibleToken(value) {
     return false;
   }
   const { sub, sid, jti } = /** @type {{ sub: unknown, sid: unknown, jti: unknown }} */ (value);
-  return typeof sub === "string" && typeof sid === "string" && typeof jti === "string";
+  return isStrictAsciiTokenId(sub) && isStrictAsciiTokenId(sid) && isStrictAsciiTokenId(jti);
 }
 
 /**
