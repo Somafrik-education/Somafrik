@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1m — durcissement de la politique temporelle JWT d’accès
+**Lot courant :** V2.1n — implémentation pure du contrôle temporel JWT
 
 ---
 
@@ -112,6 +112,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1k | Extraction stricte du credential Bearer (`apps/api`) | Tests Bearer fail-closed + CI verts |
 | V2.1l | Politique JWT d’accès RS256 (documentation) | Décision CTO documentée + CI verts |
 | V2.1m | Durcissement de la politique temporelle JWT d’accès | Contrat temporel déterministe + CI verts |
+| V2.1n | Implémentation pure du contrôle temporel JWT (`apps/api`) | `isJwtTemporalPolicySatisfied` fail-closed + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -799,18 +800,67 @@ Pour toute ligne « accepté temporellement », les autres validations JWT, sess
 
 ## 35. Gate de merge V2.1m
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] `iat`, `nbf`, `exp` et `evaluationTime` définis comme entiers Unix sûrs ;
+- [x] ordre exact `iat <= nbf < exp` documenté ;
+- [x] durée exacte `0 < exp - iat <= 900` documentée ;
+- [x] `iat <= evaluationTime + 30` documenté ;
+- [x] bornes `nbf` et `exp` documentées sans ambiguïté ;
+- [x] expiration exclusive explicitement documentée ;
+- [x] tableau des cas limites présent et cohérent ;
+- [x] aucune bibliothèque ou implémentation JWT introduite ;
+- [x] aucun secret, aucune clé et aucun JWT introduit ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 36. Périmètre exact de V2.1n
+
+Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrôle temporel documenté par V2.1m.
+
+### Export public exact
+
+- fichier : `apps/api/src/jwt-temporal-policy.js` ;
+- export unique ajouté : `isJwtTemporalPolicySatisfied(iat, nbf, exp, evaluationTime)` ;
+- réexport depuis `apps/api/src/index.js` ;
+- les exports existants `authorizationDecisionToHttpStatus` et `extractBearerCredential` restent inchangés.
+
+### Contrat d’exécution
+
+- les quatre valeurs sont des primitives injectées **explicitement** ; aucune horloge système (`Date.now`, `Date`) ;
+- validation stricte : `number` entier fini sûr (`Number.isSafeInteger`), ≥ 0 ; aucune coercition, normalisation, troncature, défaut ou arrondi ;
+- retourne uniquement `true` ou `false` ; **aucun throw** vers l’appelant ;
+- `true` signifie uniquement **TEMPORALLY_VALID** — jamais JWT authentique, signature valide, session valide, utilisateur authentifié, permission accordée ou accès autorisé ;
+- règles cumulatives : `iat <= nbf`, `nbf < exp`, `0 < exp - iat <= 900`, bornes de tolérance 30 s ;
+- expiration exclusive : `exp > evaluationTime - 30` ;
+- arithmétique sans débordement silencieux près de `Number.MAX_SAFE_INTEGER` :
+  - borne future : si `candidate <= evaluationTime` alors admissible ; sinon `candidate - evaluationTime <= 30` ;
+  - expiration : si `evaluationTime < 30` alors toute `exp >= 0` valide pour cette borne ; sinon `exp > evaluationTime - 30`.
+
+### Hors périmètre de V2.1n
+
+- bibliothèque JWT ; décodage Base64URL/JSON ; signature ou vérification cryptographique ;
+- clés, secrets, résolution de `kid` ; validation de `iss` / `aud` / `sub` / `sid` / `jti` ;
+- middleware, routes, login/refresh/logout, persistance de session ;
+- modification de la matrice 48/102 ; dépendance legacy.
+
+## 37. Gate de merge V2.1n
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] `iat`, `nbf`, `exp` et `evaluationTime` définis comme entiers Unix sûrs ;
-- [ ] ordre exact `iat <= nbf < exp` documenté ;
-- [ ] durée exacte `0 < exp - iat <= 900` documentée ;
-- [ ] `iat <= evaluationTime + 30` documenté ;
-- [ ] bornes `nbf` et `exp` documentées sans ambiguïté ;
-- [ ] expiration exclusive explicitement documentée ;
-- [ ] tableau des cas limites présent et cohérent ;
-- [ ] aucune bibliothèque ou implémentation JWT introduite ;
-- [ ] aucun secret, aucune clé et aucun JWT introduit ;
+- [ ] export public limité à `isJwtTemporalPolicySatisfied` ;
+- [ ] validation stricte des quatre entiers Unix sûrs ;
+- [ ] ordre `iat <= nbf < exp` appliqué ;
+- [ ] durée `0 < exp - iat <= 900` appliquée ;
+- [ ] tolérance de 30 secondes appliquée sans débordement ;
+- [ ] expiration exclusive appliquée ;
+- [ ] aucune horloge implicite ;
+- [ ] aucun décodage ou contrôle cryptographique JWT ;
+- [ ] aucune dépendance ajoutée ;
+- [ ] tests normatifs et cas limites verts ;
+- [ ] non-régression API/auth/domaine ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
