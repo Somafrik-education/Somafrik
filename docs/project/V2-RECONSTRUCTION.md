@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1r — implémentation pure du décodeur JWT compact strict
+**Lot courant :** V2.1s — contrat de vérification RS256 pure
 
 ---
 
@@ -117,6 +117,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1p | Implémentation pure du contrôle structurel des claims JWT (`apps/api`) | `isJwtClaimsPolicySatisfied` fail-closed + CI verts |
 | V2.1q | Contrat de décodage JWT compact sécurisé (documentation) | Décision CTO documentée + CI verts |
 | V2.1r | Implémentation pure du décodeur JWT compact strict (`apps/api`) | `decodeJwtCompactStrict` fail-closed + CI verts |
+| V2.1s | Contrat de vérification RS256 pure (documentation) | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -1423,19 +1424,169 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat de décodage
 
 ## 45. Gate de merge V2.1r
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] export public limité à `decodeJwtCompactStrict` ;
+- [x] entrée string 1..4096 et forme exacte à trois segments appliquées ;
+- [x] canonicalité Base64URL appliquée sur chaque segment ;
+- [x] UTF-8 fatal sans remplacement `U+FFFD` ;
+- [x] doublons et clés dangereuses refusés à tous les niveaux ;
+- [x] `signingInput` byte-for-byte et `signature: Uint8Array` non vide ;
+- [x] aucun throw vers l’appelant ;
+- [x] aucune vérification cryptographique ni appel à `isJwtClaimsPolicySatisfied` ;
+- [x] aucune dépendance ajoutée ;
+- [x] tests normatifs et cas limites verts ;
+- [x] non-régression API/auth/domaine ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 46. Périmètre exact de V2.1s
+
+Lot **documentation uniquement**. Aucune bibliothèque JWT, aucune vérification runtime, aucun import PEM/JWK/JWKS, aucune clé, aucun secret, aucun middleware, aucune route et aucun changement de runtime, schéma ou donnée.
+
+Objectif : contractualiser la **vérification cryptographique RS256 pure** d’une signature JWT, avec clé publique **explicitement injectée**. La résolution réelle de `kid` reste séparée (lot ultérieur).
+
+### Export documentaire exact
+
+Future fonction pure asynchrone :
+
+```text
+verifyJwtRs256Signature(signingInput, signature, verificationKey)
+```
+
+Retour exact :
+
+```text
+Promise<boolean>
+```
+
+- `true` signifie uniquement **SIGNATURE_VALID** ;
+- toute anomalie, clé incompatible ou erreur cryptographique → `false` ;
+- **aucune exception sortante** vers l’appelant.
+
+`true` ne signifie jamais : JWT authentique, claims valides, session valide, identité active, permission accordée ou accès autorisé.
+
+### Entrée — `signingInput`
+
+- type exact `string` ;
+- non vide ;
+- longueur maximale **4094** caractères ;
+- exactement **deux** segments Base64URL canoniques séparés par **un** point : `segment1.segment2` ;
+- fourni explicitement ;
+- aucun trim, encodage, normalisation ou remplacement ;
+- conversion en octets uniquement via `new TextEncoder().encode(signingInput)` pour `SubtleCrypto.verify`.
+
+Doivent notamment être refusés : `null`, `undefined`, non-string, string vide, longueur > 4094, moins/plus de deux segments, segments vides, alphabet non Base64URL, formes non canoniques, objets hostiles.
+
+### Entrée — `signature`
+
+- instance exacte de `Uint8Array` ;
+- non vide (`byteLength >= 1`) ;
+- aucune mutation de l’entrée.
+
+Doivent être refusés : `Buffer` (même s’il étend `Uint8Array` — l’API publique exige `Uint8Array` exacte via `constructor === Uint8Array` / non-`Buffer`), texte, Base64URL, tableau de nombres, `ArrayBuffer` nu, `DataView`, valeurs absentes ou hostiles.
+
+### Entrée — `verificationKey`
+
+`CryptoKey` publique **explicitement injectée**. Contraintes cumulatives :
+
+- `type === "public"` ;
+- usage `verify` obligatoire ;
+- algorithme exact `RSASSA-PKCS1-v1_5` ;
+- hash exact `SHA-256` ;
+- exposant public exact **65537** ;
+- modulus autorisé : **2048**, **3072** ou **4096** bits uniquement.
+
+Doivent être refusés : clé privée ; HMAC ; RSA-PSS ; ECDSA ; clé ambiguë ; modulus 1024 ou autre taille ; hash ≠ SHA-256 ; usage sans `verify` ; clé absente, non-`CryptoKey` ou hostile.
+
+Aucune clé n’est importée, résolue ou stockée dans V2.1s. Aucune résolution de `kid`.
+
+### Vérification imposée
+
+Le futur vérificateur doit appeler exactement :
+
+```text
+crypto.subtle.verify(
+  { name: "RSASSA-PKCS1-v1_5" },
+  verificationKey,
+  signature,
+  new TextEncoder().encode(signingInput)
+)
+```
+
+Aucun algorithme ne doit être choisi depuis une entrée utilisateur, depuis le header JWT, depuis `kid` ou depuis une configuration implicite. L’algorithme est **fixé** dans le contrat.
+
+Toute rejet, exception ou promesse rejetée de `subtle.verify` → `false` (capturée, jamais propagée).
+
+### Algorithme décisionnel documentaire
+
+Retourner `false` (via `Promise`) si **au moins une** condition suivante est vraie :
+
+1. `signingInput` n’est pas une string non vide ≤ 4094 avec exactement deux segments Base64URL canoniques ;
+2. `signature` n’est pas un `Uint8Array` exact non vide ;
+3. `verificationKey` n’est pas une `CryptoKey` publique compatible (type, usages, RSASSA-PKCS1-v1_5, SHA-256, exposant 65537, modulus 2048/3072/4096) ;
+4. `crypto.subtle.verify(...)` retourne `false` ou échoue ;
+5. une entrée a été mutée, convertie, normalisée ou une exception n’a pas été capturée.
+
+Sinon retourner `true` (**SIGNATURE_VALID** uniquement).
+
+### Tests normatifs futurs (lot d’implémentation)
+
+Couvrir au minimum :
+
+- signature RS256 valide → `true` ;
+- signature altérée → `false` ;
+- `signingInput` altéré → `false` ;
+- mauvaise clé publique → `false` ;
+- clé privée ou sans usage `verify` → `false` ;
+- clés RSA-PSS, ECDSA et HMAC → `false` ;
+- SHA autre que SHA-256 → `false` ;
+- modulus 1024 refusé → `false` ;
+- signatures vides, `Buffer`, string ou tableau refusés → `false` ;
+- valeurs absentes, primitives incorrectes et objets hostiles → `false` ;
+- aucune exception sortante ;
+- aucune mutation des entrées ;
+- clés générées **uniquement pendant les tests**, jamais versionnées dans le dépôt.
+
+### Non-régression
+
+Conservées sans élargissement :
+
+- politiques et implémentations JWT V2.1l à V2.1r ;
+- RS256 comme algorithme d’accès obligatoire ;
+- séparation décodage (V2.1q/r) / claims (V2.1o/p) / temporel (V2.1m/n) / crypto (V2.1s) / résolution `kid` (ultérieure) ;
+- aucun rôle, tenant, droit ou permission dans le JWT ;
+- matrice 48/102 inchangée ;
+- clés privées hors dépôt ;
+- aucun JWT complet dans les logs, URLs ou réponses.
+
+### Hors périmètre de V2.1s
+
+- import PEM / JWK / JWKS ;
+- résolution, rotation ou stockage réel de `kid` ;
+- clé privée, signature de jetons ou secret ;
+- décodage JWT ; appel à `decodeJwtCompactStrict` ou `isJwtClaimsPolicySatisfied` ;
+- pipeline complet d’authentification ;
+- session, middleware, routes, login, refresh ou logout ;
+- environnement, KMS, réseau, legacy, schéma ou données ;
+- matrice 48/102 ;
+- implémentation runtime (réservée à un lot ultérieur après GO CTO sur ce contrat).
+
+## 47. Gate de merge V2.1s
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] export public limité à `decodeJwtCompactStrict` ;
-- [ ] entrée string 1..4096 et forme exacte à trois segments appliquées ;
-- [ ] canonicalité Base64URL appliquée sur chaque segment ;
-- [ ] UTF-8 fatal sans remplacement `U+FFFD` ;
-- [ ] doublons et clés dangereuses refusés à tous les niveaux ;
-- [ ] `signingInput` byte-for-byte et `signature: Uint8Array` non vide ;
-- [ ] aucun throw vers l’appelant ;
-- [ ] aucune vérification cryptographique ni appel à `isJwtClaimsPolicySatisfied` ;
-- [ ] aucune dépendance ajoutée ;
-- [ ] tests normatifs et cas limites verts ;
-- [ ] non-régression API/auth/domaine ;
+- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [ ] export documentaire `verifyJwtRs256Signature(signingInput, signature, verificationKey)` défini ;
+- [ ] retour exact `Promise<boolean>` et sémantique `SIGNATURE_VALID` documentés ;
+- [ ] contraintes strictes de `signingInput`, `signature` et `verificationKey` documentées ;
+- [ ] appel imposé à `crypto.subtle.verify` avec `RSASSA-PKCS1-v1_5` documenté ;
+- [ ] modulus 2048/3072/4096, exposant 65537 et hash SHA-256 documentés ;
+- [ ] aucune résolution de `kid` ni import PEM/JWK/JWKS introduits ;
+- [ ] aucune bibliothèque ou implémentation JWT runtime introduite ;
+- [ ] aucun secret, aucune clé privée et aucun JWT introduit ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
