@@ -2390,10 +2390,19 @@ Décisions obligatoires :
 
 #### `jti`
 
-- string non vide ;
-- sans espace de bord ni caractère de contrôle ;
-- longueur maximale explicite de **128** caractères ;
+Alignement strict sur le contrat V2.1o et sur `isJwtClaimsPolicySatisfied` :
+
+- type exact `string` primitif ;
+- valeur non vide ;
+- longueur comprise entre **1 et 128** caractères inclus ;
+- uniquement les caractères ASCII suivants : `A-Z` `a-z` `0-9` `.` `_` `:` `-` ;
+- expression normative : `^[A-Za-z0-9._:-]{1,128}$` ;
+- aucune valeur Unicode ; aucun espace ASCII ou Unicode ; aucun slash ; aucun antislash ; aucun caractère de contrôle ;
+- aucune coercition ; aucune normalisation ; aucune transformation de casse ;
 - comparaison exacte et sensible à la casse ;
+- **la même règle** s’applique au claim JWT `jti` et à `AuthSessionAccessToken.jti` ;
+- un producteur futur doit générer un `jti` appartenant à ce domaine ;
+- une valeur hors format doit échouer en fail-closed **avant** toute liaison JWT ↔ session ;
 - unicité globale dans le futur stockage canonique V2 ;
 - aucune génération déterministe depuis `userId`, `sid`, temps ou secret ;
 - génération cryptographiquement aléatoire par un composant futur ;
@@ -2511,7 +2520,9 @@ Ce lot devra implémenter et tester : `AuthSessionAccessToken` ; validation stri
 
 Le repository persistant, l’émission/rotation et l’intégration HTTP restent dans des lots suivants clairement bornés.
 
-**Règle anti-enlisement :** après V2.1z, aucun nouveau contrat documentaire intermédiaire ne doit être créé avant l’implémentation V2.1aa, sauf défaut bloquant découvert par le diff CTO indépendant.
+V2.1aa devra utiliser une **validation unique et cohérente** du format `jti` (`^[A-Za-z0-9._:-]{1,128}$`) pour le claim JWT et pour `AuthSessionAccessToken.jti`. Aucune génération de `jti` n’est implémentée dans le présent correctif documentaire.
+
+**Règle anti-enlisement :** après V2.1z (et son correctif d’alignement de format `jti`), aucun nouveau contrat documentaire intermédiaire ne doit être créé avant l’implémentation V2.1aa, sauf nouveau défaut bloquant découvert par le diff CTO indépendant.
 
 ### Hors périmètre de V2.1z
 
@@ -2523,27 +2534,76 @@ Le repository persistant, l’émission/rotation et l’intégration HTTP resten
 
 ## 61. Gate de merge V2.1z
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR conservée Draft jusqu’à stabilisation ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] V2.1y correctement clôturé ;
+- [x] `AuthSessionAccessToken` contractualisé ;
+- [x] `jti` unique et lié explicitement à `sessionId` ;
+- [x] un seul `jti` actif par session contractualisé ;
+- [x] rotation atomique et révocation de l’ancien `jti` documentées ;
+- [x] réactivation et réutilisation d’un `jti` interdites ;
+- [x] cycle `active`/`revoked` documenté ;
+- [x] politique temporelle explicite documentée ;
+- [x] port `resolveAuthSessionAccessTokenByJti` contractualisé ;
+- [x] signature future `validateJwtBoundAuthSession` complétée ;
+- [x] liaison exacte `jti`/`sid`/`sub`/session documentée ;
+- [x] principal exclusivement issu de la session ;
+- [x] ordre RS256 → état `jti` → session → autorisation respecté ;
+- [x] limites réelles de la prévention du rejeu reconnues ;
+- [x] aucun runtime, export, test, repository, schéma ou donnée ajouté ;
+- [x] aucune dépendance, clé ou secret ajouté ;
+- [x] matrice 48/102 inchangée ;
+- [x] V2.1 global conservé non terminé ;
+- [x] V2.1aa imposé comme prochain lot d’implémentation ;
+- [x] aucun conflit avec `develop` ;
+- [x] décision CTO explicite avant Ready puis merge.
+
+### Clôture documentaire V2.1z
+
+- PR fusionnée : **#149** ;
+- head validé : `72c9f19bc8eed2f5feecd23f38cf68eb3952fef7` ;
+- merge commit : `8880e9d4ada338466dabe1978787b2d293af2d1b`.
+
+## 62. Correctif V2.1z — alignement du format `jti`
+
+Correctif **documentation uniquement**, autorisé par la règle anti-enlisement après découverte d’un défaut bloquant post-fusion.
+
+### Traçabilité
+
+- PR d’origine : **#149** ;
+- head fusionné : `72c9f19bc8eed2f5feecd23f38cf68eb3952fef7` ;
+- merge commit : `8880e9d4ada338466dabe1978787b2d293af2d1b` ;
+- défaut : divergence entre le format `jti` de V2.1z et V2.1o / runtime (`isJwtClaimsPolicySatisfied`) ;
+- commentaire P2 traité : le format trop permissif aurait permis un `AuthSessionAccessToken` serveur accepté alors que le JWT correspondant serait toujours refusé par le validateur de claims ;
+- décision : alignement strict sur `^[A-Za-z0-9._:-]{1,128}$` ;
+- **V2.1aa bloqué** jusqu’à fusion du présent correctif.
+
+### Effet
+
+- lève exclusivement l’incompatibilité de format ;
+- V2.1z reste le contrat architectural de référence ;
+- V2.1aa reste le prochain lot d’implémentation ;
+- aucun runtime, aucune génération de `jti`, aucun nouveau lot documentaire intercalé sans nouveau défaut bloquant CTO.
+
+### Gate du correctif
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR conservée Draft jusqu’à stabilisation ;
 - [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] V2.1y correctement clôturé ;
-- [ ] `AuthSessionAccessToken` contractualisé ;
-- [ ] `jti` unique et lié explicitement à `sessionId` ;
-- [ ] un seul `jti` actif par session contractualisé ;
-- [ ] rotation atomique et révocation de l’ancien `jti` documentées ;
-- [ ] réactivation et réutilisation d’un `jti` interdites ;
-- [ ] cycle `active`/`revoked` documenté ;
-- [ ] politique temporelle explicite documentée ;
-- [ ] port `resolveAuthSessionAccessTokenByJti` contractualisé ;
-- [ ] signature future `validateJwtBoundAuthSession` complétée ;
-- [ ] liaison exacte `jti`/`sid`/`sub`/session documentée ;
-- [ ] principal exclusivement issu de la session ;
-- [ ] ordre RS256 → état `jti` → session → autorisation respecté ;
-- [ ] limites réelles de la prévention du rejeu reconnues ;
-- [ ] aucun runtime, export, test, repository, schéma ou donnée ajouté ;
+- [ ] commentaire P2 de la PR #149 traité ;
+- [ ] format `jti` aligné sur V2.1o ;
+- [ ] regex `^[A-Za-z0-9._:-]{1,128}$` documentée ;
+- [ ] claim JWT `jti` et `AuthSessionAccessToken.jti` alignés ;
+- [ ] Unicode, espaces, slash et antislash interdits ;
+- [ ] aucune coercition ou normalisation ;
+- [ ] comparaison exacte et sensible à la casse ;
+- [ ] invariants d’unicité, rotation et révocation inchangés ;
+- [ ] aucun runtime, export ou test ajouté ;
+- [ ] aucun repository, schéma ou donnée ajouté ;
 - [ ] aucune dépendance, clé ou secret ajouté ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] V2.1 global conservé non terminé ;
-- [ ] V2.1aa imposé comme prochain lot d’implémentation ;
+- [ ] V2.1aa maintenu comme prochain lot ;
 - [ ] aucun conflit avec `develop` ;
 - [ ] décision CTO explicite avant Ready puis merge.
