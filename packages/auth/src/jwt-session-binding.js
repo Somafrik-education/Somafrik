@@ -1,3 +1,5 @@
+import { types } from "node:util";
+
 import {
   AUTH_SESSION_ACCESS_TOKEN_STATUS,
   createAuthSessionAccessToken,
@@ -18,7 +20,7 @@ function isDataDescriptor(descriptor) {
 }
 
 function isOrdinaryObject(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) || types.isProxy(value)) {
     return false;
   }
   const prototype = Object.getPrototypeOf(value);
@@ -125,6 +127,14 @@ export async function validateJwtBoundAuthSession(
   sessionEvaluationTime,
 ) {
   try {
+    if (
+      types.isProxy(cryptographicallyAdmissibleToken) ||
+      types.isProxy(authSession) ||
+      types.isProxy(authSessionAccessToken)
+    ) {
+      return null;
+    }
+
     if (!isCryptographicallyAdmissibleToken(cryptographicallyAdmissibleToken)) {
       return null;
     }

@@ -2654,6 +2654,7 @@ Règles runtime :
 - actif ⇒ `revokedAt === null` ; révoqué ⇒ `revokedAt >= issuedAt` ;
 - temporellement actif seulement si `issuedAt <= evaluationTime < expiresAt` ;
 - objets gelés ; aucune horloge implicite ; aucun `Date.now()` ;
+- aucun `Proxy` accepté (transparent ou hostile) ; `types.isProxy` fail-closed ;
 - aucune génération de `jti` ; aucun repository ; aucune I/O.
 
 ### Contrat d’exécution — `validateJwtBoundAuthSession`
@@ -2670,6 +2671,7 @@ validateJwtBoundAuthSession(
 - non-`null` = **JWT_BOUND_ACTIVE_SESSION** uniquement ;
 - les **11** contrôles V2.1z sont exigés exactement ;
 - `cryptographicallyAdmissibleToken.sub` / `.sid` / `.jti` doivent chacun satisfaire `^[A-Za-z0-9._:-]{1,128}$` (fail-closed) ;
+- aucun `Proxy` accepté sur les entrées objet (transparent ou hostile) ;
 - `isAuthSessionActive(...) === true` et `isAuthSessionAccessTokenActive(...) === true` ;
 - principal **exclusivement** issu de la session validée ;
 - aucune exception ni promesse rejetée sortante ;
@@ -2709,6 +2711,7 @@ Prochain lot imposé : **V2.1ab — orchestration post-RS256 et ports de résolu
 - [ ] `AuthSessionAccessToken` implémenté (create / active ; **sans** revoke) ;
 - [ ] format `jti` runtime aligné sur `^[A-Za-z0-9._:-]{1,128}$` ;
 - [ ] `sub` / `sid` / `jti` du résultat cryptographique validés sur le même alphabet ;
+- [ ] aucun `Proxy` accepté (transparent ou hostile) sur modèle et liaison ;
 - [ ] `validateJwtBoundAuthSession` implémenté (signature Promise) ;
 - [ ] succès = `JWT_BOUND_ACTIVE_SESSION` uniquement ;
 - [ ] les 11 liaisons V2.1z couvertes par tests nominaux et hostiles ;

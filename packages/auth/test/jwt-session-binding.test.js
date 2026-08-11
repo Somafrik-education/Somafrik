@@ -203,7 +203,7 @@ test("rejects sid / sub / jti / sessionId binding mismatches", async () => {
   );
 });
 
-test("returns principal exclusively from the validated session", async () => {
+test("returns principal exclusively from the validated session with matching userId", async () => {
   const session = createAuthSession(sessionInput());
   const accessToken = createAuthSessionAccessToken(accessTokenInput());
   const result = await validateJwtBoundAuthSession(
@@ -214,24 +214,123 @@ test("returns principal exclusively from the validated session", async () => {
   );
 
   assert.equal(result.principal.userId, "user-001");
+  assert.equal(result.principal.userId, result.sub);
+  assert.equal(result.principal.userId, session.identity.userId);
+  assert.equal(result.principal.userId, session.principal.userId);
   assert.equal(result.principal.role, "school_admin");
   assert.deepEqual(result.principal.permissions, ["schools:read", "users:read"]);
   assert.equal(Object.keys(result).sort().join(","), "jti,principal,sid,sub");
 });
 
-test("never throws or rejects for hostile evaluation time or inputs", async () => {
+test("rejects transparent and hostile proxies on every object input", async () => {
+  const session = createAuthSession(sessionInput());
+  const accessToken = createAuthSessionAccessToken(accessTokenInput());
+  const crypto = cryptoToken();
+
+  await assertBindingNull(new Proxy(crypto, {}), session, accessToken);
+  await assertBindingNull(crypto, new Proxy(session, {}), accessToken);
+  await assertBindingNull(crypto, session, new Proxy(accessToken, {}));
+
+  let trapCalls = 0;
+  const hostileHandler = {
+    get() {
+      trapCalls += 1;
+      throw new Error("hostile proxy");
+    },
+    ownKeys() {
+      trapCalls += 1;
+      throw new Error("hostile proxy");
+    },
+  };
+
+  await assertBindingNull(new Proxy(crypto, hostileHandler), session, accessToken);
+  await assertBindingNull(crypto, new Proxy(session, hostileHandler), accessToken);
+  await assertBindingNull(crypto, session, new Proxy(accessToken, hostileHandler));
+  assert.equal(trapCalls, 0);
+});
+
+test("does not mutate any of the four binding inputs", async () => {
+  const crypto = cryptoToken();
+  const session = createAuthSession(sessionInput());
+  const accessToken = createAuthSessionAccessToken(accessTokenInput());
+  const now = NOW_ACTIVE;
+
+  const cryptoBefore = structuredClone(crypto);
+  const sessionBefore = structuredClone(session);
+  const accessTokenBefore = structuredClone(accessToken);
+
+  const result = await validateJwtBoundAuthSession(crypto, session, accessToken, now);
+  assert.equal(result.jti, "jti-001");
+
+  assert.deepEqual(crypto, cryptoBefore);
+  assert.deepEqual(session, sessionBefore);
+  assert.deepEqual(accessToken, accessTokenBefore);
+  assert.equal(now, NOW_ACTIVE);
+});
+
+test("never exposes injected sensitive fields in the success result", async () => {
+  const session = createAuthSession(sessionInput());
+  const accessToken = createAuthSessionAccessToken(accessTokenInput());
+  const crypto = {
+    ...cryptoToken(),
+  };
+  // Sensitive fields must not be accepted on the crypto token shape either.
+  await assertBindingNull(
+    {
+      ...crypto,
+      compactJwt: "a.b.c",
+      signature: "sig",
+      signingInput: "a.b",
+      kid: "kid-1",
+      privateKey: "SECRET",
+    },
+    session,
+    accessToken,
+  );
+
+  const result = await validateJwtBoundAuthSession(crypto, session, accessToken, NOW_ACTIVE);
+  assert.deepEqual(Object.keys(result).sort(), ["jti", "principal", "sid", "sub"]);
+  assert.equal(Object.hasOwn(result, "compactJwt"), false);
+  assert.equal(Object.hasOwn(result, "signature"), false);
+  assert.equal(Object.hasOwn(result, "signingInput"), false);
+  assert.equal(Object.hasOwn(result, "kid"), false);
+  assert.equal(Object.hasOwn(result, "privateKey"), false);
+  assert.equal(Object.hasOwn(result, "CryptoKey"), false);
+  assert.equal(Object.hasOwn(result.principal, "compactJwt"), false);
+});
+
+test("hostile objects settle as fulfilled null never as rejected promises", async () => {
   const session = createAuthSession(sessionInput());
   const accessToken = createAuthSessionAccessToken(accessTokenInput());
 
-  assert.equal(
-    await validateJwtBoundAuthSession(cryptoToken(), session, accessToken, "bad"),
-    null,
+  const hostileCases = [
+    [undefined, undefined, undefined, undefined],
+    [null, null, null, null],
+    [new Proxy(cryptoToken(), {}), session, accessToken, NOW_ACTIVE],
+    [cryptoToken(), new Proxy(session, {}), accessToken, NOW_ACTIVE],
+    [cryptoToken(), session, new Proxy(accessToken, {}), NOW_ACTIVE],
+    [
+      new Proxy(cryptoToken(), {
+        get() {
+          throw new Error("hostile");
+        },
+      }),
+      session,
+      accessToken,
+      NOW_ACTIVE,
+    ],
+    [cryptoToken({ jti: "bad/jti" }), session, accessToken, NOW_ACTIVE],
+    [{}, {}, {}, {}],
+  ];
+
+  const settled = await Promise.allSettled(
+    hostileCases.map((args) => validateJwtBoundAuthSession(...args)),
   );
-  assert.equal(
-    await validateJwtBoundAuthSession(cryptoToken(), session, accessToken, null),
-    null,
-  );
-  assert.equal(await validateJwtBoundAuthSession(undefined, undefined, undefined, undefined), null);
+
+  for (const outcome of settled) {
+    assert.equal(outcome.status, "fulfilled");
+    assert.equal(outcome.value, null);
+  }
 });
 
 test("exports validateJwtBoundAuthSession as an async function", async () => {

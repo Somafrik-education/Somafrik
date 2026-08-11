@@ -79,12 +79,72 @@ test("rejects hostile jti values with the V2.1o / V2.1z alphabet", () => {
   assertAccessTokenInvalid(accessTokenInput({ jti: null }));
 });
 
-test("accepts jti values in the canonical ASCII alphabet", () => {
-  const token = createAuthSessionAccessToken(
+test("accepts jti values in the canonical ASCII alphabet including length 128", () => {
+  const exact128 = "a".repeat(128);
+  const token = createAuthSessionAccessToken(accessTokenInput({ jti: exact128 }));
+  assert.equal(token.jti, exact128);
+  assert.equal(token.jti.length, 128);
+  assert.equal(isAuthSessionAccessTokenActive(token, NOW_ACTIVE), true);
+
+  const mixed = createAuthSessionAccessToken(
     accessTokenInput({ jti: "Abc_012.:-XYZ" }),
   );
-  assert.equal(token.jti, "Abc_012.:-XYZ");
-  assert.equal(isAuthSessionAccessTokenActive(token, NOW_ACTIVE), true);
+  assert.equal(mixed.jti, "Abc_012.:-XYZ");
+  assert.equal(isAuthSessionAccessTokenActive(mixed, NOW_ACTIVE), true);
+});
+
+test("rejects impossible timestamps that only look syntactically canonical", () => {
+  assertAccessTokenInvalid(accessTokenInput({ issuedAt: "2026-02-30T10:00:00.000Z" }));
+  assertAccessTokenInvalid(accessTokenInput({ expiresAt: "2026-13-01T10:00:00.000Z" }));
+  assertAccessTokenInvalid(accessTokenInput({ issuedAt: "2026-04-31T10:00:00.000Z" }));
+  assertAccessTokenInvalid(
+    accessTokenInput({
+      status: AUTH_SESSION_ACCESS_TOKEN_STATUS.REVOKED,
+      revokedAt: "2026-02-30T10:30:00.000Z",
+    }),
+  );
+});
+
+test("rejects inherited prototype fields and missing own data properties", () => {
+  const inherited = {
+    sessionId: "session-001",
+    jti: "jti-001",
+    status: AUTH_SESSION_ACCESS_TOKEN_STATUS.ACTIVE,
+    issuedAt: ISSUED_AT,
+    expiresAt: EXPIRES_AT,
+  };
+  Object.setPrototypeOf(inherited, { revokedAt: null });
+  assertAccessTokenInvalid(inherited);
+
+  const inheritedOnly = Object.create({
+    sessionId: "session-001",
+    jti: "jti-001",
+    status: AUTH_SESSION_ACCESS_TOKEN_STATUS.ACTIVE,
+    issuedAt: ISSUED_AT,
+    expiresAt: EXPIRES_AT,
+    revokedAt: null,
+  });
+  assertAccessTokenInvalid(inheritedOnly);
+});
+
+test("rejects transparent and hostile proxies without invoking traps", () => {
+  const transparent = new Proxy(accessTokenInput(), {});
+  assertAccessTokenInvalid(transparent);
+
+  let trapCalls = 0;
+  const hostileProxy = new Proxy(accessTokenInput(), {
+    get() {
+      trapCalls += 1;
+      throw new Error("hostile proxy");
+    },
+    ownKeys() {
+      trapCalls += 1;
+      throw new Error("hostile proxy");
+    },
+  });
+  assertAccessTokenInvalid(hostileProxy);
+  assert.equal(trapCalls, 0);
+  assert.equal(isAuthSessionAccessTokenActive(hostileProxy, NOW_ACTIVE), false);
 });
 
 test("rejects hostile sessionId and timestamp shapes", () => {

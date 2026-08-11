@@ -1,3 +1,5 @@
+import { types } from "node:util";
+
 class AuthSessionAccessTokenValidationError extends Error {
   constructor(message) {
     super(message);
@@ -45,7 +47,7 @@ function isDataDescriptor(descriptor) {
 }
 
 function assertPlainObject(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
+  if (!input || typeof input !== "object" || Array.isArray(input) || types.isProxy(input)) {
     throw new AuthSessionAccessTokenValidationError("auth session access token must be an object");
   }
 }
