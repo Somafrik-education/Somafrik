@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1l — politique JWT d’accès RS256
+**Lot courant :** V2.1m — durcissement de la politique temporelle JWT d’accès
 
 ---
 
@@ -111,6 +111,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1j | Adaptateur HTTP pur des décisions d’autorisation (`apps/api`) | Mapping 200/401/403 fail-closed + CI verts |
 | V2.1k | Extraction stricte du credential Bearer (`apps/api`) | Tests Bearer fail-closed + CI verts |
 | V2.1l | Politique JWT d’accès RS256 (documentation) | Décision CTO documentée + CI verts |
+| V2.1m | Durcissement de la politique temporelle JWT d’accès | Contrat temporel déterministe + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -599,7 +600,8 @@ Contraintes temporelles et d’audience :
 - audience obligatoire : `somafrik-api-v2` (comparaison exacte, sans normalisation) ;
 - durée de vie maximale : **15 minutes** (`exp - iat ≤ 900` secondes) ;
 - tolérance d’horloge : **30 secondes** pour `nbf` / `exp` ;
-- `nbf` ≤ instant d’évaluation (+ tolérance) ; `exp` > instant d’évaluation (− tolérance).
+- `nbf` ≤ instant d’évaluation (+ tolérance) ; `exp` > instant d’évaluation (− tolérance) ;
+- le contrat temporel exact (`iat` / `nbf` / `exp` / `evaluationTime`, ordre, durée strictement positive et bornes) est durci sans assouplissement dans **V2.1m**.
 
 Séparation des responsabilités :
 
@@ -625,13 +627,190 @@ Gestion des clés :
 
 ## 33. Gate de merge V2.1l
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] diff limité à la documentation de reconstruction ;
+- [x] `typ === "JWT"`, `iss` exact depuis config sécurisée, et `kid` string non vide lié à une clé active sont explicitement définis ;
+- [x] aucune bibliothèque, code JWT, middleware, route ou changement legacy ;
+- [x] aucun secret ou clé privée introduit dans le dépôt ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 34. Périmètre exact de V2.1m
+
+Lot **documentation uniquement**. Aucune bibliothèque JWT, aucun code de signature/vérification/décodage, aucun middleware, aucune route, aucun secret, aucune clé et aucun changement de runtime, schéma ou donnée.
+
+Objectif : compléter la politique JWT RS256 de V2.1l avec un **contrat temporel déterministe, strict et fail-closed**. La réussite temporelle ne suffit pas à autoriser l’accès : toutes les autres règles JWT, session et autorisation restent obligatoires.
+
+### Non-régression de la politique V2.1l
+
+Conservées sans élargissement :
+
+- algorithme obligatoire `RS256` ;
+- header exact `alg`, `typ`, `kid` ;
+- `alg === "RS256"` ;
+- `typ === "JWT"` ;
+- `kid` string non vide ;
+- correspondance exacte de `kid` avec une unique clé publique active ;
+- `iss` exact depuis la configuration sécurisée, sans normalisation ;
+- `aud === "somafrik-api-v2"` ;
+- claims obligatoires `iss`, `aud`, `sub`, `sid`, `iat`, `nbf`, `exp`, `jti` ;
+- aucun rôle, tenant, droit ou permission dans le JWT ;
+- reconstruction de l’autorisation depuis la session liée par `sid` ;
+- correspondance exacte entre `sub` et le `userId` de la session résolue ;
+- session révoquée, expirée ou invalide → accès refusé ;
+- clés privées hors dépôt ;
+- rotation des clés par `kid` ;
+- aucun JWT complet dans les logs, URLs ou réponses.
+
+### Claims temporels obligatoires
+
+Les claims temporels obligatoires sont `iat`, `nbf` et `exp`. Chacun doit être :
+
+- un JSON number ;
+- un entier ;
+- fini ;
+- sûr au sens `Number.isSafeInteger` ;
+- positif ou nul ;
+- exprimé en secondes Unix UTC ;
+- fourni explicitement ;
+- jamais converti depuis une string ;
+- jamais arrondi, normalisé ou remplacé par une valeur par défaut.
+
+Doivent être refusés : strings numériques ; nombres décimaux ; `NaN` ; `Infinity` et `-Infinity` ; nombres négatifs ; valeurs hors plage des entiers sûrs ; valeurs absentes ; `null` ; booléens ; tableaux et objets.
+
+### Instant d’évaluation — `evaluationTime`
+
+L’instant d’évaluation doit être fourni **explicitement** au futur vérificateur sous le nom documentaire `evaluationTime` : entier Unix UTC en secondes respectant les **mêmes contraintes de type** que `iat` / `nbf` / `exp`.
+
+La politique pure **ne dépend pas implicitement** de l’horloge système. L’adaptateur runtime futur pourra obtenir l’heure système puis l’injecter explicitement ; cet adaptateur reste hors périmètre de V2.1m.
+
+### Ordre temporel obligatoire
+
+La relation suivante doit être satisfaite exactement :
+
+```text
+iat <= nbf < exp
+```
+
+Conséquences :
+
+- `nbf < iat` → refus ;
+- `nbf === iat` → accepté ;
+- `exp === nbf` → refus ;
+- `exp <= iat` → refus ;
+- tout ordre incohérent → refus fail-closed.
+
+Durée de vie :
+
+```text
+0 < exp - iat <= 900
+```
+
+Donc `exp - iat` est strictement positif et au plus **900** secondes. Aucune tolérance d’horloge ne doit augmenter cette durée maximale déclarée.
+
+### Contrôle de `iat`
+
+Avec la tolérance CTO de **30** secondes :
+
+```text
+iat <= evaluationTime + 30
+```
+
+Si `iat > evaluationTime + 30`, le jeton est refusé. La tolérance ne permet aucune mutation ou normalisation du claim.
+
+### Contrôle de `nbf`
+
+Le jeton n’est pas encore utilisable si :
+
+```text
+nbf > evaluationTime + 30
+```
+
+Il est temporellement admissible pour cette borne si :
+
+```text
+nbf <= evaluationTime + 30
+```
+
+Ce contrôle s’ajoute à l’ordre obligatoire `iat <= nbf`.
+
+### Contrôle de `exp`
+
+L’expiration est une **borne exclusive**. Le jeton est expiré si :
+
+```text
+exp <= evaluationTime - 30
+```
+
+Il reste admissible pour cette borne uniquement si :
+
+```text
+exp > evaluationTime - 30
+```
+
+À égalité exacte `exp === evaluationTime - 30`, le jeton est **refusé**. La tolérance de 30 secondes ne modifie jamais `0 < exp - iat <= 900`.
+
+### Algorithme décisionnel (futur vérificateur)
+
+Refuser le jeton si **au moins une** condition suivante est vraie :
+
+1. `iat`, `nbf`, `exp` ou `evaluationTime` n’est pas un entier Unix sûr, fini et positif ou nul ;
+2. `iat > nbf` ;
+3. `nbf >= exp` ;
+4. `exp - iat <= 0` ;
+5. `exp - iat > 900` ;
+6. `iat > evaluationTime + 30` ;
+7. `nbf > evaluationTime + 30` ;
+8. `exp <= evaluationTime - 30`.
+
+Toutes les conditions inverses doivent être satisfaites **cumulativement** pour que le contrôle temporel réussisse. La réussite temporelle ne suffit pas à autoriser l’accès.
+
+### Exemples normatifs
+
+Paramètres : `evaluationTime = 1_000_000` ; tolérance = **30** secondes.
+
+| Cas | iat | nbf | exp | Résultat |
+|---|---:|---:|---:|---|
+| valide immédiat | 1 000 000 | 1 000 000 | 1 000 900 | accepté temporellement |
+| futur dans tolérance | 1 000 030 | 1 000 030 | 1 000 900 | accepté temporellement |
+| iat trop futur | 1 000 031 | 1 000 031 | 1 000 900 | refus |
+| nbf trop futur | 1 000 000 | 1 000 031 | 1 000 900 | refus |
+| expiré à la borne | 999 000 | 999 000 | 999 970 | refus |
+| juste dans tolérance d’expiration | 999 001 | 999 001 | 999 971 | accepté temporellement |
+| durée nulle | 1 000 000 | 1 000 000 | 1 000 000 | refus |
+| durée supérieure à 900 | 1 000 000 | 1 000 000 | 1 000 901 | refus |
+| nbf antérieur à iat | 1 000 000 | 999 999 | 1 000 900 | refus |
+| exp égal à nbf | 1 000 000 | 1 000 100 | 1 000 100 | refus |
+
+Pour toute ligne « accepté temporellement », les autres validations JWT, session et autorisation restent obligatoires.
+
+### Hors périmètre de V2.1m
+
+- bibliothèque JWT ; signature, vérification ou décodage JWT ;
+- clé publique ou privée ; secret ;
+- middleware ; endpoint HTTP ; login, refresh ou logout ;
+- persistance ou résolution de session ;
+- appel à `Date.now()` ; génération de `jti` ;
+- modification de la matrice 48/102 ; permission supplémentaire ;
+- dépendance au runtime legacy ; lecture ou migration de données legacy.
+
+## 35. Gate de merge V2.1m
+
 - [ ] diff GitHub indépendant relu par le CTO ;
-- [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
-- [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
-- [ ] typecheck, lint, tests et sécurité existants verts ;
-- [ ] diff limité à la documentation de reconstruction ;
-- [ ] `typ === "JWT"`, `iss` exact depuis config sécurisée, et `kid` string non vide lié à une clé active sont explicitement définis ;
-- [ ] aucune bibliothèque, code JWT, middleware, route ou changement legacy ;
-- [ ] aucun secret ou clé privée introduit dans le dépôt ;
+- [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [ ] `iat`, `nbf`, `exp` et `evaluationTime` définis comme entiers Unix sûrs ;
+- [ ] ordre exact `iat <= nbf < exp` documenté ;
+- [ ] durée exacte `0 < exp - iat <= 900` documentée ;
+- [ ] `iat <= evaluationTime + 30` documenté ;
+- [ ] bornes `nbf` et `exp` documentées sans ambiguïté ;
+- [ ] expiration exclusive explicitement documentée ;
+- [ ] tableau des cas limites présent et cohérent ;
+- [ ] aucune bibliothèque ou implémentation JWT introduite ;
+- [ ] aucun secret, aucune clé et aucun JWT introduit ;
+- [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
