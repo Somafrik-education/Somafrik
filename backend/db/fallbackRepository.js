@@ -687,6 +687,8 @@ class FallbackRepository {
         countries: seedData.countries.length,
         schools: seedData.platformSchools.length,
         students: seedData.students.length,
+        teachers: seedData.teachers.length,
+        activeSubscriptions: seedData.subscriptions.filter((item) => item.status === "Actif").length,
       },
     };
   }
@@ -772,12 +774,11 @@ class FallbackRepository {
     if (!this._managedClasses) this._managedClasses = [];
     const code = requireClassCodeParam(classCode);
     const patch = validateUpdateClassInput(body);
-    const current = this._managedClasses.find((row) => row.classCode === code);
+    const current = this._managedClasses.find(
+      (row) => row.classCode === code && String(row.schoolCode) === String(schoolCode),
+    );
     if (!current) {
       throw createHttpError(404, "Classe introuvable.");
-    }
-    if (String(current.schoolCode) !== String(schoolCode)) {
-      throw createHttpError(403, "Accès refusé à une classe d'un autre établissement.");
     }
     if (patch.name) {
       const duplicate = this._managedClasses.find(

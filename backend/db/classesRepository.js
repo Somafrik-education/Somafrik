@@ -8,6 +8,10 @@ const {
   createHttpError,
   asTrimmedString,
 } = require("../lib/classesManagement");
+const {
+  isClassNameUniquenessViolation,
+  isClassCodeUniquenessViolation,
+} = require("../lib/classesUniqueness");
 
 /**
  * Dedicated PostgreSQL repository for establishment classes.
@@ -47,6 +51,13 @@ function createClassesRepository(db) {
     };
   }
 
+  function nameConflictError(name) {
+    return createHttpError(
+      409,
+      `La classe « ${name} » existe déjà pour cette année scolaire dans l'établissement.`,
+    );
+  }
+
   async function requireSchool(schoolCode) {
     const code = asTrimmedString(schoolCode);
     if (!code || code === "*") {
@@ -74,25 +85,6 @@ function createClassesRepository(db) {
       );
     }
     return year;
-  }
-
-  async function assertUniqueName(schoolId, academicYearId, name, excludeClassCode = null) {
-    const existing = await db.one(
-      `SELECT class_code
-       FROM classes
-       WHERE school_id = $1
-         AND academic_year_id = $2
-         AND lower(btrim(name)) = lower(btrim($3))
-         AND ($4::text IS NULL OR class_code <> $4)
-       LIMIT 1`,
-      [schoolId, academicYearId, name, excludeClassCode],
-    );
-    if (existing) {
-      throw createHttpError(
-        409,
-        `La classe « ${name} » existe déjà pour cette année scolaire dans l'établissement.`,
-      );
-    }
   }
 
   return {
@@ -137,7 +129,6 @@ function createClassesRepository(db) {
         school.id,
         input.academicYearName,
       );
-      await assertUniqueName(school.id, academicYear.id, input.name);
 
       let classCode = generateClassCode(input.schoolCode);
       let inserted = null;
@@ -161,7 +152,10 @@ function createClassesRepository(db) {
           );
           break;
         } catch (error) {
-          if (String(error?.code) === "23505") {
+          if (isClassNameUniquenessViolation(error)) {
+            throw nameConflictError(input.name);
+          }
+          if (isClassCodeUniquenessViolation(error)) {
             classCode = generateClassCode(input.schoolCode);
             continue;
           }
@@ -190,46 +184,45 @@ function createClassesRepository(db) {
       const patch = validateUpdateClassInput(body);
       const school = await requireSchool(schoolCode);
 
+      // Lookup scoped to school — 404 without revealing cross-tenant existence.
       const current = await db.one(
         `SELECT cl.*, s.school_code, ay.name AS academic_year_name
          FROM classes cl
          JOIN schools s ON s.id = cl.school_id
          JOIN academic_years ay ON ay.id = cl.academic_year_id
-         WHERE cl.class_code = $1
+         WHERE cl.class_code = $1 AND cl.school_id = $2
          LIMIT 1`,
-        [classCode],
+        [classCode, school.id],
       );
       if (!current) {
         throw createHttpError(404, "Classe introuvable.");
       }
-      if (String(current.school_id) !== String(school.id)) {
-        throw createHttpError(403, "Accès refusé à une classe d'un autre établissement.");
-      }
 
       const nextName = patch.name ?? current.name;
-      if (patch.name) {
-        await assertUniqueName(school.id, current.academic_year_id, nextName, classCode);
-      }
+      const nextLevel = Object.hasOwn(patch, "level") ? patch.level : current.level;
+      const nextSection = Object.hasOwn(patch, "section") ? patch.section : current.section;
+      const nextStatus = patch.status ?? current.status;
 
-      const updated = await db.one(
-        `UPDATE classes
-         SET name = $1,
-             level = $2,
-             section = $3,
-             status = $4,
-             updated_at = NOW()
-         WHERE class_code = $5 AND school_id = $6
-         RETURNING id, class_code, name, level, section, status,
-                   academic_year_id, created_at, updated_at`,
-        [
-          nextName,
-          Object.hasOwn(patch, "level") ? patch.level : current.level,
-          Object.hasOwn(patch, "section") ? patch.section : current.section,
-          patch.status ?? current.status,
-          classCode,
-          school.id,
-        ],
-      );
+      let updated;
+      try {
+        updated = await db.one(
+          `UPDATE classes
+           SET name = $1,
+               level = $2,
+               section = $3,
+               status = $4,
+               updated_at = NOW()
+           WHERE class_code = $5 AND school_id = $6
+           RETURNING id, class_code, name, level, section, status,
+                     academic_year_id, created_at, updated_at`,
+          [nextName, nextLevel, nextSection, nextStatus, classCode, school.id],
+        );
+      } catch (error) {
+        if (isClassNameUniquenessViolation(error)) {
+          throw nameConflictError(nextName);
+        }
+        throw error;
+      }
       if (!updated) {
         throw createHttpError(404, "Classe introuvable.");
       }

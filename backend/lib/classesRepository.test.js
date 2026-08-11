@@ -1,8 +1,8 @@
 "use strict";
 
 /**
- * Preuve repository Classes métier :
- * create → list → update → isolation inter-établissements.
+ * Preuve repository Classes métier (mémoire JS) :
+ * create → list → update → isolation inter-établissements (404).
  */
 const assert = require("node:assert/strict");
 const { createClassesRepository } = require("../db/classesRepository");
@@ -34,16 +34,6 @@ function createMemoryDb() {
           years.find((row) => row.school_id === params[0] && row.name === params[1]) ?? null
         );
       }
-      if (text.startsWith("SELECT CLASS_CODE FROM CLASSES")) {
-        const found = classes.find(
-          (row) =>
-            row.school_id === params[0] &&
-            row.academic_year_id === params[1] &&
-            String(row.name).trim().toLowerCase() === String(params[2]).trim().toLowerCase() &&
-            (params[3] == null || row.class_code !== params[3]),
-        );
-        return found ? { class_code: found.class_code } : null;
-      }
       if (text.startsWith("INSERT INTO CLASSES")) {
         const row = {
           id: nextId(),
@@ -57,16 +47,43 @@ function createMemoryDb() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        if (classes.some((item) => item.class_code === row.class_code)) {
-          const error = new Error("duplicate");
+        if (
+          classes.some(
+            (item) =>
+              item.school_id === row.school_id &&
+              item.academic_year_id === row.academic_year_id &&
+              String(item.name).trim().toLowerCase() === String(row.name).trim().toLowerCase(),
+          )
+        ) {
+          const error = new Error(
+            'duplicate key value violates unique constraint "uq_classes_school_year_normalized_name"',
+          );
           error.code = "23505";
+          error.constraint = "uq_classes_school_year_normalized_name";
+          error.detail =
+            "Key (school_id, academic_year_id, lower(btrim(name)))=(...) already exists.";
+          throw error;
+        }
+        if (classes.some((item) => item.class_code === row.class_code)) {
+          const error = new Error(
+            'duplicate key value violates unique constraint "classes_class_code_key"',
+          );
+          error.code = "23505";
+          error.constraint = "classes_class_code_key";
+          error.detail = `Key (class_code)=(${row.class_code}) already exists.`;
           throw error;
         }
         classes.push(row);
         return row;
       }
-      if (text.includes("FROM CLASSES CL") && text.includes("WHERE CL.CLASS_CODE")) {
-        const row = classes.find((item) => item.class_code === params[0]);
+      if (
+        text.includes("FROM CLASSES CL") &&
+        text.includes("WHERE CL.CLASS_CODE") &&
+        text.includes("CL.SCHOOL_ID")
+      ) {
+        const row = classes.find(
+          (item) => item.class_code === params[0] && item.school_id === params[1],
+        );
         if (!row) return null;
         const school = schools.find((item) => item.id === row.school_id);
         const year = years.find((item) => item.id === row.academic_year_id);
@@ -81,6 +98,22 @@ function createMemoryDb() {
           (item) => item.class_code === params[4] && item.school_id === params[5],
         );
         if (!row) return null;
+        if (
+          classes.some(
+            (item) =>
+              item.class_code !== row.class_code &&
+              item.school_id === row.school_id &&
+              item.academic_year_id === row.academic_year_id &&
+              String(item.name).trim().toLowerCase() === String(params[0]).trim().toLowerCase(),
+          )
+        ) {
+          const error = new Error(
+            'duplicate key value violates unique constraint "uq_classes_school_year_normalized_name"',
+          );
+          error.code = "23505";
+          error.constraint = "uq_classes_school_year_normalized_name";
+          throw error;
+        }
         row.name = params[0];
         row.level = params[1];
         row.section = params[2];
@@ -171,7 +204,7 @@ async function main() {
 
   await assert.rejects(
     () => repo.update(created.classCode, "SCH-B", { name: "Hack" }),
-    (error) => error.statusCode === 403,
+    (error) => error.statusCode === 404,
   );
 
   console.log("classesRepository.test.js: OK");

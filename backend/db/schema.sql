@@ -94,10 +94,15 @@ CREATE TABLE IF NOT EXISTS classes (
   name TEXT NOT NULL,
   level TEXT,
   section TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Unicité métier atomique : (établissement, année, nom normalisé).
+-- Pour bases legacy, l'index est aussi assuré par ensureClassesDomainConstraints (après dédup).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_classes_school_year_normalized_name
+  ON classes (school_id, academic_year_id, (lower(btrim(name))));
 
 CREATE TABLE IF NOT EXISTS subjects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
