@@ -283,26 +283,33 @@ test("stateful proxy cannot authorize by switching to a revoked or expired sessi
   });
 
   function createSwitchingProxy(firstView, secondView) {
-    let sessionIdReads = 0;
+    let pass = 0;
+    let inPass = false;
+
+    function currentSource() {
+      return pass <= 1 ? firstView : secondView;
+    }
+
     return new Proxy(firstView, {
       getOwnPropertyDescriptor(_target, prop) {
-        if (prop === "sessionId") {
-          sessionIdReads += 1;
+        if (prop === "sessionId" && !inPass) {
+          pass += 1;
+          inPass = true;
         }
-        const source = sessionIdReads <= 1 ? firstView : secondView;
-        return Reflect.getOwnPropertyDescriptor(source, prop);
+        const descriptor = Reflect.getOwnPropertyDescriptor(currentSource(), prop);
+        if (prop === "revokedAt" && inPass) {
+          inPass = false;
+        }
+        return descriptor;
       },
       ownKeys() {
-        const source = sessionIdReads <= 1 ? firstView : secondView;
-        return Reflect.ownKeys(source);
+        return Reflect.ownKeys(currentSource());
       },
       has(_target, prop) {
-        const source = sessionIdReads <= 1 ? firstView : secondView;
-        return Object.hasOwn(source, prop);
+        return Object.hasOwn(currentSource(), prop);
       },
       get(_target, prop, receiver) {
-        const source = sessionIdReads <= 1 ? firstView : secondView;
-        return Reflect.get(source, prop, receiver);
+        return Reflect.get(currentSource(), prop, receiver);
       },
       getPrototypeOf() {
         return Object.prototype;
@@ -330,7 +337,9 @@ test("stateful proxy cannot authorize by switching to a revoked or expired sessi
 
   const revokedFirst = createSwitchingProxy(
     revokedWithPermission,
-    activeWithoutPermission,
+    sessionInput({
+      principal: principalInput({ permissions: ["users:read"] }),
+    }),
   );
   assert.equal(
     evaluateSessionAuthorization(revokedFirst, "users:read", NOW_ACTIVE),
