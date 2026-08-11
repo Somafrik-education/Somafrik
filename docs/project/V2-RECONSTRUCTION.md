@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1w — contrat du pipeline JWT d’accès pré-session
+**Lot courant :** V2.1x — implémentation pure du pipeline JWT d’accès pré-session
 
 ---
 
@@ -122,6 +122,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1u | Contrat de résolution stricte de `kid` (documentation) | Décision CTO documentée + CI verts |
 | V2.1v | Implémentation pure du résolveur strict de `kid` (`apps/api`) | `resolveJwtRs256VerificationKey` fail-closed + CI verts |
 | V2.1w | Contrat du pipeline JWT d’accès pré-session (documentation) | Décision CTO documentée + CI verts |
+| V2.1x | Implémentation pure du pipeline JWT d’accès pré-session (`apps/api`) | `verifyJwtAccessTokenCryptographically` fail-closed + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -2051,23 +2052,72 @@ Le lot **V2.1x** implémentera de façon pure `verifyJwtAccessTokenCryptographic
 
 ## 55. Gate de merge V2.1w
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] future API et retour exacts documentés ;
+- [x] sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` documentée ;
+- [x] ordre décodage → claims/temps → kid → RS256 imposé ;
+- [x] quatre exports existants réutilisés sans duplication ;
+- [x] arrêt immédiat du pipeline après chaque échec ;
+- [x] aucune exception ni promesse rejetée sortante ;
+- [x] résultat limité exactement à `sub`, `sid` et `jti` ;
+- [x] aucune session ou autorisation incluse ;
+- [x] aucun token, signature, `signingInput` ou `CryptoKey` exposé ;
+- [x] aucune horloge implicite ou configuration implicite ;
+- [x] aucun PEM/JWK/JWKS, réseau, KMS, cache ou clé ajouté ;
+- [x] aucune dépendance ajoutée ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] V2.1x annoncé comme lot d’implémentation pure ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 56. Périmètre exact de V2.1x
+
+Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat d’orchestration V2.1w.
+
+### Export public exact
+
+- fichier : `apps/api/src/jwt-access-pipeline.js` ;
+- export unique ajouté : `verifyJwtAccessTokenCryptographically(compactToken, expectedIssuer, evaluationTime, keyCandidates)` ;
+- réexport depuis `apps/api/src/index.js` ;
+- les exports existants restent inchangés.
+
+### Contrat d’exécution
+
+- retour exact : `Promise<{ sub, sid, jti } | null>` ; non-`null` = **TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE** uniquement — jamais session, identité, permission ou accès ;
+- ordre obligatoire : `decodeJwtCompactStrict` → `isJwtClaimsPolicySatisfied` → `resolveJwtRs256VerificationKey` → `verifyJwtRs256Signature` ;
+- prédicats exacts : décodage = objet de sortie exact V2.1r ; claims = `=== true` ; kid = `CryptoKey` exacte V2.1v ; RS256 = `=== true` ;
+- résultat = nouvel objet ordinaire limité à `sub`, `sid`, `jti` sans transformation ;
+- **aucun throw** ni promesse rejetée sortante ; aucune mutation ; aucune horloge implicite ; aucune cryptographie directe (`subtle.verify` non appelé hors brique V2.1t) ;
+- aucune session, autorisation, PEM/JWK/JWKS, réseau, KMS, cache, secret ou dépendance ajoutée.
+
+### Hors périmètre de V2.1x
+
+- validation de session ; identité ; RBAC ; middleware ; routes ;
+- duplication des briques existantes ; modification de leurs API ;
+- modification de `packages/auth` ou de la matrice 48/102.
+
+## 57. Gate de merge V2.1x
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] future API et retour exacts documentés ;
-- [ ] sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` documentée ;
-- [ ] ordre décodage → claims/temps → kid → RS256 imposé ;
-- [ ] quatre exports existants réutilisés sans duplication ;
+- [ ] export public limité à `verifyJwtAccessTokenCryptographically` ;
+- [ ] retour exact `Promise<{ sub, sid, jti } | null>` et sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` ;
+- [ ] ordre décodage → claims/temps → kid → RS256 respecté ;
+- [ ] prédicats de succès exacts appliqués à chaque étape ;
 - [ ] arrêt immédiat du pipeline après chaque échec ;
-- [ ] aucune exception ni promesse rejetée sortante ;
+- [ ] quatre exports existants réutilisés sans duplication ;
 - [ ] résultat limité exactement à `sub`, `sid` et `jti` ;
 - [ ] aucune session ou autorisation incluse ;
-- [ ] aucun token, signature, `signingInput` ou `CryptoKey` exposé ;
-- [ ] aucune horloge implicite ou configuration implicite ;
-- [ ] aucun PEM/JWK/JWKS, réseau, KMS, cache ou clé ajouté ;
+- [ ] aucune exception ni promesse rejetée sortante ;
+- [ ] aucune horloge implicite, variable d’environnement ou journalisation ;
+- [ ] aucun PEM/JWK/JWKS, réseau, KMS, cache, clé ou secret ajouté ;
 - [ ] aucune dépendance ajoutée ;
+- [ ] tests normatifs et cas limites verts ;
+- [ ] non-régression API/auth/domaine ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
-- [ ] V2.1x annoncé comme lot d’implémentation pure ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
