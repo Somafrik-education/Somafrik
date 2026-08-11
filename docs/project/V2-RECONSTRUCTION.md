@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1v — implémentation pure du résolveur strict de kid
+**Lot courant :** V2.1w — contrat du pipeline JWT d’accès pré-session
 
 ---
 
@@ -121,6 +121,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1t | Implémentation pure du vérificateur RS256 (`apps/api`) | `verifyJwtRs256Signature` fail-closed + CI verts |
 | V2.1u | Contrat de résolution stricte de `kid` (documentation) | Décision CTO documentée + CI verts |
 | V2.1v | Implémentation pure du résolveur strict de `kid` (`apps/api`) | `resolveJwtRs256VerificationKey` fail-closed + CI verts |
+| V2.1w | Contrat du pipeline JWT d’accès pré-session (documentation) | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -1854,20 +1855,206 @@ décodage strict
 
 ## 53. Gate de merge V2.1v
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] export public limité à `resolveJwtRs256VerificationKey` ;
+- [x] retour exact `CryptoKey | null` et sémantique `KEY_RESOLVED` ;
+- [x] unicité exacte de `kid` (zéro ou plusieurs correspondances → `null`) ;
+- [x] refus des doublons, candidats invalides et entrées hostiles ;
+- [x] limite explicite de 256 candidats ;
+- [x] contraintes CryptoKey RS256/SHA-256 appliquées sans exécuter de cryptographie ;
+- [x] aucun import PEM/JWK/JWKS, réseau, fichier, KMS ou cache ;
+- [x] aucune horloge implicite, variable d’environnement ou journalisation ;
+- [x] aucune dépendance, clé, secret ou PEM/JWK/JWKS ajoutés ;
+- [x] tests normatifs et cas limites verts ;
+- [x] non-régression API/auth/domaine ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 54. Périmètre exact de V2.1w
+
+Lot **documentation uniquement**. Aucune implémentation runtime, aucun export réel, aucun test runtime, aucune dépendance, aucun middleware, aucune route, aucune session et aucun changement de runtime, schéma ou donnée.
+
+Objectif : contractualiser l’**orchestrateur JWT d’accès pré-session** qui composera, sans réimplémentation, les quatre briques déjà livrées. L’implémentation pure est réservée au lot ultérieur **V2.1x**.
+
+### Place dans le pipeline JWT d’accès
+
+Ordre normatif :
+
+```text
+JWT compact
+  → décodage strict
+  → validation structurelle et temporelle
+  → résolution de kid
+  → vérification RS256
+  → résultat pré-session
+  → validation de session ultérieure
+  → autorisation ultérieure
+```
+
+Il est **interdit** de vérifier RS256 avant la résolution de `kid`. La validation de session et l’autorisation restent **obligatoirement postérieures** et hors périmètre de V2.1w / V2.1x.
+
+### Export documentaire exact
+
+Future fonction pure :
+
+```text
+verifyJwtAccessTokenCryptographically(
+  compactToken,
+  expectedIssuer,
+  evaluationTime,
+  keyCandidates
+)
+```
+
+Retour exact :
+
+```text
+Promise<
+  | {
+      sub: string,
+      sid: string,
+      jti: string
+    }
+  | null
+>
+```
+
+- retour non-`null` = **TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE** uniquement ;
+- toute anomalie → `null` ;
+- **aucune exception** ni promesse rejetée sortante vers l’appelant.
+
+Le succès ne signifie jamais : session existante ou active, identité active, utilisateur authentifié définitivement, permission accordée ou accès autorisé.
+
+### Entrées explicitement injectées
+
+Les quatre entrées sont injectées sans valeur par défaut :
+
+- `compactToken` ;
+- `expectedIssuer` ;
+- `evaluationTime` ;
+- `keyCandidates`.
+
+Interdictions : lecture d’environnement, `Date.now()`, horloge implicite, chargement de clé, réseau, fichier, JWKS, KMS, cache, normalisation ou coercition. Les règles détaillées restent exclusivement celles des fonctions V2.1n, V2.1p, V2.1r, V2.1t et V2.1v.
+
+### Ordre d’exécution obligatoire des quatre briques
+
+Le futur orchestrateur devra respecter exactement :
+
+1. appeler `decodeJwtCompactStrict(compactToken)` ;
+2. si `null`, retourner `null` ;
+3. appeler `isJwtClaimsPolicySatisfied(protectedHeader, payload, expectedIssuer, evaluationTime)` ;
+4. si `false`, retourner `null` ;
+5. appeler `resolveJwtRs256VerificationKey(protectedHeader.kid, keyCandidates)` ;
+6. si `null`, retourner `null` ;
+7. appeler `verifyJwtRs256Signature(signingInput, signature, verificationKey)` ;
+8. si `false` ou rejet capturé, retourner `null` ;
+9. retourner un **nouvel** objet contenant uniquement `{ sub, sid, jti }`.
+
+### Réutilisation obligatoire
+
+Le futur orchestrateur devra appeler les exports existants. Interdictions : recopier Base64URL, reparcourir/parser le JSON, recopier les politiques claims/temporelles, revalider manuellement `CryptoKey`, refaire la résolution de `kid`, appeler directement `crypto.subtle.verify`, ou ajouter une deuxième implémentation d’une règle existante. Aucune modification des API ou comportements existants.
+
+### Résultat de succès
+
+Objet ordinaire **nouveau** contenant exactement :
+
+- `sub`
+- `sid`
+- `jti`
+
+Valeurs reprises **sans transformation** depuis le payload validé. Aucune propriété supplémentaire ; aucun header, signature, `signingInput`, `kid`, clé ou JWT retourné ; aucune référence directe au payload d’entrée ; aucun rôle, tenant, droit ou permission ; aucune mutation des objets décodés.
+
+### Fail-closed et protection globale
+
+Toute anomalie retourne `null` : JWT compact invalide, décodage refusé, header/claims/temps invalides, `kid` absent/ambigu/inactif/hostile, clé absente ou incompatible, signature invalide, brique qui lève ou rejette, entrée hostile, résultat inattendu d’une brique.
+
+Le contrat impose un **bloc de protection global** autour de l’orchestration, tout en conservant les retours fail-closed propres aux briques existantes.
+
+### Propriétés de sécurité
+
+- aucun JWT complet dans les logs, erreurs, métriques, URLs ou réponses ;
+- aucun `signingInput` ni signature journalisé ;
+- aucune `CryptoKey` retournée ou journalisée ;
+- aucune clé privée ; aucune comparaison de secret ;
+- aucune mutation des entrées ; aucun fallback legacy ;
+- aucune sélection d’algorithme dynamique ; RS256 reste imposé par les contrats existants ;
+- complexité bornée par les limites déjà définies ;
+- matrice 48/102 inchangée.
+
+### Tests normatifs futurs (V2.1x)
+
+#### Succès
+
+- JWT RS256 valide, claims valides, `kid` unique actif → objet exact `{ sub, sid, jti }` ;
+- preuve de l’ordre exact des quatre appels ;
+- valeurs `sub`/`sid`/`jti` restituées sans normalisation.
+
+#### Échec par étape
+
+- `decodeJwtCompactStrict` retourne `null` ;
+- `isJwtClaimsPolicySatisfied` retourne `false` ;
+- `resolveJwtRs256VerificationKey` retourne `null` ;
+- `verifyJwtRs256Signature` retourne `false` ;
+- chacune des quatre briques lève ou rejette ;
+- résultat inattendu ou hostile d’une brique.
+
+#### Arrêt du pipeline
+
+Prouver que :
+
+- après échec du décodage, aucune autre brique n’est appelée ;
+- après échec des claims, aucune résolution ni crypto n’est appelée ;
+- après échec de `kid`, aucune crypto n’est appelée ;
+- la vérification RS256 est toujours la dernière étape pré-session.
+
+#### Confidentialité
+
+- le résultat ne contient que `sub`, `sid` et `jti` ;
+- aucun token, header, payload complet, `kid`, signature, `signingInput` ou clé ;
+- aucune journalisation ; aucune mutation.
+
+#### Non-régression
+
+- exports existants inchangés ;
+- API/auth/domaine verts ;
+- matrice 48/102 inchangée ;
+- aucune dépendance ajoutée.
+
+### Annonce V2.1x
+
+Le lot **V2.1x** implémentera de façon pure `verifyJwtAccessTokenCryptographically` conformément à ce contrat, sans duplication des briques existantes, sans session et sans autorisation.
+
+### Hors périmètre de V2.1w
+
+- implémentation runtime (réservée à **V2.1x**) ;
+- session repository ; vérification d’identité ; RBAC ou permission ;
+- middleware, routes, logging ;
+- PEM/JWK/JWKS, réseau, KMS, cache, secrets, clés ;
+- dépendance ajoutée ; `Date.now()` ; variable d’environnement ;
+- modification de runtime, schéma, donnée ou matrice 48/102.
+
+## 55. Gate de merge V2.1w
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] export public limité à `resolveJwtRs256VerificationKey` ;
-- [ ] retour exact `CryptoKey | null` et sémantique `KEY_RESOLVED` ;
-- [ ] unicité exacte de `kid` (zéro ou plusieurs correspondances → `null`) ;
-- [ ] refus des doublons, candidats invalides et entrées hostiles ;
-- [ ] limite explicite de 256 candidats ;
-- [ ] contraintes CryptoKey RS256/SHA-256 appliquées sans exécuter de cryptographie ;
-- [ ] aucun import PEM/JWK/JWKS, réseau, fichier, KMS ou cache ;
-- [ ] aucune horloge implicite, variable d’environnement ou journalisation ;
-- [ ] aucune dépendance, clé, secret ou PEM/JWK/JWKS ajoutés ;
-- [ ] tests normatifs et cas limites verts ;
-- [ ] non-régression API/auth/domaine ;
+- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [ ] future API et retour exacts documentés ;
+- [ ] sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` documentée ;
+- [ ] ordre décodage → claims/temps → kid → RS256 imposé ;
+- [ ] quatre exports existants réutilisés sans duplication ;
+- [ ] arrêt immédiat du pipeline après chaque échec ;
+- [ ] aucune exception ni promesse rejetée sortante ;
+- [ ] résultat limité exactement à `sub`, `sid` et `jti` ;
+- [ ] aucune session ou autorisation incluse ;
+- [ ] aucun token, signature, `signingInput` ou `CryptoKey` exposé ;
+- [ ] aucune horloge implicite ou configuration implicite ;
+- [ ] aucun PEM/JWK/JWKS, réseau, KMS, cache ou clé ajouté ;
+- [ ] aucune dépendance ajoutée ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
+- [ ] V2.1x annoncé comme lot d’implémentation pure ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
