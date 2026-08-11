@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1q — contrat de décodage JWT compact sécurisé
+**Lot courant :** V2.1r — implémentation pure du décodeur JWT compact strict
 
 ---
 
@@ -116,6 +116,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1o | Contrat strict de structure et de claims JWT d’accès | Décision CTO documentée + CI verts |
 | V2.1p | Implémentation pure du contrôle structurel des claims JWT (`apps/api`) | `isJwtClaimsPolicySatisfied` fail-closed + CI verts |
 | V2.1q | Contrat de décodage JWT compact sécurisé (documentation) | Décision CTO documentée + CI verts |
+| V2.1r | Implémentation pure du décodeur JWT compact strict (`apps/api`) | `decodeJwtCompactStrict` fail-closed + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -1364,21 +1365,77 @@ Conservées sans élargissement :
 
 ## 43. Gate de merge V2.1q
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] export documentaire `decodeJwtCompactStrict(compactToken)` défini ;
+- [x] entrée string ≤ 4096 et forme exacte à trois segments documentées ;
+- [x] alphabet Base64URL canonique sans `+`, `/`, `=` documenté ;
+- [x] canonicalité Base64URL (`length % 4 !== 1`, décodage strict, réencodage sans padding, égalité exacte) documentée ;
+- [x] UTF-8 strict sans remplacement `U+FFFD` documenté ;
+- [x] objets JSON ordinaires et refus des clés dupliquées à tous les niveaux documentés ;
+- [x] clés dangereuses exactes `__proto__`, `prototype`, `constructor` documentées à tous les niveaux ;
+- [x] `signingInput` byte-for-byte `segment1.segment2` documenté ;
+- [x] `signature: Uint8Array` non vide sans vérification cryptographique documentée ;
+- [x] résultat structurel uniquement — jamais authentification ni autorisation ;
+- [x] aucune bibliothèque ou implémentation JWT introduite ;
+- [x] aucun secret, aucune clé et aucun JWT introduit ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 44. Périmètre exact de V2.1r
+
+Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat de décodage V2.1q.
+
+### Export public exact
+
+- fichier : `apps/api/src/jwt-compact-decoder.js` ;
+- export unique ajouté : `decodeJwtCompactStrict(compactToken)` ;
+- réexport depuis `apps/api/src/index.js` ;
+- les exports existants restent inchangés.
+
+### Contrat d’exécution
+
+- entrée primitive `string`, longueur **1..4096** ;
+- exactement trois segments non vides ;
+- alphabet Base64URL strict sans `+`, `/` ou `=` ;
+- canonicalité sur chaque segment : `length % 4 !== 1`, décodage strict, réencodage sans padding, égalité exacte ;
+- UTF-8 fatal (`TextDecoder` fatal) pour header et payload — aucun remplacement `U+FFFD` ;
+- parse JSON sécurisé détectant les doublons **avant** création des objets, à tous les niveaux ;
+- clés `__proto__`, `prototype`, `constructor` refusées à tous les niveaux ;
+- racines header/payload = objets ordinaires uniquement ;
+- `signingInput` repris exactement depuis les deux segments initiaux ;
+- `signature` retournée comme `Uint8Array` exacte non vide (jamais `Buffer`, texte ou tableau) ;
+- résultat non-`null` = **STRUCTURALLY_DECODED** uniquement ; toute anomalie → `null` sans exception sortante ;
+- aucune mutation des objets retournés après leur création ;
+- **aucun** appel à `isJwtClaimsPolicySatisfied`, aucune cryptographie, aucune résolution de `kid`.
+
+### Hors périmètre de V2.1r
+
+- vérification ou signature RS256 ; bibliothèque JWT ;
+- clé, JWKS, secret ou résolution de `kid` ;
+- authentification, autorisation ou session ;
+- middleware, route, login, refresh ou logout ;
+- horloge, environnement, legacy, schéma ou données ;
+- modification de la matrice 48/102.
+
+## 45. Gate de merge V2.1r
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] export documentaire `decodeJwtCompactStrict(compactToken)` défini ;
-- [ ] entrée string ≤ 4096 et forme exacte à trois segments documentées ;
-- [ ] alphabet Base64URL canonique sans `+`, `/`, `=` documenté ;
-- [ ] canonicalité Base64URL (`length % 4 !== 1`, décodage strict, réencodage sans padding, égalité exacte) documentée ;
-- [ ] UTF-8 strict sans remplacement `U+FFFD` documenté ;
-- [ ] objets JSON ordinaires et refus des clés dupliquées à tous les niveaux documentés ;
-- [ ] clés dangereuses exactes `__proto__`, `prototype`, `constructor` documentées à tous les niveaux ;
-- [ ] `signingInput` byte-for-byte `segment1.segment2` documenté ;
-- [ ] `signature: Uint8Array` non vide sans vérification cryptographique documentée ;
-- [ ] résultat structurel uniquement — jamais authentification ni autorisation ;
-- [ ] aucune bibliothèque ou implémentation JWT introduite ;
-- [ ] aucun secret, aucune clé et aucun JWT introduit ;
+- [ ] export public limité à `decodeJwtCompactStrict` ;
+- [ ] entrée string 1..4096 et forme exacte à trois segments appliquées ;
+- [ ] canonicalité Base64URL appliquée sur chaque segment ;
+- [ ] UTF-8 fatal sans remplacement `U+FFFD` ;
+- [ ] doublons et clés dangereuses refusés à tous les niveaux ;
+- [ ] `signingInput` byte-for-byte et `signature: Uint8Array` non vide ;
+- [ ] aucun throw vers l’appelant ;
+- [ ] aucune vérification cryptographique ni appel à `isJwtClaimsPolicySatisfied` ;
+- [ ] aucune dépendance ajoutée ;
+- [ ] tests normatifs et cas limites verts ;
+- [ ] non-régression API/auth/domaine ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
