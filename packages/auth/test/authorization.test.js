@@ -283,32 +283,53 @@ test("stateful proxy cannot authorize by switching to a revoked or expired sessi
   });
 
   function createSwitchingProxy(firstView, secondView) {
-    let pass = 0;
-    let inPass = false;
+    let generation = 0;
+    let phase = "between";
+    let revokedAtReadsAfterKeys = 0;
 
     function currentSource() {
-      return pass <= 1 ? firstView : secondView;
+      return generation <= 1 ? firstView : secondView;
     }
 
     return new Proxy(firstView, {
       getOwnPropertyDescriptor(_target, prop) {
-        if (prop === "sessionId" && !inPass) {
-          pass += 1;
-          inPass = true;
+        if (phase === "between") {
+          generation += 1;
+          phase = "beforeKeys";
+          revokedAtReadsAfterKeys = 0;
         }
         const descriptor = Reflect.getOwnPropertyDescriptor(currentSource(), prop);
-        if (prop === "revokedAt" && inPass) {
-          inPass = false;
+        if (phase === "afterKeys" && prop === "revokedAt") {
+          revokedAtReadsAfterKeys += 1;
+          if (revokedAtReadsAfterKeys >= 2) {
+            phase = "between";
+            revokedAtReadsAfterKeys = 0;
+          }
         }
         return descriptor;
       },
       ownKeys() {
+        if (phase === "between") {
+          generation += 1;
+          revokedAtReadsAfterKeys = 0;
+        }
+        phase = "afterKeys";
         return Reflect.ownKeys(currentSource());
       },
       has(_target, prop) {
+        if (phase === "between") {
+          generation += 1;
+          phase = "beforeKeys";
+          revokedAtReadsAfterKeys = 0;
+        }
         return Object.hasOwn(currentSource(), prop);
       },
       get(_target, prop, receiver) {
+        if (phase === "between") {
+          generation += 1;
+          phase = "beforeKeys";
+          revokedAtReadsAfterKeys = 0;
+        }
         return Reflect.get(currentSource(), prop, receiver);
       },
       getPrototypeOf() {
