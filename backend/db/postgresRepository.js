@@ -353,15 +353,17 @@ class PostgresRepository {
 
   /**
    * Classes — unicité atomique (école + année + nom normalisé) + statut active|inactive.
-   * Ordre : normaliser statuts → dédup → index unique → CHECK.
+   * Ordre : normaliser statuts → détecter doublons (fail-safe) → index unique → CHECK.
+   * Interdit : suppression silencieuse des classes en doublon.
    */
   async ensureClassesDomainConstraints() {
     const {
       COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
-      DEDUP_CLASSES_NAME_KEEP_LATEST_SQL,
+      LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
       CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
       ENSURE_CLASSES_STATUS_CHECK_SQL,
       NORMALIZE_CLASSES_STATUS_SQL,
+      formatClassesNameDuplicateDiagnostic,
     } = require("../lib/classesUniqueness");
 
     await this.query(NORMALIZE_CLASSES_STATUS_SQL);
@@ -369,17 +371,8 @@ class PostgresRepository {
     const before = await this.one(COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL);
     const duplicateGroups = Number(before?.duplicate_groups ?? 0);
     if (duplicateGroups > 0) {
-      console.warn(
-        `[classes] ${duplicateGroups} groupe(s) nom en doublon — conservation updated_at/created_at/id DESC`,
-      );
-      await this.query(DEDUP_CLASSES_NAME_KEEP_LATEST_SQL);
-    }
-
-    const after = await this.one(COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL);
-    if (Number(after?.duplicate_groups ?? 0) > 0) {
-      throw new Error(
-        "Classes : des doublons de nom persistent après déduplication — index unique non créé.",
-      );
+      const groups = await this.all(LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL);
+      throw new Error(formatClassesNameDuplicateDiagnostic(groups, duplicateGroups));
     }
 
     await this.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);

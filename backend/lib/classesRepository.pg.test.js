@@ -5,7 +5,7 @@
  * create/read, update persistée, unicité (dont concurrente),
  * isolation inter-établissements, contrainte active|inactive.
  *
- * Prérequis : PostgreSQL accessible (DATABASE_URL ou défaut local).
+ * Prérequis : DATABASE_URL fourni par l'environnement CI (aucun secret/URI de secours).
  */
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
@@ -18,9 +18,43 @@ const {
   isClassCodeUniquenessViolation,
 } = require("./classesUniqueness");
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ||
-  "postgresql://somafrik:somafrik123@127.0.0.1:5432/somafrik_classes_it";
+const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
+const CLASSES_IT_DATABASE = String(process.env.SOMAFRIK_CLASSES_IT_DATABASE ?? "somafrik_classes_it")
+  .trim()
+  .replace(/[^a-zA-Z0-9_]/g, "");
+
+/**
+ * Dérive une URI vers une base isolée à partir de DATABASE_URL (env CI uniquement).
+ * @param {string} databaseUrl
+ * @param {string} databaseName
+ */
+function withDatabaseName(databaseUrl, databaseName) {
+  const parsed = new URL(databaseUrl);
+  parsed.pathname = `/${databaseName}`;
+  return parsed.toString();
+}
+
+/**
+ * Crée la base d'intégration si absente (utilisateur CI = owner du cluster local).
+ * @param {string} databaseUrl
+ * @param {string} databaseName
+ */
+async function ensureIsolatedDatabase(databaseUrl, databaseName) {
+  if (!databaseName) {
+    throw new Error("SOMAFRIK_CLASSES_IT_DATABASE invalide.");
+  }
+  const maintenanceUrl = withDatabaseName(databaseUrl, "postgres");
+  const pool = new Pool({ connectionString: maintenanceUrl });
+  try {
+    const existing = await pool.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
+    if (!existing.rowCount) {
+      await pool.query(`CREATE DATABASE ${databaseName}`);
+    }
+  } finally {
+    await pool.end();
+  }
+  return withDatabaseName(databaseUrl, databaseName);
+}
 
 async function setupFixture(pool) {
   await pool.query(`
@@ -98,38 +132,16 @@ async function setupFixture(pool) {
   );
   const countryId = country.rows[0].id;
 
-  const schoolA = await pool.query(
+  await pool.query(
     `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'SCH-A', 'École A')
-     RETURNING id, school_code`,
-    [countryId],
-  );
-  const schoolB = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'SCH-B', 'École B')
-     RETURNING id, school_code`,
+     VALUES ($1, 'SCH-A', 'École A'), ($1, 'SCH-B', 'École B')`,
     [countryId],
   );
 
-  const yearA = await pool.query(
+  await pool.query(
     `INSERT INTO academic_years (school_id, name, is_current, status)
-     VALUES ($1, '2025-2026', TRUE, 'open')
-     RETURNING id, name`,
-    [schoolA.rows[0].id],
+     SELECT id, '2025-2026', TRUE, 'open' FROM schools WHERE school_code IN ('SCH-A', 'SCH-B')`,
   );
-  const yearB = await pool.query(
-    `INSERT INTO academic_years (school_id, name, is_current, status)
-     VALUES ($1, '2025-2026', TRUE, 'open')
-     RETURNING id, name`,
-    [schoolB.rows[0].id],
-  );
-
-  return {
-    schoolA: schoolA.rows[0],
-    schoolB: schoolB.rows[0],
-    yearA: yearA.rows[0],
-    yearB: yearB.rows[0],
-  };
 }
 
 function createDbAdapter(pool) {
@@ -156,6 +168,11 @@ function createDbAdapter(pool) {
 }
 
 async function main() {
+  if (!DATABASE_URL) {
+    console.log("SKIP classesRepository.pg.test.js: DATABASE_URL absent");
+    return;
+  }
+
   assert.equal(
     isClassNameUniquenessViolation({
       code: "23505",
@@ -179,7 +196,8 @@ async function main() {
     true,
   );
 
-  const pool = new Pool({ connectionString: DATABASE_URL });
+  const isolatedUrl = await ensureIsolatedDatabase(DATABASE_URL, CLASSES_IT_DATABASE);
+  const pool = new Pool({ connectionString: isolatedUrl });
   try {
     await setupFixture(pool);
     const repo = createClassesRepository(createDbAdapter(pool));

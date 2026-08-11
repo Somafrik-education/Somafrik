@@ -99,10 +99,10 @@ CREATE TABLE IF NOT EXISTS classes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Unicité métier atomique : (établissement, année, nom normalisé).
--- Pour bases legacy, l'index est aussi assuré par ensureClassesDomainConstraints (après dédup).
-CREATE UNIQUE INDEX IF NOT EXISTS uq_classes_school_year_normalized_name
-  ON classes (school_id, academic_year_id, (lower(btrim(name))));
+-- Unicité métier (école + année + nom normalisé) : index créé APRÈS contrôle
+-- fail-safe dans postgresRepository.ensureClassesDomainConstraints() /
+-- migration 20260811_classes_name_uniqueness.sql (bases legacy avec doublons).
+-- Ne pas créer l'index ici : schema.sql s'exécute avant la migration contrôlée.
 
 CREATE TABLE IF NOT EXISTS subjects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -512,6 +512,8 @@ CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id,
 -- dans postgresRepository.ensureAttendanceCanonicalUniqueness() (bases legacy sûres).
 -- D3.6b : l'index unique uq_grades_school_evaluation_student est créé APRÈS migration/dédup
 -- dans postgresRepository.ensureGradeCanonicalUniqueness() (bases legacy sûres).
+-- Classes : uq_classes_school_year_normalized_name est créé APRÈS contrôle fail-safe
+-- dans postgresRepository.ensureClassesDomainConstraints() (pas de suppression silencieuse).
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_school_id ON payments(school_id);
 CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_school_student ON student_fee_obligations(school_id, student_id);

@@ -165,6 +165,11 @@ jobs:
           npm run check
           npm --prefix web test
 
+      - name: verify:classes-management (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:classes-management
+
       - name: Bootstrap runtime guard (PostgreSQL préprod-like)
         env:
           NODE_ENV: test
