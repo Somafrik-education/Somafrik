@@ -1,4 +1,5 @@
 export { authorizationDecisionToHttpStatus } from "./authorization-http.js";
 export { extractBearerCredential } from "./bearer-credential.js";
+export { decodeJwtCompactStrict } from "./jwt-compact-decoder.js";
 export { isJwtClaimsPolicySatisfied } from "./jwt-claims-policy.js";
 export { isJwtTemporalPolicySatisfied } from "./jwt-temporal-policy.js";
