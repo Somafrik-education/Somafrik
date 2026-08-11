@@ -3,5 +3,10 @@ export {
   AUTH_PERMISSION_CATALOG,
   isCataloguedAuthPermission,
 } from "./permission-catalog.js";
+export {
+  AUTH_IDENTITY_STATUS,
+  createAuthIdentity,
+  isAuthIdentityActive,
+} from "./identity.js";
 export { createAuthPrincipal } from "./principal.js";
 export { can } from "./permissions.js";
