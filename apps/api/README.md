@@ -9,4 +9,13 @@ Cette application sera l'adaptateur HTTP de Somafrik V2.
 - exposer des routes métier explicites, pas un état JSON global ;
 - rester inactive en production tant que son lot de migration n'a pas franchi la parité et le gate CTO.
 
-Le premier endpoint sera ajouté dans un lot séparé après le contrat identité/authentification V2.
+## Lot V2.1j
+
+Adaptateur pur `authorizationDecisionToHttpStatus(decision)` :
+
+- `AUTHORIZED` → 200 ;
+- `UNAUTHENTICATED` → 401 ;
+- `FORBIDDEN` → 403 ;
+- décision inconnue ou invalide → 401 fail-closed.
+
+Aucun middleware, route, JWT ou corps HTTP n'est introduit dans ce lot.
