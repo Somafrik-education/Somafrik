@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1t — implémentation pure du vérificateur RS256
+**Lot courant :** V2.1u — contrat de résolution stricte de kid
 
 ---
 
@@ -119,6 +119,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1r | Implémentation pure du décodeur JWT compact strict (`apps/api`) | `decodeJwtCompactStrict` fail-closed + CI verts |
 | V2.1s | Contrat de vérification RS256 pure (documentation) | Décision CTO documentée + CI verts |
 | V2.1t | Implémentation pure du vérificateur RS256 (`apps/api`) | `verifyJwtRs256Signature` fail-closed + CI verts |
+| V2.1u | Contrat de résolution stricte de `kid` (documentation) | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -1623,20 +1624,171 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat de vérifica
 
 ## 49. Gate de merge V2.1t
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] export public limité à `verifyJwtRs256Signature` ;
+- [x] validation stricte de `signingInput`, `signature` et `verificationKey` ;
+- [x] modulus 2048/3072/4096 acceptés ; 1024 et exposants ≠ 65537 refusés ;
+- [x] RSA-PSS, ECDSA, HMAC, SHA ≠ SHA-256 et clés privées refusés ;
+- [x] appel unique à `crypto.subtle.verify` avec algorithme fixe ;
+- [x] aucune exception ni promesse rejetée vers l’appelant ;
+- [x] aucune mutation des entrées ;
+- [x] aucune résolution de `kid` ni import PEM/JWK/JWKS ;
+- [x] aucune dépendance ajoutée ;
+- [x] clés de test éphémères uniquement, jamais versionnées ;
+- [x] tests normatifs et cas limites verts ;
+- [x] non-régression API/auth/domaine ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 50. Périmètre exact de V2.1u
+
+Lot **documentation uniquement**. Aucune implémentation runtime, aucun PEM/JWK/JWKS, aucun réseau, aucun cache, aucune clé réelle ou privée, aucune cryptographie, aucun middleware et aucun changement de runtime, schéma ou donnée.
+
+Objectif : contractualiser la **résolution stricte de `kid`** vers une unique `CryptoKey` publique active compatible RS256, après décodage, validation des claims et vérification RS256. C’est la dernière brique JWT explicitement différée avant l’implémentation pure **V2.1v**.
+
+### Export documentaire exact
+
+Future fonction pure :
+
+```text
+resolveJwtRs256VerificationKey(kid, keyCandidates)
+```
+
+Retour exact :
+
+```text
+CryptoKey | null
+```
+
+- retour non-`null` = **KEY_RESOLVED** uniquement (clé publique active unique compatible) ;
+- toute anomalie → `null` ;
+- **aucune exception sortante**.
+
+Le succès ne signifie jamais : JWT authentique, signature déjà vérifiée dans ce lot, claims valides, session valide, permission accordée ou accès autorisé.
+
+### Forme exacte d’un candidat
+
+Chaque élément de `keyCandidates` devra exposer **exactement** les trois propriétés propres suivantes :
+
+```text
+{
+  kid,              // string — identifiant de clé
+  status,           // string — état de cycle de vie
+  verificationKey   // CryptoKey publique
+}
+```
+
+Aucune propriété supplémentaire n’est autorisée. Toute forme absente, hostile, héritée, à accesseurs, à symboles ou non ordinaires → `null`.
+
+### Contrat de `kid` (non-régression V2.1o)
+
+`kid` doit respecter intégralement le contrat V2.1o :
+
+- type exact `string` ;
+- non vide ;
+- longueur **1 à 128** caractères ASCII ;
+- charset uniquement : `A-Z a-z 0-9 . _ : -` ;
+- fourni explicitement ;
+- comparaison exacte par `===` ;
+- **aucune** normalisation, trim, changement de casse, coercition ou fallback.
+
+### Entrée — `keyCandidates`
+
+- injecté **explicitement** au futur résolveur ;
+- structure déterministe (tableau ordinaire de candidats conformes) ;
+- aucune lecture d’environnement, KMS, fichier, réseau ou JWKS ;
+- aucune mutation des entrées.
+
+### Règles cumulatives de résolution
+
+Retourner la `verificationKey` uniquement si **toutes** les conditions suivantes sont satisfaites :
+
+1. `kid` est valide au sens V2.1o ;
+2. `keyCandidates` est une structure admissible injectée explicitement ;
+3. **exactement un** candidat possède `candidate.kid === kid` (comparaison stricte) ;
+4. ce candidat a `status === "active"` ;
+5. `verificationKey` est une `CryptoKey` publique compatible RS256 / SHA-256 (mêmes contraintes de compatibilité que V2.1s/V2.1t : usage `verify`, `RSASSA-PKCS1-v1_5`, hash SHA-256, exposant 65537, modulus 2048/3072/4096) ;
+6. aucune ambiguïté, duplication ou conflit de `kid` dans l’ensemble fourni.
+
+Sinon retourner `null`.
+
+### Rotation et unicité
+
+- un `kid` **ne peut jamais être réutilisé** lors d’une rotation ;
+- zéro correspondance → `null` ;
+- plusieurs correspondances pour le même `kid` → `null` (ambiguïté fail-closed) ;
+- candidat présent mais `status !== "active"` (retiré, inactif, inconnu, etc.) → `null` ;
+- clé incompatible ou privée → `null`.
+
+### Algorithme décisionnel documentaire
+
+Retourner `null` si **au moins une** condition suivante est vraie :
+
+1. `kid` invalide ou non-string ;
+2. `keyCandidates` absent, non admissible ou hostile ;
+3. aucun candidat avec `kid` exact ;
+4. plus d’un candidat avec le même `kid` exact ;
+5. le candidat unique n’a pas `status === "active"` ;
+6. `verificationKey` absente, non-`CryptoKey`, privée ou incompatible RS256/SHA-256 ;
+7. une valeur a été normalisée, coercée, mutée ou une exception n’a pas été capturée.
+
+Sinon retourner la `CryptoKey` du candidat unique actif.
+
+### Exemples normatifs
+
+| Cas | Résultat |
+|---|---|
+| un seul candidat `kid` exact, `status === "active"`, clé RS256 compatible | `CryptoKey` |
+| `kid` vide, avec espace ou hors charset V2.1o | `null` |
+| aucun candidat correspondant | `null` |
+| deux candidats avec le même `kid` | `null` |
+| candidat correspondant mais `status !== "active"` | `null` |
+| clé privée ou incompatible | `null` |
+| `keyCandidates` hostile ou non injecté | `null` |
+
+### Annonce V2.1v
+
+Le lot **V2.1v** implémentera de façon pure `resolveJwtRs256VerificationKey` conformément à ce contrat, sans import PEM/JWK/JWKS, sans réseau et sans résolution implicite.
+
+### Non-régression
+
+Conservées sans élargissement :
+
+- politiques et implémentations JWT V2.1l à V2.1t ;
+- format `kid` V2.1o ;
+- séparation décodage / claims / temporel / crypto / résolution `kid` ;
+- aucun rôle, tenant, droit ou permission dans le JWT ;
+- matrice 48/102 inchangée ;
+- clés privées hors dépôt ;
+- aucun JWT complet dans les logs, URLs ou réponses.
+
+### Hors périmètre de V2.1u
+
+- implémentation runtime (réservée à **V2.1v**) ;
+- PEM, JWK ou JWKS ; appel réseau ou endpoint JWKS ;
+- cache, KMS ou variable d’environnement ;
+- clé réelle ou privée versionnée ;
+- signature ou vérification cryptographique ;
+- pipeline JWT, middleware, session ou route ;
+- dépendance ajoutée ; matrice 48/102.
+
+## 51. Gate de merge V2.1u
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] export public limité à `verifyJwtRs256Signature` ;
-- [ ] validation stricte de `signingInput`, `signature` et `verificationKey` ;
-- [ ] modulus 2048/3072/4096 acceptés ; 1024 et exposants ≠ 65537 refusés ;
-- [ ] RSA-PSS, ECDSA, HMAC, SHA ≠ SHA-256 et clés privées refusés ;
-- [ ] appel unique à `crypto.subtle.verify` avec algorithme fixe ;
-- [ ] aucune exception ni promesse rejetée vers l’appelant ;
-- [ ] aucune mutation des entrées ;
-- [ ] aucune résolution de `kid` ni import PEM/JWK/JWKS ;
-- [ ] aucune dépendance ajoutée ;
-- [ ] clés de test éphémères uniquement, jamais versionnées ;
-- [ ] tests normatifs et cas limites verts ;
-- [ ] non-régression API/auth/domaine ;
+- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [ ] export documentaire `resolveJwtRs256VerificationKey(kid, keyCandidates)` défini ;
+- [ ] retour exact `CryptoKey | null` et sémantique `KEY_RESOLVED` documentés ;
+- [ ] forme exacte des candidats `{ kid, status, verificationKey }` documentée ;
+- [ ] contrat `kid` V2.1o et comparaison `===` sans normalisation documentés ;
+- [ ] unicité, `status === "active"` et non-réutilisation de `kid` documentées ;
+- [ ] compatibilité RS256/SHA-256 de la clé résolue documentée ;
+- [ ] V2.1v annoncé comme lot d’implémentation pure ;
+- [ ] aucune implémentation runtime, PEM/JWK/JWKS, réseau ou clé introduits ;
+- [ ] aucun secret et aucune dépendance ajoutés ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
