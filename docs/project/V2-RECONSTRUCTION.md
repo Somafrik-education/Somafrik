@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1x — implémentation pure du pipeline JWT d’accès pré-session
+**Lot courant :** V2.1y — contrat de liaison JWT ↔ session
 
 ---
 
@@ -123,6 +123,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1v | Implémentation pure du résolveur strict de `kid` (`apps/api`) | `resolveJwtRs256VerificationKey` fail-closed + CI verts |
 | V2.1w | Contrat du pipeline JWT d’accès pré-session (documentation) | Décision CTO documentée + CI verts |
 | V2.1x | Implémentation pure du pipeline JWT d’accès pré-session (`apps/api`) | `verifyJwtAccessTokenCryptographically` fail-closed + CI verts |
+| V2.1y | Contrat de liaison JWT ↔ session (documentation) | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -2104,26 +2105,233 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat d’orchestr
 
 ## 57. Gate de merge V2.1x
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] diff limité aux quatre fichiers autorisés ;
+- [x] export public limité à `verifyJwtAccessTokenCryptographically` ;
+- [x] aucun export/seam de test et aucun état global mutable de briques ;
+- [x] retour exact `Promise<{ sub, sid, jti } | null>` ;
+- [x] sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` ;
+- [x] ordre décodage → claims/temps → kid → RS256 respecté ;
+- [x] quatre briques existantes réutilisées sans duplication ;
+- [x] prédicats de succès exacts appliqués ;
+- [x] arrêt immédiat après chaque échec ;
+- [x] aucune exception ni promesse rejetée sortante ;
+- [x] résultat limité exactement à `sub`, `sid` et `jti` ;
+- [x] aucune session ou autorisation incluse ;
+- [x] aucun token, signature, `signingInput`, `kid` ou `CryptoKey` exposé ;
+- [x] aucune horloge ou configuration implicite ;
+- [x] aucun PEM/JWK/JWKS, réseau, KMS, cache ou clé ajouté ;
+- [x] aucune dépendance ajoutée ;
+- [x] tests API/auth/domaine verts ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de schéma, migration ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+### Clôture documentaire V2.1x
+
+- PR fusionnée : **#147** ;
+- head validé : `d84ad4209e30cab189db3cde79c990dde7c07662` ;
+- merge commit : `3bdb5c306a22b912c4f264e2e97d7e52301d4f5e`.
+
+## 58. Périmètre exact de V2.1y
+
+Lot **documentation uniquement**. Aucune implémentation runtime, aucun export public, aucun test runtime, aucun repository, aucune migration, aucun schéma et aucun changement de donnée.
+
+Objectif : contractualiser la validation **post-cryptographique** qui lie le résultat `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` produit par V2.1x à une session d’authentification V2 exacte.
+
+### Export documentaire exact
+
+Future fonction pure :
+
+```text
+validateJwtBoundAuthSession(
+  cryptographicallyAdmissibleToken,
+  authSession,
+  sessionEvaluationTime
+)
+```
+
+Retour futur exact :
+
+```text
+Promise<{
+  sub,
+  sid,
+  jti,
+  principal
+} | null>
+```
+
+Signature normative unique : **`Promise<… | null>`**, cohérente avec `verifyJwtAccessTokenCryptographically`. Les briques session actuelles (`createAuthSession`, `isAuthSessionActive`) sont **synchrones** ; une future implémentation pourra donc résoudre immédiatement sans I/O tant qu’aucun repository n’est injecté, tout en conservant cette signature asynchrone normative. **Aucun export** n’est ajouté par V2.1y.
+
+- retour non-`null` = **JWT_BOUND_ACTIVE_SESSION** uniquement ;
+- toute anomalie → `null` (ou décision `UNAUTHENTICATED` d’un orchestrateur supérieur ultérieur) ;
+- **aucune exception** ni promesse rejetée sortante.
+
+Le succès ne signifie jamais : permission accordée, accès autorisé, réponse HTTP 200, identité obtenue par recherche implicite, session créée/prolongée/renouvelée, refresh token accepté, ni absence globale de rejeu au-delà du contrat documenté. L’**autorisation** reste une étape **ultérieure**.
+
+### Entrée — `cryptographicallyAdmissibleToken`
+
+Doit correspondre exactement à la sortie de `verifyJwtAccessTokenCryptographically` :
+
+```text
+{
+  sub: string,
+  sid: string,
+  jti: string
+}
+```
+
+Exiger : objet ordinaire admissible ; exactement trois propriétés propres de données ; aucun symbole, accesseur, champ supplémentaire, coercition, normalisation ou mutation. **Ne pas** redécoder le JWT ; **ne pas** répéter les politiques claims/temps/`kid`/RS256.
+
+### Entrée — `authSession`
+
+Doit être conforme au modèle canonique produit par `createAuthSession`. L’état actif s’évalue exclusivement via :
+
+```text
+isAuthSessionActive(authSession, sessionEvaluationTime) === true
+```
+
+Toute autre valeur que `true` → échec fail-closed. **Ne pas** recopier : validation d’identité, de principal, dates de session, révocation, matrice rôle/tenant ou permissions.
+
+### Temps explicite — `sessionEvaluationTime`
+
+Fourni explicitement au format ISO UTC canonique déjà exigé par `isAuthSessionActive`.
+
+Interdictions : `Date.now()`, horloge implicite, valeur par défaut, variable d’environnement, normalisation silencieuse.
+
+Distinction documentaire obligatoire :
+
+- V2.1x évalue les claims JWT avec un **NumericDate** ;
+- les sessions utilisent un **timestamp ISO UTC canonique** ;
+- dans un futur orchestrateur supérieur, les deux représentations doivent désigner le **même instant** d’évaluation ;
+- aucune utilisation silencieuse de deux instants indépendants ;
+- toute conversion future doit être explicite, déterministe, testée et sans arrondi ambigu.
+
+V2.1y n’ajoute **aucune** conversion runtime.
+
+### Liaisons obligatoires
+
+Le succès futur exige exactement :
+
+1. `cryptographicallyAdmissibleToken` conforme ;
+2. `authSession` conforme à `createAuthSession` ;
+3. `isAuthSessionActive(authSession, sessionEvaluationTime) === true` ;
+4. `cryptographicallyAdmissibleToken.sid === authSession.sessionId` ;
+5. `cryptographicallyAdmissibleToken.sub === authSession.identity.userId` ;
+6. `authSession.principal.userId === authSession.identity.userId` ;
+7. liaison explicite et fail-closed de `jti` selon la décision CTO ci-dessous.
+
+Interdictions : coercition, normalisation, comparaison insensible à la casse, fallback legacy, identité construite depuis les claims JWT, autorisation exécutée dans cette fonction.
+
+### Décision CTO concernant `jti`
+
+**Constat :** le modèle `AuthSession` actuel ne contient **aucune** représentation canonique de `jti`.
+
+Interdit : ignorer silencieusement `jti` ; prétendre qu’il est déjà lié à la session ; utiliser `sid` comme substitut ; ajouter `jti` au modèle runtime dans ce lot ; inventer une persistance/cache/mécanisme de rejeu ; autoriser le succès tant que la liaison canonique n’est pas définie.
+
+**Décision normative :** `jti` est l’identifiant unique du JWT d’accès. Une future implémentation ne pourra retourner `JWT_BOUND_ACTIVE_SESSION` que si le `jti` présenté est lié explicitement :
+
+- soit à l’état canonique de la session ;
+- soit à un enregistrement canonique de jeton rattaché à la session,
+
+selon un contrat ultérieur approuvé par le CTO.
+
+Tant que cette représentation canonique et son cycle de vie ne sont pas contractualisés, l’implémentation complète JWT ↔ session reste **bloquée fail-closed**.
+
+### Annonce V2.1z
+
+Prochain lot minimal : **V2.1z — contrat du cycle de vie de `jti` et prévention du rejeu**. V2.1y ne doit ni implémenter ni détailler prématurément son stockage.
+
+### Principal retourné
+
+Le `principal` retourné doit être **exclusivement** celui de la session validée.
+
+Interdit : construire le principal depuis `sub` ou d’autres claims JWT ; fusionner le payload JWT avec le principal ; ajouter rôle/tenant/permissions depuis le JWT ; retourner la session complète.
+
+Résultat de succès exact :
+
+```text
+{
+  sub,
+  sid,
+  jti,
+  principal
+}
+```
+
+`sub` / `sid` / `jti` repris sans transformation depuis le résultat V2.1x validé ; `principal` repris depuis la session validée, sans enrichissement implicite.
+
+### Ordre normatif complet
+
+```text
+Bearer credential
+  → décodage JWT strict
+  → validation des claims et du temps JWT
+  → résolution kid
+  → vérification RS256
+  → TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE
+  → résolution explicite de session par sid
+  → validation exacte et temporelle de la session
+  → liaison sid / sub / jti
+  → JWT_BOUND_ACTIVE_SESSION
+  → décision d’autorisation par permission
+  → mapping HTTP 200 / 401 / 403
+```
+
+Confirmations :
+
+- aucune session consultée avant l’admissibilité cryptographique ;
+- aucune autorisation avant la liaison complète de session ;
+- session absente, hostile, expirée ou révoquée = échec d’authentification ;
+- divergence `sid`, `sub` ou `jti` = échec d’authentification ;
+- aucune information sensible exposée à l’appelant.
+
+### Frontière du futur repository
+
+V2.1y ne crée **aucun** repository. Le futur accès à la session devra être : injecté explicitement ; borné par `sid` ; postérieur à RS256 ; sans environnement implicite ; sans accès legacy ; fail-closed sur zéro/plusieurs résultats, résultat hostile, throw ou promesse rejetée. La forme exacte du port de résolution sera contractualisée avant son implémentation. Aucun réseau, cache, KMS ou accès base n’est ajouté par V2.1y.
+
+### Fail-closed et confidentialité
+
+Toute anomalie → `null` (ou `UNAUTHENTICATED` d’un orchestrateur supérieur). Aucune exception ni promesse rejetée sortante.
+
+Ne jamais exposer : JWT compact, header/payload complets, signature, `signingInput`, `kid`, `CryptoKey`, clé/secret, session complète, résultat brut du repository, détails internes de révocation.
+
+Résultat validé limité à : `sub`, `sid`, `jti`, `principal`.
+
+### Hors périmètre de V2.1y
+
+- JavaScript runtime ; nouvel export ; test runtime ; repository de sessions ;
+- PostgreSQL ; migration ; schéma ; donnée ; ajout de `jti` au modèle de session ;
+- route/middleware ; login/refresh/logout ; création ou renouvellement de session ;
+- implémentation de révocation ; nouvelle permission/RBAC ; nouveau mapping HTTP ;
+- clé, secret, PEM/JWK/JWKS ; réseau, KMS, cache ; dépendance ; variable d’environnement ; `Date.now()` ;
+- modification legacy ; modification de la matrice 48/102.
+
+## 59. Gate de merge V2.1y
+
 - [ ] diff GitHub indépendant relu par le CTO ;
-- [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] diff limité aux quatre fichiers autorisés ;
-- [ ] export public limité à `verifyJwtAccessTokenCryptographically` ;
-- [ ] aucun export/seam de test et aucun état global mutable de briques ;
-- [ ] retour exact `Promise<{ sub, sid, jti } | null>` ;
-- [ ] sémantique `TOKEN_CRYPTOGRAPHICALLY_ADMISSIBLE` ;
-- [ ] ordre décodage → claims/temps → kid → RS256 respecté ;
-- [ ] quatre briques existantes réutilisées sans duplication ;
-- [ ] prédicats de succès exacts appliqués ;
-- [ ] arrêt immédiat après chaque échec ;
-- [ ] aucune exception ni promesse rejetée sortante ;
-- [ ] résultat limité exactement à `sub`, `sid` et `jti` ;
-- [ ] aucune session ou autorisation incluse ;
-- [ ] aucun token, signature, `signingInput`, `kid` ou `CryptoKey` exposé ;
-- [ ] aucune horloge ou configuration implicite ;
-- [ ] aucun PEM/JWK/JWKS, réseau, KMS, cache ou clé ajouté ;
-- [ ] aucune dépendance ajoutée ;
-- [ ] tests API/auth/domaine verts ;
+- [ ] PR conservée Draft jusqu’à stabilisation ;
+- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [ ] V2.1x correctement clôturé ;
+- [ ] future API `validateJwtBoundAuthSession` contractualisée ;
+- [ ] aucun export runtime ajouté ;
+- [ ] sémantique `JWT_BOUND_ACTIVE_SESSION` documentée ;
+- [ ] liaison exacte `sid` ↔ `sessionId` documentée ;
+- [ ] liaison exacte `sub` ↔ `identity.userId` documentée ;
+- [ ] cohérence `principal.userId` ↔ `identity.userId` documentée ;
+- [ ] principal exclusivement issu de la session validée ;
+- [ ] absence actuelle de représentation canonique de `jti` reconnue ;
+- [ ] implémentation bloquée fail-closed tant que `jti` n’est pas contractualisé ;
+- [ ] temps JWT et session explicitement distingués ;
+- [ ] même instant exigé dans le futur orchestrateur supérieur ;
+- [ ] résolution de session strictement postérieure à RS256 ;
+- [ ] autorisation strictement postérieure à la liaison de session ;
+- [ ] aucun runtime, test, repository, schéma ou donnée ajouté ;
+- [ ] aucune dépendance, clé ou secret ajouté ;
 - [ ] matrice 48/102 inchangée ;
-- [ ] aucune modification de schéma, migration ou donnée ;
-- [ ] aucun conflit non résolu avec `develop` ;
-- [ ] décision CTO explicite avant passage Ready puis merge.
+- [ ] V2.1 global conservé non terminé ;
+- [ ] aucun conflit avec `develop` ;
+- [ ] décision CTO explicite avant Ready puis merge.
