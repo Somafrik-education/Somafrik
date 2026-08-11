@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1o — contrat strict de structure et de claims JWT d’accès
+**Lot courant :** V2.1p — implémentation pure du contrôle structurel des claims JWT
 
 ---
 
@@ -114,6 +114,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1m | Durcissement de la politique temporelle JWT d’accès | Contrat temporel déterministe + CI verts |
 | V2.1n | Implémentation pure du contrôle temporel JWT (`apps/api`) | `isJwtTemporalPolicySatisfied` fail-closed + CI verts |
 | V2.1o | Contrat strict de structure et de claims JWT d’accès | Décision CTO documentée + CI verts |
+| V2.1p | Implémentation pure du contrôle structurel des claims JWT (`apps/api`) | `isJwtClaimsPolicySatisfied` fail-closed + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -1068,19 +1069,70 @@ Toutes les validations doivent réussir **cumulativement**. Même si elles réus
 
 ## 39. Gate de merge V2.1o
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [x] header exact `alg`, `typ`, `kid` documenté ;
+- [x] payload exact des huit claims documenté ;
+- [x] formats stricts de `kid`, `sub`, `sid` et `jti` documentés ;
+- [x] `iss` exact et `expectedIssuer` explicitement injecté ;
+- [x] `aud` string exacte `somafrik-api-v2` ;
+- [x] claims supplémentaires interdits ;
+- [x] rôle, tenant et permissions explicitement interdits ;
+- [x] politique temporelle V2.1m/V2.1n conservée ;
+- [x] aucune bibliothèque ou implémentation JWT introduite ;
+- [x] aucun secret, aucune clé et aucun JWT introduit ;
+- [x] matrice 48/102 inchangée ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 40. Périmètre exact de V2.1p
+
+Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat structurel V2.1o.
+
+### Export public exact
+
+- fichier : `apps/api/src/jwt-claims-policy.js` ;
+- export unique ajouté : `isJwtClaimsPolicySatisfied(protectedHeader, payload, expectedIssuer, evaluationTime)` ;
+- réexport depuis `apps/api/src/index.js` ;
+- les exports existants `authorizationDecisionToHttpStatus`, `extractBearerCredential` et `isJwtTemporalPolicySatisfied` restent inchangés.
+
+### Contrat d’exécution
+
+- `protectedHeader` et `payload` sont des objets **déjà décodés** et injectés explicitement ; aucun JWT compact, aucun décodage de segment, aucun parse de chaîne sérialisée ;
+- objets ordinaires uniquement (`Object.prototype` ou prototype `null`) ; propriétés propres de données ; symboles, accesseurs, héritage utilisé, tableaux, instances et proxies hostiles → `false` ;
+- header exact : `alg`, `typ`, `kid` ; `alg === "RS256"` ; `typ === "JWT"` ; `kid` ASCII 1–128 (`A-Z a-z 0-9 . _ : -`) ;
+- payload exact : huit claims `iss`, `aud`, `sub`, `sid`, `iat`, `nbf`, `exp`, `jti` ; tout claim supplémentaire → `false` ;
+- `iss` et `expectedIssuer` validés puis comparés par `===` ; `aud === "somafrik-api-v2"` ;
+- contrôle temporel **délégué** à V2.1n via `isJwtTemporalPolicySatisfied(payload.iat, payload.nbf, payload.exp, evaluationTime)` sans duplication des règles ;
+- la détection des clés JSON dupliquées appartient au **futur parseur sécurisé** (non observable après un parsing standard) ; V2.1p ne parse aucune charge sérialisée ;
+- retourne uniquement `true` / `false` ; **aucun throw** ; `true` = **STRUCTURALLY_AND_TEMPORALLY_ADMISSIBLE** uniquement — jamais authentification ni autorisation.
+
+### Hors périmètre de V2.1p
+
+- bibliothèque JWT ; parseur ; décodage compact ; cryptographie ; clés ; secrets ; résolution réelle de `kid` ;
+- middleware, routes, login/refresh/logout, session ; `Date.now()` ; variables d’environnement ;
+- modification de `packages/auth` ou de la matrice 48/102 ; dépendance legacy.
+
+## 41. Gate de merge V2.1p
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
-- [ ] header exact `alg`, `typ`, `kid` documenté ;
-- [ ] payload exact des huit claims documenté ;
-- [ ] formats stricts de `kid`, `sub`, `sid` et `jti` documentés ;
-- [ ] `iss` exact et `expectedIssuer` explicitement injecté ;
+- [ ] export public limité à `isJwtClaimsPolicySatisfied` ;
+- [ ] header limité exactement à `alg`, `typ` et `kid` ;
+- [ ] payload limité exactement aux huit claims obligatoires ;
+- [ ] propriétés supplémentaires, héritées, symboles et accesseurs refusés ;
+- [ ] objets et valeurs hostiles traités fail-closed ;
+- [ ] formats `kid`, `sub`, `sid` et `jti` appliqués strictement ;
+- [ ] `iss` et `expectedIssuer` validés puis comparés exactement ;
 - [ ] `aud` string exacte `somafrik-api-v2` ;
-- [ ] claims supplémentaires interdits ;
-- [ ] rôle, tenant et permissions explicitement interdits ;
-- [ ] politique temporelle V2.1m/V2.1n conservée ;
-- [ ] aucune bibliothèque ou implémentation JWT introduite ;
-- [ ] aucun secret, aucune clé et aucun JWT introduit ;
+- [ ] contrôle temporel délégué à V2.1n sans duplication ;
+- [ ] aucune horloge implicite ;
+- [ ] aucun décodage, parsing ou contrôle cryptographique JWT ;
+- [ ] aucune dépendance ajoutée ;
+- [ ] tests normatifs et cas limites verts ;
+- [ ] non-régression API/auth/domaine ;
 - [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
