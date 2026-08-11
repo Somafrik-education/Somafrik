@@ -1,3 +1,5 @@
+import { types } from "node:util";
+
 const MAX_KID_LENGTH = 128;
 const MAX_CANDIDATES = 256;
 const ALLOWED_STATUSES = new Set(["active", "inactive"]);
@@ -68,6 +70,9 @@ function ownDataValue(object, key) {
  */
 function isOrdinaryObject(value) {
   if (value === null || typeof value !== "object") {
+    return false;
+  }
+  if (types.isProxy(value)) {
     return false;
   }
   if (Array.isArray(value)) {
@@ -162,6 +167,9 @@ function isCompatibleVerificationKey(verificationKey) {
   if (typeof CryptoKey === "undefined") {
     return false;
   }
+  if (types.isProxy(verificationKey)) {
+    return false;
+  }
   if (!(verificationKey instanceof CryptoKey)) {
     return false;
   }
@@ -207,6 +215,9 @@ function isCompatibleVerificationKey(verificationKey) {
  */
 function isAdmissibleCandidateArray(keyCandidates) {
   if (keyCandidates === null || typeof keyCandidates !== "object") {
+    return false;
+  }
+  if (types.isProxy(keyCandidates)) {
     return false;
   }
   if (!Array.isArray(keyCandidates)) {
@@ -284,6 +295,9 @@ function isAdmissibleCandidate(candidate) {
   // verificationKey presence is structural; compatibility checked after uniqueness.
   const verificationKey = ownDataValue(candidate, "verificationKey");
   if (verificationKey === null || verificationKey === undefined) {
+    return false;
+  }
+  if (types.isProxy(verificationKey)) {
     return false;
   }
 

@@ -211,6 +211,9 @@ test("rejects invalid or hostile keyCandidates structures", async () => {
   });
   assertNoThrow(kid, hostileProxy);
 
+  const transparentProxiedCandidates = new Proxy([candidate(publicKey)], {});
+  assertNull(kid, transparentProxiedCandidates);
+
   const tooMany = [];
   for (let index = 0; index < 257; index += 1) {
     tooMany.push(candidate(publicKey, { kid: `k-${index}` }));
@@ -304,6 +307,9 @@ test("rejects invalid candidate shapes", async () => {
     },
   });
   assertNoThrow(kid, [hostileCandidate]);
+
+  const transparentProxiedCandidate = new Proxy(candidate(publicKey), {});
+  assertNull(kid, [transparentProxiedCandidate]);
 
   assertNull(kid, [candidate(publicKey, { kid: "" })]);
   assertNull(kid, [candidate(publicKey, { kid: "bad/kid" })]);
@@ -496,6 +502,25 @@ test("rejects incompatible CryptoKey shapes", async () => {
     },
   });
   assertNoThrow(kid, [candidate(/** @type {CryptoKey} */ (hostileKey))]);
+
+  const transparentProxiedKey = new Proxy(publicKey, {});
+  assertNull(kid, [candidate(/** @type {CryptoKey} */ (transparentProxiedKey))]);
+});
+
+test("rejects transparent Proxies on keyCandidates candidate and verificationKey", async () => {
+  const { publicKey } = await generateRs256Pair(2048);
+  const kid = "key-2026.01";
+
+  assert.equal(
+    resolveJwtRs256VerificationKey(kid, [candidate(publicKey)]),
+    publicKey,
+  );
+
+  assertNull(kid, new Proxy([candidate(publicKey)], {}));
+  assertNull(kid, [new Proxy(candidate(publicKey), {})]);
+  assertNull(kid, [
+    candidate(/** @type {CryptoKey} */ (new Proxy(publicKey, {}))),
+  ]);
 });
 
 test("never throws never mutates and never calls subtle.verify", async () => {

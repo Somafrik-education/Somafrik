@@ -1829,6 +1829,7 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrat de résoluti
 - `keyCandidates` : `Array` ordinaire (`Array.prototype`), sans trous, sans symboles, sans propriétés supplémentaires, sans accesseurs, sans Proxy hostile ; **taille maximale 256** ;
 - chaque candidat : objet ordinaire (`Object.prototype` ou prototype `null`) avec exactement `{ kid, status, verificationKey }` en propriétés propres de données ;
 - **tous** les candidats doivent être structurellement valides ; un candidat malformé (correspondant ou non) → `null` ;
+- **tout Proxy** (transparent ou hostile) sur `keyCandidates`, un candidat ou `verificationKey` → `null` (détection via `types.isProxy` de `node:util`) ;
 - résolution uniquement si exactement un `kid` exact, `status === "active"`, et `verificationKey` publique compatible RS256/SHA-256 (usage `verify`, `RSASSA-PKCS1-v1_5`, hash SHA-256, exposant 65537, modulus 2048/3072/4096) ;
 - zéro ou plusieurs correspondances, statut inactif/inconnu, clé privée ou incompatible → `null` ;
 - **aucune** cryptographie exécutée (`crypto.subtle.verify` non appelé) ; aucun import PEM/JWK/JWKS ; aucun réseau, fichier, KMS, cache, variable d’environnement ou clé versionnée ;
