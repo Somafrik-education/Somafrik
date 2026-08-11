@@ -46,7 +46,7 @@ type AcademicYearOption = {
 export function ClassesListPage() {
   const { showToast } = useToast();
   const permissionCtx = usePermissionContext();
-  const permissions = getEntityFeaturePermissions(permissionCtx, "classes");
+  const permissions = getEntityFeaturePermissions(permissionCtx, "classes", "Classes");
   const { activeSchoolCode } = useActiveSchool();
 
   const [rows, setRows] = useState<SchoolClass[]>([]);
@@ -156,7 +156,7 @@ export function ClassesListPage() {
     }
   }
 
-  async function deactivate(row: SchoolClass) {
+  const deactivate = useCallback(async (row: SchoolClass) => {
     try {
       const updated = await classesApi.update(row.classCode, { status: "inactive" });
       setRows((current) =>
@@ -167,7 +167,7 @@ export function ClassesListPage() {
       const message = err instanceof ApiError ? err.message : "Désactivation impossible.";
       showToast(message, "error");
     }
-  }
+  }, [showToast]);
 
   const columns = useMemo(
     () => [
@@ -211,7 +211,7 @@ export function ClassesListPage() {
         ),
       },
     ],
-    [permissions.canUpdate],
+    [permissions.canUpdate, deactivate],
   );
 
   if (!permissions.canRead) {
