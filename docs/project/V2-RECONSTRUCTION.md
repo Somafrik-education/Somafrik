@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1n — implémentation pure du contrôle temporel JWT
+**Lot courant :** V2.1o — contrat strict de structure et de claims JWT d’accès
 
 ---
 
@@ -113,6 +113,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1l | Politique JWT d’accès RS256 (documentation) | Décision CTO documentée + CI verts |
 | V2.1m | Durcissement de la politique temporelle JWT d’accès | Contrat temporel déterministe + CI verts |
 | V2.1n | Implémentation pure du contrôle temporel JWT (`apps/api`) | `isJwtTemporalPolicySatisfied` fail-closed + CI verts |
+| V2.1o | Contrat strict de structure et de claims JWT d’accès | Décision CTO documentée + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -848,19 +849,239 @@ Lot d’implémentation **pure** dans `@somafrik/api-v2` du contrôle temporel d
 
 ## 37. Gate de merge V2.1n
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu’à stabilisation du périmètre ;
+- [x] export public limité à `isJwtTemporalPolicySatisfied` ;
+- [x] validation stricte des quatre entiers Unix sûrs ;
+- [x] ordre `iat <= nbf < exp` appliqué ;
+- [x] durée `0 < exp - iat <= 900` appliquée ;
+- [x] tolérance de 30 secondes appliquée sans débordement ;
+- [x] expiration exclusive appliquée ;
+- [x] aucune horloge implicite ;
+- [x] aucun décodage ou contrôle cryptographique JWT ;
+- [x] aucune dépendance ajoutée ;
+- [x] tests normatifs et cas limites verts ;
+- [x] non-régression API/auth/domaine ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 38. Périmètre exact de V2.1o
+
+Lot **documentation uniquement**. Aucune bibliothèque JWT, aucun décodage, aucune vérification cryptographique, aucune clé, aucun secret, aucune fonction de validation, aucun middleware, aucune route et aucun changement de runtime, schéma ou donnée.
+
+Objectif : contractualiser de façon déterministe et fail-closed la **structure exacte** du header protégé et des claims non temporels d’un JWT d’accès V2, applicable au résultat futur d’un décodage JWT vérifié.
+
+### Non-régression
+
+Conservées sans élargissement :
+
+- RS256 obligatoire ;
+- header exact `alg`, `typ`, `kid` ;
+- audience exacte `somafrik-api-v2` ;
+- politique temporelle V2.1m / V2.1n ;
+- aucun rôle, tenant, droit ou permission dans le JWT ;
+- reconstruction de l’autorisation depuis `sid` ;
+- correspondance exacte `sub` ↔ `userId` de la session ;
+- session révoquée, expirée ou invalide → refus ;
+- clés privées hors dépôt ;
+- rotation des clés par `kid` ;
+- aucun JWT complet dans les logs, URLs ou réponses ;
+- matrice 48/102 inchangée.
+
+### Header protégé exact
+
+Le header protégé JWT doit être un objet JSON contenant **exactement** les trois clés propres suivantes :
+
+- `alg`
+- `typ`
+- `kid`
+
+Aucune clé supplémentaire n’est autorisée.
+
+Valeurs obligatoires :
+
+- `alg === "RS256"`
+- `typ === "JWT"`
+- `kid` conforme au contrat ci-dessous
+
+Doivent notamment être refusés :
+
+- header absent ou `null` ;
+- tableau ou primitive ;
+- clé obligatoire absente ;
+- clé supplémentaire ;
+- `alg` différent de `RS256` ;
+- `typ` différent de `JWT` ;
+- `alg`, `typ` ou `kid` non-string ;
+- valeurs héritées plutôt que propriétés propres ;
+- duplications de clés JSON détectées par le futur parseur sécurisé ;
+- objets ou valeurs hostiles.
+
+La vérification cryptographique reste hors périmètre de V2.1o.
+
+### Contrat exact de `kid`
+
+`kid` doit être :
+
+- une string JSON ;
+- non vide ;
+- longue de **1 à 128** caractères ASCII ;
+- composée uniquement de : `A-Z` `a-z` `0-9` `.` `_` `:` `-` ;
+- fournie explicitement ;
+- comparée exactement, sans normalisation.
+
+Sont interdits : espaces ; tabulations et contrôles ; Unicode hors ASCII ; slash et backslash ; chaînes numériques converties ; trim implicite ; changement de casse ; valeur vide ou supérieure à 128 caractères.
+
+La future résolution devra trouver **exactement une** clé publique active correspondant à `kid`. Zéro correspondance ou plusieurs correspondances → refus. Aucune clé n’est introduite dans V2.1o.
+
+### Payload exact
+
+Le payload d’un JWT d’accès doit contenir **exactement** les huit claims suivants, comme propriétés propres :
+
+- `iss`
+- `aud`
+- `sub`
+- `sid`
+- `iat`
+- `nbf`
+- `exp`
+- `jti`
+
+Aucun claim supplémentaire n’est autorisé. Cela interdit notamment dans le JWT : `role`, `roles`, `tenant`, `tenantId`, `tenantScope`, `permission`, `permissions`, `rights`, `scopes`, `authorization`, `schoolId`, `countryId`, et toute donnée métier ou d’autorisation supplémentaire.
+
+Doivent être refusés : payload absent ou `null` ; tableau ou primitive ; claim obligatoire absent ; claim supplémentaire ; valeur héritée plutôt que propriété propre ; duplication de clé JSON détectée par le futur parseur sécurisé ; objet ou valeur hostile ; coercition ou valeur par défaut.
+
+### Contrat exact de `iss`
+
+`iss` doit être :
+
+- une string JSON ;
+- non vide ;
+- longue de **1 à 2048** caractères ;
+- sans caractère de contrôle ;
+- sans espace en début ou en fin ;
+- égale **exactement** à `expectedIssuer`.
+
+`expectedIssuer` doit être fourni **explicitement** au futur vérificateur depuis une configuration sécurisée. Le contrat pur ne lit aucune variable d’environnement.
+
+Sont interdits : normalisation d’URL ; ajout ou retrait de slash ; trim ; changement de casse ; résolution DNS ; alias legacy ; issuer implicite ou valeur par défaut.
+
+`expectedIssuer` absent, invalide ou différent de `iss` → refus fail-closed.
+
+### Contrat exact de `aud`
+
+`aud` doit être une string JSON exacte :
+
+```text
+somafrik-api-v2
+```
+
+Sont refusés : tableau d’audiences ; autre string ; différence de casse ; espaces ; valeur absente ; valeur non-string ; normalisation ou alias.
+
+### Contrat exact de `sub`, `sid` et `jti`
+
+Chacun de `sub`, `sid` et `jti` doit être :
+
+- une string JSON ;
+- non vide ;
+- longue de **1 à 128** caractères ASCII ;
+- composée uniquement de : `A-Z` `a-z` `0-9` `.` `_` `:` `-` ;
+- fournie explicitement ;
+- conservée et comparée exactement.
+
+Sont interdits : espaces ; caractères de contrôle ; Unicode hors ASCII ; slash et backslash ; valeur non-string ; string vide ; valeur supérieure à 128 caractères ; trim, changement de casse ou conversion.
+
+Rôles :
+
+- `sub` : `userId` exact de l’identité liée à la session ;
+- `sid` : `sessionId` exact permettant la résolution future de la session ;
+- `jti` : identifiant exact et unique du JWT.
+
+V2.1o ne génère aucun `jti` et ne recherche aucune session.
+
+### Claims temporels (conservation V2.1m / V2.1n)
+
+Conservés intégralement :
+
+- `iat`, `nbf` et `exp` sont des JSON numbers ; entiers sûrs, finis et positifs ou nuls ;
+- ordre exact `iat <= nbf < exp` ;
+- durée exacte `0 < exp - iat <= 900` ;
+- `iat <= evaluationTime + 30` ;
+- `nbf <= evaluationTime + 30` ;
+- `exp > evaluationTime - 30` ;
+- expiration exclusive ;
+- aucune conversion, normalisation ou horloge implicite.
+
+`evaluationTime` est injecté explicitement et **n’appartient pas** au payload JWT.
+
+### Algorithme décisionnel structurel (futur vérificateur)
+
+Refuser si **au moins une** condition suivante est vraie :
+
+1. le header n’est pas un objet JSON conforme ;
+2. les clés du header ne sont pas exactement `alg`, `typ` et `kid` ;
+3. `alg !== "RS256"` ;
+4. `typ !== "JWT"` ;
+5. `kid` est invalide ;
+6. le payload n’est pas un objet JSON conforme ;
+7. les clés du payload ne sont pas exactement les huit claims obligatoires ;
+8. `iss` est invalide ou différent de `expectedIssuer` ;
+9. `aud !== "somafrik-api-v2"` ou `aud` n’est pas une string ;
+10. `sub`, `sid` ou `jti` est invalide ;
+11. le contrôle temporel V2.1n retourne `false` ;
+12. une valeur a été convertie, normalisée ou remplacée.
+
+Toutes les validations doivent réussir **cumulativement**. Même si elles réussissent, cela ne signifie jamais : signature cryptographique valide ; clé active vérifiée ; session valide ; identité active ; utilisateur authentifié ; permission accordée ; accès autorisé.
+
+### Exemples normatifs
+
+| Cas | Résultat structurel |
+|---|---|
+| header exact + payload exact + valeurs valides | admissible structurellement |
+| header avec `alg` HS256 | refus |
+| header avec `typ` jwt | refus |
+| header avec clé supplémentaire | refus |
+| `kid` vide | refus |
+| `kid` avec espace | refus |
+| payload avec les huit claims exacts | admissible structurellement |
+| payload sans `sid` | refus |
+| payload avec `role` supplémentaire | refus |
+| `aud` sous forme de tableau | refus |
+| `iss` différent de `expectedIssuer` | refus |
+| `sub` vide | refus |
+| `sid` non-string | refus |
+| `jti` supérieur à 128 caractères | refus |
+| claims temporels valides structurellement mais temporellement invalides | refus |
+
+« Admissible structurellement » ne constitue ni une authentification ni une autorisation.
+
+### Hors périmètre de V2.1o
+
+- bibliothèque JWT ; décodage Base64URL ou JSON ; vérification ou signature cryptographique ;
+- clé publique ou privée ; secret ; résolution réelle de `kid` ;
+- fonction de validation des claims ; middleware ou route HTTP ;
+- login, refresh ou logout ; repository ou persistance de session ;
+- variable d’environnement ; `Date.now()` ou horloge système ;
+- génération ou persistance de `jti` ; permission supplémentaire ;
+- modification de la matrice 48/102 ; dépendance au runtime ou aux données legacy.
+
+## 39. Gate de merge V2.1o
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu’à stabilisation du périmètre ;
-- [ ] export public limité à `isJwtTemporalPolicySatisfied` ;
-- [ ] validation stricte des quatre entiers Unix sûrs ;
-- [ ] ordre `iat <= nbf < exp` appliqué ;
-- [ ] durée `0 < exp - iat <= 900` appliquée ;
-- [ ] tolérance de 30 secondes appliquée sans débordement ;
-- [ ] expiration exclusive appliquée ;
-- [ ] aucune horloge implicite ;
-- [ ] aucun décodage ou contrôle cryptographique JWT ;
-- [ ] aucune dépendance ajoutée ;
-- [ ] tests normatifs et cas limites verts ;
-- [ ] non-régression API/auth/domaine ;
+- [ ] diff limité à `docs/project/V2-RECONSTRUCTION.md` ;
+- [ ] header exact `alg`, `typ`, `kid` documenté ;
+- [ ] payload exact des huit claims documenté ;
+- [ ] formats stricts de `kid`, `sub`, `sid` et `jti` documentés ;
+- [ ] `iss` exact et `expectedIssuer` explicitement injecté ;
+- [ ] `aud` string exacte `somafrik-api-v2` ;
+- [ ] claims supplémentaires interdits ;
+- [ ] rôle, tenant et permissions explicitement interdits ;
+- [ ] politique temporelle V2.1m/V2.1n conservée ;
+- [ ] aucune bibliothèque ou implémentation JWT introduite ;
+- [ ] aucun secret, aucune clé et aucun JWT introduit ;
+- [ ] matrice 48/102 inchangée ;
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] décision CTO explicite avant passage Ready puis merge.
