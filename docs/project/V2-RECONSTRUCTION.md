@@ -574,16 +574,19 @@ Algorithme et enveloppe :
 
 - algorithme obligatoire : **RS256** ;
 - header JWT obligatoire, exact : `alg`, `typ`, `kid` ;
-- `alg` doit valoir `RS256` ; toute autre valeur est refusée ;
-- `typ` doit identifier un JWT d’accès V2 ; pas d’alias legacy ;
-- `kid` identifie la clé publique de vérification et permet la rotation.
+- `alg` doit valoir exactement `RS256` ; toute autre valeur ou absence est refusée ;
+- `typ` doit valoir exactement `"JWT"` ; toute autre valeur, alias legacy ou absence est refusée ;
+- `kid` :
+  - obligatoirement de type `string` et non vide ;
+  - comparaison exacte avec l’identifiant d’une clé publique **active** de vérification ;
+  - `kid` inconnu, retiré, ambigu, non-string, vide ou absent → refus fail-closed.
 
 Claims obligatoires :
 
 | Claim | Rôle |
 |---|---|
-| `iss` | émetteur V2 |
-| `aud` | audience cible |
+| `iss` | émetteur V2 — valeur attendue fournie par configuration sécurisée ; comparaison exacte, sans normalisation ; absente, vide ou différente → refus |
+| `aud` | audience cible — valeur exacte `somafrik-api-v2` |
 | `sub` | identifiant d’identité utilisateur (`userId`) |
 | `sid` | identifiant de session d’autorisation V2 |
 | `iat` | instant d’émission |
@@ -593,7 +596,7 @@ Claims obligatoires :
 
 Contraintes temporelles et d’audience :
 
-- audience obligatoire : `somafrik-api-v2` ;
+- audience obligatoire : `somafrik-api-v2` (comparaison exacte, sans normalisation) ;
 - durée de vie maximale : **15 minutes** (`exp - iat ≤ 900` secondes) ;
 - tolérance d’horloge : **30 secondes** pour `nbf` / `exp` ;
 - `nbf` ≤ instant d’évaluation (+ tolérance) ; `exp` > instant d’évaluation (− tolérance).
@@ -608,7 +611,7 @@ Séparation des responsabilités :
 Gestion des clés :
 
 - clés **privées hors dépôt** (secrets d’environnement / KMS) ;
-- rotation par `kid` ; les jetons signés avec un `kid` retiré sont refusés ;
+- rotation par `kid` ; une clé active unique par `kid` ; les jetons signés avec un `kid` retiré, inconnu ou ambigu sont refusés ;
 - aucune clé privée, secret ou JWT complet dans le dépôt, les logs, les URLs ou les réponses.
 
 ### Hors périmètre de V2.1l
@@ -627,6 +630,7 @@ Gestion des clés :
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth`, `npm run test:v2-domain` et `npm run test:v2-api` verts ;
 - [ ] typecheck, lint, tests et sécurité existants verts ;
 - [ ] diff limité à la documentation de reconstruction ;
+- [ ] `typ === "JWT"`, `iss` exact depuis config sécurisée, et `kid` string non vide lié à une clé active sont explicitement définis ;
 - [ ] aucune bibliothèque, code JWT, middleware, route ou changement legacy ;
 - [ ] aucun secret ou clé privée introduit dans le dépôt ;
 - [ ] aucun conflit non résolu avec `develop` ;
