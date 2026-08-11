@@ -115,11 +115,16 @@ test("rejects invalid userId values without normalization", () => {
   assertIdentityInvalid(activeInput({ userId: "user\n001" }));
   assertIdentityInvalid(activeInput({ userId: "user\u0001001" }));
   assertIdentityInvalid(activeInput({ userId: "user\u007f001" }));
+  assertIdentityInvalid(activeInput({ userId: "\u00A0user" }));
+  assertIdentityInvalid(activeInput({ userId: "user\u00A0" }));
+  assertIdentityInvalid(activeInput({ userId: "user\u0085id" }));
+  assertIdentityInvalid(activeInput({ userId: "user\u009Fid" }));
   assertIdentityInvalid(activeInput({ userId: 42 }));
   assertIdentityInvalid(activeInput({ userId: null }));
 
   const accepted = createAuthIdentity(activeInput({ userId: "a".repeat(128) }));
   assert.equal(accepted.userId.length, 128);
+  assert.equal(accepted.userId, "a".repeat(128));
 });
 
 test("rejects unknown status aliases case variants and non-strings", () => {

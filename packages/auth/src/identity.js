@@ -75,8 +75,12 @@ function requireOwnDataValue(input, field) {
   return descriptor.value;
 }
 
-function isAsciiControlCharacter(codeUnit) {
-  return (codeUnit >= 0 && codeUnit <= 31) || codeUnit === 127;
+function hasLeadingOrTrailingUnicodeWhitespace(value) {
+  return /^\p{White_Space}/u.test(value) || /\p{White_Space}$/u.test(value);
+}
+
+function hasUnicodeControlCharacter(value) {
+  return /\p{Cc}/u.test(value);
 }
 
 function requireUserId(value) {
@@ -87,16 +91,12 @@ function requireUserId(value) {
     throw new AuthIdentityValidationError("userId length is invalid");
   }
 
-  const firstCode = value.charCodeAt(0);
-  const lastCode = value.charCodeAt(value.length - 1);
-  if (firstCode === 32 || lastCode === 32) {
+  if (hasLeadingOrTrailingUnicodeWhitespace(value)) {
     throw new AuthIdentityValidationError("userId must not have leading or trailing spaces");
   }
 
-  for (let index = 0; index < value.length; index += 1) {
-    if (isAsciiControlCharacter(value.charCodeAt(index))) {
-      throw new AuthIdentityValidationError("userId must not contain control characters");
-    }
+  if (hasUnicodeControlCharacter(value)) {
+    throw new AuthIdentityValidationError("userId must not contain control characters");
   }
 
   return value;
