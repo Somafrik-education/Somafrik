@@ -6,7 +6,7 @@
 
 **Base initiale :** `develop@cfb20ce`
 
-**Lot courant :** V2.1h — contrat de révocation de session V2
+**Lot courant :** V2.1i — contrat pur de décision d’autorisation
 
 ---
 
@@ -107,6 +107,7 @@ Les seeds de démonstration et les seeds issus de données métier legacy sont i
 | V2.1f | Contrat immuable d’identité utilisateur V2 | Tests identité + non-régression auth + CI verts |
 | V2.1g | Contrat immuable de session d’autorisation V2 | Tests session + liaison identité/principal + CI verts |
 | V2.1h | Contrat immuable de révocation de session V2 | Tests révocation idempotente + non-régression auth + CI verts |
+| V2.1i | Contrat pur de décision d’autorisation session + permission | Tests AUTHORIZED/UNAUTHENTICATED/FORBIDDEN + CI verts |
 | V2.1 | Identités, utilisateurs, sessions, RBAC (lots suivants) | Contrats V2 + 401/403/200 + parcours de création neufs |
 | V2.2 | Schéma PostgreSQL V2 et migrations de schéma versionnées | Migration de schéma idempotente + rollback + isolation tenant + zéro backfill |
 | V2.3 | Élèves et inscriptions annuelles créés à neuf | CRUD/transfert/clôture V2 + intégrité des données |
@@ -441,6 +442,42 @@ Hors périmètre :
 
 ## 25. Gate de merge V2.1h
 
+- [x] diff GitHub indépendant relu par le CTO ;
+- [x] PR en brouillon jusqu'à stabilisation du périmètre ;
+- [x] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
+- [x] typecheck, lint, tests et sécurité existants verts ;
+- [x] aucune modification de runtime, schéma ou donnée ;
+- [x] aucun conflit non résolu avec `develop` ;
+- [x] aucune donnée legacy lue ou migrée ;
+- [x] aucune persistence ni endpoint de logout ;
+- [x] aucune vérification automatique de la permission `sessions:revoke` ;
+- [x] décision CTO explicite avant passage Ready puis merge.
+
+## 26. Périmètre exact de V2.1i
+
+Inclus :
+
+- export `AUTHORIZATION_DECISION` (`AUTHORIZED`, `UNAUTHENTICATED`, `FORBIDDEN`) ;
+- export `evaluateSessionAuthorization(session, permission, now)` ;
+- session invalide, révoquée, expirée ou non encore active → `UNAUTHENTICATED` ;
+- `now` absent ou non canonique → `UNAUTHENTICATED` ;
+- session active mais permission invalide, hors catalogue, interdite au rôle ou non portée → `FORBIDDEN` ;
+- session active et `can(principal, permission) === true` → `AUTHORIZED` ;
+- aucun throw vers l’appelant ; aucun droit implicite ; décision déterministe et immuable ;
+- aucune mutation de la session ou du principal.
+
+Hors périmètre :
+
+- codes HTTP 401/403/200 ;
+- middleware Express ;
+- JWT, login et logout ;
+- stockage ou recherche de session ;
+- création d’utilisateurs ;
+- élargissement du catalogue V2.1d ou de la matrice 48/102 ;
+- runtime et données legacy.
+
+## 27. Gate de merge V2.1i
+
 - [ ] diff GitHub indépendant relu par le CTO ;
 - [ ] PR en brouillon jusqu'à stabilisation du périmètre ;
 - [ ] `npm run verify:v2-foundation`, `npm run test:v2-auth` et `npm run test:v2-domain` verts ;
@@ -448,6 +485,6 @@ Hors périmètre :
 - [ ] aucune modification de runtime, schéma ou donnée ;
 - [ ] aucun conflit non résolu avec `develop` ;
 - [ ] aucune donnée legacy lue ou migrée ;
-- [ ] aucune persistence ni endpoint de logout ;
-- [ ] aucune vérification automatique de la permission `sessions:revoke` ;
+- [ ] aucun mapping HTTP 401/403/200 introduit ;
+- [ ] aucun élargissement du catalogue ou de la matrice 48/102 ;
 - [ ] décision CTO explicite avant passage Ready puis merge.

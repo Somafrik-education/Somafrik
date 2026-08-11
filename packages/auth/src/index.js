@@ -9,5 +9,9 @@ export {
   isAuthIdentityActive,
 } from "./identity.js";
 export { createAuthSession, isAuthSessionActive, revokeAuthSession } from "./session.js";
+export {
+  AUTHORIZATION_DECISION,
+  evaluateSessionAuthorization,
+} from "./authorization.js";
 export { createAuthPrincipal } from "./principal.js";
 export { can } from "./permissions.js";
