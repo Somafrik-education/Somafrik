@@ -26,9 +26,7 @@ import { useAdminData } from "../context/AdminDataContext";
 
 import { getPaymentStats, getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 
-import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
-
-import { entityCreateViaContactsOnly } from "../lib/contactProvisioning";
+import { canReadRoute } from "../domain/security/permissions";
 
 import {
 
