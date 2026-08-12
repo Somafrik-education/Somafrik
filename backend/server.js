@@ -1536,6 +1536,19 @@ app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/ac
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "status"]);
 }));
 
+app.post("/api/v2/academic-years", requireAuth, requirePermission("POST /api/v2/academic-years"), asyncHandler(async (req, res) => {
+  const schoolCode = req.body?.schoolCode ?? req.principal.schoolCode;
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createAcademicYearV2({ ...req.body, schoolCode });
+  cacheService.invalidate("v2:academic-years");
+  await auditService.record(req, "academic_year_create", "academic_year", created.id, {
+    schoolCode: created.schoolCode,
+    name: created.name,
+    isCurrent: created.isCurrent,
+  });
+  res.status(201).json(created);
+}));
+
 app.get("/api/v2/exams", requireAuth, requirePermission("GET /api/v2/exams"), asyncHandler(async (req, res) => {
   const rows = await cacheService.remember("v2:exams", () => repository.getExamsV2());
   const scope = deriveSchoolScope(req.principal, await getAuthoritativeBackOfficeState());

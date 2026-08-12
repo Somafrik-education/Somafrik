@@ -43,6 +43,7 @@ const routePermissions = {
   "POST /api/v2/subjects": ["Matières:CREATE", "Gérer cours", "ALL_PRIVILEGES"],
   "DELETE /api/v2/subjects/:code": ["Matières:DELETE", "Gérer cours", "ALL_PRIVILEGES"],
   "GET /api/v2/academic-years": ["Années Académiques:READ", "Valider années académiques", "Gérer planning académique", "Gérer classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/v2/academic-years": ["Valider années académiques", "Gérer planning académique", "Gérer classes", "ALL_PRIVILEGES"],
   "GET /api/v2/exams": ["Examens:READ", "Valider examens", "Organiser examens", "Gérer cours", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/v2/documents": ["Documents:READ", "Valider bulletins", "Voir rapports", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/v2/reports/advanced": ["Rapports:READ", "Voir rapports globaux", "Voir rapports pays", "Voir rapports", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

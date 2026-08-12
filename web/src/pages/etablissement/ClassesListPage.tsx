@@ -13,8 +13,9 @@ import {
 import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
-import { ApiError, api } from "../../api/client";
+import { ApiError } from "../../api/client";
 import { classesApi, type ClassStatus, type SchoolClass } from "../../lib/classesApi";
+import { academicYearsApi } from "../../lib/academicYearsApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
 
@@ -58,6 +59,13 @@ export function ClassesListPage() {
   const [editing, setEditing] = useState<SchoolClass | null>(null);
   const [form, setForm] = useState<ClassFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const currentYear = new Date().getFullYear();
+  const [yearDraft, setYearDraft] = useState({
+    name: `${currentYear}-${currentYear + 1}`,
+    startDate: `${currentYear}-09-01`,
+    endDate: `${currentYear + 1}-08-31`,
+  });
+  const [savingYear, setSavingYear] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,7 +73,7 @@ export function ClassesListPage() {
     try {
       const [classes, academicYears] = await Promise.all([
         classesApi.list(),
-        api.get<AcademicYearOption[]>("/v2/academic-years").catch(() => []),
+        academicYearsApi.list().catch(() => []),
       ]);
       setRows(Array.isArray(classes) ? classes : []);
       const scopedYears = (Array.isArray(academicYears) ? academicYears : []).filter((year) => {
@@ -118,6 +126,25 @@ export function ClassesListPage() {
       status: row.status === "inactive" ? "inactive" : "active",
     });
     setModalOpen(true);
+  }
+
+  async function createFirstAcademicYear() {
+    if (savingYear) return;
+    setSavingYear(true);
+    try {
+      const created = await academicYearsApi.create({
+        schoolCode: activeSchoolCode && activeSchoolCode !== "*" ? activeSchoolCode : undefined,
+        ...yearDraft,
+        isCurrent: true,
+      });
+      setYears([created]);
+      setForm((current) => ({ ...current, academicYearName: created.name }));
+      showToast("Année scolaire créée et sélectionnée.", "success");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Création de l'année scolaire impossible.", "error");
+    } finally {
+      setSavingYear(false);
+    }
   }
 
   async function onSubmit(event: FormEvent) {
@@ -301,6 +328,30 @@ export function ClassesListPage() {
               ]}
             />
           </Field>
+          {!editing && years.length === 0 ? (
+            <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-950">
+                Aucune année scolaire n'est configurée. Créez la première année pour continuer.
+              </p>
+              <Field label="Nom de l'année" htmlFor="academic-year-name">
+                <Input id="academic-year-name" value={yearDraft.name} onChange={(event) => setYearDraft((current) => ({ ...current, name: event.target.value }))} />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Date de début" htmlFor="academic-year-start">
+                  <Input id="academic-year-start" type="date" value={yearDraft.startDate} onChange={(event) => setYearDraft((current) => ({ ...current, startDate: event.target.value }))} />
+                </Field>
+                <Field label="Date de fin" htmlFor="academic-year-end">
+                  <Input id="academic-year-end" type="date" value={yearDraft.endDate} onChange={(event) => setYearDraft((current) => ({ ...current, endDate: event.target.value }))} />
+                </Field>
+              </div>
+              <Button type="button" variant="secondary" onClick={() => void createFirstAcademicYear()} disabled={savingYear}>
+                {savingYear ? "Création…" : "Créer cette année scolaire"}
+              </Button>
+              <p className="text-xs text-amber-900">
+                Les périodes et le barème restent configurables dans <Link className="underline" to="/parametres/annee-scolaire">Paramètres → Année scolaire</Link>.
+              </p>
+            </div>
+          ) : null}
           <Field label="Niveau" htmlFor="class-level">
             <Input
               id="class-level"
