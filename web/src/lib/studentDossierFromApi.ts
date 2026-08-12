@@ -12,8 +12,17 @@ function mapEnrollmentStatus(status: string): StudentEnrollment["status"] {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  if (normalized === "active" || normalized === "actif" || normalized === "enrolled") {
+
+  if (
+    normalized === "active" ||
+    normalized === "actif" ||
+    normalized === "enrolled" ||
+    normalized === "inscrit"
+  ) {
     return "ENROLLED";
+  }
+  if (normalized === "approved" || normalized === "approuve") {
+    return "APPROVED";
   }
   if (normalized === "closed" || normalized === "cloture" || normalized === "cloturee") {
     return "CLOSED";
@@ -24,7 +33,34 @@ function mapEnrollmentStatus(status: string): StudentEnrollment["status"] {
   if (normalized === "suspended" || normalized === "suspendu") {
     return "SUSPENDED";
   }
-  return "ENROLLED";
+  if (normalized === "withdrawn" || normalized === "retire" || normalized === "abandonne") {
+    return "WITHDRAWN";
+  }
+  if (normalized === "completed" || normalized === "termine") {
+    return "COMPLETED";
+  }
+  if (normalized === "graduated" || normalized === "diplome") {
+    return "GRADUATED";
+  }
+  if (normalized === "rejected" || normalized === "refuse") {
+    return "REJECTED";
+  }
+  if (
+    normalized === "pre_registered" ||
+    normalized === "pre-registered" ||
+    normalized === "preinscrit"
+  ) {
+    return "PRE_REGISTERED";
+  }
+  if (normalized === "pending_review" || normalized === "pending" || normalized === "en_attente") {
+    return "PENDING_REVIEW";
+  }
+  if (normalized === "incomplete" || normalized === "incomplet") {
+    return "INCOMPLETE";
+  }
+
+  // Fail-closed : un statut inconnu ne doit jamais apparaître comme inscription active.
+  return "CLOSED";
 }
 
 function toDomainStudent(dossier: SchoolStudent): Student {
@@ -89,14 +125,9 @@ function toDomainDocuments(dossier: SchoolStudent): StudentDocument[] {
   return (dossier.documents ?? []).map((doc) => ({
     id: doc.documentCode || doc.id,
     studentId: dossier.studentCode,
-    schoolCode: dossier.schoolCode,
-    type: doc.documentType,
-    title: doc.title,
-    format: doc.format,
-    version: doc.version,
-    status: doc.status,
+    documentType: doc.documentType || "",
+    fileUrl: doc.fileUrl || "",
     createdAt: doc.createdAt ?? undefined,
-    updatedAt: doc.updatedAt ?? undefined,
   }));
 }
 
@@ -111,7 +142,7 @@ export function buildStudentWorkspaceFromDossier(
   const documents = toDomainDocuments(dossier);
   const academicYear =
     dossier.academicYearName ||
-    enrollments.find((row) => row.status === "ENROLLED")?.academicYear ||
+    enrollments.find((row) => row.status === "ENROLLED" || row.status === "APPROVED")?.academicYear ||
     "";
 
   return buildStudentWorkspace({

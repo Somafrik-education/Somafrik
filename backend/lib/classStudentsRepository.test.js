@@ -136,7 +136,7 @@ function createMemoryDb() {
         student.birth_place = params[4];
         student.parent_phone = params[5];
         student.parent_email = params[6];
-        student.updated_at = new Date().toISOString();
+        student.updated_at = new Date(Date.now() + 1).toISOString();
         return { id: student.id };
       }
 
@@ -322,6 +322,37 @@ async function main() {
     () => repo.getByStudentCode(enrolled.studentCode, "CD-2026-0002"),
     (error) => error.statusCode === 404,
   );
+
+  // Erreur PG documents non liée à l'absence de table → doit remonter.
+  const previousAll = db.all.bind(db);
+  db.all = async (sql, params = []) => {
+    const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+    if (text.includes("FROM STUDENT_DOCUMENTS")) {
+      const error = new Error("permission denied for table student_documents");
+      error.code = "42501";
+      throw error;
+    }
+    return previousAll(sql, params);
+  };
+  await assert.rejects(
+    () => repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001"),
+    (error) => error.code === "42501",
+  );
+  db.all = previousAll;
+
+  // Absence explicite de table → documents vides.
+  db.all = async (sql, params = []) => {
+    const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+    if (text.includes("FROM STUDENT_DOCUMENTS")) {
+      const error = new Error('relation "student_documents" does not exist');
+      error.code = "42P01";
+      throw error;
+    }
+    return previousAll(sql, params);
+  };
+  const dossierWithoutDocsTable = await repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001");
+  assert.deepEqual(dossierWithoutDocsTable.documents, []);
+  db.all = previousAll;
 
   await assert.rejects(
     () =>

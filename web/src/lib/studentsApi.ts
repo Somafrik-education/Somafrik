@@ -20,6 +20,7 @@ export interface SchoolStudentDocument {
   format: string;
   version: string;
   status: string;
+  fileUrl?: string;
   generatedAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;

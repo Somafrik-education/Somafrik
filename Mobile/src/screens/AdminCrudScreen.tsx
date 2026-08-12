@@ -303,8 +303,10 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
   const [calendarStep, setCalendarStep] = useState<"year" | "month" | "day">("year");
   const [selectedPermissionRole, setSelectedPermissionRole] = useState("");
   const [selectedPermissionFeature, setSelectedPermissionFeature] = useState("");
+  const isStudentsEntity = entity === "students";
+  // PR1 : création élèves uniquement via Classes → Inscrire (API PG).
   const canCreate =
-    entity !== "students" &&
+    !isStudentsEntity &&
     canMutateEntity(session, entity, "CREATE") &&
     !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
@@ -431,7 +433,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       ...(entity === "courses" && selectedCourseClass
         ? { className: selectedCourseClass }
         : {}),
-      ...(entity === "students" && lockedClassName ? { className: lockedClassName } : {}),
+      // Création élèves désactivée (canCreate=false pour students) — pas de préremplissage classe.
     });
     setVisible(true);
   };
@@ -459,7 +461,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     if (!editingItem && !canCreate) {
       Alert.alert(
         "Accès refusé",
-        entity === "students"
+        isStudentsEntity
           ? "La création d'élèves passe par Classes → Inscrire un élève."
           : "Votre rôle ne permet pas de créer cet élément.",
       );

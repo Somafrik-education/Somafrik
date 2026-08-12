@@ -936,17 +936,17 @@ class FallbackRepository {
             student.birth_place = params[4];
             student.parent_phone = params[5];
             student.parent_email = params[6];
-            student.updated_at = new Date().toISOString();
-            return { id: student.id };
-          }
-          if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
-            return (
-              (self._managedStudents ?? []).find(
-                (row) => row.student_code === params[0] && row.school_id === params[1],
-              ) ?? null
-            );
-          }
-          if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
+        student.updated_at = new Date(Date.now() + 1).toISOString();
+        return { id: student.id };
+      }
+      if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
+        return (
+          (self._managedStudents ?? []).find(
+            (row) => row.student_code === params[0] && row.school_id === params[1],
+          ) ?? null
+        );
+      }
+      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
             const student = (self._managedStudents ?? []).find(
               (row) => row.student_code === params[0] && row.school_id === params[1],
             );

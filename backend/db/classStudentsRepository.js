@@ -188,6 +188,7 @@ function createClassStudentsRepository(db) {
       format: row.format ?? "",
       version: row.version ?? "",
       status: row.status ?? "",
+      fileUrl: row.storage_key ?? "",
       generatedAt: row.generated_at ?? null,
       createdAt: row.created_at ?? null,
       updatedAt: row.updated_at ?? null,
@@ -226,6 +227,25 @@ function createClassStudentsRepository(db) {
     if (!value) return "";
     if (value instanceof Date) return value.toISOString();
     return String(value);
+  }
+
+  /**
+   * Absence explicite de la table (schéma partiel) uniquement — les autres erreurs remontent.
+   * @param {unknown} error
+   */
+  function isMissingStudentDocumentsRelation(error) {
+    const code = String(error?.code ?? "").trim();
+    if (code === "42P01") {
+      return true;
+    }
+    const message = String(error?.message ?? error ?? "").toLowerCase();
+    return (
+      message.includes("student_documents") &&
+      (message.includes("does not exist") ||
+        message.includes("n'existe pas") ||
+        message.includes("undefined_table") ||
+        message.includes("no such table"))
+    );
   }
 
   /**
@@ -428,13 +448,16 @@ function createClassStudentsRepository(db) {
       try {
         documents = await db.all(
           `SELECT document_code, document_type, title, format, version, status,
-                  generated_at, created_at, updated_at
+                  storage_key, generated_at, created_at, updated_at
            FROM student_documents
            WHERE student_id = $1 AND school_id = $2
            ORDER BY generated_at DESC NULLS LAST, created_at DESC NULLS LAST`,
           [row.student_uuid, school.id],
         );
-      } catch {
+      } catch (error) {
+        if (!isMissingStudentDocumentsRelation(error)) {
+          throw error;
+        }
         documents = [];
       }
 
