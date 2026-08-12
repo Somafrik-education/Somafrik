@@ -187,8 +187,10 @@ class PostgresRepository {
       return this;
     }
     const self = this;
+    // Bind methods to the Proxy (receiver), not the raw repository: otherwise
+    // internal this.query / this.one / this.all bypass tx and hit the pool.
     return new Proxy(self, {
-      get(target, prop) {
+      get(target, prop, receiver) {
         if (prop === "query") {
           return (sql, params) => tx.query(sql, params);
         }
@@ -201,9 +203,9 @@ class PostgresRepository {
         if (prop === "withTransaction") {
           return async (fn) => fn(tx);
         }
-        const value = target[prop];
+        const value = Reflect.get(target, prop, receiver);
         if (typeof value === "function") {
-          return value.bind(target);
+          return value.bind(receiver);
         }
         return value;
       },

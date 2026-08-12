@@ -120,7 +120,7 @@ async function main() {
       },
     );
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
-    assert.match(enrolled.data.studentCode, /^ELE-0001-0001-/);
+    assert.match(enrolled.data.studentCode, /^ELE-CD-0001-0001-/);
 
     const listed = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
@@ -144,8 +144,35 @@ async function main() {
       },
     );
     assert.equal(enrolledOther.status, 201, JSON.stringify(enrolledOther.data));
-    assert.match(enrolledOther.data.studentCode, /^ELE-0002-0001-/);
+    assert.match(enrolledOther.data.studentCode, /^ELE-BI-0002-0001-/);
     assert.notEqual(enrolled.data.studentCode, enrolledOther.data.studentCode);
+
+    // Enseignant hors classe affectée : pas de lecture du roster.
+    const teacherListDenied = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      { token: tokenTeacher },
+    );
+    assert.equal(teacherListDenied.status, 403, JSON.stringify(teacherListDenied.data));
+
+    const teacherStudentDenied = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: tokenTeacher },
+    );
+    assert.equal(teacherStudentDenied.status, 404, JSON.stringify(teacherStudentDenied.data));
+
+    // Parent : pas de dossier d'un autre élève du même établissement.
+    const tokenParent = await login("+243 820 000 001", "CD-2026-0001");
+    const parentOtherStudentDenied = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: tokenParent },
+    );
+    assert.equal(parentOtherStudentDenied.status, 404, JSON.stringify(parentOtherStudentDenied.data));
+
+    const parentClassDenied = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      { token: tokenParent },
+    );
+    assert.equal(parentClassDenied.status, 403, JSON.stringify(parentClassDenied.data));
 
     const tamperClassCode = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
@@ -184,6 +211,26 @@ async function main() {
       },
     );
     assert.equal(emptyScopeKey.status, 400, JSON.stringify(emptyScopeKey.data));
+
+    const snakeScopeKey = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: { firstName: "Hack", lastName: "Snake", class_code: activeClass.classCode },
+      },
+    );
+    assert.equal(snakeScopeKey.status, 400, JSON.stringify(snakeScopeKey.data));
+
+    const snakeSchoolId = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: { firstName: "Hack", lastName: "SnakeSchool", school_id: "x" },
+      },
+    );
+    assert.equal(snakeSchoolId.status, 400, JSON.stringify(snakeSchoolId.data));
 
     const impossibleBirthDate = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,

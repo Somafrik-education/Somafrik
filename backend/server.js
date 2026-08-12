@@ -557,7 +557,24 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const rows = await repository.listClassStudents(req.params.classCode, schoolCode);
-  res.json(rows);
+  let className = rows[0]?.className ?? "";
+  if (!className) {
+    const classes = await repository.listSchoolClasses(schoolCode);
+    const match = (classes ?? []).find(
+      (item) => String(item.classCode ?? "").trim() === String(req.params.classCode ?? "").trim(),
+    );
+    className = String(match?.name ?? "").trim();
+  }
+  const {
+    scopeClassStudentsForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const scoped = scopeClassStudentsForPrincipal(
+    req.principal,
+    className,
+    rows,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  res.json(scoped);
 }));
 
 app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
@@ -686,7 +703,19 @@ app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
     try {
       const pgStudent = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
       tenantScopeService.assertSchoolAccess(req.principal, pgStudent.schoolCode);
-      return res.json(sanitizeUserForResponse(pgStudent));
+      const {
+        authorizeStudentReadForPrincipal,
+      } = require("./lib/classStudentsAuthz");
+      const authorizedPg = authorizeStudentReadForPrincipal(
+        pgStudent,
+        req.principal,
+        req.params.id,
+        resolveAuthorizedStudentForPrincipal,
+      );
+      if (!authorizedPg) {
+        return res.status(404).json({ message: "Eleve introuvable" });
+      }
+      return res.json(sanitizeUserForResponse(authorizedPg));
     } catch (error) {
       if (error?.statusCode !== 404) {
         throw error;

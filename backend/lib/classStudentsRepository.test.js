@@ -10,10 +10,12 @@ function createMemoryDb() {
   const schools = [
     { id: "school-a", school_code: "CD-2026-0001" },
     { id: "school-b", school_code: "CD-2026-0002" },
+    { id: "school-bi", school_code: "BI-2026-0001" },
   ];
   const years = [
     { id: "ay-a", school_id: "school-a", name: "2025-2026", status: "open" },
     { id: "ay-b", school_id: "school-b", name: "2025-2026", status: "open" },
+    { id: "ay-bi", school_id: "school-bi", name: "2025-2026", status: "open" },
   ];
   /** @type {any[]} */
   const classes = [];
@@ -190,7 +192,7 @@ async function main() {
     lastName: "Diop",
     gender: "Féminin",
   });
-  assert.match(enrolled.studentCode, /^ELE-0001-0001-/);
+  assert.match(enrolled.studentCode, /^ELE-CD-0001-0001-/);
   assert.equal(enrolled.classCode, activeClass.class_code);
   assert.equal(enrolled.className, "6ème A");
 
@@ -200,6 +202,14 @@ async function main() {
 
   const fetched = await repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001");
   assert.equal(fetched.firstName, "Awa");
+
+  const biClass = db.seedClass("BI-2026-0001", { name: "6ème A", class_code: "CLS-BI-1" });
+  const enrolledBi = await repo.enroll(biClass.class_code, "BI-2026-0001", {
+    firstName: "Grace",
+    lastName: "Nkurunziza",
+  });
+  assert.match(enrolledBi.studentCode, /^ELE-BI-0001-0001-/);
+  assert.notEqual(enrolled.studentCode, enrolledBi.studentCode);
 
   await assert.rejects(
     () =>
@@ -225,8 +235,8 @@ async function main() {
     (error) => error.statusCode === 404,
   );
 
-  assert.equal(db.counts().students, 1);
-  assert.equal(db.counts().enrollments, 1);
+  assert.equal(db.counts().students, 2);
+  assert.equal(db.counts().enrollments, 2);
 
   console.log("classStudentsRepository.test.js: OK");
 }

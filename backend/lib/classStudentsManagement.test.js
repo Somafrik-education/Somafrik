@@ -8,7 +8,18 @@ const {
 } = require("./classStudentsManagement");
 
 function testForbiddenKeysAlwaysRejected() {
-  for (const key of ["classCode", "schoolCode", "className", "academicYearId"]) {
+  for (const key of [
+    "classCode",
+    "class_code",
+    "schoolCode",
+    "school_code",
+    "className",
+    "class_name",
+    "schoolId",
+    "school_id",
+    "academicYearId",
+    "academic_year_id",
+  ]) {
     assert.throws(
       () => assertEnrollmentScopeImmutable({ [key]: "" }),
       (error) => error.statusCode === 400,

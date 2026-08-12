@@ -132,20 +132,28 @@ async function setupFixture(pool) {
   await pool.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
   await pool.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
 
-  const country = await pool.query(
-    `INSERT INTO countries (name, iso_code) VALUES ('Testland', 'TT') RETURNING id`,
+  await pool.query(
+    `INSERT INTO countries (name, iso_code) VALUES ('Congo', 'CD'), ('Burundi', 'BI')
+     ON CONFLICT (iso_code) DO NOTHING`,
   );
-  const countryId = country.rows[0].id;
+  const cd = await pool.query(`SELECT id FROM countries WHERE iso_code = 'CD'`);
+  const bi = await pool.query(`SELECT id FROM countries WHERE iso_code = 'BI'`);
+  const cdId = cd.rows[0].id;
+  const biId = bi.rows[0].id;
 
   await pool.query(
     `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'CD-2026-0001', 'École CD'), ($1, 'CD-2026-0002', 'École CD2')`,
-    [countryId],
+     VALUES
+       ($1, 'CD-2026-0001', 'École CD'),
+       ($1, 'CD-2026-0002', 'École CD2'),
+       ($2, 'BI-2026-0001', 'École BI même n°')`,
+    [cdId, biId],
   );
 
   await pool.query(
     `INSERT INTO academic_years (school_id, name, is_current, status)
-     SELECT id, '2025-2026', TRUE, 'open' FROM schools WHERE school_code IN ('CD-2026-0001', 'CD-2026-0002')`,
+     SELECT id, '2025-2026', TRUE, 'open' FROM schools
+     WHERE school_code IN ('CD-2026-0001', 'CD-2026-0002', 'BI-2026-0001')`,
   );
 
   await pool.query(
@@ -328,7 +336,7 @@ async function main() {
       gender: "Féminin",
       birthDate: "2012-04-12",
     });
-    assert.match(enrolled.studentCode, /^ELE-0001-0001-/);
+    assert.match(enrolled.studentCode, /^ELE-CD-0001-0001-/);
 
     const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
     assert.equal(listed.length, 1);
@@ -342,8 +350,28 @@ async function main() {
       "CD-2026-0002",
       { firstName: "Ibra", lastName: "Fall" },
     );
-    assert.match(enrolledOtherSchool.studentCode, /^ELE-0002-0001-/);
+    assert.match(enrolledOtherSchool.studentCode, /^ELE-CD-0002-0001-/);
     assert.notEqual(enrolled.studentCode, enrolledOtherSchool.studentCode);
+
+    const activeClassBiSameNumber = await classesRepo.create(
+      {
+        name: "6ème A BI",
+        academicYearName: "2025-2026",
+        status: "active",
+      },
+      "BI-2026-0001",
+    );
+    const enrolledBiSameEstablishment = await studentsRepo.enroll(
+      activeClassBiSameNumber.classCode,
+      "BI-2026-0001",
+      { firstName: "Grace", lastName: "Nkurunziza" },
+    );
+    assert.match(enrolledBiSameEstablishment.studentCode, /^ELE-BI-0001-0001-/);
+    assert.notEqual(
+      enrolled.studentCode,
+      enrolledBiSameEstablishment.studentCode,
+      "CD-2026-0001 et BI-2026-0001 ne doivent pas partager le même matricule",
+    );
 
     await assert.rejects(
       () => studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0002"),

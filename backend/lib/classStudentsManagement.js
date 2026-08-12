@@ -9,13 +9,21 @@ const VALID_GENDERS = new Set(["Masculin", "Féminin", "Autre", ""]);
 
 const FORBIDDEN_BODY_KEYS = Object.freeze([
   "classCode",
+  "class_code",
   "classId",
+  "class_id",
   "className",
+  "class_name",
   "schoolCode",
+  "school_code",
   "schoolId",
+  "school_id",
   "academicYearId",
+  "academic_year_id",
   "academicYearName",
+  "academic_year_name",
   "enrollmentId",
+  "enrollment_id",
 ]);
 
 /**

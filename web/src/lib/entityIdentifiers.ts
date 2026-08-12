@@ -6,14 +6,21 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function parseSchoolCodeSegments(schoolCode: string): { year: string; establishment: string; yearIndex: string } {
+export function parseSchoolCodeSegments(schoolCode: string): {
+  country: string;
+  year: string;
+  establishment: string;
+  yearIndex: string;
+} {
   const normalized = schoolCode.trim().toUpperCase();
-  const match = /^[A-Z]{2}-(\d{4})-(\d{4})$/.exec(normalized);
+  const match = /^([A-Z]{2})-(\d{4})-(\d{4})$/.exec(normalized);
   if (match) {
-    const year = match[1];
-    const establishment = match[2];
+    const country = match[1];
+    const year = match[2];
+    const establishment = match[3];
     const yearIndex = Math.max(1, Number.parseInt(year, 10) - SCHOOL_YEAR_BASE);
     return {
+      country,
       year,
       establishment,
       yearIndex: String(yearIndex).padStart(4, "0"),
@@ -21,6 +28,7 @@ export function parseSchoolCodeSegments(schoolCode: string): { year: string; est
   }
   const digits = normalized.replace(/\D/g, "");
   return {
+    country: "",
     year: (digits.slice(0, 4) || "0000").padStart(4, "0").slice(-4),
     establishment: (digits.slice(-4) || "0000").padStart(4, "0"),
     yearIndex: "0001",
@@ -31,7 +39,11 @@ export function isLegacyStudentMatricule(value: string): boolean {
   const normalized = String(value ?? "").trim().toUpperCase();
   if (!normalized) return true;
   if (normalized.startsWith("STUDENTS-")) return true;
-  return !new RegExp(`^${STUDENT_PROFILE}-\\d{4}-\\d{4}-\\d{6}$`, "i").test(normalized);
+  // Nouveau format pays + ancien format sans pays.
+  return !new RegExp(
+    `^${STUDENT_PROFILE}-(?:[A-Z]{2}-)?\\d{4}-\\d{4}-\\d{6}$`,
+    "i",
+  ).test(normalized);
 }
 
 function extractStudentSequence(
@@ -40,6 +52,15 @@ function extractStudentSequence(
 ): number | null {
   const normalized = String(value ?? "").trim().toUpperCase();
   if (!normalized) return null;
+
+  if (segments.country) {
+    const countryPattern = new RegExp(
+      `^${STUDENT_PROFILE}-${segments.country}-${segments.establishment}-${segments.yearIndex}-(\\d+)$`,
+      "i",
+    );
+    const countryMatch = countryPattern.exec(normalized);
+    if (countryMatch?.[1]) return Number(countryMatch[1]);
+  }
 
   const fullPattern = new RegExp(
     `^${STUDENT_PROFILE}-${segments.establishment}-${segments.yearIndex}-(\\d+)$`,
@@ -85,19 +106,27 @@ function nextStudentSequence(
   return max + 1;
 }
 
-/** Matricule élève : ELE-établissement-année-séquence (ex. ELE-0001-0001-000001). */
+/** Matricule élève : ELE-pays-établissement-année-séquence (ex. ELE-CD-0001-0001-000001). */
 export function generateStudentMatricule(
   schoolCode: string,
   students: Record<string, unknown>[] = [],
 ): string {
   const segments = parseSchoolCodeSegments(schoolCode);
   const sequence = nextStudentSequence(schoolCode, students);
-  return `${STUDENT_PROFILE}-${segments.establishment}-${segments.yearIndex}-${String(sequence).padStart(6, "0")}`;
+  const suffix = String(sequence).padStart(6, "0");
+  if (segments.country) {
+    return `${STUDENT_PROFILE}-${segments.country}-${segments.establishment}-${segments.yearIndex}-${suffix}`;
+  }
+  return `${STUDENT_PROFILE}-${segments.establishment}-${segments.yearIndex}-${suffix}`;
 }
 
 /** Identifiant court de connexion élève (ex. ELE-0001). */
 export function getStudentLoginIdentifier(matriculeOrIdentifier: string): string {
   const value = String(matriculeOrIdentifier ?? "").trim().toUpperCase();
+  const withCountry = /^ELE-[A-Z]{2}-\d{4}-\d{4}-(\d+)$/i.exec(value);
+  if (withCountry?.[1]) {
+    return `${STUDENT_PROFILE}-${String(Number(withCountry[1])).padStart(4, "0")}`;
+  }
   const fullMatch = /^ELE-\d{4}-\d{4}-(\d+)$/i.exec(value);
   if (fullMatch?.[1]) {
     return `${STUDENT_PROFILE}-${String(Number(fullMatch[1])).padStart(4, "0")}`;
