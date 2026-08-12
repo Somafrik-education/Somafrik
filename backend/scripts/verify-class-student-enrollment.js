@@ -160,6 +160,32 @@ async function main() {
     );
     assert.equal(teacherStudentDenied.status, 404, JSON.stringify(teacherStudentDenied.data));
 
+    // Enseignant sans aucune affectation (classNames: []) : 404 même en connaissant le matricule.
+    const { TokenService } = require("../services/tokenService");
+    const tokenService = new TokenService();
+    const tokenTeacherNoAssignment = tokenService.createAccessToken({
+      sub: "USER-T-NO-ASSIGN",
+      identifier: "ENS-NO-ASSIGN",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      permissions: ["Élèves:READ", "Voir élèves"],
+      classNames: [],
+      classCodes: [],
+      classIds: [],
+      assignments: [],
+      mustChangePassword: false,
+    });
+    const teacherEmptyAssignmentsDenied = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: tokenTeacherNoAssignment },
+    );
+    assert.equal(
+      teacherEmptyAssignmentsDenied.status,
+      404,
+      JSON.stringify(teacherEmptyAssignmentsDenied.data),
+    );
+
     // Parent : pas de dossier d'un autre élève du même établissement.
     const tokenParent = await login("+243 820 000 001", "CD-2026-0001");
     const parentOtherStudentDenied = await request(

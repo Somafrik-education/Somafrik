@@ -108,11 +108,32 @@ class TenantScopeService {
       });
     }
 
-    if (principal.role === "Enseignant" && classNames.size) {
+    if (principal.role === "Enseignant") {
+      const classCodes = new Set(
+        [...(principal.classCodes ?? [])]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      // Sans aucune affectation (ni nom ni code) : ne rien exposer — évite la fuite
+      // où filterByRoleOwnership laissait passer tout l'établissement.
+      if (!classNames.size && !classCodes.size) {
+        return [];
+      }
+
       return rows.filter((row) => {
-        if (row.className) return classNames.has(row.className);
-        if (row.name && row.level && row.track) return classNames.has(row.name);
-        if (row.studentClassName) return classNames.has(row.studentClassName);
+        const rowCode = String(row.classCode ?? row.class_code ?? "").trim();
+        if (classCodes.size && rowCode) {
+          return classCodes.has(rowCode);
+        }
+        if (classNames.size) {
+          if (row.className) return classNames.has(row.className);
+          if (row.name && row.level && row.track) return classNames.has(row.name);
+          if (row.studentClassName) return classNames.has(row.studentClassName);
+        }
+        // Enseignant avec codes mais ligne sans classCode : ne pas élargir.
+        if (classCodes.size) {
+          return false;
+        }
         return true;
       });
     }

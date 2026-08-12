@@ -570,7 +570,10 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
   } = require("./lib/classStudentsAuthz");
   const scoped = scopeClassStudentsForPrincipal(
     req.principal,
-    className,
+    {
+      classCode: String(req.params.classCode ?? "").trim(),
+      className,
+    },
     rows,
     resolveAuthorizedStudentForPrincipal,
   );
@@ -3719,6 +3722,19 @@ function buildPrincipal(response, rolePermissionsMap = null) {
         ...((user.assignments ?? []).map((item) => item.className).filter(Boolean)),
       ]),
     ],
+    classCodes: [
+      ...new Set([
+        ...(user.assignedClassCodes ?? []),
+        ...((user.assignments ?? []).map((item) => item.classCode ?? item.class_code).filter(Boolean)),
+      ]),
+    ],
+    classIds: [
+      ...new Set([
+        ...(user.assignedClassIds ?? []),
+        ...((user.assignments ?? []).map((item) => item.classId ?? item.class_id).filter(Boolean)),
+      ]),
+    ],
+    assignments: Array.isArray(user.assignments) ? user.assignments : [],
   };
 }
 
