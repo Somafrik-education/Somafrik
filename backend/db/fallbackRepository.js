@@ -8,6 +8,38 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function normalizeClassNameKey(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function upsertSeedClassProjection(row) {
+  const seedIndex = seedData.classes.findIndex(
+    (item) =>
+      String(item.schoolCode ?? "").toUpperCase() === String(row.schoolCode).toUpperCase() &&
+      (normalizeClassNameKey(item.name) === normalizeClassNameKey(row.name) ||
+        String(item.id ?? item.publicId ?? "") === String(row.classCode ?? row.id ?? "")),
+  );
+  const projection = {
+    id: row.classCode ?? row.id,
+    publicId: row.classCode ?? row.publicId ?? row.id,
+    schoolCode: row.schoolCode,
+    name: row.name,
+    level: row.level ?? "",
+    track: row.section ?? row.track ?? "",
+    status: row.status === "inactive" ? "Archivée" : "Active",
+    schoolYear: row.academicYearName ?? row.schoolYear,
+  };
+  if (seedIndex >= 0) {
+    seedData.classes[seedIndex] = { ...seedData.classes[seedIndex], ...projection };
+  } else {
+    seedData.classes.push(projection);
+  }
+}
+
 class FallbackRepository {
   constructor() {
     this.engine = "memory";
@@ -772,6 +804,8 @@ class FallbackRepository {
       updatedAt: new Date().toISOString(),
     };
     this._managedClasses.push(row);
+    // Projection lecture state.classes (modules planning / notes / etc.)
+    upsertSeedClassProjection(row);
     return clone(row);
   }
 
@@ -810,6 +844,7 @@ class FallbackRepository {
     }
     if (patch.status) current.status = patch.status;
     current.updatedAt = new Date().toISOString();
+    upsertSeedClassProjection(current);
     return clone(current);
   }
 

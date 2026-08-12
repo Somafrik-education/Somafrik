@@ -4464,12 +4464,16 @@ class PostgresRepository {
     return this.getClassesRepository().listBySchoolCode(schoolCode);
   }
 
-  createSchoolClass(body, schoolCode) {
-    return this.getClassesRepository().create(body, schoolCode);
+  async createSchoolClass(body, schoolCode) {
+    const created = await this.getClassesRepository().create(body, schoolCode);
+    this.cachedDataset = null;
+    return created;
   }
 
-  updateSchoolClass(classCode, schoolCode, body) {
-    return this.getClassesRepository().update(classCode, schoolCode, body);
+  async updateSchoolClass(classCode, schoolCode, body) {
+    const updated = await this.getClassesRepository().update(classCode, schoolCode, body);
+    this.cachedDataset = null;
+    return updated;
   }
 
   getClassStudentsRepository() {

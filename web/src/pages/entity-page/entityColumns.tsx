@@ -7,7 +7,6 @@ import {
 } from "../../lib/assignments";
 import { getTeacherLoginIdentifier } from "../../lib/entityIdentifiers";
 import type { EntityModuleConfig } from "../../lib/entityModules";
-import { normalize } from "../../lib/format";
 import { isPaymentCancelled, type PaymentRecord } from "../../lib/quickPayment";
 import {
   formatContactPersonName,
@@ -143,7 +142,6 @@ function renderActionsCell(row: EntityRow, ctx: BuildEntityColumnsContext): Reac
     busy,
     canUpdate,
     allowDelete,
-    studentsCanRead,
     assignmentCanCreateOrUpdate,
     onEdit,
     onDelete,
@@ -178,16 +176,6 @@ function renderActionsCell(row: EntityRow, ctx: BuildEntityColumnsContext): Reac
 
   return (
     <div className="flex flex-wrap gap-2">
-      {module.key === "classes" && studentsCanRead ? (
-        <Link
-          to={`/etablissement/classes/${encodeURIComponent(String(row.name ?? ""))}/eleves`}
-          className="inline-flex"
-        >
-          <Button variant="secondary" size="sm" type="button">
-            Élèves
-          </Button>
-        </Link>
-      ) : null}
       {module.key === "students" && row.id ? (
         <Link
           to={`/etablissement/eleves/${encodeURIComponent(String(row.id))}`}
@@ -224,7 +212,7 @@ function renderActionsCell(row: EntityRow, ctx: BuildEntityColumnsContext): Reac
 export function buildEntityColumns(
   ctx: BuildEntityColumnsContext,
 ): Column<EntityRow>[] {
-  const { module, isParentChildMode, scopedStudents } = ctx;
+  const { module, isParentChildMode } = ctx;
   const displayColumns = isParentChildMode ? PARENT_CHILD_COLUMNS : module.columns;
 
   const dataColumns: Column<EntityRow>[] = displayColumns.map((key) => ({
@@ -232,20 +220,6 @@ export function buildEntityColumns(
     header: relationColumnHeader(key, module, isParentChildMode),
     render: (row) => renderDataCell(key, row, ctx),
   }));
-
-  if (module.key === "classes") {
-    dataColumns.push({
-      key: "studentCount",
-      header: "Effectif",
-      render: (row) => {
-        const count = scopedStudents.filter(
-          (student) =>
-            normalize(String(student.className ?? "")) === normalize(String(row.name ?? "")),
-        ).length;
-        return String(count);
-      },
-    });
-  }
 
   return [
     ...dataColumns,

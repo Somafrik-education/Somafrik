@@ -1287,7 +1287,19 @@ app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
-  const rawBody = req.body ?? {};
+  const incomingBody = req.body ?? {};
+  const {
+    stripLegacyClassesStateWrite,
+    LEGACY_CLASSES_STATE_WRITE_CODE,
+    LEGACY_CLASSES_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacyClassesStateWrite");
+  const preparedLegacy = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
+  if (preparedLegacy.rejectLegacyClassesWrite) {
+    const error = new BusinessError(400, LEGACY_CLASSES_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_CLASSES_STATE_WRITE_CODE;
+    throw error;
+  }
+  const rawBody = preparedLegacy.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -2245,7 +2257,8 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     notifications: mergeRowsByIdentity(runtimeState.notifications, storedState.notifications),
     students: mergeRowsByIdentity(runtimeState.students, storedState.students),
     teachers: mergeRowsByIdentity(runtimeState.teachers, storedState.teachers),
-    classes: mergeRowsByIdentity(runtimeState.classes, storedState.classes),
+    // Projection lecture Classes : PostgreSQL / runtime uniquement (plus de mutation JSON).
+    classes: runtimeState.classes ?? [],
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
     assignments: mergeRowsByIdentity(runtimeState.assignments ?? [], storedState.assignments ?? []),
     courseSchedules: mergeRowsByIdentity(runtimeState.courseSchedules ?? [], storedState.courseSchedules ?? []),
@@ -2838,7 +2851,8 @@ function mergeScopedBackOfficeState(
         notifications: mergeEntity("notifications"),
         students: mergeEntity("students"),
         teachers: mergeEntity("teachers"),
-        classes: mergeEntity("classes"),
+        // Lecture seule — jamais fusionnée depuis le client.
+        classes: current.classes ?? [],
         courses: mergeEntity("courses"),
         assignments: mergeEntity("assignments"),
         courseSchedules: mergeEntity("courseSchedules"),
@@ -3056,7 +3070,8 @@ function mergeScopedBackOfficeState(
             )
           : current.teachers
         : syncedTeachers,
-    classes: mergeScopedEntityIfTouched("classes", current, scopedRequested, scopedCurrent, touchedKeys),
+    // Lecture seule — jamais fusionnée depuis le client (CRUD via /api/classes).
+    classes: current.classes ?? [],
     courses: teachersTouched || touchedKeys.includes("courses")
       ? pedagogyGovernanceService.enforceCourseTeacherUniqueness(
           current.courses,
@@ -3315,8 +3330,7 @@ const CRITICAL_AUDIT_COLLECTIONS = [
   { key: "payments", entityType: "payment", label: (row) => row.publicId ?? row.id },
   { key: "bulletins", entityType: "bulletin", label: (row) => row.studentName ?? row.id },
   { key: "rolePermissions", entityType: "role_permissions", label: (row) => row.role ?? row.id },
-  // HOTFIX-RBAC-ADMIN-01 — audit classes/enseignants/affectations côté serveur (jamais via auditLog client).
-  { key: "classes", entityType: "class", label: (row) => row.name ?? row.id },
+  // Classes : plus d'audit via state — mutations via /api/classes uniquement.
   {
     key: "teachers",
     entityType: "teacher",
@@ -3404,7 +3418,6 @@ const SCHOOL_SCOPED_DELETABLE_ENTITIES = new Set([
   "relations",
   "students",
   "teachers",
-  "classes",
   "courses",
   "assignments",
   "courseSchedules",

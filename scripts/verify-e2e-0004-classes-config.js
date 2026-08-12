@@ -1,13 +1,13 @@
 /**
  * E2E 0004 : Parcours configuration des classes (Mon établissement > Classes)
  *
- * Vérifie :
- * - Création d'une classe (nom, niveau, filière, cycle, année, capacité)
- * - Présence dans state.classes pour l'établissement
+ * Vérifie (post-clôture CRUD legacy) :
+ * - Création via POST /api/classes
+ * - Présence dans la projection lecture state.classes
  * - Disponibilité pour affectations élève/enseignant
- * - Unicité du nom par établissement (pas par année scolaire)
- * - Classe archivée exclue des nouvelles inscriptions (CLASSE-003)
- * - Classe supprimée indisponible pour nouvelles affectations
+ * - Refus d'écriture legacy PUT /api/backoffice/state { classes }
+ * - Doublon API (même année scolaire) → 409
+ * - Classe inactive exclue des nouvelles inscriptions (CLASSE-003)
  *
  * Prérequis : backend Docker + bootstrap E2E
  *   npm run bootstrap:e2e-superadmin && docker compose restart backend
@@ -18,6 +18,9 @@ const {
   login,
   getState,
   putStatePatch,
+  request,
+  createClassViaApi,
+  patchClassViaApi,
   normalize,
   pushResult,
   SUPERADMIN_ID,
@@ -26,14 +29,11 @@ const {
 } = require("./e2e-api-helpers");
 const {
   filterSchoolClassRecords,
-  validateUniqueClassName,
-  saveSchoolClassFlow,
   pickUnusedClassName,
   ensureExplicitAcademicClassNames,
   isKnownClassName,
   getAssignmentSelectOptions,
   getEnrollmentClassNameSelectOptions,
-  removeSchoolClassFromState,
   scopedClasses,
   resolveSchoolYear,
   getSchoolAcademicLists,
@@ -61,27 +61,21 @@ async function main() {
   const schoolYear = resolveSchoolYear();
   const { levels, tracks } = getSchoolAcademicLists(state, schoolCode);
 
-  const classDraft = {
+  const created = await createClassViaApi(adminToken, {
     name: className,
     level: levels[0] ?? "1ère",
     track: tracks[0] ?? "Générale",
-    cycle: "Secondaire",
     schoolYear,
-    capacity: "40",
-    status: "Active",
-  };
-
-  const createFlow = saveSchoolClassFlow(state, classDraft, schoolCode);
-  assert.ok(createFlow.ok, createFlow.error);
-  state = await putStatePatch(adminToken, createFlow.patch);
-
+    status: "active",
+  });
+  state = created.state;
   const storedClass = filterSchoolClassRecords(state.classes ?? [], schoolCode).find(
     (row) => normalize(row.name) === normalize(className),
   );
 
   pushResult(
     results,
-    "2. Classe créée (state patch)",
+    "2. Classe créée via /api/classes",
     className,
     storedClass?.name ?? "—",
     Boolean(storedClass),
@@ -89,16 +83,14 @@ async function main() {
 
   const fieldsOk =
     storedClass &&
-    normalize(storedClass.level) === normalize(classDraft.level) &&
-    normalize(storedClass.track) === normalize(classDraft.track) &&
-    normalize(storedClass.cycle) === normalize(classDraft.cycle) &&
-    normalize(storedClass.schoolYear) === normalize(classDraft.schoolYear) &&
-    String(storedClass.capacity ?? "") === classDraft.capacity;
+    normalize(storedClass.level) === normalize(levels[0] ?? "1ère") &&
+    (normalize(storedClass.track) === normalize(tracks[0] ?? "Générale") ||
+      normalize(storedClass.section) === normalize(tracks[0] ?? "Générale"));
 
   pushResult(
     results,
-    "3. Champs classe enregistrés",
-    "nom+niveau+filière+cycle+année+capacité",
+    "3. Champs classe enregistrés (projection)",
+    "nom+niveau+filière",
     fieldsOk ? "complets" : "incomplets",
     Boolean(fieldsOk),
   );
@@ -126,68 +118,59 @@ async function main() {
     inAssignments,
   );
 
-  const duplicateError = validateUniqueClassName(
-    className,
-    filterSchoolClassRecords(state.classes ?? [], schoolCode),
-  );
-  const duplicateSameYear = saveSchoolClassFlow(
-    state,
-    { ...classDraft, schoolYear: "2099-2100" },
-    schoolCode,
-  );
-
+  const legacyPut = await request("/backoffice/state", {
+    method: "PUT",
+    token: adminToken,
+    body: {
+      classes: [
+        ...(state.classes ?? []),
+        { id: `CLS-LEGACY-${Date.now()}`, name: `Legacy ${Date.now()}`, schoolCode },
+      ],
+    },
+  });
   pushResult(
     results,
-    "6. Doublon nom de classe bloqué (par établissement)",
-    "erreur",
-    duplicateError || duplicateSameYear.error ? "erreur" : "créé",
-    Boolean(duplicateError || duplicateSameYear.error),
+    "6. Écriture legacy state.classes refusée",
+    "400",
+    String(legacyPut.status),
+    legacyPut.status === 400 &&
+      String(legacyPut.data?.code ?? "") === "LEGACY_CLASSES_STATE_WRITE_FORBIDDEN",
   );
 
-  const archivedClasses = (state.classes ?? []).map((row) =>
-    normalize(row.name) === normalize(className) ? { ...row, status: "Archivée" } : row,
+  const duplicate = await request("/classes", {
+    method: "POST",
+    token: adminToken,
+    body: {
+      name: className,
+      academicYearName: schoolYear,
+      status: "active",
+    },
+  });
+  pushResult(
+    results,
+    "7. Doublon API bloqué (même année scolaire)",
+    "409",
+    String(duplicate.status),
+    duplicate.status === 409,
   );
-  state = await putStatePatch(adminToken, { classes: archivedClasses });
+
+  const classCode = String(
+    created.api?.classCode ?? storedClass?.id ?? storedClass?.publicId ?? "",
+  );
+  assert.ok(classCode, "classCode manquant pour PATCH");
+  const archived = await patchClassViaApi(adminToken, classCode, { status: "inactive" });
+  state = archived.state;
   const enrollmentOptions = getEnrollmentClassNameSelectOptions(state, schoolCode);
-  const archivedExcluded = !enrollmentOptions.some((option) => normalize(option) === normalize(className));
+  const archivedExcluded = !enrollmentOptions.some(
+    (option) => normalize(option) === normalize(className),
+  );
 
   pushResult(
     results,
-    "7. Classe archivée exclue (CLASSE-003)",
+    "8. Classe inactive exclue (CLASSE-003)",
     "exclue",
     archivedExcluded ? "exclue" : "proposée",
     archivedExcluded,
-  );
-
-  const archivedRow = filterSchoolClassRecords(state.classes ?? [], schoolCode).find(
-    (row) => normalize(row.name) === normalize(className),
-  );
-  assert.ok(archivedRow, "Classe archivée introuvable avant suppression");
-
-  const deleteResult = removeSchoolClassFromState(state, archivedRow, schoolCode);
-  assert.ok(deleteResult.ok, deleteResult.error);
-  state = await putStatePatch(adminToken, deleteResult.patch);
-
-  const deletedFromList = !filterSchoolClassRecords(state.classes ?? [], schoolCode).some(
-    (row) => normalize(row.name) === normalize(className),
-  );
-  const knownAfterDelete = isKnownClassName(
-    className,
-    scopedClasses(scopeUser, state),
-    state,
-    schoolCode,
-  );
-  const optionsAfterDelete = getAssignmentSelectOptions(scopeUser, state, undefined, schoolCode);
-  const stillInAssignments = optionsAfterDelete.classes.some(
-    (option) => normalize(option.value) === normalize(className),
-  );
-
-  pushResult(
-    results,
-    "8. Classe supprimée indisponible (affectations)",
-    "indisponible",
-    deletedFromList && !knownAfterDelete && !stillInAssignments ? "indisponible" : "disponible",
-    deletedFromList && !knownAfterDelete && !stillInAssignments,
   );
 
   console.log("\n=== E2E 0004 : Configuration des classes ===");

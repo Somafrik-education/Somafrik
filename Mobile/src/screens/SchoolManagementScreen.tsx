@@ -25,7 +25,7 @@ export default function SchoolManagementScreen({
     { title: "👤 Utilisateurs", entity: "users" },
     ...(isSchoolAdmin ? [] : [{ title: "👥 Élèves", entity: "students" as const }]),
     { title: "👨‍🏫 Enseignants", entity: "teachers" },
-    { title: "📚 Classes", entity: "classes" },
+    { title: "📚 Classes", route: "Classes" },
     { title: "📖 Cours", entity: "courses" },
     { title: "🔁 Affectations", entity: "assignments" },
     { title: "💰 Paiements", entity: "payments" },

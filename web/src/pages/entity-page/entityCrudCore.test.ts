@@ -29,10 +29,11 @@ function baseState(
   overrides: Partial<BackOfficeState> = {},
 ): BackOfficeState {
   return {
-    classes: [
-      { id: "c1", name: "6ème A", schoolCode: "SCH-001" },
-      { id: "c2", name: "Autre", schoolCode: "SCH-999" },
+    courses: [
+      { id: "c1", name: "Maths", className: "6ème A", schoolCode: "SCH-001" },
+      { id: "c2", name: "Autre", className: "5ème B", schoolCode: "SCH-999" },
     ],
+    classes: [{ id: "cls1", name: "6ème A", schoolCode: "SCH-001" }],
     students: [],
     teachers: [],
     assignments: [],
@@ -45,95 +46,95 @@ function baseState(
 describe("entityCrudCore (D2.8c)", () => {
   it("création générique : id + merge sans écraser les autres établissements", () => {
     const state = baseState();
-    const snapshot = structuredClone(state.classes);
+    const snapshot = structuredClone(state.courses);
     const prepared = prepareEntityRowForSave(
-      { name: "5ème B", schoolCode: "SCH-001" },
-      "CLASSES",
+      { name: "Physique", className: "6ème A", schoolCode: "SCH-001" },
+      "COURSES",
       false,
     );
-    expect(String(prepared.id)).toMatch(/^CLASSES-/);
+    expect(String(prepared.id)).toMatch(/^COURSES-/);
 
-    const result = mergeEntityIntoState("classes", admin, state, prepared);
+    const result = mergeEntityIntoState("courses", admin, state, prepared);
     expect(result.applied).toBe(true);
     expect(result.rows).toHaveLength(3);
     expect(result.rows.find((r) => r.id === "c2")).toEqual({
       id: "c2",
       name: "Autre",
+      className: "5ème B",
       schoolCode: "SCH-999",
     });
     expect(result.rows.some((r) => r.id === prepared.id)).toBe(true);
-    // Pas de mutation de l’état source
-    expect(state.classes).toEqual(snapshot);
+    expect(state.courses).toEqual(snapshot);
   });
 
   it("modification générique : remplace la ligne du périmètre seulement", () => {
     const state = baseState();
-    const snapshot = structuredClone(state.classes);
+    const snapshot = structuredClone(state.courses);
     const prepared = prepareEntityRowForSave(
-      { id: "c1", name: "6ème A bis", schoolCode: "SCH-001" },
-      "CLASSES",
+      { id: "c1", name: "Maths bis", className: "6ème A", schoolCode: "SCH-001" },
+      "COURSES",
       true,
     );
     expect(prepared.id).toBe("c1");
 
-    const result = mergeEntityIntoState("classes", admin, state, prepared);
+    const result = mergeEntityIntoState("courses", admin, state, prepared);
     expect(result.applied).toBe(true);
-    expect(result.rows.find((r) => r.id === "c1")?.name).toBe("6ème A bis");
+    expect(result.rows.find((r) => r.id === "c1")?.name).toBe("Maths bis");
     expect(result.rows.find((r) => r.id === "c2")).toEqual(snapshot[1]);
-    expect(state.classes).toEqual(snapshot);
+    expect(state.courses).toEqual(snapshot);
   });
 
   it("suppression générique : retire la ligne scopée sans toucher les autres établissements", () => {
     const state = baseState();
-    const snapshot = structuredClone(state.classes);
-    const ok = deleteEntityFromState("classes", admin, state, "c1");
+    const snapshot = structuredClone(state.courses);
+    const ok = deleteEntityFromState("courses", admin, state, "c1");
     expect(ok.applied).toBe(true);
     expect(ok.rows.map((r) => r.id)).toEqual(["c2"]);
-    expect(state.classes).toEqual(snapshot);
+    expect(state.courses).toEqual(snapshot);
 
-    const denied = deleteEntityFromState("classes", admin, state, "c2");
+    const denied = deleteEntityFromState("courses", admin, state, "c2");
     expect(denied.applied).toBe(false);
     expect(denied.rows).toHaveLength(2);
   });
 
   it("scope établissement : refuse la modification hors périmètre", () => {
     const state = baseState();
-    const rejected = mergeEntityIntoState("classes", admin, state, {
+    const rejected = mergeEntityIntoState("courses", admin, state, {
       id: "c2",
       name: "Hijack",
       schoolCode: "SCH-999",
     });
     expect(rejected.applied).toBe(false);
-    expect(rejected.rows).toEqual(state.classes);
+    expect(rejected.rows).toEqual(state.courses);
   });
 
   it("applique le schoolCode via applyEntitySchoolScope", () => {
     const state = baseState();
     const scoped = applyEntitySchoolScope(
-      "classes",
+      "courses",
       { name: "Nouvelle" },
       "SCH-001",
       state,
     );
     expect(scoped).toEqual({ name: "Nouvelle", schoolCode: "SCH-001" });
     expect(scoped).not.toBe(
-      applyEntitySchoolScope("classes", { name: "Nouvelle" }, "SCH-001", state),
+      applyEntitySchoolScope("courses", { name: "Nouvelle" }, "SCH-001", state),
     );
   });
 
   it("génère un id préfixé", () => {
-    expect(newEntityId("CLASSES")).toMatch(/^CLASSES-/);
+    expect(newEntityId("COURSES")).toMatch(/^COURSES-/);
   });
 
   it("prepareEntityRowForSave ne mute pas l’objet source", () => {
-    const source = { name: "6ème B" };
-    const created = prepareEntityRowForSave(source, "CLASSES", false);
-    expect(source).toEqual({ name: "6ème B" });
+    const source = { name: "Histoire" };
+    const created = prepareEntityRowForSave(source, "COURSES", false);
+    expect(source).toEqual({ name: "Histoire" });
     expect(created).not.toBe(source);
-    expect(String(created.id)).toMatch(/^CLASSES-/);
+    expect(String(created.id)).toMatch(/^COURSES-/);
 
     const existing = { id: "preset", name: "X" };
-    const withExistingId = prepareEntityRowForSave(existing, "CLASSES", false);
+    const withExistingId = prepareEntityRowForSave(existing, "COURSES", false);
     expect(withExistingId.id).toBe("preset");
     expect(withExistingId).not.toBe(existing);
   });
@@ -162,7 +163,6 @@ describe("entityCrudCore (D2.8c)", () => {
     expect(
       appendGenericMutationAudit(state.auditLog, "contacts", admin, { id: "x" }, false),
     ).toBeUndefined();
-    // HOTFIX-RBAC-ADMIN-01 : plus d'auditLog client pour classes / teachers.
     expect(
       appendGenericMutationAudit(
         state.auditLog,
@@ -199,13 +199,13 @@ describe("entityCrudCore (D2.8c)", () => {
 
     await persistEntityPatch(
       { update, showToast, setBusy },
-      { classes: [] },
-      entityMutationSuccessMessage("Classes", false),
+      { courses: [] },
+      entityMutationSuccessMessage("Matières", false),
     );
     expect(setBusy).toHaveBeenCalledWith(true);
     expect(setBusy).toHaveBeenLastCalledWith(false);
-    expect(update).toHaveBeenCalledWith({ classes: [] }, { partial: true });
-    expect(showToast).toHaveBeenCalledWith("Classes créé", "success");
+    expect(update).toHaveBeenCalledWith({ courses: [] }, { partial: true });
+    expect(showToast).toHaveBeenCalledWith("Matières créé", "success");
 
     const failingUpdate = vi.fn().mockRejectedValue(new Error("network"));
     const setBusy2 = vi.fn();
@@ -213,7 +213,7 @@ describe("entityCrudCore (D2.8c)", () => {
     await expect(
       persistEntityPatch(
         { update: failingUpdate, showToast: showToast2, setBusy: setBusy2 },
-        { classes: [] },
+        { courses: [] },
         "ignored",
       ),
     ).rejects.toThrow("sync failed");

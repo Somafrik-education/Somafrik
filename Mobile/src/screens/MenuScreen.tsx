@@ -35,7 +35,7 @@ const adminMenuItems: MenuItem[] = [
   { label: "👤 Utilisateurs", entity: "users", view: "users" },
   { label: "👥 Élèves", entity: "students", view: "students" },
   { label: "👨‍🏫 Enseignants", entity: "teachers", view: "teachers" },
-  { label: "📚 Classes", entity: "classes", view: "classes" },
+  { label: "📚 Classes", route: "Classes", view: "classes" },
   { label: "📖 Cours", entity: "courses", view: "courses" },
   { label: "🔁 Affectations", entity: "assignments", view: "assignments" },
   { label: "💰 Paiements", entity: "payments", view: "payments" },

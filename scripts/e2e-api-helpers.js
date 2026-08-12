@@ -210,6 +210,90 @@ async function getState(token) {
   return res.data;
 }
 
+/**
+ * Crée une classe via /api/classes (plus d'écriture legacy state.classes).
+ * @returns {{ classRecord: object, state: object }}
+ */
+async function createClassViaApi(token, draft = {}) {
+  const name = String(draft.name ?? "").trim();
+  assert.ok(name, "createClassViaApi: name requis");
+  const statusRaw = String(draft.status ?? "active").trim().toLowerCase();
+  const status =
+    statusRaw === "inactive" || statusRaw === "archivée" || statusRaw === "archivee"
+      ? "inactive"
+      : "active";
+  const body = {
+    name,
+    academicYearName: String(draft.academicYearName ?? draft.schoolYear ?? "2025-2026").trim(),
+    status,
+  };
+  const level = String(draft.level ?? "").trim();
+  const section = String(draft.section ?? draft.track ?? "").trim();
+  if (level) body.level = level;
+  if (section) body.section = section;
+
+  const res = await request("/classes", { method: "POST", token, body });
+  if (res.status === 409) {
+    const state = await getState(token);
+    const existing = (state.classes ?? []).find(
+      (row) => normalize(row.name) === normalize(name),
+    );
+    assert.ok(existing, `classe 409 sans projection: ${name}`);
+    return { classRecord: existing, state, created: false };
+  }
+  assert.strictEqual(res.status, 201, `POST /classes: ${JSON.stringify(res.data)}`);
+  const state = await getState(token);
+  const classRecord =
+    (state.classes ?? []).find(
+      (row) =>
+        String(row.id ?? row.publicId ?? "") === String(res.data.classCode) ||
+        normalize(row.name) === normalize(name),
+    ) ?? {
+      id: res.data.classCode,
+      publicId: res.data.classCode,
+      name: res.data.name,
+      schoolCode: res.data.schoolCode,
+      level: res.data.level,
+      track: res.data.section,
+      status: res.data.status === "inactive" ? "Archivée" : "Active",
+      schoolYear: res.data.academicYearName,
+    };
+  return { classRecord, state, created: true, api: res.data };
+}
+
+async function patchClassViaApi(token, classCode, patch = {}) {
+  const body = { ...patch };
+  if (body.status != null) {
+    const statusRaw = String(body.status).trim().toLowerCase();
+    if (
+      statusRaw === "inactive" ||
+      statusRaw === "archivée" ||
+      statusRaw === "archivee" ||
+      statusRaw === "archived"
+    ) {
+      body.status = "inactive";
+    } else if (statusRaw === "active" || statusRaw === "actif") {
+      body.status = "active";
+    }
+  }
+  if (body.track && !body.section) {
+    body.section = body.track;
+    delete body.track;
+  }
+  delete body.schoolYear;
+  delete body.schoolCode;
+  delete body.id;
+  delete body.publicId;
+  const res = await request(`/classes/${encodeURIComponent(classCode)}`, {
+    method: "PATCH",
+    token,
+    body,
+  });
+  assert.ok(res.status >= 200 && res.status < 300, `PATCH /classes: ${JSON.stringify(res.data)}`);
+  const state = await getState(token);
+  return { api: res.data, state };
+}
+
 async function putState(token, body) {
   const res = await request("/backoffice/state", { method: "PUT", token, body });
   assert.strictEqual(res.status, 200, `put state: ${JSON.stringify(res.data)}`);
@@ -217,8 +301,44 @@ async function putState(token, body) {
 }
 
 async function putStatePatch(token, patch) {
+  const incoming = patch ?? {};
+  let workingPatch = { ...incoming };
+
+  if (Object.prototype.hasOwnProperty.call(workingPatch, "classes")) {
+    const current = await getState(token);
+    const currentByName = new Map(
+      (current.classes ?? []).map((row) => [normalize(row.name), row]),
+    );
+    for (const row of workingPatch.classes ?? []) {
+      const name = String(row?.name ?? "").trim();
+      if (!name) continue;
+      const existing = currentByName.get(normalize(name));
+      if (!existing) {
+        const created = await createClassViaApi(token, row);
+        if (created.classRecord) {
+          currentByName.set(normalize(name), created.classRecord);
+        }
+        continue;
+      }
+      const classCode = String(existing.id ?? existing.publicId ?? existing.classCode ?? "").trim();
+      const nextStatus = String(row.status ?? "").trim();
+      if (classCode && nextStatus) {
+        const currentStatus = String(existing.status ?? "").trim();
+        if (normalize(currentStatus) !== normalize(nextStatus)) {
+          await patchClassViaApi(token, classCode, { status: nextStatus });
+        }
+      }
+    }
+    delete workingPatch.classes;
+  }
+
+  if (Object.keys(workingPatch).length === 0) {
+    return getState(token);
+  }
+
   const current = await getState(token);
-  return putState(token, { ...current, ...patch });
+  const { classes: _currentClasses, ...currentWithoutClasses } = current;
+  return putState(token, { ...currentWithoutClasses, ...workingPatch });
 }
 
 function newId(prefix) {
@@ -348,6 +468,8 @@ module.exports = {
   mobileLoginFull,
   mobileIdentify,
   getState,
+  createClassViaApi,
+  patchClassViaApi,
   putState,
   putStatePatch,
   newId,
