@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
 
 CREATE TABLE IF NOT EXISTS academic_years (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -154,6 +156,11 @@ CREATE TABLE IF NOT EXISTS teachers (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Une seule fiche canonique par compte et établissement.
+CREATE UNIQUE INDEX IF NOT EXISTS teachers_school_user_unique
+  ON teachers (school_id, user_id)
+  WHERE user_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -985,6 +985,343 @@ class FallbackRepository {
   getSchoolStudentByCode(studentCode, schoolCode) {
     return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
   }
+
+  getTeachersRepository() {
+    if (!this._teachersRepo) {
+      const { createTeachersRepository } = require("./teachersRepository");
+      if (!this._managedTeachers) this._managedTeachers = [];
+      if (!this._managedTeacherUsers) this._managedTeacherUsers = [];
+      const self = this;
+      const memoryAdapter = {
+        async getSchoolByCode(code) {
+          const normalized = String(code ?? "").trim().toUpperCase();
+          if (normalized === String(seedData.school.code).toUpperCase()) {
+            return { id: seedData.school.id, school_code: seedData.school.code };
+          }
+          return { id: `school-${normalized}`, school_code: normalized };
+        },
+        async one(sql, params = []) {
+          const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          if (text.startsWith("INSERT INTO USERS")) {
+            const row = {
+              id: `user-${params[1]}`,
+              school_id: params[0],
+              user_code: params[1],
+              first_name: params[2],
+              last_name: params[3],
+              email: params[4],
+              phone: params[5],
+              password_hash: params[6],
+              pin_hash: params[6],
+              must_change_password: true,
+              role: "TEACHER",
+              status: "active",
+              birth_date: params[7],
+              gender: params[8],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            self._managedTeacherUsers.push(row);
+            return row;
+          }
+          if (text.startsWith("INSERT INTO TEACHERS")) {
+            const existing = self._managedTeachers.find(
+              (row) => row.user_id === params[1] && row.school_id === params[0],
+            );
+            if (existing) {
+              const error = new Error("duplicate key value violates unique constraint \"teachers_school_user_unique\"");
+              error.code = "23505";
+              error.constraint = "teachers_school_user_unique";
+              throw error;
+            }
+            const codeClash = self._managedTeachers.find((row) => row.teacher_code === params[2]);
+            if (codeClash) {
+              const error = new Error("duplicate key value violates unique constraint \"teachers_teacher_code_key\"");
+              error.code = "23505";
+              error.constraint = "teachers_teacher_code_key";
+              throw error;
+            }
+            const row = {
+              id: `tch-${params[2]}`,
+              school_id: params[0],
+              user_id: params[1],
+              teacher_code: params[2],
+              speciality: params[3],
+              hire_date: params[4],
+              status: "active",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            self._managedTeachers.push(row);
+            return row;
+          }
+          if (text.includes("FROM TEACHERS T") && text.includes("WHERE T.TEACHER_CODE")) {
+            const teacherCode = params[0];
+            const schoolId = params[1];
+            const teacher = (self._managedTeachers ?? []).find(
+              (row) => row.teacher_code === teacherCode && row.school_id === schoolId,
+            );
+            if (!teacher) return null;
+            const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
+            return {
+              ...teacher,
+              school_code:
+                schoolId === seedData.school.id
+                  ? seedData.school.code
+                  : String(schoolId).replace(/^school-/, ""),
+              first_name: user?.first_name,
+              last_name: user?.last_name,
+              email: user?.email,
+              phone: user?.phone,
+              birth_date: user?.birth_date,
+              gender: user?.gender,
+              must_change_password: user?.must_change_password,
+            };
+          }
+          return null;
+        },
+        async all(sql, params = []) {
+          const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          if (
+            text.includes("FROM TEACHERS T") &&
+            text.includes("LEFT JOIN USERS") &&
+            text.includes("WHERE T.SCHOOL_ID")
+          ) {
+            const schoolId = params[0];
+            return (self._managedTeachers ?? [])
+              .filter((row) => row.school_id === schoolId)
+              .map((teacher) => {
+                const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
+                return {
+                  ...teacher,
+                  school_code:
+                    schoolId === seedData.school.id
+                      ? seedData.school.code
+                      : String(schoolId).replace(/^school-/, ""),
+                  first_name: user?.first_name,
+                  last_name: user?.last_name,
+                  email: user?.email,
+                  phone: user?.phone,
+                  birth_date: user?.birth_date,
+                  gender: user?.gender,
+                  must_change_password: user?.must_change_password,
+                };
+              });
+          }
+          if (
+            text.includes("FROM TEACHERS T") &&
+            text.includes("JOIN USERS U") &&
+            !text.includes("LEFT JOIN") &&
+            text.includes("WHERE T.SCHOOL_ID")
+          ) {
+            const schoolId = params[0];
+            return (self._managedTeachers ?? [])
+              .filter((row) => row.school_id === schoolId)
+              .map((teacher) => {
+                const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
+                return {
+                  teacher_code: teacher.teacher_code,
+                  first_name: user?.first_name,
+                  last_name: user?.last_name,
+                  birth_date: user?.birth_date,
+                  gender: user?.gender,
+                };
+              });
+          }
+          if (text.startsWith("SELECT TEACHER_CODE AS CODE FROM TEACHERS")) {
+            const schoolId = params[0];
+            const schoolCode =
+              schoolId === seedData.school.id
+                ? seedData.school.code
+                : String(schoolId).replace(/^school-/, "");
+            const managed = (self._managedTeachers ?? [])
+              .filter((row) => row.school_id === schoolId)
+              .map((row) => ({ code: row.teacher_code }));
+            const seeded = (seedData.teachers ?? [])
+              .filter(
+                (row) =>
+                  String(row.schoolCode ?? "").trim().toUpperCase() ===
+                  String(schoolCode).trim().toUpperCase(),
+              )
+              .map((row) => ({ code: row.publicId ?? row.identifier ?? row.id }));
+            return [...seeded, ...managed];
+          }
+          if (text.startsWith("SELECT USER_CODE AS CODE FROM USERS")) {
+            const schoolId = params[0];
+            const schoolCode =
+              schoolId === seedData.school.id
+                ? seedData.school.code
+                : String(schoolId).replace(/^school-/, "");
+            const managed = (self._managedTeacherUsers ?? [])
+              .filter((row) => row.school_id === schoolId)
+              .map((row) => ({ code: row.user_code }));
+            const seeded = (seedData.userAccounts ?? [])
+              .filter(
+                (row) =>
+                  String(row.schoolCode ?? "").trim().toUpperCase() ===
+                  String(schoolCode).trim().toUpperCase(),
+              )
+              .map((row) => ({ code: row.publicId ?? row.identifier ?? row.id }));
+            return [...seeded, ...managed];
+          }
+          return [];
+        },
+        async query(sql) {
+          const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+            return { rows: [] };
+          }
+          return { rows: [] };
+        },
+        async withTransaction(fn) {
+          const snapshotTeachers = clone(self._managedTeachers ?? []);
+          const snapshotUsers = clone(self._managedTeacherUsers ?? []);
+          const tx = {
+            one: (sql, params) => memoryAdapter.one(sql, params),
+            all: (sql, params) => memoryAdapter.all(sql, params),
+            query: (sql, params) => memoryAdapter.query(sql, params),
+          };
+          try {
+            return await fn(tx);
+          } catch (error) {
+            self._managedTeachers = snapshotTeachers;
+            self._managedTeacherUsers = snapshotUsers;
+            throw error;
+          }
+        },
+        async onTeacherCreated(created) {
+          const identifier = String(created.identifier ?? "").trim();
+          const schoolCode = String(created.schoolCode ?? "").trim();
+          const managedUser = (self._managedTeacherUsers ?? []).find(
+            (row) => row.user_code === created.teacherCode || row.user_code === created.publicId,
+          );
+          if (!managedUser) return;
+
+          const account = {
+            id: managedUser.id,
+            publicId: managedUser.user_code,
+            lastName: managedUser.last_name,
+            firstName: managedUser.first_name,
+            gender: managedUser.gender ?? "",
+            birthDate: managedUser.birth_date
+              ? String(managedUser.birth_date).slice(0, 10)
+              : "",
+            phone: managedUser.phone ?? "",
+            email: managedUser.email ?? "",
+            role: "Enseignant",
+            secondaryRoles: [],
+            scopeLevel: "Établissement",
+            countryScope: seedData.school.countryScope ?? "RDC",
+            countryCode: seedData.school.countryCode ?? "CD",
+            schoolCode,
+            accessChannel: "Application",
+            identifier,
+            passwordHash: managedUser.password_hash,
+            pinHash: managedUser.pin_hash,
+            status: "Actif",
+            permissions: seedData.rolePermissions.Enseignant ?? ["Voir tableau de bord"],
+            temporaryPassword: "",
+            mustChangePassword: true,
+            photoUrl: "",
+            createdAt: new Date().toISOString().slice(0, 10),
+            lastLoginAt: "",
+            createdBy: "API teachers",
+            history: ["Compte enseignant créé via POST /api/teachers"],
+          };
+
+          const existingIdx = seedData.userAccounts.findIndex(
+            (user) => String(user.publicId ?? "") === String(account.publicId),
+          );
+          if (existingIdx >= 0) {
+            seedData.userAccounts[existingIdx] = account;
+          } else {
+            seedData.userAccounts.push(account);
+          }
+
+          const teacherRow = {
+            id: created.teacherCode,
+            userId: managedUser.id,
+            publicId: created.teacherCode,
+            identifier,
+            schoolCode,
+            name: created.name,
+            firstName: created.firstName,
+            lastName: created.lastName,
+            gender: created.gender,
+            phone: created.phone,
+            email: created.email,
+            birthDate: created.birthDate,
+            entryDate: created.entryDate,
+            mainSubject: created.mainSubject || created.speciality || "",
+            speciality: created.speciality || "",
+            status: "Actif",
+            assignments: [],
+            assignedClasses: [],
+            mustChangePassword: true,
+          };
+          const teacherIdx = seedData.teachers.findIndex(
+            (row) => String(row.publicId ?? row.id ?? "") === String(created.teacherCode),
+          );
+          if (teacherIdx >= 0) {
+            seedData.teachers[teacherIdx] = teacherRow;
+          } else {
+            seedData.teachers.push(teacherRow);
+          }
+        },
+      };
+      this._teachersRepo = createTeachersRepository(memoryAdapter);
+    }
+    return this._teachersRepo;
+  }
+
+  async listSchoolTeachers(schoolCode) {
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    const managed = await this.getTeachersRepository().listBySchoolCode(schoolCode);
+    const seeded = (seedData.teachers ?? [])
+      .filter((row) => String(row.schoolCode ?? "").trim().toUpperCase() === normalized)
+      .filter(
+        (row) =>
+          !managed.some(
+            (item) =>
+              String(item.teacherCode ?? item.publicId ?? "") ===
+              String(row.publicId ?? row.id ?? ""),
+          ),
+      )
+      .map((row) => ({
+        id: row.publicId ?? row.id,
+        teacherCode: row.publicId ?? row.id,
+        publicId: row.publicId ?? row.id,
+        identifier: row.identifier ?? "",
+        userId: row.userId ?? null,
+        firstName: row.firstName ?? "",
+        lastName: row.lastName ?? String(row.name ?? "").split(" ").slice(-1)[0] ?? "",
+        name: row.name ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim(),
+        gender: row.gender ?? "",
+        birthDate: row.birthDate ?? "",
+        entryDate: row.entryDate ?? "",
+        phone: row.phone ?? "",
+        email: row.email ?? "",
+        speciality: row.speciality ?? row.mainSubject ?? "",
+        mainSubject: row.mainSubject ?? row.speciality ?? "",
+        schoolCode: row.schoolCode,
+        status: row.status ?? "Actif",
+        mustChangePassword: Boolean(row.mustChangePassword),
+        assignments: Array.isArray(row.assignments) ? row.assignments : [],
+        assignedClasses: [
+          ...new Set((row.assignments ?? []).map((item) => item.className).filter(Boolean)),
+        ],
+        courses: [...new Set((row.assignments ?? []).map((item) => item.course).filter(Boolean))],
+      }));
+    return [...seeded, ...managed];
+  }
+
+  getSchoolTeacherByCode(teacherCode, schoolCode) {
+    return this.getTeachersRepository().getByTeacherCode(teacherCode, schoolCode);
+  }
+
+  createSchoolTeacher(body, schoolCode) {
+    return this.getTeachersRepository().create(body, schoolCode);
+  }
 }
 
 module.exports = { FallbackRepository };

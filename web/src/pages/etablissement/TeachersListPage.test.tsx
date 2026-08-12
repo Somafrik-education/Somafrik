@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -10,38 +10,13 @@ const permissions = vi.hoisted(() => ({
   canDelete: true,
 }));
 
-const dataState = vi.hoisted(() => ({
-  current: {
-    schools: [{ code: "SCH-001", name: "Lycée Test" }],
-    classes: [],
-    students: [],
-    teachers: [
-      {
-        id: "t1",
-        name: "Ndiaye",
-        firstName: "Aïssatou",
-        publicId: "SN-2026-0001-ENS-0001",
-        specialty: "Mathématiques",
-        schoolCode: "SCH-001",
-      },
-      {
-        id: "t2",
-        name: "Ba",
-        firstName: "Moussa",
-        publicId: "SN-2026-0001-ENS-0002",
-        specialty: "Français",
-        schoolCode: "SCH-001",
-      },
-    ],
-    assignments: [],
-    courses: [],
-    contacts: [],
-    relations: [],
-    users: [],
-    academicConfigBySchool: {},
-    auditLog: [],
-  } as Record<string, unknown>,
+const teachersApiMock = vi.hoisted(() => ({
+  list: vi.fn(),
+  create: vi.fn(),
+  get: vi.fn(),
 }));
+
+const showToast = vi.hoisted(() => vi.fn());
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
@@ -49,72 +24,61 @@ vi.mock("../../context/AuthContext", () => ({
       user: {
         id: "u1",
         role: "Admin School",
-        schoolCode: "SCH-001",
+        schoolCode: "CD-2026-0001",
         name: "Admin",
       },
     },
   }),
 }));
 
-vi.mock("../../context/DataContext", () => ({
-  useData: () => ({
-    state: dataState.current,
-    loading: false,
-    error: null,
-    update: vi.fn(),
-    refresh: vi.fn(),
-  }),
-}));
-
 vi.mock("../../context/ActiveSchoolContext", () => ({
   useActiveSchool: () => ({
-    activeSchoolCode: "SCH-001",
+    activeSchoolCode: "CD-2026-0001",
     scopedUser: {
       id: "u1",
       role: "Admin School",
-      schoolCode: "SCH-001",
+      schoolCode: "CD-2026-0001",
       name: "Admin",
     },
   }),
 }));
 
 vi.mock("../../lib/usePermissionContext", () => ({
-  usePermissionContext: () => ({ user: { role: "Admin School", schoolCode: "SCH-001" } }),
+  usePermissionContext: () => ({ user: { role: "Admin School", schoolCode: "CD-2026-0001" } }),
 }));
 
 vi.mock("../../lib/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/permissions")>();
   return {
     ...actual,
-    getEntityFeaturePermissions: (_ctx: unknown, key: string) => {
-      if (key === "assignments") {
-        return { canRead: true, canCreate: true, canUpdate: true, canDelete: false };
-      }
-      if (key === "students") {
-        return { canRead: true, canCreate: false, canUpdate: false, canDelete: false };
-      }
-      return { ...permissions };
-    },
+    getEntityFeaturePermissions: () => ({ ...permissions }),
   };
 });
 
 vi.mock("../../components/ui/Toast", () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast }),
 }));
 
-vi.mock("../../components/ui/ConfirmDialog", () => ({
-  useConfirm: () => ({ confirm: vi.fn(async () => true) }),
+vi.mock("../../lib/teachersApi", () => ({
+  teachersApi: teachersApiMock,
 }));
 
-vi.mock("../../components/ui/PromptDialog", () => ({
-  usePrompt: () => ({ prompt: vi.fn() }),
-}));
-
-vi.mock("../../components/ui/PrintButton", () => ({
-  PrintButton: () => <button type="button">Imprimer</button>,
+vi.mock("../../api/client", () => ({
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
+  api: {
+    get: vi.fn(),
+    post: vi.fn(),
+  },
 }));
 
 import { TeachersListPage } from "./TeachersListPage";
+import { ApiError } from "../../api/client";
 
 function renderPage() {
   return render(
@@ -124,92 +88,204 @@ function renderPage() {
   );
 }
 
-describe("TeachersListPage (D3.3 — consommation D2.7)", () => {
+describe("TeachersListPage (création compte + fiche)", () => {
   beforeEach(() => {
     permissions.canRead = true;
     permissions.canCreate = true;
-    permissions.canUpdate = true;
-    permissions.canDelete = true;
-    dataState.current = {
-      ...dataState.current,
-      teachers: [
+    teachersApiMock.list.mockReset();
+    teachersApiMock.create.mockReset();
+    showToast.mockReset();
+    teachersApiMock.list.mockResolvedValue([
+      {
+        id: "CD-2026-0001-ENS-0001",
+        teacherCode: "CD-2026-0001-ENS-0001",
+        publicId: "CD-2026-0001-ENS-0001",
+        identifier: "ENS-0001",
+        firstName: "Aïssatou",
+        lastName: "Ndiaye",
+        name: "Aïssatou Ndiaye",
+        phone: "+243 800",
+        email: "",
+        speciality: "Mathématiques",
+        mainSubject: "Mathématiques",
+        schoolCode: "CD-2026-0001",
+        status: "Actif",
+        gender: "",
+        birthDate: "",
+        entryDate: "",
+      },
+      {
+        id: "CD-2026-0001-ENS-0002",
+        teacherCode: "CD-2026-0001-ENS-0002",
+        publicId: "CD-2026-0001-ENS-0002",
+        identifier: "ENS-0002",
+        firstName: "Moussa",
+        lastName: "Ba",
+        name: "Moussa Ba",
+        phone: "",
+        email: "moussa@example.com",
+        speciality: "Français",
+        mainSubject: "Français",
+        schoolCode: "CD-2026-0001",
+        status: "Actif",
+        gender: "",
+        birthDate: "",
+        entryDate: "",
+      },
+    ]);
+  });
+
+  it("charge la liste via l'API métier", async () => {
+    renderPage();
+    expect(await screen.findByRole("heading", { level: 2, name: "Enseignants" })).toBeInTheDocument();
+    expect(await screen.findByText("Ndiaye")).toBeInTheDocument();
+    expect(screen.getByText("Ba")).toBeInTheDocument();
+    expect(teachersApiMock.list).toHaveBeenCalled();
+  });
+
+  it("crée un enseignant puis recharge la liste", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.create.mockResolvedValue({
+      teacherCode: "CD-2026-0001-ENS-0003",
+      identifier: "ENS-0003",
+    });
+    teachersApiMock.list
+      .mockResolvedValueOnce([
         {
-          id: "t1",
-          name: "Ndiaye",
+          id: "CD-2026-0001-ENS-0001",
+          teacherCode: "CD-2026-0001-ENS-0001",
+          publicId: "CD-2026-0001-ENS-0001",
+          identifier: "ENS-0001",
           firstName: "Aïssatou",
-          publicId: "SN-2026-0001-ENS-0001",
-          specialty: "Mathématiques",
-          schoolCode: "SCH-001",
+          lastName: "Ndiaye",
+          name: "Aïssatou Ndiaye",
+          phone: "+243",
+          email: "",
+          speciality: "",
+          mainSubject: "",
+          schoolCode: "CD-2026-0001",
+          status: "Actif",
+          gender: "",
+          birthDate: "",
+          entryDate: "",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "CD-2026-0001-ENS-0001",
+          teacherCode: "CD-2026-0001-ENS-0001",
+          publicId: "CD-2026-0001-ENS-0001",
+          identifier: "ENS-0001",
+          firstName: "Aïssatou",
+          lastName: "Ndiaye",
+          name: "Aïssatou Ndiaye",
+          phone: "+243",
+          email: "",
+          speciality: "",
+          mainSubject: "",
+          schoolCode: "CD-2026-0001",
+          status: "Actif",
+          gender: "",
+          birthDate: "",
+          entryDate: "",
         },
         {
-          id: "t2",
-          name: "Ba",
-          firstName: "Moussa",
-          publicId: "SN-2026-0001-ENS-0002",
-          specialty: "Français",
-          schoolCode: "SCH-001",
+          id: "CD-2026-0001-ENS-0003",
+          teacherCode: "CD-2026-0001-ENS-0003",
+          publicId: "CD-2026-0001-ENS-0003",
+          identifier: "ENS-0003",
+          firstName: "Fatou",
+          lastName: "Sow",
+          name: "Fatou Sow",
+          phone: "+243 811",
+          email: "",
+          speciality: "",
+          mainSubject: "",
+          schoolCode: "CD-2026-0001",
+          status: "Actif",
+          gender: "",
+          birthDate: "",
+          entryDate: "",
         },
-      ],
-    };
-  });
+      ]);
 
-  it("rend le chrome D2.7 (ListLayout / EntityListShell) pour Enseignants", () => {
     renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
+    await user.type(screen.getByLabelText(/Prénom/i), "Fatou");
+    await user.type(screen.getByLabelText(/^Nom/i), "Sow");
+    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-05-01");
+    await user.type(screen.getByLabelText(/Téléphone/i), "+243 811");
+    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
+    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
 
-    expect(screen.getByRole("heading", { level: 2, name: "Enseignants" })).toBeInTheDocument();
-    expect(screen.getByRole("banner")).toBeInTheDocument();
-    expect(screen.getByLabelText("Filtres et recherche")).toBeInTheDocument();
-    expect(screen.getByLabelText("Liste")).toBeInTheDocument();
-    expect(
-      screen.getByRole("searchbox", { name: /Rechercher dans enseignants/i }),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(teachersApiMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          firstName: "Fatou",
+          lastName: "Sow",
+          birthDate: "1990-05-01",
+          phone: "+243 811",
+          temporaryPassword: "TempPass1",
+        }),
+      );
+    });
+    expect(await screen.findByText("Sow")).toBeInTheDocument();
+    expect(showToast).toHaveBeenCalledWith(
+      "Enseignant créé avec son compte de connexion.",
+      "success",
+    );
   });
 
-  it("affiche le tableau nominal avec colonnes et actions existantes", () => {
+  it("affiche les erreurs 409 dans le formulaire", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.create.mockRejectedValue(
+      new ApiError("Identité enseignant ambiguë", 409),
+    );
     renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
+    await user.type(screen.getByLabelText(/Prénom/i), "Aïssatou");
+    await user.type(screen.getByLabelText(/^Nom/i), "Ndiaye");
+    await user.type(screen.getByLabelText(/Date de naissance/i), "1985-01-01");
+    await user.type(screen.getByLabelText(/Email/i), "a@example.com");
+    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
+    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
 
-    const list = screen.getByLabelText("Liste");
-    expect(within(list).getByText("Ndiaye")).toBeInTheDocument();
-    expect(within(list).getByText("Ba")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ajouter" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "Supprimer" }).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Identité enseignant ambiguë")).toBeInTheDocument();
+    expect(showToast).toHaveBeenCalledWith("Identité enseignant ambiguë", "error");
   });
 
-  it("filtre la liste via EntityListSearch sans changer les données source", async () => {
+  it("filtre la liste côté client", async () => {
     const user = userEvent.setup();
     renderPage();
-
+    await screen.findByText("Ndiaye");
     const search = screen.getByRole("searchbox", { name: /Rechercher dans enseignants/i });
     await user.type(search, "Ndiaye");
-
     expect(screen.getByText("Ndiaye")).toBeInTheDocument();
     expect(screen.queryByText("Ba")).not.toBeInTheDocument();
   });
 
-  it("affiche EmptyState DS lorsque la liste est vide", () => {
-    dataState.current = { ...dataState.current, teachers: [] };
+  it("affiche EmptyState lorsque la liste est vide", async () => {
+    teachersApiMock.list.mockResolvedValue([]);
     renderPage();
-
-    const empty = screen.getByRole("status");
+    const empty = await screen.findByRole("status");
     expect(empty).toHaveTextContent("Liste vide");
-    expect(empty).toHaveTextContent("Aucun élément à afficher dans enseignants.");
   });
 
-  it("affiche ForbiddenState (EntityListForbidden) si accès refusé", () => {
+  it("affiche ForbiddenState si accès refusé", () => {
     permissions.canRead = false;
     renderPage();
-
     expect(screen.getByRole("status")).toHaveTextContent("Accès non autorisé");
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Vous n'avez pas l'autorisation de consulter enseignants.",
-    );
     expect(screen.queryByRole("heading", { name: "Enseignants" })).not.toBeInTheDocument();
   });
 
-  it("conserve les actions secondaires d’export", () => {
+  it("n'expose pas Modifier / Supprimer / Affecter actifs", async () => {
     renderPage();
-    expect(screen.getByRole("button", { name: "Exporter CSV" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Exporter Excel" })).toBeInTheDocument();
+    await screen.findByText("Ndiaye");
+    const list = screen.getByLabelText("Liste");
+    expect(within(list).queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
+    expect(within(list).queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
+    expect(within(list).queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
   });
 });
