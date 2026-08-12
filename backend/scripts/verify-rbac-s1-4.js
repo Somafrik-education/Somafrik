@@ -33,7 +33,11 @@ function runMatrixUnitTests() {
 
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
-  assert.ok(SECRETARY_WRITABLE_ENTITIES.includes("students"));
+  // PR2 — students n'est plus writable via BackOffice state (inscription via Classes).
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!PREFET_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!DIRECTOR_WRITABLE_ENTITIES.includes("students"));
   assert.ok(SECRETARY_WRITABLE_ENTITIES.includes("payments"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("notes"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("users"));
@@ -67,14 +71,31 @@ function runMatrixUnitTests() {
       { role: "Super Administrateur Somafrik" },
       allEntities,
     ).includes("auditLog"),
+    "auditLog exclu même pour Super Admin via matrice client",
   );
   assert.strictEqual(evaluateBackOfficeWriteAccess(admin, ["auditLog"]).ok, false);
   assert.strictEqual(evaluateBackOfficeWriteAccess(secretary, ["auditLog"]).ok, false);
   assert.strictEqual(evaluateBackOfficeWriteAccess(accountant, ["auditLog"]).ok, false);
 
-  assert.deepStrictEqual(
-    evaluateBackOfficeWriteAccess(secretary, ["students", "payments"]).ok,
+  assert.strictEqual(
+    evaluateBackOfficeWriteAccess(secretary, ["students"]).ok,
+    false,
+    "Secrétaire : state.students interdit",
+  );
+  assert.strictEqual(
+    evaluateBackOfficeWriteAccess(admin, ["students"]).ok,
+    false,
+    "Admin School : state.students interdit",
+  );
+  assert.strictEqual(
+    evaluateBackOfficeWriteAccess(secretary, ["payments"]).ok,
     true,
+    "Secrétaire : payments toujours autorisé",
+  );
+  assert.strictEqual(
+    evaluateBackOfficeWriteAccess(secretary, ["students", "payments"]).ok,
+    false,
+    "mélange students+payments → refus (students interdit)",
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(secretary, ["notes"]).ok,
@@ -272,25 +293,101 @@ async function runHttpTestsIfAvailable() {
 
   const accountant = await login("comptable-s14", "Soma1234", "CD-2026-0001");
 
-  // A1 — Admin School : modification autorisée (students)
-  const adminOk = await request("/backoffice/state", {
+  // A1 — Admin School : state.students interdit (legacy fermé)
+  const adminStudentsForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: schoolAdmin.accessToken,
     body: {
       students: state.students ?? [],
     },
   });
-  assert.ok(adminOk.status >= 200 && adminOk.status < 300, `Admin School students write: ${adminOk.status}`);
+  assert.strictEqual(
+    adminStudentsForbidden.status,
+    400,
+    `Admin School students write: ${adminStudentsForbidden.status}`,
+  );
+  assert.strictEqual(
+    adminStudentsForbidden.data?.code,
+    "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
+    "code legacy students Admin School",
+  );
 
-  // A2 — Secrétaire : domaine autorisé (students)
-  const secOk = await request("/backoffice/state", {
+  // A1b — Admin School : domaine encore autorisé (teachers) → 200
+  const adminTeachersOk = await request("/backoffice/state", {
+    method: "PUT",
+    token: schoolAdmin.accessToken,
+    body: {
+      teachers: state.teachers ?? [],
+    },
+  });
+  assert.ok(
+    adminTeachersOk.status >= 200 && adminTeachersOk.status < 300,
+    `Admin School teachers write: ${adminTeachersOk.status}`,
+  );
+
+  // A2 — Secrétaire : state.students interdit (pas de droit d'écriture legacy)
+  const secStudentsForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: secretary.accessToken,
     body: {
       students: state.students ?? [],
     },
   });
-  assert.ok(secOk.status >= 200 && secOk.status < 300, `Secrétaire students write: ${secOk.status}`);
+  assert.strictEqual(
+    secStudentsForbidden.status,
+    400,
+    `Secrétaire students write: ${secStudentsForbidden.status}`,
+  );
+  assert.strictEqual(
+    secStudentsForbidden.data?.code,
+    "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
+    "code legacy students Secrétaire",
+  );
+
+  // A2b — Secrétaire : domaine encore autorisé (payments) → 200
+  const secPaymentsOk = await request("/backoffice/state", {
+    method: "PUT",
+    token: secretary.accessToken,
+    body: {
+      payments: state.payments ?? [],
+    },
+  });
+  assert.ok(
+    secPaymentsOk.status >= 200 && secPaymentsOk.status < 300,
+    `Secrétaire payments write: ${secPaymentsOk.status}`,
+  );
+
+  // A2c — Secrétaire : inscription canonique Classes → Inscrire toujours possible
+  const stamp = Date.now();
+  const classCreated = await request("/classes", {
+    method: "POST",
+    token: schoolAdmin.accessToken,
+    body: {
+      name: `RBAC Sec Inscription ${stamp}`,
+      academicYearName: "2025-2026",
+      status: "active",
+    },
+  });
+  assert.strictEqual(classCreated.status, 201, JSON.stringify(classCreated.data));
+  const enrollBySecretary = await request(
+    `/classes/${encodeURIComponent(classCreated.data.classCode)}/students`,
+    {
+      method: "POST",
+      token: secretary.accessToken,
+      body: {
+        firstName: "Sara",
+        lastName: `SecInscription${stamp}`,
+        gender: "Féminin",
+        birthDate: "2013-01-15",
+      },
+    },
+  );
+  assert.strictEqual(
+    enrollBySecretary.status,
+    201,
+    `Secrétaire inscription classe: ${enrollBySecretary.status} ${JSON.stringify(enrollBySecretary.data)}`,
+  );
+  assert.ok(enrollBySecretary.data?.studentCode);
 
   // A3 — Secrétaire : domaine interdit (notes) → 403
   const secForbidden = await request("/backoffice/state", {
@@ -338,7 +435,7 @@ async function runHttpTestsIfAvailable() {
     assert.strictEqual(auditPut.status, 403, `${label} auditLog doit être 403`);
   }
 
-  // A6 — Cross-tenant : la ligne étrangère ne doit JAMAIS être persistée (état autoritatif)
+  // A6 — Cross-tenant : écriture legacy students refusée (aucune persistance possible)
   const foreignStudent = {
     id: "ELE-FOREIGN-S14",
     publicId: "ELE-FOREIGN-S14",
@@ -357,7 +454,12 @@ async function runHttpTestsIfAvailable() {
       students: [...(state.students ?? []), foreignStudent],
     },
   });
-  assert.ok(crossPut.status >= 200 && crossPut.status < 300, "cross put status");
+  assert.strictEqual(
+    crossPut.status,
+    400,
+    "cross put students doit être refusé (legacy fermé)",
+  );
+  assert.strictEqual(crossPut.data?.code, "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN");
 
   // Lecture scoped secrétaire
   const afterCrossScoped = await request("/backoffice/state", { token: secretary.accessToken });

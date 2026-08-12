@@ -43,9 +43,10 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
 ]);
 
 /**
- * Secrétaire — modules CRUD securityMatrix :
- * Élèves, Présences, Paiements, Notifications, Messages, Documents.
- * (Utilisateurs/Contacts/Notes/Frais = lecture seule ou « - »)
+ * Secrétaire — modules encore writable via PUT /api/backoffice/state :
+ * Présences, Paiements, Notifications, Messages, Documents.
+ * Élèves : plus d'écriture state.students (inscription canonique
+ * POST /api/classes/:classCode/students — permissions « Gérer élèves » / Élèves:CREATE).
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
   "presences",

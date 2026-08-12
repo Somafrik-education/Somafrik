@@ -392,6 +392,58 @@ async function runHttpGuards() {
     const payments = await request(`/students/${encodeURIComponent(studentCode)}/payments`, { token });
     assert.ok(payments.status === 200 || payments.status === 403, `paiements: ${payments.status}`);
 
+    // Secrétaire : pas d'écriture state.students, mais inscription canonique Classe OK
+    const secretaryLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: "secretaire", password: "1234", schoolCode: "CD-2026-0001" },
+    });
+    assert.equal(secretaryLogin.status, 200, JSON.stringify(secretaryLogin.data));
+    let secretaryToken = secretaryLogin.data.accessToken || secretaryLogin.data.token;
+    assert.ok(secretaryToken);
+    if (secretaryLogin.data.user?.mustChangePassword) {
+      const changed = await request("/auth/change-password", {
+        method: "POST",
+        token: secretaryToken,
+        body: { newPassword: "SomaTest1" },
+      });
+      assert.equal(changed.status, 200, JSON.stringify(changed.data));
+      secretaryToken = changed.data.accessToken || changed.data.token;
+      assert.ok(secretaryToken);
+    }
+
+    const secretaryStateForbidden = await request("/backoffice/state", {
+      method: "PUT",
+      token: secretaryToken,
+      body: {
+        students: [
+          ...(stateBefore.data.students ?? []),
+          { id: `STU-SEC-${stamp}`, name: "Sec Forbidden", schoolCode: "CD-2026-0001" },
+        ],
+      },
+    });
+    assert.equal(secretaryStateForbidden.status, 400);
+    assert.equal(secretaryStateForbidden.data?.code, LEGACY_STUDENTS_STATE_WRITE_CODE);
+
+    const secretaryEnroll = await request(
+      `/classes/${encodeURIComponent(createdClass.data.classCode)}/students`,
+      {
+        method: "POST",
+        token: secretaryToken,
+        body: {
+          firstName: "Lina",
+          lastName: `SecEnroll${stamp}`,
+          gender: "Féminin",
+          birthDate: "2014-06-01",
+        },
+      },
+    );
+    assert.equal(
+      secretaryEnroll.status,
+      201,
+      `Secrétaire inscription classe: ${JSON.stringify(secretaryEnroll.data)}`,
+    );
+    assert.ok(secretaryEnroll.data?.studentCode);
+
     console.log("OK http: legacy state write bloqué · inscription classe + fiche PG OK");
   } finally {
     child.kill("SIGTERM");
