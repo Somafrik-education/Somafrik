@@ -40,7 +40,7 @@ function renderActions(columns: ReturnType<typeof buildEntityColumns>, row: Reco
 }
 
 describe("entityColumns (D2.8a)", () => {
-  it("construit les colonnes standard Classes + Effectif", () => {
+  it("construit les colonnes metadata Classes (sans Effectif legacy)", () => {
     const module = getEntityModule("classes")!;
     const columns = buildEntityColumns(
       baseCtx({
@@ -57,13 +57,10 @@ describe("entityColumns (D2.8a)", () => {
       "level",
       "track",
       "status",
-      "studentCount",
       "actions",
     ]);
     expect(columns.find((column) => column.key === "status")?.header).toBe("Statut");
-    expect(columns.find((column) => column.key === "studentCount")?.render?.({ name: "6ème A" })).toBe(
-      "2",
-    );
+    expect(columns.find((column) => column.key === "studentCount")).toBeUndefined();
   });
 
   it("construit les colonnes standard Enseignants", () => {
@@ -124,17 +121,16 @@ describe("entityColumns (D2.8a)", () => {
     expect(screen.queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
   });
 
-  it("masque le lien Élèves sur Classes sans permission students", () => {
+  it("n’expose plus le lien Élèves legacy sur Classes (CRUD retiré)", () => {
     const module = getEntityModule("classes")!;
     const columns = buildEntityColumns(
       baseCtx({
         module,
-        studentsCanRead: false,
+        studentsCanRead: true,
       }),
     );
     renderActions(columns, { id: "c1", name: "6ème A" });
     expect(screen.queryByRole("link", { name: "Élèves" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Modifier" })).toBeInTheDocument();
   });
 
   it("rend les noms d’élèves séparés pour les cellules multi-valeurs", () => {

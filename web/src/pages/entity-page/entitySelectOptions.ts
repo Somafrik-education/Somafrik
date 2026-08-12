@@ -6,10 +6,6 @@ import {
   mergeSelectOptions,
 } from "../../lib/academicConfig";
 import type { AssignmentSelectOptions } from "../../lib/assignments";
-import {
-  filterSchoolClassRecords,
-  getAvailableClassNameOptions,
-} from "../../lib/classRules";
 import { getContactAccountOptions, getContactRoleOptions } from "../../lib/contacts";
 import type { EntityField, EntityModuleConfig } from "../../lib/entityModules";
 import { getSchoolPeriodNames } from "../../lib/evaluations";
@@ -70,25 +66,17 @@ export function resolveEntitySelectOptions(
     return academicLists.tracks.map((option) => ({ value: option, label: option }));
   }
   if (field.optionsKey === "classNames") {
-    if (module?.key === "classes") {
-      const existing = filterSchoolClassRecords(
-        (state.classes ?? []) as Record<string, unknown>[],
-        schoolCode,
-      );
-      return getAvailableClassNameOptions(
-        academicLists.classNames,
-        existing,
-        String(editing?.name ?? ""),
-      ).map((option) => ({ value: option, label: option }));
-    }
     const extra =
       module?.key === "assignments"
         ? (assignmentOptions?.classes ?? []).map((option) => option.value)
         : [];
-    // CLASSE-003 : une classe archivée n'est plus proposée aux nouvelles inscriptions.
+    // CLASSE-003 : une classe archivée / inactive n'est plus proposée aux nouvelles inscriptions.
     const archivedClassNames = new Set(
       ((state.classes ?? []) as Record<string, unknown>[])
-        .filter((cls) => normalize(String(cls.status ?? "")) === normalize("Archivée"))
+        .filter((cls) => {
+          const status = normalize(String(cls.status ?? ""));
+          return status === normalize("Archivée") || status === normalize("inactive");
+        })
         .map((cls) => normalize(String(cls.name ?? cls.className ?? ""))),
     );
     const currentValue = normalize(String(editing?.className ?? ""));

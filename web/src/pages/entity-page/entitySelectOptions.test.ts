@@ -21,7 +21,7 @@ function baseCtx(
   overrides: Partial<ResolveEntitySelectOptionsContext> = {},
 ): ResolveEntitySelectOptionsContext {
   return {
-    module: getEntityModule("classes"),
+    module: getEntityModule("students"),
     field: { key: "level", label: "Niveau", optionsKey: "levels" },
     academicLists: emptyAcademicLists(),
     assignmentOptions: null,
@@ -64,18 +64,6 @@ describe("entitySelectOptions (D2.8b)", () => {
     expect(tracks.map((o) => o.value)).toEqual(["Général"]);
   });
 
-  it("pour Classes, ne propose que les classNames encore disponibles", () => {
-    const options = resolveEntitySelectOptions(
-      baseCtx({
-        module: getEntityModule("classes"),
-        field: { key: "name", label: "Nom", optionsKey: "classNames" },
-        editing: null,
-      }),
-    );
-    // 6ème A et Archivée X existent déjà → seuls les noms non pris restent
-    expect(options.map((o) => o.value)).toEqual(["5ème B"]);
-  });
-
   it("filtre les classes archivées hors module Classes (CLASSE-003)", () => {
     const options = resolveEntitySelectOptions(
       baseCtx({
@@ -86,6 +74,32 @@ describe("entitySelectOptions (D2.8b)", () => {
     );
     expect(options.map((o) => o.value).sort()).toEqual(["5ème B", "6ème A"]);
     expect(options.map((o) => o.value)).not.toContain("Archivée X");
+  });
+
+  it("filtre aussi le statut inactive (API /api/classes)", () => {
+    const options = resolveEntitySelectOptions(
+      baseCtx({
+        module: getEntityModule("students"),
+        field: { key: "className", label: "Classe", optionsKey: "classNames" },
+        editing: { className: "" },
+        state: {
+          classes: [
+            { id: "c1", name: "6ème A", schoolCode: "SCH-001", status: "Active" },
+            { id: "c3", name: "Inactive Y", schoolCode: "SCH-001", status: "inactive" },
+          ],
+          students: [],
+          teachers: [],
+          users: [],
+          academicConfigs: {},
+        } as unknown as ResolveEntitySelectOptionsContext["state"],
+        academicLists: {
+          ...emptyAcademicLists(),
+          classNames: ["6ème A", "5ème B", "Inactive Y"],
+        },
+      }),
+    );
+    expect(options.map((o) => o.value).sort()).toEqual(["5ème B", "6ème A"]);
+    expect(options.map((o) => o.value)).not.toContain("Inactive Y");
   });
 
   it("conserve la classe archivée courante à l’édition", () => {

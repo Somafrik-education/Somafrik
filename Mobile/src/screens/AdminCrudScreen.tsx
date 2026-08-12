@@ -20,7 +20,6 @@ import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DE
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
 import { resetUserPassword as resetUserPasswordOnBackend } from "../services/api";
-import { removeSchoolClassFromState } from "../lib/classRules";
 import { formatTeacherClasses } from "../lib/teacherClasses";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
@@ -35,6 +34,9 @@ import {
 } from "../lib/userTeacherSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
+
+const LEGACY_CLASSES_CRUD_RETIRED_MESSAGE =
+  "Le CRUD Classes via AdminCrud est retire. Utilisez l'ecran Classes (lecture) ou /api/classes (web).";
 
 type Field = {
   key: string;
@@ -258,7 +260,7 @@ const configs: Record<
   },
 };
 
-export default function AdminCrudScreen({ route }: Props) {
+export default function AdminCrudScreen({ route, navigation }: Props) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const { entity, filter, className: scopedClassName } = route.params;
@@ -632,24 +634,6 @@ export default function AdminCrudScreen({ route }: Props) {
         text: "Supprimer",
         style: "destructive",
         onPress: () => {
-          if (entity === "classes") {
-            const schoolCode = session?.user?.schoolCode ?? session?.school?.code;
-            const stateForDelete = {
-              students: studentsData,
-              courses: coursesData,
-              assignments: assignmentsData,
-              classes: classesData,
-              academicConfigs: academicConfigData?.schoolCode
-                ? { [academicConfigData.schoolCode]: academicConfigData }
-                : {},
-            };
-            const result = removeSchoolClassFromState(stateForDelete, item, schoolCode);
-            if (!result.ok) {
-              Alert.alert("Suppression refusée", result.error);
-              return;
-            }
-          }
-
           deleteItem(entity, item.id);
           if (entity === "assignments") {
             removeTeacherCourseAssignment(item);
@@ -806,6 +790,24 @@ export default function AdminCrudScreen({ route }: Props) {
       enabled
     );
   };
+
+  if (entity === "classes") {
+    return (
+      <View style={[styles.screen, { padding: 24, justifyContent: "center" }]}>
+        <Text style={styles.title}>Classes</Text>
+        <Text style={[styles.subtitle, { marginTop: 12, marginBottom: 20 }]}>
+          {LEGACY_CLASSES_CRUD_RETIRED_MESSAGE}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.addButton}
+          onPress={() => navigation.navigate("Classes")}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Ouvrir Classes (lecture)</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>

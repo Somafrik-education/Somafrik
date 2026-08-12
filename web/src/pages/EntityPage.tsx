@@ -150,13 +150,7 @@ import {
   resolveStudentMatricule,
   resolveTeacherIdentifiers,
 } from "../lib/entityIdentifiers";
-import {
-  filterSchoolClassRecords,
-  removeSchoolClassFromState,
-  validateUniqueClassName,
-} from "../lib/classRules";
-
-function normalizeTeacherFormRow(row: Record<string, unknown>): Record<string, unknown> {
+function normalizeTeacherFormProps(row: Record<string, unknown>): Record<string, unknown> {
   const next = { ...row };
   if (!String(next.identifier ?? "").trim() && String(next.publicId ?? "").trim()) {
     next.identifier = getTeacherLoginIdentifier(String(next.publicId));
@@ -204,6 +198,11 @@ interface EntityPageProps {
 }
 
 export function EntityPage({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
+  // Clôture CRUD legacy Classes — EntityPage ne gère plus cette entité.
+  if (entity === "classes") {
+    return <Navigate to="/etablissement/classes" replace />;
+  }
+
   const module = getEntityModule(entity);
   const { session } = useAuth();
   const { state, update } = useData();
@@ -682,18 +681,6 @@ export function EntityPage({ entity, mode, classScope, disableCreate = false }: 
       }
     }
 
-    if (module.key === "classes") {
-      const classConflict = validateUniqueClassName(
-        String(workingItem.name ?? ""),
-        filterSchoolClassRecords((state.classes ?? []) as Record<string, unknown>[], effectiveSchoolCode),
-        editing.id ? String(editing.id) : undefined,
-      );
-      if (classConflict) {
-        showToast(classConflict, "error");
-        return;
-      }
-    }
-
     if (module.key === "contacts") {
       const preSubmit = buildContactPreSubmitPlan(
         { state, showToast },
@@ -973,17 +960,6 @@ export function EntityPage({ entity, mode, classScope, disableCreate = false }: 
     if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
       const plan = buildParentChildBundleDeletePlan({ scopeUser, state }, { row });
       await applyPlan(plan);
-      return;
-    }
-
-    if (module.key === "classes") {
-      const result = removeSchoolClassFromState(state, row, schoolCode);
-      if (!result.ok) {
-        showToast(result.error, "error");
-        return;
-      }
-      // HOTFIX-RBAC-ADMIN-01 : pas d'auditLog client (audit serveur uniquement).
-      await applyPlan({ patch: result.patch, successMessage: "Classe supprimée" });
       return;
     }
 

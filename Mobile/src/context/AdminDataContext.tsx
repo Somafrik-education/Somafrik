@@ -23,7 +23,6 @@ import {
   UserAccount,
 } from "../data/catalog";
 import { enrichSessionPermissions } from "../domain/security/permissions";
-import { removeSchoolClassFromState } from "../lib/classRules";
 import {
   ALL_SCHOOLS_CODE,
   pickInitialSchoolCode,
@@ -521,30 +520,16 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       syncStatus,
       refreshBackOfficeState,
       getItems: (entity) => state[entity],
-      createItem: (entity, item) => commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]),
-      updateItem: (entity, item) =>
-        commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row))),
+      createItem: (entity, item) => {
+        if (entity === "classes") return;
+        commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
+      },
+      updateItem: (entity, item) => {
+        if (entity === "classes") return;
+        commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
+      },
       deleteItem: (entity, id) => {
-        if (entity === "classes") {
-          const item = classesData.find((row) => row.id === id);
-          if (!item) return;
-          const schoolCode = session?.user?.schoolCode ?? session?.school?.code;
-          const result = removeSchoolClassFromState(stateSnapshot, item, schoolCode);
-          if (!result.ok) return;
-          const nextClasses = (result.patch.classes ?? []) as SchoolClass[];
-          setClassesData(nextClasses);
-          if (result.patch.academicConfigs && schoolCode) {
-            const nextConfig = (result.patch.academicConfigs as Record<string, AcademicManagementConfig>)[schoolCode];
-            if (nextConfig) setAcademicConfigData(nextConfig);
-          }
-          persistSyncedState({
-            ...stateSnapshot,
-            classes: nextClasses,
-            academicConfigs: (result.patch.academicConfigs as Record<string, AcademicManagementConfig>) ?? stateSnapshot.academicConfigs,
-          });
-          return;
-        }
-
+        if (entity === "classes") return;
         commitEntity(entity, (items) => items.filter((row) => row.id !== id));
       },
       upsertPresenceItems: (items) =>

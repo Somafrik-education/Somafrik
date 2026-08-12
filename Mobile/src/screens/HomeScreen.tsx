@@ -759,7 +759,7 @@ export default function HomeScreen({ navigation }: any) {
             <QuickAction
               icon="grid-outline"
               label="Classes"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "classes" })}
+              onPress={() => navigation.navigate("Classes")}
             />
           )}
           {canReadEntity(session, "courses") && (

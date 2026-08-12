@@ -20,7 +20,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
   "users",
   "students",
   "teachers",
-  "classes",
   "courses",
   "assignments",
   "courseSchedules",
@@ -75,7 +74,6 @@ const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([
  */
 const PREFET_WRITABLE_ENTITIES = Object.freeze([
   "students",
-  "classes",
   "teachers",
   "courses",
   "assignments",

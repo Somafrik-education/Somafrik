@@ -106,17 +106,15 @@ export default function ClassesScreen({ navigation }: any) {
           {canCreateClass && (
             <TouchableOpacity
               activeOpacity={0.85}
-              style={[styles.addButton, blockNetworkActions && styles.disabledControl]}
-              disabled={showLoading}
+              style={[styles.addButton, styles.disabledControl]}
+              disabled
               testID={CLASSES_LOADING_TEST_IDS.addClassButton}
-              accessibilityState={{ disabled: blockNetworkActions, busy: showLoading }}
-              aria-disabled={blockNetworkActions}
+              accessibilityState={{ disabled: true }}
+              aria-disabled
               onPress={() => {
-                if (isOffline) {
-                  handleBlockedNetworkAction();
-                  return;
-                }
-                navigation.navigate("AdminCrud", { entity: "classes" });
+                setOfflineActionMessage(
+                  "La création de classes se fait via l'API /api/classes (plateforme web).",
+                );
               }}
             >
               <Ionicons name="add" size={26} color="#FFFFFF" />
