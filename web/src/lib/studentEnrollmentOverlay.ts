@@ -1,36 +1,7 @@
-import type { StudentEnrollment } from "./studentDomain";
 import type { StudentEnrollmentRecord } from "./studentEnrollment";
 import { selectCurrentStudentEnrollment } from "./studentEnrollmentSelection";
 import { collectStudentHistoryRecord } from "./studentHistory";
 import type { StudentWorkspace } from "./studentWorkspaceService";
-
-function toDomainEnrollment(record: StudentEnrollmentRecord): StudentEnrollment {
-  return {
-    id: record.id,
-    studentId: record.studentId,
-    schoolCode: record.schoolCode,
-    academicYear: record.academicYear,
-    classId: record.classId,
-    className: record.className,
-    programId: record.programId,
-    programName: record.programName,
-    status: record.status,
-    source: record.source,
-    applicationReference: record.applicationReference,
-    requestedAt: record.requestedAt,
-    enrolledAt: record.enrolledAt,
-    validatedAt: record.validatedAt,
-    endedAt: record.endedAt,
-    transferDate: record.transferDate,
-    destinationSchoolName: record.destinationSchoolName,
-    closureDate: record.closureDate,
-    previousSchool: record.previousSchoolName ?? undefined,
-    notes: record.notes,
-    enrollmentDate: record.enrolledAt ?? undefined,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-  };
-}
 
 /**
  * Superpose uniquement l'historique d'inscription sur la fiche PostgreSQL.
@@ -91,5 +62,3 @@ export function applyEnrollmentOverrideToWorkspace(
     },
   };
 }
-
-export { toDomainEnrollment };
