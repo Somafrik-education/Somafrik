@@ -247,9 +247,124 @@ function assertClassEligibleForEnrollment(classRow) {
   }
 }
 
+const FORBIDDEN_UPDATE_BODY_KEYS = Object.freeze([
+  ...FORBIDDEN_BODY_KEYS,
+  "studentCode",
+  "student_code",
+  "matricule",
+  "id",
+  "publicId",
+  "public_id",
+]);
+
+/**
+ * Modification contrôlée — identité / admin uniquement.
+ * Classe et année restent issues de l'inscription active (jamais du corps).
+ * @param {unknown} body
+ * @returns {{
+ *   firstName: string | undefined,
+ *   lastName: string | undefined,
+ *   gender: string | null | undefined,
+ *   birthDate: string | null | undefined,
+ *   birthPlace: string | null | undefined,
+ *   parentPhone: string | null | undefined,
+ *   parentEmail: string | null | undefined,
+ *   expectedUpdatedAt: string,
+ * }}
+ */
+function validateUpdateStudentInput(body) {
+  if (!isPlainObject(body)) {
+    throw createHttpError(400, "Corps de requête invalide.");
+  }
+
+  for (const key of FORBIDDEN_UPDATE_BODY_KEYS) {
+    if (Object.hasOwn(body, key)) {
+      throw createHttpError(
+        400,
+        `${key} ne peut pas être fourni : identité canonique et périmètre d'inscription sont immuables depuis le corps HTTP.`,
+      );
+    }
+  }
+
+  const expectedUpdatedAt = asTrimmedString(
+    body.expectedUpdatedAt ?? body.expected_updated_at ?? body.updatedAt ?? body.updated_at,
+  );
+  if (!expectedUpdatedAt) {
+    throw createHttpError(400, "Champ obligatoire: expectedUpdatedAt (gestion des conflits).");
+  }
+
+  const hasIdentityPatch =
+    Object.hasOwn(body, "firstName") ||
+    Object.hasOwn(body, "first_name") ||
+    Object.hasOwn(body, "lastName") ||
+    Object.hasOwn(body, "last_name") ||
+    Object.hasOwn(body, "gender") ||
+    Object.hasOwn(body, "birthDate") ||
+    Object.hasOwn(body, "birth_date") ||
+    Object.hasOwn(body, "birthPlace") ||
+    Object.hasOwn(body, "birth_place") ||
+    Object.hasOwn(body, "parentPhone") ||
+    Object.hasOwn(body, "parent_phone") ||
+    Object.hasOwn(body, "parentEmail") ||
+    Object.hasOwn(body, "parent_email");
+
+  if (!hasIdentityPatch) {
+    throw createHttpError(400, "Aucun champ modifiable fourni.");
+  }
+
+  /** @type {ReturnType<typeof validateUpdateStudentInput>} */
+  const patch = { expectedUpdatedAt };
+
+  if (Object.hasOwn(body, "firstName") || Object.hasOwn(body, "first_name")) {
+    patch.firstName = requireNonEmptyString(
+      body.firstName ?? body.first_name,
+      "firstName",
+      MAX_NAME_LENGTH,
+    );
+  }
+  if (Object.hasOwn(body, "lastName") || Object.hasOwn(body, "last_name")) {
+    patch.lastName = requireNonEmptyString(
+      body.lastName ?? body.last_name,
+      "lastName",
+      MAX_NAME_LENGTH,
+    );
+  }
+  if (Object.hasOwn(body, "gender")) {
+    patch.gender = optionalGender(body.gender);
+  }
+  if (Object.hasOwn(body, "birthDate") || Object.hasOwn(body, "birth_date")) {
+    patch.birthDate = parseAndValidateBirthDate(body.birthDate ?? body.birth_date);
+  }
+  if (Object.hasOwn(body, "birthPlace") || Object.hasOwn(body, "birth_place")) {
+    patch.birthPlace = optionalStringField(
+      body.birthPlace ?? body.birth_place,
+      "birthPlace",
+      MAX_NAME_LENGTH,
+    );
+  }
+  if (Object.hasOwn(body, "parentPhone") || Object.hasOwn(body, "parent_phone")) {
+    patch.parentPhone = optionalStringField(
+      body.parentPhone ?? body.parent_phone,
+      "parentPhone",
+      MAX_PHONE_LENGTH,
+    );
+  }
+  if (Object.hasOwn(body, "parentEmail") || Object.hasOwn(body, "parent_email")) {
+    patch.parentEmail = optionalStringField(
+      body.parentEmail ?? body.parent_email,
+      "parentEmail",
+      MAX_EMAIL_LENGTH,
+    );
+  }
+
+  return patch;
+}
+
 module.exports = {
   FORBIDDEN_BODY_KEYS,
+  FORBIDDEN_UPDATE_BODY_KEYS,
   validateEnrollStudentInput,
+  validateUpdateStudentInput,
   assertEnrollmentScopeImmutable,
   assertClassEligibleForEnrollment,
   parseAndValidateBirthDate,

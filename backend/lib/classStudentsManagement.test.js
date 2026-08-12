@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const {
   validateEnrollStudentInput,
+  validateUpdateStudentInput,
   assertEnrollmentScopeImmutable,
   parseAndValidateBirthDate,
 } = require("./classStudentsManagement");
@@ -58,10 +59,42 @@ function testBirthDateValidation() {
   assert.equal(parseAndValidateBirthDate("2012-04-12"), "2012-04-12");
 }
 
+function testUpdateRejectsScopeAndRequiresConflictToken() {
+  assert.throws(
+    () =>
+      validateUpdateStudentInput({
+        firstName: "Awa",
+        classCode: "CLS-X",
+        expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () =>
+      validateUpdateStudentInput({
+        firstName: "Awa",
+        schoolCode: "SCH-X",
+        expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () => validateUpdateStudentInput({ firstName: "Awa" }),
+    (error) => error.statusCode === 400,
+  );
+  const patch = validateUpdateStudentInput({
+    parentPhone: "+2431",
+    expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  assert.equal(patch.parentPhone, "+2431");
+  assert.equal(patch.expectedUpdatedAt, "2026-01-01T00:00:00.000Z");
+}
+
 function main() {
   testForbiddenKeysAlwaysRejected();
   testValidInput();
   testBirthDateValidation();
+  testUpdateRejectsScopeAndRequiresConflictToken();
   assert.throws(
     () => validateEnrollStudentInput({ lastName: "Diop" }, "SCH-A", "CLS-A"),
     (error) => error.statusCode === 400,

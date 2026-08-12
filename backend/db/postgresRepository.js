@@ -4488,12 +4488,20 @@ class PostgresRepository {
     return this.getClassStudentsRepository().listByClassCode(classCode, schoolCode);
   }
 
+  listSchoolStudents(schoolCode) {
+    return this.getClassStudentsRepository().listBySchoolCode(schoolCode);
+  }
+
   enrollStudentInClass(classCode, schoolCode, body) {
     return this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
   }
 
   getSchoolStudentByCode(studentCode, schoolCode) {
     return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
+  }
+
+  updateSchoolStudentByCode(studentCode, schoolCode, body) {
+    return this.getClassStudentsRepository().updateByStudentCode(studentCode, schoolCode, body);
   }
 
   getTeachersRepository() {

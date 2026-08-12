@@ -202,11 +202,9 @@ export default function StudentsScreen({ route, navigation }: any) {
 
 
 
-  const canManageStudents = canMutateEntity(session, "students", "CREATE");
-
-  const canCreateStudent =
-
-    canManageStudents && !entityCreateViaContactsOnly("students");
+  // PR1 consolidation : création élève uniquement via Classes → Inscrire (web/API PG).
+  const canManageStudents = false;
+  const canCreateStudent = false;
 
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
 

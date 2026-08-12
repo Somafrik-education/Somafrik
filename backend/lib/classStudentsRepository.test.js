@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Repository mémoire — inscription élève dans une classe.
+ * Repository mémoire — inscription élève + fiche/annuaire PostgreSQL.
  */
 const assert = require("node:assert/strict");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
@@ -23,8 +23,28 @@ function createMemoryDb() {
   const students = [];
   /** @type {any[]} */
   const enrollments = [];
+  /** @type {any[]} */
+  const documents = [];
   let classSeq = 1;
   let studentSeq = 1;
+
+  function joinActiveEnrollment(student) {
+    const enrollment = enrollments.find(
+      (row) => row.student_id === student.id && row.status === "active",
+    );
+    const cls = classes.find((row) => row.id === enrollment?.class_id);
+    const year = years.find((item) => item.id === enrollment?.academic_year_id);
+    return {
+      ...student,
+      student_uuid: student.id,
+      school_code: schools.find((item) => item.id === student.school_id)?.school_code,
+      class_code: cls?.class_code,
+      class_name: cls?.name,
+      academic_year_name: year?.name,
+      enrollment_id: enrollment?.id,
+      enrollment_date: enrollment?.enrollment_date,
+    };
+  }
 
   const memory = {
     async getSchoolByCode(code) {
@@ -62,6 +82,8 @@ function createMemoryDb() {
           last_name: params[3],
           gender: params[4],
           birth_date: params[5],
+          birth_place: "",
+          photo_url: "",
           parent_phone: params[6],
           parent_email: params[7],
           status: "active",
@@ -81,30 +103,41 @@ function createMemoryDb() {
           academic_year_id: params[3],
           enrollment_date: new Date().toISOString().slice(0, 10),
           status: "active",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
         enrollments.push(row);
         return { id: row.id, enrollment_date: row.enrollment_date };
       }
 
-      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
+      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE") && text.includes("LIMIT 1")) {
         const student = students.find(
           (row) => row.student_code === params[0] && row.school_id === params[1],
         );
         if (!student) return null;
-        const enrollment = enrollments.find(
-          (row) => row.student_id === student.id && row.status === "active",
+        return joinActiveEnrollment(student);
+      }
+
+      if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
+        const student = students.find(
+          (row) => row.student_code === params[0] && row.school_id === params[1],
         );
-        const cls = classes.find((row) => row.id === enrollment?.class_id);
-        const year = years.find((item) => item.id === enrollment?.academic_year_id);
-        return {
-          ...student,
-          school_code: schools.find((item) => item.id === student.school_id)?.school_code,
-          class_code: cls?.class_code,
-          class_name: cls?.name,
-          academic_year_name: year?.name,
-          enrollment_id: enrollment?.id,
-          enrollment_date: enrollment?.enrollment_date,
-        };
+        return student ?? null;
+      }
+
+      if (text.startsWith("UPDATE STUDENTS")) {
+        const student = students.find((row) => row.id === params[7] && row.school_id === params[8]);
+        if (!student) return null;
+        if (String(student.updated_at) !== String(params[9])) return null;
+        student.first_name = params[0];
+        student.last_name = params[1];
+        student.gender = params[2];
+        student.birth_date = params[3];
+        student.birth_place = params[4];
+        student.parent_phone = params[5];
+        student.parent_email = params[6];
+        student.updated_at = new Date().toISOString();
+        return { id: student.id };
       }
 
       throw new Error(`Unhandled one(): ${text}`);
@@ -127,20 +160,49 @@ function createMemoryDb() {
             const student = students.find(
               (row) => row.id === enrollment.student_id && row.school_id === schoolId,
             );
-            const cls = classes.find((row) => row.id === classId);
-            const year = years.find((item) => item.id === enrollment.academic_year_id);
             if (!student) return null;
+            return joinActiveEnrollment(student);
+          })
+          .filter(Boolean);
+      }
+
+      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.SCHOOL_ID")) {
+        const schoolId = params[0];
+        return students
+          .filter((row) => row.school_id === schoolId)
+          .map((student) => joinActiveEnrollment(student))
+          .sort((a, b) =>
+            String(a.last_name).localeCompare(String(b.last_name)) ||
+            String(a.first_name).localeCompare(String(b.first_name)),
+          );
+      }
+
+      if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.STUDENT_ID")) {
+        const studentId = params[0];
+        const schoolId = params[1];
+        return enrollments
+          .filter((row) => row.student_id === studentId && row.school_id === schoolId)
+          .map((enrollment) => {
+            const cls = classes.find((row) => row.id === enrollment.class_id);
+            const year = years.find((item) => item.id === enrollment.academic_year_id);
             return {
-              ...student,
-              school_code: schools.find((item) => item.id === schoolId)?.school_code,
+              enrollment_id: enrollment.id,
+              enrollment_status: enrollment.status,
+              enrollment_date: enrollment.enrollment_date,
+              enrollment_created_at: enrollment.created_at,
+              enrollment_updated_at: enrollment.updated_at,
               class_code: cls?.class_code,
               class_name: cls?.name,
               academic_year_name: year?.name,
-              enrollment_id: enrollment.id,
-              enrollment_date: enrollment.enrollment_date,
+              academic_year_status: year?.status,
             };
-          })
-          .filter(Boolean);
+          });
+      }
+
+      if (text.includes("FROM STUDENT_DOCUMENTS")) {
+        return documents.filter(
+          (row) => row.student_id === params[0] && row.school_id === params[1],
+        );
       }
 
       throw new Error(`Unhandled all(): ${text}`);
@@ -200,8 +262,53 @@ async function main() {
   assert.equal(listed.length, 1);
   assert.equal(listed[0].studentCode, enrolled.studentCode);
 
+  const schoolList = await repo.listBySchoolCode("CD-2026-0001");
+  assert.equal(schoolList.length, 1);
+  assert.equal(schoolList[0].studentCode, enrolled.studentCode);
+
   const fetched = await repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001");
   assert.equal(fetched.firstName, "Awa");
+  assert.ok(Array.isArray(fetched.enrollments));
+  assert.equal(fetched.enrollments.length, 1);
+  assert.ok(Array.isArray(fetched.guardians));
+  assert.equal(fetched.guardians.length, 0);
+  assert.ok(fetched.medical);
+  assert.ok(Array.isArray(fetched.documents));
+  assert.ok(fetched.access?.notesPath);
+
+  const updated = await repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+    parentPhone: "+243800000001",
+    expectedUpdatedAt: fetched.updatedAt,
+  });
+  assert.equal(updated.parentPhone, "+243800000001");
+  assert.notEqual(updated.updatedAt, fetched.updatedAt);
+
+  await assert.rejects(
+    () =>
+      repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+        parentPhone: "+243800000002",
+        expectedUpdatedAt: fetched.updatedAt,
+      }),
+    (error) => error.statusCode === 409,
+  );
+
+  await assert.rejects(
+    () =>
+      repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+        classCode: "HACK",
+        expectedUpdatedAt: updated.updatedAt,
+      }),
+    (error) => error.statusCode === 400,
+  );
+
+  await assert.rejects(
+    () =>
+      repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+        schoolCode: "CD-2026-0002",
+        expectedUpdatedAt: updated.updatedAt,
+      }),
+    (error) => error.statusCode === 400,
+  );
 
   const biClass = db.seedClass("BI-2026-0001", { name: "6ème A", class_code: "CLS-BI-1" });
   const enrolledBi = await repo.enroll(biClass.class_code, "BI-2026-0001", {
@@ -210,6 +317,11 @@ async function main() {
   });
   assert.match(enrolledBi.studentCode, /^ELE-BI-0001-0001-/);
   assert.notEqual(enrolled.studentCode, enrolledBi.studentCode);
+
+  await assert.rejects(
+    () => repo.getByStudentCode(enrolled.studentCode, "CD-2026-0002"),
+    (error) => error.statusCode === 404,
+  );
 
   await assert.rejects(
     () =>
