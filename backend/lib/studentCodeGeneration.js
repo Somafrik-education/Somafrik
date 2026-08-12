@@ -1,20 +1,43 @@
 "use strict";
 
 const STUDENT_PROFILE = "ELE";
+const SCHOOL_YEAR_BASE = 2025;
 
 /**
+ * Aligné sur web/src/lib/entityIdentifiers.ts — matricule ELE-établissement-année-séquence.
  * @param {string} schoolCode
- * @returns {{ establishment: string, yearIndex: string }}
+ * @returns {{ year: string, establishment: string, yearIndex: string }}
  */
 function parseSchoolCodeSegments(schoolCode) {
   const normalized = String(schoolCode ?? "")
     .trim()
     .toUpperCase();
-  const parts = normalized.split("-").filter(Boolean);
+  const match = /^[A-Z]{2}-(\d{4})-(\d{4})$/.exec(normalized);
+  if (match) {
+    const year = match[1];
+    const establishment = match[2];
+    const yearIndex = Math.max(1, Number.parseInt(year, 10) - SCHOOL_YEAR_BASE);
+    return {
+      year,
+      establishment,
+      yearIndex: String(yearIndex).padStart(4, "0"),
+    };
+  }
+  const digits = normalized.replace(/\D/g, "");
   return {
-    establishment: (parts[0] ?? "0000").replace(/[^A-Z0-9]/g, "") || "0000",
-    yearIndex: (parts[1] ?? "0000").replace(/[^A-Z0-9]/g, "") || "0000",
+    year: (digits.slice(0, 4) || "0000").padStart(4, "0").slice(-4),
+    establishment: (digits.slice(-4) || "0000").padStart(4, "0"),
+    yearIndex: "0001",
   };
+}
+
+/**
+ * @param {string} schoolCode
+ * @returns {string}
+ */
+function studentCodePrefix(schoolCode) {
+  const segments = parseSchoolCodeSegments(schoolCode);
+  return `${STUDENT_PROFILE}-${segments.establishment}-${segments.yearIndex}-`;
 }
 
 /**
@@ -29,28 +52,32 @@ function formatStudentCode(schoolCode, sequence) {
 
 /**
  * @param {string} studentCode
+ * @param {string} schoolCode
  * @returns {number | null}
  */
-function extractStudentSequence(studentCode) {
-  const match = /^ELE-([A-Z0-9]+)-([A-Z0-9]+)-(\d+)$/i.exec(String(studentCode ?? "").trim());
-  if (!match?.[3]) return null;
-  const value = Number(match[3]);
+function extractStudentSequence(studentCode, schoolCode) {
+  const segments = parseSchoolCodeSegments(schoolCode);
+  const normalized = String(studentCode ?? "").trim().toUpperCase();
+  const fullPattern = new RegExp(
+    `^${STUDENT_PROFILE}-${segments.establishment}-${segments.yearIndex}-(\\d+)$`,
+    "i",
+  );
+  const match = fullPattern.exec(normalized);
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
   return Number.isFinite(value) ? value : null;
 }
 
 /**
- * Prochain matricule élève pour un établissement (pattern ELE-XXXX-YYYY-NNNNNN).
+ * Prochain matricule élève pour un établissement (globalement unique via suffixe établissement).
  * @param {string} schoolCode
  * @param {string[]} existingCodes
  * @returns {string}
  */
 function generateNextStudentCode(schoolCode, existingCodes = []) {
-  const prefix = formatStudentCode(schoolCode, 0).replace(/0{6}$/, "");
   let max = 0;
   for (const code of existingCodes) {
-    const normalized = String(code ?? "").trim().toUpperCase();
-    if (!normalized.startsWith(prefix)) continue;
-    const sequence = extractStudentSequence(normalized);
+    const sequence = extractStudentSequence(code, schoolCode);
     if (sequence != null) {
       max = Math.max(max, sequence);
     }
@@ -60,7 +87,9 @@ function generateNextStudentCode(schoolCode, existingCodes = []) {
 
 module.exports = {
   STUDENT_PROFILE,
+  SCHOOL_YEAR_BASE,
   parseSchoolCodeSegments,
+  studentCodePrefix,
   formatStudentCode,
   extractStudentSequence,
   generateNextStudentCode,

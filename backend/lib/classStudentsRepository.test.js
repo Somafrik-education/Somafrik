@@ -8,8 +8,8 @@ const { createClassStudentsRepository } = require("../db/classStudentsRepository
 
 function createMemoryDb() {
   const schools = [
-    { id: "school-a", school_code: "SCH-A" },
-    { id: "school-b", school_code: "SCH-B" },
+    { id: "school-a", school_code: "CD-2026-0001" },
+    { id: "school-b", school_code: "CD-2026-0002" },
   ];
   const years = [
     { id: "ay-a", school_id: "school-a", name: "2025-2026", status: "open" },
@@ -143,8 +143,12 @@ function createMemoryDb() {
 
       throw new Error(`Unhandled all(): ${text}`);
     },
-    async query() {
-      return { rows: [] };
+    async query(sql, params = []) {
+      const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+      if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+        return { rows: [] };
+      }
+      throw new Error(`Unhandled query(): ${text}`);
     },
     async withTransaction(fn) {
       return fn();
@@ -173,29 +177,29 @@ function createMemoryDb() {
 async function main() {
   const db = createMemoryDb();
   const repo = createClassStudentsRepository(db);
-  const activeClass = db.seedClass("SCH-A");
-  const inactiveClass = db.seedClass("SCH-A", { name: "6ème B", status: "inactive" });
-  db.seedClass("SCH-B", { name: "5ème A", class_code: "CLS-SCH-B-1" });
+  const activeClass = db.seedClass("CD-2026-0001");
+  const inactiveClass = db.seedClass("CD-2026-0001", { name: "6ème B", status: "inactive" });
+  db.seedClass("CD-2026-0002", { name: "5ème A", class_code: "CLS-SCH-B-1" });
 
-  const enrolled = await repo.enroll(activeClass.class_code, "SCH-A", {
+  const enrolled = await repo.enroll(activeClass.class_code, "CD-2026-0001", {
     firstName: "Awa",
     lastName: "Diop",
     gender: "Féminin",
   });
-  assert.match(enrolled.studentCode, /^ELE-SCH-A-/);
+  assert.match(enrolled.studentCode, /^ELE-0001-0001-/);
   assert.equal(enrolled.classCode, activeClass.class_code);
   assert.equal(enrolled.className, "6ème A");
 
-  const listed = await repo.listByClassCode(activeClass.class_code, "SCH-A");
+  const listed = await repo.listByClassCode(activeClass.class_code, "CD-2026-0001");
   assert.equal(listed.length, 1);
   assert.equal(listed[0].studentCode, enrolled.studentCode);
 
-  const fetched = await repo.getByStudentCode(enrolled.studentCode, "SCH-A");
+  const fetched = await repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001");
   assert.equal(fetched.firstName, "Awa");
 
   await assert.rejects(
     () =>
-      repo.enroll(inactiveClass.class_code, "SCH-A", {
+      repo.enroll(inactiveClass.class_code, "CD-2026-0001", {
         firstName: "Ibra",
         lastName: "Fall",
       }),
@@ -204,16 +208,16 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.enroll(activeClass.class_code, "SCH-A", {
+      repo.enroll(activeClass.class_code, "CD-2026-0001", {
         firstName: "Hack",
         lastName: "Test",
         classCode: "CLS-SCH-B-1",
       }),
-    (error) => error.statusCode === 403,
+    (error) => error.statusCode === 400,
   );
 
   await assert.rejects(
-    () => repo.listByClassCode(activeClass.class_code, "SCH-B"),
+    () => repo.listByClassCode(activeClass.class_code, "CD-2026-0002"),
     (error) => error.statusCode === 404,
   );
 

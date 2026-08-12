@@ -7,6 +7,17 @@ const MAX_PHONE_LENGTH = 40;
 const MAX_EMAIL_LENGTH = 200;
 const VALID_GENDERS = new Set(["Masculin", "Féminin", "Autre", ""]);
 
+const FORBIDDEN_BODY_KEYS = Object.freeze([
+  "classCode",
+  "classId",
+  "className",
+  "schoolCode",
+  "schoolId",
+  "academicYearId",
+  "academicYearName",
+  "enrollmentId",
+]);
+
 /**
  * @param {unknown} value
  * @returns {boolean}
@@ -78,9 +89,9 @@ function optionalGender(value) {
 
 /**
  * @param {unknown} value
- * @returns {string | null}
+ * @returns {{ year: number, month: number, day: number } | null}
  */
-function optionalBirthDate(value) {
+function parseBirthDateParts(value) {
   if (value === undefined || value === null || value === "") {
     return null;
   }
@@ -91,49 +102,72 @@ function optionalBirthDate(value) {
   if (!trimmed) {
     return null;
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed) && !/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
-    throw createHttpError(400, "birthDate invalide (format attendu AAAA-MM-JJ ou JJ-MM-AAAA).");
+
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    return {
+      year: Number(iso[1]),
+      month: Number(iso[2]),
+      day: Number(iso[3]),
+    };
   }
-  return trimmed;
+
+  const fr = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (fr) {
+    return {
+      year: Number(fr[3]),
+      month: Number(fr[2]),
+      day: Number(fr[1]),
+    };
+  }
+
+  throw createHttpError(400, "birthDate invalide (format attendu AAAA-MM-JJ ou JJ-MM-AAAA).");
 }
 
 /**
- * Rejette toute tentative de falsifier le périmètre classe/établissement.
- * @param {unknown} body
- * @param {string} schoolCode
- * @param {string} classCode
+ * @param {unknown} value
+ * @returns {string | null} ISO date YYYY-MM-DD
  */
-function assertEnrollmentScopeImmutable(body, schoolCode, classCode) {
+function parseAndValidateBirthDate(value) {
+  const parts = parseBirthDateParts(value);
+  if (!parts) {
+    return null;
+  }
+
+  const { year, month, day } = parts;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw createHttpError(400, "birthDate invalide (date impossible).");
+  }
+
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  if (date.getTime() > todayUtc) {
+    throw createHttpError(400, "birthDate invalide (date future interdite).");
+  }
+
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Toute présence d'un champ de périmètre dans le corps est interdite (même vide).
+ * @param {unknown} body
+ */
+function assertEnrollmentScopeImmutable(body) {
   if (!isPlainObject(body)) {
     throw createHttpError(400, "Corps de requête invalide.");
   }
 
-  const forbiddenKeys = [
-    "classCode",
-    "classId",
-    "className",
-    "schoolCode",
-    "schoolId",
-    "academicYearId",
-    "academicYearName",
-    "enrollmentId",
-  ];
-  for (const key of forbiddenKeys) {
-    if (!Object.hasOwn(body, key)) continue;
-    const provided = asTrimmedString(body[key]);
-    if (!provided) continue;
-    if (key === "classCode" && provided !== classCode) {
-      throw createHttpError(403, "classCode immuable: inscription rattachée à la classe ouverte.");
-    }
-    if (key === "schoolCode") {
-      const bodySchool = provided.toUpperCase();
-      const principalSchool = asTrimmedString(schoolCode).toUpperCase();
-      if (bodySchool && bodySchool !== principalSchool) {
-        throw createHttpError(403, "Accès refusé à un autre établissement.");
-      }
-    }
-    if (key !== "classCode" && key !== "schoolCode") {
-      throw createHttpError(400, `${key} est déterminé par la classe et ne peut pas être fourni.`);
+  for (const key of FORBIDDEN_BODY_KEYS) {
+    if (Object.hasOwn(body, key)) {
+      throw createHttpError(
+        400,
+        `${key} ne peut pas être fourni : le périmètre est imposé par la classe ouverte.`,
+      );
     }
   }
 }
@@ -152,13 +186,13 @@ function assertEnrollmentScopeImmutable(body, schoolCode, classCode) {
  * }}
  */
 function validateEnrollStudentInput(body, schoolCode, classCodeParam) {
-  const classCode = requireClassCodeParam(classCodeParam);
+  requireClassCodeParam(classCodeParam);
   const resolvedSchoolCode = asTrimmedString(schoolCode);
   if (!resolvedSchoolCode || resolvedSchoolCode === "*") {
     throw createHttpError(400, "schoolCode établissement requis.");
   }
 
-  assertEnrollmentScopeImmutable(body, resolvedSchoolCode, classCode);
+  assertEnrollmentScopeImmutable(body);
 
   const firstName = requireNonEmptyString(
     body.firstName ?? body.first_name,
@@ -175,9 +209,17 @@ function validateEnrollStudentInput(body, schoolCode, classCodeParam) {
     firstName,
     lastName,
     gender: optionalGender(body.gender),
-    birthDate: optionalBirthDate(body.birthDate ?? body.birth_date),
-    parentPhone: optionalStringField(body.parentPhone ?? body.parent_phone ?? body.phone, "parentPhone", MAX_PHONE_LENGTH),
-    parentEmail: optionalStringField(body.parentEmail ?? body.parent_email ?? body.email, "parentEmail", MAX_EMAIL_LENGTH),
+    birthDate: parseAndValidateBirthDate(body.birthDate ?? body.birth_date),
+    parentPhone: optionalStringField(
+      body.parentPhone ?? body.parent_phone ?? body.phone,
+      "parentPhone",
+      MAX_PHONE_LENGTH,
+    ),
+    parentEmail: optionalStringField(
+      body.parentEmail ?? body.parent_email ?? body.email,
+      "parentEmail",
+      MAX_EMAIL_LENGTH,
+    ),
   };
 }
 
@@ -192,13 +234,15 @@ function assertClassEligibleForEnrollment(classRow) {
     throw createHttpError(409, "La classe doit être active pour inscrire un élève.");
   }
   const yearStatus = String(classRow.academic_year_status ?? classRow.academicYearStatus ?? "").trim();
-  if (yearStatus && !["open", "active"].includes(yearStatus)) {
+  if (!yearStatus || !["open", "active"].includes(yearStatus)) {
     throw createHttpError(409, "L'année scolaire de la classe n'est pas valide pour une inscription.");
   }
 }
 
 module.exports = {
+  FORBIDDEN_BODY_KEYS,
   validateEnrollStudentInput,
   assertEnrollmentScopeImmutable,
   assertClassEligibleForEnrollment,
+  parseAndValidateBirthDate,
 };

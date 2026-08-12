@@ -825,9 +825,15 @@ class FallbackRepository {
           if (text.includes("FROM CLASSES CL") && text.includes("WHERE CL.CLASS_CODE")) {
             const classCode = params[0];
             const schoolId = params[1];
-            const cls = (self._managedClasses ?? []).find(
-              (row) => row.classCode === classCode && (row.schoolId === schoolId || row.schoolCode),
-            );
+            const cls = (self._managedClasses ?? []).find((row) => {
+              if (row.classCode !== classCode) return false;
+              const rowSchoolId =
+                String(row.schoolCode ?? "").trim().toUpperCase() ===
+                String(seedData.school.code).toUpperCase()
+                  ? seedData.school.id
+                  : `school-${String(row.schoolCode ?? "").trim().toUpperCase()}`;
+              return rowSchoolId === schoolId;
+            });
             if (!cls) return null;
             const year = (self._managedAcademicYears ?? []).find((item) => item.id === cls.academicYearId);
             return {
@@ -839,11 +845,6 @@ class FallbackRepository {
               academic_year_name: cls.academicYearName,
               academic_year_status: year?.status ?? "open",
             };
-          }
-          if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
-            return (self._managedStudents ?? [])
-              .filter((row) => row.school_id === params[0])
-              .map((row) => ({ student_code: row.student_code }));
           }
           if (text.startsWith("INSERT INTO STUDENTS")) {
             const row = {
@@ -900,6 +901,18 @@ class FallbackRepository {
         },
         async all(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          const resolveSchoolCode = (schoolId) => {
+            if (schoolId === seedData.school.id) return seedData.school.code;
+            const managed = (self._managedClasses ?? []).find((row) => {
+              const rowSchoolId =
+                String(row.schoolCode ?? "").trim().toUpperCase() ===
+                String(seedData.school.code).toUpperCase()
+                  ? seedData.school.id
+                  : `school-${String(row.schoolCode ?? "").trim().toUpperCase()}`;
+              return rowSchoolId === schoolId;
+            });
+            return managed?.schoolCode ?? String(schoolId).replace(/^school-/, "");
+          };
           if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.CLASS_ID")) {
             const classId = params[0];
             const schoolId = params[1];
@@ -909,11 +922,13 @@ class FallbackRepository {
                 const student = (self._managedStudents ?? []).find(
                   (row) => row.id === enrollment.student_id && row.school_id === schoolId,
                 );
-                const cls = (self._managedClasses ?? []).find((row) => row.id === classId || row.classCode === classId);
+                const cls = (self._managedClasses ?? []).find(
+                  (row) => row.id === classId || row.classCode === classId,
+                );
                 return student
                   ? {
                       ...student,
-                      school_code: seedData.school.code,
+                      school_code: resolveSchoolCode(schoolId),
                       class_code: cls?.classCode ?? "",
                       class_name: cls?.name ?? "",
                       academic_year_name: cls?.academicYearName ?? "",
@@ -931,7 +946,11 @@ class FallbackRepository {
           }
           return [];
         },
-        async query() {
+        async query(sql, params = []) {
+          const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+            return { rows: [] };
+          }
           return { rows: [] };
         },
         async withTransaction(fn) {

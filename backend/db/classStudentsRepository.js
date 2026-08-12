@@ -5,7 +5,11 @@ const {
   validateEnrollStudentInput,
   assertClassEligibleForEnrollment,
 } = require("../lib/classStudentsManagement");
-const { generateNextStudentCode } = require("../lib/studentCodeGeneration");
+const {
+  allocateStudentCodeLocked,
+  isStudentCodeUniquenessViolation,
+  studentCodeAllocationFailed,
+} = require("../lib/studentCodeAllocation");
 
 /**
  * Repository PostgreSQL — élèves inscrits dans une classe.
@@ -107,22 +111,70 @@ function createClassStudentsRepository(db) {
   /**
    * @param {string | null | undefined} value
    */
-  function parseBirthDate(value) {
+  function normalizeBirthDateForStorage(value) {
     if (!value) return null;
-    const trimmed = String(value).trim();
-    const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-    const fr = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-    if (fr) return `${fr[3]}-${fr[2]}-${fr[1]}`;
-    return null;
+    return String(value).trim();
   }
 
-  async function listExistingStudentCodes(schoolId) {
-    const rows = await db.all(
-      `SELECT student_code FROM students WHERE school_id = $1`,
-      [schoolId],
-    );
-    return rows.map((row) => row.student_code);
+  const MAX_ENROLL_ATTEMPTS = 5;
+
+  async function insertStudentWithEnrollment(school, schoolCode, classRow, input) {
+    const birthDate = normalizeBirthDateForStorage(input.birthDate);
+
+    for (let attempt = 0; attempt < MAX_ENROLL_ATTEMPTS; attempt += 1) {
+      const studentCode = await allocateStudentCodeLocked(db, school.id, school.school_code ?? schoolCode);
+      try {
+        const student = await db.one(
+          `INSERT INTO students (
+             school_id, student_code, first_name, last_name, gender,
+             birth_date, birth_place, photo_url, parent_phone, parent_email, status
+           ) VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, 'active')
+           RETURNING id, student_code, first_name, last_name, gender, birth_date,
+                     parent_phone, parent_email, status, created_at, updated_at`,
+          [
+            school.id,
+            studentCode,
+            input.firstName,
+            input.lastName,
+            input.gender,
+            birthDate,
+            input.parentPhone,
+            input.parentEmail,
+          ],
+        );
+        if (!student) {
+          throw createHttpError(500, "Impossible de créer l'élève.");
+        }
+
+        const enrollment = await db.one(
+          `INSERT INTO enrollments (
+             school_id, student_id, class_id, academic_year_id, enrollment_date, status
+           ) VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
+           RETURNING id, enrollment_date`,
+          [school.id, student.id, classRow.id, classRow.academic_year_id],
+        );
+        if (!enrollment) {
+          throw createHttpError(500, "Impossible de créer l'inscription.");
+        }
+
+        return mapStudentRow({
+          ...student,
+          school_code: school.school_code ?? schoolCode,
+          class_code: classRow.class_code,
+          class_name: classRow.name,
+          academic_year_name: classRow.academic_year_name,
+          enrollment_id: enrollment.id,
+          enrollment_date: enrollment.enrollment_date,
+        });
+      } catch (error) {
+        if (isStudentCodeUniquenessViolation(error) && attempt < MAX_ENROLL_ATTEMPTS - 1) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    studentCodeAllocationFailed(MAX_ENROLL_ATTEMPTS);
   }
 
   return {
@@ -218,54 +270,8 @@ function createClassStudentsRepository(db) {
       assertClassEligibleForEnrollment(classRow);
       const school = await requireSchool(schoolCode);
 
-      const runEnrollment = async () => {
-        const existingCodes = await listExistingStudentCodes(school.id);
-        const studentCode = generateNextStudentCode(school.school_code ?? schoolCode, existingCodes);
-        const birthDate = parseBirthDate(input.birthDate);
-
-        const student = await db.one(
-          `INSERT INTO students (
-             school_id, student_code, first_name, last_name, gender,
-             birth_date, birth_place, photo_url, parent_phone, parent_email, status
-           ) VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, 'active')
-           RETURNING id, student_code, first_name, last_name, gender, birth_date,
-                     parent_phone, parent_email, status, created_at, updated_at`,
-          [
-            school.id,
-            studentCode,
-            input.firstName,
-            input.lastName,
-            input.gender,
-            birthDate,
-            input.parentPhone,
-            input.parentEmail,
-          ],
-        );
-        if (!student) {
-          throw createHttpError(500, "Impossible de créer l'élève.");
-        }
-
-        const enrollment = await db.one(
-          `INSERT INTO enrollments (
-             school_id, student_id, class_id, academic_year_id, enrollment_date, status
-           ) VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
-           RETURNING id, enrollment_date`,
-          [school.id, student.id, classRow.id, classRow.academic_year_id],
-        );
-        if (!enrollment) {
-          throw createHttpError(500, "Impossible de créer l'inscription.");
-        }
-
-        return mapStudentRow({
-          ...student,
-          school_code: school.school_code ?? schoolCode,
-          class_code: classRow.class_code,
-          class_name: classRow.name,
-          academic_year_name: classRow.academic_year_name,
-          enrollment_id: enrollment.id,
-          enrollment_date: enrollment.enrollment_date,
-        });
-      };
+      const runEnrollment = async () =>
+        insertStudentWithEnrollment(school, schoolCode, classRow, input);
 
       if (typeof db.withTransaction === "function") {
         return db.withTransaction(runEnrollment);

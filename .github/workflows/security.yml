@@ -170,6 +170,11 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:classes-management
 
+      - name: verify:class-student-enrollment (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:class-student-enrollment
+
       - name: Bootstrap runtime guard (PostgreSQL préprod-like)
         env:
           NODE_ENV: test

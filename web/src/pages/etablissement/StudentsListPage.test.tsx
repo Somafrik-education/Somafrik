@@ -172,7 +172,7 @@ describe("StudentsListPage (D3.1b — consommation D2.7)", () => {
     const list = screen.getByLabelText("Liste");
     expect(within(list).getByText("Diop")).toBeInTheDocument();
     expect(within(list).getByText("Fall")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ajouter" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ajouter" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Dossier" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
   });
