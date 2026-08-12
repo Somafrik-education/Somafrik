@@ -156,7 +156,7 @@ function runUnitGuards() {
   const contacts = read("web/src/lib/contacts.ts");
   assert.match(
     contacts,
-    /STUDENT_CONTACT_TYPES\.has\(contactType\)\s*\{\s*return \{ contact \};/,
+    /STUDENT_CONTACT_TYPES\.has\(contactType\)\)\s*\{\s*return \{ contact \};/,
     "contacts Élève ne mutent plus state.students",
   );
 
@@ -167,7 +167,7 @@ function runUnitGuards() {
   const contactRegistry = read("backend/lib/contactRegistrySync.js");
   assert.match(
     contactRegistry,
-    /STUDENT_CONTACT_TYPES\.has\(contactType\)\s*\{\s*return \{ contact, students: null, teachers: null \};/,
+    /STUDENT_CONTACT_TYPES\.has\(contactType\)\)\s*\{\s*return \{ contact, students: null, teachers: null \};/,
   );
   assert.doesNotMatch(
     contactRegistry,
