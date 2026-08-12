@@ -346,16 +346,38 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
       linkedTeachers[0] ??
       null;
     if (teacher) {
-      const assignments = resolveTeacherAssignments(teacher, response.user, state.assignments ?? []);
-      const assignedClasses = resolveTeacherAssignedClasses(
-        teacher,
-        response.user,
-        state.assignments ?? [],
-      );
+      const {
+        isExplicitlyActiveAssignmentStatus,
+      } = require("./lib/classStudentsAuthz");
+      const assignments = resolveTeacherAssignments(teacher, response.user, state.assignments ?? [])
+        .map((item) => {
+          const status = item.status ?? item.assignmentStatus ?? item.assignment_status ?? "active";
+          return { ...item, status };
+        })
+        .filter((item) => isExplicitlyActiveAssignmentStatus(item.status));
+      const assignedClasses = [
+        ...new Set(assignments.map((item) => item.className).filter(Boolean)),
+      ];
+      const assignedClassCodes = [
+        ...new Set(
+          assignments
+            .map((item) => item.classCode ?? item.class_code)
+            .filter(Boolean),
+        ),
+      ];
+      const assignedClassIds = [
+        ...new Set(
+          assignments
+            .map((item) => item.classId ?? item.class_id)
+            .filter(Boolean),
+        ),
+      ];
       response.user = {
         ...response.user,
         assignments,
         assignedClasses,
+        assignedClassCodes,
+        assignedClassIds,
         courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
       };
     }
@@ -469,7 +491,6 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
     const state = await getAuthoritativeBackOfficeState();
     const {
       resolveTeacherAssignments,
-      resolveTeacherAssignedClasses,
     } = require("./services/authService");
     const userId = String(safeUser.id ?? req.principal.sub ?? "").trim();
     const linkedTeachers = (state.teachers ?? []).filter((row) =>
@@ -484,11 +505,25 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
       linkedTeachers[0] ??
       null;
     if (teacher) {
-      const assignments = resolveTeacherAssignments(teacher, safeUser, state.assignments ?? []);
+      const {
+        isExplicitlyActiveAssignmentStatus,
+      } = require("./lib/classStudentsAuthz");
+      const assignments = resolveTeacherAssignments(teacher, safeUser, state.assignments ?? [])
+        .map((item) => {
+          const status = item.status ?? item.assignmentStatus ?? item.assignment_status ?? "active";
+          return { ...item, status };
+        })
+        .filter((item) => isExplicitlyActiveAssignmentStatus(item.status));
       safeUser = {
         ...safeUser,
         assignments,
-        assignedClasses: resolveTeacherAssignedClasses(teacher, safeUser, state.assignments ?? []),
+        assignedClasses: [...new Set(assignments.map((item) => item.className).filter(Boolean))],
+        assignedClassCodes: [
+          ...new Set(assignments.map((item) => item.classCode ?? item.class_code).filter(Boolean)),
+        ],
+        assignedClassIds: [
+          ...new Set(assignments.map((item) => item.classId ?? item.class_id).filter(Boolean)),
+        ],
         courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
       };
     }
@@ -3701,6 +3736,13 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     rolePermissionsMap
   );
 
+  const {
+    filterActiveTeacherAssignments,
+  } = require("./lib/classStudentsAuthz");
+  const activeAssignments = filterActiveTeacherAssignments(
+    Array.isArray(user.assignments) ? user.assignments : [],
+  );
+
   return {
     sub: user.id ?? user.publicId ?? user.matricule ?? "anonymous",
     identifier: user.identifier,
@@ -3716,25 +3758,25 @@ function buildPrincipal(response, rolePermissionsMap = null) {
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim()),
     studentIds: getPrincipalStudentIds(response),
+    // Uniquement dérivé des affectations explicitement actives (fail-closed).
     classNames: [
-      ...new Set([
-        ...(user.assignedClasses ?? []),
-        ...((user.assignments ?? []).map((item) => item.className).filter(Boolean)),
-      ]),
+      ...new Set(activeAssignments.map((item) => item.className).filter(Boolean)),
     ],
     classCodes: [
-      ...new Set([
-        ...(user.assignedClassCodes ?? []),
-        ...((user.assignments ?? []).map((item) => item.classCode ?? item.class_code).filter(Boolean)),
-      ]),
+      ...new Set(
+        activeAssignments
+          .map((item) => item.classCode ?? item.class_code)
+          .filter(Boolean),
+      ),
     ],
     classIds: [
-      ...new Set([
-        ...(user.assignedClassIds ?? []),
-        ...((user.assignments ?? []).map((item) => item.classId ?? item.class_id).filter(Boolean)),
-      ]),
+      ...new Set(
+        activeAssignments
+          .map((item) => item.classId ?? item.class_id)
+          .filter(Boolean),
+      ),
     ],
-    assignments: Array.isArray(user.assignments) ? user.assignments : [],
+    assignments: activeAssignments,
   };
 }
 

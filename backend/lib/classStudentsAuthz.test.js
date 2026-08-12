@@ -7,6 +7,8 @@ const {
   authorizeStudentReadForPrincipal,
   principalHasClassAccess,
   teacherHasActiveClassAssignment,
+  isExplicitlyActiveAssignmentStatus,
+  collectTeacherAssignmentRefs,
 } = require("./classStudentsAuthz");
 
 function resolveAuthorizedStudentForPrincipal(students, principal, studentRef) {
@@ -37,18 +39,27 @@ function resolveAuthorizedStudentForPrincipal(students, principal, studentRef) {
   return undefined;
 }
 
-function testTeacherClassGate() {
+function testActiveStatusHelper() {
+  assert.equal(isExplicitlyActiveAssignmentStatus("active"), true);
+  assert.equal(isExplicitlyActiveAssignmentStatus("Actif"), true);
+  assert.equal(isExplicitlyActiveAssignmentStatus("OPEN"), true);
+  assert.equal(isExplicitlyActiveAssignmentStatus(""), false);
+  assert.equal(isExplicitlyActiveAssignmentStatus(undefined), false);
+  assert.equal(isExplicitlyActiveAssignmentStatus("inactive"), false);
+  assert.equal(isExplicitlyActiveAssignmentStatus("closed"), false);
+  assert.equal(isExplicitlyActiveAssignmentStatus("historique"), false);
+}
+
+function testTeacherClassGateRequiresStableId() {
+  // Nom seul → refus (plus de fallback className).
   assert.equal(
     principalHasClassAccess(
-      { role: "Enseignant", classNames: ["6ème A"] },
+      {
+        role: "Enseignant",
+        classNames: ["6ème A"],
+        assignments: [{ className: "6ème A", status: "active" }],
+      },
       "6ème A",
-    ),
-    true,
-  );
-  assert.equal(
-    principalHasClassAccess(
-      { role: "Enseignant", classNames: ["6ème A"] },
-      "5ème B",
     ),
     false,
   );
@@ -65,7 +76,12 @@ function testTeacherClassGate() {
   assert.throws(
     () =>
       scopeClassStudentsForPrincipal(
-        { role: "Enseignant", classNames: ["6ème A"], schoolCode: "CD-2026-0001" },
+        {
+          role: "Enseignant",
+          classNames: ["6ème A"],
+          assignments: [{ className: "6ème A", classCode: "CLS-6A", status: "active" }],
+          schoolCode: "CD-2026-0001",
+        },
         { classCode: "CLS-5B", className: "5ème B" },
         rows,
         resolveAuthorizedStudentForPrincipal,
@@ -76,9 +92,8 @@ function testTeacherClassGate() {
   const allowed = scopeClassStudentsForPrincipal(
     {
       role: "Enseignant",
-      classNames: ["5ème B"],
-      classCodes: ["CLS-5B"],
       schoolCode: "CD-2026-0001",
+      assignments: [{ className: "5ème B", classCode: "CLS-5B", status: "active" }],
     },
     { classCode: "CLS-5B", className: "5ème B" },
     rows,
@@ -115,6 +130,43 @@ function testTeacherWithoutAssignmentsDenied() {
     ),
     undefined,
   );
+}
+
+function testInactiveAssignmentDeniedDespiteClassCode() {
+  const student = {
+    id: "ELE-INACT",
+    studentCode: "ELE-INACT",
+    className: "6ème A",
+    classCode: "CLS-6A-ACTIVE-TARGET",
+    schoolCode: "CD-2026-0001",
+  };
+  const principal = {
+    role: "Enseignant",
+    schoolCode: "CD-2026-0001",
+    // Agrégats top-level encore peuplés (fuite historique) — ne doivent pas autoriser.
+    classNames: ["6ème A"],
+    classCodes: ["CLS-6A-ACTIVE-TARGET"],
+    assignments: [
+      {
+        className: "6ème A",
+        classCode: "CLS-6A-ACTIVE-TARGET",
+        status: "inactive",
+      },
+    ],
+  };
+
+  const refs = collectTeacherAssignmentRefs(principal);
+  assert.equal(refs.classCodes.size, 0);
+  assert.equal(teacherHasActiveClassAssignment(principal, student), false);
+  assert.equal(
+    authorizeStudentReadForPrincipal(
+      student,
+      principal,
+      student.studentCode,
+      resolveAuthorizedStudentForPrincipal,
+    ),
+    undefined,
+  );
   assert.throws(
     () =>
       scopeClassStudentsForPrincipal(
@@ -126,16 +178,15 @@ function testTeacherWithoutAssignmentsDenied() {
     (error) => error instanceof BusinessError && error.statusCode === 403,
   );
 
-  // Même fuite historique via TenantScopeService : classNames vides ne doivent plus tout ouvrir.
-  const viaResolve = resolveAuthorizedStudentForPrincipal(
-    [student],
-    principal,
-    student.studentCode,
-  );
-  assert.equal(viaResolve, undefined);
+  // Statut absent → fail-closed.
+  const missingStatus = {
+    ...principal,
+    assignments: [{ className: "6ème A", classCode: "CLS-6A-ACTIVE-TARGET" }],
+  };
+  assert.equal(teacherHasActiveClassAssignment(missingStatus, student), false);
 }
 
-function testHomonymousClassesAcrossYears() {
+function testHomonymousClassesNameOnlyDenied() {
   const yearOne = {
     id: "ELE-Y1",
     studentCode: "ELE-Y1",
@@ -150,13 +201,72 @@ function testHomonymousClassesAcrossYears() {
     classCode: "CLS-6A-2026",
     schoolCode: "CD-2026-0001",
   };
-  // Affectation historique sur l'année N-1 uniquement (même nom de classe).
+  // Principal legacy : uniquement des noms, aucun classCode/classId.
   const principal = {
     role: "Enseignant",
     schoolCode: "CD-2026-0001",
     classNames: ["6ème A"],
-    classCodes: ["CLS-6A-2025"],
-    assignments: [{ className: "6ème A", classCode: "CLS-6A-2025" }],
+    classCodes: [],
+    assignments: [{ className: "6ème A", status: "active" }],
+  };
+
+  assert.equal(
+    teacherHasActiveClassAssignment(principal, {
+      classCode: yearOne.classCode,
+      className: yearOne.className,
+    }),
+    false,
+    "homonyme : classNames seuls ne doivent pas autoriser",
+  );
+  assert.equal(
+    teacherHasActiveClassAssignment(principal, {
+      classCode: yearTwo.classCode,
+      className: yearTwo.className,
+    }),
+    false,
+  );
+  assert.equal(
+    authorizeStudentReadForPrincipal(
+      yearTwo,
+      principal,
+      yearTwo.studentCode,
+      resolveAuthorizedStudentForPrincipal,
+    ),
+    undefined,
+  );
+  assert.throws(
+    () =>
+      scopeClassStudentsForPrincipal(
+        principal,
+        { classCode: yearTwo.classCode, className: yearTwo.className },
+        [yearTwo],
+        resolveAuthorizedStudentForPrincipal,
+      ),
+    (error) => error instanceof BusinessError && error.statusCode === 403,
+  );
+}
+
+function testHomonymousClassesActiveCodeAllowsOnlyMatch() {
+  const yearOne = {
+    id: "ELE-Y1",
+    studentCode: "ELE-Y1",
+    className: "6ème A",
+    classCode: "CLS-6A-2025",
+    schoolCode: "CD-2026-0001",
+  };
+  const yearTwo = {
+    id: "ELE-Y2",
+    studentCode: "ELE-Y2",
+    className: "6ème A",
+    classCode: "CLS-6A-2026",
+    schoolCode: "CD-2026-0001",
+  };
+  const principal = {
+    role: "Enseignant",
+    schoolCode: "CD-2026-0001",
+    assignments: [
+      { className: "6ème A", classCode: "CLS-6A-2025", status: "active" },
+    ],
   };
 
   assert.equal(
@@ -172,36 +282,6 @@ function testHomonymousClassesAcrossYears() {
       className: yearTwo.className,
     }),
     false,
-    "homonyme d'une autre année scolaire doit être refusé",
-  );
-
-  assert.ok(
-    authorizeStudentReadForPrincipal(
-      yearOne,
-      principal,
-      yearOne.studentCode,
-      resolveAuthorizedStudentForPrincipal,
-    ),
-  );
-  assert.equal(
-    authorizeStudentReadForPrincipal(
-      yearTwo,
-      principal,
-      yearTwo.studentCode,
-      resolveAuthorizedStudentForPrincipal,
-    ),
-    undefined,
-  );
-
-  assert.throws(
-    () =>
-      scopeClassStudentsForPrincipal(
-        principal,
-        { classCode: yearTwo.classCode, className: yearTwo.className },
-        [yearTwo],
-        resolveAuthorizedStudentForPrincipal,
-      ),
-    (error) => error instanceof BusinessError && error.statusCode === 403,
   );
 }
 
@@ -245,26 +325,6 @@ function testParentCannotReadOtherStudent() {
     ),
     undefined,
   );
-
-  assert.throws(
-    () =>
-      scopeClassStudentsForPrincipal(
-        principal,
-        "6ème A",
-        [other],
-        resolveAuthorizedStudentForPrincipal,
-      ),
-    (error) => error instanceof BusinessError && error.statusCode === 403,
-  );
-
-  const scoped = scopeClassStudentsForPrincipal(
-    principal,
-    "6ème A",
-    [own, other],
-    resolveAuthorizedStudentForPrincipal,
-  );
-  assert.equal(scoped.length, 1);
-  assert.equal(scoped[0].id, "ELE-OWN");
 }
 
 function testAdminSchoolSeesAll() {
@@ -282,9 +342,12 @@ function testAdminSchoolSeesAll() {
 }
 
 function main() {
-  testTeacherClassGate();
+  testActiveStatusHelper();
+  testTeacherClassGateRequiresStableId();
   testTeacherWithoutAssignmentsDenied();
-  testHomonymousClassesAcrossYears();
+  testInactiveAssignmentDeniedDespiteClassCode();
+  testHomonymousClassesNameOnlyDenied();
+  testHomonymousClassesActiveCodeAllowsOnlyMatch();
   testParentCannotReadOtherStudent();
   testAdminSchoolSeesAll();
   console.log("classStudentsAuthz.test.js: OK");

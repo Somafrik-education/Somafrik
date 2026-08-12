@@ -718,17 +718,14 @@ class FallbackRepository {
     let academicYear = this._managedAcademicYears.find(
       (item) => item.name === input.academicYearName && item.school_code === input.schoolCode,
     );
-    if (!academicYear && input.academicYearName === "2025-2026") {
+    if (!academicYear) {
       academicYear = {
-        id: `AY-${input.schoolCode}-2025-2026`,
+        id: `AY-${input.schoolCode}-${input.academicYearName}`,
         school_id: `school-${input.schoolCode}`,
         school_code: input.schoolCode,
-        name: "2025-2026",
+        name: input.academicYearName,
       };
       this._managedAcademicYears.push(academicYear);
-    }
-    if (!academicYear) {
-      throw createHttpError(400, "Année scolaire introuvable pour cet établissement.");
     }
 
     const duplicate = this._managedClasses.find(

@@ -186,6 +186,137 @@ async function main() {
       JSON.stringify(teacherEmptyAssignmentsDenied.data),
     );
 
+    // Affectation inactive avec le bon classCode → 404 (fail-closed sur le statut).
+    const tokenTeacherInactiveAssignment = tokenService.createAccessToken({
+      sub: "USER-T-INACTIVE",
+      identifier: "ENS-INACTIVE",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      permissions: ["Élèves:READ", "Voir élèves"],
+      classNames: [activeClass.name],
+      classCodes: [activeClass.classCode],
+      classIds: [],
+      assignments: [
+        {
+          className: activeClass.name,
+          classCode: activeClass.classCode,
+          status: "inactive",
+        },
+      ],
+      mustChangePassword: false,
+    });
+    const teacherInactiveDenied = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: tokenTeacherInactiveAssignment },
+    );
+    assert.equal(teacherInactiveDenied.status, 404, JSON.stringify(teacherInactiveDenied.data));
+    const teacherInactiveRosterDenied = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      { token: tokenTeacherInactiveAssignment },
+    );
+    assert.equal(
+      teacherInactiveRosterDenied.status,
+      403,
+      JSON.stringify(teacherInactiveRosterDenied.data),
+    );
+
+    // Homonymes inter-années : principal avec seulement classNames → refus HTTP.
+    const priorYearName = "6ème A Homonyme";
+    const priorYear = await request("/classes", {
+      method: "POST",
+      token: tokenCd,
+      body: {
+        name: priorYearName,
+        academicYearName: "2024-2025",
+        status: "active",
+      },
+    });
+    assert.equal(priorYear.status, 201, JSON.stringify(priorYear.data));
+    const currentHomonym = await request("/classes", {
+      method: "POST",
+      token: tokenCd,
+      body: {
+        name: priorYearName,
+        academicYearName: "2025-2026",
+        status: "active",
+      },
+    });
+    assert.equal(currentHomonym.status, 201, JSON.stringify(currentHomonym.data));
+    assert.notEqual(priorYear.data.classCode, currentHomonym.data.classCode);
+
+    const enrolledHomonym = await request(
+      `/classes/${encodeURIComponent(currentHomonym.data.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: { firstName: "Homo", lastName: "Nyme" },
+      },
+    );
+    assert.equal(enrolledHomonym.status, 201, JSON.stringify(enrolledHomonym.data));
+
+    const tokenTeacherNameOnly = tokenService.createAccessToken({
+      sub: "USER-T-NAME-ONLY",
+      identifier: "ENS-NAME-ONLY",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      permissions: ["Élèves:READ", "Voir élèves"],
+      classNames: [priorYearName],
+      classCodes: [],
+      classIds: [],
+      assignments: [{ className: priorYearName, status: "active" }],
+      mustChangePassword: false,
+    });
+    const teacherNameOnlyStudentDenied = await request(
+      `/students/${encodeURIComponent(enrolledHomonym.data.studentCode)}`,
+      { token: tokenTeacherNameOnly },
+    );
+    assert.equal(
+      teacherNameOnlyStudentDenied.status,
+      404,
+      JSON.stringify(teacherNameOnlyStudentDenied.data),
+    );
+    const teacherNameOnlyRosterDenied = await request(
+      `/classes/${encodeURIComponent(currentHomonym.data.classCode)}/students`,
+      { token: tokenTeacherNameOnly },
+    );
+    assert.equal(
+      teacherNameOnlyRosterDenied.status,
+      403,
+      JSON.stringify(teacherNameOnlyRosterDenied.data),
+    );
+
+    // Contrôle positif : affectation active + classCode stable → lecture autorisée.
+    const tokenTeacherActiveCode = tokenService.createAccessToken({
+      sub: "USER-T-ACTIVE-CODE",
+      identifier: "ENS-ACTIVE-CODE",
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      permissions: ["Élèves:READ", "Voir élèves"],
+      classNames: [currentHomonym.data.name],
+      classCodes: [currentHomonym.data.classCode],
+      assignments: [
+        {
+          className: currentHomonym.data.name,
+          classCode: currentHomonym.data.classCode,
+          status: "active",
+        },
+      ],
+      mustChangePassword: false,
+    });
+    const teacherActiveAllowed = await request(
+      `/students/${encodeURIComponent(enrolledHomonym.data.studentCode)}`,
+      { token: tokenTeacherActiveCode },
+    );
+    assert.equal(teacherActiveAllowed.status, 200, JSON.stringify(teacherActiveAllowed.data));
+    const teacherActiveRoster = await request(
+      `/classes/${encodeURIComponent(currentHomonym.data.classCode)}/students`,
+      { token: tokenTeacherActiveCode },
+    );
+    assert.equal(teacherActiveRoster.status, 200, JSON.stringify(teacherActiveRoster.data));
+
     // Parent : pas de dossier d'un autre élève du même établissement.
     const tokenParent = await login("+243 820 000 001", "CD-2026-0001");
     const parentOtherStudentDenied = await request(
