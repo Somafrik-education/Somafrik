@@ -8,7 +8,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { resetStudentEditingSessionsForTests } from "../../hooks/useStudentEditingContext";
 import { StudentWorkspacePage } from "./StudentWorkspacePage";
 
-const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState } = vi.hoisted(() => {
+const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet } = vi.hoisted(() => {
   const SCHOOL = "CD-2026-0001";
   const STUDENT_ID = "stu-c18b-demo";
   const ENROLLMENT_ID = "enr-c18b-demo";
@@ -67,8 +67,73 @@ const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState } = vi.hoisted(() => {
       },
     } as Record<string, unknown>,
   };
-  return { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState };
+
+  function buildDossier() {
+    const enrollment = (dataState.current.studentEnrollments as Array<Record<string, unknown>>)[0];
+    return {
+      id: STUDENT_ID,
+      publicId: STUDENT_ID,
+      studentCode: STUDENT_ID,
+      matricule: "M-C18B",
+      firstName: "Noah",
+      lastName: "Mbala",
+      name: "Noah Mbala",
+      gender: "",
+      birthDate: "",
+      birthPlace: "",
+      className: String(enrollment?.className ?? "4e A"),
+      classCode: String(enrollment?.classId ?? "CLS-4A"),
+      schoolCode: SCHOOL,
+      parentPhone: "",
+      parentEmail: "",
+      status: "active",
+      enrollmentId: ENROLLMENT_ID,
+      enrollmentDate: "21-07-2026",
+      academicYearName: "2026-2027",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-07-21T00:00:00.000Z",
+      enrollments: [
+        {
+          id: ENROLLMENT_ID,
+          status: String(enrollment?.status ?? "ENROLLED"),
+          enrollmentDate: "21-07-2026",
+          classCode: String(enrollment?.classId ?? "CLS-4A"),
+          className: String(enrollment?.className ?? "4e A"),
+          academicYearName: "2026-2027",
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-07-21T00:00:00.000Z",
+        },
+      ],
+      guardians: [],
+      medical: {
+        allergies: [],
+        conditions: [],
+        medications: [],
+        notes: "",
+        emergencyContact: "",
+        bloodType: "",
+      },
+      documents: [],
+      access: {
+        notesPath: `/api/students/${STUDENT_ID}/notes`,
+        presencesPath: `/api/students/${STUDENT_ID}/presences`,
+        paymentsPath: `/api/students/${STUDENT_ID}/payments`,
+        reportPath: `/api/students/${STUDENT_ID}/report`,
+      },
+    };
+  }
+
+  const studentsApiGet = vi.fn(async () => buildDossier());
+  return { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet };
 });
+
+vi.mock("../../lib/studentsApi", () => ({
+  studentsApi: {
+    list: vi.fn(async () => []),
+    get: studentsApiGet,
+    update: vi.fn(),
+  },
+}));
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
@@ -165,6 +230,7 @@ describe("C1.8b démo — transfer / close enrollment", () => {
   beforeEach(() => {
     cleanup();
     resetStudentEditingSessionsForTests();
+    studentsApiGet.mockClear();
     resetEnrolled();
   });
 
@@ -174,6 +240,7 @@ describe("C1.8b démo — transfer / close enrollment", () => {
 
     const tab = await screen.findByTestId("student-enrollment-tab");
     expect(within(tab).getAllByText("Inscrit").length).toBeGreaterThan(0);
+    expect(studentsApiGet).toHaveBeenCalledWith(STUDENT_ID);
 
     await user.click(screen.getByTestId("enrollment-close-start"));
     fireEvent.change(screen.getByTestId("enrollment-close-date"), {

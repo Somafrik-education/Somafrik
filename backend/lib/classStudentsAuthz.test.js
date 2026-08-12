@@ -341,6 +341,52 @@ function testAdminSchoolSeesAll() {
   assert.equal(scoped.length, 2);
 }
 
+function testSchoolDirectoryScopesTeacherAndParent() {
+  const {
+    scopeSchoolStudentsForPrincipal,
+  } = require("./classStudentsAuthz");
+  const rows = [
+    {
+      id: "ELE-1",
+      studentCode: "ELE-1",
+      classCode: "CLS-A",
+      className: "6ème A",
+      schoolCode: "CD-2026-0001",
+    },
+    {
+      id: "ELE-2",
+      studentCode: "ELE-2",
+      classCode: "CLS-B",
+      className: "5ème B",
+      schoolCode: "CD-2026-0001",
+    },
+  ];
+
+  const teacherScoped = scopeSchoolStudentsForPrincipal(
+    {
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      assignments: [{ classCode: "CLS-A", status: "active" }],
+    },
+    rows,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  assert.equal(teacherScoped.length, 1);
+  assert.equal(teacherScoped[0].studentCode, "ELE-1");
+
+  const parentScoped = scopeSchoolStudentsForPrincipal(
+    {
+      role: "Parent",
+      schoolCode: "CD-2026-0001",
+      studentIds: ["ELE-2"],
+    },
+    rows,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  assert.equal(parentScoped.length, 1);
+  assert.equal(parentScoped[0].studentCode, "ELE-2");
+}
+
 function main() {
   testActiveStatusHelper();
   testTeacherClassGateRequiresStableId();
@@ -350,6 +396,7 @@ function main() {
   testHomonymousClassesActiveCodeAllowsOnlyMatch();
   testParentCannotReadOtherStudent();
   testAdminSchoolSeesAll();
+  testSchoolDirectoryScopesTeacherAndParent();
   console.log("classStudentsAuthz.test.js: OK");
 }
 

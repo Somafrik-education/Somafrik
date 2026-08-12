@@ -3,9 +3,27 @@
 const { createHttpError, asTrimmedString, requireClassCodeParam } = require("../lib/classesManagement");
 const {
   validateEnrollStudentInput,
+  validateUpdateStudentInput,
   assertClassEligibleForEnrollment,
 } = require("../lib/classStudentsManagement");
 const { allocateStudentCodeLocked } = require("../lib/studentCodeAllocation");
+
+const STUDENT_SELECT_COLUMNS = `
+  st.id AS student_uuid,
+  st.student_code,
+  st.first_name,
+  st.last_name,
+  st.gender,
+  st.birth_date,
+  st.birth_place,
+  st.photo_url,
+  st.parent_phone,
+  st.parent_email,
+  st.status,
+  st.created_at,
+  st.updated_at,
+  s.school_code
+`;
 
 /**
  * @param {{
@@ -125,6 +143,8 @@ function createClassStudentsRepository(db) {
       name: `${row.first_name} ${row.last_name}`.trim(),
       gender: row.gender ?? "",
       birthDate: row.birth_date ? formatDate(row.birth_date) : "",
+      birthPlace: row.birth_place ?? "",
+      photoUrl: row.photo_url ?? "",
       className: row.class_name ?? "",
       classCode: row.class_code ?? "",
       schoolCode: row.school_code,
@@ -137,6 +157,95 @@ function createClassStudentsRepository(db) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  /**
+   * @param {any} row
+   */
+  function mapEnrollmentRow(row) {
+    return {
+      id: row.enrollment_id,
+      status: row.enrollment_status ?? "active",
+      enrollmentDate: row.enrollment_date ? formatDate(row.enrollment_date) : "",
+      classCode: row.class_code ?? "",
+      className: row.class_name ?? "",
+      academicYearName: row.academic_year_name ?? "",
+      academicYearStatus: row.academic_year_status ?? "",
+      createdAt: row.enrollment_created_at ?? null,
+      updatedAt: row.enrollment_updated_at ?? null,
+    };
+  }
+
+  /**
+   * @param {any} row
+   */
+  function mapDocumentRow(row) {
+    return {
+      id: row.document_code,
+      documentCode: row.document_code,
+      documentType: row.document_type ?? "",
+      title: row.title ?? "",
+      format: row.format ?? "",
+      version: row.version ?? "",
+      status: row.status ?? "",
+      fileUrl: row.storage_key ?? "",
+      generatedAt: row.generated_at ?? null,
+      createdAt: row.created_at ?? null,
+      updatedAt: row.updated_at ?? null,
+    };
+  }
+
+  function emptyMedicalProfile() {
+    return {
+      allergies: [],
+      conditions: [],
+      medications: [],
+      notes: "",
+      emergencyContact: "",
+      bloodType: "",
+      source: "postgresql",
+    };
+  }
+
+  /**
+   * @param {string} studentCode
+   */
+  function accessLinks(studentCode) {
+    const encoded = encodeURIComponent(studentCode);
+    return {
+      notesPath: `/api/students/${encoded}/notes`,
+      presencesPath: `/api/students/${encoded}/presences`,
+      paymentsPath: `/api/students/${encoded}/payments`,
+      reportPath: `/api/students/${encoded}/report`,
+    };
+  }
+
+  /**
+   * @param {string} value
+   */
+  function normalizeTimestamp(value) {
+    if (!value) return "";
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  }
+
+  /**
+   * Absence explicite de la table (schéma partiel) uniquement — les autres erreurs remontent.
+   * @param {unknown} error
+   */
+  function isMissingStudentDocumentsRelation(error) {
+    const code = String(error?.code ?? "").trim();
+    if (code === "42P01") {
+      return true;
+    }
+    const message = String(error?.message ?? error ?? "").toLowerCase();
+    return (
+      message.includes("student_documents") &&
+      (message.includes("does not exist") ||
+        message.includes("n'existe pas") ||
+        message.includes("undefined_table") ||
+        message.includes("no such table"))
+    );
   }
 
   /**
@@ -181,7 +290,7 @@ function createClassStudentsRepository(db) {
          birth_date, birth_place, photo_url, parent_phone, parent_email, status
        ) VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, 'active')
        RETURNING id, student_code, first_name, last_name, gender, birth_date,
-                 parent_phone, parent_email, status, created_at, updated_at`,
+                 birth_place, photo_url, parent_phone, parent_email, status, created_at, updated_at`,
       [
         school.id,
         studentCode,
@@ -234,6 +343,31 @@ function createClassStudentsRepository(db) {
 
   return {
     /**
+     * Annuaire établissement — lecture PostgreSQL.
+     * @param {string} schoolCode
+     */
+    async listBySchoolCode(schoolCode) {
+      const school = await requireSchool(schoolCode);
+      const rows = await db.all(
+        `SELECT ${STUDENT_SELECT_COLUMNS},
+                cl.class_code,
+                cl.name AS class_name,
+                ay.name AS academic_year_name,
+                e.id AS enrollment_id,
+                e.enrollment_date
+         FROM students st
+         JOIN schools s ON s.id = st.school_id
+         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+         LEFT JOIN classes cl ON cl.id = e.class_id
+         LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
+         WHERE st.school_id = $1
+         ORDER BY st.last_name ASC, st.first_name ASC, st.student_code ASC`,
+        [school.id],
+      );
+      return rows.map(mapStudentRow);
+    },
+
+    /**
      * @param {string} classCodeParam
      * @param {string} schoolCode
      */
@@ -241,17 +375,7 @@ function createClassStudentsRepository(db) {
       const classRow = await getClassForEnrollment(classCodeParam, schoolCode);
       const school = await requireSchool(schoolCode);
       const rows = await db.all(
-        `SELECT st.student_code,
-                st.first_name,
-                st.last_name,
-                st.gender,
-                st.birth_date,
-                st.parent_phone,
-                st.parent_email,
-                st.status,
-                st.created_at,
-                st.updated_at,
-                s.school_code,
+        `SELECT ${STUDENT_SELECT_COLUMNS},
                 cl.class_code,
                 cl.name AS class_name,
                 ay.name AS academic_year_name,
@@ -272,6 +396,7 @@ function createClassStudentsRepository(db) {
     },
 
     /**
+     * Fiche canonique par studentCode — isolée par établissement.
      * @param {string} studentCodeParam
      * @param {string} schoolCode
      */
@@ -282,17 +407,7 @@ function createClassStudentsRepository(db) {
       }
       const school = await requireSchool(schoolCode);
       const row = await db.one(
-        `SELECT st.student_code,
-                st.first_name,
-                st.last_name,
-                st.gender,
-                st.birth_date,
-                st.parent_phone,
-                st.parent_email,
-                st.status,
-                st.created_at,
-                st.updated_at,
-                s.school_code,
+        `SELECT ${STUDENT_SELECT_COLUMNS},
                 cl.class_code,
                 cl.name AS class_name,
                 ay.name AS academic_year_name,
@@ -310,7 +425,138 @@ function createClassStudentsRepository(db) {
       if (!row) {
         throw createHttpError(404, "Élève introuvable.");
       }
-      return mapStudentRow(row);
+
+      const enrollments = await db.all(
+        `SELECT e.id AS enrollment_id,
+                e.status AS enrollment_status,
+                e.enrollment_date,
+                e.created_at AS enrollment_created_at,
+                e.updated_at AS enrollment_updated_at,
+                cl.class_code,
+                cl.name AS class_name,
+                ay.name AS academic_year_name,
+                ay.status AS academic_year_status
+         FROM enrollments e
+         JOIN classes cl ON cl.id = e.class_id
+         JOIN academic_years ay ON ay.id = e.academic_year_id
+         WHERE e.student_id = $1 AND e.school_id = $2
+         ORDER BY e.enrollment_date DESC NULLS LAST, e.created_at DESC NULLS LAST`,
+        [row.student_uuid, school.id],
+      );
+
+      let documents = [];
+      try {
+        documents = await db.all(
+          `SELECT document_code, document_type, title, format, version, status,
+                  storage_key, generated_at, created_at, updated_at
+           FROM student_documents
+           WHERE student_id = $1 AND school_id = $2
+           ORDER BY generated_at DESC NULLS LAST, created_at DESC NULLS LAST`,
+          [row.student_uuid, school.id],
+        );
+      } catch (error) {
+        if (!isMissingStudentDocumentsRelation(error)) {
+          throw error;
+        }
+        documents = [];
+      }
+
+      const base = mapStudentRow(row);
+      return {
+        ...base,
+        enrollments: enrollments.map(mapEnrollmentRow),
+        guardians: [],
+        medical: emptyMedicalProfile(),
+        documents: documents.map(mapDocumentRow),
+        access: accessLinks(base.studentCode),
+      };
+    },
+
+    /**
+     * Modification contrôlée identité / admin — conflit via expectedUpdatedAt.
+     * @param {string} studentCodeParam
+     * @param {string} schoolCode
+     * @param {unknown} body
+     */
+    async updateByStudentCode(studentCodeParam, schoolCode, body) {
+      const studentCode = asTrimmedString(studentCodeParam);
+      if (!studentCode) {
+        throw createHttpError(400, "studentCode invalide.");
+      }
+      const patch = validateUpdateStudentInput(body);
+      const school = await requireSchool(schoolCode);
+
+      const current = await db.one(
+        `SELECT st.id, st.student_code, st.first_name, st.last_name, st.gender,
+                st.birth_date, st.birth_place, st.parent_phone, st.parent_email,
+                st.updated_at
+         FROM students st
+         WHERE st.student_code = $1 AND st.school_id = $2
+         LIMIT 1`,
+        [studentCode, school.id],
+      );
+      if (!current) {
+        throw createHttpError(404, "Élève introuvable.");
+      }
+
+      const currentUpdatedAt = normalizeTimestamp(current.updated_at);
+      const expected = normalizeTimestamp(patch.expectedUpdatedAt);
+      if (currentUpdatedAt !== expected) {
+        throw createHttpError(
+          409,
+          "Conflit de modification : la fiche élève a été mise à jour par un autre utilisateur.",
+        );
+      }
+
+      const nextFirstName = patch.firstName ?? current.first_name;
+      const nextLastName = patch.lastName ?? current.last_name;
+      const nextGender =
+        patch.gender !== undefined ? patch.gender : current.gender;
+      const nextBirthDate =
+        patch.birthDate !== undefined ? patch.birthDate : current.birth_date;
+      const nextBirthPlace =
+        patch.birthPlace !== undefined ? patch.birthPlace ?? "" : current.birth_place ?? "";
+      const nextParentPhone =
+        patch.parentPhone !== undefined ? patch.parentPhone : current.parent_phone;
+      const nextParentEmail =
+        patch.parentEmail !== undefined ? patch.parentEmail : current.parent_email;
+
+      const updated = await db.one(
+        `UPDATE students
+         SET first_name = $1,
+             last_name = $2,
+             gender = $3,
+             birth_date = $4,
+             birth_place = $5,
+             parent_phone = $6,
+             parent_email = $7,
+             updated_at = NOW()
+         WHERE id = $8
+           AND school_id = $9
+           AND updated_at = $10::timestamptz
+         RETURNING id`,
+        [
+          nextFirstName,
+          nextLastName,
+          nextGender,
+          nextBirthDate,
+          nextBirthPlace,
+          nextParentPhone,
+          nextParentEmail,
+          current.id,
+          school.id,
+          current.updated_at,
+        ],
+      );
+
+      if (!updated) {
+        throw createHttpError(
+          409,
+          "Conflit de modification : la fiche élève a été mise à jour par un autre utilisateur.",
+        );
+      }
+
+      return this.getByStudentCode(studentCode, schoolCode);
     },
 
     /**

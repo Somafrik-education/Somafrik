@@ -303,7 +303,12 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
   const [calendarStep, setCalendarStep] = useState<"year" | "month" | "day">("year");
   const [selectedPermissionRole, setSelectedPermissionRole] = useState("");
   const [selectedPermissionFeature, setSelectedPermissionFeature] = useState("");
-  const canCreate = canMutateEntity(session, entity, "CREATE") && !entityCreateViaContactsOnly(entity);
+  const isStudentsEntity = entity === "students";
+  // PR1 : création élèves uniquement via Classes → Inscrire (API PG).
+  const canCreate =
+    !isStudentsEntity &&
+    canMutateEntity(session, entity, "CREATE") &&
+    !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
   const canUpdate = canMutateEntity(session, entity, "UPDATE");
   const canDelete = canMutateEntity(session, entity, "DELETE");
@@ -428,7 +433,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       ...(entity === "courses" && selectedCourseClass
         ? { className: selectedCourseClass }
         : {}),
-      ...(entity === "students" && lockedClassName ? { className: lockedClassName } : {}),
+      // Création élèves désactivée (canCreate=false pour students) — pas de préremplissage classe.
     });
     setVisible(true);
   };
@@ -454,7 +459,12 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     }
 
     if (!editingItem && !canCreate) {
-      Alert.alert("Accès refusé", "Votre rôle ne permet pas de créer cet élément.");
+      Alert.alert(
+        "Accès refusé",
+        isStudentsEntity
+          ? "La création d'élèves passe par Classes → Inscrire un élève."
+          : "Votre rôle ne permet pas de créer cet élément.",
+      );
       return;
     }
 
@@ -1489,6 +1499,10 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
   const schoolCode = context?.schoolsData?.[0]?.code ?? "CD-2026-0001";
 
   if (entity === "students") {
+    // PR1 : pas de création AdminCrud — inscription via Classes uniquement.
+    if (!id) {
+      return null;
+    }
     if (!form.name || !form.className) return null;
     const publicId = form.matricule || generateLearnerPublicId(schoolCode, context?.studentsData ?? []);
     return {

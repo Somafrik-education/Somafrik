@@ -321,7 +321,7 @@ async function ensureApiBase() {
   }
 }
 
-async function request(base, pathName, { method = "GET", token, queryToken, queryAccessToken, headers = {} } = {}) {
+async function request(base, pathName, { method = "GET", token, queryToken, queryAccessToken, headers = {}, body } = {}) {
   const url = new URL(`${base}${pathName}`);
   if (queryToken != null) url.searchParams.set("token", String(queryToken));
   if (queryAccessToken != null) url.searchParams.set("access_token", String(queryAccessToken));
@@ -333,6 +333,7 @@ async function request(base, pathName, { method = "GET", token, queryToken, quer
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await response.text();
   let data = null;
@@ -371,6 +372,28 @@ async function login(base) {
     token = changeData.accessToken || token;
   }
   return token;
+}
+
+/**
+ * Liste / PDF élèves : token établissement (schoolCode requis par /api/students PG).
+ */
+async function loginSchoolScoped(base) {
+  const identifier = process.env.SOMAFRIK_VERIFY_SCHOOL_IDENTIFIER || "admin";
+  const password = process.env.SOMAFRIK_VERIFY_PASSWORD || "1234";
+  const schoolCode = process.env.SOMAFRIK_VERIFY_SCHOOL_CODE || "CD-2026-0001";
+  const loginRes = await fetch(`${base}/backoffice/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier, password, schoolCode }),
+  });
+  const data = await loginRes.json();
+  assert.strictEqual(
+    loginRes.status,
+    200,
+    `login school-scoped failed: ${JSON.stringify(data)}`,
+  );
+  assert.ok(data.accessToken, "accessToken school-scoped manquant");
+  return data.accessToken;
 }
 
 function extractApiList(payload) {
@@ -464,13 +487,16 @@ async function runHttpTests(base) {
   console.log("OK http: report.pdf ?access_token= → 401");
 
   // PDF positif strict (200 + application/pdf + corps non vide)
-  const studentsRes = await request(base, "/students?limit=1", { token });
-  assert.strictEqual(studentsRes.status, 200, "liste élèves pour test PDF Bearer");
-  const students = extractApiList(studentsRes.data);
-  assert.ok(students.length > 0, "au moins un élève requis pour le test PDF positif");
-  const studentId = students[0].id || students[0].publicId || students[0].matricule;
-  assert.ok(studentId, "identifiant élève manquant pour le test PDF");
-  await assertPositivePdf(base, token, studentId);
+  // Bulletin PDF lit encore l'état BO (hors consolidation fiche PR1).
+  // Token établissement requis ; élève seed mémoire CD-2026-0001.
+  const schoolToken = await loginSchoolScoped(base);
+  const studentsProbe = await request(base, "/students?limit=1", { token: schoolToken });
+  assert.strictEqual(
+    studentsProbe.status,
+    200,
+    `liste élèves établissement doit répondre 200 (reçu ${studentsProbe.status})`,
+  );
+  await assertPositivePdf(base, schoolToken, "ELE-0001");
 }
 
 function stopChildProcessTree(child) {

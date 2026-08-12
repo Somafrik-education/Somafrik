@@ -215,6 +215,49 @@ function scopeClassStudentsForPrincipal(principal, classContext, rows, resolveAu
 }
 
 /**
+ * Filtre la liste établissement (annuaire) selon le principal.
+ * Enseignant : uniquement les élèves dont la classe active est dans ses affectations.
+ *
+ * @param {{ role?: string, assignments?: object[], studentIds?: string[] }} principal
+ * @param {object[]} rows
+ * @param {(students: object[], principal: object, studentRef: string) => object | undefined} resolveAuthorizedStudent
+ * @returns {object[]}
+ */
+function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStudent) {
+  if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
+    return rows;
+  }
+
+  if (SCHOOL_WIDE_STUDENT_READ_ROLES.has(principal.role)) {
+    return rows;
+  }
+
+  if (principal.role === "Enseignant") {
+    const { classCodes, classIds } = collectTeacherAssignmentRefs(principal);
+    if (!classCodes.size && !classIds.size) {
+      throw new BusinessError(403, "Accès refusé: aucune classe affectée.");
+    }
+    return (rows ?? []).filter((row) => {
+      const code = asRef(row?.classCode ?? row?.class_code);
+      const id = asRef(row?.classId ?? row?.class_id);
+      return (code && classCodes.has(code)) || (id && (classIds.has(id) || classCodes.has(id)));
+    });
+  }
+
+  if (isParentOrStudentRole(principal.role)) {
+    const linkedIds = new Set(
+      (principal.studentIds ?? principal.linkedStudentIds ?? []).map((value) => asRef(value)).filter(Boolean),
+    );
+    return (rows ?? []).filter((row) => {
+      const candidates = [row?.id, row?.publicId, row?.matricule, row?.studentCode].map(asRef);
+      return candidates.some((value) => value && linkedIds.has(value));
+    });
+  }
+
+  return rows;
+}
+
+/**
  * Autorise la lecture d'un dossier élève (chemin PG inclus).
  * Enseignant : affectation active + classCode/classId uniquement.
  *
@@ -257,5 +300,6 @@ module.exports = {
   teacherHasActiveClassAssignment,
   principalHasClassAccess,
   scopeClassStudentsForPrincipal,
+  scopeSchoolStudentsForPrincipal,
   authorizeStudentReadForPrincipal,
 };

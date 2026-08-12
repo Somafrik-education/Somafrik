@@ -897,6 +897,8 @@ class FallbackRepository {
               last_name: params[3],
               gender: params[4],
               birth_date: params[5],
+              birth_place: "",
+              photo_url: "",
               parent_phone: params[6],
               parent_email: params[7],
               status: "active",
@@ -915,11 +917,36 @@ class FallbackRepository {
               academic_year_id: params[3],
               enrollment_date: new Date().toISOString().slice(0, 10),
               status: "active",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             };
             self._managedEnrollments.push(row);
             return { id: row.id, enrollment_date: row.enrollment_date };
           }
-          if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
+          if (text.startsWith("UPDATE STUDENTS")) {
+            const student = (self._managedStudents ?? []).find(
+              (row) => row.id === params[7] && row.school_id === params[8],
+            );
+            if (!student) return null;
+            if (String(student.updated_at) !== String(params[9])) return null;
+            student.first_name = params[0];
+            student.last_name = params[1];
+            student.gender = params[2];
+            student.birth_date = params[3];
+            student.birth_place = params[4];
+            student.parent_phone = params[5];
+            student.parent_email = params[6];
+        student.updated_at = new Date(Date.now() + 1).toISOString();
+        return { id: student.id };
+      }
+      if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
+        return (
+          (self._managedStudents ?? []).find(
+            (row) => row.student_code === params[0] && row.school_id === params[1],
+          ) ?? null
+        );
+      }
+      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
             const student = (self._managedStudents ?? []).find(
               (row) => row.student_code === params[0] && row.school_id === params[1],
             );
@@ -929,9 +956,14 @@ class FallbackRepository {
             );
             const cls = (self._managedClasses ?? []).find((row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id);
             const year = (self._managedAcademicYears ?? []).find((item) => item.id === enrollment?.academic_year_id);
+            const schoolCode =
+              params[1] === seedData.school.id
+                ? seedData.school.code
+                : String(params[1]).replace(/^school-/i, "");
             return {
               ...student,
-              school_code: params[1] === seedData.school.id ? seedData.school.code : `school-${params[1]}`,
+              student_uuid: student.id,
+              school_code: schoolCode,
               class_code: cls?.classCode ?? "",
               class_name: cls?.name ?? "",
               academic_year_name: year?.name ?? cls?.academicYearName ?? "",
@@ -953,7 +985,7 @@ class FallbackRepository {
                   : `school-${String(row.schoolCode ?? "").trim().toUpperCase()}`;
               return rowSchoolId === schoolId;
             });
-            return managed?.schoolCode ?? String(schoolId).replace(/^school-/, "");
+            return managed?.schoolCode ?? String(schoolId).replace(/^school-/i, "");
           };
           if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.CLASS_ID")) {
             const classId = params[0];
@@ -970,6 +1002,7 @@ class FallbackRepository {
                 return student
                   ? {
                       ...student,
+                      student_uuid: student.id,
                       school_code: resolveSchoolCode(schoolId),
                       class_code: cls?.classCode ?? "",
                       class_name: cls?.name ?? "",
@@ -980,6 +1013,57 @@ class FallbackRepository {
                   : null;
               })
               .filter(Boolean);
+          }
+          if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.SCHOOL_ID")) {
+            const schoolId = params[0];
+            return (self._managedStudents ?? [])
+              .filter((row) => row.school_id === schoolId)
+              .map((student) => {
+                const enrollment = (self._managedEnrollments ?? []).find(
+                  (row) => row.student_id === student.id && row.status === "active",
+                );
+                const cls = (self._managedClasses ?? []).find(
+                  (row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id,
+                );
+                return {
+                  ...student,
+                  student_uuid: student.id,
+                  school_code: resolveSchoolCode(schoolId),
+                  class_code: cls?.classCode ?? "",
+                  class_name: cls?.name ?? "",
+                  academic_year_name: cls?.academicYearName ?? "",
+                  enrollment_id: enrollment?.id ?? null,
+                  enrollment_date: enrollment?.enrollment_date ?? null,
+                };
+              });
+          }
+          if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.STUDENT_ID")) {
+            const studentId = params[0];
+            const schoolId = params[1];
+            return (self._managedEnrollments ?? [])
+              .filter((row) => row.student_id === studentId && row.school_id === schoolId)
+              .map((enrollment) => {
+                const cls = (self._managedClasses ?? []).find(
+                  (row) => row.id === enrollment.class_id || row.classCode === enrollment.class_id,
+                );
+                const year = (self._managedAcademicYears ?? []).find(
+                  (item) => item.id === enrollment.academic_year_id,
+                );
+                return {
+                  enrollment_id: enrollment.id,
+                  enrollment_status: enrollment.status,
+                  enrollment_date: enrollment.enrollment_date,
+                  enrollment_created_at: enrollment.created_at,
+                  enrollment_updated_at: enrollment.updated_at,
+                  class_code: cls?.classCode ?? "",
+                  class_name: cls?.name ?? "",
+                  academic_year_name: year?.name ?? cls?.academicYearName ?? "",
+                  academic_year_status: year?.status ?? "open",
+                };
+              });
+          }
+          if (text.includes("FROM STUDENT_DOCUMENTS")) {
+            return [];
           }
           if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
             return (self._managedStudents ?? [])
@@ -1013,12 +1097,20 @@ class FallbackRepository {
     return this.getClassStudentsRepository().listByClassCode(classCode, schoolCode);
   }
 
+  listSchoolStudents(schoolCode) {
+    return this.getClassStudentsRepository().listBySchoolCode(schoolCode);
+  }
+
   enrollStudentInClass(classCode, schoolCode, body) {
     return this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
   }
 
   getSchoolStudentByCode(studentCode, schoolCode) {
     return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
+  }
+
+  updateSchoolStudentByCode(studentCode, schoolCode, body) {
+    return this.getClassStudentsRepository().updateByStudentCode(studentCode, schoolCode, body);
   }
 
   getTeachersRepository() {

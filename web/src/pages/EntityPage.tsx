@@ -275,7 +275,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   // ELEVE-001 / ENS-001 : créer une fiche à partir d'un contact existant.
   const linkableContactKind: "student" | "teacher" | null =
-    module?.key === "students" ? "student" : module?.key === "teachers" ? "teacher" : null;
+    module?.key === "teachers" ? "teacher" : null;
   const linkableContactOptions = useMemo(
     () =>
       linkableContactKind

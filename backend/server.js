@@ -221,6 +221,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/students/:id",
       "/api/teachers",
       "/api/teachers/:teacherCode",
+      "PATCH /api/students/:id",
       "/api/students/:id/notes",
       "/api/notes",
       "/api/presences",
@@ -657,51 +658,95 @@ app.put("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
   res.json(saved);
 }));
 
-app.get("/api/students", requireAuth, asyncHandler(async (req, res) => {
-  const { students } = await getAuthoritativeBackOfficeState();
-  const { className } = req.query;
-  const result = sanitizeUsersForResponse(
-    tenantScopeService.filterRows(students, req.principal)
-      .filter((student) => !className || student.className === className),
-  );
-
-  sendList(res, result, req.query, ["name", "matricule", "className", "parentPhone"]);
-}));
-
-app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/students", requireAuth, requirePermission("GET /api/students"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (schoolCode && schoolCode !== "*" && typeof repository.getSchoolStudentByCode === "function") {
-    try {
-      const pgStudent = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
-      tenantScopeService.assertSchoolAccess(req.principal, pgStudent.schoolCode);
-      const {
-        authorizeStudentReadForPrincipal,
-      } = require("./lib/classStudentsAuthz");
-      const authorizedPg = authorizeStudentReadForPrincipal(
-        pgStudent,
-        req.principal,
-        req.params.id,
-        resolveAuthorizedStudentForPrincipal,
-      );
-      if (!authorizedPg) {
-        return res.status(404).json({ message: "Eleve introuvable" });
-      }
-      return res.json(sanitizeUserForResponse(authorizedPg));
-    } catch (error) {
-      if (error?.statusCode !== 404) {
-        throw error;
-      }
-    }
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+
+  if (typeof repository.listSchoolStudents !== "function") {
+    throw new BusinessError(503, "Liste élèves PostgreSQL indisponible.");
   }
 
-  const { students } = await getAuthoritativeBackOfficeState();
-  const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
+  const rows = await repository.listSchoolStudents(schoolCode);
+  const { className } = req.query;
+  const filtered = (rows ?? []).filter((student) => !className || student.className === className);
+  const {
+    scopeSchoolStudentsForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const scoped = scopeSchoolStudentsForPrincipal(
+    req.principal,
+    filtered,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  const result = sanitizeUsersForResponse(scoped);
+  sendList(res, result, req.query, ["name", "matricule", "studentCode", "className", "parentPhone"]);
+}));
 
-  if (!student) {
+app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+
+  if (typeof repository.getSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Fiche élève PostgreSQL indisponible.");
+  }
+
+  const pgStudent = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+  tenantScopeService.assertSchoolAccess(req.principal, pgStudent.schoolCode);
+  const {
+    authorizeStudentReadForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const authorizedPg = authorizeStudentReadForPrincipal(
+    pgStudent,
+    req.principal,
+    req.params.id,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorizedPg) {
+    return res.status(404).json({ message: "Eleve introuvable" });
+  }
+  return res.json(sanitizeUserForResponse(authorizedPg));
+}));
+
+app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/students/:id"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+
+  if (typeof repository.updateSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Modification élève PostgreSQL indisponible.");
+  }
+
+  const existing = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+  tenantScopeService.assertSchoolAccess(req.principal, existing.schoolCode);
+  const {
+    authorizeStudentReadForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const authorized = authorizeStudentReadForPrincipal(
+    existing,
+    req.principal,
+    req.params.id,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorized) {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  res.json(sanitizeUserForResponse(student));
+  const updated = await repository.updateSchoolStudentByCode(
+    req.params.id,
+    schoolCode,
+    req.body ?? {},
+  );
+  await auditService.record(req, "update_student", "student", updated.studentCode, {
+    studentCode: updated.studentCode,
+  });
+  res.json(sanitizeUserForResponse(updated));
 }));
 
 app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
