@@ -2,6 +2,11 @@
  * PR2 — syncStudentsDomainFromBackOffice est un no-op :
  * ne matérialise plus BO students[] → PG.
  * Les élèves se créent via POST /api/classes/:classCode/students.
+ *
+ * Preuve complémentaire (staff pédagogique toujours actif) :
+ * backend/lib/pedagogyStaffSyncRepository.test.js
+ * (syncPedagogyStaffDomainFromBackOffice accepte teachers/assignments ;
+ *  students/enrollments restent à 0 après PUT BO contenant students[]).
  */
 const assert = require("assert");
 const { PostgresRepository } = require("../db/postgresRepository");

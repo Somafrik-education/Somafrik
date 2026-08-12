@@ -645,7 +645,8 @@ async function run() {
     schoolCode: "SCH-A",
   };
 
-  // 1) Sync staff + élèves
+  // 1) Sync personnel pédagogique (teachers/assignments).
+  // PR2 — students[] dans le payload BO ne matérialise plus PG (projection read-only).
   const staffSaved = await repo.saveBackOfficeState({
     schools: [{ code: "SCH-A", name: "École A" }],
     classes: [{ id: "CLS-A", name: "6e A", schoolCode: "SCH-A" }],
@@ -656,10 +657,73 @@ async function run() {
   });
   assert.ok(staffSaved.syncAck.accepted.some((row) => row.entity === "teachers"));
   assert.ok(staffSaved.syncAck.accepted.some((row) => row.entity === "assignments"));
+  assert.ok(
+    !staffSaved.syncAck.accepted.some((row) => row.entity === "students" || row.entity === "enrollments"),
+    "PR2: syncAck ne doit pas accepter students/enrollments depuis le BO",
+  );
   assert.strictEqual(repo.tables.teachers.length, 1);
   assert.strictEqual(repo.tables.teachers[0].teacher_code, "TEACHERS-A-1");
   assert.ok(repo.tables.teachers[0].user_id, "teachers.user_id non null (02B)");
   assert.strictEqual(repo.tables.teacher_assignments.length, 1);
+  assert.strictEqual(
+    repo.tables.students.length,
+    0,
+    "PR2: syncStudentsDomainFromBackOffice no-op (pas de matérialisation)",
+  );
+  assert.strictEqual(repo.tables.enrollments.length, 0);
+
+  const studentSyncNoop = await repo.syncStudentsDomainFromBackOffice({
+    schools: [{ code: "SCH-A", name: "École A" }],
+    classes: [{ id: "CLS-A", name: "6e A", schoolCode: "SCH-A" }],
+    students: [student],
+  });
+  assert.strictEqual(studentSyncNoop.synced, true);
+  assert.strictEqual(studentSyncNoop.studentCount, 0);
+  assert.strictEqual(studentSyncNoop.enrollmentCount, 0);
+  assert.deepStrictEqual(studentSyncNoop.accepted, { students: [], enrollments: [] });
+
+  // Élève/inscription déjà présents via parcours canonique (Classes → Inscrire),
+  // nécessaires aux notes/évaluations — hors sync BO legacy.
+  const klass =
+    repo.tables.classes.find((row) => String(row.name ?? "").trim() === "6e A") ??
+    (() => {
+      const row = {
+        id: "44444444-4444-4444-8444-444444444444",
+        school_id: schoolAId,
+        name: "6e A",
+        class_code: "CLS-A",
+        status: "active",
+      };
+      repo.tables.classes.push(row);
+      return row;
+    })();
+  let academicYear = repo.tables.academic_years.find((row) => row.school_id === schoolAId);
+  if (!academicYear) {
+    academicYear = {
+      id: "55555555-5555-4555-8555-555555555555",
+      school_id: schoolAId,
+      name: "2025-2026",
+      status: "active",
+    };
+    repo.tables.academic_years.push(academicYear);
+  }
+  const pgStudentId = "22222222-2222-4222-8222-222222222222";
+  repo.tables.students.push({
+    id: pgStudentId,
+    school_id: schoolAId,
+    student_code: "STUDENTS-A-1",
+    first_name: "Eleve",
+    last_name: "Eleve",
+    status: "active",
+  });
+  repo.tables.enrollments.push({
+    id: "33333333-3333-4333-8333-333333333333",
+    school_id: schoolAId,
+    student_id: pgStudentId,
+    class_id: klass.id,
+    academic_year_id: academicYear.id,
+    status: "active",
+  });
   assert.strictEqual(repo.tables.students.length, 1);
   assert.strictEqual(repo.tables.enrollments.length, 1);
 

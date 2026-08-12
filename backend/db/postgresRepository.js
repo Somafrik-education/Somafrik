@@ -761,15 +761,16 @@ class PostgresRepository {
     await this.init();
     const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
     const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
-    // HOTFIX-PRE-E1-01 : élèves/inscriptions PG avant sync notes.
-    // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
-    // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
-    // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
-    let syncAck = { accepted: [], rejected: [] };
-    await this.withTransaction(async (tx) => {
-      const transactional = this.createTxScope(tx);
-      const studentSync = await transactional.syncStudentsDomainFromBackOffice(payload ?? {});
-      const staffSync = await transactional.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
+  // HOTFIX-PRE-E1-01 : sync élèves BO→PG retirée (PR2) — projection read-only.
+  // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
+  // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
+  // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
+  let syncAck = { accepted: [], rejected: [] };
+  await this.withTransaction(async (tx) => {
+    const transactional = this.createTxScope(tx);
+    // No-op intentionnel : ne matérialise plus students/enrollments depuis le BO.
+    const studentSync = await transactional.syncStudentsDomainFromBackOffice(payload ?? {});
+    const staffSync = await transactional.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
       const syncResult = await persistBackOfficeAfterNotesSync({
         payload: payload ?? {},
         syncFn: async (body) => transactional.syncNotesDomainFromBackOffice(body),
