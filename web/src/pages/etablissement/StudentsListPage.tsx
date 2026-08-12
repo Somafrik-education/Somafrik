@@ -11,5 +11,5 @@ import { EntityPage } from "../EntityPage";
  * La fiche / workspace (`StudentWorkspacePage`) reste hors périmètre (D3.1).
  */
 export function StudentsListPage() {
-  return <EntityPage entity="students" />;
+  return <EntityPage entity="students" disableCreate />;
 }

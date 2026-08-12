@@ -4407,6 +4407,32 @@ class PostgresRepository {
     return this.getClassesRepository().update(classCode, schoolCode, body);
   }
 
+  getClassStudentsRepository() {
+    if (!this._classStudentsRepository) {
+      const { createClassStudentsRepository } = require("./classStudentsRepository");
+      this._classStudentsRepository = createClassStudentsRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+      });
+    }
+    return this._classStudentsRepository;
+  }
+
+  listClassStudents(classCode, schoolCode) {
+    return this.getClassStudentsRepository().listByClassCode(classCode, schoolCode);
+  }
+
+  enrollStudentInClass(classCode, schoolCode, body) {
+    return this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+  }
+
+  getSchoolStudentByCode(studentCode, schoolCode) {
+    return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
+  }
+
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,

@@ -126,7 +126,7 @@ export default function App() {
             }
           />
           <Route
-            path="classes/:className/eleves"
+            path="classes/:classCode/eleves"
             element={
               <PermissionRoute view="students">
                 <ClassStudentsPage />

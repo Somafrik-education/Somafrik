@@ -805,6 +805,154 @@ class FallbackRepository {
     current.updatedAt = new Date().toISOString();
     return clone(current);
   }
+
+  getClassStudentsRepository() {
+    if (!this._classStudentsRepo) {
+      const { createClassStudentsRepository } = require("./classStudentsRepository");
+      if (!this._managedStudents) this._managedStudents = [];
+      if (!this._managedEnrollments) this._managedEnrollments = [];
+      const self = this;
+      this._classStudentsRepo = createClassStudentsRepository({
+        async getSchoolByCode(code) {
+          const normalized = String(code ?? "").trim().toUpperCase();
+          if (normalized === String(seedData.school.code).toUpperCase()) {
+            return { id: seedData.school.id, school_code: seedData.school.code };
+          }
+          return { id: `school-${normalized}`, school_code: normalized };
+        },
+        async one(sql, params = []) {
+          const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          if (text.includes("FROM CLASSES CL") && text.includes("WHERE CL.CLASS_CODE")) {
+            const classCode = params[0];
+            const schoolId = params[1];
+            const cls = (self._managedClasses ?? []).find(
+              (row) => row.classCode === classCode && (row.schoolId === schoolId || row.schoolCode),
+            );
+            if (!cls) return null;
+            const year = (self._managedAcademicYears ?? []).find((item) => item.id === cls.academicYearId);
+            return {
+              id: cls.id ?? cls.classCode,
+              class_code: cls.classCode,
+              name: cls.name,
+              status: cls.status,
+              academic_year_id: cls.academicYearId,
+              academic_year_name: cls.academicYearName,
+              academic_year_status: year?.status ?? "open",
+            };
+          }
+          if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
+            return (self._managedStudents ?? [])
+              .filter((row) => row.school_id === params[0])
+              .map((row) => ({ student_code: row.student_code }));
+          }
+          if (text.startsWith("INSERT INTO STUDENTS")) {
+            const row = {
+              id: `stu-${params[1]}`,
+              school_id: params[0],
+              student_code: params[1],
+              first_name: params[2],
+              last_name: params[3],
+              gender: params[4],
+              birth_date: params[5],
+              parent_phone: params[6],
+              parent_email: params[7],
+              status: "active",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            self._managedStudents.push(row);
+            return row;
+          }
+          if (text.startsWith("INSERT INTO ENROLLMENTS")) {
+            const row = {
+              id: `enr-${params[1]}`,
+              school_id: params[0],
+              student_id: params[1],
+              class_id: params[2],
+              academic_year_id: params[3],
+              enrollment_date: new Date().toISOString().slice(0, 10),
+              status: "active",
+            };
+            self._managedEnrollments.push(row);
+            return { id: row.id, enrollment_date: row.enrollment_date };
+          }
+          if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
+            const student = (self._managedStudents ?? []).find(
+              (row) => row.student_code === params[0] && row.school_id === params[1],
+            );
+            if (!student) return null;
+            const enrollment = (self._managedEnrollments ?? []).find(
+              (row) => row.student_id === student.id && row.status === "active",
+            );
+            const cls = (self._managedClasses ?? []).find((row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id);
+            const year = (self._managedAcademicYears ?? []).find((item) => item.id === enrollment?.academic_year_id);
+            return {
+              ...student,
+              school_code: params[1] === seedData.school.id ? seedData.school.code : `school-${params[1]}`,
+              class_code: cls?.classCode ?? "",
+              class_name: cls?.name ?? "",
+              academic_year_name: year?.name ?? cls?.academicYearName ?? "",
+              enrollment_id: enrollment?.id ?? null,
+              enrollment_date: enrollment?.enrollment_date ?? null,
+            };
+          }
+          return null;
+        },
+        async all(sql, params = []) {
+          const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.CLASS_ID")) {
+            const classId = params[0];
+            const schoolId = params[1];
+            return (self._managedEnrollments ?? [])
+              .filter((row) => row.class_id === classId && row.status === "active")
+              .map((enrollment) => {
+                const student = (self._managedStudents ?? []).find(
+                  (row) => row.id === enrollment.student_id && row.school_id === schoolId,
+                );
+                const cls = (self._managedClasses ?? []).find((row) => row.id === classId || row.classCode === classId);
+                return student
+                  ? {
+                      ...student,
+                      school_code: seedData.school.code,
+                      class_code: cls?.classCode ?? "",
+                      class_name: cls?.name ?? "",
+                      academic_year_name: cls?.academicYearName ?? "",
+                      enrollment_id: enrollment.id,
+                      enrollment_date: enrollment.enrollment_date,
+                    }
+                  : null;
+              })
+              .filter(Boolean);
+          }
+          if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
+            return (self._managedStudents ?? [])
+              .filter((row) => row.school_id === params[0])
+              .map((row) => ({ student_code: row.student_code }));
+          }
+          return [];
+        },
+        async query() {
+          return { rows: [] };
+        },
+        async withTransaction(fn) {
+          return fn();
+        },
+      });
+    }
+    return this._classStudentsRepo;
+  }
+
+  listClassStudents(classCode, schoolCode) {
+    return this.getClassStudentsRepository().listByClassCode(classCode, schoolCode);
+  }
+
+  enrollStudentInClass(classCode, schoolCode, body) {
+    return this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+  }
+
+  getSchoolStudentByCode(studentCode, schoolCode) {
+    return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
+  }
 }
 
 module.exports = { FallbackRepository };

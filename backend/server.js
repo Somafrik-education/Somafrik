@@ -213,6 +213,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/backoffice/login",
       "/api/school",
       "/api/classes",
+      "/api/classes/:classCode/students",
       "/api/courses",
       "/api/academic-config",
       "/api/assignments",
@@ -549,6 +550,27 @@ app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/
   res.json(updated);
 }));
 
+app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listClassStudents(req.params.classCode, schoolCode);
+  res.json(rows);
+}));
+
+app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.enrollStudentInClass(req.params.classCode, schoolCode, req.body ?? {});
+  await auditService.record(req, "enroll_student", "student", created.studentCode, created);
+  res.status(201).json(created);
+}));
+
 app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
@@ -659,6 +681,19 @@ app.get("/api/students", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (schoolCode && schoolCode !== "*" && typeof repository.getSchoolStudentByCode === "function") {
+    try {
+      const pgStudent = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+      tenantScopeService.assertSchoolAccess(req.principal, pgStudent.schoolCode);
+      return res.json(sanitizeUserForResponse(pgStudent));
+    } catch (error) {
+      if (error?.statusCode !== 404) {
+        throw error;
+      }
+    }
+  }
+
   const { students } = await getAuthoritativeBackOfficeState();
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
 
