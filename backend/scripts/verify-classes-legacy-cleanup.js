@@ -102,8 +102,13 @@ function runUnitGuards() {
   const entityPage = fs.readFileSync(path.join(ROOT, "web/src/pages/EntityPage.tsx"), "utf8");
   assert.match(
     entityPage,
-    /entity === "classes"[\s\S]*Navigate to="\/etablissement\/classes"/,
-    "EntityPage redirige Classes vers /etablissement/classes",
+    /props\.entity === "classes"[\s\S]*Navigate to="\/etablissement\/classes"/,
+    "EntityPage redirige Classes vers /etablissement/classes (wrapper hors Hooks)",
+  );
+  assert.match(
+    entityPage,
+    /function EntityPageContent\(/,
+    "EntityPageContent isole les Hooks hors branche Classes",
   );
   assert.doesNotMatch(
     entityPage,

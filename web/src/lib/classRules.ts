@@ -1,5 +1,4 @@
 import { normalize } from "./format";
-import type { BackOfficeState } from "../types";
 
 type Row = Record<string, unknown>;
 

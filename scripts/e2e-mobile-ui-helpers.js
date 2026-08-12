@@ -1854,7 +1854,7 @@ async function assertResponsiveAuthenticatedUi(page, viewport, results, stepPref
 
   await assertElementsWithinViewportWidth(
     page,
-    [CLASSES_STUDENT_TEST_IDS.classesTitle, CLASSES_LOADING_TEST_IDS.addClassButton],
+    [CLASSES_STUDENT_TEST_IDS.classesTitle],
     viewport,
     results,
     `${prefix}Classes — en-tête sans débordement`,

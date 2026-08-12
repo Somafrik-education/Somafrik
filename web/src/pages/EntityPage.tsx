@@ -150,6 +150,7 @@ import {
   resolveStudentMatricule,
   resolveTeacherIdentifiers,
 } from "../lib/entityIdentifiers";
+
 function normalizeTeacherFormProps(row: Record<string, unknown>): Record<string, unknown> {
   const next = { ...row };
   if (!String(next.identifier ?? "").trim() && String(next.publicId ?? "").trim()) {
@@ -197,12 +198,17 @@ interface EntityPageProps {
   disableCreate?: boolean;
 }
 
-export function EntityPage({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
-  // Clôture CRUD legacy Classes — EntityPage ne gère plus cette entité.
-  if (entity === "classes") {
+/**
+ * Clôture CRUD legacy Classes : redirection hors EntityPage, sans Hooks conditionnels.
+ */
+export function EntityPage(props: EntityPageProps) {
+  if (props.entity === "classes") {
     return <Navigate to="/etablissement/classes" replace />;
   }
+  return <EntityPageContent {...props} />;
+}
 
+function EntityPageContent({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
   const module = getEntityModule(entity);
   const { session } = useAuth();
   const { state, update } = useData();
@@ -1116,7 +1122,7 @@ export function EntityPage({ entity, mode, classScope, disableCreate = false }: 
           : module.key === "relations" && isParentChildMode
             ? parentChildBundleToForm(row)
             : module.key === "teachers"
-              ? normalizeTeacherFormRow({ ...row })
+              ? normalizeTeacherFormProps({ ...row })
               : { ...row };
       setEditing(next);
     },

@@ -13,7 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { getPresenceRate } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
+import { canReadRoute } from "../domain/security/permissions";
 import {
   classNameMatches,
   scopedClassesForSession,
@@ -58,7 +58,6 @@ export default function ClassesScreen({ navigation }: any) {
   const visibleStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
   const visibleClasses = scopedClassesForSession(session, classesData, studentsData, teacherScopeState);
   const totalStudents = visibleStudents.length;
-  const canCreateClass = canMutateEntity(session, "classes", "CREATE");
   const canOpenStudents = canReadRoute(session, session?.role === "teacher" ? "TeacherStudents" : "Students");
 
   useFocusEffect(
@@ -102,24 +101,6 @@ export default function ClassesScreen({ navigation }: any) {
               Gérez les classes et les élèves
             </Text>
           </View>
-
-          {canCreateClass && (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[styles.addButton, styles.disabledControl]}
-              disabled
-              testID={CLASSES_LOADING_TEST_IDS.addClassButton}
-              accessibilityState={{ disabled: true }}
-              aria-disabled
-              onPress={() => {
-                setOfflineActionMessage(
-                  "La création de classes se fait via l'API /api/classes (plateforme web).",
-                );
-              }}
-            >
-              <Ionicons name="add" size={26} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
         </View>
 
         <View style={[styles.searchBox, blockNetworkActions && styles.disabledControl]} pointerEvents={blockNetworkActions ? "none" : "auto"}>
@@ -278,20 +259,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#64748B",
-  },
-
-  addButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 18,
-    backgroundColor: "#2563EB",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#2563EB",
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
   },
 
   disabledControl: {
