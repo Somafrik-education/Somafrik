@@ -257,7 +257,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     label: "Élèves",
     feature: "Élèves",
     group: "utilisateurs",
-    description: "Effectifs, classes et dossiers élèves. Matricule généré automatiquement (ex. ELE-0001-0001-000001).",
+    description: "Effectifs, classes et dossiers élèves. Matricule généré automatiquement (ex. ELE-CD-0001-0001-000001).",
     fields: [
       { key: "name", label: "Nom complet", placeholder: "Nom de l'élève" },
       { key: "firstName", label: "Prénom", placeholder: "Prénom" },

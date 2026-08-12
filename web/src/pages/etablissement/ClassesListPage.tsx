@@ -188,7 +188,7 @@ export function ClassesListPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Link
               className="text-sm underline"
-              to={`/etablissement/classes/${encodeURIComponent(row.name)}/eleves`}
+              to={`/etablissement/classes/${encodeURIComponent(row.classCode)}/eleves`}
             >
               Élèves
             </Link>

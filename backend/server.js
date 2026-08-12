@@ -213,6 +213,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/backoffice/login",
       "/api/school",
       "/api/classes",
+      "/api/classes/:classCode/students",
       "/api/courses",
       "/api/academic-config",
       "/api/assignments",
@@ -322,42 +323,11 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
     response.user = { ...response.user, children };
   }
   // HOTFIX-PRE-E1-02 : enrichir la session enseignant avec affectations BO (IDs stables),
-  // sans élargir les droits — alimente principal.classNames pour les gardes notes.
+  // sans élargir les droits — affectations explicitement actives uniquement (fail-closed).
   if (response?.user?.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
-    const {
-      resolveTeacherAssignments,
-      resolveTeacherAssignedClasses,
-    } = require("./services/authService");
-    const userId = String(response.user.id ?? "").trim();
-    const identifier = String(response.user.identifier ?? "").trim().toLowerCase();
-    const linkedTeachers = (state.teachers ?? []).filter((row) => {
-      const ids = [row.userId, row.id, row.publicId, row.contactId].map((value) =>
-        String(value ?? "").trim(),
-      );
-      if (userId && ids.includes(userId)) return true;
-      return identifier && String(row.identifier ?? "").trim().toLowerCase() === identifier;
-    });
-    const teacher =
-      linkedTeachers.find(
-        (row) => resolveTeacherAssignments(row, response.user, state.assignments ?? []).length > 0,
-      ) ??
-      linkedTeachers[0] ??
-      null;
-    if (teacher) {
-      const assignments = resolveTeacherAssignments(teacher, response.user, state.assignments ?? []);
-      const assignedClasses = resolveTeacherAssignedClasses(
-        teacher,
-        response.user,
-        state.assignments ?? [],
-      );
-      response.user = {
-        ...response.user,
-        assignments,
-        assignedClasses,
-        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
-      };
-    }
+    const { enrichTeacherUserWithActiveAssignments } = require("./lib/teacherSessionAssignments");
+    response.user = enrichTeacherUserWithActiveAssignments(response.user, state);
   }
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
 }));
@@ -406,6 +376,25 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
     identifier: payload.identifier,
     publicId: payload.publicId,
   });
+
+  // Reconstruire les affectations depuis l'état autoritatif (pas depuis l'ancien jeton).
+  let assignmentFields = {};
+  if (session.role === "Enseignant") {
+    const state = await getAuthoritativeBackOfficeState();
+    const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
+    assignmentFields = teacherPrincipalAssignmentFields(
+      {
+        id: session.user_code ?? payload.sub ?? session.user_id,
+        sub: payload.sub ?? session.user_id,
+        identifier: payload.identifier,
+        publicId: payload.publicId,
+        schoolCode: session.school_code ?? payload.schoolCode,
+        role: "Enseignant",
+      },
+      state,
+    );
+  }
+
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
     role: session.role,
@@ -417,6 +406,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
     identifier: payload.identifier,
     publicId: payload.publicId,
     mustChangePassword,
+    ...assignmentFields,
   });
 
   res.json({
@@ -466,31 +456,8 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   // HOTFIX-PRE-E1-02 : ne pas perdre assignedClasses après change-password.
   if (safeUser.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
-    const {
-      resolveTeacherAssignments,
-      resolveTeacherAssignedClasses,
-    } = require("./services/authService");
-    const userId = String(safeUser.id ?? req.principal.sub ?? "").trim();
-    const linkedTeachers = (state.teachers ?? []).filter((row) =>
-      [row.userId, row.id, row.publicId, row.contactId].some(
-        (value) => String(value ?? "").trim() === userId,
-      ),
-    );
-    const teacher =
-      linkedTeachers.find(
-        (row) => resolveTeacherAssignments(row, safeUser, state.assignments ?? []).length > 0,
-      ) ??
-      linkedTeachers[0] ??
-      null;
-    if (teacher) {
-      const assignments = resolveTeacherAssignments(teacher, safeUser, state.assignments ?? []);
-      safeUser = {
-        ...safeUser,
-        assignments,
-        assignedClasses: resolveTeacherAssignedClasses(teacher, safeUser, state.assignments ?? []),
-        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
-      };
-    }
+    const { enrichTeacherUserWithActiveAssignments } = require("./lib/teacherSessionAssignments");
+    safeUser = enrichTeacherUserWithActiveAssignments(safeUser, state);
   }
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(
@@ -547,6 +514,47 @@ app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/
   const updated = await repository.updateSchoolClass(req.params.classCode, schoolCode, req.body ?? {});
   await auditService.record(req, "update_class", "class", updated.classCode, updated);
   res.json(updated);
+}));
+
+app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listClassStudents(req.params.classCode, schoolCode);
+  let className = rows[0]?.className ?? "";
+  if (!className) {
+    const classes = await repository.listSchoolClasses(schoolCode);
+    const match = (classes ?? []).find(
+      (item) => String(item.classCode ?? "").trim() === String(req.params.classCode ?? "").trim(),
+    );
+    className = String(match?.name ?? "").trim();
+  }
+  const {
+    scopeClassStudentsForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const scoped = scopeClassStudentsForPrincipal(
+    req.principal,
+    {
+      classCode: String(req.params.classCode ?? "").trim(),
+      className,
+    },
+    rows,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  res.json(scoped);
+}));
+
+app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.enrollStudentInClass(req.params.classCode, schoolCode, req.body ?? {});
+  await auditService.record(req, "enroll_student", "student", created.studentCode, created);
+  res.status(201).json(created);
 }));
 
 app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
@@ -659,6 +667,31 @@ app.get("/api/students", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/students/:id", requireAuth, asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (schoolCode && schoolCode !== "*" && typeof repository.getSchoolStudentByCode === "function") {
+    try {
+      const pgStudent = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+      tenantScopeService.assertSchoolAccess(req.principal, pgStudent.schoolCode);
+      const {
+        authorizeStudentReadForPrincipal,
+      } = require("./lib/classStudentsAuthz");
+      const authorizedPg = authorizeStudentReadForPrincipal(
+        pgStudent,
+        req.principal,
+        req.params.id,
+        resolveAuthorizedStudentForPrincipal,
+      );
+      if (!authorizedPg) {
+        return res.status(404).json({ message: "Eleve introuvable" });
+      }
+      return res.json(sanitizeUserForResponse(authorizedPg));
+    } catch (error) {
+      if (error?.statusCode !== 404) {
+        throw error;
+      }
+    }
+  }
+
   const { students } = await getAuthoritativeBackOfficeState();
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
 
@@ -3634,6 +3667,13 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     rolePermissionsMap
   );
 
+  const {
+    filterActiveTeacherAssignments,
+  } = require("./lib/classStudentsAuthz");
+  const activeAssignments = filterActiveTeacherAssignments(
+    Array.isArray(user.assignments) ? user.assignments : [],
+  );
+
   return {
     sub: user.id ?? user.publicId ?? user.matricule ?? "anonymous",
     identifier: user.identifier,
@@ -3649,12 +3689,25 @@ function buildPrincipal(response, rolePermissionsMap = null) {
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim()),
     studentIds: getPrincipalStudentIds(response),
+    // Uniquement dérivé des affectations explicitement actives (fail-closed).
     classNames: [
-      ...new Set([
-        ...(user.assignedClasses ?? []),
-        ...((user.assignments ?? []).map((item) => item.className).filter(Boolean)),
-      ]),
+      ...new Set(activeAssignments.map((item) => item.className).filter(Boolean)),
     ],
+    classCodes: [
+      ...new Set(
+        activeAssignments
+          .map((item) => item.classCode ?? item.class_code)
+          .filter(Boolean),
+      ),
+    ],
+    classIds: [
+      ...new Set(
+        activeAssignments
+          .map((item) => item.classId ?? item.class_id)
+          .filter(Boolean),
+      ),
+    ],
+    assignments: activeAssignments,
   };
 }
 

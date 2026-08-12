@@ -908,9 +908,9 @@ const teachers = [
     mainSubject: "Mathematiques",
     password: "1234",
     assignments: [
-      { className: "6ème A", course: "Mathématiques" },
-      { className: "6ème B", course: "Mathématiques" },
-      { className: "5ème A", course: "Physique" },
+      { className: "6ème A", course: "Mathématiques" , status: "active" },
+      { className: "6ème B", course: "Mathématiques" , status: "active" },
+      { className: "5ème A", course: "Physique" , status: "active" },
     ],
   },
   {
@@ -926,8 +926,8 @@ const teachers = [
     mainSubject: "Francais",
     password: "1234",
     assignments: [
-      { className: "6ème A", course: "Français" },
-      { className: "5ème B", course: "Français" },
+      { className: "6ème A", course: "Français" , status: "active" },
+      { className: "5ème B", course: "Français" , status: "active" },
     ],
   },
   {
@@ -943,8 +943,8 @@ const teachers = [
     mainSubject: "Sciences",
     password: "1234",
     assignments: [
-      { className: "6ème B", course: "Sciences" },
-      { className: "5ème A", course: "Sciences" },
+      { className: "6ème B", course: "Sciences" , status: "active" },
+      { className: "5ème A", course: "Sciences" , status: "active" },
     ],
   },
   {
@@ -960,8 +960,8 @@ const teachers = [
     mainSubject: "Histoire",
     password: "1234",
     assignments: [
-      { className: "5ème A", course: "Histoire" },
-      { className: "5ème B", course: "Histoire" },
+      { className: "5ème A", course: "Histoire" , status: "active" },
+      { className: "5ème B", course: "Histoire" , status: "active" },
     ],
   },
 ];
@@ -1225,7 +1225,7 @@ courses.forEach((course, index) => {
     (assignment) => assignment.className === course.className && assignment.course === course.name
   );
   if (!exists) {
-    teacher.assignments.push({ className: course.className, course: course.name });
+    teacher.assignments.push({ className: course.className, course: course.name, status: "active" });
   }
 });
 
@@ -1302,6 +1302,7 @@ const teacherAssignments = teachers.flatMap((teacher) =>
     className: assignment.className,
     subject: assignment.course,
     course: assignment.course,
+    status: assignment.status,
   })),
 );
 

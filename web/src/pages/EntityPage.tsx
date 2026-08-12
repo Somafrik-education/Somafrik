@@ -199,9 +199,11 @@ interface EntityPageProps {
   mode?: "parentChildRelations";
   /** Limite la liste et la création à une classe (gestion depuis Classes). */
   classScope?: string;
+  /** Masque le bouton d'ajout (ex. liste générale élèves en consultation). */
+  disableCreate?: boolean;
 }
 
-export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
+export function EntityPage({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
   const module = getEntityModule(entity);
   const { session } = useAuth();
   const { state, update } = useData();
@@ -260,6 +262,7 @@ export function EntityPage({ entity, mode, classScope }: EntityPageProps) {
   const assignmentModule = useMemo(() => getEntityModule("assignments"), []);
   const allowCreate =
     canCreate &&
+    !disableCreate &&
     !module?.planningManaged &&
     module?.key !== "payments" &&
     !entityCreateViaContactsOnly(module?.key ?? "");

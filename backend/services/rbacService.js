@@ -23,6 +23,8 @@ const routePermissions = {
   "GET /api/classes": ["Voir classes", "Gérer classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/classes": ["Gérer classes", "ALL_PRIVILEGES"],
   "PATCH /api/classes/:classCode": ["Gérer classes", "ALL_PRIVILEGES"],
+  "GET /api/classes/:classCode/students": ["Élèves:READ", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/classes/:classCode/students": ["Élèves:CREATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/assignments": ["Affectations:READ", "Gérer cours", "Voir classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "Voir rapports financiers", "Suivre abonnements pays", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/payments": ["Paiements:CREATE", "Paiements:UPDATE", "Gérer paiements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
