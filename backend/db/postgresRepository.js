@@ -84,6 +84,7 @@ class PostgresRepository {
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
+    await this.ensureTeachersDomainConstraints();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -411,6 +412,29 @@ class PostgresRepository {
     await this.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
   }
 
+  /**
+   * Teachers — unicité atomique (school_id, user_id) pour fiche canonique liée.
+   * Ordre : inventaire doublons (fail-safe) → index unique partiel.
+   * Interdit : suppression silencieuse des fiches en doublon.
+   */
+  async ensureTeachersDomainConstraints() {
+    const {
+      COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
+      LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
+      CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL,
+      formatTeachersSchoolUserDuplicateDiagnostic,
+    } = require("../lib/teachersUniqueness");
+
+    const before = await this.one(COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
+    const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+    if (duplicateGroups > 0) {
+      const groups = await this.all(LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
+      throw new Error(formatTeachersSchoolUserDuplicateDiagnostic(groups, duplicateGroups));
+    }
+
+    await this.query(CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL);
+  }
+
   async getDataset() {
     await this.init();
 
@@ -467,7 +491,8 @@ class PostgresRepository {
       `),
       this.all("SELECT * FROM subjects ORDER BY created_at, subject_code"),
       this.all(`
-        SELECT t.*, s.school_code, u.first_name, u.last_name, u.email, u.phone, u.password_hash, u.pin_hash
+        SELECT t.*, s.school_code, u.first_name, u.last_name, u.email, u.phone,
+               u.password_hash, u.pin_hash, u.birth_date, u.gender, u.must_change_password
         FROM teachers t
         JOIN schools s ON s.id = t.school_id
         LEFT JOIN users u ON u.id = t.user_id
@@ -4077,7 +4102,8 @@ class PostgresRepository {
       publicId: user.user_code,
       lastName: user.last_name,
       firstName: user.first_name,
-      gender: "",
+      gender: user.gender ?? "",
+      birthDate: this.formatDate(user.birth_date),
       phone: user.phone,
       email: user.email,
       role,
@@ -4201,10 +4227,15 @@ class PostgresRepository {
       identifier: this.extractTeacherLoginId(teacher.teacher_code),
       name: [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || teacher.teacher_code,
       firstName: teacher.first_name,
-      gender: "",
+      lastName: teacher.last_name ?? "",
+      gender: teacher.gender ?? "",
+      birthDate: this.formatDate(teacher.birth_date),
+      entryDate: this.formatDate(teacher.hire_date),
       phone: teacher.phone,
       email: teacher.email,
       mainSubject: teacher.speciality,
+      speciality: teacher.speciality,
+      mustChangePassword: Boolean(teacher.must_change_password),
       passwordHash: teacher.pin_hash ?? teacher.password_hash,
       assignments,
     };
@@ -4465,6 +4496,35 @@ class PostgresRepository {
 
   getSchoolStudentByCode(studentCode, schoolCode) {
     return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
+  }
+
+  getTeachersRepository() {
+    if (!this._teachersRepository) {
+      const { createTeachersRepository } = require("./teachersRepository");
+      this._teachersRepository = createTeachersRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+        onTeacherCreated: async () => {
+          this.cachedDataset = null;
+        },
+      });
+    }
+    return this._teachersRepository;
+  }
+
+  listSchoolTeachers(schoolCode) {
+    return this.getTeachersRepository().listBySchoolCode(schoolCode);
+  }
+
+  getSchoolTeacherByCode(teacherCode, schoolCode) {
+    return this.getTeachersRepository().getByTeacherCode(teacherCode, schoolCode);
+  }
+
+  createSchoolTeacher(body, schoolCode) {
+    return this.getTeachersRepository().create(body, schoolCode);
   }
 
   async getGradeById(id) {

@@ -219,6 +219,8 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/assignments",
       "/api/students",
       "/api/students/:id",
+      "/api/teachers",
+      "/api/teachers/:teacherCode",
       "/api/students/:id/notes",
       "/api/notes",
       "/api/presences",
@@ -924,17 +926,88 @@ app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res)
 }));
 
 app.get("/api/teachers", requireAuth, requirePermission("GET /api/teachers"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  const result = tenantScopeService.filterRows(state.teachers, req.principal, scope).map((teacher) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listSchoolTeachers(schoolCode);
+  const result = rows.map((teacher) => {
     const safeTeacher = sanitizeUserForResponse(teacher);
     return {
       ...safeTeacher,
-      assignedClasses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.className))],
-      courses: [...new Set((safeTeacher.assignments ?? []).map((item) => item.course))],
+      assignedClasses: [
+        ...new Set(
+          (safeTeacher.assignedClasses?.length
+            ? safeTeacher.assignedClasses
+            : (safeTeacher.assignments ?? []).map((item) => item.className)
+          ).filter(Boolean),
+        ),
+      ],
+      courses: [
+        ...new Set(
+          (safeTeacher.courses?.length
+            ? safeTeacher.courses
+            : (safeTeacher.assignments ?? []).map((item) => item.course)
+          ).filter(Boolean),
+        ),
+      ],
     };
   });
-  sendList(res, result, req.query, ["name", "phone", "email", "mainSubject"]);
+  sendList(res, result, req.query, ["name", "phone", "email", "mainSubject", "firstName", "lastName"]);
+}));
+
+app.get("/api/teachers/:teacherCode", requireAuth, requirePermission("GET /api/teachers/:teacherCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const teacher = await repository.getSchoolTeacherByCode(req.params.teacherCode, schoolCode);
+  const safeTeacher = sanitizeUserForResponse(teacher);
+  res.json({
+    ...safeTeacher,
+    assignedClasses: [
+      ...new Set(
+        (safeTeacher.assignedClasses?.length
+          ? safeTeacher.assignedClasses
+          : (safeTeacher.assignments ?? []).map((item) => item.className)
+        ).filter(Boolean),
+      ),
+    ],
+    courses: [
+      ...new Set(
+        (safeTeacher.courses?.length
+          ? safeTeacher.courses
+          : (safeTeacher.assignments ?? []).map((item) => item.course)
+        ).filter(Boolean),
+      ),
+    ],
+  });
+}));
+
+app.post("/api/teachers", requireAuth, requirePermission("POST /api/teachers"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { withIdempotency } = require("./services/idempotencyService");
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/teachers",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.createSchoolTeacher(req.body ?? {}, schoolCode);
+      await auditService.record(req, "create_teacher", "teacher", created.teacherCode, {
+        teacherCode: created.teacherCode,
+        identifier: created.identifier,
+        schoolCode: created.schoolCode,
+      });
+      return { statusCode: 201, body: sanitizeUserForResponse(created) };
+    },
+  });
 }));
 
 app.get("/api/users", requireAuth, requirePermission("GET /api/users"), asyncHandler(async (req, res) => {

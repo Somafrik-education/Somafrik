@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
 
 CREATE TABLE IF NOT EXISTS academic_years (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -154,6 +156,11 @@ CREATE TABLE IF NOT EXISTS teachers (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Unicité (school_id, user_id) : index créé APRÈS inventaire fail-safe dans
+-- postgresRepository.ensureTeachersDomainConstraints() /
+-- migration 20260812_teachers_school_user_uniqueness.sql (bases legacy avec doublons).
+-- Ne pas créer l'index ici : schema.sql s'exécute avant la migration contrôlée.
 
 CREATE TABLE IF NOT EXISTS students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
