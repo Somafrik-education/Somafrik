@@ -243,7 +243,6 @@ async function main() {
     method: "PUT",
     token: superToken,
     body: {
-      ...(await getState(superToken)),
       students: [
         {
           id: `STUDENTS-ORPHAN-${stamp}`,
@@ -253,13 +252,12 @@ async function main() {
           className: "1ère A",
           matricule: `ORPHAN-${stamp}`,
         },
-        ...(state.students ?? []),
       ],
     },
   });
   pushResult(
     results,
-    "13. API refuse élève sans contact (CONTACT-004)",
+    "13. API refuse écriture élèves legacy via state (PR2)",
     "400",
     String(orphanStudentRes.status),
     orphanStudentRes.status === 400,

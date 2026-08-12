@@ -18,7 +18,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
   "contacts",
   "relations",
   "users",
-  "students",
   "teachers",
   "courses",
   "assignments",
@@ -49,7 +48,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
  * (Utilisateurs/Contacts/Notes/Frais = lecture seule ou « - »)
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
-  "students",
   "presences",
   "payments",
   "paymentStatuses",
@@ -73,7 +71,6 @@ const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([
  * Préfet / Proviseur / Directeur adjoint — pédagogie (matrix Préfet CRUD).
  */
 const PREFET_WRITABLE_ENTITIES = Object.freeze([
-  "students",
   "teachers",
   "courses",
   "assignments",

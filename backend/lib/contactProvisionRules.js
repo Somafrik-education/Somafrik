@@ -1,10 +1,11 @@
 /**
  * CONTACT-004 / RB-003 — provisionnement via Contacts uniquement (API).
+ * PR2 — les fiches élèves ne sont plus provisionnées via Contacts / BO state ;
+ * elles passent par POST /api/classes/:classCode/students. Règles enseignant / users conservées.
  */
 const { ESTABLISHMENT_BACKOFFICE_ROLES } = require("./establishmentRoles");
 const {
   isPlatformUser,
-  studentLinkedToContacts,
   teacherLinkedToContacts,
 } = require("./contactRegistrySync");
 
@@ -51,8 +52,43 @@ function buildEffectiveState(state = {}, payload = {}, touchedKeys = []) {
   return merged;
 }
 
-function validateContactProvision(_state = {}, _payload = {}, _touchedKeys = []) {
-  return [];
+function validateContactProvision(state = {}, payload = {}, touchedKeys = []) {
+  const errors = [];
+  const effectiveState = buildEffectiveState(state, payload, touchedKeys);
+  const contacts = effectiveState.contacts ?? [];
+
+  if (touchedKeys.includes("users")) {
+    for (const user of listNewRows(state.users, payload.users)) {
+      if (!userRequiresContact(user)) continue;
+      const contactId = String(user.contactId ?? "").trim();
+      const contactExists = contactId && contacts.some((row) => String(row.id ?? "") === contactId);
+      if (!contactExists) {
+        errors.push({
+          entity: "users",
+          id: rowKey(user),
+          message:
+            "Compte utilisateur métier (enseignant, parent, élève) : créez d'abord un contact avec accès (CONTACT-004).",
+        });
+      }
+    }
+  }
+
+  // PR2 — no-op students : plus de provisionnement fiche élève via Contacts / BO.
+  // (touchedKeys "students" ignoré volontairement)
+
+  if (touchedKeys.includes("teachers")) {
+    for (const teacher of listNewRows(state.teachers, payload.teachers)) {
+      if (teacherLinkedToContacts(teacher, contacts)) continue;
+      errors.push({
+        entity: "teachers",
+        id: rowKey(teacher),
+        message:
+          "Fiche enseignant : créez ou reliez un contact de type Enseignant dans Contacts avant d'ajouter la fiche (CONTACT-004).",
+      });
+    }
+  }
+
+  return errors;
 }
 
 module.exports = {

@@ -1,8 +1,9 @@
 /**
  * Synchronise le registre Contacts comme source de vérité :
- * - relie contacts ↔ élèves / enseignants / utilisateurs
- * - supprime les fiches orphelines (sans contact)
- * - nettoie les données dépendantes (notes, présences, etc.)
+ * - relie contacts ↔ enseignants / utilisateurs (pas les élèves)
+ * - supprime les fiches enseignant orphelines (sans contact)
+ * - conserve la projection students intacte (création via API classes)
+ * - nettoie les données dépendantes enseignants / contacts
  */
 const { PedagogyGovernanceService } = require("../services/pedagogyGovernanceService");
 const { SUPER_ADMIN_ROLES, ESTABLISHMENT_BACKOFFICE_ROLES } = require("./establishmentRoles");
@@ -10,6 +11,7 @@ const { provisionUserFromContact } = require("./contactUserProvision");
 
 const pedagogyGovernanceService = new PedagogyGovernanceService();
 
+/** Types contact élève : plus de création/mutation de fiche via le registre (PR2). */
 const STUDENT_CONTACT_TYPES = new Set(["Élève", "Étudiant"]);
 const TEACHER_CONTACT_TYPES = new Set(["Enseignant"]);
 
@@ -74,56 +76,14 @@ function linkContactToOperationalRecord(contact, state) {
   const schoolCode = String(contact.schoolCode ?? "").trim();
   if (!contactId || !schoolCode) return { contact, students: null, teachers: null };
 
+  // PR2 — contacts Élève/Étudiant : no-op fiche (comme type inconnu).
+  // Les élèves se créent via POST /api/classes/:classCode/students uniquement.
+  if (STUDENT_CONTACT_TYPES.has(contactType)) {
+    return { contact, students: null, teachers: null };
+  }
+
   const lastName = String(contact.lastName ?? "").trim();
   const firstName = String(contact.firstName ?? "").trim();
-
-  if (STUDENT_CONTACT_TYPES.has(contactType)) {
-    const students = [...(state.students ?? [])];
-    const idx = findFicheIndex(students, contact, contactId, schoolCode);
-    if (idx >= 0) {
-      const existing = students[idx];
-      students[idx] = {
-        ...existing,
-        name: existing.name || lastName,
-        firstName: existing.firstName || firstName,
-        schoolCode: existing.schoolCode ?? schoolCode,
-        gender: existing.gender ?? contact.gender,
-        birthDate: existing.birthDate ?? contact.birthDate,
-        phone: existing.phone ?? contact.phone,
-        email: existing.email ?? contact.email,
-        contactId,
-      };
-      return {
-        contact: { ...contact, studentId: String(existing.id ?? "") },
-        students,
-        teachers: null,
-        linkedType: "student",
-      };
-    }
-    const id = newRecordId("STUDENTS");
-    const record = {
-      id,
-      name: lastName,
-      firstName,
-      className: "",
-      schoolCode,
-      gender: contact.gender ?? "Non renseigné",
-      birthDate: contact.birthDate ?? "",
-      phone: contact.phone ?? "",
-      email: contact.email ?? "",
-      matricule: id,
-      publicId: id,
-      archived: false,
-      contactId,
-    };
-    return {
-      contact: { ...contact, studentId: id },
-      students: [record, ...students],
-      teachers: null,
-      linkedType: "student",
-      created: true,
-    };
-  }
 
   if (TEACHER_CONTACT_TYPES.has(contactType)) {
     const teachers = [...(state.teachers ?? [])];
@@ -362,18 +322,19 @@ function syncContactRegistry(state = {}) {
   });
 
   const contacts = next.contacts;
-  const beforeStudents = next.students.length;
   const beforeTeachers = next.teachers.length;
   const beforeUsers = next.users.length;
 
-  next.students = next.students.filter((student) => studentLinkedToContacts(student, contacts));
+  // PR2 — ne pas purger la projection students (orphelins contacts conservés).
+  // La purge orpheline reste active pour teachers / users.
   next.teachers = next.teachers.filter((teacher) => teacherLinkedToContacts(teacher, contacts));
   next.users = next.users.filter((user) => userLinkedToContacts(user, contacts));
 
-  report.removed.students = beforeStudents - next.students.length;
+  report.removed.students = 0;
   report.removed.teachers = beforeTeachers - next.teachers.length;
   report.removed.users = beforeUsers - next.users.length;
 
+  // Toutes les clés students de la projection : évite de purger notes/présences/etc. à tort.
   const keptStudentKeys = new Set(next.students.flatMap((student) => collectStudentKeys(student)));
   const keptTeacherKeys = new Set(next.teachers.flatMap((teacher) => collectTeacherKeys(teacher)));
   const keptContactIds = new Set(contacts.map((contact) => String(contact.id ?? "").trim()).filter(Boolean));

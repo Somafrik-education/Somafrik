@@ -1985,64 +1985,18 @@ class PostgresRepository {
   }
 
   /**
-   * HOTFIX-PRE-E1-01 — Sync BO students[] → PG students + enrollments.
-   * No-op si `students` absent (PUT partiel). Rejets métier sans throw global.
+   * PR2 — Sync BO students[] → PG retirée.
+   * Les élèves se créent uniquement via POST /api/classes/:classCode/students.
+   * Conservé comme no-op pour ne pas casser l’orchestration PUT state / notes.
+   * state.students reste une projection read-only pour modules non reconstruits.
    */
-  async syncStudentsDomainFromBackOffice(payload = {}) {
-    const {
-      shouldSyncStudentsFromPayload,
-      validateStudentSyncRecord,
-    } = require("../lib/studentsBoPersistence");
-    const accepted = { students: [], enrollments: [] };
-    const rejected = [];
-    if (!shouldSyncStudentsFromPayload(payload)) {
-      return { synced: true, accepted, rejected, studentCount: 0, enrollmentCount: 0 };
-    }
-
-    const context = {
-      schools: Array.isArray(payload.schools) ? payload.schools : [],
-      classes: Array.isArray(payload.classes) ? payload.classes : [],
-    };
-
-    for (const record of payload.students) {
-      const validation = validateStudentSyncRecord(record);
-      const stableId = validation.ok ? validation.studentCode : String(record?.id ?? "").trim();
-      try {
-        if (!validation.ok) {
-          const error = new Error(validation.error);
-          error.statusCode = 400;
-          error.code = validation.code;
-          throw error;
-        }
-        const result = await this.materializeBackOfficeStudent(record, context);
-        if (!result?.studentId) {
-          const error = new Error("Échec de matérialisation élève (établissement introuvable)");
-          error.statusCode = 400;
-          error.code = "STUDENT_SYNC_MATERIALIZE_FAILED";
-          throw error;
-        }
-        accepted.students.push(validation.studentCode);
-        if (result.enrollment) {
-          accepted.enrollments.push(validation.studentCode);
-        }
-      } catch (error) {
-        if (error?.statusCode && Number(error.statusCode) >= 500) throw error;
-        rejected.push({
-          entity: "students",
-          id: stableId || undefined,
-          code: error?.code,
-          error: error?.message ?? "Échec de synchronisation de l'élève",
-        });
-      }
-    }
-
-    this.cachedDataset = null;
+  async syncStudentsDomainFromBackOffice(_payload = {}) {
     return {
-      synced: rejected.length === 0,
-      accepted,
-      rejected,
-      studentCount: accepted.students.length,
-      enrollmentCount: accepted.enrollments.length,
+      synced: true,
+      accepted: { students: [], enrollments: [] },
+      rejected: [],
+      studentCount: 0,
+      enrollmentCount: 0,
     };
   }
 

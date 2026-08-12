@@ -191,17 +191,18 @@ async function main() {
     allStored,
   );
 
-  // 9) Fiche élève provisionnée depuis contact
+  // 9) PR2 — plus de fiche élève provisionnée depuis contact
   const studentContact = savedContacts.eleve;
   const studentRecord = (state.students ?? []).find(
     (row) => normalize(row.contactId) === normalize(studentContact.id),
   );
+  const studentLink = linkContactToOperationalRecord(studentContact, state);
   pushResult(
     results,
-    "9. Élève disponible via contact (fiche liée)",
-    studentContact.studentId ?? "studentId",
-    studentRecord?.id ?? "—",
-    Boolean(studentRecord && studentRecord.contactId === studentContact.id),
+    "9. Contact élève n'crée pas de fiche (PR2 no-op)",
+    "no-op",
+    studentRecord?.id ?? studentLink.linkedType ?? "no-op",
+    !studentRecord && !studentLink.linkedType && !studentLink.students,
   );
 
   // 10) Fiche enseignant provisionnée depuis contact
@@ -277,7 +278,7 @@ async function main() {
     guardContacts.allowed,
   );
 
-  // 14) Règle registre : fiche élève sans contact = orpheline (purge sync)
+  // 14) PR2 — projection students intacte (pas de purge orpheline contacts)
   const orphanStudent = {
     id: newId("STUDENTS-ORPHAN"),
     name: "Orphelin",
@@ -291,15 +292,13 @@ async function main() {
     students: [orphanStudent, ...(state.students ?? [])],
   };
   const syncResult = syncContactRegistry(withOrphan);
-  const orphanRemoved = !(syncResult.state.students ?? []).some(
-    (row) => row.id === orphanStudent.id,
-  );
+  const orphanKept = (syncResult.state.students ?? []).some((row) => row.id === orphanStudent.id);
   pushResult(
     results,
-    "14. Fiche élève sans contact = orpheline (sync)",
-    "supprimée",
-    orphanRemoved ? "supprimée" : "conservée",
-    orphanRemoved && syncResult.report.removed.students >= 1,
+    "14. Projection students conservée (pas de purge orpheline)",
+    "conservée",
+    orphanKept ? "conservée" : "supprimée",
+    orphanKept && syncResult.report.removed.students === 0,
   );
 
   // 15) Tentative API directe : l'UI bloque, le registre nettoie

@@ -1338,13 +1338,27 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     LEGACY_CLASSES_STATE_WRITE_CODE,
     LEGACY_CLASSES_STATE_WRITE_MESSAGE,
   } = require("./lib/legacyClassesStateWrite");
-  const preparedLegacy = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
-  if (preparedLegacy.rejectLegacyClassesWrite) {
+  const {
+    stripLegacyStudentsStateWrite,
+    LEGACY_STUDENTS_STATE_WRITE_CODE,
+    LEGACY_STUDENTS_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacyStudentsStateWrite");
+  const preparedClasses = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
+  if (preparedClasses.rejectLegacyClassesWrite) {
     const error = new BusinessError(400, LEGACY_CLASSES_STATE_WRITE_MESSAGE);
     error.code = LEGACY_CLASSES_STATE_WRITE_CODE;
     throw error;
   }
-  const rawBody = preparedLegacy.body;
+  const preparedStudents = stripLegacyStudentsStateWrite(
+    preparedClasses.body,
+    backOfficeDeletableEntities,
+  );
+  if (preparedStudents.rejectLegacyStudentsWrite) {
+    const error = new BusinessError(400, LEGACY_STUDENTS_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_STUDENTS_STATE_WRITE_CODE;
+    throw error;
+  }
+  const rawBody = preparedStudents.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
