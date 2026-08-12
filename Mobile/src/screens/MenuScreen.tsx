@@ -33,7 +33,7 @@ const adminMenuItems: MenuItem[] = [
   { label: "🔐 Droits par rôle", route: "Permissions", view: "Permissions" },
   { label: "⚙️ Configuration", route: "Configuration", view: "Configuration" },
   { label: "👤 Utilisateurs", entity: "users", view: "users" },
-  { label: "👥 Élèves", entity: "students", view: "students" },
+  { label: "👥 Élèves", route: "Students", view: "students" },
   { label: "👨‍🏫 Enseignants", entity: "teachers", view: "teachers" },
   { label: "📚 Classes", route: "Classes", view: "classes" },
   { label: "📖 Cours", entity: "courses", view: "courses" },
@@ -85,7 +85,6 @@ const teacherMenuItems: MenuItem[] = [
 
 function filterMenuItemsByPermission(session: any, items: MenuItem[]) {
   return items.filter((item) => {
-    if (session?.role === "school_admin" && item.entity === "students") return false;
     const view = item.view ?? (item.entity ? ENTITY_VIEW_MAP[item.entity] : item.route);
     if (view && !canReadView(session, view)) return false;
     if (item.entity) return canReadEntity(session, item.entity);

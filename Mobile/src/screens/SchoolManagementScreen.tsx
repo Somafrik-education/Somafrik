@@ -19,11 +19,9 @@ export default function SchoolManagementScreen({
   const containerStyle = [styles.container, { paddingBottom: stackPaddingBottom }];
   const { session } = useAuth();
   const { syncStatus } = useAdminData();
-  const isSchoolAdmin = session?.role === "school_admin";
   const items: { title: string; entity?: AdminEntity; route?: string }[] = [
     { title: "🏫 Établissements", entity: "schools" },
     { title: "👤 Utilisateurs", entity: "users" },
-    ...(isSchoolAdmin ? [] : [{ title: "👥 Élèves", entity: "students" as const }]),
     { title: "👨‍🏫 Enseignants", entity: "teachers" },
     { title: "📚 Classes", route: "Classes" },
     { title: "📖 Cours", entity: "courses" },

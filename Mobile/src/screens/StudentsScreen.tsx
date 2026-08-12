@@ -200,10 +200,6 @@ export default function StudentsScreen({ route, navigation }: any) {
 
 
 
-  // PR1 consolidation : création élève uniquement via Classes → Inscrire (web/API PG).
-  const canManageStudents = false;
-  const canCreateStudent = false;
-
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
 
 
@@ -412,35 +408,6 @@ export default function StudentsScreen({ route, navigation }: any) {
 
 
 
-          {canManageStudents && (
-
-            <TouchableOpacity
-
-              activeOpacity={0.85}
-
-              style={styles.addButton}
-
-              testID={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
-
-              onPress={() =>
-
-                navigation.navigate("AdminCrud", {
-
-                  entity: "students",
-
-                  ...(className !== "Toutes les classes" ? { className } : {}),
-
-                })
-
-              }
-
-            >
-
-              <Ionicons name="add" size={26} color="#FFFFFF" />
-
-            </TouchableOpacity>
-
-          )}
 
         </View>
 
@@ -516,19 +483,23 @@ export default function StudentsScreen({ route, navigation }: any) {
 
         </Text>
 
+
+
+        <Text style={styles.enrollmentInfo}>
+
+          L'inscription d'un élève se fait via Classes → Inscrire sur le web. Consultation uniquement ici.
+
+        </Text>
+
       </>
 
     ),
 
     [
 
-      canManageStudents,
-
       className,
 
       filteredStudents.length,
-
-      navigation,
 
       paymentStats.rate,
 
@@ -578,47 +549,17 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           {isClassEmpty
 
-            ? "Cette classe n'a pas encore d'élève inscrit."
+            ? "Cette classe n'a pas encore d'élève inscrit. L'inscription se fait via Classes sur le web."
 
             : "Essayez un autre nom ou matricule."}
 
         </Text>
 
-        {isClassEmpty && canManageStudents ? (
-
-          <TouchableOpacity
-
-            activeOpacity={0.85}
-
-            style={styles.emptyActionButton}
-
-            testID={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
-
-            onPress={() =>
-
-              navigation.navigate("AdminCrud", {
-
-                entity: "students",
-
-                ...(className !== "Toutes les classes" ? { className } : {}),
-
-              })
-
-            }
-
-          >
-
-            <Text style={styles.emptyActionText}>{CLASSES_STUDENT_COPY.addStudentAction}</Text>
-
-          </TouchableOpacity>
-
-        ) : null}
-
       </View>
 
     ),
 
-    [canManageStudents, className, emptyMessage, isClassEmpty, navigation],
+    [className, emptyMessage, isClassEmpty],
 
   );
 
@@ -775,24 +716,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
 
     color: "#64748B",
-
-  },
-
-
-
-  addButton: {
-
-    width: 42,
-
-    height: 42,
-
-    borderRadius: 15,
-
-    backgroundColor: "#2563EB",
-
-    alignItems: "center",
-
-    justifyContent: "center",
 
   },
 
@@ -1126,6 +1049,18 @@ const styles = StyleSheet.create({
 
 
 
+  enrollmentInfo: {
+
+    color: "#64748B",
+
+    fontSize: 13,
+
+    lineHeight: 18,
+
+    marginBottom: 12,
+
+  },
+
   emptyHint: {
 
     marginTop: 6,
@@ -1141,32 +1076,6 @@ const styles = StyleSheet.create({
   },
 
 
-
-  emptyActionButton: {
-
-    marginTop: 16,
-
-    backgroundColor: "#2563EB",
-
-    borderRadius: 14,
-
-    paddingHorizontal: 18,
-
-    paddingVertical: 12,
-
-  },
-
-
-
-  emptyActionText: {
-
-    color: "#FFFFFF",
-
-    fontSize: 14,
-
-    fontWeight: "900",
-
-  },
 
 
 

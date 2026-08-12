@@ -38,6 +38,9 @@ type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 const LEGACY_CLASSES_CRUD_RETIRED_MESSAGE =
   "Le CRUD Classes via AdminCrud est retire. Utilisez l'ecran Classes (lecture) ou /api/classes (web).";
 
+const LEGACY_STUDENTS_CRUD_RETIRED_MESSAGE =
+  "La création d'élèves via AdminCrud est retirée. L'inscription se fait uniquement via Classes → Inscrire (web/API). La liste reste consultable sur l'écran Élèves.";
+
 type Field = {
   key: string;
   label: string;
@@ -263,8 +266,7 @@ const configs: Record<
 export default function AdminCrudScreen({ route, navigation }: Props) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { entity, filter, className: scopedClassName } = route.params;
-  const lockedClassName = scopedClassName?.trim() ?? "";
+  const { entity, filter } = route.params;
   const { session } = useAuth();
   const {
     getItems,
@@ -304,14 +306,14 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
   const [selectedPermissionRole, setSelectedPermissionRole] = useState("");
   const [selectedPermissionFeature, setSelectedPermissionFeature] = useState("");
   const isStudentsEntity = entity === "students";
-  // PR1 : création élèves uniquement via Classes → Inscrire (API PG).
+  // PR2 : CRUD élèves AdminCrud retiré — inscription via Classes → Inscrire (web/API).
   const canCreate =
     !isStudentsEntity &&
     canMutateEntity(session, entity, "CREATE") &&
     !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
-  const canUpdate = canMutateEntity(session, entity, "UPDATE");
-  const canDelete = canMutateEntity(session, entity, "DELETE");
+  const canUpdate = !isStudentsEntity && canMutateEntity(session, entity, "UPDATE");
+  const canDelete = !isStudentsEntity && canMutateEntity(session, entity, "DELETE");
   const delegableFeatures = useMemo(
     () => schoolPilotageFeatures.filter((feature) => getDelegablePermissionsForFeature(session, feature).length > 0),
     [session?.permissions, session?.user.permissions]
@@ -433,7 +435,6 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       ...(entity === "courses" && selectedCourseClass
         ? { className: selectedCourseClass }
         : {}),
-      // Création élèves désactivée (canCreate=false pour students) — pas de préremplissage classe.
     });
     setVisible(true);
   };
@@ -459,45 +460,19 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     }
 
     if (!editingItem && !canCreate) {
-      Alert.alert(
-        "Accès refusé",
-        isStudentsEntity
-          ? "La création d'élèves passe par Classes → Inscrire un élève."
-          : "Votre rôle ne permet pas de créer cet élément.",
-      );
+      Alert.alert("Accès refusé", "Votre rôle ne permet pas de créer cet élément.");
       return;
     }
 
     if (entity === "assignments" && form.assignmentType === studentClassAssignmentType) {
-      const studentId = parseSelectId(form.studentId);
-      const className = form.className;
-      const student = studentsData.find((item) => matchesEntityId(item, studentId));
-      const classExists = classesData.some((schoolClass) => normalize(schoolClass.name) === normalize(className));
-
-      if (!studentId || !className || !student || !classExists) {
-        Alert.alert("Affectation impossible", "Choisissez un élève et une classe de votre établissement.");
-        return;
-      }
-
-      updateItem("students", {
-        ...student,
-        className,
-        history: [
-          ...((student as any).history ?? []),
-          `Affecté à la classe ${className} le ${formatDate(new Date())}`,
-        ],
-      });
-      setVisible(false);
-      Alert.alert("Affectation enregistrée", `${student.name} est maintenant dans la classe ${className}.`);
+      Alert.alert(
+        "Affectation retirée",
+        "L'affectation Élève → classe via AdminCrud est retirée. Inscription via Classes → Inscrire (web/API).",
+      );
       return;
     }
 
-    const workingForm =
-      entity === "students" && lockedClassName
-        ? { ...form, className: lockedClassName }
-        : form;
-
-    const nextItem = formToItem(entity, workingForm, editingItem?.id, {
+    const nextItem = formToItem(entity, form, editingItem?.id, {
       studentsData,
       teachersData,
       classesData,
@@ -814,6 +789,31 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
           onPress={() => navigation.navigate("Classes")}
         >
           <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Ouvrir Classes (lecture)</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (entity === "students") {
+    return (
+      <View style={[styles.screen, { padding: 24, justifyContent: "center" }]}>
+        <Text style={styles.title}>Élèves</Text>
+        <Text style={[styles.subtitle, { marginTop: 12, marginBottom: 20 }]}>
+          {LEGACY_STUDENTS_CRUD_RETIRED_MESSAGE}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={[styles.addButton, { marginBottom: 12 }]}
+          onPress={() => navigation.navigate("Students", {})}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Ouvrir Élèves (consultation)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.addButton}
+          onPress={() => navigation.navigate("Classes")}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Ouvrir Classes</Text>
         </TouchableOpacity>
       </View>
     );
@@ -1151,12 +1151,6 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                 <View key={field.key} style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>{field.label}</Text>
                   {field.type === "select" ? (
-                    entity === "students" && lockedClassName && field.key === "className" ? (
-                      <View style={[styles.selectInput, styles.selectInputLocked]}>
-                        <Text style={styles.selectText}>{lockedClassName}</Text>
-                        <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" />
-                      </View>
-                    ) : (
                       <TouchableOpacity
                         style={styles.selectInput}
                         activeOpacity={0.85}
@@ -1172,7 +1166,6 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                         </Text>
                         <Ionicons name="chevron-down" size={18} color="#64748B" />
                       </TouchableOpacity>
-                    )
                   ) : field.type === "date" ? (
                     <TouchableOpacity
                       style={styles.selectInput}
@@ -1499,27 +1492,8 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
   const schoolCode = context?.schoolsData?.[0]?.code ?? "CD-2026-0001";
 
   if (entity === "students") {
-    // PR1 : pas de création AdminCrud — inscription via Classes uniquement.
-    if (!id) {
-      return null;
-    }
-    if (!form.name || !form.className) return null;
-    const publicId = form.matricule || generateLearnerPublicId(schoolCode, context?.studentsData ?? []);
-    return {
-      id: nextId,
-      publicId,
-      schoolCode,
-      name: form.name,
-      firstName: form.firstName ?? "",
-      matricule: publicId,
-      gender: form.gender || "Non renseigné",
-      birthDate: form.birthDate || "",
-      className: form.className,
-      parentName: form.parentName ?? "",
-      parentPhone: form.parentPhone ?? "",
-      parentEmail: form.parentEmail ?? "",
-      archived: false,
-    };
+    // PR2 : AdminCrud students retiré — inscription via Classes → Inscrire (web/API).
+    return null;
   }
 
   if (entity === "teachers") {
@@ -2126,18 +2100,6 @@ function generateTeacherPublicId(schoolCode: string, teachersData: any[]) {
   return `${normalizedSchool}-${identifier}`;
 }
 
-function generateLearnerPublicId(
-  schoolCode: string,
-  studentsData: any[],
-  profile: "ELE" | "ETU" = "ELE"
-) {
-  const next = getNextSequence(
-    studentsData,
-    new RegExp(`^(?:${escapeRegExp(schoolCode)}-)?${profile}-(\\d+)$`, "i")
-  );
-  return `${profile}-${String(next).padStart(4, "0")}`;
-}
-
 function generateSchoolCode(country: string, year: string, schoolsData: any[]) {
   const countryCode = getCountryCode(country);
   const next = getNextSequence(
@@ -2364,7 +2326,8 @@ function getSelectOptions(
   }
 
   if (key === "assignmentType") {
-    return [teacherCourseAssignmentType, studentClassAssignmentType];
+    // Élève → classe retiré (écriture students legacy) — affectations prof → cours uniquement.
+    return [teacherCourseAssignmentType];
   }
 
   if (key === "teacherId") {
@@ -3082,10 +3045,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-  selectInputLocked: {
-    backgroundColor: "#F8FAFC",
-    borderColor: "#CBD5E1",
   },
   selectText: {
     color: "#0F172A",

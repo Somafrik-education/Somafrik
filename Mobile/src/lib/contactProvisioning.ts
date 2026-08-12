@@ -1,5 +1,5 @@
-/** Fiches créées uniquement via Contacts (aligné web). */
-export const CONTACT_PROVISIONED_ENTITIES = new Set(["students", "teachers"]);
+/** Fiches créées uniquement via Contacts (aligné web). Élèves : inscription Classes → Inscrire. */
+export const CONTACT_PROVISIONED_ENTITIES = new Set(["teachers"]);
 
 export function entityCreateViaContactsOnly(entity: string): boolean {
   return CONTACT_PROVISIONED_ENTITIES.has(entity);

@@ -615,7 +615,7 @@ export default function HomeScreen({ navigation }: any) {
               label="Élèves"
               color="#7C3AED"
               bg="#F5F3FF"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "students" })}
+              onPress={() => navigation.navigate("Students")}
             />
           )}
 
@@ -672,11 +672,11 @@ export default function HomeScreen({ navigation }: any) {
 
           {!isSchoolAdmin && canReadStudents && (
             <ActivityItem
-              icon="person-add-outline"
+              icon="people-outline"
               title="Élèves inscrits"
               description={`${studentsData.length} dossier(s) actif(s)`}
               color="#2563EB"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "students" })}
+              onPress={() => navigation.navigate("Students")}
             />
           )}
 
@@ -715,9 +715,9 @@ export default function HomeScreen({ navigation }: any) {
           )}
           {!isSchoolAdmin && canReadEntity(session, "students") && (
             <QuickAction
-              icon="add-circle-outline"
+              icon="people-outline"
               label="Élèves"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "students" })}
+              onPress={() => navigation.navigate("Students")}
             />
           )}
           {canReadEntity(session, "teachers") && (
