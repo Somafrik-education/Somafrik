@@ -1,6 +1,5 @@
 "use strict";
 
-const { createHttpError } = require("./classesManagement");
 const { generateNextStudentCode } = require("./studentCodeGeneration");
 
 const STUDENT_CODE_UNIQUE_CONSTRAINT = "students_student_code_key";
@@ -43,20 +42,8 @@ async function allocateStudentCodeLocked(db, schoolId, schoolCode) {
   );
 }
 
-/**
- * @param {number} attempt
- * @returns {never}
- */
-function studentCodeAllocationFailed(attempt) {
-  throw createHttpError(
-    500,
-    `Impossible de générer un matricule unique après ${attempt} tentative(s).`,
-  );
-}
-
 module.exports = {
   STUDENT_CODE_UNIQUE_CONSTRAINT,
   isStudentCodeUniquenessViolation,
   allocateStudentCodeLocked,
-  studentCodeAllocationFailed,
 };

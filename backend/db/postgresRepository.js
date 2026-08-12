@@ -5,6 +5,7 @@ const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
 const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
+const { createTxAdapter } = require("./txAdapter");
 
 const roleToDb = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -174,17 +175,47 @@ class PostgresRepository {
   }
 
   async query(sql, params = []) {
-    const runner = this._txClient ?? this.pool;
-    return runner.query(sql, params);
+    return this.pool.query(sql, params);
+  }
+
+  /**
+   * Proxy transactionnel : les méthodes du dépôt utilisent le client tx passé explicitement.
+   * @param {ReturnType<typeof createTxAdapter>} tx
+   */
+  createTxScope(tx) {
+    if (!tx || typeof tx.query !== "function") {
+      return this;
+    }
+    const self = this;
+    return new Proxy(self, {
+      get(target, prop) {
+        if (prop === "query") {
+          return (sql, params) => tx.query(sql, params);
+        }
+        if (prop === "one") {
+          return (sql, params) => tx.one(sql, params);
+        }
+        if (prop === "all") {
+          return (sql, params) => tx.all(sql, params);
+        }
+        if (prop === "withTransaction") {
+          return async (fn) => fn(tx);
+        }
+        const value = target[prop];
+        if (typeof value === "function") {
+          return value.bind(target);
+        }
+        return value;
+      },
+    });
   }
 
   async withTransaction(fn) {
     const client = await this.pool.connect();
-    const previous = this._txClient;
-    this._txClient = client;
+    const tx = createTxAdapter(client);
     try {
       await client.query("BEGIN");
-      const result = await fn(client);
+      const result = await fn(tx);
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -195,7 +226,6 @@ class PostgresRepository {
       }
       throw error;
     } finally {
-      this._txClient = previous;
       client.release();
     }
   }
@@ -715,14 +745,16 @@ class PostgresRepository {
     // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
     // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
     let syncAck = { accepted: [], rejected: [] };
-    await this.withTransaction(async () => {
-      const studentSync = await this.syncStudentsDomainFromBackOffice(payload ?? {});
-      const staffSync = await this.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
+    await this.withTransaction(async (tx) => {
+      const transactional = this.createTxScope(tx);
+      const studentSync = await transactional.syncStudentsDomainFromBackOffice(payload ?? {});
+      const staffSync = await transactional.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
       const syncResult = await persistBackOfficeAfterNotesSync({
         payload: payload ?? {},
-        syncFn: async (body) => this.syncNotesDomainFromBackOffice(body),
+        syncFn: async (body) => transactional.syncNotesDomainFromBackOffice(body),
         persistFn: async (durablePayload) => {
-          await this.query(
+          const runner = tx ?? transactional;
+          await runner.query(
             `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
              VALUES ('default', $1, NOW())
              ON CONFLICT (state_key) DO UPDATE SET

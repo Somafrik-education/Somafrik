@@ -24,7 +24,7 @@ function createMemoryDb() {
   let classSeq = 1;
   let studentSeq = 1;
 
-  return {
+  const memory = {
     async getSchoolByCode(code) {
       return schools.find((row) => row.school_code === String(code).trim().toUpperCase()) ?? null;
     },
@@ -150,9 +150,6 @@ function createMemoryDb() {
       }
       throw new Error(`Unhandled query(): ${text}`);
     },
-    async withTransaction(fn) {
-      return fn();
-    },
     seedClass(schoolCode, overrides = {}) {
       const school = schools.find((row) => row.school_code === schoolCode);
       const year = years.find((row) => row.school_id === school.id);
@@ -172,6 +169,13 @@ function createMemoryDb() {
       return { students: students.length, enrollments: enrollments.length };
     },
   };
+  memory.withTransaction = async (fn) =>
+    fn({
+      one: (sql, params) => memory.one(sql, params),
+      all: (sql, params) => memory.all(sql, params),
+      query: (sql, params) => memory.query(sql, params),
+    });
+  return memory;
 }
 
 async function main() {

@@ -812,7 +812,7 @@ class FallbackRepository {
       if (!this._managedStudents) this._managedStudents = [];
       if (!this._managedEnrollments) this._managedEnrollments = [];
       const self = this;
-      this._classStudentsRepo = createClassStudentsRepository({
+      const memoryAdapter = {
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
           if (normalized === String(seedData.school.code).toUpperCase()) {
@@ -954,9 +954,15 @@ class FallbackRepository {
           return { rows: [] };
         },
         async withTransaction(fn) {
-          return fn();
+          const tx = {
+            one: (sql, params) => memoryAdapter.one(sql, params),
+            all: (sql, params) => memoryAdapter.all(sql, params),
+            query: (sql, params) => memoryAdapter.query(sql, params),
+          };
+          return fn(tx);
         },
-      });
+      };
+      this._classStudentsRepo = createClassStudentsRepository(memoryAdapter);
     }
     return this._classStudentsRepo;
   }

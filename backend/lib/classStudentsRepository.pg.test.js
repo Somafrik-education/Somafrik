@@ -9,6 +9,7 @@ const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
+const { createTxAdapter } = require("../db/txAdapter");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
@@ -154,21 +155,17 @@ async function setupFixture(pool) {
 }
 
 function createDbAdapter(pool) {
-  let txClient = null;
   return {
     async one(sql, params = []) {
-      const client = txClient ?? pool;
-      const result = await client.query(sql, params);
+      const result = await pool.query(sql, params);
       return result.rows[0] ?? null;
     },
     async all(sql, params = []) {
-      const client = txClient ?? pool;
-      const result = await client.query(sql, params);
+      const result = await pool.query(sql, params);
       return result.rows;
     },
     async query(sql, params = []) {
-      const client = txClient ?? pool;
-      return client.query(sql, params);
+      return pool.query(sql, params);
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
@@ -179,22 +176,49 @@ function createDbAdapter(pool) {
     },
     async withTransaction(fn) {
       const client = await pool.connect();
-      const previous = txClient;
-      txClient = client;
+      const tx = createTxAdapter(client);
       try {
         await client.query("BEGIN");
-        const result = await fn();
+        const result = await fn(tx);
         await client.query("COMMIT");
         return result;
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;
       } finally {
-        txClient = previous;
         client.release();
       }
     },
   };
+}
+
+/**
+ * Force l'échec de l'INSERT enrollments après un INSERT students réussi.
+ * @param {ReturnType<typeof createTxAdapter>} tx
+ */
+function wrapTxFailingEnrollment(tx) {
+  return {
+    ...tx,
+    async one(sql, params = []) {
+      const normalized = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+      if (normalized.startsWith("INSERT INTO ENROLLMENTS")) {
+        const error = new Error(
+          'duplicate key value violates unique constraint "enrollments_student_id_academic_year_id_key"',
+        );
+        error.code = "23505";
+        throw error;
+      }
+      return tx.one(sql, params);
+    },
+  };
+}
+
+function createRollbackTestRepository(baseDb) {
+  return createClassStudentsRepository({
+    ...baseDb,
+    withTransaction: async (fn) =>
+      baseDb.withTransaction(async (tx) => fn(wrapTxFailingEnrollment(tx))),
+  });
 }
 
 async function countStudents(pool, schoolCode) {
@@ -281,6 +305,22 @@ async function main() {
       (error) => error.statusCode === 409,
     );
     assert.equal(await countStudents(pool, "CD-2026-0001"), beforeFailed);
+
+    const rollbackRepo = createRollbackTestRepository(db);
+    const beforeRollback = await countStudents(pool, "CD-2026-0001");
+    await assert.rejects(
+      () =>
+        rollbackRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+          firstName: "Rollback",
+          lastName: "Test",
+        }),
+      (error) => String(error.code) === "23505",
+    );
+    assert.equal(
+      await countStudents(pool, "CD-2026-0001"),
+      beforeRollback,
+      "l'élève doit être annulé si l'inscription échoue",
+    );
 
     const enrolled = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
       firstName: "Awa",
