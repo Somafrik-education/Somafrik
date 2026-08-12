@@ -7,7 +7,7 @@ import { render, screen, within, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState } = vi.hoisted(() => {
+const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet } = vi.hoisted(() => {
   const SCHOOL = "CD-2026-0001";
   const STUDENT_ID = "stu-c18a-demo";
   const ENROLLMENT_ID = "enr-c18a-demo";
@@ -70,8 +70,73 @@ const { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState } = vi.hoisted(() => {
       },
     } as Record<string, unknown>,
   };
-  return { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState };
+
+  function buildDossier() {
+    const enrollment = (dataState.current.studentEnrollments as Array<Record<string, unknown>>)[0];
+    return {
+      id: STUDENT_ID,
+      publicId: STUDENT_ID,
+      studentCode: STUDENT_ID,
+      matricule: "M-C18A",
+      firstName: "Léa",
+      lastName: "Kabongo",
+      name: "Léa Kabongo",
+      gender: "",
+      birthDate: "",
+      birthPlace: "",
+      className: String(enrollment?.className ?? "") || "",
+      classCode: String(enrollment?.classId ?? "") || "",
+      schoolCode: SCHOOL,
+      parentPhone: "",
+      parentEmail: "",
+      status: "active",
+      enrollmentId: ENROLLMENT_ID,
+      enrollmentDate: "",
+      academicYearName: "2026-2027",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+      enrollments: [
+        {
+          id: ENROLLMENT_ID,
+          status: String(enrollment?.status ?? "PENDING_REVIEW"),
+          enrollmentDate: "",
+          classCode: String(enrollment?.classId ?? "") || "",
+          className: String(enrollment?.className ?? "") || "",
+          academicYearName: "2026-2027",
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:00.000Z",
+        },
+      ],
+      guardians: [],
+      medical: {
+        allergies: [],
+        conditions: [],
+        medications: [],
+        notes: "",
+        emergencyContact: "",
+        bloodType: "",
+      },
+      documents: [],
+      access: {
+        notesPath: `/api/students/${STUDENT_ID}/notes`,
+        presencesPath: `/api/students/${STUDENT_ID}/presences`,
+        paymentsPath: `/api/students/${STUDENT_ID}/payments`,
+        reportPath: `/api/students/${STUDENT_ID}/report`,
+      },
+    };
+  }
+
+  const studentsApiGet = vi.fn(async () => buildDossier());
+  return { SCHOOL, STUDENT_ID, ENROLLMENT_ID, dataState, studentsApiGet };
 });
+
+vi.mock("../../lib/studentsApi", () => ({
+  studentsApi: {
+    list: vi.fn(async () => []),
+    get: studentsApiGet,
+    update: vi.fn(),
+  },
+}));
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
@@ -148,6 +213,7 @@ describe("C1.8a démo manuelle — validate → assign → historique → remoun
   beforeEach(() => {
     cleanup();
     resetStudentEditingSessionsForTests();
+    studentsApiGet.mockClear();
     // Remet l'inscription initiale pour chaque run (le store mock est partagé par élève).
     dataState.current.studentEnrollments = [
       {
@@ -177,6 +243,7 @@ describe("C1.8a démo manuelle — validate → assign → historique → remoun
       within(enrollmentTab).getAllByText("En examen").length,
     ).toBeGreaterThan(0);
     expect(screen.getByTestId("enrollment-actions")).toBeInTheDocument();
+    expect(studentsApiGet).toHaveBeenCalledWith(STUDENT_ID);
 
     // 1) Valider
     await user.click(screen.getByTestId("enrollment-validate-start"));
