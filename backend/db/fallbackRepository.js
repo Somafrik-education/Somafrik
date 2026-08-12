@@ -1082,6 +1082,10 @@ class FallbackRepository {
         },
         async all(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+          if (text.includes("FROM TEACHER_ASSIGNMENTS TA")) {
+            // Mode mémoire : affectations seed gérées dans listSchoolTeachers ; aucune TA managée.
+            return [];
+          }
           if (
             text.includes("FROM TEACHERS T") &&
             text.includes("LEFT JOIN USERS") &&
@@ -1174,20 +1178,29 @@ class FallbackRepository {
           return { rows: [] };
         },
         async withTransaction(fn) {
-          const snapshotTeachers = clone(self._managedTeachers ?? []);
-          const snapshotUsers = clone(self._managedTeacherUsers ?? []);
-          const tx = {
-            one: (sql, params) => memoryAdapter.one(sql, params),
-            all: (sql, params) => memoryAdapter.all(sql, params),
-            query: (sql, params) => memoryAdapter.query(sql, params),
-          };
-          try {
-            return await fn(tx);
-          } catch (error) {
-            self._managedTeachers = snapshotTeachers;
-            self._managedTeacherUsers = snapshotUsers;
-            throw error;
-          }
+          // Sérialise les créations concurrentes mémoire (simule advisory lock établissement).
+          if (!self._teacherTxChain) self._teacherTxChain = Promise.resolve();
+          const run = self._teacherTxChain.then(async () => {
+            const snapshotTeachers = clone(self._managedTeachers ?? []);
+            const snapshotUsers = clone(self._managedTeacherUsers ?? []);
+            const tx = {
+              one: (sql, params) => memoryAdapter.one(sql, params),
+              all: (sql, params) => memoryAdapter.all(sql, params),
+              query: (sql, params) => memoryAdapter.query(sql, params),
+            };
+            try {
+              return await fn(tx);
+            } catch (error) {
+              self._managedTeachers = snapshotTeachers;
+              self._managedTeacherUsers = snapshotUsers;
+              throw error;
+            }
+          });
+          self._teacherTxChain = run.then(
+            () => undefined,
+            () => undefined,
+          );
+          return run;
         },
         async onTeacherCreated(created) {
           const identifier = String(created.identifier ?? "").trim();
@@ -1316,7 +1329,21 @@ class FallbackRepository {
   }
 
   getSchoolTeacherByCode(teacherCode, schoolCode) {
-    return this.getTeachersRepository().getByTeacherCode(teacherCode, schoolCode);
+    return this.listSchoolTeachers(schoolCode).then((rows) => {
+      const code = String(teacherCode ?? "").trim();
+      const match = rows.find(
+        (row) =>
+          String(row.teacherCode ?? "") === code ||
+          String(row.publicId ?? "") === code ||
+          String(row.id ?? "") === code ||
+          String(row.identifier ?? "") === code,
+      );
+      if (!match) {
+        const { createTeacherHttpError } = require("../lib/teachersManagement");
+        throw createTeacherHttpError(404, "Enseignant introuvable.");
+      }
+      return match;
+    });
   }
 
   createSchoolTeacher(body, schoolCode) {

@@ -84,6 +84,7 @@ class PostgresRepository {
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
+    await this.ensureTeachersDomainConstraints();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -409,6 +410,29 @@ class PostgresRepository {
 
     await this.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
     await this.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
+  }
+
+  /**
+   * Teachers — unicité atomique (school_id, user_id) pour fiche canonique liée.
+   * Ordre : inventaire doublons (fail-safe) → index unique partiel.
+   * Interdit : suppression silencieuse des fiches en doublon.
+   */
+  async ensureTeachersDomainConstraints() {
+    const {
+      COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
+      LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
+      CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL,
+      formatTeachersSchoolUserDuplicateDiagnostic,
+    } = require("../lib/teachersUniqueness");
+
+    const before = await this.one(COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
+    const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+    if (duplicateGroups > 0) {
+      const groups = await this.all(LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
+      throw new Error(formatTeachersSchoolUserDuplicateDiagnostic(groups, duplicateGroups));
+    }
+
+    await this.query(CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL);
   }
 
   async getDataset() {

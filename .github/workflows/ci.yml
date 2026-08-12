@@ -55,6 +55,11 @@ jobs:
         working-directory: web
         run: npm run verify:student-enrollment
 
+      - name: verify:teacher-account-creation (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:teacher-account-creation
+
       - name: Build image préproduction
         env:
           POSTGRES_DB: somafrik

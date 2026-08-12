@@ -256,6 +256,69 @@ describe("TeachersListPage (création compte + fiche)", () => {
     expect(showToast).toHaveBeenCalledWith("Identité enseignant ambiguë", "error");
   });
 
+  it("affiche les erreurs 400 dans le formulaire", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.create.mockRejectedValue(
+      new ApiError("Au moins un moyen de contact est requis (phone ou email).", 400),
+    );
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
+    await user.type(screen.getByLabelText(/Prénom/i), "Invalide");
+    await user.type(screen.getByLabelText(/^Nom/i), "Contact");
+    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-01-01");
+    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
+    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
+
+    expect(
+      await screen.findByText("Au moins un moyen de contact est requis (phone ou email)."),
+    ).toBeInTheDocument();
+    expect(showToast).toHaveBeenCalledWith(
+      "Au moins un moyen de contact est requis (phone ou email).",
+      "error",
+    );
+  });
+
+  it("affiche les erreurs 403 dans le formulaire", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.create.mockRejectedValue(new ApiError("Permission insuffisante", 403));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
+    await user.type(screen.getByLabelText(/Prénom/i), "Refuse");
+    await user.type(screen.getByLabelText(/^Nom/i), "Authz");
+    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-01-01");
+    await user.type(screen.getByLabelText(/Téléphone/i), "+243 1");
+    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
+    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
+
+    expect(await screen.findByText("Permission insuffisante")).toBeInTheDocument();
+    expect(showToast).toHaveBeenCalledWith("Permission insuffisante", "error");
+  });
+
+  it("affiche les erreurs serveur 500 dans le formulaire", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.create.mockRejectedValue(new ApiError("Erreur interne", 500));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
+    await user.type(screen.getByLabelText(/Prénom/i), "Serveur");
+    await user.type(screen.getByLabelText(/^Nom/i), "Erreur");
+    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-01-01");
+    await user.type(screen.getByLabelText(/Email/i), "s@example.com");
+    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
+    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
+
+    expect(await screen.findByText("Erreur interne")).toBeInTheDocument();
+    expect(showToast).toHaveBeenCalledWith("Erreur interne", "error");
+  });
+
+  it("affiche une erreur de chargement liste (serveur)", async () => {
+    teachersApiMock.list.mockRejectedValue(new ApiError("Service indisponible", 503));
+    renderPage();
+    expect(await screen.findByText("Service indisponible")).toBeInTheDocument();
+  });
+
   it("filtre la liste côté client", async () => {
     const user = userEvent.setup();
     renderPage();

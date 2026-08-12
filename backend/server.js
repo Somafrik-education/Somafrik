@@ -964,7 +964,26 @@ app.get("/api/teachers/:teacherCode", requireAuth, requirePermission("GET /api/t
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const teacher = await repository.getSchoolTeacherByCode(req.params.teacherCode, schoolCode);
-  res.json(sanitizeUserForResponse(teacher));
+  const safeTeacher = sanitizeUserForResponse(teacher);
+  res.json({
+    ...safeTeacher,
+    assignedClasses: [
+      ...new Set(
+        (safeTeacher.assignedClasses?.length
+          ? safeTeacher.assignedClasses
+          : (safeTeacher.assignments ?? []).map((item) => item.className)
+        ).filter(Boolean),
+      ),
+    ],
+    courses: [
+      ...new Set(
+        (safeTeacher.courses?.length
+          ? safeTeacher.courses
+          : (safeTeacher.assignments ?? []).map((item) => item.course)
+        ).filter(Boolean),
+      ),
+    ],
+  });
 }));
 
 app.post("/api/teachers", requireAuth, requirePermission("POST /api/teachers"), asyncHandler(async (req, res) => {

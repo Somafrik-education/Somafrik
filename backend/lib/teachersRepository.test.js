@@ -87,6 +87,9 @@ function createMemoryDb() {
     },
     async all(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+      if (text.includes("FROM TEACHER_ASSIGNMENTS TA")) {
+        return [];
+      }
       if (text.includes("LEFT JOIN USERS") && text.includes("WHERE T.SCHOOL_ID")) {
         return teachers
           .filter((row) => row.school_id === params[0])
@@ -131,21 +134,29 @@ function createMemoryDb() {
       return { rows: [] };
     },
     async withTransaction(fn) {
-      const usersSnap = users.map((row) => ({ ...row }));
-      const teachersSnap = teachers.map((row) => ({ ...row }));
-      try {
-        return await fn({
-          one: (sql, params) => adapter.one(sql, params),
-          all: (sql, params) => adapter.all(sql, params),
-          query: (sql, params) => adapter.query(sql, params),
-        });
-      } catch (error) {
-        users.length = 0;
-        teachers.length = 0;
-        users.push(...usersSnap);
-        teachers.push(...teachersSnap);
-        throw error;
-      }
+      if (!adapter._txChain) adapter._txChain = Promise.resolve();
+      const run = adapter._txChain.then(async () => {
+        const usersSnap = users.map((row) => ({ ...row }));
+        const teachersSnap = teachers.map((row) => ({ ...row }));
+        try {
+          return await fn({
+            one: (sql, params) => adapter.one(sql, params),
+            all: (sql, params) => adapter.all(sql, params),
+            query: (sql, params) => adapter.query(sql, params),
+          });
+        } catch (error) {
+          users.length = 0;
+          teachers.length = 0;
+          users.push(...usersSnap);
+          teachers.push(...teachersSnap);
+          throw error;
+        }
+      });
+      adapter._txChain = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     },
     _users: users,
     _teachers: teachers,
@@ -263,6 +274,36 @@ async function main() {
         "CD-2026-0001",
       ),
     (error) => error.statusCode === 400,
+  );
+
+  // Course identité (sérialisée mémoire) : 1 OK + 1 TEACHER_CANON_AMBIGUOUS
+  const raced = await Promise.allSettled([
+    repo.create(
+      {
+        firstName: "Race",
+        lastName: "Identity",
+        birthDate: "1983-03-03",
+        phone: "+243 805",
+        temporaryPassword: "TempPass7",
+      },
+      "CD-2026-0001",
+    ),
+    repo.create(
+      {
+        firstName: "Race",
+        lastName: "Identity",
+        birthDate: "1983-03-03",
+        phone: "+243 806",
+        temporaryPassword: "TempPass8",
+      },
+      "CD-2026-0001",
+    ),
+  ]);
+  assert.equal(raced.filter((item) => item.status === "fulfilled").length, 1);
+  assert.equal(raced.filter((item) => item.status === "rejected").length, 1);
+  assert.equal(
+    raced.find((item) => item.status === "rejected").reason.code,
+    "TEACHER_CANON_AMBIGUOUS",
   );
 
   console.log("teachersRepository.test.js: OK");

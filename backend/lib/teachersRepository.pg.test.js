@@ -103,20 +103,86 @@ async function setupFixture(pool) {
     CREATE UNIQUE INDEX IF NOT EXISTS teachers_school_user_unique
       ON teachers (school_id, user_id)
       WHERE user_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS academic_years (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (school_id, name)
+    );
+
+    CREATE TABLE IF NOT EXISTS classes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+      class_code VARCHAR(64) NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS subjects (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      subject_code VARCHAR(64) NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS teacher_assignments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      teacher_id UUID NOT NULL REFERENCES teachers(id),
+      class_id UUID NOT NULL REFERENCES classes(id),
+      subject_id UUID NOT NULL REFERENCES subjects(id),
+      academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+      assignment_role TEXT NOT NULL DEFAULT 'primary',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+    );
   `);
 
+  await pool.query(`DELETE FROM teacher_assignments`);
   await pool.query(`DELETE FROM teachers`);
   await pool.query(`DELETE FROM users`);
+  await pool.query(`DELETE FROM classes`);
+  await pool.query(`DELETE FROM subjects`);
+  await pool.query(`DELETE FROM academic_years`);
   await pool.query(`DELETE FROM schools`);
   await pool.query(`DELETE FROM countries`);
 
   const country = await pool.query(
     `INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`,
   );
-  await pool.query(
+  const schools = await pool.query(
     `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'CD-2026-0001', 'Lycée Test 1'), ($1, 'CD-2026-0002', 'Lycée Test 2')`,
+     VALUES ($1, 'CD-2026-0001', 'Lycée Test 1'), ($1, 'CD-2026-0002', 'Lycée Test 2')
+     RETURNING id, school_code`,
     [country.rows[0].id],
+  );
+  const school1 = schools.rows.find((row) => row.school_code === "CD-2026-0001");
+  const year = await pool.query(
+    `INSERT INTO academic_years (school_id, name, status)
+     VALUES ($1, '2025-2026', 'open') RETURNING id`,
+    [school1.id],
+  );
+  await pool.query(
+    `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+     VALUES ($1, $2, 'CLS-6A', '6ème A', 'active')`,
+    [school1.id, year.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO subjects (school_id, subject_code, name, status)
+     VALUES ($1, 'SUB-MATH', 'Mathématiques', 'active')`,
+    [school1.id],
   );
 }
 
@@ -328,6 +394,75 @@ async function main() {
       ),
     ]);
     assert.notEqual(concurrent[0].teacherCode, concurrent[1].teacherCode);
+
+    // Course identité canonique : une seule réussite, l'autre 409 TEACHER_CANON_AMBIGUOUS.
+    const sameIdentity = {
+      firstName: "Race",
+      lastName: "Canon",
+      birthDate: "1984-07-07",
+      gender: "Masculin",
+      phone: "+243 810 000 208",
+      temporaryPassword: "TempPass8",
+    };
+    const raced = await Promise.allSettled([
+      repo.create({ ...sameIdentity, phone: "+243 810 000 208" }, "CD-2026-0001"),
+      repo.create({ ...sameIdentity, phone: "+243 810 000 209", temporaryPassword: "TempPass9" }, "CD-2026-0001"),
+    ]);
+    const fulfilled = raced.filter((item) => item.status === "fulfilled");
+    const rejected = raced.filter((item) => item.status === "rejected");
+    assert.equal(fulfilled.length, 1, "une seule création concurrente de la même identité");
+    assert.equal(rejected.length, 1);
+    assert.equal(rejected[0].reason.statusCode, 409);
+    assert.equal(rejected[0].reason.code, "TEACHER_CANON_AMBIGUOUS");
+
+    // Non-régression affectations actives dans liste + détail.
+    const withAssign = fulfilled[0].value;
+    const teacherUuid = await pool.query(`SELECT id, school_id FROM teachers WHERE teacher_code = $1`, [
+      withAssign.teacherCode,
+    ]);
+    const classRow = await pool.query(
+      `SELECT id, academic_year_id FROM classes WHERE class_code = 'CLS-6A' LIMIT 1`,
+    );
+    const subjectRow = await pool.query(
+      `SELECT id FROM subjects WHERE subject_code = 'SUB-MATH' LIMIT 1`,
+    );
+    await pool.query(
+      `INSERT INTO teacher_assignments (
+         school_id, teacher_id, class_id, subject_id, academic_year_id, status
+       ) VALUES ($1, $2, $3, $4, $5, 'active')`,
+      [
+        teacherUuid.rows[0].school_id,
+        teacherUuid.rows[0].id,
+        classRow.rows[0].id,
+        subjectRow.rows[0].id,
+        classRow.rows[0].academic_year_id,
+      ],
+    );
+    await pool.query(
+      `INSERT INTO teacher_assignments (
+         school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status
+       ) VALUES ($1, $2, $3, $4, $5, 'secondary', 'inactive')`,
+      [
+        teacherUuid.rows[0].school_id,
+        teacherUuid.rows[0].id,
+        classRow.rows[0].id,
+        subjectRow.rows[0].id,
+        classRow.rows[0].academic_year_id,
+      ],
+    );
+
+    const listedWithAssign = await repo.listBySchoolCode("CD-2026-0001");
+    const listedTeacher = listedWithAssign.find((row) => row.teacherCode === withAssign.teacherCode);
+    assert.ok(listedTeacher);
+    assert.equal(listedTeacher.assignments.length, 1);
+    assert.equal(listedTeacher.assignments[0].className, "6ème A");
+    assert.equal(listedTeacher.assignments[0].course, "Mathématiques");
+    assert.deepEqual(listedTeacher.assignedClasses, ["6ème A"]);
+    assert.deepEqual(listedTeacher.courses, ["Mathématiques"]);
+
+    const detail = await repo.getByTeacherCode(withAssign.teacherCode, "CD-2026-0001");
+    assert.equal(detail.assignments.length, 1);
+    assert.deepEqual(detail.assignedClasses, ["6ème A"]);
 
     console.log("teachersRepository.pg.test.js: OK");
   } finally {

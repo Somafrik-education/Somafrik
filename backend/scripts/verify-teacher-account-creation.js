@@ -106,6 +106,26 @@ async function main() {
     const listedBefore = await request("/teachers", { token: admin.token });
     assert.equal(listedBefore.status, 200, JSON.stringify(listedBefore.data));
     assert.ok(Array.isArray(listedBefore.data));
+    const seedTeacher = listedBefore.data.find((row) => row.identifier === "ENS-0001");
+    assert.ok(seedTeacher, "enseignant seed ENS-0001 attendu");
+    assert.ok(
+      Array.isArray(seedTeacher.assignments) && seedTeacher.assignments.length > 0,
+      "régression : affectations actives absentes de GET /api/teachers",
+    );
+    assert.ok(
+      Array.isArray(seedTeacher.assignedClasses) && seedTeacher.assignedClasses.length > 0,
+      "régression : assignedClasses vide",
+    );
+    assert.ok(Array.isArray(seedTeacher.courses) && seedTeacher.courses.length > 0, "régression : courses vide");
+
+    const seedDetail = await request(`/teachers/${encodeURIComponent(seedTeacher.teacherCode || seedTeacher.publicId)}`, {
+      token: admin.token,
+    });
+    assert.equal(seedDetail.status, 200, JSON.stringify(seedDetail.data));
+    assert.ok(
+      Array.isArray(seedDetail.data.assignments) && seedDetail.data.assignments.length > 0,
+      "régression : affectations absentes du détail",
+    );
 
     const created = await request("/teachers", {
       method: "POST",

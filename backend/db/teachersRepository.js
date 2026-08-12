@@ -6,7 +6,12 @@ const {
   validateCreateTeacherInput,
   isExactTeacherCivilIdentity,
 } = require("../lib/teachersManagement");
-const { allocateTeacherCodesLocked, isTeacherOrUserCodeUniquenessViolation } = require("../lib/teacherCodeAllocation");
+const {
+  allocateTeacherCodesLocked,
+  acquireTeacherSchoolCreationLock,
+  isTeacherOrUserCodeUniquenessViolation,
+} = require("../lib/teacherCodeAllocation");
+const { isTeachersSchoolUserUniquenessViolation } = require("../lib/teachersUniqueness");
 const { hashSecret } = require("../services/credentialService");
 
 /**
@@ -53,14 +58,33 @@ function formatIsoDate(value) {
 }
 
 /**
- * @param {any} row
+ * @param {any[]} assignmentRows
+ * @param {string} teacherCode
  */
-function mapTeacherRow(row) {
+function mapActiveAssignments(assignmentRows, teacherCode) {
+  const code = String(teacherCode ?? "");
+  return (assignmentRows ?? [])
+    .filter((row) => String(row.teacher_code ?? "") === code)
+    .map((row) => ({
+      className: row.class_name ?? "",
+      classCode: row.class_code ?? "",
+      course: row.subject_name ?? "",
+      status: row.status ?? "active",
+    }))
+    .filter((item) => item.className || item.course);
+}
+
+/**
+ * @param {any} row
+ * @param {any[]} [assignmentRows]
+ */
+function mapTeacherRow(row, assignmentRows = []) {
   const teacherCode = row.teacher_code;
   const firstName = row.first_name ?? "";
   const lastName = row.last_name ?? "";
   const identifierMatch = String(teacherCode ?? "").match(/(ENS-\d+)$/i);
   const identifier = identifierMatch ? identifierMatch[1].toUpperCase() : "";
+  const assignments = mapActiveAssignments(assignmentRows, teacherCode);
   return {
     id: teacherCode,
     teacherCode,
@@ -80,9 +104,9 @@ function mapTeacherRow(row) {
     schoolCode: row.school_code,
     status: row.status === "active" || row.status === "Actif" ? "Actif" : row.status ?? "Actif",
     mustChangePassword: Boolean(row.must_change_password),
-    assignments: [],
-    assignedClasses: [],
-    courses: [],
+    assignments,
+    assignedClasses: [...new Set(assignments.map((item) => item.className).filter(Boolean))],
+    courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -110,6 +134,48 @@ function createTeachersRepository(db) {
       throw createTeacherHttpError(404, "Établissement introuvable.");
     }
     return school;
+  }
+
+  /**
+   * Affectations actives de l'établissement (ou d'un enseignant).
+   * @param {{ all: Function }} reader
+   * @param {string} schoolId
+   * @param {string} [teacherCode]
+   */
+  async function loadActiveAssignments(reader, schoolId, teacherCode) {
+    if (teacherCode) {
+      return reader.all(
+        `SELECT t.teacher_code,
+                cl.name AS class_name,
+                cl.class_code,
+                sub.name AS subject_name,
+                ta.status
+         FROM teacher_assignments ta
+         JOIN teachers t ON t.id = ta.teacher_id
+         JOIN classes cl ON cl.id = ta.class_id
+         JOIN subjects sub ON sub.id = ta.subject_id
+         WHERE t.school_id = $1
+           AND t.teacher_code = $2
+           AND ta.status = 'active'
+         ORDER BY cl.name, sub.name`,
+        [schoolId, teacherCode],
+      );
+    }
+    return reader.all(
+      `SELECT t.teacher_code,
+              cl.name AS class_name,
+              cl.class_code,
+              sub.name AS subject_name,
+              ta.status
+       FROM teacher_assignments ta
+       JOIN teachers t ON t.id = ta.teacher_id
+       JOIN classes cl ON cl.id = ta.class_id
+       JOIN subjects sub ON sub.id = ta.subject_id
+       WHERE t.school_id = $1
+         AND ta.status = 'active'
+       ORDER BY t.teacher_code, cl.name, sub.name`,
+      [schoolId],
+    );
   }
 
   /**
@@ -157,9 +223,13 @@ function createTeachersRepository(db) {
    * @param {object} input
    */
   async function insertUserAndTeacher(tx, school, schoolCode, input) {
+    // Verrou établissement AVANT le contrôle d'identité canonique (anti-course).
+    await acquireTeacherSchoolCreationLock(tx, school.id);
     await assertNoAmbiguousCanon(tx, school.id, input);
 
-    const codes = await allocateTeacherCodesLocked(tx, school.id, school.school_code ?? schoolCode);
+    const codes = await allocateTeacherCodesLocked(tx, school.id, school.school_code ?? schoolCode, {
+      alreadyLocked: true,
+    });
     const secretHash = hashSecret(input.temporaryPassword);
 
     let user;
@@ -211,7 +281,7 @@ function createTeachersRepository(db) {
       if (isTeacherOrUserCodeUniquenessViolation(error)) {
         throw createTeacherHttpError(409, "Conflit de code enseignant.", "TEACHER_CODE_CONFLICT");
       }
-      if (String(error.code) === "23505" && String(error.constraint ?? "").includes("school_user")) {
+      if (isTeachersSchoolUserUniquenessViolation(error)) {
         throw createTeacherHttpError(
           409,
           "Une fiche enseignant est déjà liée à ce compte dans l'établissement.",
@@ -243,30 +313,33 @@ function createTeachersRepository(db) {
      */
     async listBySchoolCode(schoolCode) {
       const school = await requireSchool(schoolCode);
-      const rows = await db.all(
-        `SELECT t.teacher_code,
-                t.user_id,
-                t.speciality,
-                t.hire_date,
-                t.status,
-                t.created_at,
-                t.updated_at,
-                s.school_code,
-                u.first_name,
-                u.last_name,
-                u.email,
-                u.phone,
-                u.birth_date,
-                u.gender,
-                u.must_change_password
-         FROM teachers t
-         JOIN schools s ON s.id = t.school_id
-         LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.school_id = $1
-         ORDER BY u.last_name ASC NULLS LAST, u.first_name ASC NULLS LAST, t.teacher_code ASC`,
-        [school.id],
-      );
-      return rows.map(mapTeacherRow);
+      const [rows, assignmentRows] = await Promise.all([
+        db.all(
+          `SELECT t.teacher_code,
+                  t.user_id,
+                  t.speciality,
+                  t.hire_date,
+                  t.status,
+                  t.created_at,
+                  t.updated_at,
+                  s.school_code,
+                  u.first_name,
+                  u.last_name,
+                  u.email,
+                  u.phone,
+                  u.birth_date,
+                  u.gender,
+                  u.must_change_password
+           FROM teachers t
+           JOIN schools s ON s.id = t.school_id
+           LEFT JOIN users u ON u.id = t.user_id
+           WHERE t.school_id = $1
+           ORDER BY u.last_name ASC NULLS LAST, u.first_name ASC NULLS LAST, t.teacher_code ASC`,
+          [school.id],
+        ),
+        loadActiveAssignments(db, school.id),
+      ]);
+      return rows.map((row) => mapTeacherRow(row, assignmentRows));
     },
 
     /**
@@ -305,7 +378,8 @@ function createTeachersRepository(db) {
       if (!row) {
         throw createTeacherHttpError(404, "Enseignant introuvable.");
       }
-      return mapTeacherRow(row);
+      const assignmentRows = await loadActiveAssignments(db, school.id, teacherCode);
+      return mapTeacherRow(row, assignmentRows);
     },
 
     /**
@@ -335,6 +409,7 @@ module.exports = {
   createTeachersRepository,
   createTeachersDb,
   mapTeacherRow,
+  mapActiveAssignments,
   formatDate,
   formatIsoDate,
 };

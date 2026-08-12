@@ -157,10 +157,10 @@ CREATE TABLE IF NOT EXISTS teachers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Une seule fiche canonique par compte et établissement.
-CREATE UNIQUE INDEX IF NOT EXISTS teachers_school_user_unique
-  ON teachers (school_id, user_id)
-  WHERE user_id IS NOT NULL;
+-- Unicité (school_id, user_id) : index créé APRÈS inventaire fail-safe dans
+-- postgresRepository.ensureTeachersDomainConstraints() /
+-- migration 20260812_teachers_school_user_uniqueness.sql (bases legacy avec doublons).
+-- Ne pas créer l'index ici : schema.sql s'exécute avant la migration contrôlée.
 
 CREATE TABLE IF NOT EXISTS students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

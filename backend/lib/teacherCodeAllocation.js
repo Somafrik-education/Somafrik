@@ -65,15 +65,27 @@ function isTeacherOrUserCodeUniquenessViolation(error) {
 }
 
 /**
+ * Verrou transactionnel établissement pour création enseignant (codes + identité).
+ * @param {{ query: (sql: string, params?: unknown[]) => Promise<unknown> }} db
+ * @param {string} schoolId
+ */
+async function acquireTeacherSchoolCreationLock(db, schoolId) {
+  await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`teacher-code:${schoolId}`]);
+}
+
+/**
  * @param {{
  *   query: (sql: string, params?: unknown[]) => Promise<unknown>,
  *   all: (sql: string, params?: unknown[]) => Promise<any[]>,
  * }} db
  * @param {string} schoolId
  * @param {string} schoolCode
+ * @param {{ alreadyLocked?: boolean }} [options]
  */
-async function allocateTeacherCodesLocked(db, schoolId, schoolCode) {
-  await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`teacher-code:${schoolId}`]);
+async function allocateTeacherCodesLocked(db, schoolId, schoolCode, options = {}) {
+  if (!options.alreadyLocked) {
+    await acquireTeacherSchoolCreationLock(db, schoolId);
+  }
   const teacherRows = await db.all(
     `SELECT teacher_code AS code FROM teachers WHERE school_id = $1`,
     [schoolId],
@@ -92,5 +104,6 @@ module.exports = {
   extractEnsSequence,
   generateNextTeacherCodes,
   isTeacherOrUserCodeUniquenessViolation,
+  acquireTeacherSchoolCreationLock,
   allocateTeacherCodesLocked,
 };
