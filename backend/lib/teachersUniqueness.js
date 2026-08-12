@@ -9,6 +9,8 @@
  */
 
 const TEACHERS_SCHOOL_USER_UNIQUE_INDEX = "teachers_school_user_unique";
+const TEACHERS_DOMAIN_CONSTRAINTS_CODE = "TEACHERS_SCHOOL_USER_DUPLICATES";
+const TEACHERS_DOMAIN_INDEX_MISSING_CODE = "TEACHERS_SCHOOL_USER_INDEX_MISSING";
 
 /** Compte les groupes (school_id, user_id) en doublon (user_id non null). */
 const COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL = `
@@ -22,7 +24,11 @@ const COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL = `
   ) d
 `;
 
-/** Échantillon diagnostic des groupes en doublon (résolution explicite requise). */
+/**
+ * Inventaire read-only des groupes en doublon.
+ * Champs exposés : school_code, user_id (UUID), teacher_codes, duplicate_count.
+ * Interdit : emails, téléphones, noms, mots de passe, hashes.
+ */
 const LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL = `
   SELECT
     s.school_code,
@@ -42,6 +48,14 @@ const CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS ${TEACHERS_SCHOOL_USER_UNIQUE_INDEX}
   ON teachers (school_id, user_id)
   WHERE user_id IS NOT NULL
+`;
+
+const CHECK_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL = `
+  SELECT 1 AS present
+  FROM pg_indexes
+  WHERE schemaname = ANY (current_schemas(false))
+    AND indexname = $1
+  LIMIT 1
 `;
 
 /**
@@ -73,6 +87,132 @@ function formatTeachersSchoolUserDuplicateDiagnostic(groups = [], duplicateGroup
 }
 
 /**
+ * @param {string} [detail]
+ * @returns {string}
+ */
+function formatTeachersSchoolUserIndexMissingDiagnostic(detail = "") {
+  const suffix = detail ? ` ${detail}` : "";
+  return (
+    `Teachers : index ${TEACHERS_SCHOOL_USER_UNIQUE_INDEX} absent après tentative de création.` +
+    ` Les contraintes domaine ne sont pas satisfaites — démarrage refusé.${suffix}`
+  );
+}
+
+/**
+ * Erreur domaine boot Teachers — message opérable, sans secrets.
+ * @param {string} message
+ * @param {{ code?: string, inventory?: object }} [meta]
+ * @returns {Error & { code: string, inventory?: object }}
+ */
+function createTeachersDomainConstraintsError(message, meta = {}) {
+  const error = new Error(message);
+  error.name = "TeachersDomainConstraintsError";
+  error.code = meta.code || TEACHERS_DOMAIN_CONSTRAINTS_CODE;
+  if (meta.inventory) {
+    error.inventory = meta.inventory;
+  }
+  return error;
+}
+
+/**
+ * Inventaire strictement read-only des doublons (school_id, user_id).
+ * Aucune écriture, aucune sélection de canon, aucune fusion.
+ *
+ * @param {{ one: Function, all: Function }} db
+ * @returns {Promise<{
+ *   duplicateGroups: number,
+ *   groups: Array<object>,
+ *   diagnostic: string,
+ * }>}
+ */
+async function inventoryTeachersSchoolUserDuplicates(db) {
+  const before = await db.one(COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
+  const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+  const groups =
+    duplicateGroups > 0 ? await db.all(LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL) : [];
+  return {
+    duplicateGroups,
+    groups: Array.isArray(groups) ? groups : [],
+    diagnostic: formatTeachersSchoolUserDuplicateDiagnostic(groups, duplicateGroups),
+  };
+}
+
+/**
+ * Applique les contraintes Teachers au boot.
+ * Ordre : inventaire read-only → fail-fast si doublons → CREATE INDEX → re-vérification.
+ *
+ * @param {{ one: Function, all: Function, query: Function }} db
+ * @param {{ info?: Function, error?: Function, warn?: Function }} [logger]
+ */
+async function ensureTeachersDomainConstraints(db, logger = console) {
+  const logInfo = typeof logger.info === "function" ? logger.info.bind(logger) : console.log;
+  const logError = typeof logger.error === "function" ? logger.error.bind(logger) : console.error;
+
+  const inventory = await inventoryTeachersSchoolUserDuplicates(db);
+  logInfo(
+    `[teachers-domain] inventaire read-only (school_id, user_id) : ` +
+      `${inventory.duplicateGroups} groupe(s) en doublon` +
+      (inventory.groups.length
+        ? ` ; échantillon=${inventory.groups.length}`
+        : " ; aucun doublon"),
+  );
+
+  if (inventory.duplicateGroups > 0) {
+    logError(`[teachers-domain] ${inventory.diagnostic}`);
+    throw createTeachersDomainConstraintsError(inventory.diagnostic, {
+      code: TEACHERS_DOMAIN_CONSTRAINTS_CODE,
+      inventory: {
+        duplicateGroups: inventory.duplicateGroups,
+        sampleCount: inventory.groups.length,
+      },
+    });
+  }
+
+  try {
+    await db.query(CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL);
+  } catch (error) {
+    if (isTeachersSchoolUserUniquenessViolation(error)) {
+      const groups = await db.all(LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
+      const duplicateGroups = Array.isArray(groups) ? groups.length : 0;
+      const diagnostic = formatTeachersSchoolUserDuplicateDiagnostic(groups, duplicateGroups);
+      logError(`[teachers-domain] échec CREATE INDEX : ${diagnostic}`);
+      throw createTeachersDomainConstraintsError(diagnostic, {
+        code: TEACHERS_DOMAIN_CONSTRAINTS_CODE,
+        inventory: { duplicateGroups, sampleCount: duplicateGroups },
+      });
+    }
+    throw error;
+  }
+
+  const after = await inventoryTeachersSchoolUserDuplicates(db);
+  if (after.duplicateGroups > 0) {
+    logError(`[teachers-domain] doublons persistants après CREATE INDEX : ${after.diagnostic}`);
+    throw createTeachersDomainConstraintsError(after.diagnostic, {
+      code: TEACHERS_DOMAIN_CONSTRAINTS_CODE,
+      inventory: {
+        duplicateGroups: after.duplicateGroups,
+        sampleCount: after.groups.length,
+      },
+    });
+  }
+
+  const indexRow = await db.one(CHECK_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL, [
+    TEACHERS_SCHOOL_USER_UNIQUE_INDEX,
+  ]);
+  if (!indexRow?.present) {
+    const diagnostic = formatTeachersSchoolUserIndexMissingDiagnostic();
+    logError(`[teachers-domain] ${diagnostic}`);
+    throw createTeachersDomainConstraintsError(diagnostic, {
+      code: TEACHERS_DOMAIN_INDEX_MISSING_CODE,
+    });
+  }
+
+  logInfo(
+    `[teachers-domain] contraintes satisfaites (index ${TEACHERS_SCHOOL_USER_UNIQUE_INDEX} présent, 0 doublon)`,
+  );
+}
+
+/**
  * @param {unknown} error
  * @returns {boolean}
  */
@@ -91,11 +231,33 @@ function isTeachersSchoolUserUniquenessViolation(error) {
   );
 }
 
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isTeachersDomainConstraintsError(error) {
+  if (!error) return false;
+  const code = String(error.code ?? "");
+  return (
+    code === TEACHERS_DOMAIN_CONSTRAINTS_CODE ||
+    code === TEACHERS_DOMAIN_INDEX_MISSING_CODE ||
+    error.name === "TeachersDomainConstraintsError"
+  );
+}
+
 module.exports = {
   TEACHERS_SCHOOL_USER_UNIQUE_INDEX,
+  TEACHERS_DOMAIN_CONSTRAINTS_CODE,
+  TEACHERS_DOMAIN_INDEX_MISSING_CODE,
   COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
   LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
   CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL,
+  CHECK_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL,
   formatTeachersSchoolUserDuplicateDiagnostic,
+  formatTeachersSchoolUserIndexMissingDiagnostic,
+  createTeachersDomainConstraintsError,
+  inventoryTeachersSchoolUserDuplicates,
+  ensureTeachersDomainConstraints,
   isTeachersSchoolUserUniquenessViolation,
+  isTeachersDomainConstraintsError,
 };

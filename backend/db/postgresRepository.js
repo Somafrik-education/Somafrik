@@ -414,25 +414,19 @@ class PostgresRepository {
 
   /**
    * Teachers — unicité atomique (school_id, user_id) pour fiche canonique liée.
-   * Ordre : inventaire doublons (fail-safe) → index unique partiel.
-   * Interdit : suppression silencieuse des fiches en doublon.
+   * Ordre : inventaire doublons read-only (fail-safe) → index unique partiel → re-vérification.
+   * Interdit : suppression / fusion / choix automatique de canon.
    */
   async ensureTeachersDomainConstraints() {
-    const {
-      COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
-      LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL,
-      CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL,
-      formatTeachersSchoolUserDuplicateDiagnostic,
-    } = require("../lib/teachersUniqueness");
-
-    const before = await this.one(COUNT_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
-    const duplicateGroups = Number(before?.duplicate_groups ?? 0);
-    if (duplicateGroups > 0) {
-      const groups = await this.all(LIST_TEACHERS_SCHOOL_USER_DUPLICATE_GROUPS_SQL);
-      throw new Error(formatTeachersSchoolUserDuplicateDiagnostic(groups, duplicateGroups));
-    }
-
-    await this.query(CREATE_TEACHERS_SCHOOL_USER_UNIQUE_INDEX_SQL);
+    const { ensureTeachersDomainConstraints } = require("../lib/teachersUniqueness");
+    await ensureTeachersDomainConstraints(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
   }
 
   async getDataset() {

@@ -135,14 +135,28 @@ async function initializeRepository({
     if (error instanceof DbConfigError) {
       throw error;
     }
+
+    // Toujours journaliser la cause réelle (sanitisée) — y compris contraintes domaine Teachers.
+    const cause = sanitizeDbErrorMessage(error);
+    const domainCode = error && error.code ? String(error.code) : "";
+
     if (mustUsePostgres || isProductionEnvironment(env)) {
-      throw new DbConfigError(
-        "Connexion PostgreSQL obligatoire impossible.",
+      logger.error(`Échec initialisation PostgreSQL: ${cause}`);
+      if (domainCode) {
+        logger.error(`Code domaine: ${domainCode}`);
+      }
+      const wrapped = new DbConfigError(
+        `Connexion PostgreSQL obligatoire impossible. Cause: ${cause}`,
       );
+      wrapped.cause = error;
+      if (domainCode) {
+        wrapped.domainCode = domainCode;
+      }
+      throw wrapped;
     }
 
     logger.warn("PostgreSQL indisponible, démarrage en mode démo mémoire.");
-    logger.warn(`Cause: ${sanitizeDbErrorMessage(error)}`);
+    logger.warn(`Cause: ${cause}`);
 
     const fallback = createFallbackRepository(env);
     await fallback.init();

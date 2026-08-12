@@ -60,6 +60,9 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:teacher-account-creation
 
+      - name: verify:teachers-domain-constraints-boot (P0 préprod)
+        run: npm run verify:teachers-domain-constraints-boot
+
       - name: Build image préproduction
         env:
           POSTGRES_DB: somafrik
