@@ -33,6 +33,20 @@ export interface SchoolStudentAccess {
   reportPath: string;
 }
 
+export interface SchoolStudentGuardian {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  relationshipType?: string;
+  isPrimaryContact?: boolean;
+  isLegalGuardian?: boolean;
+  isEmergencyContact?: boolean;
+  isFinanciallyResponsible?: boolean;
+}
+
 export interface SchoolStudent {
   id: string;
   publicId: string;
@@ -57,7 +71,7 @@ export interface SchoolStudent {
   createdAt?: string;
   updatedAt?: string;
   enrollments?: SchoolStudentEnrollment[];
-  guardians?: unknown[];
+  guardians?: SchoolStudentGuardian[];
   medical?: {
     allergies?: string[];
     conditions?: string[];

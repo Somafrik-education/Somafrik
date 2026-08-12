@@ -131,6 +131,59 @@ function toDomainDocuments(dossier: SchoolStudent): StudentDocument[] {
   }));
 }
 
+function toDomainMedicalProfiles(dossier: SchoolStudent) {
+  if (!dossier.medical) return [];
+  return [
+    {
+      id: `med-${dossier.studentCode}`,
+      studentId: dossier.studentCode,
+      bloodType: dossier.medical.bloodType || undefined,
+      allergies: (dossier.medical.allergies ?? []).join(", ") || undefined,
+      chronicConditions: (dossier.medical.conditions ?? []).join(", ") || undefined,
+      medications: (dossier.medical.medications ?? []).join(", ") || undefined,
+      confidentialNotes: dossier.medical.notes || undefined,
+      doctorPhone: dossier.medical.emergencyContact || undefined,
+    },
+  ];
+}
+
+function toDomainGuardians(dossier: SchoolStudent) {
+  const guardians = [];
+  const guardianRelations = [];
+  const persons = [];
+  for (const row of dossier.guardians ?? []) {
+    const id = String(row.id ?? "").trim();
+    if (!id) continue;
+    const personId = `person-${id}`;
+    const firstName = String(row.firstName ?? "").trim();
+    const lastName = String(row.lastName ?? "").trim();
+    persons.push({
+      id: personId,
+      firstName: firstName || "Responsable",
+      lastName: lastName || String(row.name ?? "").trim() || id,
+      phone: String(row.phone ?? "").trim() || undefined,
+      email: String(row.email ?? "").trim() || undefined,
+    });
+    guardians.push({
+      id,
+      personId,
+    });
+    guardianRelations.push({
+      id: `rel-${dossier.studentCode}-${id}`,
+      studentId: dossier.studentCode,
+      guardianId: id,
+      relationshipType: String(row.relationshipType ?? "OTHER"),
+      isPrimaryContact: Boolean(row.isPrimaryContact),
+      isLegalGuardian: Boolean(row.isLegalGuardian ?? true),
+      isEmergencyContact: Boolean(row.isEmergencyContact),
+      isFinanciallyResponsible: Boolean(row.isFinanciallyResponsible),
+      status: "Actif" as const,
+      priority: row.isPrimaryContact ? 1 : 2,
+    });
+  }
+  return { guardians, guardianRelations, persons };
+}
+
 /**
  * Construit le workspace fiche à partir de la fiche PostgreSQL `/api/students/:studentCode`.
  */
@@ -140,6 +193,8 @@ export function buildStudentWorkspaceFromDossier(
   const student = toDomainStudent(dossier);
   const enrollments = toDomainEnrollments(dossier);
   const documents = toDomainDocuments(dossier);
+  const medicalProfiles = toDomainMedicalProfiles(dossier);
+  const { guardians, guardianRelations, persons } = toDomainGuardians(dossier);
   const academicYear =
     dossier.academicYearName ||
     enrollments.find((row) => row.status === "ENROLLED" || row.status === "APPROVED")?.academicYear ||
@@ -150,11 +205,12 @@ export function buildStudentWorkspaceFromDossier(
     academicYear,
     data: {
       students: [student],
+      persons,
       enrollments,
-      guardians: [],
-      guardianRelations: [],
+      guardians,
+      guardianRelations,
       documents,
-      medicalProfiles: [],
+      medicalProfiles,
       schools: [{ code: dossier.schoolCode, name: dossier.schoolCode }],
     },
   });
