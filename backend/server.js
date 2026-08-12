@@ -4407,6 +4407,9 @@ initRepository()
         : sanitizeDbErrorMessage(error);
     console.error("Impossible d'initialiser le stockage Somafrik");
     console.error(safeMessage);
+    if (error?.domainCode) {
+      console.error(`Code domaine: ${error.domainCode}`);
+    }
     process.exit(1);
   });
 
