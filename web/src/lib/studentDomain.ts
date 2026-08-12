@@ -214,12 +214,6 @@ export function adaptLegacyStudent(row: LegacyStudentRow): Student {
   };
 }
 
-export function adaptLegacyStudents(
-  rows: readonly LegacyStudentRow[] = [],
-): Student[] {
-  return rows.map(adaptLegacyStudent);
-}
-
 export interface LegacyEnrollmentSource extends Record<string, unknown> {
   id?: string;
   enrollmentId?: string;

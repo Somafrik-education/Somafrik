@@ -84,8 +84,6 @@ import {
   entityCreateViaContactsOnly,
   type SchoolEntityKey,
 } from "../lib/entityModules";
-import { applyActiveGridsToStudent } from "../lib/fees";
-import { adaptLegacyStudents } from "../lib/studentDomain";
 import {
   getTeacherProvisioningOptions,
   syncSingleUserToTeachers,
@@ -118,7 +116,7 @@ import {
   validateTeacherSchoolEntry,
 } from "../lib/teacherRules";
 import { markAllAnnouncementsRead } from "../lib/announcementsRead";
-import { normalize, isSchoolAdminRole } from "../lib/format";
+import { isSchoolAdminRole } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
@@ -147,7 +145,6 @@ import { getSchoolAcademicLists } from "../lib/academicConfig";
 import {
   generateTeacherIdentifiers,
   getTeacherLoginIdentifier,
-  resolveStudentMatricule,
   resolveTeacherIdentifiers,
 } from "../lib/entityIdentifiers";
 
@@ -199,11 +196,14 @@ interface EntityPageProps {
 }
 
 /**
- * Clôture CRUD legacy Classes : redirection hors EntityPage, sans Hooks conditionnels.
+ * Clôture CRUD legacy Classes / Élèves : redirection hors EntityPage, sans Hooks conditionnels.
  */
 export function EntityPage(props: EntityPageProps) {
   if (props.entity === "classes") {
     return <Navigate to="/etablissement/classes" replace />;
+  }
+  if (props.entity === "students") {
+    return <Navigate to="/etablissement/eleves" replace />;
   }
   return <EntityPageContent {...props} />;
 }
@@ -327,11 +327,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
   const rows = useMemo(() => {
     if (!module) return [];
     let scoped = getScopedEntityRows(module.key, scopeUser, state);
-    if (classScope && module.key === "students") {
-      scoped = scoped.filter(
-        (row) => normalize(String(row.className ?? "")) === normalize(classScope),
-      );
-    }
     if (isParentChildMode) {
       scoped = groupParentChildRelations(scoped);
     }
@@ -340,7 +335,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     return scoped.filter((row) =>
       Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(q)),
     );
-  }, [module, search, scopeUser, state, isParentChildMode, classScope]);
+  }, [module, search, scopeUser, state, isParentChildMode]);
 
   const scopedStudentsList = useMemo(
     () => scopedStudents(scopeUser, state),
@@ -594,10 +589,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
     let workingItem = { ...editing };
 
-    if (classScope && module.key === "students") {
-      workingItem = { ...workingItem, className: classScope };
-    }
-
     if (module.planningManaged && editing.id) {
       const currentRows = getScopedEntityRows(module.key, scopeUser, state);
       const original = currentRows.find((row) => String(row.id) === String(editing.id));
@@ -750,7 +741,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
     if (!exists) {
       const featureByModule: Partial<Record<string, SubscriptionFeature>> = {
-        students: "create_student",
         teachers: "create_teacher",
         announcements: "announcements",
       };
@@ -787,33 +777,12 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       };
     }
 
-    if (module.key === "students") {
-      const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
-      if (!code || code === "*") {
-        showToast("Code établissement requis pour générer le matricule élève", "error");
-        return;
-      }
-      const matriculeInfo = resolveStudentMatricule(
-        preparedItem,
-        code,
-        (state.students ?? []) as Record<string, unknown>[],
-      );
-      preparedItem = {
-        ...preparedItem,
-        matricule: matriculeInfo.matricule,
-        publicId: matriculeInfo.publicId,
-      };
-    }
-
     const withId = prepareEntityRowForSave(
       preparedItem,
       module.key.toUpperCase(),
       exists,
     );
-    const nextItem =
-      !exists && module.key === "students"
-        ? { ...withId, archived: preparedItem.archived ?? false }
-        : withId;
+    const nextItem = withId;
 
     const mergeResult = mergeEntityIntoState(module.key, scopeUser, state, nextItem);
     if (!mergeResult.applied) {
@@ -909,13 +878,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     );
     if (genericAudit) {
       patch.auditLog = genericAudit;
-    }
-
-    if (module.key === "students" && !exists) {
-      patch.studentFees = applyActiveGridsToStudent(
-        { ...state, ...patch, students: adaptLegacyStudents(nextAllRows) },
-        nextItem as Record<string, unknown>,
-      );
     }
 
     await applyPlan({ patch, successMessage }, () => setEditing(null));
@@ -1141,21 +1103,17 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     },
   });
 
-  const listTitle = classScope
-    ? `Élèves — ${classScope}`
-    : isParentChildMode
-      ? "Relations parent-enfant"
-      : module.label;
+  const listTitle = isParentChildMode
+    ? "Relations parent-enfant"
+    : module.label;
 
-  const listDescription = classScope
-    ? `Inscription et dossiers des élèves de la classe ${classScope}.`
-    : isParentChildMode
-      ? school
-        ? `Liez un parent à un ou plusieurs élèves. Périmètre : ${school.name} (${school.code})`
-        : "Liez un parent à un ou plusieurs élèves de l'établissement."
-      : school
-        ? `${module.description} · Périmètre : ${school.name} (${school.code})`
-        : module.description;
+  const listDescription = isParentChildMode
+    ? school
+      ? `Liez un parent à un ou plusieurs élèves. Périmètre : ${school.name} (${school.code})`
+      : "Liez un parent à un ou plusieurs élèves de l'établissement."
+    : school
+      ? `${module.description} · Périmètre : ${school.name} (${school.code})`
+      : module.description;
 
   const secondaryActions = (
     <>
@@ -1220,9 +1178,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             setLinkContactOpen(true);
           }}
         >
-          {linkableContactKind === "teacher"
-            ? "Créer la fiche depuis un compte"
-            : "Ajouter depuis un contact"}
+          Créer la fiche depuis un compte
         </Button>
       ) : null}
       {allowCreate ? (
@@ -1254,10 +1210,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
               setEditing(
                 generateTeacherIdentifiers(code, (state.teachers ?? []) as Record<string, unknown>[]),
               );
-              return;
-            }
-            if (module.key === "students" && classScope) {
-              setEditing({ className: classScope });
               return;
             }
             setEditing({});
@@ -1343,16 +1295,8 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       <Modal
         open={linkContactOpen}
         onClose={() => setLinkContactOpen(false)}
-        title={
-          linkableContactKind === "teacher"
-            ? "Créer une fiche enseignant"
-            : "Créer une fiche depuis un contact"
-        }
-        description={
-          linkableContactKind === "teacher"
-            ? "Sélectionnez un compte utilisateur (rôle Enseignant) sans fiche, ou un contact existant."
-            : "Sélectionnez un compte utilisateur existant pour générer sa fiche."
-        }
+        title="Créer une fiche enseignant"
+        description="Sélectionnez un compte utilisateur (rôle Enseignant) sans fiche, ou un contact existant."
         footer={
           <>
             <Button variant="secondary" onClick={() => setLinkContactOpen(false)}>
@@ -1436,9 +1380,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
                   : isParentChildMode && field.key === "toStudentId"
                     ? "Élève"
                     : field.label;
-              const fieldLocked =
-                Boolean(field.readOnly) ||
-                (Boolean(classScope) && module.key === "students" && field.key === "className");
+              const fieldLocked = Boolean(field.readOnly);
               return (
               <Field key={field.key} label={fieldLabel} htmlFor={field.key} hint={field.hint} required={field.required}>
                 {field.inputType === "select" ? (

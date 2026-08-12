@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { Button, type Column } from "@/design-system";
 import {
   formatTeacherAssignmentsSummary,
@@ -176,17 +175,7 @@ function renderActionsCell(row: EntityRow, ctx: BuildEntityColumnsContext): Reac
 
   return (
     <div className="flex flex-wrap gap-2">
-      {module.key === "students" && row.id ? (
-        <Link
-          to={`/etablissement/eleves/${encodeURIComponent(String(row.id))}`}
-          className="inline-flex"
-        >
-          <Button variant="secondary" size="sm" type="button">
-            Dossier
-          </Button>
-        </Link>
-      ) : null}
-      {canUpdate ? (
+      {module.key !== "students" && canUpdate ? (
         <Button variant="secondary" size="sm" onClick={() => onEdit(row)}>
           Modifier
         </Button>
@@ -196,7 +185,7 @@ function renderActionsCell(row: EntityRow, ctx: BuildEntityColumnsContext): Reac
           Affecter
         </Button>
       ) : null}
-      {allowDelete ? (
+      {module.key !== "students" && allowDelete ? (
         <Button variant="danger" size="sm" disabled={busy} onClick={() => void onDelete(row)}>
           Supprimer
         </Button>

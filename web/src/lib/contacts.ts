@@ -9,7 +9,7 @@ import {
 } from "./userAccounts";
 import { resolveCountryScopeFromSchool } from "./format";
 import { resolveEffectivePermissions } from "./permissions";
-import { generateStudentMatricule, generateTeacherIdentifiers, resolveStudentMatricule } from "./entityIdentifiers";
+import { generateTeacherIdentifiers } from "./entityIdentifiers";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
 
 type Row = Record<string, unknown>;
@@ -390,9 +390,10 @@ export interface ContactLinkResult {
 
 /**
  * A. Contact ↔ fiche opérationnelle.
- * À l'enregistrement d'un contact « Élève »/« Étudiant » ou « Enseignant », crée ou relie
+ * À l'enregistrement d'un contact « Enseignant », crée ou relie
  * la fiche opérationnelle correspondante et pose `contactId` des deux côtés
- * (la fiche porte `contactId`, le contact porte `studentId`/`teacherId`).
+ * (la fiche porte `contactId`, le contact porte `teacherId`).
+ * Les contacts Élève/Étudiant ne mutent plus `students` (inscription via Classes).
  */
 export function linkContactToOperationalRecord(
   contact: Row,
@@ -409,57 +410,9 @@ export function linkContactToOperationalRecord(
   const lastName = String(contact.lastName ?? "").trim();
   const firstName = String(contact.firstName ?? "").trim();
 
+  // Élèves : lecture / inscription hors Contacts — pas de projection students.
   if (STUDENT_CONTACT_TYPES.has(contactType)) {
-    const students = [...((state.students ?? []) as Row[])];
-    const idx = findFicheIndex(students, contact, contactId, schoolCode);
-    if (idx >= 0) {
-      const existing = students[idx];
-      const matriculeInfo = resolveStudentMatricule(existing, schoolCode, students);
-      students[idx] = {
-        ...existing,
-        name: existing.name || lastName,
-        firstName: existing.firstName || firstName,
-        schoolCode: existing.schoolCode ?? schoolCode,
-        gender: existing.gender ?? contact.gender,
-        birthDate: existing.birthDate ?? contact.birthDate,
-        phone: existing.phone ?? contact.phone,
-        email: existing.email ?? contact.email,
-        matricule: matriculeInfo.matricule,
-        publicId: matriculeInfo.publicId,
-        contactId,
-      };
-      return {
-        contact: { ...contact, studentId: String(existing.id ?? "") },
-        students,
-        linkedType: "student",
-        linkedRecordId: String(existing.id ?? ""),
-        created: false,
-      };
-    }
-    const id = newRecordId("STUDENTS");
-    const matricule = generateStudentMatricule(schoolCode, students);
-    const record: Row = {
-      id,
-      name: lastName,
-      firstName,
-      className: "",
-      schoolCode,
-      gender: contact.gender ?? "Non renseigné",
-      birthDate: contact.birthDate ?? "",
-      phone: contact.phone ?? "",
-      email: contact.email ?? "",
-      matricule,
-      publicId: matricule,
-      archived: false,
-      contactId,
-    };
-    return {
-      contact: { ...contact, studentId: id },
-      students: [record, ...students],
-      linkedType: "student",
-      linkedRecordId: id,
-      created: true,
-    };
+    return { contact };
   }
 
   if (TEACHER_CONTACT_TYPES.has(contactType)) {

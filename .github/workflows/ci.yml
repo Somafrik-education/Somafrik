@@ -63,6 +63,9 @@ jobs:
       - name: verify:students-fiche-consolidation (mémoire)
         run: npm run verify:students-fiche-consolidation
 
+      - name: verify:students-legacy-cleanup (mémoire)
+        run: npm run verify:students-legacy-cleanup
+
       - name: verify:teachers-domain-constraints-boot (P0 préprod)
         run: npm run verify:teachers-domain-constraints-boot
 

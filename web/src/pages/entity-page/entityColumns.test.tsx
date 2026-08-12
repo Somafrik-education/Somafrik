@@ -79,16 +79,13 @@ describe("entityColumns (D2.8a)", () => {
     ).toContain("connexion");
   });
 
-  it("expose l’action Dossier pour les Élèves", () => {
+  it("n'expose plus Dossier / Modifier / Supprimer pour les Élèves (CRUD EntityPage retiré)", () => {
     const module = getEntityModule("students")!;
     const columns = buildEntityColumns(baseCtx({ module }));
     renderActions(columns, { id: "stu-1", name: "Diop" });
-    expect(screen.getByRole("link", { name: "Dossier" })).toHaveAttribute(
-      "href",
-      "/etablissement/eleves/stu-1",
-    );
-    expect(screen.getByRole("button", { name: "Modifier" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Supprimer" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Dossier" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
   });
 
   it("utilise les colonnes parent-enfant en mode dédié", () => {
@@ -106,17 +103,17 @@ describe("entityColumns (D2.8a)", () => {
     expect(relationColumnHeader("toStudentName", module, true)).toBe("Élève(s)");
   });
 
-  it("masque Modifier / Supprimer selon les permissions", () => {
-    const module = getEntityModule("students")!;
+  it("masque Modifier / Supprimer selon les permissions (enseignants)", () => {
+    const module = getEntityModule("teachers")!;
     const columns = buildEntityColumns(
       baseCtx({
         module,
         canUpdate: false,
         allowDelete: false,
+        assignmentCanCreateOrUpdate: false,
       }),
     );
-    renderActions(columns, { id: "stu-1", name: "Diop" });
-    expect(screen.getByRole("link", { name: "Dossier" })).toBeInTheDocument();
+    renderActions(columns, { id: "t1", name: "Diallo" });
     expect(screen.queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
   });

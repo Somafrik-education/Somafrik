@@ -186,20 +186,17 @@ export function buildContactPostMergePlan(
     const sourceContact =
       currentContacts.find((row) => String(row.id) === String(nextContact.id)) ?? nextContact;
     ficheLink = linkContactToOperationalRecord(sourceContact, state, linkSchoolCode);
-    if (ficheLink.students) {
-      patch.students = ficheLink.students as unknown as BackOfficeState["students"];
-    }
+    // Élèves : linkContactToOperationalRecord ne renvoie plus `students`.
     if (ficheLink.teachers) {
       patch.teachers = ficheLink.teachers as unknown as BackOfficeState["teachers"];
     }
     patch.contacts = currentContacts.map((row) =>
       String(row.id) === String(nextContact.id) ? ficheLink!.contact : row,
     ) as unknown as BackOfficeState["contacts"];
-    if (ficheLink.linkedType) {
-      const ficheLabel = ficheLink.linkedType === "student" ? "fiche élève" : "fiche enseignant";
+    if (ficheLink.linkedType === "teacher") {
       const baseMessage = ficheLink.created
-        ? `Contact enregistré · ${ficheLabel} créée et reliée`
-        : `Contact enregistré · ${ficheLabel} reliée`;
+        ? "Contact enregistré · fiche enseignant créée et reliée"
+        : "Contact enregistré · fiche enseignant reliée";
       if (promotion?.created && promotion.temporaryPassword) {
         successMessage = `${baseMessage} · mot de passe provisoire : ${promotion.temporaryPassword}`;
       } else {
@@ -455,13 +452,27 @@ export function buildCreateFicheFromContactPlan(
     showToast("Contact introuvable.", "error");
     return { ok: false };
   }
+  const contactType = String(contact.contactType ?? "").trim();
+  if (contactType === "Élève" || contactType === "Étudiant") {
+    showToast(
+      "Les fiches élèves se créent via Classes (inscription), pas depuis un contact.",
+      "error",
+    );
+    return { ok: false };
+  }
   const link = linkContactToOperationalRecord(contact, state, input.effectiveSchoolCode);
   if (!link.linkedType) {
     showToast("Ce contact ne peut pas être relié à une fiche.", "error");
     return { ok: false };
   }
+  if (link.linkedType === "student" || link.students) {
+    showToast(
+      "Les fiches élèves se créent via Classes (inscription), pas depuis un contact.",
+      "error",
+    );
+    return { ok: false };
+  }
   const patch: Partial<BackOfficeState> = {};
-  if (link.students) patch.students = link.students as unknown as BackOfficeState["students"];
   if (link.teachers) patch.teachers = link.teachers as unknown as BackOfficeState["teachers"];
   patch.contacts = ((state.contacts ?? []) as unknown as EntityRow[]).map((row) =>
     String(row.id) === input.contactId ? link.contact : row,

@@ -5,7 +5,6 @@ import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { api } from "../api/client";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
-import { Select } from "../components/ui/Field";
 import { PrintButton } from "../components/ui/PrintButton";
 import { useToast } from "../components/ui/Toast";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
@@ -73,7 +72,7 @@ function buildInitialAttendance(
 
 export function PresencesPage() {
   const { session } = useAuth();
-  const { state, refresh, update } = useData();
+  const { state, refresh } = useData();
   const { scopedUser } = useActiveSchool();
   const { showToast } = useToast();
   const scopeUser = scopedUser ?? session?.user ?? null;
@@ -104,17 +103,6 @@ export function PresencesPage() {
     const cardKeys = new Set(classNames.map((name) => normalize(name)));
     return students.filter((student) => !cardKeys.has(normalize(student.className)));
   }, [classNames, students, isTeacherRestricted]);
-
-  // Classes réelles proposables pour affecter un élève « Sans classe ».
-  const assignableClassNames = useMemo(() => {
-    const set = new Set<string>();
-    classes.forEach((row) => {
-      const name = String(row.name ?? "").trim();
-      if (name) set.add(name);
-    });
-    classNames.forEach((name) => set.add(name));
-    return [...set].sort((left, right) => left.localeCompare(right, "fr"));
-  }, [classes, classNames]);
 
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
@@ -161,29 +149,6 @@ export function PresencesPage() {
     }
     setAttendanceDirty(true);
     setAttendance((current) => ({ ...current, [studentId]: status }));
-  }
-
-  async function assignStudentToClass(studentId: string, className: string) {
-    if (!canUpdate) {
-      showToast("Action refusée — vous n'êtes pas autorisé à modifier les élèves.", "error");
-      return;
-    }
-    const target = className.trim();
-    if (!studentId || !target) return;
-    const nextStudents = state.students.map((student) =>
-      student.id === studentId
-        ? { ...student, className: target }
-        : student,
-    );
-    setBusy(true);
-    try {
-      await update({ students: nextStudents }, { partial: true });
-      showToast(`Élève affecté à la classe ${target}.`, "success");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Échec de l'affectation.", "error");
-    } finally {
-      setBusy(false);
-    }
   }
 
   function markAllPresent() {
@@ -396,25 +361,10 @@ export function PresencesPage() {
                   <p className="font-black text-ink">{name || "Élève"}</p>
                   <p className="text-sm font-semibold text-muted">{String(student.matricule ?? student.publicId ?? "—")}</p>
                 </div>
-                {selectedClass === UNASSIGNED_CLASS && canUpdate ? (
-                  <Select
-                    value=""
-                    disabled={busy || !assignableClassNames.length}
-                    onChange={(event) => void assignStudentToClass(studentId, event.target.value)}
-                    className="sm:w-56"
-                    options={[
-                      {
-                        value: "",
-                        label: assignableClassNames.length
-                          ? "Affecter à une classe…"
-                          : "Aucune classe disponible",
-                      },
-                      ...assignableClassNames.map((className) => ({
-                        value: className,
-                        label: className,
-                      })),
-                    ]}
-                  />
+                {selectedClass === UNASSIGNED_CLASS ? (
+                  <p className="text-sm font-semibold text-muted sm:max-w-xs">
+                    Inscription et rattachement de classe via Mon établissement → Classes.
+                  </p>
                 ) : null}
                 {canUpdate ? (
                   <div className="flex flex-wrap gap-2">
