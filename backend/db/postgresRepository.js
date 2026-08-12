@@ -82,6 +82,7 @@ class PostgresRepository {
     await this.query(schema);
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
+    await this.ensureClassesDomainConstraints();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -348,6 +349,34 @@ class PostgresRepository {
     }
 
     await this.query(CREATE_ATTENDANCE_UNIQUE_INDEX_SQL);
+  }
+
+  /**
+   * Classes — unicité atomique (école + année + nom normalisé) + statut active|inactive.
+   * Ordre : normaliser statuts → détecter doublons (fail-safe) → index unique → CHECK.
+   * Interdit : suppression silencieuse des classes en doublon.
+   */
+  async ensureClassesDomainConstraints() {
+    const {
+      COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
+      LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
+      CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
+      ENSURE_CLASSES_STATUS_CHECK_SQL,
+      NORMALIZE_CLASSES_STATUS_SQL,
+      formatClassesNameDuplicateDiagnostic,
+    } = require("../lib/classesUniqueness");
+
+    await this.query(NORMALIZE_CLASSES_STATUS_SQL);
+
+    const before = await this.one(COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL);
+    const duplicateGroups = Number(before?.duplicate_groups ?? 0);
+    if (duplicateGroups > 0) {
+      const groups = await this.all(LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL);
+      throw new Error(formatClassesNameDuplicateDiagnostic(groups, duplicateGroups));
+    }
+
+    await this.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
+    await this.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
   }
 
   async getDataset() {
@@ -4348,6 +4377,34 @@ class PostgresRepository {
 
   getSchoolByCode(code) {
     return this.one("SELECT * FROM schools WHERE school_code = $1", [String(code ?? "").trim().toUpperCase()]);
+  }
+
+  /**
+   * Classes métier — délégation au repository PostgreSQL dédié.
+   */
+  getClassesRepository() {
+    if (!this._classesRepository) {
+      const { createClassesRepository } = require("./classesRepository");
+      this._classesRepository = createClassesRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+      });
+    }
+    return this._classesRepository;
+  }
+
+  listSchoolClasses(schoolCode) {
+    return this.getClassesRepository().listBySchoolCode(schoolCode);
+  }
+
+  createSchoolClass(body, schoolCode) {
+    return this.getClassesRepository().create(body, schoolCode);
+  }
+
+  updateSchoolClass(classCode, schoolCode, body) {
+    return this.getClassesRepository().update(classCode, schoolCode, body);
   }
 
   async getGradeById(id) {
