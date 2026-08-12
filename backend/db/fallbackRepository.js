@@ -711,6 +711,13 @@ class FallbackRepository {
           school_code: seedData.school.code,
           name: "2025-2026",
         },
+        // Fixture explicite pour tests d'homonymes inter-années (pas de fabrication à la volée).
+        {
+          id: "AY-DEMO-PREV",
+          school_id: seedData.school.id,
+          school_code: seedData.school.code,
+          name: "2024-2025",
+        },
       ];
     }
 
@@ -718,14 +725,17 @@ class FallbackRepository {
     let academicYear = this._managedAcademicYears.find(
       (item) => item.name === input.academicYearName && item.school_code === input.schoolCode,
     );
-    if (!academicYear) {
+    if (!academicYear && input.academicYearName === "2025-2026") {
       academicYear = {
-        id: `AY-${input.schoolCode}-${input.academicYearName}`,
+        id: `AY-${input.schoolCode}-2025-2026`,
         school_id: `school-${input.schoolCode}`,
         school_code: input.schoolCode,
-        name: input.academicYearName,
+        name: "2025-2026",
       };
       this._managedAcademicYears.push(academicYear);
+    }
+    if (!academicYear) {
+      throw createHttpError(400, "Année scolaire introuvable pour cet établissement.");
     }
 
     const duplicate = this._managedClasses.find(

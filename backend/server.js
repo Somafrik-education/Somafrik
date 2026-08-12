@@ -323,63 +323,11 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
     response.user = { ...response.user, children };
   }
   // HOTFIX-PRE-E1-02 : enrichir la session enseignant avec affectations BO (IDs stables),
-  // sans élargir les droits — alimente principal.classNames pour les gardes notes.
+  // sans élargir les droits — affectations explicitement actives uniquement (fail-closed).
   if (response?.user?.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
-    const {
-      resolveTeacherAssignments,
-    } = require("./services/authService");
-    const userId = String(response.user.id ?? "").trim();
-    const identifier = String(response.user.identifier ?? "").trim().toLowerCase();
-    const linkedTeachers = (state.teachers ?? []).filter((row) => {
-      const ids = [row.userId, row.id, row.publicId, row.contactId].map((value) =>
-        String(value ?? "").trim(),
-      );
-      if (userId && ids.includes(userId)) return true;
-      return identifier && String(row.identifier ?? "").trim().toLowerCase() === identifier;
-    });
-    const teacher =
-      linkedTeachers.find(
-        (row) => resolveTeacherAssignments(row, response.user, state.assignments ?? []).length > 0,
-      ) ??
-      linkedTeachers[0] ??
-      null;
-    if (teacher) {
-      const {
-        isExplicitlyActiveAssignmentStatus,
-      } = require("./lib/classStudentsAuthz");
-      const assignments = resolveTeacherAssignments(teacher, response.user, state.assignments ?? [])
-        .map((item) => {
-          const status = item.status ?? item.assignmentStatus ?? item.assignment_status ?? "active";
-          return { ...item, status };
-        })
-        .filter((item) => isExplicitlyActiveAssignmentStatus(item.status));
-      const assignedClasses = [
-        ...new Set(assignments.map((item) => item.className).filter(Boolean)),
-      ];
-      const assignedClassCodes = [
-        ...new Set(
-          assignments
-            .map((item) => item.classCode ?? item.class_code)
-            .filter(Boolean),
-        ),
-      ];
-      const assignedClassIds = [
-        ...new Set(
-          assignments
-            .map((item) => item.classId ?? item.class_id)
-            .filter(Boolean),
-        ),
-      ];
-      response.user = {
-        ...response.user,
-        assignments,
-        assignedClasses,
-        assignedClassCodes,
-        assignedClassIds,
-        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
-      };
-    }
+    const { enrichTeacherUserWithActiveAssignments } = require("./lib/teacherSessionAssignments");
+    response.user = enrichTeacherUserWithActiveAssignments(response.user, state);
   }
   await sendAuthenticatedResponse(req, res, response, "backoffice_login");
 }));
@@ -428,6 +376,25 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
     identifier: payload.identifier,
     publicId: payload.publicId,
   });
+
+  // Reconstruire les affectations depuis l'état autoritatif (pas depuis l'ancien jeton).
+  let assignmentFields = {};
+  if (session.role === "Enseignant") {
+    const state = await getAuthoritativeBackOfficeState();
+    const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
+    assignmentFields = teacherPrincipalAssignmentFields(
+      {
+        id: session.user_code ?? payload.sub ?? session.user_id,
+        sub: payload.sub ?? session.user_id,
+        identifier: payload.identifier,
+        publicId: payload.publicId,
+        schoolCode: session.school_code ?? payload.schoolCode,
+        role: "Enseignant",
+      },
+      state,
+    );
+  }
+
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
     role: session.role,
@@ -439,6 +406,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
     identifier: payload.identifier,
     publicId: payload.publicId,
     mustChangePassword,
+    ...assignmentFields,
   });
 
   res.json({
@@ -488,44 +456,8 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   // HOTFIX-PRE-E1-02 : ne pas perdre assignedClasses après change-password.
   if (safeUser.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
-    const {
-      resolveTeacherAssignments,
-    } = require("./services/authService");
-    const userId = String(safeUser.id ?? req.principal.sub ?? "").trim();
-    const linkedTeachers = (state.teachers ?? []).filter((row) =>
-      [row.userId, row.id, row.publicId, row.contactId].some(
-        (value) => String(value ?? "").trim() === userId,
-      ),
-    );
-    const teacher =
-      linkedTeachers.find(
-        (row) => resolveTeacherAssignments(row, safeUser, state.assignments ?? []).length > 0,
-      ) ??
-      linkedTeachers[0] ??
-      null;
-    if (teacher) {
-      const {
-        isExplicitlyActiveAssignmentStatus,
-      } = require("./lib/classStudentsAuthz");
-      const assignments = resolveTeacherAssignments(teacher, safeUser, state.assignments ?? [])
-        .map((item) => {
-          const status = item.status ?? item.assignmentStatus ?? item.assignment_status ?? "active";
-          return { ...item, status };
-        })
-        .filter((item) => isExplicitlyActiveAssignmentStatus(item.status));
-      safeUser = {
-        ...safeUser,
-        assignments,
-        assignedClasses: [...new Set(assignments.map((item) => item.className).filter(Boolean))],
-        assignedClassCodes: [
-          ...new Set(assignments.map((item) => item.classCode ?? item.class_code).filter(Boolean)),
-        ],
-        assignedClassIds: [
-          ...new Set(assignments.map((item) => item.classId ?? item.class_id).filter(Boolean)),
-        ],
-        courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
-      };
-    }
+    const { enrichTeacherUserWithActiveAssignments } = require("./lib/teacherSessionAssignments");
+    safeUser = enrichTeacherUserWithActiveAssignments(safeUser, state);
   }
   const rolePermissionsMap = await getRolePermissionsMap();
   const principal = buildPrincipal(

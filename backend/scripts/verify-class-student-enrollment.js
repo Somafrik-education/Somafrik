@@ -52,14 +52,50 @@ async function waitForHealth(child) {
 }
 
 async function login(identifier, schoolCode) {
+  const session = await loginSession(identifier, schoolCode);
+  return session.token;
+}
+
+async function loginSession(identifier, schoolCode) {
   const loginResponse = await request("/backoffice/login", {
     method: "POST",
     body: { identifier, password: "1234", schoolCode },
   });
   assert.equal(loginResponse.status, 200, JSON.stringify(loginResponse.data));
   const token = loginResponse.data.accessToken || loginResponse.data.token;
+  const refreshToken = loginResponse.data.refreshToken;
   assert.ok(token, `missing token for ${identifier}@${schoolCode}`);
-  return token;
+  assert.ok(refreshToken, `missing refreshToken for ${identifier}@${schoolCode}`);
+  return { token, refreshToken, user: loginResponse.data.user };
+}
+
+async function refreshAccessToken(refreshToken) {
+  const refreshed = await request("/auth/refresh", {
+    method: "POST",
+    body: { refreshToken },
+  });
+  assert.equal(refreshed.status, 200, JSON.stringify(refreshed.data));
+  assert.ok(refreshed.data.accessToken, "missing accessToken after refresh");
+  return refreshed.data.accessToken;
+}
+
+async function setTeacherEmbeddedAssignments(adminToken, teacherIdentifier, assignments) {
+  const stateRes = await request("/backoffice/state", { token: adminToken });
+  assert.equal(stateRes.status, 200, JSON.stringify(stateRes.data));
+  const target = String(teacherIdentifier).trim().toUpperCase();
+  const teachers = (stateRes.data.teachers ?? []).map((row) => {
+    const identifier = String(row.identifier ?? "").trim().toUpperCase();
+    if (identifier !== target) {
+      return row;
+    }
+    return { ...row, assignments: Array.isArray(assignments) ? assignments : [] };
+  });
+  const put = await request("/backoffice/state", {
+    method: "PUT",
+    token: adminToken,
+    body: { teachers },
+  });
+  assert.ok(put.status >= 200 && put.status < 300, JSON.stringify(put.data));
 }
 
 async function createActiveClass(token, label) {
@@ -147,7 +183,7 @@ async function main() {
     assert.match(enrolledOther.data.studentCode, /^ELE-BI-0002-0001-/);
     assert.notEqual(enrolled.data.studentCode, enrolledOther.data.studentCode);
 
-    // Enseignant hors classe affectée : pas de lecture du roster.
+    // Enseignant hors classe affectée (seed sans classCode sur cette classe) : refus.
     const teacherListDenied = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
       { token: tokenTeacher },
@@ -160,68 +196,120 @@ async function main() {
     );
     assert.equal(teacherStudentDenied.status, 404, JSON.stringify(teacherStudentDenied.data));
 
-    // Enseignant sans aucune affectation (classNames: []) : 404 même en connaissant le matricule.
-    const { TokenService } = require("../services/tokenService");
-    const tokenService = new TokenService();
-    const tokenTeacherNoAssignment = tokenService.createAccessToken({
-      sub: "USER-T-NO-ASSIGN",
-      identifier: "ENS-NO-ASSIGN",
-      role: "Enseignant",
-      schoolCode: "CD-2026-0001",
-      countryCode: "CD",
-      permissions: ["Élèves:READ", "Voir élèves"],
-      classNames: [],
-      classCodes: [],
-      classIds: [],
-      assignments: [],
-      mustChangePassword: false,
+    // Année scolaire inconnue : refus (pas de fabrication automatique).
+    const unknownYear = await request("/classes", {
+      method: "POST",
+      token: tokenCd,
+      body: {
+        name: `Classe année inconnue ${Date.now()}`,
+        academicYearName: "2099-2100",
+        status: "active",
+      },
     });
-    const teacherEmptyAssignmentsDenied = await request(
+    assert.equal(unknownYear.status, 400, JSON.stringify(unknownYear.data));
+
+    // Connexion réelle : affectation active + classCode → 200 avant et après refresh.
+    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
+      {
+        className: activeClass.name,
+        classCode: activeClass.classCode,
+        course: "Mathématiques",
+        status: "active",
+      },
+    ]);
+    const activeTeacherSession = await loginSession("ENS-0001", "CD-2026-0001");
+    const teacherReadBeforeRefresh = await request(
       `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
-      { token: tokenTeacherNoAssignment },
+      { token: activeTeacherSession.token },
     );
     assert.equal(
-      teacherEmptyAssignmentsDenied.status,
-      404,
-      JSON.stringify(teacherEmptyAssignmentsDenied.data),
+      teacherReadBeforeRefresh.status,
+      200,
+      JSON.stringify(teacherReadBeforeRefresh.data),
     );
-
-    // Affectation inactive avec le bon classCode → 404 (fail-closed sur le statut).
-    const tokenTeacherInactiveAssignment = tokenService.createAccessToken({
-      sub: "USER-T-INACTIVE",
-      identifier: "ENS-INACTIVE",
-      role: "Enseignant",
-      schoolCode: "CD-2026-0001",
-      countryCode: "CD",
-      permissions: ["Élèves:READ", "Voir élèves"],
-      classNames: [activeClass.name],
-      classCodes: [activeClass.classCode],
-      classIds: [],
-      assignments: [
-        {
-          className: activeClass.name,
-          classCode: activeClass.classCode,
-          status: "inactive",
-        },
-      ],
-      mustChangePassword: false,
-    });
-    const teacherInactiveDenied = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
-      { token: tokenTeacherInactiveAssignment },
-    );
-    assert.equal(teacherInactiveDenied.status, 404, JSON.stringify(teacherInactiveDenied.data));
-    const teacherInactiveRosterDenied = await request(
+    const teacherRosterBeforeRefresh = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
-      { token: tokenTeacherInactiveAssignment },
+      { token: activeTeacherSession.token },
     );
     assert.equal(
-      teacherInactiveRosterDenied.status,
-      403,
-      JSON.stringify(teacherInactiveRosterDenied.data),
+      teacherRosterBeforeRefresh.status,
+      200,
+      JSON.stringify(teacherRosterBeforeRefresh.data),
     );
 
-    // Homonymes inter-années : principal avec seulement classNames → refus HTTP.
+    const tokenAfterRefresh = await refreshAccessToken(activeTeacherSession.refreshToken);
+    const teacherReadAfterRefresh = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: tokenAfterRefresh },
+    );
+    assert.equal(
+      teacherReadAfterRefresh.status,
+      200,
+      JSON.stringify(teacherReadAfterRefresh.data),
+    );
+
+    // Affectation désactivée avant refresh → accès refusé après refresh.
+    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
+      {
+        className: activeClass.name,
+        classCode: activeClass.classCode,
+        course: "Mathématiques",
+        status: "inactive",
+      },
+    ]);
+    const tokenAfterInactiveRefresh = await refreshAccessToken(activeTeacherSession.refreshToken);
+    const teacherReadAfterInactive = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: tokenAfterInactiveRefresh },
+    );
+    assert.equal(
+      teacherReadAfterInactive.status,
+      404,
+      JSON.stringify(teacherReadAfterInactive.data),
+    );
+
+    // Connexion réelle avec affectation inactive → refus.
+    const inactiveLogin = await loginSession("ENS-0001", "CD-2026-0001");
+    const teacherInactiveLoginDenied = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: inactiveLogin.token },
+    );
+    assert.equal(
+      teacherInactiveLoginDenied.status,
+      404,
+      JSON.stringify(teacherInactiveLoginDenied.data),
+    );
+
+    // Connexion réelle avec affectation sans statut → refus fail-closed.
+    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
+      {
+        className: activeClass.name,
+        classCode: activeClass.classCode,
+        course: "Mathématiques",
+      },
+    ]);
+    const missingStatusLogin = await loginSession("ENS-0001", "CD-2026-0001");
+    const teacherMissingStatusDenied = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: missingStatusLogin.token },
+    );
+    assert.equal(
+      teacherMissingStatusDenied.status,
+      404,
+      JSON.stringify(teacherMissingStatusDenied.data),
+    );
+    const tokenMissingStatusRefresh = await refreshAccessToken(missingStatusLogin.refreshToken);
+    const teacherMissingStatusAfterRefresh = await request(
+      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      { token: tokenMissingStatusRefresh },
+    );
+    assert.equal(
+      teacherMissingStatusAfterRefresh.status,
+      404,
+      JSON.stringify(teacherMissingStatusAfterRefresh.data),
+    );
+
+    // Homonymes inter-années (fixture 2024-2025 explicite) + principal classNames seuls.
     const priorYearName = "6ème A Homonyme";
     const priorYear = await request("/classes", {
       method: "POST",
@@ -255,22 +343,13 @@ async function main() {
     );
     assert.equal(enrolledHomonym.status, 201, JSON.stringify(enrolledHomonym.data));
 
-    const tokenTeacherNameOnly = tokenService.createAccessToken({
-      sub: "USER-T-NAME-ONLY",
-      identifier: "ENS-NAME-ONLY",
-      role: "Enseignant",
-      schoolCode: "CD-2026-0001",
-      countryCode: "CD",
-      permissions: ["Élèves:READ", "Voir élèves"],
-      classNames: [priorYearName],
-      classCodes: [],
-      classIds: [],
-      assignments: [{ className: priorYearName, status: "active" }],
-      mustChangePassword: false,
-    });
+    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
+      { className: priorYearName, course: "Mathématiques", status: "active" },
+    ]);
+    const nameOnlyLogin = await loginSession("ENS-0001", "CD-2026-0001");
     const teacherNameOnlyStudentDenied = await request(
       `/students/${encodeURIComponent(enrolledHomonym.data.studentCode)}`,
-      { token: tokenTeacherNameOnly },
+      { token: nameOnlyLogin.token },
     );
     assert.equal(
       teacherNameOnlyStudentDenied.status,
@@ -279,43 +358,13 @@ async function main() {
     );
     const teacherNameOnlyRosterDenied = await request(
       `/classes/${encodeURIComponent(currentHomonym.data.classCode)}/students`,
-      { token: tokenTeacherNameOnly },
+      { token: nameOnlyLogin.token },
     );
     assert.equal(
       teacherNameOnlyRosterDenied.status,
       403,
       JSON.stringify(teacherNameOnlyRosterDenied.data),
     );
-
-    // Contrôle positif : affectation active + classCode stable → lecture autorisée.
-    const tokenTeacherActiveCode = tokenService.createAccessToken({
-      sub: "USER-T-ACTIVE-CODE",
-      identifier: "ENS-ACTIVE-CODE",
-      role: "Enseignant",
-      schoolCode: "CD-2026-0001",
-      countryCode: "CD",
-      permissions: ["Élèves:READ", "Voir élèves"],
-      classNames: [currentHomonym.data.name],
-      classCodes: [currentHomonym.data.classCode],
-      assignments: [
-        {
-          className: currentHomonym.data.name,
-          classCode: currentHomonym.data.classCode,
-          status: "active",
-        },
-      ],
-      mustChangePassword: false,
-    });
-    const teacherActiveAllowed = await request(
-      `/students/${encodeURIComponent(enrolledHomonym.data.studentCode)}`,
-      { token: tokenTeacherActiveCode },
-    );
-    assert.equal(teacherActiveAllowed.status, 200, JSON.stringify(teacherActiveAllowed.data));
-    const teacherActiveRoster = await request(
-      `/classes/${encodeURIComponent(currentHomonym.data.classCode)}/students`,
-      { token: tokenTeacherActiveCode },
-    );
-    assert.equal(teacherActiveRoster.status, 200, JSON.stringify(teacherActiveRoster.data));
 
     // Parent : pas de dossier d'un autre élève du même établissement.
     const tokenParent = await login("+243 820 000 001", "CD-2026-0001");
