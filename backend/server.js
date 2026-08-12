@@ -328,7 +328,6 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
     const state = await getAuthoritativeBackOfficeState();
     const {
       resolveTeacherAssignments,
-      resolveTeacherAssignedClasses,
     } = require("./services/authService");
     const userId = String(response.user.id ?? "").trim();
     const identifier = String(response.user.identifier ?? "").trim().toLowerCase();
