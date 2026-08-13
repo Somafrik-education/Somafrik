@@ -80,6 +80,16 @@ async function refreshAccessToken(refreshToken) {
 }
 
 async function replaceTeacherAssignmentsViaApi(adminToken, teacherIdentifier, assignments) {
+  const teacherResponse = await request("/teachers", { token: adminToken });
+  assert.equal(teacherResponse.status, 200, JSON.stringify(teacherResponse.data));
+  const teacherKey = String(teacherIdentifier).trim().toUpperCase();
+  const teacher = teacherResponse.data.find((row) =>
+    [row.identifier, row.teacherCode, row.publicId, row.id, row.userId].some(
+      (value) => String(value ?? "").trim().toUpperCase() === teacherKey,
+    ),
+  );
+  assert.ok(teacher, `enseignant ${teacherIdentifier} introuvable`);
+  const canonicalTeacherCode = teacher.teacherCode ?? teacher.publicId ?? teacher.id;
   const desired = Array.isArray(assignments) ? assignments : [];
   const classRefs = new Set(
     desired.flatMap((assignment) => [assignment.classCode, assignment.className])
@@ -103,7 +113,7 @@ async function replaceTeacherAssignmentsViaApi(adminToken, teacherIdentifier, as
       method: "POST",
       token: adminToken,
       body: {
-        teacherCode: teacherIdentifier,
+        teacherCode: canonicalTeacherCode,
         classCode: assignment.classCode,
         className: assignment.className,
         subjectCode: assignment.subjectCode,
