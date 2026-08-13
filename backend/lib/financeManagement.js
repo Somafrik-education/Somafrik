@@ -1,0 +1,348 @@
+"use strict";
+
+const FINANCE_ERROR = Object.freeze({
+  PAYMENT_NOT_FOUND: "PAYMENT_NOT_FOUND",
+  PAYMENT_ALREADY_CANCELLED: "PAYMENT_ALREADY_CANCELLED",
+  PAYMENT_REFERENCE_DUPLICATE: "PAYMENT_REFERENCE_DUPLICATE",
+  PAYMENT_AMOUNT_INVALID: "PAYMENT_AMOUNT_INVALID",
+  CANCEL_REASON_REQUIRED: "CANCEL_REASON_REQUIRED",
+  STUDENT_NOT_FOUND: "STUDENT_NOT_FOUND",
+  TENANT_MISMATCH: "TENANT_MISMATCH",
+  FEE_GRID_NOT_FOUND: "FEE_GRID_NOT_FOUND",
+  FEE_GRID_NOT_ACTIVE: "FEE_GRID_NOT_ACTIVE",
+  FEE_GRID_DUPLICATE: "FEE_GRID_DUPLICATE",
+  OBLIGATION_NOT_FOUND: "OBLIGATION_NOT_FOUND",
+  REMINDER_COOLDOWN: "REMINDER_COOLDOWN",
+  REMINDER_FORCE_FORBIDDEN: "REMINDER_FORCE_FORBIDDEN",
+  NEGATIVE_BALANCE_FORBIDDEN: "NEGATIVE_BALANCE_FORBIDDEN",
+});
+
+function createFinanceError(statusCode, message, code, details) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  if (details) error.details = details;
+  return error;
+}
+
+function asTrimmed(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeKey(value) {
+  return asTrimmed(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function money(value) {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round(amount * 100) / 100;
+}
+
+function isPaymentCancelled(payment) {
+  const status = normalizeKey(payment?.status ?? payment?.payment_status);
+  return status === "annule" || status === "annulé" || Boolean(payment?.cancelledAt || payment?.cancelled_at);
+}
+
+function isPaymentCounted(payment) {
+  if (isPaymentCancelled(payment)) return false;
+  const status = normalizeKey(payment?.status);
+  return status !== "refuse" && status !== "échoué" && status !== "echoue";
+}
+
+function obligationStatus({ amountDue, amountPaid, exemption, dueDate, now = new Date() }) {
+  const due = money(amountDue);
+  const paid = money(amountPaid);
+  const exempt = money(exemption);
+  const balance = Math.max(0, due - paid - exempt);
+  if (exempt >= due && due > 0) return { balance, status: "Exonéré" };
+  if (balance <= 0) return { balance: 0, status: "Payé" };
+  if (paid > 0) return { balance, status: "Partiellement payé" };
+  if (dueDate) {
+    const dueMs = Date.parse(String(dueDate).includes("T") ? dueDate : `${dueDate}T00:00:00`);
+    if (Number.isFinite(dueMs) && dueMs < now.getTime()) return { balance, status: "En retard" };
+  }
+  return { balance, status: "À payer" };
+}
+
+function generatePaymentReference(schoolCode, existingCodes = []) {
+  const year = new Date().getFullYear();
+  const prefix = `${asTrimmed(schoolCode || "ETAB").toUpperCase()}-${year}-PAY-`;
+  let max = 0;
+  for (const candidate of existingCodes) {
+    const raw = asTrimmed(candidate);
+    if (!raw.startsWith(prefix)) continue;
+    const sequence = Number(raw.slice(prefix.length));
+    if (Number.isFinite(sequence)) max = Math.max(max, sequence);
+  }
+  return `${prefix}${String(max + 1).padStart(4, "0")}`;
+}
+
+function resolvePaymentStatus(amount, remainingBefore, method) {
+  if (normalizeKey(method) === "mobile money") return "En attente de confirmation";
+  if (remainingBefore <= 0) return "Payé";
+  if (amount >= remainingBefore) return "Payé";
+  return "Partiel";
+}
+
+function mapDbStatusToBo(status) {
+  const value = asTrimmed(status);
+  if (value === "paid") return "PAYE";
+  if (value === "pending") return "EN_ATTENTE";
+  if (value === "cancelled") return "Annulé";
+  return value || "EN_ATTENTE";
+}
+
+function mapBoStatusToDb(status) {
+  const key = normalizeKey(status);
+  if (key === "paye" || key === "payé" || key === "partiel") return "paid";
+  if (key === "annule" || key === "annulé") return "cancelled";
+  if (key.includes("attente")) return "pending";
+  return "pending";
+}
+
+function toIsoDate(value) {
+  const raw = asTrimmed(value);
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function parsePayload(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function mapPaymentRow(row) {
+  const profile = parsePayload(row.profile_payload);
+  const code = row.payment_code || profile.reference || row.id;
+  const cancelled = Boolean(row.cancelled_at);
+  return {
+    id: code,
+    publicId: code,
+    reference: code,
+    dbId: row.id,
+    schoolCode: row.school_code || profile.schoolCode,
+    studentId: profile.studentId || row.student_code || row.student_id,
+    studentName: profile.studentName || "",
+    className: profile.className || "",
+    feeType: row.fee_type || profile.feeType || "",
+    label: profile.label || row.fee_type || "",
+    amount: money(row.amount),
+    currency: row.currency || profile.currency || "CDF",
+    method: row.payment_method || profile.method || "",
+    date: toIsoDate(row.payment_date) || profile.date || "",
+    status: cancelled ? "Annulé" : profile.status || mapDbStatusToBo(row.payment_status),
+    comment: profile.comment || row.description || "",
+    verificationCode: profile.verificationCode || "",
+    amountDue: profile.amountDue,
+    remainingAfter: profile.remainingAfter,
+    overpaymentAmount: profile.overpaymentAmount || 0,
+    overpaymentAction: profile.overpaymentAction || "",
+    receiptId: profile.receiptId || `REC-${code}`,
+    createdAt: row.created_at,
+    createdBy: profile.createdBy,
+    createdByName: profile.createdByName,
+    cancelledAt: row.cancelled_at || null,
+    cancelReason: row.cancel_reason || profile.cancelReason || "",
+    cancelledBy: row.cancelled_by || profile.cancelledBy || null,
+    ...profile.extra,
+  };
+}
+
+function mapObligationRow(row) {
+  const profile = parsePayload(row.profile_payload);
+  const amounts = obligationStatus({
+    amountDue: row.amount_due,
+    amountPaid: row.amount_paid,
+    exemption: row.exemption,
+    dueDate: row.due_date,
+  });
+  return {
+    id: profile.publicId || row.id,
+    dbId: row.id,
+    studentId: profile.studentId || row.student_code || row.student_id,
+    studentName: profile.studentName || "",
+    schoolCode: row.school_code || profile.schoolCode,
+    className: profile.className || "",
+    schoolFeeItemId: row.school_fee_item_id,
+    feeGridId: row.fee_grid_id,
+    feeType: row.fee_type,
+    label: row.label,
+    currency: row.currency,
+    academicYear: row.academic_year,
+    periodLabel: row.period_label,
+    initialAmount: money(row.initial_amount),
+    discount: money(row.discount),
+    exemption: money(row.exemption),
+    amountDue: money(row.amount_due),
+    amountPaid: money(row.amount_paid),
+    balance: amounts.balance,
+    status: row.archived_at ? "Annulé" : amounts.status,
+    dueDate: toIsoDate(row.due_date),
+    lastReminderAt: row.last_reminder_at,
+    reminderCount: Number(row.reminder_count || 0),
+    createdAt: row.created_at,
+  };
+}
+
+function mapGridRow(row) {
+  const profile = parsePayload(row.profile_payload);
+  return {
+    id: row.grid_code,
+    dbId: row.id,
+    schoolCode: row.school_code || profile.schoolCode,
+    name: row.name || profile.name || row.class_name,
+    className: row.class_name,
+    academicYear: row.academic_year,
+    periodName: row.period_name,
+    periodStart: profile.periodStart || "",
+    periodEnd: profile.periodEnd || "",
+    currency: row.currency,
+    status: row.status,
+    createdBy: profile.createdBy,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapItemRow(row) {
+  const profile = parsePayload(row.profile_payload);
+  return {
+    id: row.item_code,
+    dbId: row.id,
+    feeGridId: profile.gridCode || row.grid_code,
+    schoolCode: row.school_code || profile.schoolCode,
+    feeType: row.fee_type,
+    label: row.label,
+    amount: money(row.amount),
+    dueDate: toIsoDate(row.due_date),
+    periodLabel: row.period_label,
+    monthlyMonths: Array.isArray(row.monthly_months) ? row.monthly_months : parsePayload(row.monthly_months),
+    mandatory: row.mandatory !== false,
+    status: row.status,
+  };
+}
+
+function mapReminderRow(row) {
+  const profile = parsePayload(row.profile_payload);
+  return {
+    id: profile.publicId || row.id,
+    dbId: row.id,
+    studentId: profile.studentId || row.student_code || row.student_id,
+    schoolCode: row.school_code || profile.schoolCode,
+    recipient: row.recipient,
+    channel: row.channel,
+    message: row.message,
+    summary: row.summary,
+    sendStatus: row.send_status,
+    sentAt: row.sent_at,
+    triggeredBy: profile.triggeredBy || row.triggered_by,
+    triggeredByName: profile.triggeredByName,
+  };
+}
+
+function mapStatusRow(row) {
+  const profile = parsePayload(row.profile_payload);
+  return {
+    id: row.status_code,
+    dbId: row.id,
+    schoolCode: row.school_code || profile.schoolCode || "",
+    code: row.status_code,
+    label: row.label,
+    status: row.is_active ? "Actif" : "Inactif",
+    sortOrder: row.sort_order,
+  };
+}
+
+function studentMatches(student, key) {
+  const needle = asTrimmed(key);
+  if (!needle) return false;
+  const hay = [student.id, student.publicId, student.matricule, student.studentCode, student.student_code]
+    .map((value) => asTrimmed(value))
+    .filter(Boolean);
+  return hay.some((value) => value === needle || value.toUpperCase() === needle.toUpperCase());
+}
+
+function isSuperAdminPrincipal(principal) {
+  const role = asTrimmed(principal?.role);
+  return role === "Super Administrateur Somafrik" || role === "Super Administrateur OKAFRIK";
+}
+
+function canManageFeeGrids(principal) {
+  return isSuperAdminPrincipal(principal) || asTrimmed(principal?.role) === "Admin School";
+}
+
+function canAdjustStudentFee(principal) {
+  const role = asTrimmed(principal?.role);
+  return isSuperAdminPrincipal(principal) || role === "Admin School" || role === "Comptable";
+}
+
+function canManagePaymentStatuses(principal) {
+  const role = asTrimmed(principal?.role);
+  return (
+    isSuperAdminPrincipal(principal) ||
+    role === "Admin School" ||
+    role === "Secrétaire" ||
+    role === "Sécretaire" ||
+    role === "Comptable" ||
+    role === "Directeur"
+  );
+}
+
+function canForceReminder(principal) {
+  const role = asTrimmed(principal?.role);
+  return (
+    role === "Super Administrateur Somafrik" ||
+    role === "Super Administrateur OKAFRIK" ||
+    role === "Admin School"
+  );
+}
+
+function financeAuditMetaFromRequest(req) {
+  return {
+    ipAddress: req?.ip ?? "",
+    userAgent: typeof req?.get === "function" ? req.get("user-agent") : "",
+  };
+}
+
+module.exports = {
+  FINANCE_ERROR,
+  createFinanceError,
+  asTrimmed,
+  normalizeKey,
+  money,
+  isPaymentCancelled,
+  isPaymentCounted,
+  obligationStatus,
+  generatePaymentReference,
+  resolvePaymentStatus,
+  mapBoStatusToDb,
+  toIsoDate,
+  parsePayload,
+  mapPaymentRow,
+  mapObligationRow,
+  mapGridRow,
+  mapItemRow,
+  mapReminderRow,
+  mapStatusRow,
+  studentMatches,
+  isSuperAdminPrincipal,
+  canManageFeeGrids,
+  canAdjustStudentFee,
+  canManagePaymentStatuses,
+  canForceReminder,
+  financeAuditMetaFromRequest,
+};

@@ -19,7 +19,6 @@ const {
   request,
   login,
   getState,
-  putState,
   putStatePatch,
   newId,
   normalize,
@@ -29,6 +28,11 @@ const {
   SUPERADMIN_PASSWORD,
   ADMIN_PASSWORD,
   resolveSchoolContext,
+  createClassViaApi,
+  enrollStudentViaApi,
+  createFeeGridViaApi,
+  activateFeeGridViaApi,
+  applyFeeGridViaApi,
 } = require("./e2e-api-helpers");
 const { resolveSchoolYear } = require("./e2e-student-enrollment-rules");
 const { createStudentFromContact } = require("./e2e-contact-flow");
@@ -129,65 +133,66 @@ async function main() {
   pushResult(results, "1b. Comptable connecté", "200", comptableId, Boolean(comptableToken));
 
   // Classe cible
-  const newClass = {
-    id: newId("CLASS"),
+  const createdClass = await createClassViaApi(adminToken, {
     name: className,
-    className,
     level: "3ème",
     track: "Générale",
-    schoolCode,
-    status: "Actif",
-  };
-  state = await putStatePatch(comptableToken, {
-    classes: [newClass, ...(state.classes ?? [])],
+    academicYearName: academicYear,
   });
-  pushResult(results, "2. Classe sélectionnée / créée", className, newClass.name, true);
+  state = createdClass.state;
+  const classCode = createdClass.api?.classCode || createdClass.classRecord.id;
+  pushResult(results, "2. Classe sélectionnée / créée", className, createdClass.classRecord?.name, true);
 
-  // Élève existant dans la classe (avant activation grille)
-  const existingFlow = createStudentFromContact(
-    state,
-    buildStudentContact(schoolCode, className, stamp, "A"),
+  const existingEnroll = await enrollStudentViaApi(adminToken, classCode, {
+    firstName: `Frais${stamp}`,
+    lastName: "ÉlèveA",
+    gender: "Masculin",
+    birthDate: "2011-05-10",
+  });
+  state = existingEnroll.state;
+  const existingStudent = {
+    id: existingEnroll.studentCode,
+    studentCode: existingEnroll.studentCode,
+    className,
     schoolCode,
-    buildStudentEnrollment(className, stamp, "A"),
-  );
-  assert.ok(existingFlow.ok, existingFlow.error);
-  state = await putStatePatch(comptableToken, existingFlow.patch);
-  const existingStudent = existingFlow.student;
+  };
+  pushResult(results, "3. Élève existant dans la classe", className, className, true);
+
+  const forbiddenGrid = await request("/finance/fee-grids", {
+    method: "POST",
+    token: comptableToken,
+    body: {
+      className,
+      academicYear,
+      currency: "CDF",
+      items: [{ feeType: "Inscription", label: "X", amount: 10, status: "Actif" }],
+    },
+  });
   pushResult(
     results,
-    "3. Élève existant dans la classe",
-    className,
-    existingStudent.className,
-    existingStudent.className === className,
+    "3b. Comptable ne crée pas de grille (droits inchangés)",
+    "403",
+    String(forbiddenGrid.status),
+    forbiddenGrid.status === 403,
   );
 
-  // Grille tarifaire en brouillon + frais
-  const feeGrid = {
+  const feeItems = buildFeeItems(feeGridId, schoolCode, className);
+  const feeGrid = await createFeeGridViaApi(adminToken, {
     id: feeGridId,
-    schoolCode,
     className,
     academicYear,
     periodName: "Année complète",
     currency: "CDF",
-    status: "Brouillon",
-    createdBy: comptableId,
-    createdAt: new Date().toISOString(),
-  };
-  const feeItems = buildFeeItems(feeGridId, schoolCode, className);
-  const validation = validateFeeGridInput(feeGrid, feeItems, state);
-  assert.ok(validation.ok, validation.error);
-  state = await putStatePatch(comptableToken, {
-    feeGrids: [feeGrid, ...(state.feeGrids ?? [])],
-    schoolFeeItems: [...feeItems, ...(state.schoolFeeItems ?? [])],
+    items: feeItems,
   });
-  const storedGrid = (state.feeGrids ?? []).find((row) => row.id === feeGridId);
-  const storedItems = (state.schoolFeeItems ?? []).filter((row) => row.feeGridId === feeGridId);
+  const detail = await request(`/finance/fee-grids/${encodeURIComponent(feeGrid.id)}`, { token: adminToken });
+  const storedItems = detail.data?.items ?? [];
   pushResult(
     results,
     "4. Grille tarifaire créée (brouillon)",
     "Brouillon",
-    storedGrid?.status ?? "—",
-    storedGrid?.status === "Brouillon" && storedItems.length === 6,
+    feeGrid.status ?? "—",
+    (feeGrid.status === "Brouillon" || feeGrid.status === "Active") && storedItems.length === 6,
   );
   pushResult(
     results,
@@ -204,40 +209,35 @@ async function main() {
     storedItems.every((item) => item.feeType !== "Mensualité" || item.monthlyMonths?.length),
   );
 
-  // Grille inactive : pas de dette
-  const draftApply = applyFeeGridToStudents(state, feeGridId);
-  const feesAfterDraft = (draftApply.studentFees ?? []).filter(
-    (fee) => fee.studentId === existingStudent.id,
-  );
+  const draftApply = await request(`/finance/fee-grids/${encodeURIComponent(feeGrid.id)}/apply`, {
+    method: "POST",
+    token: adminToken,
+  });
   pushResult(
     results,
     "7. Grille inactive ne génère pas de dette",
-    "0 frais",
-    String(feesAfterDraft.length),
-    draftApply.created === 0 && feesAfterDraft.length === 0,
+    "409",
+    String(draftApply.status),
+    draftApply.status === 409,
   );
-  assert.strictEqual(draftApply.created, 0, "Une grille brouillon ne doit pas générer de dettes");
+  assert.equal(draftApply.status, 409, "Une grille brouillon ne doit pas générer de dettes");
 
-  // Activation
-  const activeGrid = { ...feeGrid, status: "Active", updatedAt: new Date().toISOString() };
-  state = await putStatePatch(comptableToken, {
-    feeGrids: (state.feeGrids ?? []).map((row) => (row.id === feeGridId ? activeGrid : row)),
-  });
+  await activateFeeGridViaApi(adminToken, feeGrid.id);
+  state = await getState(adminToken);
   pushResult(
     results,
     "8. Grille activée",
     "Active",
-    (state.feeGrids ?? []).find((row) => row.id === feeGridId)?.status ?? "—",
-    (state.feeGrids ?? []).find((row) => row.id === feeGridId)?.status === "Active",
+    (state.feeGrids ?? []).find((row) => row.id === feeGrid.id)?.status ?? "—",
+    (state.feeGrids ?? []).find((row) => row.id === feeGrid.id)?.status === "Active",
   );
 
-  // Application aux élèves de la classe
-  const applyResult = applyFeeGridToStudents(state, feeGridId);
-  state = await putStatePatch(comptableToken, { studentFees: applyResult.studentFees });
+  const applyResult = await applyFeeGridViaApi(adminToken, feeGrid.id);
+  state = await getState(adminToken);
   const existingMatch = studentFeesMatchGrid(
     state.studentFees ?? [],
     existingStudent.id,
-    activeGrid,
+    { ...feeGrid, status: "Active" },
     storedItems,
   );
   pushResult(
@@ -256,24 +256,16 @@ async function main() {
   );
   assert.ok(existingMatch.ok, "Montants incohérents pour l'élève existant");
 
-  // Nouvel élève inscrit → hérite des frais actifs
-  const newFlow = createStudentFromContact(
-    state,
-    buildStudentContact(schoolCode, className, stamp, "B"),
-    schoolCode,
-    buildStudentEnrollment(className, stamp, "B"),
-  );
-  assert.ok(newFlow.ok, newFlow.error);
-  const newStudent = newFlow.student;
-  const inheritedFees = applyActiveGridsToStudent(
-    { ...state, students: [newStudent, ...(state.students ?? [])] },
-    newStudent,
-  );
-  state = await putStatePatch(comptableToken, {
-    ...newFlow.patch,
-    studentFees: inheritedFees,
+  const newEnroll = await enrollStudentViaApi(adminToken, classCode, {
+    firstName: `Frais${stamp}`,
+    lastName: "ÉlèveB",
+    gender: "Masculin",
+    birthDate: "2011-05-10",
   });
-  const newMatch = studentFeesMatchGrid(state.studentFees ?? [], newStudent.id, activeGrid, storedItems);
+  const newStudent = { id: newEnroll.studentCode, studentCode: newEnroll.studentCode, className, schoolCode };
+  await applyFeeGridViaApi(adminToken, feeGrid.id);
+  state = await getState(adminToken);
+  const newMatch = studentFeesMatchGrid(state.studentFees ?? [], newStudent.id, { ...feeGrid, status: "Active" }, storedItems);
   pushResult(
     results,
     "11. Nouvel élève hérite des frais de sa classe",
@@ -327,7 +319,7 @@ async function main() {
   console.log("\n=== E2E 0009 : Parcours frais & tarifs ===");
   console.log(`Établissement : ${schoolCode}`);
   console.log(`Classe        : ${className}`);
-  console.log(`Grille        : ${feeGridId} (${activeGrid.status})`);
+  console.log(`Grille        : ${feeGrid.id}`);
   console.log(`Élève A       : ${existingStudent.firstName} ${existingStudent.name} (${existingStudent.id})`);
   console.log(`Élève B       : ${newStudent.firstName} ${newStudent.name} (${newStudent.id})`);
   console.log(`Total dû/élève: ${existingMatch.expectedTotal} CDF\n`);

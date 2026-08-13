@@ -6,11 +6,8 @@ import { Modal } from "../ui/Modal";
 import { Field, Input } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
-import { appendAuditLog, auditActor, makeAuditEntry } from "../../lib/audit";
 import {
-  applyFeeGridToStudents,
   classOptionsForSchool,
-  refreshStudentFeeStatuses,
 } from "../../lib/fees";
 import {
   buildQuickFeeGrids,
@@ -20,8 +17,8 @@ import {
   validateQuickFeeGridInput,
   type QuickFeeGridInput,
 } from "../../lib/quickFeeGrid";
+import { financeApi } from "../../lib/financeApi";
 import { formatMetric, normalize } from "../../lib/format";
-import type { BackOfficeState } from "../../types";
 
 interface QuickFeeGridModalProps {
   open: boolean;
@@ -32,7 +29,7 @@ interface QuickFeeGridModalProps {
 
 export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickFeeGridModalProps) {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
 
   const [form, setForm] = useState<QuickFeeGridInput>(() =>
@@ -101,48 +98,28 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
       return;
     }
 
-    let nextStudentFees = state.studentFees ?? [];
-    let appliedTotal = 0;
-
-    if (form.applyToStudents && form.activateImmediately) {
-      for (const grid of built.grids) {
-        if (grid.status !== "Active") continue;
-        const result = applyFeeGridToStudents(
-          { ...state, studentFees: nextStudentFees, feeGrids: [...(state.feeGrids ?? []), ...built.grids], schoolFeeItems: [...(state.schoolFeeItems ?? []), ...built.items] },
-          grid.id,
-        );
-        nextStudentFees = result.studentFees;
-        appliedTotal += result.created;
-      }
-      nextStudentFees = refreshStudentFeeStatuses(nextStudentFees);
-    }
-
-    const patch: Partial<BackOfficeState> = {
-      feeGrids: [...(state.feeGrids ?? []), ...built.grids],
-      schoolFeeItems: [...(state.schoolFeeItems ?? []), ...built.items],
-      auditLog: appendAuditLog(state.auditLog, ...built.auditEntries),
-    };
-
-    if (form.applyToStudents && form.activateImmediately) {
-      patch.studentFees = nextStudentFees;
-      if (appliedTotal > 0) {
-        patch.auditLog = appendAuditLog(
-          patch.auditLog ?? state.auditLog,
-          makeAuditEntry({
-            ...auditActor(session?.user ?? null),
-            action: "fee.grid.quick_apply",
-            entityType: "fee_grid",
-            entityId: built.grids.map((grid) => grid.id).join(","),
-            schoolCode: form.schoolCode,
-            details: `${appliedTotal} dette(s) élève générée(s)`,
-          }),
-        );
-      }
-    }
-
     setBusy(true);
     try {
-      await update(patch);
+      let appliedTotal = 0;
+      for (const grid of built.grids) {
+        const items = built.items.filter((item) => item.feeGridId === grid.id);
+        const created = await financeApi.createFeeGrid({
+          className: grid.className,
+          academicYear: grid.academicYear,
+          periodName: grid.periodName,
+          currency: grid.currency,
+          status: form.activateImmediately ? "Brouillon" : grid.status,
+          items,
+        });
+        if (form.activateImmediately) {
+          await financeApi.activateFeeGrid(created.id);
+          if (form.applyToStudents) {
+            const applied = await financeApi.applyFeeGrid(created.id);
+            appliedTotal += applied.created;
+          }
+        }
+      }
+      await refresh();
       const skipped = built.skippedClasses.length;
       const message =
         `${built.grids.length} grille(s) créée(s)` +
@@ -151,8 +128,8 @@ export function QuickFeeGridModal({ open, onClose, schoolCode, onSaved }: QuickF
       showToast(message, skipped && !built.grids.length ? "error" : "success");
       onSaved?.();
       onClose();
-    } catch {
-      showToast("Échec de l'enregistrement", "error");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'enregistrement", "error");
     } finally {
       setBusy(false);
     }

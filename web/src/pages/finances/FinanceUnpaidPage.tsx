@@ -12,8 +12,6 @@ import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { useConfirm } from "../../components/ui/ConfirmDialog";
 import type {
-  PaymentReminder,
-  PlatformNotification,
   ReminderChannel,
   ReminderRecipient,
   StudentUnpaidRow,
@@ -26,7 +24,6 @@ import {
   classOptionsFromUnpaid,
   getStudentUnpaidDetail,
   listUnpaidStudentFees,
-  newReminderId,
   periodOptionsFromFees,
   REMINDER_COOLDOWN_DAYS,
   scopedPaymentReminders,
@@ -38,7 +35,8 @@ import {
   isOwnUnpaidScopeOnly,
 } from "../../lib/unpaidPermissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
-import { appendAuditLog, auditActor, makeAuditEntry } from "../../lib/audit";
+import { financeApi } from "../../lib/financeApi";
+import { ApiError } from "../../api/client";
 
 const REMINDER_CHANNELS: { value: ReminderChannel; label: string }[] = [
   { value: "notification", label: "Notification application" },
@@ -51,7 +49,7 @@ const RECIPIENTS: ReminderRecipient[] = ["Parent", "Responsable", "Étudiant"];
 
 export function FinanceUnpaidPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -119,67 +117,29 @@ export function FinanceUnpaidPage() {
       return;
     }
 
+    let forceSend = force;
     const gate = canSendReminder(reminders, row.studentId);
-    if (!gate.allowed && !force) {
+    if (!gate.allowed && !forceSend) {
       const ok = await confirm({
         title: "Relance récente",
         description: gate.message ?? "Une relance a déjà été envoyée récemment.",
         confirmLabel: "Envoyer quand même",
       });
       if (!ok) return;
+      forceSend = true;
     }
 
     setBusy(true);
     try {
       const school = state.schools.find((item) => item.code === row.schoolCode);
       const message = reminderMessage.trim() || buildReminderMessage(row, school?.name);
-      const reminder: PaymentReminder = {
-        id: newReminderId(),
-        studentId: row.studentId,
-        schoolCode: row.schoolCode,
-        recipient: reminderRecipient,
+      await financeApi.createReminder(row.studentId, {
         channel: reminderChannel,
+        recipient: reminderRecipient,
         message,
-        summary: `Relance ${row.amountDue.toLocaleString("fr-FR")} ${row.currency} — ${row.periodLabel}`,
-        sentAt: new Date().toISOString(),
-        sendStatus: reminderChannel === "notification" ? "Envoyée" : "En attente",
-        triggeredBy: session?.user?.identifier,
-        triggeredByName: session?.user?.firstName ?? session?.user?.identifier,
-      };
-
-      const notification: PlatformNotification | null =
-        reminderChannel === "notification"
-          ? {
-              id: `NOTIF-${Date.now().toString(36).toUpperCase()}`,
-              title: "Relance de paiement",
-              message: reminder.summary ?? message.slice(0, 120),
-              type: "payment_reminder",
-              channels: ["app"],
-              status: "sent",
-              schoolCode: row.schoolCode,
-              audience: "Parent",
-              date: reminder.sentAt,
-            }
-          : null;
-
-      await update({
-        paymentReminders: [reminder, ...(state.paymentReminders ?? [])].slice(0, 500),
-        notifications: notification
-          ? [notification, ...(state.notifications ?? [])]
-          : state.notifications,
-        auditLog: appendAuditLog(
-          state.auditLog,
-          makeAuditEntry({
-            ...auditActor(session?.user ?? null),
-            action: "Relance impayé",
-            entityType: "student_fee",
-            entityId: row.studentId,
-            entityLabel: row.studentName,
-            schoolCode: row.schoolCode,
-            details: `${reminder.channel} — ${reminder.summary}`,
-          }),
-        ),
+        force: Boolean(forceSend),
       });
+      await refresh();
 
       showToast(
         reminderChannel === "notification"
@@ -189,8 +149,14 @@ export function FinanceUnpaidPage() {
       );
       setReminderRow(null);
       setReminderMessage("");
-    } catch {
-      showToast("Échec de l'enregistrement de la relance", "error");
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : undefined;
+      showToast(
+        code === "REMINDER_COOLDOWN"
+          ? error instanceof Error ? error.message : "Relance récente, cooldown actif"
+          : error instanceof Error ? error.message : "Échec de l'enregistrement de la relance",
+        "error",
+      );
     } finally {
       setBusy(false);
     }

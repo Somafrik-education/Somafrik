@@ -13,14 +13,12 @@ import { useToast } from "../../components/ui/Toast";
 import { useConfirm } from "../../components/ui/ConfirmDialog";
 import type { FeeGrid, SchoolFeeItem, SchoolFeeType, StudentFee } from "../../types";
 import {
-  applyFeeGridToStudents,
   canViewFeeGrids,
   classOptionsForSchool,
   DEFAULT_MONTHLY_MONTHS,
   isGridEditable,
   itemsForGrid,
   newFeeId,
-  recordTariffHistory,
   refreshStudentFeeStatuses,
   resolveAcademicYear,
   resolveSchoolCurrency,
@@ -39,9 +37,9 @@ import {
 } from "../../lib/feePermissions";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../../lib/dates";
 import { usePermissionContext } from "../../lib/usePermissionContext";
-import { appendAuditLog, auditActor, makeAuditEntry } from "../../lib/audit";
 import { normalize } from "../../lib/format";
 import { QuickFeeGridModal } from "../../components/fees/QuickFeeGridModal";
+import { financeApi } from "../../lib/financeApi";
 
 interface DraftItem {
   id?: string;
@@ -66,7 +64,7 @@ const EMPTY_ITEM: DraftItem = {
 
 export function FinanceFeesPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { activeSchoolCode, activeSchool } = useActiveSchool();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
@@ -120,14 +118,15 @@ export function FinanceFeesPage() {
     );
   }
 
-  async function persist(patch: Parameters<typeof update>[0], message: string) {
+  async function persistFinance(action: () => Promise<unknown>, message: string) {
     setBusy(true);
     try {
-      await update(patch);
+      await action();
+      await refresh();
       showToast(message, "success");
-    } catch {
-      showToast("Échec de la synchronisation", "error");
-      throw new Error("sync failed");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de la synchronisation", "error");
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -207,54 +206,23 @@ export function FinanceFeesPage() {
       return;
     }
 
-    const nextGrids = exists
-      ? (state.feeGrids ?? []).map((g) =>
-          g.id === editing.id ? { ...editing, updatedAt: new Date().toISOString() } : g,
-        )
-      : [...(state.feeGrids ?? []), editing];
-
-    const otherItems = (state.schoolFeeItems ?? []).filter((item) => item.feeGridId !== editing.id);
-    const nextItems = [
-      ...otherItems,
-      ...(parsedItems as SchoolFeeItem[]),
-    ];
-
-    let history = state.feeTariffHistory ?? [];
-    if (exists) {
-      for (const item of parsedItems as SchoolFeeItem[]) {
-        const prior = (state.schoolFeeItems ?? []).find((row) => row.id === item.id);
-        if (prior && prior.amount !== item.amount) {
-          history = recordTariffHistory(history, {
-            schoolFeeItemId: item.id,
-            schoolCode: editing.schoolCode,
-            previousAmount: prior.amount,
-            newAmount: item.amount,
-            changedBy: session?.user?.identifier ?? session?.user?.firstName,
-            reason: "Modification tarif",
-          });
-        }
-      }
-    }
-
-    const auditEntries = [
-      makeAuditEntry({
-        ...auditActor(session?.user ?? null),
-        action: exists ? "fee.grid.update" : "fee.grid.create",
-        entityType: "fee_grid",
-        entityId: editing.id,
-        entityLabel: `${editing.className} · ${editing.academicYear}`,
-        schoolCode: editing.schoolCode,
-      }),
-    ];
+    const payload = {
+      className: editing.className,
+      academicYear: editing.academicYear,
+      periodName: editing.periodName,
+      periodStart: editing.periodStart,
+      periodEnd: editing.periodEnd,
+      currency: editing.currency,
+      name: editing.className,
+      items: parsedItems,
+    };
 
     try {
-      await persist(
-        {
-          feeGrids: nextGrids,
-          schoolFeeItems: nextItems,
-          feeTariffHistory: history,
-          auditLog: appendAuditLog(state.auditLog, ...auditEntries),
-        },
+      await persistFinance(
+        () =>
+          exists
+            ? financeApi.updateFeeGrid(editing.id, payload)
+            : financeApi.createFeeGrid(payload),
         exists ? "Grille tarifaire enregistrée" : "Grille tarifaire créée",
       );
       setEditing(null);
@@ -265,11 +233,15 @@ export function FinanceFeesPage() {
 
   async function activateGrid(grid: FeeGrid) {
     if (!canUpdate) return;
-    const next = (state.feeGrids ?? []).map((g) =>
-      g.id === grid.id ? { ...g, status: "Active" as const, updatedAt: new Date().toISOString() } : g,
-    );
-    await persist({ feeGrids: next }, `Grille activée pour ${grid.className}`);
-    setDetail(null);
+    try {
+      await persistFinance(
+        () => financeApi.activateFeeGrid(grid.id),
+        `Grille activée pour ${grid.className}`,
+      );
+      setDetail(null);
+    } catch {
+      /* toast */
+    }
   }
 
   async function deactivateGrid(grid: FeeGrid) {
@@ -281,39 +253,27 @@ export function FinanceFeesPage() {
       tone: "danger",
     });
     if (!confirmed) return;
-    const next = (state.feeGrids ?? []).map((g) =>
-      g.id === grid.id ? { ...g, status: "Désactivée" as const } : g,
-    );
-    await persist({ feeGrids: next }, "Grille désactivée");
-    setDetail(null);
+    try {
+      await persistFinance(() => financeApi.deactivateFeeGrid(grid.id), "Grille désactivée");
+      setDetail(null);
+    } catch {
+      /* toast */
+    }
   }
 
   async function applyGrid(grid: FeeGrid) {
     if (!canApply) return;
-    const result = applyFeeGridToStudents(state, grid.id);
-    const refreshed = refreshStudentFeeStatuses(result.studentFees);
-    if (!result.created) {
-      showToast(result.message ?? "Aucun frais généré", "error");
-      return;
+    try {
+      const result = await financeApi.applyFeeGrid(grid.id);
+      await refresh();
+      if (!result.created) {
+        showToast("Aucun frais généré", "error");
+        return;
+      }
+      showToast(`${result.created} frais généré(s) pour la classe ${grid.className}`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'application", "error");
     }
-    await persist(
-      {
-        studentFees: refreshed,
-        auditLog: appendAuditLog(
-          state.auditLog,
-          makeAuditEntry({
-            ...auditActor(session?.user ?? null),
-            action: "fee.grid.apply",
-            entityType: "fee_grid",
-            entityId: grid.id,
-            entityLabel: `${grid.className} · ${grid.academicYear}`,
-            schoolCode: grid.schoolCode,
-            details: `${result.created} frais généré(s), ${result.skipped} ignoré(s)`,
-          }),
-        ),
-      },
-      `${result.created} frais généré(s) pour la classe ${grid.className}`,
-    );
   }
 
   const columns: Column<FeeGrid>[] = [

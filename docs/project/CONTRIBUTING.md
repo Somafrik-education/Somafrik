@@ -138,6 +138,8 @@ npm run verify:pre-e1-hotfix-02  # si touch sync enseignants/affectations/notes 
 npm run verify:pre-e1-hotfix-02b # si touch matérialisation PG teachers/assignments (causalité)
 npm run verify:runtime-bootstrap # si touch bootstrap / auth runtime
 npm run verify:schools-legacy-cleanup # si touch établissements / PUT schools
+npm run verify:finance-legacy-cleanup # si touch Finance / PUT payments* fee* reminders
+npm run verify:finance-management     # si touch paiements, grilles, obligations, relances
 ```
 
 ### Principes

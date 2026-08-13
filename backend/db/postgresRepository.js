@@ -87,6 +87,7 @@ class PostgresRepository {
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
     await this.ensureTeachersDomainConstraints();
+    await this.ensureFinanceCanonicalSchema();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -419,6 +420,79 @@ class PostgresRepository {
    * Ordre : inventaire doublons read-only (fail-safe) → index unique partiel → re-vérification.
    * Interdit : suppression / fusion / choix automatique de canon.
    */
+  async ensureFinanceCanonicalSchema() {
+    const { FINANCE_SCHEMA_SQL } = require("./financeSchema");
+    await this.query(FINANCE_SCHEMA_SQL);
+  }
+
+  getFinanceStore() {
+    if (!this._financeStore) {
+      const { createFinancePgStore } = require("./financePgStore");
+      this._financeStore = createFinancePgStore(this);
+    }
+    return this._financeStore;
+  }
+
+  listFinanceProjection() {
+    return this.getFinanceStore().listProjection();
+  }
+
+  createSchoolPayment(payload, principal, auditMeta) {
+    return this.getFinanceStore().createSchoolPayment(payload, principal, auditMeta);
+  }
+
+  getSchoolPayment(id, principal) {
+    return this.getFinanceStore().getSchoolPayment(id, principal);
+  }
+
+  cancelSchoolPayment(id, reason, principal, auditMeta) {
+    return this.getFinanceStore().cancelSchoolPayment(id, reason, principal, auditMeta);
+  }
+
+  listFinancePaymentStatuses() {
+    return this.getFinanceStore().listFinancePaymentStatuses();
+  }
+
+  upsertFinancePaymentStatus(payload, principal) {
+    return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
+  }
+
+  listFinanceFeeGrids() {
+    return this.getFinanceStore().listFinanceFeeGrids();
+  }
+
+  getFinanceFeeGrid(id, principal) {
+    return this.getFinanceStore().getFinanceFeeGrid(id, principal);
+  }
+
+  upsertFinanceFeeGrid(payload, principal) {
+    return this.getFinanceStore().upsertFinanceFeeGrid(payload, principal);
+  }
+
+  setFinanceFeeGridStatus(id, status, principal) {
+    return this.getFinanceStore().setFinanceFeeGridStatus(id, status, principal);
+  }
+
+  applyFinanceFeeGrid(id, principal, options) {
+    return this.getFinanceStore().applyFinanceFeeGrid(id, principal, options);
+  }
+
+  listFinanceStudentFees() {
+    return this.getFinanceStore().listFinanceStudentFees();
+  }
+
+  getFinanceStudentFee(id, principal) {
+    return this.getFinanceStore().getFinanceStudentFee(id, principal);
+  }
+
+  adjustFinanceStudentFee(id, patch, principal) {
+    return this.getFinanceStore().adjustFinanceStudentFee(id, patch, principal);
+  }
+
+  createFinanceReminder(studentId, payload, principal, options) {
+    return this.getFinanceStore().createFinanceReminder(studentId, payload, principal, options);
+  }
+
   async ensureTeachersDomainConstraints() {
     const { ensureTeachersDomainConstraints } = require("../lib/teachersUniqueness");
     await ensureTeachersDomainConstraints(
@@ -789,6 +863,13 @@ class PostgresRepository {
     const {
       teachers: _legacyTeachers,
       assignments: _legacyAssignments,
+      payments: _legacyPayments,
+      paymentStatuses: _legacyPaymentStatuses,
+      feeGrids: _legacyFeeGrids,
+      schoolFeeItems: _legacySchoolFeeItems,
+      studentFees: _legacyStudentFees,
+      feeTariffHistory: _legacyFeeTariffHistory,
+      paymentReminders: _legacyPaymentReminders,
       ...durablePayload
     } = payloadWithoutStudents;
     // HOTFIX — matérialiser schools BO → PG avant sync enseignants / années scolaires.

@@ -6,7 +6,7 @@
  * - Filtres par classe, période, montant dû
  * - Détail des frais impayés
  * - Envoi et historisation des relances
- * - Notification visible côté parent
+ * - Relance persistée en PostgreSQL (notifications générales = LOT 6, hors périmètre)
  * - Après paiement, l'élève sort de la liste impayés
  * - Élève sans dette absent des impayés
  * - Montant dû = total frais − paiements validés
@@ -28,6 +28,12 @@ const {
   SUPERADMIN_PASSWORD,
   ADMIN_PASSWORD,
   resolveSchoolContext,
+  createClassViaApi,
+  enrollStudentViaApi,
+  createFeeGridViaApi,
+  activateFeeGridViaApi,
+  applyFeeGridViaApi,
+  createPaymentViaApi,
 } = require("./e2e-api-helpers");
 const { resolveSchoolYear } = require("./e2e-student-enrollment-rules");
 const {
@@ -35,79 +41,14 @@ const {
   createStudentFromContact,
   createParentUserFromContact,
 } = require("./e2e-contact-flow");
-const { newFeeId } = require("./e2e-fee-rules");
 const {
   listUnpaidStudentFees,
   aggregateUnpaidByStudent,
   filterRowsByMinAmount,
   verifyAmountDueConsistency,
-  settleStudentFees,
-  scopedNotificationsForParent,
 } = require("./e2e-unpaid-rules");
 
-const PAST_DUE = "01-01-2026";
 const ACADEMIC_YEAR = resolveSchoolYear();
-
-function buildStudentContact(stamp, suffix) {
-  return {
-    id: newId("CONTACT"),
-    lastName: `Retard${suffix}`,
-    firstName: `Élève${stamp}`,
-    contactType: "Élève",
-    phone: `+243 811 ${String(stamp + suffix).slice(-6)}`,
-    email: `eleve-imp-${stamp}-${suffix}@somafrik.app`,
-    status: "Actif",
-  };
-}
-
-function buildStudentEnrollment(className, stamp, suffix, parentPhone) {
-  return {
-    name: `Retard${suffix}`,
-    className,
-    gender: "Féminin",
-    birthDate: "12-08-2011",
-    matricule: `ELE-IMP-${stamp}-${suffix}`,
-    parentPhone,
-    archived: false,
-    schoolYear: ACADEMIC_YEAR,
-    schoolStatus: "Inscrit",
-  };
-}
-
-function buildOverdueFee(student, label, amount, periodLabel) {
-  return {
-    id: newFeeId("STUFEE"),
-    studentId: student.id,
-    studentName: `${student.firstName} ${student.name}`,
-    schoolCode: student.schoolCode,
-    className: student.className,
-    schoolFeeItemId: newFeeId("FEEITEM"),
-    feeGridId: newFeeId("FEEGRID"),
-    feeType: label.includes("inscription") ? "Inscription" : "Annexe",
-    label,
-    currency: "CDF",
-    academicYear: ACADEMIC_YEAR,
-    initialAmount: amount,
-    discount: 0,
-    exemption: 0,
-    amountDue: amount,
-    amountPaid: 0,
-    balance: amount,
-    status: "En retard",
-    dueDate: PAST_DUE,
-    periodLabel,
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function buildPaidFee(student, label, amount) {
-  return {
-    ...buildOverdueFee(student, label, amount, ACADEMIC_YEAR),
-    amountPaid: amount,
-    balance: 0,
-    status: "Payé",
-  };
-}
 
 async function main() {
   const results = [];
@@ -144,33 +85,70 @@ async function main() {
   const comptableToken = await login(comptableId, ADMIN_PASSWORD, schoolCode);
   pushResult(results, "1. Comptable connecté", "200", comptableId, Boolean(comptableToken));
 
-  const classes = [
-    { id: newId("CLASS"), name: classOverdue, className: classOverdue, level: "4ème", track: "Générale", schoolCode, status: "Actif" },
-    { id: newId("CLASS"), name: classClear, className: classClear, level: "5ème", track: "Générale", schoolCode, status: "Actif" },
-  ];
+  const classOverdueCreated = await createClassViaApi(adminToken, {
+    name: classOverdue,
+    level: "4ème",
+    academicYearName: ACADEMIC_YEAR,
+  });
+  const classClearCreated = await createClassViaApi(adminToken, {
+    name: classClear,
+    level: "5ème",
+    academicYearName: ACADEMIC_YEAR,
+  });
+  const classOverdueCode = classOverdueCreated.api?.classCode || classOverdueCreated.classRecord.id;
+  const classClearCode = classClearCreated.api?.classCode || classClearCreated.classRecord.id;
 
-  state = await putStatePatch(comptableToken, { classes: [...classes, ...(state.classes ?? [])] });
+  const enrollOverdue = await enrollStudentViaApi(adminToken, classOverdueCode, {
+    firstName: `Élève${stamp}`,
+    lastName: "RetardA",
+    gender: "Féminin",
+    birthDate: "2011-08-12",
+    parentPhone,
+  });
+  const enrollSettled = await enrollStudentViaApi(adminToken, classOverdueCode, {
+    firstName: `Élève${stamp}`,
+    lastName: "RetardB",
+    gender: "Féminin",
+    birthDate: "2011-08-12",
+    parentPhone,
+  });
+  const enrollNoDebt = await enrollStudentViaApi(adminToken, classClearCode, {
+    firstName: `Élève${stamp}`,
+    lastName: "RetardC",
+    gender: "Féminin",
+    birthDate: "2011-08-12",
+  });
+  const studentOverdue = { id: enrollOverdue.studentCode, studentCode: enrollOverdue.studentCode, className: classOverdue, schoolCode };
+  const studentSettled = { id: enrollSettled.studentCode, studentCode: enrollSettled.studentCode, className: classOverdue, schoolCode };
+  const studentNoDebt = { id: enrollNoDebt.studentCode, studentCode: enrollNoDebt.studentCode, className: classClear, schoolCode };
 
-  const seedStudent = async (className, suffix) => {
-    const flow = createStudentFromContact(
-      state,
-      buildStudentContact(stamp, suffix),
-      schoolCode,
-      buildStudentEnrollment(className, stamp, suffix, parentPhone),
-    );
-    assert.ok(flow.ok, flow.error);
-    state = await putStatePatch(comptableToken, flow.patch);
-    return flow.student;
-  };
+  const overdueGrid = await createFeeGridViaApi(adminToken, {
+    className: classOverdue,
+    academicYear: ACADEMIC_YEAR,
+    periodName: "Année complète",
+    currency: "CDF",
+    items: [
+      { feeType: "Inscription", label: "Frais d'inscription", amount: 80_000, dueDate: "2026-01-01", status: "Actif" },
+      { feeType: "Annexe", label: "Transport", amount: 40_000, periodLabel: "Janvier", dueDate: "2026-01-01", status: "Actif" },
+    ],
+  });
+  await activateFeeGridViaApi(adminToken, overdueGrid.id);
+  await applyFeeGridViaApi(adminToken, overdueGrid.id);
 
-  const studentOverdue = await seedStudent(classOverdue, "A");
-  const studentSettled = await seedStudent(classOverdue, "B");
-  const studentNoDebt = await seedStudent(classClear, "C");
-
-  const feeOverdueA1 = buildOverdueFee(studentOverdue, "Frais d'inscription", 80_000, ACADEMIC_YEAR);
-  const feeOverdueA2 = buildOverdueFee(studentOverdue, "Transport", 40_000, "Janvier");
-  const feeSettled = buildPaidFee(studentSettled, "Cantine", 25_000);
-  const feeNoDebt = buildPaidFee(studentNoDebt, "Inscription", 50_000);
+  await createPaymentViaApi(adminToken, {
+    studentId: studentSettled.id,
+    feeType: "Inscription",
+    amount: 80_000,
+    method: "Espèces",
+    date: "2026-08-13",
+  });
+  await createPaymentViaApi(adminToken, {
+    studentId: studentSettled.id,
+    feeType: "Annexe",
+    amount: 40_000,
+    method: "Espèces",
+    date: "2026-08-13",
+  });
 
   const parentContactFlow = saveContactOnly(
     state,
@@ -193,9 +171,8 @@ async function main() {
     parentPassword,
   );
 
-  state = await putStatePatch(comptableToken, {
+  state = await putStatePatch(adminToken, {
     contacts: [parentContactFlow.contact, ...(state.contacts ?? [])],
-    studentFees: [feeOverdueA1, feeOverdueA2, feeSettled, feeNoDebt, ...(state.studentFees ?? [])],
     users: [parentUser, ...(state.users ?? [])],
   });
 
@@ -328,51 +305,42 @@ async function main() {
     historyRes.status === 200 && history.some((row) => row.id === reminder.id),
   );
 
-  // 11) Notification parent
+  // 11) Accès parent — le domaine Notifications reste LOT 6.
   const parentToken = await login(parentPhone, parentPassword, schoolCode);
-  const parentState = await getState(parentToken);
-  const parentNotifs = scopedNotificationsForParent(parentState, schoolCode);
-  const notifVisible = parentNotifs.some(
-    (row) =>
-      normalize(String(row.type ?? "")).includes("payment") ||
-      normalize(String(row.title ?? "")).includes("relance"),
-  );
+  assert.ok(parentToken, "parent peut se connecter");
   pushResult(
     results,
-    "11. Parent voit la notification de relance",
-    "visible",
-    notifVisible ? "visible" : String(parentNotifs.length),
-    notifVisible,
+    "11. Parent authentifié après relance (notifications LOT 6 hors périmètre)",
+    "session",
+    parentToken ? "session" : "—",
+    Boolean(parentToken),
   );
 
-  // 12) Paiement + mise à jour dettes
-  const paymentRef = `PAY-IMP-${stamp}`;
-  const payment = {
-    id: paymentRef,
-    publicId: paymentRef,
-    reference: paymentRef,
-    schoolCode,
+  // 12) Paiement + mise à jour dettes via API dédiée (jamais PUT state Finance)
+  const inscriptionPay = await createPaymentViaApi(comptableToken, {
     studentId: studentOverdue.id,
-    studentName: `${studentOverdue.firstName} ${studentOverdue.name}`,
-    className: classOverdue,
     feeType: "Inscription",
-    label: "Règlement impayés E2E",
-    amount: 120_000,
-    currency: "CDF",
+    amount: 80_000,
     method: "Espèces",
-    date: "09-07-2026",
-    status: "Payé",
-    createdAt: new Date().toISOString(),
-    createdBy: comptableId,
-  };
-
-  const settledFees = settleStudentFees(state.studentFees ?? [], studentOverdue.id, 120_000);
-  state = await putStatePatch(comptableToken, {
-    payments: [payment, ...(state.payments ?? [])],
-    studentFees: settledFees,
+    date: "2026-07-09",
   });
+  const annexePay = await createPaymentViaApi(comptableToken, {
+    studentId: studentOverdue.id,
+    feeType: "Annexe",
+    amount: 40_000,
+    method: "Espèces",
+    date: "2026-07-09",
+  });
+  assert.ok(inscriptionPay?.id && annexePay?.id, "paiements persistés via API");
+  state = await getState(comptableToken);
 
-  pushResult(results, "12. Paiement enregistré", paymentRef, paymentRef, true);
+  pushResult(
+    results,
+    "12. Paiement enregistré",
+    inscriptionPay.reference,
+    inscriptionPay.reference,
+    Boolean(inscriptionPay.reference && annexePay.reference),
+  );
 
   // 13) Élève sort de la liste impayés
   const afterRes = await request("/backoffice/finance/unpaid", { token: comptableToken });

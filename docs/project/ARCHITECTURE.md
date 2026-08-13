@@ -134,7 +134,7 @@ Matrice d’écriture `PUT /backoffice/state` :
 - `lib/backOfficeWritableEntities.js` — Admin School, Secrétaire, Comptable, Préfet, Directeur, Admin Pays, Super Admin
 - `lib/teacherNotesWriteAccess.js` — Enseignant : **uniquement** `evaluations` + `notes`
 - `auditLog` **jamais** dans les entités writables client (S1.4)
-- `schools`, `classes`, `students`, `teachers`, `assignments` sont des projections read-only dans ce PUT ; leurs APIs métier PostgreSQL sont obligatoires.
+- `schools`, `classes`, `students`, `teachers`, `assignments` et les clés Finance (`payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders`) sont des projections read-only dans ce PUT ; leurs APIs métier PostgreSQL sont obligatoires.
 
 ```mermaid
 flowchart TD
@@ -173,8 +173,8 @@ flowchart TD
 ## 4. Database
 
 - **PostgreSQL** obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`)
-- Tables canoniques : `schools` (LOT 1, `profile_payload`), `classes`, `subjects`, `teachers`, `teacher_assignments`, `students`, `evaluations`, `grades`, `attendance`, audit logs, …
-- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine (`PUT state.schools`, `classes`, `students`, `teachers` et `assignments` retirés)
+- Tables canoniques : `schools` (LOT 1, `profile_payload`), `classes`, `subjects`, `teachers`, `teacher_assignments`, `students`, `evaluations`, `grades`, `attendance`, `payments`, `student_fee_obligations`, `payment_allocations`, `payment_reminders`, `fee_grids`, `school_fee_items`, `fee_tariff_history`, `payment_statuses`, audit logs, …
+- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine (`PUT state.schools`, `classes`, `students`, `teachers`, `assignments` et Finance retirés)
 - Préprod : Render Postgres et/ou Supabase (`DATABASE_URL`)
 
 ---

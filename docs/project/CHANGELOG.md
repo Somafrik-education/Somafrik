@@ -13,6 +13,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Added
 
+- **LOT 4 — Finance PostgreSQL** : paiements, grilles, obligations, allocations, reminders et annulations passent par des APIs dédiées persistées en PostgreSQL ; `PUT /api/backoffice/state` refuse toute présence des clés Finance (`LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`) ; `GET state` projette Finance uniquement depuis PostgreSQL, sans fusion JSON historique ni backfill ; l'audit `create_payment` / `cancel_payment` est écrit dans la même transaction PostgreSQL que l'effet métier (`cancelled_by` persisté ; rollback complet si l'audit échoue).
 - **LOT 3 — Enseignants / affectations PostgreSQL** : `POST/PATCH/DELETE /api/assignments` fournit le CRUD d'affectations scopé établissement ; `PUT /api/backoffice/state` refuse toute présence de `teachers` ou `assignments` avec codes stables fail-closed ; `state.teachers` et `state.assignments` deviennent des projections PostgreSQL read-only.
 - **LOT 2 — Élèves PostgreSQL** : inscription via `POST /api/classes/:classCode/students`, liste/fiche/modification via `GET/PATCH /api/students` ; `PUT /api/backoffice/state` refuse toute présence de `students` (`LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`, y compris PUT mixte et snapshot) avant toute mutation ; `state.students` devient une projection de lecture PostgreSQL.
 - **LOT 1 — Établissements PostgreSQL** : CRUD `/api/backoffice/establishments` persiste la table `schools` (`profile_payload` JSONB) ; `PUT /api/backoffice/state` refuse **toute présence** de `schools` (`LEGACY_SCHOOLS_STATE_WRITE_FORBIDDEN`, y compris payload mixte / snapshot) sans mutation partielle ; pays hors référentiel refusé (`COUNTRY_NOT_FOUND`) sans inventer `phone_code` / `currency` ; `state.schools` reste une projection de lecture.
@@ -24,6 +25,8 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Changed
 
+- Matrice S1.4 : clés Finance (`payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders`) retirées des writables PUT ; Web, Mobile et BackOffice les omettent des snapshots.
+- `saveBackOfficeState` ne persiste plus les projections Finance dans `backoffice_state` et n'effectue aucun dual-write JSON.
 - Matrice S1.4 : `teachers` et `assignments` retirés des clés writables ; Web, Mobile et BackOffice ne les incluent plus dans les PUT globaux, et les interfaces d'affectation utilisent les APIs dédiées.
 - `saveBackOfficeState` ne déclenche plus `syncPedagogyStaffDomainFromBackOffice` et ne persiste plus les projections enseignants/affectations dans `backoffice_state`.
 - Matrice S1.4 : `students` retiré de toutes les clés writables via PUT state ; Web, Mobile et BackOffice omettent la projection élèves des snapshots envoyés.
@@ -35,6 +38,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Removed
 
+- Writers Finance legacy Web/Mobile/BackOffice et toute écriture snapshot `payments*` / `fee*` / reminders via PUT state.
 - Writers élèves legacy Web/Mobile/BackOffice et synchronisation JSON `students[]` → PostgreSQL déclenchée par PUT state.
 - Écriture snapshot `backoffice_state.schools` via PUT state et via `saveEstablishmentState` pour le CRUD establishments.
 

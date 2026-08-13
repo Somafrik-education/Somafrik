@@ -188,6 +188,14 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:schools-legacy-cleanup
 
+      - name: verify:finance-legacy-cleanup (mémoire)
+        run: npm run verify:finance-legacy-cleanup
+
+      - name: verify:finance-management (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:finance-management
+
       - name: verify:teachers-domain-constraints-boot (P0 préprod)
         run: npm run verify:teachers-domain-constraints-boot
 

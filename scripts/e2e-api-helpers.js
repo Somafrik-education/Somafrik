@@ -294,6 +294,63 @@ async function patchClassViaApi(token, classCode, patch = {}) {
   return { api: res.data, state };
 }
 
+function toIsoBirthDate(value) {
+  const raw = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  return "2012-03-15";
+}
+
+async function enrollStudentViaApi(token, classCode, draft = {}) {
+  const body = {
+    firstName: String(draft.firstName ?? "").trim(),
+    lastName: String(draft.lastName ?? draft.name ?? "").trim(),
+    gender: draft.gender || "Masculin",
+    birthDate: toIsoBirthDate(draft.birthDate),
+  };
+  if (draft.parentPhone) body.parentPhone = draft.parentPhone;
+  const res = await request(`/classes/${encodeURIComponent(classCode)}/students`, {
+    method: "POST",
+    token,
+    body,
+  });
+  assert.strictEqual(res.status, 201, `POST /classes/:code/students: ${JSON.stringify(res.data)}`);
+  const state = await getState(token);
+  return { student: res.data, studentCode: res.data.studentCode, state };
+}
+
+async function createFeeGridViaApi(token, payload) {
+  const res = await request("/finance/fee-grids", { method: "POST", token, body: payload });
+  assert.strictEqual(res.status, 201, `POST /finance/fee-grids: ${JSON.stringify(res.data)}`);
+  return res.data;
+}
+
+async function activateFeeGridViaApi(token, gridId) {
+  const res = await request(`/finance/fee-grids/${encodeURIComponent(gridId)}/activate`, {
+    method: "POST",
+    token,
+  });
+  assert.ok(res.status >= 200 && res.status < 300, `activate grid: ${JSON.stringify(res.data)}`);
+  return res.data;
+}
+
+async function applyFeeGridViaApi(token, gridId, payload = {}) {
+  const res = await request(`/finance/fee-grids/${encodeURIComponent(gridId)}/apply`, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+  assert.ok(res.status >= 200 && res.status < 300, `apply grid: ${JSON.stringify(res.data)}`);
+  return res.data;
+}
+
+async function createPaymentViaApi(token, payload) {
+  const res = await request("/payments", { method: "POST", token, body: payload });
+  assert.strictEqual(res.status, 201, `POST /payments: ${JSON.stringify(res.data)}`);
+  return res.data;
+}
+
 async function putState(token, body) {
   const res = await request("/backoffice/state", { method: "PUT", token, body });
   assert.strictEqual(res.status, 200, `put state: ${JSON.stringify(res.data)}`);
@@ -336,9 +393,25 @@ async function putStatePatch(token, patch) {
     return getState(token);
   }
 
-  const current = await getState(token);
-  const { classes: _currentClasses, ...currentWithoutClasses } = current;
-  return putState(token, { ...currentWithoutClasses, ...workingPatch });
+  const {
+    payments: _patchPayments,
+    paymentStatuses: _patchPaymentStatuses,
+    feeGrids: _patchFeeGrids,
+    schoolFeeItems: _patchSchoolFeeItems,
+    studentFees: _patchStudentFees,
+    feeTariffHistory: _patchFeeTariffHistory,
+    paymentReminders: _patchPaymentReminders,
+    students: _patchStudents,
+    teachers: _patchTeachers,
+    assignments: _patchAssignments,
+    schools: _patchSchools,
+    auditLog: _patchAuditLog,
+    ...safePatch
+  } = workingPatch;
+  if (Object.keys(safePatch).length === 0) {
+    return getState(token);
+  }
+  return putState(token, safePatch);
 }
 
 function newId(prefix) {
@@ -401,6 +474,23 @@ async function setupActiveSchool(superToken, stamp) {
   assert.strictEqual(createRes.status, 201, `create school: ${JSON.stringify(createRes.data)}`);
   const schoolCode = createRes.data.school?.code;
   assert.ok(schoolCode, "Code établissement manquant");
+
+  const yearName = `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`;
+  const yearRes = await request("/v2/academic-years", {
+    method: "POST",
+    token: superToken,
+    body: {
+      schoolCode,
+      name: yearName,
+      startDate: `${yearName.slice(0, 4)}-09-01`,
+      endDate: `${yearName.slice(5)}-08-31`,
+      isCurrent: true,
+    },
+  });
+  assert.ok(
+    yearRes.status === 201 || yearRes.status === 409,
+    `POST /v2/academic-years: ${JSON.stringify(yearRes.data)}`,
+  );
 
   const schoolAdmin = {
     id: schoolAdminId,
@@ -470,6 +560,11 @@ module.exports = {
   getState,
   createClassViaApi,
   patchClassViaApi,
+  enrollStudentViaApi,
+  createFeeGridViaApi,
+  activateFeeGridViaApi,
+  applyFeeGridViaApi,
+  createPaymentViaApi,
   putState,
   putStatePatch,
   newId,

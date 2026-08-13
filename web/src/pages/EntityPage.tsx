@@ -3,6 +3,7 @@ import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
+import { financeApi } from "../lib/financeApi";
 import {
   Button,
   EmptyState,
@@ -60,8 +61,9 @@ import {
   resolveSelectedParentStudentLabels,
 } from "./entity-page/parentChildRelationWorkflow";
 import {
-  buildPaymentCancelPlan,
   buildPaymentReceiptPrintPlan,
+  PAYMENT_CANCEL_REASON_REQUIRED_MESSAGE,
+  PAYMENT_CANCEL_SUCCESS_MESSAGE,
 } from "./entity-page/paymentWorkflow";
 import {
   buildTeacherAssignmentDeleteConfirmCopy,
@@ -83,8 +85,6 @@ import {
   entityCreateViaContactsOnly,
   type SchoolEntityKey,
 } from "../lib/entityModules";
-import { applyActiveGridsToStudent } from "../lib/fees";
-import { adaptLegacyStudents } from "../lib/studentDomain";
 import {
   getTeacherProvisioningOptions,
   syncSingleUserToTeachers,
@@ -398,6 +398,25 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       onSuccess?.();
     } catch {
       /* toast déjà affiché */
+    }
+  }
+
+  async function persistFinanceMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      await action();
+      await refresh();
+      showToast(successMessage, "success");
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'opération Finance", "error");
+      throw error;
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -798,6 +817,47 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       preparedItem.systemBroadcast = true;
     }
 
+    if (module.key === "payments") {
+      if (exists) {
+        showToast("La modification générique d'un paiement est retirée. Utilisez l'annulation dédiée.", "error");
+        return;
+      }
+      try {
+        await persistFinanceMutation(
+          () =>
+            financeApi.createPayment({
+              studentId: preparedItem.studentId,
+              feeType: preparedItem.feeType || preparedItem.label || "Inscription",
+              amount: preparedItem.amount,
+              method: preparedItem.method,
+              date: preparedItem.date,
+              comment: preparedItem.comment,
+            }),
+          entityMutationSuccessMessage(module.label, false),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (String(module.key) === "paymentStatuses") {
+      try {
+        await persistFinanceMutation(
+          () =>
+            exists
+              ? financeApi.patchPaymentStatus(String(preparedItem.id ?? preparedItem.code), preparedItem)
+              : financeApi.createPaymentStatus(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
     if (module.key === "students") {
       const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
       if (!code || code === "*") {
@@ -900,10 +960,8 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
 
     if (module.key === "students" && !exists) {
-      patch.studentFees = applyActiveGridsToStudent(
-        { ...state, ...patch, students: adaptLegacyStudents(nextAllRows) },
-        nextItem as Record<string, unknown>,
-      );
+      showToast("La création d'élèves passe par Classes → Inscrire.", "error");
+      return;
     }
 
     await applyPlan({ patch, successMessage }, () => setEditing(null));
@@ -911,12 +969,20 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   async function submitCancelPayment() {
     if (!cancellingPayment) return;
-    const plan = buildPaymentCancelPlan(
-      { scopeUser, state, showToast },
-      { payment: cancellingPayment, reason: cancelReason },
-    );
-    if (!plan.ok) return;
-    await applyPlan(plan, closeCancelModal);
+    const reason = String(cancelReason ?? "").trim();
+    if (!reason) {
+      showToast(PAYMENT_CANCEL_REASON_REQUIRED_MESSAGE, "error");
+      return;
+    }
+    try {
+      await persistFinanceMutation(
+        () => financeApi.cancelPayment(String(cancellingPayment.reference ?? cancellingPayment.id), reason),
+        PAYMENT_CANCEL_SUCCESS_MESSAGE,
+        closeCancelModal,
+      );
+    } catch {
+      /* toast */
+    }
   }
 
   async function handleDelete(row: Record<string, unknown>) {
