@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { createTeachersRepository } = require("../db/teachersRepository");
+const { createTeacherAssignmentsRepository } = require("../db/teacherAssignmentsRepository");
 const { createTxAdapter } = require("../db/txAdapter");
 const { verifySecret } = require("../services/credentialService");
 
@@ -281,6 +282,7 @@ async function main() {
     await setupFixture(pool);
     const db = createDbAdapter(pool);
     const repo = createTeachersRepository(db);
+    const assignmentsRepo = createTeacherAssignmentsRepository(db);
 
     const created = await repo.create(
       {
@@ -426,17 +428,23 @@ async function main() {
     const subjectRow = await pool.query(
       `SELECT id FROM subjects WHERE subject_code = 'SUB-MATH' LIMIT 1`,
     );
-    await pool.query(
-      `INSERT INTO teacher_assignments (
-         school_id, teacher_id, class_id, subject_id, academic_year_id, status
-       ) VALUES ($1, $2, $3, $4, $5, 'active')`,
-      [
-        teacherUuid.rows[0].school_id,
-        teacherUuid.rows[0].id,
-        classRow.rows[0].id,
-        subjectRow.rows[0].id,
-        classRow.rows[0].academic_year_id,
-      ],
+    const createdAssignment = await assignmentsRepo.create(
+      {
+        teacherCode: withAssign.teacherCode,
+        classCode: "CLS-6A",
+        subjectCode: "SUB-MATH",
+      },
+      "CD-2026-0001",
+    );
+    assert.equal(createdAssignment.teacherCode, withAssign.teacherCode);
+    assert.equal(createdAssignment.className, "6ème A");
+    assert.equal(createdAssignment.subject, "Mathématiques");
+    await assert.rejects(
+      () => assignmentsRepo.create(
+        { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+        "CD-2026-0001",
+      ),
+      (error) => error.statusCode === 409 && error.code === "ASSIGNMENT_COURSE_CONFLICT",
     );
     await pool.query(
       `INSERT INTO teacher_assignments (
@@ -463,6 +471,22 @@ async function main() {
     const detail = await repo.getByTeacherCode(withAssign.teacherCode, "CD-2026-0001");
     assert.equal(detail.assignments.length, 1);
     assert.deepEqual(detail.assignedClasses, ["6ème A"]);
+
+    const reassigned = await assignmentsRepo.update(
+      createdAssignment.id,
+      { teacherCode: created.teacherCode },
+      "CD-2026-0001",
+    );
+    assert.equal(reassigned.teacherCode, created.teacherCode);
+    await assert.rejects(
+      () => assignmentsRepo.update(createdAssignment.id, { teacherCode: otherSchool.teacherCode }, "CD-2026-0001"),
+      (error) => error.statusCode === 400 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+    );
+    assert.deepEqual(
+      await assignmentsRepo.remove(createdAssignment.id, "CD-2026-0001"),
+      { id: createdAssignment.id, deleted: true },
+    );
+    assert.equal((await assignmentsRepo.listBySchoolCode("CD-2026-0001")).length, 0);
 
     console.log("teachersRepository.pg.test.js: OK");
   } finally {

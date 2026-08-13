@@ -130,7 +130,7 @@ class FallbackRepository {
         documents: [],
         courseSchedules: [],
         academicConfigs: {},
-        teacherAssignments: [],
+        teacherAssignments: clone(this._managedTeacherAssignments ?? []),
         platformNotifications: [],
       });
     }
@@ -154,7 +154,15 @@ class FallbackRepository {
       documents: seedData.documents,
       courseSchedules: seedData.courseSchedules ?? [],
       academicConfigs: seedData.academicConfigs ?? {},
-      teacherAssignments: seedData.teacherAssignments,
+      teacherAssignments: [
+        ...(seedData.teacherAssignments ?? []).filter(
+          (seeded) =>
+            !(this._managedTeacherAssignments ?? []).some(
+              (managed) => String(managed.id) === String(seeded.id),
+            ),
+        ),
+        ...(this._managedTeacherAssignments ?? []),
+      ].filter((row) => String(row.status ?? "active").toLowerCase() === "active"),
       platformNotifications: seedData.platformNotifications,
     });
   }
@@ -231,6 +239,8 @@ class FallbackRepository {
     // LOT 2 — state.students est une projection de lecture, jamais une source
     // de persistance, y compris dans le dépôt mémoire.
     delete durable.students;
+    delete durable.teachers;
+    delete durable.assignments;
     this.backOfficeState = durable;
     if (Array.isArray(payload?.notes)) {
       this.notes = clone(payload.notes);
@@ -1585,7 +1595,30 @@ class FallbackRepository {
         ],
         courses: [...new Set((row.assignments ?? []).map((item) => item.course).filter(Boolean))],
       }));
-    return [...seeded, ...managed];
+    const rows = [...seeded, ...managed];
+    const assignments = await this.listSchoolTeacherAssignments(schoolCode);
+    return rows.map((teacher) => {
+      const teacherAssignments = assignments
+        .filter(
+          (assignment) =>
+            [teacher.id, teacher.teacherCode, teacher.publicId, teacher.identifier, teacher.userId]
+              .map((value) => String(value ?? ""))
+              .includes(String(assignment.teacherId ?? assignment.teacherCode ?? "")) ||
+            String(assignment.teacherName ?? "") === String(teacher.name ?? ""),
+        )
+        .map((assignment) => ({
+          className: assignment.className,
+          classCode: assignment.classCode ?? "",
+          course: assignment.subject ?? assignment.course ?? "",
+          status: assignment.status ?? "active",
+        }));
+      return {
+        ...teacher,
+        assignments: teacherAssignments,
+        assignedClasses: [...new Set(teacherAssignments.map((item) => item.className).filter(Boolean))],
+        courses: [...new Set(teacherAssignments.map((item) => item.course).filter(Boolean))],
+      };
+    });
   }
 
   getSchoolTeacherByCode(teacherCode, schoolCode) {
@@ -1608,6 +1641,147 @@ class FallbackRepository {
 
   createSchoolTeacher(body, schoolCode) {
     return this.getTeachersRepository().create(body, schoolCode);
+  }
+
+  async listSchoolTeacherAssignments(schoolCode) {
+    const code = String(schoolCode ?? "").trim().toUpperCase();
+    if (!code || code === "*") {
+      const { assignmentError } = require("../lib/teacherAssignmentsManagement");
+      throw assignmentError(400, "schoolCode établissement requis.", "ASSIGNMENT_SCHOOL_REQUIRED");
+    }
+    return clone(
+      [
+        ...(shouldSeedDemoData() ? seedData.teacherAssignments ?? [] : []).filter(
+          (seeded) =>
+            !(this._managedTeacherAssignments ?? []).some(
+              (managed) => String(managed.id) === String(seeded.id),
+            ),
+        ),
+        ...(this._managedTeacherAssignments ?? []),
+      ].filter(
+        (row) =>
+          String(row.schoolCode ?? "").trim().toUpperCase() === code &&
+          String(row.status ?? "active").toLowerCase() === "active",
+      ),
+    );
+  }
+
+  async createSchoolTeacherAssignment(body, schoolCode) {
+    const { assignmentError, validateAssignmentInput } = require("../lib/teacherAssignmentsManagement");
+    const input = validateAssignmentInput(body);
+    const code = String(schoolCode ?? "").trim().toUpperCase();
+    const [teachers, dataset, existing] = await Promise.all([
+      this.listSchoolTeachers(code),
+      this.getDataset(),
+      this.listSchoolTeacherAssignments(code),
+    ]);
+    const teacher = teachers.find((row) =>
+      [row.id, row.teacherCode, row.publicId, row.identifier, row.userId].some(
+        (value) => String(value ?? "") === input.teacherCode,
+      ),
+    );
+    const schoolClass = (dataset.classes ?? []).find(
+      (row) =>
+        String(row.schoolCode ?? code).toUpperCase() === code &&
+        [row.publicId, row.classCode, row.name].some((value) => String(value ?? "") === input.classRef),
+    );
+    const matchingSubjects = (dataset.courses ?? []).filter(
+      (row) =>
+        String(row.schoolCode ?? code).toUpperCase() === code &&
+        [row.publicId, row.subjectCode, row.name].some(
+          (value) => String(value ?? "") === input.subjectRef,
+        ),
+    );
+    const subject = matchingSubjects.find(
+      (row) => String(row.className ?? "") === String(schoolClass?.name ?? ""),
+    ) ?? matchingSubjects[0];
+    if (!teacher) throw assignmentError(400, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
+    if (!schoolClass) throw assignmentError(400, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
+    if (!subject) throw assignmentError(400, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+    if (
+      existing.some(
+        (row) => row.className === schoolClass.name && String(row.subject ?? row.course) === subject.name,
+      )
+    ) {
+      throw assignmentError(409, "Ce cours est déjà affecté à un enseignant pour cette classe.", "ASSIGNMENT_COURSE_CONFLICT");
+    }
+    if (!this._managedTeacherAssignments) this._managedTeacherAssignments = [];
+    const created = {
+      id: `MEM-ASSIGN-${String(this._managedTeacherAssignments.length + 1).padStart(6, "0")}`,
+      schoolCode: code,
+      teacherId: teacher.teacherCode ?? teacher.publicId ?? teacher.id,
+      teacherCode: teacher.teacherCode ?? teacher.publicId ?? teacher.id,
+      teacherName: teacher.name,
+      className: schoolClass.name,
+      classCode: schoolClass.classCode ?? schoolClass.publicId ?? "",
+      subject: subject.name,
+      course: subject.name,
+      subjectCode: subject.subjectCode ?? subject.publicId ?? "",
+      assignmentRole: input.assignmentRole,
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this._managedTeacherAssignments.push(created);
+    return clone(created);
+  }
+
+  async updateSchoolTeacherAssignment(assignmentId, body, schoolCode) {
+    const current = (await this.listSchoolTeacherAssignments(schoolCode)).find(
+      (row) => String(row.id) === String(assignmentId),
+    );
+    if (!current) {
+      const { assignmentError } = require("../lib/teacherAssignmentsManagement");
+      throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
+    }
+    await this.deleteSchoolTeacherAssignment(assignmentId, schoolCode);
+    try {
+      const created = await this.createSchoolTeacherAssignment(
+        {
+          teacherCode: body?.teacherCode ?? body?.teacherId ?? current.teacherCode,
+          classCode: body?.classCode ?? body?.className ?? current.classCode ?? current.className,
+          subjectCode:
+            body?.subjectCode ?? body?.subject ?? body?.course ?? current.subjectCode ?? current.subject,
+          assignmentRole: body?.assignmentRole ?? current.assignmentRole,
+        },
+        schoolCode,
+      );
+      const generatedId = created.id;
+      created.id = current.id;
+      this._managedTeacherAssignments = this._managedTeacherAssignments.filter(
+        (row) =>
+          String(row.id) !== String(generatedId) &&
+          String(row.id) !== String(current.id),
+      );
+      this._managedTeacherAssignments.push(created);
+      return clone(created);
+    } catch (error) {
+      current.status = "active";
+      if (!this._managedTeacherAssignments) this._managedTeacherAssignments = [];
+      this._managedTeacherAssignments = this._managedTeacherAssignments.filter(
+        (row) => String(row.id) !== String(current.id),
+      );
+      this._managedTeacherAssignments.push(current);
+      throw error;
+    }
+  }
+
+  async deleteSchoolTeacherAssignment(assignmentId, schoolCode) {
+    const rows = await this.listSchoolTeacherAssignments(schoolCode);
+    const current = rows.find((row) => String(row.id) === String(assignmentId));
+    if (!current) {
+      const { assignmentError } = require("../lib/teacherAssignmentsManagement");
+      throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
+    }
+    if (!this._managedTeacherAssignments) this._managedTeacherAssignments = [];
+    let managed = false;
+    this._managedTeacherAssignments = this._managedTeacherAssignments.map((row) => {
+      if (String(row.id) !== String(assignmentId)) return row;
+      managed = true;
+      return { ...row, status: "deleted", updatedAt: new Date().toISOString() };
+    });
+    if (!managed) this._managedTeacherAssignments.push({ ...current, status: "deleted" });
+    return { id: current.id, deleted: true };
   }
 }
 

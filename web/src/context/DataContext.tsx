@@ -17,6 +17,7 @@ import { applyClientScopeToState } from "../lib/scope";
 import { stripClientAuditLogFromPutPayload } from "../lib/stripClientAuditLog";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
 import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
+import { stripClientPedagogyStaffFromPutPayload } from "../lib/stripClientPedagogyStaff";
 import {
   enqueuePatchMutations,
   formatOutboxFailureMessage,
@@ -183,10 +184,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       syncPausedRef.current = true;
       const usePartial = options.partial !== false;
 
+      const canonicalPatch = stripClientPedagogyStaffFromPutPayload(
+        patch as Record<string, unknown>,
+      ) as Partial<BackOfficeState>;
       const currentOutbox = loadSyncOutbox();
       const { entries: enqueued, annotatedPatch } = enqueuePatchMutations(
         currentOutbox,
-        patch as Record<string, unknown>,
+        canonicalPatch as Record<string, unknown>,
       );
       let workingOutbox = enqueued;
       persistJournal(workingOutbox);
@@ -218,9 +222,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? (annotatedPatch as Partial<BackOfficeState>)
           : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
         // HOTFIX-RBAC-ADMIN-01 : jamais envoyer auditLog (non writable client → 403).
-        const payload = stripClientStudentsFromPutPayload(
-          stripClientSchoolsFromPutPayload(
-            stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
+        const payload = stripClientPedagogyStaffFromPutPayload(
+          stripClientStudentsFromPutPayload(
+            stripClientSchoolsFromPutPayload(
+              stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
+            ),
           ),
         ) as Partial<BackOfficeState>;
         const saved = await api.put<Partial<BackOfficeState> & { syncAck?: SyncAck }>(

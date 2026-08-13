@@ -13,6 +13,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Added
 
+- **LOT 3 — Enseignants / affectations PostgreSQL** : `POST/PATCH/DELETE /api/assignments` fournit le CRUD d'affectations scopé établissement ; `PUT /api/backoffice/state` refuse toute présence de `teachers` ou `assignments` avec codes stables fail-closed ; `state.teachers` et `state.assignments` deviennent des projections PostgreSQL read-only.
 - **LOT 2 — Élèves PostgreSQL** : inscription via `POST /api/classes/:classCode/students`, liste/fiche/modification via `GET/PATCH /api/students` ; `PUT /api/backoffice/state` refuse toute présence de `students` (`LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`, y compris PUT mixte et snapshot) avant toute mutation ; `state.students` devient une projection de lecture PostgreSQL.
 - **LOT 1 — Établissements PostgreSQL** : CRUD `/api/backoffice/establishments` persiste la table `schools` (`profile_payload` JSONB) ; `PUT /api/backoffice/state` refuse **toute présence** de `schools` (`LEGACY_SCHOOLS_STATE_WRITE_FORBIDDEN`, y compris payload mixte / snapshot) sans mutation partielle ; pays hors référentiel refusé (`COUNTRY_NOT_FOUND`) sans inventer `phone_code` / `currency` ; `state.schools` reste une projection de lecture.
 - Lot V2.1a : package `@somafrik/auth-v2` avec rôles canoniques, contrat immuable `AuthPrincipal` et évaluation fail-closed `can(principal, permission)` (sans JWT, session, HTTP ni alias legacy).
@@ -23,6 +24,8 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Changed
 
+- Matrice S1.4 : `teachers` et `assignments` retirés des clés writables ; Web, Mobile et BackOffice ne les incluent plus dans les PUT globaux, et les interfaces d'affectation utilisent les APIs dédiées.
+- `saveBackOfficeState` ne déclenche plus `syncPedagogyStaffDomainFromBackOffice` et ne persiste plus les projections enseignants/affectations dans `backoffice_state`.
 - Matrice S1.4 : `students` retiré de toutes les clés writables via PUT state ; Web, Mobile et BackOffice omettent la projection élèves des snapshots envoyés.
 - Le `saveBackOfficeState` PostgreSQL ne déclenche plus `syncStudentsDomainFromBackOffice` et ne persiste plus `students` dans `backoffice_state`.
 - Matrice S1.4 : `schools` retiré des clés writables Admin Pays / Super Admin sur PUT state (LOT 1).
