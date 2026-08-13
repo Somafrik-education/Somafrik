@@ -523,21 +523,24 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       createItem: (entity, item) => {
         if (
           entity === "classes" || entity === "schools" || entity === "students" ||
-          entity === "teachers" || entity === "assignments"
+          entity === "teachers" || entity === "assignments" ||
+          entity === "payments" || entity === "paymentStatuses"
         ) return;
         commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
       },
       updateItem: (entity, item) => {
         if (
           entity === "classes" || entity === "schools" || entity === "students" ||
-          entity === "teachers" || entity === "assignments"
+          entity === "teachers" || entity === "assignments" ||
+          entity === "payments" || entity === "paymentStatuses"
         ) return;
         commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
       },
       deleteItem: (entity, id) => {
         if (
           entity === "classes" || entity === "schools" || entity === "students" ||
-          entity === "teachers" || entity === "assignments"
+          entity === "teachers" || entity === "assignments" ||
+          entity === "payments" || entity === "paymentStatuses"
         ) return;
         commitEntity(entity, (items) => items.filter((row) => row.id !== id));
       },

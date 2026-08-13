@@ -36,7 +36,7 @@ function runMatrixUnitTests() {
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("students"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("students"));
   assert.ok(!PREFET_WRITABLE_ENTITIES.includes("students"));
-  assert.ok(SECRETARY_WRITABLE_ENTITIES.includes("payments"));
+  assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("payments"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("notes"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("users"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("feeGrids"));
@@ -80,7 +80,7 @@ function runMatrixUnitTests() {
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(secretary, ["payments"]).ok,
-    true,
+    false,
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(secretary, ["notes"]).ok,
@@ -88,7 +88,7 @@ function runMatrixUnitTests() {
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(accountant, ["payments", "studentFees"]).ok,
-    true,
+    false,
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(accountant, ["users"]).ok,
@@ -100,7 +100,7 @@ function runMatrixUnitTests() {
   );
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(admin, ["users", "notes", "feeGrids"]).ok,
-    true,
+    false,
   );
 
   // Pas d'élargissement Secrétaire / Comptable vs Admin School
@@ -308,7 +308,7 @@ async function runHttpTestsIfAvailable() {
   });
   assert.strictEqual(secForbidden.status, 403, "Secrétaire notes doit être 403");
 
-  // A4 — Comptable : paiements OK
+  // A4 — Comptable : paiements via PUT state désormais fail-closed (LOT 4)
   const accOk = await request("/backoffice/state", {
     method: "PUT",
     token: accountant.accessToken,
@@ -316,7 +316,8 @@ async function runHttpTestsIfAvailable() {
       payments: state.payments ?? [],
     },
   });
-  assert.ok(accOk.status >= 200 && accOk.status < 300, `Comptable payments write: ${accOk.status}`);
+  assert.strictEqual(accOk.status, 400, `Comptable payments write: ${accOk.status}`);
+  assert.strictEqual(accOk.data?.code, "LEGACY_FINANCE_STATE_WRITE_FORBIDDEN");
 
   // A5 — Comptable : users interdit → 403
   const accForbidden = await request("/backoffice/state", {

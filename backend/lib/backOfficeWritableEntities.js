@@ -20,12 +20,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
   "users",
   "courses",
   "courseSchedules",
-  "payments",
-  "paymentStatuses",
-  "feeGrids",
-  "schoolFeeItems",
-  "studentFees",
-  "feeTariffHistory",
   "presences",
   "notes",
   "evaluations",
@@ -47,8 +41,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
   "presences",
-  "payments",
-  "paymentStatuses",
   "notifications",
   "announcements",
   "messages",
@@ -56,14 +48,9 @@ const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
 ]);
 
 /**
- * Comptable — seed « Gérer paiements » (+ suivi frais élèves opérationnels).
- * Pas de configuration tarifaire (feeGrids / schoolFeeItems / feeTariffHistory).
+ * Comptable — plus d'écriture Finance via PUT state (LOT 4 : APIs dédiées).
  */
-const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([
-  "payments",
-  "paymentStatuses",
-  "studentFees",
-]);
+const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([]);
 
 /**
  * Préfet / Proviseur / Directeur adjoint — pédagogie (matrix Préfet CRUD).
@@ -87,7 +74,7 @@ const PREFET_WRITABLE_ENTITIES = Object.freeze([
  * Directeur — seed : Gérer utilisateurs, Modifier notes, Gérer paiements + socle préfet.
  */
 const DIRECTOR_WRITABLE_ENTITIES = Object.freeze([
-  ...new Set([...PREFET_WRITABLE_ENTITIES, "users", "payments", "paymentStatuses", "contacts", "relations"]),
+  ...new Set([...PREFET_WRITABLE_ENTITIES, "users", "contacts", "relations"]),
 ]);
 
 const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([
@@ -140,7 +127,14 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
           entity !== "schools" &&
           entity !== "students" &&
           entity !== "teachers" &&
-          entity !== "assignments",
+          entity !== "assignments" &&
+          entity !== "payments" &&
+          entity !== "paymentStatuses" &&
+          entity !== "feeGrids" &&
+          entity !== "schoolFeeItems" &&
+          entity !== "studentFees" &&
+          entity !== "feeTariffHistory" &&
+          entity !== "paymentReminders",
       ),
       "rolePermissions",
       "academicConfigs",

@@ -331,9 +331,43 @@ export function saveBackOfficeState(payload: BackOfficeStatePayload) {
   delete rest.students;
   delete rest.teachers;
   delete rest.assignments;
+  delete rest.payments;
+  delete rest.paymentStatuses;
+  delete rest.feeGrids;
+  delete rest.schoolFeeItems;
+  delete rest.studentFees;
+  delete rest.feeTariffHistory;
+  delete rest.paymentReminders;
   return request<BackOfficeStatePayload>("/backoffice/state", {
     method: "PUT",
     body: JSON.stringify(rest),
+  });
+}
+
+export function createSchoolPayment(payload: Record<string, unknown>) {
+  return request("/payments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function cancelSchoolPayment(paymentId: string, reason: string) {
+  return request(`/payments/${encodeURIComponent(paymentId)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function upsertFinancePaymentStatus(payload: Record<string, unknown>, statusId?: string) {
+  if (statusId) {
+    return request(`/finance/payment-statuses/${encodeURIComponent(statusId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
+  return request("/finance/payment-statuses", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

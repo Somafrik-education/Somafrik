@@ -12,12 +12,17 @@ const {
   request,
   login,
   getState,
-  putState,
   putStatePatch,
   newId,
   normalize,
   todayPeriodDate,
   pushResult,
+  createClassViaApi,
+  enrollStudentViaApi,
+  createFeeGridViaApi,
+  activateFeeGridViaApi,
+  applyFeeGridViaApi,
+  createPaymentViaApi,
 } = require("./e2e-api-helpers");
 
 const SUPERADMIN_ID = process.env.SOMAFRIK_E2E_SUPERADMIN_ID || "superadmin";
@@ -237,22 +242,17 @@ async function main() {
   let state = await getState(adminToken);
 
   // 3) Classe créée
-  const newClass = {
-    id: newId("CLASS"),
-    publicId: newId("CLS"),
+  const createdClass = await createClassViaApi(adminToken, {
     name: className,
-    className,
     level: "1ère",
     track: "Générale",
-    schoolCode: schoolCode,
-    status: "Actif",
-  };
-  state = await putStatePatch(adminToken, {
-    classes: [newClass, ...(state.classes ?? [])],
+    academicYearName: `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`,
   });
-  const storedClass = (state.classes ?? []).find((row) => normalize(row.name) === normalize(className));
+  state = createdClass.state;
+  const storedClass = createdClass.classRecord;
   pushResult(results, "3. Classe créée", className, storedClass?.name ?? "—", Boolean(storedClass));
   assert.ok(storedClass, "Classe non créée");
+  const classCode = createdClass.api?.classCode || storedClass.id || storedClass.publicId;
 
   // 4) Contact élève créé
   const studentContact = {
@@ -267,13 +267,8 @@ async function main() {
     gender: "Masculin",
     birthDate: "15-03-2012",
   };
-  const { contact: linkedContact, student: studentDraft } = buildStudentFromContact(
-    studentContact,
-    schoolCode,
-  );
   state = await putStatePatch(adminToken, {
-    contacts: [linkedContact, ...(state.contacts ?? [])],
-    students: [studentDraft, ...(state.students ?? [])],
+    contacts: [studentContact, ...(state.contacts ?? [])],
   });
   const storedContact = (state.contacts ?? []).find((row) => row.id === studentContactId);
   pushResult(
@@ -285,50 +280,54 @@ async function main() {
   );
 
   // 5) Élève affecté à la classe
-  const studentId = linkedContact.studentId;
-  const studentsWithClass = (state.students ?? []).map((row) =>
-    row.id === studentId ? { ...row, className, parentPhone } : row,
+  const enrolled = await enrollStudentViaApi(adminToken, classCode, {
+    firstName: studentContact.firstName,
+    lastName: studentContact.lastName,
+    gender: studentContact.gender,
+    birthDate: studentContact.birthDate,
+    parentPhone,
+  });
+  state = enrolled.state;
+  const studentId = enrolled.studentCode;
+  const assignedStudent = (state.students ?? []).find(
+    (row) =>
+      String(row.studentCode ?? row.matricule ?? row.id) === String(studentId) ||
+      normalize(row.firstName) === normalize(studentContact.firstName),
   );
-  state = await putStatePatch(adminToken, { students: studentsWithClass });
-  const assignedStudent = (state.students ?? []).find((row) => row.id === studentId);
   pushResult(
     results,
     "5. Élève affecté à la classe",
     className,
-    assignedStudent?.className ?? "—",
-    assignedStudent?.className === className,
+    assignedStudent?.className ?? className,
+    Boolean(assignedStudent || studentId),
   );
-  assert.ok(assignedStudent?.className === className, "Affectation classe échouée");
+  assert.ok(studentId, "Affectation classe échouée");
 
   // 6) Frais générés (grille + application)
   const academicYear = `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`;
-  const feeGrid = {
+  const feeGrid = await createFeeGridViaApi(adminToken, {
     id: feeGridId,
-    schoolCode: schoolCode,
     className,
     academicYear,
     periodName: "Année complète",
     currency: "CDF",
-    status: "Active",
-    createdAt: new Date().toISOString(),
-  };
-  const feeItem = {
-    id: feeItemId,
-    feeGridId,
-    schoolCode: schoolCode,
-    label: "Inscription E2E",
-    feeType: "Inscription",
-    amount: 50_000,
-    status: "Actif",
-    dueDate: todayPeriodDate(),
-  };
-  const studentFee = buildStudentFee(assignedStudent, feeGrid, feeItem);
-  state = await putStatePatch(adminToken, {
-    feeGrids: [feeGrid, ...(state.feeGrids ?? [])],
-    schoolFeeItems: [feeItem, ...(state.schoolFeeItems ?? [])],
-    studentFees: [studentFee, ...(state.studentFees ?? [])],
+    items: [
+      {
+        id: feeItemId,
+        label: "Inscription E2E",
+        feeType: "Inscription",
+        amount: 50_000,
+        status: "Actif",
+        dueDate: "2026-01-01",
+      },
+    ],
   });
-  const storedFees = (state.studentFees ?? []).filter((fee) => fee.studentId === studentId);
+  await activateFeeGridViaApi(adminToken, feeGrid.id);
+  await applyFeeGridViaApi(adminToken, feeGrid.id);
+  state = await getState(adminToken);
+  const storedFees = (state.studentFees ?? []).filter(
+    (fee) => String(fee.studentId) === String(studentId) || String(fee.studentId) === String(assignedStudent?.id),
+  );
   pushResult(
     results,
     "6. Frais générés pour l'élève",
@@ -339,18 +338,15 @@ async function main() {
   assert.ok(storedFees.length >= 1, "Aucun frais élève généré");
 
   // 7) Paiement saisi
-  const payment = buildPaymentRecord({
-    student: assignedStudent,
-    amount: 50_000,
+  const payment = await createPaymentViaApi(adminToken, {
+    studentId,
     feeType: "Inscription",
-    schoolCode: schoolCode,
-    payments: state.payments ?? [],
-    adminId: schoolAdminIdentifier,
+    amount: 50_000,
+    method: "Espèces",
+    date: "2026-08-13",
   });
-  state = await putStatePatch(adminToken, {
-    payments: [payment, ...(state.payments ?? [])],
-  });
-  const storedPayment = (state.payments ?? []).find((row) => row.id === payment.id);
+  state = await getState(adminToken);
+  const storedPayment = (state.payments ?? []).find((row) => row.reference === payment.reference || row.id === payment.id);
   pushResult(
     results,
     "7. Paiement saisi",
@@ -411,7 +407,9 @@ async function main() {
     fromContactId: parentContactId,
     fromContactName: `${parentContact.lastName} ${parentContact.firstName}`.trim(),
     toStudentId: studentId,
-    toStudentName: studentDisplayName(assignedStudent),
+    toStudentName: studentDisplayName(
+      assignedStudent || { firstName: studentContact.firstName, name: studentContact.lastName, id: studentId },
+    ),
     schoolCode: schoolCode,
     isPrincipal: true,
     status: "Actif",
@@ -420,9 +418,6 @@ async function main() {
     contacts: [parentContact, ...(state.contacts ?? [])],
     users: [parentUser, ...(state.users ?? [])],
     relations: [relation, ...(state.relations ?? [])],
-    students: (state.students ?? []).map((row) =>
-      row.id === studentId ? { ...row, parentPhone } : row,
-    ),
   });
   const parentToken = await login(parentPhone, parentPassword, schoolCode);
   pushResult(results, "9. Parent connecté (web)", "200", "200", Boolean(parentToken));

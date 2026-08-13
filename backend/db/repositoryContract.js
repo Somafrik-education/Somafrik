@@ -56,6 +56,22 @@ const REPOSITORY_METHODS = Object.freeze([
   "deleteSchoolTeacherAssignment",
   "listEstablishments",
   "persistEstablishment",
+  // Finance métier (LOT 4 — PostgreSQL canonique)
+  "listFinanceProjection",
+  "createSchoolPayment",
+  "getSchoolPayment",
+  "cancelSchoolPayment",
+  "listFinancePaymentStatuses",
+  "upsertFinancePaymentStatus",
+  "listFinanceFeeGrids",
+  "getFinanceFeeGrid",
+  "upsertFinanceFeeGrid",
+  "setFinanceFeeGridStatus",
+  "applyFinanceFeeGrid",
+  "listFinanceStudentFees",
+  "getFinanceStudentFee",
+  "adjustFinanceStudentFee",
+  "createFinanceReminder",
 ]);
 
 /**

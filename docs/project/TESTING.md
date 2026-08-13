@@ -78,6 +78,8 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:classes-legacy-cleanup` | PUT `classes` interdit ; `/api/classes` + projection lecture |
 | `npm run verify:schools-legacy-cleanup` | PUT `schools` interdit (seul, mixte `{schools,users}` / `{schools,subscriptions}`, snapshot) sans mutation partielle ; pays hors référentiel (`FR`) refusé ; `/api/backoffice/establishments` + projection lecture |
 | `npm run verify:students-legacy-cleanup` | PUT `students` interdit (toute valeur, seul, mixte, snapshot) sans mutation partielle ; inscription/liste/fiche/PATCH via APIs PG ; projection `state.students` read-only ; writers Web/Mobile/BackOffice retirés |
+| `npm run verify:finance-legacy-cleanup` | PUT Finance interdit (clés `payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders` — vide, null, mixte, snapshot) sans mutation partielle ; projection GET depuis PostgreSQL uniquement ; writers Web/Mobile/BackOffice retirés |
+| `npm run verify:finance-management` | Paiement/allocation atomiques, annulation/réversion, application concurrente de grille, cooldown reminders, isolation tenant, RBAC Super Admin / Admin School / Comptable / Secrétaire / Directeur / rôles non autorisés |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
 | `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |
@@ -131,6 +133,15 @@ Après déploiement Render + Vercel (`develop`) :
 - [ ] Liste/fiche/PATCH via `/api/students` → persistance après reload
 - [ ] PUT state avec clé `students` seule, mixte ou snapshot → 400 `LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`
 - [ ] `GET state.students` reflète PostgreSQL sans ligne JSON fantôme
+
+### Gate Finance (LOT 4)
+
+- [ ] Créer un paiement via `POST /api/payments` → 201, référence générée serveur, allocations et soldes atomiques
+- [ ] Annuler via `POST /api/payments/:id/cancel` avec motif → réversion des soldes, idempotente, jamais hard delete
+- [ ] Appliquer une grille via `POST /api/finance/fee-grids/:id/apply` sans obligation en double sous concurrence
+- [ ] Relance unpaid : cooldown serveur, `force` réservé Super Admin / Admin School
+- [ ] PUT state avec une clé Finance, seule, mixte ou snapshot → 400 `LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`
+- [ ] `GET state` Finance reflète PostgreSQL sans fusion des anciennes lignes JSON
 
 ### Gate Notes / sync enseignant
 

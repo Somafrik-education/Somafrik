@@ -31,11 +31,8 @@ import {
   type PaymentRecord,
   type StudentSearchResult,
 } from "../../lib/quickPayment";
-import {
-  buildPaymentCreatePersistPlan,
-  buildPaymentReceiptPrintPlan,
-} from "../../pages/entity-page/paymentWorkflow";
-import { PaymentReceipt } from "./PaymentReceipt";
+import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWorkflow";
+import { financeApi } from "../../lib/financeApi";
 
 interface QuickPaymentModalProps {
   open: boolean;
@@ -45,7 +42,7 @@ interface QuickPaymentModalProps {
 
 export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalProps) {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, refresh } = useData();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -129,27 +126,30 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setSearch(student.name);
   }
 
-  async function persistPayment(payment: PaymentRecord, printAfter = false) {
-    const plan = buildPaymentCreatePersistPlan(
-      { scopeUser, state, showToast },
-      { payment, student: selectedStudent },
-    );
-    if (!plan.ok) return;
-
+  async function persistPayment(_payment: PaymentRecord, printAfter = false) {
     setBusy(true);
     try {
-      await update(plan.patch);
-      setSavedPayment(plan.payment);
-      onSaved?.(plan.payment);
-      showToast(plan.successMessage, "success");
+      const created = await financeApi.createPayment({
+        studentId: selectedStudent?.id,
+        feeType,
+        amount: parsedAmount,
+        method,
+        date: paymentDateFromInput(dateInput),
+        comment,
+        overpaymentAction: overpayment > 0 ? overpaymentAction : undefined,
+      });
+      await refresh();
+      setSavedPayment(created as unknown as PaymentRecord);
+      onSaved?.(created as unknown as PaymentRecord);
+      showToast("Paiement enregistré", "success");
       if (printAfter) {
         setShowReceipt(true);
         window.setTimeout(() => window.print(), 300);
       } else {
         onClose();
       }
-    } catch {
-      showToast("Échec de l'enregistrement du paiement", "error");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'enregistrement du paiement", "error");
     } finally {
       setBusy(false);
     }

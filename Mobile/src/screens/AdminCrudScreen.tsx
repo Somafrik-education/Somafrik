@@ -24,6 +24,8 @@ import {
   deleteTeacherAssignment,
   resetUserPassword as resetUserPasswordOnBackend,
   updateTeacherAssignment,
+  createSchoolPayment,
+  upsertFinancePaymentStatus,
 } from "../services/api";
 import { formatTeacherClasses } from "../lib/teacherClasses";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
@@ -525,6 +527,54 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
 
     if (businessError) {
       Alert.alert("Règle métier", businessError);
+      return;
+    }
+
+    if (entity === "payments") {
+      if (editingItem) {
+        Alert.alert(
+          "Modification générique indisponible",
+          "Les paiements se créent via l'API dédiée. L'annulation se fait depuis le web établissement.",
+        );
+        return;
+      }
+      try {
+        await createSchoolPayment({
+          studentId: nextItem.studentId,
+          feeType: nextItem.feeType || nextItem.label || "Inscription",
+          amount: nextItem.amount,
+          method: nextItem.method || "Espèces",
+          date: nextItem.date,
+        });
+        await refreshBackOfficeState();
+        setVisible(false);
+      } catch (error) {
+        Alert.alert(
+          "Paiement impossible",
+          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+        );
+      }
+      return;
+    }
+
+    if (entity === "paymentStatuses") {
+      try {
+        await upsertFinancePaymentStatus(
+          {
+            label: nextItem.label,
+            code: nextItem.value || nextItem.code,
+            status: nextItem.status,
+          },
+          editingItem ? String(nextItem.value || nextItem.id) : undefined,
+        );
+        await refreshBackOfficeState();
+        setVisible(false);
+      } catch (error) {
+        Alert.alert(
+          "Statut impossible",
+          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+        );
+      }
       return;
     }
 
@@ -1503,13 +1553,13 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
     if (!form.studentId || !form.amount) return null;
     return {
       id: nextId,
-      publicId: form.publicId || generatePublicId("PAY", year, context?.paymentsData ?? [], 6),
       schoolCode,
       studentId: form.studentId,
       amount: Number(form.amount) || 0,
       date: form.date || formatDate(new Date()),
       status: form.status || "PAYE",
       method: form.method || "Mobile Money",
+      feeType: form.feeType || "Inscription",
     };
   }
 

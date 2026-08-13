@@ -26,7 +26,7 @@ Source : `backend/server.js`. Permissions déclarées dans `backend/services/rba
 | Méthode | Path | Fichier:ligne | Permission / garde |
 |---------|------|---------------|--------------------|
 | GET | `/api/backoffice/state` | `backend/server.js:1328` | `requireAuth` + `assertBackOfficeReader` — **pas** de clé `routePermissions` |
-| PUT | `/api/backoffice/state` | `backend/server.js:1334` | `requireAuth` + `assertBackOfficeWriter` + matrice `backend/lib/backOfficeWritableEntities.js` ; classes refusées via `legacyClassesStateWrite.js` |
+| PUT | `/api/backoffice/state` | `backend/server.js:1334` | `requireAuth` + `assertBackOfficeWriter` + matrice `backend/lib/backOfficeWritableEntities.js` ; classes / schools / students / teachers / assignments / **Finance** refusés via `legacy*StateWrite.js` |
 
 ### 1.3 Establishments / plateforme lecture
 
@@ -58,7 +58,9 @@ Source : `backend/server.js`. Permissions déclarées dans `backend/services/rba
 | GET | `/api/backoffice/finance/unpaid/:studentId/reminders` | `:1305` | même clé GET unpaid |
 | POST | `/api/backoffice/finance/unpaid/:studentId/reminders` | `:1311` | `POST /api/backoffice/finance/unpaid/reminders` |
 
-POST reminders persiste via `saveEstablishmentState` (snapshot JSON). Tables PG `student_fee_obligations` / `payment_reminders` existent dans `backend/db/schema.sql` ; le flux unpaid actuel lit/écrit surtout le state BO.
+POST reminders persiste exclusivement en PostgreSQL (`payment_reminders`). Tables `payments` / `student_fee_obligations` / `payment_allocations` / `fee_grids` / `school_fee_items` / `fee_tariff_history` / `payment_statuses` sont la source de vérité. Aucun fallback JSON, aucun backfill des données historiques `backoffice_state`.
+
+APIs Finance dédiées (hors `/api/backoffice/*`) : `GET/POST /api/payments`, `GET /api/payments/:id`, `POST /api/payments/:id/cancel`, `GET/POST/PATCH /api/finance/payment-statuses`, `GET/POST/PATCH /api/finance/fee-grids`, activate/deactivate/apply, `GET /api/finance/student-fees`, `POST .../adjust`.
 
 ### 1.5 Imports
 
@@ -103,7 +105,7 @@ Table : `backend/db/schema.sql` — PK `state_key`, payload JSONB.
 | `resolveTouchedBackOfficeKeys` | `server.js` | Clés touchées pour RBAC writer |
 | `dedupeBackOfficeState` | `backend/lib/backofficeDedupe.js` | Dédup IDs |
 | Matrice writable | `backend/lib/backOfficeWritableEntities.js` | Qui peut toucher quelles clés |
-| Strip classes | `backend/lib/legacyClassesStateWrite.js` | Refuse écriture `classes` via PUT |
+| Strip Finance | `backend/lib/legacyFinanceStateWrite.js` | Refuse toute présence des 7 clés Finance via PUT |
 
 Autres appels `saveBackOfficeState` dans `server.js` : password/users, repair orphelins, bootstrap snapshot, fallback notes/présences mémoire.
 
@@ -115,13 +117,13 @@ Ordre transactionnel :
 2. **Students** — retiré au LOT 2 : aucune synchronisation `students[]` déclenchée par PUT.
 3. **Staff** — retiré au LOT 3 : aucune synchronisation `teachers[]` / `assignments[]` déclenchée par PUT.
 4. **Notes** — `persistBackOfficeAfterNotesSync` → `syncNotesDomainFromBackOffice` → strip ACK.
-5. **Persist JSON** — UPSERT `backoffice_state`, sans `students`, `teachers` ni `assignments`.
-6. **Retour** — state relu + `syncAck`, projections élèves/enseignants/affectations fournies par le runtime PG.
+5. **Persist JSON** — UPSERT `backoffice_state`, sans `students`, `teachers`, `assignments` ni clés Finance.
+6. **Retour** — state relu + `syncAck`, projections élèves/enseignants/affectations/Finance fournies par le runtime PG.
 
 ### 2.4 HTTP GET / PUT `/state`
 
 - **GET** — lecteur BO/web ; réponse scoped.
-- **PUT** — strip `classes` → writer matrix → validations → merge scoped → `saveEstablishmentState` → audit + `syncAck`.
+- **PUT** — strip classes / schools / students / teachers / assignments / **Finance** → writer matrix → validations → merge scoped → `saveEstablishmentState` → audit + `syncAck`.
 
 ### 2.5 Scripts ops touchant le snapshot
 
@@ -149,6 +151,7 @@ Ordre transactionnel :
 | `studentsApi` | `web/src/lib/studentsApi.ts` | `/api/students` (PG) |
 | `classStudentsApi` | `web/src/lib/classStudentsApi.ts` | `/api/classes/:code/students` (PG) |
 | `teachersApi` | `web/src/lib/teachersApi.ts` | `/api/teachers` (PG) |
+| `financeApi` | `web/src/lib/financeApi.ts` | `/api/payments` + `/api/finance/*` (PG) |
 | `academicYearsApi` | `web/src/lib/academicYearsApi.ts` | `/api/v2/academic-years` (PG) |
 
 ### 3.2 Pages déjà sur APIs PG
@@ -160,6 +163,9 @@ Ordre transactionnel :
 | `StudentsListPage` | `/etablissement/eleves` | `studentsApi.list` (lecture) |
 | `StudentWorkspacePage` | `/etablissement/eleves/:id…` | `studentsApi.get` |
 | `TeachersListPage` | `/etablissement/enseignants` | `teachersApi` |
+| `FinanceFeesPage` | `/etablissement/finances/frais` | `financeApi` (grilles PG) |
+| `FinanceUnpaidPage` | `/etablissement/finances/impayes` | `financeApi` reminders + unpaid PG |
+| `QuickPaymentModal` / `EntityPage` payments | paiements | `financeApi.createPayment` / `cancelPayment` |
 | `SchoolsPage` / `EstablishmentProfilePage` | établissements | `establishmentsApi` (écrit encore le JSON via backend) |
 
 `EntityPage` redirige `entity === "classes"` → `/etablissement/classes`.
@@ -169,7 +175,6 @@ Ordre transactionnel :
 | Domaine | Pages / modules |
 |---------|-----------------|
 | Pédagogie JSON | `GradesEvaluationsPage`, `PresencesPage`, `CoursePlanningPage`, planning, `ConfigurationPage` |
-| Finance JSON | `FinanceFeesPage`, `FinanceUnpaidPage`, `EntityPage` payments, modales paiement/frais |
 | Plateforme / clients | `CountriesPage`, `UsersPage`, `PermissionsPage`, `NotificationsPage`, abonnements, `BulletinDesignPage`, settings |
 | Relations / docs / comm | `ParentChildRelationsPage`, `EntityPage` relations/documents/messages/announcements/exams/bulletins |
 | Shell | `OverviewPage`, `EtablissementOverviewPage`, `Topbar`, `GlobalSearch`, `ActiveSchoolContext` |
@@ -194,12 +199,12 @@ Ordre transactionnel :
 
 | Écran | Usage |
 |-------|-------|
-| `AdminCrudScreen` | CRUD multi-entités → PUT (sauf classes) |
+| `AdminCrudScreen` | CRUD multi-entités → PUT (sauf classes/schools/students/teachers/assignments/**payments**) ; paiements via `createSchoolPayment` |
 | `StudentsScreen` | Lecture ; création locale désactivée |
 | `ClassesScreen` | Lecture + refresh state |
 | `TeachersScreen`, `TeacherGradesScreen`, `TeacherAttendanceScreen` | Données BO / APIs selon rôle |
 | `HomeScreen`, `MenuScreen`, `SchoolManagementScreen` | Agrégats |
-| `PaymentsScreen`, `StudentPaymentsScreen` | payments JSON |
+| `PaymentsScreen`, `StudentPaymentsScreen` | lecture projection GET ; création via API dédiée |
 | `MessagesScreen`, `AnnouncementsScreen`, `PlatformNotificationsScreen`, `PermissionsScreen` | écritures PUT |
 | `TimetableScreen`, `ConfigurationScreen`, `ReportCardsScreen` | lecture |
 
@@ -222,6 +227,7 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 | Notes (écriture canonique) | `evaluations`, `grades` | `POST /api/notes` | D3.6b |
 | Présences (écriture canonique) | `attendance` | `POST /api/presences` | D3.5b |
 | Schools (CRUD) | `schools` (+ `profile_payload`) | `GET/POST/PATCH/DELETE /api/backoffice/establishments` | PUT `schools` **interdit** ; `verify:schools-legacy-cleanup` |
+| Finance | `payments`, `student_fee_obligations`, `payment_allocations`, `payment_reminders`, `fee_grids`, `school_fee_items`, `fee_tariff_history`, `payment_statuses` | `/api/payments`, `/api/finance/*`, unpaid reminders | PUT Finance **interdit** ; `verify:finance-legacy-cleanup` + `verify:finance-management` |
 
 ### 5.2 Dual (JSON encore writable + sync / projection)
 
@@ -229,6 +235,7 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 |---------|---------------------|
 | `students[]` dans PUT | **Projection lecture PG** ; toute présence dans PUT refusée (`LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`) |
 | `teachers[]` / `assignments[]` | **Projections lecture PG** ; toute présence dans PUT refusée (`LEGACY_*_STATE_WRITE_FORBIDDEN`) |
+| Clés Finance (`payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders`) | **Projections lecture PG** ; toute présence dans PUT refusée (`LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`) ; jamais fusionnées avec l'ancien JSON |
 | `classes[]` | **Projection lecture** dans GET state ; plus d’écriture PUT |
 | `notes` / `evaluations` | PG SoT ; Web Notes UI encore via `DataContext.update` (PUT) |
 | `presences` | PG SoT via POST ; PUT/Mobile peuvent encore pousser |
@@ -237,7 +244,7 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 
 ### 5.3 Encore majoritairement JSON (`backoffice_state`)
 
-`users`, `countries`, `contacts`, `relations`, `subscriptions` (+ offers/payments/invoices/discounts/audit), `notifications`, `courses`, `courseSchedules`, `payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders`, `exams`, `bulletins`, `documents`, `announcements`, `messages`, `rolePermissions`, `dashboardChartConfig`, `deletedRows`.
+`users`, `countries`, `contacts`, `relations`, `subscriptions` (+ offers/payments/invoices/discounts/audit), `notifications`, `courses`, `courseSchedules`, `exams`, `bulletins`, `documents`, `announcements`, `messages`, `rolePermissions`, `dashboardChartConfig`, `deletedRows`.
 
 ---
 
@@ -251,9 +258,9 @@ Sans calendrier — dépendances techniques seulement.
 | **1** | **Schools / establishments** | ✅ API establishments = SoT PG ; PUT `schools` interdit |
 | **2** | **Students** | ✅ PUT `students` interdit ; inscription + fiche + validation import sur projection APIs PG |
 | **3** | **Teachers / assignments** | ✅ PUT `teachers`/`assignments` interdit ; CRUD affectations PG dédié |
-| **4** | **Finance** | Paiements, grilles, impayés, reminders → APIs + tables PG |
-| **5** | **Pedagogy** | Courses, schedules, exams, bulletins, documents, academicConfigs ; Notes/Présences UI 100 % APIs PG |
-| **6** | **Platform** | Countries, subscriptions, notifications, rolePermissions, dashboardChartConfig |
+| **4** | **Finance** | ✅ PUT clés Finance interdit ; APIs + tables PG SoT ; aucun backfill JSON historique ; lots 5–8 bloqués |
+| **5** | **Pedagogy** | 🔒 Courses, schedules, exams, bulletins, documents, academicConfigs ; Notes/Présences UI 100 % APIs PG |
+| **6** | **Platform** | 🔒 Countries, subscriptions, notifications, rolePermissions, dashboardChartConfig |
 | **7** | **Clients / comptes** | Users, contacts, relations, messages, announcements |
 | **8** | **Retrait PUT `/api/backoffice/state`** | Quand checklist §7 verte ; GET state peut rester temporairement en projection read-only |
 
@@ -282,7 +289,7 @@ Checklist **toutes** obligatoires :
    - [x] students (LOT 2 — inscription/fiche PG, projection state read-only)
    - [x] teachers, classes (déjà), assignments
    - [ ] courses, courseSchedules
-   - [ ] payments*, fee*, reminders
+   - [x] payments*, fee*, reminders (LOT 4 — APIs PG, PUT interdit, pas de backfill JSON)
    - [ ] presences, notes, evaluations, exams, bulletins, documents
    - [ ] academicConfigs, announcements, messages, rolePermissions, dashboardChartConfig
 
@@ -296,6 +303,7 @@ Checklist **toutes** obligatoires :
    - [ ] GET state soit retiré, soit strictement read-only dérivé de PG (pas de dual-write)
    - [x] `state.classes` / élèves ne sont plus source d’écriture
    - [x] `state.teachers` / `state.assignments` ne sont plus sources d’écriture
+   - [x] `state` Finance (payments*, fee*, reminders) n’est plus source d’écriture
 
 6. **Vérifications vertes**
    - [ ] `verify:classes-legacy-cleanup`
@@ -305,6 +313,8 @@ Checklist **toutes** obligatoires :
    - [ ] `verify:students-legacy-cleanup`
    - [ ] `verify:teacher-account-creation`
    - [ ] `verify:teachers-assignments-legacy-cleanup`
+   - [ ] `verify:finance-legacy-cleanup`
+   - [ ] `verify:finance-management`
    - [ ] RBAC state adaptés au retrait
    - [ ] `verify:runtime-bootstrap` + suite accès sans dépendance d’écriture state
    - [ ] Gates préprod domaines migrés
@@ -323,12 +333,12 @@ Checklist **toutes** obligatoires :
 
 ### Writable par rôle (extrait)
 
-Source `backend/lib/backOfficeWritableEntities.js` — Admin School conserve finance, notes, etc. ; **pas** `classes`, `schools`, `students`, `teachers` ni `assignments` (bloqués avant merge). `auditLog` jamais writable client.
+Source `backend/lib/backOfficeWritableEntities.js` — Admin School conserve notes, documents, etc. ; **pas** `classes`, `schools`, `students`, `teachers`, `assignments` ni clés Finance (bloqués avant merge, `LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`). `auditLog` jamais writable client. Comptable n'a plus aucune clé PUT.
 
 ### APIs métier hors `/backoffice` déjà structurantes
 
-`/api/classes*`, `/api/students*`, `/api/teachers*`, `/api/notes`, `/api/presences`, `/api/v2/academic-years`, `/api/academic-config`, `/api/v2/subjects`, `/api/assignments`, `/api/payments` — coexistent avec le snapshot.
+`/api/classes*`, `/api/students*`, `/api/teachers*`, `/api/notes`, `/api/presences`, `/api/v2/academic-years`, `/api/academic-config`, `/api/v2/subjects`, `/api/assignments`, `/api/payments`, `/api/finance/*` — coexistent avec le snapshot. Lots 5–8 restent bloqués.
 
 ---
 
-*Fin LOT 0 — inventaire. Aucune recommandation d’implémentation dans ce lot.*
+*LOT 0 inventaire, mis à jour LOT 4 — Finance PostgreSQL SoT. Aucun backfill des données historiques.*

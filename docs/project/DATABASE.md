@@ -9,7 +9,7 @@
 ## 1. Principes
 
 1. **PostgreSQL** est obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`).
-2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), notes (`evaluations` / `grades`), présences (`attendance`), classes — le JSON BO n’est plus source de vérité pour ces écritures.
+2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
 3. Beaucoup de domaines restent encore dans le **snapshot JSON** `backoffice_state` (migration progressive).
 4. Pas de dossier `/migrations` versionné classique : le schéma est appliqué via `schema.sql` à l’init, puis des **ensures / migrations runtime** dans le repository.
 
@@ -81,7 +81,21 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 | `backoffice_state` | Snapshot JSON BO | PK `state_key` · `state_payload` JSONB |
 | `sessions` | Refresh sessions | hash refresh token |
 
-Autres domaines (paiements, examens, documents…) : voir `schema.sql` — souvent encore synchronisés via snapshot JSON.
+Autres domaines (examens, documents, messages…) : voir `schema.sql` — souvent encore synchronisés via snapshot JSON.
+
+### 4.5 Finance (canonique PG — LOT 4)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `payments` | Paiements (référence serveur `payment_code`) | UNIQUE `payment_code` · `cancelled_at` / `cancel_reason` (soft cancel) · aucun COPY depuis JSON |
+| `student_fee_obligations` | Dettes élève | UNIQUE active (élève + type + période) · soldes ≥ 0 |
+| `payment_allocations` | Ventilation paiement → obligation | FK payment + obligation · réversion `reversed_at` |
+| `payment_reminders` | Relances unpaid | cooldown serveur · pas de mutation snapshot |
+| `payment_statuses` | Référentiel statuts | UNIQUE (école, `status_code`) |
+| `fee_grids` / `school_fee_items` | Grilles et lignes | UNIQUE classe/année/période par établissement |
+| `fee_tariff_history` | Historique d'application | traçabilité d'activation / apply |
+
+Aucun script ne recopie les anciennes données Finance de `backoffice_state` vers ces tables. V2 repart propre ; un seed de démonstration contrôlé reste possible.
 
 ---
 
@@ -113,6 +127,9 @@ erDiagram
 | UNIQUE `schools.school_code` | Identifiant établissement |
 | UNIQUE class/teacher/student codes | Identifiants métier |
 | UNIQUE attendance (school, student, date) | Un appel / élève / jour (D3.5b) |
+| UNIQUE `payments.payment_code` | Référence comptable serveur, anti-doublon |
+| UNIQUE obligations actives (école, élève, type, période) | Pas d'obligation en double sous concurrence |
+| UNIQUE fee_grids (école, classe, année, période) | Une grille naturelle par tenant |
 | UNIQUE grades (school, evaluation, student) | Une note / élève / évaluation (D3.6b) |
 | UNIQUE evaluations (school, legacy_json_id) | Pont anti-doublon JSON→PG |
 | Index FK usuels | Jointures sync / lectures scoped |
@@ -129,7 +146,8 @@ Les index uniques « post-dédup » peuvent être créés en runtime après nett
 | Présences | **PG** |
 | Classes / students | **PG** ; projections `state.classes` / `state.students` strictement read-only |
 | Teachers / affectations | **PG** (`teachers`, `teacher_assignments`) ; projections `state.teachers` / `state.assignments` strictement read-only |
-| Finance, messages, config… | Majoritairement JSON BO |
+| Finance | **PG** (`payments`, obligations, allocations, grilles, reminders) ; projections GET `state` read-only, jamais fusionnées avec l'ancien JSON ; PUT Finance **interdit** |
+| Messages, config, contacts… | Majoritairement JSON BO (lots 5–8 bloqués) |
 | Audit | **PG** `audit_logs` |
 
 Lorsqu’un domaine bascule en PG canonique : contrat DS + entrée CHANGELOG + mise à jour de ce fichier.

@@ -7,10 +7,14 @@ const API_BASE_URL = `${API_URL.replace(/\/$/, "")}/api`;
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  code?: string;
+  details?: unknown;
+  constructor(message: string, status: number, code?: string, details?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
+    this.details = details;
   }
 }
 
@@ -45,11 +49,15 @@ export async function request<T = unknown>(
   }
 
   if (!response.ok) {
+    const payload = data && typeof data === "object" ? (data as { message?: unknown; code?: unknown; details?: unknown }) : null;
     const message =
-      (data && typeof data === "object" && "message" in data
-        ? String((data as { message: unknown }).message)
-        : null) ?? "Erreur plateforme";
-    throw new ApiError(message, response.status);
+      (payload?.message != null ? String(payload.message) : null) ?? "Erreur plateforme";
+    throw new ApiError(
+      message,
+      response.status,
+      payload?.code != null ? String(payload.code) : undefined,
+      payload?.details,
+    );
   }
 
   return data as T;

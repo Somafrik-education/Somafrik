@@ -241,6 +241,13 @@ class FallbackRepository {
     delete durable.students;
     delete durable.teachers;
     delete durable.assignments;
+    delete durable.payments;
+    delete durable.paymentStatuses;
+    delete durable.feeGrids;
+    delete durable.schoolFeeItems;
+    delete durable.studentFees;
+    delete durable.feeTariffHistory;
+    delete durable.paymentReminders;
     this.backOfficeState = durable;
     if (Array.isArray(payload?.notes)) {
       this.notes = clone(payload.notes);
@@ -1782,6 +1789,105 @@ class FallbackRepository {
     });
     if (!managed) this._managedTeacherAssignments.push({ ...current, status: "deleted" });
     return { id: current.id, deleted: true };
+  }
+
+  getFinanceStore() {
+    if (!this._financeStore) {
+      const { createFinanceMemoryStore } = require("./financeMemoryStore");
+      const { studentMatches } = require("../lib/financeManagement");
+      this._financeStore = createFinanceMemoryStore({
+        getSchoolByCode: async (code) => {
+          const normalized = String(code ?? "").trim().toUpperCase();
+          return (
+            this._establishmentStore().find(
+              (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === normalized,
+            ) || null
+          );
+        },
+        findStudent: async (studentKey, principal) => {
+          const dataset = await this.getDataset();
+          const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+          return (
+            (dataset.students ?? []).find((student) => {
+              if (schoolCode && schoolCode !== "*" && String(student.schoolCode ?? "").toUpperCase() !== schoolCode) {
+                return false;
+              }
+              return studentMatches(student, studentKey);
+            }) || null
+          );
+        },
+        listStudentsInClass: async (schoolCode, className) => {
+          const dataset = await this.getDataset();
+          const { normalizeKey } = require("../lib/financeManagement");
+          return (dataset.students ?? []).filter(
+            (student) =>
+              String(student.schoolCode ?? "").toUpperCase() === String(schoolCode).toUpperCase() &&
+              normalizeKey(student.className) === normalizeKey(className),
+          );
+        },
+      });
+    }
+    return this._financeStore;
+  }
+
+  listFinanceProjection() {
+    return this.getFinanceStore().listProjection();
+  }
+
+  createSchoolPayment(payload, principal) {
+    return this.getFinanceStore().createSchoolPayment(payload, principal);
+  }
+
+  getSchoolPayment(id, principal) {
+    return this.getFinanceStore().getSchoolPayment(id, principal);
+  }
+
+  cancelSchoolPayment(id, reason, principal) {
+    return this.getFinanceStore().cancelSchoolPayment(id, reason, principal);
+  }
+
+  listFinancePaymentStatuses() {
+    return this.getFinanceStore().listFinancePaymentStatuses();
+  }
+
+  upsertFinancePaymentStatus(payload, principal) {
+    return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
+  }
+
+  listFinanceFeeGrids() {
+    return this.getFinanceStore().listFinanceFeeGrids();
+  }
+
+  getFinanceFeeGrid(id, principal) {
+    return this.getFinanceStore().getFinanceFeeGrid(id, principal);
+  }
+
+  upsertFinanceFeeGrid(payload, principal) {
+    return this.getFinanceStore().upsertFinanceFeeGrid(payload, principal);
+  }
+
+  setFinanceFeeGridStatus(id, status, principal) {
+    return this.getFinanceStore().setFinanceFeeGridStatus(id, status, principal);
+  }
+
+  applyFinanceFeeGrid(id, principal, options) {
+    return this.getFinanceStore().applyFinanceFeeGrid(id, principal, options);
+  }
+
+  listFinanceStudentFees() {
+    return this.getFinanceStore().listFinanceStudentFees();
+  }
+
+  getFinanceStudentFee(id, principal) {
+    return this.getFinanceStore().getFinanceStudentFee(id, principal);
+  }
+
+  adjustFinanceStudentFee(id, patch, principal) {
+    return this.getFinanceStore().adjustFinanceStudentFee(id, patch, principal);
+  }
+
+  createFinanceReminder(studentId, payload, principal, options) {
+    return this.getFinanceStore().createFinanceReminder(studentId, payload, principal, options);
   }
 }
 

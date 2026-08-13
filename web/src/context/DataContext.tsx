@@ -17,6 +17,7 @@ import { applyClientScopeToState } from "../lib/scope";
 import { stripClientAuditLogFromPutPayload } from "../lib/stripClientAuditLog";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
 import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
+import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientPedagogyStaffFromPutPayload } from "../lib/stripClientPedagogyStaff";
 import {
   enqueuePatchMutations,
@@ -184,9 +185,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       syncPausedRef.current = true;
       const usePartial = options.partial !== false;
 
-      const canonicalPatch = stripClientPedagogyStaffFromPutPayload(
-        patch as Record<string, unknown>,
+      const canonicalPatch = stripClientFinanceFromPutPayload(
+        stripClientPedagogyStaffFromPutPayload(patch as Record<string, unknown>),
       ) as Partial<BackOfficeState>;
+      if (Object.keys(canonicalPatch).length === 0) {
+        syncPausedRef.current = false;
+        return;
+      }
       const currentOutbox = loadSyncOutbox();
       const { entries: enqueued, annotatedPatch } = enqueuePatchMutations(
         currentOutbox,
@@ -222,10 +227,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? (annotatedPatch as Partial<BackOfficeState>)
           : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
         // HOTFIX-RBAC-ADMIN-01 : jamais envoyer auditLog (non writable client → 403).
-        const payload = stripClientPedagogyStaffFromPutPayload(
-          stripClientStudentsFromPutPayload(
-            stripClientSchoolsFromPutPayload(
-              stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
+        const payload = stripClientFinanceFromPutPayload(
+          stripClientPedagogyStaffFromPutPayload(
+            stripClientStudentsFromPutPayload(
+              stripClientSchoolsFromPutPayload(
+                stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
+              ),
             ),
           ),
         ) as Partial<BackOfficeState>;

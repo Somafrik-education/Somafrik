@@ -161,6 +161,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 
 ---
 
+## ADR-012 — Finance : PostgreSQL source de vérité (LOT 4)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | Le domaine Finance (paiements, statuts, grilles, lignes, obligations, historique tarifaire, reminders, allocations, soldes, annulations) est autoritatif en PostgreSQL. Toute présence d'une clé Finance dans `PUT /api/backoffice/state` est refusée avant fusion, y compris `[]`, `{}`, `null`, payload mixte ou snapshot identique (`LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`, `details.rejectedKeys` déterministes). `GET state` peut encore projeter Finance, uniquement depuis PostgreSQL, sans fusion ni backfill des anciennes lignes JSON. V2 repart avec des données propres ; un seed de démonstration contrôlé reste possible. L'annulation d'un paiement est une action dédiée (motif obligatoire, réversion atomique des allocations/soldes, idempotente, jamais un hard delete). L'idempotence HTTP existante et les gardes d'unicité (référence paiement, obligations actives, application de grille) protègent la concurrence. |
+| **Contexte** | Les tables `payments`, `student_fee_obligations` et `payment_reminders` existaient déjà, mais les écritures métier transitaient encore par le snapshot JSON. |
+| **Alternatives** | Dual-write JSON+PG ; backfill des données historiques `backoffice_state` ; attendre le LOT 8 pour retirer le PUT. |
+| **Impact** | Matrice S1.4 sans clés Finance ; writers Web/Mobile/BackOffice retirés ; APIs `/api/payments` et `/api/finance/*` ; preuves `verify:finance-legacy-cleanup` et `verify:finance-management`. Lots 5–8 (pédagogie, plateforme, clients, retrait PUT) restent bloqués. Notifications / Audit généraux restent LOT 6. |
+| **Statut** | Proposée |
+
+---
+
 ## Comment ajouter une décision
 
 1. Incrémenter `ADR-00N`

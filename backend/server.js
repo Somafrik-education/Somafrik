@@ -1191,25 +1191,143 @@ app.post("/api/payments", requireAuth, requirePermission("POST /api/payments"), 
     principal: req.principal,
     handler: async () => {
       const body = req.body ?? {};
-      const required = ["studentId", "feeType", "amount", "method", "date"];
-      const missing = required.filter((field) => !String(body[field] ?? "").trim() && body[field] !== 0);
-      if (missing.length) {
-        throw new BusinessError(400, `Champs obligatoires manquants : ${missing.join(", ")}`);
-      }
-      const amount = Number(body.amount);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        throw new BusinessError(400, "Le montant doit être strictement positif.");
-      }
-
-      const state = await getAuthoritativeBackOfficeState();
-      const { applyAtomicPayment } = require("./services/paymentTransactionService");
-      const { payment, nextState } = applyAtomicPayment(state, body, req.principal);
-      await ensureRepositoryBackOfficeSnapshot(state);
-      await repository.saveBackOfficeState(nextState);
+      const payment = await repository.createSchoolPayment(body, req.principal);
       await auditService.record(req, "create_payment", "payment", payment.id, payment);
       return { statusCode: 201, body: payment };
     },
   });
+}));
+
+app.get("/api/payments/:paymentId", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
+  const payment = await repository.getSchoolPayment(req.params.paymentId, req.principal);
+  if (!payment) throw new BusinessError(404, "Paiement introuvable");
+  res.json(payment);
+}));
+
+app.post("/api/payments/:paymentId/cancel", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/payments/${req.params.paymentId}/cancel`,
+    principal: req.principal,
+    handler: async () => {
+      const payment = await repository.cancelSchoolPayment(
+        req.params.paymentId,
+        req.body?.reason ?? req.body?.cancelReason,
+        req.principal,
+      );
+      await auditService.record(req, "cancel_payment", "payment", payment.id, { reason: payment.cancelReason });
+      return { statusCode: 200, body: payment };
+    },
+  });
+}));
+
+app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
+  const rows = await repository.listFinancePaymentStatuses();
+  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["code", "label", "status"]);
+}));
+
+app.post("/api/finance/payment-statuses", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanManagePaymentStatuses(req.principal);
+  const row = await repository.upsertFinancePaymentStatus(req.body ?? {}, req.principal);
+  res.status(201).json(row);
+}));
+
+app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanManagePaymentStatuses(req.principal);
+  const row = await repository.upsertFinancePaymentStatus(
+    { ...(req.body ?? {}), code: req.params.statusId, id: req.params.statusId },
+    req.principal,
+  );
+  res.json(row);
+}));
+
+function assertCanManageFeeGrids(principal) {
+  const { canManageFeeGrids } = require("./lib/financeManagement");
+  if (canManageFeeGrids(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour gérer les grilles tarifaires.");
+}
+
+function assertCanManagePaymentStatuses(principal) {
+  const { canManagePaymentStatuses } = require("./lib/financeManagement");
+  if (canManagePaymentStatuses(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour gérer les statuts de paiement.");
+}
+
+function assertCanAdjustStudentFee(principal) {
+  const { canAdjustStudentFee } = require("./lib/financeManagement");
+  if (canAdjustStudentFee(principal)) return;
+  throw new BusinessError(403, "Permission insuffisante pour ajuster une obligation.");
+}
+
+app.get("/api/finance/fee-grids", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const rows = await repository.listFinanceFeeGrids();
+  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["className", "academicYear", "status"]);
+}));
+
+app.post("/api/finance/fee-grids", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.upsertFinanceFeeGrid(req.body ?? {}, req.principal);
+  res.status(201).json(grid);
+}));
+
+app.get("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const detail = await repository.getFinanceFeeGrid(req.params.gridId, req.principal);
+  if (!detail) throw new BusinessError(404, "Grille introuvable");
+  const scope = String(req.principal?.schoolCode ?? "").trim();
+  if (scope && scope !== "*" && String(detail.grid.schoolCode ?? "").toUpperCase() !== scope.toUpperCase()) {
+    throw new BusinessError(404, "Grille introuvable");
+  }
+  res.json(detail);
+}));
+
+app.patch("/api/finance/fee-grids/:gridId", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.upsertFinanceFeeGrid({ ...(req.body ?? {}), id: req.params.gridId }, req.principal);
+  res.json(grid);
+}));
+
+app.post("/api/finance/fee-grids/:gridId/activate", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.setFinanceFeeGridStatus(req.params.gridId, "Active", req.principal);
+  res.json(grid);
+}));
+
+app.post("/api/finance/fee-grids/:gridId/deactivate", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  const grid = await repository.setFinanceFeeGridStatus(req.params.gridId, "Désactivée", req.principal);
+  res.json(grid);
+}));
+
+app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanManageFeeGrids(req.principal);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/finance/fee-grids/${req.params.gridId}/apply`,
+    principal: req.principal,
+    handler: async () => {
+      const result = await repository.applyFinanceFeeGrid(req.params.gridId, req.principal, req.body ?? {});
+      return { statusCode: 200, body: result };
+    },
+  });
+}));
+
+app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const rows = await repository.listFinanceStudentFees();
+  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["studentName", "label", "status"]);
+}));
+
+app.get("/api/finance/student-fees/:obligationId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
+  const row = await repository.getFinanceStudentFee(req.params.obligationId, req.principal);
+  if (!row) throw new BusinessError(404, "Obligation introuvable");
+  res.json(row);
+}));
+
+app.post("/api/finance/student-fees/:obligationId/adjust", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  assertCanAdjustStudentFee(req.principal);
+  const row = await repository.adjustFinanceStudentFee(req.params.obligationId, req.body ?? {}, req.principal);
+  res.json(row);
 }));
 
 app.get("/api/announcements", requireAuth, asyncHandler(async (req, res) => {
@@ -1376,20 +1494,18 @@ app.get("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requ
 }));
 
 app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, requirePermission("POST /api/backoffice/finance/unpaid/reminders"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const { reminder, state: nextState } = unpaidService.sendReminder(
-    state,
-    req.principal,
+  const reminder = await repository.createFinanceReminder(
     req.params.studentId,
     req.body ?? {},
+    req.principal,
     { force: Boolean(req.body?.force) },
   );
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
   await auditService.record(req, "send_payment_reminder", "student_fee", req.params.studentId, {
     channel: reminder.channel,
     summary: reminder.summary,
   });
-  res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(saved, req.principal) });
+  const nextState = await getAuthoritativeBackOfficeState();
+  res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
@@ -1445,7 +1561,19 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     error.code = preparedLegacyStaff.code;
     throw error;
   }
-  const rawBody = preparedLegacyStaff.body;
+  const {
+    stripLegacyFinanceStateWrite,
+    LEGACY_FINANCE_STATE_WRITE_CODE,
+    LEGACY_FINANCE_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacyFinanceStateWrite");
+  const preparedLegacyFinance = stripLegacyFinanceStateWrite(preparedLegacyStaff.body);
+  if (preparedLegacyFinance.rejectLegacyFinanceWrite) {
+    const error = new BusinessError(400, LEGACY_FINANCE_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_FINANCE_STATE_WRITE_CODE;
+    error.details = { rejectedKeys: preparedLegacyFinance.rejectedKeys };
+    throw error;
+  }
+  const rawBody = preparedLegacyFinance.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -2119,7 +2247,7 @@ async function getScopedMvpBusinessService(principal) {
       classes: state.classes ?? runtime.classes ?? [],
       courses: state.courses ?? runtime.courses ?? [],
       notes: state.notes ?? runtime.notes ?? [],
-      payments: state.payments ?? runtime.payments ?? [],
+      payments: state.payments ?? [],
     },
     principal,
     tenantScopeService,
@@ -2296,23 +2424,39 @@ async function getAuthoritativeBackOfficeState() {
   const runtimeState = buildInitialBackOfficeState(runtime);
   const storedState = await repository.getBackOfficeState();
 
+  let nextState;
   if (!hasUserBackOfficeState(storedState)) {
-    return sanitizeBackOfficeState(runtimeState);
+    nextState = sanitizeBackOfficeState(runtimeState);
+  } else {
+    const merged = mergeBackOfficeRuntimeState(runtime, storedState);
+    const { state: withSchools, repaired: repairedSchools } = repairOrphanSchools(merged);
+    if (repairedSchools.length) {
+      await repository.saveBackOfficeState(withSchools);
+      console.info(`[backoffice] Établissements rétablis depuis références orphelines : ${repairedSchools.join(", ")}`);
+    }
+    const sanitized = sanitizeBackOfficeState(stripLegacyOrganizationFields(withSchools));
+    nextState = {
+      ...sanitized,
+      courses: pedagogyGovernanceService.hydrateCoursesFromAssignments(
+        sanitized.courses ?? [],
+        sanitized.assignments ?? [],
+      ),
+    };
   }
+  return overlayFinanceProjection(nextState);
+}
 
-  const merged = mergeBackOfficeRuntimeState(runtime, storedState);
-  const { state: withSchools, repaired: repairedSchools } = repairOrphanSchools(merged);
-  if (repairedSchools.length) {
-    await repository.saveBackOfficeState(withSchools);
-    console.info(`[backoffice] Établissements rétablis depuis références orphelines : ${repairedSchools.join(", ")}`);
-  }
-  const sanitized = sanitizeBackOfficeState(stripLegacyOrganizationFields(withSchools));
+async function overlayFinanceProjection(state) {
+  const finance = await repository.listFinanceProjection();
   return {
-    ...sanitized,
-    courses: pedagogyGovernanceService.hydrateCoursesFromAssignments(
-      sanitized.courses ?? [],
-      sanitized.assignments ?? [],
-    ),
+    ...state,
+    payments: finance.payments ?? [],
+    paymentStatuses: finance.paymentStatuses ?? [],
+    feeGrids: finance.feeGrids ?? [],
+    schoolFeeItems: finance.schoolFeeItems ?? [],
+    studentFees: finance.studentFees ?? [],
+    feeTariffHistory: finance.feeTariffHistory ?? [],
+    paymentReminders: finance.paymentReminders ?? [],
   };
 }
 
@@ -2345,7 +2489,7 @@ function buildInitialBackOfficeState(runtime = {}) {
     courses: runtime.courses ?? [],
     assignments: runtime.teacherAssignments ?? [],
     courseSchedules: runtime.courseSchedules ?? [],
-    payments: runtime.payments ?? [],
+    payments: [],
     paymentStatuses: [],
     feeGrids: [],
     schoolFeeItems: [],
@@ -2383,12 +2527,13 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     courses: runtime.courses ?? [],
     assignments: runtime.teacherAssignments ?? [],
     courseSchedules: storedState.courseSchedules ?? runtime.courseSchedules ?? [],
-    payments: runtime.payments ?? [],
-    feeGrids: storedState.feeGrids ?? [],
-    schoolFeeItems: storedState.schoolFeeItems ?? [],
-    studentFees: storedState.studentFees ?? [],
-    feeTariffHistory: storedState.feeTariffHistory ?? [],
-    paymentReminders: storedState.paymentReminders ?? [],
+    payments: [],
+    paymentStatuses: [],
+    feeGrids: [],
+    schoolFeeItems: [],
+    studentFees: [],
+    feeTariffHistory: [],
+    paymentReminders: [],
     presences: runtime.presences ?? [],
     notes: runtime.notes ?? [],
     evaluations: runtime.evaluations ?? [],
@@ -2432,18 +2577,13 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
     assignments: runtimeState.assignments ?? [],
     courseSchedules: mergeRowsByIdentity(runtimeState.courseSchedules ?? [], storedState.courseSchedules ?? []),
-    payments: mergeRowsByIdentity(runtimeState.payments, storedState.payments),
-    feeGrids: mergeRowsByIdentity(runtimeState.feeGrids ?? [], storedState.feeGrids ?? []),
-    schoolFeeItems: mergeRowsByIdentity(runtimeState.schoolFeeItems ?? [], storedState.schoolFeeItems ?? []),
-    studentFees: mergeRowsByIdentity(runtimeState.studentFees ?? [], storedState.studentFees ?? []),
-    feeTariffHistory: mergeRowsByIdentity(
-      runtimeState.feeTariffHistory ?? [],
-      storedState.feeTariffHistory ?? [],
-    ),
-    paymentReminders: mergeRowsByIdentity(
-      runtimeState.paymentReminders ?? [],
-      storedState.paymentReminders ?? [],
-    ),
+    payments: [],
+    paymentStatuses: [],
+    feeGrids: runtimeState.feeGrids ?? [],
+    schoolFeeItems: runtimeState.schoolFeeItems ?? [],
+    studentFees: runtimeState.studentFees ?? [],
+    feeTariffHistory: runtimeState.feeTariffHistory ?? [],
+    paymentReminders: runtimeState.paymentReminders ?? [],
     presences: mergeRowsByIdentity(runtimeState.presences, storedState.presences),
     notes: mergeRowsByIdentity(runtimeState.notes, storedState.notes),
     evaluations: mergeRowsByIdentity(runtimeState.evaluations ?? [], storedState.evaluations ?? []),
@@ -4556,6 +4696,7 @@ app.use((error, _req, res, _next) => {
     return res.status(error.statusCode).json({
       message: error.message,
       ...(error.code ? { code: error.code } : {}),
+      ...(error.details ? { details: error.details } : {}),
     });
   }
 

@@ -59,7 +59,7 @@ La plateforme unifie :
 | Sync outbox | ✅ SYNC-01/02/03 · SYNC-04 isolé |
 | Hotfix Admin auditLog | ✅ RBAC-ADMIN-01 mergé |
 | Reconstruction V2 | 🚧 V2.0 fondation et frontières |
-| Finance opérations / RH | 🔒 Verrouillé |
+| Finance opérations / RH | 🔒 Verrouillé (persistance LOT 4 ✅) |
 | Mobile production / IA / i18n | 📋 Planifié |
 
 ---
@@ -85,7 +85,8 @@ La plateforme unifie :
 | Fiches Classe / Enseignant / Parent | 🔒 produit | E |
 | Chrome DS Présences (`ToolLayout`) | 🔒 | E |
 | Bulletins D3.7 | 🔒 après Notes | E |
-| Finance opérations | 🔒 | F |
+| Finance persistance PostgreSQL (LOT 4) | ✅ | F (persistance) |
+| Finance opérations produit (reporting, RH, extras) | 🔒 | F |
 
 ## 7. Modules planifiés
 
@@ -95,8 +96,8 @@ Voir phases F → J ci-dessous.
 
 | Dette | Sévérité | Mitigation |
 |-------|----------|------------|
-| Snapshot `backoffice_state` partagé entre domaines | Haute | Migration V2 progressive vers API métier + PostgreSQL canonique (LOTS 1–3 : PUT `schools` / `students` / `teachers` / `assignments` retirés) |
-| Workflows encore porteurs d’`auditLog` client (Finance / Contacts) | Moyenne | Filet DataContext + strip ; migration progressive |
+| Snapshot `backoffice_state` partagé entre domaines | Haute | Migration V2 progressive vers API métier + PostgreSQL canonique (LOTS 1–4 : PUT `schools` / `students` / `teachers` / `assignments` / Finance retirés) |
+| Workflows encore porteurs d’`auditLog` client (Contacts) | Moyenne | Filet DataContext + strip ; migration progressive |
 | SYNC-04 non livré | Moyenne | Isoler après validation préprod Notes |
 | Monolithes UI (`ConfigurationPage`, modales EntityPage) | Basse | Extractions D2.8 pattern |
 | Expo / audit npm Mobile | Basse | Migration Expo ciblée |
@@ -184,7 +185,7 @@ Sous réserve de validation préprod post-RBAC-ADMIN-01 :
 | **Préconditions** | Vie scolaire stabilisée ; instruction CTO |
 | **Fonctionnalités** | Grilles tarifaires, paiements, relances, reporting financier |
 | **Critères de validation** | RBAC Comptable/Secrétaire ; audit serveur ; pas d’`auditLog` client |
-| **Statut** | 🔒 Verrouillé |
+| **Statut** | ✅ Persistance LOT 4 (PostgreSQL SoT, PUT Finance interdit) · extras produit / reporting 🔒 · lots 5–8 bloqués |
 
 ### Phase G — Communication
 
