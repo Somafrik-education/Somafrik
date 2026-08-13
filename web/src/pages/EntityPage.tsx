@@ -113,12 +113,11 @@ import {
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
 import {
-  validateTeacherDeletion,
   validateTeacherIdentityDuplicate,
   validateTeacherSchoolEntry,
 } from "../lib/teacherRules";
 import { markAllAnnouncementsRead } from "../lib/announcementsRead";
-import { normalize, isSchoolAdminRole } from "../lib/format";
+import { normalize } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
@@ -144,6 +143,7 @@ import {
 } from "../lib/pedagogySync";
 import type { BackOfficeState, SessionUser } from "../types";
 import { getSchoolAcademicLists } from "../lib/academicConfig";
+import { teacherAssignmentsApi } from "../lib/teacherAssignmentsApi";
 import {
   generateTeacherIdentifiers,
   getTeacherLoginIdentifier,
@@ -215,7 +215,7 @@ export function EntityPage(props: EntityPageProps) {
 function EntityPageContent({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
   const module = getEntityModule(entity);
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, refresh } = useData();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const { prompt } = usePrompt();
@@ -408,6 +408,25 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
   }
 
+  async function persistAssignmentMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      await action();
+      await refresh();
+      showToast(successMessage, "success");
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'affectation", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function closeCancelModal() {
     setCancellingPayment(null);
     setCancelReason("");
@@ -574,6 +593,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         "Utilisez Classes → Inscrire un élève ou la fiche élève PostgreSQL.",
         "error",
       );
+      return;
+    }
+    if (module.key === "teachers") {
+      showToast("Utilisez la page Enseignants reliée à l'API PostgreSQL.", "error");
       return;
     }
 
@@ -761,6 +784,23 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
     if (!exists && !canCreate) {
       showToast("Création non autorisée pour votre rôle.", "error");
+      return;
+    }
+
+    if (module.key === "assignments") {
+      const assignmentPayload = workingItem;
+      try {
+        await persistAssignmentMutation(
+          () =>
+            exists
+              ? teacherAssignmentsApi.update(String(linkedItem.id), assignmentPayload)
+              : teacherAssignmentsApi.create(assignmentPayload),
+          exists ? "Affectation modifiée" : "Affectation créée",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast déjà affiché */
+      }
       return;
     }
 
@@ -959,22 +999,9 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
 
     if (module.key === "teachers") {
-      if (!canDelete) {
-        showToast(
-          isSchoolAdminRole(scopeUser?.role)
-            ? "Suppression réservée : accordez le droit « Enseignants — Supprimer » (Superadmin) ou confiez l'action au préfet des études."
-            : "Suppression non autorisée pour votre rôle.",
-          "error",
-        );
-        return;
-      }
-      const linkError = validateTeacherDeletion(state, row);
-      if (linkError) {
-        showToast(linkError, "error");
-        return;
-      }
+      showToast("La suppression legacy des enseignants est retirée.", "error");
+      return;
     }
-
     const confirmed = await confirm({
       title: `Supprimer cet élément ?`,
       description: `Retirer définitivement cet enregistrement de ${module.label.toLowerCase()} ?`,
@@ -982,6 +1009,18 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       tone: "danger",
     });
     if (!confirmed) return;
+
+    if (module.key === "assignments") {
+      try {
+        await persistAssignmentMutation(
+          () => teacherAssignmentsApi.remove(String(row.id)),
+          "Affectation retirée",
+        );
+      } catch {
+        /* toast déjà affiché */
+      }
+      return;
+    }
 
     if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
       const plan = buildParentChildBundleDeletePlan({ scopeUser, state }, { row });
@@ -1026,6 +1065,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   async function handleCreateFicheFromContact() {
     if (!module || !linkContactId) return;
+    if (module.key === "teachers") {
+      showToast("Créez l'enseignant depuis la page Enseignants PostgreSQL.", "error");
+      return;
+    }
     const plan = buildCreateFicheFromSelectionPlan(
       {
         scopeUser,
@@ -1071,10 +1114,33 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     );
     if (!plan.ok) return;
 
-    await applyPlan(plan, () => {
-      setTeacherAssignmentContext(plan.refreshTeacherContext);
-      setEditingAssignment(plan.resetEditingAssignment);
-    });
+    const assignmentPayload = prepareAssignmentForSave(
+      {
+        ...editingAssignment,
+        teacherId: String(
+          plan.linkedTeacher.id ?? teacherAssignmentContext.id ?? "",
+        ),
+      },
+      scopedTeachers(scopeUser, state),
+      effectiveSchoolCode,
+      state,
+      scopeUser,
+    );
+    try {
+      await persistAssignmentMutation(
+        () =>
+          editingAssignment.id
+            ? teacherAssignmentsApi.update(String(editingAssignment.id), assignmentPayload)
+            : teacherAssignmentsApi.create(assignmentPayload),
+        plan.successMessage,
+        () => {
+          setTeacherAssignmentContext(plan.refreshTeacherContext);
+          setEditingAssignment(plan.resetEditingAssignment);
+        },
+      );
+    } catch {
+      /* toast déjà affiché */
+    }
   }
 
   async function handleDeleteAssignment(assignment: Record<string, unknown>) {
@@ -1106,16 +1172,24 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     );
     if (!plan.ok) return;
 
-    await applyPlan(plan, () => {
-      if (
-        plan.clearEditingIfId &&
-        String(editingAssignment?.id ?? "") === plan.clearEditingIfId
-      ) {
-        setEditingAssignment(
-          emptyEditingAssignment(String(teacherAssignmentContext?.id ?? "")),
-        );
-      }
-    });
+    try {
+      await persistAssignmentMutation(
+        () => teacherAssignmentsApi.remove(String(assignment.id)),
+        plan.successMessage,
+        () => {
+          if (
+            plan.clearEditingIfId &&
+            String(editingAssignment?.id ?? "") === plan.clearEditingIfId
+          ) {
+            setEditingAssignment(
+              emptyEditingAssignment(String(teacherAssignmentContext?.id ?? "")),
+            );
+          }
+        },
+      );
+    } catch {
+      /* toast déjà affiché */
+    }
   }
 
   const displayFields = isParentChildMode

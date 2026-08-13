@@ -116,13 +116,14 @@ Après déploiement Render + Vercel (`develop`) :
 - [ ] Login faux → **401** (jamais 500)
 - [ ] Login valide → session + state
 
-### Gate Classes / Enseignants (RBAC-ADMIN-01)
+### Gate Enseignants / affectations (LOT 3)
 
-- [ ] Admin établissement : créer classe → PUT **200**, payload **sans** `auditLog`
-- [ ] Reload complet → classe toujours présente (PG)
-- [ ] Modifier / supprimer une classe → 200 + persistance
-- [ ] Créer enseignant + affectation → 200, sans `auditLog`, persiste
-- [ ] Nettoyage localStorage suffit pour les fantômes optimistes (pas de delete serveur)
+- [ ] Créer enseignant via `POST /api/teachers` → 201 + relecture PG
+- [ ] Créer/modifier/retirer une affectation via `POST/PATCH/DELETE /api/assignments`
+- [ ] Conflit classe + matière + année → 409 `ASSIGNMENT_COURSE_CONFLICT`
+- [ ] Référence d'un autre établissement → rejet, sans mutation
+- [ ] PUT state avec clé `teachers` ou `assignments`, seule/mixte/snapshot → 400 avec code stable
+- [ ] `GET state.teachers` / `state.assignments` reflète PostgreSQL sans ligne JSON fantôme
 
 ### Gate Élèves (LOT 2)
 

@@ -95,7 +95,7 @@ Voir phases F → J ci-dessous.
 
 | Dette | Sévérité | Mitigation |
 |-------|----------|------------|
-| Snapshot `backoffice_state` partagé entre domaines | Haute | Migration V2 progressive vers API métier + PostgreSQL canonique (LOT 1 établissements et LOT 2 élèves : PUT `schools` / `students` retirés) |
+| Snapshot `backoffice_state` partagé entre domaines | Haute | Migration V2 progressive vers API métier + PostgreSQL canonique (LOTS 1–3 : PUT `schools` / `students` / `teachers` / `assignments` retirés) |
 | Workflows encore porteurs d’`auditLog` client (Finance / Contacts) | Moyenne | Filet DataContext + strip ; migration progressive |
 | SYNC-04 non livré | Moyenne | Isoler après validation préprod Notes |
 | Monolithes UI (`ConfigurationPage`, modales EntityPage) | Basse | Extractions D2.8 pattern |

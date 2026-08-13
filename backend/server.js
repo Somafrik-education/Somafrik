@@ -644,6 +644,55 @@ app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments
   sendList(res, rows, req.query, ["className", "course", "teacherName", "teacherId"]);
 }));
 
+app.post("/api/assignments", requireAuth, requirePermission("POST /api/assignments"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createSchoolTeacherAssignment(req.body ?? {}, schoolCode);
+  await auditService.record(req, "create_teacher_assignment", "teacher_assignment", created.id, {
+    teacherCode: created.teacherCode,
+    classCode: created.classCode,
+    subjectCode: created.subjectCode,
+    schoolCode,
+  });
+  res.status(201).json(created);
+}));
+
+app.patch("/api/assignments/:assignmentId", requireAuth, requirePermission("PATCH /api/assignments/:assignmentId"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateSchoolTeacherAssignment(
+    req.params.assignmentId,
+    req.body ?? {},
+    schoolCode,
+  );
+  await auditService.record(req, "update_teacher_assignment", "teacher_assignment", updated.id, {
+    teacherCode: updated.teacherCode,
+    classCode: updated.classCode,
+    subjectCode: updated.subjectCode,
+    schoolCode,
+  });
+  res.json(updated);
+}));
+
+app.delete("/api/assignments/:assignmentId", requireAuth, requirePermission("DELETE /api/assignments/:assignmentId"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const result = await repository.deleteSchoolTeacherAssignment(req.params.assignmentId, schoolCode);
+  await auditService.record(req, "delete_teacher_assignment", "teacher_assignment", result.id, {
+    schoolCode,
+  });
+  res.json(result);
+}));
+
 app.get("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
   const config = await repository.getAcademicConfig(req.principal.schoolCode);
   res.json(config);
@@ -1366,6 +1415,9 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     LEGACY_STUDENTS_STATE_WRITE_CODE,
     LEGACY_STUDENTS_STATE_WRITE_MESSAGE,
   } = require("./lib/legacyStudentsStateWrite");
+  const {
+    stripLegacyPedagogyStaffStateWrite,
+  } = require("./lib/legacyPedagogyStaffStateWrite");
   const preparedLegacyClasses = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
   if (preparedLegacyClasses.rejectLegacyClassesWrite) {
     const error = new BusinessError(400, LEGACY_CLASSES_STATE_WRITE_MESSAGE);
@@ -1387,7 +1439,13 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     error.code = LEGACY_STUDENTS_STATE_WRITE_CODE;
     throw error;
   }
-  const rawBody = preparedLegacyStudents.body;
+  const preparedLegacyStaff = stripLegacyPedagogyStaffStateWrite(preparedLegacyStudents.body);
+  if (preparedLegacyStaff.rejectedEntity) {
+    const error = new BusinessError(400, preparedLegacyStaff.message);
+    error.code = preparedLegacyStaff.code;
+    throw error;
+  }
+  const rawBody = preparedLegacyStaff.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -1634,7 +1692,8 @@ async function getRuntime() {
   // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
   const mergedStudents = dataset.students ?? [];
   const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
-  const mergedTeachers = mergeRowsByIdentity(dataset.teachers ?? [], storedState?.teachers ?? []);
+  // LOT 3 — enseignants et affectations sont des projections PostgreSQL uniquement.
+  const mergedTeachers = dataset.teachers ?? [];
   const authService = new AuthService({
     school: dataset.school,
     schools: dataset.platformSchools,
@@ -1645,9 +1704,7 @@ async function getRuntime() {
     userAccounts: dataset.userAccounts,
     countries: dataset.countries,
     subscriptions: dataset.subscriptions ?? [],
-    assignments: storedState?.assignments?.length
-      ? storedState.assignments
-      : (dataset.teacherAssignments ?? []),
+    assignments: dataset.teacherAssignments ?? [],
   });
   const gradeBookService = new GradeBookService({
     students: dataset.students,
@@ -2113,7 +2170,12 @@ async function saveEstablishmentState(nextState, currentState = null, principal 
   const saved = await repository.saveBackOfficeState(hydrated);
   // LOT 2 — la projection élèves est issue du runtime PostgreSQL et n'est
   // jamais durablement réécrite dans backoffice_state.
-  return { ...saved, students: sanitized.students ?? [] };
+  return {
+    ...saved,
+    students: sanitized.students ?? [],
+    teachers: sanitized.teachers ?? [],
+    assignments: sanitized.assignments ?? [],
+  };
 }
 
 function requireSchoolSubscriptionFeature(feature) {
@@ -2363,11 +2425,12 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     // LOT 2 — projection lecture exclusivement PostgreSQL/runtime.
     // Les éventuelles lignes students historiques du JSON sont ignorées.
     students: runtimeState.students ?? [],
-    teachers: mergeRowsByIdentity(runtimeState.teachers, storedState.teachers),
+    // LOT 3 — projections lecture exclusivement PostgreSQL/runtime.
+    teachers: runtimeState.teachers ?? [],
     // Projection lecture Classes / Établissements : PostgreSQL / runtime (plus de mutation JSON).
     classes: runtimeState.classes ?? [],
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
-    assignments: mergeRowsByIdentity(runtimeState.assignments ?? [], storedState.assignments ?? []),
+    assignments: runtimeState.assignments ?? [],
     courseSchedules: mergeRowsByIdentity(runtimeState.courseSchedules ?? [], storedState.courseSchedules ?? []),
     payments: mergeRowsByIdentity(runtimeState.payments, storedState.payments),
     feeGrids: mergeRowsByIdentity(runtimeState.feeGrids ?? [], storedState.feeGrids ?? []),

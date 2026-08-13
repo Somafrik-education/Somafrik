@@ -19,7 +19,12 @@ import { AdminEntity, useAdminData } from "../context/AdminDataContext";
 import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_SUBJECTS, DEFAULT_TRACKS, UserAccount } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
-import { resetUserPassword as resetUserPasswordOnBackend } from "../services/api";
+import {
+  createTeacherAssignment,
+  deleteTeacherAssignment,
+  resetUserPassword as resetUserPasswordOnBackend,
+  updateTeacherAssignment,
+} from "../services/api";
 import { formatTeacherClasses } from "../lib/teacherClasses";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
@@ -287,6 +292,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     rolePermissionsData,
     updateRoleFeatureAccess,
     academicConfigData,
+    refreshBackOfficeState,
   } = useAdminData();
   const config = configs[entity];
   const items = getItems(entity);
@@ -312,7 +318,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     canMutateEntity(session, entity, "CREATE") &&
     !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
-  const canUpdate = !isStudentsEntity && canMutateEntity(session, entity, "UPDATE");
+  const canUpdate =
+    !isStudentsEntity && entity !== "teachers" && canMutateEntity(session, entity, "UPDATE");
   const canDelete = !isStudentsEntity && canMutateEntity(session, entity, "DELETE");
   const delegableFeatures = useMemo(
     () => schoolPilotageFeatures.filter((feature) => getDelegablePermissionsForFeature(session, feature).length > 0),
@@ -454,7 +461,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     setVisible(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (editingItem && !canUpdate) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier cet élément.");
       return;
@@ -521,6 +528,24 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (entity === "assignments") {
+      try {
+        if (editingItem?.id) {
+          await updateTeacherAssignment(String(editingItem.id), nextItem);
+        } else {
+          await createTeacherAssignment(nextItem);
+        }
+        await refreshBackOfficeState();
+        setVisible(false);
+      } catch (error) {
+        Alert.alert(
+          "Affectation impossible",
+          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+        );
+      }
+      return;
+    }
+
     if (editingItem) {
       updateItem(entity as any, nextItem as any);
     } else {
@@ -566,56 +591,11 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       }
     }
 
-    if (entity === "assignments") {
-      syncTeacherCourseAssignment(nextItem, editingItem);
-    }
-
     if (entity === "courses") {
       setSelectedCourseClass(String(nextItem.className ?? ""));
-      syncCourseTeacherAssignment(nextItem, editingItem);
     }
 
     setVisible(false);
-  };
-
-  const syncCourseTeacherAssignment = (course: any, previousCourse?: any) => {
-    if (previousCourse?.teacherId) {
-      removeTeacherCourseAssignment({
-        teacherId: previousCourse.teacherId,
-        className: previousCourse.className,
-        course: previousCourse.name,
-      });
-      const previousAssignment = assignmentsData.find(
-        (assignment: any) =>
-          normalize(assignment.className) === normalize(previousCourse.className) &&
-          normalize(assignment.course) === normalize(previousCourse.name)
-      );
-      if (previousAssignment?.id) {
-        deleteItem("assignments", String(previousAssignment.id));
-      }
-    }
-
-    const existingAssignment = assignmentsData.find(
-      (assignment: any) =>
-        normalize(assignment.className) === normalize(course.className) &&
-        normalize(assignment.course) === normalize(course.name)
-    );
-
-    const assignmentPayload = {
-      id: existingAssignment?.id ?? createInternalId("ASSIGN"),
-      schoolCode: course.schoolCode,
-      teacherId: course.teacherId,
-      className: course.className,
-      course: course.name,
-    };
-
-    if (existingAssignment) {
-      updateItem("assignments", assignmentPayload);
-    } else {
-      createItem("assignments", assignmentPayload);
-    }
-
-    syncTeacherCourseAssignment(assignmentPayload, existingAssignment);
   };
 
   const confirmDelete = (item: any) => {
@@ -630,54 +610,21 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
         text: "Supprimer",
         style: "destructive",
         onPress: () => {
-          deleteItem(entity, item.id);
           if (entity === "assignments") {
-            removeTeacherCourseAssignment(item);
+            void deleteTeacherAssignment(String(item.id))
+              .then(() => refreshBackOfficeState())
+              .catch((error) =>
+                Alert.alert(
+                  "Retrait impossible",
+                  error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+                ),
+              );
+            return;
           }
+          deleteItem(entity, item.id);
         },
       },
     ]);
-  };
-
-  const syncTeacherCourseAssignment = (assignment: any, previousAssignment?: any) => {
-    if (previousAssignment) {
-      removeTeacherCourseAssignment(previousAssignment);
-    }
-
-    const teacher = teachersData.find((item) => matchesEntityId(item, assignment.teacherId));
-    if (!teacher) return;
-
-    const nextTeacherAssignments = [
-      ...(teacher.assignments ?? []).filter(
-        (item: any) =>
-          normalize(item.className) !== normalize(assignment.className) ||
-          normalize(item.course) !== normalize(assignment.course)
-      ),
-      { className: assignment.className, course: assignment.course, teacherId: teacher.id },
-    ];
-
-    updateItem("teachers", {
-      ...teacher,
-      assignments: nextTeacherAssignments,
-      assignedClasses: [...new Set(nextTeacherAssignments.map((item: any) => item.className))],
-    });
-  };
-
-  const removeTeacherCourseAssignment = (assignment: any) => {
-    const teacher = teachersData.find((item) => matchesEntityId(item, assignment.teacherId));
-    if (!teacher) return;
-
-    const nextTeacherAssignments = (teacher.assignments ?? []).filter(
-      (item: any) =>
-        normalize(item.className) !== normalize(assignment.className) ||
-        normalize(item.course) !== normalize(assignment.course)
-    );
-
-    updateItem("teachers", {
-      ...teacher,
-      assignments: nextTeacherAssignments,
-      assignedClasses: [...new Set(nextTeacherAssignments.map((item: any) => item.className))],
-    });
   };
 
   const resetUserPassword = async (item: any) => {
@@ -1196,7 +1143,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
               <TouchableOpacity style={styles.cancelButton} onPress={() => setVisible(false)}>
                 <Text style={styles.cancelText}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={save}>
+              <TouchableOpacity style={styles.saveButton} onPress={() => void save()}>
                 <Text style={styles.saveText}>Enregistrer</Text>
               </TouchableOpacity>
             </View>

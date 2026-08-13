@@ -268,6 +268,30 @@ export function getAssignments() {
   return request<TeacherAssignment[]>("/assignments");
 }
 
+export function createTeacherAssignment(payload: Partial<TeacherAssignment>) {
+  const { schoolCode: _schoolCode, schoolId: _schoolId, academicYearId: _year, id: _id, ...canonical } =
+    payload as Partial<TeacherAssignment> & Record<string, unknown>;
+  return request<TeacherAssignment>("/assignments", {
+    method: "POST",
+    body: JSON.stringify(canonical),
+  });
+}
+
+export function updateTeacherAssignment(id: string, payload: Partial<TeacherAssignment>) {
+  const { schoolCode: _schoolCode, schoolId: _schoolId, academicYearId: _year, id: _id, ...canonical } =
+    payload as Partial<TeacherAssignment> & Record<string, unknown>;
+  return request<TeacherAssignment>(`/assignments/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(canonical),
+  });
+}
+
+export function deleteTeacherAssignment(id: string) {
+  return request<{ id: string; deleted: boolean }>(`/assignments/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export function getCourseSchedules() {
   return request<unknown[]>("/course-schedules");
 }
@@ -305,6 +329,8 @@ export function saveBackOfficeState(payload: BackOfficeStatePayload) {
   const rest = { ...payload };
   delete rest.schools;
   delete rest.students;
+  delete rest.teachers;
+  delete rest.assignments;
   return request<BackOfficeStatePayload>("/backoffice/state", {
     method: "PUT",
     body: JSON.stringify(rest),

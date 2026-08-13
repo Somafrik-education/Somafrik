@@ -113,10 +113,10 @@ Ordre transactionnel :
 
 1. **Schools** — pour chaque `payload.schools[]` → `ensureSchoolFromBackOfficeRecord` matérialise `schools` (+ `countries` si besoin). Introduit PR #160.
 2. **Students** — retiré au LOT 2 : aucune synchronisation `students[]` déclenchée par PUT.
-3. **Staff** — `syncPedagogyStaffDomainFromBackOffice` → teachers + assignments PG.
+3. **Staff** — retiré au LOT 3 : aucune synchronisation `teachers[]` / `assignments[]` déclenchée par PUT.
 4. **Notes** — `persistBackOfficeAfterNotesSync` → `syncNotesDomainFromBackOffice` → strip ACK.
-5. **Persist JSON** — UPSERT `backoffice_state`, sans `students`.
-6. **Retour** — state relu + `syncAck`, projection élèves fournie par le runtime PG.
+5. **Persist JSON** — UPSERT `backoffice_state`, sans `students`, `teachers` ni `assignments`.
+6. **Retour** — state relu + `syncAck`, projections élèves/enseignants/affectations fournies par le runtime PG.
 
 ### 2.4 HTTP GET / PUT `/state`
 
@@ -216,7 +216,8 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 | Classes | `classes` (+ `academic_years`) | `GET/POST/PATCH /api/classes` | PUT `classes` **interdit** ; `verify:classes-legacy-cleanup` |
 | Inscription élève | `students`, `enrollments` | `POST /api/classes/:classCode/students` | `verify:class-student-enrollment` |
 | Fiche / liste élèves | `students`, `enrollments`, … | `GET/PATCH /api/students` | `verify:students-fiche-consolidation` |
-| Enseignants (création) | `teachers`, `users` | `GET/POST /api/teachers` | `verify:teacher-account-creation` |
+| Enseignants | `teachers`, `users` | `GET/POST /api/teachers` | `verify:teacher-account-creation` |
+| Affectations enseignants | `teacher_assignments` | `GET/POST/PATCH/DELETE /api/assignments` | `verify:teachers-assignments-legacy-cleanup` |
 | Années scolaires | `academic_years` | `GET/POST /api/v2/academic-years` | Hotfix #160 + preuve préprod |
 | Notes (écriture canonique) | `evaluations`, `grades` | `POST /api/notes` | D3.6b |
 | Présences (écriture canonique) | `attendance` | `POST /api/presences` | D3.5b |
@@ -227,7 +228,7 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 | Domaine | État au tip develop |
 |---------|---------------------|
 | `students[]` dans PUT | **Projection lecture PG** ; toute présence dans PUT refusée (`LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`) |
-| `teachers[]` / `assignments[]` | PUT sync PG ; création UI via `/api/teachers` |
+| `teachers[]` / `assignments[]` | **Projections lecture PG** ; toute présence dans PUT refusée (`LEGACY_*_STATE_WRITE_FORBIDDEN`) |
 | `classes[]` | **Projection lecture** dans GET state ; plus d’écriture PUT |
 | `notes` / `evaluations` | PG SoT ; Web Notes UI encore via `DataContext.update` (PUT) |
 | `presences` | PG SoT via POST ; PUT/Mobile peuvent encore pousser |
@@ -249,7 +250,7 @@ Sans calendrier — dépendances techniques seulement.
 | **0** | Inventaire (ce document) | Baseline partagée |
 | **1** | **Schools / establishments** | ✅ API establishments = SoT PG ; PUT `schools` interdit |
 | **2** | **Students** | ✅ PUT `students` interdit ; inscription + fiche + validation import sur projection APIs PG |
-| **3** | **Teachers / assignments** | Interdire `teachers`/`assignments` sur PUT ; APIs affectations |
+| **3** | **Teachers / assignments** | ✅ PUT `teachers`/`assignments` interdit ; CRUD affectations PG dédié |
 | **4** | **Finance** | Paiements, grilles, impayés, reminders → APIs + tables PG |
 | **5** | **Pedagogy** | Courses, schedules, exams, bulletins, documents, academicConfigs ; Notes/Présences UI 100 % APIs PG |
 | **6** | **Platform** | Countries, subscriptions, notifications, rolePermissions, dashboardChartConfig |
@@ -279,20 +280,22 @@ Checklist **toutes** obligatoires :
    - [ ] users, countries, contacts, relations
    - [ ] subscriptions* / notifications
    - [x] students (LOT 2 — inscription/fiche PG, projection state read-only)
-   - [ ] teachers, classes (déjà), courses, assignments, courseSchedules
+   - [x] teachers, classes (déjà), assignments
+   - [ ] courses, courseSchedules
    - [ ] payments*, fee*, reminders
    - [ ] presences, notes, evaluations, exams, bulletins, documents
    - [ ] academicConfigs, announcements, messages, rolePermissions, dashboardChartConfig
 
 4. **Side-effects de `saveBackOfficeState` retirés ou inutiles**
    - [x] Plus de sync students déclenché par PUT
-   - [ ] Plus de sync staff/notes déclenché par PUT
+   - [x] Plus de sync staff déclenché par PUT
+   - [ ] Plus de sync notes déclenché par PUT
    - [ ] Materialize schools uniquement depuis API establishments
 
 5. **Projection JSON**
    - [ ] GET state soit retiré, soit strictement read-only dérivé de PG (pas de dual-write)
    - [x] `state.classes` / élèves ne sont plus source d’écriture
-   - [ ] `state.teachers` n'est plus source d’écriture
+   - [x] `state.teachers` / `state.assignments` ne sont plus sources d’écriture
 
 6. **Vérifications vertes**
    - [ ] `verify:classes-legacy-cleanup`
@@ -301,6 +304,7 @@ Checklist **toutes** obligatoires :
    - [ ] `verify:students-fiche-consolidation`
    - [ ] `verify:students-legacy-cleanup`
    - [ ] `verify:teacher-account-creation`
+   - [ ] `verify:teachers-assignments-legacy-cleanup`
    - [ ] RBAC state adaptés au retrait
    - [ ] `verify:runtime-bootstrap` + suite accès sans dépendance d’écriture state
    - [ ] Gates préprod domaines migrés
@@ -319,7 +323,7 @@ Checklist **toutes** obligatoires :
 
 ### Writable par rôle (extrait)
 
-Source `backend/lib/backOfficeWritableEntities.js` — Admin School inclut encore `teachers`, finance, notes, etc. ; **pas** `classes`, `schools` ni `students` (bloqués avant merge). `auditLog` jamais writable client.
+Source `backend/lib/backOfficeWritableEntities.js` — Admin School conserve finance, notes, etc. ; **pas** `classes`, `schools`, `students`, `teachers` ni `assignments` (bloqués avant merge). `auditLog` jamais writable client.
 
 ### APIs métier hors `/backoffice` déjà structurantes
 

@@ -128,7 +128,7 @@ Les index uniques « post-dédup » peuvent être créés en runtime après nett
 | Notes / évaluations | **PG** (+ syncAck) |
 | Présences | **PG** |
 | Classes / students | **PG** ; projections `state.classes` / `state.students` strictement read-only |
-| Teachers (CRUD BO) | Snapshot JSON via `PUT /backoffice/state` (migration LOT 3) |
+| Teachers / affectations | **PG** (`teachers`, `teacher_assignments`) ; projections `state.teachers` / `state.assignments` strictement read-only |
 | Finance, messages, config… | Majoritairement JSON BO |
 | Audit | **PG** `audit_logs` |
 

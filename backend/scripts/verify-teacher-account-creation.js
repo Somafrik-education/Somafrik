@@ -8,6 +8,10 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const {
+  LEGACY_TEACHERS_STATE_WRITE_CODE,
+  LEGACY_ASSIGNMENTS_STATE_WRITE_CODE,
+} = require("../lib/legacyPedagogyStaffStateWrite");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19562;
@@ -319,6 +323,99 @@ async function main() {
       },
     );
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
+
+    // LOT 3 — CRUD affectations dédié + projection state PostgreSQL.
+    const assignmentsBefore = await request("/assignments", { token: admin.token });
+    assert.equal(assignmentsBefore.status, 200, JSON.stringify(assignmentsBefore.data));
+    const seedAssignment = assignmentsBefore.data[0];
+    assert.ok(seedAssignment?.id, "affectation seed attendue");
+
+    const retiredSeed = await request(
+      `/assignments/${encodeURIComponent(seedAssignment.id)}`,
+      { method: "DELETE", token: admin.token },
+    );
+    assert.equal(retiredSeed.status, 200, JSON.stringify(retiredSeed.data));
+
+    const assignmentCreated = await request("/assignments", {
+      method: "POST",
+      token: admin.token,
+      body: {
+        teacherCode: created.data.teacherCode,
+        className: seedAssignment.className,
+        subject: seedAssignment.subject || seedAssignment.course,
+      },
+    });
+    assert.equal(assignmentCreated.status, 201, JSON.stringify(assignmentCreated.data));
+    assert.equal(assignmentCreated.data.teacherCode, created.data.teacherCode);
+
+    const assignmentUpdated = await request(
+      `/assignments/${encodeURIComponent(assignmentCreated.data.id)}`,
+      {
+        method: "PATCH",
+        token: admin.token,
+        body: { teacherCode: homonym.data.teacherCode },
+      },
+    );
+    assert.equal(assignmentUpdated.status, 200, JSON.stringify(assignmentUpdated.data));
+    assert.equal(assignmentUpdated.data.teacherCode, homonym.data.teacherCode);
+
+    const projectedState = await request("/backoffice/state", { token: admin.token });
+    assert.equal(projectedState.status, 200, JSON.stringify(projectedState.data));
+    assert.ok(
+      (projectedState.data.teachers ?? []).some(
+        (row) => String(row.id ?? row.teacherCode ?? row.publicId) === homonym.data.teacherCode,
+      ),
+      "state.teachers projette PostgreSQL",
+    );
+    assert.ok(
+      (projectedState.data.assignments ?? []).some(
+        (row) => String(row.id) === String(assignmentCreated.data.id),
+      ),
+      "state.assignments projette PostgreSQL",
+    );
+
+    const teachersPut = await request("/backoffice/state", {
+      method: "PUT",
+      token: admin.token,
+      body: { teachers: [] },
+    });
+    assert.equal(teachersPut.status, 400, JSON.stringify(teachersPut.data));
+    assert.equal(teachersPut.data.code, LEGACY_TEACHERS_STATE_WRITE_CODE);
+
+    const assignmentsPut = await request("/backoffice/state", {
+      method: "PUT",
+      token: admin.token,
+      body: { assignments: null },
+    });
+    assert.equal(assignmentsPut.status, 400, JSON.stringify(assignmentsPut.data));
+    assert.equal(assignmentsPut.data.code, LEGACY_ASSIGNMENTS_STATE_WRITE_CODE);
+
+    const sentinelId = `USER-LOT3-${Date.now()}`;
+    const mixedPut = await request("/backoffice/state", {
+      method: "PUT",
+      token: admin.token,
+      body: {
+        assignments: projectedState.data.assignments,
+        users: [
+          ...(projectedState.data.users ?? []),
+          { id: sentinelId, name: "Sentinel LOT 3", schoolCode: "CD-2026-0001" },
+        ],
+      },
+    });
+    assert.equal(mixedPut.status, 400, JSON.stringify(mixedPut.data));
+    assert.equal(mixedPut.data.code, LEGACY_ASSIGNMENTS_STATE_WRITE_CODE);
+    const afterMixed = await request("/backoffice/state", { token: admin.token });
+    assert.equal(
+      (afterMixed.data.users ?? []).some((row) => String(row.id) === sentinelId),
+      false,
+      "aucune mutation partielle sur PUT staff mixte",
+    );
+
+    const assignmentDeleted = await request(
+      `/assignments/${encodeURIComponent(assignmentCreated.data.id)}`,
+      { method: "DELETE", token: admin.token },
+    );
+    assert.equal(assignmentDeleted.status, 200, JSON.stringify(assignmentDeleted.data));
 
     console.log("verify-teacher-account-creation.js: OK");
   } catch (error) {

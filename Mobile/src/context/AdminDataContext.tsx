@@ -521,15 +521,15 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       refreshBackOfficeState,
       getItems: (entity) => state[entity],
       createItem: (entity, item) => {
-        if (entity === "classes" || entity === "schools" || entity === "students") return;
+        if (["classes", "schools", "students", "teachers", "assignments"].includes(entity)) return;
         commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
       },
       updateItem: (entity, item) => {
-        if (entity === "classes" || entity === "schools" || entity === "students") return;
+        if (["classes", "schools", "students", "teachers", "assignments"].includes(entity)) return;
         commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
       },
       deleteItem: (entity, id) => {
-        if (entity === "classes" || entity === "schools" || entity === "students") return;
+        if (["classes", "schools", "students", "teachers", "assignments"].includes(entity)) return;
         commitEntity(entity, (items) => items.filter((row) => row.id !== id));
       },
       upsertPresenceItems: (items) =>

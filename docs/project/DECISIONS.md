@@ -148,6 +148,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 
 ---
 
+## ADR-011 — Enseignants / affectations : PostgreSQL source de vérité (LOT 3)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | `state.teachers` et `state.assignments` deviennent des projections PostgreSQL read-only. Toute présence de ces clés dans `PUT /api/backoffice/state` est refusée avant merge. Les affectations sont créées, modifiées et retirées via `POST/PATCH/DELETE /api/assignments`, scopées par le principal authentifié. |
+| **Contexte** | La création d'enseignants disposait déjà de `/api/teachers`, mais les affectations et les mises à jour staff transitaient encore par un dual-write snapshot JSON → PostgreSQL. |
+| **Alternatives** | Conserver le dual-write jusqu'au LOT 8 ; tolérer les clés sans les persister ; étendre le snapshot avec des ACK staff. |
+| **Impact** | Matrice S1.4 sans `teachers`/`assignments` ; side-effect staff retiré de `saveBackOfficeState` ; projection PG complète des `teacher_assignments` ; writers Web/Mobile/BackOffice retirés ; preuve `verify:teachers-assignments-legacy-cleanup`. |
+| **Statut** | Proposée |
+
+---
+
 ## Comment ajouter une décision
 
 1. Incrémenter `ADR-00N`

@@ -6,6 +6,7 @@ const { hashSecret } = require("../services/credentialService");
 const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
+const { mapAssignment } = require("./teacherAssignmentsRepository");
 
 const roleToDb = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -504,11 +505,20 @@ class PostgresRepository {
         ORDER BY t.created_at, t.teacher_code
       `),
       this.all(`
-        SELECT t.teacher_code, cl.name AS class_name, sub.name AS subject_name
+        SELECT ta.id, ta.school_id, ta.teacher_id, ta.class_id, ta.subject_id,
+               ta.academic_year_id, ta.assignment_role, ta.status,
+               ta.created_at, ta.updated_at,
+               s.school_code, t.teacher_code, u.first_name, u.last_name,
+               cl.class_code, cl.name AS class_name,
+               sub.subject_code, sub.name AS subject_name,
+               ay.name AS academic_year_name
         FROM teacher_assignments ta
+        JOIN schools s ON s.id = ta.school_id
         JOIN teachers t ON t.id = ta.teacher_id
+        LEFT JOIN users u ON u.id = t.user_id
         JOIN classes cl ON cl.id = ta.class_id
         JOIN subjects sub ON sub.id = ta.subject_id
+        JOIN academic_years ay ON ay.id = ta.academic_year_id
         WHERE ta.status = 'active'
         ORDER BY t.teacher_code, cl.name, sub.name
       `),
@@ -618,6 +628,7 @@ class PostgresRepository {
       subscriptions: subscriptionRows.map((subscription) => this.mapSubscription(subscription)),
       userAccounts: userRows.map((user) => this.mapUser(user, schoolByCode, teacherLoginByUserId)),
       teachers,
+      teacherAssignments: teacherAssignmentRows.map(mapAssignment),
       classes,
       courses,
       students,
@@ -774,7 +785,12 @@ class PostgresRepository {
     const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
     // LOT 2 — students est une projection read-only : aucune synchronisation
     // ni persistance JSON ne doit être déclenchée par PUT /backoffice/state.
-    const { students: _legacyStudents, ...payloadWithoutStudents } = payload ?? {};
+    const {
+      students: _legacyStudents,
+      teachers: _legacyTeachers,
+      assignments: _legacyAssignments,
+      ...durablePayload
+    } = payload ?? {};
     // HOTFIX — matérialiser schools BO → PG avant sync enseignants / années scolaires.
     // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
     // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
@@ -782,17 +798,16 @@ class PostgresRepository {
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async (tx) => {
       const transactional = this.createTxScope(tx);
-      const payloadSchools = Array.isArray(payloadWithoutStudents.schools)
-        ? payloadWithoutStudents.schools
+      const payloadSchools = Array.isArray(durablePayload.schools)
+        ? durablePayload.schools
         : [];
       for (const school of payloadSchools) {
         const code = school?.code ?? school?.schoolCode;
         if (!code) continue;
         await transactional.ensureSchoolFromBackOfficeRecord(code, { schools: payloadSchools });
       }
-      const staffSync = await transactional.syncPedagogyStaffDomainFromBackOffice(payloadWithoutStudents);
       const syncResult = await persistBackOfficeAfterNotesSync({
-        payload: payloadWithoutStudents,
+        payload: durablePayload,
         syncFn: async (body) => transactional.syncNotesDomainFromBackOffice(body),
         persistFn: async (durablePayload) => {
           const runner = tx ?? transactional;
@@ -811,7 +826,12 @@ class PostgresRepository {
         accepted: { students: [], enrollments: [] },
         rejected: [],
       };
-      syncAck = mergePreE1SyncAck(studentSyncRetired, staffSync, syncResult);
+      const staffSyncRetired = {
+        synced: true,
+        accepted: { teachers: [], assignments: [] },
+        rejected: [],
+      };
+      syncAck = mergePreE1SyncAck(studentSyncRetired, staffSyncRetired, syncResult);
     });
     this.cachedDataset = null;
     // syncAck est retourné avec le résultat de cette opération uniquement —
@@ -4617,6 +4637,47 @@ class PostgresRepository {
 
   createSchoolTeacher(body, schoolCode) {
     return this.getTeachersRepository().create(body, schoolCode);
+  }
+
+  getTeacherAssignmentsRepository() {
+    if (!this._teacherAssignmentsRepository) {
+      const { createTeacherAssignmentsRepository } = require("./teacherAssignmentsRepository");
+      this._teacherAssignmentsRepository = createTeacherAssignmentsRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+      });
+    }
+    return this._teacherAssignmentsRepository;
+  }
+
+  listSchoolTeacherAssignments(schoolCode) {
+    return this.getTeacherAssignmentsRepository().listBySchoolCode(schoolCode);
+  }
+
+  createSchoolTeacherAssignment(body, schoolCode) {
+    return this.getTeacherAssignmentsRepository().create(body, schoolCode).then((created) => {
+      this.cachedDataset = null;
+      return created;
+    });
+  }
+
+  updateSchoolTeacherAssignment(assignmentId, body, schoolCode) {
+    return this.getTeacherAssignmentsRepository()
+      .update(assignmentId, body, schoolCode)
+      .then((updated) => {
+        this.cachedDataset = null;
+        return updated;
+      });
+  }
+
+  deleteSchoolTeacherAssignment(assignmentId, schoolCode) {
+    return this.getTeacherAssignmentsRepository().remove(assignmentId, schoolCode).then((result) => {
+      this.cachedDataset = null;
+      return result;
+    });
   }
 
   async getGradeById(id) {
