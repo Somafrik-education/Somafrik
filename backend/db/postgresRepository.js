@@ -761,6 +761,7 @@ class PostgresRepository {
     await this.init();
     const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
     const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
+    // HOTFIX — matérialiser schools BO → PG avant sync élèves/enseignants / années scolaires.
     // HOTFIX-PRE-E1-01 : élèves/inscriptions PG avant sync notes.
     // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
     // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
@@ -768,6 +769,12 @@ class PostgresRepository {
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async (tx) => {
       const transactional = this.createTxScope(tx);
+      const payloadSchools = Array.isArray(payload?.schools) ? payload.schools : [];
+      for (const school of payloadSchools) {
+        const code = school?.code ?? school?.schoolCode;
+        if (!code) continue;
+        await transactional.ensureSchoolFromBackOfficeRecord(code, { schools: payloadSchools });
+      }
       const studentSync = await transactional.syncStudentsDomainFromBackOffice(payload ?? {});
       const staffSync = await transactional.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
       const syncResult = await persistBackOfficeAfterNotesSync({
@@ -3890,7 +3897,7 @@ class PostgresRepository {
       error.statusCode = 400;
       throw error;
     }
-    const school = await this.one("SELECT id FROM schools WHERE school_code = $1", [schoolCode]);
+    const school = await this.ensureSchoolFromBackOfficeRecord(schoolCode);
     if (!school) {
       const error = new Error("Établissement introuvable.");
       error.statusCode = 404;
