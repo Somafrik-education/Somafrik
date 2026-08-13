@@ -37,6 +37,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 
 const LEGACY_CLASSES_CRUD_RETIRED_MESSAGE =
   "Le CRUD Classes via AdminCrud est retire. Utilisez l'ecran Classes (lecture) ou /api/classes (web).";
+const LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE =
+  "Le CRUD Etablissements via AdminCrud est retire. Utilisez le web /etablissements (API PostgreSQL).";
 
 type Field = {
   key: string;
@@ -819,6 +821,17 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     );
   }
 
+  if (entity === "schools") {
+    return (
+      <View style={[styles.screen, { padding: 24, justifyContent: "center" }]}>
+        <Text style={styles.title}>Établissements</Text>
+        <Text style={[styles.subtitle, { marginTop: 12, marginBottom: 20 }]}>
+          {LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
@@ -926,50 +939,6 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                 )}
               </View>
             </View>
-          </View>
-        )}
-
-        {entity === "schools" && (
-          <View style={styles.filtersCard}>
-            <View style={styles.searchBox}>
-              <Ionicons name="search-outline" size={18} color="#64748B" />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Rechercher nom, code, ville ou pays"
-                style={styles.searchInput}
-              />
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              {["Tous", ...new Set(schoolsData.map((item) => item.type).filter(Boolean))].map((type) => (
-                <TouchableOpacity
-                  key={`type-${type}`}
-                  activeOpacity={0.85}
-                  style={[styles.filterPill, schoolTypeFilter === type && styles.filterPillActive]}
-                  onPress={() => setSchoolTypeFilter(type)}
-                >
-                  <Text style={[styles.filterText, schoolTypeFilter === type && styles.filterTextActive]}>
-                    {type}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              {["Tous", ...new Set(schoolsData.map((item) => item.country).filter(Boolean))].map((country) => (
-                <TouchableOpacity
-                  key={`country-${country}`}
-                  activeOpacity={0.85}
-                  style={[styles.filterPill, schoolCountryFilter === country && styles.filterPillActive]}
-                  onPress={() => setSchoolCountryFilter(country)}
-                >
-                  <Text style={[styles.filterText, schoolCountryFilter === country && styles.filterTextActive]}>
-                    {country}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
           </View>
         )}
 

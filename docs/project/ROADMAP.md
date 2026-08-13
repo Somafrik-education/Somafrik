@@ -1,7 +1,7 @@
 # Roadmap produit — Somafrik
 
 **Statut :** source de vérité officielle des développements  
-**Dernière mise à jour :** 2026-08-10
+**Dernière mise à jour :** 2026-08-13
 **Branche de référence :** `develop`  
 **Suivi Design System granulaire :** [../ux/design-system/SUIVI-MIGRATIONS.md](../ux/design-system/SUIVI-MIGRATIONS.md)
 
@@ -95,7 +95,7 @@ Voir phases F → J ci-dessous.
 
 | Dette | Sévérité | Mitigation |
 |-------|----------|------------|
-| Snapshot `backoffice_state` partagé entre domaines | Haute | Migration V2 progressive vers API métier + PostgreSQL canonique |
+| Snapshot `backoffice_state` partagé entre domaines | Haute | Migration V2 progressive vers API métier + PostgreSQL canonique (LOT 1 établissements : PUT `schools` retiré) |
 | Workflows encore porteurs d’`auditLog` client (Finance / Contacts) | Moyenne | Filet DataContext + strip ; migration progressive |
 | SYNC-04 non livré | Moyenne | Isoler après validation préprod Notes |
 | Monolithes UI (`ConfigurationPage`, modales EntityPage) | Basse | Extractions D2.8 pattern |

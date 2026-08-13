@@ -575,10 +575,10 @@ async function main() {
   });
   pushResult(
     results,
-    "18. Paramètres admin inaccessibles (état)",
-    "403",
-    String(statePutRes.status),
-    statePutRes.status === 403,
+    "18. Paramètres admin inaccessibles (état établissements)",
+    "400 LEGACY_SCHOOLS_STATE_WRITE_FORBIDDEN",
+    `${statePutRes.status} ${statePutRes.data?.code ?? ""}`.trim(),
+    statePutRes.status === 400 && statePutRes.data?.code === "LEGACY_SCHOOLS_STATE_WRITE_FORBIDDEN",
   );
 
   const establishmentPatchRes = await request(

@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS schools (
   email TEXT,
   school_type TEXT,
   status TEXT NOT NULL DEFAULT 'active',
+  profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

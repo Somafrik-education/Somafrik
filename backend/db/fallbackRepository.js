@@ -84,7 +84,7 @@ class FallbackRepository {
     if (!shouldSeedDemoData()) {
       return clone({
         school: null,
-        platformSchools: [],
+        platformSchools: this._managedSchools ?? [],
         countries: [],
         subscriptions: [],
         userAccounts: [],
@@ -107,7 +107,7 @@ class FallbackRepository {
     }
     return clone({
       school: seedData.school,
-      platformSchools: seedData.platformSchools,
+      platformSchools: this._managedSchools ?? seedData.platformSchools,
       countries: seedData.countries,
       subscriptions: seedData.subscriptions,
       subscriptionOffers: seedData.subscriptionOffers ?? [],
@@ -203,6 +203,60 @@ class FallbackRepository {
       this.notes = clone(payload.notes);
     }
     return this.getBackOfficeState();
+  }
+
+  _establishmentStore() {
+    if (!this._managedSchools) {
+      this._managedSchools = shouldSeedDemoData() ? clone(seedData.platformSchools) : [];
+    }
+    return this._managedSchools;
+  }
+
+  async listEstablishments() {
+    return clone(this._establishmentStore());
+  }
+
+  async persistEstablishment(record) {
+    const { normalizeSchoolCode } = require("../lib/schoolsManagement");
+    const code = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.publicId);
+    if (!code || code === "*") {
+      const error = new Error("Code établissement requis.");
+      error.statusCode = 400;
+      error.code = "SCHOOL_CODE_REQUIRED";
+      throw error;
+    }
+    const school = { ...record, code, publicId: record?.publicId || code };
+    const store = this._establishmentStore();
+    const index = store.findIndex(
+      (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === code,
+    );
+    if (index >= 0) {
+      store[index] = { ...store[index], ...school };
+    } else {
+      store.unshift(school);
+    }
+
+    const seedIndex = seedData.platformSchools.findIndex(
+      (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === code,
+    );
+    if (seedIndex >= 0) {
+      seedData.platformSchools[seedIndex] = { ...seedData.platformSchools[seedIndex], ...school };
+    } else if (shouldSeedDemoData()) {
+      seedData.platformSchools.unshift(school);
+    }
+
+    if (this.backOfficeState) {
+      const schools = Array.isArray(this.backOfficeState.schools) ? this.backOfficeState.schools : [];
+      const stateIndex = schools.findIndex(
+        (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === code,
+      );
+      this.backOfficeState.schools =
+        stateIndex >= 0
+          ? schools.map((row, idx) => (idx === stateIndex ? { ...row, ...school } : row))
+          : [school, ...schools];
+    }
+
+    return clone(index >= 0 ? store[index] : school);
   }
 
   async findIdempotencyRecord(cacheId) {

@@ -92,16 +92,6 @@ export function SubscriptionSchoolsPage() {
     try {
       await update({
         subscriptions: next,
-        schools: state.schools.map((s) =>
-          normalize(s.code) === normalize(school.code)
-            ? {
-                ...s,
-                subscriptionPlan: offer.name,
-                subscriptionStatus: created.paymentStatus,
-                subscriptionEndDate: created.endDate,
-              }
-            : s,
-        ),
         subscriptionAuditLog: appendSubscriptionAudit(state.subscriptionAuditLog, {
           action: "Attribution abonnement",
           schoolCode: school.code,

@@ -98,7 +98,6 @@ const DIRECTOR_WRITABLE_ENTITIES = Object.freeze([
 ]);
 
 const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([
-  "schools",
   "users",
   "countries",
   "contacts",
@@ -139,8 +138,9 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
 
   if (isSuperAdminRole(role)) {
     // auditLog volontairement exclu : journal serveur uniquement.
+    // schools volontairement exclu : CRUD via /api/backoffice/establishments (LOT 1).
     return [
-      ...allEntities.filter((entity) => entity !== "auditLog"),
+      ...allEntities.filter((entity) => entity !== "auditLog" && entity !== "schools"),
       "rolePermissions",
       "academicConfigs",
       "dashboardChartConfig",

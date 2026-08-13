@@ -13,11 +13,22 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Added
 
+- **LOT 1 — Établissements PostgreSQL** : CRUD `/api/backoffice/establishments` persiste la table `schools` (`profile_payload` JSONB) ; `PUT /api/backoffice/state` refuse `schools` (`LEGACY_SCHOOLS_STATE_WRITE_FORBIDDEN`) ; `state.schools` reste une projection de lecture.
 - Lot V2.1a : package `@somafrik/auth-v2` avec rôles canoniques, contrat immuable `AuthPrincipal` et évaluation fail-closed `can(principal, permission)` (sans JWT, session, HTTP ni alias legacy).
 - Ouverture du chantier de reconstruction contrôlée Somafrik V2 : structure `apps/` / `packages/` / `tests/v2/`, premier invariant tenant scope et garde-fou CI des frontières legacy.
 - Gouvernance documentaire officielle sous `docs/project/` (ROADMAP, ARCHITECTURE, CHANGELOG, RELEASES, CONTRIBUTING, DECISIONS) — PR #82.
 - Extension gouvernance SaaS : [TESTING.md](./TESTING.md), [SECURITY.md](./SECURITY.md), [OPERATIONS.md](./OPERATIONS.md), [DATABASE.md](./DATABASE.md).
 - Règle CONTRIBUTING : PR fonctionnelle incomplète sans mise à jour doc de gouvernance lorsque nécessaire.
+
+### Changed
+
+- Matrice S1.4 : `schools` retiré des clés writables Admin Pays / Super Admin sur PUT state (LOT 1).
+- Web `DataContext` : strip `schools` avant PUT, comme `auditLog`.
+- Mobile AdminCrud : CRUD établissements retiré (lecture web `/etablissements`).
+
+### Removed
+
+- Écriture snapshot `backoffice_state.schools` via PUT state et via `saveEstablishmentState` pour le CRUD establishments.
 
 ---
 

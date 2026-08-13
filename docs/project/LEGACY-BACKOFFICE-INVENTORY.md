@@ -220,7 +220,7 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 | Années scolaires | `academic_years` | `GET/POST /api/v2/academic-years` | Hotfix #160 + preuve préprod |
 | Notes (écriture canonique) | `evaluations`, `grades` | `POST /api/notes` | D3.6b |
 | Présences (écriture canonique) | `attendance` | `POST /api/presences` | D3.5b |
-| Schools (lignes PG) | `schools` | matérialisées depuis BO / ensure | PR #160 |
+| Schools (CRUD) | `schools` (+ `profile_payload`) | `GET/POST/PATCH/DELETE /api/backoffice/establishments` | PUT `schools` **interdit** ; `verify:schools-legacy-cleanup` |
 
 ### 5.2 Dual (JSON encore writable + sync / projection)
 
@@ -231,7 +231,7 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 | `classes[]` | **Projection lecture** dans GET state ; plus d’écriture PUT |
 | `notes` / `evaluations` | PG SoT ; Web Notes UI encore via `DataContext.update` (PUT) |
 | `presences` | PG SoT via POST ; PUT/Mobile peuvent encore pousser |
-| `schools` / establishments API | CRUD via `/backoffice/establishments*` → snapshot + matérialisation PG |
+| `schools` / establishments API | **SoT PG** via `/backoffice/establishments*` ; PUT `schools` **interdit** ; projection lecture GET state |
 | `academicConfigs` | Stocké dans JSON ; `/api/academic-config` ancré au snapshot |
 
 ### 5.3 Encore majoritairement JSON (`backoffice_state`)
@@ -247,7 +247,7 @@ Sans calendrier — dépendances techniques seulement.
 | Lot | Domaine | Objectif de sortie du PUT state |
 |-----|---------|--------------------------------|
 | **0** | Inventaire (ce document) | Baseline partagée |
-| **1** | **Schools / establishments** | API establishments = SoT PG ; retirer dépendance snapshot pour CRUD écoles |
+| **1** | **Schools / establishments** | ✅ API establishments = SoT PG ; PUT `schools` interdit |
 | **2** | **Students** | Interdire `students` sur PUT ; inscription + fiche + import uniquement APIs PG |
 | **3** | **Teachers / assignments** | Interdire `teachers`/`assignments` sur PUT ; APIs affectations |
 | **4** | **Finance** | Paiements, grilles, impayés, reminders → APIs + tables PG |
@@ -275,7 +275,8 @@ Checklist **toutes** obligatoires :
    - [ ] Tests E2E / verify qui font PUT state mis à jour ou supprimés
 
 3. **Chaque entité du sanitize a une API PG SoT**
-   - [ ] schools, users, countries, contacts, relations
+   - [x] schools (LOT 1 — PUT retiré ; API establishments SoT PG)
+   - [ ] users, countries, contacts, relations
    - [ ] subscriptions* / notifications
    - [ ] students, teachers, classes (déjà), courses, assignments, courseSchedules
    - [ ] payments*, fee*, reminders
@@ -292,6 +293,7 @@ Checklist **toutes** obligatoires :
 
 6. **Vérifications vertes**
    - [ ] `verify:classes-legacy-cleanup`
+   - [ ] `verify:schools-legacy-cleanup`
    - [ ] `verify:class-student-enrollment`
    - [ ] `verify:students-fiche-consolidation`
    - [ ] `verify:teacher-account-creation`
