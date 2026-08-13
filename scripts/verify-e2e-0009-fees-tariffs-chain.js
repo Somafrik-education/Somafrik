@@ -319,7 +319,7 @@ async function main() {
   console.log("\n=== E2E 0009 : Parcours frais & tarifs ===");
   console.log(`Établissement : ${schoolCode}`);
   console.log(`Classe        : ${className}`);
-  console.log(`Grille        : ${feeGridId} (${activeGrid.status})`);
+  console.log(`Grille        : ${feeGrid.id}`);
   console.log(`Élève A       : ${existingStudent.firstName} ${existingStudent.name} (${existingStudent.id})`);
   console.log(`Élève B       : ${newStudent.firstName} ${newStudent.name} (${newStudent.id})`);
   console.log(`Total dû/élève: ${existingMatch.expectedTotal} CDF\n`);

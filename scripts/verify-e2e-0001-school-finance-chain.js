@@ -23,6 +23,7 @@ const {
   activateFeeGridViaApi,
   applyFeeGridViaApi,
   createPaymentViaApi,
+  resolveSchoolContext,
 } = require("./e2e-api-helpers");
 
 const SUPERADMIN_ID = process.env.SOMAFRIK_E2E_SUPERADMIN_ID || "superadmin";
@@ -138,79 +139,6 @@ function buildPaymentRecord({ student, amount, feeType, schoolCode, payments, ad
     createdByName: "Admin E2E",
     recordedAt: now,
   };
-}
-
-async function setupActiveSchool(superToken, stamp) {
-  const schoolName = `E2E-0001 ${stamp}`;
-  const schoolAdminId = `usr-e2e0001-${stamp}`;
-  const schoolAdminIdentifier = `ADM-E2E0001-${stamp}`;
-  const createRes = await request("/backoffice/establishments", {
-    method: "POST",
-    token: superToken,
-    body: {
-      name: schoolName,
-      type: "Collège",
-      country: "République Démocratique du Congo",
-      countryCode: "CD",
-      city: "Kinshasa",
-      phone: `+243 810 ${String(stamp).slice(-6)}`,
-      email: `e2e0001-${stamp}@somafrik.app`,
-      principalName: "Directeur E2E 0001",
-      principalEmail: `directeur-e2e0001-${stamp}@somafrik.app`,
-      force: true,
-    },
-  });
-  assert.strictEqual(createRes.status, 201, `create school: ${JSON.stringify(createRes.data)}`);
-  const schoolCode = createRes.data.school?.code;
-  assert.ok(schoolCode, "Code établissement manquant");
-
-  const schoolAdmin = {
-    id: schoolAdminId,
-    firstName: "Admin",
-    lastName: "E2E 0001",
-    role: "Admin School",
-    identifier: schoolAdminIdentifier,
-    email: `${schoolAdminIdentifier.toLowerCase()}@somafrik.app`,
-    schoolCode,
-    countryScope: "RDC",
-    scopeLevel: "Établissement",
-    accessChannel: "Application",
-    status: "Actif",
-    validationStatus: "Validé",
-    password: ADMIN_PASSWORD,
-    temporaryPassword: ADMIN_PASSWORD,
-    permissions: [],
-  };
-  await putState(superToken, { users: [schoolAdmin] });
-  const adminToken = await login(schoolAdminIdentifier, ADMIN_PASSWORD, schoolCode);
-  return { schoolCode, schoolName, schoolAdminIdentifier, adminToken };
-}
-
-async function resolveSchoolContext(superToken) {
-  const presetSchool = String(process.env.SOMAFRIK_TEST_SCHOOL_CODE ?? "").trim();
-  const presetAdmin = String(process.env.SOMAFRIK_E2E_SCHOOL_ADMIN_ID ?? "admin").trim();
-
-  if (presetSchool) {
-    const schoolRes = await request(`/backoffice/establishments/${encodeURIComponent(presetSchool)}`, {
-      token: superToken,
-    });
-    if (schoolRes.status === 200) {
-      try {
-        const adminToken = await login(presetAdmin, ADMIN_PASSWORD, presetSchool);
-        return {
-          schoolCode: presetSchool,
-          schoolName: schoolRes.data?.name ?? presetSchool,
-          schoolAdminIdentifier: presetAdmin,
-          adminToken,
-          reused: true,
-        };
-      } catch {
-        // Recreate admin below via fresh school if preset admin unavailable.
-      }
-    }
-  }
-
-  return { ...(await setupActiveSchool(superToken, Date.now())), reused: false };
 }
 
 async function main() {

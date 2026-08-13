@@ -393,22 +393,6 @@ async function putStatePatch(token, patch) {
     return getState(token);
   }
 
-  const current = await getState(token);
-  const {
-    classes: _currentClasses,
-    schools: _schools,
-    students: _students,
-    teachers: _teachers,
-    assignments: _assignments,
-    payments: _payments,
-    paymentStatuses: _paymentStatuses,
-    feeGrids: _feeGrids,
-    schoolFeeItems: _schoolFeeItems,
-    studentFees: _studentFees,
-    feeTariffHistory: _feeTariffHistory,
-    paymentReminders: _paymentReminders,
-    ...currentWithoutCanonical
-  } = current;
   const {
     payments: _patchPayments,
     paymentStatuses: _patchPaymentStatuses,
@@ -421,12 +405,13 @@ async function putStatePatch(token, patch) {
     teachers: _patchTeachers,
     assignments: _patchAssignments,
     schools: _patchSchools,
+    auditLog: _patchAuditLog,
     ...safePatch
   } = workingPatch;
   if (Object.keys(safePatch).length === 0) {
     return getState(token);
   }
-  return putState(token, { ...currentWithoutCanonical, ...safePatch });
+  return putState(token, safePatch);
 }
 
 function newId(prefix) {
@@ -489,6 +474,23 @@ async function setupActiveSchool(superToken, stamp) {
   assert.strictEqual(createRes.status, 201, `create school: ${JSON.stringify(createRes.data)}`);
   const schoolCode = createRes.data.school?.code;
   assert.ok(schoolCode, "Code établissement manquant");
+
+  const yearName = `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`;
+  const yearRes = await request("/v2/academic-years", {
+    method: "POST",
+    token: superToken,
+    body: {
+      schoolCode,
+      name: yearName,
+      startDate: `${yearName.slice(0, 4)}-09-01`,
+      endDate: `${yearName.slice(5)}-08-31`,
+      isCurrent: true,
+    },
+  });
+  assert.ok(
+    yearRes.status === 201 || yearRes.status === 409,
+    `POST /v2/academic-years: ${JSON.stringify(yearRes.data)}`,
+  );
 
   const schoolAdmin = {
     id: schoolAdminId,
