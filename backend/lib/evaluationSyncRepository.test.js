@@ -164,6 +164,11 @@ function createInjectablePostgresRepository() {
       return [row];
     }
 
+    if (upper.includes("FROM TERMS") && upper.includes("LOWER(BTRIM(NAME))")) {
+      return tables.terms.filter(
+        (row) => eq(row.academic_year_id, params[0]) && lower(row.name) === lower(params[1]),
+      );
+    }
     if (upper.includes("FROM TERMS") && upper.includes("NAME =")) {
       return tables.terms.filter(
         (row) => eq(row.academic_year_id, params[0]) && eq(row.name, params[1]),
@@ -204,6 +209,39 @@ function createInjectablePostgresRepository() {
       return tables.evaluations.filter(
         (row) => eq(row.school_id, params[0]) && eq(row.legacy_json_id, params[1]),
       );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE ID = $1 AND SCHOOL_ID = $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.id, params[0]) && eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE ID = $1 AND SCHOOL_ID <> $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.id, params[0]) && !eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE LEGACY_JSON_ID = $1 AND SCHOOL_ID <> $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.legacy_json_id, params[0]) && !eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS E") && upper.includes("JOIN CLASSES C")) {
+      const evaluation = tables.evaluations.find((row) => eq(row.id, params[0]));
+      if (!evaluation) return [];
+      const klass = tables.classes.find((row) => eq(row.id, evaluation.class_id));
+      const subject = tables.subjects.find((row) => eq(row.id, evaluation.subject_id));
+      const term = tables.terms.find((row) => eq(row.id, evaluation.term_id));
+      const teacher = evaluation.teacher_id
+        ? tables.teachers.find((row) => eq(row.id, evaluation.teacher_id))
+        : null;
+      return [
+        {
+          class_name: klass?.name ?? null,
+          subject_name: subject?.name ?? null,
+          term_name: term?.name ?? null,
+          teacher_code: teacher?.teacher_code ?? null,
+        },
+      ];
     }
     if (upper.includes("FROM EVALUATIONS WHERE LEGACY_JSON_ID")) {
       return tables.evaluations.filter((row) => eq(row.legacy_json_id, params[0]));
@@ -384,6 +422,7 @@ async function run() {
     evaluations: [{ ...evaluation, title: "Devoir maison (maj)" }],
     notes: [],
   });
+  assert.strictEqual(second.rejected.length, 0, JSON.stringify(second.rejected));
   assert.deepStrictEqual(second.accepted.evaluations, ["EVAL-REPO-1"]);
   assert.strictEqual(repo.tables.evaluations.length, 1);
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
