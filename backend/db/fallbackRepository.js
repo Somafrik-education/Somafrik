@@ -217,12 +217,27 @@ class FallbackRepository {
   }
 
   async persistEstablishment(record) {
-    const { normalizeSchoolCode } = require("../lib/schoolsManagement");
+    const {
+      normalizeSchoolCode,
+      findCanonicalCountry,
+      COUNTRY_NOT_FOUND_CODE,
+      COUNTRY_NOT_FOUND_MESSAGE,
+    } = require("../lib/schoolsManagement");
     const code = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.publicId);
     if (!code || code === "*") {
       const error = new Error("Code établissement requis.");
       error.statusCode = 400;
       error.code = "SCHOOL_CODE_REQUIRED";
+      throw error;
+    }
+    const catalog = [
+      ...(Array.isArray(seedData.countries) ? seedData.countries : []),
+      ...(Array.isArray(this.backOfficeState?.countries) ? this.backOfficeState.countries : []),
+    ];
+    if (!findCanonicalCountry(catalog, record?.countryCode, record?.country)) {
+      const error = new Error(COUNTRY_NOT_FOUND_MESSAGE);
+      error.statusCode = 400;
+      error.code = COUNTRY_NOT_FOUND_CODE;
       throw error;
     }
     const school = { ...record, code, publicId: record?.publicId || code };

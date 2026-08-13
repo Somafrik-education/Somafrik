@@ -76,7 +76,7 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:db-config` | Config DB prod/préprod |
 | `npm run verify:runtime-bootstrap` | `init` → health → login 401 |
 | `npm run verify:classes-legacy-cleanup` | PUT `classes` interdit ; `/api/classes` + projection lecture |
-| `npm run verify:schools-legacy-cleanup` | PUT `schools` interdit ; `/api/backoffice/establishments` + projection lecture |
+| `npm run verify:schools-legacy-cleanup` | PUT `schools` interdit (seul, mixte `{schools,users}` / `{schools,subscriptions}`, snapshot) sans mutation partielle ; pays hors référentiel (`FR`) refusé ; `/api/backoffice/establishments` + projection lecture |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
 | `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |

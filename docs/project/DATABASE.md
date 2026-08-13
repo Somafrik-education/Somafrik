@@ -49,7 +49,7 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
-| `countries` | Pays | — |
+| `countries` | Référentiel pays canonique | UNIQUE `iso_code` — pas d’auto-création d’un ISO inconnu (refus `COUNTRY_NOT_FOUND`) |
 | `schools` | Établissements (SoT LOT 1) | UNIQUE `school_code` · FK country · `profile_payload` JSONB · `deleted_at` |
 | `users` | Comptes | liens école / rôle |
 | `academic_years` / `terms` | Calendrier | FK school |

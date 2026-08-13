@@ -302,9 +302,11 @@ export function getBackOfficeState() {
 }
 
 export function saveBackOfficeState(payload: BackOfficeStatePayload) {
+  const rest = { ...payload };
+  delete rest.schools;
   return request<BackOfficeStatePayload>("/backoffice/state", {
     method: "PUT",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(rest),
   });
 }
 

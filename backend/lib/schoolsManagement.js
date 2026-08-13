@@ -51,13 +51,58 @@ function normalizeSchoolCode(value) {
   return asTrimmedString(value).toUpperCase();
 }
 
+const COUNTRY_NOT_FOUND_CODE = "COUNTRY_NOT_FOUND";
+const COUNTRY_NOT_FOUND_MESSAGE =
+  "Pays inconnu : utilisez un code présent dans le référentiel pays.";
+
+function isRdcAlias(value) {
+  const raw = asTrimmedString(value).toUpperCase();
+  return (
+    raw === "CD" ||
+    raw === "RDC" ||
+    raw === "CONGO" ||
+    raw.startsWith("RÉPUBLIQUE DÉMOCRATIQUE") ||
+    raw.startsWith("REPUBLIQUE DEMOCRATIQUE")
+  );
+}
+
 function normalizeCountryIso(countryCode, countryName) {
-  const raw = asTrimmedString(countryCode || countryName).toUpperCase();
-  if (!raw) return "CD";
-  if (raw === "RDC" || raw === "CONGO" || raw.startsWith("RÉPUBLIQUE DÉMOCRATIQUE")) {
+  const rawCode = asTrimmedString(countryCode).toUpperCase();
+  const rawName = asTrimmedString(countryName).toUpperCase();
+  if (isRdcAlias(rawCode) || (!rawCode && isRdcAlias(rawName))) {
     return "CD";
   }
-  return raw.slice(0, 2);
+  if (rawCode) {
+    return rawCode.slice(0, 8);
+  }
+  if (!rawName) {
+    return "";
+  }
+  return rawName.slice(0, 2);
+}
+
+function countryCatalogCode(country) {
+  return asTrimmedString(country?.code || country?.iso_code).toUpperCase();
+}
+
+function findCanonicalCountry(countries, countryCode, countryName) {
+  const list = Array.isArray(countries) ? countries : [];
+  const iso = normalizeCountryIso(countryCode, countryName);
+  const name = asTrimmedString(countryName).toLowerCase();
+  return (
+    list.find((country) => {
+      const code = countryCatalogCode(country);
+      const id = asTrimmedString(country?.id).toUpperCase();
+      const countryNameValue = asTrimmedString(country?.name).toLowerCase();
+      if (iso && (code === iso || id === iso || (iso === "CD" && (code === "RDC" || id === "RDC" || id === "COUNTRY-RDC")))) {
+        return true;
+      }
+      if (name && countryNameValue === name) {
+        return true;
+      }
+      return false;
+    }) || null
+  );
 }
 
 function toSchoolDbStatus(status) {
@@ -162,11 +207,14 @@ function mapEstablishmentRow(row, subscription = null) {
 }
 
 module.exports = {
+  COUNTRY_NOT_FOUND_CODE,
+  COUNTRY_NOT_FOUND_MESSAGE,
   PROFILE_KEYS,
   isPlainObject,
   asTrimmedString,
   normalizeSchoolCode,
   normalizeCountryIso,
+  findCanonicalCountry,
   toSchoolDbStatus,
   fromSchoolDbStatus,
   formatTimestamp,

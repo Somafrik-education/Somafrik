@@ -1969,20 +1969,20 @@ class PostgresRepository {
     );
     if (!backOfficeSchool) return null;
 
-    const rawCountryCode = String(backOfficeSchool.countryCode ?? backOfficeSchool.country ?? "CD").trim().toUpperCase();
-    const isoCode = rawCountryCode === "RDC" ? "CD" : rawCountryCode.slice(0, 2);
-    let country = await this.one("SELECT id FROM countries WHERE iso_code = $1 LIMIT 1", [isoCode]);
-    if (!country) {
-      country = await this.one(
-        `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
-         VALUES ($1, $2, '+243', 'CDF', TRUE, NOW(), NOW())
-         ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id`,
-        [backOfficeSchool.country ?? "République Démocratique du Congo", isoCode],
-      );
+    const { extractProfilePayload, toSchoolDbStatus, normalizeCountryIso } = require("../lib/schoolsManagement");
+    const isoCode = normalizeCountryIso(backOfficeSchool.countryCode, backOfficeSchool.country);
+    let country = null;
+    if (isoCode) {
+      country = await this.one("SELECT id FROM countries WHERE iso_code = $1 LIMIT 1", [isoCode]);
     }
-
-    const { extractProfilePayload, toSchoolDbStatus } = require("../lib/schoolsManagement");
+    if (!country && backOfficeSchool.country) {
+      country = await this.one("SELECT id FROM countries WHERE lower(name) = lower($1) LIMIT 1", [
+        String(backOfficeSchool.country).trim(),
+      ]);
+    }
+    if (!country) {
+      return null;
+    }
     const profile = extractProfilePayload({ ...backOfficeSchool, code: normalized });
     return this.one(
       `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, profile_payload, created_at, updated_at)

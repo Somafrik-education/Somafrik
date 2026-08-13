@@ -20,34 +20,27 @@ function isPlainObject(value) {
 }
 
 /**
- * Retire `schools` du corps pour ne jamais appliquer de mutation legacy.
- * Si la requête ne touche que `schools`, signaler un rejet explicite.
+ * Toute présence de la clé `schools` (seule, mixte ou snapshot complet) est un
+ * rejet stable. Le corps est aussi dépourvu de `schools` pour qu'aucune
+ * mutation d'établissements n'atteigne le merge si le garde HTTP est contourné.
  *
  * @param {object} rawBody
- * @param {string[]} [knownEntityKeys]
+ * @param {string[]} [_knownEntityKeys]
  * @returns {{
  *   body: object,
  *   rejectLegacySchoolsWrite: boolean,
  *   strippedSchools: boolean,
  * }}
  */
-function stripLegacySchoolsStateWrite(rawBody = {}, knownEntityKeys = []) {
+function stripLegacySchoolsStateWrite(rawBody = {}, _knownEntityKeys = []) {
   if (!isPlainObject(rawBody) || !Object.prototype.hasOwnProperty.call(rawBody, "schools")) {
     return { body: rawBody, rejectLegacySchoolsWrite: false, strippedSchools: false };
   }
 
   const { schools: _ignored, ...rest } = rawBody;
-  const entityKeys = Array.isArray(knownEntityKeys) ? knownEntityKeys : [];
-  const otherTouched = entityKeys.filter(
-    (key) => key !== "schools" && Object.prototype.hasOwnProperty.call(rest, key),
-  );
-  const optionalTouched = ["rolePermissions", "academicConfigs", "dashboardChartConfig", "auditLog"].filter(
-    (key) => Object.prototype.hasOwnProperty.call(rest, key),
-  );
-
   return {
     body: rest,
-    rejectLegacySchoolsWrite: otherTouched.length === 0 && optionalTouched.length === 0,
+    rejectLegacySchoolsWrite: true,
     strippedSchools: true,
   };
 }

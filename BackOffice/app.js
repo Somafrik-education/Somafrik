@@ -2459,7 +2459,6 @@ function applyBackOfficeState(backendState = {}) {
 
 function getBackOfficeStatePayload() {
   return {
-    schools: state.schools,
     users: state.users,
     countries: state.countries,
     subscriptions: state.subscriptions,

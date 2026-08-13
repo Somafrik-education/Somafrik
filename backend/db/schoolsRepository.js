@@ -6,6 +6,8 @@
  */
 
 const {
+  COUNTRY_NOT_FOUND_CODE,
+  COUNTRY_NOT_FOUND_MESSAGE,
   normalizeSchoolCode,
   normalizeCountryIso,
   toSchoolDbStatus,
@@ -28,20 +30,24 @@ function createHttpError(statusCode, message, code) {
  * }} db
  */
 function createSchoolsRepository(db) {
-  async function ensureCountry(record) {
+  async function requireCountry(record) {
     const isoCode = normalizeCountryIso(record.countryCode, record.country);
-    const countryName = String(record.country ?? isoCode).trim() || isoCode;
-    let country = await db.one("SELECT id, name, iso_code, currency FROM countries WHERE iso_code = $1 LIMIT 1", [
-      isoCode,
-    ]);
-    if (!country) {
+    const countryName = String(record.country ?? "").trim();
+    let country = null;
+    if (isoCode) {
       country = await db.one(
-        `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
-         VALUES ($1, $2, '+243', 'CDF', TRUE, NOW(), NOW())
-         ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id, name, iso_code, currency`,
-        [countryName, isoCode],
+        "SELECT id, name, iso_code, currency FROM countries WHERE iso_code = $1 LIMIT 1",
+        [isoCode],
       );
+    }
+    if (!country && countryName) {
+      country = await db.one(
+        "SELECT id, name, iso_code, currency FROM countries WHERE lower(name) = lower($1) LIMIT 1",
+        [countryName],
+      );
+    }
+    if (!country) {
+      throw createHttpError(400, COUNTRY_NOT_FOUND_MESSAGE, COUNTRY_NOT_FOUND_CODE);
     }
     return country;
   }
@@ -95,7 +101,7 @@ function createSchoolsRepository(db) {
         throw createHttpError(400, "Nom d'établissement requis.", "SCHOOL_NAME_REQUIRED");
       }
 
-      const country = await ensureCountry(record ?? {});
+      const country = await requireCountry(record ?? {});
       const profile = extractProfilePayload({ ...record, code, name });
       const dbStatus = toSchoolDbStatus(record?.status);
       const deletedAt =

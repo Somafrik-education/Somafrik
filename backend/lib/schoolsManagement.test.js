@@ -5,20 +5,35 @@ const assert = require("node:assert/strict");
 const {
   normalizeSchoolCode,
   normalizeCountryIso,
+  findCanonicalCountry,
   toSchoolDbStatus,
   fromSchoolDbStatus,
   extractProfilePayload,
   mapEstablishmentRow,
+  COUNTRY_NOT_FOUND_CODE,
 } = require("./schoolsManagement");
 
 test("normalise le code établissement en majuscules", () => {
   assert.equal(normalizeSchoolCode(" cd-2026-0001 "), "CD-2026-0001");
 });
 
-test("normalise l’ISO pays (RDC → CD)", () => {
+test("normalise l’ISO pays (RDC → CD) sans inventer un pays vide", () => {
   assert.equal(normalizeCountryIso("RDC"), "CD");
   assert.equal(normalizeCountryIso("BI"), "BI");
   assert.equal(normalizeCountryIso("", "RDC"), "CD");
+  assert.equal(normalizeCountryIso(""), "");
+  assert.equal(normalizeCountryIso("FR"), "FR");
+});
+
+test("findCanonicalCountry refuse un pays absent du référentiel (ex. FR)", () => {
+  const catalog = [
+    { id: "COUNTRY-RDC", name: "République Démocratique du Congo", code: "CD" },
+    { id: "COUNTRY-BI", name: "Burundi", code: "BI" },
+  ];
+  assert.equal(findCanonicalCountry(catalog, "CD", "RDC")?.code, "CD");
+  assert.equal(findCanonicalCountry(catalog, "FR", "France"), null);
+  assert.equal(findCanonicalCountry(catalog, "", "France"), null);
+  assert.equal(COUNTRY_NOT_FOUND_CODE, "COUNTRY_NOT_FOUND");
 });
 
 test("mappe les statuts BO ↔ PG", () => {

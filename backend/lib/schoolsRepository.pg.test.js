@@ -72,6 +72,13 @@ async function setupFixture(pool) {
     );
   `);
   await pool.query("TRUNCATE schools, countries CASCADE");
+  await pool.query(`
+    INSERT INTO countries (name, iso_code, phone_code, currency, is_active)
+    VALUES
+      ('République Démocratique du Congo', 'CD', '+243', 'CDF', TRUE),
+      ('République du Congo', 'CG', '+242', 'XAF', TRUE),
+      ('Burundi', 'BI', '+257', 'BIF', TRUE)
+  `);
 }
 
 function createDbAdapter(pool) {
@@ -143,7 +150,30 @@ async function main() {
     const listed = await repo.listAll();
     assert.equal(listed.length, 1);
 
-    console.log("OK schoolsRepository PostgreSQL: persist / profil JSONB / update");
+    await assert.rejects(
+      () =>
+        repo.persist({
+          code: "FR-2026-0401",
+          name: "Lycée Français Inventé",
+          type: "Lycée",
+          country: "France",
+          countryCode: "FR",
+          city: "Paris",
+          status: "Actif",
+        }),
+      (error) => error.code === "COUNTRY_NOT_FOUND" && error.statusCode === 400,
+    );
+
+    const franceCountry = await pool.query("SELECT iso_code FROM countries WHERE iso_code = $1", ["FR"]);
+    assert.equal(franceCountry.rows.length, 0, "aucun pays FR inventé");
+    const franceSchool = await pool.query("SELECT school_code FROM schools WHERE school_code = $1", [
+      "FR-2026-0401",
+    ]);
+    assert.equal(franceSchool.rows.length, 0, "aucun établissement FR persisté");
+    const countryCount = await pool.query("SELECT COUNT(*)::int AS count FROM countries");
+    assert.equal(countryCount.rows[0].count, 3);
+
+    console.log("OK schoolsRepository PostgreSQL: persist / profil JSONB / update / pays inconnu refusé");
   } finally {
     await pool.end();
   }

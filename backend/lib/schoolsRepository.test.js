@@ -28,14 +28,7 @@ function createMemoryDb() {
         return countries.find((row) => row.iso_code === params[0]) ?? null;
       }
       if (text.startsWith("INSERT INTO COUNTRIES")) {
-        const row = {
-          id: nextId(),
-          name: params[0],
-          iso_code: params[1],
-          currency: "CDF",
-        };
-        countries.push(row);
-        return row;
+        throw new Error("le référentiel pays ne doit jamais être inventé");
       }
       if (text.includes("FROM SCHOOLS S") && text.includes("WHERE S.ID")) {
         const school = schools.find((row) => row.id === params[0]);
@@ -120,6 +113,7 @@ function createMemoryDb() {
       return { rows: [] };
     },
     schools,
+    countries,
   };
 }
 
@@ -163,7 +157,31 @@ async function main() {
   assert.equal(reread.principalName, "Awa Kabila");
   assert.equal(db.schools.length, 1);
 
-  console.log("OK schoolsRepository mémoire: persist / list / update");
+  await assert.rejects(
+    () =>
+      repo.persist({
+        code: "FR-2026-0401",
+        name: "Lycée Français Inventé",
+        type: "Lycée",
+        country: "France",
+        countryCode: "FR",
+        city: "Paris",
+        status: "Actif",
+      }),
+    (error) => error.code === "COUNTRY_NOT_FOUND" && error.statusCode === 400,
+  );
+  assert.equal(db.schools.length, 1);
+  assert.equal(
+    db.schools.some((row) => row.school_code === "FR-2026-0401"),
+    false,
+  );
+  assert.equal(
+    db.countries.some((row) => row.iso_code === "FR" || /france/i.test(String(row.name ?? ""))),
+    false,
+    "aucun pays FR inventé dans le référentiel",
+  );
+
+  console.log("OK schoolsRepository mémoire: persist / list / update / pays inconnu refusé");
 }
 
 main().catch((error) => {

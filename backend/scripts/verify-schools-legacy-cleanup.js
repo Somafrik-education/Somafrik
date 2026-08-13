@@ -21,6 +21,11 @@ const {
   LEGACY_SCHOOLS_STATE_WRITE_MESSAGE,
 } = require("../lib/legacySchoolsStateWrite");
 const {
+  COUNTRY_NOT_FOUND_CODE,
+  COUNTRY_NOT_FOUND_MESSAGE,
+  findCanonicalCountry,
+} = require("../lib/schoolsManagement");
+const {
   COUNTRY_ADMIN_WRITABLE_ENTITIES,
   evaluateBackOfficeWriteAccess,
   getWritableBackOfficeEntitiesForPrincipal,
@@ -96,6 +101,18 @@ function runUnitGuards() {
   assert.equal(onlySchools.rejectLegacySchoolsWrite, true);
   assert.equal(onlySchools.strippedSchools, true);
 
+  const mixedUsers = stripLegacySchoolsStateWrite(
+    { schools: [{ code: "CD-HACK" }], users: [{ id: "USER-SENTINEL" }] },
+    ["schools", "users", "subscriptions"],
+  );
+  assert.equal(mixedUsers.rejectLegacySchoolsWrite, true);
+  const mixedSubs = stripLegacySchoolsStateWrite(
+    { schools: [{ code: "CD-HACK" }], subscriptions: [{ id: "SUB-SENTINEL" }] },
+    ["schools", "users", "subscriptions"],
+  );
+  assert.equal(mixedSubs.rejectLegacySchoolsWrite, true);
+  assert.equal(findCanonicalCountry([{ code: "CD", name: "RDC" }], "FR", "France"), null);
+
   const schoolsPage = fs.readFileSync(path.join(ROOT, "web/src/pages/SchoolsPage.tsx"), "utf8");
   assert.match(schoolsPage, /establishmentsApi\.create/);
   assert.match(schoolsPage, /establishmentsApi\.update/);
@@ -113,6 +130,32 @@ function runUnitGuards() {
 
   const adminData = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
   assert.match(adminData, /entity === "classes" \|\| entity === "schools"/);
+
+  const mobileApi = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
+  assert.match(mobileApi, /delete rest\.schools/);
+
+  const backOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
+  const payloadFn = backOffice.match(/function getBackOfficeStatePayload\(\) \{[\s\S]*?\n\}/);
+  assert.ok(payloadFn, "getBackOfficeStatePayload présent");
+  assert.doesNotMatch(
+    payloadFn[0],
+    /schools:\s*state\.schools/,
+    "BackOffice n'inclut plus schools dans le PUT state",
+  );
+
+  const schoolsRepo = fs.readFileSync(path.join(ROOT, "backend/db/schoolsRepository.js"), "utf8");
+  assert.doesNotMatch(schoolsRepo, /\+243/);
+  assert.doesNotMatch(schoolsRepo, /INSERT INTO countries/);
+
+  const postgresRepo = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
+  assert.doesNotMatch(
+    postgresRepo,
+    /backOfficeSchool\.country \?\? "République Démocratique du Congo"/,
+  );
+  assert.doesNotMatch(
+    postgresRepo,
+    /VALUES \(\$1, \$2, '\+243', 'CDF'/,
+  );
 
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
   assert.match(server, /persistEstablishment/);
@@ -222,6 +265,133 @@ async function runHttpGuards() {
     assert.equal(forbidden.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
     assert.equal(String(forbidden.data?.message ?? ""), LEGACY_SCHOOLS_STATE_WRITE_MESSAGE);
 
+    const france = await request("/backoffice/establishments", {
+      method: "POST",
+      token,
+      body: {
+        name: `Lycée France ${stamp}`,
+        type: "Lycée",
+        country: "France",
+        countryCode: "FR",
+        city: "Paris",
+        phone: "+33 1 00 00 00 00",
+        email: `france-${stamp}@test.fr`,
+        principalName: "Marie Dupont",
+        address: "1 rue de Rivoli",
+        status: "Actif",
+        validationStatus: "Validé",
+      },
+    });
+    assert.equal(france.status, 400, `pays FR: attendu 400, reçu ${france.status} ${JSON.stringify(france.data)}`);
+    assert.equal(france.data?.code, COUNTRY_NOT_FOUND_CODE);
+    assert.equal(String(france.data?.message ?? ""), COUNTRY_NOT_FOUND_MESSAGE);
+
+    const countriesList = await request("/backoffice/countries", { token });
+    assert.equal(countriesList.status, 200);
+    const countryRows = Array.isArray(countriesList.data)
+      ? countriesList.data
+      : countriesList.data?.items ?? countriesList.data?.data ?? [];
+    assert.equal(
+      countryRows.some((row) => String(row.code ?? row.iso_code ?? "").toUpperCase() === "FR"),
+      false,
+      "aucun pays FR créé dans le référentiel",
+    );
+
+    const stateAfterFrance = await request("/backoffice/state", { token });
+    assert.equal(stateAfterFrance.status, 200);
+    assert.equal(
+      (stateAfterFrance.data.countries ?? []).some((row) => String(row.code ?? "").toUpperCase() === "FR"),
+      false,
+    );
+    assert.equal(
+      (stateAfterFrance.data.schools ?? []).some(
+        (row) => String(row.countryCode ?? "").toUpperCase() === "FR" || /france/i.test(String(row.country ?? "")),
+      ),
+      false,
+      "aucun établissement France persisté",
+    );
+
+    const userSentinelId = `USER-LOT1-MIXED-${stamp}`;
+    const subSentinelId = `SUB-LOT1-MIXED-${stamp}`;
+    const baselineUsers = [...(stateAfterFrance.data.users ?? [])];
+    const baselineSubs = [...(stateAfterFrance.data.subscriptions ?? [])];
+    const userSentinel = {
+      id: userSentinelId,
+      name: "Sentinel Mixed Schools",
+      email: `sentinel-mixed-${stamp}@test.cd`,
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      status: "Actif",
+    };
+    const subSentinel = {
+      id: subSentinelId,
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      country: "RDC",
+      plan: "Premium",
+      status: "Actif",
+    };
+
+    const mixedUsers = await request("/backoffice/state", {
+      method: "PUT",
+      token,
+      body: {
+        schools: [
+          ...(stateAfterFrance.data.schools ?? []),
+          { code: `CD-MIXED-USERS-${stamp}`, name: "Hack Users", country: "RDC", city: "Goma" },
+        ],
+        users: [...baselineUsers, userSentinel],
+      },
+    });
+    assert.equal(mixedUsers.status, 400, JSON.stringify(mixedUsers.data));
+    assert.equal(mixedUsers.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
+
+    const mixedSubs = await request("/backoffice/state", {
+      method: "PUT",
+      token,
+      body: {
+        schools: [
+          ...(stateAfterFrance.data.schools ?? []),
+          { code: `CD-MIXED-SUBS-${stamp}`, name: "Hack Subs", country: "RDC", city: "Goma" },
+        ],
+        subscriptions: [...baselineSubs, subSentinel],
+      },
+    });
+    assert.equal(mixedSubs.status, 400, JSON.stringify(mixedSubs.data));
+    assert.equal(mixedSubs.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
+
+    const snapshotPut = await request("/backoffice/state", {
+      method: "PUT",
+      token,
+      body: {
+        ...stateAfterFrance.data,
+        users: [...baselineUsers, userSentinel],
+        subscriptions: [...baselineSubs, subSentinel],
+      },
+    });
+    assert.equal(snapshotPut.status, 400, JSON.stringify(snapshotPut.data));
+    assert.equal(snapshotPut.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
+
+    const afterMixed = await request("/backoffice/state", { token });
+    assert.equal(afterMixed.status, 200);
+    assert.equal(
+      (afterMixed.data.users ?? []).some((row) => String(row.id) === userSentinelId),
+      false,
+      "aucune mutation partielle users",
+    );
+    assert.equal(
+      (afterMixed.data.subscriptions ?? []).some((row) => String(row.id) === subSentinelId),
+      false,
+      "aucune mutation partielle subscriptions",
+    );
+    assert.equal(
+      (afterMixed.data.schools ?? []).some((row) => String(row.code ?? "").includes("MIXED")),
+      false,
+      "aucune mutation partielle schools",
+    );
+    assert.equal((afterMixed.data.users ?? []).length, baselineUsers.length);
+    assert.equal((afterMixed.data.subscriptions ?? []).length, baselineSubs.length);
+
     const adminLogin = await request("/backoffice/login", {
       method: "POST",
       body: { identifier: "admin", password: "1234", schoolCode: "CD-2026-0001" },
@@ -252,7 +422,9 @@ async function runHttpGuards() {
       `Admin School ne peut pas PATCH un autre établissement: ${JSON.stringify(teacherPatch.data)}`,
     );
 
-    console.log("OK http: legacy state write bloqué · /establishments + projection OK");
+    console.log(
+      "OK http: pays inconnu refusé · PUT schools mixte/snapshot rejeté sans mutation partielle · /establishments + projection OK",
+    );
   } finally {
     child.kill("SIGTERM");
     await wait(200);

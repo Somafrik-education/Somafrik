@@ -127,10 +127,10 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | | |
 |--|--|
 | **Date** | 2026-08-13 |
-| **Décision** | Le CRUD établissements passe exclusivement par `/api/backoffice/establishments`, persisté dans la table PostgreSQL `schools` (`profile_payload` pour les champs BO). `PUT /api/backoffice/state` refuse la clé `schools`. `GET /state.schools` reste une projection de lecture. |
+| **Décision** | Le CRUD établissements passe exclusivement par `/api/backoffice/establishments`, persisté dans la table PostgreSQL `schools` (`profile_payload` pour les champs BO). `PUT /api/backoffice/state` refuse **toute présence** de la clé `schools` (y compris payload mixte). Un pays absent du référentiel est refusé (`COUNTRY_NOT_FOUND`) : aucun `INSERT` pays avec métadonnées inventées. `GET /state.schools` reste une projection de lecture. |
 | **Contexte** | Inventaire LOT 0 : le CRUD écoles écrivait encore le snapshot JSON puis matérialisait PG en side-effect. Les classes avaient déjà ce modèle. |
 | **Alternatives** | Dual-write JSON+PG durable ; nouvelle API `/api/v2/schools` ; attendre LOT 8 pour tout retirer. |
-| **Impact** | Matrice S1.4 sans `schools` ; Mobile AdminCrud schools en lecture/retrait CRUD ; Web DataContext strip `schools` ; `verify:schools-legacy-cleanup`. |
+| **Impact** | Matrice S1.4 sans `schools` ; Mobile AdminCrud schools en lecture/retrait CRUD ; Web/Mobile/BackOffice omettent `schools` du PUT ; `verify:schools-legacy-cleanup` (pays inconnu + PUT mixte). |
 | **Statut** | Proposée |
 
 ---
