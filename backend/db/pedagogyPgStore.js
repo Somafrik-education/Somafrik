@@ -25,6 +25,9 @@ function createPedagogyPgStore(repo) {
     const query = (sql, params) => scopedRepo.query(sql, params);
 
     return {
+      async all(sql, params) {
+        return all(sql, params);
+      },
       async getSchoolByCode(code) {
         const row = await one("SELECT * FROM schools WHERE school_code = $1", [asTrimmed(code).toUpperCase()]);
         if (!row) return null;
@@ -78,6 +81,32 @@ function createPedagogyPgStore(repo) {
         );
         return row ?? null;
       },
+      async getAcademicYearById(id) {
+        if (!id) return null;
+        return one(`SELECT * FROM academic_years WHERE id = $1`, [id]);
+      },
+      async findTermByName(academicYearId, name) {
+        return one(
+          `SELECT * FROM terms
+           WHERE academic_year_id = $1 AND lower(btrim(name)) = lower(btrim($2))
+           LIMIT 1`,
+          [academicYearId, name],
+        );
+      },
+      async findActiveTeacherAssignment({ schoolId, teacherId, classId, subjectId, academicYearId }) {
+        return one(
+          `SELECT ta.*
+           FROM teacher_assignments ta
+           WHERE ta.school_id = $1
+             AND ta.teacher_id = $2
+             AND ta.class_id = $3
+             AND ta.subject_id = $4
+             AND ta.academic_year_id = $5
+             AND lower(ta.status) = 'active'
+           LIMIT 1`,
+          [schoolId, teacherId, classId, subjectId, academicYearId],
+        );
+      },
       async ensureSubject(schoolId, name, coefficient = 1) {
         const existing = await this.findSubject(schoolId, name);
         if (existing) return existing;
@@ -119,6 +148,26 @@ function createPedagogyPgStore(repo) {
         sql += " LIMIT 1";
         const row = await one(sql, params);
         return row ? mapCourseRow(row) : null;
+      },
+      async getCourseContextByCode(code, principal) {
+        const params = [asTrimmed(code)];
+        let sql = `
+          SELECT sc.id AS course_db_id, sc.school_id, s.school_code,
+                 c.id AS class_id, c.academic_year_id,
+                 sub.id AS subject_id
+          FROM school_courses sc
+          JOIN schools s ON s.id = sc.school_id
+          JOIN classes c ON c.id = sc.class_id
+          JOIN subjects sub ON sub.id = sc.subject_id
+          WHERE sc.course_code = $1 OR sc.id::text = $1 OR sc.legacy_json_id = $1
+        `;
+        const schoolCode = asTrimmed(principal?.schoolCode);
+        if (schoolCode && schoolCode !== "*") {
+          sql += " AND s.school_code = $2";
+          params.push(schoolCode.toUpperCase());
+        }
+        sql += " LIMIT 1";
+        return one(sql, params);
       },
       async insertCourse(payload) {
         const row = await one(
@@ -285,6 +334,9 @@ function createPedagogyPgStore(repo) {
       },
       async upsertGrade(payload, principal) {
         return scopedRepo.upsertGrade(payload, principal);
+      },
+      async upsertAttendance(payload, principal) {
+        return scopedRepo.upsertAttendance(payload, principal);
       },
       async upsertAttendanceBatch(payload, principal) {
         return scopedRepo.upsertAttendanceBatch(payload, principal);

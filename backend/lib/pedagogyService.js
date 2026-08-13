@@ -6,6 +6,14 @@ const {
   createPedagogyError,
   ignoreClientScope,
 } = require("./pedagogyManagement");
+const {
+  resolveCanonicalClass,
+  resolveCanonicalSubject,
+  assertOpenAcademicYearForClass,
+  resolveCanonicalPeriod,
+  resolveTeacherWithActiveAssignment,
+  mapPedagogyPersistenceError,
+} = require("./pedagogyReferences");
 
 function assertTenant(principal, schoolCode) {
   const scope = asTrimmed(principal?.schoolCode);
@@ -44,6 +52,17 @@ function generateCourseCode(schoolCode, existing = []) {
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
 }
 
+async function resolveSchoolContext(tx, principal) {
+  const schoolCode = asTrimmed(principal?.schoolCode);
+  if (!schoolCode || schoolCode === "*") {
+    throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+  }
+  const school = await tx.getSchoolByCode(schoolCode);
+  if (!school) throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+  assertTenant(principal, school.code);
+  return school;
+}
+
 async function createCourse(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   const className = asTrimmed(payload.className);
@@ -52,23 +71,23 @@ async function createCourse(store, rawPayload, principal, auditMeta) {
     throw createPedagogyError(400, "Classe et matière obligatoires.");
   }
   return store.withTransaction(async (tx) => {
-    const schoolCode = asTrimmed(principal?.schoolCode);
-    if (!schoolCode || schoolCode === "*") {
-      throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
-    }
-    const school = await tx.getSchoolByCode(schoolCode);
-    if (!school) throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
-    assertTenant(principal, school.code);
-    const klass = await tx.findClass(school.id, className);
-    if (!klass) throw createPedagogyError(404, "Classe introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
-    const subject = await tx.ensureSubject(school.id, subjectName, Number(payload.coefficient ?? 1));
-    let teacherId = null;
-    if (payload.teacherId) {
-      const teacher = await tx.findTeacher(school.id, payload.teacherId);
-      if (!teacher) throw createPedagogyError(404, "Enseignant introuvable.", PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED);
-      teacherId = teacher.id;
-    }
-    const courseCode = asTrimmed(payload.id ?? payload.publicId) || generateCourseCode(school.code);
+    const school = await resolveSchoolContext(tx, principal);
+    const klass = await resolveCanonicalClass(tx, school.id, className);
+    const academicYear = await assertOpenAcademicYearForClass(tx, klass);
+    const subject = await resolveCanonicalSubject(tx, school.id, subjectName);
+    const { teacherId } = await resolveTeacherWithActiveAssignment(tx, {
+      schoolId: school.id,
+      teacherKey: payload.teacherId,
+      classId: klass.id,
+      subjectId: subject.id,
+      academicYearId: academicYear.id,
+    });
+    const existingCourses = await tx.all(
+      `SELECT course_code FROM school_courses WHERE school_id = $1`,
+      [school.id],
+    );
+    const courseCode =
+      asTrimmed(payload.id ?? payload.publicId) || generateCourseCode(school.code, existingCourses);
     const saved = await tx.insertCourse({
       schoolId: school.id,
       classId: klass.id,
@@ -95,18 +114,27 @@ async function updateCourse(store, courseId, patch, principal, auditMeta) {
     const existing = await tx.getCourseByCode(courseId, principal);
     if (!existing) throw createPedagogyError(404, "Cours introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
     assertTenant(principal, existing.schoolCode);
+    const school = await tx.getSchoolByCode(existing.schoolCode);
+    const courseRow = await tx.getCourseContextByCode(courseId, principal);
+    if (!courseRow) throw createPedagogyError(404, "Cours introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
+    await assertOpenAcademicYearForClass(tx, { academic_year_id: courseRow.academic_year_id });
+
     let teacherId;
     if (patch.teacherId !== undefined) {
       if (!patch.teacherId) {
         teacherId = null;
       } else {
-        const school = await tx.getSchoolByCode(existing.schoolCode);
-        const teacher = await tx.findTeacher(school.id, patch.teacherId);
-        if (!teacher) throw createPedagogyError(404, "Enseignant introuvable.", PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED);
-        teacherId = teacher.id;
+        const resolved = await resolveTeacherWithActiveAssignment(tx, {
+          schoolId: school.id,
+          teacherKey: patch.teacherId,
+          classId: courseRow.class_id,
+          subjectId: courseRow.subject_id,
+          academicYearId: courseRow.academic_year_id,
+        });
+        teacherId = resolved.teacherId;
       }
     }
-    const saved = await tx.updateCourse(existing.dbId, {
+    const saved = await tx.updateCourse(courseRow.course_db_id, {
       teacherId,
       coefficient: patch.coefficient != null ? Number(patch.coefficient) : null,
       profile: patch.teacherId != null ? { teacherId: patch.teacherId } : null,
@@ -128,7 +156,11 @@ async function deleteCourse(store, courseId, principal, auditMeta) {
     const existing = await tx.getCourseByCode(courseId, principal);
     if (!existing) throw createPedagogyError(404, "Cours introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
     assertTenant(principal, existing.schoolCode);
-    const saved = await tx.archiveCourse(existing.dbId);
+    const courseRow = await tx.getCourseContextByCode(courseId, principal);
+    if (courseRow) {
+      await assertOpenAcademicYearForClass(tx, { academic_year_id: courseRow.academic_year_id });
+    }
+    const saved = await tx.archiveCourse(courseRow?.course_db_id ?? existing.dbId);
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "delete_course",
       entityType: "course",
@@ -164,20 +196,20 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
   }
   const times = parseScheduleTimes(payload);
   return store.withTransaction(async (tx) => {
-    const schoolCode = asTrimmed(principal?.schoolCode);
-    if (!schoolCode || schoolCode === "*") {
-      throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    const school = await resolveSchoolContext(tx, principal);
+    const klass = await resolveCanonicalClass(tx, school.id, className);
+    const academicYear = await assertOpenAcademicYearForClass(tx, klass);
+    const subject = await resolveCanonicalSubject(tx, school.id, subjectName);
+    if (payload.periodName) {
+      await resolveCanonicalPeriod(tx, academicYear.id, payload.periodName);
     }
-    const school = await tx.getSchoolByCode(schoolCode);
-    if (!school) throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
-    assertTenant(principal, school.code);
-    const klass = await tx.findClass(school.id, className);
-    let teacherId = null;
-    if (payload.teacherId) {
-      const teacher = await tx.findTeacher(school.id, payload.teacherId);
-      if (!teacher) throw createPedagogyError(404, "Enseignant introuvable.", PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED);
-      teacherId = teacher.id;
-    }
+    const { teacherId } = await resolveTeacherWithActiveAssignment(tx, {
+      schoolId: school.id,
+      teacherKey: payload.teacherId,
+      classId: klass.id,
+      subjectId: subject.id,
+      academicYearId: academicYear.id,
+    });
     const conflicts = await tx.listScheduleConflicts(school.id, {
       startsAt: times.startsAt,
       endsAt: times.endsAt,
@@ -191,9 +223,9 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
     }
     const saved = await tx.insertScheduleSlot({
       schoolId: school.id,
-      classId: klass?.id ?? null,
+      classId: klass.id,
       className,
-      subjectName,
+      subjectName: subject.name,
       teacherId,
       kind: payload.kind ?? "course",
       startsAt: times.startsAt,
@@ -230,13 +262,26 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
     if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT);
     assertTenant(principal, existing.schoolCode);
     const school = await tx.getSchoolByCode(existing.schoolCode);
+    const nextClassName = asTrimmed(patch.className ?? existing.className);
+    const nextSubjectName = asTrimmed(patch.subject ?? existing.subject);
+    const klass = await resolveCanonicalClass(tx, school.id, nextClassName);
+    const academicYear = await assertOpenAcademicYearForClass(tx, klass);
+    const subject = await resolveCanonicalSubject(tx, school.id, nextSubjectName);
+    if (patch.periodName ?? existing.periodName) {
+      await resolveCanonicalPeriod(tx, academicYear.id, patch.periodName ?? existing.periodName);
+    }
     let teacherId;
     if (patch.teacherId !== undefined) {
       if (!patch.teacherId) teacherId = null;
       else {
-        const teacher = await tx.findTeacher(school.id, patch.teacherId);
-        if (!teacher) throw createPedagogyError(404, "Enseignant introuvable.", PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED);
-        teacherId = teacher.id;
+        const resolved = await resolveTeacherWithActiveAssignment(tx, {
+          schoolId: school.id,
+          teacherKey: patch.teacherId,
+          classId: klass.id,
+          subjectId: subject.id,
+          academicYearId: academicYear.id,
+        });
+        teacherId = resolved.teacherId;
       }
     }
     const nextStart = times?.startsAt ?? existing.start;
@@ -246,7 +291,7 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
       {
         startsAt: nextStart,
         endsAt: nextEnd,
-        className: patch.className ?? existing.className,
+        className: nextClassName,
         teacherId: teacherId ?? null,
       },
       existing.dbId ?? existing.id,
@@ -255,8 +300,8 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
       throw createPedagogyError(409, "Conflit d'emploi du temps.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT);
     }
     const saved = await tx.updateScheduleSlot(existing.dbId ?? existing.id, {
-      className: patch.className,
-      subjectName: patch.subject,
+      className: nextClassName,
+      subjectName: subject.name,
       teacherId,
       startsAt: times?.startsAt,
       endsAt: times?.endsAt,
@@ -292,61 +337,92 @@ async function deleteCourseSchedule(store, scheduleId, principal, auditMeta) {
 }
 
 async function createEvaluation(store, rawPayload, principal, auditMeta) {
-  const payload = ignoreClientScope(rawPayload);
-  return store.withTransaction(async (tx) => {
-    const saved = await tx.upsertEvaluation(payload, principal);
-    await writePedagogyAudit(tx, principal, auditMeta, {
-      action: "create_evaluation",
-      entityType: "evaluation",
-      entityId: saved.id,
-      schoolCode: saved.schoolCode,
-      newValue: saved,
+  const payload = {
+    ...ignoreClientScope(rawPayload),
+    schoolCode: asTrimmed(rawPayload.schoolCode ?? principal?.schoolCode),
+  };
+  try {
+    return await store.withTransaction(async (tx) => {
+      const saved = await tx.upsertEvaluation(payload, principal);
+      await writePedagogyAudit(tx, principal, auditMeta, {
+        action: "create_evaluation",
+        entityType: "evaluation",
+        entityId: saved.id,
+        schoolCode: saved.schoolCode,
+        newValue: saved,
+      });
+      return saved;
     });
-    return saved;
-  });
+  } catch (error) {
+    throw mapPedagogyPersistenceError(error);
+  }
 }
 
 async function updateEvaluation(store, evaluationId, patch, principal, auditMeta) {
-  return store.withTransaction(async (tx) => {
-    const payload = { ...ignoreClientScope(patch), id: evaluationId };
-    const saved = await tx.upsertEvaluation(payload, principal);
-    await writePedagogyAudit(tx, principal, auditMeta, {
-      action: "update_evaluation",
-      entityType: "evaluation",
-      entityId: saved.id,
-      schoolCode: saved.schoolCode,
-      newValue: saved,
+  try {
+    return await store.withTransaction(async (tx) => {
+      const payload = {
+        ...ignoreClientScope(patch),
+        id: evaluationId,
+        schoolCode: asTrimmed(patch.schoolCode ?? principal?.schoolCode),
+      };
+      const saved = await tx.upsertEvaluation(payload, principal);
+      await writePedagogyAudit(tx, principal, auditMeta, {
+        action: "update_evaluation",
+        entityType: "evaluation",
+        entityId: saved.id,
+        schoolCode: saved.schoolCode,
+        newValue: saved,
+      });
+      return saved;
     });
-    return saved;
-  });
+  } catch (error) {
+    throw mapPedagogyPersistenceError(error);
+  }
 }
 
 async function upsertGrade(store, payload, principal, auditMeta) {
-  return store.withTransaction(async (tx) => {
-    const saved = await tx.upsertGrade(payload, principal);
-    await writePedagogyAudit(tx, principal, auditMeta, {
-      action: "upsert_grade",
-      entityType: "grade",
-      entityId: saved.id,
-      schoolCode: saved.schoolCode,
-      newValue: saved,
+  const scopedPayload = {
+    ...payload,
+    schoolCode: asTrimmed(payload.schoolCode ?? principal?.schoolCode),
+  };
+  try {
+    return await store.withTransaction(async (tx) => {
+      const saved = await tx.upsertGrade(scopedPayload, principal);
+      await writePedagogyAudit(tx, principal, auditMeta, {
+        action: "upsert_grade",
+        entityType: "grade",
+        entityId: saved.id,
+        schoolCode: saved.schoolCode,
+        newValue: saved,
+      });
+      return saved;
     });
-    return saved;
-  });
+  } catch (error) {
+    throw mapPedagogyPersistenceError(error);
+  }
 }
 
 async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
-  return store.withTransaction(async (tx) => {
-    const saved = await tx.upsertAttendanceBatch(payload, principal);
-    await writePedagogyAudit(tx, principal, auditMeta, {
-      action: "upsert_attendance_batch",
-      entityType: "attendance",
-      entityId: String(saved.length),
-      schoolCode: principal?.schoolCode,
-      newValue: { count: saved.length },
+  try {
+    return await store.withTransaction(async (tx) => {
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const saved = [];
+      for (const item of items) {
+        saved.push(await tx.upsertAttendance(item, principal));
+      }
+      await writePedagogyAudit(tx, principal, auditMeta, {
+        action: "upsert_attendance_batch",
+        entityType: "attendance",
+        entityId: String(saved.length),
+        schoolCode: principal?.schoolCode,
+        newValue: { count: saved.length },
+      });
+      return saved;
     });
-    return saved;
-  });
+  } catch (error) {
+    throw mapPedagogyPersistenceError(error);
+  }
 }
 
 module.exports = {

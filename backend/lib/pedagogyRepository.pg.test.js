@@ -1,12 +1,14 @@
 "use strict";
 
 /**
- * Intégration PostgreSQL — pédagogie canonique (cours, emplois du temps, projection).
+ * Intégration PostgreSQL — pédagogie canonique :
+ * références, affectations, année fermée, notes, présences, audit rollback, concurrence.
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("path");
 const { Pool } = require("pg");
+const { createPostgresRepository } = require("../db/repositoryFactory");
 const { createPedagogyPgStore } = require("../db/pedagogyPgStore");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { PEDAGOGY_ERROR } = require("./pedagogyManagement");
@@ -37,45 +39,129 @@ async function ensureIsolatedDatabase(databaseUrl, databaseName) {
   return withDatabaseName(databaseUrl, databaseName);
 }
 
-function createRepo(pool) {
-  return {
-    async query(sql, params = []) {
-      return pool.query(sql, params);
-    },
-    async one(sql, params = []) {
-      const result = await pool.query(sql, params);
-      return result.rows[0] ?? null;
-    },
-    async all(sql, params = []) {
-      const result = await pool.query(sql, params);
-      return result.rows;
-    },
-    async withTransaction(fn) {
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        const tx = createTxAdapter(client);
-        const result = await fn(tx);
-        await client.query("COMMIT");
-        return result;
-      } catch (error) {
-        try {
-          await client.query("ROLLBACK");
-        } catch {
-          /* ignore */
-        }
-        throw error;
-      } finally {
-        client.release();
-      }
-    },
-    createTxScope(tx) {
-      return {
-        query: (sql, params) => tx.query(sql, params),
-        one: (sql, params) => tx.one(sql, params),
-        all: (sql, params) => tx.all(sql, params),
+function failAuditWrites(store) {
+  const original = store.withTransaction.bind(store);
+  store.withTransaction = (fn) =>
+    original(async (tx) => {
+      tx.recordPedagogyAudit = async () => {
+        throw new Error("audit write failed");
       };
-    },
+      return fn(tx);
+    });
+  return () => {
+    store.withTransaction = original;
+  };
+}
+
+async function seedFixture(pool) {
+  const country = await pool.query(
+    `INSERT INTO countries (name, iso_code, phone_code, currency)
+     VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
+  );
+  const schoolA = await pool.query(
+    `INSERT INTO schools (country_id, school_code, name, status)
+     VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
+    [country.rows[0].id],
+  );
+  const schoolB = await pool.query(
+    `INSERT INTO schools (country_id, school_code, name, status)
+     VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id`,
+    [country.rows[0].id],
+  );
+  const openYear = await pool.query(
+    `INSERT INTO academic_years (school_id, name, status)
+     VALUES ($1, '2025-2026', 'open') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+  const closedYear = await pool.query(
+    `INSERT INTO academic_years (school_id, name, status)
+     VALUES ($1, '2024-2025', 'closed') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+  const klass = await pool.query(
+    `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+     VALUES ($1, $2, 'CLS-6A', '6ème A', 'active') RETURNING id`,
+    [schoolA.rows[0].id, openYear.rows[0].id],
+  );
+  const closedClass = await pool.query(
+    `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+     VALUES ($1, $2, 'CLS-5Z', '5ème Z', 'active') RETURNING id`,
+    [schoolA.rows[0].id, closedYear.rows[0].id],
+  );
+  const term = await pool.query(
+    `INSERT INTO terms (academic_year_id, name, status)
+     VALUES ($1, 'Trimestre 1', 'open') RETURNING id`,
+    [openYear.rows[0].id],
+  );
+  const math = await pool.query(
+    `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
+     VALUES ($1, 'SUB-MATH', 'Mathématiques', 2, 'active') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+  const physics = await pool.query(
+    `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
+     VALUES ($1, 'SUB-PHY', 'Physique', 2, 'active') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+  const teacherUser = await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+     VALUES ($1, 'USR-ENS-PG', 'Paul', 'Prof', 'ens-pg@test.cd', 'TEACHER', 'active') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+  const teacher = await pool.query(
+    `INSERT INTO teachers (school_id, user_id, teacher_code, status)
+     VALUES ($1, $2, 'ENS-PG-001', 'active') RETURNING id`,
+    [schoolA.rows[0].id, teacherUser.rows[0].id],
+  );
+  const teacherNoAssign = await pool.query(
+    `INSERT INTO teachers (school_id, teacher_code, status)
+     VALUES ($1, 'ENS-PG-002', 'active') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'active')`,
+    [schoolA.rows[0].id, teacher.rows[0].id, klass.rows[0].id, math.rows[0].id, openYear.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'inactive')`,
+    [schoolA.rows[0].id, teacher.rows[0].id, klass.rows[0].id, physics.rows[0].id, openYear.rows[0].id],
+  );
+  const student = await pool.query(
+    `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+     VALUES ($1, 'CD-2026-0001-STU-PG-01', 'Awa', 'Test', 'active') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+  const outsider = await pool.query(
+    `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+     VALUES ($1, 'BI-2026-0001-STU-01', 'Jean', 'Other', 'active') RETURNING id`,
+    [schoolB.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, 'active')`,
+    [schoolA.rows[0].id, student.rows[0].id, klass.rows[0].id, openYear.rows[0].id],
+  );
+  const adminUser = await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+     VALUES ($1, 'USR-ADMIN-PG', 'Admin', 'School', 'admin-pg@test.cd', 'SCHOOL_ADMIN', 'active') RETURNING id`,
+    [schoolA.rows[0].id],
+  );
+
+  return {
+    schoolA: schoolA.rows[0].id,
+    schoolB: schoolB.rows[0].id,
+    klass: klass.rows[0].id,
+    closedClass: closedClass.rows[0].id,
+    openYear: openYear.rows[0].id,
+    term: term.rows[0].id,
+    math: math.rows[0].id,
+    teacher: teacher.rows[0].id,
+    teacherNoAssign: teacherNoAssign.rows[0].id,
+    student: student.rows[0].id,
+    outsider: outsider.rows[0].id,
+    adminUser: adminUser.rows[0].id,
   };
 }
 
@@ -94,37 +180,19 @@ async function main() {
     await pool.query(schema);
     await pool.query(PEDAGOGY_SCHEMA_SQL);
 
-    const country = await pool.query(
-      `INSERT INTO countries (name, iso_code, phone_code, currency)
-       VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
-    );
-    const schoolA = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Lycée A', 'active') RETURNING id`,
-      [country.rows[0].id],
-    );
-    const schoolB = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'BI-2026-0001', 'Lycée B', 'active') RETURNING id`,
-      [country.rows[0].id],
-    );
-    const year = await pool.query(
-      `INSERT INTO academic_years (school_id, name, status)
-       VALUES ($1, '2025-2026', 'open') RETURNING id`,
-      [schoolA.rows[0].id],
-    );
-    await pool.query(
-      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
-       VALUES ($1, $2, 'CLS-6A', '6ème A', 'active')`,
-      [schoolA.rows[0].id, year.rows[0].id],
-    );
-
-    const repo = createRepo(pool);
+    const fixture = await seedFixture(pool);
+    const repo = createPostgresRepository(isolatedUrl);
+    repo.ready = true;
     const store = createPedagogyPgStore(repo);
     const admin = {
       role: "Admin School",
       schoolCode: "CD-2026-0001",
-      sub: "admin-pedagogy-it",
+      sub: fixture.adminUser,
+    };
+    const teacherPrincipal = {
+      role: "Enseignant",
+      schoolCode: "CD-2026-0001",
+      sub: "ENS-PG-001",
     };
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "pedagogy-it" };
 
@@ -140,6 +208,89 @@ async function main() {
     assert.ok(course.id);
     assert.equal(course.className, "6ème A");
     assert.equal(course.name, "Mathématiques");
+
+    await assert.rejects(
+      () =>
+        store.createSchoolCourse(
+          { className: "Classe Fantôme", name: "Mathématiques" },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.COURSE_NOT_FOUND,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createSchoolCourse(
+          { className: "6ème A", name: "Matière Inventée" },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.COURSE_NOT_FOUND,
+    );
+
+    const subjectsBefore = await pool.query(`SELECT count(*)::int AS count FROM subjects`);
+    assert.equal(subjectsBefore.rows[0].count, 2, "aucune matière auto-créée");
+
+    await assert.rejects(
+      () =>
+        store.createSchoolCourse(
+          { className: "5ème Z", name: "Mathématiques" },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.ACADEMIC_YEAR_CLOSED,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createSchoolCourse(
+          {
+            className: "6ème A",
+            name: "Mathématiques",
+            teacherId: "ENS-PG-002",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createSchoolCourse(
+          {
+            className: "6ème A",
+            name: "Physique",
+            teacherId: "ENS-PG-001",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createSchoolCourse(
+          {
+            className: "6ème A",
+            name: "Mathématiques",
+            teacherId: "ENS-INCONNU",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 404 && !error.code,
+    );
+
+    const courseWithTeacher = await store.updateSchoolCourse(
+      course.id,
+      { teacherId: "ENS-PG-001" },
+      admin,
+      auditMeta,
+    );
+    assert.equal(courseWithTeacher.teacherId, "ENS-PG-001");
 
     await assert.rejects(
       () =>
@@ -163,6 +314,59 @@ async function main() {
       auditMeta,
     );
     assert.equal(slotA.className, "6ème A");
+    const slotRow = await pool.query(`SELECT class_id FROM course_schedule_slots WHERE legacy_json_id = $1`, [
+      "SCH-LOT5-1",
+    ]);
+    assert.ok(slotRow.rows[0].class_id, "créneau lié à une classe canonique");
+
+    await assert.rejects(
+      () =>
+        store.createCourseSchedule(
+          {
+            id: "SCH-UNKNOWN-CLASS",
+            className: "Classe Inconnue",
+            subject: "Mathématiques",
+            start: "2026-09-02T08:00:00.000Z",
+            end: "2026-09-02T09:00:00.000Z",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.COURSE_NOT_FOUND,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createCourseSchedule(
+          {
+            id: "SCH-UNKNOWN-SUBJECT",
+            className: "6ème A",
+            subject: "Latin",
+            start: "2026-09-02T08:00:00.000Z",
+            end: "2026-09-02T09:00:00.000Z",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.COURSE_NOT_FOUND,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createCourseSchedule(
+          {
+            id: "SCH-BAD-PERIOD",
+            className: "6ème A",
+            subject: "Mathématiques",
+            periodName: "Trimestre 9",
+            start: "2026-09-03T08:00:00.000Z",
+            end: "2026-09-03T09:00:00.000Z",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.PERIOD_NOT_FOUND,
+    );
 
     await assert.rejects(
       () =>
@@ -180,16 +384,149 @@ async function main() {
       (error) => error.code === PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT,
     );
 
+    const evaluation = await store.createEvaluation(
+      {
+        id: "EVAL-PG-LOT5",
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Devoir intégration",
+        maxScore: 20,
+        schoolCode: "CD-2026-0001",
+        teacherId: "ENS-PG-001",
+      },
+      admin,
+      auditMeta,
+    );
+    assert.ok(evaluation.id);
+
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: evaluation.id,
+            studentId: "BI-2026-0001-STU-01",
+            value: 12,
+            scale: 20,
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) =>
+        error.code === PEDAGOGY_ERROR.STUDENT_NOT_ENROLLED ||
+        error.statusCode === 404 ||
+        error.statusCode === 400,
+    );
+
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: evaluation.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            value: 25,
+            scale: 20,
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.GRADE_INVALID || error.statusCode === 400,
+    );
+
+    const grade = await store.upsertSchoolGrade(
+      {
+        evaluationId: evaluation.id,
+        studentId: "CD-2026-0001-STU-PG-01",
+        teacherId: "ENS-PG-001",
+        value: 14,
+        scale: 20,
+      },
+      admin,
+      auditMeta,
+    );
+    assert.ok(grade.id);
+
+    const [gradeA, gradeB] = await Promise.all([
+      store.upsertSchoolGrade(
+        {
+          evaluationId: evaluation.id,
+          studentId: "CD-2026-0001-STU-PG-01",
+          teacherId: "ENS-PG-001",
+          value: 15,
+          scale: 20,
+          version: 1,
+        },
+        admin,
+        auditMeta,
+      ),
+      store.upsertSchoolGrade(
+        {
+          evaluationId: evaluation.id,
+          studentId: "CD-2026-0001-STU-PG-01",
+          teacherId: "ENS-PG-001",
+          value: 16,
+          scale: 20,
+          version: 1,
+        },
+        admin,
+        auditMeta,
+      ).catch((error) => error),
+    ]);
+    const gradeRows = await pool.query(
+      `SELECT count(*)::int AS count FROM grades WHERE evaluation_id = $1 AND student_id = $2`,
+      [evaluation.dbId ?? evaluation.id, fixture.student],
+    );
+    assert.equal(gradeRows.rows[0].count, 1, "une seule note canonique après concurrence");
+    assert.ok(gradeA?.id || gradeB?.statusCode === 409 || gradeB?.code);
+
+    const attendance = await store.upsertSchoolAttendanceBatch(
+      {
+        items: [
+          {
+            studentId: "CD-2026-0001-STU-PG-01",
+            className: "6ème A",
+            date: "2026-09-01",
+            status: "present",
+            teacherId: "ENS-PG-001",
+          },
+        ],
+      },
+      admin,
+      auditMeta,
+    );
+    assert.equal(attendance.length, 1);
+
+    const restoreAudit = failAuditWrites(store);
+    await assert.rejects(
+      () =>
+        store.createSchoolCourse(
+          { id: `CRS-AUDIT-FAIL-${Date.now()}`, className: "6ème A", name: "Physique" },
+          admin,
+          auditMeta,
+        ),
+      (error) => String(error.message).includes("audit write failed"),
+    );
+    restoreAudit();
+    const coursesAfterFailedAudit = await pool.query(
+      `SELECT count(*)::int AS count FROM school_courses WHERE subject_id = $1`,
+      [fixture.physics],
+    );
+    assert.equal(coursesAfterFailedAudit.rows[0].count, 0, "rollback audit : cours non persisté");
+
     const projection = await store.listProjection();
     const schoolCourses = projection.courses.filter((row) => row.schoolCode === "CD-2026-0001");
     const schoolSlots = projection.courseSchedules.filter((row) => row.schoolCode === "CD-2026-0001");
     assert.ok(schoolCourses.some((row) => row.name === "Mathématiques"));
     assert.ok(schoolSlots.some((row) => row.id === "SCH-LOT5-1"));
+    assert.ok(projection.notes.some((row) => Number(row.value ?? row.score) === 14 || Number(row.value) >= 14));
+
+    const boState = await pool.query(`SELECT state_payload FROM backoffice_state WHERE state_key = 'default'`);
+    assert.equal(boState.rowCount, 0, "aucune projection JSON historique backoffice_state");
 
     const auditRows = await pool.query(
-      `SELECT * FROM audit_logs WHERE action IN ('create_course', 'create_course_schedule')`,
+      `SELECT * FROM audit_logs WHERE action IN ('create_course', 'create_course_schedule', 'upsert_grade', 'upsert_attendance_batch')`,
     );
-    assert.ok(auditRows.rowCount >= 2);
+    assert.ok(auditRows.rowCount >= 4);
 
     console.log("pedagogyRepository.pg.test.js: OK");
   } finally {
