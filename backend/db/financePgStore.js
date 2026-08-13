@@ -146,8 +146,8 @@ function createFinancePgStore(repo) {
       async cancelPayment(dbId, reason) {
         const row = await one(
           `UPDATE payments
-           SET cancelled_at = NOW(), cancel_reason = $2, payment_status = 'cancelled',
-               profile_payload = COALESCE(profile_payload, '{}'::jsonb) || jsonb_build_object('status','Annulé','cancelReason',$2),
+           SET cancelled_at = NOW(), cancel_reason = $2::text, payment_status = 'cancelled',
+               profile_payload = COALESCE(profile_payload, '{}'::jsonb) || jsonb_build_object('status','Annulé','cancelReason',$2::text),
                updated_at = NOW()
            WHERE id = $1 AND cancelled_at IS NULL
            RETURNING *`,
@@ -321,6 +321,7 @@ function createFinancePgStore(repo) {
         const amount = money(input.item.amount);
         const amounts = obligationStatus({ amountDue: amount, amountPaid: 0, exemption: 0, dueDate: input.item.dueDate });
         try {
+          await query("SAVEPOINT finance_obligation_insert");
           await query(
             `INSERT INTO student_fee_obligations (
                school_id, student_id, fee_grid_id, school_fee_item_id, fee_type, label, currency,
@@ -350,8 +351,14 @@ function createFinancePgStore(repo) {
               }),
             ],
           );
+          await query("RELEASE SAVEPOINT finance_obligation_insert");
           return true;
         } catch (error) {
+          try {
+            await query("ROLLBACK TO SAVEPOINT finance_obligation_insert");
+          } catch {
+            /* ignore */
+          }
           if (error.code === "23505") return false;
           throw error;
         }

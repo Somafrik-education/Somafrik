@@ -16,8 +16,8 @@ const {
   obligationStatus,
   toIsoDate,
   mapBoStatusToDb,
-} = require("./financeManagement");
-const financeService = require("./financeService");
+} = require("../lib/financeManagement");
+const financeService = require("../lib/financeService");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));

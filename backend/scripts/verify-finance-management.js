@@ -55,7 +55,20 @@ async function login(identifier, password, schoolCode) {
     body: { identifier, password, ...(schoolCode ? { schoolCode } : {}) },
   });
   assert.equal(result.status, 200, JSON.stringify(result.data));
-  return result.data.accessToken || result.data.token;
+  let token = result.data.accessToken || result.data.token;
+  if (
+    (result.data?.user?.mustChangePassword || result.data?.mustChangePassword) &&
+    String(password).length >= 8
+  ) {
+    const changed = await request("/auth/change-password", {
+      method: "POST",
+      token,
+      body: { newPassword: password },
+    });
+    assert.equal(changed.status, 200, JSON.stringify(changed.data));
+    token = changed.data.accessToken || changed.data.token || token;
+  }
+  return token;
 }
 
 async function main() {

@@ -85,8 +85,6 @@ import {
   entityCreateViaContactsOnly,
   type SchoolEntityKey,
 } from "../lib/entityModules";
-import { applyActiveGridsToStudent } from "../lib/fees";
-import { adaptLegacyStudents } from "../lib/studentDomain";
 import {
   getTeacherProvisioningOptions,
   syncSingleUserToTeachers,
@@ -844,7 +842,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       return;
     }
 
-    if (module.key === "paymentStatuses") {
+    if (String(module.key) === "paymentStatuses") {
       try {
         await persistFinanceMutation(
           () =>

@@ -33,6 +33,7 @@ import {
 } from "../../lib/quickPayment";
 import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWorkflow";
 import { financeApi } from "../../lib/financeApi";
+import { PaymentReceipt } from "./PaymentReceipt";
 
 interface QuickPaymentModalProps {
   open: boolean;
