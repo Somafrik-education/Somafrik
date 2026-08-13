@@ -13,6 +13,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Added
 
+- **LOT 2 — Élèves PostgreSQL** : inscription via `POST /api/classes/:classCode/students`, liste/fiche/modification via `GET/PATCH /api/students` ; `PUT /api/backoffice/state` refuse toute présence de `students` (`LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`, y compris PUT mixte et snapshot) avant toute mutation ; `state.students` devient une projection de lecture PostgreSQL.
 - **LOT 1 — Établissements PostgreSQL** : CRUD `/api/backoffice/establishments` persiste la table `schools` (`profile_payload` JSONB) ; `PUT /api/backoffice/state` refuse **toute présence** de `schools` (`LEGACY_SCHOOLS_STATE_WRITE_FORBIDDEN`, y compris payload mixte / snapshot) sans mutation partielle ; pays hors référentiel refusé (`COUNTRY_NOT_FOUND`) sans inventer `phone_code` / `currency` ; `state.schools` reste une projection de lecture.
 - Lot V2.1a : package `@somafrik/auth-v2` avec rôles canoniques, contrat immuable `AuthPrincipal` et évaluation fail-closed `can(principal, permission)` (sans JWT, session, HTTP ni alias legacy).
 - Ouverture du chantier de reconstruction contrôlée Somafrik V2 : structure `apps/` / `packages/` / `tests/v2/`, premier invariant tenant scope et garde-fou CI des frontières legacy.
@@ -22,6 +23,8 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Changed
 
+- Matrice S1.4 : `students` retiré de toutes les clés writables via PUT state ; Web, Mobile et BackOffice omettent la projection élèves des snapshots envoyés.
+- Le `saveBackOfficeState` PostgreSQL ne déclenche plus `syncStudentsDomainFromBackOffice` et ne persiste plus `students` dans `backoffice_state`.
 - Matrice S1.4 : `schools` retiré des clés writables Admin Pays / Super Admin sur PUT state (LOT 1).
 - Web `DataContext` : strip `schools` avant PUT, comme `auditLog`.
 - Mobile `saveBackOfficeState` et BackOffice `getBackOfficeStatePayload` : `schools` omis du PUT (toute présence est un 400 serveur).
@@ -29,6 +32,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Removed
 
+- Writers élèves legacy Web/Mobile/BackOffice et synchronisation JSON `students[]` → PostgreSQL déclenchée par PUT state.
 - Écriture snapshot `backoffice_state.schools` via PUT state et via `saveEstablishmentState` pour le CRUD establishments.
 
 ---

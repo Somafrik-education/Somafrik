@@ -312,8 +312,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     canMutateEntity(session, entity, "CREATE") &&
     !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
-  const canUpdate = canMutateEntity(session, entity, "UPDATE");
-  const canDelete = canMutateEntity(session, entity, "DELETE");
+  const canUpdate = !isStudentsEntity && canMutateEntity(session, entity, "UPDATE");
+  const canDelete = !isStudentsEntity && canMutateEntity(session, entity, "DELETE");
   const delegableFeatures = useMemo(
     () => schoolPilotageFeatures.filter((feature) => getDelegablePermissionsForFeature(session, feature).length > 0),
     [session?.permissions, session?.user.permissions]
@@ -471,26 +471,10 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     }
 
     if (entity === "assignments" && form.assignmentType === studentClassAssignmentType) {
-      const studentId = parseSelectId(form.studentId);
-      const className = form.className;
-      const student = studentsData.find((item) => matchesEntityId(item, studentId));
-      const classExists = classesData.some((schoolClass) => normalize(schoolClass.name) === normalize(className));
-
-      if (!studentId || !className || !student || !classExists) {
-        Alert.alert("Affectation impossible", "Choisissez un élève et une classe de votre établissement.");
-        return;
-      }
-
-      updateItem("students", {
-        ...student,
-        className,
-        history: [
-          ...((student as any).history ?? []),
-          `Affecté à la classe ${className} le ${formatDate(new Date())}`,
-        ],
-      });
-      setVisible(false);
-      Alert.alert("Affectation enregistrée", `${student.name} est maintenant dans la classe ${className}.`);
+      Alert.alert(
+        "Affectation élèves retirée",
+        "Utilisez Classes → Inscrire un élève. La fiche élève est désormais gérée uniquement par l'API PostgreSQL.",
+      );
       return;
     }
 

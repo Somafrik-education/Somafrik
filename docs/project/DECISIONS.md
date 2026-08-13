@@ -135,6 +135,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 
 ---
 
+## ADR-010 — Élèves : PostgreSQL source de vérité (LOT 2)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | Les élèves sont créés par inscription via `POST /api/classes/:classCode/students` et lus/modifiés via `GET/PATCH /api/students`. Toute présence de `students` dans `PUT /api/backoffice/state` est refusée avant merge. `GET state.students` reste une projection PostgreSQL read-only. |
+| **Contexte** | Les tables `students` / `enrollments` et les APIs fiche/inscription existaient déjà, mais le snapshot pouvait encore écrire `students[]` et déclencher une matérialisation JSON → PG. |
+| **Alternatives** | Conserver le dual-write jusqu'au LOT 8 ; tolérer silencieusement `students` dans les snapshots complets ; créer une seconde API élèves. |
+| **Impact** | Matrice S1.4 sans `students` ; writers Web/Mobile/BackOffice retirés ; side-effect `syncStudentsDomainFromBackOffice` retiré de `saveBackOfficeState` ; preuve `verify:students-legacy-cleanup`. |
+| **Statut** | Proposée |
+
+---
+
 ## Comment ajouter une décision
 
 1. Incrémenter `ADR-00N`

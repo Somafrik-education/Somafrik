@@ -43,6 +43,12 @@ const REPOSITORY_METHODS = Object.freeze([
   "listSchoolClasses",
   "createSchoolClass",
   "updateSchoolClass",
+  // Élèves métier (LOT 2 — PostgreSQL canonique)
+  "listClassStudents",
+  "listSchoolStudents",
+  "enrollStudentInClass",
+  "getSchoolStudentByCode",
+  "updateSchoolStudentByCode",
   "listEstablishments",
   "persistEstablishment",
 ]);

@@ -81,7 +81,36 @@ class FallbackRepository {
 
   async getDataset() {
     await this.init();
-    if (!shouldSeedDemoData()) {
+    const seeded = shouldSeedDemoData();
+    const schoolCodes = (
+      seeded ? this._managedSchools ?? seedData.platformSchools : this._managedSchools ?? []
+    )
+      .map((school) => String(school.code ?? school.schoolCode ?? "").trim())
+      .filter(Boolean);
+    const managedStudents = this._managedStudents?.length
+      ? (
+          await Promise.all(
+            [...new Set(schoolCodes)].map((schoolCode) =>
+              this.getClassStudentsRepository().listBySchoolCode(schoolCode),
+            ),
+          )
+        ).flat()
+      : [];
+    const studentsByCode = new Map();
+    for (const student of seeded ? seedData.students : []) {
+      const code = String(
+        student.studentCode ?? student.matricule ?? student.publicId ?? student.id ?? "",
+      );
+      studentsByCode.set(code, student);
+    }
+    for (const student of managedStudents) {
+      const code = String(
+        student.studentCode ?? student.matricule ?? student.publicId ?? student.id ?? "",
+      );
+      studentsByCode.set(code, student);
+    }
+    const studentProjection = [...studentsByCode.values()];
+    if (!seeded) {
       return clone({
         school: null,
         platformSchools: this._managedSchools ?? [],
@@ -91,7 +120,7 @@ class FallbackRepository {
         teachers: [],
         classes: [],
         courses: [],
-        students: [],
+        students: studentProjection,
         notes: [],
         presences: [],
         payments: [],
@@ -115,7 +144,7 @@ class FallbackRepository {
       teachers: seedData.teachers,
       classes: seedData.classes,
       courses: seedData.courses,
-      students: seedData.students,
+      students: studentProjection,
       notes: this.notes,
       presences: this.presences,
       payments: seedData.payments,
@@ -198,7 +227,11 @@ class FallbackRepository {
   }
 
   async saveBackOfficeState(payload) {
-    this.backOfficeState = clone(payload ?? {});
+    const durable = clone(payload ?? {});
+    // LOT 2 — state.students est une projection de lecture, jamais une source
+    // de persistance, y compris dans le dépôt mémoire.
+    delete durable.students;
+    this.backOfficeState = durable;
     if (Array.isArray(payload?.notes)) {
       this.notes = clone(payload.notes);
     }

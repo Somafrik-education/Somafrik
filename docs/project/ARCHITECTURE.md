@@ -173,7 +173,7 @@ flowchart TD
 
 - **PostgreSQL** obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`)
 - Tables canoniques : `schools` (LOT 1, `profile_payload`), `classes`, `subjects`, `teachers`, `students`, `evaluations`, `grades`, `attendance`, audit logs, …
-- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine (`PUT state.schools` retiré)
+- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine (`PUT state.schools` et `PUT state.students` retirés)
 - Préprod : Render Postgres et/ou Supabase (`DATABASE_URL`)
 
 ---
