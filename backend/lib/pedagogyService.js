@@ -397,7 +397,7 @@ async function updateEvaluation(store, evaluationId, patch, principal, auditMeta
         id: evaluationId,
         schoolCode: tenantSchoolCodeFromPrincipal(principal),
       };
-      const saved = await tx.upsertEvaluation(payload, principal);
+      const saved = await tx.upsertEvaluation(payload, principal, { requireExisting: true });
       await writePedagogyAudit(tx, principal, auditMeta, {
         action: "update_evaluation",
         entityType: "evaluation",

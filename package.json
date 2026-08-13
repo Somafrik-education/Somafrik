@@ -41,7 +41,7 @@
     "verify:teachers-domain-constraints-boot": "node --test backend/lib/teachersDomainConstraintsBoot.test.js && node backend/lib/teachersUniqueness.test.js",
     "verify:finance-management": "node backend/lib/financeRepository.test.js && node backend/lib/financeRepository.pg.test.js && node backend/scripts/verify-finance-management.js",
     "verify:finance-legacy-cleanup": "node --test backend/lib/legacyFinanceStateWrite.test.js && node backend/scripts/verify-finance-legacy-cleanup.js",
-    "verify:pedagogy-management": "node --test backend/lib/legacyPedagogyStateWrite.test.js backend/lib/pedagogyReferences.test.js && node backend/lib/pedagogyRepository.test.js && node backend/lib/pedagogyRepository.pg.test.js && node backend/scripts/verify-pedagogy-management.js",
+    "verify:pedagogy-management": "node --test backend/lib/legacyPedagogyStateWrite.test.js backend/lib/pedagogyReferences.test.js && node backend/lib/pedagogyRepository.test.js && node backend/lib/pedagogyRepository.pg.test.js && node backend/lib/pedagogyMigration.pg.test.js && node backend/scripts/verify-pedagogy-management.js",
     "verify:pedagogy-legacy-cleanup": "node --test backend/lib/legacyPedagogyStateWrite.test.js && node backend/scripts/verify-pedagogy-legacy-cleanup.js",
     "inventory:teachers-school-user-duplicates": "node backend/scripts/inventory-teachers-school-user-duplicates.js",
     "verify:pre-e1-hotfix-02": "node --test backend/lib/legacyPedagogyStaffStateWrite.test.js backend/lib/teacherAssignmentsManagement.test.js && node backend/lib/evaluationAttachment.test.js",

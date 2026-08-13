@@ -67,6 +67,14 @@ async function preparePedagogyHttpDatabase(databaseUrl) {
        VALUES ($1, 'BI-2026-0002', 'Lycée B', 'active')`,
       [country.rows[0].id],
     );
+    const schoolBId = (
+      await pool.query(`SELECT id FROM schools WHERE school_code = 'BI-2026-0002'`)
+    ).rows[0].id;
+    await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'BI-2026-0002-STU-01', 'Jean', 'BI', 'active')`,
+      [schoolBId],
+    );
     const year = await pool.query(
       `INSERT INTO academic_years (school_id, name, status)
        VALUES ($1, '2025-2026', 'open') RETURNING id`,
@@ -287,10 +295,17 @@ async function runPostgresHttpGuards(databaseUrl) {
     const adminToken = await login(PG_PORT, "admin", "1234", "CD-2026-0001");
     const teacherToken = await login(PG_PORT, "ENS-0001", "1234", "CD-2026-0001");
     const stamp = Date.now();
+    const schoolBId = (
+      await pool.query(`SELECT id FROM schools WHERE school_code = 'BI-2026-0002'`)
+    ).rows[0].id;
 
     const schoolsBefore = await pool.query(`SELECT school_code FROM schools ORDER BY school_code`);
     assert.equal(schoolsBefore.rowCount, 2);
-    const subjectsBefore = await pool.query(`SELECT count(*)::int AS count FROM subjects`);
+    const subjectsBefore = await pool.query(
+      `SELECT count(*)::int AS count FROM subjects s
+       JOIN schools sc ON sc.id = s.school_id
+       WHERE sc.school_code = 'CD-2026-0001'`,
+    );
     const subjectCountBefore = subjectsBefore.rows[0].count;
 
     const unknownClass = await request(PG_PORT, "/courses", {
@@ -421,6 +436,62 @@ async function runPostgresHttpGuards(databaseUrl) {
     );
     assert.equal(evalInBi.rows[0].count, 0, "aucune évaluation dans l'établissement BI");
 
+    const biYear = await pool.query(
+      `INSERT INTO academic_years (school_id, name, status)
+       VALUES ($1, '2025-2026', 'open') RETURNING id`,
+      [schoolBId],
+    );
+    const biClass = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-BI-HTTP', '6ème BI', 'active') RETURNING id`,
+      [schoolBId, biYear.rows[0].id],
+    );
+    const biSubject = await pool.query(
+      `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
+       VALUES ($1, 'SUB-BI-HTTP', 'Mathématiques', 1, 'active') RETURNING id`,
+      [schoolBId],
+    );
+    const biTerm = await pool.query(
+      `INSERT INTO terms (academic_year_id, name, status)
+       VALUES ($1, 'Trimestre 1', 'open') RETURNING id`,
+      [biYear.rows[0].id],
+    );
+    const biEvaluation = await pool.query(
+      `INSERT INTO evaluations (
+         school_id, class_id, subject_id, term_id, title, evaluation_type,
+         evaluation_date, max_score, coefficient, status, active, legacy_json_id
+       ) VALUES ($1,$2,$3,$4,'Éval BI HTTP','test','2026-01-01',20,1,'draft',true,$5)
+       RETURNING id, legacy_json_id, title`,
+      [schoolBId, biClass.rows[0].id, biSubject.rows[0].id, biTerm.rows[0].id, `EVAL-BI-HTTP-${stamp}`],
+    );
+
+    const patchForeignUuid = await request(PG_PORT, `/evaluations/${biEvaluation.rows[0].id}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { title: "Compromis UUID" },
+    });
+    assert.equal(patchForeignUuid.status, 404, JSON.stringify(patchForeignUuid.data));
+
+    const postForeignLegacy = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        id: biEvaluation.rows[0].legacy_json_id,
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Compromis legacy",
+        teacherId: "ENS-0001",
+        scale: 20,
+      },
+    });
+    assert.equal(postForeignLegacy.status, 404, JSON.stringify(postForeignLegacy.data));
+
+    const biEvalUnchanged = await pool.query(`SELECT title FROM evaluations WHERE id = $1`, [
+      biEvaluation.rows[0].id,
+    ]);
+    assert.equal(biEvalUnchanged.rows[0].title, "Éval BI HTTP");
+
     const forgedNote = await request(PG_PORT, "/notes", {
       method: "POST",
       token: adminToken,
@@ -472,6 +543,37 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.equal(presenceTenant.rowCount, 1);
     assert.equal(presenceTenant.rows[0].school_code, "CD-2026-0001");
 
+    const biStudentPresence = await request(PG_PORT, "/presences", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        items: [
+          {
+            studentId: "BI-2026-0002-STU-01",
+            className: "6ème A",
+            date: "2026-09-11",
+            status: "present",
+            teacherId: "ENS-0001",
+          },
+        ],
+      },
+    });
+    assert.equal(biStudentPresence.status, 404, JSON.stringify(biStudentPresence.data));
+    const biPresenceCount = await pool.query(
+      `SELECT count(*)::int AS count
+       FROM attendance a
+       JOIN schools s ON s.id = a.school_id
+       WHERE s.school_code = 'BI-2026-0002'`,
+    );
+    assert.equal(biPresenceCount.rows[0].count, 0, "zéro présence BI via admin CD");
+    const biAuditCount = await pool.query(
+      `SELECT count(*)::int AS count
+       FROM audit_logs al
+       JOIN schools s ON s.id = al.school_id
+       WHERE s.school_code = 'BI-2026-0002'`,
+    );
+    assert.equal(biAuditCount.rows[0].count, 0, "zéro audit BI");
+
     const schedulePatchForbidden = await request(PG_PORT, `/course-schedules/${validSchedule.data.id}`, {
       method: "PATCH",
       token: adminToken,
@@ -493,7 +595,11 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.equal(slotAfterFailedPatch.rows[0].subject_name, "Mathématiques");
     assert.ok(slotAfterFailedPatch.rows[0].class_id, "class_id canonique conservé");
 
-    const subjectsAfter = await pool.query(`SELECT count(*)::int AS count FROM subjects`);
+    const subjectsAfter = await pool.query(
+      `SELECT count(*)::int AS count FROM subjects s
+       JOIN schools sc ON sc.id = s.school_id
+       WHERE sc.school_code = 'CD-2026-0001'`,
+    );
     assert.equal(subjectsAfter.rows[0].count, subjectCountBefore, "aucune matière inventée");
 
     console.log("OK http-pg: validation références + affectation + projection");

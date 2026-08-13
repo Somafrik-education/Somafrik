@@ -56,3 +56,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_course_schedule_slots_school_legacy
 
 CREATE INDEX IF NOT EXISTS idx_course_schedule_slots_school_class
   ON course_schedule_slots (school_id, class_name, starts_at);
+
+DO $$
+BEGIN
+  IF to_regclass('public.course_schedule_slots') IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM course_schedule_slots WHERE class_id IS NULL) THEN
+      RAISE EXCEPTION 'course_schedule_slots contains NULL class_id rows; backfill required before NOT NULL enforcement';
+    END IF;
+    ALTER TABLE course_schedule_slots ALTER COLUMN class_id SET NOT NULL;
+  END IF;
+END $$;

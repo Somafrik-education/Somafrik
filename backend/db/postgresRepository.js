@@ -309,7 +309,9 @@ class PostgresRepository {
         console.warn(`[D3.6b] Anomalie note sans evaluation_id: ${note.id ?? note.studentId ?? "?"}`);
         continue;
       }
-      const evaluation = await this.resolveEvaluationRow(evaluationId, note.schoolCode);
+      const evaluation = await this.resolveEvaluationRow(evaluationId, note.schoolCode, {
+        allowGlobalLegacyFallback: true,
+      });
       if (!evaluation) {
         anomalyCount += 1;
         console.warn(
@@ -1550,24 +1552,52 @@ class PostgresRepository {
     };
   }
 
-  async resolveEvaluationRow(evaluationKey, schoolCode) {
+  async resolveEvaluationRow(evaluationKey, schoolCode, options = {}) {
     const key = String(evaluationKey ?? "").trim();
     if (!key) return null;
-    if (isUuid(key)) {
-      const byId = await this.one("SELECT * FROM evaluations WHERE id = $1", [key]);
-      if (byId) return byId;
-    }
-    if (schoolCode && schoolCode !== "*") {
+
+    const scoped = Boolean(schoolCode && schoolCode !== "*");
+    let schoolId = null;
+    if (scoped) {
       const school = await this.getSchoolByCode(schoolCode);
-      if (school) {
-        const byLegacySchool = await this.one(
-          `SELECT * FROM evaluations WHERE school_id = $1 AND legacy_json_id = $2 LIMIT 1`,
-          [school.id, key],
-        );
-        if (byLegacySchool) return byLegacySchool;
-      }
+      if (!school) return null;
+      schoolId = school.id;
     }
-    return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
+
+    if (isUuid(key)) {
+      if (schoolId) {
+        return this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id = $2", [key, schoolId]);
+      }
+      return this.one("SELECT * FROM evaluations WHERE id = $1", [key]);
+    }
+
+    if (schoolId) {
+      return this.one(
+        `SELECT * FROM evaluations WHERE school_id = $1 AND legacy_json_id = $2 LIMIT 1`,
+        [schoolId, key],
+      );
+    }
+
+    if (options.allowGlobalLegacyFallback === true) {
+      return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
+    }
+
+    return null;
+  }
+
+  async findForeignEvaluationRow(evaluationKey, schoolId) {
+    const key = String(evaluationKey ?? "").trim();
+    if (!key || !schoolId) return null;
+    if (isUuid(key)) {
+      return this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id <> $2 LIMIT 1", [
+        key,
+        schoolId,
+      ]);
+    }
+    return this.one(
+      `SELECT * FROM evaluations WHERE legacy_json_id = $1 AND school_id <> $2 LIMIT 1`,
+      [key, schoolId],
+    );
   }
 
   async findSubjectByNormalizedName(schoolId, subjectName) {
@@ -1681,19 +1711,68 @@ class PostgresRepository {
     const legacyId = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
     const context = options.context ?? {};
     const ensure = options.ensure !== false;
+    const scopedSchoolCode = asTrimmed(evaluation.schoolCode).toUpperCase();
+    const schoolRecord = scopedSchoolCode ? await this.getSchoolByCode(scopedSchoolCode) : null;
+    if (principal && !schoolRecord) {
+      throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
 
-    const {
-      school,
-      schoolClass,
-      subject,
-      academicYear,
-      term,
-      teacher,
-      periodName,
-      schoolCode,
-    } = await resolveEvaluationAttachments(
-      evaluation,
-      {
+    let existing = null;
+    if (legacyId && scopedSchoolCode) {
+      existing = await this.resolveEvaluationRow(legacyId, scopedSchoolCode);
+      if (!existing && principal && schoolRecord) {
+        const foreign = await this.findForeignEvaluationRow(legacyId, schoolRecord.id);
+        if (foreign) {
+          throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+        }
+      }
+    }
+    if (!existing && isUuid(evaluation.id) && schoolRecord) {
+      existing = await this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id = $2", [
+        evaluation.id,
+        schoolRecord.id,
+      ]);
+      if (!existing && principal) {
+        const foreign = await this.findForeignEvaluationRow(evaluation.id, schoolRecord.id);
+        if (foreign) {
+          throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+        }
+      }
+    }
+
+    if (options.requireExisting && !existing) {
+      throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+    }
+
+    if (existing && principal && schoolRecord && String(existing.school_id) !== String(schoolRecord.id)) {
+      throw createPedagogyError(403, "Accès refusé : évaluation hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
+
+    let attachmentEvaluation = { ...evaluation };
+    if (existing) {
+      const refs = await this.one(
+        `SELECT c.name AS class_name, sub.name AS subject_name, tm.name AS term_name, t.teacher_code
+         FROM evaluations e
+         JOIN classes c ON c.id = e.class_id
+         JOIN subjects sub ON sub.id = e.subject_id
+         JOIN terms tm ON tm.id = e.term_id
+         LEFT JOIN teachers t ON t.id = e.teacher_id
+         WHERE e.id = $1`,
+        [existing.id],
+      );
+      attachmentEvaluation = {
+        ...attachmentEvaluation,
+        className: attachmentEvaluation.className ?? attachmentEvaluation.class_name ?? refs?.class_name,
+        subject:
+          attachmentEvaluation.subject ??
+          attachmentEvaluation.subjectName ??
+          refs?.subject_name,
+        period: attachmentEvaluation.period ?? refs?.term_name,
+        teacherId: attachmentEvaluation.teacherId ?? refs?.teacher_code,
+      };
+    }
+
+    const attachmentDeps = {
         getSchoolByCode: (code) => this.getSchoolByCode(code),
         ensureSchool: ensure ? (code) => this.ensureSchoolFromBackOfficeRecord(code) : undefined,
         findClassById: (schoolId, id) =>
@@ -1722,7 +1801,9 @@ class PostgresRepository {
           ),
         findSubjectByName: (schoolId, name) => this.findSubjectByNormalizedName(schoolId, name),
         ensureSubject: ensure ? (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context) : undefined,
-        getCurrentAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
+        getCurrentAcademicYear: ensure
+          ? (schoolId) => this.getCurrentAcademicYear(schoolId)
+          : (schoolId) => this.findOpenAcademicYear(schoolId),
         ensureAcademicYear: ensure ? (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId) : undefined,
         findTermByName: (academicYearId, name) =>
           this.one(
@@ -1800,8 +1881,18 @@ class PostgresRepository {
               );
             }
           : undefined,
-      },
-      {
+    };
+
+    const {
+      school,
+      schoolClass,
+      subject,
+      academicYear,
+      term,
+      teacher,
+      periodName,
+      schoolCode,
+    } = await resolveEvaluationAttachments(attachmentEvaluation, attachmentDeps, {
         ensure,
         context,
         requireTeacher: options.requireTeacher === true,
@@ -1825,14 +1916,6 @@ class PostgresRepository {
     const title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
     const evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
     const evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
-
-    let existing = null;
-    if (legacyId) {
-      existing = await this.resolveEvaluationRow(legacyId, schoolCode);
-    }
-    if (!existing && isUuid(evaluation.id)) {
-      existing = await this.one("SELECT * FROM evaluations WHERE id = $1", [evaluation.id]);
-    }
 
     if (existing) {
       await this.query(
@@ -2043,6 +2126,17 @@ class PostgresRepository {
     }
 
     return { row: null, backOfficeStudent };
+  }
+
+  async findOpenAcademicYear(schoolId) {
+    return this.one(
+      `SELECT *
+       FROM academic_years
+       WHERE school_id = $1 AND status IN ('active', 'open')
+       ORDER BY is_current DESC, created_at DESC
+       LIMIT 1`,
+      [schoolId],
+    );
   }
 
   async getCurrentAcademicYear(schoolId) {
@@ -2784,21 +2878,37 @@ class PostgresRepository {
     };
   }
 
-  async resolveStudentForAttendance(payload, principal = {}) {
+  async assertPrincipalStudentTenant(principal, student) {
+    const schoolCode = String(principal?.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (!schoolCode || schoolCode === "*") return;
+    const school = await this.getSchoolByCode(schoolCode);
+    if (!school || String(student?.school_id) !== String(school.id)) {
+      const error = new Error("Accès refusé : élève hors périmètre établissement.");
+      error.statusCode = 403;
+      error.code = "TENANT_MISMATCH";
+      throw error;
+    }
+  }
+
+  async resolveStudentForAttendance(payload, principal = {}, options = {}) {
     const schoolCode = String(payload.schoolCode ?? principal.schoolCode ?? "").trim().toUpperCase();
+    const tenantScoped = Boolean(schoolCode && schoolCode !== "*");
+    const pedagogyStrict = options.pedagogyStrict === true || tenantScoped;
     const className = String(payload.className ?? "").trim();
 
-    if (schoolCode && schoolCode !== "*") {
+    if (tenantScoped && !options.skipSchoolEnsure) {
       await this.ensureSchoolFromBackOfficeRecord(schoolCode);
     }
 
     let { row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, schoolCode);
 
-    if (!student && !backOfficeStudent) {
+    if (!student && !backOfficeStudent && !pedagogyStrict) {
       ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, ""));
     }
 
-    if (!student && backOfficeStudent) {
+    if (!student && backOfficeStudent && !pedagogyStrict) {
       const materialized = await this.materializeBackOfficeStudent(backOfficeStudent);
       if (materialized?.studentId) {
         ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(
@@ -2810,7 +2920,17 @@ class PostgresRepository {
 
     if (!student) return null;
 
+    if (tenantScoped) {
+      const tenantSchool = await this.getSchoolByCode(schoolCode);
+      if (!tenantSchool || String(student.school_id) !== String(tenantSchool.id)) {
+        return null;
+      }
+    }
+
     if (!student.class_id) {
+      if (pedagogyStrict) {
+        return null;
+      }
       const targetClassName =
         className ||
         String(backOfficeStudent?.className ?? "").trim() ||
@@ -3263,12 +3383,14 @@ class PostgresRepository {
       throw error;
     }
 
-    const student = await this.resolveStudentForAttendance(payload, principal);
+    const student = await this.resolveStudentForAttendance(payload, principal, { pedagogyStrict: true });
     if (!student || !student.class_id) {
       const error = new Error("Élève ou classe introuvable pour l'appel");
       error.statusCode = 404;
       throw error;
     }
+
+    await this.assertPrincipalStudentTenant(principal, student);
 
     if (!(await this.teacherCanAccessStudentClass(principal, student))) {
       const error = new Error("Accès refusé: élève hors classe affectée.");

@@ -475,6 +475,160 @@ async function main() {
     const schoolsAfterEvalForge = await pool.query(`SELECT count(*)::int AS count FROM schools`);
     assert.equal(schoolsAfterEvalForge.rows[0].count, schoolCountBefore, "schoolCode client ignoré");
 
+    const biYear = await pool.query(
+      `INSERT INTO academic_years (school_id, name, status)
+       VALUES ($1, '2025-2026', 'open') RETURNING id`,
+      [fixture.schoolB],
+    );
+    const biClass = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-BI', '6ème BI', 'active') RETURNING id`,
+      [fixture.schoolB, biYear.rows[0].id],
+    );
+    const biSubject = await pool.query(
+      `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
+       VALUES ($1, 'SUB-BI-MATH', 'Mathématiques', 1, 'active') RETURNING id`,
+      [fixture.schoolB],
+    );
+    const biTerm = await pool.query(
+      `INSERT INTO terms (academic_year_id, name, status)
+       VALUES ($1, 'Trimestre 1', 'open') RETURNING id`,
+      [biYear.rows[0].id],
+    );
+    const biEvaluation = await pool.query(
+      `INSERT INTO evaluations (
+         school_id, class_id, subject_id, term_id, title, evaluation_type,
+         evaluation_date, max_score, coefficient, status, active, legacy_json_id
+       ) VALUES ($1,$2,$3,$4,'Éval BI','test','2026-01-01',20,1,'draft',true,'EVAL-BI-FOREIGN')
+       RETURNING id, legacy_json_id, title`,
+      [fixture.schoolB, biClass.rows[0].id, biSubject.rows[0].id, biTerm.rows[0].id],
+    );
+
+    await assert.rejects(
+      () =>
+        store.updateEvaluation(
+          biEvaluation.rows[0].id,
+          { title: "Compromis UUID" },
+          admin,
+          auditMeta,
+        ),
+      (error) =>
+        error.code === PEDAGOGY_ERROR.EVALUATION_NOT_FOUND || error.statusCode === 404,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createEvaluation(
+          {
+            id: biEvaluation.rows[0].legacy_json_id,
+            className: "6ème A",
+            subject: "Mathématiques",
+            period: "Trimestre 1",
+            title: "Compromis legacy",
+            teacherId: "ENS-PG-001",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) =>
+        error.code === PEDAGOGY_ERROR.EVALUATION_NOT_FOUND || error.statusCode === 404,
+    );
+
+    const biEvalAfter = await pool.query(`SELECT title FROM evaluations WHERE id = $1`, [
+      biEvaluation.rows[0].id,
+    ]);
+    assert.equal(biEvalAfter.rows[0].title, "Éval BI", "évaluation BI inchangée");
+
+    const auditBiEval = await pool.query(
+      `SELECT count(*)::int AS count FROM audit_logs WHERE entity_type = 'evaluation' AND entity_id = $1`,
+      [String(biEvaluation.rows[0].id)],
+    );
+    assert.equal(auditBiEval.rows[0].count, 0, "aucun audit sur évaluation BI étrangère");
+
+    await assert.rejects(
+      () =>
+        store.upsertSchoolAttendanceBatch(
+          {
+            items: [
+              {
+                studentId: "BI-2026-0001-STU-01",
+                className: "6ème A",
+                date: "2026-09-15",
+                status: "present",
+                teacherId: "ENS-PG-001",
+              },
+            ],
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 404,
+    );
+    const biAttendance = await pool.query(
+      `SELECT count(*)::int AS count
+       FROM attendance a
+       JOIN schools s ON s.id = a.school_id
+       WHERE s.school_code = 'BI-2026-0001'`,
+    );
+    assert.equal(biAttendance.rows[0].count, 0, "aucune présence BI via tenant CD");
+
+    const noYearSchool = await pool.query(
+      `INSERT INTO schools (country_id, school_code, name, status)
+       SELECT country_id, 'NO-YEAR-2026', 'Sans année ouverte', 'active'
+       FROM schools WHERE school_code = 'CD-2026-0001'
+       RETURNING id`,
+    );
+    const closedOnlyYear = await pool.query(
+      `INSERT INTO academic_years (school_id, name, status)
+       VALUES ($1, '2023-2024', 'closed') RETURNING id`,
+      [noYearSchool.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-NO-YEAR', 'Classe fermée', 'active')`,
+      [noYearSchool.rows[0].id, closedOnlyYear.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
+       VALUES ($1, 'SUB-NO-YEAR', 'Mathématiques', 1, 'active')`,
+      [noYearSchool.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO terms (academic_year_id, name, status)
+       VALUES ($1, 'Trimestre 1', 'closed')`,
+      [closedOnlyYear.rows[0].id],
+    );
+    const yearsForNoYearBefore = await pool.query(
+      `SELECT count(*)::int AS count FROM academic_years WHERE school_id = $1`,
+      [noYearSchool.rows[0].id],
+    );
+    assert.equal(yearsForNoYearBefore.rows[0].count, 1, "fixture : uniquement année fermée");
+    await assert.rejects(
+      () =>
+        store.createEvaluation(
+          {
+            id: "EVAL-NO-YEAR",
+            className: "Classe fermée",
+            subject: "Mathématiques",
+            period: "Trimestre 1",
+            title: "Sans année ouverte",
+            teacherId: "ENS-PG-001",
+          },
+          { role: "Admin School", schoolCode: "NO-YEAR-2026", sub: fixture.adminUser },
+          auditMeta,
+        ),
+      (error) => error.statusCode === 400 || error.statusCode === 404,
+    );
+    const yearsForNoYearAfter = await pool.query(
+      `SELECT count(*)::int AS count FROM academic_years WHERE school_id = $1`,
+      [noYearSchool.rows[0].id],
+    );
+    assert.equal(
+      yearsForNoYearAfter.rows[0].count,
+      yearsForNoYearBefore.rows[0].count,
+      "ensure:false ne crée pas d'année scolaire",
+    );
+
     await assert.rejects(
       () =>
         store.upsertSchoolGrade(

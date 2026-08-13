@@ -334,8 +334,12 @@ function createPedagogyPgStore(repo) {
         const row = await one(sql, params);
         return row ? mapScheduleRow(row) : null;
       },
-      async upsertEvaluation(payload, principal) {
-        return scopedRepo.upsertEvaluationFromLegacy(payload, { principal, ensure: false });
+      async upsertEvaluation(payload, principal, options = {}) {
+        return scopedRepo.upsertEvaluationFromLegacy(payload, {
+          principal,
+          ensure: false,
+          ...options,
+        });
       },
       async upsertGrade(payload, principal) {
         return scopedRepo.upsertGrade(payload, principal);
