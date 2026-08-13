@@ -5,6 +5,7 @@ const {
   asTrimmed,
   createPedagogyError,
   ignoreClientScope,
+  tenantSchoolCodeFromPrincipal,
 } = require("./pedagogyManagement");
 const {
   resolveCanonicalClass,
@@ -270,10 +271,18 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
     if (patch.periodName ?? existing.periodName) {
       await resolveCanonicalPeriod(tx, academicYear.id, patch.periodName ?? existing.periodName);
     }
-    let teacherId;
+
+    const classOrSubjectChanged =
+      nextClassName !== asTrimmed(existing.className) ||
+      nextSubjectName !== asTrimmed(existing.subject);
+
+    let finalTeacherId = null;
+    let profilePatch = null;
     if (patch.teacherId !== undefined) {
-      if (!patch.teacherId) teacherId = null;
-      else {
+      if (!patch.teacherId) {
+        finalTeacherId = null;
+        profilePatch = { teacherId: "", teacherName: "" };
+      } else {
         const resolved = await resolveTeacherWithActiveAssignment(tx, {
           schoolId: school.id,
           teacherKey: patch.teacherId,
@@ -281,9 +290,29 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
           subjectId: subject.id,
           academicYearId: academicYear.id,
         });
-        teacherId = resolved.teacherId;
+        finalTeacherId = resolved.teacherId;
+        profilePatch = { teacherId: patch.teacherId };
+      }
+    } else if (existing.teacherDbId) {
+      finalTeacherId = existing.teacherDbId;
+      if (classOrSubjectChanged) {
+        const teacher =
+          (await tx.findTeacher(school.id, existing.teacherId)) ??
+          (await tx.findTeacher(school.id, existing.teacherDbId));
+        const teacherKey = asTrimmed(teacher?.teacher_code ?? existing.teacherId);
+        if (teacherKey) {
+          const resolved = await resolveTeacherWithActiveAssignment(tx, {
+            schoolId: school.id,
+            teacherKey,
+            classId: klass.id,
+            subjectId: subject.id,
+            academicYearId: academicYear.id,
+          });
+          finalTeacherId = resolved.teacherId;
+        }
       }
     }
+
     const nextStart = times?.startsAt ?? existing.start;
     const nextEnd = times?.endsAt ?? existing.end;
     const conflicts = await tx.listScheduleConflicts(
@@ -292,7 +321,7 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
         startsAt: nextStart,
         endsAt: nextEnd,
         className: nextClassName,
-        teacherId: teacherId ?? null,
+        teacherId: finalTeacherId,
       },
       existing.dbId ?? existing.id,
     );
@@ -300,12 +329,14 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
       throw createPedagogyError(409, "Conflit d'emploi du temps.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT);
     }
     const saved = await tx.updateScheduleSlot(existing.dbId ?? existing.id, {
+      classId: klass.id,
       className: nextClassName,
       subjectName: subject.name,
-      teacherId,
-      startsAt: times?.startsAt,
-      endsAt: times?.endsAt,
-      room: patch.room,
+      teacherId: finalTeacherId,
+      startsAt: nextStart,
+      endsAt: nextEnd,
+      room: patch.room !== undefined ? patch.room : existing.room,
+      profile: profilePatch,
     });
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "update_course_schedule",
@@ -339,7 +370,7 @@ async function deleteCourseSchedule(store, scheduleId, principal, auditMeta) {
 async function createEvaluation(store, rawPayload, principal, auditMeta) {
   const payload = {
     ...ignoreClientScope(rawPayload),
-    schoolCode: asTrimmed(rawPayload.schoolCode ?? principal?.schoolCode),
+    schoolCode: tenantSchoolCodeFromPrincipal(principal),
   };
   try {
     return await store.withTransaction(async (tx) => {
@@ -364,7 +395,7 @@ async function updateEvaluation(store, evaluationId, patch, principal, auditMeta
       const payload = {
         ...ignoreClientScope(patch),
         id: evaluationId,
-        schoolCode: asTrimmed(patch.schoolCode ?? principal?.schoolCode),
+        schoolCode: tenantSchoolCodeFromPrincipal(principal),
       };
       const saved = await tx.upsertEvaluation(payload, principal);
       await writePedagogyAudit(tx, principal, auditMeta, {
@@ -383,8 +414,8 @@ async function updateEvaluation(store, evaluationId, patch, principal, auditMeta
 
 async function upsertGrade(store, payload, principal, auditMeta) {
   const scopedPayload = {
-    ...payload,
-    schoolCode: asTrimmed(payload.schoolCode ?? principal?.schoolCode),
+    ...ignoreClientScope(payload),
+    schoolCode: tenantSchoolCodeFromPrincipal(principal),
   };
   try {
     return await store.withTransaction(async (tx) => {
@@ -404,9 +435,12 @@ async function upsertGrade(store, payload, principal, auditMeta) {
 }
 
 async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
+  const tenantCode = tenantSchoolCodeFromPrincipal(principal);
   try {
     return await store.withTransaction(async (tx) => {
-      const items = Array.isArray(payload.items) ? payload.items : [];
+      const items = Array.isArray(payload.items)
+        ? payload.items.map((item) => ({ ...ignoreClientScope(item), schoolCode: tenantCode }))
+        : [];
       const saved = [];
       for (const item of items) {
         saved.push(await tx.upsertAttendance(item, principal));

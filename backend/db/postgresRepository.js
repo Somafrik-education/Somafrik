@@ -1289,11 +1289,13 @@ class PostgresRepository {
     const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
       evaluation.school_id,
     ]);
-    const lookupSchoolCode = String(
-      payload.schoolCode ?? evaluationSchool?.school_code ?? "",
-    )
+    const principalSchool = String(principal?.schoolCode ?? "")
       .trim()
       .toUpperCase();
+    const lookupSchoolCode =
+      principalSchool && principalSchool !== "*"
+        ? principalSchool
+        : String(evaluationSchool?.school_code ?? "").trim().toUpperCase();
     const student = await this.resolveStudentForGrade(payload.studentId, lookupSchoolCode);
     if (!student) {
       const error = new Error("Eleve introuvable");
@@ -1665,9 +1667,20 @@ class PostgresRepository {
       validateEvaluationContract,
     } = require("../lib/gradesCanonical");
     const { resolveEvaluationAttachments } = require("../lib/evaluationAttachment");
+    const { asTrimmed, createPedagogyError, PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+
+    const principal = options.principal;
+    if (principal) {
+      const tenantCode = asTrimmed(principal.schoolCode).toUpperCase();
+      if (!tenantCode || tenantCode === "*") {
+        throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+      }
+      evaluation = { ...evaluation, schoolCode: tenantCode };
+    }
 
     const legacyId = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
     const context = options.context ?? {};
+    const ensure = options.ensure !== false;
 
     const {
       school,
@@ -1682,19 +1695,21 @@ class PostgresRepository {
       evaluation,
       {
         getSchoolByCode: (code) => this.getSchoolByCode(code),
-        ensureSchool: (code) => this.ensureSchoolFromBackOfficeRecord(code),
+        ensureSchool: ensure ? (code) => this.ensureSchoolFromBackOfficeRecord(code) : undefined,
         findClassById: (schoolId, id) =>
           this.one(`SELECT * FROM classes WHERE school_id = $1 AND (id::text = $2 OR class_code = $2) LIMIT 1`, [
             schoolId,
             id,
           ]),
         findClassByName: (schoolId, name) => this.findClassByNormalizedName(schoolId, name),
-        ensureClass: async (schoolId, name) => {
-          const classId = await this.ensureClassForSchool(schoolId, name);
-          return classId
-            ? this.one(`SELECT * FROM classes WHERE id = $1`, [classId])
-            : null;
-        },
+        ensureClass: ensure
+          ? async (schoolId, name) => {
+              const classId = await this.ensureClassForSchool(schoolId, name);
+              return classId
+                ? this.one(`SELECT * FROM classes WHERE id = $1`, [classId])
+                : null;
+            }
+          : undefined,
         findSubjectById: (schoolId, id) =>
           this.one(
             `SELECT * FROM subjects WHERE school_id = $1 AND (id::text = $2 OR subject_code = $2) LIMIT 1`,
@@ -1706,79 +1721,88 @@ class PostgresRepository {
             [schoolId, code],
           ),
         findSubjectByName: (schoolId, name) => this.findSubjectByNormalizedName(schoolId, name),
-        ensureSubject: (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context),
+        ensureSubject: ensure ? (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context) : undefined,
         getCurrentAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
-        ensureAcademicYear: (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId),
-        ensureTerm: async (academicYearId, name) =>
-          (await this.one(
-            `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+        ensureAcademicYear: ensure ? (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId) : undefined,
+        findTermByName: (academicYearId, name) =>
+          this.one(
+            `SELECT * FROM terms WHERE academic_year_id = $1 AND lower(btrim(name)) = lower(btrim($2)) LIMIT 1`,
             [academicYearId, name],
-          )) ??
-          (await this.one(
-            `INSERT INTO terms (academic_year_id, name, status)
-             VALUES ($1, $2, 'open')
-             ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
-             RETURNING *`,
-            [academicYearId, name],
-          )),
+          ),
+        ensureTerm: ensure
+          ? async (academicYearId, name) =>
+              (await this.one(
+                `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+                [academicYearId, name],
+              )) ??
+              (await this.one(
+                `INSERT INTO terms (academic_year_id, name, status)
+                 VALUES ($1, $2, 'open')
+                 ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
+                 RETURNING *`,
+                [academicYearId, name],
+              ))
+          : undefined,
         findTeacherByCode: (schoolId, code) =>
           this.one(
             `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
             [schoolId, code],
           ),
-        ensureTeacher: async (schoolId, code, ctx) => {
-          const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
-          const state = (await this.getBackOfficeState()) ?? {};
-          // Matérialisation exacte de LA même fiche (même id / teacher_code) — pas un jumeau.
-          const boTeacher =
-            teachers.find(
-              (row) =>
-                String(row.id ?? "").trim() === String(code) ||
-                String(row.publicId ?? "").trim() === String(code),
-            ) ??
-            (state.teachers ?? []).find(
-              (row) =>
-                String(row.id ?? "").trim() === String(code) ||
-                String(row.publicId ?? "").trim() === String(code),
-            );
-          if (!boTeacher) return null;
-          if (
-            String(boTeacher.id ?? "").trim() !== String(code) &&
-            String(boTeacher.publicId ?? "").trim() !== String(code)
-          ) {
-            return null;
-          }
-          const school = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
-          const materialized = await this.materializeBackOfficeTeacher(
-            {
-              ...boTeacher,
-              schoolCode: boTeacher.schoolCode ?? school?.school_code,
-            },
-            ctx,
-          );
-          return materialized?.teacherId
-            ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
-            : null;
-        },
-        // FIX V2.1 §5.2 — uniquement teacher_code explicite + affectation ; pas de filet opportuniste.
-        findTeacherByExactAssignment: (schoolId, classId, subjectId, preferredTeacherCode) => {
-          if (!preferredTeacherCode) return null;
-          return this.one(
-            `SELECT t.*
-             FROM teachers t
-             JOIN teacher_assignments ta ON ta.teacher_id = t.id
-             WHERE t.school_id = $1
-               AND t.teacher_code = $2
-               AND ta.class_id = $3
-               AND ta.subject_id = $4
-               AND ta.status = 'active'
-             LIMIT 1`,
-            [schoolId, preferredTeacherCode, classId, subjectId],
-          );
-        },
+        ensureTeacher: ensure
+          ? async (schoolId, code, ctx) => {
+              const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
+              const state = (await this.getBackOfficeState()) ?? {};
+              const boTeacher =
+                teachers.find(
+                  (row) =>
+                    String(row.id ?? "").trim() === String(code) ||
+                    String(row.publicId ?? "").trim() === String(code),
+                ) ??
+                (state.teachers ?? []).find(
+                  (row) =>
+                    String(row.id ?? "").trim() === String(code) ||
+                    String(row.publicId ?? "").trim() === String(code),
+                );
+              if (!boTeacher) return null;
+              if (
+                String(boTeacher.id ?? "").trim() !== String(code) &&
+                String(boTeacher.publicId ?? "").trim() !== String(code)
+              ) {
+                return null;
+              }
+              const schoolRow = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
+              const materialized = await this.materializeBackOfficeTeacher(
+                {
+                  ...boTeacher,
+                  schoolCode: boTeacher.schoolCode ?? schoolRow?.school_code,
+                },
+                ctx,
+              );
+              return materialized?.teacherId
+                ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
+                : null;
+            }
+          : undefined,
+        findTeacherByExactAssignment: ensure
+          ? (schoolId, classId, subjectId, preferredTeacherCode) => {
+              if (!preferredTeacherCode) return null;
+              return this.one(
+                `SELECT t.*
+                 FROM teachers t
+                 JOIN teacher_assignments ta ON ta.teacher_id = t.id
+                 WHERE t.school_id = $1
+                   AND t.teacher_code = $2
+                   AND ta.class_id = $3
+                   AND ta.subject_id = $4
+                   AND ta.status = 'active'
+                 LIMIT 1`,
+                [schoolId, preferredTeacherCode, classId, subjectId],
+              );
+            }
+          : undefined,
       },
       {
-        ensure: options.ensure !== false,
+        ensure,
         context,
         requireTeacher: options.requireTeacher === true,
       },

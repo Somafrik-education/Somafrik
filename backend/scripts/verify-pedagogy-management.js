@@ -110,6 +110,21 @@ async function preparePedagogyHttpDatabase(databaseUrl) {
       [schoolA.rows[0].id, teacher.rows[0].id, klass.rows[0].id, math.rows[0].id, year.rows[0].id],
     );
     await pool.query(
+      `INSERT INTO terms (academic_year_id, name, status)
+       VALUES ($1, 'Trimestre 1', 'open')`,
+      [year.rows[0].id],
+    );
+    const student = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'CD-2026-0001-STU-HTTP-01', 'Awa', 'HTTP', 'active') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'active')`,
+      [schoolA.rows[0].id, student.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+    await pool.query(
       `INSERT INTO subscriptions (school_id, plan_name, price_per_student, billing_currency, billing_cycle, status, start_date)
        VALUES ($1, 'Premium', 10, 'CDF', 'monthly', 'active', '2025-09-01')`,
       [schoolA.rows[0].id],
@@ -238,10 +253,8 @@ async function runMemoryHttpGuards() {
       token: parentToken,
       body: { className: "6ème A", name: "Mathématiques" },
     });
-    assert.ok(
-      parentCourse.status === 403 || parentCourse.status === 500 || parentCourse.status >= 400,
-      "parent ne crée pas de cours",
-    );
+    assert.notEqual(parentCourse.status, 201, "parent ne crée pas de cours");
+    assert.ok(parentCourse.status >= 400, `parent bloqué: ${parentCourse.status}`);
 
     const teacherNote = await request(MEMORY_PORT, "/notes", {
       method: "POST",
@@ -267,12 +280,18 @@ async function runMemoryHttpGuards() {
 
 async function runPostgresHttpGuards(databaseUrl) {
   const isolatedUrl = await preparePedagogyHttpDatabase(databaseUrl);
+  const pool = new Pool({ connectionString: isolatedUrl });
   const child = spawnBackend({ port: PG_PORT, databaseUrl: isolatedUrl });
   try {
     await waitForHealth(child, PG_PORT);
     const adminToken = await login(PG_PORT, "admin", "1234", "CD-2026-0001");
     const teacherToken = await login(PG_PORT, "ENS-0001", "1234", "CD-2026-0001");
     const stamp = Date.now();
+
+    const schoolsBefore = await pool.query(`SELECT school_code FROM schools ORDER BY school_code`);
+    assert.equal(schoolsBefore.rowCount, 2);
+    const subjectsBefore = await pool.query(`SELECT count(*)::int AS count FROM subjects`);
+    const subjectCountBefore = subjectsBefore.rows[0].count;
 
     const unknownClass = await request(PG_PORT, "/courses", {
       method: "POST",
@@ -361,19 +380,126 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.equal(crossTenant.status, 201, JSON.stringify(crossTenant.data));
     assert.equal(crossTenant.data?.schoolCode, "CD-2026-0001", "schoolCode client ignoré");
 
-    const teacherForbiddenCourse = await request(PG_PORT, "/courses", {
+    const teacherUnknownSubject = await request(PG_PORT, "/courses", {
       method: "POST",
       token: teacherToken,
-      body: { className: "6ème A", name: "Histoire" },
+      body: { className: "6ème A", name: `Matière-${stamp}` },
     });
-    assert.ok(
-      [201, 403, 500].includes(teacherForbiddenCourse.status),
-      `enseignant POST /courses: ${teacherForbiddenCourse.status}`,
+    assert.equal(teacherUnknownSubject.status, 404, JSON.stringify(teacherUnknownSubject.data));
+    assert.equal(teacherUnknownSubject.data?.code, PEDAGOGY_ERROR.COURSE_NOT_FOUND);
+
+    const forgedEvaluation = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        id: `EVAL-FORGE-${stamp}`,
+        schoolCode: "BI-2026-0002",
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Contrôle tenant",
+        teacherId: "ENS-0001",
+        scale: 20,
+      },
+    });
+    assert.equal(forgedEvaluation.status, 201, JSON.stringify(forgedEvaluation.data));
+    const evalTenant = await pool.query(
+      `SELECT s.school_code
+       FROM evaluations e
+       JOIN schools s ON s.id = e.school_id
+       WHERE e.legacy_json_id = $1`,
+      [`EVAL-FORGE-${stamp}`],
     );
+    assert.equal(evalTenant.rowCount, 1);
+    assert.equal(evalTenant.rows[0].school_code, "CD-2026-0001", "évaluation scellée au tenant principal");
+
+    const evalInBi = await pool.query(
+      `SELECT count(*)::int AS count
+       FROM evaluations e
+       JOIN schools s ON s.id = e.school_id
+       WHERE s.school_code = 'BI-2026-0002'`,
+    );
+    assert.equal(evalInBi.rows[0].count, 0, "aucune évaluation dans l'établissement BI");
+
+    const forgedNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        schoolCode: "BI-2026-0002",
+        evaluationId: `EVAL-FORGE-${stamp}`,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        teacherId: "ENS-0001",
+        value: 12,
+        scale: 20,
+      },
+    });
+    assert.equal(forgedNote.status, 201, JSON.stringify(forgedNote.data));
+    const noteTenant = await pool.query(
+      `SELECT s.school_code
+       FROM grades g
+       JOIN schools s ON s.id = g.school_id
+       JOIN evaluations e ON e.id = g.evaluation_id
+       WHERE e.legacy_json_id = $1`,
+      [`EVAL-FORGE-${stamp}`],
+    );
+    assert.equal(noteTenant.rowCount, 1);
+    assert.equal(noteTenant.rows[0].school_code, "CD-2026-0001");
+
+    const forgedPresence = await request(PG_PORT, "/presences", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        items: [
+          {
+            schoolCode: "BI-2026-0002",
+            studentId: "CD-2026-0001-STU-HTTP-01",
+            className: "6ème A",
+            date: "2026-09-10",
+            status: "present",
+            teacherId: "ENS-0001",
+          },
+        ],
+      },
+    });
+    assert.equal(forgedPresence.status, 201, JSON.stringify(forgedPresence.data));
+    const presenceTenant = await pool.query(
+      `SELECT s.school_code
+       FROM attendance a
+       JOIN schools s ON s.id = a.school_id
+       JOIN students st ON st.id = a.student_id
+       WHERE st.student_code = 'CD-2026-0001-STU-HTTP-01'`,
+    );
+    assert.equal(presenceTenant.rowCount, 1);
+    assert.equal(presenceTenant.rows[0].school_code, "CD-2026-0001");
+
+    const schedulePatchForbidden = await request(PG_PORT, `/course-schedules/${validSchedule.data.id}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { subject: "Histoire" },
+    });
+    assert.equal(schedulePatchForbidden.status, 403, JSON.stringify(schedulePatchForbidden.data));
+    assert.equal(
+      schedulePatchForbidden.data?.code,
+      PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+      "PATCH créneau sans teacherId revalide l'affectation",
+    );
+    const slotAfterFailedPatch = await pool.query(
+      `SELECT class_name, subject_name, class_id
+       FROM course_schedule_slots
+       WHERE legacy_json_id = $1`,
+      [`SCH-HTTP-${stamp}`],
+    );
+    assert.equal(slotAfterFailedPatch.rows[0].class_name, "6ème A");
+    assert.equal(slotAfterFailedPatch.rows[0].subject_name, "Mathématiques");
+    assert.ok(slotAfterFailedPatch.rows[0].class_id, "class_id canonique conservé");
+
+    const subjectsAfter = await pool.query(`SELECT count(*)::int AS count FROM subjects`);
+    assert.equal(subjectsAfter.rows[0].count, subjectCountBefore, "aucune matière inventée");
 
     console.log("OK http-pg: validation références + affectation + projection");
   } finally {
     child.kill("SIGTERM");
+    await pool.end().catch(() => {});
     await wait(200);
   }
 }

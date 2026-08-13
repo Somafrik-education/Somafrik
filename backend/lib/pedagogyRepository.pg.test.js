@@ -384,6 +384,56 @@ async function main() {
       (error) => error.code === PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT,
     );
 
+    const klassB = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-6B', '6ème B', 'active') RETURNING id`,
+      [fixture.schoolA, fixture.openYear],
+    );
+    await pool.query(
+      `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, $5, 'active')`,
+      [fixture.schoolA, fixture.teacher, klassB.rows[0].id, fixture.math, fixture.openYear],
+    );
+
+    const scheduleWithTeacher = await store.createCourseSchedule(
+      {
+        id: "SCH-PATCH-TEACHER",
+        className: "6ème A",
+        subject: "Mathématiques",
+        teacherId: "ENS-PG-001",
+        start: "2026-10-01T08:00:00.000Z",
+        end: "2026-10-01T09:00:00.000Z",
+      },
+      admin,
+      auditMeta,
+    );
+    assert.equal(scheduleWithTeacher.className, "6ème A");
+
+    await assert.rejects(
+      () =>
+        store.updateCourseSchedule(
+          "SCH-PATCH-TEACHER",
+          { subject: "Physique" },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+    );
+
+    const patchedSchedule = await store.updateCourseSchedule(
+      "SCH-PATCH-TEACHER",
+      { className: "6ème B" },
+      admin,
+      auditMeta,
+    );
+    assert.equal(patchedSchedule.className, "6ème B");
+    const patchedRow = await pool.query(
+      `SELECT class_id, class_name FROM course_schedule_slots WHERE legacy_json_id = $1`,
+      ["SCH-PATCH-TEACHER"],
+    );
+    assert.equal(patchedRow.rows[0].class_name, "6ème B");
+    assert.equal(patchedRow.rows[0].class_id, klassB.rows[0].id, "class_id mis à jour au PATCH");
+
     const evaluation = await store.createEvaluation(
       {
         id: "EVAL-PG-LOT5",
@@ -399,6 +449,31 @@ async function main() {
       auditMeta,
     );
     assert.ok(evaluation.id);
+
+    const schoolsBeforeEvalForge = await pool.query(`SELECT count(*)::int AS count FROM schools`);
+    const schoolCountBefore = schoolsBeforeEvalForge.rows[0].count;
+    const forgedEval = await store.createEvaluation(
+      {
+        id: "EVAL-FORGE-TENANT",
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Tenant scellé",
+        maxScore: 20,
+        schoolCode: "BI-2026-0001",
+        teacherId: "ENS-PG-001",
+      },
+      admin,
+      auditMeta,
+    );
+    assert.ok(forgedEval.id);
+    const forgedEvalRow = await pool.query(
+      `SELECT s.school_code FROM evaluations e JOIN schools s ON s.id = e.school_id WHERE e.legacy_json_id = $1`,
+      ["EVAL-FORGE-TENANT"],
+    );
+    assert.equal(forgedEvalRow.rows[0].school_code, "CD-2026-0001");
+    const schoolsAfterEvalForge = await pool.query(`SELECT count(*)::int AS count FROM schools`);
+    assert.equal(schoolsAfterEvalForge.rows[0].count, schoolCountBefore, "schoolCode client ignoré");
 
     await assert.rejects(
       () =>

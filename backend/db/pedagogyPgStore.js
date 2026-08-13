@@ -260,7 +260,7 @@ function createPedagogyPgStore(repo) {
            RETURNING *`,
           [
             payload.schoolId,
-            payload.classId ?? null,
+            payload.classId,
             payload.className,
             payload.subjectName,
             payload.teacherId ?? null,
@@ -284,23 +284,28 @@ function createPedagogyPgStore(repo) {
       async updateScheduleSlot(dbId, patch) {
         const row = await one(
           `UPDATE course_schedule_slots
-           SET class_name = COALESCE($2, class_name),
-               subject_name = COALESCE($3, subject_name),
-               teacher_id = COALESCE($4, teacher_id),
-               starts_at = COALESCE($5, starts_at),
-               ends_at = COALESCE($6, ends_at),
-               room = COALESCE($7, room),
-               profile_payload = COALESCE($8::jsonb, profile_payload),
+           SET class_id = $2,
+               class_name = $3,
+               subject_name = $4,
+               teacher_id = $5,
+               starts_at = $6,
+               ends_at = $7,
+               room = COALESCE($8, room),
+               profile_payload = CASE
+                 WHEN $9::jsonb IS NULL THEN profile_payload
+                 ELSE profile_payload || $9::jsonb
+               END,
                updated_at = NOW()
            WHERE id = $1
            RETURNING *`,
           [
             dbId,
-            patch.className ?? null,
-            patch.subjectName ?? null,
+            patch.classId,
+            patch.className,
+            patch.subjectName,
             patch.teacherId ?? null,
-            patch.startsAt ?? null,
-            patch.endsAt ?? null,
+            patch.startsAt,
+            patch.endsAt,
             patch.room ?? null,
             patch.profile ? JSON.stringify(patch.profile) : null,
           ],
@@ -330,7 +335,7 @@ function createPedagogyPgStore(repo) {
         return row ? mapScheduleRow(row) : null;
       },
       async upsertEvaluation(payload, principal) {
-        return scopedRepo.upsertEvaluationFromLegacy(payload, { principal });
+        return scopedRepo.upsertEvaluationFromLegacy(payload, { principal, ensure: false });
       },
       async upsertGrade(payload, principal) {
         return scopedRepo.upsertGrade(payload, principal);
@@ -469,6 +474,9 @@ function mapScheduleRow(row) {
   const id = row.legacy_json_id || row.id;
   return {
     id,
+    dbId: row.id,
+    classId: row.class_id,
+    teacherDbId: row.teacher_id,
     schoolCode: row.school_code,
     className: row.class_name,
     subject: row.subject_name,

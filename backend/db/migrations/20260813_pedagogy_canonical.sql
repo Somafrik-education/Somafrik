@@ -28,7 +28,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_school_courses_class_subject_active
 CREATE TABLE IF NOT EXISTS course_schedule_slots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
-  class_id UUID REFERENCES classes(id),
+  class_id UUID NOT NULL REFERENCES classes(id),
   class_name TEXT NOT NULL,
   subject_name TEXT NOT NULL,
   teacher_id UUID REFERENCES teachers(id),

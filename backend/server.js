@@ -666,8 +666,12 @@ app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("writ
     principal: req.principal,
     handler: async () => {
       assertCanManageNotes(req.principal);
-      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
-      const saved = await repository.createSchoolEvaluation(req.body ?? {}, req.principal, pedagogyAuditMetaFromRequest(req));
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
+      const saved = await repository.createSchoolEvaluation(
+        ignoreClientScope(req.body ?? {}),
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
       return { statusCode: 201, body: saved };
     },
   });
@@ -931,8 +935,9 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
     handler: async () => {
       assertCanManageNotes(req.principal);
       const state = await getAuthoritativeBackOfficeState();
-      const body = req.body ?? {};
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
+      const body = ignoreClientScope(req.body ?? {});
       // Unicité portée par PG upsert (school+evaluation+student) — comme D3.5b présences.
       assertNoteWrite(state, body, {
         enforceLockedEvaluation: false,
@@ -941,7 +946,6 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       let saved;
       // D3.6b : PostgreSQL = autorité canonique. JSON BO seulement en moteur mémoire.
       const engine = String(repository.engine ?? "postgresql");
-      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
       try {
         await ensureRepositoryBackOfficeSnapshot(state);
         if (engine === "postgresql" && typeof repository.upsertSchoolGrade === "function") {
@@ -984,13 +988,16 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
     handler: async () => {
       assertCanManagePresences(req.principal);
       const state = await getAuthoritativeBackOfficeState();
-      const body = req.body ?? {};
-      const { validatePresenceWrite } = require("./services/dataIntegrityService");
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
+      const rawBody = req.body ?? {};
+      const body = Array.isArray(rawBody.items)
+        ? { ...rawBody, items: rawBody.items.map((item) => ignoreClientScope(item)) }
+        : ignoreClientScope(rawBody);
+      const { assertPresenceWrite } = require("./services/dataIntegrityService");
       const items = Array.isArray(body.items) ? body.items : [body];
       for (const item of items) {
-        validatePresenceWrite(state, item);
+        assertPresenceWrite(state, item);
       }
-      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
       let saved;
       const engine = String(repository.engine ?? "postgresql");
       if (engine === "postgresql" && typeof repository.upsertSchoolAttendanceBatch === "function") {

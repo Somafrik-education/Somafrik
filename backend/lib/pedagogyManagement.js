@@ -34,6 +34,14 @@ function ignoreClientScope(payload = {}) {
   return next;
 }
 
+function tenantSchoolCodeFromPrincipal(principal) {
+  const code = asTrimmed(principal?.schoolCode);
+  if (!code || code === "*") {
+    throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+  }
+  return code.toUpperCase();
+}
+
 function pedagogyAuditMetaFromRequest(req) {
   return {
     ipAddress: req?.ip ?? req?.headers?.["x-forwarded-for"] ?? "",
@@ -46,5 +54,6 @@ module.exports = {
   asTrimmed,
   createPedagogyError,
   ignoreClientScope,
+  tenantSchoolCodeFromPrincipal,
   pedagogyAuditMetaFromRequest,
 };
