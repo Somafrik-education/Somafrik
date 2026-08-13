@@ -137,6 +137,7 @@ npm run verify:students-sync     # si touch sync élèves/inscriptions PG
 npm run verify:pre-e1-hotfix-02  # si touch sync enseignants/affectations/notes PG
 npm run verify:pre-e1-hotfix-02b # si touch matérialisation PG teachers/assignments (causalité)
 npm run verify:runtime-bootstrap # si touch bootstrap / auth runtime
+npm run verify:schools-legacy-cleanup # si touch établissements / PUT schools
 ```
 
 ### Principes

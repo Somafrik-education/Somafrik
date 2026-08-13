@@ -1,7 +1,7 @@
 # Base de données — Somafrik
 
 **Statut :** référence schéma & conventions  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-08-13  
 **Sources :** `backend/db/schema.sql` · `backend/db/postgresRepository.js` · [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Principes
 
 1. **PostgreSQL** est obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`).
-2. Domaines **canoniques PG** : notes (`evaluations` / `grades`), présences (`attendance`) — le JSON BO n’est plus source de vérité pour ces écritures.
+2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), notes (`evaluations` / `grades`), présences (`attendance`), classes — le JSON BO n’est plus source de vérité pour ces écritures.
 3. Beaucoup de domaines restent encore dans le **snapshot JSON** `backoffice_state` (migration progressive).
 4. Pas de dossier `/migrations` versionné classique : le schéma est appliqué via `schema.sql` à l’init, puis des **ensures / migrations runtime** dans le repository.
 
@@ -20,7 +20,7 @@
 Au démarrage (`postgresRepository.init()`) :
 
 1. Exécution de `backend/db/schema.sql` (`CREATE TABLE IF NOT EXISTS`…)
-2. Ensures runtime (unicité attendance, contraintes grades, etc.)
+2. Ensures runtime (unicité attendance, contraintes grades, colonnes `schools.profile_payload` / `deleted_at`, etc.)
 3. Migrations de données éventuelles (ex. `migrateEvaluationsFromBackOffice`, `migrateNotesFromBackOffice`)
 
 Helper annexe : `backend/scripts/migrate-test-data.js`.
@@ -49,8 +49,8 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
-| `countries` | Pays | — |
-| `schools` | Établissements | UNIQUE `school_code` · FK country |
+| `countries` | Référentiel pays canonique | UNIQUE `iso_code` — pas d’auto-création d’un ISO inconnu (refus `COUNTRY_NOT_FOUND`) |
+| `schools` | Établissements (SoT LOT 1) | UNIQUE `school_code` · FK country · `profile_payload` JSONB · `deleted_at` |
 | `users` | Comptes | liens école / rôle |
 | `academic_years` / `terms` | Calendrier | FK school |
 | `subjects` | Matières | FK school |

@@ -1,7 +1,7 @@
 # Architecture — Somafrik
 
 **Statut :** référence technique officielle  
-**Dernière mise à jour :** 2026-08-10
+**Dernière mise à jour :** 2026-08-13
 **Compléments :** [../preproduction.md](../preproduction.md) · [../ci-cd-security.md](../ci-cd-security.md) · [../ux/design-system/README.md](../ux/design-system/README.md)
 
 ---
@@ -172,8 +172,8 @@ flowchart TD
 ## 4. Database
 
 - **PostgreSQL** obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`)
-- Tables canoniques : `schools`, `classes`, `subjects`, `teachers`, `students`, `evaluations`, `grades`, `attendance`, audit logs, …
-- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine
+- Tables canoniques : `schools` (LOT 1, `profile_payload`), `classes`, `subjects`, `teachers`, `students`, `evaluations`, `grades`, `attendance`, audit logs, …
+- Snapshot JSON BO encore utilisé pour de nombreux domaines — migration progressive domaine par domaine (`PUT state.schools` retiré)
 - Préprod : Render Postgres et/ou Supabase (`DATABASE_URL`)
 
 ---

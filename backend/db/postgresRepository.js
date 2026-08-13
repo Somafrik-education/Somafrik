@@ -81,6 +81,7 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.query(schema);
+    await this.ensureSchoolsCanonicalColumns();
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
@@ -427,6 +428,16 @@ class PostgresRepository {
       },
       console,
     );
+  }
+
+  /**
+   * LOT 1 — colonnes canoniques établissements (idempotent pour bases déjà créées).
+   */
+  async ensureSchoolsCanonicalColumns() {
+    await this.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb`,
+    );
+    await this.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
   }
 
   async getDataset() {
@@ -1958,22 +1969,24 @@ class PostgresRepository {
     );
     if (!backOfficeSchool) return null;
 
-    const rawCountryCode = String(backOfficeSchool.countryCode ?? backOfficeSchool.country ?? "CD").trim().toUpperCase();
-    const isoCode = rawCountryCode === "RDC" ? "CD" : rawCountryCode.slice(0, 2);
-    let country = await this.one("SELECT id FROM countries WHERE iso_code = $1 LIMIT 1", [isoCode]);
-    if (!country) {
-      country = await this.one(
-        `INSERT INTO countries (name, iso_code, phone_code, currency, is_active, created_at, updated_at)
-         VALUES ($1, $2, '+243', 'CDF', TRUE, NOW(), NOW())
-         ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id`,
-        [backOfficeSchool.country ?? "République Démocratique du Congo", isoCode],
-      );
+    const { extractProfilePayload, toSchoolDbStatus, normalizeCountryIso } = require("../lib/schoolsManagement");
+    const isoCode = normalizeCountryIso(backOfficeSchool.countryCode, backOfficeSchool.country);
+    let country = null;
+    if (isoCode) {
+      country = await this.one("SELECT id FROM countries WHERE iso_code = $1 LIMIT 1", [isoCode]);
     }
-
+    if (!country && backOfficeSchool.country) {
+      country = await this.one("SELECT id FROM countries WHERE lower(name) = lower($1) LIMIT 1", [
+        String(backOfficeSchool.country).trim(),
+      ]);
+    }
+    if (!country) {
+      return null;
+    }
+    const profile = extractProfilePayload({ ...backOfficeSchool, code: normalized });
     return this.one(
-      `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      `INSERT INTO schools (country_id, school_code, name, logo_url, address, city, phone, email, school_type, status, profile_payload, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW(), NOW())
        ON CONFLICT (school_code) DO UPDATE SET name = EXCLUDED.name
        RETURNING *`,
       [
@@ -1986,7 +1999,8 @@ class PostgresRepository {
         backOfficeSchool.phone ?? "",
         backOfficeSchool.email ?? "",
         backOfficeSchool.type ?? "Établissement",
-        this.toDbStatus(backOfficeSchool.status ?? "Actif"),
+        toSchoolDbStatus(backOfficeSchool.status ?? "Actif"),
+        JSON.stringify(profile),
       ],
     );
   }
@@ -4085,37 +4099,16 @@ class PostgresRepository {
   }
 
   mapSchool(school, subscription) {
-    return {
-      id: school.id,
-      countryId: school.country_id,
-      countryCode: school.iso_code,
-      publicId: school.school_code,
-      code: school.school_code,
-      name: school.name,
-      type: school.school_type,
-      city: school.city,
-      country: school.country_name === "République Démocratique du Congo" ? "RDC" : school.country_name,
-      address: school.address,
-      phone: school.phone,
-      email: school.email,
-      website: "",
-      currency: school.country_currency,
-      slogan: "Excellence et Innovation",
-      status: this.fromDbStatus(school.status),
-      logoUrl: school.logo_url ?? "",
-      schoolYear: "2025-2026",
-      timezone: "Africa/Kinshasa",
-      language: "Français",
-      dateFormat: "JJ-MM-AAAA",
-      primaryColor: "#2563EB",
-      subscriptionPlan: subscription?.plan_name ?? "Essentiel",
-      subscriptionStartDate: this.formatDate(subscription?.start_date),
-      subscriptionEndDate: this.formatDate(subscription?.end_date),
-      subscriptionStatus: this.fromSubscriptionStatus(subscription?.status),
-      maxStudents: 1200,
-      maxTeachers: 120,
-      createdAt: this.formatDate(school.created_at),
-    };
+    const { mapEstablishmentRow } = require("../lib/schoolsManagement");
+    const mapped = mapEstablishmentRow(school, subscription);
+    if (!mapped.subscriptionPlan) mapped.subscriptionPlan = subscription?.plan_name ?? "Essentiel";
+    if (!mapped.subscriptionStatus && subscription?.status) {
+      mapped.subscriptionStatus = this.fromSubscriptionStatus(subscription.status);
+    }
+    if (mapped.maxStudents == null) mapped.maxStudents = 1200;
+    if (mapped.maxTeachers == null) mapped.maxTeachers = 120;
+    if (!mapped.slogan) mapped.slogan = "Excellence et Innovation";
+    return mapped;
   }
 
   mapSubscription(subscription) {
@@ -4491,6 +4484,28 @@ class PostgresRepository {
 
   getSchoolByCode(code) {
     return this.one("SELECT * FROM schools WHERE school_code = $1", [String(code ?? "").trim().toUpperCase()]);
+  }
+
+  getSchoolsRepository() {
+    if (!this._schoolsRepository) {
+      const { createSchoolsRepository } = require("./schoolsRepository");
+      this._schoolsRepository = createSchoolsRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      });
+    }
+    return this._schoolsRepository;
+  }
+
+  listEstablishments() {
+    return this.getSchoolsRepository().listAll();
+  }
+
+  async persistEstablishment(record) {
+    const saved = await this.getSchoolsRepository().persist(record);
+    this.cachedDataset = null;
+    return saved;
   }
 
   /**

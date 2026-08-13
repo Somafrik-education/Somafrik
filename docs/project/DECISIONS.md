@@ -1,7 +1,7 @@
 # Décisions d’architecture (ADR simplifié) — Somafrik
 
 **Statut :** registre officiel des décisions durables  
-**Dernière mise à jour :** 2026-08-10
+**Dernière mise à jour :** 2026-08-13
 
 Format obligatoire pour chaque entrée :
 
@@ -119,6 +119,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | **Alternatives** | Continuer uniquement les correctifs dans les monolithes ; supprimer l'existant et effectuer une réécriture « big bang » ; créer un second dépôt sans historique commun. |
 | **Impact** | Frontières V2 automatisées ; aucune nouvelle dépendance au snapshot global ; petites PR par capacité ; aucune suppression legacy avant preuve de parité ; contrat détaillé dans [V2-RECONSTRUCTION.md](./V2-RECONSTRUCTION.md). |
 | **Statut** | Acceptée |
+
+---
+
+## ADR-009 — Établissements : PostgreSQL source de vérité (LOT 1)
+
+| | |
+|--|--|
+| **Date** | 2026-08-13 |
+| **Décision** | Le CRUD établissements passe exclusivement par `/api/backoffice/establishments`, persisté dans la table PostgreSQL `schools` (`profile_payload` pour les champs BO). `PUT /api/backoffice/state` refuse **toute présence** de la clé `schools` (y compris payload mixte). Un pays absent du référentiel est refusé (`COUNTRY_NOT_FOUND`) : aucun `INSERT` pays avec métadonnées inventées. `GET /state.schools` reste une projection de lecture. |
+| **Contexte** | Inventaire LOT 0 : le CRUD écoles écrivait encore le snapshot JSON puis matérialisait PG en side-effect. Les classes avaient déjà ce modèle. |
+| **Alternatives** | Dual-write JSON+PG durable ; nouvelle API `/api/v2/schools` ; attendre LOT 8 pour tout retirer. |
+| **Impact** | Matrice S1.4 sans `schools` ; Mobile AdminCrud schools en lecture/retrait CRUD ; Web/Mobile/BackOffice omettent `schools` du PUT ; `verify:schools-legacy-cleanup` (pays inconnu + PUT mixte). |
+| **Statut** | Proposée |
 
 ---
 

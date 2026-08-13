@@ -43,6 +43,8 @@ const REPOSITORY_METHODS = Object.freeze([
   "listSchoolClasses",
   "createSchoolClass",
   "updateSchoolClass",
+  "listEstablishments",
+  "persistEstablishment",
 ]);
 
 /**

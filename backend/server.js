@@ -1221,29 +1221,37 @@ app.get("/api/backoffice/establishments/:code", requireAuth, requirePermission("
 }));
 
 app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST /api/backoffice/establishments"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.create(req.body ?? {}, state, req.principal, {
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.create(req.body ?? {}, { ...state, schools }, req.principal, {
     force: Boolean(req.body?.force),
   });
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "create_establishment", "school", school.code, { name: school.name });
-  res.status(201).json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "create_establishment", "school", savedSchool.code, { name: savedSchool.name });
+  const nextState = await getAuthoritativeBackOfficeState();
+  res.status(201).json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.post("/api/backoffice/establishments/import", requireAuth, requirePermission("POST /api/backoffice/establishments/import"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { created, errors, state: nextState } = establishmentService.importRows(
+  const schools = persisted.length ? persisted : state.schools;
+  const { created, errors } = establishmentService.importRows(
     req.body?.rows ?? [],
-    state,
+    { ...state, schools },
     req.principal,
     { force: Boolean(req.body?.force) },
   );
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
+  const savedCreated = [];
+  for (const school of created) {
+    savedCreated.push(await repository.persistEstablishment(school));
+  }
   await auditService.record(req, "import_establishments", "school", "bulk", {
-    created: created.length,
+    created: savedCreated.length,
     errors: errors.length,
   });
-  res.status(201).json({ created, errors, count: created.length });
+  res.status(201).json({ created: savedCreated, errors, count: savedCreated.length });
 }));
 
 app.post("/api/backoffice/import/students/validate", requireAuth, requirePermission("POST /api/backoffice/import/students/validate"), asyncHandler(async (req, res) => {
@@ -1255,35 +1263,45 @@ app.post("/api/backoffice/import/students/validate", requireAuth, requirePermiss
 }));
 
 app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.update(req.params.code, req.body ?? {}, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "update_establishment", "school", school.code);
-  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.update(req.params.code, req.body ?? {}, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "update_establishment", "school", savedSchool.code);
+  const nextState = await getAuthoritativeBackOfficeState();
+  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.activate(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "activate_establishment", "school", school.code);
-  res.json({ school });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.activate(req.params.code, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "activate_establishment", "school", savedSchool.code);
+  res.json({ school: savedSchool });
 }));
 
 app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.suspend(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "suspend_establishment", "school", school.code);
-  res.json({ school });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.suspend(req.params.code, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "suspend_establishment", "school", savedSchool.code);
+  res.json({ school: savedSchool });
 }));
 
 app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermission("DELETE /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+  const persisted = await repository.listEstablishments();
   const state = await getAuthoritativeBackOfficeState();
-  const { school, state: nextState } = establishmentService.softDelete(req.params.code, state, req.principal);
-  const saved = await saveEstablishmentState(nextState, state, req.principal);
-  await auditService.record(req, "delete_establishment", "school", school.code);
-  res.json({ school, state: scopedBackOfficeStateForResponse(saved, req.principal) });
+  const schools = persisted.length ? persisted : state.schools;
+  const { school } = establishmentService.softDelete(req.params.code, { ...state, schools }, req.principal);
+  const savedSchool = await repository.persistEstablishment(school);
+  await auditService.record(req, "delete_establishment", "school", savedSchool.code);
+  const nextState = await getAuthoritativeBackOfficeState();
+  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
@@ -1338,13 +1356,27 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     LEGACY_CLASSES_STATE_WRITE_CODE,
     LEGACY_CLASSES_STATE_WRITE_MESSAGE,
   } = require("./lib/legacyClassesStateWrite");
-  const preparedLegacy = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
-  if (preparedLegacy.rejectLegacyClassesWrite) {
+  const {
+    stripLegacySchoolsStateWrite,
+    LEGACY_SCHOOLS_STATE_WRITE_CODE,
+    LEGACY_SCHOOLS_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacySchoolsStateWrite");
+  const preparedLegacyClasses = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
+  if (preparedLegacyClasses.rejectLegacyClassesWrite) {
     const error = new BusinessError(400, LEGACY_CLASSES_STATE_WRITE_MESSAGE);
     error.code = LEGACY_CLASSES_STATE_WRITE_CODE;
     throw error;
   }
-  const rawBody = preparedLegacy.body;
+  const preparedLegacySchools = stripLegacySchoolsStateWrite(
+    preparedLegacyClasses.body,
+    backOfficeDeletableEntities,
+  );
+  if (preparedLegacySchools.rejectLegacySchoolsWrite) {
+    const error = new BusinessError(400, LEGACY_SCHOOLS_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_SCHOOLS_STATE_WRITE_CODE;
+    throw error;
+  }
+  const rawBody = preparedLegacySchools.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -2315,7 +2347,7 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     notifications: mergeRowsByIdentity(runtimeState.notifications, storedState.notifications),
     students: mergeRowsByIdentity(runtimeState.students, storedState.students),
     teachers: mergeRowsByIdentity(runtimeState.teachers, storedState.teachers),
-    // Projection lecture Classes : PostgreSQL / runtime uniquement (plus de mutation JSON).
+    // Projection lecture Classes / Établissements : PostgreSQL / runtime (plus de mutation JSON).
     classes: runtimeState.classes ?? [],
     courses: mergeRowsByIdentity(runtimeState.courses, storedState.courses),
     assignments: mergeRowsByIdentity(runtimeState.assignments ?? [], storedState.assignments ?? []),
@@ -2549,16 +2581,27 @@ function schoolRowKey(row = {}) {
 function mergeSchoolRows(dbSchools = [], storedSchools = []) {
   const rows = new Map();
 
-  dbSchools.forEach((school) => {
+  storedSchools.forEach((school) => {
     const key = schoolRowKey(school);
     if (key) rows.set(key, { ...school });
   });
 
-  storedSchools.forEach((school) => {
+  dbSchools.forEach((school) => {
     const key = schoolRowKey(school);
     if (!key) return;
     const existing = rows.get(key);
-    rows.set(key, existing ? { ...existing, ...school } : { ...school });
+    if (!existing) {
+      rows.set(key, { ...school });
+      return;
+    }
+    const merged = { ...existing, ...school };
+    for (const [field, value] of Object.entries(existing)) {
+      const next = merged[field];
+      if ((next === undefined || next === null || next === "") && value !== undefined && value !== null && value !== "") {
+        merged[field] = value;
+      }
+    }
+    rows.set(key, merged);
   });
 
   return [...rows.values()];

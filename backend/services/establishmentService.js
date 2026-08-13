@@ -1,4 +1,9 @@
 const { BusinessError } = require("./authService");
+const {
+  findCanonicalCountry,
+  COUNTRY_NOT_FOUND_CODE,
+  COUNTRY_NOT_FOUND_MESSAGE,
+} = require("../lib/schoolsManagement");
 const { schoolMatchesCountryScope } = require("../lib/countryScope");
 const {
   generateSchoolCode,
@@ -116,22 +121,23 @@ function appendAudit(state, entry) {
   return [row, ...log].slice(0, 200);
 }
 
-function findCountryByName(state, countryName) {
-  const name = String(countryName ?? "").trim().toLowerCase();
-  return (state.countries ?? []).find(
-    (country) => String(country.name ?? "").trim().toLowerCase() === name,
-  );
+function assertCanonicalCountry(school, state) {
+  const canonical = findCanonicalCountry(state.countries, school.countryCode, school.country);
+  if (!canonical) {
+    const error = new BusinessError(400, COUNTRY_NOT_FOUND_MESSAGE);
+    error.code = COUNTRY_NOT_FOUND_CODE;
+    throw error;
+  }
+  school.country = canonical.name;
+  school.countryCode = canonical.code;
+  return canonical;
 }
 
 function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
   const schools = state.schools ?? [];
-  let country = payload.country;
-  let countryCode = payload.countryCode;
-  const countryRow = findCountryByName(state, country);
-  if (countryRow) {
-    country = countryRow.name;
-    countryCode = countryRow.code;
-  }
+  const canonical = findCanonicalCountry(state.countries, payload.countryCode, payload.country);
+  const country = canonical?.name ?? payload.country;
+  const countryCode = canonical?.code ?? payload.countryCode;
   const code =
     payload.code?.trim().toUpperCase() ||
     (countryCode && isNew ? generateSchoolCode(countryCode, schools) : "");
@@ -196,6 +202,7 @@ class EstablishmentService {
   create(payload, state, principal, { force = false } = {}) {
     assertCanManageEstablishments(principal);
     const school = hydrateSchoolPayload(payload, state, { isNew: true });
+    assertCanonicalCountry(school, state);
     const error = validateSchoolPayload(school, state.schools ?? [], { isNew: true });
     if (error) throw new BusinessError(400, error);
 
@@ -258,6 +265,7 @@ class EstablishmentService {
 
     const error = validateSchoolPayload(merged, state.schools ?? [], { isNew: false });
     if (error) throw new BusinessError(400, error);
+    assertCanonicalCountry(merged, state);
 
     merged.updatedAt = new Date().toISOString();
 
