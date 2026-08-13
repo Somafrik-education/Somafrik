@@ -330,11 +330,25 @@ async function main() {
     const seedAssignment = assignmentsBefore.data[0];
     assert.ok(seedAssignment?.id, "affectation seed attendue");
 
-    const retiredSeed = await request(
-      `/assignments/${encodeURIComponent(seedAssignment.id)}`,
-      { method: "DELETE", token: admin.token },
-    );
-    assert.equal(retiredSeed.status, 200, JSON.stringify(retiredSeed.data));
+    const seedSubject = seedAssignment.subject || seedAssignment.course;
+    let retiredCollisionCount = 0;
+    for (; retiredCollisionCount < 100; retiredCollisionCount += 1) {
+      const currentAssignments = await request("/assignments", { token: admin.token });
+      assert.equal(currentAssignments.status, 200, JSON.stringify(currentAssignments.data));
+      const collision = currentAssignments.data.find(
+        (row) =>
+          row.className === seedAssignment.className &&
+          (row.subject || row.course) === seedSubject,
+      );
+      if (!collision) break;
+      const retired = await request(
+        `/assignments/${encodeURIComponent(collision.id)}`,
+        { method: "DELETE", token: admin.token },
+      );
+      assert.equal(retired.status, 200, JSON.stringify(retired.data));
+    }
+    assert.ok(retiredCollisionCount > 0, "collision seed attendue");
+    assert.ok(retiredCollisionCount < 100, "purge des collisions affectation bornée");
 
     const assignmentCreated = await request("/assignments", {
       method: "POST",
@@ -342,7 +356,7 @@ async function main() {
       body: {
         teacherCode: created.data.teacherCode,
         className: seedAssignment.className,
-        subject: seedAssignment.subject || seedAssignment.course,
+        subject: seedSubject,
       },
     });
     assert.equal(assignmentCreated.status, 201, JSON.stringify(assignmentCreated.data));
