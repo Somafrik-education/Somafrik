@@ -1685,14 +1685,16 @@ class FallbackRepository {
         String(row.schoolCode ?? code).toUpperCase() === code &&
         [row.publicId, row.classCode, row.name].some((value) => String(value ?? "") === input.classRef),
     );
-    const subject = (dataset.courses ?? []).find(
+    const matchingSubjects = (dataset.courses ?? []).filter(
       (row) =>
         String(row.schoolCode ?? code).toUpperCase() === code &&
-        String(row.className ?? "") === String(schoolClass?.name ?? "") &&
         [row.publicId, row.subjectCode, row.name].some(
           (value) => String(value ?? "") === input.subjectRef,
         ),
     );
+    const subject = matchingSubjects.find(
+      (row) => String(row.className ?? "") === String(schoolClass?.name ?? ""),
+    ) ?? matchingSubjects[0];
     if (!teacher) throw assignmentError(400, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
     if (!schoolClass) throw assignmentError(400, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
     if (!subject) throw assignmentError(400, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");

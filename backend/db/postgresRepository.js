@@ -785,12 +785,12 @@ class PostgresRepository {
     const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
     // LOT 2 — students est une projection read-only : aucune synchronisation
     // ni persistance JSON ne doit être déclenchée par PUT /backoffice/state.
+    const { students: _legacyStudents, ...payloadWithoutStudents } = payload ?? {};
     const {
-      students: _legacyStudents,
       teachers: _legacyTeachers,
       assignments: _legacyAssignments,
       ...durablePayload
-    } = payload ?? {};
+    } = payloadWithoutStudents;
     // HOTFIX — matérialiser schools BO → PG avant sync enseignants / années scolaires.
     // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
     // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.

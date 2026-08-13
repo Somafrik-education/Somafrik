@@ -79,23 +79,39 @@ async function refreshAccessToken(refreshToken) {
   return refreshed.data.accessToken;
 }
 
-async function setTeacherEmbeddedAssignments(adminToken, teacherIdentifier, assignments) {
-  const stateRes = await request("/backoffice/state", { token: adminToken });
-  assert.equal(stateRes.status, 200, JSON.stringify(stateRes.data));
-  const target = String(teacherIdentifier).trim().toUpperCase();
-  const teachers = (stateRes.data.teachers ?? []).map((row) => {
-    const identifier = String(row.identifier ?? "").trim().toUpperCase();
-    if (identifier !== target) {
-      return row;
-    }
-    return { ...row, assignments: Array.isArray(assignments) ? assignments : [] };
-  });
-  const put = await request("/backoffice/state", {
-    method: "PUT",
-    token: adminToken,
-    body: { teachers },
-  });
-  assert.ok(put.status >= 200 && put.status < 300, JSON.stringify(put.data));
+async function replaceTeacherAssignmentsViaApi(adminToken, teacherIdentifier, assignments) {
+  const desired = Array.isArray(assignments) ? assignments : [];
+  const classRefs = new Set(
+    desired.flatMap((assignment) => [assignment.classCode, assignment.className])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean),
+  );
+  const current = await request("/assignments", { token: adminToken });
+  assert.equal(current.status, 200, JSON.stringify(current.data));
+  for (const assignment of current.data) {
+    if (!classRefs.has(String(assignment.classCode ?? "").trim()) &&
+        !classRefs.has(String(assignment.className ?? "").trim())) continue;
+    const removed = await request(`/assignments/${encodeURIComponent(assignment.id)}`, {
+      method: "DELETE",
+      token: adminToken,
+    });
+    assert.equal(removed.status, 200, JSON.stringify(removed.data));
+  }
+
+  for (const assignment of desired.filter((row) => row.status === "active")) {
+    const created = await request("/assignments", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        teacherCode: teacherIdentifier,
+        classCode: assignment.classCode,
+        className: assignment.className,
+        subjectCode: assignment.subjectCode,
+        subject: assignment.subject ?? assignment.course,
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+  }
 }
 
 async function createActiveClass(token, label) {
@@ -209,7 +225,7 @@ async function main() {
     assert.equal(unknownYear.status, 400, JSON.stringify(unknownYear.data));
 
     // Connexion réelle : affectation active + classCode → 200 avant et après refresh.
-    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -248,8 +264,8 @@ async function main() {
       JSON.stringify(teacherReadAfterRefresh.data),
     );
 
-    // Affectation désactivée avant refresh → accès refusé après refresh.
-    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
+    // Affectation retirée avant refresh → accès refusé après refresh.
+    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -280,8 +296,8 @@ async function main() {
       JSON.stringify(teacherInactiveLoginDenied.data),
     );
 
-    // Connexion réelle avec affectation sans statut → refus fail-closed.
-    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
+    // Le client ne peut pas créer une affectation sans statut actif → refus fail-closed.
+    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -343,8 +359,13 @@ async function main() {
     );
     assert.equal(enrolledHomonym.status, 201, JSON.stringify(enrolledHomonym.data));
 
-    await setTeacherEmbeddedAssignments(tokenCd, "ENS-0001", [
-      { className: priorYearName, course: "Mathématiques", status: "active" },
+    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
+      {
+        classCode: priorYear.data.classCode,
+        className: priorYearName,
+        course: "Mathématiques",
+        status: "inactive",
+      },
     ]);
     const nameOnlyLogin = await loginSession("ENS-0001", "CD-2026-0001");
     const teacherNameOnlyStudentDenied = await request(
