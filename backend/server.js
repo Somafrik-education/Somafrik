@@ -1361,6 +1361,11 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     LEGACY_SCHOOLS_STATE_WRITE_CODE,
     LEGACY_SCHOOLS_STATE_WRITE_MESSAGE,
   } = require("./lib/legacySchoolsStateWrite");
+  const {
+    stripLegacyStudentsStateWrite,
+    LEGACY_STUDENTS_STATE_WRITE_CODE,
+    LEGACY_STUDENTS_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacyStudentsStateWrite");
   const preparedLegacyClasses = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
   if (preparedLegacyClasses.rejectLegacyClassesWrite) {
     const error = new BusinessError(400, LEGACY_CLASSES_STATE_WRITE_MESSAGE);
@@ -1376,7 +1381,13 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     error.code = LEGACY_SCHOOLS_STATE_WRITE_CODE;
     throw error;
   }
-  const rawBody = preparedLegacySchools.body;
+  const preparedLegacyStudents = stripLegacyStudentsStateWrite(preparedLegacySchools.body);
+  if (preparedLegacyStudents.rejectLegacyStudentsWrite) {
+    const error = new BusinessError(400, LEGACY_STUDENTS_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_STUDENTS_STATE_WRITE_CODE;
+    throw error;
+  }
+  const rawBody = preparedLegacyStudents.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -1620,7 +1631,8 @@ async function getRuntime() {
   applyStoredStatusOverlay(dataset, storedState);
   applyStoredSchoolOverlay(dataset, storedState);
   applyStoredUserOverlay(dataset, storedState);
-  const mergedStudents = mergeRowsByIdentity(dataset.students ?? [], storedState?.students ?? []);
+  // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
+  const mergedStudents = dataset.students ?? [];
   const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
   const mergedTeachers = mergeRowsByIdentity(dataset.teachers ?? [], storedState?.teachers ?? []);
   const authService = new AuthService({
@@ -2098,7 +2110,10 @@ async function saveEstablishmentState(nextState, currentState = null, principal 
   const enriched = enrichStateWithValidationAlerts(current, nextState, principal);
   const sanitized = sanitizeBackOfficeState(enriched);
   const hydrated = ensureSubscriptionModuleState(hydrateSubscriptionsFromSchools(sanitized));
-  return repository.saveBackOfficeState(hydrated);
+  const saved = await repository.saveBackOfficeState(hydrated);
+  // LOT 2 — la projection élèves est issue du runtime PostgreSQL et n'est
+  // jamais durablement réécrite dans backoffice_state.
+  return { ...saved, students: sanitized.students ?? [] };
 }
 
 function requireSchoolSubscriptionFeature(feature) {
@@ -2345,7 +2360,9 @@ function mergeBackOfficeRuntimeState(runtime = {}, storedState = {}) {
     relations: mergeRowsByIdentity(runtimeState.relations, storedState.relations),
     subscriptions: mergeRowsByIdentity(runtimeState.subscriptions, storedState.subscriptions),
     notifications: mergeRowsByIdentity(runtimeState.notifications, storedState.notifications),
-    students: mergeRowsByIdentity(runtimeState.students, storedState.students),
+    // LOT 2 — projection lecture exclusivement PostgreSQL/runtime.
+    // Les éventuelles lignes students historiques du JSON sont ignorées.
+    students: runtimeState.students ?? [],
     teachers: mergeRowsByIdentity(runtimeState.teachers, storedState.teachers),
     // Projection lecture Classes / Établissements : PostgreSQL / runtime (plus de mutation JSON).
     classes: runtimeState.classes ?? [],

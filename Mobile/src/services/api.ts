@@ -304,6 +304,7 @@ export function getBackOfficeState() {
 export function saveBackOfficeState(payload: BackOfficeStatePayload) {
   const rest = { ...payload };
   delete rest.schools;
+  delete rest.students;
   return request<BackOfficeStatePayload>("/backoffice/state", {
     method: "PUT",
     body: JSON.stringify(rest),

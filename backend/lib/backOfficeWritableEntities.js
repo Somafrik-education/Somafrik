@@ -18,7 +18,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
   "contacts",
   "relations",
   "users",
-  "students",
   "teachers",
   "courses",
   "assignments",
@@ -49,7 +48,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
  * (Utilisateurs/Contacts/Notes/Frais = lecture seule ou « - »)
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
-  "students",
   "presences",
   "payments",
   "paymentStatuses",
@@ -73,7 +71,6 @@ const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([
  * Préfet / Proviseur / Directeur adjoint — pédagogie (matrix Préfet CRUD).
  */
 const PREFET_WRITABLE_ENTITIES = Object.freeze([
-  "students",
   "teachers",
   "courses",
   "assignments",
@@ -138,9 +135,12 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
 
   if (isSuperAdminRole(role)) {
     // auditLog volontairement exclu : journal serveur uniquement.
-    // schools volontairement exclu : CRUD via /api/backoffice/establishments (LOT 1).
+    // schools et students volontairement exclus : APIs PostgreSQL dédiées
+    // (LOT 1 établissements, LOT 2 élèves).
     return [
-      ...allEntities.filter((entity) => entity !== "auditLog" && entity !== "schools"),
+      ...allEntities.filter(
+        (entity) => entity !== "auditLog" && entity !== "schools" && entity !== "students",
+      ),
       "rolePermissions",
       "academicConfigs",
       "dashboardChartConfig",

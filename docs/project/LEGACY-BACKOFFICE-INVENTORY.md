@@ -112,11 +112,11 @@ Autres appels `saveBackOfficeState` dans `server.js` : password/users, repair or
 Ordre transactionnel :
 
 1. **Schools** — pour chaque `payload.schools[]` → `ensureSchoolFromBackOfficeRecord` matérialise `schools` (+ `countries` si besoin). Introduit PR #160.
-2. **Students** — `syncStudentsDomainFromBackOffice` → `materializeBackOfficeStudent` → tables `students` / `enrollments`.
+2. **Students** — retiré au LOT 2 : aucune synchronisation `students[]` déclenchée par PUT.
 3. **Staff** — `syncPedagogyStaffDomainFromBackOffice` → teachers + assignments PG.
 4. **Notes** — `persistBackOfficeAfterNotesSync` → `syncNotesDomainFromBackOffice` → strip ACK.
-5. **Persist JSON** — UPSERT `backoffice_state`.
-6. **Retour** — state relu + `syncAck`.
+5. **Persist JSON** — UPSERT `backoffice_state`, sans `students`.
+6. **Retour** — state relu + `syncAck`, projection élèves fournie par le runtime PG.
 
 ### 2.4 HTTP GET / PUT `/state`
 
@@ -226,7 +226,7 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 
 | Domaine | État au tip develop |
 |---------|---------------------|
-| `students[]` dans PUT | Encore writable + sync PG ; UI création orientée API PG |
+| `students[]` dans PUT | **Projection lecture PG** ; toute présence dans PUT refusée (`LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`) |
 | `teachers[]` / `assignments[]` | PUT sync PG ; création UI via `/api/teachers` |
 | `classes[]` | **Projection lecture** dans GET state ; plus d’écriture PUT |
 | `notes` / `evaluations` | PG SoT ; Web Notes UI encore via `DataContext.update` (PUT) |
@@ -248,7 +248,7 @@ Sans calendrier — dépendances techniques seulement.
 |-----|---------|--------------------------------|
 | **0** | Inventaire (ce document) | Baseline partagée |
 | **1** | **Schools / establishments** | ✅ API establishments = SoT PG ; PUT `schools` interdit |
-| **2** | **Students** | Interdire `students` sur PUT ; inscription + fiche + import uniquement APIs PG |
+| **2** | **Students** | ✅ PUT `students` interdit ; inscription + fiche + validation import sur projection APIs PG |
 | **3** | **Teachers / assignments** | Interdire `teachers`/`assignments` sur PUT ; APIs affectations |
 | **4** | **Finance** | Paiements, grilles, impayés, reminders → APIs + tables PG |
 | **5** | **Pedagogy** | Courses, schedules, exams, bulletins, documents, academicConfigs ; Notes/Présences UI 100 % APIs PG |
@@ -278,24 +278,28 @@ Checklist **toutes** obligatoires :
    - [x] schools (LOT 1 — PUT retiré ; API establishments SoT PG)
    - [ ] users, countries, contacts, relations
    - [ ] subscriptions* / notifications
-   - [ ] students, teachers, classes (déjà), courses, assignments, courseSchedules
+   - [x] students (LOT 2 — inscription/fiche PG, projection state read-only)
+   - [ ] teachers, classes (déjà), courses, assignments, courseSchedules
    - [ ] payments*, fee*, reminders
    - [ ] presences, notes, evaluations, exams, bulletins, documents
    - [ ] academicConfigs, announcements, messages, rolePermissions, dashboardChartConfig
 
 4. **Side-effects de `saveBackOfficeState` retirés ou inutiles**
-   - [ ] Plus de sync students/staff/notes déclenché par PUT
+   - [x] Plus de sync students déclenché par PUT
+   - [ ] Plus de sync staff/notes déclenché par PUT
    - [ ] Materialize schools uniquement depuis API establishments
 
 5. **Projection JSON**
    - [ ] GET state soit retiré, soit strictement read-only dérivé de PG (pas de dual-write)
-   - [ ] `state.classes` / élèves / enseignants ne sont plus source d’écriture
+   - [x] `state.classes` / élèves ne sont plus source d’écriture
+   - [ ] `state.teachers` n'est plus source d’écriture
 
 6. **Vérifications vertes**
    - [ ] `verify:classes-legacy-cleanup`
    - [ ] `verify:schools-legacy-cleanup`
    - [ ] `verify:class-student-enrollment`
    - [ ] `verify:students-fiche-consolidation`
+   - [ ] `verify:students-legacy-cleanup`
    - [ ] `verify:teacher-account-creation`
    - [ ] RBAC state adaptés au retrait
    - [ ] `verify:runtime-bootstrap` + suite accès sans dépendance d’écriture state
@@ -315,7 +319,7 @@ Checklist **toutes** obligatoires :
 
 ### Writable par rôle (extrait)
 
-Source `backend/lib/backOfficeWritableEntities.js` — Admin School inclut encore `students`, `teachers`, finance, notes, etc. ; **pas** `classes` (bloqué avant merge). `auditLog` jamais writable client.
+Source `backend/lib/backOfficeWritableEntities.js` — Admin School inclut encore `teachers`, finance, notes, etc. ; **pas** `classes`, `schools` ni `students` (bloqués avant merge). `auditLog` jamais writable client.
 
 ### APIs métier hors `/backoffice` déjà structurantes
 

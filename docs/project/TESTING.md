@@ -77,6 +77,7 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:runtime-bootstrap` | `init` → health → login 401 |
 | `npm run verify:classes-legacy-cleanup` | PUT `classes` interdit ; `/api/classes` + projection lecture |
 | `npm run verify:schools-legacy-cleanup` | PUT `schools` interdit (seul, mixte `{schools,users}` / `{schools,subscriptions}`, snapshot) sans mutation partielle ; pays hors référentiel (`FR`) refusé ; `/api/backoffice/establishments` + projection lecture |
+| `npm run verify:students-legacy-cleanup` | PUT `students` interdit (toute valeur, seul, mixte, snapshot) sans mutation partielle ; inscription/liste/fiche/PATCH via APIs PG ; projection `state.students` read-only ; writers Web/Mobile/BackOffice retirés |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
 | `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |
@@ -122,6 +123,13 @@ Après déploiement Render + Vercel (`develop`) :
 - [ ] Modifier / supprimer une classe → 200 + persistance
 - [ ] Créer enseignant + affectation → 200, sans `auditLog`, persiste
 - [ ] Nettoyage localStorage suffit pour les fantômes optimistes (pas de delete serveur)
+
+### Gate Élèves (LOT 2)
+
+- [ ] Inscrire depuis une classe → 201 et matricule canonique
+- [ ] Liste/fiche/PATCH via `/api/students` → persistance après reload
+- [ ] PUT state avec clé `students` seule, mixte ou snapshot → 400 `LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN`
+- [ ] `GET state.students` reflète PostgreSQL sans ligne JSON fantôme
 
 ### Gate Notes / sync enseignant
 

@@ -772,24 +772,27 @@ class PostgresRepository {
     await this.init();
     const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
     const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
-    // HOTFIX — matérialiser schools BO → PG avant sync élèves/enseignants / années scolaires.
-    // HOTFIX-PRE-E1-01 : élèves/inscriptions PG avant sync notes.
+    // LOT 2 — students est une projection read-only : aucune synchronisation
+    // ni persistance JSON ne doit être déclenchée par PUT /backoffice/state.
+    const { students: _legacyStudents, ...payloadWithoutStudents } = payload ?? {};
+    // HOTFIX — matérialiser schools BO → PG avant sync enseignants / années scolaires.
     // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
     // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
     // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async (tx) => {
       const transactional = this.createTxScope(tx);
-      const payloadSchools = Array.isArray(payload?.schools) ? payload.schools : [];
+      const payloadSchools = Array.isArray(payloadWithoutStudents.schools)
+        ? payloadWithoutStudents.schools
+        : [];
       for (const school of payloadSchools) {
         const code = school?.code ?? school?.schoolCode;
         if (!code) continue;
         await transactional.ensureSchoolFromBackOfficeRecord(code, { schools: payloadSchools });
       }
-      const studentSync = await transactional.syncStudentsDomainFromBackOffice(payload ?? {});
-      const staffSync = await transactional.syncPedagogyStaffDomainFromBackOffice(payload ?? {});
+      const staffSync = await transactional.syncPedagogyStaffDomainFromBackOffice(payloadWithoutStudents);
       const syncResult = await persistBackOfficeAfterNotesSync({
-        payload: payload ?? {},
+        payload: payloadWithoutStudents,
         syncFn: async (body) => transactional.syncNotesDomainFromBackOffice(body),
         persistFn: async (durablePayload) => {
           const runner = tx ?? transactional;
@@ -803,7 +806,12 @@ class PostgresRepository {
           );
         },
       });
-      syncAck = mergePreE1SyncAck(studentSync, staffSync, syncResult);
+      const studentSyncRetired = {
+        synced: true,
+        accepted: { students: [], enrollments: [] },
+        rejected: [],
+      };
+      syncAck = mergePreE1SyncAck(studentSyncRetired, staffSync, syncResult);
     });
     this.cachedDataset = null;
     // syncAck est retourné avec le résultat de cette opération uniquement —
@@ -4562,16 +4570,24 @@ class PostgresRepository {
     return this.getClassStudentsRepository().listBySchoolCode(schoolCode);
   }
 
-  enrollStudentInClass(classCode, schoolCode, body) {
-    return this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+  async enrollStudentInClass(classCode, schoolCode, body) {
+    const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+    this.cachedDataset = null;
+    return created;
   }
 
   getSchoolStudentByCode(studentCode, schoolCode) {
     return this.getClassStudentsRepository().getByStudentCode(studentCode, schoolCode);
   }
 
-  updateSchoolStudentByCode(studentCode, schoolCode, body) {
-    return this.getClassStudentsRepository().updateByStudentCode(studentCode, schoolCode, body);
+  async updateSchoolStudentByCode(studentCode, schoolCode, body) {
+    const updated = await this.getClassStudentsRepository().updateByStudentCode(
+      studentCode,
+      schoolCode,
+      body,
+    );
+    this.cachedDataset = null;
+    return updated;
   }
 
   getTeachersRepository() {

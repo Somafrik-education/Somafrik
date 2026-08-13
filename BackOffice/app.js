@@ -2463,7 +2463,6 @@ function getBackOfficeStatePayload() {
     countries: state.countries,
     subscriptions: state.subscriptions,
     notifications: state.notifications,
-    students: state.students,
     teachers: state.teachers,
     classes: state.classes,
     courses: state.courses,

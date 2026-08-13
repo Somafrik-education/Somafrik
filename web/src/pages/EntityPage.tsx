@@ -267,11 +267,16 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
   const assignmentModule = useMemo(() => getEntityModule("assignments"), []);
   const allowCreate =
     canCreate &&
+    module?.key !== "students" &&
     !disableCreate &&
     !module?.planningManaged &&
     module?.key !== "payments" &&
     !entityCreateViaContactsOnly(module?.key ?? "");
-  const allowDelete = canDelete && !module?.planningManaged && module?.key !== "payments";
+  const allowDelete =
+    canDelete &&
+    module?.key !== "students" &&
+    !module?.planningManaged &&
+    module?.key !== "payments";
 
   // ELEVE-001 / ENS-001 : créer une fiche à partir d'un contact existant.
   const linkableContactKind: "student" | "teacher" | null =
@@ -560,6 +565,13 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!editing || !module) return;
+    if (module.key === "students") {
+      showToast(
+        "Utilisez Classes → Inscrire un élève ou la fiche élève PostgreSQL.",
+        "error",
+      );
+      return;
+    }
 
     if (module.key === "relations" && isParentChildMode) {
       const plan = buildParentChildBundleSubmitPlan(
@@ -933,6 +945,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   async function handleDelete(row: Record<string, unknown>) {
     if (!module || !row.id) return;
+    if (module.key === "students") {
+      showToast("La suppression legacy des élèves est retirée.", "error");
+      return;
+    }
     if (module.planningManaged) {
       showToast("Supprimez la session depuis Planning de cours.", "error");
       return;
@@ -1106,7 +1122,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     module,
     isParentChildMode,
     busy,
-    canUpdate,
+    canUpdate: module.key === "students" ? false : canUpdate,
     allowDelete,
     studentsCanRead: studentsPermissions.canRead,
     assignmentCanCreateOrUpdate:
