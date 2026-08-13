@@ -10,6 +10,7 @@ import { Modal } from "../components/ui/Modal";
 import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
+import { platformApi } from "../lib/platformApi";
 import type { PlatformNotification } from "../types";
 
 const AUDIENCE_OPTIONS = [
@@ -43,7 +44,7 @@ function newId(): string {
 
 export function NotificationsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const [busy, setBusy] = useState(false);
   const [composing, setComposing] = useState<PlatformNotification | null>(null);
   const { showToast } = useToast();
@@ -72,9 +73,9 @@ export function NotificationsPage() {
           ? "Super Administrateur Somafrik"
           : composing.audience,
     };
-    const next = [notification, ...state.notifications];
     try {
-      await update({ notifications: next });
+      await platformApi.createNotification(notification as unknown as Record<string, unknown>);
+      await refresh();
       showToast("Notification envoyée", "success");
       setComposing(null);
     } catch {
@@ -86,11 +87,11 @@ export function NotificationsPage() {
 
   async function markRead(notification: PlatformNotification) {
     setBusy(true);
-    const next = state.notifications.map((n) =>
-      n.id === notification.id ? { ...n, status: "Lu" } : n,
-    );
     try {
-      await update({ notifications: next });
+      if (notification.id) {
+        await platformApi.updateNotification(String(notification.id), { status: "Lu" });
+      }
+      await refresh();
     } catch {
       showToast("Échec de la mise à jour", "error");
     } finally {
@@ -100,10 +101,13 @@ export function NotificationsPage() {
 
   async function markAllRead() {
     setBusy(true);
-    const ids = new Set(rows.map((n) => n.id));
-    const next = state.notifications.map((n) => (ids.has(n.id) ? { ...n, status: "Lu" } : n));
     try {
-      await update({ notifications: next });
+      for (const notification of rows) {
+        if (notification.id) {
+          await platformApi.updateNotification(String(notification.id), { status: "Lu" });
+        }
+      }
+      await refresh();
       showToast("Notifications marquées comme lues", "success");
     } catch {
       showToast("Échec de la mise à jour", "error");
@@ -114,9 +118,11 @@ export function NotificationsPage() {
 
   async function archive(notification: PlatformNotification) {
     setBusy(true);
-    const next = state.notifications.filter((n) => n.id !== notification.id);
     try {
-      await update({ notifications: next });
+      if (notification.id) {
+        await platformApi.updateNotification(String(notification.id), { archived: true });
+      }
+      await refresh();
       showToast("Notification archivée", "success");
     } catch {
       showToast("Échec de l'archivage", "error");

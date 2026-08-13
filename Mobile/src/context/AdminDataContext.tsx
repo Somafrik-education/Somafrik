@@ -31,7 +31,7 @@ import {
 } from "../lib/activeSchool";
 import { normalize } from "../lib/format";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
-import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, BackOfficeStatePayload } from "../services/api";
 import { SYNC_INTERVAL_MS } from "../config/env";
 import { useAuth } from "./AuthContext";
 
@@ -449,6 +449,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     };
 
     const commitEntity = (entity: AdminEntity, updater: (items: any[]) => any[]) => {
+      if (entity === "countries" || entity === "subscriptions") {
+        return;
+      }
       setters[entity]((items: any[]) => {
         const nextItems = enforceEntityScope(entity, updater(items), session, state);
         persistSyncedState({ ...state, [entity]: nextItems });
@@ -483,11 +486,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         );
 
         setUsersData(nextUsers as UserAccount[]);
-        persistSyncedState({
-          ...state,
-          users: nextUsers,
-          rolePermissions: nextPermissions,
-        });
+        void replacePlatformRolePermissions(nextPermissions).catch(() => setSyncStatus("offline"));
 
         return nextPermissions;
       });
@@ -573,13 +572,19 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       upsertNotification: (item) => {
         setNotificationsData((current) => {
           const next = [item, ...current.filter((row) => row.id !== item.id)];
-          persistSyncedState({ ...stateSnapshot, notifications: next });
+          void createPlatformNotification(item as Record<string, unknown>).catch(() => setSyncStatus("offline"));
           return next;
         });
       },
       updateNotifications: (items) => {
         setNotificationsData(items);
-        persistSyncedState({ ...stateSnapshot, notifications: items });
+        void Promise.all(
+          items.map((item) =>
+            item.id
+              ? updatePlatformNotification(String(item.id), item as Record<string, unknown>)
+              : createPlatformNotification(item as Record<string, unknown>),
+          ),
+        ).catch(() => setSyncStatus("offline"));
       },
     };
   }, [

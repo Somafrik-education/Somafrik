@@ -284,14 +284,12 @@ Checklist **toutes** obligatoires :
 
 3. **Chaque entité du sanitize a une API PG SoT**
    - [x] schools (LOT 1 — PUT retiré ; API establishments SoT PG)
-   - [ ] users, countries, contacts, relations
-   - [ ] subscriptions* / notifications
+   - [ ] users, contacts, relations
+   - [x] countries, subscriptions*, notifications, rolePermissions, dashboardChartConfig (LOT 6 — APIs PG, PUT interdit)
    - [x] students (LOT 2 — inscription/fiche PG, projection state read-only)
    - [x] teachers, classes (déjà), assignments
-   - [ ] courses, courseSchedules
+   - [x] courses, courseSchedules, notes, presences, evaluations (LOT 5)
    - [x] payments*, fee*, reminders (LOT 4 — APIs PG, PUT interdit, pas de backfill JSON)
-   - [ ] presences, notes, evaluations, exams, bulletins, documents
-   - [ ] academicConfigs, announcements, messages, rolePermissions, dashboardChartConfig
 
 4. **Side-effects de `saveBackOfficeState` retirés ou inutiles**
    - [x] Plus de sync students déclenché par PUT
@@ -304,6 +302,7 @@ Checklist **toutes** obligatoires :
    - [x] `state.classes` / élèves ne sont plus source d’écriture
    - [x] `state.teachers` / `state.assignments` ne sont plus sources d’écriture
    - [x] `state` Finance (payments*, fee*, reminders) n’est plus source d’écriture
+   - [x] `state` Plateforme (countries, subscriptions*, notifications, rolePermissions, dashboardChartConfig) n’est plus source d’écriture
 
 6. **Vérifications vertes**
    - [ ] `verify:classes-legacy-cleanup`
@@ -313,8 +312,8 @@ Checklist **toutes** obligatoires :
    - [ ] `verify:students-legacy-cleanup`
    - [ ] `verify:teacher-account-creation`
    - [ ] `verify:teachers-assignments-legacy-cleanup`
-   - [ ] `verify:finance-legacy-cleanup`
-   - [ ] `verify:finance-management`
+   - [ ] `verify:platform-legacy-cleanup`
+   - [ ] `verify:platform-management`
    - [ ] RBAC state adaptés au retrait
    - [ ] `verify:runtime-bootstrap` + suite accès sans dépendance d’écriture state
    - [ ] Gates préprod domaines migrés
@@ -341,4 +340,4 @@ Source `backend/lib/backOfficeWritableEntities.js` — Admin School conserve not
 
 ---
 
-*LOT 0 inventaire, mis à jour LOT 4 — Finance PostgreSQL SoT. Aucun backfill des données historiques.*
+*LOT 0 inventaire, mis à jour LOT 6 — Plateforme PostgreSQL SoT. Aucun backfill des données historiques.*

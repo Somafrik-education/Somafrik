@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { scopedSchools } from "../../lib/scope";
-import { appendSubscriptionAudit } from "../../lib/subscriptionModule";
+import { platformApi } from "../../lib/platformApi";
 import { normalize } from "../../lib/format";
 import { useFeaturePermissions } from "../../lib/usePermissionContext";
 import { Card, SectionHeader } from "../../components/ui/Card";
@@ -15,7 +15,7 @@ import type { SubscriptionDiscount } from "../../types";
 
 export function SubscriptionDiscountsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const { canCreate, canUpdate } = useFeaturePermissions("Abonnements");
@@ -54,15 +54,8 @@ export function SubscriptionDiscountsPage() {
       createdAt: new Date().toLocaleString("fr-FR"),
     };
     try {
-      await update({
-        subscriptionDiscounts: [discount, ...(state.subscriptionDiscounts ?? [])],
-        subscriptionAuditLog: appendSubscriptionAudit(state.subscriptionAuditLog, {
-          action: "Remise proposée",
-          schoolCode: form.schoolCode,
-          author: user?.identifier ?? user?.email,
-          details: `${form.percent}% — ${form.reason}`,
-        }),
-      });
+      await platformApi.createSubscriptionDiscount(discount as unknown as Record<string, unknown>);
+      await refresh();
       setForm({ ...form, reason: "" });
       showToast("Remise proposée — validation Super Admin requise", "success");
     } catch {
@@ -74,21 +67,12 @@ export function SubscriptionDiscountsPage() {
 
   async function approve(discount: SubscriptionDiscount) {
     setBusy(true);
-    const next = (state.subscriptionDiscounts ?? []).map((d) =>
-      d.id === discount.id
-        ? { ...d, status: "Approuvée" as const, approvedBy: user?.identifier ?? user?.email }
-        : d,
-    );
     try {
-      await update({
-        subscriptionDiscounts: next,
-        subscriptionAuditLog: appendSubscriptionAudit(state.subscriptionAuditLog, {
-          action: "Remise approuvée",
-          schoolCode: discount.schoolCode,
-          author: user?.identifier ?? user?.email,
-          details: `${discount.percent ?? discount.amount}%`,
-        }),
+      await platformApi.patchSubscriptionDiscount(discount.id, {
+        status: "Approuvée",
+        approvedBy: user?.identifier ?? user?.email,
       });
+      await refresh();
       showToast("Remise approuvée", "success");
     } catch {
       showToast("Échec", "error");

@@ -26,6 +26,7 @@ import { Button } from "../components/ui/Button";
 import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
+import { platformApi } from "../lib/platformApi";
 
 type SuperadminDraftRole = typeof COUNTRY_ADMIN_ROLE | typeof SCHOOL_ADMIN_ROLE;
 
@@ -43,7 +44,7 @@ const ROLE_HINTS: Record<SuperadminDraftRole, string> = {
 
 export function PermissionsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
 
@@ -145,8 +146,8 @@ export function PermissionsPage() {
   async function save() {
     setBusy(true);
     try {
-      await update({
-        rolePermissions: mergeSuperadminRolePermissions(state.rolePermissions, {
+      await platformApi.replaceRolePermissions(
+        mergeSuperadminRolePermissions(state.rolePermissions, {
           ...state.rolePermissions,
           [COUNTRY_ADMIN_ROLE]: normalizeManagedRolePermissions(
             COUNTRY_ADMIN_ROLE,
@@ -157,7 +158,8 @@ export function PermissionsPage() {
             draftByRole[SCHOOL_ADMIN_ROLE],
           ),
         }),
-      });
+      );
+      await refresh();
       showToast("Permissions enregistrées", "success");
     } catch {
       showToast("Échec de l'enregistrement", "error");

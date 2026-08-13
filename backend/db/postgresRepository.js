@@ -89,6 +89,7 @@ class PostgresRepository {
     await this.ensureTeachersDomainConstraints();
     await this.ensureFinanceCanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
+    await this.ensurePlatformCanonicalSchema();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -431,6 +432,75 @@ class PostgresRepository {
   async ensurePedagogyCanonicalSchema() {
     const { PEDAGOGY_SCHEMA_SQL } = require("./pedagogySchema");
     await this.query(PEDAGOGY_SCHEMA_SQL);
+  }
+
+  async ensurePlatformCanonicalSchema() {
+    const { PLATFORM_SCHEMA_SQL } = require("./platformSchema");
+    await this.query(PLATFORM_SCHEMA_SQL);
+  }
+
+  getPlatformStore() {
+    if (!this._platformStore) {
+      const { createPlatformPgStore } = require("./platformPgStore");
+      this._platformStore = createPlatformPgStore(this);
+    }
+    return this._platformStore;
+  }
+
+  listPlatformProjection() {
+    return this.getPlatformStore().listProjection();
+  }
+
+  getRolePermissionsMap() {
+    return this.getPlatformStore().getRolePermissionsMap();
+  }
+
+  createPlatformCountry(payload, principal, auditMeta) {
+    return this.getPlatformStore().createCountry(payload, principal, auditMeta);
+  }
+
+  updatePlatformCountry(code, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateCountry(code, patch, principal, auditMeta);
+  }
+
+  upsertPlatformSubscription(payload, principal, auditMeta) {
+    return this.getPlatformStore().upsertSubscription(payload, principal, auditMeta);
+  }
+
+  createPlatformNotification(payload, principal, auditMeta) {
+    return this.getPlatformStore().createNotification(payload, principal, auditMeta);
+  }
+
+  updatePlatformNotification(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateNotification(id, patch, principal, auditMeta);
+  }
+
+  replacePlatformRolePermissions(map, principal, auditMeta) {
+    return this.getPlatformStore().replaceRolePermissions(map, principal, auditMeta);
+  }
+
+  savePlatformDashboardChartConfig(config, principal, auditMeta) {
+    return this.getPlatformStore().saveDashboardChartConfig(config, principal, auditMeta);
+  }
+
+  upsertPlatformSubscriptionOffer(payload, principal, auditMeta) {
+    return this.getPlatformStore().upsertSubscriptionOffer(payload, principal, auditMeta);
+  }
+
+  createPlatformSubscriptionPayment(payload, principal, auditMeta) {
+    return this.getPlatformStore().createSubscriptionPayment(payload, principal, auditMeta);
+  }
+
+  updatePlatformSubscriptionPayment(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateSubscriptionPayment(id, patch, principal, auditMeta);
+  }
+
+  createPlatformSubscriptionDiscount(payload, principal, auditMeta) {
+    return this.getPlatformStore().createSubscriptionDiscount(payload, principal, auditMeta);
+  }
+
+  updatePlatformSubscriptionDiscount(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateSubscriptionDiscount(id, patch, principal, auditMeta);
   }
 
   getPedagogyStore() {
@@ -941,9 +1011,20 @@ class PostgresRepository {
       studentFees: _legacyStudentFees,
       feeTariffHistory: _legacyFeeTariffHistory,
       paymentReminders: _legacyPaymentReminders,
+      countries: _legacyCountries,
+      subscriptions: _legacySubscriptions,
+      subscriptionOffers: _legacySubscriptionOffers,
+      subscriptionPayments: _legacySubscriptionPayments,
+      subscriptionInvoices: _legacySubscriptionInvoices,
+      subscriptionDiscounts: _legacySubscriptionDiscounts,
+      subscriptionAuditLog: _legacySubscriptionAuditLog,
+      notifications: _legacyNotifications,
+      rolePermissions: _legacyRolePermissions,
+      dashboardChartConfig: _legacyDashboardChartConfig,
       ...durablePayload
     } = payloadWithoutStudents;
     // LOT 5 — pédagogie : projection PostgreSQL read-only ; aucune sync JSON → PG.
+    // LOT 6 — plateforme : projection PostgreSQL read-only ; aucune sync JSON → PG.
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async (tx) => {
       const transactional = this.createTxScope(tx);

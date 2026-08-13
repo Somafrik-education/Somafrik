@@ -13,8 +13,9 @@ import {
   SectionHeader,
   Select,
   Textarea,
+  useToast,
 } from "../design-system";
-import { useToast } from "../components/ui/Toast";
+import { platformApi } from "../lib/platformApi";
 import {
   DEFAULT_CLASS_NAMES,
   DEFAULT_LEVELS,
@@ -71,7 +72,7 @@ export type ConfigurationSection = "annee-scolaire" | "structure" | "roles-droit
 
 export function ConfigurationPage({ section }: { section?: ConfigurationSection } = {}) {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, refresh } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
   const user = session?.user ?? null;
@@ -461,10 +462,11 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
       await update({
         academicConfigs: nextConfigs,
         ...(nextUsers !== state.users ? { users: nextUsers } : {}),
-        ...(nextRolePermissions !== state.rolePermissions
-          ? { rolePermissions: nextRolePermissions }
-          : {}),
       });
+      if (nextRolePermissions !== state.rolePermissions) {
+        await platformApi.replaceRolePermissions(nextRolePermissions);
+      }
+      await refresh();
       setRolePermissionDraft(null);
       const bulkSuffix = codes.length > 1 ? ` (${codes.length} établissements)` : "";
       if (renamedLabels) {
@@ -515,7 +517,9 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
           ? { ...account, permissions: nextRolePermissions[account.role] }
           : account,
       );
-      await update({ rolePermissions: nextRolePermissions, users: nextUsers });
+      await platformApi.replaceRolePermissions(nextRolePermissions);
+      await update({ users: nextUsers });
+      await refresh();
       setRolePermissionDraft(null);
       showToast("Pilotage des rôles enregistré", "success");
     } catch {

@@ -5,7 +5,6 @@ import {
   DEFAULT_SUBSCRIPTION_OFFERS,
   SUBSCRIPTION_MODULE_LABELS,
   ensureSubscriptionOffers,
-  appendSubscriptionAudit,
   filterOffersForCountry,
   formatOfferCountries,
 } from "../../lib/subscriptionModule";
@@ -20,10 +19,11 @@ import { Field, Input, Select } from "../../components/ui/Field";
 import { Table, type Column } from "../../components/ui/Table";
 import { Badge } from "../../components/ui/Badge";
 import { useToast } from "../../components/ui/Toast";
+import { platformApi } from "../../lib/platformApi";
 import type { SubscriptionOffer } from "../../types";
 
 export function SubscriptionOffersPage() {
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { session } = useAuth();
   const { showToast } = useToast();
   const { canCreate, canUpdate } = useFeaturePermissions("Abonnements");
@@ -106,14 +106,8 @@ export function SubscriptionOffersPage() {
     }
 
     try {
-      await update({
-        subscriptionOffers: nextOffers,
-        subscriptionAuditLog: appendSubscriptionAudit(state.subscriptionAuditLog, {
-          action: isNew ? "Création offre" : "Modification offre",
-          author: session?.user?.identifier ?? session?.user?.email,
-          details: `${offer.name} — ${countryCodes.join(", ")}`,
-        }),
-      });
+      await platformApi.upsertSubscriptionOffer(offer as unknown as Record<string, unknown>);
+      await refresh();
       setDraft(null);
       showToast(isNew ? "Offre créée" : "Offre mise à jour", "success");
     } catch {

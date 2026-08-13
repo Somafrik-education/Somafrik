@@ -2099,11 +2099,20 @@ async function handleActionClick(event) {
   }
 
   if (action === "renew-subscriptions") {
-    state.subscriptions.forEach(renewSubscription);
-    state.subscriptions.forEach((subscription) => addAudit("Renouvellement abonnement", subscription.schoolCode, `Abonnement renouvelé jusqu'au ${subscription.endDate}`));
-    renderOperationalViews();
-    persistSession();
-    showToast("Tous les abonnements ont été renouvelés.");
+    void Promise.all(
+      state.subscriptions.map((subscription) => {
+        renewSubscription(subscription);
+        return syncPlatformSubscription(subscription);
+      }),
+    )
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        state.subscriptions.forEach((subscription) =>
+          addAudit("Renouvellement abonnement", subscription.schoolCode, `Abonnement renouvelé jusqu'au ${subscription.endDate}`),
+        );
+        showToast("Tous les abonnements ont été renouvelés.");
+      })
+      .catch((error) => showToast(error.message ?? "Échec du renouvellement."));
     return;
   }
 
@@ -2111,10 +2120,13 @@ async function handleActionClick(event) {
     const target = state.subscriptions.find((subscription) => subscription.id === id);
     if (!target) return;
     renewSubscription(target);
-    addAudit("Renouvellement abonnement", target.schoolCode, `Abonnement renouvelé jusqu'au ${target.endDate}`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`Abonnement ${target.schoolCode} renouvelé.`);
+    void syncPlatformSubscription(target)
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Renouvellement abonnement", target.schoolCode, `Abonnement renouvelé jusqu'au ${target.endDate}`);
+        showToast(`Abonnement ${target.schoolCode} renouvelé.`);
+      })
+      .catch((error) => showToast(error.message ?? "Échec du renouvellement."));
     return;
   }
 
@@ -2147,34 +2159,41 @@ async function handleActionClick(event) {
   }
 
   if (action === "read-all-notifications") {
-    state.notifications.forEach((notification) => {
-      notification.status = "Lu";
-    });
-    addAudit("Lecture notifications", "bulk", "Toutes les notifications marquées comme lues");
-    renderOperationalViews();
-    persistSession();
-    showToast("Toutes les notifications sont marquées comme lues.");
+    void Promise.all(
+      state.notifications.map((notification) => patchPlatformNotification(notification.id, { status: "Lu" })),
+    )
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Lecture notifications", "bulk", "Toutes les notifications marquées comme lues");
+        showToast("Toutes les notifications sont marquées comme lues.");
+      })
+      .catch((error) => showToast(error.message ?? "Échec de la mise à jour."));
     return;
   }
 
   if (action === "read-notification") {
     const target = state.notifications.find((notification) => notification.id === id);
     if (!target) return;
-    target.status = "Lu";
-    addAudit("Lecture notification", target.id, target.title);
-    renderOperationalViews();
-    persistSession();
-    showToast("Notification marquée comme lue.");
+    void patchPlatformNotification(target.id, { status: "Lu" })
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Lecture notification", target.id, target.title);
+        showToast("Notification marquée comme lue.");
+      })
+      .catch((error) => showToast(error.message ?? "Échec de la mise à jour."));
     return;
   }
 
   if (action === "archive-notification") {
     const target = state.notifications.find((notification) => notification.id === id);
-    state.notifications = state.notifications.filter((notification) => notification.id !== id);
-    addAudit("Archivage notification", id, target?.title ?? "Notification archivée");
-    renderOperationalViews();
-    persistSession();
-    showToast("Notification archivée.");
+    if (!target) return;
+    void patchPlatformNotification(target.id, { archived: true })
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Archivage notification", id, target?.title ?? "Notification archivée");
+        showToast("Notification archivée.");
+      })
+      .catch((error) => showToast(error.message ?? "Échec de l'archivage."));
     return;
   }
 
@@ -2312,7 +2331,12 @@ function handlePermissionToggle(event) {
 
   state.rolePermissions[role] = [...rolePermissions].sort(sortPermissions);
   applyRolePermissions(role);
-  persistSession();
+  void syncPlatformRolePermissions()
+    .then(() => refreshBackOfficeStateFromBackend())
+    .catch((error) => {
+      console.warn("Échec synchronisation rolePermissions.", error);
+      showToast("Synchronisation des droits indisponible.");
+    });
   renderMenus();
   renderControls();
   renderUsers();
@@ -2350,7 +2374,12 @@ function handleSchoolRoleToggle(input) {
 
   state.rolePermissions[role] = [...rolePermissions].sort(sortPermissions);
   applyRolePermissions(role);
-  persistSession();
+  void syncPlatformRolePermissions()
+    .then(() => refreshBackOfficeStateFromBackend())
+    .catch((error) => {
+      console.warn("Échec synchronisation rolePermissions.", error);
+      showToast("Synchronisation des droits indisponible.");
+    });
   renderMenus();
   renderControls();
   renderUsers();
@@ -2460,15 +2489,46 @@ function applyBackOfficeState(backendState = {}) {
 function getBackOfficeStatePayload() {
   return {
     users: state.users,
-    countries: state.countries,
-    subscriptions: state.subscriptions,
-    notifications: state.notifications,
     announcements: state.announcements,
     messages: state.messages,
     auditLog: state.auditLog,
-    rolePermissions: state.rolePermissions,
     academicConfigs: state.academicConfigs,
   };
+}
+
+async function syncPlatformRolePermissions() {
+  await request("/backoffice/role-permissions", {
+    method: "PUT",
+    body: JSON.stringify(state.rolePermissions),
+  });
+}
+
+async function syncPlatformCountry(payload) {
+  return request("/backoffice/countries", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function syncPlatformNotification(payload) {
+  return request("/backoffice/notifications", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function patchPlatformNotification(id, patch) {
+  return request(`/backoffice/notifications/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+async function syncPlatformSubscription(payload) {
+  return request("/backoffice/subscriptions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 function scheduleBackOfficeSync() {
@@ -3088,17 +3148,16 @@ function saveCountryForm() {
     return;
   }
 
-  state.countries.unshift({
-    id: `COUNTRY-${payload.code}-${Date.now()}`,
-    ...payload,
-    administratorId: "",
-    createdAt: formatDate(new Date()),
-  });
-  addAudit("Création pays", payload.code, `${payload.name} ajouté à la plateforme`);
-  closeDetail();
-  renderOperationalViews();
-  persistSession();
-  showToast(`Pays ${payload.code} créé.`);
+  void syncPlatformCountry(payload)
+    .then(() => refreshBackOfficeStateFromBackend())
+    .then(() => {
+      addAudit("Création pays", payload.code, `${payload.name} ajouté à la plateforme`);
+      closeDetail();
+      showToast(`Pays ${payload.code} créé.`);
+    })
+    .catch((error) => {
+      errorTarget.textContent = error.message ?? "Échec de la création du pays.";
+    });
 }
 
 function openNotificationForm() {
@@ -3145,7 +3204,6 @@ function saveNotificationForm() {
   }
 
   const notification = {
-    id: `NOTIF-${Date.now()}`,
     audience: document.querySelector("#notificationAudienceInput")?.value.trim() || "Plateforme",
     countryCode: state.session?.user?.countryCode || "*",
     title,
@@ -3158,12 +3216,16 @@ function saveNotificationForm() {
     createdBy: state.session?.user?.id,
   };
 
-  state.notifications.unshift(notification);
-  addAudit("Création notification", notification.id, notification.title);
-  closeDetail();
-  renderOperationalViews();
-  persistSession();
-  showToast("Notification publiée.");
+  void syncPlatformNotification(notification)
+    .then(() => refreshBackOfficeStateFromBackend())
+    .then(() => {
+      addAudit("Création notification", title, title);
+      closeDetail();
+      showToast("Notification publiée.");
+    })
+    .catch((error) => {
+      errorTarget.textContent = error.message ?? "Échec de la publication.";
+    });
 }
 
 function openUserForm() {

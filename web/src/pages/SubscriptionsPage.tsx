@@ -11,11 +11,12 @@ import { PrintButton } from "../components/ui/PrintButton";
 import { StatusBadge } from "../components/ui/Badge";
 import { Table, type Column } from "../components/ui/Table";
 import { useToast } from "../components/ui/Toast";
+import { platformApi } from "../lib/platformApi";
 import type { Subscription } from "../types";
 
 export function SubscriptionsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
 
@@ -64,7 +65,15 @@ export function SubscriptionsPage() {
       });
     }
     try {
-      await update({ subscriptions: next });
+      const target = mergedRow ?? subscription;
+      await platformApi.upsertSubscription({
+        ...target,
+        schoolCode: subscription.schoolCode,
+        status: "Actif",
+        paymentStatus: "À jour",
+        endDate,
+      });
+      await refresh();
       showToast("Abonnement renouvelé", "success");
     } catch {
       showToast("Échec du renouvellement", "error");

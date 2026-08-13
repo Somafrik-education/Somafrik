@@ -110,6 +110,24 @@ Migration : `backend/db/migrations/20260813_pedagogy_canonical.sql` (idempotente
 
 Clés PUT `/api/backoffice/state` interdites : `courses`, `courseSchedules`, `evaluations`, `notes`, `presences` → `LEGACY_PEDAGOGY_STATE_WRITE_FORBIDDEN`.
 
+### 4.7 Plateforme (canonique PG — LOT 6)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `countries` | Référentiel pays (SoT) | UNIQUE `iso_code` · `profile_payload` (politique abonnement, fuseau) |
+| `subscriptions` | Abonnement établissement | FK `school_id` · `profile_payload` (offre, cycle, accès) |
+| `subscription_offers` | Offres commerciales | `offer_code` · pays cibles JSONB |
+| `subscription_payments` / `subscription_invoices` / `subscription_discounts` | Collections abonnement | FK établissement · audit dédié `subscription_audit_log` |
+| `notifications` | Notifications plateforme | FK école optionnelle · statut lu/archivé |
+| `role_permissions` | Matrice RBAC | UNIQUE `role_name` · permissions JSONB |
+| `dashboard_chart_config` | Overrides graphiques | clé `scope_key` (`platform` / `establishment`) |
+
+Migration : `backend/db/migrations/20260813_platform_canonical.sql` (idempotente, sans backfill JSON).
+
+APIs : `/api/backoffice/countries`, `/subscriptions`, `/notifications`, `/role-permissions`, `/dashboard-chart-config`, `/subscription-offers`, `/subscription-payments`, `/subscription-discounts`.
+
+Clés PUT `/api/backoffice/state` interdites : `countries`, `subscriptions`, `subscriptionOffers`, `subscriptionPayments`, `subscriptionInvoices`, `subscriptionDiscounts`, `subscriptionAuditLog`, `notifications`, `rolePermissions`, `dashboardChartConfig` → `LEGACY_PLATFORM_STATE_WRITE_FORBIDDEN`.
+
 ---
 
 ## 5. Relations (vue simplifiée)
@@ -160,7 +178,8 @@ Les index uniques « post-dédup » peuvent être créés en runtime après nett
 | Classes / students | **PG** ; projections `state.classes` / `state.students` strictement read-only |
 | Teachers / affectations | **PG** (`teachers`, `teacher_assignments`) ; projections `state.teachers` / `state.assignments` strictement read-only |
 | Finance | **PG** (`payments`, obligations, allocations, grilles, reminders) ; projections GET `state` read-only, jamais fusionnées avec l'ancien JSON ; PUT Finance **interdit** |
-| Messages, config, contacts… | Majoritairement JSON BO (lots 5–8 bloqués) |
+| Plateforme | **PG** (`countries`, `subscriptions`, collections abonnement, `notifications`, `role_permissions`, `dashboard_chart_config`) ; projection GET read-only ; PUT plateforme **interdit** |
+| Messages, config, contacts… | Majoritairement JSON BO (lots 7–8 bloqués) |
 | Audit | **PG** `audit_logs` |
 
 Lorsqu’un domaine bascule en PG canonique : contrat DS + entrée CHANGELOG + mise à jour de ce fichier.
