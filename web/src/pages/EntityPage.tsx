@@ -168,6 +168,10 @@ const STUDENT_LINKED_KEYS = new Set<SchoolEntityKey>([
   "documents",
 ]);
 
+function isStudentsEntityKey(key: SchoolEntityKey): boolean {
+  return key === "students";
+}
+
 function linkStudentFromName(
   key: SchoolEntityKey,
   item: Record<string, unknown>,
@@ -565,7 +569,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!editing || !module) return;
-    if (module.key === "students") {
+    if (isStudentsEntityKey(module.key)) {
       showToast(
         "Utilisez Classes → Inscrire un élève ou la fiche élève PostgreSQL.",
         "error",

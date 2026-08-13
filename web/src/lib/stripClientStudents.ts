@@ -6,6 +6,7 @@ export function stripClientStudentsFromPutPayload<T extends Record<string, unkno
   if (!Object.prototype.hasOwnProperty.call(payload, "students")) {
     return payload;
   }
-  const { students: _ignored, ...rest } = payload;
-  return rest;
+  const rest = { ...payload } as Record<string, unknown>;
+  delete rest.students;
+  return rest as Omit<T, "students">;
 }

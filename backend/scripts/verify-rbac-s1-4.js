@@ -33,7 +33,9 @@ function runMatrixUnitTests() {
 
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
-  assert.ok(SECRETARY_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("students"));
+  assert.ok(!PREFET_WRITABLE_ENTITIES.includes("students"));
   assert.ok(SECRETARY_WRITABLE_ENTITIES.includes("payments"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("notes"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("users"));
@@ -74,6 +76,10 @@ function runMatrixUnitTests() {
 
   assert.deepStrictEqual(
     evaluateBackOfficeWriteAccess(secretary, ["students", "payments"]).ok,
+    false,
+  );
+  assert.deepStrictEqual(
+    evaluateBackOfficeWriteAccess(secretary, ["payments"]).ok,
     true,
   );
   assert.deepStrictEqual(
@@ -272,25 +278,25 @@ async function runHttpTestsIfAvailable() {
 
   const accountant = await login("comptable-s14", "Soma1234", "CD-2026-0001");
 
-  // A1 — Admin School : modification autorisée (students)
-  const adminOk = await request("/backoffice/state", {
-    method: "PUT",
-    token: schoolAdmin.accessToken,
-    body: {
-      students: state.students ?? [],
-    },
-  });
-  assert.ok(adminOk.status >= 200 && adminOk.status < 300, `Admin School students write: ${adminOk.status}`);
-
-  // A2 — Secrétaire : domaine autorisé (students)
-  const secOk = await request("/backoffice/state", {
-    method: "PUT",
-    token: secretary.accessToken,
-    body: {
-      students: state.students ?? [],
-    },
-  });
-  assert.ok(secOk.status >= 200 && secOk.status < 300, `Secrétaire students write: ${secOk.status}`);
+  // A1/A2 — LOT 2 : toute présence de students est refusée avant la matrice RBAC.
+  for (const [label, token] of [
+    ["Admin School", schoolAdmin.accessToken],
+    ["Secrétaire", secretary.accessToken],
+  ]) {
+    const legacyStudentsPut = await request("/backoffice/state", {
+      method: "PUT",
+      token,
+      body: {
+        students: state.students ?? [],
+      },
+    });
+    assert.strictEqual(legacyStudentsPut.status, 400, `${label} students legacy doit être 400`);
+    assert.strictEqual(
+      legacyStudentsPut.data?.code,
+      "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
+      `${label} students legacy code stable`,
+    );
+  }
 
   // A3 — Secrétaire : domaine interdit (notes) → 403
   const secForbidden = await request("/backoffice/state", {
@@ -357,7 +363,12 @@ async function runHttpTestsIfAvailable() {
       students: [...(state.students ?? []), foreignStudent],
     },
   });
-  assert.ok(crossPut.status >= 200 && crossPut.status < 300, "cross put status");
+  assert.strictEqual(crossPut.status, 400, "cross put students legacy doit être refusé");
+  assert.strictEqual(
+    crossPut.data?.code,
+    "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
+    "cross put students legacy code stable",
+  );
 
   // Lecture scoped secrétaire
   const afterCrossScoped = await request("/backoffice/state", { token: secretary.accessToken });
@@ -426,3 +437,4 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
