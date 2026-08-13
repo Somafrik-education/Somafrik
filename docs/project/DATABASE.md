@@ -87,7 +87,8 @@ Autres domaines (examens, documents, messages…) : voir `schema.sql` — souven
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
-| `payments` | Paiements (référence serveur `payment_code`) | UNIQUE `payment_code` · `cancelled_at` / `cancel_reason` (soft cancel) · aucun COPY depuis JSON |
+| `payments` | Paiements (référence serveur `payment_code`) | UNIQUE `payment_code` · `cancelled_at` / `cancel_reason` / `cancelled_by` (soft cancel) · aucun COPY depuis JSON |
+| `audit_logs` | Effets Finance (`create_payment`, `cancel_payment`) | Même transaction que le paiement / l'annulation ; pas d'audit post-COMMIT |
 | `student_fee_obligations` | Dettes élève | UNIQUE active (élève + type + période) · soldes ≥ 0 |
 | `payment_allocations` | Ventilation paiement → obligation | FK payment + obligation · réversion `reversed_at` |
 | `payment_reminders` | Relances unpaid | cooldown serveur · pas de mutation snapshot |

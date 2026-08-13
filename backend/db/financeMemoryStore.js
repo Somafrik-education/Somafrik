@@ -33,6 +33,7 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     feeTariffHistory: [],
     paymentReminders: [],
     allocations: [],
+    auditLogs: [],
   };
 
   function txApi() {
@@ -88,7 +89,7 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         tables.payments.push(row);
         return mapPaymentRow(row);
       },
-      async getPaymentByCode(code, principal) {
+      async getPaymentByCode(code, principal, _opts) {
         const row = tables.payments.find(
           (item) => item.payment_code === code || item.id === code || item.profile_payload?.reference === code,
         );
@@ -100,14 +101,38 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         }
         return mapped;
       },
-      async cancelPayment(dbId, reason) {
+      async cancelPayment(dbId, reason, principal) {
         const row = tables.payments.find((item) => item.id === dbId);
         if (!row) throw createFinanceError(404, "Paiement introuvable.", FINANCE_ERROR.PAYMENT_NOT_FOUND);
+        if (row.cancelled_at) {
+          return { payment: mapPaymentRow(row), cancelledNow: false };
+        }
         row.cancelled_at = new Date().toISOString();
         row.cancel_reason = reason;
+        row.cancelled_by = principal?.sub || principal?.id || null;
         row.payment_status = "cancelled";
-        row.profile_payload = { ...row.profile_payload, status: "Annulé", cancelReason: reason };
-        return mapPaymentRow(row);
+        row.profile_payload = {
+          ...row.profile_payload,
+          status: "Annulé",
+          cancelReason: reason,
+          cancelledBy: row.cancelled_by,
+        };
+        return { payment: mapPaymentRow(row), cancelledNow: true };
+      },
+      async recordFinanceAudit(entry) {
+        tables.auditLogs.push({
+          id: randomUUID(),
+          schoolCode: entry.schoolCode,
+          userId: entry.userId,
+          action: entry.action,
+          entityType: entry.entityType,
+          entityId: entry.entityId,
+          oldValue: entry.oldValue ?? null,
+          newValue: entry.newValue ?? null,
+          ipAddress: entry.ipAddress ?? "",
+          userAgent: entry.userAgent ?? "",
+          createdAt: new Date().toISOString(),
+        });
       },
       async listObligationsByStudent(schoolId, studentDbId, _opts) {
         return tables.studentFees
@@ -337,6 +362,7 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         tables.feeTariffHistory = snapshot.feeTariffHistory;
         tables.paymentReminders = snapshot.paymentReminders;
         tables.allocations = snapshot.allocations;
+        tables.auditLogs = snapshot.auditLogs;
         throw error;
       }
     },
@@ -357,9 +383,9 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         paymentReminders: tables.paymentReminders.map(mapReminderRow),
       };
     },
-    createSchoolPayment: (payload, principal) => financeService.createPayment(api, payload, principal),
+    createSchoolPayment: (payload, principal, auditMeta) => financeService.createPayment(api, payload, principal, auditMeta),
     getSchoolPayment: async (id, principal) => txApi().getPaymentByCode(id, principal),
-    cancelSchoolPayment: (id, reason, principal) => financeService.cancelPayment(api, id, reason, principal),
+    cancelSchoolPayment: (id, reason, principal, auditMeta) => financeService.cancelPayment(api, id, reason, principal, auditMeta),
     upsertFinanceFeeGrid: (payload, principal) => financeService.upsertFeeGrid(api, payload, principal),
     getFinanceFeeGrid: async (id, principal) => {
       const grid = await txApi().getGrid(id, principal);

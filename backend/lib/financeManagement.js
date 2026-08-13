@@ -156,7 +156,8 @@ function mapPaymentRow(row) {
     createdBy: profile.createdBy,
     createdByName: profile.createdByName,
     cancelledAt: row.cancelled_at || null,
-    cancelReason: row.cancel_reason || "",
+    cancelReason: row.cancel_reason || profile.cancelReason || "",
+    cancelledBy: row.cancelled_by || profile.cancelledBy || null,
     ...profile.extra,
   };
 }
@@ -310,6 +311,13 @@ function canForceReminder(principal) {
   );
 }
 
+function financeAuditMetaFromRequest(req) {
+  return {
+    ipAddress: req?.ip ?? "",
+    userAgent: typeof req?.get === "function" ? req.get("user-agent") : "",
+  };
+}
+
 module.exports = {
   FINANCE_ERROR,
   createFinanceError,
@@ -336,4 +344,5 @@ module.exports = {
   canAdjustStudentFee,
   canManagePaymentStatuses,
   canForceReminder,
+  financeAuditMetaFromRequest,
 };

@@ -85,7 +85,24 @@ function reverseAllocationsOnFees(obligations, allocations) {
   });
 }
 
-async function createPayment(store, rawPayload, principal) {
+async function writeFinanceAudit(tx, principal, auditMeta, entry) {
+  if (typeof tx.recordFinanceAudit !== "function") {
+    throw createFinanceError(500, "Audit Finance indisponible dans la transaction.");
+  }
+  await tx.recordFinanceAudit({
+    schoolCode: entry.schoolCode || principal?.schoolCode,
+    userId: principal?.sub || principal?.id,
+    action: entry.action,
+    entityType: entry.entityType,
+    entityId: String(entry.entityId ?? ""),
+    oldValue: entry.oldValue,
+    newValue: entry.newValue,
+    ipAddress: auditMeta?.ipAddress,
+    userAgent: auditMeta?.userAgent,
+  });
+}
+
+async function createPayment(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   const amount = money(payload.amount);
   if (!(amount > 0)) {
@@ -160,17 +177,24 @@ async function createPayment(store, rawPayload, principal) {
     for (const fee of updated) {
       await tx.updateObligation(fee);
     }
+    await writeFinanceAudit(tx, principal, auditMeta, {
+      action: "create_payment",
+      entityType: "payment",
+      entityId: saved.id,
+      schoolCode: saved.schoolCode,
+      newValue: saved,
+    });
     return saved;
   });
 }
 
-async function cancelPayment(store, paymentId, reason, principal) {
+async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
   const motif = asTrimmed(reason);
   if (!motif) {
     throw createFinanceError(400, "Le motif d'annulation est obligatoire.", FINANCE_ERROR.CANCEL_REASON_REQUIRED);
   }
   return store.withTransaction(async (tx) => {
-    const payment = await tx.getPaymentByCode(paymentId, principal);
+    const payment = await tx.getPaymentByCode(paymentId, principal, { lock: true });
     if (!payment) {
       throw createFinanceError(404, "Paiement introuvable.", FINANCE_ERROR.PAYMENT_NOT_FOUND);
     }
@@ -193,7 +217,18 @@ async function cancelPayment(store, paymentId, reason, principal) {
       }
       await tx.reverseAllocations(payment.dbId);
     }
-    return tx.cancelPayment(payment.dbId, motif, principal);
+    const result = await tx.cancelPayment(payment.dbId, motif, principal);
+    if (!result.cancelledNow) {
+      return result.payment;
+    }
+    await writeFinanceAudit(tx, principal, auditMeta, {
+      action: "cancel_payment",
+      entityType: "payment",
+      entityId: result.payment.id,
+      schoolCode: result.payment.schoolCode,
+      newValue: { reason: result.payment.cancelReason, cancelledBy: result.payment.cancelledBy },
+    });
+    return result.payment;
   });
 }
 

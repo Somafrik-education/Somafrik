@@ -125,7 +125,7 @@ function createFinancePgStore(repo) {
           throw error;
         }
       },
-      async getPaymentByCode(code, principal) {
+      async getPaymentByCode(code, principal, { lock } = {}) {
         const params = [code, code];
         let sql = `
           SELECT p.*, s.school_code, st.student_code
@@ -140,24 +140,60 @@ function createFinancePgStore(repo) {
           params.push(schoolCode.toUpperCase());
         }
         sql += " LIMIT 1";
+        if (lock) sql += " FOR UPDATE OF p";
         const row = await one(sql, params);
         return row ? mapPaymentRow(row) : null;
       },
-      async cancelPayment(dbId, reason) {
+      async resolveActorUserId(principal) {
+        const normalized = asTrimmed(principal?.sub || principal?.id);
+        if (!normalized) return null;
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)) {
+          const row = await one("SELECT id FROM users WHERE id = $1::uuid", [normalized]);
+          return row?.id ?? null;
+        }
+        const byCode = await one("SELECT id FROM users WHERE user_code = $1", [normalized]);
+        return byCode?.id ?? null;
+      },
+      async cancelPayment(dbId, reason, principal) {
+        const actorId = await this.resolveActorUserId(principal);
         const row = await one(
           `UPDATE payments
-           SET cancelled_at = NOW(), cancel_reason = $2::text, payment_status = 'cancelled',
-               profile_payload = COALESCE(profile_payload, '{}'::jsonb) || jsonb_build_object('status','Annulé','cancelReason',$2::text),
+           SET cancelled_at = NOW(), cancel_reason = $2::text, cancelled_by = $3::uuid,
+               payment_status = 'cancelled',
+               profile_payload = COALESCE(profile_payload, '{}'::jsonb)
+                 || jsonb_build_object('status','Annulé','cancelReason',$2::text,'cancelledBy',$3::text),
                updated_at = NOW()
            WHERE id = $1 AND cancelled_at IS NULL
            RETURNING *`,
-          [dbId, reason],
+          [dbId, reason, actorId],
         );
         const persisted = row || await one("SELECT * FROM payments WHERE id = $1", [dbId]);
         if (!persisted) throw createFinanceError(404, "Paiement introuvable.", FINANCE_ERROR.PAYMENT_NOT_FOUND);
         const school = await one("SELECT school_code FROM schools WHERE id = $1", [persisted.school_id]);
         const student = await one("SELECT student_code FROM students WHERE id = $1", [persisted.student_id]);
-        return mapPaymentRow({ ...persisted, school_code: school?.school_code, student_code: student?.student_code });
+        return {
+          payment: mapPaymentRow({ ...persisted, school_code: school?.school_code, student_code: student?.student_code }),
+          cancelledNow: Boolean(row),
+        };
+      },
+      async recordFinanceAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+        const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
+        const actorId = await this.resolveActorUserId({ sub: userId });
+        await query(
+          `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`,
+          [
+            school?.id ?? null,
+            actorId,
+            action,
+            entityType,
+            entityId ?? null,
+            oldValue ? JSON.stringify(oldValue) : null,
+            newValue ? JSON.stringify(newValue) : null,
+            ipAddress ?? "",
+            userAgent ?? "",
+          ],
+        );
       },
       async listObligationsByStudent(schoolId, studentDbId, { lock } = {}) {
         const sql = `
@@ -464,9 +500,9 @@ function createFinancePgStore(repo) {
         paymentReminders: reminders.map(mapReminderRow),
       };
     },
-    createSchoolPayment: (payload, principal) => financeService.createPayment(api, payload, principal),
+    createSchoolPayment: (payload, principal, auditMeta) => financeService.createPayment(api, payload, principal, auditMeta),
     getSchoolPayment: (id, principal) => bind(repo).getPaymentByCode(id, principal),
-    cancelSchoolPayment: (id, reason, principal) => financeService.cancelPayment(api, id, reason, principal),
+    cancelSchoolPayment: (id, reason, principal, auditMeta) => financeService.cancelPayment(api, id, reason, principal, auditMeta),
     upsertFinanceFeeGrid: (payload, principal) => financeService.upsertFeeGrid(api, payload, principal),
     getFinanceFeeGrid: async (id, principal) => {
       const grid = await bind(repo).getGrid(id, principal);

@@ -75,6 +75,13 @@ function extractFunction(source, name) {
   return source.slice(start, next < 0 ? source.length : next);
 }
 
+function extractRoute(source, marker) {
+  const start = source.indexOf(marker);
+  if (start < 0) return "";
+  const next = source.indexOf("\napp.", start + marker.length);
+  return source.slice(start, next < 0 ? source.length : next);
+}
+
 function runUnitGuards() {
   for (const role of ["Admin School", "Secrétaire", "Comptable", "Directeur"]) {
     for (const key of FINANCE_STATE_KEYS) {
@@ -117,6 +124,26 @@ function runUnitGuards() {
     server,
     /applyAtomicPayment\(.*saveBackOfficeState|saveBackOfficeState\(.*payments/,
   );
+
+  const paymentsPost = extractRoute(server, 'app.post("/api/payments"');
+  assert.match(paymentsPost, /financeAuditMetaFromRequest/);
+  assert.match(paymentsPost, /createSchoolPayment/);
+  assert.doesNotMatch(paymentsPost, /auditService\.record/);
+
+  const paymentsCancel = extractRoute(server, 'app.post("/api/payments/:paymentId/cancel"');
+  assert.match(paymentsCancel, /financeAuditMetaFromRequest/);
+  assert.match(paymentsCancel, /cancelSchoolPayment/);
+  assert.doesNotMatch(paymentsCancel, /auditService\.record/);
+
+  const financeService = fs.readFileSync(path.join(ROOT, "backend/lib/financeService.js"), "utf8");
+  assert.match(financeService, /async function writeFinanceAudit\(tx,/);
+  assert.match(financeService, /await writeFinanceAudit\(tx, principal, auditMeta,/);
+  assert.match(financeService, /tx\.recordFinanceAudit/);
+
+  const pgStore = fs.readFileSync(path.join(ROOT, "backend/db/financePgStore.js"), "utf8");
+  assert.match(pgStore, /cancelled_by = \$3::uuid/);
+  assert.match(pgStore, /INSERT INTO audit_logs/);
+  assert.match(pgStore, /FOR UPDATE OF p/);
 
   const postgres = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
   const saveState = postgres.match(/async saveBackOfficeState\(payload\) \{[\s\S]*?\n  \}\n\n  async getAcademicConfig/);

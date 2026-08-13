@@ -437,16 +437,16 @@ class PostgresRepository {
     return this.getFinanceStore().listProjection();
   }
 
-  createSchoolPayment(payload, principal) {
-    return this.getFinanceStore().createSchoolPayment(payload, principal);
+  createSchoolPayment(payload, principal, auditMeta) {
+    return this.getFinanceStore().createSchoolPayment(payload, principal, auditMeta);
   }
 
   getSchoolPayment(id, principal) {
     return this.getFinanceStore().getSchoolPayment(id, principal);
   }
 
-  cancelSchoolPayment(id, reason, principal) {
-    return this.getFinanceStore().cancelSchoolPayment(id, reason, principal);
+  cancelSchoolPayment(id, reason, principal, auditMeta) {
+    return this.getFinanceStore().cancelSchoolPayment(id, reason, principal, auditMeta);
   }
 
   listFinancePaymentStatuses() {

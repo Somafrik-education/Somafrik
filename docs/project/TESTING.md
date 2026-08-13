@@ -137,11 +137,14 @@ Après déploiement Render + Vercel (`develop`) :
 ### Gate Finance (LOT 4)
 
 - [ ] Créer un paiement via `POST /api/payments` → 201, référence générée serveur, allocations et soldes atomiques
-- [ ] Annuler via `POST /api/payments/:id/cancel` avec motif → réversion des soldes, idempotente, jamais hard delete
+- [ ] Annuler via `POST /api/payments/:id/cancel` avec motif → réversion des soldes, idempotente, jamais hard delete ; `cancelled_by` persisté
+- [ ] Paiement / annulation + audit `audit_logs` dans **le même commit** PostgreSQL ; échec d'écriture d'audit → rollback complet
+- [ ] Annulation concurrente → une seule réversion et un seul événement `cancel_payment`
 - [ ] Appliquer une grille via `POST /api/finance/fee-grids/:id/apply` sans obligation en double sous concurrence
 - [ ] Relance unpaid : cooldown serveur, `force` réservé Super Admin / Admin School
 - [ ] PUT state avec une clé Finance, seule, mixte ou snapshot → 400 `LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`
 - [ ] `GET state` Finance reflète PostgreSQL sans fusion des anciennes lignes JSON
+- [ ] E2E 0001 / 0009 / 0011 exécutés contre un backend PostgreSQL
 
 ### Gate Notes / sync enseignant
 

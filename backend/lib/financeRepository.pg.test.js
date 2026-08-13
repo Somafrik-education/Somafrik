@@ -134,9 +134,35 @@ async function main() {
       [schoolB.rows[0].id],
     );
 
+    const user = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+       VALUES ($1, 'USR-FIN-IT-ADMIN', 'Admin', 'A', 'admin-finance-it@somafrik.test', 'SCHOOL_ADMIN', 'active')
+       RETURNING id`,
+      [schoolA.rows[0].id],
+    );
     const repo = createRepo(pool);
     const store = createFinancePgStore(repo);
-    const admin = { role: "Admin School", schoolCode: "CD-2026-0001", firstName: "Admin", lastName: "A" };
+    const admin = {
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      firstName: "Admin",
+      lastName: "A",
+      sub: user.rows[0].id,
+    };
+
+    function failAuditWrites() {
+      const original = store.withTransaction.bind(store);
+      store.withTransaction = (fn) =>
+        original(async (tx) => {
+          tx.recordFinanceAudit = async () => {
+            throw new Error("audit write failed");
+          };
+          return fn(tx);
+        });
+      return () => {
+        store.withTransaction = original;
+      };
+    }
 
     const grid = await store.upsertFinanceFeeGrid(
       {
@@ -178,8 +204,14 @@ async function main() {
 
     const cancelled = await store.cancelSchoolPayment(payment.reference, "Saisie erronée", admin);
     assert.equal(cancelled.status, "Annulé");
+    assert.equal(String(cancelled.cancelledBy), String(admin.sub));
     const restored = (await store.listFinanceStudentFees())[0];
     assert.equal(Number(restored.balance), 40_000);
+    const cancelAudit = await pool.query(
+      `SELECT * FROM audit_logs WHERE action = 'cancel_payment' AND entity_id = $1`,
+      [payment.reference],
+    );
+    assert.equal(cancelAudit.rowCount, 1);
 
     await assert.rejects(
       () =>
@@ -195,6 +227,77 @@ async function main() {
         ),
       (error) => error.code === FINANCE_ERROR.STUDENT_NOT_FOUND || error.code === FINANCE_ERROR.TENANT_MISMATCH,
     );
+
+    const restoreAudit = failAuditWrites();
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: "CD-2026-0001-STU-0001",
+            feeType: "Inscription",
+            amount: 40_000,
+            method: "Espèces",
+            date: "2026-08-13",
+          },
+          admin,
+        ),
+      (error) => String(error.message).includes("audit write failed"),
+    );
+    restoreAudit();
+    const paymentsAfterFailedCreate = await pool.query("SELECT * FROM payments WHERE cancelled_at IS NULL");
+    assert.equal(paymentsAfterFailedCreate.rowCount, 0);
+    const createAudits = await pool.query(`SELECT * FROM audit_logs WHERE action = 'create_payment'`);
+    assert.equal(createAudits.rowCount, 1);
+    const obligationAfterFailedCreate = (await store.listFinanceStudentFees())[0];
+    assert.equal(Number(obligationAfterFailedCreate.balance), 40_000);
+
+    const concurrentPayment = await store.createSchoolPayment(
+      {
+        studentId: "CD-2026-0001-STU-0001",
+        feeType: "Inscription",
+        amount: 40_000,
+        method: "Espèces",
+        date: "2026-08-13",
+      },
+      admin,
+    );
+    const restoreCancelAudit = failAuditWrites();
+    await assert.rejects(
+      () => store.cancelSchoolPayment(concurrentPayment.reference, "Audit KO", admin),
+      (error) => String(error.message).includes("audit write failed"),
+    );
+    restoreCancelAudit();
+    const stillOpen = await store.getSchoolPayment(concurrentPayment.reference, admin);
+    assert.notEqual(stillOpen.status, "Annulé");
+    assert.equal(Number((await store.listFinanceStudentFees())[0].balance), 0);
+    const cancelAuditsAfterFailed = await pool.query(
+      `SELECT * FROM audit_logs WHERE action = 'cancel_payment' AND entity_id = $1`,
+      [concurrentPayment.reference],
+    );
+    assert.equal(cancelAuditsAfterFailed.rowCount, 0);
+
+    const [firstCancel, secondCancel] = await Promise.all([
+      store.cancelSchoolPayment(concurrentPayment.reference, "Concurrent A", admin),
+      store.cancelSchoolPayment(concurrentPayment.reference, "Concurrent B", admin),
+    ]);
+    assert.equal(firstCancel.status, "Annulé");
+    assert.equal(secondCancel.status, "Annulé");
+    const concurrentCancelAudits = await pool.query(
+      `SELECT * FROM audit_logs WHERE action = 'cancel_payment' AND entity_id = $1`,
+      [concurrentPayment.reference],
+    );
+    assert.equal(concurrentCancelAudits.rowCount, 1);
+    const openAllocations = await pool.query(
+      `SELECT * FROM payment_allocations WHERE payment_id = $1 AND reversed_at IS NULL`,
+      [concurrentPayment.dbId],
+    );
+    assert.equal(openAllocations.rowCount, 0);
+    const reversedOnce = (await store.listFinanceStudentFees())[0];
+    assert.equal(Number(reversedOnce.balance), 40_000);
+    const cancelledRow = await pool.query("SELECT cancelled_by FROM payments WHERE payment_code = $1", [
+      concurrentPayment.reference,
+    ]);
+    assert.equal(String(cancelledRow.rows[0].cancelled_by), String(admin.sub));
 
     console.log("financeRepository.pg.test.js: OK");
   } finally {

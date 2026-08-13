@@ -1191,8 +1191,8 @@ app.post("/api/payments", requireAuth, requirePermission("POST /api/payments"), 
     principal: req.principal,
     handler: async () => {
       const body = req.body ?? {};
-      const payment = await repository.createSchoolPayment(body, req.principal);
-      await auditService.record(req, "create_payment", "payment", payment.id, payment);
+      const { financeAuditMetaFromRequest } = require("./lib/financeManagement");
+      const payment = await repository.createSchoolPayment(body, req.principal, financeAuditMetaFromRequest(req));
       return { statusCode: 201, body: payment };
     },
   });
@@ -1211,12 +1211,13 @@ app.post("/api/payments/:paymentId/cancel", requireAuth, requirePermission("POST
     routeKey: `POST /api/payments/${req.params.paymentId}/cancel`,
     principal: req.principal,
     handler: async () => {
+      const { financeAuditMetaFromRequest } = require("./lib/financeManagement");
       const payment = await repository.cancelSchoolPayment(
         req.params.paymentId,
         req.body?.reason ?? req.body?.cancelReason,
         req.principal,
+        financeAuditMetaFromRequest(req),
       );
-      await auditService.record(req, "cancel_payment", "payment", payment.id, { reason: payment.cancelReason });
       return { statusCode: 200, body: payment };
     },
   });
