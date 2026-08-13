@@ -3873,6 +3873,54 @@ class PostgresRepository {
     }));
   }
 
+  async createAcademicYearV2(input = {}) {
+    await this.init();
+    const schoolCode = String(input.schoolCode ?? "").trim().toUpperCase();
+    const name = String(input.name ?? "").trim();
+    const startDate = String(input.startDate ?? "").trim();
+    const endDate = String(input.endDate ?? "").trim();
+    const isCurrent = input.isCurrent !== false;
+    if (!schoolCode || !name || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      const error = new Error("Établissement, nom, date de début et date de fin sont requis.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (startDate >= endDate) {
+      const error = new Error("La date de fin doit être postérieure à la date de début.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const school = await this.one("SELECT id FROM schools WHERE school_code = $1", [schoolCode]);
+    if (!school) {
+      const error = new Error("Établissement introuvable.");
+      error.statusCode = 404;
+      throw error;
+    }
+    const duplicate = await this.one(
+      "SELECT id FROM academic_years WHERE school_id = $1 AND lower(btrim(name)) = lower(btrim($2))",
+      [school.id, name],
+    );
+    if (duplicate) {
+      const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    if (isCurrent) {
+      await this.query("UPDATE academic_years SET is_current = FALSE, updated_at = NOW() WHERE school_id = $1", [school.id]);
+    }
+    const row = await this.one(
+      `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
+       VALUES ($1, $2, $3, $4, $5, 'open') RETURNING *`,
+      [school.id, name, startDate, endDate, isCurrent],
+    );
+    return {
+      id: row.id, schoolId: row.school_id, schoolCode, name: row.name,
+      startDate: this.formatIsoDate(row.start_date), endDate: this.formatIsoDate(row.end_date),
+      status: this.fromYearStatus(row.status), isCurrent: row.is_current,
+      enrollmentCount: 0, gradeCount: 0, promotionDecisionCount: 0, notesLocked: false,
+    };
+  }
+
   async getExamsV2() {
     await this.init();
     const rows = await this.all(`

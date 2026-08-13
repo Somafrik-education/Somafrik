@@ -646,6 +646,14 @@ class FallbackRepository {
   }
 
   async getAcademicYearsV2() {
+    if (this._managedAcademicYears) {
+      return this._managedAcademicYears.map((row) => ({
+        id: row.id, schoolId: row.school_id, schoolCode: row.school_code, name: row.name,
+        startDate: row.start_date ?? "", endDate: row.end_date ?? "",
+        status: row.status === "open" ? "Ouverte" : row.status, isCurrent: Boolean(row.is_current),
+        enrollmentCount: 0, gradeCount: 0, promotionDecisionCount: 0, notesLocked: false,
+      }));
+    }
     return [{
       id: "AY-DEMO-2026",
       schoolId: seedData.school.id,
@@ -661,6 +669,29 @@ class FallbackRepository {
       promotionDecisionCount: 0,
       notesLocked: false,
     }];
+  }
+
+  async createAcademicYearV2(input = {}) {
+    const schoolCode = String(input.schoolCode ?? "").trim().toUpperCase();
+    const name = String(input.name ?? "").trim();
+    const startDate = String(input.startDate ?? "").trim();
+    const endDate = String(input.endDate ?? "").trim();
+    if (!schoolCode || !name || !startDate || !endDate || startDate >= endDate) {
+      const error = new Error("Établissement, nom et dates valides sont requis.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!this._managedAcademicYears) this._managedAcademicYears = [];
+    if (this._managedAcademicYears.some((row) => row.school_code === schoolCode && row.name.toLowerCase() === name.toLowerCase())) {
+      const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    const isCurrent = input.isCurrent !== false;
+    if (isCurrent) this._managedAcademicYears.forEach((row) => { if (row.school_code === schoolCode) row.is_current = false; });
+    const row = { id: `AY-${Date.now()}`, school_id: `school-${schoolCode}`, school_code: schoolCode, name, start_date: startDate, end_date: endDate, status: "open", is_current: isCurrent };
+    this._managedAcademicYears.push(row);
+    return (await this.getAcademicYearsV2()).find((item) => item.id === row.id);
   }
 
   async getExamsV2() {
