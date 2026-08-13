@@ -539,6 +539,59 @@ async function main() {
     ]);
     assert.equal(biEvalAfter.rows[0].title, "Éval BI", "évaluation BI inchangée");
 
+    const customEval = await pool.query(
+      `INSERT INTO evaluations (
+         school_id, class_id, subject_id, teacher_id, term_id,
+         title, evaluation_type, evaluation_date, max_score, coefficient,
+         status, active, legacy_json_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       RETURNING id, legacy_json_id, updated_at`,
+      [
+        fixture.schoolA,
+        fixture.klass,
+        fixture.math,
+        fixture.teacher,
+        fixture.term,
+        "Éval PATCH partiel",
+        "examen",
+        "2026-06-15",
+        10,
+        2,
+        "published",
+        false,
+        "EVAL-PATCH-PARTIAL",
+      ],
+    );
+    const evalBeforePatch = customEval.rows[0];
+    await store.updateEvaluation(
+      "EVAL-PATCH-PARTIAL",
+      { title: "Nouveau titre seul" },
+      admin,
+      auditMeta,
+    );
+    const evalAfterPatch = await pool.query(`SELECT * FROM evaluations WHERE id = $1`, [
+      evalBeforePatch.id,
+    ]);
+    const patched = evalAfterPatch.rows[0];
+    assert.equal(patched.title, "Nouveau titre seul");
+    assert.equal(Number(patched.max_score), 10);
+    assert.equal(Number(patched.coefficient), 2);
+    assert.equal(patched.status, "published");
+    assert.equal(patched.evaluation_type, "examen");
+    const patchedDate =
+      patched.evaluation_date instanceof Date
+        ? patched.evaluation_date.toISOString().slice(0, 10)
+        : String(patched.evaluation_date).slice(0, 10);
+    assert.equal(patchedDate, "2026-06-15");
+    assert.equal(patched.active, false);
+    assert.equal(patched.class_id, fixture.klass);
+    assert.equal(patched.subject_id, fixture.math);
+    assert.equal(patched.term_id, fixture.term);
+    assert.ok(
+      new Date(patched.updated_at).getTime() >= new Date(evalBeforePatch.updated_at).getTime(),
+      "seul updated_at (et le titre) doivent changer",
+    );
+
     const auditBiEval = await pool.query(
       `SELECT count(*)::int AS count FROM audit_logs WHERE entity_type = 'evaluation' AND entity_id = $1`,
       [String(biEvaluation.rows[0].id)],

@@ -1903,19 +1903,72 @@ class PostgresRepository {
     void academicYear;
     void periodName;
 
-    const maxScore = Number(evaluation.scale ?? evaluation.max_score ?? 20);
-    const coefficient = Number(evaluation.coefficient ?? 1);
-    const status = toEvaluationStatus(evaluation.status, "draft");
+    const patchTouches = (keys) => evaluationPatchTouches(evaluation, keys);
+
+    let maxScore;
+    let coefficient;
+    let status;
+    let evaluationType;
+    let evaluationDate;
+    let active;
+    let title;
+    let classId;
+    let subjectId;
+    let termId;
+    let teacherId;
+
+    if (existing) {
+      maxScore = patchTouches(["scale", "max_score", "maxScore"])
+        ? Number(evaluation.scale ?? evaluation.max_score ?? evaluation.maxScore ?? 20)
+        : Number(existing.max_score ?? 20);
+      coefficient = patchTouches(["coefficient"])
+        ? Number(evaluation.coefficient ?? 1)
+        : Number(existing.coefficient ?? 1);
+      status = patchTouches(["status"])
+        ? toEvaluationStatus(evaluation.status, String(existing.status ?? "draft"))
+        : String(existing.status ?? "draft");
+      evaluationType = patchTouches(["evaluationType", "type", "evaluation_type"])
+        ? toDbEvaluationType(evaluation.evaluationType ?? evaluation.type)
+        : String(existing.evaluation_type ?? "devoir");
+      evaluationDate = patchTouches(["date", "evaluation_date"])
+        ? this.parseDate(evaluation.date ?? evaluation.evaluation_date)
+        : existing.evaluation_date ?? null;
+      active = patchTouches(["active"]) ? evaluation.active !== false : existing.active !== false;
+      title = patchTouches(["title"])
+        ? String(evaluation.title ?? "Évaluation").trim() || "Évaluation"
+        : String(existing.title ?? "Évaluation").trim() || "Évaluation";
+      classId = patchTouches(["className", "class_name", "classId", "class_id"])
+        ? schoolClass.id
+        : existing.class_id;
+      subjectId = patchTouches(["subject", "subjectName", "subjectCode", "subjectId", "subject_id"])
+        ? subject.id
+        : existing.subject_id;
+      termId = patchTouches(["period", "termName", "term_id"])
+        ? term.id
+        : existing.term_id;
+      teacherId = patchTouches(["teacherId", "teacher_code"])
+        ? teacher?.id ?? null
+        : existing.teacher_id ?? null;
+    } else {
+      maxScore = Number(evaluation.scale ?? evaluation.max_score ?? evaluation.maxScore ?? 20);
+      coefficient = Number(evaluation.coefficient ?? 1);
+      status = toEvaluationStatus(evaluation.status, "draft");
+      evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
+      evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
+      active = evaluation.active !== false;
+      title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
+      classId = schoolClass.id;
+      subjectId = subject.id;
+      termId = term.id;
+      teacherId = teacher?.id ?? null;
+    }
+
     const contractError = validateEvaluationContract({ maxScore, coefficient, status });
     if (contractError) {
       const error = new Error(contractError);
       error.statusCode = 400;
       throw error;
     }
-
-    const title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
-    const evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
-    const evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
 
     if (existing) {
       await this.query(
@@ -1927,17 +1980,17 @@ class PostgresRepository {
              updated_at = NOW()
          WHERE id = $13`,
         [
-          schoolClass.id,
-          subject.id,
-          teacher?.id ?? null,
-          term.id,
+          classId,
+          subjectId,
+          teacherId,
+          termId,
           title,
           evaluationType,
           evaluationDate,
           maxScore,
           coefficient,
           status,
-          evaluation.active !== false,
+          active,
           legacyId || null,
           existing.id,
         ],
@@ -5291,6 +5344,10 @@ function toDbEvaluationType(type) {
   if (normalized.includes("travail") || normalized === "tp") return "tp";
   if (normalized.includes("projet")) return "projet";
   return "devoir";
+}
+
+function evaluationPatchTouches(evaluation = {}, keys = []) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(evaluation, key));
 }
 
 function defaultAcademicPeriods() {
