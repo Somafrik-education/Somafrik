@@ -12,13 +12,11 @@ export type TeacherAssignmentPayload = {
 };
 
 function canonicalPayload(payload: TeacherAssignmentPayload): TeacherAssignmentPayload {
-  const {
-    schoolCode: _schoolCode,
-    schoolId: _schoolId,
-    academicYearId: _academicYearId,
-    id: _id,
-    ...canonical
-  } = payload as TeacherAssignmentPayload & Record<string, unknown>;
+  const canonical = { ...payload } as TeacherAssignmentPayload & Record<string, unknown>;
+  delete canonical.schoolCode;
+  delete canonical.schoolId;
+  delete canonical.academicYearId;
+  delete canonical.id;
   return canonical;
 }
 

@@ -68,7 +68,6 @@ import {
   buildTeacherAssignmentDeletePlan,
   buildTeacherAssignmentSubmitPlan,
   emptyEditingAssignment,
-  reapplyAssignmentPeriodRoom,
 } from "./entity-page/teacherAssignmentWorkflow";
 import { PrintButton } from "../components/ui/PrintButton";
 import { Field, Input, Select } from "../components/ui/Field";
@@ -89,7 +88,6 @@ import { adaptLegacyStudents } from "../lib/studentDomain";
 import {
   getTeacherProvisioningOptions,
   syncSingleUserToTeachers,
-  syncTeacherProfileToUser,
 } from "../lib/userTeacherSync";
 import {
   getAssignmentSelectOptions,
@@ -112,10 +110,6 @@ import {
   parentChildBundleToForm,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
-import {
-  validateTeacherIdentityDuplicate,
-  validateTeacherSchoolEntry,
-} from "../lib/teacherRules";
 import { markAllAnnouncementsRead } from "../lib/announcementsRead";
 import { normalize } from "../lib/format";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
@@ -148,7 +142,6 @@ import {
   generateTeacherIdentifiers,
   getTeacherLoginIdentifier,
   resolveStudentMatricule,
-  resolveTeacherIdentifiers,
 } from "../lib/entityIdentifiers";
 
 function normalizeTeacherFormProps(row: Record<string, unknown>): Record<string, unknown> {
@@ -661,23 +654,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       return;
     }
 
-    if (module.key === "teachers") {
-      const entryError = validateTeacherSchoolEntry(workingItem);
-      if (entryError) {
-        showToast(entryError, "error");
-        return;
-      }
-      const identityError = validateTeacherIdentityDuplicate(
-        workingItem,
-        getScopedEntityRows("teachers", scopeUser, state),
-        editing.id ? String(editing.id) : undefined,
-      );
-      if (identityError) {
-        showToast(identityError, "error");
-        return;
-      }
-    }
-
     if (module.key === "courses") {
       const teachers = scopedTeachers(scopeUser, state);
       const teacherName = String(workingItem.teacherName ?? "").trim();
@@ -773,12 +749,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       current.some((row) => String(row.id) === String(linkedItem.id));
 
     if (exists && !canUpdate) {
-      showToast(
-        module.key === "teachers"
-          ? "Modification des enseignants réservée au préfet des études ou à un rôle habilité."
-          : "Modification non autorisée pour votre rôle.",
-        "error",
-      );
+      showToast("Modification non autorisée pour votre rôle.", "error");
       return;
     }
 
@@ -827,22 +798,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       preparedItem.systemBroadcast = true;
     }
 
-    if (module.key === "teachers") {
-      const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
-      if (!code || code === "*") {
-        showToast("Code établissement requis pour générer l'identifiant enseignant", "error");
-        return;
-      }
-      preparedItem = {
-        ...preparedItem,
-        ...resolveTeacherIdentifiers(
-          preparedItem,
-          code,
-          (state.teachers ?? []) as Record<string, unknown>[],
-        ),
-      };
-    }
-
     if (module.key === "students") {
       const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
       if (!code || code === "*") {
@@ -878,29 +833,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
     const nextAllRows = mergeResult.rows;
     const patch: Partial<BackOfficeState> = buildPedagogyPatch(module.key, nextItem, nextAllRows);
-
-    if (module.key === "teachers" && patch.teachers) {
-      const savedTeacher = (patch.teachers as Record<string, unknown>[]).find(
-        (row) => String(row.id ?? "") === String(nextItem.id ?? ""),
-      );
-      if (savedTeacher) {
-        patch.users = syncTeacherProfileToUser(state.users, savedTeacher);
-      }
-    }
-
-    // La synchro pédagogique reconstruit certaines affectations : on réapplique
-    // les champs métier (période, salle) sur la ligne enregistrée (AFF-001).
-    if (module.key === "assignments" && patch.assignments) {
-      const targetId = String(nextItem.id ?? "");
-      const period = String((nextItem as Record<string, unknown>).period ?? "");
-      const room = String((nextItem as Record<string, unknown>).room ?? "");
-      patch.assignments = reapplyAssignmentPeriodRoom(
-        patch.assignments as Record<string, unknown>[],
-        targetId,
-        period,
-        room,
-      ) as BackOfficeState["assignments"];
-    }
 
     let successMessage = entityMutationSuccessMessage(module.label, exists);
 

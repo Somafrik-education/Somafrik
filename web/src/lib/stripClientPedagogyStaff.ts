@@ -2,7 +2,8 @@
 export function stripClientPedagogyStaffFromPutPayload<T extends Record<string, unknown>>(
   payload: T,
 ): Omit<T, "teachers" | "assignments"> {
-  const { teachers: _teachers, assignments: _assignments, ...rest } = payload;
-  return rest;
+  const canonical = { ...payload } as Record<string, unknown>;
+  delete canonical.teachers;
+  delete canonical.assignments;
+  return canonical as Omit<T, "teachers" | "assignments">;
 }
-
