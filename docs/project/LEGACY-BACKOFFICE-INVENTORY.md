@@ -26,7 +26,7 @@ Source : `backend/server.js`. Permissions déclarées dans `backend/services/rba
 | Méthode | Path | Fichier:ligne | Permission / garde |
 |---------|------|---------------|--------------------|
 | GET | `/api/backoffice/state` | `backend/server.js:1328` | `requireAuth` + `assertBackOfficeReader` — **pas** de clé `routePermissions` |
-| PUT | `/api/backoffice/state` | `backend/server.js:1334` | `requireAuth` + `assertBackOfficeWriter` + matrice `backend/lib/backOfficeWritableEntities.js` ; classes / schools / students / teachers / assignments / **Finance** refusés via `legacy*StateWrite.js` |
+| PUT | `/api/backoffice/state` | `backend/server.js:1334` | `requireAuth` + `assertBackOfficeWriter` + matrice `backend/lib/backOfficeWritableEntities.js` ; classes / schools / students / teachers / assignments / **Finance** / **Pédagogie** refusés via `legacy*StateWrite.js` |
 
 ### 1.3 Establishments / plateforme lecture
 

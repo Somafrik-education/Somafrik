@@ -98,6 +98,18 @@ Autres domaines (examens, documents, messages…) : voir `schema.sql` — souven
 
 Aucun script ne recopie les anciennes données Finance de `backoffice_state` vers ces tables. V2 repart propre ; un seed de démonstration contrôlé reste possible.
 
+### 4.6 Pédagogie (canonique PG — LOT 5)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `school_courses` | Matières / cours par classe | UNIQUE `(school_id, course_code)` · UNIQUE actif `(school_id, class_id, subject_id)` |
+| `course_schedule_slots` | Emplois du temps | contrainte horaire `ends_at > starts_at` · détection conflits serveur |
+| `evaluations` / `grades` / `attendance` | Évaluations, notes, présences | tables existantes ; écritures via APIs dédiées uniquement |
+
+Migration : `backend/db/migrations/20260813_pedagogy_canonical.sql` (idempotente, sans COPY ni backfill JSON).
+
+Clés PUT `/api/backoffice/state` interdites : `courses`, `courseSchedules`, `evaluations`, `notes`, `presences` → `LEGACY_PEDAGOGY_STATE_WRITE_FORBIDDEN`.
+
 ---
 
 ## 5. Relations (vue simplifiée)

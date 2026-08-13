@@ -604,6 +604,91 @@ app.get("/api/course-schedules", requireAuth, asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
+app.post("/api/courses", requireAuth, requirePermission("POST /api/courses"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const created = await repository.createSchoolCourse(req.body ?? {}, req.principal, pedagogyAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/courses/:courseId", requireAuth, requirePermission("POST /api/courses"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateSchoolCourse(
+    req.params.courseId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/courses/:courseId", requireAuth, requirePermission("POST /api/courses"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const deleted = await repository.deleteSchoolCourse(
+    req.params.courseId,
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(deleted);
+}));
+
+app.post("/api/course-schedules", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const created = await repository.createCourseSchedule(req.body ?? {}, req.principal, pedagogyAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/course-schedules/:scheduleId", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateCourseSchedule(
+    req.params.scheduleId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const deleted = await repository.deleteCourseSchedule(
+    req.params.scheduleId,
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(deleted);
+}));
+
+app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/evaluations",
+    principal: req.principal,
+    handler: async () => {
+      assertCanManageNotes(req.principal);
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
+      const saved = await repository.createSchoolEvaluation(
+        ignoreClientScope(req.body ?? {}),
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: saved };
+    },
+  });
+}));
+
+app.patch("/api/evaluations/:evaluationId", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  assertCanManageNotes(req.principal);
+  const saved = await repository.updateSchoolEvaluation(
+    req.params.evaluationId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(saved);
+}));
+
 app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
@@ -850,8 +935,9 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
     handler: async () => {
       assertCanManageNotes(req.principal);
       const state = await getAuthoritativeBackOfficeState();
-      const body = req.body ?? {};
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
+      const body = ignoreClientScope(req.body ?? {});
       // Unicité portée par PG upsert (school+evaluation+student) — comme D3.5b présences.
       assertNoteWrite(state, body, {
         enforceLockedEvaluation: false,
@@ -862,7 +948,12 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       const engine = String(repository.engine ?? "postgresql");
       try {
         await ensureRepositoryBackOfficeSnapshot(state);
-        saved = await repository.upsertGrade(body, req.principal);
+        if (engine === "postgresql" && typeof repository.upsertSchoolGrade === "function") {
+          saved = await repository.upsertSchoolGrade(body, req.principal, pedagogyAuditMetaFromRequest(req));
+        } else {
+          saved = await repository.upsertGrade(body, req.principal);
+          await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
+        }
       } catch (error) {
         const message = String(error?.message ?? "");
         const status = error?.statusCode ?? error?.status;
@@ -883,7 +974,6 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
           throw error;
         }
       }
-      await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
       return { statusCode: 201, body: saved };
     },
   });
@@ -898,67 +988,26 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
     handler: async () => {
       assertCanManagePresences(req.principal);
       const state = await getAuthoritativeBackOfficeState();
-      const body = req.body ?? {};
-      const batchClassName = String(body.className ?? "").trim();
-      const items = (Array.isArray(body.items) ? body.items : []).map((item) => {
-        const student = findStudent(state.students ?? [], item.studentId);
-        return {
-          ...item,
-          studentId: student?.matricule ?? student?.publicId ?? student?.id ?? item.studentId,
-          className: String(item.className ?? batchClassName ?? student?.className ?? "").trim(),
-          schoolCode: String(item.schoolCode ?? student?.schoolCode ?? req.principal.schoolCode ?? "")
-            .trim()
-            .toUpperCase(),
-        };
-      });
-
+      const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
+      const rawBody = req.body ?? {};
+      const body = Array.isArray(rawBody.items)
+        ? { ...rawBody, items: rawBody.items.map((item) => ignoreClientScope(item)) }
+        : ignoreClientScope(rawBody);
       const { assertPresenceWrite } = require("./services/dataIntegrityService");
-      const normalizedItems = [];
+      const items = Array.isArray(body.items) ? body.items : [body];
       for (const item of items) {
-        const student = findStudent(state.students ?? [], item.studentId);
-        const studentKeys = student ? buildScopedStudentIdSet([student]) : new Set();
-        // D3.5b : clé = établissement + élève + jour
-        const itemSchool = String(item.schoolCode ?? "").trim().toUpperCase();
-        const duplicate = (state.presences ?? []).find((row) => {
-          const rowSchool = String(row.schoolCode ?? "").trim().toUpperCase();
-          if (itemSchool && rowSchool && itemSchool !== rowSchool) return false;
-          return (
-            studentKeys.has(String(row.studentId ?? "")) &&
-            normalizePresenceDay(row.date) === normalizePresenceDay(item.date)
-          );
-        });
-        const nextItem = duplicate ? { ...duplicate, ...item, id: duplicate.id } : item;
-        assertPresenceWrite(state, nextItem, { skipDuplicateCheck: true });
-        normalizedItems.push(nextItem);
+        assertPresenceWrite(state, item);
       }
-
-      await ensureRepositoryBackOfficeSnapshot(state);
-
-      // D3.5b : PostgreSQL = autorité canonique. Le JSON BO n'est autorisé
-      // qu'en moteur mémoire (secours démo), jamais comme 2ᵉ source durable.
       let saved;
       const engine = String(repository.engine ?? "postgresql");
-      try {
-        saved = await repository.upsertAttendanceBatch({ ...body, items: normalizedItems }, req.principal);
-      } catch (error) {
-        const message = String(error?.message ?? "");
-        const status = error?.statusCode ?? error?.status;
-        const canUseTransientBoFallback =
-          engine === "memory" &&
-          (status === 404 || status === 400) &&
-          (message.includes("introuvable") || message.includes("Eleve") || message.includes("présence"));
-        if (canUseTransientBoFallback) {
-          saved = await savePresencesViaBackOfficeState(state, normalizedItems);
-        } else {
-          throw error;
-        }
+      if (engine === "postgresql" && typeof repository.upsertSchoolAttendanceBatch === "function") {
+        saved = await repository.upsertSchoolAttendanceBatch(body, req.principal, pedagogyAuditMetaFromRequest(req));
+      } else {
+        saved = await repository.upsertAttendanceBatch(body, req.principal);
+        await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
+          count: saved.length,
+        });
       }
-
-      await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
-        count: saved.length,
-        className: req.body?.className,
-        date: req.body?.date,
-      });
       return { statusCode: 201, body: saved };
     },
   });
@@ -1574,7 +1623,19 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     error.details = { rejectedKeys: preparedLegacyFinance.rejectedKeys };
     throw error;
   }
-  const rawBody = preparedLegacyFinance.body;
+  const {
+    stripLegacyPedagogyStateWrite,
+    LEGACY_PEDAGOGY_STATE_WRITE_CODE,
+    LEGACY_PEDAGOGY_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacyPedagogyStateWrite");
+  const preparedLegacyPedagogy = stripLegacyPedagogyStateWrite(preparedLegacyFinance.body);
+  if (preparedLegacyPedagogy.rejectLegacyPedagogyWrite) {
+    const error = new BusinessError(400, LEGACY_PEDAGOGY_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_PEDAGOGY_STATE_WRITE_CODE;
+    error.details = { rejectedKeys: preparedLegacyPedagogy.rejectedKeys };
+    throw error;
+  }
+  const rawBody = preparedLegacyPedagogy.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -2444,7 +2505,19 @@ async function getAuthoritativeBackOfficeState() {
       ),
     };
   }
-  return overlayFinanceProjection(nextState);
+  return overlayPedagogyProjection(await overlayFinanceProjection(nextState));
+}
+
+async function overlayPedagogyProjection(state) {
+  const pedagogy = await repository.listPedagogyProjection();
+  return {
+    ...state,
+    courses: pedagogy.courses ?? [],
+    courseSchedules: pedagogy.courseSchedules ?? [],
+    evaluations: pedagogy.evaluations ?? [],
+    notes: pedagogy.notes ?? [],
+    presences: pedagogy.presences ?? [],
+  };
 }
 
 async function overlayFinanceProjection(state) {

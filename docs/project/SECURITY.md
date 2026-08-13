@@ -24,11 +24,12 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 
 | Rôle | Exemples de clés autorisées |
 |------|-----------------------------|
-| Super Admin | Toutes sauf `auditLog` et clés canoniques PG (écoles, élèves, enseignants/affectations, Finance) |
+| Super Admin | Toutes sauf `auditLog` et clés canoniques PG (écoles, élèves, enseignants/affectations, Finance, Pédagogie) |
 | Admin Pays | users, countries, subscriptions… (plus `schools`) |
 | Admin School | contacts, users, notes, documents… (plus Finance PUT) |
 | Secrétaire | presences, messages, documents… (paiements via APIs dédiées, plus PUT Finance) |
 | Comptable | **aucune** clé PUT state ; Finance exclusivement via `/api/payments` et `/api/finance/*` |
+| Pédagogie (cours, EDT, évaluations, notes, présences) | **aucune** clé PUT state ; exclusivement via `/api/courses`, `/api/course-schedules`, `/api/evaluations`, `/api/notes`, `/api/presences` |
 | Préfet / Proviseur / DA | pédagogie (notes, classes, teachers…) |
 | Enseignant | **uniquement** `evaluations` + `notes` (HOTFIX-SYNC-03) |
 

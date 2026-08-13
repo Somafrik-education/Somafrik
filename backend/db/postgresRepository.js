@@ -88,6 +88,7 @@ class PostgresRepository {
     await this.ensureClassesDomainConstraints();
     await this.ensureTeachersDomainConstraints();
     await this.ensureFinanceCanonicalSchema();
+    await this.ensurePedagogyCanonicalSchema();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -308,7 +309,9 @@ class PostgresRepository {
         console.warn(`[D3.6b] Anomalie note sans evaluation_id: ${note.id ?? note.studentId ?? "?"}`);
         continue;
       }
-      const evaluation = await this.resolveEvaluationRow(evaluationId, note.schoolCode);
+      const evaluation = await this.resolveEvaluationRow(evaluationId, note.schoolCode, {
+        allowGlobalLegacyFallback: true,
+      });
       if (!evaluation) {
         anomalyCount += 1;
         console.warn(
@@ -423,6 +426,71 @@ class PostgresRepository {
   async ensureFinanceCanonicalSchema() {
     const { FINANCE_SCHEMA_SQL } = require("./financeSchema");
     await this.query(FINANCE_SCHEMA_SQL);
+  }
+
+  async ensurePedagogyCanonicalSchema() {
+    const { PEDAGOGY_SCHEMA_SQL } = require("./pedagogySchema");
+    await this.query(PEDAGOGY_SCHEMA_SQL);
+  }
+
+  getPedagogyStore() {
+    if (!this._pedagogyStore) {
+      const { createPedagogyPgStore } = require("./pedagogyPgStore");
+      this._pedagogyStore = createPedagogyPgStore(this);
+    }
+    return this._pedagogyStore;
+  }
+
+  listPedagogyProjection() {
+    return this.getPedagogyStore().listProjection();
+  }
+
+  createSchoolCourse(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createSchoolCourse(payload, principal, auditMeta);
+  }
+
+  updateSchoolCourse(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateSchoolCourse(id, patch, principal, auditMeta);
+  }
+
+  deleteSchoolCourse(id, principal, auditMeta) {
+    return this.getPedagogyStore().deleteSchoolCourse(id, principal, auditMeta);
+  }
+
+  getSchoolCourse(id, principal) {
+    return this.getPedagogyStore().getSchoolCourse(id, principal);
+  }
+
+  createCourseSchedule(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createCourseSchedule(payload, principal, auditMeta);
+  }
+
+  updateCourseSchedule(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateCourseSchedule(id, patch, principal, auditMeta);
+  }
+
+  deleteCourseSchedule(id, principal, auditMeta) {
+    return this.getPedagogyStore().deleteCourseSchedule(id, principal, auditMeta);
+  }
+
+  getCourseSchedule(id, principal) {
+    return this.getPedagogyStore().getCourseSchedule(id, principal);
+  }
+
+  createSchoolEvaluation(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createEvaluation(payload, principal, auditMeta);
+  }
+
+  updateSchoolEvaluation(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateEvaluation(id, patch, principal, auditMeta);
+  }
+
+  upsertSchoolGrade(payload, principal, auditMeta) {
+    return this.getPedagogyStore().upsertSchoolGrade(payload, principal, auditMeta);
+  }
+
+  upsertSchoolAttendanceBatch(payload, principal, auditMeta) {
+    return this.getPedagogyStore().upsertSchoolAttendanceBatch(payload, principal, auditMeta);
   }
 
   getFinanceStore() {
@@ -855,14 +923,17 @@ class PostgresRepository {
 
   async saveBackOfficeState(payload) {
     await this.init();
-    const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
-    const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
     // LOT 2 — students est une projection read-only : aucune synchronisation
     // ni persistance JSON ne doit être déclenchée par PUT /backoffice/state.
     const { students: _legacyStudents, ...payloadWithoutStudents } = payload ?? {};
     const {
       teachers: _legacyTeachers,
       assignments: _legacyAssignments,
+      courses: _legacyCourses,
+      courseSchedules: _legacyCourseSchedules,
+      evaluations: _legacyEvaluations,
+      notes: _legacyNotes,
+      presences: _legacyPresences,
       payments: _legacyPayments,
       paymentStatuses: _legacyPaymentStatuses,
       feeGrids: _legacyFeeGrids,
@@ -872,10 +943,7 @@ class PostgresRepository {
       paymentReminders: _legacyPaymentReminders,
       ...durablePayload
     } = payloadWithoutStudents;
-    // HOTFIX — matérialiser schools BO → PG avant sync enseignants / années scolaires.
-    // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
-    // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
-    // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
+    // LOT 5 — pédagogie : projection PostgreSQL read-only ; aucune sync JSON → PG.
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async (tx) => {
       const transactional = this.createTxScope(tx);
@@ -887,32 +955,20 @@ class PostgresRepository {
         if (!code) continue;
         await transactional.ensureSchoolFromBackOfficeRecord(code, { schools: payloadSchools });
       }
-      const syncResult = await persistBackOfficeAfterNotesSync({
-        payload: durablePayload,
-        syncFn: async (body) => transactional.syncNotesDomainFromBackOffice(body),
-        persistFn: async (durablePayload) => {
-          const runner = tx ?? transactional;
-          await runner.query(
-            `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
-             VALUES ('default', $1, NOW())
-             ON CONFLICT (state_key) DO UPDATE SET
-               state_payload = EXCLUDED.state_payload,
-               updated_at = NOW()`,
-            [JSON.stringify(durablePayload)],
-          );
-        },
-      });
-      const studentSyncRetired = {
-        synced: true,
-        accepted: { students: [], enrollments: [] },
+      const runner = tx ?? transactional;
+      await runner.query(
+        `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
+         VALUES ('default', $1, NOW())
+         ON CONFLICT (state_key) DO UPDATE SET
+           state_payload = EXCLUDED.state_payload,
+           updated_at = NOW()`,
+        [JSON.stringify(durablePayload)],
+      );
+      syncAck = {
+        accepted: [],
         rejected: [],
-      };
-      const staffSyncRetired = {
         synced: true,
-        accepted: { teachers: [], assignments: [] },
-        rejected: [],
       };
-      syncAck = mergePreE1SyncAck(studentSyncRetired, staffSyncRetired, syncResult);
     });
     this.cachedDataset = null;
     // syncAck est retourné avec le résultat de cette opération uniquement —
@@ -1235,11 +1291,13 @@ class PostgresRepository {
     const evaluationSchool = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [
       evaluation.school_id,
     ]);
-    const lookupSchoolCode = String(
-      payload.schoolCode ?? evaluationSchool?.school_code ?? "",
-    )
+    const principalSchool = String(principal?.schoolCode ?? "")
       .trim()
       .toUpperCase();
+    const lookupSchoolCode =
+      principalSchool && principalSchool !== "*"
+        ? principalSchool
+        : String(evaluationSchool?.school_code ?? "").trim().toUpperCase();
     const student = await this.resolveStudentForGrade(payload.studentId, lookupSchoolCode);
     if (!student) {
       const error = new Error("Eleve introuvable");
@@ -1494,24 +1552,52 @@ class PostgresRepository {
     };
   }
 
-  async resolveEvaluationRow(evaluationKey, schoolCode) {
+  async resolveEvaluationRow(evaluationKey, schoolCode, options = {}) {
     const key = String(evaluationKey ?? "").trim();
     if (!key) return null;
-    if (isUuid(key)) {
-      const byId = await this.one("SELECT * FROM evaluations WHERE id = $1", [key]);
-      if (byId) return byId;
-    }
-    if (schoolCode && schoolCode !== "*") {
+
+    const scoped = Boolean(schoolCode && schoolCode !== "*");
+    let schoolId = null;
+    if (scoped) {
       const school = await this.getSchoolByCode(schoolCode);
-      if (school) {
-        const byLegacySchool = await this.one(
-          `SELECT * FROM evaluations WHERE school_id = $1 AND legacy_json_id = $2 LIMIT 1`,
-          [school.id, key],
-        );
-        if (byLegacySchool) return byLegacySchool;
-      }
+      if (!school) return null;
+      schoolId = school.id;
     }
-    return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
+
+    if (isUuid(key)) {
+      if (schoolId) {
+        return this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id = $2", [key, schoolId]);
+      }
+      return this.one("SELECT * FROM evaluations WHERE id = $1", [key]);
+    }
+
+    if (schoolId) {
+      return this.one(
+        `SELECT * FROM evaluations WHERE school_id = $1 AND legacy_json_id = $2 LIMIT 1`,
+        [schoolId, key],
+      );
+    }
+
+    if (options.allowGlobalLegacyFallback === true) {
+      return this.one(`SELECT * FROM evaluations WHERE legacy_json_id = $1 LIMIT 1`, [key]);
+    }
+
+    return null;
+  }
+
+  async findForeignEvaluationRow(evaluationKey, schoolId) {
+    const key = String(evaluationKey ?? "").trim();
+    if (!key || !schoolId) return null;
+    if (isUuid(key)) {
+      return this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id <> $2 LIMIT 1", [
+        key,
+        schoolId,
+      ]);
+    }
+    return this.one(
+      `SELECT * FROM evaluations WHERE legacy_json_id = $1 AND school_id <> $2 LIMIT 1`,
+      [key, schoolId],
+    );
   }
 
   async findSubjectByNormalizedName(schoolId, subjectName) {
@@ -1611,36 +1697,98 @@ class PostgresRepository {
       validateEvaluationContract,
     } = require("../lib/gradesCanonical");
     const { resolveEvaluationAttachments } = require("../lib/evaluationAttachment");
+    const { asTrimmed, createPedagogyError, PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+
+    const principal = options.principal;
+    if (principal) {
+      const tenantCode = asTrimmed(principal.schoolCode).toUpperCase();
+      if (!tenantCode || tenantCode === "*") {
+        throw createPedagogyError(400, "Établissement requis.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+      }
+      evaluation = { ...evaluation, schoolCode: tenantCode };
+    }
 
     const legacyId = String(evaluation.id ?? evaluation.legacy_json_id ?? "").trim();
     const context = options.context ?? {};
+    const ensure = options.ensure !== false;
+    const scopedSchoolCode = asTrimmed(evaluation.schoolCode).toUpperCase();
+    const schoolRecord = scopedSchoolCode ? await this.getSchoolByCode(scopedSchoolCode) : null;
+    if (principal && !schoolRecord) {
+      throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
 
-    const {
-      school,
-      schoolClass,
-      subject,
-      academicYear,
-      term,
-      teacher,
-      periodName,
-      schoolCode,
-    } = await resolveEvaluationAttachments(
-      evaluation,
-      {
+    let existing = null;
+    if (legacyId && scopedSchoolCode) {
+      existing = await this.resolveEvaluationRow(legacyId, scopedSchoolCode);
+      if (!existing && principal && schoolRecord) {
+        const foreign = await this.findForeignEvaluationRow(legacyId, schoolRecord.id);
+        if (foreign) {
+          throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+        }
+      }
+    }
+    if (!existing && isUuid(evaluation.id) && schoolRecord) {
+      existing = await this.one("SELECT * FROM evaluations WHERE id = $1 AND school_id = $2", [
+        evaluation.id,
+        schoolRecord.id,
+      ]);
+      if (!existing && principal) {
+        const foreign = await this.findForeignEvaluationRow(evaluation.id, schoolRecord.id);
+        if (foreign) {
+          throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+        }
+      }
+    }
+
+    if (options.requireExisting && !existing) {
+      throw createPedagogyError(404, "Évaluation introuvable.", PEDAGOGY_ERROR.EVALUATION_NOT_FOUND);
+    }
+
+    if (existing && principal && schoolRecord && String(existing.school_id) !== String(schoolRecord.id)) {
+      throw createPedagogyError(403, "Accès refusé : évaluation hors périmètre.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
+
+    let attachmentEvaluation = { ...evaluation };
+    if (existing) {
+      const refs = await this.one(
+        `SELECT c.name AS class_name, sub.name AS subject_name, tm.name AS term_name, t.teacher_code
+         FROM evaluations e
+         JOIN classes c ON c.id = e.class_id
+         JOIN subjects sub ON sub.id = e.subject_id
+         JOIN terms tm ON tm.id = e.term_id
+         LEFT JOIN teachers t ON t.id = e.teacher_id
+         WHERE e.id = $1`,
+        [existing.id],
+      );
+      attachmentEvaluation = {
+        ...attachmentEvaluation,
+        className: attachmentEvaluation.className ?? attachmentEvaluation.class_name ?? refs?.class_name,
+        subject:
+          attachmentEvaluation.subject ??
+          attachmentEvaluation.subjectName ??
+          refs?.subject_name,
+        period: attachmentEvaluation.period ?? refs?.term_name,
+        teacherId: attachmentEvaluation.teacherId ?? refs?.teacher_code,
+      };
+    }
+
+    const attachmentDeps = {
         getSchoolByCode: (code) => this.getSchoolByCode(code),
-        ensureSchool: (code) => this.ensureSchoolFromBackOfficeRecord(code),
+        ensureSchool: ensure ? (code) => this.ensureSchoolFromBackOfficeRecord(code) : undefined,
         findClassById: (schoolId, id) =>
           this.one(`SELECT * FROM classes WHERE school_id = $1 AND (id::text = $2 OR class_code = $2) LIMIT 1`, [
             schoolId,
             id,
           ]),
         findClassByName: (schoolId, name) => this.findClassByNormalizedName(schoolId, name),
-        ensureClass: async (schoolId, name) => {
-          const classId = await this.ensureClassForSchool(schoolId, name);
-          return classId
-            ? this.one(`SELECT * FROM classes WHERE id = $1`, [classId])
-            : null;
-        },
+        ensureClass: ensure
+          ? async (schoolId, name) => {
+              const classId = await this.ensureClassForSchool(schoolId, name);
+              return classId
+                ? this.one(`SELECT * FROM classes WHERE id = $1`, [classId])
+                : null;
+            }
+          : undefined,
         findSubjectById: (schoolId, id) =>
           this.one(
             `SELECT * FROM subjects WHERE school_id = $1 AND (id::text = $2 OR subject_code = $2) LIMIT 1`,
@@ -1652,79 +1800,100 @@ class PostgresRepository {
             [schoolId, code],
           ),
         findSubjectByName: (schoolId, name) => this.findSubjectByNormalizedName(schoolId, name),
-        ensureSubject: (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context),
-        getCurrentAcademicYear: (schoolId) => this.getCurrentAcademicYear(schoolId),
-        ensureAcademicYear: (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId),
-        ensureTerm: async (academicYearId, name) =>
-          (await this.one(
-            `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+        ensureSubject: ensure ? (schoolId, name) => this.ensureSubjectForSchool(schoolId, name, context) : undefined,
+        getCurrentAcademicYear: ensure
+          ? (schoolId) => this.getCurrentAcademicYear(schoolId)
+          : (schoolId) => this.findOpenAcademicYear(schoolId),
+        ensureAcademicYear: ensure ? (schoolId) => this.ensureCurrentAcademicYearForSchool(schoolId) : undefined,
+        findTermByName: (academicYearId, name) =>
+          this.one(
+            `SELECT * FROM terms WHERE academic_year_id = $1 AND lower(btrim(name)) = lower(btrim($2)) LIMIT 1`,
             [academicYearId, name],
-          )) ??
-          (await this.one(
-            `INSERT INTO terms (academic_year_id, name, status)
-             VALUES ($1, $2, 'open')
-             ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
-             RETURNING *`,
-            [academicYearId, name],
-          )),
+          ),
+        ensureTerm: ensure
+          ? async (academicYearId, name) =>
+              (await this.one(
+                `SELECT * FROM terms WHERE academic_year_id = $1 AND name = $2 LIMIT 1`,
+                [academicYearId, name],
+              )) ??
+              (await this.one(
+                `INSERT INTO terms (academic_year_id, name, status)
+                 VALUES ($1, $2, 'open')
+                 ON CONFLICT (academic_year_id, name) DO UPDATE SET name = EXCLUDED.name
+                 RETURNING *`,
+                [academicYearId, name],
+              ))
+          : undefined,
         findTeacherByCode: (schoolId, code) =>
           this.one(
             `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
             [schoolId, code],
           ),
-        ensureTeacher: async (schoolId, code, ctx) => {
-          const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
-          const state = (await this.getBackOfficeState()) ?? {};
-          // Matérialisation exacte de LA même fiche (même id / teacher_code) — pas un jumeau.
-          const boTeacher =
-            teachers.find(
-              (row) =>
-                String(row.id ?? "").trim() === String(code) ||
-                String(row.publicId ?? "").trim() === String(code),
-            ) ??
-            (state.teachers ?? []).find(
-              (row) =>
-                String(row.id ?? "").trim() === String(code) ||
-                String(row.publicId ?? "").trim() === String(code),
-            );
-          if (!boTeacher) return null;
-          if (
-            String(boTeacher.id ?? "").trim() !== String(code) &&
-            String(boTeacher.publicId ?? "").trim() !== String(code)
-          ) {
-            return null;
-          }
-          const school = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
-          const materialized = await this.materializeBackOfficeTeacher(
-            {
-              ...boTeacher,
-              schoolCode: boTeacher.schoolCode ?? school?.school_code,
-            },
-            ctx,
-          );
-          return materialized?.teacherId
-            ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
-            : null;
-        },
-        // FIX V2.1 §5.2 — uniquement teacher_code explicite + affectation ; pas de filet opportuniste.
-        findTeacherByExactAssignment: (schoolId, classId, subjectId, preferredTeacherCode) => {
-          if (!preferredTeacherCode) return null;
-          return this.one(
-            `SELECT t.*
-             FROM teachers t
-             JOIN teacher_assignments ta ON ta.teacher_id = t.id
-             WHERE t.school_id = $1
-               AND t.teacher_code = $2
-               AND ta.class_id = $3
-               AND ta.subject_id = $4
-               AND ta.status = 'active'
-             LIMIT 1`,
-            [schoolId, preferredTeacherCode, classId, subjectId],
-          );
-        },
-      },
-      {
-        ensure: options.ensure !== false,
+        ensureTeacher: ensure
+          ? async (schoolId, code, ctx) => {
+              const teachers = Array.isArray(ctx?.teachers) ? ctx.teachers : [];
+              const state = (await this.getBackOfficeState()) ?? {};
+              const boTeacher =
+                teachers.find(
+                  (row) =>
+                    String(row.id ?? "").trim() === String(code) ||
+                    String(row.publicId ?? "").trim() === String(code),
+                ) ??
+                (state.teachers ?? []).find(
+                  (row) =>
+                    String(row.id ?? "").trim() === String(code) ||
+                    String(row.publicId ?? "").trim() === String(code),
+                );
+              if (!boTeacher) return null;
+              if (
+                String(boTeacher.id ?? "").trim() !== String(code) &&
+                String(boTeacher.publicId ?? "").trim() !== String(code)
+              ) {
+                return null;
+              }
+              const schoolRow = await this.one(`SELECT school_code FROM schools WHERE id = $1`, [schoolId]);
+              const materialized = await this.materializeBackOfficeTeacher(
+                {
+                  ...boTeacher,
+                  schoolCode: boTeacher.schoolCode ?? schoolRow?.school_code,
+                },
+                ctx,
+              );
+              return materialized?.teacherId
+                ? this.one(`SELECT * FROM teachers WHERE id = $1`, [materialized.teacherId])
+                : null;
+            }
+          : undefined,
+        findTeacherByExactAssignment: ensure
+          ? (schoolId, classId, subjectId, preferredTeacherCode) => {
+              if (!preferredTeacherCode) return null;
+              return this.one(
+                `SELECT t.*
+                 FROM teachers t
+                 JOIN teacher_assignments ta ON ta.teacher_id = t.id
+                 WHERE t.school_id = $1
+                   AND t.teacher_code = $2
+                   AND ta.class_id = $3
+                   AND ta.subject_id = $4
+                   AND ta.status = 'active'
+                 LIMIT 1`,
+                [schoolId, preferredTeacherCode, classId, subjectId],
+              );
+            }
+          : undefined,
+    };
+
+    const {
+      school,
+      schoolClass,
+      subject,
+      academicYear,
+      term,
+      teacher,
+      periodName,
+      schoolCode,
+    } = await resolveEvaluationAttachments(attachmentEvaluation, attachmentDeps, {
+        ensure,
         context,
         requireTeacher: options.requireTeacher === true,
       },
@@ -1734,26 +1903,71 @@ class PostgresRepository {
     void academicYear;
     void periodName;
 
-    const maxScore = Number(evaluation.scale ?? evaluation.max_score ?? 20);
-    const coefficient = Number(evaluation.coefficient ?? 1);
-    const status = toEvaluationStatus(evaluation.status, "draft");
+    const patchTouches = (keys) => evaluationPatchTouches(evaluation, keys);
+
+    let maxScore;
+    let coefficient;
+    let status;
+    let evaluationType;
+    let evaluationDate;
+    let active;
+    let title;
+    let classId;
+    let subjectId;
+    let termId;
+    let teacherId;
+
+    if (existing) {
+      maxScore = patchTouches(["scale", "max_score", "maxScore"])
+        ? Number(evaluation.scale ?? evaluation.max_score ?? evaluation.maxScore ?? 20)
+        : Number(existing.max_score ?? 20);
+      coefficient = patchTouches(["coefficient"])
+        ? Number(evaluation.coefficient ?? 1)
+        : Number(existing.coefficient ?? 1);
+      status = patchTouches(["status"])
+        ? toEvaluationStatus(evaluation.status, String(existing.status ?? "draft"))
+        : String(existing.status ?? "draft");
+      evaluationType = patchTouches(["evaluationType", "type", "evaluation_type"])
+        ? toDbEvaluationType(evaluation.evaluationType ?? evaluation.type)
+        : String(existing.evaluation_type ?? "devoir");
+      evaluationDate = patchTouches(["date", "evaluation_date"])
+        ? this.parseDate(evaluation.date ?? evaluation.evaluation_date)
+        : existing.evaluation_date ?? null;
+      active = patchTouches(["active"]) ? evaluation.active !== false : existing.active !== false;
+      title = patchTouches(["title"])
+        ? String(evaluation.title ?? "Évaluation").trim() || "Évaluation"
+        : String(existing.title ?? "Évaluation").trim() || "Évaluation";
+      classId = patchTouches(["className", "class_name", "classId", "class_id"])
+        ? schoolClass.id
+        : existing.class_id;
+      subjectId = patchTouches(["subject", "subjectName", "subjectCode", "subjectId", "subject_id"])
+        ? subject.id
+        : existing.subject_id;
+      termId = patchTouches(["period", "termName", "term_id"])
+        ? term.id
+        : existing.term_id;
+      teacherId = patchTouches(["teacherId", "teacher_code"])
+        ? teacher?.id ?? null
+        : existing.teacher_id ?? null;
+    } else {
+      maxScore = Number(evaluation.scale ?? evaluation.max_score ?? evaluation.maxScore ?? 20);
+      coefficient = Number(evaluation.coefficient ?? 1);
+      status = toEvaluationStatus(evaluation.status, "draft");
+      evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
+      evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
+      active = evaluation.active !== false;
+      title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
+      classId = schoolClass.id;
+      subjectId = subject.id;
+      termId = term.id;
+      teacherId = teacher?.id ?? null;
+    }
+
     const contractError = validateEvaluationContract({ maxScore, coefficient, status });
     if (contractError) {
       const error = new Error(contractError);
       error.statusCode = 400;
       throw error;
-    }
-
-    const title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
-    const evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
-    const evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
-
-    let existing = null;
-    if (legacyId) {
-      existing = await this.resolveEvaluationRow(legacyId, schoolCode);
-    }
-    if (!existing && isUuid(evaluation.id)) {
-      existing = await this.one("SELECT * FROM evaluations WHERE id = $1", [evaluation.id]);
     }
 
     if (existing) {
@@ -1766,17 +1980,17 @@ class PostgresRepository {
              updated_at = NOW()
          WHERE id = $13`,
         [
-          schoolClass.id,
-          subject.id,
-          teacher?.id ?? null,
-          term.id,
+          classId,
+          subjectId,
+          teacherId,
+          termId,
           title,
           evaluationType,
           evaluationDate,
           maxScore,
           coefficient,
           status,
-          evaluation.active !== false,
+          active,
           legacyId || null,
           existing.id,
         ],
@@ -1965,6 +2179,17 @@ class PostgresRepository {
     }
 
     return { row: null, backOfficeStudent };
+  }
+
+  async findOpenAcademicYear(schoolId) {
+    return this.one(
+      `SELECT *
+       FROM academic_years
+       WHERE school_id = $1 AND status IN ('active', 'open')
+       ORDER BY is_current DESC, created_at DESC
+       LIMIT 1`,
+      [schoolId],
+    );
   }
 
   async getCurrentAcademicYear(schoolId) {
@@ -2706,21 +2931,37 @@ class PostgresRepository {
     };
   }
 
-  async resolveStudentForAttendance(payload, principal = {}) {
+  async assertPrincipalStudentTenant(principal, student) {
+    const schoolCode = String(principal?.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (!schoolCode || schoolCode === "*") return;
+    const school = await this.getSchoolByCode(schoolCode);
+    if (!school || String(student?.school_id) !== String(school.id)) {
+      const error = new Error("Accès refusé : élève hors périmètre établissement.");
+      error.statusCode = 403;
+      error.code = "TENANT_MISMATCH";
+      throw error;
+    }
+  }
+
+  async resolveStudentForAttendance(payload, principal = {}, options = {}) {
     const schoolCode = String(payload.schoolCode ?? principal.schoolCode ?? "").trim().toUpperCase();
+    const tenantScoped = Boolean(schoolCode && schoolCode !== "*");
+    const pedagogyStrict = options.pedagogyStrict === true || tenantScoped;
     const className = String(payload.className ?? "").trim();
 
-    if (schoolCode && schoolCode !== "*") {
+    if (tenantScoped && !options.skipSchoolEnsure) {
       await this.ensureSchoolFromBackOfficeRecord(schoolCode);
     }
 
     let { row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, schoolCode);
 
-    if (!student && !backOfficeStudent) {
+    if (!student && !backOfficeStudent && !pedagogyStrict) {
       ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(payload.studentId, ""));
     }
 
-    if (!student && backOfficeStudent) {
+    if (!student && backOfficeStudent && !pedagogyStrict) {
       const materialized = await this.materializeBackOfficeStudent(backOfficeStudent);
       if (materialized?.studentId) {
         ({ row: student, backOfficeStudent } = await this.queryStudentWithClass(
@@ -2732,7 +2973,17 @@ class PostgresRepository {
 
     if (!student) return null;
 
+    if (tenantScoped) {
+      const tenantSchool = await this.getSchoolByCode(schoolCode);
+      if (!tenantSchool || String(student.school_id) !== String(tenantSchool.id)) {
+        return null;
+      }
+    }
+
     if (!student.class_id) {
+      if (pedagogyStrict) {
+        return null;
+      }
       const targetClassName =
         className ||
         String(backOfficeStudent?.className ?? "").trim() ||
@@ -3185,12 +3436,14 @@ class PostgresRepository {
       throw error;
     }
 
-    const student = await this.resolveStudentForAttendance(payload, principal);
+    const student = await this.resolveStudentForAttendance(payload, principal, { pedagogyStrict: true });
     if (!student || !student.class_id) {
       const error = new Error("Élève ou classe introuvable pour l'appel");
       error.statusCode = 404;
       throw error;
     }
+
+    await this.assertPrincipalStudentTenant(principal, student);
 
     if (!(await this.teacherCanAccessStudentClass(principal, student))) {
       const error = new Error("Accès refusé: élève hors classe affectée.");
@@ -5091,6 +5344,10 @@ function toDbEvaluationType(type) {
   if (normalized.includes("travail") || normalized === "tp") return "tp";
   if (normalized.includes("projet")) return "projet";
   return "devoir";
+}
+
+function evaluationPatchTouches(evaluation = {}, keys = []) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(evaluation, key));
 }
 
 function defaultAcademicPeriods() {

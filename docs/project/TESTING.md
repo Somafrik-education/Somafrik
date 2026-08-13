@@ -80,6 +80,8 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:students-legacy-cleanup` | PUT `students` interdit (toute valeur, seul, mixte, snapshot) sans mutation partielle ; inscription/liste/fiche/PATCH via APIs PG ; projection `state.students` read-only ; writers Web/Mobile/BackOffice retirés |
 | `npm run verify:finance-legacy-cleanup` | PUT Finance interdit (clés `payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders` — vide, null, mixte, snapshot) sans mutation partielle ; projection GET depuis PostgreSQL uniquement ; writers Web/Mobile/BackOffice retirés |
 | `npm run verify:finance-management` | Paiement/allocation atomiques, annulation/réversion, application concurrente de grille, cooldown reminders, isolation tenant, RBAC Super Admin / Admin School / Comptable / Secrétaire / Directeur / rôles non autorisés |
+| `npm run verify:pedagogy-legacy-cleanup` | PUT Pédagogie interdit (`courses`, `courseSchedules`, `evaluations`, `notes`, `presences` — vide, null, mixte) sans mutation partielle ; `rejectedKeys` déterministes |
+| `npm run verify:pedagogy-management` | Routes canoniques `/api/courses`, `/api/course-schedules`, `/api/evaluations`, `/api/notes`, `/api/presences` ; intégration PG (`pedagogyRepository.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
 | `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |

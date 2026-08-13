@@ -1,14 +1,8 @@
 /**
- * HOTFIX-SYNC-02 — Preuve repository réelle (méthodes PostgresRepository),
- * pas une Map pgEvaluations reconstruite.
+ * HOTFIX-SYNC-02 / LOT 5 — Preuve repository réelle (méthodes PostgresRepository).
  *
- * Exercice :
- *   saveBackOfficeState
- *   → syncNotesDomainFromBackOffice
- *   → upsertEvaluationFromLegacy
- *   → INSERT evaluations
- *   → syncAck.accepted
- *   → getBackOfficeState (refresh)
+ * LOT 5 : `saveBackOfficeState` ne déclenche plus `syncNotesDomainFromBackOffice`.
+ * La synchronisation BO → PG reste testée via l'appel explicite de la méthode interne.
  */
 const assert = require("assert");
 const { PostgresRepository } = require("../db/postgresRepository");
@@ -170,6 +164,11 @@ function createInjectablePostgresRepository() {
       return [row];
     }
 
+    if (upper.includes("FROM TERMS") && upper.includes("LOWER(BTRIM(NAME))")) {
+      return tables.terms.filter(
+        (row) => eq(row.academic_year_id, params[0]) && lower(row.name) === lower(params[1]),
+      );
+    }
     if (upper.includes("FROM TERMS") && upper.includes("NAME =")) {
       return tables.terms.filter(
         (row) => eq(row.academic_year_id, params[0]) && eq(row.name, params[1]),
@@ -210,6 +209,39 @@ function createInjectablePostgresRepository() {
       return tables.evaluations.filter(
         (row) => eq(row.school_id, params[0]) && eq(row.legacy_json_id, params[1]),
       );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE ID = $1 AND SCHOOL_ID = $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.id, params[0]) && eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE ID = $1 AND SCHOOL_ID <> $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.id, params[0]) && !eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS WHERE LEGACY_JSON_ID = $1 AND SCHOOL_ID <> $2")) {
+      return tables.evaluations.filter(
+        (row) => eq(row.legacy_json_id, params[0]) && !eq(row.school_id, params[1]),
+      );
+    }
+    if (upper.includes("FROM EVALUATIONS E") && upper.includes("JOIN CLASSES C")) {
+      const evaluation = tables.evaluations.find((row) => eq(row.id, params[0]));
+      if (!evaluation) return [];
+      const klass = tables.classes.find((row) => eq(row.id, evaluation.class_id));
+      const subject = tables.subjects.find((row) => eq(row.id, evaluation.subject_id));
+      const term = tables.terms.find((row) => eq(row.id, evaluation.term_id));
+      const teacher = evaluation.teacher_id
+        ? tables.teachers.find((row) => eq(row.id, evaluation.teacher_id))
+        : null;
+      return [
+        {
+          class_name: klass?.name ?? null,
+          subject_name: subject?.name ?? null,
+          term_name: term?.name ?? null,
+          teacher_code: teacher?.teacher_code ?? null,
+        },
+      ];
     }
     if (upper.includes("FROM EVALUATIONS WHERE LEGACY_JSON_ID")) {
       return tables.evaluations.filter((row) => eq(row.legacy_json_id, params[0]));
@@ -342,13 +374,21 @@ async function run() {
   });
 
   assert.ok(saved.syncAck, "syncAck HTTP réel présent");
-  assert.deepStrictEqual(
-    saved.syncAck.accepted.map((item) => item.id),
-    ["EVAL-REPO-1"],
-  );
+  assert.deepStrictEqual(saved.syncAck.accepted, []);
   assert.strictEqual(saved.syncAck.rejected.length, 0);
+  assert.strictEqual(repo.tables.evaluations.length, 0, "LOT 5: pas de sync via PUT state");
 
-  // INSERT réel via upsertEvaluationFromLegacy
+  const syncResult = await repo.syncNotesDomainFromBackOffice({
+    schools: [{ code: "SCH-001", name: "Lycée Test" }],
+    classes: [{ id: "c1", name: "6e A", schoolCode: "SCH-001" }],
+    courses: [{ id: "m1", name: "Mathématiques", schoolCode: "SCH-001" }],
+    evaluations: [evaluation],
+    notes: [],
+  });
+  assert.deepStrictEqual(syncResult.accepted.evaluations, ["EVAL-REPO-1"]);
+  assert.strictEqual(syncResult.rejected.length, 0);
+
+  // INSERT réel via upsertEvaluationFromLegacy (chemin interne explicite)
   assert.strictEqual(repo.tables.evaluations.length, 1);
   assert.strictEqual(repo.tables.evaluations[0].legacy_json_id, "EVAL-REPO-1");
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison");
@@ -376,17 +416,23 @@ async function run() {
   assert.strictEqual(repo.tables.subjects.length, subjectCountBefore);
   assert.strictEqual(normalizeText(again.name), normalizeText("Mathématiques"));
 
-  // Deuxième sync idempotente → toujours 1 ligne evaluations
-  const second = await repo.saveBackOfficeState({
+  // Deuxième sync idempotente via méthode interne → toujours 1 ligne evaluations
+  const second = await repo.syncNotesDomainFromBackOffice({
     schools: [{ code: "SCH-001", name: "Lycée Test" }],
     evaluations: [{ ...evaluation, title: "Devoir maison (maj)" }],
     notes: [],
   });
-  assert.deepStrictEqual(
-    second.syncAck.accepted.map((item) => item.id),
-    ["EVAL-REPO-1"],
-  );
+  assert.strictEqual(second.rejected.length, 0, JSON.stringify(second.rejected));
+  assert.deepStrictEqual(second.accepted.evaluations, ["EVAL-REPO-1"]);
   assert.strictEqual(repo.tables.evaluations.length, 1);
+  assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
+
+  const putAgain = await repo.saveBackOfficeState({
+    schools: [{ code: "SCH-001", name: "Lycée Test" }],
+    evaluations: [{ ...evaluation, title: "Ignoré par PUT" }],
+    notes: [],
+  });
+  assert.deepStrictEqual(putAgain.syncAck.accepted, []);
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
 
   // Preuve explicite ensure année seule

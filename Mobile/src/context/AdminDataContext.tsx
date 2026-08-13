@@ -524,7 +524,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         if (
           entity === "classes" || entity === "schools" || entity === "students" ||
           entity === "teachers" || entity === "assignments" ||
-          entity === "payments" || entity === "paymentStatuses"
+          entity === "payments" || entity === "paymentStatuses" ||
+          entity === "courses"
         ) return;
         commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
       },
@@ -532,7 +533,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         if (
           entity === "classes" || entity === "schools" || entity === "students" ||
           entity === "teachers" || entity === "assignments" ||
-          entity === "payments" || entity === "paymentStatuses"
+          entity === "payments" || entity === "paymentStatuses" ||
+          entity === "courses"
         ) return;
         commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
       },
@@ -540,7 +542,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         if (
           entity === "classes" || entity === "schools" || entity === "students" ||
           entity === "teachers" || entity === "assignments" ||
-          entity === "payments" || entity === "paymentStatuses"
+          entity === "payments" || entity === "paymentStatuses" ||
+          entity === "courses"
         ) return;
         commitEntity(entity, (items) => items.filter((row) => row.id !== id));
       },
@@ -548,27 +551,23 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         setPresencesData((current) => {
           const scopedItems = items.map((item) => applyItemScope("presences", item, session, state));
           const keys = new Set(scopedItems.map((item) => `${item.studentId}-${item.date}`));
-          const nextItems = enforceEntityScope(
+          return enforceEntityScope(
             "presences",
             [...scopedItems, ...current.filter((item) => !keys.has(`${item.studentId}-${item.date}`))],
             session,
-            state
+            state,
           );
-          persistSyncedState({ ...state, presences: nextItems });
-          return nextItems;
         }),
       upsertNoteItem: (item) =>
         setNotesData((current) => {
           const scopedItem = applyItemScope("notes", item, session, state);
           const exists = current.some((row) => row.id === scopedItem.id);
-          const nextItems = enforceEntityScope(
+          return enforceEntityScope(
             "notes",
             exists ? current.map((row) => (row.id === scopedItem.id ? scopedItem : row)) : [scopedItem, ...current],
             session,
-            state
+            state,
           );
-          persistSyncedState({ ...state, notes: nextItems });
-          return nextItems;
         }),
       updateRoleFeatureAccess,
       upsertNotification: (item) => {

@@ -19,7 +19,6 @@ import {
   buildExamSlotTimes,
   buildSlotTemplateTimes,
   canRepairSchoolPlanning,
-  clearSchoolAssignments,
   createScheduleId,
   EXAM_TYPE_OPTIONS,
   extractTimeFromIso,
@@ -33,8 +32,6 @@ import {
   getSchoolAcademicPeriods,
   isExamSchedule,
   isoToPeriodDate,
-  mergeCourseSchedules,
-  mergePlanningLinkedCourses,
   mergePlanningLinkedExams,
   normalizePlanningSlotForSave,
   normalizeScheduleKind,
@@ -50,6 +47,7 @@ import {
   type PlanningScheduleKind,
   type PlanningViewFilter,
 } from "../lib/coursePlanning";
+import { syncSchoolCourseSchedules } from "../lib/pedagogyPlanningSync";
 import { inputToPeriodDate, parsePeriodDate, periodDateToInput } from "../lib/academicPeriods";
 import type { BackOfficeState, SessionUser } from "../types";
 
@@ -136,7 +134,7 @@ function slotTimesFromForm(form: FormState): { start: string; end: string } {
 
 export function CoursePlanningPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, refresh } = useData();
   const stateRef = useRef(state);
   stateRef.current = state;
   const { showToast } = useToast();
@@ -308,18 +306,9 @@ export function CoursePlanningPage() {
     const resetPatch = buildSchoolPlanningResetPatch(stateRef.current, schoolCode);
     setSaving(true);
     try {
-      await update(
-        {
-          ...resetPatch,
-          courses: mergePlanningLinkedCourses(
-            stateRef.current,
-            [],
-            previousSchoolSlots,
-            schoolCode,
-          ),
-        },
-        { partial: true },
-      );
+      await syncSchoolCourseSchedules(previousSchoolSlots, []);
+      await update({ exams: resetPatch.exams }, { partial: true });
+      await refresh();
       setForm(null);
       autoRepairRef.current = true;
       showToast("Planning réinitialisé. Vous pouvez recréer vos créneaux.", "success");
@@ -396,24 +385,10 @@ export function CoursePlanningPage() {
     );
     setSaving(true);
     try {
-      await update(
-        {
-          courseSchedules: mergeCourseSchedules(stateRef.current, schoolCode, nextSchoolSlots),
-          exams: mergePlanningLinkedExams(
-            stateRef.current,
-            nextSchoolSlots,
-            previousSchoolSlots,
-          ),
-          courses: mergePlanningLinkedCourses(
-            stateRef.current,
-            nextSchoolSlots,
-            previousSchoolSlots,
-            schoolCode,
-          ),
-          assignments: clearSchoolAssignments(stateRef.current, schoolCode),
-        },
-        { partial: true },
-      );
+      await syncSchoolCourseSchedules(previousSchoolSlots, nextSchoolSlots);
+      const exams = mergePlanningLinkedExams(stateRef.current, nextSchoolSlots, previousSchoolSlots);
+      await update({ exams }, { partial: true });
+      await refresh();
       showToast(message, "success");
       if (!options.keepForm) {
         setForm(null);

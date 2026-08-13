@@ -338,9 +338,34 @@ export function saveBackOfficeState(payload: BackOfficeStatePayload) {
   delete rest.studentFees;
   delete rest.feeTariffHistory;
   delete rest.paymentReminders;
+  delete rest.courseSchedules;
+  delete rest.courses;
+  delete rest.evaluations;
+  delete rest.notes;
+  delete rest.presences;
   return request<BackOfficeStatePayload>("/backoffice/state", {
     method: "PUT",
     body: JSON.stringify(rest),
+  });
+}
+
+export function createCourse(payload: Record<string, unknown>) {
+  return request("/courses", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateCourse(courseId: string, payload: Record<string, unknown>) {
+  return request(`/courses/${encodeURIComponent(courseId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteCourse(courseId: string) {
+  return request(`/courses/${encodeURIComponent(courseId)}`, {
+    method: "DELETE",
   });
 }
 

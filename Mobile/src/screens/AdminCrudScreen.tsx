@@ -21,8 +21,11 @@ import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
 import {
   createTeacherAssignment,
+  createCourse,
+  deleteCourse,
   deleteTeacherAssignment,
   resetUserPassword as resetUserPasswordOnBackend,
+  updateCourse,
   updateTeacherAssignment,
   createSchoolPayment,
   upsertFinancePaymentStatus,
@@ -596,6 +599,25 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (entity === "courses") {
+      try {
+        if (editingItem?.id) {
+          await updateCourse(String(editingItem.id ?? nextItem.id), nextItem);
+        } else {
+          await createCourse(nextItem);
+        }
+        setSelectedCourseClass(String(nextItem.className ?? ""));
+        await refreshBackOfficeState();
+        setVisible(false);
+      } catch (error) {
+        Alert.alert(
+          "Matière impossible",
+          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+        );
+      }
+      return;
+    }
+
     if (editingItem) {
       updateItem(entity as any, nextItem as any);
     } else {
@@ -641,10 +663,6 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       }
     }
 
-    if (entity === "courses") {
-      setSelectedCourseClass(String(nextItem.className ?? ""));
-    }
-
     setVisible(false);
   };
 
@@ -666,6 +684,17 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
               .catch((error) =>
                 Alert.alert(
                   "Retrait impossible",
+                  error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
+                ),
+              );
+            return;
+          }
+          if (entity === "courses") {
+            void deleteCourse(String(item.id))
+              .then(() => refreshBackOfficeState())
+              .catch((error) =>
+                Alert.alert(
+                  "Suppression impossible",
                   error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
                 ),
               );
