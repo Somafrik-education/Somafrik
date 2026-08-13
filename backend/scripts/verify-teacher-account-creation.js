@@ -416,6 +416,15 @@ async function main() {
       { method: "DELETE", token: admin.token },
     );
     assert.equal(assignmentDeleted.status, 200, JSON.stringify(assignmentDeleted.data));
+    const assignmentsAfterDelete = await request("/assignments", { token: admin.token });
+    assert.equal(assignmentsAfterDelete.status, 200, JSON.stringify(assignmentsAfterDelete.data));
+    assert.equal(
+      assignmentsAfterDelete.data.some(
+        (row) => String(row.id) === String(assignmentCreated.data.id),
+      ),
+      false,
+      "l'affectation modifiée puis supprimée ne doit pas survivre en mémoire",
+    );
 
     console.log("verify-teacher-account-creation.js: OK");
   } catch (error) {

@@ -1746,12 +1746,19 @@ class FallbackRepository {
       );
       const generatedId = created.id;
       created.id = current.id;
-      const index = this._managedTeacherAssignments.findIndex((row) => row.id === generatedId);
-      if (index >= 0) this._managedTeacherAssignments[index] = created;
+      this._managedTeacherAssignments = this._managedTeacherAssignments.filter(
+        (row) =>
+          String(row.id) !== String(generatedId) &&
+          String(row.id) !== String(current.id),
+      );
+      this._managedTeacherAssignments.push(created);
       return clone(created);
     } catch (error) {
       current.status = "active";
       if (!this._managedTeacherAssignments) this._managedTeacherAssignments = [];
+      this._managedTeacherAssignments = this._managedTeacherAssignments.filter(
+        (row) => String(row.id) !== String(current.id),
+      );
       this._managedTeacherAssignments.push(current);
       throw error;
     }
@@ -1765,9 +1772,13 @@ class FallbackRepository {
       throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
     }
     if (!this._managedTeacherAssignments) this._managedTeacherAssignments = [];
-    const managed = this._managedTeacherAssignments.find((row) => String(row.id) === String(assignmentId));
-    if (managed) managed.status = "deleted";
-    else this._managedTeacherAssignments.push({ ...current, status: "deleted" });
+    let managed = false;
+    this._managedTeacherAssignments = this._managedTeacherAssignments.map((row) => {
+      if (String(row.id) !== String(assignmentId)) return row;
+      managed = true;
+      return { ...row, status: "deleted", updatedAt: new Date().toISOString() };
+    });
+    if (!managed) this._managedTeacherAssignments.push({ ...current, status: "deleted" });
     return { id: current.id, deleted: true };
   }
 }
