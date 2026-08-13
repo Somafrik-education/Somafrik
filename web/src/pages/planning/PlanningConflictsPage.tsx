@@ -14,16 +14,14 @@ import { normalize } from "../../lib/format";
 import {
   auditSchoolPlanningConsistency,
   canRepairSchoolPlanning,
-  clearSchoolAssignments,
   extractTimeFromIso,
-  mergeCourseSchedules,
-  mergePlanningLinkedCourses,
   mergePlanningLinkedExams,
   PLANNING_WEEKDAYS,
   repairSchoolCourseSchedules,
   scopedCourseSchedules,
   weekdayFromIso,
 } from "../../lib/coursePlanning";
+import { syncSchoolCourseSchedules } from "../../lib/pedagogyPlanningSync";
 
 function weekdayLabel(value: number): string {
   return PLANNING_WEEKDAYS.find((row) => row.value === value)?.label ?? "—";
@@ -56,7 +54,7 @@ const columns: ColumnDef<ConflictRow>[] = [
 
 export function PlanningConflictsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, update, refresh } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
   const scopeUser = scopedUser ?? session?.user ?? null;
@@ -100,15 +98,10 @@ export function PlanningConflictsPage() {
     const report = repairSchoolCourseSchedules(state, scopeUser, schoolCode);
     setSaving(true);
     try {
-      await update(
-        {
-          courseSchedules: mergeCourseSchedules(state, schoolCode, report.slots),
-          exams: mergePlanningLinkedExams(state, report.slots, previousSchoolSlots),
-          courses: mergePlanningLinkedCourses(state, report.slots, previousSchoolSlots, schoolCode),
-          assignments: clearSchoolAssignments(state, schoolCode),
-        },
-        { partial: true },
-      );
+      await syncSchoolCourseSchedules(previousSchoolSlots, report.slots);
+      const exams = mergePlanningLinkedExams(state, report.slots, previousSchoolSlots);
+      await update({ exams }, { partial: true });
+      await refresh();
       showToast("Données du planning corrigées.", "success");
     } catch {
       showToast("Échec de la correction du planning.", "error");

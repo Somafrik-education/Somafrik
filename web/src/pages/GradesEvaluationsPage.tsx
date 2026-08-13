@@ -11,6 +11,7 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
+import { useFeaturePermissions } from "../lib/usePermissionContext";
 import {
   EmptyState,
   ForbiddenState,
@@ -18,7 +19,7 @@ import {
   LoadingState,
   ToolLayout,
 } from "../design-system";
-import { useFeaturePermissions } from "../lib/usePermissionContext";
+import { pedagogyApi } from "../lib/pedagogyApi";
 import { classNamesMatch } from "../lib/classRules";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
 import {
@@ -69,7 +70,7 @@ function uniqueClassNames(students: Record<string, unknown>[], classes: Record<s
 
 export function GradesEvaluationsPage() {
   const { session } = useAuth();
-  const { state, update, loading, error: syncError, retryFailedSync } = useData();
+  const { state, update, refresh, loading, error: syncError, retryFailedSync } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -112,7 +113,14 @@ export function GradesEvaluationsPage() {
     if (!code) return;
     const imported = buildEvaluationsFromExams(state, code);
     if (!imported.length) return;
-    void update({ evaluations: [...(state.evaluations ?? []), ...imported] });
+    void (async () => {
+      for (const evaluation of imported) {
+        const exists = (state.evaluations ?? []).some((row) => row.id === evaluation.id);
+        if (exists) continue;
+        await pedagogyApi.createEvaluation(evaluation as unknown as Record<string, unknown>);
+      }
+      await refresh();
+    })();
   }, [code, state.exams?.length]);
 
   useEffect(() => {
@@ -137,10 +145,27 @@ export function GradesEvaluationsPage() {
     evaluations?: Evaluation[];
     notes?: unknown[];
     bulletins?: unknown[];
+    evaluation?: Evaluation;
   }) {
     setBusy(true);
     try {
-      await update(patch);
+      if (patch.evaluation) {
+        const exists = (state.evaluations ?? []).some((row) => row.id === patch.evaluation?.id);
+        if (exists) {
+          await pedagogyApi.updateEvaluation(patch.evaluation.id, patch.evaluation as unknown as Record<string, unknown>);
+        } else {
+          await pedagogyApi.createEvaluation(patch.evaluation as unknown as Record<string, unknown>);
+        }
+      }
+      if (patch.notes?.length) {
+        for (const note of patch.notes) {
+          await pedagogyApi.upsertNote(note as Record<string, unknown>);
+        }
+      }
+      if (patch.bulletins) {
+        await update({ bulletins: patch.bulletins });
+      }
+      await refresh();
       return { ok: true as const };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur de synchronisation";
@@ -169,7 +194,7 @@ export function GradesEvaluationsPage() {
 
     // HOTFIX-SYNC-03 : ne pas envoyer auditLog (non writable client → 403 RBAC).
     const persisted = await persistState({
-      evaluations: nextEvaluations,
+      evaluation: nextEvaluations.find((row) => row.id === evaluation.id) ?? evaluation,
     });
     if (!persisted.ok) {
       // Conservée localement (outbox failed) — ne pas afficher un succès trompeur.
@@ -196,7 +221,7 @@ export function GradesEvaluationsPage() {
       row.id === evaluation.id ? deactivateEvaluation(row, scopeUser) : row,
     );
     await persistState({
-      evaluations: next,
+      evaluation: next.find((row) => row.id === evaluation.id) ?? deactivateEvaluation(evaluation, scopeUser),
     });
     showToast("Évaluation désactivée");
   }
@@ -215,7 +240,7 @@ export function GradesEvaluationsPage() {
       row.id === evaluation.id ? validatedEval : row,
     );
     await persistState({
-      evaluations: nextEvaluations,
+      evaluation: nextEvaluations.find((row) => row.id === evaluation.id) ?? validatedEval,
       notes: gradesToLegacyNotes(nextGrades),
     });
     showToast("Notes validées");
@@ -239,7 +264,7 @@ export function GradesEvaluationsPage() {
       allGrades(state),
     );
     await persistState({
-      evaluations: nextEvaluations,
+      evaluation: nextEvaluations.find((row) => row.id === evaluation.id) ?? published,
       bulletins,
     });
     showToast("Évaluation publiée — bulletins mis à jour");

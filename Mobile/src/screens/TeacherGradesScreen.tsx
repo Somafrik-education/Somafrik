@@ -67,7 +67,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
     assignmentsData,
     classesData,
     academicConfigData,
-    upsertNoteItem,
+    refreshBackOfficeState,
   } = useAdminData();
   const [gradeSession, setGradeSession] = useState<GradeSession | null>(null);
   const canCreateNotes = hasSecurityPermission(session, "Notes", "CREATE");
@@ -246,7 +246,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
         })
       );
 
-      savedGrades.forEach((grade) => upsertNoteItem(grade));
+      await refreshBackOfficeState();
       Alert.alert("Session enregistrée", `${presentStudents.length} note(s) enregistrée(s) ou mise(s) à jour.`);
       setGradeSession(null);
     } catch (error) {

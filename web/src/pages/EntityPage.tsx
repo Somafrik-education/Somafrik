@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { financeApi } from "../lib/financeApi";
+import { pedagogyApi } from "../lib/pedagogyApi";
 import {
   Button,
   EmptyState,
@@ -439,6 +440,25 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
   }
 
+  async function persistPedagogyMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      await action();
+      await refresh();
+      showToast(successMessage, "success");
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'opération pédagogique", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function closeCancelModal() {
     setCancellingPayment(null);
     setCancelReason("");
@@ -858,6 +878,22 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       return;
     }
 
+    if (module.key === "courses") {
+      try {
+        await persistPedagogyMutation(
+          () =>
+            exists
+              ? pedagogyApi.updateCourse(String(preparedItem.id ?? preparedItem.publicId), preparedItem)
+              : pedagogyApi.createCourse(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
     if (module.key === "students") {
       const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
       if (!code || code === "*") {
@@ -1016,6 +1052,18 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         );
       } catch {
         /* toast déjà affiché */
+      }
+      return;
+    }
+
+    if (module.key === "courses") {
+      try {
+        await persistPedagogyMutation(
+          () => pedagogyApi.deleteCourse(String(row.id ?? row.publicId)),
+          ENTITY_DELETED_MESSAGE,
+        );
+      } catch {
+        /* toast */
       }
       return;
     }

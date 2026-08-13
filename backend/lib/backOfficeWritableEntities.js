@@ -18,11 +18,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
   "contacts",
   "relations",
   "users",
-  "courses",
-  "courseSchedules",
-  "presences",
-  "notes",
-  "evaluations",
   "exams",
   "bulletins",
   "documents",
@@ -40,7 +35,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
  * (Utilisateurs/Contacts/Notes/Frais = lecture seule ou « - »)
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
-  "presences",
   "notifications",
   "announcements",
   "messages",
@@ -56,11 +50,6 @@ const ACCOUNTANT_WRITABLE_ENTITIES = Object.freeze([]);
  * Préfet / Proviseur / Directeur adjoint — pédagogie (matrix Préfet CRUD).
  */
 const PREFET_WRITABLE_ENTITIES = Object.freeze([
-  "courses",
-  "courseSchedules",
-  "presences",
-  "notes",
-  "evaluations",
   "exams",
   "bulletins",
   "documents",
@@ -134,7 +123,12 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
           entity !== "schoolFeeItems" &&
           entity !== "studentFees" &&
           entity !== "feeTariffHistory" &&
-          entity !== "paymentReminders",
+          entity !== "paymentReminders" &&
+          entity !== "courses" &&
+          entity !== "courseSchedules" &&
+          entity !== "evaluations" &&
+          entity !== "notes" &&
+          entity !== "presences",
       ),
       "rolePermissions",
       "academicConfigs",

@@ -60,6 +60,7 @@ La plateforme unifie :
 | Hotfix Admin auditLog | ✅ RBAC-ADMIN-01 mergé |
 | Reconstruction V2 | 🚧 V2.0 fondation et frontières |
 | Finance opérations / RH | 🔒 Verrouillé (persistance LOT 4 ✅) |
+| Pédagogie (cours, EDT, notes, présences) | 🔒 Verrouillé (persistance LOT 5 ✅) |
 | Mobile production / IA / i18n | 📋 Planifié |
 
 ---
@@ -185,7 +186,7 @@ Sous réserve de validation préprod post-RBAC-ADMIN-01 :
 | **Préconditions** | Vie scolaire stabilisée ; instruction CTO |
 | **Fonctionnalités** | Grilles tarifaires, paiements, relances, reporting financier |
 | **Critères de validation** | RBAC Comptable/Secrétaire ; audit serveur ; pas d’`auditLog` client |
-| **Statut** | ✅ Persistance LOT 4 (PostgreSQL SoT, PUT Finance interdit) · extras produit / reporting 🔒 · lots 5–8 bloqués |
+| **Statut** | ✅ Persistance LOT 5 (PostgreSQL SoT pédagogie, PUT pédagogie interdit) · lots 6–8 bloqués |
 
 ### Phase G — Communication
 

@@ -67,6 +67,10 @@ jobs:
 
       - name: verify:finance-legacy-cleanup (mémoire)
         run: npm run verify:finance-legacy-cleanup
+      - name: verify:pedagogy-management
+        run: npm run verify:pedagogy-management
+      - name: verify:pedagogy-legacy-cleanup (mémoire)
+        run: npm run verify:pedagogy-legacy-cleanup
 
       - name: verify:finance-management (mémoire + PostgreSQL CI)
         env:

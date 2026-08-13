@@ -88,6 +88,7 @@ class PostgresRepository {
     await this.ensureClassesDomainConstraints();
     await this.ensureTeachersDomainConstraints();
     await this.ensureFinanceCanonicalSchema();
+    await this.ensurePedagogyCanonicalSchema();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -423,6 +424,71 @@ class PostgresRepository {
   async ensureFinanceCanonicalSchema() {
     const { FINANCE_SCHEMA_SQL } = require("./financeSchema");
     await this.query(FINANCE_SCHEMA_SQL);
+  }
+
+  async ensurePedagogyCanonicalSchema() {
+    const { PEDAGOGY_SCHEMA_SQL } = require("./pedagogySchema");
+    await this.query(PEDAGOGY_SCHEMA_SQL);
+  }
+
+  getPedagogyStore() {
+    if (!this._pedagogyStore) {
+      const { createPedagogyPgStore } = require("./pedagogyPgStore");
+      this._pedagogyStore = createPedagogyPgStore(this);
+    }
+    return this._pedagogyStore;
+  }
+
+  listPedagogyProjection() {
+    return this.getPedagogyStore().listProjection();
+  }
+
+  createSchoolCourse(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createSchoolCourse(payload, principal, auditMeta);
+  }
+
+  updateSchoolCourse(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateSchoolCourse(id, patch, principal, auditMeta);
+  }
+
+  deleteSchoolCourse(id, principal, auditMeta) {
+    return this.getPedagogyStore().deleteSchoolCourse(id, principal, auditMeta);
+  }
+
+  getSchoolCourse(id, principal) {
+    return this.getPedagogyStore().getSchoolCourse(id, principal);
+  }
+
+  createCourseSchedule(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createCourseSchedule(payload, principal, auditMeta);
+  }
+
+  updateCourseSchedule(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateCourseSchedule(id, patch, principal, auditMeta);
+  }
+
+  deleteCourseSchedule(id, principal, auditMeta) {
+    return this.getPedagogyStore().deleteCourseSchedule(id, principal, auditMeta);
+  }
+
+  getCourseSchedule(id, principal) {
+    return this.getPedagogyStore().getCourseSchedule(id, principal);
+  }
+
+  createSchoolEvaluation(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createEvaluation(payload, principal, auditMeta);
+  }
+
+  updateSchoolEvaluation(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateEvaluation(id, patch, principal, auditMeta);
+  }
+
+  upsertSchoolGrade(payload, principal, auditMeta) {
+    return this.getPedagogyStore().upsertSchoolGrade(payload, principal, auditMeta);
+  }
+
+  upsertSchoolAttendanceBatch(payload, principal, auditMeta) {
+    return this.getPedagogyStore().upsertSchoolAttendanceBatch(payload, principal, auditMeta);
   }
 
   getFinanceStore() {
@@ -855,14 +921,17 @@ class PostgresRepository {
 
   async saveBackOfficeState(payload) {
     await this.init();
-    const { persistBackOfficeAfterNotesSync } = require("../lib/gradesBoPersistence");
-    const { mergePreE1SyncAck } = require("../lib/pedagogyStaffBoPersistence");
     // LOT 2 — students est une projection read-only : aucune synchronisation
     // ni persistance JSON ne doit être déclenchée par PUT /backoffice/state.
     const { students: _legacyStudents, ...payloadWithoutStudents } = payload ?? {};
     const {
       teachers: _legacyTeachers,
       assignments: _legacyAssignments,
+      courses: _legacyCourses,
+      courseSchedules: _legacyCourseSchedules,
+      evaluations: _legacyEvaluations,
+      notes: _legacyNotes,
+      presences: _legacyPresences,
       payments: _legacyPayments,
       paymentStatuses: _legacyPaymentStatuses,
       feeGrids: _legacyFeeGrids,
@@ -872,10 +941,7 @@ class PostgresRepository {
       paymentReminders: _legacyPaymentReminders,
       ...durablePayload
     } = payloadWithoutStudents;
-    // HOTFIX — matérialiser schools BO → PG avant sync enseignants / années scolaires.
-    // HOTFIX-PRE-E1-02 : enseignants/affectations PG avant évaluations/notes.
-    // HOTFIX-SYNC-01 : sync PG par enregistrement + ACK ; strip uniquement les acceptés.
-    // Échec infra (throw) ⇒ ROLLBACK. Rejets métier ⇒ conservés en JSON (sync_failed).
+    // LOT 5 — pédagogie : projection PostgreSQL read-only ; aucune sync JSON → PG.
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async (tx) => {
       const transactional = this.createTxScope(tx);
@@ -887,32 +953,20 @@ class PostgresRepository {
         if (!code) continue;
         await transactional.ensureSchoolFromBackOfficeRecord(code, { schools: payloadSchools });
       }
-      const syncResult = await persistBackOfficeAfterNotesSync({
-        payload: durablePayload,
-        syncFn: async (body) => transactional.syncNotesDomainFromBackOffice(body),
-        persistFn: async (durablePayload) => {
-          const runner = tx ?? transactional;
-          await runner.query(
-            `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
-             VALUES ('default', $1, NOW())
-             ON CONFLICT (state_key) DO UPDATE SET
-               state_payload = EXCLUDED.state_payload,
-               updated_at = NOW()`,
-            [JSON.stringify(durablePayload)],
-          );
-        },
-      });
-      const studentSyncRetired = {
-        synced: true,
-        accepted: { students: [], enrollments: [] },
+      const runner = tx ?? transactional;
+      await runner.query(
+        `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
+         VALUES ('default', $1, NOW())
+         ON CONFLICT (state_key) DO UPDATE SET
+           state_payload = EXCLUDED.state_payload,
+           updated_at = NOW()`,
+        [JSON.stringify(durablePayload)],
+      );
+      syncAck = {
+        accepted: [],
         rejected: [],
-      };
-      const staffSyncRetired = {
         synced: true,
-        accepted: { teachers: [], assignments: [] },
-        rejected: [],
       };
-      syncAck = mergePreE1SyncAck(studentSyncRetired, staffSyncRetired, syncResult);
     });
     this.cachedDataset = null;
     // syncAck est retourné avec le résultat de cette opération uniquement —

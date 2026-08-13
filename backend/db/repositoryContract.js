@@ -72,6 +72,20 @@ const REPOSITORY_METHODS = Object.freeze([
   "getFinanceStudentFee",
   "adjustFinanceStudentFee",
   "createFinanceReminder",
+  // Pédagogie métier (LOT 5 — PostgreSQL canonique)
+  "listPedagogyProjection",
+  "createSchoolCourse",
+  "updateSchoolCourse",
+  "deleteSchoolCourse",
+  "getSchoolCourse",
+  "createCourseSchedule",
+  "updateCourseSchedule",
+  "deleteCourseSchedule",
+  "getCourseSchedule",
+  "createSchoolEvaluation",
+  "updateSchoolEvaluation",
+  "upsertSchoolGrade",
+  "upsertSchoolAttendanceBatch",
 ]);
 
 /**

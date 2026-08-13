@@ -248,10 +248,12 @@ class FallbackRepository {
     delete durable.studentFees;
     delete durable.feeTariffHistory;
     delete durable.paymentReminders;
+    delete durable.courses;
+    delete durable.courseSchedules;
+    delete durable.evaluations;
+    delete durable.notes;
+    delete durable.presences;
     this.backOfficeState = durable;
-    if (Array.isArray(payload?.notes)) {
-      this.notes = clone(payload.notes);
-    }
     return this.getBackOfficeState();
   }
 
@@ -1888,6 +1890,73 @@ class FallbackRepository {
 
   createFinanceReminder(studentId, payload, principal, options) {
     return this.getFinanceStore().createFinanceReminder(studentId, payload, principal, options);
+  }
+
+  async listPedagogyProjection() {
+    const state = (await this.getBackOfficeState()) ?? {};
+    return {
+      courses: state.courses ?? [],
+      courseSchedules: state.courseSchedules ?? [],
+      evaluations: state.evaluations ?? [],
+      notes: state.notes ?? [],
+      presences: state.presences ?? [],
+    };
+  }
+
+  createSchoolCourse() {
+    throw new Error("PostgreSQL requis pour les écritures pédagogiques canoniques.");
+  }
+
+  updateSchoolCourse() {
+    return this.createSchoolCourse();
+  }
+
+  deleteSchoolCourse() {
+    return this.createSchoolCourse();
+  }
+
+  getSchoolCourse() {
+    return Promise.resolve(null);
+  }
+
+  createCourseSchedule() {
+    return this.createSchoolCourse();
+  }
+
+  updateCourseSchedule() {
+    return this.createSchoolCourse();
+  }
+
+  deleteCourseSchedule() {
+    return this.createSchoolCourse();
+  }
+
+  getCourseSchedule() {
+    return Promise.resolve(null);
+  }
+
+  async createSchoolEvaluation(payload, principal) {
+    const evaluation = { ...payload, id: payload.id || `EVAL-${Date.now()}` };
+    const state = (await this.getBackOfficeState()) ?? {};
+    this.backOfficeState = { ...state, evaluations: [...(state.evaluations ?? []), evaluation] };
+    return evaluation;
+  }
+
+  async updateSchoolEvaluation(id, patch, principal) {
+    const state = (await this.getBackOfficeState()) ?? {};
+    const evaluations = (state.evaluations ?? []).map((row) =>
+      String(row.id) === String(id) ? { ...row, ...patch } : row,
+    );
+    this.backOfficeState = { ...state, evaluations };
+    return evaluations.find((row) => String(row.id) === String(id));
+  }
+
+  async upsertSchoolGrade(payload, principal) {
+    return this.upsertGrade(payload, principal);
+  }
+
+  async upsertSchoolAttendanceBatch(payload, principal) {
+    return this.upsertAttendanceBatch(payload, principal);
   }
 }
 

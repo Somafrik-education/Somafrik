@@ -52,7 +52,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { studentsData, classesData, presencesData, teachersData, assignmentsData, upsertPresenceItems } =
+  const { studentsData, classesData, presencesData, teachersData, assignmentsData, refreshBackOfficeState } =
     useAdminData();
   const scopeState = useMemo(
     () => ({ teachers: teachersData, assignments: assignmentsData, classes: classesData }),
@@ -212,7 +212,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         },
         ...current,
       ]);
-      upsertPresenceItems(savedPresences as any);
+      await refreshBackOfficeState();
 
       Alert.alert(
         "Appel enregistré",
