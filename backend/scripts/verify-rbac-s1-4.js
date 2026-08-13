@@ -32,7 +32,10 @@ function runMatrixUnitTests() {
   const allEntities = ["students", "users", "notes", "payments", "auditLog"];
 
   assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
-  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("presences"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("courses"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("evaluations"));
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("students"));
   assert.ok(!SECRETARY_WRITABLE_ENTITIES.includes("students"));
   assert.ok(!PREFET_WRITABLE_ENTITIES.includes("students"));
@@ -298,7 +301,7 @@ async function runHttpTestsIfAvailable() {
     );
   }
 
-  // A3 — Secrétaire : domaine interdit (notes) → 403
+  // A3 — Secrétaire : notes via PUT state fail-closed (LOT 5)
   const secForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: secretary.accessToken,
@@ -306,7 +309,8 @@ async function runHttpTestsIfAvailable() {
       notes: [{ id: "NOTE-FORBIDDEN", studentId: "1", value: 10, schoolCode: "CD-2026-0001" }],
     },
   });
-  assert.strictEqual(secForbidden.status, 403, "Secrétaire notes doit être 403");
+  assert.strictEqual(secForbidden.status, 400, "Secrétaire notes legacy doit être 400");
+  assert.strictEqual(secForbidden.data?.code, "LEGACY_PEDAGOGY_STATE_WRITE_FORBIDDEN");
 
   // A4 — Comptable : paiements via PUT state désormais fail-closed (LOT 4)
   const accOk = await request("/backoffice/state", {
