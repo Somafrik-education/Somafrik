@@ -48,11 +48,20 @@ test("une nouvelle année courante désactive la précédente", async () => {
 /**
  * Hotfix — établissement créé via BackOffice JSON, absent de la table schools.
  * createAcademicYearV2 doit le matérialiser via ensureSchoolFromBackOfficeRecord.
+ * Le pays CD est préchargé : le contrat fail-closed refuse d’inventer un pays.
  */
+const CANONICAL_CD_COUNTRY = Object.freeze({
+  id: "00000000-0000-4000-8000-0000000000cd",
+  name: "République Démocratique du Congo",
+  iso_code: "CD",
+  phone_code: "+243",
+  currency: "CDF",
+});
+
 function createInjectableAcademicYearsRepository() {
   const tables = {
     schools: [],
-    countries: [],
+    countries: [{ ...CANONICAL_CD_COUNTRY }],
     academic_years: [],
     backoffice_state: [
       {
@@ -95,16 +104,13 @@ function createInjectableAcademicYearsRepository() {
     if (upper.includes("FROM COUNTRIES WHERE ISO_CODE")) {
       return tables.countries.filter((row) => eq(row.iso_code, params[0]));
     }
+    if (upper.includes("FROM COUNTRIES WHERE LOWER(NAME)")) {
+      return tables.countries.filter(
+        (row) => String(row.name ?? "").trim().toLowerCase() === String(params[0] ?? "").trim().toLowerCase(),
+      );
+    }
     if (upper.startsWith("INSERT INTO COUNTRIES")) {
-      const row = {
-        id: nextId(),
-        name: params[0],
-        iso_code: params[1],
-      };
-      const existing = tables.countries.find((item) => eq(item.iso_code, row.iso_code));
-      if (existing) return [existing];
-      tables.countries.push(row);
-      return [row];
+      throw new Error("INSERT INTO countries interdit : le référentiel pays est fail-closed");
     }
     if (upper.startsWith("INSERT INTO SCHOOLS")) {
       const row = {
@@ -183,6 +189,8 @@ function createInjectableAcademicYearsRepository() {
 test("PostgreSQL: matérialise un établissement BackOffice-only puis crée la 1re année", async () => {
   const repo = createInjectableAcademicYearsRepository();
   assert.equal(repo.tables.schools.length, 0, "précondition: schools PG vide");
+  assert.equal(repo.tables.countries.length, 1, "précondition: pays CD canonique préchargé");
+  const countryIdBefore = repo.tables.countries[0].id;
 
   const created = await repo.createAcademicYearV2({
     schoolCode: "cd-2026-0099",
@@ -194,9 +202,13 @@ test("PostgreSQL: matérialise un établissement BackOffice-only puis crée la 1
 
   assert.equal(repo.tables.schools.length, 1, "établissement matérialisé dans schools");
   assert.equal(repo.tables.schools[0].school_code, "CD-2026-0099", "code normalisé en majuscules");
+  assert.equal(repo.tables.schools[0].country_id, countryIdBefore, "FK pays = CD préchargé");
   assert.equal(created.schoolCode, "CD-2026-0099");
   assert.equal(created.schoolId, repo.tables.schools[0].id);
   assert.equal(created.name, "2026-2027");
   assert.equal(created.isCurrent, true);
   assert.equal(repo.tables.academic_years.length, 1);
+  assert.equal(repo.tables.countries.length, 1, "aucun pays créé pendant la matérialisation");
+  assert.equal(repo.tables.countries[0].id, countryIdBefore);
+  assert.equal(repo.tables.countries[0].iso_code, "CD");
 });
