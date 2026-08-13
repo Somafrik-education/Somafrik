@@ -21,7 +21,90 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode } = {}) {
+function resolveSeedSchoolId(schoolCode, seed = {}) {
+  const normalized = asTrimmed(schoolCode).toUpperCase();
+  if (!normalized) return null;
+  if (seed.school && asTrimmed(seed.school.code).toUpperCase() === normalized) {
+    return seed.school.id;
+  }
+  const match = (seed.platformSchools ?? []).find(
+    (row) => asTrimmed(row.code ?? row.schoolCode).toUpperCase() === normalized,
+  );
+  return match?.id ?? `school-${normalized}`;
+}
+
+function bootstrapPlatformMemoryFromSeed(tables, seed = {}) {
+  if (tables.countries.length) {
+    return;
+  }
+
+  for (const country of seed.countries ?? []) {
+    tables.countries.push({
+      id: country.id ?? randomUUID(),
+      name: country.name,
+      iso_code: country.code,
+      phone_code: country.phonePrefix ?? country.phone_code ?? "",
+      currency: country.currency ?? "USD",
+      is_active: asTrimmed(country.status).toLowerCase() !== "suspendu",
+      profile_payload: {},
+      created_at: new Date(),
+    });
+  }
+
+  tables.rolePermissions = clone(seed.rolePermissions ?? {});
+  tables.chartConfig = clone(seed.dashboardChartConfig ?? { platform: {}, establishment: {} });
+
+  for (const offer of seed.subscriptionOffers ?? []) {
+    tables.offers.push({
+      id: offer.id ?? randomUUID(),
+      offer_code: offer.id ?? offer.offerCode ?? randomUUID(),
+      country_codes: offer.countryCodes ?? [],
+      active: offer.active !== false,
+      profile_payload: offer,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+  }
+
+  for (const subscription of seed.subscriptions ?? []) {
+    const schoolCode = subscription.schoolCode ?? subscription.school_code;
+    const schoolId = resolveSeedSchoolId(schoolCode, seed);
+    tables.subscriptions.push({
+      id: subscription.id ?? randomUUID(),
+      school_id: schoolId,
+      school_code: schoolCode,
+      country_code: subscription.countryCode ?? subscription.country_code,
+      country_name: subscription.country ?? subscription.country_name,
+      plan_name: subscription.plan ?? subscription.planName,
+      price_per_student: Number(subscription.monthlyPrice ?? subscription.pricePerStudent ?? 0),
+      billing_currency: subscription.currency ?? "USD",
+      billing_cycle: subscription.billingCycle ?? "monthly",
+      status: asTrimmed(subscription.status).toLowerCase() === "actif" ? "active" : "suspended",
+      start_date: subscription.startDate ?? null,
+      end_date: subscription.endDate ?? null,
+      profile_payload: subscription,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+  }
+
+  for (const notification of seed.platformNotifications ?? []) {
+    tables.notifications.push({
+      id: notification.id ?? randomUUID(),
+      school_id: notification.schoolId ?? resolveSeedSchoolId(notification.schoolCode, seed),
+      school_code: notification.schoolCode,
+      title: notification.title,
+      message: notification.message ?? notification.body ?? "",
+      type: notification.type ?? "Information",
+      channel: Array.isArray(notification.channels) ? notification.channels[0] : "app",
+      status: notification.status ?? "Non lu",
+      profile_payload: notification,
+      created_at: new Date(),
+    });
+  }
+}
+
+function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode, seed } = {}) {
   const tables = {
     countries: [],
     subscriptions: [],
@@ -35,6 +118,10 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode } = {}) {
     chartConfig: { platform: {}, establishment: {} },
     auditLogs: [],
   };
+
+  if (seed) {
+    bootstrapPlatformMemoryFromSeed(tables, seed);
+  }
 
   function txApi() {
     return {
@@ -320,4 +407,4 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode } = {}) {
   return api;
 }
 
-module.exports = { createPlatformMemoryStore };
+module.exports = { createPlatformMemoryStore, bootstrapPlatformMemoryFromSeed };

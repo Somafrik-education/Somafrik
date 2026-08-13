@@ -1972,6 +1972,17 @@ class FallbackRepository {
   getPlatformStore() {
     if (!this._platformStore) {
       const { createPlatformMemoryStore } = require("./platformMemoryStore");
+      const platformSeed = shouldSeedDemoData()
+        ? {
+            school: seedData.school,
+            platformSchools: this._managedSchools ?? seedData.platformSchools,
+            countries: seedData.countries,
+            subscriptions: seedData.subscriptions,
+            subscriptionOffers: seedData.subscriptionOffers ?? [],
+            platformNotifications: seedData.platformNotifications,
+            rolePermissions: seedData.rolePermissions,
+          }
+        : null;
       this._platformStore = createPlatformMemoryStore({
         getSchoolByCode: async (code) => {
           const { getCountryCodeFromScope } = require("../lib/countryScope");
@@ -1999,6 +2010,7 @@ class FallbackRepository {
             (country) => String(country.code).toUpperCase() === String(code).toUpperCase(),
           );
         },
+        seed: platformSeed,
       });
     }
     return this._platformStore;

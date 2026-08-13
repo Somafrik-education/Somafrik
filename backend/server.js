@@ -2624,7 +2624,9 @@ async function getAuthoritativeBackOfficeState() {
       ),
     };
   }
-  return overlayPlatformProjection(overlayPedagogyProjection(await overlayFinanceProjection(nextState)));
+  return overlayPlatformProjection(
+    await overlayPedagogyProjection(await overlayFinanceProjection(nextState)),
+  );
 }
 
 async function overlayPlatformProjection(state) {
@@ -2639,8 +2641,8 @@ async function overlayPlatformProjection(state) {
     subscriptionInvoices: platform.subscriptionInvoices ?? [],
     subscriptionDiscounts: platform.subscriptionDiscounts ?? [],
     subscriptionAuditLog: platform.subscriptionAuditLog ?? [],
-    rolePermissions: platform.rolePermissions ?? state.rolePermissions ?? {},
-    dashboardChartConfig: platform.dashboardChartConfig ?? state.dashboardChartConfig,
+    rolePermissions: platform.rolePermissions ?? {},
+    dashboardChartConfig: platform.dashboardChartConfig ?? { platform: {}, establishment: {} },
   };
 }
 
@@ -4354,9 +4356,11 @@ async function resolveUserPasswordLookupKeys(principal) {
       return alias && keys.has(alias);
     });
 
-  const { users } = await getAuthoritativeBackOfficeState();
+  const { users: stateUsers } = await getAuthoritativeBackOfficeState();
   const runtime = await getRuntime();
-  const allAccounts = [...users, ...(runtime.userAccounts ?? [])];
+  const users = Array.isArray(stateUsers) ? stateUsers : [];
+  const runtimeAccounts = Array.isArray(runtime.userAccounts) ? runtime.userAccounts : [];
+  const allAccounts = [...users, ...runtimeAccounts];
 
   let changed = true;
   while (changed) {
