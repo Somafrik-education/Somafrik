@@ -8,7 +8,8 @@
 const WEB_APP_PATH = "/web/";
 
 function redirectToWebApp() {
-  if (window.location.pathname === "/" || window.location.pathname.endsWith("/BackOffice/")) {
+  const path = window.location.pathname.toLowerCase();
+  if (path === "/" || path.endsWith("/backoffice/") || path.endsWith("/backoffice")) {
     window.location.replace(WEB_APP_PATH);
   }
 }

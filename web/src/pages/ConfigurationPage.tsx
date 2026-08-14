@@ -246,7 +246,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         schoolCode: effectiveSchoolCode,
         ...partial,
       };
-      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } });
+      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } }, { schoolCode: effectiveSchoolCode });
       showToast(successMessage, "success");
       setAcademicFormKey((current) => current + 1);
     } catch {
@@ -411,7 +411,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         subjectsByClass: nextByClass,
         subjects: getAllSchoolSubjects(nextByClass),
       };
-      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } });
+      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } }, { schoolCode: effectiveSchoolCode });
       showToast(`Matières enregistrées pour ${className}`, "success");
       setAcademicFormKey((current) => current + 1);
     } catch {
@@ -480,10 +480,13 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         userRoles: newRoles,
       };
 
-      await update({
-        academicConfigs: { [effectiveSchoolCode]: nextConfig },
-        ...(nextUsers !== state.users ? { users: nextUsers } : {}),
-      });
+      await update(
+        {
+          academicConfigs: { [effectiveSchoolCode]: nextConfig },
+          ...(nextUsers !== state.users ? { users: nextUsers } : {}),
+        },
+        { schoolCode: effectiveSchoolCode },
+      );
       if (nextRolePermissions !== state.rolePermissions) {
         await platformApi.replaceRolePermissions(nextRolePermissions);
       }

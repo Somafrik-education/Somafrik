@@ -47,7 +47,7 @@
     "verify:platform-legacy-cleanup": "node backend/scripts/verify-platform-legacy-cleanup.js",
     "verify:clients-management": "node --test backend/lib/legacyClientsStateWrite.test.js && node backend/lib/clientsRolePolicy.test.js && node backend/lib/clientsSecurity.test.js && node backend/lib/clientsMigration.pg.test.js && node backend/lib/clientsRepository.test.js && node backend/lib/clientsRepository.pg.test.js && node backend/scripts/verify-clients-management.js",
     "verify:clients-legacy-cleanup": "node backend/scripts/verify-clients-legacy-cleanup.js",
-    "verify:backoffice-state-removal": "node --test backend/lib/backofficeStateRemoval.test.js backend/lib/backofficeStateRemoval.pg.test.js backend/lib/principalSchoolScope.test.js backend/lib/residualStateManagement.test.js && node backend/scripts/verify-backoffice-state-removal.js",
+    "verify:backoffice-state-removal": "node --test backend/lib/backofficeStateRemoval.test.js backend/lib/backofficeStateRemoval.pg.test.js backend/lib/principalSchoolScope.test.js backend/lib/residualStateManagement.test.js backend/lib/residualReplacePayload.test.js && node backend/scripts/verify-backoffice-state-removal.js",
     "inventory:teachers-school-user-duplicates": "node backend/scripts/inventory-teachers-school-user-duplicates.js",
     "verify:pre-e1-hotfix-02": "node --test backend/lib/legacyPedagogyStaffStateWrite.test.js backend/lib/teacherAssignmentsManagement.test.js && node backend/lib/evaluationAttachment.test.js",
     "verify:pre-e1-hotfix-02b": "node --test backend/lib/legacyPedagogyStaffStateWrite.test.js backend/lib/teacherAssignmentsManagement.test.js && node backend/lib/backofficeDedupe.teachers.test.js && node scripts/verify-pre-e1-hotfix-02b.js",

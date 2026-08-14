@@ -840,9 +840,10 @@ app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /a
 
 app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
   const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
   const schoolCode = resolvePrincipalSchoolCode(req.principal);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const exams = Array.isArray(req.body?.exams) ? req.body.exams : [];
+  const exams = assertResidualReplacePayload(req.body, "exams");
   const saved = await repository.replaceResidualExams(
     schoolCode,
     exams,
@@ -864,9 +865,10 @@ app.get("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api
 
 app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
   const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
   const schoolCode = resolvePrincipalSchoolCode(req.principal);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const bulletins = Array.isArray(req.body?.bulletins) ? req.body.bulletins : [];
+  const bulletins = assertResidualReplacePayload(req.body, "bulletins");
   const saved = await repository.replaceResidualBulletins(
     schoolCode,
     bulletins,
@@ -888,9 +890,10 @@ app.get("/api/backoffice/establishment-documents", requireAuth, requirePermissio
 
 app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
   const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
   const schoolCode = resolvePrincipalSchoolCode(req.principal);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const documents = Array.isArray(req.body?.documents) ? req.body.documents : [];
+  const documents = assertResidualReplacePayload(req.body, "documents");
   const saved = await repository.replaceResidualDocuments(
     schoolCode,
     documents,

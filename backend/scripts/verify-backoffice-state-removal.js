@@ -68,7 +68,7 @@ function runStaticGuards() {
   const patterns = [
     "backend/server.js",
     "web/src/context/DataContext.tsx",
-    "web/src/lib/fetchDomainBackOfficeState.ts",
+    "web/src/lib/domainLoaders.ts",
     "Mobile/src/services/api.ts",
     "Mobile/src/context/AdminDataContext.tsx",
     "BackOffice/app.js",
@@ -76,7 +76,7 @@ function runStaticGuards() {
     "backend/db/fallbackRepository.js",
   ].map((rel) => fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
-  const [server, dataContext, fetchDomain, mobileApi, mobileContext, backOffice, postgres, fallback] = patterns;
+  const [server, dataContext, domainLoaders, mobileApi, mobileContext, backOffice, postgres, fallback] = patterns;
 
   assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /sendBackOfficeStateReadRemoved/);
@@ -84,9 +84,10 @@ function runStaticGuards() {
   assert.match(server, /overlayResidualProjection/);
   assert.match(server, /exams: residual\.exams \?\? \[\]/);
   assert.match(server, /requirePermission\("PUT \/api\/backoffice\/planning-exams"\)/);
-  assert.match(fetchDomain, /fetchDomainBackOfficeState/);
+  assert.match(domainLoaders, /loadDomains/);
+  assert.doesNotMatch(dataContext, /fetchDomainBackOfficeState/);
   assert.doesNotMatch(dataContext, /api\.put\([\s\S]*\/backoffice\/state/);
-  assert.doesNotMatch(dataContext, /api\.get\([\s\S]*\/backoffice\/state/);
+  assert.doesNotMatch(dataContext, /void refresh\(\)/);
   assert.doesNotMatch(dataContext, /setInterval/);
   assert.doesNotMatch(mobileApi, /\/backoffice\/state[\s\S]{0,120}method:\s*"PUT"/);
   assert.doesNotMatch(mobileApi, /method:\s*"PUT"[\s\S]{0,120}\/backoffice\/state/);
@@ -274,6 +275,27 @@ async function runResidualGuards(superToken) {
       exams: [{ id: "EXAM-KEEP-CD", schoolCode: "CD-2026-0001", title: "Canonique CD" }],
     },
   });
+
+  const invalidPayloadCases = [
+    ["/backoffice/planning-exams", {}],
+    ["/backoffice/planning-exams", { exams: null }],
+    ["/backoffice/planning-exams", { exams: [{}] }],
+    ["/backoffice/report-cards", { bulletins: "invalid" }],
+    ["/backoffice/establishment-documents", { documents: [null] }],
+  ];
+
+  for (const [route, body] of invalidPayloadCases) {
+    const auditAction = route.includes("planning")
+      ? "replace_residual_exam"
+      : route.includes("report")
+        ? "replace_residual_bulletin"
+        : "replace_residual_document";
+    const auditBefore = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
+    const rejected = await request(route, { method: "PUT", token: adminCd, body });
+    assert.equal(rejected.status, 400, `${route} doit rejeter payload invalide: ${JSON.stringify(body)}`);
+    const auditAfter = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
+    assert.equal(auditAfter, auditBefore, `${route} ne doit pas auditer un payload invalide`);
+  }
 
   const foreignCases = [
     ["/backoffice/planning-exams", "exams", { id: "EXAM-FOREIGN", schoolCode: "BI-2026-0002", title: "Inject" }],
