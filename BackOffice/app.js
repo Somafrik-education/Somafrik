@@ -2529,23 +2529,11 @@ async function syncPlatformSubscription(payload) {
 }
 
 function scheduleBackOfficeSync() {
-  clearTimeout(state.syncTimeoutId);
-  state.syncTimeoutId = setTimeout(() => {
-    syncBackOfficeState().catch((error) => {
-      console.warn("Échec de synchronisation plateforme.", error);
-      showToast("Synchronisation backend indisponible.");
-    });
-  }, 350);
+  // LOT 8 — PUT /api/backoffice/state supprimé.
 }
 
 async function syncBackOfficeState() {
-  if (!state.session?.accessToken) return;
-  const synced = await request("/backoffice/state", {
-    method: "PUT",
-    body: JSON.stringify(getBackOfficeStatePayload()),
-  });
-  applyBackOfficeState(synced);
-  renderOperationalViews();
+  return;
 }
 
 function startRealtimeSync() {

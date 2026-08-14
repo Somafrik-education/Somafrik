@@ -10,6 +10,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("path");
 const fs = require("fs");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19571;
@@ -159,7 +160,7 @@ function runUnitGuards() {
 
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
   assert.match(server, /persistEstablishment/);
-  assert.match(server, /stripLegacySchoolsStateWrite/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.doesNotMatch(
     server,
     /saveEstablishmentState\(nextState, state, req\.principal\);\n  await auditService\.record\(req, "create_establishment"/,
@@ -261,9 +262,8 @@ async function runHttpGuards() {
         ],
       },
     });
-    assert.equal(forbidden.status, 400, `attendu 400, reçu ${forbidden.status} ${JSON.stringify(forbidden.data)}`);
-    assert.equal(forbidden.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
-    assert.equal(String(forbidden.data?.message ?? ""), LEGACY_SCHOOLS_STATE_WRITE_MESSAGE);
+    assertBackOfficeStateWriteRemoved(forbidden);
+assertBackOfficeStateWriteRemoved(forbidden);
 
     const france = await request("/backoffice/establishments", {
       method: "POST",
@@ -343,10 +343,8 @@ async function runHttpGuards() {
         users: [...baselineUsers, userSentinel],
       },
     });
-    assert.equal(mixedUsers.status, 400, JSON.stringify(mixedUsers.data));
-    assert.equal(mixedUsers.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
-
-    const mixedSubs = await request("/backoffice/state", {
+    assertBackOfficeStateWriteRemoved(mixedUsers);
+const mixedSubs = await request("/backoffice/state", {
       method: "PUT",
       token,
       body: {
@@ -357,10 +355,8 @@ async function runHttpGuards() {
         subscriptions: [...baselineSubs, subSentinel],
       },
     });
-    assert.equal(mixedSubs.status, 400, JSON.stringify(mixedSubs.data));
-    assert.equal(mixedSubs.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
-
-    const snapshotPut = await request("/backoffice/state", {
+    assertBackOfficeStateWriteRemoved(mixedSubs);
+const snapshotPut = await request("/backoffice/state", {
       method: "PUT",
       token,
       body: {
@@ -369,10 +365,8 @@ async function runHttpGuards() {
         subscriptions: [...baselineSubs, subSentinel],
       },
     });
-    assert.equal(snapshotPut.status, 400, JSON.stringify(snapshotPut.data));
-    assert.equal(snapshotPut.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
-
-    const afterMixed = await request("/backoffice/state", { token });
+    assertBackOfficeStateWriteRemoved(snapshotPut);
+const afterMixed = await request("/backoffice/state", { token });
     assert.equal(afterMixed.status, 200);
     assert.equal(
       (afterMixed.data.users ?? []).some((row) => String(row.id) === userSentinelId),
@@ -403,10 +397,8 @@ async function runHttpGuards() {
       token: adminToken,
       body: { schools: [{ code: "CD-HACK", name: "Hack" }] },
     });
-    assert.equal(adminPut.status, 400);
-    assert.equal(adminPut.data?.code, LEGACY_SCHOOLS_STATE_WRITE_CODE);
-
-    const teacherLogin = await request("/backoffice/login", {
+    assertBackOfficeStateWriteRemoved(adminPut);
+const teacherLogin = await request("/backoffice/login", {
       method: "POST",
       body: { identifier: "admin", password: "1234", schoolCode: "CD-2026-0001" },
     });

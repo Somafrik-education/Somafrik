@@ -8,6 +8,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 const {
   LEGACY_TEACHERS_STATE_WRITE_CODE,
   LEGACY_ASSIGNMENTS_STATE_WRITE_CODE,

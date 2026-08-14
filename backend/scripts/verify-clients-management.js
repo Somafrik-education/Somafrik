@@ -15,6 +15,7 @@ function decodeJwtPayload(token) {
 }
 
 const ROOT = require("node:path").resolve(__dirname, "../..");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 const PORT = 19685;
 const BASE = `http://127.0.0.1:${PORT}/api`;
 
@@ -113,9 +114,8 @@ async function main() {
         token: superToken,
         body: { [key]: [] },
       });
-      assert.equal(legacy.status, 400, key);
-      assert.equal(legacy.data?.code, "LEGACY_CLIENTS_STATE_WRITE_FORBIDDEN", key);
-    }
+      assertBackOfficeStateWriteRemoved(legacy);
+}
 
     const contact = await request("/backoffice/contacts", {
       method: "POST",

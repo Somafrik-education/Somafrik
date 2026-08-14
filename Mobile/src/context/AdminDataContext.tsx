@@ -38,7 +38,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
 import { SYNC_INTERVAL_MS } from "../config/env";
 import { useAuth } from "./AuthContext";
 
@@ -426,15 +426,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setSession(enriched);
   }, [rolePermissionsData, session, session?.role]);
 
-  const persistSyncedState = (nextState: BackOfficeStatePayload) => {
-    if (!canSyncBackOfficeState(session?.role, session)) {
-      return;
-    }
-
-    setSyncStatus("syncing");
-    saveBackOfficeState(nextState)
-      .then(() => setSyncStatus("synced"))
-      .catch(() => setSyncStatus("offline"));
+  const persistSyncedState = (_nextState: BackOfficeStatePayload) => {
+    // LOT 8 — plus de synchronisation PUT globale.
+    return;
   };
 
   const value = useMemo<AdminDataContextValue>(() => {

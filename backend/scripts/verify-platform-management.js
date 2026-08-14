@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 
 const ROOT = require("node:path").resolve(__dirname, "../..");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 const PORT = 19683;
 const BASE = `http://127.0.0.1:${PORT}/api`;
 
@@ -120,10 +121,8 @@ async function main() {
       token: superToken,
       body: { countries: [], users: [] },
     });
-    assert.equal(legacyMixed.status, 400);
-    assert.equal(legacyMixed.data?.code, "LEGACY_PLATFORM_STATE_WRITE_FORBIDDEN");
-
-    const subscription = await request("/backoffice/subscriptions", {
+    assertBackOfficeStateWriteRemoved(legacyMixed);
+const subscription = await request("/backoffice/subscriptions", {
       method: "POST",
       token: superToken,
       body: { schoolCode: "CD-2026-0001", plan: "Premium", monthlyPrice: 12, currency: "CDF" },
@@ -216,10 +215,8 @@ async function main() {
       token: superToken,
       body: { users: stateRoleMap.data.users ?? [] },
     });
-    assert.equal(deniedUsersPut.status, 400);
-    assert.equal(deniedUsersPut.data?.code, "LEGACY_CLIENTS_STATE_WRITE_FORBIDDEN");
-
-    console.log("verify-platform-management.js OK");
+    assertBackOfficeStateWriteRemoved(deniedUsersPut);
+console.log("verify-platform-management.js OK");
   } finally {
     child.kill("SIGTERM");
     await wait(300);

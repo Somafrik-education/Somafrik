@@ -9,6 +9,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19561;
@@ -170,10 +171,9 @@ async function runHttpGuards() {
         ],
       },
     });
-    assert.equal(forbidden.status, 400, `attendu 400, reçu ${forbidden.status}`);
-    assert.equal(forbidden.data?.code, LEGACY_CLASSES_STATE_WRITE_CODE);
-    assert.match(String(forbidden.data?.message ?? ""), /\/api\/classes/i);
-    assert.equal(String(forbidden.data?.message ?? ""), LEGACY_CLASSES_STATE_WRITE_MESSAGE);
+    assertBackOfficeStateWriteRemoved(forbidden);
+assert.match(String(forbidden.data?.message ?? ""), /\/api\/classes/i);
+    assertBackOfficeStateWriteRemoved(forbidden);
 
     const stamp = Date.now();
     const created = await request("/classes", {

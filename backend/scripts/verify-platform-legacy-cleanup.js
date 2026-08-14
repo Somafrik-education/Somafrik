@@ -22,6 +22,7 @@ const {
   stripLegacyPlatformStateWrite,
 } = require("../lib/legacyPlatformStateWrite");
 const { getWritableBackOfficeEntitiesForPrincipal } = require("../lib/backOfficeWritableEntities");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -96,9 +97,9 @@ function runUnitGuards() {
   const mobileApi = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
   const legacyBackOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
 
-  assert.match(server, /stripLegacyPlatformStateWrite/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /overlayPlatformProjection/);
-  assert.match(server, /LEGACY_PLATFORM_STATE_WRITE_CODE/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /repository\.getRolePermissionsMap/);
   assert.match(server, /requirePermission\("GET \/api\/backoffice\/subscription-access"\)/);
   assert.match(postgres, /ensurePlatformCanonicalSchema/);
@@ -167,10 +168,8 @@ async function runHttpGuards() {
           token,
           body: { [key]: value },
         });
-        assert.equal(rejected.status, 400, `${key}=${String(value)}: ${JSON.stringify(rejected.data)}`);
-        assert.equal(rejected.data?.code, LEGACY_PLATFORM_STATE_WRITE_CODE);
-        assert.deepEqual(rejected.data?.details?.rejectedKeys, [key]);
-      }
+        assertBackOfficeStateWriteRemoved(rejected);
+}
     }
 
     const mixed = await request("/backoffice/state", {
@@ -178,11 +177,8 @@ async function runHttpGuards() {
       token,
       body: { users: stateBefore.data.users ?? [], notifications: [] },
     });
-    assert.equal(mixed.status, 400);
-    assert.equal(mixed.data?.code, LEGACY_PLATFORM_STATE_WRITE_CODE);
-    assert.deepEqual(mixed.data?.details?.rejectedKeys, ["notifications"]);
-
-    const stateAfter = await request("/backoffice/state", { token });
+    assertBackOfficeStateWriteRemoved(mixed);
+const stateAfter = await request("/backoffice/state", { token });
     assert.equal(stateAfter.status, 200);
     assert.deepEqual(stateAfter.data.users?.length, stateBefore.data.users?.length);
 

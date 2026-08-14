@@ -12,6 +12,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19573;
@@ -118,7 +119,7 @@ function runUnitGuards() {
   assert.deepEqual(mixed.rejectedKeys, ["feeGrids", "payments"]);
 
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
-  assert.match(server, /stripLegacyFinanceStateWrite/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /overlayFinanceProjection/);
   assert.doesNotMatch(
     server,
@@ -146,8 +147,7 @@ function runUnitGuards() {
   assert.match(pgStore, /FOR UPDATE OF p/);
 
   const postgres = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
-  const saveState = postgres.match(/async saveBackOfficeState\(payload\) \{[\s\S]*?\n  \}\n\n  async getAcademicConfig/);
-  assert.ok(saveState, "saveBackOfficeState PostgreSQL présent");
+  assert.match(postgres, /async getBackOfficeState\(\)[\s\S]*return null/);
   assert.match(saveState[0], /_legacyPayments/);
   assert.doesNotMatch(saveState[0], /syncFinance|backfillFinance|COPY .*payments/);
 
@@ -211,10 +211,8 @@ async function runHttpGuards() {
         token,
         body: { [key]: [] },
       });
-      assert.equal(rejected.status, 400, `${key} vide: ${JSON.stringify(rejected.data)}`);
-      assert.equal(rejected.data?.code, LEGACY_FINANCE_STATE_WRITE_CODE);
-      assert.deepEqual(rejected.data?.details?.rejectedKeys, [key]);
-    }
+      assertBackOfficeStateWriteRemoved(rejected);
+}
 
     const userSentinelId = `USER-LOT4-${stamp}`;
     const mixed = await request("/backoffice/state", {
@@ -234,9 +232,8 @@ async function runHttpGuards() {
         ],
       },
     });
-    assert.equal(mixed.status, 400, JSON.stringify(mixed.data));
-    assert.equal(mixed.data?.code, LEGACY_FINANCE_STATE_WRITE_CODE);
-    assert.equal(mixed.data?.message, LEGACY_FINANCE_STATE_WRITE_MESSAGE);
+    assertBackOfficeStateWriteRemoved(mixed);
+assertBackOfficeStateWriteRemoved(mixed);
     assert.deepEqual(mixed.data?.details?.rejectedKeys, ["feeGrids", "payments"]);
 
     const stateAfter = await request("/backoffice/state", { token });

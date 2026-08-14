@@ -8,6 +8,7 @@
  */
 const assert = require("assert");
 const path = require("path");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const {
   ADMIN_SCHOOL_WRITABLE_ENTITIES,

@@ -495,6 +495,22 @@ function createClientsMemoryStore(seed = {}) {
     createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
     updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
     archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),
+    touchUserLastLogin(lookupKeys = []) {
+      const keys = new Set(
+        (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      tables.users = tables.users.map((row) => {
+        const aliases = [row.id, row.user_code, row.email, row.phone]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean);
+        if (!aliases.some((alias) => keys.has(alias))) {
+          return row;
+        }
+        return { ...row, last_login_at: new Date(), updated_at: new Date() };
+      });
+    },
     getAuditLog: () => [...auditLog],
     clearAuditLog: () => {
       auditLog.length = 0;

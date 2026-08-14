@@ -23,6 +23,11 @@ import { stripClientPedagogyFromPutPayload } from "../lib/stripClientPedagogy";
 import { stripClientPlatformFromPutPayload } from "../lib/stripClientPlatform";
 import { stripClientClientsFromPutPayload } from "../lib/stripClientClients";
 import {
+  extractResidualPatch,
+  hasResidualPatch,
+  syncResidualBackOfficePatch,
+} from "../lib/residualBackOfficeSync";
+import {
   enqueuePatchMutations,
   formatOutboxFailureMessage,
   listActiveOutboxEntries,
@@ -232,41 +237,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
       persistJournal(workingOutbox);
 
       try {
-        const rawPayload = usePartial
-          ? (annotatedPatch as Partial<BackOfficeState>)
-          : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
-        // HOTFIX-RBAC-ADMIN-01 : jamais envoyer auditLog (non writable client → 403).
-        const payload = stripClientClientsFromPutPayload(
-          stripClientPlatformFromPutPayload(
-            stripClientPedagogyFromPutPayload(
-              stripClientFinanceFromPutPayload(
-                stripClientPedagogyStaffFromPutPayload(
-                  stripClientStudentsFromPutPayload(
-                    stripClientSchoolsFromPutPayload(
-                      stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ) as Partial<BackOfficeState>;
-        const saved = await api.put<Partial<BackOfficeState> & { syncAck?: SyncAck }>(
-          "/backoffice/state",
-          payload,
-        );
-        const ack = extractSyncAck(saved);
-        // ACK Notes explicite + ACK implicite des domaines snapshot BO (presences/exams/payments).
+        const residualPatch = extractResidualPatch(annotatedPatch as Partial<BackOfficeState>);
+        if (!hasResidualPatch(residualPatch)) {
+          workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
+            ack: { accepted: [], rejected: [] },
+            annotatedPatch,
+          });
+          persistJournal(workingOutbox);
+          syncPausedRef.current = false;
+          return;
+        }
+
+        const schoolCode = String(sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase();
+        await syncResidualBackOfficePatch(residualPatch, schoolCode);
+        const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
+
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
-          ack,
+          ack: { accepted: Object.keys(residualPatch), rejected: [] },
           annotatedPatch,
         });
         persistJournal(workingOutbox);
 
         setState((prev) => {
-          const base = usePartial
-            ? applyPartialSave(prev, saved, annotatedPatch as Partial<BackOfficeState>)
-            : mergeRemoteSnapshot(prev, saved);
+          const base = mergeRemoteSnapshot(prev, remote);
           const withPending = reapplyOutboxToState(base, listActiveOutboxEntries(workingOutbox));
           return sessionUserRef.current
             ? applyClientScopeToState(withPending, sessionUserRef.current)
@@ -275,7 +268,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         const failure = formatOutboxFailureMessage(workingOutbox);
         setError(failure);
-        // HOTFIX-SYNC-02 : un rejet métier (ex. rattachement) doit remonter à l'UI.
         if (failure) {
           syncPausedRef.current = false;
           throw new Error(failure);

@@ -12,6 +12,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19572;
@@ -106,12 +107,11 @@ function runUnitGuards() {
   assert.equal(Object.prototype.hasOwnProperty.call(mixed.body, "students"), false);
 
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
-  assert.match(server, /stripLegacyStudentsStateWrite/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /students:\s*runtimeState\.students \?\? \[\]/);
 
   const postgres = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
-  const saveState = postgres.match(/async saveBackOfficeState\(payload\) \{[\s\S]*?\n  \}\n\n  async getAcademicConfig/);
-  assert.ok(saveState, "saveBackOfficeState PostgreSQL présent");
+  assert.match(postgres, /async getBackOfficeState\(\)[\s\S]*return null/);
   assert.doesNotMatch(
     saveState[0],
     /syncStudentsDomainFromBackOffice/,
@@ -234,9 +234,8 @@ async function runHttpGuards() {
       token,
       body: { students: [{ id: "STUDENT-HACK", schoolCode: "CD-2026-0001" }] },
     });
-    assert.equal(onlyStudents.status, 400, JSON.stringify(onlyStudents.data));
-    assert.equal(onlyStudents.data?.code, LEGACY_STUDENTS_STATE_WRITE_CODE);
-    assert.equal(onlyStudents.data?.message, LEGACY_STUDENTS_STATE_WRITE_MESSAGE);
+    assertBackOfficeStateWriteRemoved(onlyStudents);
+assertBackOfficeStateWriteRemoved(mixed);
 
     const userSentinelId = `USER-LOT2-${stamp}`;
     const mixed = await request("/backoffice/state", {
@@ -255,10 +254,8 @@ async function runHttpGuards() {
         ],
       },
     });
-    assert.equal(mixed.status, 400, JSON.stringify(mixed.data));
-    assert.equal(mixed.data?.code, LEGACY_STUDENTS_STATE_WRITE_CODE);
-
-    const {
+    assertBackOfficeStateWriteRemoved(mixed);
+const {
       schools: _readOnlySchools,
       classes: _readOnlyClasses,
       students: _readOnlyStudents,
@@ -276,10 +273,8 @@ async function runHttpGuards() {
         ],
       },
     });
-    assert.equal(snapshot.status, 400, JSON.stringify(snapshot.data));
-    assert.equal(snapshot.data?.code, LEGACY_STUDENTS_STATE_WRITE_CODE);
-
-    const stateAfter = await request("/backoffice/state", { token });
+    assertBackOfficeStateWriteRemoved(snapshot);
+const stateAfter = await request("/backoffice/state", { token });
     assert.equal(stateAfter.status, 200);
     assert.equal(
       (stateAfter.data.users ?? []).some((row) => String(row.id) === userSentinelId),
