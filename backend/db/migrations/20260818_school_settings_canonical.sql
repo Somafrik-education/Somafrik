@@ -1,0 +1,12 @@
+-- LOT 4 — Paramètres établissement canoniques (idempotent, sans COPY JSON).
+CREATE TABLE IF NOT EXISTS school_settings (
+  school_id UUID PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
+  period_mode TEXT NOT NULL DEFAULT 'trimestre',
+  default_scale NUMERIC(6,2) NOT NULL DEFAULT 20,
+  report_card_mode TEXT NOT NULL DEFAULT 'period',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT school_settings_period_mode_check CHECK (period_mode IN ('trimestre', 'semestre', 'periode')),
+  CONSTRAINT school_settings_report_card_mode_check CHECK (report_card_mode IN ('period', 'annual', 'custom')),
+  CONSTRAINT school_settings_default_scale_check CHECK (default_scale > 0 AND default_scale <= 100)
+);

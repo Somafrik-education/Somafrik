@@ -15,6 +15,10 @@ const {
   assertNoLegacyEvaluationTypesWrite,
   stripLegacyEvaluationTypes,
 } = require("../lib/evaluationTypesManagement");
+const {
+  assertNoLegacySchoolSettingsWrite,
+  stripLegacySchoolSettings,
+} = require("../lib/schoolSettingsManagement");
 
 function parsePayload(value) {
   if (!value) return {};
@@ -50,25 +54,26 @@ function createResidualPgStore(repo) {
 
   const store = {
     async listProjection() {
-      const configRows = await all(
-        `SELECT sac.config_payload, s.school_code
-         FROM school_academic_configs sac
-         JOIN schools s ON s.id = sac.school_id`,
-      );
+      const schoolRows = await all(`SELECT id, school_code FROM schools`);
       const academicConfigs = {};
-      for (const row of configRows) {
+      for (const row of schoolRows) {
         const code = String(row.school_code).toUpperCase();
-        const payload = parsePayload(row.config_payload);
-        delete payload.evaluationTypes;
-        let evaluationTypes = [];
-        if (typeof repo.listEvaluationTypeNames === "function") {
-          evaluationTypes = await repo.listEvaluationTypeNames(code);
+        if (typeof repo.getSchoolSettingsStore === "function") {
+          try {
+            academicConfigs[code] = await repo.getSchoolSettingsStore().projectAcademicConfig(code);
+          } catch (error) {
+            if (error?.code === "SCHOOL_NOT_FOUND" || error?.statusCode === 404) {
+              academicConfigs[code] = { schoolCode: code };
+            } else {
+              throw error;
+            }
+          }
+        } else {
+          const configRow = await one(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [
+            row.id,
+          ]);
+          academicConfigs[code] = { ...parsePayload(configRow?.config_payload), schoolCode: code };
         }
-        academicConfigs[code] = {
-          ...payload,
-          schoolCode: code,
-          evaluationTypes,
-        };
       }
 
       const residualRows = await all(
@@ -90,6 +95,15 @@ function createResidualPgStore(repo) {
     },
 
     async getAcademicConfig(schoolCode) {
+      if (typeof repo.getSchoolSettingsStore === "function") {
+        const normalized = String(schoolCode ?? "").trim().toUpperCase();
+        try {
+          return await repo.getSchoolSettingsStore().projectAcademicConfig(normalized);
+        } catch (error) {
+          if (error?.code === "SCHOOL_NOT_FOUND" || error?.statusCode === 404) return null;
+          throw error;
+        }
+      }
       const school = await resolveSchool(schoolCode);
       if (!school) return null;
       const row = await one(
@@ -97,66 +111,18 @@ function createResidualPgStore(repo) {
         [school.id],
       );
       const storedConfig = parsePayload(row?.config_payload);
-      const termRows = await all(
-        `SELECT t.*
-         FROM terms t
-         JOIN academic_years ay ON ay.id = t.academic_year_id
-         WHERE ay.school_id = $1
-         ORDER BY t.start_date NULLS LAST, t.created_at`,
-        [school.id],
-      );
-      const periods = termRows.length
-        ? termRows.map((term, index) => ({
-            name: term.name,
-            type: term.name.toLowerCase().includes("semestre")
-              ? "Semestre"
-              : term.name.toLowerCase().includes("trimestre")
-                ? "Trimestre"
-                : "Période",
-            startDate: repo.formatDate(term.start_date),
-            endDate: repo.formatDate(term.end_date),
-            active: index === 0,
-          }))
-        : defaultAcademicPeriods();
-
-      let levels = [];
-      let tracks = [];
-      let userRoles = [];
-      let evaluationTypes = [];
-      if (typeof repo.getSchoolEducationActiveLists === "function") {
-        const lists = await repo.getSchoolEducationActiveLists(school.school_code ?? school.code);
-        levels = lists.levels ?? [];
-        tracks = lists.tracks ?? [];
-      }
-      if (typeof repo.listEstablishmentRoles === "function") {
-        const roles = await repo.listEstablishmentRoles({ schoolAssignableOnly: true });
-        userRoles = roles.map((row) => row.roleName);
-      }
-      if (typeof repo.listEvaluationTypeNames === "function") {
-        evaluationTypes = await repo.listEvaluationTypeNames(school.school_code ?? school.code);
-      }
-
       return withSystemActivePeriods({
         schoolCode: school.school_code ?? school.code,
-        periodMode: storedConfig?.periodMode ?? inferPeriodMode(periods),
-        periods: Array.isArray(storedConfig?.periods) && storedConfig.periods.length
-          ? storedConfig.periods
-          : periods,
-        evaluationTypes,
+        periodMode: storedConfig?.periodMode ?? inferPeriodMode(defaultAcademicPeriods()),
+        periods: defaultAcademicPeriods(),
+        evaluationTypes: [],
         defaultScale: Number(storedConfig?.defaultScale ?? 20),
         reportCardMode: storedConfig?.reportCardMode ?? "period",
-        allowCustomClasses: storedConfig?.allowCustomClasses !== false,
-        allowCustomCourses: storedConfig?.allowCustomCourses !== false,
-        allowCustomReportCards: storedConfig?.allowCustomReportCards !== false,
-        levels,
-        tracks,
-        userRoles,
-        classNames: Array.isArray(storedConfig?.classNames) && storedConfig.classNames.length
-          ? storedConfig.classNames
-          : seedData.demoClassNames,
-        subjects: Array.isArray(storedConfig?.subjects) && storedConfig.subjects.length
-          ? storedConfig.subjects
-          : seedData.demoSubjects,
+        levels: [],
+        tracks: [],
+        userRoles: [],
+        classNames: [],
+        subjects: [],
       });
     },
 
@@ -164,8 +130,9 @@ function createResidualPgStore(repo) {
       assertNoLegacyAcademicLevelsTracksWrite(config);
       assertNoLegacyUserRolesWrite(config);
       assertNoLegacyEvaluationTypesWrite(config);
-      const sanitizedConfig = stripLegacyEvaluationTypes(
-        stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config)),
+      assertNoLegacySchoolSettingsWrite(config);
+      stripLegacySchoolSettings(
+        stripLegacyEvaluationTypes(stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config))),
       );
       const school = await resolveSchool(schoolCode);
       if (!school) {
@@ -175,48 +142,18 @@ function createResidualPgStore(repo) {
       }
       const normalizedSchoolCode = String(school.school_code ?? school.code).trim().toUpperCase();
       const runner = tx && typeof tx.query === "function" ? tx : repo;
-      const savedConfig = withSystemActivePeriods({
-        schoolCode: normalizedSchoolCode,
-        periodMode: sanitizedConfig.periodMode ?? "trimestre",
-        periods: Array.isArray(sanitizedConfig.periods) && sanitizedConfig.periods.length ? sanitizedConfig.periods : defaultAcademicPeriods(),
-        defaultScale: Number(sanitizedConfig.defaultScale ?? 20),
-        reportCardMode: sanitizedConfig.reportCardMode ?? "period",
-        allowCustomClasses: sanitizedConfig.allowCustomClasses !== false,
-        allowCustomCourses: sanitizedConfig.allowCustomCourses !== false,
-        allowCustomReportCards: sanitizedConfig.allowCustomReportCards !== false,
-        classNames: Array.isArray(sanitizedConfig.classNames) && sanitizedConfig.classNames.length
-          ? sanitizedConfig.classNames
-          : seedData.demoClassNames,
-        subjects: Array.isArray(sanitizedConfig.subjects) && sanitizedConfig.subjects.length
-          ? sanitizedConfig.subjects
-          : seedData.demoSubjects,
-      });
       await runner.query(
         `INSERT INTO school_academic_configs (school_id, config_payload, updated_at)
          VALUES ($1, $2::jsonb, NOW())
          ON CONFLICT (school_id) DO UPDATE SET
            config_payload = EXCLUDED.config_payload,
            updated_at = NOW()`,
-        [school.id, JSON.stringify(savedConfig)],
+        [school.id, JSON.stringify({})],
       );
-      if (typeof repo.getSchoolEducationActiveLists === "function") {
-        const lists = await repo.getSchoolEducationActiveLists(normalizedSchoolCode);
-        savedConfig.levels = lists.levels ?? [];
-        savedConfig.tracks = lists.tracks ?? [];
-      } else {
-        savedConfig.levels = [];
-        savedConfig.tracks = [];
+      if (typeof repo.getSchoolSettingsStore === "function") {
+        return repo.getSchoolSettingsStore().projectAcademicConfig(normalizedSchoolCode);
       }
-      if (typeof repo.listEstablishmentRoles === "function") {
-        const roles = await repo.listEstablishmentRoles({ schoolAssignableOnly: true });
-        savedConfig.userRoles = roles.map((row) => row.roleName);
-      }
-      if (typeof repo.listEvaluationTypeNames === "function") {
-        savedConfig.evaluationTypes = await repo.listEvaluationTypeNames(normalizedSchoolCode);
-      } else {
-        savedConfig.evaluationTypes = [];
-      }
-      return savedConfig;
+      return { schoolCode: normalizedSchoolCode };
     },
 
     async replaceDomainRecords(domain, schoolCode, items = [], tx = null) {

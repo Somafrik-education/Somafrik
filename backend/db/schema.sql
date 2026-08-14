@@ -240,6 +240,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluation_types_school_name_norm
 CREATE INDEX IF NOT EXISTS idx_evaluation_types_school_status
   ON evaluation_types (school_id, status, display_order);
 
+-- LOT 4 : paramètres établissement scalaires (périodes = terms)
+CREATE TABLE IF NOT EXISTS school_settings (
+  school_id UUID PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
+  period_mode TEXT NOT NULL DEFAULT 'trimestre',
+  default_scale NUMERIC(6,2) NOT NULL DEFAULT 20,
+  report_card_mode TEXT NOT NULL DEFAULT 'period',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT school_settings_period_mode_check CHECK (period_mode IN ('trimestre', 'semestre', 'periode')),
+  CONSTRAINT school_settings_report_card_mode_check CHECK (report_card_mode IN ('period', 'annual', 'custom')),
+  CONSTRAINT school_settings_default_scale_check CHECK (default_scale > 0 AND default_scale <= 100)
+);
+
 -- D3.6b : évaluations pédagogiques (entité distincte des notes)
 -- evaluation_type_id = source de vérité ; evaluation_type TEXT = projection/compatibilité
 CREATE TABLE IF NOT EXISTS evaluations (

@@ -245,8 +245,8 @@ class FallbackRepository {
       this._residualStore = createResidualMemoryStore();
       if (shouldSeedDemoData()) {
         const store = this._residualStore;
-        for (const [schoolCode, config] of Object.entries(seedData.academicConfigs ?? {})) {
-          store.saveAcademicConfig(String(schoolCode).toUpperCase(), config);
+        for (const [schoolCode] of Object.entries(seedData.academicConfigs ?? {})) {
+          store.saveAcademicConfig(String(schoolCode).toUpperCase(), {});
         }
         const defaultSchool = String(seedData.school?.code ?? "CD-2026-0001").toUpperCase();
         store.replaceDomainRecords("exam", defaultSchool, seedData.exams ?? []);
@@ -257,8 +257,22 @@ class FallbackRepository {
     return this._residualStore;
   }
 
-  listResidualProjection() {
-    return Promise.resolve(this.getResidualStore().listProjection());
+  async listResidualProjection() {
+    const residual = this.getResidualStore().listProjection();
+    const academicConfigs = { ...(residual.academicConfigs ?? {}) };
+    this.getSchoolSettingsStore();
+    if (this._schoolSettingsBootstrap) await this._schoolSettingsBootstrap;
+    const schools = [seedData.school, ...(this._managedSchools ?? seedData.platformSchools ?? [])];
+    for (const school of schools) {
+      const code = String(school.code ?? school.schoolCode ?? "").trim().toUpperCase();
+      if (!code) continue;
+      try {
+        academicConfigs[code] = await this.getAcademicConfig(code);
+      } catch (_error) {
+        academicConfigs[code] = academicConfigs[code] ?? { schoolCode: code };
+      }
+    }
+    return { ...residual, academicConfigs };
   }
 
   replaceResidualExams(schoolCode, items, principal, auditMeta) {
@@ -369,36 +383,36 @@ class FallbackRepository {
   }
 
   async getAcademicConfig(schoolCode) {
-    const store = this.getResidualStore();
+    const store = this.getSchoolSettingsStore();
+    if (this._schoolSettingsBootstrap) await this._schoolSettingsBootstrap;
     const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code).trim().toUpperCase();
-    const config =
-      (await store.getAcademicConfig(normalizedSchoolCode)) ??
-      (await store.saveAcademicConfig(normalizedSchoolCode, {
-        schoolCode: normalizedSchoolCode,
-        periodMode: "trimestre",
-        periods: [
-          { id: "trimestre-1", name: "Trimestre 1", type: "Trimestre", order: 1, startDate: "01-09-2025", endDate: "31-12-2025", active: false },
-          { id: "trimestre-2", name: "Trimestre 2", type: "Trimestre", order: 2, startDate: "01-01-2026", endDate: "31-03-2026", active: false },
-          { id: "trimestre-3", name: "Trimestre 3", type: "Trimestre", order: 3, startDate: "01-04-2026", endDate: "30-06-2026", active: false },
-        ],
-        defaultScale: 20,
-        reportCardMode: "period",
-        allowCustomClasses: true,
-        allowCustomCourses: true,
-        allowCustomReportCards: true,
-        classNames: seedData.demoClassNames,
-        subjects: seedData.demoSubjects,
-      }));
-    const lists = await this.getSchoolEducationActiveLists(normalizedSchoolCode);
-    const evaluationTypes = await this.listEvaluationTypeNames(normalizedSchoolCode);
-    return { ...config, levels: lists.levels ?? [], tracks: lists.tracks ?? [], evaluationTypes };
+    try {
+      const projected = await store.projectAcademicConfig(normalizedSchoolCode);
+      const lists = await this.getSchoolEducationActiveLists(normalizedSchoolCode);
+      const evaluationTypes = await this.listEvaluationTypeNames(normalizedSchoolCode);
+      const roles = typeof this.listEstablishmentRoles === "function"
+        ? (await this.listEstablishmentRoles({ schoolAssignableOnly: true })).map((row) => row.roleName)
+        : [];
+      return {
+        ...projected,
+        levels: lists.levels ?? [],
+        tracks: lists.tracks ?? [],
+        userRoles: roles,
+        evaluationTypes,
+      };
+    } catch (error) {
+      if (error?.statusCode === 404) return null;
+      throw error;
+    }
   }
 
   async saveAcademicConfig(schoolCode, config, tx = null) {
     const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code)
       .trim()
       .toUpperCase();
-    return this.getResidualStore().saveAcademicConfig(normalizedSchoolCode, config, tx);
+    const saved = await this.getResidualStore().saveAcademicConfig(normalizedSchoolCode, config, tx);
+    const projected = await this.getAcademicConfig(normalizedSchoolCode);
+    return projected ?? saved;
   }
 
   createTxScope(_tx) {
@@ -2626,6 +2640,41 @@ class FallbackRepository {
     if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
     const { archiveEvaluationType } = require("../lib/evaluationTypesService");
     return archiveEvaluationType(this, typeId, principal, auditMeta, schoolCode);
+  }
+
+  getSchoolSettingsStore() {
+    if (!this._schoolSettingsStore) {
+      const { createSchoolSettingsMemoryStore } = require("./schoolSettingsMemoryStore");
+      this._schoolSettingsStore = createSchoolSettingsMemoryStore({
+        school: seedData.school,
+        schools: seedData.platformSchools,
+      });
+      this._schoolSettingsStore.setClassNames(seedData.school.code, seedData.demoClassNames);
+      this._schoolSettingsStore.setSubjectNames(seedData.school.code, seedData.demoSubjects);
+      this._schoolSettingsBootstrap = this._schoolSettingsStore.bootstrapCanonicalSettingsForAllSchools();
+    }
+    return this._schoolSettingsStore;
+  }
+
+  async getSchoolSettings(principal, schoolCode) {
+    this.getSchoolSettingsStore();
+    if (this._schoolSettingsBootstrap) await this._schoolSettingsBootstrap;
+    const { getSchoolSettings } = require("../lib/schoolSettingsService");
+    return getSchoolSettings(this, principal, schoolCode);
+  }
+
+  async patchSchoolSettings(payload, principal, auditMeta, schoolCode) {
+    this.getSchoolSettingsStore();
+    if (this._schoolSettingsBootstrap) await this._schoolSettingsBootstrap;
+    const { patchSchoolSettings } = require("../lib/schoolSettingsService");
+    return patchSchoolSettings(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  async replaceAcademicPeriods(payload, principal, auditMeta, schoolCode) {
+    this.getSchoolSettingsStore();
+    if (this._schoolSettingsBootstrap) await this._schoolSettingsBootstrap;
+    const { replaceAcademicPeriods } = require("../lib/schoolSettingsService");
+    return replaceAcademicPeriods(this, payload, principal, auditMeta, schoolCode);
   }
 }
 

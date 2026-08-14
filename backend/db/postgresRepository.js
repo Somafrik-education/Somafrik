@@ -109,6 +109,11 @@ class PostgresRepository {
     await this.ensureEvaluationTypesCanonicalSchema();
     await this.stripLegacyEvaluationTypesPayloads();
     await this.ensureEvaluationTypesBootstrap();
+    await this.ensureSchoolSettingsPreflight();
+    await this.ensureSchoolSettingsConstraints();
+    await this.ensureSchoolSettingsCanonicalSchema();
+    await this.stripLegacySchoolSettingsPayloads();
+    await this.ensureSchoolSettingsBootstrap();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -652,6 +657,51 @@ class PostgresRepository {
   getEvaluationTypesStore() {
     const { createEvaluationTypesPgStore } = require("./evaluationTypesPgStore");
     return createEvaluationTypesPgStore(this);
+  }
+
+  async ensureSchoolSettingsPreflight() {
+    const { assertSchoolSettingsSchemaPreflight } = require("./schoolSettingsSchema");
+    await assertSchoolSettingsSchemaPreflight(this);
+  }
+
+  async ensureSchoolSettingsCanonicalSchema() {
+    const { SCHOOL_SETTINGS_SCHEMA_SQL } = require("./schoolSettingsSchema");
+    await this.query(SCHOOL_SETTINGS_SCHEMA_SQL);
+  }
+
+  async stripLegacySchoolSettingsPayloads() {
+    const { stripLegacySchoolSettingsPayloads } = require("../lib/schoolSettingsService");
+    await stripLegacySchoolSettingsPayloads(this);
+  }
+
+  async ensureSchoolSettingsConstraints() {
+    const { ensureSchoolSettingsConstraints } = require("../lib/schoolSettingsService");
+    await ensureSchoolSettingsConstraints(this, console);
+  }
+
+  async ensureSchoolSettingsBootstrap() {
+    const { ensureSchoolSettingsBootstrap } = require("../lib/schoolSettingsService");
+    await ensureSchoolSettingsBootstrap(this);
+  }
+
+  getSchoolSettingsStore() {
+    const { createSchoolSettingsPgStore } = require("./schoolSettingsPgStore");
+    return createSchoolSettingsPgStore(this);
+  }
+
+  getSchoolSettings(principal, schoolCode) {
+    const { getSchoolSettings } = require("../lib/schoolSettingsService");
+    return getSchoolSettings(this, principal, schoolCode);
+  }
+
+  patchSchoolSettings(payload, principal, auditMeta, schoolCode) {
+    const { patchSchoolSettings } = require("../lib/schoolSettingsService");
+    return patchSchoolSettings(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  replaceAcademicPeriods(payload, principal, auditMeta, schoolCode) {
+    const { replaceAcademicPeriods } = require("../lib/schoolSettingsService");
+    return replaceAcademicPeriods(this, payload, principal, auditMeta, schoolCode);
   }
 
   listEvaluationTypes(schoolCode, options) {

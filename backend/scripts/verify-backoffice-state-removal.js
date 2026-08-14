@@ -198,36 +198,30 @@ async function runResidualGuards(superToken) {
 
   const baselineBi = await request("/academic-config", { token: adminBi });
   assert.equal(baselineBi.status, 200);
-  await request("/academic-config", {
-    method: "PUT",
+  const biSettings = await request("/school-settings", {
+    method: "PATCH",
     token: adminBi,
-    body: {
-      schoolCode: "CD-2026-0001",
-      periodMode: "bi-baseline",
-      periods: [{ name: "Trimestre 1", type: "Trimestre", startDate: "01-09-2025", endDate: "20-12-2025", active: true }],
-      defaultScale: 20,
-    },
+    body: { schoolCode: "CD-2026-0001", periodMode: "semestre" },
   });
+  assert.equal(biSettings.status, 200, JSON.stringify(biSettings.data));
+  assert.equal(biSettings.data?.periodMode, "semestre");
 
-  await request("/academic-config", {
-    method: "PUT",
+  const cdSettings = await request("/school-settings", {
+    method: "PATCH",
     token: adminCd,
-    body: {
-      schoolCode: "BI-2026-0002",
-      periodMode: "cd-scoped-write",
-      periods: [{ name: "Trimestre 1", type: "Trimestre", startDate: "01-09-2025", endDate: "20-12-2025", active: true }],
-      defaultScale: 20,
-    },
+    body: { schoolCode: "BI-2026-0002", periodMode: "periode" },
   });
+  assert.equal(cdSettings.status, 200, JSON.stringify(cdSettings.data));
+  assert.equal(cdSettings.data?.periodMode, "periode");
 
   const cdConfig = await request("/academic-config", { token: adminCd });
   assert.equal(cdConfig.status, 200);
-  assert.equal(cdConfig.data?.periodMode, "cd-scoped-write");
+  assert.equal(cdConfig.data?.periodMode, "periode");
   assert.equal(cdConfig.data?.schoolCode, "CD-2026-0001");
 
   const biConfig = await request("/academic-config", { token: adminBi });
   assert.equal(biConfig.status, 200);
-  assert.equal(biConfig.data?.periodMode, "bi-baseline");
+  assert.equal(biConfig.data?.periodMode, "semestre");
   assert.equal(biConfig.data?.schoolCode, "BI-2026-0002");
 
   const beforeExams = await request("/backoffice/planning-exams", { token: adminCd });

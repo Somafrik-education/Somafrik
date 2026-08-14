@@ -865,6 +865,81 @@ app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academi
   res.json(saved);
 }));
 
+app.get("/api/school-settings", requireAuth, requirePermission("GET /api/school-settings"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertSchoolSettingsRead } = require("./lib/schoolSettingsManagement");
+  assertSchoolSettingsRead(req.principal);
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const settings = await repository.getSchoolSettings(req.principal, schoolCode);
+  res.json(settings);
+}));
+
+app.patch("/api/school-settings", requireAuth, requirePermission("PATCH /api/school-settings"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.patchSchoolSettings(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
+app.put("/api/academic-periods", requireAuth, requirePermission("PUT /api/academic-periods"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.replaceAcademicPeriods(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/school-settings", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/school-settings"), asyncHandler(async (req, res) => {
+  const { assertSchoolSettingsRead } = require("./lib/schoolSettingsManagement");
+  assertSchoolSettingsRead(req.principal);
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const settings = await repository.getSchoolSettings(req.principal, schoolCode);
+  res.json(settings);
+}));
+
+app.patch("/api/backoffice/establishments/:schoolCode/school-settings", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:schoolCode/school-settings"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.patchSchoolSettings(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/academic-periods", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/academic-periods"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { schoolSettingsAuditMetaFromRequest } = require("./lib/schoolSettingsManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.replaceAcademicPeriods(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    schoolSettingsAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(saved);
+}));
+
 app.get("/api/evaluation-types", requireAuth, requirePermission("GET /api/evaluation-types"), asyncHandler(async (req, res) => {
   const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
   const { assertEvaluationTypesRead } = require("./lib/evaluationTypesManagement");
