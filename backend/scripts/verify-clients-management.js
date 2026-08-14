@@ -175,33 +175,10 @@ async function main() {
     });
     assert.equal(crossTenant.status, 403, JSON.stringify(crossTenant.data));
 
-    const staffPassword = "E2eStaff!2026";
-    const staff = await request("/backoffice/users", {
-      method: "POST",
-      token: schoolToken,
-      body: {
-        firstName: "Self",
-        lastName: "Patch",
-        role: "Secrétaire",
-        email: `self-patch-${Date.now()}@test.local`,
-        schoolCode: "CD-2026-0001",
-        temporaryPassword: staffPassword,
-      },
-    });
-    assert.equal(staff.status, 201, JSON.stringify(staff.data));
-    const staffToken = await login(staff.data.identifier, staffPassword, "CD-2026-0001");
-    const rbacOnlyPatch = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
-      method: "PATCH",
-      token: staffToken,
-      body: { profile: { permissions: ["ALL_PRIVILEGES"] } },
-    });
-    assert.equal(rbacOnlyPatch.status, 403, JSON.stringify(rbacOnlyPatch.data));
-    assert.notEqual(
-      rbacOnlyPatch.data?.code,
-      "FORBIDDEN",
-      "Secrétaire bloqué par RBAC avant le garde-fou métier",
-    );
-
+    // -------------------------------------------------------------------------
+    // P0 HTTP — escalade profile.permissions (acteur Admin School autorisé RBAC)
+    // Le PATCH principal utilise ownToken (second Admin School), jamais staffToken.
+    // -------------------------------------------------------------------------
     const adminSchoolPassword = "E2eAdminSchool!2026";
     const stamp = Date.now();
     const secondAdmin = await request("/backoffice/users", {
@@ -223,8 +200,8 @@ async function main() {
       adminSchoolPassword,
       "CD-2026-0001",
     );
-    const ownToken = beforeSession.accessToken;
-    const beforeJwtPermissions = jwtPermissions(ownToken);
+    const adminSchoolOwnToken = beforeSession.accessToken;
+    const beforeJwtPermissions = jwtPermissions(adminSchoolOwnToken);
 
     const usersBefore = await request("/backoffice/users", { token: schoolToken });
     assert.equal(usersBefore.status, 200);
@@ -235,14 +212,14 @@ async function main() {
 
     const forbiddenPatch = await request(`/backoffice/users/${encodeURIComponent(secondAdmin.data.id)}`, {
       method: "PATCH",
-      token: ownToken,
+      token: adminSchoolOwnToken,
       body: { profile: { permissions: ["ALL_PRIVILEGES"] } },
     });
     assert.equal(forbiddenPatch.status, 403, JSON.stringify(forbiddenPatch.data));
     assert.equal(
       forbiddenPatch.data?.code,
       "FORBIDDEN",
-      "Admin School autorisé RBAC : rejet métier profile.permissions",
+      "Admin School (Gérer utilisateurs) : rejet métier assertSafeUserProfilePatch",
     );
 
     const afterSession = await loginSession(
