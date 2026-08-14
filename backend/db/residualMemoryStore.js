@@ -10,6 +10,10 @@ const {
   assertNoLegacyUserRolesWrite,
   stripLegacyUserRoles,
 } = require("../lib/establishmentRolesManagement");
+const {
+  assertNoLegacyEvaluationTypesWrite,
+  stripLegacyEvaluationTypes,
+} = require("../lib/evaluationTypesManagement");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -54,15 +58,15 @@ function createResidualMemoryStore() {
     saveAcademicConfig(schoolCode, config, _tx = null) {
       assertNoLegacyAcademicLevelsTracksWrite(config);
       assertNoLegacyUserRolesWrite(config);
-      const sanitizedConfig = stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config));
+      assertNoLegacyEvaluationTypesWrite(config);
+      const sanitizedConfig = stripLegacyEvaluationTypes(
+        stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config)),
+      );
       const normalized = asTrimmed(schoolCode).toUpperCase();
       const saved = withSystemActivePeriods({
         schoolCode: normalized,
         periodMode: sanitizedConfig.periodMode ?? "trimestre",
         periods: Array.isArray(sanitizedConfig.periods) && sanitizedConfig.periods.length ? sanitizedConfig.periods : [],
-        evaluationTypes: Array.isArray(sanitizedConfig.evaluationTypes) && sanitizedConfig.evaluationTypes.length
-          ? sanitizedConfig.evaluationTypes
-          : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
         defaultScale: Number(sanitizedConfig.defaultScale ?? 20),
         reportCardMode: sanitizedConfig.reportCardMode ?? "period",
         allowCustomClasses: sanitizedConfig.allowCustomClasses !== false,

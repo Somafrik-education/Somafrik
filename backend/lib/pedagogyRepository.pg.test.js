@@ -78,6 +78,11 @@ async function seedFixture(pool) {
      VALUES ($1, '2024-2025', 'closed') RETURNING id`,
     [schoolA.rows[0].id],
   );
+  await pool.query(
+    `INSERT INTO evaluation_types (school_id, code, name, status, display_order)
+     VALUES ($1, 'devoir', 'Devoir', 'active', 20)`,
+    [schoolA.rows[0].id],
+  );
   const klass = await pool.query(
     `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
      VALUES ($1, $2, 'CLS-6A', '6ème A', 'active') RETURNING id`,

@@ -28,9 +28,17 @@ export async function syncResidualBackOfficePatch(
 
     if (scopedEntries.length === 1) {
       const [, config] = scopedEntries[0];
+      const payload = { ...((config && typeof config === "object" ? config : {}) as Record<string, unknown>) };
+      delete payload.evaluationTypes;
+      delete payload.levels;
+      delete payload.tracks;
+      delete payload.userRoles;
+      delete payload.schoolId;
+      delete payload.schoolCode;
+      delete payload.countryCode;
       await api.put(
         `/backoffice/establishments/${encodeURIComponent(scopedSchool)}/academic-config`,
-        config as Record<string, unknown>,
+        payload,
       );
     }
   }

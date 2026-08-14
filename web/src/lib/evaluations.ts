@@ -21,15 +21,6 @@ import { formatStudentName, GradeBookService } from "./gradeBook";
 import { normalize } from "./format";
 import { isSuperAdminRole } from "./orgHierarchy";
 
-export const EVALUATION_TYPES: EvaluationType[] = [
-  "Devoir",
-  "Interrogation",
-  "Composition",
-  "Examen",
-  "Rattrapage",
-  "Contrôle continu",
-];
-
 export const EVALUATION_STATUSES: EvaluationStatus[] = [
   "Brouillon",
   "Ouverte",
@@ -89,13 +80,14 @@ export function getSchoolAcademicConfig(state: BackOfficeState, schoolCode: stri
   return (configs[schoolCode] as Record<string, unknown>) ?? (configs["*"] as Record<string, unknown>) ?? {};
 }
 
+/** Projection lecture GET academic-config uniquement — jamais un catalogue local. */
 export function getEvaluationTypes(state: BackOfficeState, schoolCode: string): string[] {
   const config = getSchoolAcademicConfig(state, schoolCode);
   const raw = config.evaluationTypes;
   if (Array.isArray(raw) && raw.length) {
     return raw.map((item) => String(item).trim()).filter(Boolean);
   }
-  return [...EVALUATION_TYPES];
+  return [];
 }
 
 /** Noms de périodes configurées pour l'établissement (fallback trimestres). */

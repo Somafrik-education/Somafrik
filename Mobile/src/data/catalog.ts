@@ -550,7 +550,7 @@ export const defaultAcademicConfig: AcademicManagementConfig = {
     { name: "Trimestre 2", type: "Trimestre", startDate: "01-01-2026", endDate: "31-03-2026" },
     { name: "Trimestre 3", type: "Trimestre", startDate: "01-04-2026", endDate: "30-06-2026" },
   ],
-  evaluationTypes: ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
+  evaluationTypes: [],
   defaultScale: 20,
   reportCardMode: "period",
   levels: DEFAULT_LEVELS,

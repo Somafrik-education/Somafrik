@@ -11,6 +11,10 @@ const {
   assertNoLegacyUserRolesWrite,
   stripLegacyUserRoles,
 } = require("../lib/establishmentRolesManagement");
+const {
+  assertNoLegacyEvaluationTypesWrite,
+  stripLegacyEvaluationTypes,
+} = require("../lib/evaluationTypesManagement");
 
 function parsePayload(value) {
   if (!value) return {};
@@ -53,10 +57,17 @@ function createResidualPgStore(repo) {
       );
       const academicConfigs = {};
       for (const row of configRows) {
+        const code = String(row.school_code).toUpperCase();
         const payload = parsePayload(row.config_payload);
-        academicConfigs[String(row.school_code).toUpperCase()] = {
+        delete payload.evaluationTypes;
+        let evaluationTypes = [];
+        if (typeof repo.listEvaluationTypeNames === "function") {
+          evaluationTypes = await repo.listEvaluationTypeNames(code);
+        }
+        academicConfigs[code] = {
           ...payload,
-          schoolCode: String(row.school_code).toUpperCase(),
+          schoolCode: code,
+          evaluationTypes,
         };
       }
 
@@ -111,6 +122,7 @@ function createResidualPgStore(repo) {
       let levels = [];
       let tracks = [];
       let userRoles = [];
+      let evaluationTypes = [];
       if (typeof repo.getSchoolEducationActiveLists === "function") {
         const lists = await repo.getSchoolEducationActiveLists(school.school_code ?? school.code);
         levels = lists.levels ?? [];
@@ -120,6 +132,9 @@ function createResidualPgStore(repo) {
         const roles = await repo.listEstablishmentRoles({ schoolAssignableOnly: true });
         userRoles = roles.map((row) => row.roleName);
       }
+      if (typeof repo.listEvaluationTypeNames === "function") {
+        evaluationTypes = await repo.listEvaluationTypeNames(school.school_code ?? school.code);
+      }
 
       return withSystemActivePeriods({
         schoolCode: school.school_code ?? school.code,
@@ -127,9 +142,7 @@ function createResidualPgStore(repo) {
         periods: Array.isArray(storedConfig?.periods) && storedConfig.periods.length
           ? storedConfig.periods
           : periods,
-        evaluationTypes: Array.isArray(storedConfig?.evaluationTypes) && storedConfig.evaluationTypes.length
-          ? storedConfig.evaluationTypes
-          : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
+        evaluationTypes,
         defaultScale: Number(storedConfig?.defaultScale ?? 20),
         reportCardMode: storedConfig?.reportCardMode ?? "period",
         allowCustomClasses: storedConfig?.allowCustomClasses !== false,
@@ -150,7 +163,10 @@ function createResidualPgStore(repo) {
     async saveAcademicConfig(schoolCode, config, tx = null) {
       assertNoLegacyAcademicLevelsTracksWrite(config);
       assertNoLegacyUserRolesWrite(config);
-      const sanitizedConfig = stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config));
+      assertNoLegacyEvaluationTypesWrite(config);
+      const sanitizedConfig = stripLegacyEvaluationTypes(
+        stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config)),
+      );
       const school = await resolveSchool(schoolCode);
       if (!school) {
         const error = new Error("Établissement introuvable.");
@@ -163,9 +179,6 @@ function createResidualPgStore(repo) {
         schoolCode: normalizedSchoolCode,
         periodMode: sanitizedConfig.periodMode ?? "trimestre",
         periods: Array.isArray(sanitizedConfig.periods) && sanitizedConfig.periods.length ? sanitizedConfig.periods : defaultAcademicPeriods(),
-        evaluationTypes: Array.isArray(sanitizedConfig.evaluationTypes) && sanitizedConfig.evaluationTypes.length
-          ? sanitizedConfig.evaluationTypes
-          : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
         defaultScale: Number(sanitizedConfig.defaultScale ?? 20),
         reportCardMode: sanitizedConfig.reportCardMode ?? "period",
         allowCustomClasses: sanitizedConfig.allowCustomClasses !== false,
@@ -188,9 +201,22 @@ function createResidualPgStore(repo) {
       );
       if (typeof repo.getSchoolEducationActiveLists === "function") {
         const lists = await repo.getSchoolEducationActiveLists(normalizedSchoolCode);
-        return { ...savedConfig, levels: lists.levels ?? [], tracks: lists.tracks ?? [] };
+        savedConfig.levels = lists.levels ?? [];
+        savedConfig.tracks = lists.tracks ?? [];
+      } else {
+        savedConfig.levels = [];
+        savedConfig.tracks = [];
       }
-      return { ...savedConfig, levels: [], tracks: [] };
+      if (typeof repo.listEstablishmentRoles === "function") {
+        const roles = await repo.listEstablishmentRoles({ schoolAssignableOnly: true });
+        savedConfig.userRoles = roles.map((row) => row.roleName);
+      }
+      if (typeof repo.listEvaluationTypeNames === "function") {
+        savedConfig.evaluationTypes = await repo.listEvaluationTypeNames(normalizedSchoolCode);
+      } else {
+        savedConfig.evaluationTypes = [];
+      }
+      return savedConfig;
     },
 
     async replaceDomainRecords(domain, schoolCode, items = [], tx = null) {

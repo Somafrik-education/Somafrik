@@ -381,7 +381,6 @@ class FallbackRepository {
           { id: "trimestre-2", name: "Trimestre 2", type: "Trimestre", order: 2, startDate: "01-01-2026", endDate: "31-03-2026", active: false },
           { id: "trimestre-3", name: "Trimestre 3", type: "Trimestre", order: 3, startDate: "01-04-2026", endDate: "30-06-2026", active: false },
         ],
-        evaluationTypes: ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
         defaultScale: 20,
         reportCardMode: "period",
         allowCustomClasses: true,
@@ -391,7 +390,8 @@ class FallbackRepository {
         subjects: seedData.demoSubjects,
       }));
     const lists = await this.getSchoolEducationActiveLists(normalizedSchoolCode);
-    return { ...config, levels: lists.levels ?? [], tracks: lists.tracks ?? [] };
+    const evaluationTypes = await this.listEvaluationTypeNames(normalizedSchoolCode);
+    return { ...config, levels: lists.levels ?? [], tracks: lists.tracks ?? [], evaluationTypes };
   }
 
   async saveAcademicConfig(schoolCode, config, tx = null) {
@@ -2208,20 +2208,91 @@ class FallbackRepository {
     return Promise.resolve(null);
   }
 
-  async createSchoolEvaluation(payload, principal) {
-    const evaluation = { ...payload, id: payload.id || `EVAL-${Date.now()}` };
+  async createSchoolEvaluation(payload, principal, auditMeta) {
+    this.getEvaluationTypesStore();
+    if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
+    const { ignoreClientScope } = require("../lib/pedagogyManagement");
+    const { resolveEvaluationTypeForWrite } = require("../lib/evaluationTypesService");
+    const scoped = ignoreClientScope(payload ?? {});
+    const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+    const school = await this.getEvaluationTypesStore().requireSchoolByCode(schoolCode);
+    const lookup = { ...scoped };
+    const hasExplicitType = Boolean(
+      lookup.evaluationTypeId || lookup.evaluation_type_id || lookup.evaluationType || lookup.type || lookup.evaluation_type,
+    );
+    if (!hasExplicitType) lookup.evaluationType = "Devoir";
+    const resolved = await resolveEvaluationTypeForWrite(this, school.id, lookup, { required: true });
+    const evaluation = {
+      ...scoped,
+      id: scoped.id || `EVAL-${Date.now()}`,
+      schoolCode,
+      evaluationType: resolved.name,
+      evaluationTypeId: resolved.id,
+      evaluationTypeCode: resolved.code,
+    };
     const state = (await this.getBackOfficeState()) ?? {};
     this.backOfficeState = { ...state, evaluations: [...(state.evaluations ?? []), evaluation] };
+    if (auditMeta) {
+      await this.recordAudit({
+        schoolCode,
+        userId: principal?.sub,
+        action: "create_evaluation",
+        entityType: "evaluation",
+        entityId: evaluation.id,
+        newValue: evaluation,
+        ipAddress: auditMeta.ipAddress,
+        userAgent: auditMeta.userAgent,
+      });
+    }
     return evaluation;
   }
 
-  async updateSchoolEvaluation(id, patch, principal) {
-    const state = (await this.getBackOfficeState()) ?? {};
-    const evaluations = (state.evaluations ?? []).map((row) =>
-      String(row.id) === String(id) ? { ...row, ...patch } : row,
+  async updateSchoolEvaluation(id, patch, principal, auditMeta) {
+    this.getEvaluationTypesStore();
+    if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
+    const { ignoreClientScope } = require("../lib/pedagogyManagement");
+    const scoped = ignoreClientScope(patch ?? {});
+    const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+    const typeTouched = Boolean(
+      scoped.evaluationTypeId || scoped.evaluation_type_id || scoped.evaluationType || scoped.type || scoped.evaluation_type,
     );
+    let resolved = null;
+    if (typeTouched) {
+      const { resolveEvaluationTypeForWrite } = require("../lib/evaluationTypesService");
+      const school = await this.getEvaluationTypesStore().requireSchoolByCode(schoolCode);
+      resolved = await resolveEvaluationTypeForWrite(this, school.id, scoped, { required: true });
+    }
+    const state = (await this.getBackOfficeState()) ?? {};
+    const evaluations = (state.evaluations ?? []).map((row) => {
+      if (String(row.id) !== String(id)) return row;
+      return {
+        ...row,
+        ...scoped,
+        schoolCode: row.schoolCode || schoolCode,
+        ...(resolved
+          ? {
+              evaluationType: resolved.name,
+              evaluationTypeId: resolved.id,
+              evaluationTypeCode: resolved.code,
+            }
+          : {}),
+      };
+    });
     this.backOfficeState = { ...state, evaluations };
-    return evaluations.find((row) => String(row.id) === String(id));
+    const saved = evaluations.find((row) => String(row.id) === String(id));
+    if (auditMeta && saved) {
+      await this.recordAudit({
+        schoolCode: saved.schoolCode,
+        userId: principal?.sub,
+        action: "update_evaluation",
+        entityType: "evaluation",
+        entityId: saved.id,
+        newValue: saved,
+        ipAddress: auditMeta.ipAddress,
+        userAgent: auditMeta.userAgent,
+      });
+    }
+    return saved;
   }
 
   async upsertSchoolGrade(payload, principal) {
@@ -2514,6 +2585,51 @@ class FallbackRepository {
   assertEstablishmentRoleAssignable(roleLabel, principal) {
     const { assertEstablishmentRoleAssignable } = require("../lib/establishmentRolesService");
     return assertEstablishmentRoleAssignable(this, roleLabel, principal);
+  }
+
+  getEvaluationTypesStore() {
+    if (!this._evaluationTypesStore) {
+      const { createEvaluationTypesMemoryStore } = require("./evaluationTypesMemoryStore");
+      this._evaluationTypesStore = createEvaluationTypesMemoryStore({
+        school: seedData.school,
+        schools: seedData.platformSchools,
+      });
+      this._evaluationTypesBootstrap = this._evaluationTypesStore.bootstrapCanonicalTypesForAllSchools();
+    }
+    return this._evaluationTypesStore;
+  }
+
+  async listEvaluationTypes(schoolCode, options) {
+    const store = this.getEvaluationTypesStore();
+    if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
+    return store.listBySchool(schoolCode, options);
+  }
+
+  async listEvaluationTypeNames(schoolCode) {
+    const store = this.getEvaluationTypesStore();
+    if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
+    return store.listActiveNames(schoolCode);
+  }
+
+  async createEvaluationType(payload, principal, auditMeta, schoolCode) {
+    this.getEvaluationTypesStore();
+    if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
+    const { createEvaluationType } = require("../lib/evaluationTypesService");
+    return createEvaluationType(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  async updateEvaluationType(typeId, patch, principal, auditMeta, schoolCode) {
+    this.getEvaluationTypesStore();
+    if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
+    const { updateEvaluationType } = require("../lib/evaluationTypesService");
+    return updateEvaluationType(this, typeId, patch, principal, auditMeta, schoolCode);
+  }
+
+  async archiveEvaluationType(typeId, principal, auditMeta, schoolCode) {
+    this.getEvaluationTypesStore();
+    if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;
+    const { archiveEvaluationType } = require("../lib/evaluationTypesService");
+    return archiveEvaluationType(this, typeId, principal, auditMeta, schoolCode);
   }
 }
 

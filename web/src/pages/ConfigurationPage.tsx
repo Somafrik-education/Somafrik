@@ -16,6 +16,7 @@ import {
   useToast,
 } from "../design-system";
 import { SchoolEducationActivationPanel } from "../components/SchoolEducationActivationPanel";
+import { EvaluationTypesPanel } from "../components/EvaluationTypesPanel";
 import {
   DEFAULT_CLASS_NAMES,
   getAllSchoolSubjects,
@@ -302,21 +303,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
           .filter((_, rowIndex) => rowIndex !== index)
           .map((row, rowIndex) => ({ ...row, order: rowIndex + 1 })),
       ),
-    );
-  }
-
-  async function handleEvaluationsSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await saveAcademicPartial(
-      "evaluations",
-      {
-        evaluationTypes: String(form.get("evaluationTypes") ?? "")
-          .split(/\r?\n|,/)
-          .map((item) => item.trim())
-          .filter(Boolean),
-      },
-      "Types d'évaluation enregistrés",
     );
   }
 
@@ -628,23 +614,22 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
             </form>
           </Card>
 
-          <Card key={`evaluations-${academicFormKey}`} className="p-6">
+          <Card className="p-6">
             <SectionHeader
               title="Types d'évaluation"
-              description="Liste des types proposés lors de la saisie des notes."
+              description="Catalogue PostgreSQL de l'établissement. Les types archivés ne sont plus proposés à la saisie."
             />
-            <form onSubmit={handleEvaluationsSubmit} className="mt-4 space-y-4">
-              <FormField label="Types d'évaluation">
-                <Textarea
-                  name="evaluationTypes"
-                  rows={4}
-                  defaultValue={(academicConfig.evaluationTypes as string[] | undefined)?.join("\n") ?? "Interrogation\nDevoir\nExamen"}
+            <div className="mt-4">
+              {configTarget && !isAllSchoolsSelection(configTarget) ? (
+                <EvaluationTypesPanel
+                  schoolCode={configTarget}
+                  canConfigure={canConfigure}
+                  userRole={user?.role}
                 />
-              </FormField>
-              <Button type="submit" disabled={savingSection === "evaluations"}>
-                Enregistrer
-              </Button>
-            </form>
+              ) : (
+                <p className="text-sm text-muted">Sélectionnez un établissement pour gérer les types d'évaluation.</p>
+              )}
+            </div>
           </Card>
         </>
       ) : null}

@@ -865,6 +865,114 @@ app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academi
   res.json(saved);
 }));
 
+app.get("/api/evaluation-types", requireAuth, requirePermission("GET /api/evaluation-types"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertEvaluationTypesRead } = require("./lib/evaluationTypesManagement");
+  assertEvaluationTypesRead(req.principal);
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const types = await repository.listEvaluationTypes(schoolCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ types });
+}));
+
+app.post("/api/evaluation-types", requireAuth, requirePermission("POST /api/evaluation-types"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createEvaluationType(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/evaluation-types/:typeId", requireAuth, requirePermission("PATCH /api/evaluation-types/:typeId"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateEvaluationType(
+    req.params.typeId,
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(updated);
+}));
+
+app.post("/api/evaluation-types/:typeId/archive", requireAuth, requirePermission("POST /api/evaluation-types/:typeId/archive"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const archived = await repository.archiveEvaluationType(
+    req.params.typeId,
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/evaluation-types", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/evaluation-types"), asyncHandler(async (req, res) => {
+  const { assertEvaluationTypesRead } = require("./lib/evaluationTypesManagement");
+  assertEvaluationTypesRead(req.principal);
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const types = await repository.listEvaluationTypes(schoolCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ types });
+}));
+
+app.post("/api/backoffice/establishments/:schoolCode/evaluation-types", requireAuth, requirePermission("POST /api/backoffice/establishments/:schoolCode/evaluation-types"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createEvaluationType(
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/establishments/:schoolCode/evaluation-types/:typeId", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:schoolCode/evaluation-types/:typeId"), asyncHandler(async (req, res) => {
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateEvaluationType(
+    req.params.typeId,
+    stripClientSchoolCode(req.body ?? {}),
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/establishments/:schoolCode/evaluation-types/:typeId/archive", requireAuth, requirePermission("POST /api/backoffice/establishments/:schoolCode/evaluation-types/:typeId/archive"), asyncHandler(async (req, res) => {
+  const { evaluationTypesAuditMetaFromRequest } = require("./lib/evaluationTypesManagement");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const archived = await repository.archiveEvaluationType(
+    req.params.typeId,
+    req.principal,
+    evaluationTypesAuditMetaFromRequest(req),
+    schoolCode,
+  );
+  res.json(archived);
+}));
+
 app.get("/api/backoffice/education-levels", requireAuth, requirePermission("GET /api/backoffice/education-levels"), asyncHandler(async (req, res) => {
   const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
   const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
