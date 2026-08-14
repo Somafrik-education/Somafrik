@@ -204,6 +204,58 @@ async function insertResidual(pool, schoolId, domain, legacyId, payload) {
   );
 }
 
+async function stripLot5Schema(pool) {
+  await pool.query("DROP TABLE IF EXISTS school_documents CASCADE");
+  await pool.query("DROP TABLE IF EXISTS report_card_templates CASCADE");
+  await pool.query("DROP TABLE IF EXISTS report_cards CASCADE");
+  await pool.query("ALTER TABLE exams DROP CONSTRAINT IF EXISTS exams_status_check");
+  await pool.query("ALTER TABLE exams DROP COLUMN IF EXISTS academic_year_id");
+  await pool.query("ALTER TABLE exams DROP COLUMN IF EXISTS evaluation_type_id");
+  await pool.query("ALTER TABLE exams DROP COLUMN IF EXISTS starts_at");
+  await pool.query("ALTER TABLE exams DROP COLUMN IF EXISTS ends_at");
+}
+
+async function resetPreLot5Schema(pool) {
+  await pool.query("DROP SCHEMA public CASCADE");
+  await pool.query("CREATE SCHEMA public");
+  await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
+  await pool.query(CLIENTS_SCHEMA_SQL);
+  await pool.query(EDUCATION_REFERENCE_SCHEMA_SQL);
+  await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
+  await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
+  await stripLot5Schema(pool);
+}
+
+async function insertRawExam(pool, { schoolId, classId, subjectId, termId, name, status, code }) {
+  const row = await pool.query(
+    `INSERT INTO exams (school_id, class_id, subject_id, term_id, exam_code, name, exam_type, exam_date, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'Examen', '2026-06-10', $7)
+     RETURNING id, status`,
+    [schoolId, classId, subjectId, termId, code, name, status],
+  );
+  return row.rows[0];
+}
+
+async function assertLot5Unmutated(pool, { examId, expectedStatus } = {}) {
+  const tables = await pool.query(`
+    SELECT to_regclass('public.report_cards') AS report_cards,
+           to_regclass('public.report_card_templates') AS templates,
+           to_regclass('public.school_documents') AS documents
+  `);
+  assert.equal(tables.rows[0].report_cards, null);
+  assert.equal(tables.rows[0].templates, null);
+  assert.equal(tables.rows[0].documents, null);
+  const yearCol = await pool.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'exams' AND column_name = 'academic_year_id'`,
+  );
+  assert.equal(yearCol.rowCount, 0);
+  if (examId) {
+    const exam = await pool.query(`SELECT status FROM exams WHERE id = $1`, [examId]);
+    assert.equal(exam.rows[0].status, expectedStatus);
+  }
+}
+
 async function testExamCanonicalFlow(pool) {
   await resetBaseSchema(pool);
   const { schoolAId, schoolBId } = await seedSchools(pool);
@@ -344,6 +396,80 @@ async function testAmbiguousResidualStops(pool) {
   assert.equal(residual.rows[0].archived_at, null);
 }
 
+async function testAmbiguousResidualStopsBeforeAnyMutation(pool) {
+  await resetPreLot5Schema(pool);
+  const { schoolAId } = await seedSchools(pool);
+  const refs = await seedAcademic(pool, schoolAId, { suffix: "PRE" });
+  const exam = await insertRawExam(pool, {
+    schoolId: schoolAId,
+    classId: refs.classId,
+    subjectId: refs.subjectId,
+    termId: refs.termId,
+    name: "Contrôle publié pré-LOT5",
+    status: "published",
+    code: "EXA-PRE-PUB",
+  });
+  await insertResidual(pool, schoolAId, "exam", "EX-AMBIG-BOOT", {
+    name: "Contrôle fantôme",
+    className: "Classe inventée",
+    subject: "Matière inventée",
+    date: "2026-06-10",
+  });
+  const repo = createRepo(pool);
+  await assert.rejects(
+    () => runDocumentsExamsCanonicalBoot(repo, { info() {} }),
+    (error) => error.code === DOCUMENTS_EXAMS_ERROR.LEGACY_EXAMS_AMBIGUOUS,
+  );
+  await assertLot5Unmutated(pool, { examId: exam.id, expectedStatus: "published" });
+  const residual = await pool.query(
+    `SELECT archived_at FROM establishment_residual_records WHERE legacy_json_id = 'EX-AMBIG-BOOT'`,
+  );
+  assert.equal(residual.rows[0].archived_at, null);
+}
+
+async function testUnknownExamStatusStopsBeforeAnyMutation(pool) {
+  await resetPreLot5Schema(pool);
+  const { schoolAId } = await seedSchools(pool);
+  const refs = await seedAcademic(pool, schoolAId, { suffix: "UNK" });
+  const exam = await insertRawExam(pool, {
+    schoolId: schoolAId,
+    classId: refs.classId,
+    subjectId: refs.subjectId,
+    termId: refs.termId,
+    name: "Contrôle statut inconnu",
+    status: "unknown-status",
+    code: "EXA-PRE-UNK",
+  });
+  const repo = createRepo(pool);
+  await assert.rejects(
+    () => runDocumentsExamsCanonicalBoot(repo, { info() {} }),
+    (error) => error.code === DOCUMENTS_EXAMS_ERROR.LEGACY_EXAM_STATUS_AMBIGUOUS,
+  );
+  await assertLot5Unmutated(pool, { examId: exam.id, expectedStatus: "unknown-status" });
+}
+
+async function testPublishedConvertsAfterCleanInventory(pool) {
+  await resetPreLot5Schema(pool);
+  const { schoolAId } = await seedSchools(pool);
+  const refs = await seedAcademic(pool, schoolAId, { suffix: "OK" });
+  const exam = await insertRawExam(pool, {
+    schoolId: schoolAId,
+    classId: refs.classId,
+    subjectId: refs.subjectId,
+    termId: refs.termId,
+    name: "Contrôle publié propre",
+    status: "published",
+    code: "EXA-PRE-OK",
+  });
+  const repo = createRepo(pool);
+  await runDocumentsExamsCanonicalBoot(repo, { info() {} });
+  const saved = await pool.query(`SELECT status, academic_year_id FROM exams WHERE id = $1`, [exam.id]);
+  assert.equal(saved.rows[0].status, "completed");
+  assert.equal(String(saved.rows[0].academic_year_id), String(refs.yearId));
+  const tables = await pool.query(`SELECT to_regclass('public.report_cards') AS ref`);
+  assert.ok(tables.rows[0].ref);
+}
+
 async function testReportCards(pool) {
   await resetBaseSchema(pool);
   const { schoolAId, schoolBId } = await seedSchools(pool);
@@ -450,6 +576,9 @@ async function main() {
     await testClosedYearRejected(pool);
     await testExactResidualStrip(pool);
     await testAmbiguousResidualStops(pool);
+    await testAmbiguousResidualStopsBeforeAnyMutation(pool);
+    await testUnknownExamStatusStopsBeforeAnyMutation(pool);
+    await testPublishedConvertsAfterCleanInventory(pool);
     await testReportCards(pool);
     await testTemplatesAndDocuments(pool);
     console.log("documentsExams.pg.test.js OK");

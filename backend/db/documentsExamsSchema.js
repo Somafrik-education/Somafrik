@@ -7,32 +7,19 @@
  * report_cards = publication (pas de copie des notes).
  * report_card_templates = layout de rendu uniquement.
  * school_documents = métadonnées documents établissement (pas de binaire).
+ *
+ * Le boot runtime applique dans cet ordre :
+ *   preflight → inventaire residual → inventaire statuts exams
+ *   → STOP si ambigu → DDL → normalisation déterministe → CHECK → strip
+ * Ne jamais exécuter la normalisation avant l'inventaire.
  */
 
-const DOCUMENTS_EXAMS_SCHEMA_SQL = `
+const DOCUMENTS_EXAMS_SCHEMA_DDL_SQL = `
 ALTER TABLE exams
   ADD COLUMN IF NOT EXISTS academic_year_id UUID REFERENCES academic_years(id),
   ADD COLUMN IF NOT EXISTS evaluation_type_id UUID REFERENCES evaluation_types(id),
   ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
-
-UPDATE exams SET status = 'completed' WHERE status = 'published';
-UPDATE exams SET status = 'scheduled' WHERE status NOT IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived');
-
-UPDATE exams e
-SET academic_year_id = t.academic_year_id
-FROM terms t
-WHERE e.term_id = t.id AND e.academic_year_id IS NULL;
-
-DO $$ BEGIN
-  ALTER TABLE exams DROP CONSTRAINT IF EXISTS exams_status_check;
-EXCEPTION WHEN undefined_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  ALTER TABLE exams
-    ADD CONSTRAINT exams_status_check
-    CHECK (status IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived'));
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS idx_exams_school_date ON exams (school_id, exam_date DESC);
 CREATE INDEX IF NOT EXISTS idx_exams_school_class ON exams (school_id, class_id);
@@ -96,6 +83,33 @@ CREATE TABLE IF NOT EXISTS school_documents (
 CREATE INDEX IF NOT EXISTS idx_school_documents_school ON school_documents (school_id, status, created_at DESC);
 `;
 
+const DOCUMENTS_EXAMS_DATA_NORMALIZATION_SQL = `
+UPDATE exams SET status = 'completed' WHERE status = 'published';
+
+UPDATE exams e
+SET academic_year_id = t.academic_year_id
+FROM terms t
+WHERE e.term_id = t.id AND e.academic_year_id IS NULL;
+`;
+
+const DOCUMENTS_EXAMS_STATUS_CHECK_SQL = `
+DO $$ BEGIN
+  ALTER TABLE exams DROP CONSTRAINT IF EXISTS exams_status_check;
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE exams
+    ADD CONSTRAINT exams_status_check
+    CHECK (status IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+`;
+
+const DOCUMENTS_EXAMS_SCHEMA_SQL = [
+  DOCUMENTS_EXAMS_SCHEMA_DDL_SQL,
+  DOCUMENTS_EXAMS_DATA_NORMALIZATION_SQL,
+  DOCUMENTS_EXAMS_STATUS_CHECK_SQL,
+].join("\n");
+
 const STRIP_LEGACY_RESIDUAL_RECORDS_SQL = `
 UPDATE establishment_residual_records
 SET archived_at = NOW(), status = 'archived', updated_at = NOW()
@@ -119,6 +133,9 @@ async function assertDocumentsExamsSchemaPreflight(db) {
 }
 
 module.exports = {
+  DOCUMENTS_EXAMS_SCHEMA_DDL_SQL,
+  DOCUMENTS_EXAMS_DATA_NORMALIZATION_SQL,
+  DOCUMENTS_EXAMS_STATUS_CHECK_SQL,
   DOCUMENTS_EXAMS_SCHEMA_SQL,
   STRIP_LEGACY_RESIDUAL_RECORDS_SQL,
   assertDocumentsExamsSchemaPreflight,

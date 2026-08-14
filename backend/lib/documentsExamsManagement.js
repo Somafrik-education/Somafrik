@@ -18,11 +18,15 @@ const DOCUMENTS_EXAMS_ERROR = Object.freeze({
   LEGACY_EXAMS_AMBIGUOUS: "LEGACY_EXAMS_AMBIGUOUS",
   LEGACY_REPORT_CARDS_AMBIGUOUS: "LEGACY_REPORT_CARDS_AMBIGUOUS",
   LEGACY_DOCUMENTS_AMBIGUOUS: "LEGACY_DOCUMENTS_AMBIGUOUS",
+  LEGACY_EXAM_STATUS_AMBIGUOUS: "LEGACY_EXAM_STATUS_AMBIGUOUS",
 });
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const EXAM_STATUSES = Object.freeze(["draft", "scheduled", "validated", "completed", "cancelled", "archived"]);
+const DETERMINISTIC_EXAM_STATUS_ALIASES = Object.freeze({
+  published: "completed",
+});
 const REPORT_CARD_STATUSES = Object.freeze(["draft", "generated", "published", "archived"]);
 const DOCUMENT_STATUSES = Object.freeze(["available", "generating", "archived"]);
 const TEMPLATE_LAYOUT_KEYS = Object.freeze([
@@ -207,6 +211,18 @@ function assertTemplatesWrite(principal) {
 function canonicalizeExamStatus(value) {
   const key = normalizeLabel(value);
   return EXAM_STATUS_FROM_LABEL[key] || (EXAM_STATUSES.includes(asTrimmed(value)) ? asTrimmed(value) : null);
+}
+
+function classifyExamStatuses(statuses = []) {
+  const unknown = [];
+  for (const raw of statuses) {
+    const status = asTrimmed(raw);
+    if (!status) continue;
+    if (EXAM_STATUSES.includes(status)) continue;
+    if (Object.prototype.hasOwnProperty.call(DETERMINISTIC_EXAM_STATUS_ALIASES, status)) continue;
+    unknown.push(status);
+  }
+  return { unknown, ambiguous: unknown.length > 0 };
 }
 
 function examStatusLabel(status) {
@@ -425,6 +441,7 @@ function assertLegacyResidualWriteForbidden(domain) {
 module.exports = {
   DOCUMENTS_EXAMS_ERROR,
   EXAM_STATUSES,
+  DETERMINISTIC_EXAM_STATUS_ALIASES,
   REPORT_CARD_STATUSES,
   DOCUMENT_STATUSES,
   TEMPLATE_LAYOUT_KEYS,
@@ -444,6 +461,7 @@ module.exports = {
   assertDocumentsWrite,
   assertTemplatesWrite,
   canonicalizeExamStatus,
+  classifyExamStatuses,
   examStatusLabel,
   parseIsoDate,
   validateTemplateLayout,

@@ -130,7 +130,7 @@ Migration SQL : `backend/db/migrations/20260818_school_settings_canonical.sql`.
 
 `GET /api/students/:id/report.pdf` applique le layout depuis `report_card_templates` (classe puis défaut établissement). `academicConfigs.bulletinDesignByClass` n'est plus lu.
 
-**Boot** : preflight → schéma → inventaire residual exam/bulletin/document → STOP si non exactement équivalent (`LEGACY_*_AMBIGUOUS`) → strip. Aucune création heuristique d'examen / élève / classe.
+**Boot (ordre obligatoire)** : preflight read-only → inventaire residual exam/bulletin/document → inventaire des `exams.status` → STOP `LEGACY_*_AMBIGUOUS` / `LEGACY_EXAM_STATUS_AMBIGUOUS` si ambigu → **ensuite** DDL (`DOCUMENTS_EXAMS_SCHEMA_DDL_SQL`) → normalisation déterministe uniquement (`published` → `completed`, backfill `academic_year_id` depuis `terms`) → CHECK status → strip residual. Aucune création heuristique d'examen / élève / classe. Aucun statut inconnu → `scheduled`.
 
 Migration SQL : `backend/db/migrations/20260819_exams_report_cards_documents_canonical.sql`.
 

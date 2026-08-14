@@ -102,6 +102,15 @@ test("classifyResidualReportCard et document STOP si non appariés", () => {
   assert.equal(doc.ambiguous, true);
 });
 
+test("classifyExamStatuses autorise published et refuse un statut inconnu", () => {
+  const { classifyExamStatuses, DETERMINISTIC_EXAM_STATUS_ALIASES } = require("./documentsExamsManagement");
+  assert.equal(DETERMINISTIC_EXAM_STATUS_ALIASES.published, "completed");
+  assert.equal(classifyExamStatuses(["draft", "published", "validated"]).ambiguous, false);
+  const unknown = classifyExamStatuses(["unknown-status", "pending_review", "scheduled"]);
+  assert.equal(unknown.ambiguous, true);
+  assert.deepEqual(unknown.unknown, ["unknown-status", "pending_review"]);
+});
+
 test("resolveBulletinDesignForStudent n'utilise plus academicConfigs JSON", () => {
   const { resolveBulletinDesignForStudent, readBulletinDesignFromConfig } = require("./bulletinDesignResolver");
   const state = {

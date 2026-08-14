@@ -4,6 +4,8 @@ const {
   DOCUMENTS_EXAMS_ERROR,
   asTrimmed,
   createDocumentsExamsError,
+  classifyExamStatuses,
+  EXAM_STATUSES,
   assertExamsRead,
   assertExamsWrite,
   assertExamsValidate,
@@ -287,11 +289,75 @@ async function stripLegacyResidualRecords(repo) {
   }
 }
 
+async function listDistinctExamStatuses(repo) {
+  if (typeof repo.all === "function") {
+    return repo.all("SELECT DISTINCT status FROM exams");
+  }
+  if (typeof repo.query === "function") {
+    const result = await repo.query("SELECT DISTINCT status FROM exams");
+    return result.rows ?? [];
+  }
+  return [];
+}
+
+async function inventoryExamStatuses(repo) {
+  const rows = await listDistinctExamStatuses(repo);
+  return classifyExamStatuses(rows.map((row) => row.status));
+}
+
+function throwExamStatusAmbiguous(unknown) {
+  const unique = [...new Set(unknown)];
+  const error = new Error(
+    `Examens : ${unique.length} statut(s) non reconnus (${unique.join(", ")}). ` +
+      `Conversion déterministe autorisée : published → completed. Aucune heuristique.`,
+  );
+  error.name = "DocumentsExamsConstraintsError";
+  error.code = DOCUMENTS_EXAMS_ERROR.LEGACY_EXAM_STATUS_AMBIGUOUS;
+  error.inventory = { unknown: unique };
+  throw error;
+}
+
+async function ensureExamStatusesDeterministic(repo, logger = console) {
+  const { unknown, ambiguous } = await inventoryExamStatuses(repo);
+  const logInfo = typeof logger.info === "function" ? logger.info.bind(logger) : console.log;
+  logInfo(`[documents-exams] inventaire statuts exams : unknown=${unknown.length}`);
+  if (ambiguous) throwExamStatusAmbiguous(unknown);
+  return { unknown };
+}
+
+async function verifyDocumentsExamsCanonicalSchema(repo) {
+  if (typeof repo.one !== "function") return;
+  for (const name of ["report_cards", "report_card_templates", "school_documents"]) {
+    const row = await repo.one("SELECT to_regclass($1) AS ref", [`public.${name}`]);
+    if (!row?.ref) {
+      const error = new Error(`Table canonique ${name} absente après le DDL LOT 5.`);
+      error.code = "DOCUMENTS_EXAMS_SCHEMA_VERIFY";
+      throw error;
+    }
+  }
+  const rows = await listDistinctExamStatuses(repo);
+  const leftover = rows
+    .map((row) => String(row.status ?? "").trim())
+    .filter((status) => status && !EXAM_STATUSES.includes(status));
+  if (leftover.length) throwExamStatusAmbiguous(leftover);
+}
+
 async function runDocumentsExamsCanonicalBoot(repo, logger = console) {
-  const { assertDocumentsExamsSchemaPreflight, DOCUMENTS_EXAMS_SCHEMA_SQL } = require("../db/documentsExamsSchema");
+  const { assertDocumentsExamsSchemaPreflight } = require("../db/documentsExamsSchema");
   await assertDocumentsExamsSchemaPreflight(repo);
-  await repo.query(DOCUMENTS_EXAMS_SCHEMA_SQL);
   const { inventory } = await ensureDocumentsExamsConstraints(repo, logger);
+  await ensureExamStatusesDeterministic(repo, logger);
+  const {
+    DOCUMENTS_EXAMS_SCHEMA_DDL_SQL,
+    DOCUMENTS_EXAMS_DATA_NORMALIZATION_SQL,
+    DOCUMENTS_EXAMS_STATUS_CHECK_SQL,
+  } = require("../db/documentsExamsSchema");
+  if (typeof repo.query === "function") {
+    await repo.query(DOCUMENTS_EXAMS_SCHEMA_DDL_SQL);
+    await repo.query(DOCUMENTS_EXAMS_DATA_NORMALIZATION_SQL);
+    await repo.query(DOCUMENTS_EXAMS_STATUS_CHECK_SQL);
+  }
+  await verifyDocumentsExamsCanonicalSchema(repo);
   await stripLegacyResidualRecords(repo);
   return { inventory };
 }
@@ -318,6 +384,7 @@ module.exports = {
   patchSchoolDocument,
   archiveSchoolDocument,
   ensureDocumentsExamsConstraints,
+  ensureExamStatusesDeterministic,
   stripLegacyResidualRecords,
   runDocumentsExamsCanonicalBoot,
 };

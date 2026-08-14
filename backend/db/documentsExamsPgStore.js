@@ -637,13 +637,20 @@ function createDocumentsExamsPgStore(repo) {
     );
   }
 
+  async function relationExists(name) {
+    const row = await one(`SELECT to_regclass($1) AS ref`, [`public.${name}`]);
+    return Boolean(row?.ref);
+  }
+
   async function inventorySchool(school) {
     const residualExams = await listActiveResidual(school.id, "exam");
     const residualCards = await listActiveResidual(school.id, "bulletin");
     const residualDocs = await listActiveResidual(school.id, "document");
     const relationalExams = await listExams(school.id);
-    const relationalCards = await listReportCards(school.id);
-    const relationalDocuments = await listSchoolDocuments(school.id);
+    const relationalCards = (await relationExists("report_cards")) ? await listReportCards(school.id) : [];
+    const relationalDocuments = (await relationExists("school_documents"))
+      ? await listSchoolDocuments(school.id)
+      : [];
     const classNames = await listClassNames(school.id);
     const subjectNames = await listSubjectNames(school.id);
     const termNames = await listTermNames(school.id);

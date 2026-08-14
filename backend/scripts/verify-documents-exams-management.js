@@ -340,6 +340,25 @@ async function runPgSuite(databaseUrl) {
 }
 
 async function main() {
+  const schemaSource = fs.readFileSync(path.join(ROOT, "backend/db/documentsExamsSchema.js"), "utf8");
+  const serviceSource = fs.readFileSync(path.join(ROOT, "backend/lib/documentsExamsService.js"), "utf8");
+  const migrationSource = fs.readFileSync(
+    path.join(ROOT, "backend/db/migrations/20260819_exams_report_cards_documents_canonical.sql"),
+    "utf8",
+  );
+  assert.match(schemaSource, /DOCUMENTS_EXAMS_SCHEMA_DDL_SQL/);
+  assert.match(schemaSource, /DOCUMENTS_EXAMS_DATA_NORMALIZATION_SQL/);
+  assert.equal(schemaSource.includes("status NOT IN"), false);
+  assert.equal(migrationSource.includes("status NOT IN"), false);
+  const bootFn = serviceSource.slice(serviceSource.indexOf("async function runDocumentsExamsCanonicalBoot"));
+  const inventoryAt = bootFn.indexOf("ensureDocumentsExamsConstraints");
+  const statusAt = bootFn.indexOf("ensureExamStatusesDeterministic");
+  const ddlAt = bootFn.indexOf("repo.query(DOCUMENTS_EXAMS_SCHEMA_DDL_SQL)");
+  const normAt = bootFn.indexOf("repo.query(DOCUMENTS_EXAMS_DATA_NORMALIZATION_SQL)");
+  assert.ok(inventoryAt >= 0 && inventoryAt < ddlAt, "inventaire residual avant DDL");
+  assert.ok(statusAt >= 0 && statusAt < ddlAt, "inventaire statuts avant DDL");
+  assert.ok(ddlAt >= 0 && ddlAt < normAt, "DDL avant normalisation");
+
   await runMemorySuite();
   const databaseUrl = String(process.env.DATABASE_URL ?? "").trim();
   if (databaseUrl) {

@@ -1,29 +1,23 @@
 -- LOT 5 — Examens, bulletins, templates et documents établissement canoniques.
 -- Idempotent. Aucune copie heuristique de JSON résiduel.
+--
+-- Le boot runtime (runDocumentsExamsCanonicalBoot) n'applique PAS ce fichier
+-- avant l'inventaire. Ordre obligatoire :
+--   preflight → inventaire residual → inventaire statuts exams
+--   → STOP si ambigu (LEGACY_*_AMBIGUOUS / LEGACY_EXAM_STATUS_AMBIGUOUS)
+--   → DDL → normalisation déterministe (published → completed uniquement)
+--   → CHECK status → strip residual
+--
+-- Conversion déterministe documentée : exams.status 'published' → 'completed'.
+-- Tout autre statut hors
+--   draft | scheduled | validated | completed | cancelled | archived | published
+-- bloque le boot. Aucun mapping heuristique vers 'scheduled'.
 
 ALTER TABLE exams
   ADD COLUMN IF NOT EXISTS academic_year_id UUID REFERENCES academic_years(id),
   ADD COLUMN IF NOT EXISTS evaluation_type_id UUID REFERENCES evaluation_types(id),
   ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
-
-UPDATE exams SET status = 'completed' WHERE status = 'published';
-UPDATE exams SET status = 'scheduled' WHERE status NOT IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived');
-
-UPDATE exams e
-SET academic_year_id = t.academic_year_id
-FROM terms t
-WHERE e.term_id = t.id AND e.academic_year_id IS NULL;
-
-DO $$ BEGIN
-  ALTER TABLE exams DROP CONSTRAINT IF EXISTS exams_status_check;
-EXCEPTION WHEN undefined_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  ALTER TABLE exams
-    ADD CONSTRAINT exams_status_check
-    CHECK (status IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived'));
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS idx_exams_school_date ON exams (school_id, exam_date DESC);
 CREATE INDEX IF NOT EXISTS idx_exams_school_class ON exams (school_id, class_id);
@@ -85,3 +79,20 @@ CREATE TABLE IF NOT EXISTS school_documents (
 );
 
 CREATE INDEX IF NOT EXISTS idx_school_documents_school ON school_documents (school_id, status, created_at DESC);
+
+UPDATE exams SET status = 'completed' WHERE status = 'published';
+
+UPDATE exams e
+SET academic_year_id = t.academic_year_id
+FROM terms t
+WHERE e.term_id = t.id AND e.academic_year_id IS NULL;
+
+DO $$ BEGIN
+  ALTER TABLE exams DROP CONSTRAINT IF EXISTS exams_status_check;
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE exams
+    ADD CONSTRAINT exams_status_check
+    CHECK (status IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
