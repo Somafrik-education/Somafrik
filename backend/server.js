@@ -114,6 +114,25 @@ app.disable("x-powered-by");
 app.use(appSecurityHeaders);
 app.use(cors(buildCorsOptions({ BusinessError })));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? "1mb" }));
+app.use((error, req, res, next) => {
+  if (
+    error instanceof SyntaxError &&
+    error.status === 400 &&
+    req.method === "PUT" &&
+    String(req.path ?? "").endsWith("/backoffice/state")
+  ) {
+    const {
+      BACKOFFICE_STATE_WRITE_REMOVED_CODE,
+      BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
+      BACKOFFICE_STATE_WRITE_REMOVED_STATUS,
+    } = require("./lib/backofficeStateRemoval");
+    return res.status(BACKOFFICE_STATE_WRITE_REMOVED_STATUS).json({
+      code: BACKOFFICE_STATE_WRITE_REMOVED_CODE,
+      message: BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
+    });
+  }
+  return next(error);
+});
 // S2.1 — JWT uniquement via Authorization: Bearer (jamais ?token= / ?access_token=).
 app.use("/api", rejectJwtInQueryString);
 app.use(
@@ -777,17 +796,155 @@ app.delete("/api/assignments/:assignmentId", requireAuth, requirePermission("DEL
 }));
 
 app.get("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
-  const config = await repository.getAcademicConfig(req.principal.schoolCode);
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const config = await repository.getAcademicConfig(schoolCode);
   res.json(config);
 }));
 
-app.put("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
-  if (!["Super Administrateur Somafrik", "Admin Pays", "Admin School"].includes(req.principal.role)) {
-    throw new BusinessError(403, "Seuls les administrateurs peuvent configurer la gestion académique.");
-  }
-  const saved = await repository.saveAcademicConfig(req.principal.schoolCode, req.body ?? {});
-  await auditService.record(req, "save_academic_config", "academic_config", saved.schoolCode, saved);
+app.get("/api/backoffice/establishments/:schoolCode/academic-config", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/academic-config"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const config = await repository.getAcademicConfig(schoolCode);
+  res.json(config);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/academic-config", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/academic-config"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.withTransaction(async (tx) => {
+    const scope = repository.createTxScope(tx);
+    const result = await scope.saveAcademicConfig(schoolCode, payload, tx);
+    await scope.recordAudit(
+      {
+        schoolCode,
+        userId: req.principal?.sub,
+        action: "save_academic_config",
+        entityType: "academic_config",
+        entityId: schoolCode,
+        newValue: result,
+        ipAddress: req.ip ?? "",
+        userAgent: req.get("user-agent") ?? "",
+      },
+      tx,
+    );
+    if (typeof repository.invalidateCachedDataset === "function") {
+      repository.invalidateCachedDataset();
+    } else {
+      repository.cachedDataset = null;
+    }
+    return result;
+  });
   res.json(saved);
+}));
+
+app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academic-config"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.withTransaction(async (tx) => {
+    const scope = repository.createTxScope(tx);
+    const result = await scope.saveAcademicConfig(schoolCode, payload, tx);
+    await scope.recordAudit(
+      {
+        schoolCode,
+        userId: req.principal?.sub,
+        action: "save_academic_config",
+        entityType: "academic_config",
+        entityId: schoolCode,
+        newValue: result,
+        ipAddress: req.ip ?? "",
+        userAgent: req.get("user-agent") ?? "",
+      },
+      tx,
+    );
+    if (typeof repository.invalidateCachedDataset === "function") {
+      repository.invalidateCachedDataset();
+    } else {
+      repository.cachedDataset = null;
+    }
+    return result;
+  });
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
+  const exams = await listResidualDomainForPrincipal(req.principal, "exams");
+  res.json({ exams });
+}));
+
+app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const exams = assertResidualReplacePayload(req.body, "exams");
+  const saved = await repository.replaceResidualExams(
+    schoolCode,
+    exams,
+    req.principal,
+    {
+      schoolCode,
+      userId: req.principal?.sub,
+      ipAddress: req.ip ?? "",
+      userAgent: req.get("user-agent") ?? "",
+    },
+  );
+  res.json({ exams: saved });
+}));
+
+app.get("/api/backoffice/report-cards", requireAuth, requirePermission("GET /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
+  const bulletins = await listResidualDomainForPrincipal(req.principal, "bulletins");
+  res.json({ bulletins });
+}));
+
+app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const bulletins = assertResidualReplacePayload(req.body, "bulletins");
+  const saved = await repository.replaceResidualBulletins(
+    schoolCode,
+    bulletins,
+    req.principal,
+    {
+      schoolCode,
+      userId: req.principal?.sub,
+      ipAddress: req.ip ?? "",
+      userAgent: req.get("user-agent") ?? "",
+    },
+  );
+  res.json({ bulletins: saved });
+}));
+
+app.get("/api/backoffice/establishment-documents", requireAuth, requirePermission("GET /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
+  const documents = await listResidualDomainForPrincipal(req.principal, "documents");
+  res.json({ documents });
+}));
+
+app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const documents = assertResidualReplacePayload(req.body, "documents");
+  const saved = await repository.replaceResidualDocuments(
+    schoolCode,
+    documents,
+    req.principal,
+    {
+      schoolCode,
+      userId: req.principal?.sub,
+      ipAddress: req.ip ?? "",
+      userAgent: req.get("user-agent") ?? "",
+    },
+  );
+  res.json({ documents: saved });
 }));
 
 app.get("/api/students", requireAuth, requirePermission("GET /api/students"), asyncHandler(async (req, res) => {
@@ -942,35 +1099,12 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
         skipDuplicateCheck: true,
       });
       let saved;
-      // D3.6b : PostgreSQL = autorité canonique. JSON BO seulement en moteur mémoire.
       const engine = String(repository.engine ?? "postgresql");
-      try {
-        await ensureRepositoryBackOfficeSnapshot(state);
-        if (engine === "postgresql" && typeof repository.upsertSchoolGrade === "function") {
-          saved = await repository.upsertSchoolGrade(body, req.principal, pedagogyAuditMetaFromRequest(req));
-        } else {
-          saved = await repository.upsertGrade(body, req.principal);
-          await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
-        }
-      } catch (error) {
-        const message = String(error?.message ?? "");
-        const status = error?.statusCode ?? error?.status;
-        const canUseTransientBoFallback =
-          engine === "memory" &&
-          (status === 404 || status === 400 || status === 403) &&
-          (message.includes("introuvable") ||
-            message.includes("Eleve") ||
-            message.includes("Matiere") ||
-            message.includes("Enseignant") ||
-            message.includes("Evaluation") ||
-            message.includes("évaluation") ||
-            message.includes("trimestre") ||
-            message.includes("Accès"));
-        if (canUseTransientBoFallback) {
-          saved = await saveNotesViaBackOfficeState(state, body, req.principal);
-        } else {
-          throw error;
-        }
+      if (engine === "postgresql" && typeof repository.upsertSchoolGrade === "function") {
+        saved = await repository.upsertSchoolGrade(body, req.principal, pedagogyAuditMetaFromRequest(req));
+      } else {
+        saved = await repository.upsertGrade(body, req.principal);
+        await auditService.record(req, "upsert_grade", "grade", saved.id, saved);
       }
       return { statusCode: 201, body: saved };
     },
@@ -1763,222 +1897,14 @@ app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, req
   res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
-app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
-  assertBackOfficeReader(req.principal);
-  const state = await getAuthoritativeBackOfficeState();
-  res.json(scopedBackOfficeStateForResponse(state, req.principal));
+app.get("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {
+  const { sendBackOfficeStateReadRemoved } = require("./lib/backofficeStateRemoval");
+  sendBackOfficeStateReadRemoved(res);
 }));
 
-app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
-  const incomingBody = req.body ?? {};
-  const {
-    stripLegacyClassesStateWrite,
-    LEGACY_CLASSES_STATE_WRITE_CODE,
-    LEGACY_CLASSES_STATE_WRITE_MESSAGE,
-  } = require("./lib/legacyClassesStateWrite");
-  const {
-    stripLegacySchoolsStateWrite,
-    LEGACY_SCHOOLS_STATE_WRITE_CODE,
-    LEGACY_SCHOOLS_STATE_WRITE_MESSAGE,
-  } = require("./lib/legacySchoolsStateWrite");
-  const {
-    stripLegacyStudentsStateWrite,
-    LEGACY_STUDENTS_STATE_WRITE_CODE,
-    LEGACY_STUDENTS_STATE_WRITE_MESSAGE,
-  } = require("./lib/legacyStudentsStateWrite");
-  const {
-    stripLegacyPedagogyStaffStateWrite,
-  } = require("./lib/legacyPedagogyStaffStateWrite");
-  const preparedLegacyClasses = stripLegacyClassesStateWrite(incomingBody, backOfficeDeletableEntities);
-  if (preparedLegacyClasses.rejectLegacyClassesWrite) {
-    const error = new BusinessError(400, LEGACY_CLASSES_STATE_WRITE_MESSAGE);
-    error.code = LEGACY_CLASSES_STATE_WRITE_CODE;
-    throw error;
-  }
-  const preparedLegacySchools = stripLegacySchoolsStateWrite(
-    preparedLegacyClasses.body,
-    backOfficeDeletableEntities,
-  );
-  if (preparedLegacySchools.rejectLegacySchoolsWrite) {
-    const error = new BusinessError(400, LEGACY_SCHOOLS_STATE_WRITE_MESSAGE);
-    error.code = LEGACY_SCHOOLS_STATE_WRITE_CODE;
-    throw error;
-  }
-  const preparedLegacyStudents = stripLegacyStudentsStateWrite(preparedLegacySchools.body);
-  if (preparedLegacyStudents.rejectLegacyStudentsWrite) {
-    const error = new BusinessError(400, LEGACY_STUDENTS_STATE_WRITE_MESSAGE);
-    error.code = LEGACY_STUDENTS_STATE_WRITE_CODE;
-    throw error;
-  }
-  const preparedLegacyStaff = stripLegacyPedagogyStaffStateWrite(preparedLegacyStudents.body);
-  if (preparedLegacyStaff.rejectedEntity) {
-    const error = new BusinessError(400, preparedLegacyStaff.message);
-    error.code = preparedLegacyStaff.code;
-    throw error;
-  }
-  const {
-    stripLegacyFinanceStateWrite,
-    LEGACY_FINANCE_STATE_WRITE_CODE,
-    LEGACY_FINANCE_STATE_WRITE_MESSAGE,
-  } = require("./lib/legacyFinanceStateWrite");
-  const preparedLegacyFinance = stripLegacyFinanceStateWrite(preparedLegacyStaff.body);
-  if (preparedLegacyFinance.rejectLegacyFinanceWrite) {
-    const error = new BusinessError(400, LEGACY_FINANCE_STATE_WRITE_MESSAGE);
-    error.code = LEGACY_FINANCE_STATE_WRITE_CODE;
-    error.details = { rejectedKeys: preparedLegacyFinance.rejectedKeys };
-    throw error;
-  }
-  const {
-    stripLegacyPedagogyStateWrite,
-    LEGACY_PEDAGOGY_STATE_WRITE_CODE,
-    LEGACY_PEDAGOGY_STATE_WRITE_MESSAGE,
-  } = require("./lib/legacyPedagogyStateWrite");
-  const preparedLegacyPedagogy = stripLegacyPedagogyStateWrite(preparedLegacyFinance.body);
-  if (preparedLegacyPedagogy.rejectLegacyPedagogyWrite) {
-    const error = new BusinessError(400, LEGACY_PEDAGOGY_STATE_WRITE_MESSAGE);
-    error.code = LEGACY_PEDAGOGY_STATE_WRITE_CODE;
-    error.details = { rejectedKeys: preparedLegacyPedagogy.rejectedKeys };
-    throw error;
-  }
-  const {
-    stripLegacyPlatformStateWrite,
-    LEGACY_PLATFORM_STATE_WRITE_CODE,
-    LEGACY_PLATFORM_STATE_WRITE_MESSAGE,
-  } = require("./lib/legacyPlatformStateWrite");
-  const preparedLegacyPlatform = stripLegacyPlatformStateWrite(preparedLegacyPedagogy.body);
-  if (preparedLegacyPlatform.rejectLegacyPlatformWrite) {
-    const error = new BusinessError(400, LEGACY_PLATFORM_STATE_WRITE_MESSAGE);
-    error.code = LEGACY_PLATFORM_STATE_WRITE_CODE;
-    error.details = { rejectedKeys: preparedLegacyPlatform.rejectedKeys };
-    throw error;
-  }
-  const {
-    stripLegacyClientsStateWrite,
-    LEGACY_CLIENTS_STATE_WRITE_CODE,
-    LEGACY_CLIENTS_STATE_WRITE_MESSAGE,
-  } = require("./lib/legacyClientsStateWrite");
-  const preparedLegacyClients = stripLegacyClientsStateWrite(preparedLegacyPlatform.body);
-  if (preparedLegacyClients.rejectLegacyClientsWrite) {
-    const error = new BusinessError(400, LEGACY_CLIENTS_STATE_WRITE_MESSAGE);
-    error.code = LEGACY_CLIENTS_STATE_WRITE_CODE;
-    error.details = { rejectedKeys: preparedLegacyClients.rejectedKeys };
-    throw error;
-  }
-  const rawBody = preparedLegacyClients.body;
-  const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
-  assertBackOfficeWriter(req.principal, touchedKeys);
-  const currentState = await getAuthoritativeBackOfficeState();
-
-  // HOTFIX-SYNC-03 — Enseignant : evaluations/notes uniquement, teacherId session, affectation.
-  let effectiveBody = rawBody;
-  let effectiveTouchedKeys = touchedKeys;
-  if (isTeacherNotesPrincipal(req.principal)) {
-    const prepared = prepareTeacherNotesWritePayload(rawBody, req.principal, currentState);
-    if (!prepared.ok) {
-      throw new BusinessError(403, prepared.message ?? "Permission insuffisante pour modifier ces données.");
-    }
-    effectiveBody = prepared.payload;
-    effectiveTouchedKeys = Object.keys(prepared.payload);
-  }
-
-  const requestedState = sanitizeBackOfficeState(effectiveBody);
-  const { validateWritePayload } = require("./services/dataIntegrityService");
-  const integrityCheck = validateWritePayload(currentState, requestedState, effectiveTouchedKeys);
-  if (!integrityCheck.ok) {
-    throw new BusinessError(400, integrityCheck.errors[0]?.message ?? "Données incohérentes.");
-  }
-  const credentialErrors = validateIntroducedAccountSecrets(
-    currentState,
-    requestedState,
-    effectiveTouchedKeys,
-  );
-  if (credentialErrors.length) {
-    const first = credentialErrors[0];
-    throw new BusinessError(400, first.message);
-  }
-  const identityErrors = validateIntroducedCivilIdentityConflicts(
-    currentState,
-    requestedState,
-    effectiveTouchedKeys,
-  );
-  if (identityErrors.length) {
-    throw new BusinessError(409, identityErrors[0].message);
-  }
-
-  let nextState;
-  if (isTeacherNotesPrincipal(req.principal)) {
-    // Fusion métier déjà réalisée (préserve les lignes des autres enseignants).
-    nextState = {
-      ...currentState,
-      ...(effectiveBody.evaluations ? { evaluations: effectiveBody.evaluations } : {}),
-      ...(effectiveBody.notes ? { notes: effectiveBody.notes } : {}),
-    };
-  } else {
-    nextState = mergeScopedBackOfficeState(
-      currentState,
-      requestedState,
-      req.principal,
-      effectiveTouchedKeys,
-    );
-  }
-  const hydratedCourses = pedagogyGovernanceService.hydrateCoursesFromAssignments(
-    nextState.courses ?? [],
-    nextState.assignments ?? [],
-  );
-  const nextStateWithCourses = { ...nextState, courses: hydratedCourses };
-  const changedCourses = pedagogyGovernanceService.listChangedCourses(
-    currentState.courses ?? [],
-    hydratedCourses,
-  );
-  const courseValidationError = changedCourses.length
-    ? pedagogyGovernanceService.validateCoursesCollection(
-        changedCourses,
-        nextStateWithCourses.assignments ?? [],
-      )
-    : null;
-  if (courseValidationError) {
-    throw new BusinessError(400, courseValidationError);
-  }
-
-  // Filet de sécurité serveur : refuser toute double réservation (enseignant /
-  // classe) introduite par cette requête sur les créneaux de planning.
-  const introducedScheduleConflicts = detectIntroducedConflicts(
-    nextStateWithCourses.courseSchedules ?? [],
-    changedScheduleIds(
-      currentState.courseSchedules ?? [],
-      nextStateWithCourses.courseSchedules ?? [],
-    ),
-  );
-  if (introducedScheduleConflicts.length) {
-    throw new BusinessError(409, introducedScheduleConflicts[0].message);
-  }
-
-  const saved = await saveEstablishmentState(nextStateWithCourses, currentState, req.principal);
-  await auditCriticalStateChanges(req, currentState, saved);
-  await auditService.record(req, "sync_backoffice_state", "backoffice_state", "default", {
-    schools: saved.schools?.length ?? 0,
-    users: saved.users?.length ?? 0,
-    countries: saved.countries?.length ?? 0,
-    subscriptions: saved.subscriptions?.length ?? 0,
-    notifications: saved.notifications?.length ?? 0,
-    students: saved.students?.length ?? 0,
-    teachers: saved.teachers?.length ?? 0,
-    classes: saved.classes?.length ?? 0,
-    roles: Object.keys(saved.rolePermissions ?? {}).length,
-  });
-  // HOTFIX-SYNC-01 / PRE-E1-02B : syncAck observable, strictement lié à cette requête.
-  // Ne jamais lire repository.lastSyncAck (état mutable partagé → fuite inter-requêtes).
-  const response = scopedBackOfficeStateForResponse(saved, req.principal);
-  if (saved?.syncAck && typeof saved.syncAck === "object") {
-    response.syncAck = saved.syncAck;
-  }
-  // Lot 2 / T1 — identitySyncAck.skips[] toujours présent (tableau, éventuellement vide).
-  // Extraire AVANT sanitize/save : sanitizeBackOfficeState ne persiste pas ce champ.
-  const rawSkips = nextStateWithCourses?.identitySyncAck?.skips;
-  response.identitySyncAck = {
-    skips: Array.isArray(rawSkips) ? rawSkips : [],
-  };
-  res.json(response);
+app.put("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {
+  const { sendBackOfficeStateWriteRemoved } = require("./lib/backofficeStateRemoval");
+  sendBackOfficeStateWriteRemoved(res);
 }));
 
 app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
@@ -2104,13 +2030,10 @@ app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (req, res) => {
 
 async function getRuntime() {
   const dataset = await repository.getDataset();
-  const storedState = await repository.getBackOfficeState();
-  applyStoredStatusOverlay(dataset, storedState);
-  applyStoredSchoolOverlay(dataset, storedState);
   // LOT 7 / PR-A — comptes utilisateurs : authentification exclusivement PostgreSQL (pas d'overlay JSON).
   // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
   const mergedStudents = dataset.students ?? [];
-  const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
+  const mergedRelations = [];
   // LOT 3 — enseignants et affectations sont des projections PostgreSQL uniquement.
   const mergedTeachers = dataset.teachers ?? [];
   const authService = new AuthService({
@@ -2473,21 +2396,20 @@ function assertCanManagePresences(principal) {
   throw new BusinessError(403, "Permission insuffisante pour enregistrer l'appel.");
 }
 
-async function saveEstablishmentState(nextState, currentState = null, principal = null) {
-  const current = currentState ?? (await getAuthoritativeBackOfficeState());
-  const { enrichStateWithValidationAlerts } = require("./lib/validationNotifications");
-  const enriched = enrichStateWithValidationAlerts(current, nextState, principal);
-  const sanitized = sanitizeBackOfficeState(enriched);
-  const hydrated = ensureSubscriptionModuleState(hydrateSubscriptionsFromSchools(sanitized));
-  const saved = await repository.saveBackOfficeState(hydrated);
-  // LOT 2 — la projection élèves est issue du runtime PostgreSQL et n'est
-  // jamais durablement réécrite dans backoffice_state.
-  return {
-    ...saved,
-    students: sanitized.students ?? [],
-    teachers: sanitized.teachers ?? [],
-    assignments: sanitized.assignments ?? [],
-  };
+async function saveEstablishmentState() {
+  const { createBackOfficeStateWriteRemovedError } = require("./lib/backofficeStateRemoval");
+  throw createBackOfficeStateWriteRemovedError();
+}
+
+async function touchUserLastLogin(principal) {
+  if (!principal?.sub && !principal?.identifier) return;
+  const lookupKeys = [principal.sub, principal.identifier, principal.publicId]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  if (!lookupKeys.length) return;
+  if (typeof repository.touchUserLastLogin === "function") {
+    await repository.touchUserLastLogin(lookupKeys);
+  }
 }
 
 function requireSchoolSubscriptionFeature(feature) {
@@ -2606,32 +2528,53 @@ const backOfficeDeletableEntities = [
 async function getAuthoritativeBackOfficeState() {
   const runtime = await getRuntime();
   const runtimeState = buildInitialBackOfficeState(runtime);
-  const storedState = await repository.getBackOfficeState();
-
-  let nextState;
-  if (!hasUserBackOfficeState(storedState)) {
-    nextState = sanitizeBackOfficeState(runtimeState);
-  } else {
-    const merged = mergeBackOfficeRuntimeState(runtime, storedState);
-    const { state: withSchools, repaired: repairedSchools } = repairOrphanSchools(merged);
-    if (repairedSchools.length) {
-      await repository.saveBackOfficeState(withSchools);
-      console.info(`[backoffice] Établissements rétablis depuis références orphelines : ${repairedSchools.join(", ")}`);
-    }
-    const sanitized = sanitizeBackOfficeState(stripLegacyOrganizationFields(withSchools));
-    nextState = {
-      ...sanitized,
-      courses: pedagogyGovernanceService.hydrateCoursesFromAssignments(
-        sanitized.courses ?? [],
-        sanitized.assignments ?? [],
+  const base = sanitizeBackOfficeState(runtimeState);
+  const nextState = {
+    ...base,
+    courses: pedagogyGovernanceService.hydrateCoursesFromAssignments(
+      base.courses ?? [],
+      base.assignments ?? [],
+    ),
+    deletedRows: {},
+  };
+  return overlayResidualProjection(
+    await overlayClientsProjection(
+      await overlayPlatformProjection(
+        await overlayPedagogyProjection(await overlayFinanceProjection(nextState)),
       ),
-    };
-  }
-  return overlayClientsProjection(
-    await overlayPlatformProjection(
-      await overlayPedagogyProjection(await overlayFinanceProjection(nextState)),
     ),
   );
+}
+
+async function listResidualDomainForPrincipal(principal, domain) {
+  if (typeof repository.listResidualProjection !== "function") {
+    return [];
+  }
+  const residual = await repository.listResidualProjection();
+  const rows = residual[domain] ?? [];
+  return tenantScopeService.filterRows(rows, principal);
+}
+
+async function overlayResidualProjection(state) {
+  if (typeof repository.listResidualProjection !== "function") {
+    return {
+      ...state,
+      exams: [],
+      bulletins: [],
+      documents: [],
+    };
+  }
+  const residual = await repository.listResidualProjection();
+  return {
+    ...state,
+    academicConfigs: {
+      ...(state.academicConfigs ?? {}),
+      ...(residual.academicConfigs ?? {}),
+    },
+    exams: residual.exams ?? [],
+    bulletins: residual.bulletins ?? [],
+    documents: residual.documents ?? [],
+  };
 }
 
 async function overlayClientsProjection(state) {
@@ -4175,31 +4118,6 @@ function belongsToScopedStudentOrSchool(row = {}, schoolCodes, studentIds) {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-async function touchUserLastLogin(principal) {
-  if (!principal?.sub && !principal?.identifier) return;
-  const state = await getAuthoritativeBackOfficeState();
-  const now = new Date().toISOString();
-  let touched = false;
-  const users = (state.users ?? []).map((user) => {
-    const aliases = [user.id, user.publicId, user.identifier].map((value) => String(value ?? "").trim());
-    const principalKeys = [principal.sub, principal.identifier, principal.publicId]
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean);
-    if (!principalKeys.some((key) => aliases.includes(key))) return user;
-    touched = true;
-    return {
-      ...user,
-      lastLoginAt: now,
-      history: [
-        ...(Array.isArray(user.history) ? user.history : []),
-        `Connexion réussie le ${now.slice(0, 10)}`,
-      ],
-    };
-  });
-  if (!touched) return;
-  await saveEstablishmentState({ ...state, users, updatedAt: now });
 }
 
 async function sendAuthenticatedResponse(req, res, response, action) {

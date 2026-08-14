@@ -24,6 +24,7 @@ const {
   scopeMvpDatasetForPrincipal,
 } = require("../lib/mvpAccess");
 const { TenantScopeService } = require("../services/tenantScopeService");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 function runMatrixUnitTests() {
   const admin = { role: "Admin School", schoolCode: "CD-2026-0001" };

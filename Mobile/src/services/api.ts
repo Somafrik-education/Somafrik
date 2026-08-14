@@ -322,46 +322,19 @@ export function savePresences(payload: unknown) {
 }
 
 export function getBackOfficeState() {
-  return request<BackOfficeStatePayload>("/backoffice/state");
+  return Promise.reject(
+    Object.assign(new Error("La lecture globale BackOffice State a été supprimée."), {
+      code: "BACKOFFICE_STATE_READ_REMOVED",
+    }),
+  );
 }
 
-export function saveBackOfficeState(payload: BackOfficeStatePayload) {
-  const rest = { ...payload };
-  delete rest.schools;
-  delete rest.students;
-  delete rest.teachers;
-  delete rest.assignments;
-  delete rest.payments;
-  delete rest.paymentStatuses;
-  delete rest.feeGrids;
-  delete rest.schoolFeeItems;
-  delete rest.studentFees;
-  delete rest.feeTariffHistory;
-  delete rest.paymentReminders;
-  delete rest.courseSchedules;
-  delete rest.courses;
-  delete rest.evaluations;
-  delete rest.notes;
-  delete rest.presences;
-  delete rest.countries;
-  delete rest.subscriptions;
-  delete rest.subscriptionOffers;
-  delete rest.subscriptionPayments;
-  delete rest.subscriptionInvoices;
-  delete rest.subscriptionDiscounts;
-  delete rest.subscriptionAuditLog;
-  delete rest.notifications;
-  delete rest.rolePermissions;
-  delete rest.dashboardChartConfig;
-  delete rest.users;
-  delete rest.contacts;
-  delete rest.relations;
-  delete rest.messages;
-  delete rest.announcements;
-  return request<BackOfficeStatePayload>("/backoffice/state", {
-    method: "PUT",
-    body: JSON.stringify(rest),
-  });
+export function saveBackOfficeState(_payload: BackOfficeStatePayload) {
+  return Promise.reject(
+    Object.assign(new Error("L'écriture globale BackOffice State a été supprimée."), {
+      code: "BACKOFFICE_STATE_WRITE_REMOVED",
+    }),
+  );
 }
 
 export function createClientsAnnouncement(payload: Record<string, unknown>) {

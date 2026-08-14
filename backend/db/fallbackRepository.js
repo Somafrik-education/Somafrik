@@ -203,7 +203,7 @@ class FallbackRepository {
     }
   }
 
-  async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+  async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }, _tx = null) {
     this.auditLogs.unshift({
       id: `AUDIT-MEM-${String(this.auditLogs.length + 1).padStart(5, "0")}`,
       schoolCode,
@@ -231,45 +231,51 @@ class FallbackRepository {
   }
 
   async getBackOfficeState() {
-    return clone(this.backOfficeState);
+    return null;
   }
 
-  async saveBackOfficeState(payload) {
-    const durable = clone(payload ?? {});
-    // LOT 2 — state.students est une projection de lecture, jamais une source
-    // de persistance, y compris dans le dépôt mémoire.
-    delete durable.students;
-    delete durable.teachers;
-    delete durable.assignments;
-    delete durable.payments;
-    delete durable.paymentStatuses;
-    delete durable.feeGrids;
-    delete durable.schoolFeeItems;
-    delete durable.studentFees;
-    delete durable.feeTariffHistory;
-    delete durable.paymentReminders;
-    delete durable.courses;
-    delete durable.courseSchedules;
-    delete durable.evaluations;
-    delete durable.notes;
-    delete durable.presences;
-    delete durable.countries;
-    delete durable.subscriptions;
-    delete durable.subscriptionOffers;
-    delete durable.subscriptionPayments;
-    delete durable.subscriptionInvoices;
-    delete durable.subscriptionDiscounts;
-    delete durable.subscriptionAuditLog;
-    delete durable.notifications;
-    delete durable.rolePermissions;
-    delete durable.dashboardChartConfig;
-    delete durable.users;
-    delete durable.contacts;
-    delete durable.relations;
-    delete durable.messages;
-    delete durable.announcements;
-    this.backOfficeState = durable;
-    return this.getBackOfficeState();
+  async saveBackOfficeState(_payload) {
+    const { createBackOfficeStateWriteRemovedError } = require("../lib/backofficeStateRemoval");
+    throw createBackOfficeStateWriteRemovedError();
+  }
+
+  getResidualStore() {
+    if (!this._residualStore) {
+      const { createResidualMemoryStore } = require("./residualMemoryStore");
+      this._residualStore = createResidualMemoryStore();
+      if (shouldSeedDemoData()) {
+        const store = this._residualStore;
+        for (const [schoolCode, config] of Object.entries(seedData.academicConfigs ?? {})) {
+          store.saveAcademicConfig(String(schoolCode).toUpperCase(), config);
+        }
+        const defaultSchool = String(seedData.school?.code ?? "CD-2026-0001").toUpperCase();
+        store.replaceDomainRecords("exam", defaultSchool, seedData.exams ?? []);
+        store.replaceDomainRecords("bulletin", defaultSchool, seedData.bulletins ?? []);
+        store.replaceDomainRecords("document", defaultSchool, seedData.documents ?? []);
+      }
+    }
+    return this._residualStore;
+  }
+
+  listResidualProjection() {
+    return Promise.resolve(this.getResidualStore().listProjection());
+  }
+
+  replaceResidualExams(schoolCode, items, principal, auditMeta) {
+    return this.withResidualReplace("exam", schoolCode, items, principal, auditMeta);
+  }
+
+  replaceResidualBulletins(schoolCode, items, principal, auditMeta) {
+    return this.withResidualReplace("bulletin", schoolCode, items, principal, auditMeta);
+  }
+
+  replaceResidualDocuments(schoolCode, items, principal, auditMeta) {
+    return this.withResidualReplace("document", schoolCode, items, principal, auditMeta);
+  }
+
+  async withResidualReplace(domain, schoolCode, items, principal, auditMeta) {
+    const { recordResidualReplace } = require("../lib/residualStateManagement");
+    return recordResidualReplace(this, domain, schoolCode, items, principal, auditMeta);
   }
 
   _establishmentStore() {
@@ -363,8 +369,9 @@ class FallbackRepository {
   }
 
   async getAcademicConfig(schoolCode) {
+    const store = this.getResidualStore();
     const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code).trim().toUpperCase();
-    const config = this.backOfficeState?.academicConfigs?.[normalizedSchoolCode] ?? {
+    return store.getAcademicConfig(normalizedSchoolCode) ?? store.saveAcademicConfig(normalizedSchoolCode, {
       schoolCode: normalizedSchoolCode,
       periodMode: "trimestre",
       periods: [
@@ -382,44 +389,33 @@ class FallbackRepository {
       tracks: seedData.demoTracks,
       classNames: seedData.demoClassNames,
       subjects: seedData.demoSubjects,
-    };
-    return {
-      ...config,
-      periods: applySystemActivePeriod(config.periods ?? []),
-    };
+    });
   }
 
-  async saveAcademicConfig(schoolCode, config) {
-    const normalizedSchoolCode = String(config.schoolCode ?? (schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code)).trim().toUpperCase();
-    const savedConfig = {
-      schoolCode: normalizedSchoolCode,
-      periodMode: config.periodMode ?? "trimestre",
-      periods: applySystemActivePeriod(
-        Array.isArray(config.periods) && config.periods.length ? config.periods : [
-        { id: "trimestre-1", name: "Trimestre 1", type: "Trimestre", order: 1, startDate: "01-09-2025", endDate: "31-12-2025", active: false },
-        { id: "trimestre-2", name: "Trimestre 2", type: "Trimestre", order: 2, startDate: "01-01-2026", endDate: "31-03-2026", active: false },
-        { id: "trimestre-3", name: "Trimestre 3", type: "Trimestre", order: 3, startDate: "01-04-2026", endDate: "30-06-2026", active: false },
-      ],
-      ),
-      evaluationTypes: Array.isArray(config.evaluationTypes) && config.evaluationTypes.length ? config.evaluationTypes : ["Interrogation", "Devoir", "Examen"],
-      defaultScale: Number(config.defaultScale ?? 20),
-      reportCardMode: config.reportCardMode ?? "period",
-      allowCustomClasses: config.allowCustomClasses !== false,
-      allowCustomCourses: config.allowCustomCourses !== false,
-      allowCustomReportCards: config.allowCustomReportCards !== false,
-      levels: Array.isArray(config.levels) && config.levels.length ? config.levels : seedData.demoLevels,
-      tracks: Array.isArray(config.tracks) && config.tracks.length ? config.tracks : seedData.demoTracks,
-      classNames: Array.isArray(config.classNames) && config.classNames.length ? config.classNames : seedData.demoClassNames,
-      subjects: Array.isArray(config.subjects) && config.subjects.length ? config.subjects : seedData.demoSubjects,
-    };
-    this.backOfficeState = {
-      ...(this.backOfficeState ?? {}),
-      academicConfigs: {
-        ...(this.backOfficeState?.academicConfigs ?? {}),
-        [normalizedSchoolCode]: savedConfig,
-      },
-    };
-    return clone(savedConfig);
+  async saveAcademicConfig(schoolCode, config, tx = null) {
+    const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code)
+      .trim()
+      .toUpperCase();
+    return this.getResidualStore().saveAcademicConfig(normalizedSchoolCode, config, tx);
+  }
+
+  createTxScope(_tx) {
+    return this;
+  }
+
+  async withTransaction(fn) {
+    return fn(null);
+  }
+
+  async touchUserLastLogin(lookupKeys = []) {
+    const keys = (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    if (!keys.length) return;
+    const store = this.getClientsStore();
+    if (typeof store.touchUserLastLogin === "function") {
+      await store.touchUserLastLogin(keys);
+    }
   }
 
   async resetUserPassword(userId, temporaryPassword) {

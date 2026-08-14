@@ -22,6 +22,7 @@ const {
   stripLegacyPlatformStateWrite,
 } = require("../lib/legacyPlatformStateWrite");
 const { getWritableBackOfficeEntitiesForPrincipal } = require("../lib/backOfficeWritableEntities");
+const { assertBackOfficeStateReadRemoved, assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -96,22 +97,18 @@ function runUnitGuards() {
   const mobileApi = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
   const legacyBackOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
 
-  assert.match(server, /stripLegacyPlatformStateWrite/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /overlayPlatformProjection/);
-  assert.match(server, /LEGACY_PLATFORM_STATE_WRITE_CODE/);
+  assert.match(server, /sendBackOfficeStateReadRemoved/);
   assert.match(server, /repository\.getRolePermissionsMap/);
   assert.match(server, /requirePermission\("GET \/api\/backoffice\/subscription-access"\)/);
   assert.match(postgres, /ensurePlatformCanonicalSchema/);
   assert.match(postgres, /assertPlatformSchemaPreflight/);
-  assert.match(postgres, /countries: _legacyCountries/);
+  assert.match(postgres, /listPlatformProjection/);
   assert.match(webDataContext, /stripClientPlatformFromPutPayload/);
 
-  const payloadFunction = extractFunction(legacyBackOffice, "getBackOfficeStatePayload");
-  assert.ok(payloadFunction, "getBackOfficeStatePayload présent");
-  assert.doesNotMatch(payloadFunction, /countries:\s*state\.countries/);
-  assert.doesNotMatch(payloadFunction, /subscriptions:\s*state\.subscriptions/);
-  assert.doesNotMatch(payloadFunction, /notifications:\s*state\.notifications/);
-  assert.doesNotMatch(payloadFunction, /rolePermissions:\s*state\.rolePermissions/);
+  assert.doesNotMatch(legacyBackOffice, /request\(["']\/backoffice\/state["']\)/);
+  assert.doesNotMatch(legacyBackOffice, /getBackOfficeStatePayload/);
 
   for (const key of PLATFORM_STATE_KEYS) {
     assert.doesNotMatch(
@@ -122,7 +119,7 @@ function runUnitGuards() {
   }
 
   assert.doesNotMatch(mobileApi, /persistSyncedState/);
-  assert.match(mobileApi, /delete rest\.countries/);
+  assert.match(mobileApi, /BACKOFFICE_STATE_READ_REMOVED/);
   assert.match(mobileApi, /createPlatformNotification/);
   assert.equal(LEGACY_PLATFORM_STATE_WRITE_CODE, "LEGACY_PLATFORM_STATE_WRITE_FORBIDDEN");
 
@@ -157,8 +154,11 @@ async function runHttpGuards() {
   try {
     await waitForHealth(child);
     const token = await loginAdmin();
-    const stateBefore = await request("/backoffice/state", { token });
-    assert.equal(stateBefore.status, 200, JSON.stringify(stateBefore.data));
+    const usersBefore = await request("/users", { token });
+    assert.equal(usersBefore.status, 200, JSON.stringify(usersBefore.data));
+    const baselineUserCount = Array.isArray(usersBefore.data) ? usersBefore.data.length : 0;
+
+    assertBackOfficeStateReadRemoved(await request("/backoffice/state", { token }));
 
     for (const key of PLATFORM_STATE_KEYS) {
       for (const value of [[], {}, null]) {
@@ -167,26 +167,26 @@ async function runHttpGuards() {
           token,
           body: { [key]: value },
         });
-        assert.equal(rejected.status, 400, `${key}=${String(value)}: ${JSON.stringify(rejected.data)}`);
-        assert.equal(rejected.data?.code, LEGACY_PLATFORM_STATE_WRITE_CODE);
-        assert.deepEqual(rejected.data?.details?.rejectedKeys, [key]);
+        assertBackOfficeStateWriteRemoved(rejected);
       }
     }
 
     const mixed = await request("/backoffice/state", {
       method: "PUT",
       token,
-      body: { users: stateBefore.data.users ?? [], notifications: [] },
+      body: { users: usersBefore.data ?? [], notifications: [] },
     });
-    assert.equal(mixed.status, 400);
-    assert.equal(mixed.data?.code, LEGACY_PLATFORM_STATE_WRITE_CODE);
-    assert.deepEqual(mixed.data?.details?.rejectedKeys, ["notifications"]);
+    assertBackOfficeStateWriteRemoved(mixed);
 
-    const stateAfter = await request("/backoffice/state", { token });
-    assert.equal(stateAfter.status, 200);
-    assert.deepEqual(stateAfter.data.users?.length, stateBefore.data.users?.length);
+    const usersAfter = await request("/users", { token });
+    assert.equal(usersAfter.status, 200);
+    assert.equal(
+      Array.isArray(usersAfter.data) ? usersAfter.data.length : 0,
+      baselineUserCount,
+      "aucune mutation users via PUT state rejeté",
+    );
 
-    console.log("OK http: PUT plateforme fail-closed");
+    console.log("OK http: PUT plateforme fail-closed + GET state retiré");
   } finally {
     child.kill("SIGTERM");
   }

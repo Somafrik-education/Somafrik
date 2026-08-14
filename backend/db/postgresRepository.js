@@ -92,6 +92,7 @@ class PostgresRepository {
     await this.ensurePedagogyCanonicalSchema();
     await this.ensurePlatformCanonicalSchema();
     await this.ensureClientsCanonicalSchema();
+    await this.ensureResidualCanonicalSchema();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -445,6 +446,40 @@ class PostgresRepository {
   async ensureClientsCanonicalSchema() {
     const { CLIENTS_SCHEMA_SQL } = require("./clientsSchema");
     await this.query(CLIENTS_SCHEMA_SQL);
+  }
+
+  async ensureResidualCanonicalSchema() {
+    const { RESIDUAL_STATE_SCHEMA_SQL } = require("./residualStateSchema");
+    await this.query(RESIDUAL_STATE_SCHEMA_SQL);
+  }
+
+  getResidualStore() {
+    if (!this._residualStore) {
+      const { createResidualPgStore } = require("./residualPgStore");
+      this._residualStore = createResidualPgStore(this);
+    }
+    return this._residualStore;
+  }
+
+  listResidualProjection() {
+    return this.getResidualStore().listProjection();
+  }
+
+  replaceResidualExams(schoolCode, items, principal, auditMeta) {
+    return this.withResidualReplace("exam", schoolCode, items, principal, auditMeta);
+  }
+
+  replaceResidualBulletins(schoolCode, items, principal, auditMeta) {
+    return this.withResidualReplace("bulletin", schoolCode, items, principal, auditMeta);
+  }
+
+  replaceResidualDocuments(schoolCode, items, principal, auditMeta) {
+    return this.withResidualReplace("document", schoolCode, items, principal, auditMeta);
+  }
+
+  async withResidualReplace(domain, schoolCode, items, principal, auditMeta) {
+    const { recordResidualReplace } = require("../lib/residualStateManagement");
+    return recordResidualReplace(this, domain, schoolCode, items, principal, auditMeta);
   }
 
   getPlatformStore() {
@@ -1002,11 +1037,15 @@ class PostgresRepository {
     );
   }
 
-  async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+  async recordAudit(
+    { schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent },
+    tx = null,
+  ) {
     await this.init();
+    const executor = tx && typeof tx.query === "function" ? tx : this;
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);
-    await this.query(
+    await executor.query(
       `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
@@ -1019,7 +1058,7 @@ class PostgresRepository {
         newValue ? JSON.stringify(newValue) : null,
         ipAddress ?? "",
         userAgent ?? "",
-      ]
+      ],
     );
   }
 
@@ -1069,169 +1108,40 @@ class PostgresRepository {
   }
 
   async getBackOfficeState() {
-    await this.init();
-    const row = await this.one("SELECT state_payload FROM backoffice_state WHERE state_key = 'default'");
-    return row?.state_payload ?? null;
+    // LOT 8 — plus de lecture du snapshot JSON global.
+    return null;
   }
 
-  async saveBackOfficeState(payload) {
-    await this.init();
-    // LOT 2 — students est une projection read-only : aucune synchronisation
-    // ni persistance JSON ne doit être déclenchée par PUT /backoffice/state.
-    const { students: _legacyStudents, ...payloadWithoutStudents } = payload ?? {};
-    const {
-      teachers: _legacyTeachers,
-      assignments: _legacyAssignments,
-      courses: _legacyCourses,
-      courseSchedules: _legacyCourseSchedules,
-      evaluations: _legacyEvaluations,
-      notes: _legacyNotes,
-      presences: _legacyPresences,
-      payments: _legacyPayments,
-      paymentStatuses: _legacyPaymentStatuses,
-      feeGrids: _legacyFeeGrids,
-      schoolFeeItems: _legacySchoolFeeItems,
-      studentFees: _legacyStudentFees,
-      feeTariffHistory: _legacyFeeTariffHistory,
-      paymentReminders: _legacyPaymentReminders,
-      countries: _legacyCountries,
-      subscriptions: _legacySubscriptions,
-      subscriptionOffers: _legacySubscriptionOffers,
-      subscriptionPayments: _legacySubscriptionPayments,
-      subscriptionInvoices: _legacySubscriptionInvoices,
-      subscriptionDiscounts: _legacySubscriptionDiscounts,
-      subscriptionAuditLog: _legacySubscriptionAuditLog,
-      notifications: _legacyNotifications,
-      rolePermissions: _legacyRolePermissions,
-      dashboardChartConfig: _legacyDashboardChartConfig,
-      users: _legacyUsers,
-      contacts: _legacyContacts,
-      relations: _legacyRelations,
-      messages: _legacyMessages,
-      announcements: _legacyAnnouncements,
-      ...durablePayload
-    } = payloadWithoutStudents;
-    // LOT 5 — pédagogie : projection PostgreSQL read-only ; aucune sync JSON → PG.
-    // LOT 6 — plateforme : projection PostgreSQL read-only ; aucune sync JSON → PG.
-    // LOT 7 — clients : projection PostgreSQL read-only ; aucune sync JSON → PG.
-    let syncAck = { accepted: [], rejected: [] };
-    await this.withTransaction(async (tx) => {
-      const transactional = this.createTxScope(tx);
-      const payloadSchools = Array.isArray(durablePayload.schools)
-        ? durablePayload.schools
-        : [];
-      for (const school of payloadSchools) {
-        const code = school?.code ?? school?.schoolCode;
-        if (!code) continue;
-        await transactional.ensureSchoolFromBackOfficeRecord(code, { schools: payloadSchools });
-      }
-      const runner = tx ?? transactional;
-      await runner.query(
-        `INSERT INTO backoffice_state (state_key, state_payload, updated_at)
-         VALUES ('default', $1, NOW())
-         ON CONFLICT (state_key) DO UPDATE SET
-           state_payload = EXCLUDED.state_payload,
-           updated_at = NOW()`,
-        [JSON.stringify(durablePayload)],
-      );
-      syncAck = {
-        accepted: [],
-        rejected: [],
-        synced: true,
-      };
-    });
-    this.cachedDataset = null;
-    // syncAck est retourné avec le résultat de cette opération uniquement —
-    // ne pas le stocker sur l'instance (fuite inter-requêtes / cross-tenant).
-    const state = await this.getBackOfficeState();
-    return { ...state, syncAck };
+  async saveBackOfficeState(_payload) {
+    // LOT 8 — écriture snapshot interdite ; compatibilité tests internes uniquement.
+    const { createBackOfficeStateWriteRemovedError } = require("../lib/backofficeStateRemoval");
+    throw createBackOfficeStateWriteRemovedError();
   }
 
   async getAcademicConfig(schoolCode) {
     await this.init();
-    const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code).trim().toUpperCase();
-    const state = (await this.getBackOfficeState()) ?? {};
-    const storedConfig = state.academicConfigs?.[normalizedSchoolCode];
-    const school = await this.getSchoolByCode(normalizedSchoolCode);
-    const termRows = school
-      ? await this.all(
-          `SELECT t.*
-           FROM terms t
-           JOIN academic_years ay ON ay.id = t.academic_year_id
-           WHERE ay.school_id = $1
-           ORDER BY t.start_date NULLS LAST, t.created_at`,
-          [school.id]
-        )
-      : [];
-    const periods = termRows.length
-      ? termRows.map((term, index) => ({
-          name: term.name,
-          type: term.name.toLowerCase().includes("semestre") ? "Semestre" : term.name.toLowerCase().includes("trimestre") ? "Trimestre" : "Période",
-          startDate: this.formatDate(term.start_date),
-          endDate: this.formatDate(term.end_date),
-          active: index === 0,
-        }))
-      : defaultAcademicPeriods();
-
-    return withSystemActivePeriods({
-      schoolCode: normalizedSchoolCode,
-      periodMode: storedConfig?.periodMode ?? inferPeriodMode(periods),
-      periods: Array.isArray(storedConfig?.periods) && storedConfig.periods.length ? storedConfig.periods : periods,
-      evaluationTypes: Array.isArray(storedConfig?.evaluationTypes) && storedConfig.evaluationTypes.length
-        ? storedConfig.evaluationTypes
-        : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
-      defaultScale: Number(storedConfig?.defaultScale ?? 20),
-      reportCardMode: storedConfig?.reportCardMode ?? "period",
-      allowCustomClasses: storedConfig?.allowCustomClasses !== false,
-      allowCustomCourses: storedConfig?.allowCustomCourses !== false,
-      allowCustomReportCards: storedConfig?.allowCustomReportCards !== false,
-      levels: Array.isArray(storedConfig?.levels) && storedConfig.levels.length
-        ? storedConfig.levels
-        : seedData.demoLevels,
-      tracks: Array.isArray(storedConfig?.tracks) && storedConfig.tracks.length
-        ? storedConfig.tracks
-        : seedData.demoTracks,
-      classNames: Array.isArray(storedConfig?.classNames) && storedConfig.classNames.length
-        ? storedConfig.classNames
-        : seedData.demoClassNames,
-      subjects: Array.isArray(storedConfig?.subjects) && storedConfig.subjects.length
-        ? storedConfig.subjects
-        : seedData.demoSubjects,
-    });
+    return this.getResidualStore().getAcademicConfig(schoolCode);
   }
 
-  async saveAcademicConfig(schoolCode, config) {
+  async saveAcademicConfig(schoolCode, config, tx = null) {
     await this.init();
-    const normalizedSchoolCode = String(config.schoolCode ?? (schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code)).trim().toUpperCase();
-    const currentState = (await this.getBackOfficeState()) ?? {};
-    const academicConfigs = currentState.academicConfigs && typeof currentState.academicConfigs === "object"
-      ? currentState.academicConfigs
-      : {};
-    const savedConfig = withSystemActivePeriods({
-      schoolCode: normalizedSchoolCode,
-      periodMode: config.periodMode ?? "trimestre",
-      periods: Array.isArray(config.periods) && config.periods.length ? config.periods : defaultAcademicPeriods(),
-      evaluationTypes: Array.isArray(config.evaluationTypes) && config.evaluationTypes.length
-        ? config.evaluationTypes
-        : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
-      defaultScale: Number(config.defaultScale ?? 20),
-      reportCardMode: config.reportCardMode ?? "period",
-      allowCustomClasses: config.allowCustomClasses !== false,
-      allowCustomCourses: config.allowCustomCourses !== false,
-      allowCustomReportCards: config.allowCustomReportCards !== false,
-      levels: Array.isArray(config.levels) && config.levels.length ? config.levels : seedData.demoLevels,
-      tracks: Array.isArray(config.tracks) && config.tracks.length ? config.tracks : seedData.demoTracks,
-      classNames: Array.isArray(config.classNames) && config.classNames.length ? config.classNames : seedData.demoClassNames,
-      subjects: Array.isArray(config.subjects) && config.subjects.length ? config.subjects : seedData.demoSubjects,
-    });
-    await this.saveBackOfficeState({
-      ...currentState,
-      academicConfigs: {
-        ...academicConfigs,
-        [normalizedSchoolCode]: savedConfig,
-      },
-    });
-    return savedConfig;
+    return this.getResidualStore().saveAcademicConfig(schoolCode, config, tx);
+  }
+
+  async touchUserLastLogin(lookupKeys = []) {
+    await this.init();
+    const keys = (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    for (const key of keys) {
+      await this.query(
+        `UPDATE users
+         SET last_login_at = NOW(), updated_at = NOW()
+         WHERE id::text = $1 OR user_code = $1`,
+        [key],
+      );
+    }
+    this.cachedDataset = null;
   }
 
   async resetUserPassword(userRef, temporaryPassword) {

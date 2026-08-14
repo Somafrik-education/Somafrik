@@ -294,11 +294,6 @@ export interface Session {
   refreshToken?: string;
   permissions?: string[];
   menus?: string[];
-  schools: School[];
-  users: UserAccount[];
-  countries?: Country[];
-  subscriptions?: Subscription[];
-  notifications?: PlatformNotification[];
   rolePermissions?: Record<string, string[]>;
   academicConfigs?: Record<string, unknown>;
   auditLog?: unknown[];
