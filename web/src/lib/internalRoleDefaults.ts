@@ -104,6 +104,7 @@ export const INTERNAL_ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "Élèves:UPDATE",
     "Enseignants:READ",
     "Enseignants:UPDATE",
+    "Enseignants:DELETE",
     "Affectations:READ",
     "Affectations:CREATE",
     "Affectations:UPDATE",

@@ -14,6 +14,18 @@ const teachersApiMock = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
   get: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+}));
+
+const teacherAssignmentsApiMock = vi.hoisted(() => ({
+  create: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+}));
+
+const classesApiMock = vi.hoisted(() => ({
+  list: vi.fn(),
 }));
 
 const showToast = vi.hoisted(() => vi.fn());
@@ -63,6 +75,14 @@ vi.mock("../../lib/teachersApi", () => ({
   teachersApi: teachersApiMock,
 }));
 
+vi.mock("../../lib/teacherAssignmentsApi", () => ({
+  teacherAssignmentsApi: teacherAssignmentsApiMock,
+}));
+
+vi.mock("../../lib/classesApi", () => ({
+  classesApi: classesApiMock,
+}));
+
 vi.mock("../../api/client", () => ({
   ApiError: class ApiError extends Error {
     status: number;
@@ -74,11 +94,13 @@ vi.mock("../../api/client", () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
 import { TeachersListPage } from "./TeachersListPage";
-import { ApiError } from "../../api/client";
+import { ApiError, api } from "../../api/client";
 
 function renderPage() {
   return render(
@@ -92,8 +114,18 @@ describe("TeachersListPage (création compte + fiche)", () => {
   beforeEach(() => {
     permissions.canRead = true;
     permissions.canCreate = true;
+    permissions.canUpdate = true;
+    permissions.canDelete = true;
     teachersApiMock.list.mockReset();
     teachersApiMock.create.mockReset();
+    teachersApiMock.update.mockReset();
+    teachersApiMock.remove.mockReset();
+    teacherAssignmentsApiMock.create.mockReset();
+    classesApiMock.list.mockReset();
+    classesApiMock.list.mockResolvedValue([
+      { classCode: "CLS-6A", name: "6ème A", status: "active" },
+    ]);
+    vi.mocked(api.get).mockResolvedValue([{ code: "SUB-MATH", name: "Mathématiques", status: "active" }]);
     showToast.mockReset();
     teachersApiMock.list.mockResolvedValue([
       {
@@ -110,9 +142,9 @@ describe("TeachersListPage (création compte + fiche)", () => {
         mainSubject: "Mathématiques",
         schoolCode: "CD-2026-0001",
         status: "Actif",
-        gender: "",
-        birthDate: "",
-        entryDate: "",
+        gender: "Féminin",
+        birthDate: "1985-01-01",
+        entryDate: "2010-09-01",
       },
       {
         id: "CD-2026-0001-ENS-0002",
@@ -128,9 +160,9 @@ describe("TeachersListPage (création compte + fiche)", () => {
         mainSubject: "Français",
         schoolCode: "CD-2026-0001",
         status: "Actif",
-        gender: "",
-        birthDate: "",
-        entryDate: "",
+        gender: "Masculin",
+        birthDate: "1982-03-12",
+        entryDate: "2011-09-01",
       },
     ]);
   });
@@ -343,12 +375,250 @@ describe("TeachersListPage (création compte + fiche)", () => {
     expect(screen.queryByRole("heading", { name: "Enseignants" })).not.toBeInTheDocument();
   });
 
-  it("n'expose pas Modifier / Supprimer / Affecter actifs", async () => {
+  it("affiche Modifier / Affecter / Supprimer selon les permissions", async () => {
+    renderPage();
+    await screen.findByText("Ndiaye");
+    const list = screen.getByLabelText("Liste");
+    expect(within(list).getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
+    expect(within(list).getAllByRole("button", { name: "Affecter" }).length).toBeGreaterThan(0);
+    expect(within(list).getAllByRole("button", { name: "Supprimer" }).length).toBeGreaterThan(0);
+  });
+
+  it("masque les boutons d'écriture sans permission", async () => {
+    permissions.canUpdate = false;
+    permissions.canDelete = false;
     renderPage();
     await screen.findByText("Ndiaye");
     const list = screen.getByLabelText("Liste");
     expect(within(list).queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
     expect(within(list).queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
-    expect(within(list).queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
+  });
+
+  it("modifie un enseignant via PATCH puis recharge", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockResolvedValue({ teacherCode: "CD-2026-0001-ENS-0001" });
+    teachersApiMock.list.mockResolvedValueOnce([
+      {
+        id: "CD-2026-0001-ENS-0001",
+        teacherCode: "CD-2026-0001-ENS-0001",
+        publicId: "CD-2026-0001-ENS-0001",
+        identifier: "ENS-0001",
+        firstName: "Aïssatou",
+        lastName: "Ndiaye",
+        name: "Aïssatou Ndiaye",
+        phone: "+243 800",
+        email: "",
+        speciality: "Mathématiques",
+        mainSubject: "Mathématiques",
+        schoolCode: "CD-2026-0001",
+        status: "Actif",
+        gender: "Féminin",
+        birthDate: "1985-01-01",
+        entryDate: "2010-09-01",
+      },
+    ]).mockResolvedValueOnce([
+      {
+        id: "CD-2026-0001-ENS-0001",
+        teacherCode: "CD-2026-0001-ENS-0001",
+        publicId: "CD-2026-0001-ENS-0001",
+        identifier: "ENS-0001",
+        firstName: "Aïssatou",
+        lastName: "Ndiaye",
+        name: "Aïssatou Ndiaye",
+        phone: "+243 800",
+        email: "aissatou@example.com",
+        speciality: "Physique",
+        mainSubject: "Physique",
+        schoolCode: "CD-2026-0001",
+        status: "Actif",
+        gender: "Féminin",
+        birthDate: "1985-01-01",
+        entryDate: "2010-09-01",
+      },
+    ]);
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    expect(screen.queryByLabelText(/Mot de passe temporaire/i)).not.toBeInTheDocument();
+    const speciality = screen.getByLabelText(/Spécialité/i);
+    await user.clear(speciality);
+    await user.type(speciality, "Physique");
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    await waitFor(() => {
+      expect(teachersApiMock.update).toHaveBeenCalledWith(
+        "CD-2026-0001-ENS-0001",
+        expect.objectContaining({ speciality: "Physique" }),
+      );
+    });
+    expect(showToast).toHaveBeenCalledWith("Enseignant modifié.", "success");
+    expect(teachersApiMock.list.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("affecte un enseignant via teacherAssignmentsApi puis recharge", async () => {
+    const user = userEvent.setup();
+    teacherAssignmentsApiMock.create.mockResolvedValue({ id: "asg-1" });
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    expect(await screen.findByLabelText(/Classe/i)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/Classe/i), "CLS-6A");
+    await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
+    await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
+    await waitFor(() => {
+      expect(teacherAssignmentsApiMock.create).toHaveBeenCalledWith({
+        teacherCode: "CD-2026-0001-ENS-0001",
+        classCode: "CLS-6A",
+        subjectCode: "SUB-MATH",
+      });
+    });
+    expect(teacherAssignmentsApiMock.create.mock.calls[0][0].schoolCode).toBeUndefined();
+    expect(showToast).toHaveBeenCalledWith("Affectation enregistrée.", "success");
+  });
+
+  it("archive un enseignant après confirmation et le retire de la liste", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockResolvedValue({ teacherCode: "CD-2026-0001-ENS-0001", archived: true });
+    teachersApiMock.list.mockReset();
+    teachersApiMock.list
+      .mockResolvedValueOnce([
+        {
+          id: "CD-2026-0001-ENS-0001",
+          teacherCode: "CD-2026-0001-ENS-0001",
+          publicId: "CD-2026-0001-ENS-0001",
+          identifier: "ENS-0001",
+          firstName: "Aïssatou",
+          lastName: "Ndiaye",
+          name: "Aïssatou Ndiaye",
+          phone: "+243 800",
+          email: "",
+          speciality: "Mathématiques",
+          mainSubject: "Mathématiques",
+          schoolCode: "CD-2026-0001",
+          status: "Actif",
+          gender: "",
+          birthDate: "",
+          entryDate: "",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    expect(await screen.findByText(/désactive son compte de connexion/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    await waitFor(() => {
+      expect(teachersApiMock.remove).toHaveBeenCalledWith("CD-2026-0001-ENS-0001");
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Ndiaye")).not.toBeInTheDocument();
+    });
+  });
+
+  it("affiche les erreurs 404/409 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValue(new ApiError("Enseignant introuvable.", 404));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText("Enseignant introuvable.")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 400 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValueOnce(new ApiError("Au moins un moyen de contact est requis (phone ou email).", 400));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText(/moyen de contact/i)).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 403 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValue(new ApiError("Permission insuffisante", 403));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText("Permission insuffisante")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 409 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValue(new ApiError("Un compte avec cet email ou ce téléphone existe déjà.", 409));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText(/email ou ce téléphone/i)).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 500 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValue(new ApiError("Erreur interne", 500));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText("Erreur interne")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 409 d'affectation", async () => {
+    const user = userEvent.setup();
+    teacherAssignmentsApiMock.create.mockRejectedValue(
+      new ApiError("Ce cours est déjà affecté à un enseignant pour cette classe.", 409),
+    );
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
+    await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
+    await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
+    expect(
+      await screen.findByText("Ce cours est déjà affecté à un enseignant pour cette classe."),
+    ).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 409 de suppression", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockRejectedValue(
+      new ApiError("Cet enseignant possède encore des cours ou créneaux actifs. Retirez-les avant suppression.", 409),
+    );
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    expect(await screen.findByText(/cours ou créneaux actifs/i)).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 403/404/500 de suppression", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockRejectedValueOnce(new ApiError("Permission insuffisante", 403));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    expect(await screen.findByText("Permission insuffisante")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 404 de suppression", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockRejectedValue(new ApiError("Enseignant introuvable.", 404));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    expect(await screen.findByText("Enseignant introuvable.")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 500 de suppression", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockRejectedValue(new ApiError("Erreur interne", 500));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    expect(await screen.findByText("Erreur interne")).toBeInTheDocument();
   });
 });

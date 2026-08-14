@@ -209,11 +209,16 @@ CREATE TABLE IF NOT EXISTS teacher_assignments (
   assignment_role TEXT NOT NULL DEFAULT 'primary',
   status TEXT NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE teacher_assignments ADD COLUMN IF NOT EXISTS assignment_role TEXT NOT NULL DEFAULT 'primary';
+
+-- Unicité des affectations ACTIVES uniquement : index partiel créé APRÈS inventaire fail-safe
+-- dans postgresRepository.ensureTeacherAssignmentsActiveUniqueness() /
+-- migration 20260814_teacher_assignments_active_uniqueness.sql.
+-- Ne pas recréer UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+-- ici : une contrainte globale empêcherait la réaffectation après status='deleted'.
 
 -- D3.6b : évaluations pédagogiques (entité distincte des notes)
 CREATE TABLE IF NOT EXISTS evaluations (

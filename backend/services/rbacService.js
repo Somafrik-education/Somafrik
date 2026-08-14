@@ -28,6 +28,8 @@ const routePermissions = {
     "ALL_PRIVILEGES",
   ],
   "POST /api/teachers": ["Enseignants:CREATE", "Gérer enseignants", "ALL_PRIVILEGES"],
+  "PATCH /api/teachers/:teacherCode": ["Enseignants:UPDATE", "Gérer enseignants", "ALL_PRIVILEGES"],
+  "DELETE /api/teachers/:teacherCode": ["Enseignants:DELETE", "Gérer enseignants", "ALL_PRIVILEGES"],
   "GET /api/classes": ["Voir classes", "Gérer classes", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/classes": ["Gérer classes", "ALL_PRIVILEGES"],
   "PATCH /api/classes/:classCode": ["Gérer classes", "ALL_PRIVILEGES"],

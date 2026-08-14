@@ -4,6 +4,8 @@ const {
   assignmentError,
   validateAssignmentInput,
 } = require("../lib/teacherAssignmentsManagement");
+const { assignmentAuditScope, writeTransactionalAudit } = require("../lib/teacherTransactionalAudit");
+const { isTeacherAssignmentsActiveUniquenessViolation } = require("../lib/teacherAssignmentsUniqueness");
 
 function mapAssignment(row) {
   return {
@@ -74,6 +76,7 @@ function createTeacherAssignmentsRepository(db) {
          WHERE t.school_id = $1
            AND (t.teacher_code = $2 OR t.id::text = $2 OR u.user_code = $2 OR u.id::text = $2)
            AND COALESCE(t.status, 'active') = 'active'
+           AND COALESCE(u.status, 'active') = 'active'
          LIMIT 1`,
         [school.id, teacherRef],
       ),
@@ -131,71 +134,155 @@ function createTeacherAssignmentsRepository(db) {
       return rows.map(mapAssignment);
     },
 
-    async create(body, schoolCode) {
+    async create(body, schoolCode, principal = null, auditMeta = null) {
       const school = await requireSchool(schoolCode);
       const input = validateAssignmentInput(body);
+      const wantsAudit = Boolean(principal || auditMeta);
       return db.withTransaction(async (tx) => {
-        await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        const scope = wantsAudit ? assignmentAuditScope(db, tx) : tx;
+        await scope.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
           `teacher-assignment:${school.id}`,
         ]);
-        const refs = await resolveReferences(tx, school, input);
-        await assertCourseAvailable(tx, school.id, refs);
-        const row = await tx.one(
-          `INSERT INTO teacher_assignments (
-             school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status
-           ) VALUES ($1, $2, $3, $4, $5, $6, 'active')
-           RETURNING id`,
-          [
-            school.id,
-            refs.teacher.id,
-            refs.schoolClass.id,
-            refs.subject.id,
-            refs.schoolClass.academic_year_id,
-            input.assignmentRole,
-          ],
-        );
-        return mapAssignment(await requireCurrent(row.id, school.id, tx));
+        const refs = await resolveReferences(scope, school, input);
+        await assertCourseAvailable(scope, school.id, refs);
+        let row;
+        try {
+          row = await scope.one(
+            `INSERT INTO teacher_assignments (
+               school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status
+             ) VALUES ($1, $2, $3, $4, $5, $6, 'active')
+             RETURNING id`,
+            [
+              school.id,
+              refs.teacher.id,
+              refs.schoolClass.id,
+              refs.subject.id,
+              refs.schoolClass.academic_year_id,
+              input.assignmentRole,
+            ],
+          );
+        } catch (error) {
+          if (isTeacherAssignmentsActiveUniquenessViolation(error)) {
+            throw assignmentError(
+              409,
+              "Cette affectation existe déjà pour cet enseignant.",
+              "ASSIGNMENT_ACTIVE_DUPLICATE",
+            );
+          }
+          throw error;
+        }
+        const created = mapAssignment(await requireCurrent(row.id, school.id, scope));
+        if (wantsAudit) {
+          await writeTransactionalAudit(scope, tx, {
+            principal: principal ?? {},
+            auditMeta: auditMeta ?? {},
+            action: "create_teacher_assignment",
+            entityType: "teacher_assignment",
+            entityId: created.id,
+            oldValue: null,
+            newValue: {
+              teacherCode: created.teacherCode,
+              classCode: created.classCode,
+              subjectCode: created.subjectCode,
+              schoolCode: school.school_code ?? schoolCode,
+            },
+            schoolCode: school.school_code ?? schoolCode,
+          });
+        }
+        return created;
       });
     },
 
-    async update(assignmentId, body, schoolCode) {
+    async update(assignmentId, body, schoolCode, principal = null, auditMeta = null) {
       const school = await requireSchool(schoolCode);
       const input = validateAssignmentInput(body, { partial: true });
+      const wantsAudit = Boolean(principal || auditMeta);
       return db.withTransaction(async (tx) => {
-        await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        const scope = wantsAudit ? assignmentAuditScope(db, tx) : tx;
+        await scope.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
           `teacher-assignment:${school.id}`,
         ]);
-        const current = await requireCurrent(assignmentId, school.id, tx);
-        const refs = await resolveReferences(tx, school, input, current);
-        await assertCourseAvailable(tx, school.id, refs, String(assignmentId));
-        await tx.one(
-          `UPDATE teacher_assignments SET teacher_id = $1, class_id = $2, subject_id = $3,
-             academic_year_id = $4, assignment_role = $5, updated_at = NOW()
-           WHERE id::text = $6 AND school_id = $7 RETURNING id`,
-          [
-            refs.teacher.id,
-            refs.schoolClass.id,
-            refs.subject.id,
-            refs.schoolClass.academic_year_id,
-            input.present.assignmentRole ? input.assignmentRole : current.assignment_role,
-            String(assignmentId),
-            school.id,
-          ],
-        );
-        return mapAssignment(await requireCurrent(assignmentId, school.id, tx));
+        const current = await requireCurrent(assignmentId, school.id, scope);
+        const refs = await resolveReferences(scope, school, input, current);
+        await assertCourseAvailable(scope, school.id, refs, String(assignmentId));
+        try {
+          await scope.one(
+            `UPDATE teacher_assignments SET teacher_id = $1, class_id = $2, subject_id = $3,
+               academic_year_id = $4, assignment_role = $5, updated_at = NOW()
+             WHERE id::text = $6 AND school_id = $7 RETURNING id`,
+            [
+              refs.teacher.id,
+              refs.schoolClass.id,
+              refs.subject.id,
+              refs.schoolClass.academic_year_id,
+              input.present.assignmentRole ? input.assignmentRole : current.assignment_role,
+              String(assignmentId),
+              school.id,
+            ],
+          );
+        } catch (error) {
+          if (isTeacherAssignmentsActiveUniquenessViolation(error)) {
+            throw assignmentError(
+              409,
+              "Cette affectation existe déjà pour cet enseignant.",
+              "ASSIGNMENT_ACTIVE_DUPLICATE",
+            );
+          }
+          throw error;
+        }
+        const updated = mapAssignment(await requireCurrent(assignmentId, school.id, scope));
+        if (wantsAudit) {
+          await writeTransactionalAudit(scope, tx, {
+            principal: principal ?? {},
+            auditMeta: auditMeta ?? {},
+            action: "update_teacher_assignment",
+            entityType: "teacher_assignment",
+            entityId: updated.id,
+            oldValue: { teacherCode: current.teacher_code, classCode: current.class_code, subjectCode: current.subject_code },
+            newValue: {
+              teacherCode: updated.teacherCode,
+              classCode: updated.classCode,
+              subjectCode: updated.subjectCode,
+              schoolCode: school.school_code ?? schoolCode,
+            },
+            schoolCode: school.school_code ?? schoolCode,
+          });
+        }
+        return updated;
       });
     },
 
-    async remove(assignmentId, schoolCode) {
+    async remove(assignmentId, schoolCode, principal = null, auditMeta = null) {
       const school = await requireSchool(schoolCode);
-      await requireCurrent(assignmentId, school.id);
-      const row = await db.one(
-        `UPDATE teacher_assignments SET status = 'deleted', updated_at = NOW()
-         WHERE id::text = $1 AND school_id = $2 AND status = 'active' RETURNING id`,
-        [String(assignmentId), school.id],
-      );
-      if (!row) throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
-      return { id: row.id, deleted: true };
+      const wantsAudit = Boolean(principal || auditMeta);
+      const run = async (tx) => {
+        const scope = wantsAudit ? assignmentAuditScope(db, tx) : tx;
+        await requireCurrent(assignmentId, school.id, scope);
+        const row = await scope.one(
+          `UPDATE teacher_assignments SET status = 'deleted', updated_at = NOW()
+           WHERE id::text = $1 AND school_id = $2 AND status = 'active' RETURNING id`,
+          [String(assignmentId), school.id],
+        );
+        if (!row) throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
+        const result = { id: row.id, deleted: true };
+        if (wantsAudit) {
+          await writeTransactionalAudit(scope, tx, {
+            principal: principal ?? {},
+            auditMeta: auditMeta ?? {},
+            action: "delete_teacher_assignment",
+            entityType: "teacher_assignment",
+            entityId: result.id,
+            oldValue: { id: result.id, status: "active" },
+            newValue: { id: result.id, deleted: true, schoolCode: school.school_code ?? schoolCode },
+            schoolCode: school.school_code ?? schoolCode,
+          });
+        }
+        return result;
+      };
+      if (typeof db.withTransaction === "function") {
+        return db.withTransaction(run);
+      }
+      return run(db);
     },
   };
 }

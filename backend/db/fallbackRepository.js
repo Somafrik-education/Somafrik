@@ -1355,9 +1355,14 @@ class FallbackRepository {
             self._managedTeachers.push(row);
             return row;
           }
-          if (text.includes("FROM TEACHERS T") && text.includes("WHERE T.TEACHER_CODE")) {
-            const teacherCode = params[0];
-            const schoolId = params[1];
+          if (
+            text.includes("FROM TEACHERS T") &&
+            text.includes("T.TEACHER_CODE") &&
+            (text.includes("WHERE T.TEACHER_CODE") || text.includes("FOR UPDATE"))
+          ) {
+            const teacherCodeFirst = text.includes("WHERE T.TEACHER_CODE");
+            const teacherCode = teacherCodeFirst ? params[0] : params[1];
+            const schoolId = teacherCodeFirst ? params[1] : params[0];
             const teacher = (self._managedTeachers ?? []).find(
               (row) => row.teacher_code === teacherCode && row.school_id === schoolId,
             );
@@ -1365,6 +1370,9 @@ class FallbackRepository {
             const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
             return {
               ...teacher,
+              teacher_id: teacher.id,
+              teacher_status: teacher.status,
+              user_status: user?.status ?? "active",
               school_code:
                 schoolId === seedData.school.id
                   ? seedData.school.code
@@ -1377,6 +1385,73 @@ class FallbackRepository {
               gender: user?.gender,
               must_change_password: user?.must_change_password,
             };
+          }
+          if (text.startsWith("SELECT U.ID") && text.includes("FROM USERS U")) {
+            const excludeUserId = text.includes("U.ID::TEXT <>") ? params[0] : null;
+            const schoolId = excludeUserId ? params[1] : params[0];
+            const identity = String((excludeUserId ? params[2] : params[1]) ?? "").toLowerCase();
+            const match = (self._managedTeacherUsers ?? []).find((row) => {
+              if (row.school_id !== schoolId) return false;
+              if (["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase())) return false;
+              if (excludeUserId && String(row.id) === String(excludeUserId)) return false;
+              if (text.includes("U.EMAIL")) {
+                return String(row.email ?? "").trim().toLowerCase() === identity;
+              }
+              return String(row.phone ?? "").trim().toLowerCase() === identity;
+            });
+            return match ? { id: match.id, user_code: match.user_code } : null;
+          }
+          if (text.startsWith("UPDATE USERS") && text.includes("SET FIRST_NAME")) {
+            const user = (self._managedTeacherUsers ?? []).find((row) => row.id === params[0]);
+            if (!user) return null;
+            Object.assign(user, {
+              first_name: params[1],
+              last_name: params[2],
+              email: params[3],
+              phone: params[4],
+              birth_date: params[5],
+              gender: params[6],
+              updated_at: new Date().toISOString(),
+            });
+            return { id: user.id };
+          }
+          if (text.startsWith("UPDATE TEACHERS") && text.includes("SET SPECIALITY")) {
+            const teacher = (self._managedTeachers ?? []).find((row) => row.id === params[0]);
+            if (!teacher) return null;
+            Object.assign(teacher, {
+              speciality: params[1],
+              hire_date: params[2],
+              updated_at: new Date().toISOString(),
+            });
+            return { id: teacher.id };
+          }
+          if (text.startsWith("UPDATE TEACHERS") && text.includes("SET STATUS = 'ARCHIVED'")) {
+            const teacher = (self._managedTeachers ?? []).find((row) => row.id === params[0]);
+            if (!teacher) return null;
+            teacher.status = "archived";
+            teacher.updated_at = new Date().toISOString();
+            return { id: teacher.id };
+          }
+          if (text.startsWith("UPDATE USERS") && text.includes("SET STATUS = 'ARCHIVED'")) {
+            const user = (self._managedTeacherUsers ?? []).find((row) => row.id === params[0]);
+            if (!user) return null;
+            user.status = "archived";
+            user.updated_at = new Date().toISOString();
+            const seedUser = seedData.userAccounts.find(
+              (row) => String(row.publicId ?? row.id ?? "") === String(user.user_code) || String(row.id) === String(user.id),
+            );
+            if (seedUser) seedUser.status = "archived";
+            return { id: user.id };
+          }
+          if (text.startsWith("SELECT") && text.includes("AS COURSES")) {
+            const teacherId = params[0];
+            const courses = (self._managedSchoolCourses ?? []).filter(
+              (row) => row.teacher_id === teacherId && row.status === "active",
+            ).length;
+            const schedules = (self._managedScheduleSlots ?? []).filter(
+              (row) => row.teacher_id === teacherId && new Date(row.ends_at).getTime() > Date.now(),
+            ).length;
+            return { courses, schedules };
           }
           return null;
         },
@@ -1394,8 +1469,12 @@ class FallbackRepository {
             const schoolId = params[0];
             return (self._managedTeachers ?? [])
               .filter((row) => row.school_id === schoolId)
+              .filter((row) => !["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase()))
               .map((teacher) => {
                 const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
+                if (user && ["deleted", "archived"].includes(String(user.status ?? "active").toLowerCase())) {
+                  return null;
+                }
                 return {
                   ...teacher,
                   school_code:
@@ -1410,7 +1489,8 @@ class FallbackRepository {
                   gender: user?.gender,
                   must_change_password: user?.must_change_password,
                 };
-              });
+              })
+              .filter(Boolean);
           }
           if (
             text.includes("FROM TEACHERS T") &&
@@ -1419,10 +1499,16 @@ class FallbackRepository {
             text.includes("WHERE T.SCHOOL_ID")
           ) {
             const schoolId = params[0];
+            const excludeCode = params[1];
             return (self._managedTeachers ?? [])
               .filter((row) => row.school_id === schoolId)
+              .filter((row) => !excludeCode || row.teacher_code !== excludeCode)
+              .filter((row) => !["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase()))
               .map((teacher) => {
                 const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);
+                if (user && ["deleted", "archived"].includes(String(user.status ?? "active").toLowerCase())) {
+                  return null;
+                }
                 return {
                   teacher_code: teacher.teacher_code,
                   first_name: user?.first_name,
@@ -1430,7 +1516,8 @@ class FallbackRepository {
                   birth_date: user?.birth_date,
                   gender: user?.gender,
                 };
-              });
+              })
+              .filter(Boolean);
           }
           if (text.startsWith("SELECT TEACHER_CODE AS CODE FROM TEACHERS")) {
             const schoolId = params[0];
@@ -1470,19 +1557,58 @@ class FallbackRepository {
           }
           return [];
         },
-        async query(sql) {
+        async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
           if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
             return { rows: [] };
           }
+          if (text.startsWith("UPDATE TEACHER_ASSIGNMENTS") && text.includes("SET STATUS = 'DELETED'")) {
+            const teacherId = params[0];
+            const teacher = (self._managedTeachers ?? []).find((item) => item.id === teacherId);
+            const teacherCode = teacher?.teacher_code ?? "";
+            self._managedTeacherAssignments = (self._managedTeacherAssignments ?? []).map((row) => {
+              const matches =
+                String(row.teacher_id ?? "") === String(teacherId) ||
+                String(row.teacherCode ?? row.teacherId ?? "") === String(teacherCode);
+              if (!matches || String(row.status ?? "active") !== "active") return row;
+              return { ...row, status: "deleted", updatedAt: new Date().toISOString() };
+            });
+            return { rows: [], rowCount: 1 };
+          }
+          if (text.startsWith("UPDATE SESSIONS") && text.includes("TEACHER_ARCHIVED")) {
+            const userId = params[0];
+            for (const session of self.sessions.values()) {
+              if (String(session.user_id ?? "") === String(userId) && !session.revoked_at) {
+                session.revoked_at = new Date();
+                session.revoke_reason = "teacher_archived";
+              }
+            }
+            return { rows: [], rowCount: 1 };
+          }
           return { rows: [] };
         },
+        createTxScope(tx) {
+          return {
+            one: (sql, params) => (tx || memoryAdapter).one(sql, params),
+            all: (sql, params) => (tx || memoryAdapter).all(sql, params),
+            query: (sql, params) => (tx || memoryAdapter).query(sql, params),
+            getSchoolByCode: (code) => memoryAdapter.getSchoolByCode(code),
+            recordAudit: (payload, innerTx) => self.recordAudit(payload, innerTx ?? tx),
+            withTransaction: (fn) => fn(tx),
+          };
+        },
+        recordAudit: (payload, tx) => self.recordAudit(payload, tx),
         async withTransaction(fn) {
           // Sérialise les créations concurrentes mémoire (simule advisory lock établissement).
           if (!self._teacherTxChain) self._teacherTxChain = Promise.resolve();
           const run = self._teacherTxChain.then(async () => {
             const snapshotTeachers = clone(self._managedTeachers ?? []);
             const snapshotUsers = clone(self._managedTeacherUsers ?? []);
+            const snapshotAssignments = clone(self._managedTeacherAssignments ?? []);
+            const snapshotSessions = [...self.sessions.entries()].map(([id, session]) => [
+              id,
+              { ...session },
+            ]);
             const tx = {
               one: (sql, params) => memoryAdapter.one(sql, params),
               all: (sql, params) => memoryAdapter.all(sql, params),
@@ -1493,6 +1619,13 @@ class FallbackRepository {
             } catch (error) {
               self._managedTeachers = snapshotTeachers;
               self._managedTeacherUsers = snapshotUsers;
+              self._managedTeacherAssignments = snapshotAssignments;
+              for (const [id, session] of snapshotSessions) {
+                const current = self.sessions.get(id);
+                if (!current) continue;
+                current.revoked_at = session.revoked_at;
+                current.revoke_reason = session.revoke_reason;
+              }
               throw error;
             }
           });
@@ -1582,9 +1715,19 @@ class FallbackRepository {
           }
         },
       };
+      this._teachersMemoryDb = memoryAdapter;
       this._teachersRepo = createTeachersRepository(memoryAdapter);
     }
     return this._teachersRepo;
+  }
+
+  getTeacherLifecycleRepository() {
+    if (!this._teacherLifecycleRepo) {
+      const { createTeacherLifecycleRepository } = require("./teacherLifecycleRepository");
+      this.getTeachersRepository();
+      this._teacherLifecycleRepo = createTeacherLifecycleRepository(this._teachersMemoryDb);
+    }
+    return this._teacherLifecycleRepo;
   }
 
   async listSchoolTeachers(schoolCode) {
@@ -1592,6 +1735,7 @@ class FallbackRepository {
     const managed = await this.getTeachersRepository().listBySchoolCode(schoolCode);
     const seeded = (seedData.teachers ?? [])
       .filter((row) => String(row.schoolCode ?? "").trim().toUpperCase() === normalized)
+      .filter((row) => !["archived", "deleted", "archivé"].includes(String(row.status ?? "actif").toLowerCase()))
       .filter(
         (row) =>
           !managed.some(
@@ -1669,8 +1813,54 @@ class FallbackRepository {
     });
   }
 
-  createSchoolTeacher(body, schoolCode) {
-    return this.getTeachersRepository().create(body, schoolCode);
+  createSchoolTeacher(body, schoolCode, principal, auditMeta) {
+    return this.getTeachersRepository().create(body, schoolCode, principal, auditMeta);
+  }
+
+  async updateSchoolTeacher(teacherCode, body, schoolCode, principal, auditMeta) {
+    await this.getTeacherLifecycleRepository().update(
+      teacherCode,
+      body,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
+    const updated = await this.getSchoolTeacherByCode(teacherCode, schoolCode);
+    const seedIdx = (seedData.teachers ?? []).findIndex(
+      (row) => String(row.publicId ?? row.id ?? "") === String(teacherCode),
+    );
+    if (seedIdx >= 0) {
+      seedData.teachers[seedIdx] = {
+        ...seedData.teachers[seedIdx],
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        name: updated.name,
+        email: updated.email,
+        phone: updated.phone,
+        gender: updated.gender,
+        birthDate: updated.birthDate,
+        entryDate: updated.entryDate,
+        speciality: updated.speciality,
+        mainSubject: updated.mainSubject || updated.speciality,
+      };
+    }
+    return updated;
+  }
+
+  async archiveSchoolTeacher(teacherCode, schoolCode, principal, auditMeta) {
+    const result = await this.getTeacherLifecycleRepository().archive(
+      teacherCode,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
+    const seedIdx = (seedData.teachers ?? []).findIndex(
+      (row) => String(row.publicId ?? row.id ?? "") === String(teacherCode),
+    );
+    if (seedIdx >= 0) {
+      seedData.teachers[seedIdx] = { ...seedData.teachers[seedIdx], status: "archived" };
+    }
+    return result;
   }
 
   async listSchoolTeacherAssignments(schoolCode) {
@@ -1696,7 +1886,7 @@ class FallbackRepository {
     );
   }
 
-  async createSchoolTeacherAssignment(body, schoolCode) {
+  async createSchoolTeacherAssignment(body, schoolCode, principal, auditMeta) {
     const { assignmentError, validateAssignmentInput } = require("../lib/teacherAssignmentsManagement");
     const input = validateAssignmentInput(body);
     const code = String(schoolCode ?? "").trim().toUpperCase();
@@ -1753,10 +1943,34 @@ class FallbackRepository {
       updatedAt: new Date().toISOString(),
     };
     this._managedTeacherAssignments.push(created);
+    try {
+      if (principal || auditMeta) {
+        await this.recordAudit({
+          schoolCode: code,
+          userId: principal?.sub || auditMeta?.userId,
+          action: "create_teacher_assignment",
+          entityType: "teacher_assignment",
+          entityId: created.id,
+          newValue: {
+            teacherCode: created.teacherCode,
+            classCode: created.classCode,
+            subjectCode: created.subjectCode,
+            schoolCode: code,
+          },
+          ipAddress: auditMeta?.ipAddress,
+          userAgent: auditMeta?.userAgent,
+        });
+      }
+    } catch (error) {
+      this._managedTeacherAssignments = this._managedTeacherAssignments.filter(
+        (row) => String(row.id) !== String(created.id),
+      );
+      throw error;
+    }
     return clone(created);
   }
 
-  async updateSchoolTeacherAssignment(assignmentId, body, schoolCode) {
+  async updateSchoolTeacherAssignment(assignmentId, body, schoolCode, principal, auditMeta) {
     const current = (await this.listSchoolTeacherAssignments(schoolCode)).find(
       (row) => String(row.id) === String(assignmentId),
     );
@@ -1784,6 +1998,23 @@ class FallbackRepository {
           String(row.id) !== String(current.id),
       );
       this._managedTeacherAssignments.push(created);
+      if (principal || auditMeta) {
+        await this.recordAudit({
+          schoolCode,
+          userId: principal?.sub || auditMeta?.userId,
+          action: "update_teacher_assignment",
+          entityType: "teacher_assignment",
+          entityId: created.id,
+          newValue: {
+            teacherCode: created.teacherCode,
+            classCode: created.classCode,
+            subjectCode: created.subjectCode,
+            schoolCode,
+          },
+          ipAddress: auditMeta?.ipAddress,
+          userAgent: auditMeta?.userAgent,
+        });
+      }
       return clone(created);
     } catch (error) {
       current.status = "active";
@@ -1796,7 +2027,7 @@ class FallbackRepository {
     }
   }
 
-  async deleteSchoolTeacherAssignment(assignmentId, schoolCode) {
+  async deleteSchoolTeacherAssignment(assignmentId, schoolCode, principal, auditMeta) {
     const rows = await this.listSchoolTeacherAssignments(schoolCode);
     const current = rows.find((row) => String(row.id) === String(assignmentId));
     if (!current) {
@@ -1811,6 +2042,25 @@ class FallbackRepository {
       return { ...row, status: "deleted", updatedAt: new Date().toISOString() };
     });
     if (!managed) this._managedTeacherAssignments.push({ ...current, status: "deleted" });
+    try {
+      if (principal || auditMeta) {
+        await this.recordAudit({
+          schoolCode,
+          userId: principal?.sub || auditMeta?.userId,
+          action: "delete_teacher_assignment",
+          entityType: "teacher_assignment",
+          entityId: current.id,
+          newValue: { id: current.id, deleted: true, schoolCode },
+          ipAddress: auditMeta?.ipAddress,
+          userAgent: auditMeta?.userAgent,
+        });
+      }
+    } catch (error) {
+      this._managedTeacherAssignments = this._managedTeacherAssignments.map((row) =>
+        String(row.id) === String(current.id) ? { ...current, status: "active" } : row,
+      );
+      throw error;
+    }
     return { id: current.id, deleted: true };
   }
 

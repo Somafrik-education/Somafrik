@@ -32,6 +32,7 @@ const { TenantScopeService } = require("./services/tenantScopeService");
 const { RoleGovernanceService } = require("./services/roleGovernanceService");
 const { PedagogyGovernanceService } = require("./services/pedagogyGovernanceService");
 const { AuditService } = require("./services/auditService");
+const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
 const { mergeAcademicConfigs } = require("./lib/bulletinDesignAccess");
 const { resolveParentChildren } = require("./lib/parentChildren");
 const { classNamesMatch, normalizePresenceDay } = require("./lib/dataIntegrityRules");
@@ -238,6 +239,8 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/students/:id",
       "/api/teachers",
       "/api/teachers/:teacherCode",
+      "PATCH /api/teachers/:teacherCode",
+      "DELETE /api/teachers/:teacherCode",
       "PATCH /api/students/:id",
       "/api/students/:id/notes",
       "/api/notes",
@@ -752,13 +755,12 @@ app.post("/api/assignments", requireAuth, requirePermission("POST /api/assignmen
     throw new BusinessError(400, "schoolCode établissement requis.");
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const created = await repository.createSchoolTeacherAssignment(req.body ?? {}, schoolCode);
-  await auditService.record(req, "create_teacher_assignment", "teacher_assignment", created.id, {
-    teacherCode: created.teacherCode,
-    classCode: created.classCode,
-    subjectCode: created.subjectCode,
+  const created = await repository.createSchoolTeacherAssignment(
+    req.body ?? {},
     schoolCode,
-  });
+    req.principal,
+    auditMetaFromRequest(req),
+  );
   res.status(201).json(created);
 }));
 
@@ -772,13 +774,9 @@ app.patch("/api/assignments/:assignmentId", requireAuth, requirePermission("PATC
     req.params.assignmentId,
     req.body ?? {},
     schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
   );
-  await auditService.record(req, "update_teacher_assignment", "teacher_assignment", updated.id, {
-    teacherCode: updated.teacherCode,
-    classCode: updated.classCode,
-    subjectCode: updated.subjectCode,
-    schoolCode,
-  });
   res.json(updated);
 }));
 
@@ -788,10 +786,12 @@ app.delete("/api/assignments/:assignmentId", requireAuth, requirePermission("DEL
     throw new BusinessError(400, "schoolCode établissement requis.");
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const result = await repository.deleteSchoolTeacherAssignment(req.params.assignmentId, schoolCode);
-  await auditService.record(req, "delete_teacher_assignment", "teacher_assignment", result.id, {
+  const result = await repository.deleteSchoolTeacherAssignment(
+    req.params.assignmentId,
     schoolCode,
-  });
+    req.principal,
+    auditMetaFromRequest(req),
+  );
   res.json(result);
 }));
 
@@ -1274,15 +1274,65 @@ app.post("/api/teachers", requireAuth, requirePermission("POST /api/teachers"), 
     routeKey: "POST /api/teachers",
     principal: req.principal,
     handler: async () => {
-      const created = await repository.createSchoolTeacher(req.body ?? {}, schoolCode);
-      await auditService.record(req, "create_teacher", "teacher", created.teacherCode, {
-        teacherCode: created.teacherCode,
-        identifier: created.identifier,
-        schoolCode: created.schoolCode,
-      });
+      const created = await repository.createSchoolTeacher(
+        req.body ?? {},
+        schoolCode,
+        req.principal,
+        auditMetaFromRequest(req),
+      );
       return { statusCode: 201, body: sanitizeUserForResponse(created) };
     },
   });
+}));
+
+app.patch("/api/teachers/:teacherCode", requireAuth, requirePermission("PATCH /api/teachers/:teacherCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const updated = await repository.updateSchoolTeacher(
+    req.params.teacherCode,
+    req.body ?? {},
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  const safeTeacher = sanitizeUserForResponse(updated);
+  res.json({
+    ...safeTeacher,
+    assignedClasses: [
+      ...new Set(
+        (safeTeacher.assignedClasses?.length
+          ? safeTeacher.assignedClasses
+          : (safeTeacher.assignments ?? []).map((item) => item.className)
+        ).filter(Boolean),
+      ),
+    ],
+    courses: [
+      ...new Set(
+        (safeTeacher.courses?.length
+          ? safeTeacher.courses
+          : (safeTeacher.assignments ?? []).map((item) => item.course)
+        ).filter(Boolean),
+      ),
+    ],
+  });
+}));
+
+app.delete("/api/teachers/:teacherCode", requireAuth, requirePermission("DELETE /api/teachers/:teacherCode"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const result = await repository.archiveSchoolTeacher(
+    req.params.teacherCode,
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
+  res.json(result);
 }));
 
 app.get("/api/users", requireAuth, requirePermission("GET /api/users"), asyncHandler(async (req, res) => {

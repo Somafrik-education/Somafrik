@@ -1,10 +1,20 @@
 import { api } from "../api/client";
 
+export interface TeacherAssignmentSummary {
+  id?: string | null;
+  className: string;
+  classCode?: string;
+  course: string;
+  subjectCode?: string;
+  status?: string;
+}
+
 export interface SchoolTeacher {
   id: string;
   teacherCode: string;
   publicId: string;
   identifier: string;
+  userId?: string | null;
   firstName: string;
   lastName: string;
   name: string;
@@ -18,6 +28,7 @@ export interface SchoolTeacher {
   schoolCode: string;
   status: string;
   mustChangePassword?: boolean;
+  assignments?: TeacherAssignmentSummary[];
   assignedClasses?: string[];
   courses?: string[];
 }
@@ -34,6 +45,17 @@ export interface CreateTeacherPayload {
   temporaryPassword: string;
 }
 
+export interface UpdateTeacherPayload {
+  firstName?: string;
+  lastName?: string;
+  gender?: string | null;
+  birthDate?: string;
+  entryDate?: string;
+  phone?: string | null;
+  email?: string | null;
+  speciality?: string | null;
+}
+
 export const teachersApi = {
   list: () => api.get<SchoolTeacher[]>("/teachers"),
 
@@ -41,4 +63,12 @@ export const teachersApi = {
     api.get<SchoolTeacher>(`/teachers/${encodeURIComponent(teacherCode)}`),
 
   create: (payload: CreateTeacherPayload) => api.post<SchoolTeacher>("/teachers", payload),
+
+  update: (teacherCode: string, payload: UpdateTeacherPayload) =>
+    api.patch<SchoolTeacher>(`/teachers/${encodeURIComponent(teacherCode)}`, payload),
+
+  remove: (teacherCode: string) =>
+    api.delete<{ teacherCode: string; archived: boolean }>(
+      `/teachers/${encodeURIComponent(teacherCode)}`,
+    ),
 };

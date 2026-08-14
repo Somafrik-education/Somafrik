@@ -11,8 +11,10 @@ import {
 } from "@/design-system";
 import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
-import { ApiError } from "../../api/client";
+import { ApiError, api } from "../../api/client";
 import { teachersApi, type CreateTeacherPayload, type SchoolTeacher } from "../../lib/teachersApi";
+import { teacherAssignmentsApi } from "../../lib/teacherAssignmentsApi";
+import { classesApi, type SchoolClass } from "../../lib/classesApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
 
@@ -26,6 +28,17 @@ type TeacherFormState = {
   email: string;
   speciality: string;
   temporaryPassword: string;
+};
+
+type AssignFormState = {
+  classCode: string;
+  subjectCode: string;
+};
+
+type SubjectOption = {
+  code: string;
+  name: string;
+  status: string;
 };
 
 const EMPTY_FORM: TeacherFormState = {
@@ -42,40 +55,88 @@ const EMPTY_FORM: TeacherFormState = {
 
 function mapApiError(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
-    if (err.status === 403) {
-      return err.message || "Accès refusé.";
-    }
+    if (err.status === 403) return err.message || "Accès refusé.";
+    if (err.status === 404) return err.message || "Enseignant introuvable.";
     if (err.status === 409) {
       return err.message || "Conflit : cette identité enseignant est ambiguë ou déjà présente.";
     }
-    if (err.status === 400) {
-      return err.message || "Données invalides.";
-    }
-    if (err.status >= 500) {
-      return err.message || "Erreur serveur. Réessayez plus tard.";
-    }
+    if (err.status === 400) return err.message || "Données invalides.";
+    if (err.status >= 500) return err.message || "Erreur serveur. Réessayez plus tard.";
     return err.message || fallback;
   }
   return fallback;
 }
 
+function toDateInputValue(value: string): string {
+  const raw = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const fr = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (fr) return `${fr[3]}-${fr[2]}-${fr[1]}`;
+  return "";
+}
+
+function teacherFormFromRow(row: SchoolTeacher): TeacherFormState {
+  return {
+    firstName: row.firstName ?? "",
+    lastName: row.lastName ?? "",
+    gender: row.gender ?? "",
+    birthDate: toDateInputValue(row.birthDate),
+    entryDate: toDateInputValue(row.entryDate),
+    phone: row.phone ?? "",
+    email: row.email ?? "",
+    speciality: row.speciality || row.mainSubject || "",
+    temporaryPassword: "",
+  };
+}
+
+function asSubjectOptions(payload: unknown): SubjectOption[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown[] }).items)
+      ? (payload as { items: unknown[] }).items
+      : [];
+  return rows
+    .map((row) => {
+      const item = row as Record<string, unknown>;
+      const code = String(item.code ?? item.subjectCode ?? item.publicId ?? "").trim();
+      const name = String(item.name ?? item.subject ?? "").trim();
+      return { code, name, status: String(item.status ?? "active") };
+    })
+    .filter((row) => row.code && row.name);
+}
+
 /**
- * Liste et création d'enseignants via /api/teachers (PostgreSQL).
- * Affectations, modification et suppression hors périmètre de cette PR.
+ * Liste et cycle de vie des enseignants via /api/teachers (PostgreSQL).
+ * Affectations : POST /api/assignments exclusivement.
  */
 export function TeachersListPage() {
   const { showToast } = useToast();
   const permissionCtx = usePermissionContext();
   const permissions = getEntityFeaturePermissions(permissionCtx, "teachers", "Enseignants");
+  const assignmentPermissions = getEntityFeaturePermissions(
+    permissionCtx,
+    "assignments",
+    "Affectations",
+  );
 
   const [rows, setRows] = useState<SchoolTeacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<SchoolTeacher | null>(null);
   const [form, setForm] = useState<TeacherFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<SchoolTeacher | null>(null);
+  const [assignForm, setAssignForm] = useState<AssignFormState>({ classCode: "", subjectCode: "" });
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [subjects, setSubjects] = useState<SubjectOption[]>([]);
+  const [deleting, setDeleting] = useState<SchoolTeacher | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,9 +183,46 @@ export function TeachersListPage() {
   }, [rows, search]);
 
   function openCreate() {
+    setEditing(null);
     setForm(EMPTY_FORM);
     setFormError(null);
     setModalOpen(true);
+  }
+
+  function openEdit(row: SchoolTeacher) {
+    setEditing(row);
+    setForm(teacherFormFromRow(row));
+    setFormError(null);
+    setModalOpen(true);
+  }
+
+  async function openAssign(row: SchoolTeacher) {
+    setAssigning(row);
+    setAssignForm({ classCode: "", subjectCode: "" });
+    setAssignError(null);
+    try {
+      const [classRows, subjectPayload] = await Promise.all([
+        classesApi.list(),
+        api.get<unknown>("/v2/subjects"),
+      ]);
+      setClasses(
+        Array.isArray(classRows)
+          ? classRows.filter((item) => String(item.status ?? "active") === "active")
+          : [],
+      );
+      setSubjects(
+        asSubjectOptions(subjectPayload).filter(
+          (item) => String(item.status ?? "active").toLowerCase() !== "archived",
+        ),
+      );
+    } catch (err) {
+      setAssignError(mapApiError(err, "Impossible de charger les classes ou matières."));
+    }
+  }
+
+  function openDelete(row: SchoolTeacher) {
+    setDeleting(row);
+    setDeleteError(null);
   }
 
   async function onSubmit(event: FormEvent) {
@@ -133,27 +231,83 @@ export function TeachersListPage() {
     setSaving(true);
     setFormError(null);
     try {
-      const payload: CreateTeacherPayload = {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        gender: form.gender || undefined,
-        birthDate: form.birthDate,
-        entryDate: form.entryDate || undefined,
-        phone: form.phone.trim() || undefined,
-        email: form.email.trim() || undefined,
-        speciality: form.speciality.trim() || undefined,
-        temporaryPassword: form.temporaryPassword,
-      };
-      await teachersApi.create(payload);
-      setModalOpen(false);
-      showToast("Enseignant créé avec son compte de connexion.", "success");
+      if (editing) {
+        await teachersApi.update(editing.teacherCode || editing.publicId || editing.id, {
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          gender: form.gender || null,
+          birthDate: form.birthDate,
+          entryDate: form.entryDate || undefined,
+          phone: form.phone.trim() || null,
+          email: form.email.trim() || null,
+          speciality: form.speciality.trim() || null,
+        });
+        setModalOpen(false);
+        showToast("Enseignant modifié.", "success");
+      } else {
+        const payload: CreateTeacherPayload = {
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          gender: form.gender || undefined,
+          birthDate: form.birthDate,
+          entryDate: form.entryDate || undefined,
+          phone: form.phone.trim() || undefined,
+          email: form.email.trim() || undefined,
+          speciality: form.speciality.trim() || undefined,
+          temporaryPassword: form.temporaryPassword,
+        };
+        await teachersApi.create(payload);
+        setModalOpen(false);
+        showToast("Enseignant créé avec son compte de connexion.", "success");
+      }
       await load();
     } catch (err) {
-      const message = mapApiError(err, "Création impossible.");
+      const message = mapApiError(err, editing ? "Modification impossible." : "Création impossible.");
       setFormError(message);
       showToast(message, "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onAssign(event: FormEvent) {
+    event.preventDefault();
+    if (!assigning || assignSaving) return;
+    setAssignSaving(true);
+    setAssignError(null);
+    try {
+      await teacherAssignmentsApi.create({
+        teacherCode: assigning.teacherCode || assigning.publicId || assigning.id,
+        classCode: assignForm.classCode,
+        subjectCode: assignForm.subjectCode,
+      });
+      setAssigning(null);
+      showToast("Affectation enregistrée.", "success");
+      await load();
+    } catch (err) {
+      const message = mapApiError(err, "Affectation impossible.");
+      setAssignError(message);
+      showToast(message, "error");
+    } finally {
+      setAssignSaving(false);
+    }
+  }
+
+  async function onDelete() {
+    if (!deleting || deleteSaving) return;
+    setDeleteSaving(true);
+    setDeleteError(null);
+    try {
+      await teachersApi.remove(deleting.teacherCode || deleting.publicId || deleting.id);
+      setDeleting(null);
+      showToast("Enseignant archivé. Le compte d'accès a été désactivé.", "success");
+      await load();
+    } catch (err) {
+      const message = mapApiError(err, "Suppression impossible.");
+      setDeleteError(message);
+      showToast(message, "error");
+    } finally {
+      setDeleteSaving(false);
     }
   }
 
@@ -185,15 +339,42 @@ export function TeachersListPage() {
         render: (row: SchoolTeacher) => row.speciality || row.mainSubject || "—",
       },
       {
+        key: "assignments",
+        header: "Affectations",
+        sortable: false,
+        render: (row: SchoolTeacher) => {
+          const classesLabel = (row.assignedClasses ?? []).filter(Boolean).join(", ");
+          const coursesLabel = (row.courses ?? []).filter(Boolean).join(", ");
+          if (!classesLabel && !coursesLabel) return "—";
+          return [classesLabel, coursesLabel].filter(Boolean).join(" · ");
+        },
+      },
+      {
         key: "actions",
         header: "Actions",
         sortable: false,
-        render: () => (
-          <span className="text-sm text-muted">Modifier / Supprimer / Affecter — prochaine PR</span>
+        render: (row: SchoolTeacher) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {permissions.canUpdate ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(row)}>
+                Modifier
+              </Button>
+            ) : null}
+            {assignmentPermissions.canCreate ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => void openAssign(row)}>
+                Affecter
+              </Button>
+            ) : null}
+            {permissions.canDelete ? (
+              <Button type="button" variant="danger" size="sm" onClick={() => openDelete(row)}>
+                Supprimer
+              </Button>
+            ) : null}
+          </div>
         ),
       },
     ],
-    [],
+    [assignmentPermissions.canCreate, permissions.canDelete, permissions.canUpdate],
   );
 
   if (!permissions.canRead) {
@@ -204,7 +385,7 @@ export function TeachersListPage() {
     <>
       <EntityListShell
         title="Enseignants"
-        description="Création des enseignants et de leur compte de connexion."
+        description="Création, modification, affectation et archivage des enseignants."
         alerts={
           error ? (
             <InlineAlert tone="danger" title="Erreur">
@@ -249,11 +430,19 @@ export function TeachersListPage() {
         )}
       </EntityListShell>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Ajouter un enseignant">
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? "Modifier l'enseignant" : "Ajouter un enseignant"}
+      >
         <form className="space-y-3" onSubmit={(event) => void onSubmit(event)}>
           {formError ? (
             <InlineAlert tone="danger" title="Erreur">
               {formError}
+            </InlineAlert>
+          ) : editing ? (
+            <InlineAlert tone="info" title="Identité canonique">
+              L&apos;établissement, le rôle et les identifiants techniques restent imposés par le serveur.
             </InlineAlert>
           ) : (
             <InlineAlert tone="info" title="Compte de connexion">
@@ -335,27 +524,134 @@ export function TeachersListPage() {
               }
             />
           </Field>
-          <Field label="Mot de passe temporaire" htmlFor="teacher-temp-password" required>
-            <Input
-              id="teacher-temp-password"
-              type="password"
-              autoComplete="new-password"
-              value={form.temporaryPassword}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, temporaryPassword: event.target.value }))
-              }
-              required
-            />
-          </Field>
+          {editing ? null : (
+            <Field label="Mot de passe temporaire" htmlFor="teacher-temp-password" required>
+              <Input
+                id="teacher-temp-password"
+                type="password"
+                autoComplete="new-password"
+                value={form.temporaryPassword}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, temporaryPassword: event.target.value }))
+                }
+                required
+              />
+            </Field>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               Annuler
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? "Création…" : "Créer l'enseignant"}
+              {saving
+                ? editing
+                  ? "Enregistrement…"
+                  : "Création…"
+                : editing
+                  ? "Enregistrer"
+                  : "Créer l'enseignant"}
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(assigning)}
+        onClose={() => setAssigning(null)}
+        title={assigning ? `Affecter ${assigning.name || assigning.lastName}` : "Affecter"}
+      >
+        <form className="space-y-3" onSubmit={(event) => void onAssign(event)}>
+          {assignError ? (
+            <InlineAlert tone="danger" title="Erreur">
+              {assignError}
+            </InlineAlert>
+          ) : (
+            <InlineAlert tone="info" title="Références canoniques">
+              Classe et matière de l&apos;établissement. L&apos;année académique active est imposée
+              côté serveur. Aucun schoolCode n&apos;est envoyé.
+            </InlineAlert>
+          )}
+          {assigning ? (
+            <p className="text-sm text-muted">
+              Affectations actuelles :{" "}
+              {(assigning.assignedClasses ?? []).join(", ") || "aucune classe"} ·{" "}
+              {(assigning.courses ?? []).join(", ") || "aucune matière"}
+            </p>
+          ) : null}
+          <Field label="Classe" htmlFor="teacher-assign-class" required>
+            <Select
+              id="teacher-assign-class"
+              value={assignForm.classCode}
+              onChange={(event) =>
+                setAssignForm((current) => ({ ...current, classCode: event.target.value }))
+              }
+              required
+              options={[
+                { value: "", label: "Sélectionner une classe" },
+                ...classes.map((row) => ({
+                  value: row.classCode,
+                  label: row.name,
+                })),
+              ]}
+            />
+          </Field>
+          <Field label="Matière" htmlFor="teacher-assign-subject" required>
+            <Select
+              id="teacher-assign-subject"
+              value={assignForm.subjectCode}
+              onChange={(event) =>
+                setAssignForm((current) => ({ ...current, subjectCode: event.target.value }))
+              }
+              required
+              options={[
+                { value: "", label: "Sélectionner une matière" },
+                ...subjects.map((row) => ({
+                  value: row.code,
+                  label: row.name,
+                })),
+              ]}
+            />
+          </Field>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setAssigning(null)}>
+              Annuler
+            </Button>
+            <Button type="submit" disabled={assignSaving || !assignForm.classCode || !assignForm.subjectCode}>
+              {assignSaving ? "Enregistrement…" : "Enregistrer l'affectation"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        title="Archiver l'enseignant"
+      >
+        <div className="space-y-3">
+          {deleteError ? (
+            <InlineAlert tone="danger" title="Erreur">
+              {deleteError}
+            </InlineAlert>
+          ) : (
+            <InlineAlert tone="warning" title="Compte d'accès">
+              Cette action archive l&apos;enseignant et désactive son compte de connexion. Les notes,
+              évaluations et présences historiques sont conservées.
+            </InlineAlert>
+          )}
+          <p className="text-sm">
+            Confirmer l&apos;archivage de{" "}
+            <strong>{deleting?.name || `${deleting?.firstName ?? ""} ${deleting?.lastName ?? ""}`.trim()}</strong> ?
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setDeleting(null)}>
+              Annuler
+            </Button>
+            <Button type="button" variant="danger" disabled={deleteSaving} onClick={() => void onDelete()}>
+              {deleteSaving ? "Archivage…" : "Confirmer la suppression"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </>
   );

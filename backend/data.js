@@ -108,6 +108,8 @@ const rolePermissions = {
   "Préfet des études": [
     "Voir élèves",
     "Voir enseignants",
+    "Enseignants:UPDATE",
+    "Enseignants:DELETE",
     "Voir classes",
     "Voir notes",
     "Voir présences",

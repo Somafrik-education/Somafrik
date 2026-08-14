@@ -10,9 +10,10 @@ function createMemoryAdapter() {
     ["CD-2026-0002", { id: "school-2", school_code: "CD-2026-0002" }],
   ]);
   const teachers = [
-    { id: "teacher-1", school_id: "school-1", teacher_code: "CD-2026-0001-ENS-0001", first_name: "Awa", last_name: "Diop" },
-    { id: "teacher-2", school_id: "school-1", teacher_code: "CD-2026-0001-ENS-0002", first_name: "Moussa", last_name: "Ba" },
-    { id: "teacher-x", school_id: "school-2", teacher_code: "CD-2026-0002-ENS-0001", first_name: "Cross", last_name: "Tenant" },
+    { id: "teacher-1", school_id: "school-1", teacher_code: "CD-2026-0001-ENS-0001", first_name: "Awa", last_name: "Diop", status: "active", user_status: "active" },
+    { id: "teacher-2", school_id: "school-1", teacher_code: "CD-2026-0001-ENS-0002", first_name: "Moussa", last_name: "Ba", status: "active", user_status: "active" },
+    { id: "teacher-archived", school_id: "school-1", teacher_code: "CD-2026-0001-ENS-0099", first_name: "Archivé", last_name: "Test", status: "archived", user_status: "archived" },
+    { id: "teacher-x", school_id: "school-2", teacher_code: "CD-2026-0002-ENS-0001", first_name: "Cross", last_name: "Tenant", status: "active", user_status: "active" },
   ];
   const classes = [
     { id: "class-1", school_id: "school-1", class_code: "CLS-6A", name: "6ème A", academic_year_id: "year-1" },
@@ -59,7 +60,9 @@ function createMemoryAdapter() {
         return teachers.find(
           (row) =>
             row.school_id === params[0] &&
-            [row.id, row.teacher_code].includes(String(params[1])),
+            [row.id, row.teacher_code].includes(String(params[1])) &&
+            String(row.status ?? "active") === "active" &&
+            String(row.user_status ?? "active") === "active",
         ) ?? null;
       }
       if (text.startsWith("SELECT CL.ID")) {
@@ -194,5 +197,19 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
     deleted: true,
   });
   assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 0);
+  const recreated = await repo.create(
+    { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+    "CD-2026-0001",
+  );
+  assert.notEqual(recreated.id, created.id);
+  assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 1);
+  await assert.rejects(
+    () =>
+      repo.create(
+        { teacherCode: "CD-2026-0001-ENS-0099", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+        "CD-2026-0001",
+      ),
+    (error) => error.statusCode === 400 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+  );
 });
 
