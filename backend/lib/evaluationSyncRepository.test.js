@@ -365,18 +365,22 @@ async function run() {
     date: "2026-07-23",
   };
 
-  const saved = await repo.saveBackOfficeState({
-    schools: [{ code: "SCH-001", name: "Lycée Test" }],
-    classes: [{ id: "c1", name: "6e A", schoolCode: "SCH-001" }],
-    courses: [{ id: "m1", name: "Mathématiques", schoolCode: "SCH-001" }],
-    evaluations: [evaluation],
-    notes: [],
-  });
-
-  assert.ok(saved.syncAck, "syncAck HTTP réel présent");
-  assert.deepStrictEqual(saved.syncAck.accepted, []);
-  assert.strictEqual(saved.syncAck.rejected.length, 0);
-  assert.strictEqual(repo.tables.evaluations.length, 0, "LOT 5: pas de sync via PUT state");
+  await assert.rejects(
+    () =>
+      repo.saveBackOfficeState({
+        schools: [{ code: "SCH-001", name: "Lycée Test" }],
+        classes: [{ id: "c1", name: "6e A", schoolCode: "SCH-001" }],
+        courses: [{ id: "m1", name: "Mathématiques", schoolCode: "SCH-001" }],
+        evaluations: [evaluation],
+        notes: [],
+      }),
+    (error) => {
+      assert.equal(error.code, "BACKOFFICE_STATE_WRITE_REMOVED");
+      assert.equal(error.statusCode, 410);
+      return true;
+    },
+  );
+  assert.strictEqual(repo.tables.evaluations.length, 0, "LOT 8: PUT state supprimé, pas de sync via saveBackOfficeState");
 
   const syncResult = await repo.syncNotesDomainFromBackOffice({
     schools: [{ code: "SCH-001", name: "Lycée Test" }],
@@ -406,9 +410,7 @@ async function run() {
   assert.ok(pgRow, "ligne lue depuis evaluations");
 
   const refreshed = await repo.getBackOfficeState();
-  assert.ok(refreshed, "getBackOfficeState après save");
-  // Strip des acceptés : evaluations absentes du JSON durable
-  assert.deepStrictEqual(refreshed.evaluations ?? [], []);
+  assert.equal(refreshed, null, "LOT 8: getBackOfficeState ne lit plus le snapshot durable");
 
   // Anti-doublon matière accentuée : Mathématiques déjà créée → Mathematiques ne crée pas
   const subjectCountBefore = repo.tables.subjects.length;
@@ -427,12 +429,18 @@ async function run() {
   assert.strictEqual(repo.tables.evaluations.length, 1);
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
 
-  const putAgain = await repo.saveBackOfficeState({
-    schools: [{ code: "SCH-001", name: "Lycée Test" }],
-    evaluations: [{ ...evaluation, title: "Ignoré par PUT" }],
-    notes: [],
-  });
-  assert.deepStrictEqual(putAgain.syncAck.accepted, []);
+  await assert.rejects(
+    () =>
+      repo.saveBackOfficeState({
+        schools: [{ code: "SCH-001", name: "Lycée Test" }],
+        evaluations: [{ ...evaluation, title: "Ignoré par PUT" }],
+        notes: [],
+      }),
+    (error) => {
+      assert.equal(error.code, "BACKOFFICE_STATE_WRITE_REMOVED");
+      return true;
+    },
+  );
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
 
   // Preuve explicite ensure année seule

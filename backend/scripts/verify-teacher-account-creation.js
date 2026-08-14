@@ -8,10 +8,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
-const {
-  LEGACY_TEACHERS_STATE_WRITE_CODE,
-  LEGACY_ASSIGNMENTS_STATE_WRITE_CODE,
-} = require("../lib/legacyPedagogyStaffStateWrite");
+const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19562;
@@ -373,19 +370,22 @@ async function main() {
     assert.equal(assignmentUpdated.status, 200, JSON.stringify(assignmentUpdated.data));
     assert.equal(assignmentUpdated.data.teacherCode, homonym.data.teacherCode);
 
-    const projectedState = await request("/backoffice/state", { token: admin.token });
-    assert.equal(projectedState.status, 200, JSON.stringify(projectedState.data));
+    const teachersList = await request("/teachers", { token: admin.token });
+    assert.equal(teachersList.status, 200, JSON.stringify(teachersList.data));
     assert.ok(
-      (projectedState.data.teachers ?? []).some(
+      (teachersList.data ?? []).some(
         (row) => String(row.id ?? row.teacherCode ?? row.publicId) === homonym.data.teacherCode,
       ),
-      "state.teachers projette PostgreSQL",
+      "GET /teachers projette PostgreSQL",
     );
+
+    const assignmentsList = await request("/assignments", { token: admin.token });
+    assert.equal(assignmentsList.status, 200, JSON.stringify(assignmentsList.data));
     assert.ok(
-      (projectedState.data.assignments ?? []).some(
+      (assignmentsList.data ?? []).some(
         (row) => String(row.id) === String(assignmentCreated.data.id),
       ),
-      "state.assignments projette PostgreSQL",
+      "GET /assignments projette PostgreSQL",
     );
 
     const teachersPut = await request("/backoffice/state", {
@@ -393,34 +393,34 @@ async function main() {
       token: admin.token,
       body: { teachers: [] },
     });
-    assert.equal(teachersPut.status, 400, JSON.stringify(teachersPut.data));
-    assert.equal(teachersPut.data.code, LEGACY_TEACHERS_STATE_WRITE_CODE);
+    assertBackOfficeStateWriteRemoved(teachersPut, "teachers");
 
     const assignmentsPut = await request("/backoffice/state", {
       method: "PUT",
       token: admin.token,
       body: { assignments: null },
     });
-    assert.equal(assignmentsPut.status, 400, JSON.stringify(assignmentsPut.data));
-    assert.equal(assignmentsPut.data.code, LEGACY_ASSIGNMENTS_STATE_WRITE_CODE);
+    assertBackOfficeStateWriteRemoved(assignmentsPut, "assignments");
 
     const sentinelId = `USER-LOT3-${Date.now()}`;
+    const usersBeforeMixed = await request("/backoffice/users", { token: admin.token });
+    assert.equal(usersBeforeMixed.status, 200, JSON.stringify(usersBeforeMixed.data));
     const mixedPut = await request("/backoffice/state", {
       method: "PUT",
       token: admin.token,
       body: {
-        assignments: projectedState.data.assignments,
+        assignments: assignmentsList.data,
         users: [
-          ...(projectedState.data.users ?? []),
+          ...(usersBeforeMixed.data ?? []),
           { id: sentinelId, name: "Sentinel LOT 3", schoolCode: "CD-2026-0001" },
         ],
       },
     });
-    assert.equal(mixedPut.status, 400, JSON.stringify(mixedPut.data));
-    assert.equal(mixedPut.data.code, LEGACY_ASSIGNMENTS_STATE_WRITE_CODE);
-    const afterMixed = await request("/backoffice/state", { token: admin.token });
+    assertBackOfficeStateWriteRemoved(mixedPut, "mixed staff");
+    const usersAfterMixed = await request("/backoffice/users", { token: admin.token });
+    assert.equal(usersAfterMixed.status, 200, JSON.stringify(usersAfterMixed.data));
     assert.equal(
-      (afterMixed.data.users ?? []).some((row) => String(row.id) === sentinelId),
+      (usersAfterMixed.data ?? []).some((row) => String(row.id) === sentinelId),
       false,
       "aucune mutation partielle sur PUT staff mixte",
     );

@@ -12,6 +12,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { assertBackOfficeStateReadRemoved, assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19573;
@@ -118,7 +119,7 @@ function runUnitGuards() {
   assert.deepEqual(mixed.rejectedKeys, ["feeGrids", "payments"]);
 
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
-  assert.match(server, /stripLegacyFinanceStateWrite/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /overlayFinanceProjection/);
   assert.doesNotMatch(
     server,
@@ -146,25 +147,23 @@ function runUnitGuards() {
   assert.match(pgStore, /FOR UPDATE OF p/);
 
   const postgres = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
-  const saveState = postgres.match(/async saveBackOfficeState\(payload\) \{[\s\S]*?\n  \}\n\n  async getAcademicConfig/);
-  assert.ok(saveState, "saveBackOfficeState PostgreSQL présent");
-  assert.match(saveState[0], /_legacyPayments/);
-  assert.doesNotMatch(saveState[0], /syncFinance|backfillFinance|COPY .*payments/);
+  const saveState = postgres.match(/async saveBackOfficeState[\s\S]*?^  \}/m);
+  assert.ok(saveState, "saveBackOfficeState présent");
+  assert.match(postgres, /async getBackOfficeState\(\)[\s\S]*return null/);
+  assert.match(saveState[0], /createBackOfficeStateWriteRemovedError/);
 
   const webContext = fs.readFileSync(path.join(ROOT, "web/src/context/DataContext.tsx"), "utf8");
   assert.match(webContext, /stripClientFinanceFromPutPayload/);
 
   const mobileApi = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
-  assert.match(mobileApi, /delete rest\.payments/);
+  assert.match(mobileApi, /BACKOFFICE_STATE_READ_REMOVED/);
 
   const mobileContext = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
   assert.match(mobileContext, /entity === "payments"/);
 
   const legacyBackOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
-  const payloadFunction = extractFunction(legacyBackOffice, "getBackOfficeStatePayload");
-  assert.ok(payloadFunction, "getBackOfficeStatePayload présent");
-  assert.doesNotMatch(payloadFunction, /payments:\s*state\.payments/);
-  assert.doesNotMatch(payloadFunction, /paymentStatuses:\s*state\.paymentStatuses/);
+  assert.doesNotMatch(legacyBackOffice, /\/backoffice\/state/);
+  assert.doesNotMatch(legacyBackOffice, /payments:\s*state\.payments/);
 
   console.log("OK unit: Finance hors PUT state et clients legacy");
 }
@@ -202,8 +201,11 @@ async function runHttpGuards() {
     const token = await loginAdmin();
     const stamp = Date.now();
 
-    const stateBefore = await request("/backoffice/state", { token });
-    assert.equal(stateBefore.status, 200, JSON.stringify(stateBefore.data));
+    const usersBefore = await request("/users", { token });
+    assert.equal(usersBefore.status, 200);
+    const baselineUserCount = Array.isArray(usersBefore.data) ? usersBefore.data.length : 0;
+
+    assertBackOfficeStateReadRemoved(await request("/backoffice/state", { token }));
 
     for (const key of FINANCE_STATE_KEYS) {
       const rejected = await request("/backoffice/state", {
@@ -211,9 +213,7 @@ async function runHttpGuards() {
         token,
         body: { [key]: [] },
       });
-      assert.equal(rejected.status, 400, `${key} vide: ${JSON.stringify(rejected.data)}`);
-      assert.equal(rejected.data?.code, LEGACY_FINANCE_STATE_WRITE_CODE);
-      assert.deepEqual(rejected.data?.details?.rejectedKeys, [key]);
+      assertBackOfficeStateWriteRemoved(rejected);
     }
 
     const userSentinelId = `USER-LOT4-${stamp}`;
@@ -224,7 +224,7 @@ async function runHttpGuards() {
         payments: null,
         feeGrids: {},
         users: [
-          ...(stateBefore.data.users ?? []),
+          ...(usersBefore.data ?? []),
           {
             id: userSentinelId,
             name: "Sentinel Lot 4",
@@ -234,15 +234,12 @@ async function runHttpGuards() {
         ],
       },
     });
-    assert.equal(mixed.status, 400, JSON.stringify(mixed.data));
-    assert.equal(mixed.data?.code, LEGACY_FINANCE_STATE_WRITE_CODE);
-    assert.equal(mixed.data?.message, LEGACY_FINANCE_STATE_WRITE_MESSAGE);
-    assert.deepEqual(mixed.data?.details?.rejectedKeys, ["feeGrids", "payments"]);
+    assertBackOfficeStateWriteRemoved(mixed);
 
-    const stateAfter = await request("/backoffice/state", { token });
-    assert.equal(stateAfter.status, 200);
+    const usersAfter = await request("/users", { token });
+    assert.equal(usersAfter.status, 200);
     assert.equal(
-      (stateAfter.data.users ?? []).some((row) => String(row.id) === userSentinelId),
+      (usersAfter.data ?? []).some((row) => String(row.id) === userSentinelId),
       false,
       "aucune mutation partielle users",
     );
@@ -316,13 +313,14 @@ async function runHttpGuards() {
     assert.equal(replay.status, 201, JSON.stringify(replay.data));
     assert.equal(replay.data.reference, payment.data.reference);
 
-    const projected = await request("/backoffice/state", { token });
+    const projected = await request("/payments", { token });
+    assert.equal(projected.status, 200);
     assert.ok(
-      (projected.data.payments ?? []).some((row) => row.reference === payment.data.reference),
-      "GET state projette le paiement PostgreSQL",
+      (projected.data ?? []).some((row) => row.reference === payment.data.reference),
+      "GET /payments projette le paiement PostgreSQL",
     );
 
-    console.log("OK http: APIs Finance PG + PUT fail-closed + projection read-only");
+    console.log("OK http: APIs Finance PG + PUT fail-closed");
   } finally {
     child.kill("SIGTERM");
     await wait(200);

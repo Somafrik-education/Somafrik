@@ -8,20 +8,23 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api } from "../api/client";
 import { useAuth } from "./AuthContext";
-import { SYNC_INTERVAL_MS } from "../lib/constants";
-import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
+import { mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
+import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
-import { stripClientAuditLogFromPutPayload } from "../lib/stripClientAuditLog";
+import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
 import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
-import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientPedagogyStaffFromPutPayload } from "../lib/stripClientPedagogyStaff";
 import { stripClientPedagogyFromPutPayload } from "../lib/stripClientPedagogy";
 import { stripClientPlatformFromPutPayload } from "../lib/stripClientPlatform";
 import { stripClientClientsFromPutPayload } from "../lib/stripClientClients";
+import {
+  extractResidualPatch,
+  hasResidualPatch,
+  syncResidualBackOfficePatch,
+} from "../lib/residualBackOfficeSync";
 import {
   enqueuePatchMutations,
   formatOutboxFailureMessage,
@@ -30,10 +33,21 @@ import {
   reapplyOutboxToState,
   saveSyncOutbox,
   settleOutboxAfterHttpSave,
-  type SyncAck,
   type SyncOutboxEntry,
 } from "../lib/syncOutbox";
 import type { BackOfficeState, Session } from "../types";
+
+interface UpdateOptions {
+  sync?: boolean;
+  partial?: boolean;
+  /** École cible pour la synchronisation résiduelle (configuration multi-établissement). */
+  schoolCode?: string;
+}
+
+interface EnsureDomainsOptions {
+  schoolCode?: string;
+  force?: boolean;
+}
 
 interface DataContextValue {
   state: BackOfficeState;
@@ -41,8 +55,13 @@ interface DataContextValue {
   error: string | null;
   /** HOTFIX-SYNC-01 — journal des mutations non synchronisées. */
   syncJournal: SyncOutboxEntry[];
-  refresh: () => Promise<void>;
-  update: (patch: Partial<BackOfficeState>, options?: { sync?: boolean; partial?: boolean }) => Promise<void>;
+  /** Recharge les domaines déjà chargés, ou ceux passés en argument. */
+  refresh: (domains?: DomainKey[], options?: EnsureDomainsOptions) => Promise<void>;
+  /** Charge les domaines demandés s'ils ne le sont pas encore. */
+  ensureDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => Promise<void>;
+  /** Invalide le cache de domaines (ex. changement d'établissement actif). */
+  invalidateDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => void;
+  update: (patch: Partial<BackOfficeState>, options?: UpdateOptions) => Promise<void>;
   retryFailedSync: () => Promise<void>;
 }
 
@@ -83,11 +102,6 @@ const EMPTY_STATE: BackOfficeState = {
 function stateFromSession(session: Session): BackOfficeState {
   const base: BackOfficeState = {
     ...EMPTY_STATE,
-    schools: session.schools ?? [],
-    users: session.users ?? [],
-    countries: session.countries ?? [],
-    subscriptions: session.subscriptions ?? [],
-    notifications: session.notifications ?? [],
     rolePermissions: session.rolePermissions ?? {},
     academicConfigs: (session.academicConfigs as Record<string, unknown>) ?? {},
     auditLog: session.auditLog ?? [],
@@ -101,10 +115,6 @@ function samePermissionSet(left: string[], right: string[]) {
   return right.every((item) => values.has(item));
 }
 
-function extractSyncAck(saved: Partial<BackOfficeState> & { syncAck?: SyncAck }): SyncAck | null {
-  return saved.syncAck ?? null;
-}
-
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -116,6 +126,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
   const sessionUserRef = useRef(session?.user ?? null);
   sessionUserRef.current = session?.user ?? null;
+  const loadedDomainsRef = useRef<Set<string>>(new Set());
+  const activeSchoolCodeRef = useRef("");
+
+  const rememberSchoolCode = useCallback((schoolCode?: string) => {
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    if (normalized && normalized !== "*") {
+      activeSchoolCodeRef.current = normalized;
+    }
+  }, []);
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,45 +145,97 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSyncJournal(listActiveOutboxEntries(entries));
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (!session || syncPausedRef.current) return;
-    setLoading(true);
-    try {
-      const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
-      const outbox = loadSyncOutbox();
+  const cacheKeysForDomains = useCallback((domains: DomainKey[], schoolCode?: string) => {
+    return domains.map((domain) => domainCacheKey(domain, schoolCode));
+  }, []);
+
+  const mergeLoadedDomains = useCallback(
+    (remote: Partial<BackOfficeState>, cacheKeys: string[]) => {
+      for (const key of cacheKeys) loadedDomainsRef.current.add(key);
       setState((prev) => {
         const merged = mergeRemoteSnapshot(prev, remote);
-        const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries(outbox));
-        return session?.user ? applyClientScopeToState(withPending, session.user) : withPending;
+        const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
+        return sessionUserRef.current
+          ? applyClientScopeToState(withPending, sessionUserRef.current)
+          : withPending;
       });
-      const failure = formatOutboxFailureMessage(outbox);
-      if (failure) setError(failure);
-      else setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur de chargement");
-    } finally {
-      setLoading(false);
+    },
+    [],
+  );
+
+  const invalidateDomains = useCallback((domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
+    for (const domain of domains) {
+      loadedDomainsRef.current.delete(domainCacheKey(domain, options.schoolCode));
     }
-  }, [session]);
+  }, []);
+
+  const refreshDomains = useCallback(
+    async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
+      if (!session || syncPausedRef.current) return;
+      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
+      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+
+      let keys = domains;
+      if (!keys?.length) {
+        keys = [...new Set(
+          [...loadedDomainsRef.current].map((cacheKey) => cacheKey.split(":")[0] as DomainKey),
+        )];
+      }
+      if (!keys.length) return;
+
+      setLoading(true);
+      try {
+        const result = await loadDomains(keys, { schoolCode });
+        if (result.loaded.length) {
+          mergeLoadedDomains(result.data, cacheKeysForDomains(result.loaded, schoolCode));
+        }
+        const failure = formatOutboxFailureMessage(loadSyncOutbox());
+        const loadError = result.serverErrors.map((entry) => `${entry.domain}: ${entry.message}`).join(" ; ");
+        setError(failure || loadError || null);
+        if (result.serverErrors.length) {
+          throw new Error(loadError);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message) setError(err.message);
+        else setError("Erreur de chargement");
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [session, mergeLoadedDomains, cacheKeysForDomains, rememberSchoolCode],
+  );
+
+  const ensureDomains = useCallback(
+    async (domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
+      if (!session) return;
+      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
+      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+      const pending = domains.filter((domain) => {
+        const cacheKey = domainCacheKey(domain, schoolCode);
+        if (options.force) return true;
+        return !loadedDomainsRef.current.has(cacheKey);
+      });
+      if (!pending.length) return;
+      if (options.force) {
+        invalidateDomains(pending, { schoolCode });
+      }
+      await refreshDomains(pending, { schoolCode });
+    },
+    [session, refreshDomains, invalidateDomains, rememberSchoolCode],
+  );
 
   useEffect(() => {
     if (session) {
+      loadedDomainsRef.current = new Set();
       const seeded = reapplyOutboxToState(stateFromSession(session), listActiveOutboxEntries());
       setState(seeded);
-      void refresh();
     } else {
+      loadedDomainsRef.current = new Set();
       setState(EMPTY_STATE);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken]);
-
-  useEffect(() => {
-    if (!session?.accessToken) return;
-    const timer = window.setInterval(() => {
-      void refresh();
-    }, SYNC_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [session?.accessToken, refresh]);
 
   useEffect(() => {
     if (!session?.user?.role || !session.accessToken) return;
@@ -184,15 +255,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [state.rolePermissions, session?.accessToken, session?.user?.role, setSession]);
 
   const update = useCallback(
-    async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
+    async (patch: Partial<BackOfficeState>, options: UpdateOptions = {}) => {
       syncPausedRef.current = true;
-      const usePartial = options.partial !== false;
 
       const canonicalPatch = stripClientClientsFromPutPayload(
         stripClientPlatformFromPutPayload(
           stripClientPedagogyFromPutPayload(
             stripClientFinanceFromPutPayload(
-              stripClientPedagogyStaffFromPutPayload(patch as Record<string, unknown>),
+              stripClientPedagogyStaffFromPutPayload(
+                stripClientStudentsFromPutPayload(
+                  stripClientSchoolsFromPutPayload(patch as Record<string, unknown>),
+                ),
+              ),
             ),
           ),
         ),
@@ -232,50 +306,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
       persistJournal(workingOutbox);
 
       try {
-        const rawPayload = usePartial
-          ? (annotatedPatch as Partial<BackOfficeState>)
-          : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
-        // HOTFIX-RBAC-ADMIN-01 : jamais envoyer auditLog (non writable client → 403).
-        const payload = stripClientClientsFromPutPayload(
-          stripClientPlatformFromPutPayload(
-            stripClientPedagogyFromPutPayload(
-              stripClientFinanceFromPutPayload(
-                stripClientPedagogyStaffFromPutPayload(
-                  stripClientStudentsFromPutPayload(
-                    stripClientSchoolsFromPutPayload(
-                      stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ) as Partial<BackOfficeState>;
-        const saved = await api.put<Partial<BackOfficeState> & { syncAck?: SyncAck }>(
-          "/backoffice/state",
-          payload,
-        );
-        const ack = extractSyncAck(saved);
-        // ACK Notes explicite + ACK implicite des domaines snapshot BO (presences/exams/payments).
+        const residualPatch = extractResidualPatch(annotatedPatch as Partial<BackOfficeState>);
+        if (!hasResidualPatch(residualPatch)) {
+          workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
+            ack: { accepted: [], rejected: [] },
+            annotatedPatch,
+          });
+          persistJournal(workingOutbox);
+          syncPausedRef.current = false;
+          return;
+        }
+
+        const sessionSchool = String(sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase();
+        const targetSchool =
+          String(options.schoolCode ?? sessionSchool).trim().toUpperCase() || sessionSchool;
+        await syncResidualBackOfficePatch(residualPatch, targetSchool);
+
+        const refreshKeys = domainsFromPatch(residualPatch);
+        if (refreshKeys.length) {
+          const targetSchool =
+            String(options.schoolCode ?? sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase() || undefined;
+          const result = await loadDomains(refreshKeys, { schoolCode: targetSchool });
+          if (result.loaded.length) {
+            mergeLoadedDomains(result.data, cacheKeysForDomains(result.loaded, targetSchool));
+          }
+        }
+
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
-          ack,
+          ack: {
+            accepted: Object.keys(residualPatch).map((entity) => ({ entity })),
+            rejected: [],
+          },
           annotatedPatch,
         });
         persistJournal(workingOutbox);
 
-        setState((prev) => {
-          const base = usePartial
-            ? applyPartialSave(prev, saved, annotatedPatch as Partial<BackOfficeState>)
-            : mergeRemoteSnapshot(prev, saved);
-          const withPending = reapplyOutboxToState(base, listActiveOutboxEntries(workingOutbox));
-          return sessionUserRef.current
-            ? applyClientScopeToState(withPending, sessionUserRef.current)
-            : withPending;
-        });
-
         const failure = formatOutboxFailureMessage(workingOutbox);
         setError(failure);
-        // HOTFIX-SYNC-02 : un rejet métier (ex. rattachement) doit remonter à l'UI.
         if (failure) {
           syncPausedRef.current = false;
           throw new Error(failure);
@@ -303,7 +370,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }, 1500);
       }
     },
-    [persistJournal],
+    [mergeLoadedDomains, persistJournal, cacheKeysForDomains],
   );
 
   const retryFailedSync = useCallback(async () => {
@@ -325,8 +392,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [update]);
 
   const value = useMemo<DataContextValue>(
-    () => ({ state, loading, error, syncJournal, refresh, update, retryFailedSync }),
-    [state, loading, error, syncJournal, refresh, update, retryFailedSync],
+    () => ({
+      state,
+      loading,
+      error,
+      syncJournal,
+      refresh: refreshDomains,
+      ensureDomains,
+      invalidateDomains,
+      update,
+      retryFailedSync,
+    }),
+    [state, loading, error, syncJournal, refreshDomains, ensureDomains, invalidateDomains, update, retryFailedSync],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

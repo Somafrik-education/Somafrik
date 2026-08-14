@@ -1,11 +1,15 @@
-# Somafrik Plateforme (legacy)
+# BackOffice (retiré — LOT 8)
 
-Portail web historique réservé aux comptes plateforme.
+L'application autonome `BackOffice/` est **dépréciée et retirée**.
 
-## Accès
+- Plus de `GET /api/backoffice/state` (lecture globale supprimée).
+- Plus de `PUT /api/backoffice/state` (écriture globale supprimée depuis LOT 8).
+- Plus de polling ni de synchronisation snapshot côté client.
 
-```
-http://localhost:5000/backoffice
-```
+## Remplacement
 
-Préférez la version React moderne : http://localhost:5173/web/
+- **Web** : `/web/` (React)
+- **Mobile** : application React Native
+- **APIs métier** : routes dédiées par domaine (`/api/backoffice/establishments`, `/api/students`, etc.)
+
+Cette page statique redirige vers `/web/` pour les anciennes URL.

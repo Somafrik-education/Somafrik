@@ -66,7 +66,6 @@ function runServiceLoginTests() {
     password: "1234",
   });
   assertNoSensitiveFields(login.user, "BackOfficeAccessService.login.user");
-  assertNoSensitiveFields(login.users, "BackOfficeAccessService.login.users");
   assert.ok(login.user?.role, "role présent après sanitization");
 
   const auth = new AuthService({
@@ -202,7 +201,6 @@ async function runHttpTestsIfAvailable() {
   assert.ok(login?.accessToken, "login accessToken attendu");
   assert.ok(login.refreshToken, "refreshToken top-level attendu");
   assertNoSensitiveFields(login.user, "HTTP login.user");
-  assertNoSensitiveFields(login.users, "HTTP login.users");
   // refreshToken / accessToken top-level autorisés (contrat auth), jamais dans user.
   assertNoSensitiveFields(login, "HTTP login payload", {
     ignoreTopLevelKeys: ["refreshToken", "accessToken"],

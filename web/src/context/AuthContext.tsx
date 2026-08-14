@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = sessionRef.current?.accessToken;
     if (!token) return;
     let cancelled = false;
-    void api.get("/backoffice/state").catch((err) => {
+    void api.get("/auth/effective-permissions").catch((err) => {
       if (cancelled) return;
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         setSession(null);

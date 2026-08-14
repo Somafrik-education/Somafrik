@@ -12,6 +12,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { assertBackOfficeStateReadRemoved, assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19572;
@@ -106,24 +107,20 @@ function runUnitGuards() {
   assert.equal(Object.prototype.hasOwnProperty.call(mixed.body, "students"), false);
 
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
-  assert.match(server, /stripLegacyStudentsStateWrite/);
+  assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
   assert.match(server, /students:\s*runtimeState\.students \?\? \[\]/);
 
   const postgres = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
-  const saveState = postgres.match(/async saveBackOfficeState\(payload\) \{[\s\S]*?\n  \}\n\n  async getAcademicConfig/);
-  assert.ok(saveState, "saveBackOfficeState PostgreSQL présent");
-  assert.doesNotMatch(
-    saveState[0],
-    /syncStudentsDomainFromBackOffice/,
-    "PUT state ne déclenche plus le sync students JSON → PG",
-  );
-  assert.match(saveState[0], /payloadWithoutStudents/);
+  const saveState = postgres.match(/async saveBackOfficeState[\s\S]*?^  \}/m);
+  assert.ok(saveState, "saveBackOfficeState présent");
+  assert.match(postgres, /async getBackOfficeState\(\)[\s\S]*return null/);
+  assert.match(saveState[0], /createBackOfficeStateWriteRemovedError/);
 
   const webContext = fs.readFileSync(path.join(ROOT, "web/src/context/DataContext.tsx"), "utf8");
   assert.match(webContext, /stripClientStudentsFromPutPayload/);
 
   const mobileApi = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
-  assert.match(mobileApi, /delete rest\.students/);
+  assert.match(mobileApi, /BACKOFFICE_STATE_READ_REMOVED/);
 
   const mobileContext = fs.readFileSync(
     path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"),
@@ -135,9 +132,8 @@ function runUnitGuards() {
   );
 
   const legacyBackOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
-  const payloadFunction = extractFunction(legacyBackOffice, "getBackOfficeStatePayload");
-  assert.ok(payloadFunction, "getBackOfficeStatePayload présent");
-  assert.doesNotMatch(payloadFunction, /students:\s*state\.students/);
+  assert.doesNotMatch(legacyBackOffice, /\/backoffice\/state/);
+  assert.doesNotMatch(legacyBackOffice, /students:\s*state\.students/);
 
   console.log("OK unit: Students hors PUT state et clients legacy");
 }
@@ -220,23 +216,25 @@ async function runHttpGuards() {
     assert.equal(patched.status, 200, JSON.stringify(patched.data));
     assert.equal(patched.data.parentPhone, "+24380002222");
 
-    const stateBefore = await request("/backoffice/state", { token });
-    assert.equal(stateBefore.status, 200, JSON.stringify(stateBefore.data));
+    const studentsBefore = await request("/students", { token });
+    assert.equal(studentsBefore.status, 200, JSON.stringify(studentsBefore.data));
     assert.ok(
-      (stateBefore.data.students ?? []).some(
+      (studentsBefore.data ?? []).some(
         (row) => String(row.studentCode ?? row.matricule ?? row.publicId) === studentCode,
       ),
-      "state.students projette l'élève PostgreSQL",
+      "GET /students projette l'élève PostgreSQL",
     );
+
+    const usersBefore = await request("/users", { token });
+    assert.equal(usersBefore.status, 200);
+    const baselineUsers = usersBefore.data ?? [];
 
     const onlyStudents = await request("/backoffice/state", {
       method: "PUT",
       token,
       body: { students: [{ id: "STUDENT-HACK", schoolCode: "CD-2026-0001" }] },
     });
-    assert.equal(onlyStudents.status, 400, JSON.stringify(onlyStudents.data));
-    assert.equal(onlyStudents.data?.code, LEGACY_STUDENTS_STATE_WRITE_CODE);
-    assert.equal(onlyStudents.data?.message, LEGACY_STUDENTS_STATE_WRITE_MESSAGE);
+    assertBackOfficeStateWriteRemoved(onlyStudents);
 
     const userSentinelId = `USER-LOT2-${stamp}`;
     const mixed = await request("/backoffice/state", {
@@ -245,7 +243,7 @@ async function runHttpGuards() {
       body: {
         students: [{ id: "STUDENT-MIXED-HACK" }],
         users: [
-          ...(stateBefore.data.users ?? []),
+          ...baselineUsers,
           {
             id: userSentinelId,
             name: "Sentinel Lot 2",
@@ -255,43 +253,35 @@ async function runHttpGuards() {
         ],
       },
     });
-    assert.equal(mixed.status, 400, JSON.stringify(mixed.data));
-    assert.equal(mixed.data?.code, LEGACY_STUDENTS_STATE_WRITE_CODE);
+    assertBackOfficeStateWriteRemoved(mixed);
 
-    const {
-      schools: _readOnlySchools,
-      classes: _readOnlyClasses,
-      students: _readOnlyStudents,
-      ...writableSnapshot
-    } = stateBefore.data;
     const snapshot = await request("/backoffice/state", {
       method: "PUT",
       token,
       body: {
-        ...writableSnapshot,
-        students: stateBefore.data.students,
         users: [
-          ...(stateBefore.data.users ?? []),
+          ...baselineUsers,
           { id: userSentinelId, name: "Snapshot Sentinel" },
         ],
       },
     });
-    assert.equal(snapshot.status, 400, JSON.stringify(snapshot.data));
-    assert.equal(snapshot.data?.code, LEGACY_STUDENTS_STATE_WRITE_CODE);
+    assertBackOfficeStateWriteRemoved(snapshot);
 
-    const stateAfter = await request("/backoffice/state", { token });
-    assert.equal(stateAfter.status, 200);
+    const usersAfter = await request("/users", { token });
+    const studentsAfter = await request("/students", { token });
+    assert.equal(usersAfter.status, 200);
+    assert.equal(studentsAfter.status, 200);
     assert.equal(
-      (stateAfter.data.users ?? []).some((row) => String(row.id) === userSentinelId),
+      (usersAfter.data ?? []).some((row) => String(row.id) === userSentinelId),
       false,
       "aucune mutation partielle users",
     );
     assert.equal(
-      (stateAfter.data.students ?? []).some((row) => String(row.id) === "STUDENT-MIXED-HACK"),
+      (studentsAfter.data ?? []).some((row) => String(row.id) === "STUDENT-MIXED-HACK"),
       false,
       "aucune mutation students",
     );
-    const projected = (stateAfter.data.students ?? []).find(
+    const projected = (studentsAfter.data ?? []).find(
       (row) => String(row.studentCode ?? row.matricule ?? row.publicId) === studentCode,
     );
     assert.equal(projected?.parentPhone, "+24380002222");
@@ -315,7 +305,7 @@ async function runHttpGuards() {
     assert.equal(importValidation.data.summary.rejected, 1, "import voit le doublon PG projeté");
 
     console.log(
-      "OK http: APIs élèves PG + projection read-only + PUT students seul/mixte/snapshot refusé",
+      "OK http: APIs élèves PG + PUT students seul/mixte/snapshot refusé",
     );
   } finally {
     child.kill("SIGTERM");

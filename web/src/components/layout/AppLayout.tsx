@@ -6,6 +6,7 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 import { SubscriptionAccessBanner } from "../SubscriptionAccessBanner";
+import { DomainRouteBootstrap } from "../DomainRouteBootstrap";
 
 const SUBSCRIPTION_NAV = [
   { path: "/abonnements/offres", label: "Abonnements" },
@@ -61,6 +62,7 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen">
+      <DomainRouteBootstrap />
       <Sidebar />
       <MobileNavDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
