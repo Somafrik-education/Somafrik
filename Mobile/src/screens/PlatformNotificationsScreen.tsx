@@ -16,18 +16,15 @@ import { canMutateEntity, hasSecurityPermission } from "../domain/security/permi
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import type { PlatformNotification } from "../lib/scope";
+import { isUnreadNotification } from "../lib/platformNotificationSync";
 
 const TYPE_OPTIONS = ["Information", "Alerte", "Paiement", "Académique", "Système"];
 const PRIORITY_OPTIONS = ["Normale", "Haute", "Critique"];
 const AUDIENCE_OPTIONS = ["Tous", "Super Administrateur Somafrik", "Admin Pays", "Administrateurs Établissement", "Enseignants", "Parents", "Élèves"];
 
-function newId() {
-  return `ntf-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 export default function PlatformNotificationsScreen() {
   const { session } = useAuth();
-  const { notificationsData, upsertNotification, updateNotifications } = useAdminData();
+  const { notificationsData, upsertNotification, markNotificationsRead } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
   const [composing, setComposing] = useState<Partial<PlatformNotification> | null>(null);
@@ -41,13 +38,11 @@ export default function PlatformNotificationsScreen() {
   );
 
   const markAllRead = () => {
-    updateNotifications(notificationsData.map((item) => ({ ...item, status: "Lu" })));
+    markNotificationsRead(notificationsData.filter((item) => isUnreadNotification(item)));
   };
 
   const markRead = (item: PlatformNotification) => {
-    updateNotifications(
-      notificationsData.map((row) => (row.id === item.id ? { ...row, status: "Lu" } : row)),
-    );
+    markNotificationsRead([item]);
   };
 
   const saveNotification = () => {
@@ -61,7 +56,6 @@ export default function PlatformNotificationsScreen() {
       type: composing.type ?? "Information",
       audience: composing.audience ?? "Tous",
       priority: composing.priority ?? "Normale",
-      id: composing.id ?? newId(),
       status: composing.status ?? "Non lu",
       date: composing.date ?? new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
       createdBy: session?.user.name ?? "Mobile",

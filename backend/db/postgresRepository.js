@@ -435,7 +435,8 @@ class PostgresRepository {
   }
 
   async ensurePlatformCanonicalSchema() {
-    const { PLATFORM_SCHEMA_SQL } = require("./platformSchema");
+    const { PLATFORM_SCHEMA_SQL, assertPlatformSchemaPreflight } = require("./platformSchema");
+    await assertPlatformSchemaPreflight(this);
     await this.query(PLATFORM_SCHEMA_SQL);
   }
 

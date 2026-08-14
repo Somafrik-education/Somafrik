@@ -102,6 +102,7 @@ function runUnitGuards() {
   assert.match(server, /repository\.getRolePermissionsMap/);
   assert.match(server, /requirePermission\("GET \/api\/backoffice\/subscription-access"\)/);
   assert.match(postgres, /ensurePlatformCanonicalSchema/);
+  assert.match(postgres, /assertPlatformSchemaPreflight/);
   assert.match(postgres, /countries: _legacyCountries/);
   assert.match(webDataContext, /stripClientPlatformFromPutPayload/);
 

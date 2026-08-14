@@ -96,4 +96,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_subscriptions_school_id
   ON subscriptions (school_id);
 `;
 
-module.exports = { PLATFORM_SCHEMA_SQL };
+const SUBSCRIPTION_DUPLICATE_PREFLIGHT_SQL = `
+  SELECT school_id, COUNT(*)::int AS count
+  FROM subscriptions
+  WHERE school_id IS NOT NULL
+  GROUP BY school_id
+  HAVING COUNT(*) > 1
+`;
+
+/**
+ * Fail-closed avant création de uq_subscriptions_school_id sur une base peuplée.
+ * @param {{ all: (sql: string) => Promise<Array<{ school_id: string, count: number }>> }} repo
+ */
+async function assertPlatformSchemaPreflight(repo) {
+  let duplicates = [];
+  try {
+    duplicates = await repo.all(SUBSCRIPTION_DUPLICATE_PREFLIGHT_SQL);
+  } catch (error) {
+    if (/relation "subscriptions" does not exist/i.test(String(error?.message ?? ""))) {
+      return;
+    }
+    throw error;
+  }
+
+  if (!duplicates.length) {
+    return;
+  }
+
+  const error = new Error(
+    `PLATFORM_SCHEMA_PREFLIGHT_FAILED: ${duplicates.length} école(s) avec plusieurs abonnements. ` +
+      "Exécuter SELECT school_id, COUNT(*) FROM subscriptions GROUP BY school_id HAVING COUNT(*) > 1;",
+  );
+  error.code = "PLATFORM_SUBSCRIPTION_DUPLICATES";
+  error.statusCode = 500;
+  error.details = { duplicates };
+  throw error;
+}
+
+module.exports = {
+  PLATFORM_SCHEMA_SQL,
+  SUBSCRIPTION_DUPLICATE_PREFLIGHT_SQL,
+  assertPlatformSchemaPreflight,
+};

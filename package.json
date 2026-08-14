@@ -43,7 +43,7 @@
     "verify:finance-legacy-cleanup": "node --test backend/lib/legacyFinanceStateWrite.test.js && node backend/scripts/verify-finance-legacy-cleanup.js",
     "verify:pedagogy-management": "node --test backend/lib/legacyPedagogyStateWrite.test.js backend/lib/pedagogyReferences.test.js && node backend/lib/pedagogyRepository.test.js && node backend/lib/pedagogyRepository.pg.test.js && node backend/lib/pedagogyMigration.pg.test.js && node backend/scripts/verify-pedagogy-management.js",
     "verify:pedagogy-legacy-cleanup": "node --test backend/lib/legacyPedagogyStateWrite.test.js && node backend/scripts/verify-pedagogy-legacy-cleanup.js",
-    "verify:platform-management": "node --test backend/lib/legacyPlatformStateWrite.test.js && node backend/lib/platformRepository.test.js && node backend/lib/platformRepository.pg.test.js && node backend/lib/platformMigration.pg.test.js && node backend/scripts/verify-platform-management.js",
+    "verify:platform-management": "node --test backend/lib/legacyPlatformStateWrite.test.js && node backend/lib/platformRepository.test.js && node backend/lib/platformRepository.pg.test.js && node backend/lib/platformMigration.pg.test.js && npx --yes tsx Mobile/src/lib/platformNotificationSync.test.ts && node backend/scripts/verify-platform-management.js",
     "verify:platform-legacy-cleanup": "node backend/scripts/verify-platform-legacy-cleanup.js",
     "inventory:teachers-school-user-duplicates": "node backend/scripts/inventory-teachers-school-user-duplicates.js",
     "verify:pre-e1-hotfix-02": "node --test backend/lib/legacyPedagogyStaffStateWrite.test.js backend/lib/teacherAssignmentsManagement.test.js && node backend/lib/evaluationAttachment.test.js",

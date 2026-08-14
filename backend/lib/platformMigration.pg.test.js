@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("path");
 const { Pool } = require("pg");
-const { PLATFORM_SCHEMA_SQL } = require("../db/platformSchema");
+const { PLATFORM_SCHEMA_SQL, assertPlatformSchemaPreflight } = require("../db/platformSchema");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DB = String(process.env.SOMAFRIK_PLATFORM_MIGRATION_IT_DATABASE ?? "somafrik_platform_migration_it")
@@ -75,6 +75,43 @@ async function main() {
 
     const roles = await pool.query(`SELECT permissions FROM role_permissions WHERE role_name = 'Admin School'`);
     assert.equal(roles.rows[0].permissions[0], "Voir tableau de bord");
+
+    const repo = {
+      all: async (sql) => {
+        const result = await pool.query(sql);
+        return result.rows;
+      },
+    };
+    await assertPlatformSchemaPreflight(repo);
+
+    const index = await pool.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = 'uq_subscriptions_school_id'`,
+    );
+    assert.equal(index.rowCount, 1);
+
+    await pool.query("DROP SCHEMA public CASCADE");
+    await pool.query("CREATE SCHEMA public");
+    await pool.query(schema);
+
+    const countryDup = await pool.query(
+      `INSERT INTO countries (name, iso_code, phone_code, currency)
+       VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
+    );
+    const schoolDup = await pool.query(
+      `INSERT INTO schools (country_id, school_code, name, status)
+       VALUES ($1, 'CD-2026-DUP', 'Dup', 'active') RETURNING id`,
+      [countryDup.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO subscriptions (school_id, plan_name, price_per_student, billing_currency, billing_cycle, status)
+       VALUES ($1, 'A', 1, 'CDF', 'monthly', 'active'), ($1, 'B', 2, 'CDF', 'monthly', 'active')`,
+      [schoolDup.rows[0].id],
+    );
+
+    await assert.rejects(
+      () => assertPlatformSchemaPreflight(repo),
+      (error) => error.code === "PLATFORM_SUBSCRIPTION_DUPLICATES",
+    );
 
     console.log("platformMigration.pg.test.js OK");
   } finally {
