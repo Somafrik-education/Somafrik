@@ -86,3 +86,6 @@ CREATE INDEX IF NOT EXISTS idx_subscription_discounts_school
 
 CREATE INDEX IF NOT EXISTS idx_subscription_audit_log_school
   ON subscription_audit_log (school_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscriptions_school_id
+  ON subscriptions (school_id);

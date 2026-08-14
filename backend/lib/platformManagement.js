@@ -149,14 +149,24 @@ function mapSubscriptionRow(row) {
   };
 }
 
-function mapNotificationRow(row) {
+function resolveNotificationCountryCode(row = {}) {
   const profile = parsePayload(row.profile_payload);
+  return asTrimmed(profile.countryCode || row.country_code);
+}
+
+function mapNotificationRow(row) {
+  if (!row) {
+    return null;
+  }
+  const profile = parsePayload(row.profile_payload);
+  const countryCode = resolveNotificationCountryCode(row);
+  const { countryCode: _ignoredCountry, ...profileRest } = profile;
   return {
     id: row.id,
     schoolId: row.school_id,
     schoolCode: row.school_code || profile.schoolCode,
     audience: profile.audience || "BackOffice",
-    countryCode: profile.countryCode || row.country_code || "*",
+    countryCode,
     title: row.title,
     message: row.message,
     type: row.type || profile.type || "Information",
@@ -165,7 +175,7 @@ function mapNotificationRow(row) {
     status: row.read_at || row.status === "read" || profile.status === "Lu" ? "Lu" : profile.status || "Non lu",
     date: formatDate(row.sent_at ?? row.created_at) || profile.date,
     createdBy: profile.createdBy || "PostgreSQL",
-    ...profile,
+    ...profileRest,
   };
 }
 
@@ -305,6 +315,93 @@ function assertSchoolScope(principal, schoolCode) {
   }
 }
 
+async function assertSchoolInPrincipalCountry(store, principal, schoolCode) {
+  if (!isCountryAdminPrincipal(principal)) {
+    return;
+  }
+  const normalized = asTrimmed(schoolCode).toUpperCase();
+  if (!normalized) {
+    throw createPlatformError(400, "Code établissement obligatoire.");
+  }
+  const school = await store.getSchoolByCode(normalized);
+  if (!school) {
+    throw createPlatformError(404, "Établissement introuvable.", PLATFORM_ERROR.SCHOOL_NOT_FOUND);
+  }
+  const principalCountry = resolvePrincipalCountryCode(principal);
+  if (asTrimmed(school.country_code).toUpperCase() !== principalCountry.toUpperCase()) {
+    throw createPlatformError(403, "Accès refusé : établissement hors périmètre pays.", PLATFORM_ERROR.TENANT_MISMATCH);
+  }
+}
+
+function assertNotificationScope(principal, existing) {
+  if (!existing) {
+    throw createPlatformError(404, "Notification introuvable.", PLATFORM_ERROR.NOTIFICATION_NOT_FOUND);
+  }
+  if (isSuperAdminPrincipal(principal)) {
+    return;
+  }
+
+  const profile = parsePayload(existing.profile_payload);
+  const schoolCode = asTrimmed(existing.school_code || profile.schoolCode);
+  const notificationCountry = resolveNotificationCountryCode(existing);
+
+  if (isCountryAdminPrincipal(principal)) {
+    if (!notificationCountry) {
+      throw createPlatformError(403, "Accès refusé : notification hors périmètre pays.", PLATFORM_ERROR.TENANT_MISMATCH);
+    }
+    assertCountryScope(principal, notificationCountry);
+    return;
+  }
+
+  if (!schoolCode) {
+    throw createPlatformError(403, "Accès refusé : notification plateforme hors périmètre.", PLATFORM_ERROR.FORBIDDEN);
+  }
+  assertSchoolScope(principal, schoolCode);
+}
+
+async function assertSubscriptionPaymentScope(store, principal, existing) {
+  if (!existing) {
+    throw createPlatformError(404, "Paiement introuvable.", PLATFORM_ERROR.PAYMENT_NOT_FOUND);
+  }
+  if (isSuperAdminPrincipal(principal)) {
+    return;
+  }
+  if (isCountryAdminPrincipal(principal)) {
+    await assertSchoolInPrincipalCountry(store, principal, existing.school_code);
+    return;
+  }
+  assertSchoolScope(principal, existing.school_code);
+}
+
+async function assertSubscriptionDiscountScope(store, principal, existing) {
+  if (!existing) {
+    throw createPlatformError(404, "Remise introuvable.", PLATFORM_ERROR.DISCOUNT_NOT_FOUND);
+  }
+  if (isSuperAdminPrincipal(principal)) {
+    return;
+  }
+
+  const profile = parsePayload(existing.profile_payload);
+  const schoolCode = asTrimmed(existing.school_code || profile.schoolCode);
+  if (isCountryAdminPrincipal(principal)) {
+    if (!schoolCode) {
+      const discountCountry = asTrimmed(profile.countryCode);
+      if (!discountCountry) {
+        throw createPlatformError(403, "Accès refusé : remise hors périmètre pays.", PLATFORM_ERROR.TENANT_MISMATCH);
+      }
+      assertCountryScope(principal, discountCountry);
+      return;
+    }
+    await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+    return;
+  }
+
+  if (!schoolCode) {
+    throw createPlatformError(403, "Accès refusé : remise plateforme hors périmètre.", PLATFORM_ERROR.FORBIDDEN);
+  }
+  assertSchoolScope(principal, schoolCode);
+}
+
 function assertSuperAdmin(principal) {
   if (!isSuperAdminPrincipal(principal)) {
     throw createPlatformError(403, "Réservé au Super Administrateur.", PLATFORM_ERROR.FORBIDDEN);
@@ -335,7 +432,12 @@ module.exports = {
   mapRolePermissionsRows,
   mapDashboardChartConfigRows,
   resolvePrincipalCountryCode,
+  resolveNotificationCountryCode,
   assertCountryScope,
   assertSchoolScope,
+  assertSchoolInPrincipalCountry,
+  assertNotificationScope,
+  assertSubscriptionPaymentScope,
+  assertSubscriptionDiscountScope,
   assertSuperAdmin,
 };

@@ -12,6 +12,10 @@ const {
   assertSchoolScope,
   assertSuperAdmin,
   resolvePrincipalCountryCode,
+  assertSchoolInPrincipalCountry,
+  assertNotificationScope,
+  assertSubscriptionPaymentScope,
+  assertSubscriptionDiscountScope,
   mapCountryRow,
   mapSubscriptionRow,
   mapNotificationRow,
@@ -214,8 +218,8 @@ function normalizeSubscriptionStatus(status) {
 
 async function createNotification(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
-  const title = asTrimmed(payload.title);
-  const message = asTrimmed(payload.message);
+  const title = asTrimmed(rawPayload.title ?? payload.title);
+  const message = asTrimmed(rawPayload.message ?? payload.message);
   if (!title || !message) {
     throw createPlatformError(400, "Titre et message obligatoires.");
   }
@@ -231,24 +235,27 @@ async function createNotification(store, rawPayload, principal, auditMeta) {
         throw createPlatformError(404, "Établissement introuvable.", PLATFORM_ERROR.SCHOOL_NOT_FOUND);
       }
     }
-    if (isCountryAdminPrincipal(principal) && payload.countryCode) {
-      assertCountryScope(principal, payload.countryCode);
+    const countryCode = isCountryAdminPrincipal(principal)
+      ? resolvePrincipalCountryCode(principal)
+      : asTrimmed(rawPayload.countryCode ?? payload.countryCode);
+    if (isCountryAdminPrincipal(principal) && countryCode) {
+      assertCountryScope(principal, countryCode);
     }
     const saved = await tx.insertNotification({
       schoolId: school?.id ?? null,
       title,
       message,
-      type: asTrimmed(payload.type) || "Information",
-      channel: (payload.channels && payload.channels[0]) || "app",
-      status: payload.status === "Lu" ? "read" : "sent",
+      type: asTrimmed(rawPayload.type ?? payload.type) || "Information",
+      channel: (rawPayload.channels ?? payload.channels)?.[0] || "app",
+      status: (rawPayload.status ?? payload.status) === "Lu" ? "read" : "sent",
       profile: {
-        audience: payload.audience,
-        countryCode: isCountryAdminPrincipal(principal) ? principal.countryCode : payload.countryCode,
+        audience: rawPayload.audience ?? payload.audience,
+        countryCode: countryCode || undefined,
         schoolCode: school?.school_code,
-        priority: payload.priority,
-        channels: payload.channels,
-        status: payload.status || "Non lu",
-        date: payload.date,
+        priority: rawPayload.priority ?? payload.priority,
+        channels: rawPayload.channels ?? payload.channels,
+        status: (rawPayload.status ?? payload.status) || "Non lu",
+        date: rawPayload.date ?? payload.date,
         createdBy: principal?.identifier || principal?.email || "Plateforme",
       },
     });
@@ -267,18 +274,13 @@ async function updateNotification(store, id, rawPatch, principal, auditMeta) {
   const patch = ignoreClientScope(rawPatch);
   return store.withTransaction(async (tx) => {
     const existing = await tx.getNotificationById(id, principal, { lock: true });
-    if (!existing) {
-      throw createPlatformError(404, "Notification introuvable.", PLATFORM_ERROR.NOTIFICATION_NOT_FOUND);
-    }
-    if (existing.school_code) assertSchoolScope(principal, existing.school_code);
-    if (isCountryAdminPrincipal(principal) && existing.country_code) {
-      assertCountryScope(principal, existing.country_code);
-    }
+    assertNotificationScope(principal, existing);
     const profile = {
       ...require("./platformManagement").parsePayload(existing.profile_payload),
       ...patch,
       status: patch.status ?? require("./platformManagement").parsePayload(existing.profile_payload).status,
     };
+    const archived = patch.archived === true;
     const saved = await tx.updateNotification(existing.id, {
       title: patch.title ?? existing.title,
       message: patch.message ?? existing.message,
@@ -286,17 +288,19 @@ async function updateNotification(store, id, rawPatch, principal, auditMeta) {
       status: patch.status === "Lu" || patch.status === "read" ? "read" : existing.status,
       readAt: patch.status === "Lu" || patch.status === "read" ? new Date() : existing.read_at,
       profile,
-      archived: patch.archived === true,
+      archived,
     });
+    const oldValue = mapNotificationRow(existing);
+    const newValue = saved ? mapNotificationRow(saved) : { id: existing.id, archived: true };
     await writePlatformAudit(tx, principal, auditMeta, {
       schoolCode: existing.school_code,
-      action: patch.archived ? "archive_notification" : "update_notification",
+      action: archived ? "archive_notification" : "update_notification",
       entityType: "notification",
       entityId: existing.id,
-      oldValue: mapNotificationRow(existing),
-      newValue: mapNotificationRow(saved),
+      oldValue,
+      newValue,
     });
-    return mapNotificationRow(saved);
+    return newValue;
   });
 }
 
@@ -375,9 +379,13 @@ async function upsertSubscriptionOffer(store, rawPayload, principal, auditMeta) 
 }
 
 async function createSubscriptionPayment(store, rawPayload, principal, auditMeta) {
-  const payload = ignoreClientScope(rawPayload);
-  const schoolCode = asTrimmed(payload.schoolCode).toUpperCase();
+  const schoolCode = asTrimmed(rawPayload.schoolCode || rawPayload.schoolId).toUpperCase();
+  if (!schoolCode) {
+    throw createPlatformError(400, "Code établissement obligatoire.");
+  }
   assertSchoolScope(principal, schoolCode);
+  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+  const payload = ignoreClientScope(rawPayload);
   return store.withTransaction(async (tx) => {
     const school = await tx.getSchoolByCode(schoolCode);
     if (!school) throw createPlatformError(404, "Établissement introuvable.", PLATFORM_ERROR.SCHOOL_NOT_FOUND);
@@ -408,8 +416,7 @@ async function updateSubscriptionPayment(store, id, rawPatch, principal, auditMe
   const patch = ignoreClientScope(rawPatch);
   return store.withTransaction(async (tx) => {
     const existing = await tx.getSubscriptionPaymentByCode(id, principal, { lock: true });
-    if (!existing) throw createPlatformError(404, "Paiement introuvable.", PLATFORM_ERROR.PAYMENT_NOT_FOUND);
-    assertSchoolScope(principal, existing.school_code);
+    await assertSubscriptionPaymentScope(store, principal, existing);
     const profile = { ...require("./platformManagement").parsePayload(existing.profile_payload), ...patch };
     const saved = await tx.updateSubscriptionPayment(existing.id, {
       paymentStatus: patch.status === "Validé" ? "validated" : existing.payment_status,
@@ -428,9 +435,18 @@ async function updateSubscriptionPayment(store, id, rawPatch, principal, auditMe
 }
 
 async function createSubscriptionDiscount(store, rawPayload, principal, auditMeta) {
+  const schoolCode = asTrimmed(rawPayload.schoolCode || rawPayload.schoolId).toUpperCase();
+  if (schoolCode) {
+    assertSchoolScope(principal, schoolCode);
+    await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+  } else if (isCountryAdminPrincipal(principal)) {
+    const countryCode = asTrimmed(rawPayload.countryCode);
+    if (!countryCode) {
+      throw createPlatformError(400, "Code pays obligatoire pour une remise nationale.");
+    }
+    assertCountryScope(principal, countryCode);
+  }
   const payload = ignoreClientScope(rawPayload);
-  const schoolCode = asTrimmed(payload.schoolCode).toUpperCase();
-  if (schoolCode) assertSchoolScope(principal, schoolCode);
   return store.withTransaction(async (tx) => {
     let school = null;
     if (schoolCode) {
@@ -441,7 +457,13 @@ async function createSubscriptionDiscount(store, rawPayload, principal, auditMet
       schoolId: school?.id ?? null,
       offerId: payload.offerId,
       status: "pending",
-      profile: { ...payload, id: payload.id || randomUUID(), schoolCode, status: "En attente" },
+      profile: {
+        ...payload,
+        id: payload.id || randomUUID(),
+        schoolCode: schoolCode || undefined,
+        countryCode: rawPayload.countryCode || payload.countryCode,
+        status: "En attente",
+      },
     });
     await writePlatformAudit(tx, principal, auditMeta, {
       schoolCode,
@@ -458,8 +480,7 @@ async function updateSubscriptionDiscount(store, id, rawPatch, principal, auditM
   const patch = ignoreClientScope(rawPatch);
   return store.withTransaction(async (tx) => {
     const existing = await tx.getSubscriptionDiscountById(id, principal, { lock: true });
-    if (!existing) throw createPlatformError(404, "Remise introuvable.", PLATFORM_ERROR.DISCOUNT_NOT_FOUND);
-    if (existing.school_code) assertSchoolScope(principal, existing.school_code);
+    await assertSubscriptionDiscountScope(store, principal, existing);
     const profile = { ...require("./platformManagement").parsePayload(existing.profile_payload), ...patch };
     const saved = await tx.updateSubscriptionDiscount(existing.id, {
       status: patch.status ? normalizeDiscountStatus(patch.status) : existing.status,

@@ -208,7 +208,14 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode, seed } =
         return existing;
       },
       async getNotificationById(id) {
-        return tables.notifications.find((n) => n.id === id || parsePayload(n.profile_payload).publicId === id) ?? null;
+        const row =
+          tables.notifications.find((n) => n.id === id || parsePayload(n.profile_payload).publicId === id) ?? null;
+        if (!row) return null;
+        const profile = parsePayload(row.profile_payload);
+        return {
+          ...row,
+          country_code: row.country_code || profile.countryCode || null,
+        };
       },
       async insertNotification(row) {
         const saved = {
@@ -284,9 +291,16 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode, seed } =
         return existing;
       },
       async getSubscriptionPaymentByCode(code) {
-        return tables.payments.find((p) => p.payment_code === code || p.id === code) ?? null;
+        const row = tables.payments.find((p) => p.payment_code === code || p.id === code) ?? null;
+        if (!row) return null;
+        return {
+          ...row,
+          school_code: row.school_code || tables.subscriptions.find((s) => s.school_id === row.school_id)?.school_code,
+        };
       },
       async insertSubscriptionPayment(row) {
+        const schoolCode =
+          tables.subscriptions.find((subscription) => subscription.school_id === row.schoolId)?.school_code ?? null;
         const saved = {
           id: randomUUID(),
           school_id: row.schoolId,
@@ -296,6 +310,7 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode, seed } =
           currency: row.currency,
           payment_status: row.paymentStatus,
           profile_payload: row.profile ?? {},
+          school_code: schoolCode,
           created_at: new Date(),
         };
         tables.payments.push(saved);
@@ -313,12 +328,14 @@ function createPlatformMemoryStore({ getSchoolByCode, getCountryByCode, seed } =
         return tables.discounts.find((d) => d.id === id || parsePayload(d.profile_payload).id === id) ?? null;
       },
       async insertSubscriptionDiscount(row) {
+        const schoolCode = row.profile?.schoolCode ?? null;
         const saved = {
           id: randomUUID(),
           school_id: row.schoolId,
           offer_id: row.offerId,
           status: row.status,
           profile_payload: row.profile ?? {},
+          school_code: schoolCode,
           created_at: new Date(),
         };
         tables.discounts.push(saved);

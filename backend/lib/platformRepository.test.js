@@ -82,6 +82,46 @@ async function main() {
   assert.ok(projection.subscriptions.length >= 1);
   assert.ok(projection.notifications.length >= 1);
 
+  const payment = await store.createSubscriptionPayment(
+    { schoolCode: "CD-2026-0001", amount: 25, currency: "CDF", reference: "PAY-TEST-1" },
+    schoolAdmin,
+    auditMeta,
+  );
+  assert.equal(payment.schoolCode, "CD-2026-0001");
+
+  await assert.rejects(
+    () =>
+      store.updateSubscriptionPayment(
+        payment.id,
+        { status: "Validé" },
+        foreignAdmin,
+        auditMeta,
+      ),
+    (error) => error.statusCode === 403,
+  );
+
+  const countryNotification = await store.createNotification(
+    { title: "Alerte pays", message: "National", type: "Information", countryCode: "CD" },
+    countryAdmin,
+    auditMeta,
+  );
+  assert.equal(countryNotification.countryCode, "CD");
+
+  const foreignCountryAdmin = { role: "Admin Pays", schoolCode: "*", countryCode: "BI", identifier: "bi-admin" };
+  await assert.rejects(
+    () =>
+      store.updateNotification(countryNotification.id, { title: "Intrusion" }, foreignCountryAdmin, auditMeta),
+    (error) => error.statusCode === 403,
+  );
+
+  const archived = await store.updateNotification(
+    countryNotification.id,
+    { archived: true },
+    countryAdmin,
+    auditMeta,
+  );
+  assert.equal(archived.archived, true);
+
   console.log("platformRepository.test.js OK");
 }
 

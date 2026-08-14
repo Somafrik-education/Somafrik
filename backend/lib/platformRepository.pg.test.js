@@ -157,6 +157,72 @@ async function main() {
     assert.ok(projection.subscriptions.some((row) => row.schoolCode === "CD-2026-0001"));
     assert.ok(projection.rolePermissions["Admin School"]);
 
+    const payment = await store.createSubscriptionPayment(
+      { schoolCode: "CD-2026-0001", amount: 15, currency: "CDF", reference: "PAY-PG-1" },
+      schoolAdmin,
+      auditMeta,
+    );
+    assert.equal(payment.schoolCode, "CD-2026-0001");
+
+    const validatedByCountryAdmin = await store.updateSubscriptionPayment(
+      payment.id,
+      { status: "Validé" },
+      countryAdmin,
+      auditMeta,
+    );
+    assert.equal(validatedByCountryAdmin.status, "Validé");
+
+    const biSchool = await pool.query(`SELECT id FROM schools WHERE school_code = 'BI-2026-0002'`);
+    await pool.query(
+      `INSERT INTO subscriptions (school_id, plan_name, price_per_student, billing_currency, billing_cycle, status)
+       VALUES ($1, 'Standard', 5, 'BIF', 'monthly', 'active')`,
+      [biSchool.rows[0].id],
+    );
+    const biPayment = await pool.query(
+      `INSERT INTO subscription_payments (school_id, subscription_id, payment_code, amount, currency, payment_status)
+       SELECT $1, sub.id, 'PAY-BI-1', 10, 'BIF', 'pending'
+       FROM subscriptions sub WHERE sub.school_id = $1`,
+      [biSchool.rows[0].id],
+    );
+    await assert.rejects(
+      () => store.updateSubscriptionPayment("PAY-BI-1", { status: "Validé" }, countryAdmin, auditMeta),
+      (error) => error.statusCode === 403,
+    );
+
+    const countryNotification = await store.createNotification(
+      { title: "National", message: "CD only", type: "Information", countryCode: "CD" },
+      countryAdmin,
+      auditMeta,
+    );
+    assert.equal(countryNotification.countryCode, "CD");
+
+    const biCountryAdmin = { role: "Admin Pays", schoolCode: "*", countryCode: "BI", identifier: "bi-admin" };
+    await assert.rejects(
+      () => store.updateNotification(countryNotification.id, { title: "Hack" }, biCountryAdmin, auditMeta),
+      (error) => error.statusCode === 403,
+    );
+
+    const archived = await store.updateNotification(
+      countryNotification.id,
+      { archived: true },
+      countryAdmin,
+      auditMeta,
+    );
+    assert.equal(archived.archived, true);
+    const remaining = await pool.query("SELECT COUNT(*)::int AS count FROM notifications");
+    assert.equal(remaining.rows[0].count, 0);
+
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO subscriptions (school_id, plan_name, price_per_student, billing_currency, billing_cycle, status)
+           VALUES ($1, 'Duplicate', 1, 'CDF', 'monthly', 'active')`,
+          [schoolA.rows[0].id],
+        ),
+      (error) => /unique|duplicate/i.test(String(error.message)),
+      "subscriptions.school_id must be unique",
+    );
+
     const originalWithTransaction = store.withTransaction.bind(store);
     store.withTransaction = (fn) =>
       originalWithTransaction(async (tx) => {

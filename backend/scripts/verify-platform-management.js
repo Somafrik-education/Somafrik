@@ -166,6 +166,48 @@ async function main() {
     });
     assert.equal(access.status, 200);
 
+    const crossCountryAccess = await request("/backoffice/subscription-access?schoolCode=BI-2026-0002", {
+      token: countryAdminToken,
+    });
+    assert.equal(crossCountryAccess.status, 403, JSON.stringify(crossCountryAccess.data));
+
+    const payment = await request("/backoffice/subscription-payments", {
+      method: "POST",
+      token: superToken,
+      body: {
+        schoolCode: "CD-2026-0001",
+        amount: 42,
+        currency: "CDF",
+        reference: "PAY-VERIFY-1",
+      },
+    });
+    assert.equal(payment.status, 201, JSON.stringify(payment.data));
+    assert.equal(payment.data.schoolCode, "CD-2026-0001");
+
+    const countryNotice = await request("/backoffice/notifications", {
+      method: "POST",
+      token: countryAdminToken,
+      body: { title: "Alerte CD", message: "National", type: "Information" },
+    });
+    assert.equal(countryNotice.status, 201, JSON.stringify(countryNotice.data));
+    assert.equal(countryNotice.data.countryCode, "CD");
+
+    const archiveNotice = await request(
+      `/backoffice/notifications/${encodeURIComponent(countryNotice.data.id)}`,
+      {
+        method: "PATCH",
+        token: countryAdminToken,
+        body: { archived: true },
+      },
+    );
+    assert.equal(archiveNotice.status, 200, JSON.stringify(archiveNotice.data));
+    assert.equal(archiveNotice.data.archived, true);
+
+    const countries = await request("/backoffice/countries", { token: superToken });
+    assert.equal(countries.status, 200);
+    assert.ok(Array.isArray(countries.data));
+    assert.ok(countries.data.some((row) => row.code === "CD"));
+
     const deniedAccess = await request("/backoffice/subscription-access?schoolCode=CD-2026-0001");
     assert.equal(deniedAccess.status, 401);
 

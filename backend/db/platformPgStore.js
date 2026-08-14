@@ -103,7 +103,7 @@ function createPlatformPgStore(repo) {
       async getNotificationById(id, principal, { lock } = {}) {
         const params = [id, id];
         let sql = `
-          SELECT n.*, s.school_code, c.iso_code AS country_code
+          SELECT n.*, s.school_code, COALESCE(c.iso_code, n.profile_payload->>'countryCode') AS country_code
           FROM notifications n
           LEFT JOIN schools s ON s.id = n.school_id
           LEFT JOIN countries c ON c.id = s.country_id
@@ -339,7 +339,7 @@ function createPlatformPgStore(repo) {
            ORDER BY sub.created_at`,
         ),
         repo.all(
-          `SELECT n.*, s.school_code, c.iso_code AS country_code
+          `SELECT n.*, s.school_code, COALESCE(c.iso_code, n.profile_payload->>'countryCode') AS country_code
            FROM notifications n
            LEFT JOIN schools s ON s.id = n.school_id
            LEFT JOIN countries c ON c.id = s.country_id

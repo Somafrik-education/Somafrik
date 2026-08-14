@@ -88,6 +88,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "upsertSchoolAttendanceBatch",
   // Plateforme métier (LOT 6 — PostgreSQL canonique)
   "listPlatformProjection",
+  "getPlatformSchoolByCode",
   "getRolePermissionsMap",
   "createPlatformCountry",
   "updatePlatformCountry",

@@ -451,6 +451,10 @@ class PostgresRepository {
     return this.getPlatformStore().listProjection();
   }
 
+  getPlatformSchoolByCode(code) {
+    return this.getPlatformStore().getSchoolByCode(code);
+  }
+
   getRolePermissionsMap() {
     return this.getPlatformStore().getRolePermissionsMap();
   }

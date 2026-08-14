@@ -1393,18 +1393,18 @@ app.get("/api/announcements", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/backoffice/countries", requireAuth, requirePermission("GET /api/backoffice/countries"), asyncHandler(async (req, res) => {
-  const { countries } = await getRuntime();
-  res.json(tenantScopeService.filterRows(countries, req.principal, { countryField: "code" }));
+  const platform = await repository.listPlatformProjection();
+  res.json(tenantScopeService.filterRows(platform.countries ?? [], req.principal, { countryField: "code" }));
 }));
 
 app.get("/api/backoffice/subscriptions", requireAuth, requirePermission("GET /api/backoffice/subscriptions"), asyncHandler(async (req, res) => {
-  const { subscriptions } = await getRuntime();
-  sendList(res, tenantScopeService.filterRows(subscriptions, req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
+  const platform = await repository.listPlatformProjection();
+  sendList(res, tenantScopeService.filterRows(platform.subscriptions ?? [], req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
 }));
 
 app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /api/backoffice/notifications"), asyncHandler(async (req, res) => {
-  const { platformNotifications } = await getRuntime();
-  sendList(res, tenantScopeService.filterRows(platformNotifications, req.principal), req.query, ["title", "message", "type", "status"]);
+  const platform = await repository.listPlatformProjection();
+  sendList(res, tenantScopeService.filterRows(platform.notifications ?? [], req.principal), req.query, ["title", "message", "type", "status"]);
 }));
 
 app.post("/api/backoffice/countries", requireAuth, requirePermission("POST /api/backoffice/countries"), asyncHandler(async (req, res) => {
@@ -1455,8 +1455,8 @@ app.put("/api/backoffice/role-permissions", requireAuth, requirePermission("PUT 
 }));
 
 app.get("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("GET /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  res.json(sanitizeDashboardChartConfig(state.dashboardChartConfig));
+  const platform = await repository.listPlatformProjection();
+  res.json(sanitizeDashboardChartConfig(platform.dashboardChartConfig));
 }));
 
 app.put("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("PUT /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
@@ -1502,10 +1502,38 @@ app.patch("/api/backoffice/subscription-discounts/:discountId", requireAuth, req
 }));
 
 app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("GET /api/backoffice/subscription-access"), asyncHandler(async (req, res) => {
-  const schoolCode = req.query.schoolCode || req.principal?.schoolCode;
+  const {
+    asTrimmed,
+    isSuperAdminPrincipal,
+    isCountryAdminPrincipal,
+    assertSchoolScope,
+    resolvePrincipalCountryCode,
+  } = require("./lib/platformManagement");
+  const requestedSchoolCode = asTrimmed(req.query.schoolCode).toUpperCase();
+  const principalSchoolCode = asTrimmed(req.principal?.schoolCode).toUpperCase();
+  const schoolCode = requestedSchoolCode || principalSchoolCode;
+
   if (!schoolCode || schoolCode === "*") {
     return res.json({ level: "full", message: "" });
   }
+
+  if (requestedSchoolCode) {
+    if (isSuperAdminPrincipal(req.principal)) {
+      // accès global autorisé
+    } else if (isCountryAdminPrincipal(req.principal)) {
+      const school = await repository.getPlatformSchoolByCode(schoolCode);
+      const principalCountry = resolvePrincipalCountryCode(req.principal);
+      if (
+        !school ||
+        asTrimmed(school.country_code).toUpperCase() !== principalCountry.toUpperCase()
+      ) {
+        throw new BusinessError(403, "Accès refusé : établissement hors périmètre pays.");
+      }
+    } else {
+      assertSchoolScope(req.principal, schoolCode);
+    }
+  }
+
   const state = await getAuthoritativeBackOfficeState();
   res.json(schoolSubscriptionAccessService.resolveSchoolAccess(schoolCode, state));
 }));
@@ -2081,17 +2109,8 @@ function applyStoredStatusOverlay(dataset, storedState) {
     return;
   }
 
-  if (Array.isArray(storedState.countries)) {
-    const statusByCode = new Map(
-      storedState.countries
-        .filter((country) => country && country.code)
-        .map((country) => [String(country.code).trim().toUpperCase(), country.status])
-    );
-    dataset.countries = (dataset.countries ?? []).map((country) => {
-      const status = statusByCode.get(String(country.code ?? "").trim().toUpperCase());
-      return status ? { ...country, status } : country;
-    });
-  }
+  // LOT 6 — le statut pays provient exclusivement de la projection plateforme PostgreSQL.
+  // Ne plus superposer l'ancien snapshot JSON sur dataset.countries.
 }
 
 // Superpose les comptes gérés depuis le state BackOffice persistant sur le dataset
