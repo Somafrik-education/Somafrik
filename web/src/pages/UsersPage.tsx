@@ -131,6 +131,23 @@ export function UsersPage() {
     });
   }, [allUsers, search, roleFilter, statusFilter, pendingOnly]);
 
+  async function persistUserPatch(user: UserAccount, patch: Partial<UserAccount>, message: string) {
+    setBusy(true);
+    try {
+      await clientsApi.updateUser(String(user.id), {
+        ...user,
+        ...patch,
+      } as unknown as Record<string, unknown>);
+      await refresh();
+      showToast(message, "success");
+    } catch {
+      showToast("Échec de la synchronisation", "error");
+      throw new Error("sync failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function persistUsers(_next: UserAccount[], message: string, syncedUser?: UserAccount) {
     setBusy(true);
     try {
@@ -162,9 +179,8 @@ export function UsersPage() {
 
   async function toggleSuspend(user: UserAccount) {
     const nextStatus = user.status === "Suspendu" ? "Actif" : "Suspendu";
-    const next = state.users.map((u) => (u.id === user.id ? { ...u, status: nextStatus } : u));
     try {
-      await persistUsers(next, `Compte ${nextStatus.toLowerCase()}`);
+      await persistUserPatch(user, { status: nextStatus }, `Compte ${nextStatus.toLowerCase()}`);
       setDetail(null);
     } catch {
       /* toast déjà affiché */
@@ -173,9 +189,8 @@ export function UsersPage() {
 
   async function rejectAccount(user: UserAccount) {
     if (!isSuperadminView || !canSuperadminManageUser(user)) return;
-    const next = state.users.filter((u) => u.id !== user.id);
     try {
-      await persistUsers(next, "Compte refusé et retiré");
+      await persistUserPatch(user, { status: "Archivé" }, "Compte refusé et archivé");
       setDetail(null);
     } catch {
       /* toast déjà affiché */
@@ -183,19 +198,17 @@ export function UsersPage() {
   }
 
   async function validateAccount(user: UserAccount) {
-    const next = state.users.map((u) =>
-      u.id === user.id
-        ? {
-            ...u,
-            status: "Actif",
-            validationStatus: VALIDATED_STATUS,
-            validatedBy: session?.user?.identifier ?? session?.user?.firstName ?? "Super Admin",
-            validatedAt: new Date().toISOString(),
-          }
-        : u,
-    );
     try {
-      await persistUsers(next, "Compte validé. L'Admin École peut désormais se connecter.");
+      await persistUserPatch(
+        user,
+        {
+          status: "Actif",
+          validationStatus: VALIDATED_STATUS,
+          validatedBy: session?.user?.identifier ?? session?.user?.firstName ?? "Super Admin",
+          validatedAt: new Date().toISOString(),
+        },
+        "Compte validé. L'Admin École peut désormais se connecter.",
+      );
       setDetail(null);
     } catch {
       /* toast déjà affiché */
