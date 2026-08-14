@@ -38,8 +38,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
-import { SYNC_INTERVAL_MS } from "../config/env";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
 import { useAuth } from "./AuthContext";
 
 export type AdminEntity =
@@ -228,89 +227,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     [session, stateSnapshot, activeSchoolCode, requiresSchoolSelection]
   );
 
-  useEffect(() => {
-    if (!canSyncBackOfficeState(session?.role, session)) {
-      return;
-    }
-
-    let mounted = true;
-    setSyncStatus("syncing");
-
-    const refresh = () => getBackOfficeState()
-      .then((payload) => {
-        if (!mounted) return;
-        applySyncedState(payload);
-        setSyncStatus("synced");
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setSyncStatus("offline");
-      });
-    refresh();
-    const intervalId = setInterval(refresh, SYNC_INTERVAL_MS);
-
-    return () => {
-      mounted = false;
-      clearInterval(intervalId);
-    };
-  }, [session, session?.role]);
-
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    if (canSyncBackOfficeState(session.role, session)) {
-      return;
-    }
-
-    let mounted = true;
-    const refresh = () =>
-      Promise.all([
-        getStudents(),
-        getClasses(),
-        getCourses(),
-        getNotes(),
-        getPresences(),
-        getAcademicConfig(),
-        getAssignments(),
-        getCourseSchedules().catch(() => [] as unknown[]),
-      ])
-        .then(
-          ([
-            studentPayload,
-            classPayload,
-            coursePayload,
-            notePayload,
-            presencePayload,
-            academicConfigPayload,
-            assignmentPayload,
-            courseSchedulePayload,
-          ]) => {
-        if (mounted) {
-          applyArray(studentPayload, setStudentsData);
-          applyArray(classPayload, setClassesData);
-          applyArray(coursePayload, setCoursesData);
-          applyArray(notePayload, setNotesData);
-          applyArray(presencePayload, setPresencesData);
-          applyArray(assignmentPayload, setAssignmentsData);
-          applyArray(courseSchedulePayload, setCourseSchedulesData);
-          setAcademicConfigData(academicConfigPayload as AcademicManagementConfig);
-          setSyncStatus("synced");
-        }
-      })
-      .catch(() => {
-        if (mounted) setSyncStatus("offline");
-      });
-    refresh();
-    const intervalId = setInterval(refresh, SYNC_INTERVAL_MS);
-
-    return () => {
-      mounted = false;
-      clearInterval(intervalId);
-    };
-  }, [session]);
-
   const applySyncedState = (payload: BackOfficeStatePayload) => {
     applyArray(payload.students, setStudentsData);
     applyArray(payload.teachers, setTeachersData);
@@ -351,13 +267,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setSyncStatus("syncing");
 
     try {
-      if (canSyncBackOfficeState(session.role, session)) {
-        const payload = await getBackOfficeState();
-        applySyncedState(payload);
-        setSyncStatus("synced");
-        return;
-      }
-
       const [
         studentPayload,
         classPayload,
@@ -391,7 +300,15 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       setSyncStatus("offline");
       throw new Error("Synchronisation impossible");
     }
-  }, [session, session?.role, activeSchoolCode, session?.user?.schoolCode, session?.school?.code]);
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    void refreshBackOfficeState().catch(() => null);
+  }, [session, refreshBackOfficeState]);
 
   useEffect(() => {
     if (!session) {
@@ -712,11 +629,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   ]);
 
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;
-}
-
-function canSyncBackOfficeState(role?: string, authenticated?: unknown) {
-  if (!authenticated) return false;
-  return ["super_admin", "country_admin", "school_admin", "principal", "prefet", "secretary"].includes(role ?? "");
 }
 
 function applyArray<T>(value: unknown, setter: React.Dispatch<React.SetStateAction<T[]>>) {

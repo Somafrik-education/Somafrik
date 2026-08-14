@@ -8,13 +8,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api } from "../api/client";
 import { useAuth } from "./AuthContext";
-import { SYNC_INTERVAL_MS } from "../lib/constants";
 import { mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
+import { fetchDomainBackOfficeState } from "../lib/fetchDomainBackOfficeState";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
+import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
+import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
 import { stripClientPedagogyStaffFromPutPayload } from "../lib/stripClientPedagogyStaff";
 import { stripClientPedagogyFromPutPayload } from "../lib/stripClientPedagogy";
 import { stripClientPlatformFromPutPayload } from "../lib/stripClientPlatform";
@@ -127,7 +128,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!session || syncPausedRef.current) return;
     setLoading(true);
     try {
-      const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
+      const remote = await fetchDomainBackOfficeState();
       const outbox = loadSyncOutbox();
       setState((prev) => {
         const merged = mergeRemoteSnapshot(prev, remote);
@@ -156,14 +157,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [session?.accessToken]);
 
   useEffect(() => {
-    if (!session?.accessToken) return;
-    const timer = window.setInterval(() => {
-      void refresh();
-    }, SYNC_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [session?.accessToken, refresh]);
-
-  useEffect(() => {
     if (!session?.user?.role || !session.accessToken) return;
     const merged = resolveEffectivePermissions(
       session.user.role,
@@ -188,7 +181,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         stripClientPlatformFromPutPayload(
           stripClientPedagogyFromPutPayload(
             stripClientFinanceFromPutPayload(
-              stripClientPedagogyStaffFromPutPayload(patch as Record<string, unknown>),
+              stripClientPedagogyStaffFromPutPayload(
+                stripClientStudentsFromPutPayload(
+                  stripClientSchoolsFromPutPayload(patch as Record<string, unknown>),
+                ),
+              ),
             ),
           ),
         ),
@@ -241,7 +238,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         const schoolCode = String(sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase();
         await syncResidualBackOfficePatch(residualPatch, schoolCode);
-        const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
+        const remote = await fetchDomainBackOfficeState();
 
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
           ack: {

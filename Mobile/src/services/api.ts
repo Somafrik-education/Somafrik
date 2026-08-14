@@ -322,7 +322,11 @@ export function savePresences(payload: unknown) {
 }
 
 export function getBackOfficeState() {
-  return request<BackOfficeStatePayload>("/backoffice/state");
+  return Promise.reject(
+    Object.assign(new Error("La lecture globale BackOffice State a été supprimée."), {
+      code: "BACKOFFICE_STATE_READ_REMOVED",
+    }),
+  );
 }
 
 export function saveBackOfficeState(_payload: BackOfficeStatePayload) {
