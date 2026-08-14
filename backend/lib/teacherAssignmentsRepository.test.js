@@ -197,6 +197,12 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
     deleted: true,
   });
   assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 0);
+  const recreated = await repo.create(
+    { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+    "CD-2026-0001",
+  );
+  assert.notEqual(recreated.id, created.id);
+  assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 1);
   await assert.rejects(
     () =>
       repo.create(

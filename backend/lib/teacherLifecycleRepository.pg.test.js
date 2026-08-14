@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Intégration PostgreSQL — cycle de vie enseignant (update / archive / audit).
+ * Intégration PostgreSQL — cycle de vie enseignant (update / archive / audit réel).
  */
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
@@ -9,6 +9,7 @@ const { createTeachersRepository } = require("../db/teachersRepository");
 const { createTeacherAssignmentsRepository } = require("../db/teacherAssignmentsRepository");
 const { createTeacherLifecycleRepository } = require("../db/teacherLifecycleRepository");
 const { createTxAdapter } = require("../db/txAdapter");
+const { ensureTeacherAssignmentsActiveUniqueness } = require("./teacherAssignmentsUniqueness");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const TEACHER_IT_DATABASE = String(
@@ -35,6 +36,14 @@ async function ensureIsolatedDatabase(databaseUrl, databaseName) {
     await pool.end();
   }
   return withDatabaseName(databaseUrl, databaseName);
+}
+
+function poolAdapter(pool) {
+  return {
+    one: async (sql, params) => (await pool.query(sql, params)).rows[0] ?? null,
+    all: async (sql, params) => (await pool.query(sql, params)).rows,
+    query: (sql, params) => pool.query(sql, params),
+  };
 }
 
 async function setupFixture(pool) {
@@ -127,8 +136,7 @@ async function setupFixture(pool) {
       assignment_role TEXT NOT NULL DEFAULT 'primary',
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS school_courses (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -242,6 +250,8 @@ async function setupFixture(pool) {
     WHERE school_id IS NOT NULL AND phone IS NOT NULL AND trim(phone) <> ''
       AND COALESCE(status, 'active') NOT IN ('deleted', 'archived')`);
 
+  await ensureTeacherAssignmentsActiveUniqueness(poolAdapter(pool), { info() {}, error() {} });
+
   for (const table of [
     "grades",
     "attendance",
@@ -304,10 +314,26 @@ async function setupFixture(pool) {
   };
 }
 
+async function countAudit(pool, action, entityId) {
+  const row = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM audit_logs WHERE action = $1 AND entity_id::text = $2`,
+    [action, String(entityId)],
+  );
+  return row.rows[0].c;
+}
+
+async function countTable(pool, sql, params = []) {
+  const row = await pool.query(sql, params);
+  return Number(row.rows[0].c ?? row.rows[0].users ?? 0);
+}
+
+function isNotNullViolation(error) {
+  return String(error?.code) === "23502" || /null value in column "action"/i.test(String(error?.message ?? ""));
+}
+
 function createDbAdapter(pool, options = {}) {
   const adapter = {
     failAudit: options.failAudit ?? null,
-    audits: [],
     async one(sql, params = []) {
       const result = await pool.query(sql, params);
       return result.rows[0] ?? null;
@@ -320,25 +346,69 @@ function createDbAdapter(pool, options = {}) {
       return pool.query(sql, params);
     },
     async getSchoolByCode(code) {
-      const result = await pool.query(
+      return adapter.one(
         `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
         [String(code).toUpperCase()],
       );
-      return result.rows[0] ?? null;
     },
-    async recordAudit(payload) {
-      if (adapter.failAudit && payload.action === adapter.failAudit) {
-        throw new Error("forced audit failure");
+    async recordAudit(payload, tx = null) {
+      const executor = tx && typeof tx.query === "function" ? tx : adapter;
+      const runOne =
+        typeof executor.one === "function"
+          ? (sql, params) => executor.one(sql, params)
+          : async (sql, params) => {
+              const result = await executor.query(sql, params);
+              return result.rows?.[0] ?? null;
+            };
+      const school = payload.schoolCode
+        ? await runOne(
+            `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+            [String(payload.schoolCode).toUpperCase()],
+          )
+        : null;
+      let dbUserId = null;
+      if (payload.userId) {
+        const user = await runOne(
+          `SELECT id FROM users WHERE id::text = $1 OR user_code = $1 LIMIT 1`,
+          [String(payload.userId)],
+        );
+        dbUserId = user?.id ?? null;
       }
-      adapter.audits.push(payload);
+      if (adapter.failAudit && payload.action === adapter.failAudit) {
+        await executor.query(
+          `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id)
+           VALUES ($1, $2, NULL, $3, $4)`,
+          [school?.id ?? null, dbUserId, payload.entityType, payload.entityId ?? "forced-audit-failure"],
+        );
+        return;
+      }
+      await executor.query(
+        `INSERT INTO audit_logs (
+           school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent
+         ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`,
+        [
+          school?.id ?? null,
+          dbUserId,
+          payload.action,
+          payload.entityType,
+          payload.entityId ?? null,
+          payload.oldValue ? JSON.stringify(payload.oldValue) : null,
+          payload.newValue ? JSON.stringify(payload.newValue) : null,
+          payload.ipAddress ?? "",
+          payload.userAgent ?? "",
+        ],
+      );
     },
     createTxScope(tx) {
       return {
         one: (sql, params) => tx.one(sql, params),
         all: (sql, params) => tx.all(sql, params),
         query: (sql, params) => tx.query(sql, params),
-        getSchoolByCode: (code) => adapter.getSchoolByCode(code),
-        recordAudit: (payload) => adapter.recordAudit(payload),
+        getSchoolByCode: (code) =>
+          tx.one(`SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`, [
+            String(code).toUpperCase(),
+          ]),
+        recordAudit: (payload, innerTx) => adapter.recordAudit(payload, innerTx ?? tx),
         withTransaction: (fn) => fn(tx),
       };
     },
@@ -395,12 +465,14 @@ async function main() {
     const counts = await pool.query(
       `SELECT
          (SELECT COUNT(*)::int FROM users u JOIN schools s ON s.id = u.school_id WHERE s.school_code = 'CD-2026-0001') AS users,
-         (SELECT COUNT(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id WHERE s.school_code = 'CD-2026-0001') AS teachers`,
+         (SELECT COUNT(*)::int FROM teachers t JOIN schools s ON s.id = t.school_id WHERE s.school_code = 'CD-2026-0001') AS teachers,
+         (SELECT COUNT(*)::int FROM audit_logs WHERE action = 'create_teacher' AND entity_id = $1) AS audits`,
+      [created.teacherCode],
     );
     assert.equal(counts.rows[0].users, 1);
     assert.equal(counts.rows[0].teachers, 1);
+    assert.equal(counts.rows[0].audits, 1);
     assert.equal(created.userId != null, true);
-    assert.ok(db.audits.some((row) => row.action === "create_teacher"));
 
     const updated = await lifecycle.update(
       created.teacherCode,
@@ -417,6 +489,7 @@ async function main() {
     );
     assert.equal(pgRow.rows[0].first_name, "Jean-Paul");
     assert.equal(pgRow.rows[0].speciality, "Physique");
+    assert.equal(await countAudit(pool, "update_teacher", created.teacherCode), 1);
 
     await assert.rejects(
       () => lifecycle.update(created.teacherCode, { schoolCode: "BI-2026-0002" }, "CD-2026-0001"),
@@ -445,7 +518,10 @@ async function main() {
         temporaryPassword: "TempPass2",
       },
       "CD-2026-0001",
+      principal,
+      {},
     );
+    assert.equal(await countAudit(pool, "create_teacher", other.teacherCode), 1);
     await assert.rejects(
       () => lifecycle.update(other.teacherCode, { email: "jean.kabeya@example.com" }, "CD-2026-0001"),
       (error) => error.statusCode === 409 && error.code === "TEACHER_LOGIN_IDENTITY_DUPLICATE",
@@ -470,19 +546,51 @@ async function main() {
     );
     assert.equal((await teachers.listBySchoolCode("CD-2026-0002")).length, 0);
 
+    const teacherRow = await pool.query(`SELECT id, user_id FROM teachers WHERE teacher_code = $1`, [
+      created.teacherCode,
+    ]);
+    const teacherId = teacherRow.rows[0].id;
+    const userId = teacherRow.rows[0].user_id;
+
     const assignment = await assignments.create(
       { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
       "CD-2026-0001",
       principal,
       {},
     );
-    assert.ok(db.audits.some((row) => row.action === "create_teacher_assignment"));
+    assert.equal(await countAudit(pool, "create_teacher_assignment", assignment.id), 1);
 
-    const teacherRow = await pool.query(`SELECT id, user_id FROM teachers WHERE teacher_code = $1`, [
-      created.teacherCode,
-    ]);
-    const teacherId = teacherRow.rows[0].id;
-    const userId = teacherRow.rows[0].user_id;
+    await assignments.remove(assignment.id, "CD-2026-0001", principal, {});
+    assert.equal(await countAudit(pool, "delete_teacher_assignment", assignment.id), 1);
+
+    const recreated = await assignments.create(
+      { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+      "CD-2026-0001",
+      principal,
+      {},
+    );
+    assert.notEqual(String(recreated.id), String(assignment.id));
+    assert.equal(await countAudit(pool, "create_teacher_assignment", recreated.id), 1);
+    const assignmentHistory = await pool.query(
+      `SELECT id, status FROM teacher_assignments WHERE teacher_id = $1 ORDER BY created_at`,
+      [teacherId],
+    );
+    assert.equal(assignmentHistory.rows.length, 2);
+    assert.equal(assignmentHistory.rows.filter((row) => row.status === "active").length, 1);
+    assert.equal(assignmentHistory.rows.filter((row) => row.status === "deleted").length, 1);
+    assert.equal(String(assignmentHistory.rows.find((row) => row.status === "deleted").id), String(assignment.id));
+    assert.equal(String(assignmentHistory.rows.find((row) => row.status === "active").id), String(recreated.id));
+
+    const updatedAssignment = await assignments.update(
+      recreated.id,
+      { teacherCode: created.teacherCode },
+      "CD-2026-0001",
+      principal,
+      {},
+    );
+    assert.equal(String(updatedAssignment.id), String(recreated.id));
+    assert.equal(await countAudit(pool, "update_teacher_assignment", recreated.id), 1);
+
     await pool.query(
       `INSERT INTO grades (school_id, student_id, class_id, subject_id, teacher_id, term_id, score)
        VALUES ($1, $2, $3, $4, $5, $6, 14)`,
@@ -506,20 +614,22 @@ async function main() {
 
     const archived = await lifecycle.archive(created.teacherCode, "CD-2026-0001", principal, {});
     assert.deepEqual(archived, { teacherCode: created.teacherCode, archived: true });
-    const statuses = await pool.query(
-      `SELECT t.status AS teacher_status, u.status AS user_status
-       FROM teachers t JOIN users u ON u.id = t.user_id WHERE t.teacher_code = $1`,
-      [created.teacherCode],
+    const archiveBundle = await pool.query(
+      `SELECT
+         (SELECT t.status FROM teachers t WHERE t.teacher_code = $1) AS teacher_status,
+         (SELECT u.status FROM users u WHERE u.id = $2) AS user_status,
+         (SELECT COUNT(*)::int FROM sessions s WHERE s.user_id = $2 AND s.revoke_reason = 'teacher_archived' AND s.revoked_at IS NOT NULL) AS revoked,
+         (SELECT COUNT(*)::int FROM teacher_assignments ta WHERE ta.teacher_id = $3 AND ta.status = 'active') AS active_assignments,
+         (SELECT COUNT(*)::int FROM teacher_assignments ta WHERE ta.teacher_id = $3 AND ta.status = 'deleted') AS deleted_assignments,
+         (SELECT COUNT(*)::int FROM audit_logs a WHERE a.action = 'archive_teacher' AND a.entity_id = $1) AS audits`,
+      [created.teacherCode, userId, teacherId],
     );
-    assert.equal(statuses.rows[0].teacher_status, "archived");
-    assert.equal(statuses.rows[0].user_status, "archived");
-    const session = await pool.query(`SELECT revoked_at, revoke_reason FROM sessions WHERE user_id = $1`, [userId]);
-    assert.ok(session.rows[0].revoked_at);
-    assert.equal(session.rows[0].revoke_reason, "teacher_archived");
-    const assignmentStatus = await pool.query(`SELECT status FROM teacher_assignments WHERE id = $1`, [
-      assignment.id,
-    ]);
-    assert.equal(assignmentStatus.rows[0].status, "deleted");
+    assert.equal(archiveBundle.rows[0].teacher_status, "archived");
+    assert.equal(archiveBundle.rows[0].user_status, "archived");
+    assert.equal(archiveBundle.rows[0].revoked, 1);
+    assert.equal(archiveBundle.rows[0].active_assignments, 0);
+    assert.equal(archiveBundle.rows[0].deleted_assignments, 2);
+    assert.equal(archiveBundle.rows[0].audits, 1);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS c FROM grades WHERE teacher_id = $1`, [teacherId])).rows[0].c, 1);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS c FROM evaluations WHERE teacher_id = $1`, [teacherId])).rows[0].c, 1);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS c FROM attendance WHERE teacher_id = $1`, [teacherId])).rows[0].c, 1);
@@ -546,6 +656,8 @@ async function main() {
         temporaryPassword: "TempPass3",
       },
       "CD-2026-0001",
+      principal,
+      {},
     );
     const blockedId = (
       await pool.query(`SELECT id FROM teachers WHERE teacher_code = $1`, [blocked.teacherCode])
@@ -576,15 +688,21 @@ async function main() {
       `SELECT u.first_name FROM teachers t JOIN users u ON u.id = t.user_id WHERE t.teacher_code = $1`,
       [other.teacherCode],
     );
+    const auditsBeforeUpdateFail = await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`);
     await assert.rejects(
       () => failUpdateLifecycle.update(other.teacherCode, { firstName: "Rollback" }, "CD-2026-0001", principal, {}),
-      (error) => String(error.message).includes("forced audit failure"),
+      isNotNullViolation,
     );
     const afterName = await pool.query(
       `SELECT u.first_name FROM teachers t JOIN users u ON u.id = t.user_id WHERE t.teacher_code = $1`,
       [other.teacherCode],
     );
     assert.equal(afterName.rows[0].first_name, beforeName.rows[0].first_name);
+    assert.equal(await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`), auditsBeforeUpdateFail);
+    assert.equal(
+      await countTable(pool, `SELECT COUNT(*)::int AS c FROM users u JOIN teachers t ON t.user_id = u.id WHERE u.first_name = 'Rollback'`),
+      0,
+    );
 
     const failArchiveDb = createDbAdapter(pool, { failAudit: "archive_teacher" });
     const failArchiveLifecycle = createTeacherLifecycleRepository(failArchiveDb);
@@ -597,13 +715,34 @@ async function main() {
         temporaryPassword: "TempPass4",
       },
       "CD-2026-0001",
+      principal,
+      {},
     );
+    const auditsBeforeArchiveFail = await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`);
     await assert.rejects(
       () => failArchiveLifecycle.archive(free.teacherCode, "CD-2026-0001", principal, {}),
-      (error) => String(error.message).includes("forced audit failure"),
+      isNotNullViolation,
     );
     const stillActive = await pool.query(`SELECT status FROM teachers WHERE teacher_code = $1`, [free.teacherCode]);
     assert.equal(stillActive.rows[0].status, "active");
+    assert.equal(await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`), auditsBeforeArchiveFail);
+
+    const failAssignDb = createDbAdapter(pool, { failAudit: "create_teacher_assignment" });
+    const failAssignments = createTeacherAssignmentsRepository(failAssignDb);
+    const assignmentsBeforeFail = await countTable(pool, `SELECT COUNT(*)::int AS c FROM teacher_assignments`);
+    const auditsBeforeAssignFail = await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`);
+    await assert.rejects(
+      () =>
+        failAssignments.create(
+          { teacherCode: other.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+          "CD-2026-0001",
+          principal,
+          {},
+        ),
+      isNotNullViolation,
+    );
+    assert.equal(await countTable(pool, `SELECT COUNT(*)::int AS c FROM teacher_assignments`), assignmentsBeforeFail);
+    assert.equal(await countTable(pool, `SELECT COUNT(*)::int AS c FROM audit_logs`), auditsBeforeAssignFail);
 
     const raceA = await teachers.create(
       {
@@ -615,6 +754,8 @@ async function main() {
         temporaryPassword: "TempPass5",
       },
       "CD-2026-0001",
+      principal,
+      {},
     );
     const raceB = await teachers.create(
       {
@@ -626,17 +767,23 @@ async function main() {
         temporaryPassword: "TempPass6",
       },
       "CD-2026-0001",
+      principal,
+      {},
     );
     const raced = await Promise.allSettled([
       lifecycle.update(
         raceA.teacherCode,
         { firstName: "Identique", lastName: "Canon", birthDate: "1980-12-12", gender: "Masculin" },
         "CD-2026-0001",
+        principal,
+        {},
       ),
       lifecycle.update(
         raceB.teacherCode,
         { firstName: "Identique", lastName: "Canon", birthDate: "1980-12-12", gender: "Masculin" },
         "CD-2026-0001",
+        principal,
+        {},
       ),
     ]);
     const fulfilled = raced.filter((item) => item.status === "fulfilled");
@@ -645,6 +792,34 @@ async function main() {
     assert.equal(rejected.length, 1);
     assert.equal(rejected[0].reason.statusCode, 409);
     assert.equal(rejected[0].reason.code, "TEACHER_CANON_AMBIGUOUS");
+
+    const unauditedCreates = await pool.query(
+      `SELECT COUNT(*)::int AS c
+       FROM teachers t
+       WHERE NOT EXISTS (
+         SELECT 1 FROM audit_logs a
+         WHERE a.action = 'create_teacher' AND a.entity_id = t.teacher_code
+       )`,
+    );
+    assert.equal(unauditedCreates.rows[0].c, 0, "zéro création enseignant sans audit_logs");
+
+    const orphanTeacherAudits = await pool.query(
+      `SELECT COUNT(*)::int AS c
+       FROM audit_logs a
+       WHERE a.action IN ('create_teacher', 'update_teacher', 'archive_teacher')
+         AND a.entity_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM teachers t WHERE t.teacher_code = a.entity_id)`,
+    );
+    assert.equal(orphanTeacherAudits.rows[0].c, 0, "zéro audit enseignant orphelin");
+
+    const orphanAssignmentAudits = await pool.query(
+      `SELECT COUNT(*)::int AS c
+       FROM audit_logs a
+       WHERE a.action IN ('create_teacher_assignment', 'update_teacher_assignment', 'delete_teacher_assignment')
+         AND a.entity_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM teacher_assignments ta WHERE ta.id::text = a.entity_id)`,
+    );
+    assert.equal(orphanAssignmentAudits.rows[0].c, 0, "zéro audit affectation orphelin");
 
     console.log("teacherLifecycleRepository.pg.test.js: OK");
   } finally {

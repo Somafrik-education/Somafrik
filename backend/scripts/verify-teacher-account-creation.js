@@ -453,6 +453,18 @@ async function main() {
       "l'affectation modifiée puis supprimée ne doit pas survivre en mémoire",
     );
 
+    const assignmentRecreated = await request("/assignments", {
+      method: "POST",
+      token: admin.token,
+      body: {
+        teacherCode: created.data.teacherCode,
+        className: seedAssignment.className,
+        subject: seedSubject,
+      },
+    });
+    assert.equal(assignmentRecreated.status, 201, JSON.stringify(assignmentRecreated.data));
+    assert.notEqual(String(assignmentRecreated.data.id), String(assignmentCreated.data.id));
+
     const prefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
 
     const patched = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {

@@ -87,6 +87,7 @@ class PostgresRepository {
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
     await this.ensureTeachersDomainConstraints();
+    await this.ensureTeacherAssignmentsActiveUniqueness();
     await this.ensureUsersLoginIdentityConstraints();
     await this.ensureFinanceCanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
@@ -770,6 +771,18 @@ class PostgresRepository {
   async ensureTeachersDomainConstraints() {
     const { ensureTeachersDomainConstraints } = require("../lib/teachersUniqueness");
     await ensureTeachersDomainConstraints(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
+  }
+
+  async ensureTeacherAssignmentsActiveUniqueness() {
+    const { ensureTeacherAssignmentsActiveUniqueness } = require("../lib/teacherAssignmentsUniqueness");
+    await ensureTeacherAssignmentsActiveUniqueness(
       {
         one: (sql, params) => this.one(sql, params),
         all: (sql, params) => this.all(sql, params),

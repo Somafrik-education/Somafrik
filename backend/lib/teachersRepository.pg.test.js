@@ -146,10 +146,19 @@ async function setupFixture(pool) {
       assignment_role TEXT NOT NULL DEFAULT 'primary',
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  const { ensureTeacherAssignmentsActiveUniqueness } = require("./teacherAssignmentsUniqueness");
+  await ensureTeacherAssignmentsActiveUniqueness(
+    {
+      one: async (sql, params) => (await pool.query(sql, params)).rows[0] ?? null,
+      all: async (sql, params) => (await pool.query(sql, params)).rows,
+      query: (sql, params) => pool.query(sql, params),
+    },
+    { info() {}, error() {} },
+  );
 
   await pool.query(`DELETE FROM teacher_assignments`);
   await pool.query(`DELETE FROM teachers`);

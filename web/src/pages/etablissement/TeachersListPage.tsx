@@ -38,7 +38,7 @@ type AssignFormState = {
 type SubjectOption = {
   code: string;
   name: string;
-  status?: string;
+  status: string;
 };
 
 const EMPTY_FORM: TeacherFormState = {
@@ -205,8 +205,16 @@ export function TeachersListPage() {
         classesApi.list(),
         api.get<unknown>("/v2/subjects"),
       ]);
-      setClasses(Array.isArray(classRows) ? classRows.filter((item) => item.status === "active") : []);
-      setSubjects(asSubjectOptions(subjectPayload).filter((item) => item.status.toLowerCase() !== "archived"));
+      setClasses(
+        Array.isArray(classRows)
+          ? classRows.filter((item) => String(item.status ?? "active") === "active")
+          : [],
+      );
+      setSubjects(
+        asSubjectOptions(subjectPayload).filter(
+          (item) => String(item.status ?? "active").toLowerCase() !== "archived",
+        ),
+      );
     } catch (err) {
       setAssignError(mapApiError(err, "Impossible de charger les classes ou matières."));
     }

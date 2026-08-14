@@ -5,6 +5,7 @@ const {
   validateAssignmentInput,
 } = require("../lib/teacherAssignmentsManagement");
 const { assignmentAuditScope, writeTransactionalAudit } = require("../lib/teacherTransactionalAudit");
+const { isTeacherAssignmentsActiveUniquenessViolation } = require("../lib/teacherAssignmentsUniqueness");
 
 function mapAssignment(row) {
   return {
@@ -144,20 +145,32 @@ function createTeacherAssignmentsRepository(db) {
         ]);
         const refs = await resolveReferences(scope, school, input);
         await assertCourseAvailable(scope, school.id, refs);
-        const row = await scope.one(
-          `INSERT INTO teacher_assignments (
-             school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status
-           ) VALUES ($1, $2, $3, $4, $5, $6, 'active')
-           RETURNING id`,
-          [
-            school.id,
-            refs.teacher.id,
-            refs.schoolClass.id,
-            refs.subject.id,
-            refs.schoolClass.academic_year_id,
-            input.assignmentRole,
-          ],
-        );
+        let row;
+        try {
+          row = await scope.one(
+            `INSERT INTO teacher_assignments (
+               school_id, teacher_id, class_id, subject_id, academic_year_id, assignment_role, status
+             ) VALUES ($1, $2, $3, $4, $5, $6, 'active')
+             RETURNING id`,
+            [
+              school.id,
+              refs.teacher.id,
+              refs.schoolClass.id,
+              refs.subject.id,
+              refs.schoolClass.academic_year_id,
+              input.assignmentRole,
+            ],
+          );
+        } catch (error) {
+          if (isTeacherAssignmentsActiveUniquenessViolation(error)) {
+            throw assignmentError(
+              409,
+              "Cette affectation existe déjà pour cet enseignant.",
+              "ASSIGNMENT_ACTIVE_DUPLICATE",
+            );
+          }
+          throw error;
+        }
         const created = mapAssignment(await requireCurrent(row.id, school.id, scope));
         if (wantsAudit) {
           await writeTransactionalAudit(scope, tx, {
@@ -192,20 +205,31 @@ function createTeacherAssignmentsRepository(db) {
         const current = await requireCurrent(assignmentId, school.id, scope);
         const refs = await resolveReferences(scope, school, input, current);
         await assertCourseAvailable(scope, school.id, refs, String(assignmentId));
-        await scope.one(
-          `UPDATE teacher_assignments SET teacher_id = $1, class_id = $2, subject_id = $3,
-             academic_year_id = $4, assignment_role = $5, updated_at = NOW()
-           WHERE id::text = $6 AND school_id = $7 RETURNING id`,
-          [
-            refs.teacher.id,
-            refs.schoolClass.id,
-            refs.subject.id,
-            refs.schoolClass.academic_year_id,
-            input.present.assignmentRole ? input.assignmentRole : current.assignment_role,
-            String(assignmentId),
-            school.id,
-          ],
-        );
+        try {
+          await scope.one(
+            `UPDATE teacher_assignments SET teacher_id = $1, class_id = $2, subject_id = $3,
+               academic_year_id = $4, assignment_role = $5, updated_at = NOW()
+             WHERE id::text = $6 AND school_id = $7 RETURNING id`,
+            [
+              refs.teacher.id,
+              refs.schoolClass.id,
+              refs.subject.id,
+              refs.schoolClass.academic_year_id,
+              input.present.assignmentRole ? input.assignmentRole : current.assignment_role,
+              String(assignmentId),
+              school.id,
+            ],
+          );
+        } catch (error) {
+          if (isTeacherAssignmentsActiveUniquenessViolation(error)) {
+            throw assignmentError(
+              409,
+              "Cette affectation existe déjà pour cet enseignant.",
+              "ASSIGNMENT_ACTIVE_DUPLICATE",
+            );
+          }
+          throw error;
+        }
         const updated = mapAssignment(await requireCurrent(assignmentId, school.id, scope));
         if (wantsAudit) {
           await writeTransactionalAudit(scope, tx, {
