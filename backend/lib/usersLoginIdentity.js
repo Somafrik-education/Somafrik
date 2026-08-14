@@ -12,7 +12,13 @@ const USERS_PLATFORM_PHONE_INDEX = "uq_users_platform_phone";
 const USERS_LOGIN_IDENTITY_DUPLICATES_CODE = "USERS_LOGIN_IDENTITY_DUPLICATES";
 
 /** Comptes exclus de l'unicité identité (aligné inventaire + index + validation applicative). */
-const ACTIVE_USER_IDENTITY_STATUS_SQL = `COALESCE(status, 'active') NOT IN ('deleted', 'archived')`;
+function activeIdentityStatusSql(alias = "") {
+  const prefix = alias ? `${alias}.` : "";
+  return `COALESCE(${prefix}status, 'active') NOT IN ('deleted', 'archived')`;
+}
+
+/** @deprecated Préférer activeIdentityStatusSql(alias) — réservé aux requêtes mono-table users sans alias. */
+const ACTIVE_USER_IDENTITY_STATUS_SQL = activeIdentityStatusSql();
 
 const DROP_USERS_LOGIN_IDENTITY_INDEXES_SQL = [
   `DROP INDEX IF EXISTS ${USERS_SCHOOL_EMAIL_INDEX}`,
@@ -85,7 +91,7 @@ const LIST_SCHOOL_EMAIL_DUPLICATE_GROUPS_SQL = `
   WHERE u.school_id IS NOT NULL
     AND u.email IS NOT NULL
     AND trim(u.email) <> ''
-    AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
+    AND ${activeIdentityStatusSql("u")}
   GROUP BY s.school_code, lower(trim(u.email))
   HAVING COUNT(*) > 1
   ORDER BY s.school_code, email_key
@@ -251,7 +257,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
          FROM users u
          WHERE u.school_id = ${schoolParam}
            AND lower(trim(u.email)) = ${emailParam}
-           AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
+           AND ${activeIdentityStatusSql("u")}
            ${excludeClause}
          LIMIT 1`,
         params,
@@ -270,7 +276,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
          FROM users u
          WHERE u.school_id IS NULL
            AND lower(trim(u.email)) = ${emailParam}
-           AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
+           AND ${activeIdentityStatusSql("u")}
            ${excludeClause}
          LIMIT 1`,
         params,
@@ -296,7 +302,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
          FROM users u
          WHERE u.school_id = ${schoolParam}
            AND lower(trim(u.phone)) = ${phoneParam}
-           AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
+           AND ${activeIdentityStatusSql("u")}
            ${phoneExclude}
          LIMIT 1`,
         phoneParams,
@@ -314,7 +320,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
          FROM users u
          WHERE u.school_id IS NULL
            AND lower(trim(u.phone)) = ${phoneParam}
-           AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
+           AND ${activeIdentityStatusSql("u")}
            ${phoneExclude}
          LIMIT 1`,
         phoneParams,
@@ -331,6 +337,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
 
 module.exports = {
   USERS_LOGIN_IDENTITY_DUPLICATES_CODE,
+  activeIdentityStatusSql,
   ACTIVE_USER_IDENTITY_STATUS_SQL,
   ensureUsersLoginIdentityConstraints,
   inventoryUsersLoginIdentityDuplicates,

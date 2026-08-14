@@ -12,6 +12,7 @@ const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const {
+  USERS_LOGIN_IDENTITY_DUPLICATES_CODE,
   ensureUsersLoginIdentityConstraints,
   inventoryUsersLoginIdentityDuplicates,
 } = require("./usersLoginIdentity");
@@ -80,6 +81,90 @@ async function seedSchool(pool) {
   return { schoolId: school.rows[0].id, studentId: student.rows[0].id };
 }
 
+async function resetSchema(pool) {
+  await pool.query("DROP SCHEMA public CASCADE");
+  await pool.query("CREATE SCHEMA public");
+  const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
+  await pool.query(schema);
+  await pool.query(CLIENTS_SCHEMA_SQL);
+}
+
+function assertUsersLoginIdentityDuplicatesError(error, label) {
+  assert.notEqual(error?.code, "42702", `${label}: pas d'ambiguïté SQL status`);
+  assert.equal(error?.code, USERS_LOGIN_IDENTITY_DUPLICATES_CODE, label);
+  assert.match(String(error?.message ?? ""), /doublon/i);
+}
+
+async function testEnsureRejectsLegacyDuplicates(pool, db) {
+  const { schoolId } = await seedSchool(pool);
+
+  await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+     VALUES ($1, 'USR-DUP-A', 'Dup', 'A', 'dup.school@test', 'SCHOOL_ADMIN', 'active'),
+            ($1, 'USR-DUP-B', 'Dup', 'B', 'dup.school@test', 'SCHOOL_ADMIN', 'active')`,
+    [schoolId],
+  );
+  const schoolEmailInventory = await inventoryUsersLoginIdentityDuplicates(db);
+  assert.ok(schoolEmailInventory.duplicateGroups > 0, "inventaire email école détecte le doublon");
+  await assert.rejects(
+    () => ensureUsersLoginIdentityConstraints(db),
+    (error) => {
+      assertUsersLoginIdentityDuplicatesError(error, "établissement email");
+      return true;
+    },
+  );
+
+  await resetSchema(pool);
+  const { schoolId: schoolIdPhone } = await seedSchool(pool);
+  await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, role, status)
+     VALUES ($1, 'USR-PH-A', 'Phone', 'A', 'phone.a@test', '+243900000001', 'SCHOOL_ADMIN', 'active'),
+            ($1, 'USR-PH-B', 'Phone', 'B', 'phone.b@test', '+243900000001', 'SCHOOL_ADMIN', 'active')`,
+    [schoolIdPhone],
+  );
+  const schoolPhoneInventory = await inventoryUsersLoginIdentityDuplicates(db);
+  assert.ok(schoolPhoneInventory.duplicateGroups > 0, "inventaire téléphone école détecte le doublon");
+  await assert.rejects(
+    () => ensureUsersLoginIdentityConstraints(db),
+    (error) => {
+      assertUsersLoginIdentityDuplicatesError(error, "établissement téléphone");
+      return true;
+    },
+  );
+
+  await resetSchema(pool);
+  await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, role, status)
+     VALUES (NULL, 'USR-PLAT-E-A', 'Plat', 'A', 'plat.dup@test', 'SUPER_ADMIN', 'active'),
+            (NULL, 'USR-PLAT-E-B', 'Plat', 'B', 'plat.dup@test', 'SUPER_ADMIN', 'active')`,
+  );
+  const platformEmailInventory = await inventoryUsersLoginIdentityDuplicates(db);
+  assert.ok(platformEmailInventory.duplicateGroups > 0, "inventaire email plateforme détecte le doublon");
+  await assert.rejects(
+    () => ensureUsersLoginIdentityConstraints(db),
+    (error) => {
+      assertUsersLoginIdentityDuplicatesError(error, "plateforme email");
+      return true;
+    },
+  );
+
+  await resetSchema(pool);
+  await pool.query(
+    `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, role, status)
+     VALUES (NULL, 'USR-PLAT-P-A', 'Plat', 'A', 'plat.phone.a@test', '+243900000002', 'SUPER_ADMIN', 'active'),
+            (NULL, 'USR-PLAT-P-B', 'Plat', 'B', 'plat.phone.b@test', '+243900000002', 'SUPER_ADMIN', 'active')`,
+  );
+  const platformPhoneInventory = await inventoryUsersLoginIdentityDuplicates(db);
+  assert.ok(platformPhoneInventory.duplicateGroups > 0, "inventaire téléphone plateforme détecte le doublon");
+  await assert.rejects(
+    () => ensureUsersLoginIdentityConstraints(db),
+    (error) => {
+      assertUsersLoginIdentityDuplicatesError(error, "plateforme téléphone");
+      return true;
+    },
+  );
+}
+
 async function main() {
   if (!DATABASE_URL) {
     console.log("usersLoginIdentity.pg.test.js SKIP (DATABASE_URL absent)");
@@ -91,12 +176,10 @@ async function main() {
   const db = createRepo(pool);
 
   try {
-    await pool.query("DROP SCHEMA public CASCADE");
-    await pool.query("CREATE SCHEMA public");
-    const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
-    await pool.query(schema);
-    await pool.query(CLIENTS_SCHEMA_SQL);
+    await resetSchema(pool);
+    await testEnsureRejectsLegacyDuplicates(pool, db);
 
+    await resetSchema(pool);
     const { schoolId } = await seedSchool(pool);
 
     // Actif + archivé même email → inventaire 0 doublon, boot/index OK
