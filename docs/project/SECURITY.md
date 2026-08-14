@@ -59,10 +59,14 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 
 ### Lockout
 
-- Fichier : `backend/lib/loginLockout.js`
-- Seuil : 5 échecs → verrouillage ~15 minutes
+- SoT : table PostgreSQL `login_lockouts` (`backend/lib/loginLockout.js` + `loginLockoutPgStore.js`)
+- Clé : `school_scope` (code établissement ou `*` plateforme) + identifiant normalisé (trim/lower)
+- Seuil : 5 échecs → verrouillage ~15 minutes (atomique `INSERT … ON CONFLICT`)
+- Succès → `DELETE` ; expiration → reset lazy
 - Interdit de désactiver le lockout en production (`SOMAFRIK_DISABLE_LOGIN_LOCKOUT`)
+- `POST /api/backoffice/e2e/clear-login-lockout` : **404** sauf `SOMAFRIK_E2E=true` et `NODE_ENV !== production`
 - Préprod : lockout **activé** + rate limits sur les routes login
+- Tests : `npm run verify:login-lockout-data`
 
 ---
 
@@ -75,6 +79,7 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 | **Serveur** | `AuditService.record` — `userId`, `schoolCode`, action, entity, IP, UA |
 | **Stockage** | Table `audit_logs` (JSONB old/new) |
 | **Collections critiques** | users, payments, bulletins, rolePermissions, classes, teachers, assignments… |
+| **Export établissement** | action `export_school_data` (domaines + timestamp, **pas** le contenu) |
 
 ---
 
@@ -130,7 +135,7 @@ Voir [../ci-cd-security.md](../ci-cd-security.md).
 | Check | Contenu |
 |-------|---------|
 | Secrets | Gitleaks |
-| Security | `verify:db-config` + `verify:mobile-security` |
+| Security | `verify:db-config` + `verify:mobile-security` + `verify:login-lockout-data` + `verify:data-export-safety` |
 | TypeScript / Lint | Qualité |
 | Tests | verify JWT, RBAC, sanitize, check… |
 | Audit | `npm audit` fail si **critical** |

@@ -82,6 +82,8 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.query(schema);
+    await this.ensureLoginLockoutsCanonicalSchema();
+    this.attachLoginLockoutStore();
     await this.ensureSchoolsCanonicalColumns();
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
@@ -199,6 +201,16 @@ class PostgresRepository {
     for (const sql of statements) {
       await this.query(sql);
     }
+  }
+
+  async ensureLoginLockoutsCanonicalSchema() {
+    const { LOGIN_LOCKOUTS_SCHEMA_SQL } = require("./loginLockoutSchema");
+    await this.query(LOGIN_LOCKOUTS_SCHEMA_SQL);
+  }
+
+  attachLoginLockoutStore() {
+    const { attachPostgresLoginLockoutStore } = require("../lib/loginLockout");
+    attachPostgresLoginLockoutStore(this);
   }
 
   async query(sql, params = []) {

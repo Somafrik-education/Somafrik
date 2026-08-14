@@ -58,25 +58,28 @@ class BackOfficeAccessService {
     return resolveParentChildren(user, { students: this.students, relations: this.relations }, schoolCode);
   }
 
-  login({ schoolCode, identifier, password }) {
+  async login({ schoolCode, identifier, password }) {
     if (!identifier || !password) {
       throw new BusinessError(400, "Identifiant et mot de passe obligatoires");
     }
 
     const loginKey = getLoginAttemptKey(schoolCode, identifier);
     try {
-      assertLoginNotLocked(loginKey);
-    } catch {
-      throw new BusinessError(
-        423,
-        "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
-      );
+      await assertLoginNotLocked(loginKey);
+    } catch (error) {
+      if (error?.code === "LOGIN_LOCKED" || error?.message === "LOCKED") {
+        throw new BusinessError(
+          423,
+          "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
+        );
+      }
+      throw error;
     }
 
     const user = this.findUserAccount(identifier, schoolCode);
 
     if (!user || !this.verifyPassword(user, password)) {
-      recordFailedLoginAttempt(loginKey);
+      await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
@@ -113,7 +116,7 @@ class BackOfficeAccessService {
     this.assertScopeCanAccessSchool(user, schoolContext);
     this.assertSchoolCountryActive(user, schoolContext);
 
-    clearFailedLoginAttempts(loginKey);
+    await clearFailedLoginAttempts(loginKey);
 
     const mustChangePassword =
       user.mustChangePassword === false

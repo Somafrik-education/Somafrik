@@ -53,6 +53,8 @@
     "verify:evaluation-types-data": "node --test backend/lib/evaluationTypes.test.js && node backend/lib/evaluationTypes.pg.test.js && node backend/scripts/verify-evaluation-types-management.js",
     "verify:school-settings-data": "node --test backend/lib/schoolSettings.test.js && node backend/lib/schoolSettings.pg.test.js && node backend/scripts/verify-school-settings-management.js",
     "verify:documents-exams-data": "node --test backend/lib/documentsExams.test.js && node backend/lib/documentsExams.pg.test.js && node backend/scripts/verify-documents-exams-management.js",
+    "verify:login-lockout-data": "node --test backend/lib/loginLockout.test.js && node backend/lib/loginLockout.pg.test.js && node backend/scripts/verify-login-lockout-management.js",
+    "verify:data-export-safety": "node --test backend/lib/dataExport.test.js && node backend/scripts/verify-data-export-safety.js && npm --prefix web run test -- src/pages/parametres/DataBackupSettingsPage.test.tsx",
     "verify:clients-legacy-cleanup": "node backend/scripts/verify-clients-legacy-cleanup.js",
     "verify:backoffice-state-removal": "node --test backend/lib/backofficeStateRemoval.test.js backend/lib/backofficeStateRemoval.pg.test.js backend/lib/principalSchoolScope.test.js backend/lib/residualStateManagement.test.js backend/lib/residualReplacePayload.test.js backend/lib/residualRoutesRbac.test.js && node backend/scripts/verify-backoffice-state-removal.js",
     "inventory:teachers-school-user-duplicates": "node backend/scripts/inventory-teachers-school-user-duplicates.js",
