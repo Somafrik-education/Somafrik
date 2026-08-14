@@ -13,8 +13,8 @@ const { createSchoolSettingsPgStore } = require("../db/schoolSettingsPgStore");
 const { createResidualPgStore } = require("../db/residualPgStore");
 const {
   ensureSchoolSettingsConstraints,
-  stripLegacySchoolSettingsPayloads,
   ensureSchoolSettingsBootstrap,
+  runSchoolSettingsCanonicalBoot,
   getSchoolSettings,
   patchSchoolSettings,
   replaceAcademicPeriods,
@@ -201,23 +201,83 @@ async function testLegacyBootstrapInventory(pool) {
   assert.equal(row.rows[0].config_payload.periods[0].name, "Période Alpha");
 }
 
-async function testStripAfterCleanInventory(pool) {
+async function testLegacyValidatedScalarsSurviveFullBootSequence(pool) {
   await resetBaseSchema(pool);
   const { schoolAId } = await seedSchools(pool);
   await pool.query(
     `INSERT INTO school_academic_configs (school_id, config_payload, updated_at)
      VALUES ($1, $2::jsonb, NOW())`,
-    [schoolAId, JSON.stringify({ periodMode: "trimestre", defaultScale: 20, reportCardMode: "period" })],
+    [
+      schoolAId,
+      JSON.stringify({ periodMode: "semestre", defaultScale: 10, reportCardMode: "annual" }),
+    ],
   );
   const repo = createRepo(pool);
-  await assertSchoolSettingsSchemaPreflight(repo);
-  await ensureSchoolSettingsConstraints(repo, console);
+  const { captured } = await runSchoolSettingsCanonicalBoot(repo, console);
+  assert.equal(captured.length >= 1, true);
+  assert.equal(captured.find((item) => item.schoolId === schoolAId)?.periodMode, "semestre");
+  assert.equal(captured.find((item) => item.schoolId === schoolAId)?.defaultScale, 10);
+  assert.equal(captured.find((item) => item.schoolId === schoolAId)?.reportCardMode, "annual");
+
+  const settings = await pool.query(
+    `SELECT period_mode, default_scale, report_card_mode FROM school_settings WHERE school_id = $1`,
+    [schoolAId],
+  );
+  assert.equal(settings.rowCount, 1);
+  assert.equal(settings.rows[0].period_mode, "semestre");
+  assert.equal(Number(settings.rows[0].default_scale), 10);
+  assert.equal(settings.rows[0].report_card_mode, "annual");
+
+  const json = await pool.query(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [schoolAId]);
+  assert.equal("periodMode" in json.rows[0].config_payload, false);
+  assert.equal("defaultScale" in json.rows[0].config_payload, false);
+  assert.equal("reportCardMode" in json.rows[0].config_payload, false);
+}
+
+async function testSchoolInsertCreatesSettingsRow(pool) {
+  await resetBaseSchema(pool);
   await pool.query(SCHOOL_SETTINGS_SCHEMA_SQL);
-  await stripLegacySchoolSettingsPayloads(repo);
-  const row = await pool.query(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [schoolAId]);
-  assert.equal("periodMode" in row.rows[0].config_payload, false);
-  assert.equal("defaultScale" in row.rows[0].config_payload, false);
-  assert.equal("periods" in row.rows[0].config_payload, false);
+  const fixture = await seedSchools(pool);
+  const existing = await pool.query(`SELECT period_mode FROM school_settings WHERE school_id = $1`, [fixture.schoolAId]);
+  assert.equal(existing.rowCount, 1, "trigger/backfill crée school_settings à l'INSERT schools");
+  assert.equal(existing.rows[0].period_mode, "trimestre");
+
+  const country = await pool.query(`SELECT id FROM countries LIMIT 1`);
+  const created = await pool.query(
+    `INSERT INTO schools (country_id, school_code, name, status)
+     VALUES ($1, 'CD-2026-0099', 'Lycée post-boot', 'active') RETURNING id`,
+    [country.rows[0].id],
+  );
+  const row = await pool.query(
+    `SELECT period_mode, default_scale, report_card_mode FROM school_settings WHERE school_id = $1`,
+    [created.rows[0].id],
+  );
+  assert.equal(row.rowCount, 1);
+  assert.equal(row.rows[0].period_mode, "trimestre");
+  assert.equal(Number(row.rows[0].default_scale), 20);
+  assert.equal(row.rows[0].report_card_mode, "period");
+}
+
+async function testGetMaterializesMissingSettingsRow(pool) {
+  await resetBaseSchema(pool);
+  await pool.query(SCHOOL_SETTINGS_SCHEMA_SQL);
+  const fixture = await seedSchools(pool);
+  const repo = createRepo(pool);
+  await pool.query(`DELETE FROM school_settings WHERE school_id = $1`, [fixture.schoolAId]);
+  const missing = await pool.query(`SELECT 1 FROM school_settings WHERE school_id = $1`, [fixture.schoolAId]);
+  assert.equal(missing.rowCount, 0);
+  const adminA = {
+    role: "Admin School",
+    sub: "admin-a",
+    schoolCode: "CD-2026-0001",
+    permissions: ["Paramètres Établissement:UPDATE"],
+  };
+  const settings = await repo.getSchoolSettings(adminA, "CD-2026-0001");
+  assert.equal(settings.periodMode, "trimestre");
+  assert.equal(settings.defaultScale, 20);
+  assert.equal(settings.reportCardMode, "period");
+  const restored = await pool.query(`SELECT period_mode FROM school_settings WHERE school_id = $1`, [fixture.schoolAId]);
+  assert.equal(restored.rowCount, 1, "GET matérialise school_settings en PostgreSQL");
 }
 
 async function testCustomClassNamesBlockBoot(pool) {
@@ -269,7 +329,9 @@ async function main() {
   try {
     await testLegacyBootstrapInventory(pool);
     await testCustomClassNamesBlockBoot(pool);
-    await testStripAfterCleanInventory(pool);
+    await testLegacyValidatedScalarsSurviveFullBootSequence(pool);
+    await testSchoolInsertCreatesSettingsRow(pool);
+    await testGetMaterializesMissingSettingsRow(pool);
 
     await resetBaseSchema(pool);
     await pool.query(SCHOOL_SETTINGS_SCHEMA_SQL);
@@ -277,7 +339,7 @@ async function main() {
     const repo = createRepo(pool);
 
     await ensureSchoolSettingsConstraints(repo, console);
-    await ensureSchoolSettingsBootstrap(repo);
+    await ensureSchoolSettingsBootstrap(repo, []);
 
     const created = await repo.getSchoolSettings(adminA, "CD-2026-0001");
     assert.equal(created.schoolCode, "CD-2026-0001");

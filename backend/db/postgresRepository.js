@@ -109,11 +109,7 @@ class PostgresRepository {
     await this.ensureEvaluationTypesCanonicalSchema();
     await this.stripLegacyEvaluationTypesPayloads();
     await this.ensureEvaluationTypesBootstrap();
-    await this.ensureSchoolSettingsPreflight();
-    await this.ensureSchoolSettingsConstraints();
-    await this.ensureSchoolSettingsCanonicalSchema();
-    await this.stripLegacySchoolSettingsPayloads();
-    await this.ensureSchoolSettingsBootstrap();
+    await this.runSchoolSettingsCanonicalBoot();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -659,6 +655,11 @@ class PostgresRepository {
     return createEvaluationTypesPgStore(this);
   }
 
+  async runSchoolSettingsCanonicalBoot() {
+    const { runSchoolSettingsCanonicalBoot } = require("../lib/schoolSettingsService");
+    return runSchoolSettingsCanonicalBoot(this, console);
+  }
+
   async ensureSchoolSettingsPreflight() {
     const { assertSchoolSettingsSchemaPreflight } = require("./schoolSettingsSchema");
     await assertSchoolSettingsSchemaPreflight(this);
@@ -676,12 +677,17 @@ class PostgresRepository {
 
   async ensureSchoolSettingsConstraints() {
     const { ensureSchoolSettingsConstraints } = require("../lib/schoolSettingsService");
-    await ensureSchoolSettingsConstraints(this, console);
+    return ensureSchoolSettingsConstraints(this, console);
   }
 
-  async ensureSchoolSettingsBootstrap() {
+  async ensureSchoolSettingsBootstrap(captured) {
     const { ensureSchoolSettingsBootstrap } = require("../lib/schoolSettingsService");
-    await ensureSchoolSettingsBootstrap(this);
+    await ensureSchoolSettingsBootstrap(this, captured);
+  }
+
+  async verifySchoolSettingsMaterialized(captured) {
+    const { verifySchoolSettingsMaterialized } = require("../lib/schoolSettingsService");
+    await verifySchoolSettingsMaterialized(this, captured);
   }
 
   getSchoolSettingsStore() {
@@ -5219,6 +5225,14 @@ class PostgresRepository {
   async persistEstablishment(record) {
     const saved = await this.getSchoolsRepository().persist(record);
     this.cachedDataset = null;
+    try {
+      const store = this.getSchoolSettingsStore();
+      if (saved?.id && typeof store.seedDefaultSettingsIfEmpty === "function") {
+        await store.seedDefaultSettingsIfEmpty(saved.id);
+      }
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
     return saved;
   }
 

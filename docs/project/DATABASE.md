@@ -110,7 +110,9 @@ Migration SQL : `backend/db/migrations/20260817_evaluation_types_canonical.sql`.
 
 `PUT /api/academic-config` refuse `periods`, `periodMode`, `classNames`, `subjects`, `subjectsByClass`, `defaultScale`, `reportCardMode`, `schoolYear`, `academicYear`, `allowCustom*`, `bulletinDesignByClass`, `defaultGradeScale`. `GET /api/academic-config` projette depuis PostgreSQL.
 
-**Boot (ordre obligatoire)** : preflight (`schools`, `academic_years`, `terms`) → inventaire JSON → STOP `LEGACY_SCHOOL_SETTINGS_AMBIGUOUS` (ou codes spécialisés périodes/classes/matières) si non exactement équivalent → schéma `school_settings` → strip JSON → bootstrap scalaires 1:1 + terms défauts si vide.
+**Boot (ordre obligatoire)** : preflight (`schools`, `academic_years`, `terms`) → inventaire JSON + **capture des scalaires B validés** (`periodMode`, `defaultScale`/`defaultGradeScale`, `reportCardMode`) → STOP `LEGACY_SCHOOL_SETTINGS_AMBIGUOUS` (ou codes spécialisés périodes/classes/matières) si non exactement équivalent → schéma `school_settings` (table + trigger `AFTER INSERT ON schools` + backfill) → bootstrap/matérialisation **depuis les valeurs capturées** (jamais relire le JSON) → vérification PostgreSQL = capturé → **puis** strip JSON.
+
+Un `INSERT` ultérieur dans `schools` crée transactionnellement la ligne `school_settings` (défauts SQL). `GET /api/school-settings` et `projectAcademicConfig()` matérialisent la ligne en PostgreSQL si elle manque ; ils ne synthétisent plus `trimestre` / `20` / `period` en mémoire.
 
 Migration SQL : `backend/db/migrations/20260818_school_settings_canonical.sql`.
 

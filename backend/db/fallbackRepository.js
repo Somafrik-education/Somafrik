@@ -358,7 +358,15 @@ class FallbackRepository {
           : [school, ...schools];
     }
 
-    return clone(index >= 0 ? store[index] : school);
+    const saved = clone(index >= 0 ? store[index] : school);
+    const settingsStore = this.getSchoolSettingsStore();
+    if (typeof settingsStore.registerSchool === "function") {
+      const registered = settingsStore.registerSchool(saved);
+      if (registered?.id && typeof settingsStore.seedDefaultSettingsIfEmpty === "function") {
+        await settingsStore.seedDefaultSettingsIfEmpty(registered.id);
+      }
+    }
+    return saved;
   }
 
   async findIdempotencyRecord(cacheId) {

@@ -253,6 +253,24 @@ CREATE TABLE IF NOT EXISTS school_settings (
   CONSTRAINT school_settings_default_scale_check CHECK (default_scale > 0 AND default_scale <= 100)
 );
 
+CREATE OR REPLACE FUNCTION ensure_school_settings_for_school()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO school_settings (school_id)
+  VALUES (NEW.id)
+  ON CONFLICT (school_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_schools_ensure_school_settings ON schools;
+CREATE TRIGGER trg_schools_ensure_school_settings
+AFTER INSERT ON schools
+FOR EACH ROW
+EXECUTE FUNCTION ensure_school_settings_for_school();
+
 -- D3.6b : évaluations pédagogiques (entité distincte des notes)
 -- evaluation_type_id = source de vérité ; evaluation_type TEXT = projection/compatibilité
 CREATE TABLE IF NOT EXISTS evaluations (

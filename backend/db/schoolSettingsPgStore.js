@@ -4,15 +4,13 @@ const { parsePeriodDate } = require("../lib/academicPeriods");
 const { withSystemActivePeriods, defaultAcademicPeriods, inferPeriodMode } = require("../lib/academicConfigDefaults");
 const {
   SCHOOL_SETTINGS_ERROR,
-  DEFAULT_TRIMESTRE_NAMES,
   asTrimmed,
   createSchoolSettingsError,
   inferPeriodType,
   mapSettingsRow,
   classifyLegacySchoolSettings,
-  isValidPeriodMode,
-  isValidReportCardMode,
-  isValidDefaultScale,
+  extractValidatedSchoolSettingsScalars,
+  settingsPatchFromCaptured,
 } = require("../lib/schoolSettingsManagement");
 
 function toIsoDate(value) {
@@ -145,6 +143,21 @@ function createSchoolSettingsPgStore(repo) {
     });
   }
 
+  async function ensureSettingsRow(schoolId) {
+    const existing = await getSettings(schoolId);
+    if (existing) return existing;
+    const created = await seedDefaultSettingsIfEmpty(schoolId);
+    if (!created) {
+      throw createSchoolSettingsError(
+        500,
+        "Impossible de matérialiser school_settings.",
+        SCHOOL_SETTINGS_ERROR.SCHOOL_SETTINGS_UNAVAILABLE,
+        { schoolId },
+      );
+    }
+    return created;
+  }
+
   async function seedDefaultTermsIfEmpty(schoolId) {
     let year = await findCurrentAcademicYear(schoolId);
     if (!year && typeof repo.ensureCurrentAcademicYearForSchool === "function") {
@@ -229,12 +242,7 @@ function createSchoolSettingsPgStore(repo) {
 
   async function projectAcademicConfig(schoolCode) {
     const school = await requireSchoolByCode(schoolCode);
-    const settingsRow = (await getSettings(school.id)) ?? {
-      school_id: school.id,
-      period_mode: "trimestre",
-      default_scale: 20,
-      report_card_mode: "period",
-    };
+    const settingsRow = await ensureSettingsRow(school.id);
     const settings = mapSettingsRow(settingsRow, school.school_code);
     const termRows = await listTermRows(school.id);
     const periods = withSystemActivePeriods({
@@ -280,6 +288,7 @@ function createSchoolSettingsPgStore(repo) {
     );
     const inventory = [];
     const ambiguous = [];
+    const captured = [];
     for (const row of rows) {
       let payload = row.config_payload;
       if (typeof payload === "string") {
@@ -304,29 +313,27 @@ function createSchoolSettingsPgStore(repo) {
           issues: classified.issues,
           keys: classified.issues.map((item) => item.key),
         });
+      } else {
+        captured.push({
+          schoolId: row.school_id,
+          schoolCode: row.school_code,
+          ...extractValidatedSchoolSettingsScalars(payload),
+        });
       }
     }
-    return { inventory, ambiguous };
+    return { inventory, ambiguous, captured };
   }
 
-  async function bootstrapCanonicalSettingsForAllSchools() {
+  async function bootstrapCanonicalSettingsForAllSchools(captured = []) {
+    const capturedBySchoolId = new Map((captured ?? []).map((item) => [item.schoolId, item]));
     const schools = await all(`SELECT id, school_code FROM schools`);
     for (const school of schools) {
-      const row = await one(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [school.id]);
-      let payload = row?.config_payload ?? {};
-      if (typeof payload === "string") {
-        try {
-          payload = JSON.parse(payload);
-        } catch {
-          payload = {};
-        }
+      const patch = settingsPatchFromCaptured(capturedBySchoolId.get(school.id));
+      if (Object.keys(patch).length > 0) {
+        await upsertSettings(school.id, patch);
+      } else {
+        await seedDefaultSettingsIfEmpty(school.id);
       }
-      const defaults = {};
-      if (isValidPeriodMode(payload.periodMode)) defaults.periodMode = payload.periodMode;
-      if (isValidDefaultScale(payload.defaultScale)) defaults.defaultScale = Number(payload.defaultScale);
-      else if (isValidDefaultScale(payload.defaultGradeScale)) defaults.defaultScale = Number(payload.defaultGradeScale);
-      if (isValidReportCardMode(payload.reportCardMode)) defaults.reportCardMode = payload.reportCardMode;
-      await seedDefaultSettingsIfEmpty(school.id, defaults);
       await seedDefaultTermsIfEmpty(school.id);
     }
   }
@@ -340,6 +347,7 @@ function createSchoolSettingsPgStore(repo) {
     getSettings,
     upsertSettings,
     seedDefaultSettingsIfEmpty,
+    ensureSettingsRow,
     seedDefaultTermsIfEmpty,
     replaceTerms,
     projectAcademicConfig,

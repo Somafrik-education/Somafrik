@@ -9,9 +9,8 @@ const {
   inferPeriodType,
   mapSettingsRow,
   classifyLegacySchoolSettings,
-  isValidPeriodMode,
-  isValidReportCardMode,
-  isValidDefaultScale,
+  extractValidatedSchoolSettingsScalars,
+  settingsPatchFromCaptured,
 } = require("../lib/schoolSettingsManagement");
 
 function createSchoolSettingsMemoryStore(seed = {}) {
@@ -42,6 +41,9 @@ function createSchoolSettingsMemoryStore(seed = {}) {
   }
 
   return {
+    registerSchool(school) {
+      return rememberSchool(school);
+    },
     setLegacySchoolSettingsPayload(schoolCode, payload) {
       legacyPayloads.set(asTrimmed(schoolCode).toUpperCase(), payload);
     },
@@ -93,6 +95,20 @@ function createSchoolSettingsMemoryStore(seed = {}) {
     async seedDefaultSettingsIfEmpty(schoolId, defaults = {}) {
       if (settings.has(schoolId)) return settings.get(schoolId);
       return this.upsertSettings(schoolId, defaults);
+    },
+    async ensureSettingsRow(schoolId) {
+      const existing = await this.getSettings(schoolId);
+      if (existing) return existing;
+      const created = await this.seedDefaultSettingsIfEmpty(schoolId);
+      if (!created) {
+        throw createSchoolSettingsError(
+          500,
+          "Impossible de matérialiser school_settings.",
+          SCHOOL_SETTINGS_ERROR.SCHOOL_SETTINGS_UNAVAILABLE,
+          { schoolId },
+        );
+      }
+      return created;
     },
     async seedDefaultTermsIfEmpty(schoolId) {
       let year = years.get(schoolId);
@@ -152,12 +168,7 @@ function createSchoolSettingsMemoryStore(seed = {}) {
     },
     async projectAcademicConfig(schoolCode) {
       const school = await this.requireSchoolByCode(schoolCode);
-      const settingsRow = settings.get(school.id) ?? {
-        school_id: school.id,
-        period_mode: "trimestre",
-        default_scale: 20,
-        report_card_mode: "period",
-      };
+      const settingsRow = await this.ensureSettingsRow(school.id);
       const mapped = mapSettingsRow(settingsRow, school.school_code);
       const termRows = await this.listTermRows(school.id);
       const periods = withSystemActivePeriods({
@@ -189,6 +200,7 @@ function createSchoolSettingsMemoryStore(seed = {}) {
     async inventoryLegacySchoolSettingsPayloads() {
       const inventory = [];
       const ambiguous = [];
+      const captured = [];
       for (const [schoolCode, payload] of legacyPayloads.entries()) {
         const school = schoolByCode(schoolCode);
         const classified = classifyLegacySchoolSettings(payload, {
@@ -199,19 +211,25 @@ function createSchoolSettingsMemoryStore(seed = {}) {
         inventory.push({ schoolCode, issues: classified.issues });
         if (classified.ambiguous) {
           ambiguous.push({ schoolCode, issues: classified.issues, keys: classified.issues.map((item) => item.key) });
+        } else if (school) {
+          captured.push({
+            schoolId: school.id,
+            schoolCode,
+            ...extractValidatedSchoolSettingsScalars(payload),
+          });
         }
       }
-      return { inventory, ambiguous };
+      return { inventory, ambiguous, captured };
     },
-    async bootstrapCanonicalSettingsForAllSchools() {
+    async bootstrapCanonicalSettingsForAllSchools(captured = []) {
+      const capturedBySchoolId = new Map((captured ?? []).map((item) => [item.schoolId, item]));
       for (const school of schools.values()) {
-        const payload = legacyPayloads.get(school.school_code) ?? {};
-        const defaults = {};
-        if (isValidPeriodMode(payload.periodMode)) defaults.periodMode = payload.periodMode;
-        if (isValidDefaultScale(payload.defaultScale)) defaults.defaultScale = Number(payload.defaultScale);
-        else if (isValidDefaultScale(payload.defaultGradeScale)) defaults.defaultScale = Number(payload.defaultGradeScale);
-        if (isValidReportCardMode(payload.reportCardMode)) defaults.reportCardMode = payload.reportCardMode;
-        await this.seedDefaultSettingsIfEmpty(school.id, defaults);
+        const patch = settingsPatchFromCaptured(capturedBySchoolId.get(school.id));
+        if (Object.keys(patch).length > 0) {
+          await this.upsertSettings(school.id, patch);
+        } else {
+          await this.seedDefaultSettingsIfEmpty(school.id);
+        }
         await this.seedDefaultTermsIfEmpty(school.id);
       }
     },

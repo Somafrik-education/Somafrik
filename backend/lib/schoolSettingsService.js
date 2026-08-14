@@ -9,6 +9,7 @@ const {
   ignoreClientScope,
   parseSettingsPatch,
   mapSettingsRow,
+  settingsPatchFromCaptured,
 } = require("./schoolSettingsManagement");
 const { createSchoolSettingsPgStore } = require("../db/schoolSettingsPgStore");
 
@@ -53,16 +54,18 @@ async function getSchoolSettings(repo, principal, schoolCode) {
   const scopedSchool = resolveSchoolCodeFromPrincipal(principal, schoolCode);
   const store = settingsStore(repo);
   const school = await store.requireSchoolByCode(scopedSchool);
-  const row = await store.getSettings(school.id);
-  const mapped = mapSettingsRow(
-    row ?? {
-      school_id: school.id,
-      period_mode: "trimestre",
-      default_scale: 20,
-      report_card_mode: "period",
-    },
-    school.school_code,
-  );
+  const row = typeof store.ensureSettingsRow === "function"
+    ? await store.ensureSettingsRow(school.id)
+    : await store.getSettings(school.id);
+  if (!row) {
+    throw createSchoolSettingsError(
+      500,
+      "Impossible de matérialiser school_settings.",
+      SCHOOL_SETTINGS_ERROR.SCHOOL_SETTINGS_UNAVAILABLE,
+      { schoolId: school.id, schoolCode: school.school_code },
+    );
+  }
+  const mapped = mapSettingsRow(row, school.school_code);
   const config = await store.projectAcademicConfig(scopedSchool);
   return { ...mapped, periods: config.periods, schoolYear: config.schoolYear };
 }
@@ -121,7 +124,7 @@ async function replaceAcademicPeriods(repo, rawPayload, principal, auditMeta, sc
 
 async function ensureSchoolSettingsConstraints(repo, logger = console) {
   const store = settingsStore(repo);
-  const { inventory, ambiguous } = await store.inventoryLegacySchoolSettingsPayloads();
+  const { inventory, ambiguous, captured = [] } = await store.inventoryLegacySchoolSettingsPayloads();
   const logInfo = typeof logger.info === "function" ? logger.info.bind(logger) : console.log;
   const logError = typeof logger.error === "function" ? logger.error.bind(logger) : console.error;
   logInfo(`[school-settings] inventaire legacy academic-config : ${inventory.length} établissement(s), ${ambiguous.length} ambigu(s)`);
@@ -141,6 +144,7 @@ async function ensureSchoolSettingsConstraints(repo, logger = console) {
     error.inventory = { ambiguousSchools: ambiguous.length, inventoryCount: inventory.length, ambiguous };
     throw error;
   }
+  return { inventory, captured };
 }
 
 async function stripLegacySchoolSettingsPayloads(repo) {
@@ -148,9 +152,60 @@ async function stripLegacySchoolSettingsPayloads(repo) {
   await repo.query(STRIP_LEGACY_SCHOOL_SETTINGS_SQL);
 }
 
-async function ensureSchoolSettingsBootstrap(repo) {
+async function ensureSchoolSettingsBootstrap(repo, captured = []) {
   const store = settingsStore(repo);
-  await store.bootstrapCanonicalSettingsForAllSchools();
+  await store.bootstrapCanonicalSettingsForAllSchools(captured);
+}
+
+async function verifySchoolSettingsMaterialized(repo, captured = []) {
+  const store = settingsStore(repo);
+  for (const item of captured ?? []) {
+    const row = await store.getSettings(item.schoolId);
+    const patch = settingsPatchFromCaptured(item);
+    if (!row) {
+      throw createSchoolSettingsError(
+        500,
+        `school_settings manquant après bootstrap (${item.schoolCode ?? item.schoolId}).`,
+        SCHOOL_SETTINGS_ERROR.SCHOOL_SETTINGS_MATERIALIZE_MISMATCH,
+        { schoolId: item.schoolId, schoolCode: item.schoolCode },
+      );
+    }
+    if (patch.periodMode && row.period_mode !== patch.periodMode) {
+      throw createSchoolSettingsError(
+        500,
+        `period_mode divergé après bootstrap (${item.schoolCode}: ${row.period_mode} ≠ ${patch.periodMode}).`,
+        SCHOOL_SETTINGS_ERROR.SCHOOL_SETTINGS_MATERIALIZE_MISMATCH,
+        { schoolId: item.schoolId, schoolCode: item.schoolCode, field: "period_mode" },
+      );
+    }
+    if (patch.defaultScale !== undefined && Number(row.default_scale) !== Number(patch.defaultScale)) {
+      throw createSchoolSettingsError(
+        500,
+        `default_scale divergé après bootstrap (${item.schoolCode}: ${row.default_scale} ≠ ${patch.defaultScale}).`,
+        SCHOOL_SETTINGS_ERROR.SCHOOL_SETTINGS_MATERIALIZE_MISMATCH,
+        { schoolId: item.schoolId, schoolCode: item.schoolCode, field: "default_scale" },
+      );
+    }
+    if (patch.reportCardMode && row.report_card_mode !== patch.reportCardMode) {
+      throw createSchoolSettingsError(
+        500,
+        `report_card_mode divergé après bootstrap (${item.schoolCode}: ${row.report_card_mode} ≠ ${patch.reportCardMode}).`,
+        SCHOOL_SETTINGS_ERROR.SCHOOL_SETTINGS_MATERIALIZE_MISMATCH,
+        { schoolId: item.schoolId, schoolCode: item.schoolCode, field: "report_card_mode" },
+      );
+    }
+  }
+}
+
+async function runSchoolSettingsCanonicalBoot(repo, logger = console) {
+  const { assertSchoolSettingsSchemaPreflight, SCHOOL_SETTINGS_SCHEMA_SQL } = require("../db/schoolSettingsSchema");
+  await assertSchoolSettingsSchemaPreflight(repo);
+  const { captured } = await ensureSchoolSettingsConstraints(repo, logger);
+  await repo.query(SCHOOL_SETTINGS_SCHEMA_SQL);
+  await ensureSchoolSettingsBootstrap(repo, captured);
+  await verifySchoolSettingsMaterialized(repo, captured);
+  await stripLegacySchoolSettingsPayloads(repo);
+  return { captured };
 }
 
 module.exports = {
@@ -160,4 +215,6 @@ module.exports = {
   ensureSchoolSettingsConstraints,
   stripLegacySchoolSettingsPayloads,
   ensureSchoolSettingsBootstrap,
+  verifySchoolSettingsMaterialized,
+  runSchoolSettingsCanonicalBoot,
 };

@@ -20,6 +20,8 @@ const SCHOOL_SETTINGS_ERROR = Object.freeze({
   LEGACY_SCHOOL_PERIODS_AMBIGUOUS: "LEGACY_SCHOOL_PERIODS_AMBIGUOUS",
   LEGACY_SCHOOL_CLASS_NAMES_AMBIGUOUS: "LEGACY_SCHOOL_CLASS_NAMES_AMBIGUOUS",
   LEGACY_SCHOOL_SUBJECTS_AMBIGUOUS: "LEGACY_SCHOOL_SUBJECTS_AMBIGUOUS",
+  SCHOOL_SETTINGS_MATERIALIZE_MISMATCH: "SCHOOL_SETTINGS_MATERIALIZE_MISMATCH",
+  SCHOOL_SETTINGS_UNAVAILABLE: "SCHOOL_SETTINGS_UNAVAILABLE",
 });
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
@@ -347,6 +349,38 @@ function stripLegacySchoolSettings(payload) {
   return next;
 }
 
+function extractValidatedSchoolSettingsScalars(payload) {
+  const captured = {};
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return captured;
+  }
+  if (hasOwn(payload, "periodMode") && isValidPeriodMode(payload.periodMode)) {
+    captured.periodMode = asTrimmed(payload.periodMode);
+  }
+  const scaleRaw = hasOwn(payload, "defaultScale")
+    ? payload.defaultScale
+    : hasOwn(payload, "defaultGradeScale")
+      ? payload.defaultGradeScale
+      : undefined;
+  if (scaleRaw !== undefined && scaleRaw !== null && isValidDefaultScale(scaleRaw)) {
+    captured.defaultScale = Number(scaleRaw);
+  }
+  if (hasOwn(payload, "reportCardMode") && isValidReportCardMode(payload.reportCardMode)) {
+    captured.reportCardMode = asTrimmed(payload.reportCardMode);
+  }
+  return captured;
+}
+
+function settingsPatchFromCaptured(item = {}) {
+  const patch = {};
+  if (item.periodMode) patch.periodMode = item.periodMode;
+  if (item.defaultScale !== undefined && item.defaultScale !== null) {
+    patch.defaultScale = Number(item.defaultScale);
+  }
+  if (item.reportCardMode) patch.reportCardMode = item.reportCardMode;
+  return patch;
+}
+
 function parseSettingsPatch(payload) {
   const patch = ignoreClientScope(payload);
   const next = {};
@@ -409,6 +443,8 @@ module.exports = {
   isLegacySchoolSettingsAmbiguous,
   assertNoLegacySchoolSettingsWrite,
   stripLegacySchoolSettings,
+  extractValidatedSchoolSettingsScalars,
+  settingsPatchFromCaptured,
   parseSettingsPatch,
   isValidPeriodMode,
   isValidReportCardMode,

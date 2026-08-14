@@ -135,7 +135,7 @@ Convention des fiches : propriétaire métier, UI, API, source, tables, RBAC, sc
 | `bulletinDesignByClass` | D (academic-config) | Objet non vide → ambigu ; documents hors LOT 4 |
 | Horaires / jours d’ouverture | — | Absents du dépôt, non inventés |
 
-**Boot** : preflight (`schools`, `academic_years`, `terms`) → inventaire JSON → STOP `LEGACY_SCHOOL_SETTINGS_AMBIGUOUS` si non exactement équivalent → CREATE `school_settings` → strip → bootstrap scalaires 1:1 + terms défauts si vide.
+**Boot** : preflight (`schools`, `academic_years`, `terms`) → inventaire JSON + capture des scalaires B validés → STOP `LEGACY_SCHOOL_SETTINGS_AMBIGUOUS` si non exactement équivalent → CREATE `school_settings` (trigger `AFTER INSERT ON schools` + backfill) → bootstrap depuis les valeurs capturées → vérification PG = capturé → **puis** strip JSON. `GET` / projection matérialisent `school_settings` si la ligne manque (pas de fallback mémoire `trimestre`/`20`/`period`).
 
 **Mobile** : `GET /academic-config` projection ; `ConfigurationScreen` lecture seule ; pas de PUT SoT.
 

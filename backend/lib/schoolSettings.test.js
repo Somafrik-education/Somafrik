@@ -11,6 +11,7 @@ const {
   classifyLegacySchoolSettings,
   mapSettingsRow,
   stripLegacySchoolSettings,
+  extractValidatedSchoolSettingsScalars,
 } = require("./schoolSettingsManagement");
 
 test("assertNoLegacySchoolSettingsWrite refuse chaque clé LOT 4 même à null", () => {
@@ -110,6 +111,21 @@ test("stripLegacySchoolSettings retire les clés LOT 4 sans toucher LOT 1/2/3", 
   assert.equal("classNames" in next, false);
   assert.deepEqual(next.levels, ["6ème"]);
   assert.deepEqual(next.evaluationTypes, ["Devoir"]);
+});
+
+test("extractValidatedSchoolSettingsScalars capture les scalaires B valides", () => {
+  const captured = extractValidatedSchoolSettingsScalars({
+    periodMode: "semestre",
+    defaultScale: 10,
+    reportCardMode: "annual",
+    levels: ["6ème"],
+  });
+  assert.deepEqual(captured, { periodMode: "semestre", defaultScale: 10, reportCardMode: "annual" });
+});
+
+test("extractValidatedSchoolSettingsScalars utilise defaultGradeScale si defaultScale absent", () => {
+  const captured = extractValidatedSchoolSettingsScalars({ defaultGradeScale: 10 });
+  assert.equal(captured.defaultScale, 10);
 });
 
 test("mapSettingsRow expose les scalaires canoniques", () => {
