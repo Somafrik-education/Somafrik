@@ -31,7 +31,6 @@ const { CacheService } = require("./services/cacheService");
 const { TenantScopeService } = require("./services/tenantScopeService");
 const { RoleGovernanceService } = require("./services/roleGovernanceService");
 const { PedagogyGovernanceService } = require("./services/pedagogyGovernanceService");
-const { UserTeacherSyncService } = require("./services/userTeacherSyncService");
 const { AuditService } = require("./services/auditService");
 const { mergeAcademicConfigs } = require("./lib/bulletinDesignAccess");
 const { resolveParentChildren } = require("./lib/parentChildren");
@@ -107,7 +106,6 @@ const cacheService = new CacheService();
 const tenantScopeService = new TenantScopeService();
 const roleGovernanceService = new RoleGovernanceService();
 const pedagogyGovernanceService = new PedagogyGovernanceService();
-const userTeacherSyncService = new UserTeacherSyncService();
 let auditService = new AuditService(repository);
 let idempotencyService = new IdempotencyService(repository);
 app.locals.idempotencyService = idempotencyService;
@@ -2109,8 +2107,7 @@ async function getRuntime() {
   const storedState = await repository.getBackOfficeState();
   applyStoredStatusOverlay(dataset, storedState);
   applyStoredSchoolOverlay(dataset, storedState);
-  applyStoredUserOverlay(dataset, storedState);
-  await applyClientsAuthOverlay(dataset);
+  // LOT 7 / PR-A — comptes utilisateurs : authentification exclusivement PostgreSQL (pas d'overlay JSON).
   // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
   const mergedStudents = dataset.students ?? [];
   const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
@@ -2211,44 +2208,6 @@ function applyStoredStatusOverlay(dataset, storedState) {
   // Ne plus superposer l'ancien snapshot JSON sur dataset.countries.
 }
 
-// Superpose les comptes gérés depuis le state BackOffice persistant sur le dataset
-// de connexion : un Admin École créé/validé dans le BackOffice devient ainsi
-// authentifiable, et son statut (Actif / Suspendu / En attente de validation)
-// reflété au login. Le mot de passe temporaire sert de secret tant qu'aucun
-// hash n'est défini.
-function isDbUserUuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? ""));
-}
-
-function userOverlayKeys(user) {
-  const keys = [];
-  if (user?.id) keys.push(`id:${String(user.id)}`);
-  if (user?.publicId) keys.push(`public:${String(user.publicId).trim().toUpperCase()}`);
-  if (user?.identifier) {
-    const login = String(user.identifier).trim().toLowerCase();
-    const schoolCode = String(user.schoolCode ?? "").trim().toUpperCase();
-    if (schoolCode && schoolCode !== "*") {
-      keys.push(`login:${login}@${schoolCode}`);
-    } else {
-      keys.push(`login:${login}`);
-    }
-  }
-  return [...new Set(keys.filter(Boolean))];
-}
-
-function resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey) {
-  const keys = userOverlayKeys(user);
-  for (const alias of keys) {
-    const match = aliasToPrimaryKey.get(alias);
-    if (match) {
-      return match;
-    }
-  }
-
-  const schoolScopedLogin = keys.find((alias) => alias.startsWith("login:") && alias.includes("@"));
-  return schoolScopedLogin ?? keys[0] ?? null;
-}
-
 function applyStoredUserCredentials(base = {}, stored = {}, merged = {}) {
   const storedHash = Boolean(stored.passwordHash || stored.pinHash);
   const baseHash = Boolean(base.passwordHash || base.pinHash);
@@ -2307,119 +2266,6 @@ function normalizeBackOfficeUserCredentials(user = {}) {
   }
 
   return next;
-}
-
-async function applyClientsAuthOverlay(dataset) {
-  if (!dataset || typeof repository.listClientsAuthAccounts !== "function") {
-    return;
-  }
-
-  const authAccounts = await repository.listClientsAuthAccounts();
-  if (!Array.isArray(authAccounts) || authAccounts.length === 0) {
-    return;
-  }
-
-  const byPrimaryKey = new Map();
-  const aliasToPrimaryKey = new Map();
-
-  const registerUser = (user, primaryKey) => {
-    if (!primaryKey || !user) {
-      return;
-    }
-    byPrimaryKey.set(primaryKey, user);
-    for (const alias of userOverlayKeys(user)) {
-      aliasToPrimaryKey.set(alias, primaryKey);
-    }
-  };
-
-  for (const user of dataset.userAccounts ?? []) {
-    registerUser(user, resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey));
-  }
-
-  for (const stored of authAccounts) {
-    const primaryKey = resolveUserOverlayPrimaryKey(stored, aliasToPrimaryKey);
-    if (!primaryKey) {
-      continue;
-    }
-    const base = byPrimaryKey.get(primaryKey) ?? {};
-    const merged = normalizeBackOfficeUserCredentials({ ...base, ...stored });
-    registerUser(merged, primaryKey);
-  }
-
-  dataset.userAccounts = [...byPrimaryKey.values()];
-}
-
-function applyStoredUserOverlay(dataset, storedState) {
-  if (!dataset || !isPlainObject(storedState) || !Array.isArray(storedState.users)) {
-    return;
-  }
-
-  const byPrimaryKey = new Map();
-  const aliasToPrimaryKey = new Map();
-
-  const registerUser = (user, primaryKey) => {
-    if (!primaryKey || !user) {
-      return;
-    }
-    byPrimaryKey.set(primaryKey, user);
-    for (const alias of userOverlayKeys(user)) {
-      aliasToPrimaryKey.set(alias, primaryKey);
-    }
-  };
-
-  for (const user of dataset.userAccounts ?? []) {
-    registerUser(user, resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey));
-  }
-
-  for (const stored of storedState.users) {
-    const primaryKey = resolveUserOverlayPrimaryKey(stored, aliasToPrimaryKey);
-    if (!primaryKey) {
-      continue;
-    }
-
-    const base = byPrimaryKey.get(primaryKey) ?? {};
-    const merged = { ...base, ...stored };
-
-    const baseLoginId = String(base.identifier ?? "").trim();
-    const storedLoginId = String(stored.identifier ?? "").trim();
-    if (
-      baseLoginId &&
-      storedLoginId &&
-      baseLoginId !== storedLoginId &&
-      /^(ENS-\d+|ELE-\d+)$/i.test(baseLoginId) &&
-      /^USR-/i.test(storedLoginId)
-    ) {
-      merged.identifier = baseLoginId;
-    } else if (
-      baseLoginId &&
-      storedLoginId &&
-      baseLoginId !== storedLoginId &&
-      storedLoginId.toUpperCase() === String(stored.publicId ?? base.publicId ?? "").trim().toUpperCase()
-    ) {
-      // Instantané BackOffice : l'identifiant de connexion démo (admin, prefet…) prime sur le code technique.
-      merged.identifier = baseLoginId;
-    }
-
-    if (isDbUserUuid(base.id)) {
-      merged.id = base.id;
-    }
-    if (base.publicId) {
-      merged.publicId = base.publicId;
-    }
-
-    applyStoredUserCredentials(base, stored, merged);
-
-    if (!merged.passwordHash && !merged.pinHash && String(merged.password ?? "").trim()) {
-      const legacyHash = hashSecret(String(merged.password).trim());
-      merged.passwordHash = legacyHash;
-      merged.pinHash = legacyHash;
-      delete merged.password;
-    }
-
-    registerUser(merged, primaryKey);
-  }
-
-  dataset.userAccounts = [...byPrimaryKey.values()];
 }
 
 function handleBusinessResponse(res, action) {
@@ -3701,29 +3547,8 @@ function mergeScopedBackOfficeState(
     scopedCurrent,
     touchedKeys,
   );
-  const teacherSync =
-    usersTouched || teachersTouched
-      ? userTeacherSyncService.syncTeachersFromUserAccounts(
-          {
-            ...current,
-            users: mergedUsers,
-            teachers: mergedTeachers,
-            contacts: mergedContacts,
-            // §4.1 — départage multi-TEACHERS-* via affectations du même PUT
-            assignments: mergedAssignmentsForSync,
-          },
-          {
-            // §4.1.b — distinguer PUT étranger vs écriture identitaire
-            previousUsers: current.users ?? [],
-            previousTeachers: current.teachers ?? [],
-            usersTouched,
-            teachersTouched,
-          },
-        )
-      : null;
-  const syncedTeachers = teacherSync?.teachers ?? current.teachers;
-  const syncedContacts = teacherSync?.contacts ?? mergedContacts;
-  const identitySyncSkips = Array.isArray(teacherSync?.skips) ? teacherSync.skips : [];
+  const syncedTeachers = mergedTeachers;
+  const syncedContacts = mergedContacts;
   const mergedCourses = mergeScopedEntityIfTouched(
     "courses",
     current,
@@ -3879,8 +3704,6 @@ function mergeScopedBackOfficeState(
     deletedRows,
     updatedAt: new Date().toISOString(),
   }),
-    // Lot 2 / T1 — propager skips sync (ephemeral, non persisté)
-    identitySyncAck: { skips: identitySyncSkips },
   };
 }
 

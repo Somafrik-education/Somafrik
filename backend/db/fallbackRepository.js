@@ -2107,10 +2107,6 @@ class FallbackRepository {
     return Promise.resolve(this.getClientsStore().listProjection());
   }
 
-  listClientsAuthAccounts() {
-    return Promise.resolve(this.getClientsStore().listAuthAccounts());
-  }
-
   createClientsUser(payload, principal, auditMeta) {
     return this.getClientsStore().createUser(payload, principal, auditMeta);
   }
