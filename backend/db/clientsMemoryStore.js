@@ -353,6 +353,7 @@ function createClientsMemoryStore(seed = {}) {
   const store = {
     bind,
     getSchoolByCode: (code) => txApi.getSchoolByCode(code),
+    getUserById: (id) => txApi.getUserById(id),
     withTransaction(fn) {
       return fn(txApi);
     },

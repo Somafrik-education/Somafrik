@@ -5,6 +5,8 @@ const {
   assertAssignableUserRole,
   assertProvisionContactRole,
   normalizeAssignableRole,
+  assertSafeUserProfilePatch,
+  assertWritableUserTarget,
 } = require("./clientsRolePolicy");
 const { CLIENTS_ERROR } = require("./clientsManagement");
 
@@ -31,6 +33,18 @@ function main() {
   assert.equal(assertProvisionContactRole("Parent"), "Parent");
   expectForbidden(() => assertProvisionContactRole("Enseignant"));
   expectForbidden(() => assertProvisionContactRole("Super Administrateur Somafrik"));
+
+  expectForbidden(() => assertSafeUserProfilePatch({ permissions: ["ALL_PRIVILEGES"] }));
+  expectForbidden(() => assertSafeUserProfilePatch({ identifier: "hacked" }));
+  assert.doesNotThrow(() => assertSafeUserProfilePatch({ photoUrl: "https://example.com/a.png" }));
+
+  expectForbidden(() =>
+    assertWritableUserTarget(
+      { role: "Admin School", schoolCode: "CD-2026-0001" },
+      { role: "COUNTRY_ADMIN" },
+      { profile: { photoUrl: "x" } },
+    ),
+  );
 
   console.log("clientsRolePolicy.test.js OK");
 }

@@ -350,6 +350,7 @@ function createClientsPgStore(repo) {
   const store = {
     bind,
     getSchoolByCode: (code) => bind({}).getSchoolByCode(code),
+    getUserById: (id) => bind({}).getUserById(id),
     withTransaction(fn) {
       return repo.withTransaction((tx) => fn(bind(tx)));
     },

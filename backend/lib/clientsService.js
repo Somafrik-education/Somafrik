@@ -27,6 +27,8 @@ const {
   assertAssignableUserRole,
   assertProvisionContactRole,
   toDbRole,
+  assertSafeUserPatch,
+  mergeUserProfileForUpdate,
   PROVISION_CONTACT_ROLE,
 } = require("./clientsRolePolicy");
 
@@ -149,28 +151,32 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
     assertAssignableUserRole(principal, patch.role);
   }
 
+  const existing = await store.getUserById(userId);
+  if (!existing) {
+    throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
+  }
+  const schoolCode = existing.school_code;
+  assertSchoolScope(principal, schoolCode);
+  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+  assertSafeUserPatch(principal, existing, patch);
+
   return store.withTransaction(async (tx) => {
-    const existing = await tx.getUserById(userId);
-    if (!existing) {
+    const locked = await tx.getUserById(userId);
+    if (!locked) {
       throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
     }
-    const schoolCode = existing.school_code;
-    assertSchoolScope(principal, schoolCode);
-    await assertSchoolInPrincipalCountry(store, principal, schoolCode);
 
-    const profile = { ...parsePayload(existing.profile_payload), ...(patch.profile ?? {}) };
-    if (patch.contactId !== undefined) profile.contactId = patch.contactId;
-    if (patch.secondaryRoles !== undefined) profile.secondaryRoles = patch.secondaryRoles;
+    const profile = mergeUserProfileForUpdate(parsePayload(locked.profile_payload), patch);
 
-    const saved = await tx.updateUser(existing.id, {
-      firstName: patch.firstName ?? existing.first_name,
-      lastName: patch.lastName ?? existing.last_name,
-      email: patch.email ?? existing.email,
-      phone: patch.phone ?? existing.phone,
-      gender: patch.gender ?? existing.gender,
-      birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : existing.birth_date,
-      role: patch.role ? toDbRole(patch.role) : existing.role,
-      status: patch.status ? toDbStatus(patch.status) : existing.status,
+    const saved = await tx.updateUser(locked.id, {
+      firstName: patch.firstName ?? locked.first_name,
+      lastName: patch.lastName ?? locked.last_name,
+      email: patch.email ?? locked.email,
+      phone: patch.phone ?? locked.phone,
+      gender: patch.gender ?? locked.gender,
+      birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : locked.birth_date,
+      role: patch.role ? toDbRole(patch.role) : locked.role,
+      status: patch.status ? toDbStatus(patch.status) : locked.status,
       profile,
     });
 
@@ -179,7 +185,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
       action: "update_user",
       entityType: "user",
       entityId: saved.id,
-      oldValue: mapUserRow(existing),
+      oldValue: mapUserRow(locked),
       newValue: mapUserRow(saved),
     });
     return mapUserRow(saved);

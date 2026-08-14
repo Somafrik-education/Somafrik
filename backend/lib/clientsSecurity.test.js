@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { createClientsMemoryStore } = require("../db/clientsMemoryStore");
-const { CLIENTS_ERROR } = require("./clientsManagement");
+const { CLIENTS_ERROR, parsePayload } = require("./clientsManagement");
 
 function buildStore() {
   return createClientsMemoryStore({
@@ -101,6 +101,27 @@ async function main() {
     { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
   );
   assert.equal(store.getAuditLog().length, 0, "updateUser privilégié : aucun audit");
+
+  store.clearAuditLog();
+  await expectRejection(
+    store.updateUser(
+      staff.id,
+      { profile: { permissions: ["ALL_PRIVILEGES"] } },
+      schoolAdmin,
+      auditMeta,
+    ),
+    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+  );
+  assert.equal(store.getAuditLog().length, 0, "profile.permissions : aucun audit");
+  const staffAfter = store.getUserById(staff.id);
+  assert.equal(parsePayload(staffAfter.profile_payload).permissions, undefined, "aucune permission persistée");
+
+  store.clearAuditLog();
+  await expectRejection(
+    store.updateUser(staff.id, { permissions: ["ALL_PRIVILEGES"] }, schoolAdmin, auditMeta),
+    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+  );
+  assert.equal(store.getAuditLog().length, 0, "permissions top-level : aucun audit");
 
   const contact = await store.createContact(
     {

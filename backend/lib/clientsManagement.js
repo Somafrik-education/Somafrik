@@ -206,7 +206,7 @@ function mapUserRow(row) {
     accessChannel: profile.accessChannel ?? "Application",
     identifier: profile.identifier || resolveUserIdentifier({ role, phone: row.phone, email: row.email, userCode: row.user_code }),
     status: fromDbStatus(row.status),
-    permissions: profile.permissions ?? [],
+    permissions: [],
     hasTemporaryPassword: Boolean(row.must_change_password),
     mustChangePassword: Boolean(row.must_change_password),
     photoUrl: profile.photoUrl ?? "",

@@ -8,6 +8,12 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { collectSensitiveUserFieldPaths } = require("../lib/sanitizeUserForResponse");
 
+function decodeJwtPayload(token) {
+  const segment = String(token ?? "").split(".")[1];
+  if (!segment) return {};
+  return JSON.parse(Buffer.from(segment, "base64url").toString("utf8"));
+}
+
 const ROOT = require("node:path").resolve(__dirname, "../..");
 const PORT = 19685;
 const BASE = `http://127.0.0.1:${PORT}/api`;
@@ -144,6 +150,60 @@ async function main() {
       },
     });
     assert.equal(crossTenant.status, 403, JSON.stringify(crossTenant.data));
+
+    const staffPassword = "E2eStaff!2026";
+    const staff = await request("/backoffice/users", {
+      method: "POST",
+      token: schoolToken,
+      body: {
+        firstName: "Self",
+        lastName: "Patch",
+        role: "Secrétaire",
+        email: `self-patch-${Date.now()}@test.local`,
+        schoolCode: "CD-2026-0001",
+        temporaryPassword: staffPassword,
+      },
+    });
+    assert.equal(staff.status, 201, JSON.stringify(staff.data));
+    const staffToken = await login(staff.data.identifier, staffPassword, "CD-2026-0001");
+    const beforeLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
+    });
+    assert.equal(beforeLogin.status, 200);
+    const beforePermissions = [
+      ...(beforeLogin.data.permissions ?? []),
+      ...(beforeLogin.data.user?.permissions ?? []),
+      ...decodeJwtPayload(beforeLogin.data.accessToken).permissions ?? [],
+    ];
+
+    const forbiddenPatch = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
+      method: "PATCH",
+      token: staffToken,
+      body: { profile: { permissions: ["ALL_PRIVILEGES"] } },
+    });
+    assert.equal(forbiddenPatch.status, 403, JSON.stringify(forbiddenPatch.data));
+
+    const afterLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
+    });
+    assert.equal(afterLogin.status, 200);
+    const afterPermissions = [
+      ...(afterLogin.data.permissions ?? []),
+      ...(afterLogin.data.user?.permissions ?? []),
+      ...decodeJwtPayload(afterLogin.data.accessToken).permissions ?? [],
+    ];
+    assert.equal(afterPermissions.includes("ALL_PRIVILEGES"), false, "JWT sans ALL_PRIVILEGES");
+    assert.deepEqual(afterPermissions.sort(), beforePermissions.sort(), "permissions inchangées après rejet");
+
+    const usersAfter = await request("/backoffice/users", { token: schoolToken });
+    assert.equal(usersAfter.status, 200);
+    const projectedStaff = (Array.isArray(usersAfter.data) ? usersAfter.data : usersAfter.data?.items ?? []).find(
+      (row) => row.id === staff.data.id,
+    );
+    assert.ok(projectedStaff, "utilisateur toujours projeté");
+    assert.equal(projectedStaff.permissions?.includes("ALL_PRIVILEGES"), false, "projection sans ALL_PRIVILEGES");
 
     console.log("verify-clients-management.js OK");
   } finally {

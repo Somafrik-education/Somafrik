@@ -14,6 +14,19 @@ const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Admin
 const COUNTRY_ADMIN_ROLE = "Admin Pays";
 const PROVISION_CONTACT_ROLE = "Parent";
 
+const USER_PROFILE_PATCH_ALLOWLIST = new Set(["photoUrl"]);
+
+const FORBIDDEN_USER_PROFILE_PATCH_KEYS = new Set([
+  "permissions",
+  "identifier",
+  "countryScope",
+  "countryCode",
+  "accessChannel",
+  "createdBy",
+  "role",
+  "history",
+]);
+
 function normalizeAssignableRole(role) {
   const trimmed = asTrimmed(role);
   if (!trimmed) {
@@ -85,6 +98,84 @@ function toDbRole(roleLabel) {
   return ROLE_TO_DB[normalized] ?? normalized;
 }
 
+function resolveUserRoleLabel(existing = {}) {
+  return normalizeAssignableRole(ROLE_FROM_DB[existing.role] ?? existing.role);
+}
+
+function isPrivilegedUserRole(roleLabel) {
+  return isSuperAdminRole(roleLabel) || isCountryAdminRole(roleLabel);
+}
+
+function assertSafeUserProfilePatch(profilePatch) {
+  if (!profilePatch || typeof profilePatch !== "object" || Array.isArray(profilePatch)) {
+    return;
+  }
+
+  for (const key of Object.keys(profilePatch)) {
+    if (FORBIDDEN_USER_PROFILE_PATCH_KEYS.has(key)) {
+      throw createClientsError(403, `Champ profil interdit: ${key}.`, CLIENTS_ERROR.FORBIDDEN);
+    }
+    if (!USER_PROFILE_PATCH_ALLOWLIST.has(key)) {
+      throw createClientsError(403, `Champ profil non autorisé: ${key}.`, CLIENTS_ERROR.FORBIDDEN);
+    }
+  }
+}
+
+function mergeUserProfileForUpdate(existingProfile, patch = {}) {
+  const merged = { ...existingProfile };
+  if (patch.profile && typeof patch.profile === "object") {
+    for (const key of USER_PROFILE_PATCH_ALLOWLIST) {
+      if (patch.profile[key] !== undefined) {
+        merged[key] = patch.profile[key];
+      }
+    }
+  }
+  if (patch.contactId !== undefined) {
+    merged.contactId = patch.contactId;
+  }
+  if (patch.secondaryRoles !== undefined) {
+    merged.secondaryRoles = patch.secondaryRoles;
+  }
+  delete merged.permissions;
+  return merged;
+}
+
+/**
+ * Empêche la modification silencieuse d'un compte privilégié (profil/permissions sans patch.role).
+ */
+function assertWritableUserTarget(principal, existing, patch = {}) {
+  const targetRole = resolveUserRoleLabel(existing);
+  const privileged = isPrivilegedUserRole(targetRole);
+
+  if (privileged && patch.role === undefined && !isSuperAdminPrincipal(principal)) {
+    throw createClientsError(
+      403,
+      "Compte privilégié : modification du rôle requise.",
+      CLIENTS_ERROR.FORBIDDEN,
+    );
+  }
+
+  if (isSuperAdminPrincipal(principal)) {
+    return;
+  }
+
+  if (isSuperAdminRole(targetRole)) {
+    throw createClientsError(403, "Compte Super Administrateur non modifiable.", CLIENTS_ERROR.FORBIDDEN);
+  }
+
+  if (!isCountryAdminPrincipal(principal) && isCountryAdminRole(targetRole)) {
+    throw createClientsError(403, "Compte Admin Pays non modifiable.", CLIENTS_ERROR.FORBIDDEN);
+  }
+}
+
+function assertSafeUserPatch(principal, existing, patch = {}) {
+  if (patch.permissions !== undefined) {
+    throw createClientsError(403, "Champ permissions non modifiable.", CLIENTS_ERROR.FORBIDDEN);
+  }
+  assertSafeUserProfilePatch(patch.profile);
+  assertWritableUserTarget(principal, existing, patch);
+}
+
 module.exports = {
   SUPER_ADMIN_ROLES,
   COUNTRY_ADMIN_ROLE,
@@ -95,4 +186,12 @@ module.exports = {
   assertAssignableUserRole,
   assertProvisionContactRole,
   toDbRole,
+  USER_PROFILE_PATCH_ALLOWLIST,
+  FORBIDDEN_USER_PROFILE_PATCH_KEYS,
+  resolveUserRoleLabel,
+  isPrivilegedUserRole,
+  assertSafeUserProfilePatch,
+  mergeUserProfileForUpdate,
+  assertWritableUserTarget,
+  assertSafeUserPatch,
 };
