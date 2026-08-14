@@ -872,6 +872,104 @@ app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academi
   res.json(saved);
 }));
 
+app.get("/api/backoffice/education-levels", requireAuth, requirePermission("GET /api/backoffice/education-levels"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
+  const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
+  if (!countryCode) {
+    return res.status(400).json({ message: "countryCode obligatoire." });
+  }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
+  const levels = await repository.listEducationLevelsByCountry(countryCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ levels });
+}));
+
+app.post("/api/backoffice/education-levels", requireAuth, requirePermission("POST /api/backoffice/education-levels"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const created = await repository.createEducationLevel(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/education-levels/:levelId", requireAuth, requirePermission("PATCH /api/backoffice/education-levels/:levelId"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const updated = await repository.updateEducationLevel(req.params.levelId, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/education-levels/:levelId/archive", requireAuth, requirePermission("POST /api/backoffice/education-levels/:levelId/archive"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const archived = await repository.archiveEducationLevel(req.params.levelId, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/education-streams", requireAuth, requirePermission("GET /api/backoffice/education-streams"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
+  const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
+  if (!countryCode) {
+    return res.status(400).json({ message: "countryCode obligatoire." });
+  }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
+  const streams = await repository.listEducationStreamsByCountry(countryCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+    streamType: req.query.streamType ? String(req.query.streamType) : null,
+    levelId: req.query.levelId ? String(req.query.levelId) : null,
+  });
+  res.json({ streams });
+}));
+
+app.post("/api/backoffice/education-streams", requireAuth, requirePermission("POST /api/backoffice/education-streams"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const created = await repository.createEducationStream(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/education-streams/:streamId", requireAuth, requirePermission("PATCH /api/backoffice/education-streams/:streamId"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const updated = await repository.updateEducationStream(req.params.streamId, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/education-streams/:streamId/archive", requireAuth, requirePermission("POST /api/backoffice/education-streams/:streamId/archive"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const archived = await repository.archiveEducationStream(req.params.streamId, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/education-reference/catalog", requireAuth, requirePermission("GET /api/education-reference/catalog"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const catalog = await repository.getEducationSchoolCatalog(schoolCode);
+  res.json(catalog);
+}));
+
+app.put("/api/education-reference/school-activation", requireAuth, requirePermission("PUT /api/education-reference/school-activation"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await repository.saveSchoolEducationActivation(schoolCode, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/education-reference/catalog", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/education-reference/catalog"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const catalog = await repository.getEducationSchoolCatalog(schoolCode);
+  res.json(catalog);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/education-reference/school-activation", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/education-reference/school-activation"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.saveSchoolEducationActivation(schoolCode, payload, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
 app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
   const exams = await listResidualDomainForPrincipal(req.principal, "exams");
   res.json({ exams });

@@ -108,6 +108,7 @@ export const NAV_ITEMS: NavItem[] = [
 
   // Paramétrage plateforme (Super Admin / Admin Pays)
   { view: "countries", path: "/pays", label: "Pays", group: "plateforme" },
+  { view: "countries", path: "/referentiels-pedagogiques", label: "Référentiels pédagogiques", group: "plateforme" },
   { view: "schools", path: "/etablissements", label: "Établissements", group: "plateforme" },
   { view: "subscriptions", path: "/abonnements", label: "Abonnements", group: "plateforme" },
 

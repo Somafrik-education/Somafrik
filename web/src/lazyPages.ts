@@ -19,6 +19,10 @@ export const DashboardEntryPage = lazyPage(() => import("./pages/DashboardEntryP
 export const DashboardPage = DashboardEntryPage;
 export const MarketplacePage = lazyPage(() => import("./pages/MarketplacePage"), "MarketplacePage");
 export const CountriesPage = lazyPage(() => import("./pages/CountriesPage"), "CountriesPage");
+export const EducationReferencePage = lazyPage(
+  () => import("./pages/EducationReferencePage"),
+  "EducationReferencePage",
+);
 export const SchoolsPage = lazyPage(() => import("./pages/SchoolsPage"), "SchoolsPage");
 export const SubscriptionsLayout = lazyPage(
   () => import("./pages/abonnements/SubscriptionsLayout"),

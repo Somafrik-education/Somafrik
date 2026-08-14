@@ -18,6 +18,7 @@ import {
   TeachersListPage,
   ConfigurationPage,
   CountriesPage,
+  EducationReferencePage,
   CoursePlanningPage,
   DashboardEntryPage,
   MarketplacePage,
@@ -304,6 +305,14 @@ export default function App() {
           element={
             <PermissionRoute view="countries">
               <CountriesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/referentiels-pedagogiques"
+          element={
+            <PermissionRoute view="countries">
+              <EducationReferencePage />
             </PermissionRoute>
           }
         />

@@ -217,6 +217,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:clients-management
+      - name: verify:education-reference-data (LOT 1 référentiels pédagogiques)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:education-reference-data
       - name: verify:clients-legacy-cleanup (mémoire)
         run: npm run verify:clients-legacy-cleanup
       - name: verify:backoffice-state-removal (mémoire + PostgreSQL CI)

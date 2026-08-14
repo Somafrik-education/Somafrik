@@ -86,6 +86,7 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:platform-management` | APIs `/api/backoffice/countries`, `/subscriptions`, `/notifications`, `/role-permissions`, collections abonnement ; isolation tenant HTTP ; `getRolePermissionsMap()` PostgreSQL ; audit transactionnel (`platformRepository.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:clients-legacy-cleanup` | PUT Clients interdit (5 clés) ; writers Web/Mobile/BackOffice retirés |
 | `npm run verify:clients-management` | APIs `/api/backoffice/users`, `/contacts`, `/relations`, `/messages`, `/announcements` ; provisionnement contact/parent ; isolation tenant ; pas de fuite `password_hash` (`clientsRepository.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:education-reference-data` | Référentiels pédagogiques canoniques PG : CRUD Superadmin niveaux/filières, activation établissement, unicité par pays, cross-country, rejet `levels`/`tracks` sur `PUT /api/academic-config` (`LEGACY_ACADEMIC_LEVELS_WRITE_FORBIDDEN` / `LEGACY_ACADEMIC_STREAMS_WRITE_FORBIDDEN`) ; audit transactionnel (`educationReference.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
 | `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |

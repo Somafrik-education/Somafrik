@@ -2,6 +2,10 @@
 
 const { withSystemActivePeriods } = require("../lib/academicConfigDefaults");
 const seedData = require("../data");
+const {
+  assertNoLegacyAcademicLevelsTracksWrite,
+  stripLegacyAcademicLevelsTracks,
+} = require("../lib/educationReferenceManagement");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -44,26 +48,26 @@ function createResidualMemoryStore() {
       return academicConfigs.get(normalized) ?? null;
     },
     saveAcademicConfig(schoolCode, config, _tx = null) {
+      assertNoLegacyAcademicLevelsTracksWrite(config);
+      const sanitizedConfig = stripLegacyAcademicLevelsTracks(config);
       const normalized = asTrimmed(schoolCode).toUpperCase();
       const saved = withSystemActivePeriods({
         schoolCode: normalized,
-        periodMode: config.periodMode ?? "trimestre",
-        periods: Array.isArray(config.periods) && config.periods.length ? config.periods : [],
-        evaluationTypes: Array.isArray(config.evaluationTypes) && config.evaluationTypes.length
-          ? config.evaluationTypes
+        periodMode: sanitizedConfig.periodMode ?? "trimestre",
+        periods: Array.isArray(sanitizedConfig.periods) && sanitizedConfig.periods.length ? sanitizedConfig.periods : [],
+        evaluationTypes: Array.isArray(sanitizedConfig.evaluationTypes) && sanitizedConfig.evaluationTypes.length
+          ? sanitizedConfig.evaluationTypes
           : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
-        defaultScale: Number(config.defaultScale ?? 20),
-        reportCardMode: config.reportCardMode ?? "period",
-        allowCustomClasses: config.allowCustomClasses !== false,
-        allowCustomCourses: config.allowCustomCourses !== false,
-        allowCustomReportCards: config.allowCustomReportCards !== false,
-        levels: Array.isArray(config.levels) && config.levels.length ? config.levels : seedData.demoLevels,
-        tracks: Array.isArray(config.tracks) && config.tracks.length ? config.tracks : seedData.demoTracks,
-        classNames: Array.isArray(config.classNames) && config.classNames.length
-          ? config.classNames
+        defaultScale: Number(sanitizedConfig.defaultScale ?? 20),
+        reportCardMode: sanitizedConfig.reportCardMode ?? "period",
+        allowCustomClasses: sanitizedConfig.allowCustomClasses !== false,
+        allowCustomCourses: sanitizedConfig.allowCustomCourses !== false,
+        allowCustomReportCards: sanitizedConfig.allowCustomReportCards !== false,
+        classNames: Array.isArray(sanitizedConfig.classNames) && sanitizedConfig.classNames.length
+          ? sanitizedConfig.classNames
           : seedData.demoClassNames,
-        subjects: Array.isArray(config.subjects) && config.subjects.length
-          ? config.subjects
+        subjects: Array.isArray(sanitizedConfig.subjects) && sanitizedConfig.subjects.length
+          ? sanitizedConfig.subjects
           : seedData.demoSubjects,
       });
       academicConfigs.set(normalized, saved);

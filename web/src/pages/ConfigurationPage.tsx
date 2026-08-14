@@ -16,10 +16,9 @@ import {
   useToast,
 } from "../design-system";
 import { platformApi } from "../lib/platformApi";
+import { SchoolEducationActivationPanel } from "../components/SchoolEducationActivationPanel";
 import {
   DEFAULT_CLASS_NAMES,
-  DEFAULT_LEVELS,
-  DEFAULT_TRACKS,
   DEFAULT_USER_ROLES,
   getAllSchoolSubjects,
   getSchoolAcademicLists,
@@ -331,26 +330,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
           .filter(Boolean),
       },
       "Types d'évaluation enregistrés",
-    );
-  }
-
-  async function handleLevelsSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await saveAcademicPartial(
-      "levels",
-      { levels: parseListLines(String(form.get("levels") ?? "")) },
-      "Niveaux enregistrés",
-    );
-  }
-
-  async function handleTracksSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await saveAcademicPartial(
-      "tracks",
-      { tracks: parseListLines(String(form.get("tracks") ?? "")) },
-      "Filières enregistrées",
     );
   }
 
@@ -858,43 +837,18 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
       {showAcademicConfig && inSection("structure") ? (
         <>
-          <Card key={`levels-${academicFormKey}`} className="p-6">
+          <Card className="p-6">
             <SectionHeader
-              title="Niveaux"
-              description="Un niveau par ligne. Utilisés dans les listes déroulantes lors de la création de classes."
+              title="Niveaux et filières"
+              description="Activez les éléments du référentiel national proposés par le Superadmin. La création libre n'est plus autorisée."
             />
-            <form onSubmit={handleLevelsSubmit} className="mt-4 space-y-4">
-              <FormField label="Niveaux">
-                <Textarea
-                  name="levels"
-                  rows={4}
-                  readOnly={!canConfigure}
-                  defaultValue={(academicConfig.levels as string[] | undefined)?.join("\n") ?? DEFAULT_LEVELS.join("\n")}
-                />
-              </FormField>
-              <Button type="submit" disabled={!canConfigure || savingSection === "levels"}>
-                Enregistrer
-              </Button>
-            </form>
-          </Card>
-
-          <Card key={`tracks-${academicFormKey}`} className="p-6">
-            <SectionHeader
-              title="Filières"
-              description="Une filière par ligne. Utilisées dans les listes déroulantes lors de la création de classes."
-            />
-            <form onSubmit={handleTracksSubmit} className="mt-4 space-y-4">
-              <FormField label="Filières">
-                <Textarea
-                  name="tracks"
-                  rows={4}
-                  defaultValue={(academicConfig.tracks as string[] | undefined)?.join("\n") ?? DEFAULT_TRACKS.join("\n")}
-                />
-              </FormField>
-              <Button type="submit" disabled={savingSection === "tracks"}>
-                Enregistrer
-              </Button>
-            </form>
+            <div className="mt-4">
+              {configTarget && !isAllSchoolsSelection(configTarget) ? (
+                <SchoolEducationActivationPanel schoolCode={configTarget} canConfigure={canConfigure} />
+              ) : (
+                <p className="text-sm text-muted">Sélectionnez un établissement pour gérer l'activation.</p>
+              )}
+            </div>
           </Card>
 
           <Card key={`classNames-${academicFormKey}`} className="p-6">

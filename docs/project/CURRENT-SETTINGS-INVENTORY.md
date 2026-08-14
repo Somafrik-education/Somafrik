@@ -366,12 +366,12 @@ Lecture obligatoire de chaque fiche :
 - Référentiel pédagogique **local à l’école**, non partagé par pays.
 - Vocabulaire non gouverné (doublons, libellés divergents entre établissements d’un même pays). Risque audit actuel : **INFO** (pas de dual-write avec une table `levels` / `tracks` — elle n’existe pas).
 
-**Cible validée (ne pas implémenter ici)**
+**Cible validée (implémentée LOT 1 — PR référentiels pédagogiques)**
 
-- Propriétaire du **référentiel** = Superadmin.
-- Référentiel idéalement **scopé par pays**.
-- L’établissement **ne crée plus librement** le vocabulaire.
-- Admin établissement **sélectionne / active uniquement** les niveaux et filières proposés pour son établissement.
+- Propriétaire du **référentiel** = Superadmin (`education_levels`, `education_streams` scopés par `country_id`).
+- L’établissement **ne crée plus librement** le vocabulaire (`levels`/`tracks` rejetés sur `PUT /api/academic-config` avec codes stables).
+- Admin établissement **active uniquement** via `PUT /api/education-reference/school-activation` (`school_levels`, `school_streams`).
+- Lecture `GET /api/academic-config` : `levels`/`tracks` dérivés du référentiel canonique PG, plus du JSON `config_payload`.
 
 Cible conceptuelle :
 
@@ -452,7 +452,7 @@ Domaine | Paramètre | UI | API | Stockage | Scope | Écriture canonique ? | Leg
 Établissement | `schoolYear` profil | implicite / seed | même PATCH | JSONB `profile_payload.schoolYear` | Établissement | Oui (JSON) | Dual `academic_years` | idem | P1 | Une seule année courante (`academic_years.is_current`) ; profil en lecture dérivée
 Établissement | `primaryColor` / timezone / langue | ComingSoon Apparence | PATCH establishments (clés acceptées, UI absente) | JSONB | Établissement | API oui, UI non | Écran mort | idem | P2 | Brancher l’écran Apparence ou retirer les clés
 Académique | Périodes / mode / barème | `ConfigurationPage` année-scolaire | GET/PUT `/api/academic-config` (+ establishments/…) | `school_academic_configs.config_payload` | Établissement | JSON oui ; **tables `terms` non** | Dual-read `terms` si JSON vide | PUT : Paramètres UPDATE / planning / classes. GET config : auth seul | **P0** | Sync transactionnelle JSON → `academic_years`/`terms` ou UI sur APIs v2
-Académique | Niveaux / filières / séries / options | `ConfigurationPage` structure | même PUT | JSON `levels` / `tracks` | Établissement | Oui JSON (vocabulaire **créé par l’école**) | Seed si vide ; **pas** de table `levels`/`tracks` | idem | INFO | **Cible CTO §4.A (non implémentée) :** référentiel Superadmin par pays ; établissement = activation uniquement, plus de création libre du vocabulaire
+Académique | Niveaux / filières / séries / options | `ConfigurationPage` structure + `EducationReferencePage` | `GET/PUT /api/education-reference/*`, CRUD `/api/backoffice/education-*` | `education_levels`, `education_streams`, `school_levels`, `school_streams` | Pays + établissement | Oui PG | JSON `levels`/`tracks` retiré ; PUT academic-config interdit | Référentiels pédagogiques / Paramètres UPDATE | INFO → **migré LOT 1** | Superadmin catalogue ; établissement activation uniquement
 Académique | Types d’évaluation | `ConfigurationPage` **année scolaire** (écran actuel) | même PUT (`evaluationTypes`) | JSON `config_payload.evaluationTypes` | Établissement | Oui JSON catalogue | Instances : `evaluations.evaluation_type` TEXT ; **aucune** table `evaluation_types` | idem | P1 | **Cible CTO §4.C (non implémentée) :** catalogue canonique établissement dans Structure pédagogique (Paramètres → Structure → Types d’évaluation). Superadmin = modèles optionnels plus tard, pas le propriétaire opérationnel
 Académique | `classNames` / `subjects` JSON | structure | même PUT | JSON | Établissement | Oui JSON **sans** sync `classes`/`subjects`/`school_courses` | Dual opérationnel | idem | **P0** | Génération / mapping vers classes et matières PG ; interdire double saisie
 Académique | Année scolaire v2 | **pas le hub** | `/api/v2/academic-years` | `academic_years` | Établissement | Oui (autre écran/API) | Hub ignore | Années Académiques READ/WRITE | P1 | Hub Année scolaire → API v2
