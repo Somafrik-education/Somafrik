@@ -55,7 +55,5 @@ CREATE TABLE IF NOT EXISTS school_streams (
   CONSTRAINT school_streams_status_check CHECK (status IN ('active', 'archived'))
 );
 
-UPDATE school_academic_configs
-SET config_payload = config_payload - 'levels' - 'tracks',
-    updated_at = NOW()
-WHERE (config_payload ? 'levels') OR (config_payload ? 'tracks');
+-- Note : le retrait des clés legacy levels/tracks de school_academic_configs est exécuté
+-- au boot uniquement après inventaire propre (voir STRIP_LEGACY_ACADEMIC_REFERENCE_SQL).

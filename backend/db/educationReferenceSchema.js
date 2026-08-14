@@ -59,8 +59,10 @@ CREATE TABLE IF NOT EXISTS school_streams (
   PRIMARY KEY (school_id, stream_id),
   CONSTRAINT school_streams_status_check CHECK (status IN ('active', 'archived'))
 );
+`;
 
--- Retrait des clés legacy levels/tracks du JSON (aucune migration automatique des valeurs).
+const STRIP_LEGACY_ACADEMIC_REFERENCE_SQL = `
+-- Appliqué uniquement après inventaire legacy propre (boot postgresRepository).
 UPDATE school_academic_configs
 SET config_payload = config_payload - 'levels' - 'tracks',
     updated_at = NOW()
@@ -79,5 +81,6 @@ async function assertEducationReferenceSchemaPreflight(db) {
 
 module.exports = {
   EDUCATION_REFERENCE_SCHEMA_SQL,
+  STRIP_LEGACY_ACADEMIC_REFERENCE_SQL,
   assertEducationReferenceSchemaPreflight,
 };

@@ -194,6 +194,23 @@ async function updateStream(repo, streamId, rawPatch, principal, auditMeta) {
   if (!existing) {
     throw createEducationReferenceError(404, "Filière introuvable.", EDUCATION_REFERENCE_ERROR.STREAM_NOT_FOUND);
   }
+  if (patch.levelId !== undefined && patch.levelId) {
+    const level = await store.getLevelById(patch.levelId);
+    if (!level || level.countryCode !== existing.countryCode) {
+      throw createEducationReferenceError(
+        403,
+        "Niveau parent invalide pour ce pays.",
+        EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH,
+      );
+    }
+    if (level.status !== "active") {
+      throw createEducationReferenceError(
+        404,
+        "Niveau parent introuvable ou archivé.",
+        EDUCATION_REFERENCE_ERROR.LEVEL_NOT_FOUND,
+      );
+    }
+  }
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = eduStore(scope);
@@ -284,6 +301,11 @@ async function ensureEducationReferenceConstraints(repo, logger = console) {
   }
 }
 
+async function stripLegacyAcademicReferencePayloads(repo) {
+  const { STRIP_LEGACY_ACADEMIC_REFERENCE_SQL } = require("../db/educationReferenceSchema");
+  await repo.query(STRIP_LEGACY_ACADEMIC_REFERENCE_SQL);
+}
+
 module.exports = {
   createLevel,
   updateLevel,
@@ -293,4 +315,5 @@ module.exports = {
   archiveStream,
   saveSchoolActivation,
   ensureEducationReferenceConstraints,
+  stripLegacyAcademicReferencePayloads,
 };

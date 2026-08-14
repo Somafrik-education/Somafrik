@@ -7,14 +7,18 @@ const { Pool } = require("pg");
 const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
-const { EDUCATION_REFERENCE_SCHEMA_SQL } = require("../db/educationReferenceSchema");
+const { EDUCATION_REFERENCE_SCHEMA_SQL, assertEducationReferenceSchemaPreflight } = require("../db/educationReferenceSchema");
 const { createEducationReferencePgStore } = require("../db/educationReferencePgStore");
 const {
   createLevel,
   createStream,
+  updateStream,
   saveSchoolActivation,
   archiveLevel,
+  ensureEducationReferenceConstraints,
+  stripLegacyAcademicReferencePayloads,
 } = require("./educationReferenceService");
+const { EDUCATION_REFERENCE_ERROR } = require("./educationReferenceManagement");
 const { assertNoLegacyAcademicLevelsTracksWrite } = require("./educationReferenceManagement");
 const { createResidualPgStore } = require("../db/residualPgStore");
 
@@ -100,6 +104,7 @@ function createRepo(pool) {
     },
     createEducationLevel: (payload, principal, auditMeta) => createLevel(repo, payload, principal, auditMeta),
     createEducationStream: (payload, principal, auditMeta) => createStream(repo, payload, principal, auditMeta),
+    updateEducationStream: (streamId, patch, principal, auditMeta) => updateStream(repo, streamId, patch, principal, auditMeta),
     saveSchoolEducationActivation: (schoolCode, activation, principal, auditMeta) =>
       saveSchoolActivation(repo, schoolCode, activation, principal, auditMeta),
     archiveEducationLevel: (levelId, principal, auditMeta) => archiveLevel(repo, levelId, principal, auditMeta),
@@ -126,6 +131,64 @@ async function seedSchool(pool) {
   return { schoolId: school.rows[0].id, schoolCode: "CD-2026-0001", frCountryId: fr.rows[0].id };
 }
 
+async function resetBaseSchema(pool) {
+  await pool.query("DROP SCHEMA public CASCADE");
+  await pool.query("CREATE SCHEMA public");
+  await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
+  await pool.query(CLIENTS_SCHEMA_SQL);
+  await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
+}
+
+async function testLegacyBootstrapInventory(pool) {
+  await resetBaseSchema(pool);
+  const { schoolId } = await seedSchool(pool);
+  await pool.query(
+    `INSERT INTO school_academic_configs (school_id, config_payload, updated_at)
+     VALUES ($1, $2::jsonb, NOW())`,
+    [
+      schoolId,
+      JSON.stringify({
+        levels: ["Primaire", "Secondaire"],
+        tracks: ["Scientifique"],
+        periods: [],
+      }),
+    ],
+  );
+
+  const repo = createRepo(pool);
+  await assertEducationReferenceSchemaPreflight(repo);
+
+  await assert.rejects(
+    () => ensureEducationReferenceConstraints(repo, console),
+    (error) => error.code === EDUCATION_REFERENCE_ERROR.LEGACY_ACADEMIC_REFERENCE_AMBIGUOUS,
+  );
+
+  const row = await pool.query(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [schoolId]);
+  assert.deepEqual(row.rows[0].config_payload.levels, ["Primaire", "Secondaire"]);
+  assert.deepEqual(row.rows[0].config_payload.tracks, ["Scientifique"]);
+}
+
+async function testStripAfterCleanInventory(pool) {
+  await resetBaseSchema(pool);
+  const { schoolId } = await seedSchool(pool);
+  await pool.query(
+    `INSERT INTO school_academic_configs (school_id, config_payload, updated_at)
+     VALUES ($1, $2::jsonb, NOW())`,
+    [schoolId, JSON.stringify({ levels: [], tracks: [], periods: [] })],
+  );
+
+  const repo = createRepo(pool);
+  await assertEducationReferenceSchemaPreflight(repo);
+  await ensureEducationReferenceConstraints(repo, console);
+  await pool.query(EDUCATION_REFERENCE_SCHEMA_SQL);
+  await stripLegacyAcademicReferencePayloads(repo);
+
+  const row = await pool.query(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [schoolId]);
+  assert.equal("levels" in row.rows[0].config_payload, false);
+  assert.equal("tracks" in row.rows[0].config_payload, false);
+  assert.ok(Array.isArray(row.rows[0].config_payload.periods));
+}
+
 async function main() {
   if (!DATABASE_URL) {
     console.log("educationReference.pg.test.js SKIP (DATABASE_URL absent)");
@@ -140,11 +203,10 @@ async function main() {
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
 
   try {
-    await pool.query("DROP SCHEMA public CASCADE");
-    await pool.query("CREATE SCHEMA public");
-    await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
-    await pool.query(CLIENTS_SCHEMA_SQL);
-    await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
+    await testLegacyBootstrapInventory(pool);
+    await testStripAfterCleanInventory(pool);
+
+    await resetBaseSchema(pool);
     await pool.query(EDUCATION_REFERENCE_SCHEMA_SQL);
 
     await seedSchool(pool);
@@ -177,6 +239,11 @@ async function main() {
       { countryCode: "FR", name: "Seconde", code: "seconde" },
       superPrincipal,
       auditMeta,
+    );
+
+    await assert.rejects(
+      () => repo.updateEducationStream(stream.id, { levelId: frLevel.id }, superPrincipal, auditMeta),
+      (error) => error.statusCode === 403 && error.code === EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH,
     );
 
     await assert.rejects(

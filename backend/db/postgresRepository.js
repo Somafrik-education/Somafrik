@@ -94,8 +94,10 @@ class PostgresRepository {
     await this.ensurePlatformCanonicalSchema();
     await this.ensureClientsCanonicalSchema();
     await this.ensureResidualCanonicalSchema();
-    await this.ensureEducationReferenceCanonicalSchema();
+    await this.ensureEducationReferencePreflight();
     await this.ensureEducationReferenceConstraints();
+    await this.ensureEducationReferenceCanonicalSchema();
+    await this.stripLegacyAcademicReferencePayloads();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -456,10 +458,19 @@ class PostgresRepository {
     await this.query(RESIDUAL_STATE_SCHEMA_SQL);
   }
 
-  async ensureEducationReferenceCanonicalSchema() {
-    const { EDUCATION_REFERENCE_SCHEMA_SQL, assertEducationReferenceSchemaPreflight } = require("./educationReferenceSchema");
+  async ensureEducationReferencePreflight() {
+    const { assertEducationReferenceSchemaPreflight } = require("./educationReferenceSchema");
     await assertEducationReferenceSchemaPreflight(this);
+  }
+
+  async ensureEducationReferenceCanonicalSchema() {
+    const { EDUCATION_REFERENCE_SCHEMA_SQL } = require("./educationReferenceSchema");
     await this.query(EDUCATION_REFERENCE_SCHEMA_SQL);
+  }
+
+  async stripLegacyAcademicReferencePayloads() {
+    const { stripLegacyAcademicReferencePayloads } = require("../lib/educationReferenceService");
+    await stripLegacyAcademicReferencePayloads(this);
   }
 
   async ensureEducationReferenceConstraints() {

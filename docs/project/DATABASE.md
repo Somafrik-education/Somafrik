@@ -71,6 +71,8 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 
 `PUT /api/academic-config` refuse `levels` et `tracks` ; lecture `GET /api/academic-config` projette `levels`/`tracks` depuis ces tables (noms actifs pour l'établissement).
 
+**Boot (ordre obligatoire)** : preflight (`countries`, `schools`) → inventaire legacy `school_academic_configs` (échec `LEGACY_ACADEMIC_REFERENCE_AMBIGUOUS` si valeurs non vides) → création tables canoniques → strip JSON `levels`/`tracks` uniquement après inventaire propre.
+
 ### 4.3 Notes (canonique PG)
 
 | Table | Rôle | Contraintes notables |
