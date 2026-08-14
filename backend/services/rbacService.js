@@ -167,7 +167,6 @@ const routePermissions = {
     "Paramètres Établissement:UPDATE",
     "Référentiels pédagogiques:UPDATE",
     "ALL_PRIVILEGES",
-    "COUNTRY_PRIVILEGES",
   ],
   "GET /api/backoffice/establishments/:schoolCode/education-reference/catalog": [
     "Paramètres Établissement:READ",
@@ -181,7 +180,6 @@ const routePermissions = {
     "Paramètres Établissement:UPDATE",
     "Référentiels pédagogiques:UPDATE",
     "ALL_PRIVILEGES",
-    "COUNTRY_PRIVILEGES",
   ],
   "PUT /api/backoffice/planning-exams": [
     "Organiser examens",

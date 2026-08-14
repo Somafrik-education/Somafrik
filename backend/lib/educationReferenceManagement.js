@@ -1,5 +1,7 @@
 "use strict";
 
+const { getCountryCodeFromScope } = require("./countryScope");
+
 const EDUCATION_REFERENCE_ERROR = Object.freeze({
   FORBIDDEN: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
@@ -10,6 +12,7 @@ const EDUCATION_REFERENCE_ERROR = Object.freeze({
   STREAM_NOT_FOUND: "STREAM_NOT_FOUND",
   COUNTRY_MISMATCH: "COUNTRY_MISMATCH",
   LEVEL_IN_USE: "LEVEL_IN_USE",
+  LEVEL_HAS_ACTIVE_STREAMS: "LEVEL_HAS_ACTIVE_STREAMS",
   STREAM_IN_USE: "STREAM_IN_USE",
   LEGACY_ACADEMIC_LEVELS_WRITE_FORBIDDEN: "LEGACY_ACADEMIC_LEVELS_WRITE_FORBIDDEN",
   LEGACY_ACADEMIC_STREAMS_WRITE_FORBIDDEN: "LEGACY_ACADEMIC_STREAMS_WRITE_FORBIDDEN",
@@ -75,6 +78,26 @@ function assertSuperAdmin(principal) {
   }
 }
 
+function resolvePrincipalCountryCode(principal) {
+  return asTrimmed(principal?.countryCode) || getCountryCodeFromScope(principal?.countryScope);
+}
+
+function assertEducationReferenceCountryRead(principal, countryCode) {
+  if (isSuperAdminPrincipal(principal)) return;
+  if (isCountryAdminPrincipal(principal)) {
+    const requested = asTrimmed(countryCode).toUpperCase();
+    const principalCountry = resolvePrincipalCountryCode(principal).toUpperCase();
+    if (!requested || !principalCountry || requested !== principalCountry) {
+      throw createEducationReferenceError(
+        403,
+        "Accès refusé : pays hors périmètre.",
+        EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH,
+      );
+    }
+    return;
+  }
+}
+
 function assertSchoolCatalogRead(principal) {
   if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
     return;
@@ -100,7 +123,6 @@ function assertSchoolActivationWrite(principal) {
   const allowed = [
     "Paramètres Établissement:UPDATE",
     "ALL_PRIVILEGES",
-    "COUNTRY_PRIVILEGES",
     "Référentiels pédagogiques:UPDATE",
   ];
   if (!allowed.some((key) => permissions.includes(key))) {
@@ -187,6 +209,8 @@ module.exports = {
   ignoreClientScope,
   educationReferenceAuditMetaFromRequest,
   assertSuperAdmin,
+  assertEducationReferenceCountryRead,
+  resolvePrincipalCountryCode,
   assertSchoolCatalogRead,
   assertSchoolActivationWrite,
   mapLevelRow,

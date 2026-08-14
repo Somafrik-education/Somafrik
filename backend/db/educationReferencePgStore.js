@@ -135,6 +135,20 @@ function createEducationReferencePgStore(repo) {
         { activeSchools: activeSchools.count },
       );
     }
+    const activeStreams = await one(
+      `SELECT COUNT(*)::int AS count
+       FROM education_streams es
+       WHERE es.level_id = $1::uuid AND es.status = 'active'`,
+      [levelId],
+    );
+    if (Number(activeStreams?.count ?? 0) > 0) {
+      throw createEducationReferenceError(
+        409,
+        "Impossible d'archiver ce niveau : des filières actives y sont encore rattachées.",
+        EDUCATION_REFERENCE_ERROR.LEVEL_HAS_ACTIVE_STREAMS,
+        { activeStreams: activeStreams.count },
+      );
+    }
     const row = await one(
       `UPDATE education_levels
        SET status = 'archived', updated_at = NOW()
@@ -166,15 +180,27 @@ function createEducationReferencePgStore(repo) {
   }
 
   async function updateStream(streamId, patch) {
+    const sets = ["updated_at = NOW()"];
+    const params = [streamId];
+    let index = 2;
+    if (patch.name !== undefined) {
+      sets.push(`name = $${index++}`);
+      params.push(patch.name);
+    }
+    if (patch.levelIdProvided) {
+      sets.push(`level_id = $${index++}`);
+      params.push(patch.levelId);
+    }
+    if (patch.displayOrder !== undefined) {
+      sets.push(`display_order = $${index++}`);
+      params.push(patch.displayOrder);
+    }
     const row = await one(
       `UPDATE education_streams
-       SET name = COALESCE($2, name),
-           level_id = COALESCE($3, level_id),
-           display_order = COALESCE($4, display_order),
-           updated_at = NOW()
+       SET ${sets.join(", ")}
        WHERE id = $1::uuid AND status = 'active'
        RETURNING *`,
-      [streamId, patch.name ?? null, patch.levelId ?? null, patch.displayOrder ?? null],
+      params,
     );
     if (!row) return null;
     const country = await one(`SELECT iso_code FROM countries WHERE id = $1`, [row.country_id]);

@@ -199,7 +199,12 @@ async function main() {
   const pool = new Pool({ connectionString: url });
   const repo = createRepo(pool);
   const superPrincipal = { role: "Super Administrateur Somafrik", sub: "super-1" };
-  const schoolPrincipal = { role: "Admin School", sub: "admin-1", schoolCode: "CD-2026-0001" };
+  const schoolPrincipal = {
+    role: "Admin School",
+    sub: "admin-1",
+    schoolCode: "CD-2026-0001",
+    permissions: ["Paramètres Établissement:UPDATE"],
+  };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "test" };
 
   try {
@@ -246,6 +251,28 @@ async function main() {
       (error) => error.statusCode === 403 && error.code === EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH,
     );
 
+    const detached = await repo.updateEducationStream(stream.id, { levelId: null }, superPrincipal, auditMeta);
+    assert.equal(detached.levelId, null);
+
+    const relinked = await repo.updateEducationStream(stream.id, { levelId: levelA.id }, superPrincipal, auditMeta);
+    assert.equal(relinked.levelId, levelA.id);
+
+    const tempLevel = await repo.createEducationLevel(
+      { countryCode: "CD", name: "Temp", code: "temp" },
+      superPrincipal,
+      auditMeta,
+    );
+    await repo.archiveEducationLevel(tempLevel.id, superPrincipal, auditMeta);
+    await assert.rejects(
+      () =>
+        repo.createEducationStream(
+          { countryCode: "CD", name: "Bad", code: "bad_stream", streamType: "filiere", levelId: tempLevel.id },
+          superPrincipal,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 404 && error.code === EDUCATION_REFERENCE_ERROR.LEVEL_NOT_FOUND,
+    );
+
     await assert.rejects(
       () =>
         repo.saveSchoolEducationActivation(
@@ -288,10 +315,16 @@ async function main() {
 
     await repo.saveSchoolEducationActivation(
       "CD-2026-0001",
-      { levelIds: [levelDup.id], streamIds: [] },
+      { levelIds: [levelDup.id], streamIds: [stream.id] },
       schoolPrincipal,
       auditMeta,
     );
+    await assert.rejects(
+      () => repo.archiveEducationLevel(levelA.id, superPrincipal, auditMeta),
+      (error) => error.statusCode === 409 && error.code === EDUCATION_REFERENCE_ERROR.LEVEL_HAS_ACTIVE_STREAMS,
+    );
+
+    await repo.updateEducationStream(stream.id, { levelId: null }, superPrincipal, auditMeta);
     await repo.archiveEducationLevel(levelA.id, superPrincipal, auditMeta);
     const archived = await createEducationReferencePgStore(repo).getLevelById(levelA.id);
     assert.equal(archived.status, "archived");

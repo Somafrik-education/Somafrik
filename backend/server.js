@@ -873,10 +873,12 @@ app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academi
 }));
 
 app.get("/api/backoffice/education-levels", requireAuth, requirePermission("GET /api/backoffice/education-levels"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
   const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
   if (!countryCode) {
     return res.status(400).json({ message: "countryCode obligatoire." });
   }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
   const levels = await repository.listEducationLevelsByCountry(countryCode, {
     includeArchived: String(req.query.includeArchived ?? "") === "true",
   });
@@ -902,10 +904,12 @@ app.post("/api/backoffice/education-levels/:levelId/archive", requireAuth, requi
 }));
 
 app.get("/api/backoffice/education-streams", requireAuth, requirePermission("GET /api/backoffice/education-streams"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
   const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
   if (!countryCode) {
     return res.status(400).json({ message: "countryCode obligatoire." });
   }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
   const streams = await repository.listEducationStreamsByCountry(countryCode, {
     includeArchived: String(req.query.includeArchived ?? "") === "true",
     streamType: req.query.streamType ? String(req.query.streamType) : null,

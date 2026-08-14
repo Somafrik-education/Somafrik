@@ -63,6 +63,7 @@ async function main() {
     await waitForHealth(child);
     const superToken = await login("superadmin", "1234");
     const adminToken = await login("admin", "1234", "CD-2026-0001");
+    const countryAdminToken = await login("admin-rdc", "1234");
 
     const createdLevel = await request("/backoffice/education-levels", {
       method: "POST",
@@ -91,6 +92,25 @@ async function main() {
       body: { levelIds: [createdLevel.data.id], streamIds: [createdStream.data.id] },
     });
     assert.equal(activation.status, 200, JSON.stringify(activation.data));
+
+    const countryAdminActivation = await request("/education-reference/school-activation", {
+      method: "PUT",
+      token: countryAdminToken,
+      body: { levelIds: [createdLevel.data.id], streamIds: [createdStream.data.id] },
+    });
+    assert.equal(countryAdminActivation.status, 403, JSON.stringify(countryAdminActivation.data));
+
+    const countryReadOwn = await request("/backoffice/education-levels?countryCode=CD", {
+      token: countryAdminToken,
+    });
+    assert.equal(countryReadOwn.status, 200, JSON.stringify(countryReadOwn.data));
+    assert.ok(Array.isArray(countryReadOwn.data.levels));
+
+    const countryReadForeign = await request("/backoffice/education-levels?countryCode=BI", {
+      token: countryAdminToken,
+    });
+    assert.equal(countryReadForeign.status, 403, JSON.stringify(countryReadForeign.data));
+    assert.equal(countryReadForeign.data?.code, "COUNTRY_MISMATCH");
 
     const legacyPut = await request("/academic-config", {
       method: "PUT",

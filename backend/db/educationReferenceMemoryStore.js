@@ -141,6 +141,14 @@ function createEducationReferenceMemoryStore(seed = {}) {
       if (activeSchools > 0) {
         throw createEducationReferenceError(409, "Niveau utilisé", EDUCATION_REFERENCE_ERROR.LEVEL_IN_USE);
       }
+      const activeStreams = streams.filter((item) => item.level_id === levelId && item.status === "active").length;
+      if (activeStreams > 0) {
+        throw createEducationReferenceError(
+          409,
+          "Niveau référencé par des filières actives",
+          EDUCATION_REFERENCE_ERROR.LEVEL_HAS_ACTIVE_STREAMS,
+        );
+      }
       const index = levels.findIndex((item) => item.id === levelId && item.status === "active");
       if (index < 0) return null;
       levels[index] = { ...levels[index], status: "archived", updated_at: new Date().toISOString() };
@@ -174,7 +182,7 @@ function createEducationReferenceMemoryStore(seed = {}) {
       streams[index] = {
         ...streams[index],
         name: patch.name ?? streams[index].name,
-        level_id: patch.levelId !== undefined ? patch.levelId : streams[index].level_id,
+        level_id: patch.levelIdProvided ? patch.levelId : streams[index].level_id,
         display_order: patch.displayOrder ?? streams[index].display_order,
         updated_at: new Date().toISOString(),
       };

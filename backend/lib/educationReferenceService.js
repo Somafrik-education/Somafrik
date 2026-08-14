@@ -7,6 +7,7 @@ const {
   normalizeCode,
   createEducationReferenceError,
   assertSuperAdmin,
+  assertSchoolActivationWrite,
   ignoreClientScope,
 } = require("./educationReferenceManagement");
 const { createEducationReferencePgStore } = require("../db/educationReferencePgStore");
@@ -157,6 +158,13 @@ async function createStream(repo, rawPayload, principal, auditMeta) {
     if (!level || level.countryCode !== countryCode) {
       throw createEducationReferenceError(404, "Niveau parent introuvable pour ce pays.", EDUCATION_REFERENCE_ERROR.LEVEL_NOT_FOUND);
     }
+    if (level.status !== "active") {
+      throw createEducationReferenceError(
+        404,
+        "Niveau parent introuvable ou archivé.",
+        EDUCATION_REFERENCE_ERROR.LEVEL_NOT_FOUND,
+      );
+    }
   }
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
@@ -214,11 +222,15 @@ async function updateStream(repo, streamId, rawPatch, principal, auditMeta) {
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = eduStore(scope);
-    const saved = await scopedStore.updateStream(streamId, {
+    const storePatch = {
       name: patch.name ? asTrimmed(patch.name) : undefined,
-      levelId: patch.levelId !== undefined ? patch.levelId || null : undefined,
       displayOrder: patch.displayOrder != null ? Number(patch.displayOrder) : undefined,
-    });
+    };
+    if (patch.levelId !== undefined) {
+      storePatch.levelId = patch.levelId || null;
+      storePatch.levelIdProvided = true;
+    }
+    const saved = await scopedStore.updateStream(streamId, storePatch);
     if (!saved) {
       throw createEducationReferenceError(404, "Filière introuvable ou archivée.", EDUCATION_REFERENCE_ERROR.STREAM_NOT_FOUND);
     }
@@ -259,6 +271,7 @@ async function archiveStream(repo, streamId, principal, auditMeta) {
 }
 
 async function saveSchoolActivation(repo, schoolCode, activation, principal, auditMeta) {
+  assertSchoolActivationWrite(principal);
   const normalizedSchool = asTrimmed(schoolCode).toUpperCase();
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
