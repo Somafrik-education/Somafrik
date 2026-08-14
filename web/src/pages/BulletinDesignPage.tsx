@@ -26,7 +26,7 @@ import {
 
 export function BulletinDesignPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state } = useData();
   const { showToast } = useToast();
   const { availableSchools, setActiveSchoolCode } = useActiveSchool();
   const user = session?.user ?? null;
@@ -34,7 +34,6 @@ export function BulletinDesignPage() {
   const [schoolCode, setSchoolCode] = useState(() => availableSchools[0]?.code ?? "");
   const [className, setClassName] = useState("");
   const [draft, setDraft] = useState<BulletinClassDesign | null>(null);
-  const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
@@ -102,38 +101,10 @@ export function BulletinDesignPage() {
 
   async function saveDesign() {
     if (!schoolCode || !className || !draft) return;
-    setSaving(true);
-    try {
-      const currentConfig = (state.academicConfigs?.[schoolCode] ?? {}) as Record<string, unknown>;
-      const currentDesigns = (
-        currentConfig.bulletinDesignByClass && typeof currentConfig.bulletinDesignByClass === "object"
-          ? { ...(currentConfig.bulletinDesignByClass as Record<string, BulletinClassDesign>) }
-          : {}
-      ) as Record<string, BulletinClassDesign>;
-
-      await update(
-        {
-          academicConfigs: {
-            [schoolCode]: {
-              ...currentConfig,
-              schoolCode,
-              bulletinDesignByClass: {
-                ...currentDesigns,
-                [className]: { ...draft, templateVersion: 1 },
-              },
-            },
-          },
-        },
-        { partial: true },
-      );
-      showToast(`Modèle bulletin enregistré — ${className}`, "success");
-    } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Échec de l'enregistrement du modèle";
-      showToast(message, "error");
-    } finally {
-      setSaving(false);
-    }
+    showToast(
+      "Le modèle bulletin n'est plus enregistrable via academic-config. La persistance documents est hors LOT 4.",
+      "error",
+    );
   }
 
   async function previewDesign(format: "html" | "pdf") {
@@ -311,8 +282,8 @@ export function BulletinDesignPage() {
                 </label>
               </div>
               <div className="flex flex-wrap gap-3 pt-2">
-                <Button disabled={saving || !subjects.length} onClick={() => void saveDesign()}>
-                  {saving ? "Enregistrement…" : "Enregistrer le modèle"}
+                <Button disabled={!subjects.length} onClick={() => void saveDesign()}>
+                  Enregistrer le modèle
                 </Button>
                 <Button
                   variant="secondary"

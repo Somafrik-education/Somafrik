@@ -90,7 +90,9 @@ export default function ConfigurationScreen() {
             : availableSchools.find((school) => school.code === activeSchoolCode)?.name ?? activeSchoolCode}
         </Text>
         <Text style={styles.summaryMeta}>
-          Mode : {academicConfigData.periodMode} • Echelle : /{academicConfigData.defaultScale}
+          {academicConfigData.schoolCode
+            ? `Mode : ${academicConfigData.periodMode} • Echelle : /${academicConfigData.defaultScale}`
+            : "Configuration établissement non chargée."}
         </Text>
         <Text style={styles.summaryMeta}>
           Periodes : {academicConfigData.periods?.length ?? 0} • Matieres : {academicConfigData.subjects?.length ?? 0}

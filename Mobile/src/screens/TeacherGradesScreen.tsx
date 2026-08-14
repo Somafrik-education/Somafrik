@@ -170,6 +170,14 @@ export default function TeacherGradesScreen({ navigation }: any) {
       return;
     }
 
+    if (!academicConfigData.schoolCode || !Number.isFinite(Number(academicConfigData.defaultScale)) || Number(academicConfigData.defaultScale) <= 0) {
+      Alert.alert(
+        "Configuration indisponible",
+        "Le barème par défaut de l'établissement n'est pas chargé. Réessayez après synchronisation.",
+      );
+      return;
+    }
+
     const type = evaluationTypes[0];
     setGradeSession({
       id: `EVAL-${Date.now()}`,
@@ -177,7 +185,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
       typeId: type.id,
       period: activePeriod,
       date: todayLabel,
-      scale: String(academicConfigData.defaultScale || 20),
+      scale: String(academicConfigData.defaultScale),
       assignment,
       values: Object.fromEntries(rows.map((student) => [student.id, ""])),
       gradeIds: {},

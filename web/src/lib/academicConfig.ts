@@ -61,10 +61,7 @@ export function resolveSubjectsByClass(
     return result;
   }
 
-  const flat =
-    Array.isArray(config.subjects) && config.subjects.length
-      ? (config.subjects as string[])
-      : DEFAULT_SUBJECTS;
+  const flat = Array.isArray(config.subjects) ? (config.subjects as string[]) : [];
   const migrated: Record<string, string[]> = {};
   classNames.forEach((className) => {
     migrated[className] = [...flat];
@@ -82,9 +79,9 @@ export function getSubjectsForClass(
   const classNames =
     Array.isArray(config.classNames) && config.classNames.length
       ? (config.classNames as string[])
-      : DEFAULT_CLASS_NAMES;
+      : [];
   const byClass = resolveSubjectsByClass(config, classNames);
-  return byClass[className] ?? [];
+  return byClass[className] ?? (Array.isArray(config.subjects) ? (config.subjects as string[]) : []);
 }
 
 export function getAllSchoolSubjects(subjectsByClass: Record<string, string[]>): string[] {
@@ -114,12 +111,12 @@ export function getSchoolAcademicLists(
     Array.isArray(config.tracks) && config.tracks.length
       ? (config.tracks as string[])
       : DEFAULT_TRACKS;
-  const classNames =
-    Array.isArray(config.classNames) && config.classNames.length
-      ? (config.classNames as string[])
-      : DEFAULT_CLASS_NAMES;
+  const classNames = Array.isArray(config.classNames) ? (config.classNames as string[]) : [];
   const subjectsByClass = resolveSubjectsByClass(config, classNames);
-  const subjects = getAllSchoolSubjects(subjectsByClass);
+  const subjects =
+    Array.isArray(config.subjects) && config.subjects.length
+      ? (config.subjects as string[])
+      : getAllSchoolSubjects(subjectsByClass);
   const userRoles =
     Array.isArray(config.userRoles) && config.userRoles.length
       ? (config.userRoles as string[])

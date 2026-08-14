@@ -5,10 +5,6 @@ import {
   CountryProfile,
   Course,
   CourseScheduleSlot,
-  DEFAULT_CLASS_NAMES,
-  DEFAULT_LEVELS,
-  DEFAULT_SUBJECTS,
-  DEFAULT_TRACKS,
   NoteItem,
   PaymentItem,
   PaymentStatus,
@@ -100,15 +96,15 @@ const AdminDataContext = createContext<AdminDataContextValue | undefined>(undefi
 
 const emptyAcademicConfig: AcademicManagementConfig = {
   schoolCode: "",
-  periodMode: "trimestre",
+  periodMode: "",
   periods: [],
   evaluationTypes: [],
-  defaultScale: 20,
-  reportCardMode: "period",
-  levels: DEFAULT_LEVELS,
-  tracks: DEFAULT_TRACKS,
-  classNames: DEFAULT_CLASS_NAMES,
-  subjects: DEFAULT_SUBJECTS,
+  defaultScale: 0,
+  reportCardMode: "",
+  levels: [],
+  tracks: [],
+  classNames: [],
+  subjects: [],
 };
 
 export function AdminDataProvider({ children }: { children: React.ReactNode }) {
