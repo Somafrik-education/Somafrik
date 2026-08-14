@@ -602,11 +602,12 @@ rolePermissions["Super Administrateur Somafrik"] = [
 
 {
   const schoolPerms = new Set(rolePermissions["Admin School"] ?? []);
-  ["Enseignants:UPDATE", "Enseignants:DELETE", "Enseignants:SUSPEND", "Gérer enseignants"].forEach((token) =>
+  ["Enseignants:DELETE", "Enseignants:SUSPEND", "Gérer enseignants"].forEach((token) =>
     schoolPerms.delete(token),
   );
   schoolPerms.add("Enseignants:READ");
   schoolPerms.add("Enseignants:CREATE");
+  schoolPerms.add("Enseignants:UPDATE");
   schoolPerms.add("Ajouter enseignants");
   schoolPerms.add("Voir enseignants");
   rolePermissions["Admin School"] = [...schoolPerms].sort((a, b) => a.localeCompare(b, "fr"));

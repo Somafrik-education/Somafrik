@@ -440,6 +440,109 @@ async function main() {
       "l'affectation modifiée puis supprimée ne doit pas survivre en mémoire",
     );
 
+    const prefet = await login("prefet", "CD-2026-0001");
+
+    const patched = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
+      method: "PATCH",
+      token: admin.token,
+      body: { speciality: "Géographie", firstName: "Fatou", email: "fatou.sow@example.com" },
+    });
+    assert.equal(patched.status, 200, JSON.stringify(patched.data));
+    assert.equal(patched.data.firstName, "Fatou");
+    assert.equal(patched.data.speciality, "Géographie");
+
+    const forgedPatch = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
+      method: "PATCH",
+      token: admin.token,
+      body: { schoolCode: "BI-2026-0002", speciality: "Hack" },
+    });
+    assert.equal(forgedPatch.status, 400, JSON.stringify(forgedPatch.data));
+
+    const teacherPatch = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
+      method: "PATCH",
+      token: teacherSeed.token,
+      body: { speciality: "Hack" },
+    });
+    assert.equal(teacherPatch.status, 403, JSON.stringify(teacherPatch.data));
+
+    const crossPatch = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
+      method: "PATCH",
+      token: adminBi.token,
+      body: { speciality: "Hack" },
+    });
+    assert.equal(crossPatch.status, 404, JSON.stringify(crossPatch.data));
+
+    const emailClash = await request(`/teachers/${encodeURIComponent(homonym.data.teacherCode)}`, {
+      method: "PATCH",
+      token: admin.token,
+      body: { email: "fatou.sow@example.com" },
+    });
+    assert.equal(emailClash.status, 409, JSON.stringify(emailClash.data));
+
+    const phoneClash = await request(`/teachers/${encodeURIComponent(homonym.data.teacherCode)}`, {
+      method: "PATCH",
+      token: admin.token,
+      body: { phone: teacherPayload().phone },
+    });
+    assert.equal(phoneClash.status, 409, JSON.stringify(phoneClash.data));
+
+    const civilClash = await request(`/teachers/${encodeURIComponent(homonym.data.teacherCode)}`, {
+      method: "PATCH",
+      token: admin.token,
+      body: { firstName: "Fatou", lastName: "Sow", birthDate: "1990-05-01" },
+    });
+    assert.equal(civilClash.status, 409, JSON.stringify(civilClash.data));
+    assert.equal(civilClash.data.code, "TEACHER_CANON_AMBIGUOUS");
+
+    const teacherDelete = await request(`/teachers/${encodeURIComponent(homonym.data.teacherCode)}`, {
+      method: "DELETE",
+      token: teacherSeed.token,
+    });
+    assert.equal(teacherDelete.status, 403, JSON.stringify(teacherDelete.data));
+
+    const adminDelete = await request(`/teachers/${encodeURIComponent(homonym.data.teacherCode)}`, {
+      method: "DELETE",
+      token: admin.token,
+    });
+    assert.equal(adminDelete.status, 403, JSON.stringify(adminDelete.data));
+
+    const missingDelete = await request("/teachers/CD-2026-0001-ENS-9999", {
+      method: "DELETE",
+      token: prefet.token,
+    });
+    assert.equal(missingDelete.status, 404, JSON.stringify(missingDelete.data));
+
+    const archived = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
+      method: "DELETE",
+      token: prefet.token,
+    });
+    assert.equal(archived.status, 200, JSON.stringify(archived.data));
+    assert.equal(archived.data.archived, true);
+    assert.equal(archived.data.teacherCode, created.data.teacherCode);
+
+    const listedAfterArchive = await request("/teachers", { token: admin.token });
+    assert.equal(listedAfterArchive.status, 200);
+    assert.equal(
+      listedAfterArchive.data.some((row) => row.teacherCode === created.data.teacherCode),
+      false,
+      "enseignant archivé absent de la liste active",
+    );
+    const getArchived = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
+      token: admin.token,
+    });
+    assert.equal(getArchived.status, 404, JSON.stringify(getArchived.data));
+
+    const assignArchived = await request("/assignments", {
+      method: "POST",
+      token: admin.token,
+      body: {
+        teacherCode: created.data.teacherCode,
+        className: seedAssignment.className,
+        subject: seedSubject,
+      },
+    });
+    assert.equal(assignArchived.status, 400, JSON.stringify(assignArchived.data));
+
     console.log("verify-teacher-account-creation.js: OK");
   } catch (error) {
     console.error(stderr);

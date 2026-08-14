@@ -13,6 +13,7 @@ const {
 } = require("../lib/teacherCodeAllocation");
 const { isTeachersSchoolUserUniquenessViolation } = require("../lib/teachersUniqueness");
 const { hashSecret } = require("../services/credentialService");
+const { teacherAuditScope, writeTransactionalAudit } = require("../lib/teacherTransactionalAudit");
 
 /**
  * @param {{
@@ -66,9 +67,11 @@ function mapActiveAssignments(assignmentRows, teacherCode) {
   return (assignmentRows ?? [])
     .filter((row) => String(row.teacher_code ?? "") === code)
     .map((row) => ({
+      id: row.id ?? null,
       className: row.class_name ?? "",
       classCode: row.class_code ?? "",
       course: row.subject_name ?? "",
+      subjectCode: row.subject_code ?? "",
       status: row.status ?? "active",
     }))
     .filter((item) => item.className || item.course);
@@ -145,10 +148,12 @@ function createTeachersRepository(db) {
   async function loadActiveAssignments(reader, schoolId, teacherCode) {
     if (teacherCode) {
       return reader.all(
-        `SELECT t.teacher_code,
+        `SELECT ta.id,
+                t.teacher_code,
                 cl.name AS class_name,
                 cl.class_code,
                 sub.name AS subject_name,
+                sub.subject_code,
                 ta.status
          FROM teacher_assignments ta
          JOIN teachers t ON t.id = ta.teacher_id
@@ -162,10 +167,12 @@ function createTeachersRepository(db) {
       );
     }
     return reader.all(
-      `SELECT t.teacher_code,
+      `SELECT ta.id,
+              t.teacher_code,
               cl.name AS class_name,
               cl.class_code,
               sub.name AS subject_name,
+              sub.subject_code,
               ta.status
        FROM teacher_assignments ta
        JOIN teachers t ON t.id = ta.teacher_id
@@ -334,6 +341,8 @@ function createTeachersRepository(db) {
            JOIN schools s ON s.id = t.school_id
            LEFT JOIN users u ON u.id = t.user_id
            WHERE t.school_id = $1
+             AND COALESCE(t.status, 'active') NOT IN ('deleted', 'archived')
+             AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
            ORDER BY u.last_name ASC NULLS LAST, u.first_name ASC NULLS LAST, t.teacher_code ASC`,
           [school.id],
         ),
@@ -372,6 +381,8 @@ function createTeachersRepository(db) {
          JOIN schools s ON s.id = t.school_id
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.teacher_code = $1 AND t.school_id = $2
+           AND COALESCE(t.status, 'active') NOT IN ('deleted', 'archived')
+           AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
          LIMIT 1`,
         [teacherCode, school.id],
       );
@@ -386,15 +397,36 @@ function createTeachersRepository(db) {
      * @param {object} body
      * @param {string} schoolCode
      */
-    async create(body, schoolCode) {
+    async create(body, schoolCode, principal = null, auditMeta = null) {
       const school = await requireSchool(schoolCode);
       const input = validateCreateTeacherInput(body, schoolCode);
+      const wantsAudit = Boolean(principal || auditMeta);
 
       const created =
         typeof db.withTransaction === "function"
-          ? await db.withTransaction(async (tx) =>
-              insertUserAndTeacher(createTeachersDb(tx), school, schoolCode, input),
-            )
+          ? await db.withTransaction(async (tx) => {
+              const writer = createTeachersDb(tx);
+              const inserted = await insertUserAndTeacher(writer, school, schoolCode, input);
+              if (wantsAudit) {
+                const scope = teacherAuditScope(db, tx);
+                await writeTransactionalAudit(scope, tx, {
+                  principal: principal ?? {},
+                  auditMeta: auditMeta ?? {},
+                  action: "create_teacher",
+                  entityType: "teacher",
+                  entityId: inserted.teacherCode,
+                  oldValue: null,
+                  newValue: {
+                    teacherCode: inserted.teacherCode,
+                    identifier: inserted.identifier,
+                    schoolCode: inserted.schoolCode,
+                    userId: inserted.userId,
+                  },
+                  schoolCode: school.school_code ?? schoolCode,
+                });
+              }
+              return inserted;
+            })
           : await insertUserAndTeacher(createTeachersDb(db), school, schoolCode, input);
 
       if (typeof db.onTeacherCreated === "function") {

@@ -10,6 +10,8 @@ const {
   assertUniqueUserLoginIdentity,
   isUsersLoginIdentityUniquenessViolation,
 } = require("../lib/usersLoginIdentity");
+const { acquireTeacherSchoolCreationLock } = require("../lib/teacherCodeAllocation");
+const { teacherAuditScope, writeTransactionalAudit } = require("../lib/teacherTransactionalAudit");
 
 const FORBIDDEN_PATCH_KEYS = Object.freeze([
   "id",
@@ -20,6 +22,9 @@ const FORBIDDEN_PATCH_KEYS = Object.freeze([
   "role",
   "teacherCode",
   "teacher_code",
+  "identifier",
+  "publicId",
+  "public_id",
   "userId",
   "user_id",
   "userCode",
@@ -31,6 +36,8 @@ const FORBIDDEN_PATCH_KEYS = Object.freeze([
   "password_hash",
   "pinHash",
   "pin_hash",
+  "hash",
+  "hashes",
   "mustChangePassword",
   "must_change_password",
   "assignments",
@@ -41,6 +48,8 @@ const FORBIDDEN_PATCH_KEYS = Object.freeze([
   "class_id",
   "subjectId",
   "subject_id",
+  "subjectCode",
+  "subject_code",
 ]);
 
 function asOptionalString(value, field, maxLength) {
@@ -96,8 +105,10 @@ function validateTeacherUpdateInput(body) {
         ? parseAndValidateDate(body.birthDate ?? body.birth_date, "birthDate", { required: true })
         : undefined,
     entryDate:
-      body.entryDate !== undefined || body.entry_date !== undefined || body.hireDate !== undefined
-        ? parseAndValidateDate(body.entryDate ?? body.entry_date ?? body.hireDate, "entryDate", { required: true })
+      body.entryDate !== undefined || body.entry_date !== undefined || body.hireDate !== undefined || body.hire_date !== undefined
+        ? parseAndValidateDate(body.entryDate ?? body.entry_date ?? body.hireDate ?? body.hire_date, "entryDate", {
+            required: true,
+          })
         : undefined,
   };
   if (!Object.values(patch).some((value) => value !== undefined)) {
@@ -108,7 +119,13 @@ function validateTeacherUpdateInput(body) {
 
 function formatIsoDate(value) {
   if (!value) return "";
-  if (typeof value === "string") return value.slice(0, 10);
+  if (typeof value === "string") {
+    const iso = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (iso) return iso[1];
+    const fr = value.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (fr) return `${fr[3]}-${fr[2]}-${fr[1]}`;
+    return value.slice(0, 10);
+  }
   return new Date(value).toISOString().slice(0, 10);
 }
 
@@ -152,7 +169,11 @@ function createTeacherLifecycleRepository(db) {
        FOR UPDATE OF t, u`,
       [schoolId, teacherCode],
     );
-    if (!row || ["deleted", "archived"].includes(String(row.teacher_status ?? "").toLowerCase())) {
+    if (
+      !row ||
+      ["deleted", "archived"].includes(String(row.teacher_status ?? "").toLowerCase()) ||
+      ["deleted", "archived"].includes(String(row.user_status ?? "").toLowerCase())
+    ) {
       throw createTeacherHttpError(404, "Enseignant introuvable.");
     }
     return row;
@@ -179,21 +200,22 @@ function createTeacherLifecycleRepository(db) {
     }
   }
 
-  async function writeAudit(scope, tx, principal, auditMeta, action, entityId, oldValue, newValue, schoolCode) {
-    if (typeof scope.recordAudit !== "function") {
-      throw createTeacherHttpError(500, "Audit enseignant indisponible dans la transaction.");
+  async function assertNoActivePedagogy(scope, teacherId) {
+    const activeRefs = await scope.one(
+      `SELECT
+         (SELECT COUNT(*)::int FROM school_courses sc
+          WHERE sc.teacher_id = $1 AND sc.status = 'active') AS courses,
+         (SELECT COUNT(*)::int FROM course_schedule_slots css
+          WHERE css.teacher_id = $1 AND css.ends_at > NOW()) AS schedules`,
+      [teacherId],
+    );
+    if (Number(activeRefs?.courses ?? 0) > 0 || Number(activeRefs?.schedules ?? 0) > 0) {
+      throw createTeacherHttpError(
+        409,
+        "Cet enseignant possède encore des cours ou créneaux actifs. Retirez-les avant suppression.",
+        "TEACHER_ACTIVE_PEDAGOGY_REFERENCES",
+      );
     }
-    await scope.recordAudit({
-      schoolCode,
-      userId: principal?.sub || principal?.id,
-      action,
-      entityType: "teacher",
-      entityId,
-      oldValue,
-      newValue,
-      ipAddress: auditMeta?.ipAddress,
-      userAgent: auditMeta?.userAgent,
-    }, tx);
   }
 
   return {
@@ -204,7 +226,8 @@ function createTeacherLifecycleRepository(db) {
       const patch = validateTeacherUpdateInput(body);
 
       return db.withTransaction(async (tx) => {
-        const scope = typeof db.createTxScope === "function" ? db.createTxScope(tx) : tx;
+        const scope = teacherAuditScope(db, tx);
+        await acquireTeacherSchoolCreationLock(scope, school.id);
         const current = await lockedTeacher(scope, school.id, teacherCode);
         const next = {
           firstName: patch.firstName ?? current.first_name,
@@ -236,7 +259,7 @@ function createTeacherLifecycleRepository(db) {
                  birth_date = $6, gender = $7, updated_at = NOW()
              WHERE id = $1
              RETURNING id`,
-            [current.user_id, next.firstName, next.lastName, next.email, next.phone, next.birthDate, next.gender],
+            [current.user_id, next.firstName, next.lastName, next.email, next.phone, next.birthDate || null, next.gender],
           );
         } catch (error) {
           if (error?.code === "USER_LOGIN_IDENTITY_DUPLICATE" || isUsersLoginIdentityUniquenessViolation(error)) {
@@ -249,11 +272,20 @@ function createTeacherLifecycleRepository(db) {
            SET speciality = $2, hire_date = $3, updated_at = NOW()
            WHERE id = $1
            RETURNING id`,
-          [current.teacher_id, next.speciality, next.entryDate],
+          [current.teacher_id, next.speciality, next.entryDate || null],
         );
 
         const updated = await lockedTeacher(scope, school.id, teacherCode);
-        await writeAudit(scope, tx, principal, auditMeta, "update_teacher", teacherCode, teacherSnapshot(current), teacherSnapshot(updated), school.school_code ?? schoolCode);
+        await writeTransactionalAudit(scope, tx, {
+          principal,
+          auditMeta,
+          action: "update_teacher",
+          entityType: "teacher",
+          entityId: teacherCode,
+          oldValue: teacherSnapshot(current),
+          newValue: teacherSnapshot(updated),
+          schoolCode: school.school_code ?? schoolCode,
+        });
         return teacherSnapshot(updated);
       });
     },
@@ -264,23 +296,10 @@ function createTeacherLifecycleRepository(db) {
       const school = await requireSchool(schoolCode);
 
       return db.withTransaction(async (tx) => {
-        const scope = typeof db.createTxScope === "function" ? db.createTxScope(tx) : tx;
+        const scope = teacherAuditScope(db, tx);
+        await acquireTeacherSchoolCreationLock(scope, school.id);
         const current = await lockedTeacher(scope, school.id, teacherCode);
-        const activeRefs = await scope.one(
-          `SELECT
-             (SELECT COUNT(*)::int FROM school_courses sc
-              WHERE sc.teacher_id = $1 AND COALESCE(sc.status, 'active') NOT IN ('deleted', 'archived', 'inactive')) AS courses,
-             (SELECT COUNT(*)::int FROM course_schedule_slots css
-              WHERE css.teacher_id = $1 AND COALESCE(css.status, 'active') NOT IN ('deleted', 'archived', 'inactive')) AS schedules`,
-          [current.teacher_id],
-        );
-        if (Number(activeRefs?.courses ?? 0) > 0 || Number(activeRefs?.schedules ?? 0) > 0) {
-          throw createTeacherHttpError(
-            409,
-            "Cet enseignant possède encore des cours ou créneaux actifs. Retirez-les avant suppression.",
-            "TEACHER_ACTIVE_PEDAGOGY_REFERENCES",
-          );
-        }
+        await assertNoActivePedagogy(scope, current.teacher_id);
 
         await scope.query(
           `UPDATE teacher_assignments
@@ -304,7 +323,16 @@ function createTeacherLifecycleRepository(db) {
         );
 
         const archived = { ...teacherSnapshot(current), status: "archived", userStatus: "archived" };
-        await writeAudit(scope, tx, principal, auditMeta, "archive_teacher", teacherCode, teacherSnapshot(current), archived, school.school_code ?? schoolCode);
+        await writeTransactionalAudit(scope, tx, {
+          principal,
+          auditMeta,
+          action: "archive_teacher",
+          entityType: "teacher",
+          entityId: teacherCode,
+          oldValue: teacherSnapshot(current),
+          newValue: archived,
+          schoolCode: school.school_code ?? schoolCode,
+        });
         return { teacherCode, archived: true };
       });
     },

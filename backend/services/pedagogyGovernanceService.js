@@ -33,18 +33,18 @@ class PedagogyGovernanceService {
     return principal?.role === SCHOOL_ADMIN_ROLE;
   }
 
-  /** Retire les droits de modification / suppression enseignants pour Admin School. */
+  /** Admin School : ajout et modification des enseignants (pas de suppression). */
   sanitizeSchoolAdminRolePermissions(rolePermissions = {}) {
     const next = { ...rolePermissions };
     const schoolPerms = new Set(next[SCHOOL_ADMIN_ROLE] ?? []);
     [
-      "Enseignants:UPDATE",
       "Enseignants:DELETE",
       "Enseignants:SUSPEND",
       "Gérer enseignants",
     ].forEach((token) => schoolPerms.delete(token));
     schoolPerms.add("Enseignants:READ");
     schoolPerms.add("Enseignants:CREATE");
+    schoolPerms.add("Enseignants:UPDATE");
     schoolPerms.add("Ajouter enseignants");
     schoolPerms.add("Voir enseignants");
     next[SCHOOL_ADMIN_ROLE] = [...schoolPerms].sort((a, b) => String(a).localeCompare(String(b), "fr"));

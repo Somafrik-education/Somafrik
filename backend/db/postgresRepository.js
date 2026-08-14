@@ -4947,6 +4947,8 @@ class PostgresRepository {
         query: (sql, params) => this.query(sql, params),
         getSchoolByCode: (code) => this.getSchoolByCode(code),
         withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
         onTeacherCreated: async () => {
           this.cachedDataset = null;
         },
@@ -4963,8 +4965,39 @@ class PostgresRepository {
     return this.getTeachersRepository().getByTeacherCode(teacherCode, schoolCode);
   }
 
-  createSchoolTeacher(body, schoolCode) {
-    return this.getTeachersRepository().create(body, schoolCode);
+  createSchoolTeacher(body, schoolCode, principal, auditMeta) {
+    return this.getTeachersRepository().create(body, schoolCode, principal, auditMeta);
+  }
+
+  getTeacherLifecycleRepository() {
+    if (!this._teacherLifecycleRepository) {
+      const { createTeacherLifecycleRepository } = require("./teacherLifecycleRepository");
+      this._teacherLifecycleRepository = createTeacherLifecycleRepository(this);
+    }
+    return this._teacherLifecycleRepository;
+  }
+
+  async updateSchoolTeacher(teacherCode, body, schoolCode, principal, auditMeta) {
+    await this.getTeacherLifecycleRepository().update(
+      teacherCode,
+      body,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
+    this.cachedDataset = null;
+    return this.getSchoolTeacherByCode(teacherCode, schoolCode);
+  }
+
+  async archiveSchoolTeacher(teacherCode, schoolCode, principal, auditMeta) {
+    const result = await this.getTeacherLifecycleRepository().archive(
+      teacherCode,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
+    this.cachedDataset = null;
+    return result;
   }
 
   getTeacherAssignmentsRepository() {
@@ -4976,6 +5009,8 @@ class PostgresRepository {
         query: (sql, params) => this.query(sql, params),
         getSchoolByCode: (code) => this.getSchoolByCode(code),
         withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
       });
     }
     return this._teacherAssignmentsRepository;
@@ -4985,27 +5020,31 @@ class PostgresRepository {
     return this.getTeacherAssignmentsRepository().listBySchoolCode(schoolCode);
   }
 
-  createSchoolTeacherAssignment(body, schoolCode) {
-    return this.getTeacherAssignmentsRepository().create(body, schoolCode).then((created) => {
-      this.cachedDataset = null;
-      return created;
-    });
+  createSchoolTeacherAssignment(body, schoolCode, principal, auditMeta) {
+    return this.getTeacherAssignmentsRepository()
+      .create(body, schoolCode, principal, auditMeta)
+      .then((created) => {
+        this.cachedDataset = null;
+        return created;
+      });
   }
 
-  updateSchoolTeacherAssignment(assignmentId, body, schoolCode) {
+  updateSchoolTeacherAssignment(assignmentId, body, schoolCode, principal, auditMeta) {
     return this.getTeacherAssignmentsRepository()
-      .update(assignmentId, body, schoolCode)
+      .update(assignmentId, body, schoolCode, principal, auditMeta)
       .then((updated) => {
         this.cachedDataset = null;
         return updated;
       });
   }
 
-  deleteSchoolTeacherAssignment(assignmentId, schoolCode) {
-    return this.getTeacherAssignmentsRepository().remove(assignmentId, schoolCode).then((result) => {
-      this.cachedDataset = null;
-      return result;
-    });
+  deleteSchoolTeacherAssignment(assignmentId, schoolCode, principal, auditMeta) {
+    return this.getTeacherAssignmentsRepository()
+      .remove(assignmentId, schoolCode, principal, auditMeta)
+      .then((result) => {
+        this.cachedDataset = null;
+        return result;
+      });
   }
 
   async getGradeById(id) {
