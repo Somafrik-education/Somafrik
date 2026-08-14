@@ -5,6 +5,8 @@ import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { financeApi } from "../lib/financeApi";
 import { pedagogyApi } from "../lib/pedagogyApi";
+import { clientsApi } from "../lib/clientsApi";
+import { prepareContactForSave } from "../lib/contacts";
 import {
   Button,
   EmptyState,
@@ -459,6 +461,37 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
   }
 
+  async function persistClientsMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      const result = await action();
+      await refresh();
+      if (
+        result &&
+        typeof result === "object" &&
+        "temporaryPassword" in result &&
+        String((result as { temporaryPassword?: string }).temporaryPassword ?? "").trim()
+      ) {
+        showToast(
+          `${successMessage} · mot de passe provisoire : ${(result as { temporaryPassword: string }).temporaryPassword}`,
+          "success",
+        );
+      } else {
+        showToast(successMessage, "success");
+      }
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'opération Clients", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function closeCancelModal() {
     setCancellingPayment(null);
     setCancelReason("");
@@ -810,6 +843,75 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         );
       } catch {
         /* toast déjà affiché */
+      }
+      return;
+    }
+
+    if (module.key === "contacts") {
+      const payload = prepareContactForSave(workingItem, state);
+      const exists = Boolean(editing.id);
+      try {
+        await persistClientsMutation(
+          async () => {
+            const saved = (exists
+              ? await clientsApi.updateContact(String(editing.id), payload)
+              : await clientsApi.createContact(payload)) as Record<string, unknown>;
+            if (String(saved.hasAccess ?? payload.hasAccess ?? "") === "Oui") {
+              return clientsApi.provisionContactAccount(String(saved.id), {
+                role: saved.role ?? payload.role,
+                studentId: payload.studentId,
+              });
+            }
+            return saved;
+          },
+          exists ? "Contact modifié" : "Contact créé",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "relations") {
+      try {
+        await persistClientsMutation(
+          () => clientsApi.createRelation(workingItem),
+          "Relation enregistrée",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "announcements") {
+      const exists = Boolean(editing.id);
+      try {
+        await persistClientsMutation(
+          () =>
+            exists
+              ? clientsApi.updateAnnouncement(String(editing.id), workingItem)
+              : clientsApi.createAnnouncement(workingItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "messages") {
+      try {
+        await persistClientsMutation(
+          () => clientsApi.sendMessage(workingItem),
+          "Message envoyé",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
       }
       return;
     }

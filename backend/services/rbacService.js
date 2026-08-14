@@ -106,6 +106,22 @@ const routePermissions = {
   "GET /api/backoffice/subscription-access": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/finance/unpaid": ["Impayés:READ", "Paiements:READ", "Frais & tarifs:READ", "Gérer paiements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "POST /api/backoffice/finance/unpaid/reminders": ["Impayés:CREATE", "Paiements:UPDATE", "Gérer paiements", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/users": ["Utilisateurs:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/users": ["Utilisateurs:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/users/:userId": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/contacts": ["Contacts:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/contacts": ["Contacts:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/contacts/:contactId": ["Contacts:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/contacts/:contactId/provision-account": ["Contacts:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/relations": ["Relations:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/relations": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages": ["Messages:READ", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/messages": ["Messages:CREATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/messages/:messageId/read": ["Messages:UPDATE", "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/announcements": ["Notifications:READ", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/announcements": ["Notifications:CREATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/announcements/:announcementId": ["Notifications:UPDATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/announcements/:announcementId/archive": ["Notifications:UPDATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
 };
 
 class RbacService {

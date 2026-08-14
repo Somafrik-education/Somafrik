@@ -208,6 +208,12 @@ jobs:
         run: npm run verify:platform-management
       - name: verify:platform-legacy-cleanup (mémoire)
         run: npm run verify:platform-legacy-cleanup
+      - name: verify:clients-management (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/somafrik
+        run: npm run verify:clients-management
+      - name: verify:clients-legacy-cleanup (mémoire)
+        run: npm run verify:clients-legacy-cleanup
 
       - name: verify:teachers-domain-constraints-boot (P0 préprod)
         run: npm run verify:teachers-domain-constraints-boot

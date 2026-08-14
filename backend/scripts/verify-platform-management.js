@@ -211,12 +211,13 @@ async function main() {
     const deniedAccess = await request("/backoffice/subscription-access?schoolCode=CD-2026-0001");
     assert.equal(deniedAccess.status, 401);
 
-    const allowedUsersPut = await request("/backoffice/state", {
+    const deniedUsersPut = await request("/backoffice/state", {
       method: "PUT",
       token: superToken,
       body: { users: stateRoleMap.data.users ?? [] },
     });
-    assert.equal(allowedUsersPut.status, 200);
+    assert.equal(deniedUsersPut.status, 400);
+    assert.equal(deniedUsersPut.data?.code, "LEGACY_CLIENTS_STATE_WRITE_FORBIDDEN");
 
     console.log("verify-platform-management.js OK");
   } finally {

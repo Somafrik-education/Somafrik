@@ -128,6 +128,23 @@ APIs : `/api/backoffice/countries`, `/subscriptions`, `/notifications`, `/role-p
 
 Clés PUT `/api/backoffice/state` interdites : `countries`, `subscriptions`, `subscriptionOffers`, `subscriptionPayments`, `subscriptionInvoices`, `subscriptionDiscounts`, `subscriptionAuditLog`, `notifications`, `rolePermissions`, `dashboardChartConfig` → `LEGACY_PLATFORM_STATE_WRITE_FORBIDDEN`.
 
+### 4.8 Clients / comptes (canonique PG — LOT 7)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `users` | Comptes applicatifs (réutilisée) | `profile_payload` · `must_change_password` · aucun secret en projection |
+| `contacts` | Carnet CRM établissement | FK `school_id` / `country_id` · UNIQUE téléphone/email par école |
+| `contact_relations` | Liens parent → élève | FK `contact_id` → `contacts`, `student_id` → `students` · UNIQUE `(school_id, contact_id, student_id)` |
+| `school_conversations` / `school_conversation_participants` | Fil de messagerie | participants par `user_id` |
+| `school_messages` / `school_message_reads` | Messages et accusés de lecture | expéditeur = `sender_user_id` (principal serveur) |
+| `announcements` | Annonces (réutilisée) | `profile_payload` ciblage rôle/classe · FK pays |
+
+Migration : `backend/db/migrations/20260814_clients_canonical.sql` (idempotente, sans backfill JSON).
+
+APIs : `/api/backoffice/users`, `/contacts`, `/contacts/:id/provision-account`, `/relations`, `/messages`, `/messages/:id/read`, `/announcements`.
+
+Clés PUT `/api/backoffice/state` interdites : `users`, `contacts`, `relations`, `messages`, `announcements` → `LEGACY_CLIENTS_STATE_WRITE_FORBIDDEN`.
+
 ---
 
 ## 5. Relations (vue simplifiée)

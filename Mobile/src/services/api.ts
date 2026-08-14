@@ -353,9 +353,49 @@ export function saveBackOfficeState(payload: BackOfficeStatePayload) {
   delete rest.notifications;
   delete rest.rolePermissions;
   delete rest.dashboardChartConfig;
+  delete rest.users;
+  delete rest.contacts;
+  delete rest.relations;
+  delete rest.messages;
+  delete rest.announcements;
   return request<BackOfficeStatePayload>("/backoffice/state", {
     method: "PUT",
     body: JSON.stringify(rest),
+  });
+}
+
+export function createClientsAnnouncement(payload: Record<string, unknown>) {
+  return request("/backoffice/announcements", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateClientsAnnouncement(announcementId: string, payload: Record<string, unknown>) {
+  return request(`/backoffice/announcements/${encodeURIComponent(announcementId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendClientsMessage(payload: Record<string, unknown>) {
+  return request("/backoffice/messages", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createClientsUser(payload: Record<string, unknown>) {
+  return request("/backoffice/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateClientsUser(userId: string, payload: Record<string, unknown>) {
+  return request(`/backoffice/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
   });
 }
 

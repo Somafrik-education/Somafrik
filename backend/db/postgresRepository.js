@@ -90,6 +90,7 @@ class PostgresRepository {
     await this.ensureFinanceCanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
     await this.ensurePlatformCanonicalSchema();
+    await this.ensureClientsCanonicalSchema();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -440,6 +441,11 @@ class PostgresRepository {
     await this.query(PLATFORM_SCHEMA_SQL);
   }
 
+  async ensureClientsCanonicalSchema() {
+    const { CLIENTS_SCHEMA_SQL } = require("./clientsSchema");
+    await this.query(CLIENTS_SCHEMA_SQL);
+  }
+
   getPlatformStore() {
     if (!this._platformStore) {
       const { createPlatformPgStore } = require("./platformPgStore");
@@ -506,6 +512,62 @@ class PostgresRepository {
 
   updatePlatformSubscriptionDiscount(id, patch, principal, auditMeta) {
     return this.getPlatformStore().updateSubscriptionDiscount(id, patch, principal, auditMeta);
+  }
+
+  getClientsStore() {
+    if (!this._clientsStore) {
+      const { createClientsPgStore } = require("./clientsPgStore");
+      this._clientsStore = createClientsPgStore(this);
+    }
+    return this._clientsStore;
+  }
+
+  listClientsProjection() {
+    return this.getClientsStore().listProjection();
+  }
+
+  createClientsUser(payload, principal, auditMeta) {
+    return this.getClientsStore().createUser(payload, principal, auditMeta);
+  }
+
+  updateClientsUser(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
+  }
+
+  createClientsContact(payload, principal, auditMeta) {
+    return this.getClientsStore().createContact(payload, principal, auditMeta);
+  }
+
+  updateClientsContact(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateContact(id, patch, principal, auditMeta);
+  }
+
+  provisionClientsContactAccount(contactId, payload, principal, auditMeta) {
+    return this.getClientsStore().provisionContactAccount(contactId, payload, principal, auditMeta);
+  }
+
+  createClientsRelation(payload, principal, auditMeta) {
+    return this.getClientsStore().createRelation(payload, principal, auditMeta);
+  }
+
+  sendClientsMessage(payload, principal, auditMeta) {
+    return this.getClientsStore().sendMessage(payload, principal, auditMeta);
+  }
+
+  markClientsMessageRead(messageId, principal, auditMeta) {
+    return this.getClientsStore().markMessageRead(messageId, principal, auditMeta);
+  }
+
+  createClientsAnnouncement(payload, principal, auditMeta) {
+    return this.getClientsStore().createAnnouncement(payload, principal, auditMeta);
+  }
+
+  updateClientsAnnouncement(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateAnnouncement(id, patch, principal, auditMeta);
+  }
+
+  archiveClientsAnnouncement(id, principal, auditMeta) {
+    return this.getClientsStore().archiveAnnouncement(id, principal, auditMeta);
   }
 
   getPedagogyStore() {
@@ -1026,10 +1088,16 @@ class PostgresRepository {
       notifications: _legacyNotifications,
       rolePermissions: _legacyRolePermissions,
       dashboardChartConfig: _legacyDashboardChartConfig,
+      users: _legacyUsers,
+      contacts: _legacyContacts,
+      relations: _legacyRelations,
+      messages: _legacyMessages,
+      announcements: _legacyAnnouncements,
       ...durablePayload
     } = payloadWithoutStudents;
     // LOT 5 — pédagogie : projection PostgreSQL read-only ; aucune sync JSON → PG.
     // LOT 6 — plateforme : projection PostgreSQL read-only ; aucune sync JSON → PG.
+    // LOT 7 — clients : projection PostgreSQL read-only ; aucune sync JSON → PG.
     let syncAck = { accepted: [], rejected: [] };
     await this.withTransaction(async (tx) => {
       const transactional = this.createTxScope(tx);
