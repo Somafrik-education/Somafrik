@@ -436,6 +436,10 @@ class FallbackRepository {
     return fn(null);
   }
 
+  async withReadOnlyRepeatableRead(fn) {
+    return fn(this);
+  }
+
   async touchUserLastLogin(lookupKeys = []) {
     const keys = (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])
       .map((value) => String(value ?? "").trim())

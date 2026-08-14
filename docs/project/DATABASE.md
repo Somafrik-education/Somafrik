@@ -142,7 +142,7 @@ Migration SQL : `backend/db/migrations/20260819_exams_report_cards_documents_can
 
 Clé : `school_scope` = code établissement UPPER, ou `*` pour un compte plateforme. Identifiant = trim + lower (email, téléphone, `user_code`, identifiant enseignant). Politique : 5 échecs → `locked_until` + 15 min. Succès → `DELETE`. Expiration → reset lazy. Pas de Map processus lorsque le moteur PostgreSQL est actif.
 
-Export : `GET /api/data-export` (enveloppe `format=somafrik-export`, `version=1`, `includedDomains` = domaines réellement lus). Pas de `PUT /api/backoffice/state`. Pas de restauration globale.
+Export : `GET /api/data-export` (enveloppe `format=somafrik-export`, `version=1`, `includedDomains` = domaines réellement lus). **Snapshot consistency = PostgreSQL `REPEATABLE READ`** : toutes les lectures (existence établissement + domaines) s’exécutent dans une transaction `READ ONLY ISOLATION LEVEL REPEATABLE READ` sur une seule connexion ; l’écriture d’audit `export_school_data` a lieu **après** le COMMIT du snapshot (fail-closed si l’audit échoue). Pas de `PUT /api/backoffice/state`. Pas de restauration globale. Moteur mémoire : pas de snapshot SQL (processus unique).
 
 Migration SQL : `backend/db/migrations/20260820_login_lockouts_canonical.sql`.
 

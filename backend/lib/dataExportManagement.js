@@ -5,6 +5,9 @@ const { stripSensitiveFieldsDeep } = require("./sanitizeUserForResponse");
 
 const DATA_EXPORT_FORMAT = "somafrik-export";
 const DATA_EXPORT_VERSION = 1;
+/** Snapshot consistency = PostgreSQL REPEATABLE READ (transaction READ ONLY). */
+const DATA_EXPORT_SNAPSHOT_ISOLATION = "REPEATABLE READ";
+const DATA_EXPORT_SNAPSHOT_ACCESS_MODE = "READ ONLY";
 
 const DATA_EXPORT_ERROR = Object.freeze({
   FORBIDDEN: "FORBIDDEN",
@@ -145,6 +148,8 @@ function dataExportAuditMetaFromRequest(req) {
 module.exports = {
   DATA_EXPORT_FORMAT,
   DATA_EXPORT_VERSION,
+  DATA_EXPORT_SNAPSHOT_ISOLATION,
+  DATA_EXPORT_SNAPSHOT_ACCESS_MODE,
   DATA_EXPORT_ERROR,
   DATA_EXPORT_READ_PERMISSIONS,
   assertDataExportRead,

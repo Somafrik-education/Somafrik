@@ -7,6 +7,8 @@ const path = require("node:path");
 const {
   DATA_EXPORT_FORMAT,
   DATA_EXPORT_VERSION,
+  DATA_EXPORT_SNAPSHOT_ISOLATION,
+  DATA_EXPORT_SNAPSHOT_ACCESS_MODE,
   DATA_EXPORT_ERROR,
   assertDataExportRead,
   resolveExportSchoolCode,
@@ -14,6 +16,7 @@ const {
   collectSensitiveExportPaths,
   buildExportEnvelope,
 } = require("./dataExportManagement");
+const { exportSchoolData } = require("./dataExportService");
 const { BusinessError } = require("../services/authService");
 
 test("assertDataExportRead refuse un enseignant", () => {
@@ -81,6 +84,75 @@ test("aucun secret exporté (hash, jwt, credentials)", () => {
   assert.equal("jwt_secret" in clean.students[0].nested, false);
   assert.equal("DATABASE_URL" in clean.students[0].nested, false);
   assert.deepEqual(collectSensitiveExportPaths(clean), []);
+});
+
+test("snapshot consistency = PostgreSQL REPEATABLE READ READ ONLY", () => {
+  assert.equal(DATA_EXPORT_SNAPSHOT_ISOLATION, "REPEATABLE READ");
+  assert.equal(DATA_EXPORT_SNAPSHOT_ACCESS_MODE, "READ ONLY");
+  const repoSrc = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  const serviceSrc = fs.readFileSync(path.join(__dirname, "dataExportService.js"), "utf8");
+  assert.match(repoSrc, /BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(serviceSrc, /withReadOnlyRepeatableRead/);
+  assert.match(serviceSrc, /recordAudit/);
+});
+
+test("exportSchoolData lit dans withReadOnlyRepeatableRead puis audite hors snapshot", async () => {
+  const calls = [];
+  const principal = {
+    role: "Admin School",
+    schoolCode: "CD-2026-0001",
+    permissions: ["Paramètres Établissement:READ"],
+    sub: "admin-1",
+  };
+  const repo = {
+    async withReadOnlyRepeatableRead(fn) {
+      calls.push("snapshot");
+      return fn({
+        async one(sql) {
+          if (String(sql).includes("FROM schools")) {
+            return { id: "school-1", school_code: "CD-2026-0001", status: "active" };
+          }
+          return null;
+        },
+        async all() {
+          return [];
+        },
+      });
+    },
+    async recordAudit() {
+      calls.push("audit");
+    },
+  };
+  const envelope = await exportSchoolData(repo, principal, "IGNORED");
+  assert.equal(envelope.format, DATA_EXPORT_FORMAT);
+  assert.deepEqual(calls, ["snapshot", "audit"]);
+});
+
+test("échec audit export = fail-closed (pas de payload renvoyé)", async () => {
+  const principal = {
+    role: "Admin School",
+    schoolCode: "CD-2026-0001",
+    permissions: ["Paramètres Établissement:READ"],
+  };
+  const repo = {
+    async withReadOnlyRepeatableRead(fn) {
+      return fn({
+        async one() {
+          return { id: "school-1", school_code: "CD-2026-0001" };
+        },
+        async all() {
+          return [];
+        },
+      });
+    },
+    async recordAudit() {
+      throw new BusinessError(500, "Audit indisponible pour l'export.");
+    },
+  };
+  await assert.rejects(
+    () => exportSchoolData(repo, principal, "CD-2026-0001"),
+    (error) => error instanceof BusinessError && error.statusCode === 500,
+  );
 });
 
 test("aucun restore legacy dans l'UI Données ni DataContext.replace-all", () => {

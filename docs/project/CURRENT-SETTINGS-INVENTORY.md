@@ -59,7 +59,7 @@ Les cartes marquées `status: "soon"` restent cliquables : elles ouvrent un `Com
 | **Rôles et droits** `/parametres/roles-droits` | `ConfigurationPage section="roles-droits"` | `academicConfigs.userRoles` + `state.rolePermissions` | **Partiel** : liste de rôles → JSON academic-config ; **pilotage** → `PUT /api/backoffice/role-permissions` (**Super Admin uniquement**) | Dual JSONB + `role_permissions` |
 | **Documents** `/parametres/documents` | `BulletinDesignPage` | listes classes/matières (projection) ; design via `report_card_templates` | **SoT table dédiée** (`PUT /api/report-card-templates`) ; `bulletinDesignByClass` interdit | JSON interdit |
 | **Sécurité** `/parametres/securite` | `SecuritySettingsPage` | Session AuthContext + `state.auditLog` + texte **codé en dur** | **Non** — lecture locale / export CSV client. **Pas** `GET /api/audit` | Calculé + écran trompeur |
-| **Données et sauvegarde** `/parametres/donnees` | `DataBackupSettingsPage` | aperçu client + **`GET /api/data-export`** | CSV = extrait affiché. JSON = enveloppe `somafrik-export` v1 (PG). **Pas de restauration globale** | Canonique PG (export) |
+| **Données et sauvegarde** `/parametres/donnees` | `DataBackupSettingsPage` | aperçu client + **`GET /api/data-export`** | CSV = extrait affiché. JSON = enveloppe `somafrik-export` v1, snapshot PG **`REPEATABLE READ`**. **Pas de restauration globale** | Canonique PG (export) |
 | **Finances** `/parametres/finances` | `SettingsFinancePage` | Aucune | **Non** — `ComingSoonState` | Écran résiduel (ops Finance existent ailleurs) |
 | **Notifications** `/parametres/notifications` | `SettingsNotificationsPage` | Aucune | **Non** — ComingSoon | Écran résiduel (annonces / `notifications` existent ailleurs) |
 | **Apparence** `/parametres/apparence` | `SettingsAppearancePage` | Aucune | **Non** — ComingSoon. Champs `logoUrl` / `primaryColor` existent pourtant sur l’établissement | Écran mort ; données ailleurs |
@@ -237,7 +237,7 @@ C’est un écart de modèle (catalogue JSON vs colonne d’instance), pas un se
 - RBAC : `Élèves:*` / `Gérer élèves`
 - PUT state élèves : 410 + `legacyStudentsStateWrite.js`
 
-**Restore JSON** du hub Données : bouton retiré ; `DataContext.update({ partial: false })` refuse. Export via `GET /api/data-export`.
+**Restore JSON** du hub Données : bouton retiré ; `DataContext.update({ partial: false })` refuse. Export via `GET /api/data-export` (snapshot PG `REPEATABLE READ`).
 
 ---
 
@@ -525,7 +525,7 @@ Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **
 3. **Pilotage des rôles établissement non persistable** : `saveRolePilotage` → `replaceRolePermissions` + `assertSuperAdmin` ; Admin School échoue. Patch `users` strippé.
 4. **Mobile paymentStatuses** : écriture PG puis refresh qui **omet** le domaine → liste locale potentiellement fausse.
 
-Clos LOT 6 : restore JSON trompeur (bouton retiré) ; lockout RAM (table `login_lockouts`).
+Clos LOT 6 : restore JSON trompeur (bouton retiré) ; lockout RAM (table `login_lockouts`) ; export JSON = snapshot PostgreSQL `REPEATABLE READ` (P1).
 
 ### P1
 

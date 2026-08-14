@@ -79,7 +79,7 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 | **Serveur** | `AuditService.record` — `userId`, `schoolCode`, action, entity, IP, UA |
 | **Stockage** | Table `audit_logs` (JSONB old/new) |
 | **Collections critiques** | users, payments, bulletins, rolePermissions, classes, teachers, assignments… |
-| **Export établissement** | action `export_school_data` (domaines + timestamp, **pas** le contenu) |
+| **Export établissement** | lectures dans une transaction PostgreSQL **`READ ONLY` + `REPEATABLE READ`** (snapshot unique) ; audit `export_school_data` après COMMIT (domaines + timestamp, **pas** le contenu) ; fail-closed si l’audit échoue |
 
 ---
 

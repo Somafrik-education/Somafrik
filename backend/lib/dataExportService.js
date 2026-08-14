@@ -2,12 +2,12 @@
 
 const { TenantScopeService } = require("../services/tenantScopeService");
 const {
-  DATA_EXPORT_ERROR,
   assertDataExportRead,
   resolveExportSchoolCode,
   buildExportEnvelope,
   isSuperAdminPrincipal,
 } = require("./dataExportManagement");
+const { loadExportDomains } = require("./dataExportSnapshot");
 const { BusinessError } = require("../services/authService");
 
 const tenantScopeService = new TenantScopeService();
@@ -18,59 +18,37 @@ function createExportError(status, message, code) {
   return error;
 }
 
-async function safeDomain(loader) {
-  try {
-    return await loader();
-  } catch (error) {
-    if (error instanceof BusinessError) throw error;
-    throw error;
+async function runExportSnapshot(repo, load) {
+  if (typeof repo.withReadOnlyRepeatableRead === "function") {
+    return repo.withReadOnlyRepeatableRead(async (scoped) => load(scoped));
   }
+  if (typeof repo.withTransaction === "function") {
+    return repo.withTransaction(async (tx) => {
+      const scoped = typeof repo.createTxScope === "function" && tx ? repo.createTxScope(tx) : repo;
+      return load(scoped);
+    });
+  }
+  return load(repo);
 }
 
-async function exportSchoolData(repo, principal, requestedSchoolCode, auditMeta = {}) {
+async function exportSchoolData(repo, principal, requestedSchoolCode, auditMeta = {}, snapshotOptions = {}) {
   assertDataExportRead(principal);
   const schoolCode = resolveExportSchoolCode(principal, requestedSchoolCode);
   tenantScopeService.assertSchoolAccess(principal, schoolCode);
 
-  const resolveSchool =
-    typeof repo.getSchoolByCode === "function"
-      ? (code) => repo.getSchoolByCode(code)
-      : typeof repo.getPlatformSchoolByCode === "function"
-        ? (code) => repo.getPlatformSchoolByCode(code)
-        : null;
-  if (resolveSchool) {
-    const school = await resolveSchool(schoolCode);
-    if (!school) {
-      throw createExportError(404, "Établissement introuvable.", DATA_EXPORT_ERROR.SCHOOL_NOT_FOUND);
-    }
-  }
-
-  const domains = {};
-
-  if (typeof repo.getSchoolSettings === "function") {
-    domains.schoolSettings = await safeDomain(() => repo.getSchoolSettings(principal, schoolCode));
-  }
-  if (typeof repo.listSchoolStudents === "function") {
-    domains.students = await safeDomain(() => repo.listSchoolStudents(schoolCode));
-  }
-  if (typeof repo.listSchoolClasses === "function") {
-    domains.classes = await safeDomain(() => repo.listSchoolClasses(schoolCode));
-  }
-  if (typeof repo.listSchoolTeachers === "function") {
-    domains.teachers = await safeDomain(() => repo.listSchoolTeachers(schoolCode));
-  }
-  if (isSuperAdminPrincipal(principal) && typeof repo.getAuditLogs === "function") {
-    const rows = await repo.getAuditLogs({ schoolCode, limit: 200 });
-    domains.audit = (rows ?? []).map((row) => ({
-      action: row.action,
-      entityType: row.entityType ?? row.entity_type,
-      createdAt: row.createdAt ?? row.created_at,
-      userCode: row.userCode ?? row.user_code ?? null,
-    }));
-  }
-
-  const generatedAt = new Date().toISOString();
-  const envelope = buildExportEnvelope({ schoolCode, domains, generatedAt });
+  const envelope = await runExportSnapshot(repo, async (scoped) => {
+    const snapshot = await loadExportDomains(scoped, {
+      schoolCode,
+      principal,
+      includeAudit: isSuperAdminPrincipal(principal),
+      onBarrier: snapshotOptions.onBarrier,
+    });
+    return buildExportEnvelope({
+      schoolCode,
+      domains: snapshot.domains,
+      generatedAt: new Date().toISOString(),
+    });
+  });
 
   if (typeof repo.recordAudit !== "function") {
     throw createExportError(500, "Audit indisponible pour l'export.", "AUDIT_UNAVAILABLE");
@@ -83,7 +61,7 @@ async function exportSchoolData(repo, principal, requestedSchoolCode, auditMeta 
     entityId: schoolCode,
     newValue: {
       includedDomains: envelope.includedDomains,
-      generatedAt,
+      generatedAt: envelope.generatedAt,
     },
     ipAddress: auditMeta.ipAddress,
     userAgent: auditMeta.userAgent,

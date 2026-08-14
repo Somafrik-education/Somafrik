@@ -242,6 +242,9 @@ class PostgresRepository {
         if (prop === "withTransaction") {
           return async (fn) => fn(tx);
         }
+        if (prop === "withReadOnlyRepeatableRead") {
+          return async (fn) => fn(receiver, tx);
+        }
         const value = Reflect.get(target, prop, receiver);
         if (typeof value === "function") {
           return value.bind(receiver);
@@ -257,6 +260,31 @@ class PostgresRepository {
     try {
       await client.query("BEGIN");
       const result = await fn(tx);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_rollbackError) {
+        // conserve l'erreur métier d'origine
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Snapshot lecture LOT 6 : une seule connexion, READ ONLY + REPEATABLE READ.
+   * Toutes les lectures d'export doivent passer par le scoped repo (createTxScope).
+   */
+  async withReadOnlyRepeatableRead(fn) {
+    const client = await this.pool.connect();
+    const tx = createTxAdapter(client);
+    try {
+      await client.query("BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ");
+      const scoped = this.createTxScope(tx);
+      const result = await fn(scoped, tx);
       await client.query("COMMIT");
       return result;
     } catch (error) {
