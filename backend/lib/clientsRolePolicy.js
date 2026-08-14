@@ -13,6 +13,8 @@ const {
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const COUNTRY_ADMIN_ROLE = "Admin Pays";
 const PROVISION_CONTACT_ROLE = "Parent";
+const TEACHER_ROLE = "Enseignant";
+const TEACHER_ACCOUNT_ENTRY_ERROR = "TEACHER_ACCOUNT_MUST_BE_CREATED_FROM_TEACHERS";
 
 const USER_PROFILE_PATCH_ALLOWLIST = new Set(["photoUrl"]);
 
@@ -56,11 +58,21 @@ function isCountryAdminRole(roleLabel) {
 /**
  * Politique serveur des rôles attribuables par principal.
  * Rejette avec 403 avant toute mutation (hors transaction).
+ * Le rôle Enseignant est réservé au module canonique /teachers afin de garantir
+ * la création atomique users + teachers et d'interdire les comptes TEACHER orphelins.
  */
 function assertAssignableUserRole(principal, role) {
   const normalizedRole = normalizeAssignableRole(role);
   if (!normalizedRole) {
     throw createClientsError(400, "Rôle obligatoire.");
+  }
+
+  if (normalizedRole === TEACHER_ROLE) {
+    throw createClientsError(
+      403,
+      "Un compte enseignant doit être créé depuis le module Enseignants.",
+      TEACHER_ACCOUNT_ENTRY_ERROR,
+    );
   }
 
   if (isSuperAdminRole(normalizedRole) && !isSuperAdminPrincipal(principal)) {
@@ -194,6 +206,8 @@ module.exports = {
   SUPER_ADMIN_ROLES,
   COUNTRY_ADMIN_ROLE,
   PROVISION_CONTACT_ROLE,
+  TEACHER_ROLE,
+  TEACHER_ACCOUNT_ENTRY_ERROR,
   normalizeAssignableRole,
   isSuperAdminRole,
   isCountryAdminRole,
