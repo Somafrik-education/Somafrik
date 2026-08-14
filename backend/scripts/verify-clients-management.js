@@ -57,12 +57,36 @@ async function waitForHealth(child) {
 }
 
 async function login(identifier, password, schoolCode) {
+  const session = await loginSession(identifier, password, schoolCode);
+  return session.accessToken;
+}
+
+async function loginSession(identifier, password, schoolCode) {
   const result = await request("/backoffice/login", {
     method: "POST",
     body: { identifier, password, ...(schoolCode ? { schoolCode } : {}) },
   });
   assert.equal(result.status, 200, JSON.stringify(result.data));
-  return result.data.accessToken || result.data.token;
+  let token = result.data.accessToken || result.data.token;
+  let session = result.data;
+  if (
+    (session?.user?.mustChangePassword || session?.mustChangePassword) &&
+    String(password).length >= 8
+  ) {
+    const changed = await request("/auth/change-password", {
+      method: "POST",
+      token,
+      body: { newPassword: password },
+    });
+    assert.equal(changed.status, 200, JSON.stringify(changed.data));
+    token = changed.data.accessToken || changed.data.token || token;
+    session = { ...session, ...changed.data, accessToken: token };
+  }
+  return session;
+}
+
+function jwtPermissions(token) {
+  return [...new Set(decodeJwtPayload(token).permissions ?? [])];
 }
 
 async function main() {
@@ -166,44 +190,78 @@ async function main() {
     });
     assert.equal(staff.status, 201, JSON.stringify(staff.data));
     const staffToken = await login(staff.data.identifier, staffPassword, "CD-2026-0001");
-    const beforeLogin = await request("/backoffice/login", {
-      method: "POST",
-      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
-    });
-    assert.equal(beforeLogin.status, 200);
-    const beforePermissions = [
-      ...(beforeLogin.data.permissions ?? []),
-      ...(beforeLogin.data.user?.permissions ?? []),
-      ...decodeJwtPayload(beforeLogin.data.accessToken).permissions ?? [],
-    ];
-
-    const forbiddenPatch = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
+    const rbacOnlyPatch = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
       method: "PATCH",
       token: staffToken,
       body: { profile: { permissions: ["ALL_PRIVILEGES"] } },
     });
-    assert.equal(forbiddenPatch.status, 403, JSON.stringify(forbiddenPatch.data));
+    assert.equal(rbacOnlyPatch.status, 403, JSON.stringify(rbacOnlyPatch.data));
+    assert.notEqual(
+      rbacOnlyPatch.data?.code,
+      "FORBIDDEN",
+      "Secrétaire bloqué par RBAC avant le garde-fou métier",
+    );
 
-    const afterLogin = await request("/backoffice/login", {
+    const adminSchoolPassword = "E2eAdminSchool!2026";
+    const stamp = Date.now();
+    const secondAdmin = await request("/backoffice/users", {
       method: "POST",
-      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
+      token: schoolToken,
+      body: {
+        firstName: "Second",
+        lastName: "Admin",
+        role: "Admin School",
+        email: `admin-school-${stamp}@test.local`,
+        schoolCode: "CD-2026-0001",
+        temporaryPassword: adminSchoolPassword,
+      },
     });
-    assert.equal(afterLogin.status, 200);
-    const afterPermissions = [
-      ...(afterLogin.data.permissions ?? []),
-      ...(afterLogin.data.user?.permissions ?? []),
-      ...decodeJwtPayload(afterLogin.data.accessToken).permissions ?? [],
-    ];
-    assert.equal(afterPermissions.includes("ALL_PRIVILEGES"), false, "JWT sans ALL_PRIVILEGES");
-    assert.deepEqual(afterPermissions.sort(), beforePermissions.sort(), "permissions inchangées après rejet");
+    assert.equal(secondAdmin.status, 201, JSON.stringify(secondAdmin.data));
+
+    const beforeSession = await loginSession(
+      secondAdmin.data.identifier,
+      adminSchoolPassword,
+      "CD-2026-0001",
+    );
+    const ownToken = beforeSession.accessToken;
+    const beforeJwtPermissions = jwtPermissions(ownToken);
+
+    const usersBefore = await request("/backoffice/users", { token: schoolToken });
+    assert.equal(usersBefore.status, 200);
+    const projectedBefore = (Array.isArray(usersBefore.data) ? usersBefore.data : usersBefore.data?.items ?? []).find(
+      (row) => row.id === secondAdmin.data.id,
+    );
+    assert.ok(projectedBefore, "admin secondaire projeté avant PATCH");
+
+    const forbiddenPatch = await request(`/backoffice/users/${encodeURIComponent(secondAdmin.data.id)}`, {
+      method: "PATCH",
+      token: ownToken,
+      body: { profile: { permissions: ["ALL_PRIVILEGES"] } },
+    });
+    assert.equal(forbiddenPatch.status, 403, JSON.stringify(forbiddenPatch.data));
+    assert.equal(
+      forbiddenPatch.data?.code,
+      "FORBIDDEN",
+      "Admin School autorisé RBAC : rejet métier profile.permissions",
+    );
+
+    const afterSession = await loginSession(
+      secondAdmin.data.identifier,
+      adminSchoolPassword,
+      "CD-2026-0001",
+    );
+    const afterJwtPermissions = jwtPermissions(afterSession.accessToken);
+    assert.equal(afterJwtPermissions.includes("ALL_PRIVILEGES"), false, "JWT sans ALL_PRIVILEGES");
+    assert.deepEqual(afterJwtPermissions.sort(), beforeJwtPermissions.sort(), "JWT inchangé après rejet");
 
     const usersAfter = await request("/backoffice/users", { token: schoolToken });
     assert.equal(usersAfter.status, 200);
-    const projectedStaff = (Array.isArray(usersAfter.data) ? usersAfter.data : usersAfter.data?.items ?? []).find(
-      (row) => row.id === staff.data.id,
+    const projectedAfter = (Array.isArray(usersAfter.data) ? usersAfter.data : usersAfter.data?.items ?? []).find(
+      (row) => row.id === secondAdmin.data.id,
     );
-    assert.ok(projectedStaff, "utilisateur toujours projeté");
-    assert.equal(projectedStaff.permissions?.includes("ALL_PRIVILEGES"), false, "projection sans ALL_PRIVILEGES");
+    assert.ok(projectedAfter, "admin secondaire toujours projeté");
+    assert.equal(projectedAfter.permissions?.includes("ALL_PRIVILEGES"), false, "projection sans ALL_PRIVILEGES");
+    assert.equal(projectedAfter.firstName, projectedBefore.firstName, "projection inchangée (zéro mutation)");
 
     console.log("verify-clients-management.js OK");
   } finally {
