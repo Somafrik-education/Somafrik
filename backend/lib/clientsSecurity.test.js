@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const { createClientsMemoryStore } = require("../db/clientsMemoryStore");
 const { CLIENTS_ERROR, parsePayload } = require("./clientsManagement");
+const { TEACHER_ACCOUNT_ENTRY_ERROR } = require("./clientsRolePolicy");
 
 function buildStore() {
   return createClientsMemoryStore({
@@ -35,6 +36,29 @@ async function main() {
   const countryAdmin = { sub: "admin-pays", role: "Admin Pays", countryCode: "CD", schoolCode: "*", identifier: "admin-rdc" };
   const superAdmin = { sub: "super", role: "Super Administrateur Somafrik", identifier: "superadmin" };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "security-test" };
+
+  // Un compte TEACHER ne doit jamais pouvoir être créé par le module Utilisateurs.
+  // La création canonique est réservée à /teachers, qui persiste users + teachers atomiquement.
+  for (const principal of [schoolAdmin, countryAdmin, superAdmin]) {
+    store.clearAuditLog();
+    const beforeUsers = store.listProjection().users.length;
+    await expectRejection(
+      store.createUser(
+        {
+          firstName: "Teacher",
+          lastName: "Orphan",
+          role: principal === schoolAdmin ? "Enseignant" : "TEACHER",
+          schoolCode: "CD-2026-0001",
+          phone: "+243810099999",
+        },
+        principal,
+        auditMeta,
+      ),
+      { status: 403, code: TEACHER_ACCOUNT_ENTRY_ERROR },
+    );
+    assert.equal(store.listProjection().users.length, beforeUsers, "aucun user TEACHER orphelin persisté");
+    assert.equal(store.getAuditLog().length, 0, "rejet TEACHER : aucun audit de mutation");
+  }
 
   store.clearAuditLog();
   await expectRejection(
@@ -101,6 +125,13 @@ async function main() {
     { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
   );
   assert.equal(store.getAuditLog().length, 0, "updateUser privilégié : aucun audit");
+
+  store.clearAuditLog();
+  await expectRejection(
+    store.updateUser(staff.id, { role: "TEACHER" }, schoolAdmin, auditMeta),
+    { status: 403, code: TEACHER_ACCOUNT_ENTRY_ERROR },
+  );
+  assert.equal(store.getAuditLog().length, 0, "promotion TEACHER générique : aucun audit");
 
   store.clearAuditLog();
   await expectRejection(
