@@ -562,6 +562,24 @@ class PostgresRepository {
     return this.getClientsStore().listProjection();
   }
 
+  async listClientsAuthAccounts() {
+    await this.init();
+    const rows = await this.all(
+      `SELECT u.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
+       FROM users u
+       LEFT JOIN schools s ON s.id = u.school_id
+       LEFT JOIN countries c ON c.id = s.country_id
+       WHERE COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')`,
+    );
+    const schoolRows = await this.all(`
+      SELECT s.*, c.name AS country_name, c.iso_code
+      FROM schools s
+      LEFT JOIN countries c ON c.id = s.country_id
+    `);
+    const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
+    return rows.map((row) => this.mapUser(row, schoolByCode));
+  }
+
   createClientsUser(payload, principal, auditMeta) {
     this.cachedDataset = null;
     return this.getClientsStore().createUser(payload, principal, auditMeta);

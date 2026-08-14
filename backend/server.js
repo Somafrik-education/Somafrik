@@ -2030,7 +2030,8 @@ app.get("/api/mvp/dashboard", requireAuth, asyncHandler(async (req, res) => {
 
 async function getRuntime() {
   const dataset = await repository.getDataset();
-  // LOT 7 / PR-A — comptes utilisateurs : authentification exclusivement PostgreSQL (pas d'overlay JSON).
+  // LOT 7 / PR-A — projection canonique clients (PG / mémoire), pas d'overlay backoffice_state.users JSON.
+  await applyClientsAuthOverlay(dataset);
   // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
   const mergedStudents = dataset.students ?? [];
   const mergedRelations = [];
@@ -2189,6 +2190,79 @@ function normalizeBackOfficeUserCredentials(user = {}) {
   }
 
   return next;
+}
+
+function isDbUserUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? ""));
+}
+
+function userOverlayKeys(user) {
+  const keys = [];
+  if (user?.id) keys.push(`id:${String(user.id)}`);
+  if (user?.publicId) keys.push(`public:${String(user.publicId).trim().toUpperCase()}`);
+  if (user?.identifier) {
+    const login = String(user.identifier).trim().toLowerCase();
+    const schoolCode = String(user.schoolCode ?? "").trim().toUpperCase();
+    if (schoolCode && schoolCode !== "*") {
+      keys.push(`login:${login}@${schoolCode}`);
+    } else {
+      keys.push(`login:${login}`);
+    }
+  }
+  return [...new Set(keys.filter(Boolean))];
+}
+
+function resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey) {
+  const keys = userOverlayKeys(user);
+  for (const alias of keys) {
+    const match = aliasToPrimaryKey.get(alias);
+    if (match) {
+      return match;
+    }
+  }
+
+  const schoolScopedLogin = keys.find((alias) => alias.startsWith("login:") && alias.includes("@"));
+  return schoolScopedLogin ?? keys[0] ?? null;
+}
+
+async function applyClientsAuthOverlay(dataset) {
+  if (!dataset || typeof repository.listClientsAuthAccounts !== "function") {
+    return;
+  }
+
+  const authAccounts = await repository.listClientsAuthAccounts();
+  if (!Array.isArray(authAccounts) || authAccounts.length === 0) {
+    return;
+  }
+
+  const byPrimaryKey = new Map();
+  const aliasToPrimaryKey = new Map();
+
+  const registerUser = (user, primaryKey) => {
+    if (!primaryKey || !user) {
+      return;
+    }
+    byPrimaryKey.set(primaryKey, user);
+    for (const alias of userOverlayKeys(user)) {
+      aliasToPrimaryKey.set(alias, primaryKey);
+    }
+  };
+
+  for (const user of dataset.userAccounts ?? []) {
+    registerUser(user, resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey));
+  }
+
+  for (const stored of authAccounts) {
+    const primaryKey = resolveUserOverlayPrimaryKey(stored, aliasToPrimaryKey);
+    if (!primaryKey) {
+      continue;
+    }
+    const base = byPrimaryKey.get(primaryKey) ?? {};
+    const merged = normalizeBackOfficeUserCredentials({ ...base, ...stored });
+    registerUser(merged, primaryKey);
+  }
+
+  dataset.userAccounts = [...byPrimaryKey.values()];
 }
 
 function handleBusinessResponse(res, action) {
