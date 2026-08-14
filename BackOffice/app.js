@@ -2419,7 +2419,7 @@ function renderOperationalViews() {
   refreshActionVisibility();
 }
 
-function persistSession({ sync = true } = {}) {
+function persistSession({ sync = false } = {}) {
   if (!state.session) return;
 
   enforceCountryAdminSchoolAdminCrud();
@@ -2529,11 +2529,15 @@ async function syncPlatformSubscription(payload) {
 }
 
 function scheduleBackOfficeSync() {
-  // LOT 8 — PUT /api/backoffice/state supprimé.
+  console.error(
+    "BACKOFFICE_STATE_WRITE_REMOVED: la synchronisation globale BackOffice State a été supprimée. Utilisez les API dédiées.",
+  );
 }
 
 async function syncBackOfficeState() {
-  return;
+  throw new Error(
+    "La synchronisation globale BackOffice State a été supprimée (BACKOFFICE_STATE_WRITE_REMOVED). Utilisez les API dédiées.",
+  );
 }
 
 function startRealtimeSync() {

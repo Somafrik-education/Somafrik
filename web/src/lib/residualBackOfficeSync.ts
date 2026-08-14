@@ -11,11 +11,8 @@ export async function syncResidualBackOfficePatch(
   }
 
   if (patch.academicConfigs && typeof patch.academicConfigs === "object") {
-    for (const [code, config] of Object.entries(patch.academicConfigs)) {
-      await api.put("/academic-config", {
-        ...(config as Record<string, unknown>),
-        schoolCode: code,
-      });
+    for (const [, config] of Object.entries(patch.academicConfigs)) {
+      await api.put("/academic-config", config as Record<string, unknown>);
     }
   }
 

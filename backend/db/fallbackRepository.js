@@ -203,7 +203,7 @@ class FallbackRepository {
     }
   }
 
-  async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+  async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }, _tx = null) {
     this.auditLogs.unshift({
       id: `AUDIT-MEM-${String(this.auditLogs.length + 1).padStart(5, "0")}`,
       schoolCode,
@@ -392,9 +392,19 @@ class FallbackRepository {
     });
   }
 
-  async saveAcademicConfig(schoolCode, config) {
-    const normalizedSchoolCode = String(config.schoolCode ?? (schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code)).trim().toUpperCase();
-    return this.getResidualStore().saveAcademicConfig(normalizedSchoolCode, config);
+  async saveAcademicConfig(schoolCode, config, tx = null) {
+    const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code)
+      .trim()
+      .toUpperCase();
+    return this.getResidualStore().saveAcademicConfig(normalizedSchoolCode, config, tx);
+  }
+
+  createTxScope(_tx) {
+    return this;
+  }
+
+  async withTransaction(fn) {
+    return fn(null);
   }
 
   async touchUserLastLogin(lookupKeys = []) {

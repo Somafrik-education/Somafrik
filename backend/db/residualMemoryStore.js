@@ -43,7 +43,7 @@ function createResidualMemoryStore() {
       const normalized = asTrimmed(schoolCode).toUpperCase();
       return academicConfigs.get(normalized) ?? null;
     },
-    saveAcademicConfig(schoolCode, config) {
+    saveAcademicConfig(schoolCode, config, _tx = null) {
       const normalized = asTrimmed(schoolCode).toUpperCase();
       const saved = withSystemActivePeriods({
         schoolCode: normalized,

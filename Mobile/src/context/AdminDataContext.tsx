@@ -427,8 +427,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [rolePermissionsData, session, session?.role]);
 
   const persistSyncedState = (_nextState: BackOfficeStatePayload) => {
-    // LOT 8 — plus de synchronisation PUT globale.
-    return;
+    throw Object.assign(
+      new Error("La synchronisation globale BackOffice State a été supprimée. Utilisez les API dédiées."),
+      { code: "BACKOFFICE_STATE_WRITE_REMOVED" },
+    );
   };
 
   const value = useMemo<AdminDataContextValue>(() => {

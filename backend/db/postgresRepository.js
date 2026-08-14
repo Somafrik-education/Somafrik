@@ -1042,11 +1042,15 @@ class PostgresRepository {
     );
   }
 
-  async recordAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+  async recordAudit(
+    { schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent },
+    tx = null,
+  ) {
     await this.init();
+    const executor = tx && typeof tx.query === "function" ? tx : this;
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);
-    await this.query(
+    await executor.query(
       `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
@@ -1059,7 +1063,7 @@ class PostgresRepository {
         newValue ? JSON.stringify(newValue) : null,
         ipAddress ?? "",
         userAgent ?? "",
-      ]
+      ],
     );
   }
 
@@ -1124,9 +1128,9 @@ class PostgresRepository {
     return this.getResidualStore().getAcademicConfig(schoolCode);
   }
 
-  async saveAcademicConfig(schoolCode, config) {
+  async saveAcademicConfig(schoolCode, config, tx = null) {
     await this.init();
-    return this.getResidualStore().saveAcademicConfig(schoolCode, config);
+    return this.getResidualStore().saveAcademicConfig(schoolCode, config, tx);
   }
 
   async touchUserLastLogin(lookupKeys = []) {

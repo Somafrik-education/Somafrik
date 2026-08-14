@@ -122,6 +122,33 @@ const routePermissions = {
   "POST /api/backoffice/announcements": ["Notifications:CREATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/announcements/:announcementId": ["Notifications:UPDATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/announcements/:announcementId/archive": ["Notifications:UPDATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PUT /api/academic-config": [
+    "Gérer planning académique",
+    "Gérer classes",
+    "Paramètres Établissement:UPDATE",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
+  "PUT /api/backoffice/planning-exams": [
+    "Organiser examens",
+    "Valider examens",
+    "Gérer planning académique",
+    "Gérer cours",
+    "ALL_PRIVILEGES",
+  ],
+  "PUT /api/backoffice/report-cards": [
+    "Valider bulletins",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
+  "PUT /api/backoffice/establishment-documents": [
+    "Documents:CREATE",
+    "Documents:UPDATE",
+    "Gérer élèves",
+    "Valider bulletins",
+    "ALL_PRIVILEGES",
+  ],
 };
 
 class RbacService {

@@ -802,59 +802,90 @@ app.get("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
   res.json(config);
 }));
 
-app.put("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
-  if (!["Super Administrateur Somafrik", "Admin Pays", "Admin School"].includes(req.principal.role)) {
-    throw new BusinessError(403, "Seuls les administrateurs peuvent configurer la gestion académique.");
-  }
-  const saved = await repository.saveAcademicConfig(req.principal.schoolCode, req.body ?? {});
-  await auditService.record(req, "save_academic_config", "academic_config", saved.schoolCode, saved);
+app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academic-config"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode, stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.withTransaction(async (tx) => {
+    const scope = repository.createTxScope(tx);
+    const result = await scope.saveAcademicConfig(schoolCode, payload, tx);
+    await scope.recordAudit(
+      {
+        schoolCode,
+        userId: req.principal?.sub,
+        action: "save_academic_config",
+        entityType: "academic_config",
+        entityId: schoolCode,
+        newValue: result,
+        ipAddress: req.ip ?? "",
+        userAgent: req.get("user-agent") ?? "",
+      },
+      tx,
+    );
+    if (typeof repository.invalidateCachedDataset === "function") {
+      repository.invalidateCachedDataset();
+    } else {
+      repository.cachedDataset = null;
+    }
+    return result;
+  });
   res.json(saved);
 }));
 
-app.put("/api/backoffice/planning-exams", requireAuth, asyncHandler(async (req, res) => {
-  const schoolCode = String(req.body?.schoolCode ?? req.principal?.schoolCode ?? "").trim().toUpperCase();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
+app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const exams = Array.isArray(req.body?.exams) ? req.body.exams : [];
   const saved = await repository.replaceResidualExams(
     schoolCode,
     exams,
     req.principal,
-    { schoolCode, userId: req.principal?.sub },
+    {
+      schoolCode,
+      userId: req.principal?.sub,
+      ipAddress: req.ip ?? "",
+      userAgent: req.get("user-agent") ?? "",
+    },
   );
   res.json({ exams: saved });
 }));
 
-app.put("/api/backoffice/report-cards", requireAuth, asyncHandler(async (req, res) => {
-  const schoolCode = String(req.body?.schoolCode ?? req.principal?.schoolCode ?? "").trim().toUpperCase();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
+app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const bulletins = Array.isArray(req.body?.bulletins) ? req.body.bulletins : [];
   const saved = await repository.replaceResidualBulletins(
     schoolCode,
     bulletins,
     req.principal,
-    { schoolCode, userId: req.principal?.sub },
+    {
+      schoolCode,
+      userId: req.principal?.sub,
+      ipAddress: req.ip ?? "",
+      userAgent: req.get("user-agent") ?? "",
+    },
   );
   res.json({ bulletins: saved });
 }));
 
-app.put("/api/backoffice/establishment-documents", requireAuth, asyncHandler(async (req, res) => {
-  const schoolCode = String(req.body?.schoolCode ?? req.principal?.schoolCode ?? "").trim().toUpperCase();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
+app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const documents = Array.isArray(req.body?.documents) ? req.body.documents : [];
   const saved = await repository.replaceResidualDocuments(
     schoolCode,
     documents,
     req.principal,
-    { schoolCode, userId: req.principal?.sub },
+    {
+      schoolCode,
+      userId: req.principal?.sub,
+      ipAddress: req.ip ?? "",
+      userAgent: req.get("user-agent") ?? "",
+    },
   );
   res.json({ documents: saved });
 }));
@@ -2619,7 +2650,12 @@ async function getAuthoritativeBackOfficeState() {
 
 async function overlayResidualProjection(state) {
   if (typeof repository.listResidualProjection !== "function") {
-    return state;
+    return {
+      ...state,
+      exams: [],
+      bulletins: [],
+      documents: [],
+    };
   }
   const residual = await repository.listResidualProjection();
   return {
@@ -2628,9 +2664,9 @@ async function overlayResidualProjection(state) {
       ...(state.academicConfigs ?? {}),
       ...(residual.academicConfigs ?? {}),
     },
-    exams: (residual.exams ?? []).length ? residual.exams : state.exams ?? [],
-    bulletins: (residual.bulletins ?? []).length ? residual.bulletins : state.bulletins ?? [],
-    documents: (residual.documents ?? []).length ? residual.documents : state.documents ?? [],
+    exams: residual.exams ?? [],
+    bulletins: residual.bulletins ?? [],
+    documents: residual.documents ?? [],
   };
 }
 

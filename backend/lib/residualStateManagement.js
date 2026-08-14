@@ -35,16 +35,20 @@ async function recordResidualReplace(repository, domain, schoolCode, items, prin
   }
 
   const run = async (tx) => {
+    const scope = typeof repository.createTxScope === "function" ? repository.createTxScope(tx) : repository;
     const store = repository.getResidualStore();
     const result = await store.replaceDomainRecords(recordDomain, scopedSchoolCode, items ?? [], tx);
-    if (typeof repository.recordAudit === "function" && auditMeta) {
-      await repository.recordAudit(
+    if (typeof scope.recordAudit === "function" && auditMeta) {
+      await scope.recordAudit(
         {
+          schoolCode: scopedSchoolCode,
+          userId: auditMeta.userId,
           action: `replace_residual_${recordDomain}`,
           entityType: recordDomain,
           entityId: scopedSchoolCode,
           newValue: { count: result.length },
-          ...auditMeta,
+          ipAddress: auditMeta.ipAddress ?? "",
+          userAgent: auditMeta.userAgent ?? "",
         },
         tx,
       );

@@ -11,12 +11,9 @@ import {
 import { api } from "../api/client";
 import { useAuth } from "./AuthContext";
 import { SYNC_INTERVAL_MS } from "../lib/constants";
-import { applyPartialSave, mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
+import { mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
-import { stripClientAuditLogFromPutPayload } from "../lib/stripClientAuditLog";
-import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
-import { stripClientStudentsFromPutPayload } from "../lib/stripClientStudents";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientPedagogyStaffFromPutPayload } from "../lib/stripClientPedagogyStaff";
 import { stripClientPedagogyFromPutPayload } from "../lib/stripClientPedagogy";
@@ -35,7 +32,6 @@ import {
   reapplyOutboxToState,
   saveSyncOutbox,
   settleOutboxAfterHttpSave,
-  type SyncAck,
   type SyncOutboxEntry,
 } from "../lib/syncOutbox";
 import type { BackOfficeState, Session } from "../types";
@@ -104,10 +100,6 @@ function samePermissionSet(left: string[], right: string[]) {
   if (left.length !== right.length) return false;
   const values = new Set(left);
   return right.every((item) => values.has(item));
-}
-
-function extractSyncAck(saved: Partial<BackOfficeState> & { syncAck?: SyncAck }): SyncAck | null {
-  return saved.syncAck ?? null;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -191,7 +183,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const update = useCallback(
     async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
       syncPausedRef.current = true;
-      const usePartial = options.partial !== false;
 
       const canonicalPatch = stripClientClientsFromPutPayload(
         stripClientPlatformFromPutPayload(
@@ -253,7 +244,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const remote = await api.get<Partial<BackOfficeState>>("/backoffice/state");
 
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
-          ack: { accepted: Object.keys(residualPatch), rejected: [] },
+          ack: {
+            accepted: Object.keys(residualPatch).map((entity) => ({ entity })),
+            rejected: [],
+          },
           annotatedPatch,
         });
         persistJournal(workingOutbox);

@@ -129,14 +129,15 @@ function createResidualPgStore(repo) {
       });
     },
 
-    async saveAcademicConfig(schoolCode, config) {
-      const school = await resolveSchool(config.schoolCode ?? schoolCode);
+    async saveAcademicConfig(schoolCode, config, tx = null) {
+      const school = await resolveSchool(schoolCode);
       if (!school) {
         const error = new Error("Établissement introuvable.");
         error.statusCode = 404;
         throw error;
       }
       const normalizedSchoolCode = String(school.school_code ?? school.code).trim().toUpperCase();
+      const runner = tx && typeof tx.query === "function" ? tx : repo;
       const savedConfig = withSystemActivePeriods({
         schoolCode: normalizedSchoolCode,
         periodMode: config.periodMode ?? "trimestre",
@@ -158,7 +159,7 @@ function createResidualPgStore(repo) {
           ? config.subjects
           : seedData.demoSubjects,
       });
-      await query(
+      await runner.query(
         `INSERT INTO school_academic_configs (school_id, config_payload, updated_at)
          VALUES ($1, $2::jsonb, NOW())
          ON CONFLICT (school_id) DO UPDATE SET
