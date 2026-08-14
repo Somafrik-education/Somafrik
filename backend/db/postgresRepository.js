@@ -2179,16 +2179,18 @@ class PostgresRepository {
         lookupPayload.evaluationType = "Devoir";
       }
       if (hasExplicitType || requireCanonicalType) {
-        resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
-          required: requireCanonicalType,
-        });
-      } else if (hasExplicitType) {
-        try {
+        if (requireCanonicalType) {
           resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
-            required: false,
+            required: true,
           });
-        } catch (_error) {
-          resolvedType = null;
+        } else {
+          try {
+            resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
+              required: false,
+            });
+          } catch (_error) {
+            resolvedType = null;
+          }
         }
       }
     }

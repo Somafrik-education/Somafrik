@@ -259,12 +259,13 @@ function createInjectablePostgresRepository() {
         term_id: params[4],
         title: params[5],
         evaluation_type: params[6],
-        evaluation_date: params[7],
-        max_score: params[8],
-        coefficient: params[9],
-        status: params[10],
-        active: params[11],
-        legacy_json_id: params[12],
+        evaluation_type_id: params[7] ?? null,
+        evaluation_date: params[8],
+        max_score: params[9],
+        coefficient: params[10],
+        status: params[11],
+        active: params[12],
+        legacy_json_id: params[13],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -272,7 +273,7 @@ function createInjectablePostgresRepository() {
       return [row];
     }
     if (upper.startsWith("UPDATE EVALUATIONS")) {
-      const id = params[12];
+      const id = params[13];
       const row = tables.evaluations.find((item) => eq(item.id, id));
       if (!row) return [];
       Object.assign(row, {
@@ -282,12 +283,13 @@ function createInjectablePostgresRepository() {
         term_id: params[3],
         title: params[4],
         evaluation_type: params[5],
-        evaluation_date: params[6],
-        max_score: params[7],
-        coefficient: params[8],
-        status: params[9],
-        active: params[10],
-        legacy_json_id: row.legacy_json_id ?? params[11],
+        evaluation_type_id: params[6] ?? null,
+        evaluation_date: params[7],
+        max_score: params[8],
+        coefficient: params[9],
+        status: params[10],
+        active: params[11],
+        legacy_json_id: row.legacy_json_id ?? params[12],
         updated_at: new Date().toISOString(),
       });
       return [];
@@ -320,7 +322,8 @@ function createInjectablePostgresRepository() {
       upper.includes("CREATE TABLE") ||
       upper.includes("CREATE UNIQUE INDEX") ||
       upper.includes("ALTER TABLE") ||
-      upper.includes("FROM GRADES")
+      upper.includes("FROM GRADES") ||
+      upper.includes("FROM EVALUATION_TYPES")
     ) {
       return [];
     }
