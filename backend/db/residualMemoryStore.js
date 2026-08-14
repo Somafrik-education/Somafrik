@@ -6,6 +6,10 @@ const {
   assertNoLegacyAcademicLevelsTracksWrite,
   stripLegacyAcademicLevelsTracks,
 } = require("../lib/educationReferenceManagement");
+const {
+  assertNoLegacyUserRolesWrite,
+  stripLegacyUserRoles,
+} = require("../lib/establishmentRolesManagement");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -49,7 +53,8 @@ function createResidualMemoryStore() {
     },
     saveAcademicConfig(schoolCode, config, _tx = null) {
       assertNoLegacyAcademicLevelsTracksWrite(config);
-      const sanitizedConfig = stripLegacyAcademicLevelsTracks(config);
+      assertNoLegacyUserRolesWrite(config);
+      const sanitizedConfig = stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config));
       const normalized = asTrimmed(schoolCode).toUpperCase();
       const saved = withSystemActivePeriods({
         schoolCode: normalized,

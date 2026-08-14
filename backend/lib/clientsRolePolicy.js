@@ -83,10 +83,6 @@ function assertAssignableUserRole(principal, role) {
     throw createClientsError(403, "Rôle non autorisé pour ce principal.", CLIENTS_ERROR.FORBIDDEN);
   }
 
-  if (!ROLE_TO_DB[normalizedRole] && !Object.values(ROLE_FROM_DB).includes(normalizedRole)) {
-    throw createClientsError(400, "Rôle inconnu.");
-  }
-
   return normalizedRole;
 }
 

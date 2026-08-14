@@ -15,11 +15,9 @@ import {
   Textarea,
   useToast,
 } from "../design-system";
-import { platformApi } from "../lib/platformApi";
 import { SchoolEducationActivationPanel } from "../components/SchoolEducationActivationPanel";
 import {
   DEFAULT_CLASS_NAMES,
-  DEFAULT_USER_ROLES,
   getAllSchoolSubjects,
   getSchoolAcademicLists,
   parseListLines,
@@ -35,29 +33,16 @@ import {
   type AcademicPeriodRow,
   type PeriodMode,
 } from "../lib/academicPeriods";
-import { isPlatformBackOfficeRole, isSuperAdminRole } from "../lib/orgHierarchy";
-import { scopedUsers } from "../lib/scope";
+import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { isAllSchoolsSelection, resolveTargetSchoolCodes } from "../lib/activeSchool";
 import { buildSchoolSelectOptions } from "../lib/superadminCrudPath";
 import { canAccessSchoolBackOffice, canManageEstablishmentSettings } from "../lib/permissions";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
-import { isSchoolAdminRole, displayRoleName, normalize } from "../lib/format";
-import {
-  applyRoleRenames,
-  canDelegateSchoolPermission,
-  detectRoleRenames,
-  getDelegableActionsForFeature,
-  getDelegableSchoolFeatures,
-  getSchoolPilotageRoles,
-  mergeLocalRolePermissions,
-  readRolePermissions,
-  resolveRolePermissionKey,
-} from "../lib/schoolPilotage";
+import { displayRoleName, normalize } from "../lib/format";
+import { establishmentRolesApi, type EstablishmentRole } from "../lib/establishmentRolesApi";
 
 type SavingSection =
-  | "userRoles"
-  | "rolePilotage"
   | "periods"
   | "evaluations"
   | "levels"
@@ -71,7 +56,7 @@ export type ConfigurationSection = "annee-scolaire" | "structure" | "roles-droit
 
 export function ConfigurationPage({ section }: { section?: ConfigurationSection } = {}) {
   const { session } = useAuth();
-  const { state, update, refresh } = useData();
+  const { state, update } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
   const user = session?.user ?? null;
@@ -80,7 +65,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     activeSchool,
     availableSchools,
     requiresSelection,
-    scopedUser,
   } = useActiveSchool();
 
   const [configTarget, setConfigTarget] = useState(
@@ -119,34 +103,19 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const [periodRows, setPeriodRows] = useState<AcademicPeriodRow[]>(() =>
     normalizeStoredPeriods(academicConfig.periods, coercePeriodMode(academicConfig.periodMode)),
   );
-  const [selectedPilotageRole, setSelectedPilotageRole] = useState("");
-  const [selectedPilotageFeature, setSelectedPilotageFeature] = useState("");
-  const [rolePermissionDraft, setRolePermissionDraft] = useState<Record<string, string[]> | null>(null);
   const [selectedSubjectClass, setSelectedSubjectClass] = useState("");
+  const [assignableRoles, setAssignableRoles] = useState<EstablishmentRole[]>([]);
+  const [selectedCatalogueRoleId, setSelectedCatalogueRoleId] = useState("");
+  const [rolesLoading, setRolesLoading] = useState(false);
 
-  const users = scopedUsers(scopedUser, state);
   const settingsPermissions = useFeaturePermissions("Paramètres Établissement");
   const canConfigure = canManageEstablishmentSettings(ctx);
   const canReadSettings = settingsPermissions.canRead || canConfigure;
-  const showRolePilotage = isSchoolAdminRole(user?.role);
   const canDesignBulletins = isSuperAdminRole(user?.role);
-  const configuredUserRoles = useMemo(
-    () => getSchoolPilotageRoles(state, isBulkConfiguration ? undefined : configTarget).filter(
-      (role) => !isPlatformBackOfficeRole(role),
-    ),
-    [state.academicConfigs, configTarget, isBulkConfiguration],
+  const selectedCatalogueRole = useMemo(
+    () => assignableRoles.find((role) => role.id === selectedCatalogueRoleId) ?? assignableRoles[0] ?? null,
+    [assignableRoles, selectedCatalogueRoleId],
   );
-  const delegableFeatures = useMemo(() => getDelegableSchoolFeatures(ctx), [ctx]);
-  const effectiveRolePermissions = rolePermissionDraft ?? state.rolePermissions;
-  const selectedRolePermissions = useMemo(
-    () => new Set(readRolePermissions(selectedPilotageRole, configuredUserRoles, effectiveRolePermissions)),
-    [configuredUserRoles, effectiveRolePermissions, selectedPilotageRole],
-  );
-  const delegableActions = useMemo(
-    () => getDelegableActionsForFeature(ctx, selectedPilotageFeature),
-    [ctx, selectedPilotageFeature],
-  );
-  const pilotageDirty = rolePermissionDraft !== null;
 
   const resolvedPeriodRows = useMemo(() => applySystemActivePeriod(periodRows), [periodRows]);
   const classNamesForSubjects = useMemo(() => {
@@ -159,8 +128,30 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   );
   useEffect(() => {
     setAcademicFormKey((current) => current + 1);
-    setRolePermissionDraft(null);
   }, [configTarget]);
+
+  useEffect(() => {
+    if (section && section !== "roles-droits") return;
+    let cancelled = false;
+    setRolesLoading(true);
+    void establishmentRolesApi
+      .listAssignable()
+      .then((response) => {
+        if (cancelled) return;
+        const roles = Array.isArray(response.roles) ? response.roles : [];
+        setAssignableRoles(roles);
+        setSelectedCatalogueRoleId((current) => current || roles[0]?.id || "");
+      })
+      .catch(() => {
+        if (!cancelled) setAssignableRoles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRolesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [section, configTarget]);
 
   useEffect(() => {
     const mode = coercePeriodMode(academicConfig.periodMode);
@@ -169,20 +160,16 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   }, [academicFormKey, configTarget]);
 
   useEffect(() => {
-    if (!selectedPilotageRole && configuredUserRoles.length) {
-      setSelectedPilotageRole(configuredUserRoles[0]);
-    } else if (selectedPilotageRole && !configuredUserRoles.includes(selectedPilotageRole)) {
-      setSelectedPilotageRole(configuredUserRoles[0] ?? "");
+    if (!selectedCatalogueRoleId && assignableRoles.length) {
+      setSelectedCatalogueRoleId(assignableRoles[0].id);
+    } else if (
+      selectedCatalogueRoleId &&
+      assignableRoles.length &&
+      !assignableRoles.some((role) => role.id === selectedCatalogueRoleId)
+    ) {
+      setSelectedCatalogueRoleId(assignableRoles[0]?.id ?? "");
     }
-  }, [configuredUserRoles, selectedPilotageRole]);
-
-  useEffect(() => {
-    if (!selectedPilotageFeature && delegableFeatures.length) {
-      setSelectedPilotageFeature(delegableFeatures[0]);
-    } else if (selectedPilotageFeature && !delegableFeatures.includes(selectedPilotageFeature)) {
-      setSelectedPilotageFeature(delegableFeatures[0] ?? "");
-    }
-  }, [delegableFeatures, selectedPilotageFeature]);
+  }, [assignableRoles, selectedCatalogueRoleId]);
 
   useEffect(() => {
     if (!selectedSubjectClass && classNamesForSubjects.length) {
@@ -400,140 +387,9 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     }
   }
 
-  async function handleUserRolesSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
-      showToast(
-        "Sélectionnez un établissement précis. L'enregistrement multi-établissements n'est pas disponible sur cette API.",
-        "error",
-      );
-      return;
-    }
-    const effectiveSchoolCode = String(configTarget ?? activeSchoolCode ?? "").trim();
-    if (!canConfigure || !effectiveSchoolCode) {
-      if (!canConfigure) {
-        showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
-      }
-      return;
-    }
-    const form = new FormData(event.currentTarget);
-    const newRoles = parseListLines(String(form.get("userRoles") ?? "")).filter(
-      (role) => !isPlatformBackOfficeRole(role),
-    );
-
-    setSavingSection("userRoles");
-    try {
-      const existing = (state.academicConfigs?.[effectiveSchoolCode] ?? {}) as Record<string, unknown>;
-      let nextUsers = state.users;
-      let nextRolePermissions = state.rolePermissions;
-      let renamedLabels = "";
-
-      const oldRoles =
-        Array.isArray(existing.userRoles) && (existing.userRoles as string[]).length
-          ? (existing.userRoles as string[])
-          : DEFAULT_USER_ROLES;
-      const migrations = detectRoleRenames(oldRoles, newRoles);
-      if (Object.keys(migrations).length) {
-        const renamed = applyRoleRenames(
-          {
-            ...state,
-            academicConfigs: {
-              ...state.academicConfigs,
-              [effectiveSchoolCode]: existing,
-            },
-            users: nextUsers,
-            rolePermissions: nextRolePermissions,
-          },
-          migrations,
-        );
-        nextUsers = renamed.users;
-        nextRolePermissions = renamed.rolePermissions;
-        renamedLabels = Object.entries(migrations)
-          .map(([from, to]) => `« ${from} » → « ${to} »`)
-          .join(", ");
-      }
-
-      const nextConfig = {
-        ...(typeof existing === "object" ? existing : {}),
-        schoolCode: effectiveSchoolCode,
-        userRoles: newRoles,
-      };
-
-      await update(
-        {
-          academicConfigs: { [effectiveSchoolCode]: nextConfig },
-          ...(nextUsers !== state.users ? { users: nextUsers } : {}),
-        },
-        { schoolCode: effectiveSchoolCode },
-      );
-      if (nextRolePermissions !== state.rolePermissions) {
-        await platformApi.replaceRolePermissions(nextRolePermissions);
-      }
-      await refresh();
-      setRolePermissionDraft(null);
-      if (renamedLabels) {
-        showToast(`Rôles enregistrés (${renamedLabels})`, "success");
-      } else {
-        showToast("Rôles enregistrés", "success");
-      }
-      setAcademicFormKey((current) => current + 1);
-    } catch {
-      showToast("Échec de l'enregistrement", "error");
-    } finally {
-      setSavingSection(null);
-    }
-  }
-
-  function togglePilotagePermission(permission: string, enabled: boolean) {
-    if (!canDelegateSchoolPermission(ctx, permission) || !selectedPilotageRole) return;
-    setRolePermissionDraft((current) => {
-      const base = current ?? state.rolePermissions;
-      const legacyKey = resolveRolePermissionKey(selectedPilotageRole, configuredUserRoles, base);
-      const rolePerms = new Set(
-        base[selectedPilotageRole] ?? base[legacyKey] ?? [],
-      );
-      if (enabled) rolePerms.add(permission);
-      else rolePerms.delete(permission);
-      const next = {
-        ...base,
-        [selectedPilotageRole]: [...rolePerms].sort((a, b) => a.localeCompare(b, "fr")),
-      };
-      if (legacyKey !== selectedPilotageRole && next[legacyKey]) {
-        delete next[legacyKey];
-      }
-      return next;
-    });
-  }
-
-  async function saveRolePilotage() {
-    if (!rolePermissionDraft) return;
-    setSavingSection("rolePilotage");
-    try {
-      const nextRolePermissions = mergeLocalRolePermissions(
-        state.rolePermissions,
-        rolePermissionDraft,
-        configuredUserRoles,
-      );
-      const nextUsers = state.users.map((account) =>
-        account.role && nextRolePermissions[account.role]
-          ? { ...account, permissions: nextRolePermissions[account.role] }
-          : account,
-      );
-      await platformApi.replaceRolePermissions(nextRolePermissions);
-      await update({ users: nextUsers });
-      await refresh();
-      setRolePermissionDraft(null);
-      showToast("Pilotage des rôles enregistré", "success");
-    } catch {
-      showToast("Échec de l'enregistrement", "error");
-    } finally {
-      setSavingSection(null);
-    }
-  }
-
   const showAcademicConfig = canConfigure || canReadSettings;
   const inSection = (target: ConfigurationSection) => !section || section === target;
-  const hasRolesAccess = canConfigure || showRolePilotage;
+  const hasRolesAccess = canReadSettings || canConfigure;
 
   if (section === "roles-droits" && !hasRolesAccess) {
     return (
@@ -598,98 +454,56 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         </p>
       </Card>
 
-      {canConfigure && inSection("roles-droits") ? (
-        <Card key={`userRoles-${academicFormKey}`} className="p-6">
-          <SectionHeader
-            title="Rôles"
-            description="Un rôle par ligne pour votre établissement (secrétaire, préfet, enseignant…). Les droits se pilotent ci-dessous. Admin Pays et Admin School sont gérés par le Superadmin dans Droits par rôle."
-          />
-          <form onSubmit={handleUserRolesSubmit} className="mt-4 space-y-4">
-            <FormField label="Rôles">
-              <Textarea
-                name="userRoles"
-                rows={6}
-                defaultValue={(academicConfig.userRoles as string[] | undefined)?.join("\n") ?? DEFAULT_USER_ROLES.join("\n")}
-              />
-            </FormField>
-            <Button type="submit" disabled={savingSection === "userRoles"}>
-              Enregistrer
-            </Button>
-          </form>
-        </Card>
-      ) : null}
-
-      {showRolePilotage && delegableFeatures.length && configuredUserRoles.length && inSection("roles-droits") ? (
+      {hasRolesAccess && inSection("roles-droits") ? (
         <Card className="p-6">
           <SectionHeader
-            title="Pilotage des rôles de l'établissement"
-            description="Définissez les droits des rôles locaux de l'établissement, dans la limite de vos propres autorisations."
-            actions={
-              <Button
-                size="sm"
-                disabled={!pilotageDirty || savingSection === "rolePilotage"}
-                onClick={() => void saveRolePilotage()}
-              >
-                Enregistrer
-              </Button>
-            }
+            title="Rôles affectables"
+            description="Catalogue canonique géré par le Superadmin. Vous pouvez affecter ces rôles aux utilisateurs de votre établissement, sans modifier la politique globale."
           />
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <FormField label="Rôle">
-              <Select
-                value={selectedPilotageRole}
-                onChange={(e) => setSelectedPilotageRole(e.target.value)}
-                options={configuredUserRoles.map((role) => ({ value: role, label: displayRoleName(role) }))}
-              />
-            </FormField>
-            <FormField label="Fonctionnalité">
-              <Select
-                value={selectedPilotageFeature}
-                onChange={(e) => setSelectedPilotageFeature(e.target.value)}
-                options={delegableFeatures.map((feature) => ({ value: feature, label: feature }))}
-              />
-            </FormField>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-line bg-slate-50/60 p-4">
-            <p className="text-sm font-bold text-ink">{selectedPilotageFeature}</p>
-            <p className="text-xs text-muted">
-              {displayRoleName(selectedPilotageRole)} •{" "}
-              {users.filter((account) => account.role === selectedPilotageRole && account.status !== "Suspendu").length}{" "}
-              compte(s) actif(s)
-            </p>
-            <div className="mt-4 space-y-3">
-              {delegableActions.length ? (
-                delegableActions.map((action) => {
-                  const permission = `${selectedPilotageFeature}:${action.key}`;
-                  const enabled = selectedRolePermissions.has(permission);
-                  return (
-                    <label
-                      key={permission}
-                      className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 ${
-                        enabled ? "border-brand/30 bg-brand-50" : "border-line bg-white"
-                      }`}
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-ink">{action.label}</p>
-                        <p className="text-xs text-muted">{enabled ? "Accordé" : "Refusé"}</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 cursor-pointer accent-brand"
-                        checked={enabled}
-                        onChange={(e) => togglePilotagePermission(permission, e.target.checked)}
-                      />
-                    </label>
-                  );
-                })
-              ) : (
-                <p className="text-sm text-muted">
-                  Aucun droit délégable pour cette fonctionnalité dans votre périmètre.
-                </p>
-              )}
+          {rolesLoading ? (
+            <p className="mt-4 text-sm text-muted">Chargement du catalogue…</p>
+          ) : assignableRoles.length ? (
+            <div className="mt-4 space-y-4">
+              <FormField label="Rôle">
+                <Select
+                  value={selectedCatalogueRole?.id ?? ""}
+                  onChange={(e) => setSelectedCatalogueRoleId(e.target.value)}
+                  options={assignableRoles.map((role) => ({
+                    value: role.id,
+                    label: displayRoleName(role.roleName),
+                  }))}
+                />
+              </FormField>
+              {selectedCatalogueRole ? (
+                <div className="rounded-xl border border-line bg-slate-50/60 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-bold text-ink">{displayRoleName(selectedCatalogueRole.roleName)}</p>
+                    <Badge tone="neutral">{selectedCatalogueRole.roleCode}</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    Permissions accordées par le Superadmin (lecture seule).
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedCatalogueRole.permissions.length ? (
+                      selectedCatalogueRole.permissions.map((permission) => (
+                        <Badge key={permission} tone="info">
+                          {permission}
+                        </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted">Aucune permission définie pour ce rôle.</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
-          </div>
+          ) : (
+            <EmptyState
+              className="mt-4"
+              title="Aucun rôle affectable"
+              description="Le catalogue des rôles n'est pas encore disponible pour votre établissement."
+            />
+          )}
         </Card>
       ) : null}
 

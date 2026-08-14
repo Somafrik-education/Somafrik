@@ -123,7 +123,9 @@ export function resolveEffectivePermissions(
 ): string[] {
   const fromUser = userPermissions ?? [];
   const fromRole = role && Array.isArray(rolePermissions[role]) ? rolePermissions[role] : [];
-  const fromDefaults = getInternalRoleDefaults(role);
+  const hasCanonicalSource =
+    fromUser.length > 0 || fromRole.length > 0 || Object.keys(rolePermissions).length > 0;
+  const fromDefaults = hasCanonicalSource ? [] : getInternalRoleDefaults(role);
   const merged = [...new Set([...fromUser, ...fromRole, ...fromDefaults])];
   if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
     merged.push("ALL_PRIVILEGES");

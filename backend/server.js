@@ -26,6 +26,7 @@ const {
 } = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
 const { RbacService } = require("./services/rbacService");
+const { mergeRolePermissions, normalizeBusinessPermission } = require("./lib/rolePermissionsResolution");
 const { PaginationService } = require("./services/paginationService");
 const { CacheService } = require("./services/cacheService");
 const { TenantScopeService } = require("./services/tenantScopeService");
@@ -389,11 +390,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
   }
 
   const rolePermissionsMap = await getRolePermissionsMap();
-  const permissions = mergeRolePermissions(
-    session.role,
-    [...new Set([...(payload.permissions ?? []), ...rbacService.permissionsFor(session.role)])],
-    rolePermissionsMap,
-  );
+  const permissions = mergeRolePermissions(session.role, [], rolePermissionsMap);
   const mustChangePassword = await principalMustChangePassword({
     sub: session.user_id,
     identifier: payload.identifier,
@@ -442,11 +439,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
 
 app.get("/api/auth/effective-permissions", requireAuth, asyncHandler(async (req, res) => {
   const rolePermissionsMap = await getRolePermissionsMap();
-  const permissions = mergeRolePermissions(
-    req.principal.role,
-    [...new Set([...(req.principal.permissions ?? []), ...rbacService.permissionsFor(req.principal.role)])],
-    rolePermissionsMap,
-  );
+  const permissions = mergeRolePermissions(req.principal.role, [], rolePermissionsMap);
   res.json({ permissions });
 }));
 
@@ -968,6 +961,37 @@ app.put("/api/backoffice/establishments/:schoolCode/education-reference/school-a
   const payload = stripClientSchoolCode(req.body ?? {});
   const saved = await repository.saveSchoolEducationActivation(schoolCode, payload, req.principal, educationReferenceAuditMetaFromRequest(req));
   res.json(saved);
+}));
+
+app.get("/api/backoffice/establishment-roles", requireAuth, requirePermission("GET /api/backoffice/establishment-roles"), asyncHandler(async (req, res) => {
+  const roles = await repository.listEstablishmentRoles({
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+    schoolAssignableOnly: String(req.query.schoolAssignableOnly ?? "") === "true",
+  });
+  res.json({ roles });
+}));
+
+app.post("/api/backoffice/establishment-roles", requireAuth, requirePermission("POST /api/backoffice/establishment-roles"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const created = await repository.createEstablishmentRole(req.body ?? {}, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/establishment-roles/:roleId", requireAuth, requirePermission("PATCH /api/backoffice/establishment-roles/:roleId"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const updated = await repository.updateEstablishmentRole(req.params.roleId, req.body ?? {}, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/establishment-roles/:roleId/archive", requireAuth, requirePermission("POST /api/backoffice/establishment-roles/:roleId/archive"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const archived = await repository.archiveEstablishmentRole(req.params.roleId, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/establishment-roles/assignable", requireAuth, requirePermission("GET /api/establishment-roles/assignable"), asyncHandler(async (req, res) => {
+  const roles = await repository.listEstablishmentRoles({ schoolAssignableOnly: true });
+  res.json({ roles });
 }));
 
 app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
@@ -4414,11 +4438,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     rawRole === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : rawRole;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
   const countryCode = user.countryCode ?? countryCodeFromScope(user.countryScope) ?? school.countryCode ?? countryCodeFromSchoolOrCountry(schoolCode, school.country);
-  const permissions = mergeRolePermissions(
-    role,
-    [...new Set([...(user.permissions ?? []), ...rbacService.permissionsFor(role)])],
-    rolePermissionsMap
-  );
+  const permissions = mergeRolePermissions(role, [], rolePermissionsMap);
 
   const {
     filterActiveTeacherAssignments,
@@ -4517,63 +4537,6 @@ async function resolveUserPasswordLookupKeys(principal) {
 // Récupère la matrice de droits par rôle (configurée par le Super Admin dans le BackOffice).
 async function getRolePermissionsMap() {
   return repository.getRolePermissionsMap();
-}
-
-// Fusionne les droits de base (compte / RBAC) avec les droits accordés au rôle par le Super Admin.
-// Logique métier : un module accordé à un rôle devient visible (dashboard, onglets, menu) pour
-// tous les utilisateurs de ce rôle, sans jamais retirer un privilège déjà détenu par le compte.
-function mergeRolePermissions(role, basePermissions = [], rolePermissionsMap = null) {
-  const configured =
-    rolePermissionsMap && Array.isArray(rolePermissionsMap[role])
-      ? rolePermissionsMap[role]
-      : role === "Super Administrateur Somafrik" &&
-          Array.isArray(rolePermissionsMap?.["Super Administrateur OKAFRIK"])
-        ? rolePermissionsMap["Super Administrateur OKAFRIK"]
-        : null;
-
-  if (!configured || !configured.length) {
-    return enforceBusinessRolePermissions(role, basePermissions ?? []);
-  }
-
-  const merged = [...new Set([...(basePermissions ?? []), ...configured])];
-  return enforceBusinessRolePermissions(role, merged);
-}
-
-function enforceBusinessRolePermissions(role, permissions = []) {
-  let next = [...permissions];
-
-  if (role === "Admin Pays") {
-    next = next.filter((permission) => permission !== "Pays:CREATE" && permission !== "Pays:DELETE");
-  }
-
-  if (role !== "Admin School") {
-    return next;
-  }
-
-  const forbiddenFeatures = ["Établissements", "Abonnements"];
-  const forbiddenKeywords = ["abonnement", "etablissement", "établissement", "inscription", "tarif"];
-  return next.filter((permission) => {
-    if (String(permission).startsWith("Paramètres Établissement:")) {
-      return true;
-    }
-    if (String(permission).startsWith("Frais & tarifs:")) {
-      return true;
-    }
-
-    const normalizedPermission = normalizeBusinessPermission(permission);
-    if (normalizedPermission.startsWith("frais & tarifs")) return true;
-    return (
-      !forbiddenFeatures.some((feature) => String(permission).startsWith(feature)) &&
-      !forbiddenKeywords.some((keyword) => normalizedPermission.includes(keyword))
-    );
-  });
-}
-
-function normalizeBusinessPermission(permission) {
-  return String(permission ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 }
 
 function getPrincipalStudentIds(response) {

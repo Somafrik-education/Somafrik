@@ -104,7 +104,10 @@ async function createUser(store, rawPayload, principal, auditMeta) {
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
 
-  const role = assertAssignableUserRole(principal, asTrimmed(payload.role));
+  let role = assertAssignableUserRole(principal, asTrimmed(payload.role));
+  if (typeof store.assertEstablishmentRoleAssignable === "function") {
+    role = await store.assertEstablishmentRoleAssignable(role, principal);
+  }
   const firstName = asTrimmed(payload.firstName);
   const lastName = asTrimmed(payload.lastName);
   if (!firstName || !lastName) {
@@ -202,8 +205,12 @@ async function createUser(store, rawPayload, principal, auditMeta) {
 
 async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   const patch = ignoreClientScope(rawPatch);
+  let canonicalRole;
   if (patch.role !== undefined) {
-    assertAssignableUserRole(principal, patch.role);
+    canonicalRole = assertAssignableUserRole(principal, patch.role);
+    if (typeof store.assertEstablishmentRoleAssignable === "function") {
+      canonicalRole = await store.assertEstablishmentRoleAssignable(canonicalRole, principal);
+    }
   }
 
   const existing = await store.getUserById(userId);
@@ -241,7 +248,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
         phone: nextPhone,
         gender: patch.gender ?? locked.gender,
         birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : locked.birth_date,
-        role: patch.role ? toDbRole(patch.role) : locked.role,
+        role: canonicalRole !== undefined ? toDbRole(canonicalRole) : locked.role,
         status: patch.status ? toDbStatus(patch.status) : locked.status,
         profile,
       });

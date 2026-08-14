@@ -9,7 +9,7 @@
 ## 1. Principes
 
 1. **PostgreSQL** est obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`).
-2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
+2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), **rôles établissement** (`establishment_roles` + permissions), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
 3. Beaucoup de domaines restent encore dans le **snapshot JSON** `backoffice_state` (migration progressive).
 4. Pas de dossier `/migrations` versionné classique : le schéma est appliqué via `schema.sql` à l’init, puis des **ensures / migrations runtime** dans le repository.
 
@@ -72,6 +72,18 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 `PUT /api/academic-config` refuse `levels` et `tracks` ; lecture `GET /api/academic-config` projette `levels`/`tracks` depuis ces tables (noms actifs pour l'établissement).
 
 **Boot (ordre obligatoire)** : preflight (`countries`, `schools`) → inventaire legacy `school_academic_configs` (échec `LEGACY_ACADEMIC_REFERENCE_AMBIGUOUS` si valeurs non vides) → création tables canoniques → strip JSON `levels`/`tracks` uniquement après inventaire propre.
+
+### 4.2bis Rôles généraux d'établissement (canonique PG — LOT 2 Paramètres)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `establishment_roles` | Catalogue rôles internes (Secrétaire, Préfet, …) | UNIQUE `role_code`, `role_name` · `scope` school/platform/country · `school_assignable` |
+| `establishment_role_permissions` | Matrice permissions par rôle | PK `(role_id, permission)` · FK cascade |
+| `establishment_role_delegation_permissions` | Plafond de délégation Admin School | PK `(role_id, permission)` · FK cascade |
+
+`PUT /api/academic-config` refuse `userRoles` ; `GET /api/academic-config` projette `userRoles` depuis le catalogue assignable. JWT : `getRolePermissionsMap()` fusionne `role_permissions` (plateforme) + matrice établissement.
+
+**Boot** : preflight → inventaire legacy `userRoles` JSON (`LEGACY_ESTABLISHMENT_ROLES_AMBIGUOUS`) → schéma → strip `userRoles` → bootstrap seed si vide.
 
 ### 4.3 Notes (canonique PG)
 

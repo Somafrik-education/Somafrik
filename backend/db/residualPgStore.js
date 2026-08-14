@@ -7,6 +7,10 @@ const {
   assertNoLegacyAcademicLevelsTracksWrite,
   stripLegacyAcademicLevelsTracks,
 } = require("../lib/educationReferenceManagement");
+const {
+  assertNoLegacyUserRolesWrite,
+  stripLegacyUserRoles,
+} = require("../lib/establishmentRolesManagement");
 
 function parsePayload(value) {
   if (!value) return {};
@@ -106,10 +110,15 @@ function createResidualPgStore(repo) {
 
       let levels = [];
       let tracks = [];
+      let userRoles = [];
       if (typeof repo.getSchoolEducationActiveLists === "function") {
         const lists = await repo.getSchoolEducationActiveLists(school.school_code ?? school.code);
         levels = lists.levels ?? [];
         tracks = lists.tracks ?? [];
+      }
+      if (typeof repo.listEstablishmentRoles === "function") {
+        const roles = await repo.listEstablishmentRoles({ schoolAssignableOnly: true });
+        userRoles = roles.map((row) => row.roleName);
       }
 
       return withSystemActivePeriods({
@@ -128,6 +137,7 @@ function createResidualPgStore(repo) {
         allowCustomReportCards: storedConfig?.allowCustomReportCards !== false,
         levels,
         tracks,
+        userRoles,
         classNames: Array.isArray(storedConfig?.classNames) && storedConfig.classNames.length
           ? storedConfig.classNames
           : seedData.demoClassNames,
@@ -139,7 +149,8 @@ function createResidualPgStore(repo) {
 
     async saveAcademicConfig(schoolCode, config, tx = null) {
       assertNoLegacyAcademicLevelsTracksWrite(config);
-      const sanitizedConfig = stripLegacyAcademicLevelsTracks(config);
+      assertNoLegacyUserRolesWrite(config);
+      const sanitizedConfig = stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config));
       const school = await resolveSchool(schoolCode);
       if (!school) {
         const error = new Error("Établissement introuvable.");

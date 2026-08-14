@@ -391,21 +391,24 @@ Puis établissement :
 
 Exemples visés : Secrétaire, Préfet des études, Directeur, Économe, autres rôles internes génériques.
 
-**État actuel**
+**État LOT 2 (implémenté sur branche `cursor/establishment-roles-lot2-f873`)**
 
-- Catalogue local : `config_payload.userRoles` (JSON établissement), UI `ConfigurationPage` rôles-droits.
-- Matrice rôle → permissions : table PG **globale** `role_permissions` ; écriture `PUT /api/backoffice/role-permissions` + `assertSuperAdmin`.
-- Defaults parallèles : `backend/data.js`, `web/src/lib/internalRoleDefaults.ts`, Mobile `catalog.ts`.
-- `mapUser()` injecte le seed, pas la matrice PG.
-- L’UI de **pilotage local** appelle l’API globale et **échoue** pour Admin School (constat **P0**, inchangé).
+- Catalogue canonique PostgreSQL : `establishment_roles`, `establishment_role_permissions`, `establishment_role_delegation_permissions`.
+- API Superadmin : `GET/POST/PATCH /api/backoffice/establishment-roles`, `POST …/archive`.
+- API établissement (lecture) : `GET /api/establishment-roles/assignable`.
+- `config_payload.userRoles` : **lecture seule** (dérivée du catalogue assignable) ; écriture rejetée (`LEGACY_USER_ROLES_WRITE_FORBIDDEN`).
+- Matrice plateforme : `role_permissions` (Superadmin) ; matrice établissement : tables LOT 2.
+- JWT / `buildPrincipal` : permissions depuis `getRolePermissionsMap()` (PG), sans seed `data.js` sur le compte ; rôle PG actif avec `permissions=[]` → JWT vide (fail-closed, pas de fallback « Voir tableau de bord »).
+- Web `ConfigurationPage` rôles-droits : catalogue assignable en lecture seule (plus de pilotage local ni liste `userRoles` éditable).
+- Defaults client (`internalRoleDefaults.ts`, Mobile `catalog.ts`) : ignorés dès qu’une matrice serveur est chargée.
 
-**Problème constaté**
+**Legacy neutralisé**
 
-- Triple source de permissions (**P1**).
-- Confusion de scope : liste de rôles **établissement** vs matrice **plateforme**.
-- Admin établissement peut aujourd’hui **éditer la liste** `userRoles` (création apparente de rôles généraux au niveau école).
+- `PUT /api/academic-config` avec clé `userRoles` → 400.
+- Boot PG : inventaire `userRoles` JSON avant strip ; ambiguïté → arrêt (`LEGACY_ESTABLISHMENT_ROLES_AMBIGUOUS`).
+- `saveRolePilotage` / édition locale de la matrice retirés de l’UI établissement.
 
-**Cible validée (ne pas implémenter ici)**
+**Cible validée (atteinte LOT 2)**
 
 - Catalogue des **rôles généraux** = Superadmin.
 - Matrice **rôle → permissions** = Superadmin.

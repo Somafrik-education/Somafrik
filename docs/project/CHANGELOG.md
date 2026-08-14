@@ -13,6 +13,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Added
 
+- **LOT 2 Paramètres — Rôles généraux d'établissement** : tables canoniques `establishment_roles`, `establishment_role_permissions`, `establishment_role_delegation_permissions` ; CRUD Superadmin via `/api/backoffice/establishment-roles` ; lecture assignable via `/api/establishment-roles/assignable` ; `PUT /api/academic-config` refuse `userRoles` (`LEGACY_USER_ROLES_WRITE_FORBIDDEN`) ; JWT dérivé de la matrice PostgreSQL (plateforme + établissement) ; Web Paramètres/Rôles en lecture seule sur le catalogue.
 - **LOT 1 Paramètres — Référentiels pédagogiques Superadmin** : tables canoniques `education_levels`, `education_streams`, `school_levels`, `school_streams` scopées par pays ; CRUD Superadmin via `/api/backoffice/education-levels` et `/api/backoffice/education-streams` ; activation établissement via `/api/education-reference/*` ; `PUT /api/academic-config` refuse toute présence de `levels` ou `tracks` (`LEGACY_ACADEMIC_LEVELS_WRITE_FORBIDDEN` / `LEGACY_ACADEMIC_STREAMS_WRITE_FORBIDDEN`) ; inventaire legacy fail-safe sans migration automatique ambiguë ; audit transactionnel.
 - **LOT 5 — Pédagogie PostgreSQL** : cours, emplois du temps, évaluations, notes et présences passent par des APIs dédiées persistées en PostgreSQL ; `PUT /api/backoffice/state` refuse toute présence des clés pédagogiques (`LEGACY_PEDAGOGY_STATE_WRITE_FORBIDDEN`) ; `GET state` projette la pédagogie uniquement depuis PostgreSQL ; audit transactionnel sur les écritures sensibles.
 - **LOT 4 — Finance PostgreSQL** : paiements, grilles, obligations, allocations, reminders et annulations passent par des APIs dédiées persistées en PostgreSQL ; `PUT /api/backoffice/state` refuse toute présence des clés Finance (`LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`) ; `GET state` projette Finance uniquement depuis PostgreSQL, sans fusion JSON historique ni backfill ; l'audit `create_payment` / `cancel_payment` est écrit dans la même transaction PostgreSQL que l'effet métier (`cancelled_by` persisté ; rollback complet si l'audit échoue).
@@ -27,7 +28,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Changed
 
-- Matrice S1.4 : clés Pédagogie (`courses`, `courseSchedules`, `evaluations`, `notes`, `presences`) retirées des writables PUT ; Web, Mobile et BackOffice les omettent des snapshots.
+- **LOT 2 correctifs CTO** : matrice `getPermissionsMap()` inclut les rôles actifs sans permission (LEFT JOIN) ; `mergeRolePermissions` fail-closed sans fallback dashboard ; bootstrap `role_permissions` plateforme ; canonicalisation du rôle sur `PATCH` utilisateur ; tests permissions vides / roleCode / rôle absent. (`courses`, `courseSchedules`, `evaluations`, `notes`, `presences`) retirées des writables PUT ; Web, Mobile et BackOffice les omettent des snapshots.
 - `saveBackOfficeState` ne persiste plus les projections Pédagogie dans `backoffice_state` et n'effectue aucun dual-write JSON.
 - Matrice S1.4 : clés Finance (`payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders`) retirées des writables PUT ; Web, Mobile et BackOffice les omettent des snapshots.
 - `saveBackOfficeState` ne persiste plus les projections Finance dans `backoffice_state` et n'effectue aucun dual-write JSON.

@@ -92,12 +92,18 @@ class PostgresRepository {
     await this.ensureFinanceCanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
     await this.ensurePlatformCanonicalSchema();
+    await this.ensurePlatformRolePermissionsBootstrap();
     await this.ensureClientsCanonicalSchema();
     await this.ensureResidualCanonicalSchema();
     await this.ensureEducationReferencePreflight();
     await this.ensureEducationReferenceConstraints();
     await this.ensureEducationReferenceCanonicalSchema();
     await this.stripLegacyAcademicReferencePayloads();
+    await this.ensureEstablishmentRolesPreflight();
+    await this.ensureEstablishmentRolesConstraints();
+    await this.ensureEstablishmentRolesCanonicalSchema();
+    await this.stripLegacyUserRolesPayloads();
+    await this.ensureEstablishmentRolesBootstrap();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -448,6 +454,25 @@ class PostgresRepository {
     await this.query(PLATFORM_SCHEMA_SQL);
   }
 
+  async ensurePlatformRolePermissionsBootstrap() {
+    const seedData = require("../data");
+    const platformRoles = [
+      "Super Administrateur Somafrik",
+      "Super Administrateur OKAFRIK",
+      "Admin Pays",
+      "Admin School",
+    ];
+    for (const roleName of platformRoles) {
+      const existing = await this.one(`SELECT role_name FROM role_permissions WHERE role_name = $1`, [roleName]);
+      if (existing) continue;
+      await this.query(
+        `INSERT INTO role_permissions (role_name, permissions, updated_at)
+         VALUES ($1, $2::jsonb, NOW())`,
+        [roleName, JSON.stringify(seedData.rolePermissions?.[roleName] ?? [])],
+      );
+    }
+  }
+
   async ensureClientsCanonicalSchema() {
     const { CLIENTS_SCHEMA_SQL } = require("./clientsSchema");
     await this.query(CLIENTS_SCHEMA_SQL);
@@ -537,6 +562,63 @@ class PostgresRepository {
     return saveSchoolActivation(this, schoolCode, activation, principal, auditMeta);
   }
 
+  async ensureEstablishmentRolesPreflight() {
+    const { assertEstablishmentRolesSchemaPreflight } = require("./establishmentRolesSchema");
+    await assertEstablishmentRolesSchemaPreflight(this);
+  }
+
+  async ensureEstablishmentRolesCanonicalSchema() {
+    const { ESTABLISHMENT_ROLES_SCHEMA_SQL } = require("./establishmentRolesSchema");
+    await this.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
+  }
+
+  async stripLegacyUserRolesPayloads() {
+    const { stripLegacyUserRolesPayloads } = require("../lib/establishmentRolesService");
+    await stripLegacyUserRolesPayloads(this);
+  }
+
+  async ensureEstablishmentRolesConstraints() {
+    const { ensureEstablishmentRolesConstraints } = require("../lib/establishmentRolesService");
+    await ensureEstablishmentRolesConstraints(this, console);
+  }
+
+  async ensureEstablishmentRolesBootstrap() {
+    const { ensureEstablishmentRolesBootstrap } = require("../lib/establishmentRolesService");
+    await ensureEstablishmentRolesBootstrap(this);
+  }
+
+  getEstablishmentRolesStore() {
+    if (!this._establishmentRolesStore) {
+      const { createEstablishmentRolesPgStore } = require("./establishmentRolesPgStore");
+      this._establishmentRolesStore = createEstablishmentRolesPgStore(this);
+    }
+    return this._establishmentRolesStore;
+  }
+
+  listEstablishmentRoles(options) {
+    return this.getEstablishmentRolesStore().listRoles(options);
+  }
+
+  createEstablishmentRole(payload, principal, auditMeta) {
+    const { createRole } = require("../lib/establishmentRolesService");
+    return createRole(this, payload, principal, auditMeta);
+  }
+
+  updateEstablishmentRole(roleId, patch, principal, auditMeta) {
+    const { updateRole } = require("../lib/establishmentRolesService");
+    return updateRole(this, roleId, patch, principal, auditMeta);
+  }
+
+  archiveEstablishmentRole(roleId, principal, auditMeta) {
+    const { archiveRole } = require("../lib/establishmentRolesService");
+    return archiveRole(this, roleId, principal, auditMeta);
+  }
+
+  assertEstablishmentRoleAssignable(roleLabel, principal) {
+    const { assertEstablishmentRoleAssignable } = require("../lib/establishmentRolesService");
+    return assertEstablishmentRoleAssignable(this, roleLabel, principal);
+  }
+
   getResidualStore() {
     if (!this._residualStore) {
       const { createResidualPgStore } = require("./residualPgStore");
@@ -582,8 +664,10 @@ class PostgresRepository {
     return this.getPlatformStore().getSchoolByCode(code);
   }
 
-  getRolePermissionsMap() {
-    return this.getPlatformStore().getRolePermissionsMap();
+  async getRolePermissionsMap() {
+    const platformMap = (await this.getPlatformStore().getRolePermissionsMap()) ?? {};
+    const establishmentMap = await this.getEstablishmentRolesStore().getPermissionsMap();
+    return { ...platformMap, ...establishmentMap };
   }
 
   createPlatformCountry(payload, principal, auditMeta) {
@@ -4611,7 +4695,7 @@ class PostgresRepository {
       passwordHash: user.password_hash,
       pinHash: user.pin_hash,
       status: this.fromDbStatus(user.status),
-      permissions: seedData.rolePermissions[role] ?? ["Voir tableau de bord"],
+      permissions: [],
       temporaryPassword: "",
       mustChangePassword: Boolean(user.must_change_password),
       photoUrl: "",
