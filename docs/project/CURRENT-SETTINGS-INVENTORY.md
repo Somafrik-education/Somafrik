@@ -29,6 +29,8 @@ Chaque paramètre est classé dans **une** catégorie principale (la plus proche
 
 Niveaux de risque : **P0** (incohérence métier ou sécurité opérationnelle actuelle), **P1** (double source / RBAC trompeur / dette exploitable), **P2** (UX morte, dette locale), **INFO** (constat sans impact immédiat).
 
+Les **décisions métier CTO** (section 4) décrivent une **cible validée, non implémentée**. Elles ne modifient ni l’état constaté ni les niveaux de risque.
+
 ---
 
 ## 1. Cartographie du menu / écran Paramètres (Web)
@@ -52,8 +54,8 @@ Les cartes marquées `status: "soon"` restent cliquables : elles ouvrent un `Com
 |---------------|---------------|-------------------------|--------------------|------|
 | **Mon abonnement** `/parametres/mon-abonnement` | `MonAbonnementPage` + sous-routes factures / paiements / changer-offre / résiliation | APIs abonnements plateforme | **Oui** — tables `subscriptions`, `subscription_*` | Canonique PG |
 | **Profil établissement** `/parametres/profil` | `EstablishmentProfilePage` | `activeSchool` (domaine `schools`) | **Oui** — `PATCH /api/backoffice/establishments/:code` | Canonique PG + JSONB profil |
-| **Année scolaire** `/parametres/annee-scolaire` | `ConfigurationPage section="annee-scolaire"` | `state.academicConfigs[schoolCode]` | **Oui** — PUT academic-config → `school_academic_configs.config_payload` (**pas** `academic_years` / `terms`) | JSONB PG, dual avec tables relationnelles |
-| **Structure pédagogique** `/parametres/structure` | `ConfigurationPage section="structure"` | mêmes `academicConfigs` (`levels`, `tracks`, `classNames`, `subjects`) | **Oui** — même PUT JSON ; **pas** sync `classes` / `subjects` / `school_courses` | JSONB PG, dual |
+| **Année scolaire** `/parametres/annee-scolaire` | `ConfigurationPage section="annee-scolaire"` | `state.academicConfigs[schoolCode]` (périodes, barème, **`evaluationTypes` actuellement ici**) | **Oui** — PUT academic-config → `school_academic_configs.config_payload` (**pas** `academic_years` / `terms`). Types d’éval = JSON, pas la table `evaluations` | JSONB PG, dual périodes avec tables relationnelles |
+| **Structure pédagogique** `/parametres/structure` | `ConfigurationPage section="structure"` | mêmes `academicConfigs` (`levels`, `tracks`, `classNames`, `subjects`) — **pas** `evaluationTypes` aujourd’hui | **Oui** — même PUT JSON ; **pas** sync `classes` / `subjects` / `school_courses`. Vocabulaire niveaux/filières créé par l’école. Cible CTO §4.A/C non implémentée | JSONB PG, dual |
 | **Rôles et droits** `/parametres/roles-droits` | `ConfigurationPage section="roles-droits"` | `academicConfigs.userRoles` + `state.rolePermissions` | **Partiel** : liste de rôles → JSON academic-config ; **pilotage** → `PUT /api/backoffice/role-permissions` (**Super Admin uniquement**) | Dual JSONB + `role_permissions` |
 | **Documents** `/parametres/documents` | `BulletinDesignPage` | `academicConfigs` (design par classe) + listes classes/matières | **Oui** si Superadmin — PUT academic-config. Page **redirige** les non-Superadmin | JSONB PG |
 | **Sécurité** `/parametres/securite` | `SecuritySettingsPage` | Session AuthContext + `state.auditLog` + texte **codé en dur** | **Non** — lecture locale / export CSV client. **Pas** `GET /api/audit` | Calculé + écran trompeur |
@@ -121,12 +123,21 @@ Champs JSON typiques : `periodMode`, `periods[]`, `evaluationTypes`, `defaultSca
 | Paramètre | Scope | Validations UI | Dual / legacy | Risque |
 |-----------|-------|----------------|---------------|--------|
 | Périodes / mode trimestre-semestre | Établissement | `academicPeriods.ts` (`coercePeriodMode`, `applySystemActivePeriod`) | Notes/évaluations utilisent `terms.id` (PG). Config hub n’alimente pas `terms`. | **P0** |
-| Barème `defaultScale`, types d’évaluation | Établissement | nombres / listes | Types d’évals pédagogie V2 = table `evaluations` ; JSON = référentiel UI | P1 |
-| Niveaux, filières | Établissement | listes lignes | Seed `backend/data.js` `demoLevels` / `demoTracks` si JSON vide | INFO |
+| Barème `defaultScale` | Établissement | nombre | JSON `config_payload` uniquement | INFO |
+| Types d’évaluation `evaluationTypes` | Établissement | liste de libellés, **écran actuel = section année scolaire** (`ConfigurationPage` `savingSection === "evaluations"`) | **Catalogue JSON** dans `config_payload.evaluationTypes`. **Pas** un référentiel porté par la table `evaluations` (voir ci-dessous). Aucune table `evaluation_types`. | P1 |
+| Niveaux, filières | Établissement | listes lignes | JSON `config_payload.levels` / `tracks` ; seed `backend/data.js` `demoLevels` / `demoTracks` si JSON vide. Gérés aujourd’hui par Admin établissement. Cible CTO (non implémentée) : §4.A | INFO |
 | `classNames` / `subjects` | Établissement | listes | **Non synchronisés** avec `classes`, `subjects`, `school_courses` | **P0** |
 | Flags `allowCustom*` | Établissement | booléens | Consommés planning / bulletins côté Web | INFO |
 | Design bulletins | Établissement + classe | Superadmin only UI | JSON dans le même `config_payload` | P1 |
 | Années scolaires relationnelles | Établissement | APIs v2 | `GET/POST /api/v2/academic-years` — **pas** branchées sur le hub Année scolaire | **P1** |
+
+**Types d’évaluation — imprécision à ne pas reproduire.** La table `evaluations` (`backend/db/schema.sql`) stocke des **instances** (un devoir, une interrogation… : `title`, `term_id`, `class_id`, `subject_id`, `max_score`, …). Elle possède `evaluation_type TEXT NOT NULL DEFAULT 'devoir'` : c’est la **valeur portée par chaque instance**, pas un catalogue. Aujourd’hui :
+
+- `school_academic_configs.config_payload.evaluationTypes` = catalogue/configuration actuelle des types (tableau JSON, défauts `["Interrogation", "Devoir", "Examen", …]` dans `residualPgStore.js`) ;
+- `evaluations.evaluation_type` = texte libre sur l’instance (défaut `'devoir'`), **sans FK** vers le JSON ;
+- **il n’existe pas** de table canonique `evaluation_types`.
+
+C’est un écart de modèle (catalogue JSON vs colonne d’instance), pas un second référentiel relationnel. Cible CTO (non implémentée) : §4.C.
 
 **RBAC lecture GET `/api/academic-config`** : tout utilisateur authentifié dans le tenant. **P1**.
 
@@ -147,7 +158,7 @@ Champs JSON typiques : `periodMode`, `periods[]`, `evaluationTypes`, `defaultSca
 | Paramètre | UI | API | Stockage | Écriture canonique ? | Legacy | Risque |
 |-----------|----|-----|----------|----------------------|--------|--------|
 | Matrice globale rôle → permissions | `PermissionsPage` (`/administration/permissions`) | GET/PUT `/api/backoffice/role-permissions` | `role_permissions` | Oui, Super Admin | Seed `data.js` si table vide / login | **P1** |
-| Liste des rôles établissement | `ConfigurationPage` rôles-droits | PUT academic-config (`userRoles`) | JSON `config_payload.userRoles` | Oui (JSON) | Défauts `DEFAULT_USER_ROLES` | INFO |
+| Liste des rôles établissement (`userRoles`, ex. Secrétaire, Préfet, Directeur) | `ConfigurationPage` rôles-droits | PUT academic-config (`userRoles`) | JSON `config_payload.userRoles` | Oui (JSON) | Défauts `DEFAULT_USER_ROLES`. Cible CTO (non implémentée) : §4.B — catalogue Superadmin, établissement = affectation uniquement | INFO |
 | Pilotage local par fonction | `ConfigurationPage.saveRolePilotage` | `platformApi.replaceRolePermissions` | `role_permissions` (global) | **Non pour Admin School** : API refuse hors Super Admin. Toast « Échec de l'enregistrement ». `update({ users })` ensuite est **strippé** (`stripClientClientsFromPutPayload`) | UI laisse croire à un persist établissement | **P0** |
 | Permissions effectives session | Auth login | — | Calculé : seed au mapUser + overlay `rolePermissions` client | Non persisté sur `users` (pas de colonne permissions) | Triple source | **P1** |
 
@@ -220,7 +231,7 @@ Ces objets sont des **données opérationnelles** avec des APIs PG. Le hub Param
 | **Matières V2** | limité | `GET/POST /api/v2/subjects`, `DELETE /api/v2/subjects/:code` | `subjects` | `Matières:*` / `Gérer cours` | JSON `subjects` academic-config ; cours `school_courses` | **P0** |
 | **Cours** | planning / classes | `GET /api/courses` (**auth seul**, pas `requirePermission`) ; POST/PATCH/DELETE avec `POST /api/courses` | `school_courses` | écriture `Gérer cours` | GET via overlay `getAuthoritativeBackOfficeState` | P1 lecture large |
 | **Emploi du temps** | `CoursePlanningPage` | `GET/POST/PATCH/DELETE /api/course-schedules` | `course_schedule_slots` | `POST /api/course-schedules` | Lit aussi `academicConfigs` (périodes JSON) | P1 |
-| **Évaluations** | notes / pédagogie | `POST/PATCH /api/evaluations` + feature abo `write_notes` | `evaluations.term_id` → `terms` | abonnement + auth | **Pas de GET `/api/evaluations` dédié** listé ; types JSON `evaluationTypes` distincts | P1 |
+| **Évaluations (instances)** | notes / pédagogie | `POST/PATCH /api/evaluations` + feature abo `write_notes` | table `evaluations` : instance (`term_id`, `title`, `evaluation_type TEXT DEFAULT 'devoir'`, …). **Pas** un référentiel de types | abonnement + auth | Catalogue actuel = JSON `evaluationTypes`. Aucune table `evaluation_types`. Pas de GET `/api/evaluations` dédié listé | P1 |
 | **Notes** | module Notes | `GET /api/notes` (auth seul) ; `POST /api/notes` + `write_notes` | `grades` | lecture large ; écriture feature | Filtrage principal / parent | P1 |
 | **Présences** | module Présences | `GET /api/presences` (auth) ; `POST` + `write_presence` | `attendance` | idem | Helper mort `savePresencesViaBackOfficeState` (défini, **aucun appelant**) | INFO |
 | **Examens résiduels** | planning exams | `GET/PUT /api/backoffice/planning-exams` | `establishment_residual_records` `record_domain='exam'` JSON | `Organiser/Valider examens` | Table relationnelle `exams` / `exam_results` **en parallèle** (APIs `/api/v2/exams`) | **P1** dual exams |
@@ -329,7 +340,111 @@ Domaines encore en **JSONB résiduel** (écriture possible) : `academicConfigs`,
 
 ---
 
-## 4. Matrice de synthèse
+## 4. Décisions métier CTO — cible validée
+
+**Statut :** arbitrages métier **déjà validés** par le CTO. **Non implémentés** dans cette PR, ni dans le runtime actuel.
+
+Cette section ne décrit **pas** le comportement d’aujourd’hui. L’état constaté reste les sections 1–3 et 6. Les risques P0/P1/P2/INFO de l’audit **ne sont pas relevés** pour « coller » à la cible.
+
+Lecture obligatoire de chaque fiche :
+
+1. **État actuel** (code exécuté) ;
+2. **Problème constaté** (si applicable, déjà chiffré dans l’audit) ;
+3. **Décision métier cible** (lots futurs uniquement).
+
+### 4.A Niveaux / filières / séries / options
+
+**État actuel**
+
+- Stockage : `school_academic_configs.config_payload.levels` et `config_payload.tracks` (JSON, scope **établissement**).
+- UI : Admin établissement, hub Paramètres → **Structure pédagogique** (`ConfigurationPage` section `structure`).
+- Si JSON vide : seed `backend/data.js` `demoLevels` / `demoTracks`.
+- L’établissement **crée librement** le vocabulaire (listes de lignes).
+
+**Problème constaté**
+
+- Référentiel pédagogique **local à l’école**, non partagé par pays.
+- Vocabulaire non gouverné (doublons, libellés divergents entre établissements d’un même pays). Risque audit actuel : **INFO** (pas de dual-write avec une table `levels` / `tracks` — elle n’existe pas).
+
+**Cible validée (ne pas implémenter ici)**
+
+- Propriétaire du **référentiel** = Superadmin.
+- Référentiel idéalement **scopé par pays**.
+- L’établissement **ne crée plus librement** le vocabulaire.
+- Admin établissement **sélectionne / active uniquement** les niveaux et filières proposés pour son établissement.
+
+Cible conceptuelle :
+
+```
+Superadmin
+  → Référentiels pédagogiques
+    → Pays
+      → Niveaux
+      → Filières / séries / options
+
+Puis établissement :
+  → Structure pédagogique
+    → Niveaux / filières activés dans cet établissement
+```
+
+### 4.B Rôles généraux
+
+Exemples visés : Secrétaire, Préfet des études, Directeur, Économe, autres rôles internes génériques.
+
+**État actuel**
+
+- Catalogue local : `config_payload.userRoles` (JSON établissement), UI `ConfigurationPage` rôles-droits.
+- Matrice rôle → permissions : table PG **globale** `role_permissions` ; écriture `PUT /api/backoffice/role-permissions` + `assertSuperAdmin`.
+- Defaults parallèles : `backend/data.js`, `web/src/lib/internalRoleDefaults.ts`, Mobile `catalog.ts`.
+- `mapUser()` injecte le seed, pas la matrice PG.
+- L’UI de **pilotage local** appelle l’API globale et **échoue** pour Admin School (constat **P0**, inchangé).
+
+**Problème constaté**
+
+- Triple source de permissions (**P1**).
+- Confusion de scope : liste de rôles **établissement** vs matrice **plateforme**.
+- Admin établissement peut aujourd’hui **éditer la liste** `userRoles` (création apparente de rôles généraux au niveau école).
+
+**Cible validée (ne pas implémenter ici)**
+
+- Catalogue des **rôles généraux** = Superadmin.
+- Matrice **rôle → permissions** = Superadmin.
+- Admin établissement **ne crée pas** de rôle général privilégié.
+- Admin établissement **affecte uniquement** les rôles autorisés aux utilisateurs de son établissement.
+
+**Recommandation future (modèle, hors lot) :** pour chaque rôle général, prévoir **rôle canonique + permissions + scope / plafond de délégation**.
+
+### 4.C Types d’évaluation
+
+Exemples visés : Devoir, Interrogation, Examen, TP, Oral, Projet, Composition, …
+
+**État actuel**
+
+- Catalogue : `config_payload.evaluationTypes` (tableau JSON établissement).
+- UI actuelle : section **Année scolaire** (`ConfigurationPage` `savingSection === "evaluations"`), **pas** Structure pédagogique.
+- Instances : table `evaluations.evaluation_type` (`TEXT NOT NULL DEFAULT 'devoir'`) — valeur d’instance, **sans** table `evaluation_types`, **sans** FK vers le JSON.
+
+**Problème constaté**
+
+- Pas de table canonique dédiée aux types.
+- Le catalogue JSON et le `TEXT` d’instance peuvent diverger (**P1** factuel, inchangé).
+- L’écran actuel mélange types d’évaluation et paramètres d’année scolaire.
+
+**Cible validée (ne pas implémenter ici)**
+
+```
+Admin établissement
+  → Paramètres
+    → Structure pédagogique
+      → Types d'évaluation
+```
+
+- Le **catalogue est spécifique à l’établissement**.
+- Le Superadmin pourra **éventuellement** fournir plus tard des modèles / suggestions ; l’établissement choisit ses **types opérationnels**.
+
+---
+
+## 5. Matrice de synthèse
 
 Domaine | Paramètre | UI | API | Stockage | Scope | Écriture canonique ? | Legacy résiduel ? | RBAC | Risque | Recommandation future
 --------|-----------|----|-----|----------|-------|----------------------|-------------------|------|--------|----------------------
@@ -337,12 +452,13 @@ Domaine | Paramètre | UI | API | Stockage | Scope | Écriture canonique ? | Leg
 Établissement | `schoolYear` profil | implicite / seed | même PATCH | JSONB `profile_payload.schoolYear` | Établissement | Oui (JSON) | Dual `academic_years` | idem | P1 | Une seule année courante (`academic_years.is_current`) ; profil en lecture dérivée
 Établissement | `primaryColor` / timezone / langue | ComingSoon Apparence | PATCH establishments (clés acceptées, UI absente) | JSONB | Établissement | API oui, UI non | Écran mort | idem | P2 | Brancher l’écran Apparence ou retirer les clés
 Académique | Périodes / mode / barème | `ConfigurationPage` année-scolaire | GET/PUT `/api/academic-config` (+ establishments/…) | `school_academic_configs.config_payload` | Établissement | JSON oui ; **tables `terms` non** | Dual-read `terms` si JSON vide | PUT : Paramètres UPDATE / planning / classes. GET config : auth seul | **P0** | Sync transactionnelle JSON → `academic_years`/`terms` ou UI sur APIs v2
-Académique | Niveaux / filières | `ConfigurationPage` structure | même PUT | JSON | Établissement | Oui JSON | Seed si vide | idem | INFO | Garder JSON référentiel ou table dédiée
+Académique | Niveaux / filières / séries / options | `ConfigurationPage` structure | même PUT | JSON `levels` / `tracks` | Établissement | Oui JSON (vocabulaire **créé par l’école**) | Seed si vide ; **pas** de table `levels`/`tracks` | idem | INFO | **Cible CTO §4.A (non implémentée) :** référentiel Superadmin par pays ; établissement = activation uniquement, plus de création libre du vocabulaire
+Académique | Types d’évaluation | `ConfigurationPage` **année scolaire** (écran actuel) | même PUT (`evaluationTypes`) | JSON `config_payload.evaluationTypes` | Établissement | Oui JSON catalogue | Instances : `evaluations.evaluation_type` TEXT ; **aucune** table `evaluation_types` | idem | P1 | **Cible CTO §4.C (non implémentée) :** catalogue canonique établissement dans Structure pédagogique (Paramètres → Structure → Types d’évaluation). Superadmin = modèles optionnels plus tard, pas le propriétaire opérationnel
 Académique | `classNames` / `subjects` JSON | structure | même PUT | JSON | Établissement | Oui JSON **sans** sync `classes`/`subjects`/`school_courses` | Dual opérationnel | idem | **P0** | Génération / mapping vers classes et matières PG ; interdire double saisie
 Académique | Année scolaire v2 | **pas le hub** | `/api/v2/academic-years` | `academic_years` | Établissement | Oui (autre écran/API) | Hub ignore | Années Académiques READ/WRITE | P1 | Hub Année scolaire → API v2
-Rôles | Matrice globale | `PermissionsPage` | PUT `/api/backoffice/role-permissions` | `role_permissions` | Plateforme | Oui Super Admin | Seed `data.js` + `mapUser` | ALL_PRIVILEGES + `assertSuperAdmin` | P1 | Login doit charger la matrice PG, pas le seed
-Rôles | Liste `userRoles` | `ConfigurationPage` rôles | PUT academic-config | JSON `userRoles` | Établissement | Oui JSON | Défauts Web | Paramètres UPDATE | INFO | Clarifier rôles locaux vs globaux
-Rôles | Pilotage local fonctions | `saveRolePilotage` | PUT role-permissions (global) | `role_permissions` | **Plateforme** (malgré UI école) | **Non** pour Admin School | `update(users)` strippé | ALL_PRIVILEGES | **P0** | Soit matrice établissement, soit retirer le bouton ; ne pas appeler l’API globale
+Rôles | Matrice globale | `PermissionsPage` | PUT `/api/backoffice/role-permissions` | `role_permissions` | Plateforme | Oui Super Admin | Seed `data.js` + `mapUser` | ALL_PRIVILEGES + `assertSuperAdmin` | P1 | **Cible CTO §4.B (non implémentée) :** catalogue Superadmin + permissions centralisées. Login doit charger la matrice PG, pas le seed. Prévoir rôle canonique + permissions + scope/plafond de délégation
+Rôles | Liste `userRoles` (rôles généraux) | `ConfigurationPage` rôles | PUT academic-config | JSON `userRoles` | Établissement | Oui JSON (l’école **édite le catalogue**) | Défauts Web | Paramètres UPDATE | INFO | **Cible CTO §4.B (non implémentée) :** catalogue Superadmin ; établissement = affectation uniquement, pas de création de rôle général privilégié
+Rôles | Pilotage local fonctions | `saveRolePilotage` | PUT role-permissions (global) | `role_permissions` | **Plateforme** (malgré UI école) | **Non** pour Admin School | `update(users)` strippé | ALL_PRIVILEGES | **P0** | Aligné §4.B : retirer l’illusion d’une matrice établissement ; Superadmin = unique écrivain des permissions ; école = affectation de rôles autorisés
 Rôles | Defaults client | — | — | `internalRoleDefaults.ts` / Mobile `catalog.ts` | Build | Non | Triple source | UI | P1 | Une source générée depuis PG
 Utilisateurs | Comptes | Utilisateurs / Contacts | `/api/backoffice/users`, `/api/users` | `users` | Utilisateur / école | Oui | Overlay nommage legacy | Utilisateurs:* | INFO | —
 Utilisateurs | MDP / PIN | Sécurité (lecture) + reset | reset-password ; login | hashes `users` | Utilisateur | Politique **code** | Écran non éditable | UPDATE utilisateurs | P1 | Si politique un jour configurable : table + écran
@@ -351,7 +467,7 @@ Enseignants | Fiches / cycle de vie | TeachersList | `/api/teachers`, assignment
 Élèves | Fiches / inscriptions | Élèves | `/api/students`, classes/students | `students`, `enrollments` | Établissement | Oui | Restore JSON no-op | Élèves:* | **P0** (restore) | Restore serveur ou retirer le bouton
 Pédagogie | Classes PG | Classes | `/api/classes` | `classes` | École + année | Oui | Dual JSON names | Gérer classes | P0 (dual) | Voir structure
 Pédagogie | Cours / EDT | Planning | `/api/courses`, `/api/course-schedules` | `school_courses`, `course_schedule_slots` | École | Oui | GET courses sans permission fine | Gérer cours | P1 | Aligner GET sur `requirePermission`
-Pédagogie | Notes / présences | modules ops | `/api/notes`, `/api/presences`, evaluations | `grades`, `attendance`, `evaluations` | École / élève | Oui | GET auth-only ; feature abo en écriture | write_notes / write_presence | P1 | Permissions lecture explicites
+Pédagogie | Notes / présences / instances d’évaluation | modules ops | `/api/notes`, `/api/presences`, POST/PATCH `/api/evaluations` | `grades`, `attendance`, `evaluations` (instances ; `evaluation_type` TEXT) | École / élève | Oui pour l’instance | GET auth-only ; feature abo en écriture ; types catalogue = JSON distinct | write_notes / write_presence | P1 | Permissions lecture explicites. Types : voir ligne Académique « Types d’évaluation » / §4.C — **ne pas** traiter `evaluations` comme un référentiel de types
 Pédagogie | Examens JSON vs V2 | planning | PUT planning-exams vs `/api/v2/exams` | residual JSON vs `exams` | École | Deux écritures | Dual | Examens:* | P1 | Une SoT examens
 Pédagogie | Bulletins / documents JSON | Documents (design) + listing | PUT report-cards / establishment-documents | residual JSON | École | Replace-all | Oui | Documents/Bulletins | P1 | CRUD item, pas replace-all
 Finance | Hub « Paramètres Finances » | ComingSoon | aucune | — | — | Non | Ops Finance ailleurs | — | P2 | Pointer vers fee-grids / payment-statuses
@@ -369,11 +485,11 @@ Legacy | Restore JSON | Données | `DataContext.update` | strips | École | **No
 Mobile | Hub Configuration | `ConfigurationScreen` | GET academic-config | JSON + résumé | École | Édition périodes **absente** | Cartes mortes | Configuration view | P2 | Naviguer vers éditeurs ou retirer cartes
 BackOffice | App autonome | `BackOffice/app.js` | redirect `/web/` | — | — | Non | Coquille | — | INFO | Retirer artefact déploiement
 
-Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **pas** implémentées dans cette PR.
+Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **pas** implémentées dans cette PR. Les trois cibles CTO (§4.A/B/C) y figurent pour les lots suivants uniquement.
 
 ---
 
-## 5. Synthèse des constats par criticité
+## 6. Synthèse des constats par criticité
 
 ### P0
 
@@ -396,6 +512,7 @@ Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **
 - GET `/api/courses`, `/api/notes`, `/api/presences` : auth sans permission de feature.
 - Notifications plateforme vs announcements établissement ; policy pays vs `subscription_offers`.
 - Hub Année scolaire ignoré par `/api/v2/academic-years`.
+- Types d’évaluation : catalogue JSON `evaluationTypes` (écran année scolaire) vs `evaluations.evaluation_type` (TEXT d’instance, défaut `'devoir'`). **Pas** de table `evaluation_types`. Ce n’est **pas** un référentiel porté par `evaluations`.
 
 ### P2
 
@@ -415,7 +532,7 @@ Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **
 
 ---
 
-## 6. Fichiers et fonctions principales cités (index)
+## 7. Fichiers et fonctions principales cités (index)
 
 | Zone | Chemins |
 |------|---------|
@@ -432,13 +549,14 @@ Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **
 
 ---
 
-## 7. Confirmation d’absence de correctif
+## 8. Confirmation d’absence de correctif
 
-Cette PR ajoute **uniquement** le présent fichier documentaire.
+Cette PR ne contient **que** le présent fichier documentaire.
 
 - **Aucun correctif fonctionnel** (backend, Web, Mobile, BackOffice).
 - **Aucune migration SQL**, aucun changement de schéma, aucun changement RBAC.
 - **Aucun nettoyage legacy**, aucun renommage, aucun test applicatif modifié.
 - **Aucune suppression** de donnée ni de fichier applicatif.
+- Les **décisions CTO §4** sont des **cibles** ; le runtime n’a pas changé.
 
-Les colonnes « Recommandation future » préparent des lots ultérieurs ; elles ne constituent pas un plan d’exécution dans cette PR.
+Les colonnes « Recommandation future » et la section 4 préparent des lots ultérieurs ; elles ne constituent pas un plan d’exécution dans cette PR.
