@@ -434,11 +434,16 @@ class FallbackRepository {
       );
     const seedUserIndex = seedData.userAccounts.findIndex(matchesLookup);
     const stateUser = existingStateUsers.find(matchesLookup);
+    const clientsUser = this.getClientsStore().resetUserPassword(lookupKeys, temporaryPassword);
 
-    if (!stateUser && seedUserIndex === -1) {
+    if (!stateUser && seedUserIndex === -1 && !clientsUser) {
       const error = new Error("Utilisateur introuvable");
       error.statusCode = 404;
       throw error;
+    }
+
+    if (clientsUser) {
+      return clone(clientsUser);
     }
 
     const sourceUser = stateUser ?? seedData.userAccounts[seedUserIndex];
@@ -482,11 +487,16 @@ class FallbackRepository {
       );
     const seedUserIndex = seedData.userAccounts.findIndex(matchesLookup);
     const stateUser = existingStateUsers.find(matchesLookup);
+    const clientsUser = this.getClientsStore().changeUserPassword(lookupKeys, newPassword);
 
-    if (!stateUser && seedUserIndex === -1) {
+    if (!stateUser && seedUserIndex === -1 && !clientsUser) {
       const error = new Error("Utilisateur introuvable");
       error.statusCode = 404;
       throw error;
+    }
+
+    if (clientsUser) {
+      return clone(clientsUser);
     }
 
     const sourceUser = stateUser ?? seedData.userAccounts[seedUserIndex];
@@ -2095,6 +2105,10 @@ class FallbackRepository {
 
   listClientsProjection() {
     return Promise.resolve(this.getClientsStore().listProjection());
+  }
+
+  listClientsAuthAccounts() {
+    return Promise.resolve(this.getClientsStore().listAuthAccounts());
   }
 
   createClientsUser(payload, principal, auditMeta) {

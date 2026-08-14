@@ -526,11 +526,17 @@ class PostgresRepository {
     return this.getClientsStore().listProjection();
   }
 
+  listClientsAuthAccounts() {
+    return Promise.resolve([]);
+  }
+
   createClientsUser(payload, principal, auditMeta) {
+    this.cachedDataset = null;
     return this.getClientsStore().createUser(payload, principal, auditMeta);
   }
 
   updateClientsUser(id, patch, principal, auditMeta) {
+    this.cachedDataset = null;
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
   }
 
@@ -543,6 +549,7 @@ class PostgresRepository {
   }
 
   provisionClientsContactAccount(contactId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
     return this.getClientsStore().provisionContactAccount(contactId, payload, principal, auditMeta);
   }
 

@@ -2110,6 +2110,7 @@ async function getRuntime() {
   applyStoredStatusOverlay(dataset, storedState);
   applyStoredSchoolOverlay(dataset, storedState);
   applyStoredUserOverlay(dataset, storedState);
+  await applyClientsAuthOverlay(dataset);
   // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
   const mergedStudents = dataset.students ?? [];
   const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
@@ -2306,6 +2307,46 @@ function normalizeBackOfficeUserCredentials(user = {}) {
   }
 
   return next;
+}
+
+async function applyClientsAuthOverlay(dataset) {
+  if (!dataset || typeof repository.listClientsAuthAccounts !== "function") {
+    return;
+  }
+
+  const authAccounts = await repository.listClientsAuthAccounts();
+  if (!Array.isArray(authAccounts) || authAccounts.length === 0) {
+    return;
+  }
+
+  const byPrimaryKey = new Map();
+  const aliasToPrimaryKey = new Map();
+
+  const registerUser = (user, primaryKey) => {
+    if (!primaryKey || !user) {
+      return;
+    }
+    byPrimaryKey.set(primaryKey, user);
+    for (const alias of userOverlayKeys(user)) {
+      aliasToPrimaryKey.set(alias, primaryKey);
+    }
+  };
+
+  for (const user of dataset.userAccounts ?? []) {
+    registerUser(user, resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey));
+  }
+
+  for (const stored of authAccounts) {
+    const primaryKey = resolveUserOverlayPrimaryKey(stored, aliasToPrimaryKey);
+    if (!primaryKey) {
+      continue;
+    }
+    const base = byPrimaryKey.get(primaryKey) ?? {};
+    const merged = normalizeBackOfficeUserCredentials({ ...base, ...stored });
+    registerUser(merged, primaryKey);
+  }
+
+  dataset.userAccounts = [...byPrimaryKey.values()];
 }
 
 function applyStoredUserOverlay(dataset, storedState) {

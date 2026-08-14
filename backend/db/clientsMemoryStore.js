@@ -2,10 +2,12 @@
 
 const { randomUUID } = require("node:crypto");
 const clientsService = require("../lib/clientsService");
+const { hashSecret } = require("../services/credentialService");
 const {
   asTrimmed,
   parsePayload,
   mapUserRow,
+  mapUserRowToAuthAccount,
   mapContactRow,
   mapRelationRow,
   mapMessageRow,
@@ -390,6 +392,91 @@ function createClientsMemoryStore(seed = {}) {
         });
       });
       return { users, contacts, relations, messages, announcements };
+    },
+    listAuthAccounts() {
+      return tables.users.map((row) => {
+        const school = tables.schools.find((item) => item.id === row.school_id);
+        return mapUserRowToAuthAccount({
+          ...row,
+          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+          country_code: school?.countryCode ?? "CD",
+          country_name: school?.country ?? "RDC",
+        });
+      });
+    },
+    changeUserPassword(lookupKeys, newPassword) {
+      const keys = new Set(
+        (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      const index = tables.users.findIndex((row) => {
+        const school = tables.schools.find((item) => item.id === row.school_id);
+        const mapped = mapUserRowToAuthAccount({
+          ...row,
+          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+          country_code: school?.countryCode ?? "CD",
+          country_name: school?.country ?? "RDC",
+        });
+        return [mapped.id, mapped.publicId, mapped.identifier].some((value) =>
+          keys.has(String(value ?? "").trim()),
+        );
+      });
+      if (index < 0) {
+        return null;
+      }
+      const secretHash = hashSecret(newPassword);
+      tables.users[index] = {
+        ...tables.users[index],
+        password_hash: secretHash,
+        pin_hash: secretHash,
+        must_change_password: false,
+        updated_at: new Date(),
+      };
+      const school = tables.schools.find((item) => item.id === tables.users[index].school_id);
+      return mapUserRowToAuthAccount({
+        ...tables.users[index],
+        school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+        country_code: school?.countryCode ?? "CD",
+        country_name: school?.country ?? "RDC",
+      });
+    },
+    resetUserPassword(lookupKeys, temporaryPassword) {
+      const keys = new Set(
+        (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      const index = tables.users.findIndex((row) => {
+        const school = tables.schools.find((item) => item.id === row.school_id);
+        const mapped = mapUserRowToAuthAccount({
+          ...row,
+          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+          country_code: school?.countryCode ?? "CD",
+          country_name: school?.country ?? "RDC",
+        });
+        return [mapped.id, mapped.publicId, mapped.identifier].some((value) =>
+          keys.has(String(value ?? "").trim()),
+        );
+      });
+      if (index < 0) {
+        return null;
+      }
+      const secretHash = hashSecret(temporaryPassword);
+      tables.users[index] = {
+        ...tables.users[index],
+        password_hash: secretHash,
+        pin_hash: secretHash,
+        must_change_password: true,
+        updated_at: new Date(),
+      };
+      const school = tables.schools.find((item) => item.id === tables.users[index].school_id);
+      return mapUserRowToAuthAccount({
+        ...tables.users[index],
+        school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+        country_code: school?.countryCode ?? "CD",
+        country_name: school?.country ?? "RDC",
+      });
     },
     createUser: (...args) => clientsService.createUser(store, ...args),
     updateUser: (...args) => clientsService.updateUser(store, ...args),

@@ -109,7 +109,6 @@ async function main() {
     await request(`/finance/fee-grids/${encodeURIComponent(grid.data.id)}/activate`, { method: "POST", token: adminToken });
     await request(`/finance/fee-grids/${encodeURIComponent(grid.data.id)}/apply`, { method: "POST", token: adminToken });
 
-    const state = await request("/backoffice/state", { token: adminToken });
     const accountantUser = {
       id: `USER-CPT-${stamp}`,
       firstName: "Compta",
@@ -143,16 +142,30 @@ async function main() {
       password: "E2eTest!2026",
       temporaryPassword: "E2eTest!2026",
     };
-    const usersPut = await request("/backoffice/state", {
-      method: "PUT",
-      token: adminToken,
-      body: { users: [...(state.data.users ?? []), accountantUser, secretaryUser, directorUser] },
-    });
-    assert.ok(usersPut.status >= 200 && usersPut.status < 300, JSON.stringify(usersPut.data));
+    async function createStaffUser(userPayload) {
+      const created = await request("/backoffice/users", {
+        method: "POST",
+        token: adminToken,
+        body: {
+          firstName: userPayload.firstName,
+          lastName: userPayload.lastName,
+          role: userPayload.role,
+          schoolCode: userPayload.schoolCode,
+          status: userPayload.status,
+          temporaryPassword: userPayload.temporaryPassword || userPayload.password,
+        },
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.data));
+      return created.data;
+    }
 
-    const accountantToken = await login(accountantUser.identifier, "E2eTest!2026", "CD-2026-0001");
-    const secretaryToken = await login(secretaryUser.identifier, "E2eTest!2026", "CD-2026-0001");
-    const directorToken = await login(directorUser.identifier, "E2eTest!2026", "CD-2026-0001");
+    const accountant = await createStaffUser(accountantUser);
+    const secretary = await createStaffUser(secretaryUser);
+    const director = await createStaffUser(directorUser);
+
+    const accountantToken = await login(accountant.identifier, "E2eTest!2026", "CD-2026-0001");
+    const secretaryToken = await login(secretary.identifier, "E2eTest!2026", "CD-2026-0001");
+    const directorToken = await login(director.identifier, "E2eTest!2026", "CD-2026-0001");
     const superToken = await login("superadmin", "1234");
     const prefetToken = await login("prefet", "1234", "CD-2026-0001");
     const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");

@@ -1029,7 +1029,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     const nextAllRows = mergeResult.rows;
     const patch: Partial<BackOfficeState> = buildPedagogyPatch(module.key, nextItem, nextAllRows);
 
-    let successMessage = entityMutationSuccessMessage(module.label, exists);
+    const successMessage = entityMutationSuccessMessage(module.label, exists);
 
     const genericAudit = appendGenericMutationAudit(
       state.auditLog,

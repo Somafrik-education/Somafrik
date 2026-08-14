@@ -305,6 +305,20 @@ function mapAnnouncementRow(row) {
   };
 }
 
+function mapUserRowToAuthAccount(row) {
+  const user = mapUserRow(row);
+  const passwordHash = row.password_hash ?? row.passwordHash ?? null;
+  const pinHash = row.pin_hash ?? row.pinHash ?? passwordHash;
+  return {
+    ...user,
+    passwordHash,
+    pinHash,
+    mustChangePassword:
+      row.must_change_password != null ? Boolean(row.must_change_password) : user.mustChangePassword,
+    hasTemporaryPassword: Boolean(row.must_change_password ?? user.mustChangePassword),
+  };
+}
+
 module.exports = {
   CLIENTS_ERROR,
   ROLE_TO_DB,
@@ -328,6 +342,7 @@ module.exports = {
   generateUserCode,
   resolveUserIdentifier,
   mapUserRow,
+  mapUserRowToAuthAccount,
   mapContactRow,
   mapRelationRow,
   mapMessageRow,

@@ -274,16 +274,22 @@ async function runHttpTestsIfAvailable() {
     mustChangePassword: false,
     permissions: ["Gérer paiements", "Voir rapports financiers", "Paiements:CREATE", "Paiements:UPDATE"],
   };
-  const putComptable = await request("/backoffice/state", {
-    method: "PUT",
+  const createComptable = await request("/backoffice/users", {
+    method: "POST",
     token: schoolAdmin.accessToken,
     body: {
-      users: [...(state.users ?? []).filter((u) => u.id !== comptableUser.id), comptableUser],
+      firstName: comptableUser.firstName,
+      lastName: comptableUser.lastName,
+      role: comptableUser.role,
+      email: comptableUser.email,
+      schoolCode: comptableUser.schoolCode,
+      status: comptableUser.status,
+      temporaryPassword: comptableUser.temporaryPassword,
     },
   });
-  assert.ok(putComptable.status >= 200 && putComptable.status < 300, `create comptable: ${putComptable.status}`);
+  assert.strictEqual(createComptable.status, 201, `create comptable: ${createComptable.status}`);
 
-  const accountant = await login("comptable-s14", "Soma1234", "CD-2026-0001");
+  const accountant = await login(comptableUser.email, "Soma1234", "CD-2026-0001");
 
   // A1/A2 — LOT 2 : toute présence de students est refusée avant la matrice RBAC.
   for (const [label, token] of [
