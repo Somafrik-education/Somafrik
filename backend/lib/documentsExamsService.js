@@ -180,6 +180,17 @@ async function listTemplates(repo, principal, schoolCode) {
   return store.listTemplates(school.id);
 }
 
+async function resolveBulletinLayoutForStudent(repo, student) {
+  const schoolCode = asTrimmed(student?.schoolCode ?? student?.school?.code).toUpperCase();
+  const className = asTrimmed(student?.className ?? student?.class?.name);
+  if (!schoolCode || !className) return null;
+  const store = recordsStore(repo);
+  const school = typeof store.getSchoolByCode === "function" ? await store.getSchoolByCode(schoolCode) : null;
+  if (!school) return null;
+  if (typeof store.resolveActiveBulletinLayout !== "function") return null;
+  return store.resolveActiveBulletinLayout(school.id, className);
+}
+
 async function upsertTemplate(repo, payload, principal, auditMeta, schoolCode) {
   return mutate(repo, principal, auditMeta, schoolCode, assertDocumentsRead, assertTemplatesWrite, async (store, school, scopedSchool) => {
     const saved = await store.upsertTemplate(school.id, payload);
@@ -299,6 +310,7 @@ module.exports = {
   publishReportCard,
   archiveReportCard,
   listTemplates,
+  resolveBulletinLayoutForStudent,
   upsertTemplate,
   archiveTemplate,
   listSchoolDocuments,

@@ -102,13 +102,30 @@ const adminA = {
   role: "Admin School",
   sub: "admin-a",
   schoolCode: "CD-2026-0001",
-  permissions: ["Organiser examens", "Valider examens", "Bulletins:UPDATE", "Documents:UPDATE", "Conception bulletins"],
+  permissions: [
+    "Organiser examens",
+    "Valider examens",
+    "Examens:READ",
+    "Bulletins:READ",
+    "Bulletins:UPDATE",
+    "Documents:READ",
+    "Documents:UPDATE",
+    "Conception bulletins",
+  ],
 };
 const adminB = {
   role: "Admin School",
   sub: "admin-b",
   schoolCode: "BI-2026-0002",
-  permissions: ["Organiser examens", "Valider examens", "Bulletins:UPDATE", "Documents:UPDATE"],
+  permissions: [
+    "Organiser examens",
+    "Valider examens",
+    "Examens:READ",
+    "Bulletins:READ",
+    "Bulletins:UPDATE",
+    "Documents:READ",
+    "Documents:UPDATE",
+  ],
 };
 
 async function resetBaseSchema(pool) {
@@ -137,7 +154,7 @@ async function seedSchools(pool) {
   return { schoolAId: schoolA.rows[0].id, schoolBId: schoolB.rows[0].id };
 }
 
-async function seedAcademic(pool, schoolId, { closedYear = false } = {}) {
+async function seedAcademic(pool, schoolId, { closedYear = false, suffix = "A" } = {}) {
   const year = await pool.query(
     `INSERT INTO academic_years (school_id, name, status, is_current)
      VALUES ($1, '2025-2026', $2, TRUE) RETURNING id`,
@@ -149,13 +166,13 @@ async function seedAcademic(pool, schoolId, { closedYear = false } = {}) {
   );
   const klass = await pool.query(
     `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
-     VALUES ($1, $2, 'CLS-6A', '6ème A', 'active') RETURNING id`,
-    [schoolId, year.rows[0].id],
+     VALUES ($1, $2, $3, '6ème A', 'active') RETURNING id`,
+    [schoolId, year.rows[0].id, `CLS-6A-${suffix}`],
   );
   const subject = await pool.query(
     `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
-     VALUES ($1, 'SUB-MATH', 'Mathématiques', 2, 'active') RETURNING id`,
-    [schoolId],
+     VALUES ($1, $2, 'Mathématiques', 2, 'active') RETURNING id`,
+    [schoolId, `SUB-MATH-${suffix}`],
   );
   return {
     yearId: year.rows[0].id,
@@ -190,8 +207,8 @@ async function insertResidual(pool, schoolId, domain, legacyId, payload) {
 async function testExamCanonicalFlow(pool) {
   await resetBaseSchema(pool);
   const { schoolAId, schoolBId } = await seedSchools(pool);
-  const refsA = await seedAcademic(pool, schoolAId);
-  const refsB = await seedAcademic(pool, schoolBId);
+  const refsA = await seedAcademic(pool, schoolAId, { suffix: "A" });
+  const refsB = await seedAcademic(pool, schoolBId, { suffix: "B" });
   const repo = createRepo(pool);
   const exam = await createExam(
     repo,
@@ -251,7 +268,7 @@ async function testExamCanonicalFlow(pool) {
 async function testClosedYearRejected(pool) {
   await resetBaseSchema(pool);
   const { schoolAId } = await seedSchools(pool);
-  const refs = await seedAcademic(pool, schoolAId, { closedYear: true });
+  const refs = await seedAcademic(pool, schoolAId, { closedYear: true, suffix: "C" });
   const repo = createRepo(pool);
   await assert.rejects(
     () =>
@@ -384,6 +401,10 @@ async function testTemplatesAndDocuments(pool) {
     {},
   );
   assert.equal(classTemplate.classId, refs.classId);
+  const layoutForClass = await repo.getDocumentsExamsStore().resolveActiveBulletinLayout(schoolAId, "6ème A");
+  assert.equal(layoutForClass.reportTitle, "Bulletin 6A");
+  const layoutDefault = await repo.getDocumentsExamsStore().resolveActiveBulletinLayout(schoolAId, "Classe inconnue");
+  assert.equal(layoutDefault.reportTitle, "Bulletin école");
   const updated = await upsertTemplate(
     repo,
     { classId: refs.classId, templateType: "bulletin", layout: { reportTitle: "Bulletin 6A v2" } },

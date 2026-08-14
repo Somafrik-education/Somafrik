@@ -1,20 +1,15 @@
-function readBulletinDesignFromConfig(config = {}, className) {
-  const designs = config.bulletinDesignByClass;
-  if (!designs || typeof designs !== "object" || Array.isArray(designs)) {
-    return null;
-  }
-  const row = designs[className];
-  return row && typeof row === "object" && !Array.isArray(row) ? row : null;
+function readBulletinDesignFromConfig(_config = {}, _className) {
+  // LOT 5 : academicConfigs.bulletinDesignByClass n'est plus une source de vérité.
+  // Le layout canonique vit dans report_card_templates (PostgreSQL).
+  void _config;
+  void _className;
+  return null;
 }
 
-function resolveBulletinDesignForStudent(state = {}, student = {}) {
-  const schoolCode = String(student.schoolCode ?? student.school?.code ?? "").trim();
-  const className = String(student.className ?? student.class?.name ?? "").trim();
-  if (!schoolCode || !className) {
-    return null;
-  }
-  const config = state.academicConfigs?.[schoolCode] ?? {};
-  return readBulletinDesignFromConfig(config, className);
+function resolveBulletinDesignForStudent(_state = {}, _student = {}) {
+  void _state;
+  void _student;
+  return null;
 }
 
 function applyBulletinDesignToReport(report = {}, design) {

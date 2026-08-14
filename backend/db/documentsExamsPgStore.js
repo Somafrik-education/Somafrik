@@ -342,6 +342,10 @@ function createDocumentsExamsPgStore(repo) {
     return body && Object.prototype.hasOwnProperty.call(body, key);
   }
 
+  function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value ?? ""));
+  }
+
   async function setExamStatus(schoolId, examId, status) {
     const next = canonicalizeExamStatus(status);
     if (!next) throw createDocumentsExamsError(400, "Statut d'examen invalide.", DOCUMENTS_EXAMS_ERROR.INVALID_STATUS);
@@ -511,6 +515,36 @@ function createDocumentsExamsPgStore(repo) {
     return mapTemplateRow(row);
   }
 
+  async function resolveActiveBulletinLayout(schoolId, className) {
+    const name = asTrimmed(className);
+    if (name) {
+      const classSpecific = await one(
+        `SELECT t.layout
+         FROM report_card_templates t
+         JOIN classes c ON c.id = t.class_id
+         WHERE t.school_id = $1
+           AND t.status = 'active'
+           AND t.template_type = 'bulletin'
+           AND lower(btrim(c.name)) = lower(btrim($2))
+         ORDER BY t.updated_at DESC
+         LIMIT 1`,
+        [schoolId, name],
+      );
+      if (classSpecific?.layout && typeof classSpecific.layout === "object") {
+        return classSpecific.layout;
+      }
+    }
+    const fallback = await one(
+      `SELECT layout
+       FROM report_card_templates
+       WHERE school_id = $1 AND class_id IS NULL AND status = 'active' AND template_type = 'bulletin'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [schoolId],
+    );
+    return fallback?.layout && typeof fallback.layout === "object" ? fallback.layout : null;
+  }
+
   async function listSchoolDocuments(schoolId) {
     const rows = await all(
       `SELECT d.*, s.school_code, st.first_name, st.last_name
@@ -550,7 +584,7 @@ function createDocumentsExamsPgStore(repo) {
         asTrimmed(body.storageKey) || null,
         asTrimmed(body.mimeType) || null,
         asTrimmed(body.status) || "available",
-        createdBy || null,
+        isUuid(createdBy) ? createdBy : null,
       ],
     );
     return mapSchoolDocumentRow(row);
@@ -689,6 +723,7 @@ function createDocumentsExamsPgStore(repo) {
     upsertTemplate,
     getTemplate,
     archiveTemplate,
+    resolveActiveBulletinLayout,
     listSchoolDocuments,
     insertSchoolDocument,
     updateSchoolDocument,

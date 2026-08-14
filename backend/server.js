@@ -39,10 +39,7 @@ const { resolveParentChildren } = require("./lib/parentChildren");
 const { classNamesMatch, normalizePresenceDay } = require("./lib/dataIntegrityRules");
 const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("./lib/countryScope");
 const { buildDesignPreviewReport } = require("./lib/bulletinDesignPreview");
-const {
-  applyBulletinDesignToReport,
-  resolveBulletinDesignForStudent,
-} = require("./lib/bulletinDesignResolver");
+const { applyBulletinDesignToReport } = require("./lib/bulletinDesignResolver");
 const { renderReportCardPdf, renderReportCardPreviewHtml } = require("./services/bulletinPdfRenderer");
 const { dedupeBackOfficeState } = require("./lib/backofficeDedupe");
 const {
@@ -1287,7 +1284,7 @@ app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /a
 
 app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async () => {
   const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
-  assertLegacyResidualWriteForbidden("exam");
+  assertLegacyResidualWriteForbidden("exam"); // LEGACY_EXAMS_WRITE_FORBIDDEN
 }));
 
 app.get("/api/backoffice/report-cards", requireAuth, requirePermission("GET /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
@@ -1297,7 +1294,7 @@ app.get("/api/backoffice/report-cards", requireAuth, requirePermission("GET /api
 
 app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async () => {
   const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
-  assertLegacyResidualWriteForbidden("bulletin");
+  assertLegacyResidualWriteForbidden("bulletin"); // LEGACY_REPORT_CARDS_WRITE_FORBIDDEN
 }));
 
 app.get("/api/backoffice/establishment-documents", requireAuth, requirePermission("GET /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
@@ -1307,7 +1304,7 @@ app.get("/api/backoffice/establishment-documents", requireAuth, requirePermissio
 
 app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async () => {
   const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
-  assertLegacyResidualWriteForbidden("document");
+  assertLegacyResidualWriteForbidden("document"); // LEGACY_DOCUMENTS_WRITE_FORBIDDEN
 }));
 
 app.get("/api/students", requireAuth, requirePermission("GET /api/students"), asyncHandler(async (req, res) => {
@@ -1531,7 +1528,8 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
   }
 
   const period = req.query.period ? String(req.query.period) : "Trimestre 1";
-  const design = resolveBulletinDesignForStudent(backOfficeState, student);
+  const { resolveBulletinLayoutForStudent } = require("./lib/documentsExamsService");
+  const design = await resolveBulletinLayoutForStudent(repository, student);
   const baseReport = gradeBookService.generateReport(student.id, period, "Publié");
   const report = applyBulletinDesignToReport(baseReport, design);
   const pdf = await reportPdfService.generateReportCardPdf(report);

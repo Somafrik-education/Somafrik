@@ -56,7 +56,6 @@ test("validateTemplateLayout refuse les données métier dans le layout", () => 
   const layout = validateTemplateLayout({
     reportTitle: "Bulletin",
     showRank: true,
-    grades: undefined,
     unknownKey: "drop",
   });
   assert.equal(layout.reportTitle, "Bulletin");
@@ -101,4 +100,17 @@ test("classifyResidualReportCard et document STOP si non appariés", () => {
   assert.equal(card.ambiguous, true);
   const doc = classifyResidualDocument({ title: "Attestation fantôme" }, { relationalDocuments: [] });
   assert.equal(doc.ambiguous, true);
+});
+
+test("resolveBulletinDesignForStudent n'utilise plus academicConfigs JSON", () => {
+  const { resolveBulletinDesignForStudent, readBulletinDesignFromConfig } = require("./bulletinDesignResolver");
+  const state = {
+    academicConfigs: {
+      "CD-2026-0001": {
+        bulletinDesignByClass: { "6ème A": { reportTitle: "JSON interdit" } },
+      },
+    },
+  };
+  assert.equal(resolveBulletinDesignForStudent(state, { schoolCode: "CD-2026-0001", className: "6ème A" }), null);
+  assert.equal(readBulletinDesignFromConfig(state.academicConfigs["CD-2026-0001"], "6ème A"), null);
 });

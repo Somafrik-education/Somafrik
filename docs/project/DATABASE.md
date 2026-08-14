@@ -128,6 +128,8 @@ Migration SQL : `backend/db/migrations/20260818_school_settings_canonical.sql`.
 
 `PUT /api/backoffice/planning-exams` / `report-cards` / `establishment-documents` → `400 LEGACY_*_WRITE_FORBIDDEN`. GET = projection relationnelle.
 
+`GET /api/students/:id/report.pdf` applique le layout depuis `report_card_templates` (classe puis défaut établissement). `academicConfigs.bulletinDesignByClass` n'est plus lu.
+
 **Boot** : preflight → schéma → inventaire residual exam/bulletin/document → STOP si non exactement équivalent (`LEGACY_*_AMBIGUOUS`) → strip. Aucune création heuristique d'examen / élève / classe.
 
 Migration SQL : `backend/db/migrations/20260819_exams_report_cards_documents_canonical.sql`.

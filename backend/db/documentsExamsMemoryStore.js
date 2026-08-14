@@ -50,6 +50,9 @@ function createDocumentsExamsMemoryStore(seed = {}) {
     registerSchool(school) {
       return rememberSchool(school);
     },
+    async getSchoolByCode(schoolCode) {
+      return schoolByCode(schoolCode);
+    },
     async requireSchoolByCode(schoolCode) {
       const school = schoolByCode(schoolCode);
       if (!school) {
@@ -254,6 +257,26 @@ function createDocumentsExamsMemoryStore(seed = {}) {
       row.status = "archived";
       row.updated_at = new Date().toISOString();
       return mapTemplateRow(row, { schoolCode: row.school_code, className: row.class_name });
+    },
+    async resolveActiveBulletinLayout(schoolId, className) {
+      const name = asTrimmed(className).toLowerCase();
+      const classMatch = templates.find(
+        (row) =>
+          row.school_id === schoolId &&
+          row.status === "active" &&
+          row.template_type === "bulletin" &&
+          name &&
+          String(row.class_name ?? "").trim().toLowerCase() === name,
+      );
+      if (classMatch?.layout) return classMatch.layout;
+      const fallback = templates.find(
+        (row) =>
+          row.school_id === schoolId &&
+          row.status === "active" &&
+          row.template_type === "bulletin" &&
+          (row.class_id == null || row.class_id === ""),
+      );
+      return fallback?.layout ?? null;
     },
     async listSchoolDocuments(schoolId) {
       return documents.filter((row) => row.school_id === schoolId).map((row) => mapSchoolDocumentRow(row, {
