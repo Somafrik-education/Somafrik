@@ -18,7 +18,35 @@ function stripClientSchoolCode(payload = {}) {
   return rest;
 }
 
+function scopeResidualItems(schoolCode, items = []) {
+  const scopedSchoolCode = String(schoolCode ?? "")
+    .trim()
+    .toUpperCase();
+  if (!scopedSchoolCode || scopedSchoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+
+  const list = Array.isArray(items) ? items : [];
+  for (const item of list) {
+    const itemSchoolCode = String(item?.schoolCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (itemSchoolCode && itemSchoolCode !== scopedSchoolCode) {
+      throw new BusinessError(
+        400,
+        `Élément hors périmètre établissement (${itemSchoolCode} ≠ ${scopedSchoolCode}).`,
+      );
+    }
+  }
+
+  return list.map((item) => ({
+    ...(item && typeof item === "object" ? item : {}),
+    schoolCode: scopedSchoolCode,
+  }));
+}
+
 module.exports = {
   resolvePrincipalSchoolCode,
   stripClientSchoolCode,
+  scopeResidualItems,
 };

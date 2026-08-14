@@ -245,7 +245,49 @@ async function runResidualGuards(superToken) {
   const auditAfterReplace = await countAuditRows(superToken, { action: "replace_residual_exam", schoolCode: "CD-2026-0001" });
   assert.ok(auditAfterReplace > auditBeforeReplace, "audit transactionnel attendu sur remplacement autorisé");
 
-  console.log("OK http: RBAC résiduel, isolation CD/BI, projection vide, audit");
+  await request("/backoffice/planning-exams", {
+    method: "PUT",
+    token: adminCd,
+    body: {
+      exams: [{ id: "EXAM-KEEP-CD", schoolCode: "CD-2026-0001", title: "Canonique CD" }],
+    },
+  });
+
+  const foreignCases = [
+    ["/backoffice/planning-exams", "exams", { id: "EXAM-FOREIGN", schoolCode: "BI-2026-0002", title: "Inject" }],
+    ["/backoffice/report-cards", "bulletins", { id: "BUL-FOREIGN", schoolCode: "BI-2026-0002", title: "Inject" }],
+    [
+      "/backoffice/establishment-documents",
+      "documents",
+      { id: "DOC-FOREIGN", schoolCode: "BI-2026-0002", title: "Inject" },
+    ],
+  ];
+
+  for (const [route, key, item] of foreignCases) {
+    const auditAction = `replace_residual_${key === "exams" ? "exam" : key === "bulletins" ? "bulletin" : "document"}`;
+    const auditBefore = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
+    const rejected = await request(route, {
+      method: "PUT",
+      token: adminCd,
+      body: { [key]: [item] },
+    });
+    assert.equal(rejected.status, 400, `${route} doit rejeter schoolCode imbriqué BI`);
+    const auditAfter = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
+    assert.equal(auditAfter, auditBefore, `${route} ne doit pas auditer un payload rejeté`);
+  }
+
+  const preservedState = await request("/backoffice/state", { token: adminCd });
+  assert.equal(preservedState.status, 200);
+  assert.ok(
+    (preservedState.data?.exams ?? []).some((exam) => exam.id === "EXAM-KEEP-CD"),
+    "les éléments CD existants ne doivent pas être archivés par un payload étranger rejeté",
+  );
+  assert.ok(
+    !(preservedState.data?.exams ?? []).some((exam) => exam.id === "EXAM-FOREIGN"),
+    "aucun examen BI injecté ne doit apparaître en projection CD",
+  );
+
+  console.log("OK http: RBAC résiduel, isolation CD/BI, projection vide, audit, schoolCode imbriqué");
 }
 
 async function runHttpGuards() {

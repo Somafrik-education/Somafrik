@@ -219,28 +219,35 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     partial: Record<string, unknown>,
     successMessage: string,
   ) {
-    const codes = resolveTargetSchoolCodes(configTarget, availableSchools.map((item) => item.code));
-    if (!canConfigure || !codes.length) {
-      if (!canConfigure) {
-        showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
-      }
+    if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
+      showToast(
+        "Sélectionnez un établissement précis. L'enregistrement multi-établissements n'est pas disponible sur cette API.",
+        "error",
+      );
       return;
     }
+
+    const effectiveSchoolCode = String(configTarget ?? activeSchoolCode ?? "").trim();
+    if (!effectiveSchoolCode || isAllSchoolsSelection(effectiveSchoolCode)) {
+      showToast("Sélectionnez un établissement actif avant d'enregistrer.", "error");
+      return;
+    }
+
+    if (!canConfigure) {
+      showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
+      return;
+    }
+
     setSavingSection(section);
     try {
-      const nextConfigs = { ...state.academicConfigs };
-      for (const code of codes) {
-        const existing = (nextConfigs[code] ?? {}) as Record<string, unknown>;
-        nextConfigs[code] = {
-          ...(typeof existing === "object" ? existing : {}),
-          schoolCode: code,
-          ...partial,
-        };
-      }
-      await update({ academicConfigs: nextConfigs });
-      const bulkSuffix =
-        codes.length > 1 ? ` (${codes.length} établissements)` : "";
-      showToast(`${successMessage}${bulkSuffix}`, "success");
+      const existing = (state.academicConfigs?.[effectiveSchoolCode] ?? {}) as Record<string, unknown>;
+      const nextConfig = {
+        ...(typeof existing === "object" ? existing : {}),
+        schoolCode: effectiveSchoolCode,
+        ...partial,
+      };
+      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } });
+      showToast(successMessage, "success");
       setAcademicFormKey((current) => current + 1);
     } catch {
       showToast("Échec de l'enregistrement", "error");
@@ -369,8 +376,15 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
   async function handleSubjectsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const codes = resolveTargetSchoolCodes(configTarget, availableSchools.map((item) => item.code));
-    if (!canConfigure || !codes.length || !selectedSubjectClass) {
+    if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
+      showToast(
+        "Sélectionnez un établissement précis. L'enregistrement multi-établissements n'est pas disponible sur cette API.",
+        "error",
+      );
+      return;
+    }
+    const effectiveSchoolCode = String(configTarget ?? activeSchoolCode ?? "").trim();
+    if (!canConfigure || !effectiveSchoolCode || !selectedSubjectClass) {
       if (!canConfigure) {
         showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
       } else {
@@ -384,25 +398,21 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
     setSavingSection("subjects");
     try {
-      const nextConfigs = { ...state.academicConfigs };
-      for (const code of codes) {
-        const existing = (nextConfigs[code] ?? {}) as Record<string, unknown>;
-        const classNames = getSchoolAcademicLists({ ...state, academicConfigs: nextConfigs }, code).classNames;
-        const currentByClass = resolveSubjectsByClass(existing, classNames);
-        const nextByClass = {
-          ...currentByClass,
-          [className]: subjects,
-        };
-        nextConfigs[code] = {
-          ...(typeof existing === "object" ? existing : {}),
-          schoolCode: code,
-          subjectsByClass: nextByClass,
-          subjects: getAllSchoolSubjects(nextByClass),
-        };
-      }
-      await update({ academicConfigs: nextConfigs });
-      const bulkSuffix = codes.length > 1 ? ` (${codes.length} établissements)` : "";
-      showToast(`Matières enregistrées pour ${className}${bulkSuffix}`, "success");
+      const existing = (state.academicConfigs?.[effectiveSchoolCode] ?? {}) as Record<string, unknown>;
+      const classNames = getSchoolAcademicLists(state, effectiveSchoolCode).classNames;
+      const currentByClass = resolveSubjectsByClass(existing, classNames);
+      const nextByClass = {
+        ...currentByClass,
+        [className]: subjects,
+      };
+      const nextConfig = {
+        ...(typeof existing === "object" ? existing : {}),
+        schoolCode: effectiveSchoolCode,
+        subjectsByClass: nextByClass,
+        subjects: getAllSchoolSubjects(nextByClass),
+      };
+      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } });
+      showToast(`Matières enregistrées pour ${className}`, "success");
       setAcademicFormKey((current) => current + 1);
     } catch {
       showToast("Échec de l'enregistrement", "error");
@@ -413,8 +423,15 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
   async function handleUserRolesSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const codes = resolveTargetSchoolCodes(configTarget, availableSchools.map((item) => item.code));
-    if (!canConfigure || !codes.length) {
+    if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
+      showToast(
+        "Sélectionnez un établissement précis. L'enregistrement multi-établissements n'est pas disponible sur cette API.",
+        "error",
+      );
+      return;
+    }
+    const effectiveSchoolCode = String(configTarget ?? activeSchoolCode ?? "").trim();
+    if (!canConfigure || !effectiveSchoolCode) {
       if (!canConfigure) {
         showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
       }
@@ -427,40 +444,44 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
     setSavingSection("userRoles");
     try {
-      const nextConfigs = { ...state.academicConfigs };
+      const existing = (state.academicConfigs?.[effectiveSchoolCode] ?? {}) as Record<string, unknown>;
       let nextUsers = state.users;
       let nextRolePermissions = state.rolePermissions;
       let renamedLabels = "";
 
-      for (const code of codes) {
-        const existing = (nextConfigs[code] ?? {}) as Record<string, unknown>;
-        const oldRoles =
-          Array.isArray(existing.userRoles) && (existing.userRoles as string[]).length
-            ? (existing.userRoles as string[])
-            : DEFAULT_USER_ROLES;
-        const migrations = detectRoleRenames(oldRoles, newRoles);
-        if (Object.keys(migrations).length) {
-          const renamed = applyRoleRenames(
-            { ...state, academicConfigs: nextConfigs, users: nextUsers, rolePermissions: nextRolePermissions },
-            migrations,
-          );
-          nextUsers = renamed.users;
-          nextRolePermissions = renamed.rolePermissions;
-          if (!renamedLabels) {
-            renamedLabels = Object.entries(migrations)
-              .map(([from, to]) => `« ${from} » → « ${to} »`)
-              .join(", ");
-          }
-        }
-        nextConfigs[code] = {
-          ...(typeof existing === "object" ? existing : {}),
-          schoolCode: code,
-          userRoles: newRoles,
-        };
+      const oldRoles =
+        Array.isArray(existing.userRoles) && (existing.userRoles as string[]).length
+          ? (existing.userRoles as string[])
+          : DEFAULT_USER_ROLES;
+      const migrations = detectRoleRenames(oldRoles, newRoles);
+      if (Object.keys(migrations).length) {
+        const renamed = applyRoleRenames(
+          {
+            ...state,
+            academicConfigs: {
+              ...state.academicConfigs,
+              [effectiveSchoolCode]: existing,
+            },
+            users: nextUsers,
+            rolePermissions: nextRolePermissions,
+          },
+          migrations,
+        );
+        nextUsers = renamed.users;
+        nextRolePermissions = renamed.rolePermissions;
+        renamedLabels = Object.entries(migrations)
+          .map(([from, to]) => `« ${from} » → « ${to} »`)
+          .join(", ");
       }
 
+      const nextConfig = {
+        ...(typeof existing === "object" ? existing : {}),
+        schoolCode: effectiveSchoolCode,
+        userRoles: newRoles,
+      };
+
       await update({
-        academicConfigs: nextConfigs,
+        academicConfigs: { [effectiveSchoolCode]: nextConfig },
         ...(nextUsers !== state.users ? { users: nextUsers } : {}),
       });
       if (nextRolePermissions !== state.rolePermissions) {
@@ -468,11 +489,10 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
       }
       await refresh();
       setRolePermissionDraft(null);
-      const bulkSuffix = codes.length > 1 ? ` (${codes.length} établissements)` : "";
       if (renamedLabels) {
-        showToast(`Rôles enregistrés (${renamedLabels})${bulkSuffix}`, "success");
+        showToast(`Rôles enregistrés (${renamedLabels})`, "success");
       } else {
-        showToast(`Rôles enregistrés${bulkSuffix}`, "success");
+        showToast("Rôles enregistrés", "success");
       }
       setAcademicFormKey((current) => current + 1);
     } catch {

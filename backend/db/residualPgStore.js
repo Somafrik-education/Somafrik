@@ -179,9 +179,10 @@ function createResidualPgStore(repo) {
       }
       const normalizedSchool = String(school.school_code ?? school.code).trim().toUpperCase();
       const runner = tx ?? repo;
-      const scopedItems = (items ?? []).filter(
-        (item) => String(item?.schoolCode ?? normalizedSchool).trim().toUpperCase() === normalizedSchool,
-      );
+      const scopedItems = (items ?? []).map((item) => ({
+        ...(item && typeof item === "object" ? item : {}),
+        schoolCode: normalizedSchool,
+      }));
       const nextIds = new Set(scopedItems.map((item) => resolveRecordId(item)).filter(Boolean));
 
       await runner.query(
@@ -195,7 +196,7 @@ function createResidualPgStore(repo) {
       for (const item of scopedItems) {
         const legacyId = resolveRecordId(item);
         if (!legacyId) continue;
-        const payload = { ...item, schoolCode: item.schoolCode ?? normalizedSchool };
+        const payload = { ...item, schoolCode: normalizedSchool };
         await runner.query(
           `INSERT INTO establishment_residual_records (
              school_id, record_domain, legacy_json_id, profile_payload, status, archived_at, updated_at

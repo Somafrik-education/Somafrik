@@ -1,5 +1,6 @@
 import type { BackOfficeState } from "../types";
 import { api } from "../api/client";
+import { normalize } from "./format";
 
 export async function syncResidualBackOfficePatch(
   patch: Partial<BackOfficeState>,
@@ -7,28 +8,40 @@ export async function syncResidualBackOfficePatch(
 ): Promise<void> {
   const scopedSchool = String(schoolCode ?? "").trim().toUpperCase();
   if (!scopedSchool || scopedSchool === "*") {
-    throw new Error("schoolCode établissement requis pour la synchronisation.");
+    throw new Error("Sélectionnez un établissement actif avant d'enregistrer la configuration.");
   }
 
   if (patch.academicConfigs && typeof patch.academicConfigs === "object") {
-    for (const [, config] of Object.entries(patch.academicConfigs)) {
+    const entries = Object.entries(patch.academicConfigs);
+    const scopedEntries = entries.filter(([code]) => normalize(code) === normalize(scopedSchool));
+    const foreignEntries = entries.filter(([code]) => normalize(code) !== normalize(scopedSchool));
+
+    if (foreignEntries.length) {
+      throw new Error(
+        `Configuration hors périmètre : ${foreignEntries.map(([code]) => code).join(", ")}.`,
+      );
+    }
+
+    if (scopedEntries.length > 1) {
+      throw new Error("Une seule configuration établissement peut être synchronisée à la fois.");
+    }
+
+    if (scopedEntries.length === 1) {
+      const [, config] = scopedEntries[0];
       await api.put("/academic-config", config as Record<string, unknown>);
     }
   }
 
   if (Array.isArray(patch.exams)) {
-    await api.put("/backoffice/planning-exams", { schoolCode: scopedSchool, exams: patch.exams });
+    await api.put("/backoffice/planning-exams", { exams: patch.exams });
   }
 
   if (Array.isArray(patch.bulletins)) {
-    await api.put("/backoffice/report-cards", { schoolCode: scopedSchool, bulletins: patch.bulletins });
+    await api.put("/backoffice/report-cards", { bulletins: patch.bulletins });
   }
 
   if (Array.isArray(patch.documents)) {
-    await api.put("/backoffice/establishment-documents", {
-      schoolCode: scopedSchool,
-      documents: patch.documents,
-    });
+    await api.put("/backoffice/establishment-documents", { documents: patch.documents });
   }
 }
 

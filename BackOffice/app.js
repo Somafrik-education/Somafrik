@@ -1965,11 +1965,15 @@ async function handleActionClick(event) {
     }
 
     applySelectedRolePermissions();
-    persistSession();
-    renderUsers();
-    renderControls();
-    renderPermissions();
-    showToast(`Droits du rôle ${state.selectedPermissionRole} enregistrés.`);
+    void syncPlatformRolePermissions()
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        renderUsers();
+        renderControls();
+        renderPermissions();
+        showToast(`Droits du rôle ${state.selectedPermissionRole} enregistrés.`);
+      })
+      .catch((error) => showServerSyncError(error, "Échec de l'enregistrement des droits."));
     return;
   }
 
@@ -2019,22 +2023,28 @@ async function handleActionClick(event) {
       return;
     }
 
-    target.administratorId = target.administratorId || getAvailableCountryAdminId(target);
-    addAudit("Affectation administrateur pays", target.code, `Administrateur ${target.administratorId} affecté`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`Administrateur affecté à ${target.code}.`);
+    const administratorId = target.administratorId || getAvailableCountryAdminId(target);
+    void patchPlatformCountry(target.code, { administratorId })
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Affectation administrateur pays", target.code, `Administrateur ${administratorId} affecté`);
+        showToast(`Administrateur affecté à ${target.code}.`);
+      })
+      .catch((error) => showServerSyncError(error, "Échec de l'affectation administrateur pays."));
     return;
   }
 
   if (action === "toggle-country") {
     const target = state.countries.find((country) => country.id === id);
     if (!target) return;
-    target.status = target.status === "Suspendu" ? "Actif" : "Suspendu";
-    addAudit("Changement statut pays", target.code, `${target.name} passé à ${target.status}`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`Pays ${target.status.toLowerCase()}.`);
+    const nextStatus = target.status === "Suspendu" ? "Actif" : "Suspendu";
+    void patchPlatformCountry(target.code, { status: nextStatus })
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Changement statut pays", target.code, `${target.name} passé à ${nextStatus}`);
+        showToast(`Pays ${nextStatus.toLowerCase()}.`);
+      })
+      .catch((error) => showServerSyncError(error, "Échec de la mise à jour du pays."));
     return;
   }
 
@@ -2056,27 +2066,31 @@ async function handleActionClick(event) {
   }
 
   if (action === "validate-schools") {
-    const count = state.schools.filter((school) => school.validationStatus === "En attente").length;
-    state.schools.forEach((school) => {
-      if (school.validationStatus === "En attente") {
-        school.validationStatus = "Validé";
-      }
-    });
-    addAudit("Validation établissements", "bulk", `${count} établissement(s) validé(s)`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`${count} établissement(s) validé(s).`);
+    const pending = state.schools.filter((school) => school.validationStatus === "En attente");
+    if (!pending.length) {
+      showToast("Aucun établissement en attente de validation.");
+      return;
+    }
+    void Promise.all(pending.map((school) => activateEstablishment(school.code)))
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Validation établissements", "bulk", `${pending.length} établissement(s) validé(s)`);
+        showToast(`${pending.length} établissement(s) validé(s).`);
+      })
+      .catch((error) => showServerSyncError(error, "Échec de la validation des établissements."));
     return;
   }
 
   if (action === "validate-school") {
     const target = state.schools.find((school) => school.code === id);
     if (!target) return;
-    target.validationStatus = "Validé";
-    addAudit("Validation établissement", target.code, `${target.name} validé`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`${target.name} validé.`);
+    void activateEstablishment(target.code)
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit("Validation établissement", target.code, `${target.name} validé`);
+        showToast(`${target.name} validé.`);
+      })
+      .catch((error) => showServerSyncError(error, "Échec de la validation de l'établissement."));
     return;
   }
 
@@ -2090,11 +2104,19 @@ async function handleActionClick(event) {
   if (action === "toggle-school") {
     const target = state.schools.find((school) => school.code === id);
     if (!target) return;
-    target.status = target.status === "Suspendu" ? "Actif" : "Suspendu";
-    addAudit("Changement statut établissement", target.code, `${target.name} passé à ${target.status}`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`Établissement ${target.status.toLowerCase()}.`);
+    const shouldActivate = target.status === "Suspendu";
+    const requestFn = shouldActivate ? activateEstablishment : suspendEstablishment;
+    void requestFn(target.code)
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit(
+          "Changement statut établissement",
+          target.code,
+          `${target.name} passé à ${shouldActivate ? "Actif" : "Suspendu"}`,
+        );
+        showToast(`Établissement ${shouldActivate ? "réactivé" : "suspendu"}.`);
+      })
+      .catch((error) => showServerSyncError(error, "Échec de la mise à jour de l'établissement."));
     return;
   }
 
@@ -2131,20 +2153,16 @@ async function handleActionClick(event) {
   }
 
   if (action === "remind-subscriptions") {
-    const count = markSubscriptionReminders(state.subscriptions);
-    renderOperationalViews();
-    persistSession();
-    showToast(`${count} relance(s) abonnement enregistrée(s).`);
+    showToast(
+      "Les relances d'abonnement ne sont pas encore synchronisées avec le serveur. Utilisez l'application Web.",
+    );
     return;
   }
 
   if (action === "remind-subscription") {
-    const target = state.subscriptions.find((subscription) => subscription.id === id);
-    if (!target) return;
-    markSubscriptionReminders([target]);
-    renderOperationalViews();
-    persistSession();
-    showToast(`Relance enregistrée pour ${target.schoolCode}.`);
+    showToast(
+      "Les relances d'abonnement ne sont pas encore synchronisées avec le serveur. Utilisez l'application Web.",
+    );
     return;
   }
 
@@ -2219,9 +2237,9 @@ async function handleActionClick(event) {
       user.mustChangePassword = true;
     }
     addAudit("Réinitialisation mots de passe", "bulk", `${targets.length} mot(s) de passe temporaire réinitialisé(s)`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`${targets.length} mot(s) de passe temporaire réinitialisé(s) à 1234.`);
+    void refreshBackOfficeStateFromBackend()
+      .then(() => showToast(`${targets.length} mot(s) de passe temporaire réinitialisé(s).`))
+      .catch((error) => showServerSyncError(error, "Échec du rafraîchissement après réinitialisation."));
     return;
   }
 
@@ -2237,13 +2255,14 @@ async function handleActionClick(event) {
       method: "POST",
       body: JSON.stringify({ temporaryPassword }),
     });
-    target.temporaryPassword = response.temporaryPassword ?? temporaryPassword;
-    target.mustChangePassword = true;
-    target.history = [...(target.history ?? []), `Mot de passe réinitialisé le ${formatDate(new Date())}`];
     addAudit("Réinitialisation mot de passe", target.identifier, `${target.firstName} ${target.lastName}`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`Mot de passe de ${target.identifier} réinitialisé : ${target.temporaryPassword}`);
+    void refreshBackOfficeStateFromBackend()
+      .then(() =>
+        showToast(
+          `Mot de passe de ${target.identifier} réinitialisé : ${response.temporaryPassword ?? temporaryPassword}`,
+        ),
+      )
+      .catch((error) => showServerSyncError(error, "Échec du rafraîchissement après réinitialisation."));
     return;
   }
 
@@ -2254,11 +2273,18 @@ async function handleActionClick(event) {
       showToast("Action non autorisée sur cet utilisateur.");
       return;
     }
-    target.status = target.status === "Suspendu" ? "Actif" : "Suspendu";
-    addAudit("Changement statut utilisateur", target.identifier, `${target.firstName} ${target.lastName} passé à ${target.status}`);
-    renderOperationalViews();
-    persistSession();
-    showToast(`Utilisateur ${target.status.toLowerCase()}.`);
+    const nextStatus = target.status === "Suspendu" ? "Actif" : "Suspendu";
+    void patchBackofficeUser(target.id, { status: nextStatus })
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        addAudit(
+          "Changement statut utilisateur",
+          target.identifier,
+          `${target.firstName} ${target.lastName} passé à ${nextStatus}`,
+        );
+        showToast(`Utilisateur ${nextStatus.toLowerCase()}.`);
+      })
+      .catch((error) => showServerSyncError(error, "Échec de la mise à jour utilisateur."));
     return;
   }
 
@@ -2505,6 +2531,57 @@ async function syncPlatformCountry(payload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+async function patchPlatformCountry(code, patch) {
+  return request(`/backoffice/countries/${encodeURIComponent(code)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+async function createEstablishment(payload) {
+  return request("/backoffice/establishments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function patchEstablishment(code, patch) {
+  return request(`/backoffice/establishments/${encodeURIComponent(code)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+async function activateEstablishment(code) {
+  return request(`/backoffice/establishments/${encodeURIComponent(code)}/activate`, {
+    method: "PATCH",
+  });
+}
+
+async function suspendEstablishment(code) {
+  return request(`/backoffice/establishments/${encodeURIComponent(code)}/suspend`, {
+    method: "PATCH",
+  });
+}
+
+async function createBackofficeUser(payload) {
+  return request("/backoffice/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function patchBackofficeUser(userId, patch) {
+  return request(`/backoffice/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+function showServerSyncError(error, fallbackMessage) {
+  showToast(error?.message ?? fallbackMessage ?? "Échec de la synchronisation serveur.");
 }
 
 async function syncPlatformNotification(payload) {
@@ -2931,10 +3008,17 @@ function handleRoleFormSubmit(event) {
 
     state.rolePermissions[roleName] = [];
     state.selectedPermissionRole = roleName;
-    persistSession();
-    closeRoleForm();
-    renderPermissions();
-    showToast(`Rôle ${roleName} créé.`);
+    void syncPlatformRolePermissions()
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        closeRoleForm();
+        renderPermissions();
+        showToast(`Rôle ${roleName} créé.`);
+      })
+      .catch((error) => {
+        delete state.rolePermissions[roleName];
+        roleFormError.textContent = error.message ?? "Échec de la création du rôle.";
+      });
     return;
   }
 
@@ -2955,17 +3039,29 @@ function handleRoleFormSubmit(event) {
       return;
     }
 
-    state.rolePermissions[nextRole] = state.rolePermissions[currentRole] ?? [];
+    const previousPermissions = state.rolePermissions[currentRole] ?? [];
+    const previousUsers = state.users;
+    state.rolePermissions[nextRole] = previousPermissions;
     delete state.rolePermissions[currentRole];
     state.users = state.users.map((user) => (
       user.role === currentRole ? { ...user, role: nextRole } : user
     ));
     state.selectedPermissionRole = nextRole;
-    persistSession();
-    closeRoleForm();
-    renderUsers();
-    renderPermissions();
-    showToast(`Rôle renommé en ${nextRole}.`);
+    void syncPlatformRolePermissions()
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        closeRoleForm();
+        renderUsers();
+        renderPermissions();
+        showToast(`Rôle renommé en ${nextRole}.`);
+      })
+      .catch((error) => {
+        state.rolePermissions[currentRole] = previousPermissions;
+        delete state.rolePermissions[nextRole];
+        state.users = previousUsers;
+        state.selectedPermissionRole = currentRole;
+        roleFormError.textContent = error.message ?? "Échec du renommage du rôle.";
+      });
     return;
   }
 
@@ -2976,12 +3072,21 @@ function handleRoleFormSubmit(event) {
       return;
     }
 
+    const previousPermissions = state.rolePermissions[currentRole];
     delete state.rolePermissions[currentRole];
-    state.selectedPermissionRole = getPermissionRoles().find((item) => item !== currentRole) ?? state.session.user.role;
-    persistSession();
-    closeRoleForm();
-    renderPermissions();
-    showToast(`Rôle ${currentRole} supprimé.`);
+    state.selectedPermissionRole =
+      getPermissionRoles().find((item) => item !== currentRole) ?? state.session.user.role;
+    void syncPlatformRolePermissions()
+      .then(() => refreshBackOfficeStateFromBackend())
+      .then(() => {
+        closeRoleForm();
+        renderPermissions();
+        showToast(`Rôle ${currentRole} supprimé.`);
+      })
+      .catch((error) => {
+        state.rolePermissions[currentRole] = previousPermissions;
+        roleFormError.textContent = error.message ?? "Échec de la suppression du rôle.";
+      });
   }
 }
 
@@ -3319,60 +3424,26 @@ function saveUserForm() {
   }
 
   const permissions = state.rolePermissions[payload.role] ?? ["Voir tableau de bord"];
-  const user = {
-    id: `USER-${Date.now()}`,
-    publicId: `USR-${Date.now()}`,
+  void createBackofficeUser({
     ...payload,
-    scopeLevel: payload.role === "Admin Pays" ? "Pays" : payload.schoolCode === "*" ? "Global" : "Établissement",
-    accessChannel: "Application",
     permissions: [...permissions],
     temporaryPassword: "1234",
-    history: [`Créé le ${formatDate(new Date())}`],
-  };
-
-  state.users.unshift(user);
-  if (user.role === "Enseignant") {
-    const syncService = {
-      upsertTeacherFromUser(teachers, account) {
-        const schoolCode = String(account.schoolCode ?? "").trim();
-        if (!schoolCode || schoolCode === "*") return teachers;
-        const next = [...teachers];
-        const index = next.findIndex(
-          (teacher) =>
-            String(teacher.userId ?? "") === String(account.id) ||
-            (normalize(teacher.identifier) === normalize(account.identifier) &&
-              (!teacher.userId || String(teacher.userId) === String(account.id))),
-        );
-        const row = {
-          ...(index >= 0 ? next[index] : {}),
-          id: index >= 0 ? next[index].id : `TEACHER-${Date.now()}`,
-          userId: account.id,
-          publicId: account.publicId ?? `${schoolCode}-${account.identifier}`,
-          identifier: account.identifier,
-          schoolCode,
-          name: account.lastName,
-          firstName: account.firstName,
-          gender: account.gender ?? "Non renseigné",
-          phone: account.phone ?? "",
-          email: account.email ?? "",
-          status: account.status === "Suspendu" ? "Suspendu" : "Actif",
-          password: account.temporaryPassword ?? "1234",
-          assignments: index >= 0 ? next[index].assignments ?? [] : [],
-          assignedClasses: index >= 0 ? next[index].assignedClasses ?? [] : [],
-        };
-        if (index >= 0) next[index] = row;
-        else next.unshift(row);
-        return next;
-      },
-    };
-    state.teachers = syncService.upsertTeacherFromUser(state.teachers, user);
-  }
-  addAudit("Création utilisateur", user.identifier, `${user.firstName} ${user.lastName} créé avec le rôle ${user.role}`);
-  closeDetail();
-  renderOperationalViews();
-  renderPermissions();
-  persistSession();
-  showToast("Utilisateur créé avec le mot de passe temporaire 1234.");
+  })
+    .then(() => refreshBackOfficeStateFromBackend())
+    .then(() => {
+      addAudit(
+        "Création utilisateur",
+        payload.identifier,
+        `${payload.firstName} ${payload.lastName} créé avec le rôle ${payload.role}`,
+      );
+      closeDetail();
+      renderOperationalViews();
+      renderPermissions();
+      showToast("Utilisateur créé avec le mot de passe temporaire 1234.");
+    })
+    .catch((error) => {
+      errorTarget.textContent = error.message ?? "Échec de la création utilisateur.";
+    });
 }
 
 function syncUserScopeInputs() {
@@ -3480,46 +3551,39 @@ function handleSchoolFormSubmit(event) {
     return;
   }
 
-  if (originalCode) {
-    const index = state.schools.findIndex((school) => school.code === originalCode);
-    if (index < 0) return;
-    state.schools[index] = {
-      ...state.schools[index],
-      ...payload,
-      publicId: originalCode,
-      code: originalCode,
-    };
-    syncSchoolSubscription(state.schools[index]);
-    addAudit("Modification établissement", originalCode, `${payload.name} mis à jour`);
-    showToast("Établissement modifié.");
-    openSchoolDetail(state.schools[index]);
-  } else {
-    const school = {
-      ...payload,
-      id: `SCHOOL-${Date.now()}`,
-      publicId: payload.code,
-      validationStatus: "En attente",
-      subscriptionStartDate: formatDate(new Date()),
-      schoolYear: "2025-2026",
-      currency: "CDF",
-      timezone: "Africa/Kinshasa",
-      language: "Français",
-      dateFormat: "JJ-MM-AAAA",
-      primaryColor: "#2563EB",
-      createdAt: formatDate(new Date()),
-    };
-    state.schools.unshift(school);
-    syncSchoolSubscription(school);
-    addAudit("Création établissement", school.code, `${school.name} créé`);
-    state.schoolPage = 1;
-    showToast("Établissement créé et mis en attente de validation.");
-  }
+  const submit = originalCode
+    ? patchEstablishment(originalCode, payload)
+    : createEstablishment({
+        ...payload,
+        validationStatus: "En attente",
+        subscriptionStartDate: formatDate(new Date()),
+        schoolYear: "2025-2026",
+        currency: "CDF",
+        timezone: "Africa/Kinshasa",
+        language: "Français",
+        dateFormat: "JJ-MM-AAAA",
+        primaryColor: "#2563EB",
+      });
 
-  closeSchoolForm();
-  renderSchools();
-  renderKpis();
-  renderSubscriptions();
-  persistSession();
+  void submit
+    .then(() => refreshBackOfficeStateFromBackend())
+    .then(() => {
+      if (originalCode) {
+        addAudit("Modification établissement", originalCode, `${payload.name} mis à jour`);
+        showToast("Établissement modifié.");
+      } else {
+        addAudit("Création établissement", payload.code, `${payload.name} créé`);
+        state.schoolPage = 1;
+        showToast("Établissement créé et mis en attente de validation.");
+      }
+      closeSchoolForm();
+      renderSchools();
+      renderKpis();
+      renderSubscriptions();
+    })
+    .catch((submitError) => {
+      schoolFormError.textContent = submitError.message ?? "Échec de l'enregistrement de l'établissement.";
+    });
 }
 
 function readSchoolForm() {

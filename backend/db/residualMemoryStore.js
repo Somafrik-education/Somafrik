@@ -71,14 +71,18 @@ function createResidualMemoryStore() {
     },
     replaceDomainRecords(domain, schoolCode, items = []) {
       const normalizedSchool = asTrimmed(schoolCode).toUpperCase();
-      const nextIds = new Set(items.map((item) => resolveRecordId(item)).filter(Boolean));
+      const scopedItems = (items ?? []).map((item) => ({
+        ...(item && typeof item === "object" ? item : {}),
+        schoolCode: normalizedSchool,
+      }));
+      const nextIds = new Set(scopedItems.map((item) => resolveRecordId(item)).filter(Boolean));
       records[domain] = records[domain].filter((row) => {
         if (asTrimmed(row.schoolCode).toUpperCase() !== normalizedSchool) {
           return true;
         }
         return nextIds.has(resolveRecordId(row));
       });
-      for (const item of items) {
+      for (const item of scopedItems) {
         const legacyId = resolveRecordId(item);
         if (!legacyId) continue;
         const existingIndex = records[domain].findIndex(
@@ -89,7 +93,7 @@ function createResidualMemoryStore() {
         const entry = {
           schoolCode: normalizedSchool,
           legacy_json_id: legacyId,
-          profile_payload: { ...item, schoolCode: item.schoolCode ?? normalizedSchool },
+          profile_payload: { ...item, schoolCode: normalizedSchool },
         };
         if (existingIndex >= 0) {
           records[domain][existingIndex] = entry;

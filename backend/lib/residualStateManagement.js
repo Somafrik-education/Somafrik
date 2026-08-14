@@ -1,5 +1,7 @@
 "use strict";
 
+const { scopeResidualItems } = require("./principalSchoolScope");
+
 const DOMAIN_TO_RECORD = Object.freeze({
   exam: "exam",
   exams: "exam",
@@ -34,10 +36,12 @@ async function recordResidualReplace(repository, domain, schoolCode, items, prin
     throw error;
   }
 
+  const scopedItems = scopeResidualItems(scopedSchoolCode, items ?? []);
+
   const run = async (tx) => {
     const scope = typeof repository.createTxScope === "function" ? repository.createTxScope(tx) : repository;
     const store = repository.getResidualStore();
-    const result = await store.replaceDomainRecords(recordDomain, scopedSchoolCode, items ?? [], tx);
+    const result = await store.replaceDomainRecords(recordDomain, scopedSchoolCode, scopedItems, tx);
     if (typeof scope.recordAudit === "function" && auditMeta) {
       await scope.recordAudit(
         {
