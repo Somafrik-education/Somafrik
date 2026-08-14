@@ -84,6 +84,30 @@ async function main() {
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
 
+    const emptyRole = await request("/backoffice/establishment-roles", {
+      method: "POST",
+      token: superToken,
+      body: {
+        roleName: "Lot2 Vide",
+        roleCode: "lot2_vide",
+        permissions: [],
+        delegationPermissions: [],
+      },
+    });
+    assert.equal(emptyRole.status, 201, JSON.stringify(emptyRole.data));
+
+    const codeRole = await request("/backoffice/establishment-roles", {
+      method: "POST",
+      token: superToken,
+      body: {
+        roleName: "Lot2 Code Label",
+        roleCode: "lot2_code_role",
+        permissions: ["Documents:READ"],
+        delegationPermissions: ["Documents:READ"],
+      },
+    });
+    assert.equal(codeRole.status, 201, JSON.stringify(codeRole.data));
+
     const forbiddenPrivileges = await request("/backoffice/establishment-roles", {
       method: "POST",
       token: superToken,
@@ -135,6 +159,36 @@ async function main() {
       },
     });
     assert.equal(staff.status, 201, JSON.stringify(staff.data));
+
+    const codeStaff = await request("/backoffice/users", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        firstName: "Lot2",
+        lastName: "Code",
+        role: "Secrétaire",
+        email: `lot2-code-${stamp}@test.local`,
+        schoolCode: "CD-2026-0001",
+        temporaryPassword: staffPassword,
+      },
+    });
+    assert.equal(codeStaff.status, 201, JSON.stringify(codeStaff.data));
+
+    const assignByCode = await request(`/backoffice/users/${encodeURIComponent(codeStaff.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { role: "lot2_code_role" },
+    });
+    assert.equal(assignByCode.status, 200, JSON.stringify(assignByCode.data));
+    assert.equal(assignByCode.data.role, "Lot2 Code Label");
+
+    const assignByName = await request(`/backoffice/users/${encodeURIComponent(codeStaff.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { role: "Lot2 Code Label" },
+    });
+    assert.equal(assignByName.status, 200, JSON.stringify(assignByName.data));
+    assert.equal(assignByName.data.role, "Lot2 Code Label");
 
     const assignOk = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
       method: "PATCH",
@@ -207,6 +261,24 @@ async function main() {
     const usersList = await request("/backoffice/users", { token: adminToken });
     assert.equal(usersList.status, 200);
     assert.ok(listItems(usersList.data).some((row) => row.id === staff.data.id));
+
+    const secretaireRole = catalogue.data.roles.find((row) => row.roleName === "Secrétaire");
+    assert.ok(secretaireRole, "rôle Secrétaire attendu dans le catalogue");
+    const stripSecretaire = await request(`/backoffice/establishment-roles/${encodeURIComponent(secretaireRole.id)}`, {
+      method: "PATCH",
+      token: superToken,
+      body: { permissions: [], delegationPermissions: [] },
+    });
+    assert.equal(stripSecretaire.status, 200, JSON.stringify(stripSecretaire.data));
+
+    const emptySession = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
+    });
+    assert.equal(emptySession.status, 200, JSON.stringify(emptySession.data));
+    const emptyPermissions = emptySession.data.permissions ?? emptySession.data.user?.permissions ?? [];
+    assert.equal(emptyPermissions.length, 0, JSON.stringify(emptyPermissions));
+    assert.equal(emptyPermissions.includes("Voir tableau de bord"), false);
 
     console.log("verify-establishment-roles-management.js OK");
   } finally {

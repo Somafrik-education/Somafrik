@@ -26,6 +26,7 @@ const {
 } = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
 const { RbacService } = require("./services/rbacService");
+const { mergeRolePermissions, normalizeBusinessPermission } = require("./lib/rolePermissionsResolution");
 const { PaginationService } = require("./services/paginationService");
 const { CacheService } = require("./services/cacheService");
 const { TenantScopeService } = require("./services/tenantScopeService");
@@ -389,11 +390,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
   }
 
   const rolePermissionsMap = await getRolePermissionsMap();
-  const permissions = mergeRolePermissions(
-    session.role,
-    [...new Set([...(payload.permissions ?? []), ...rbacService.permissionsFor(session.role)])],
-    rolePermissionsMap,
-  );
+  const permissions = mergeRolePermissions(session.role, [], rolePermissionsMap);
   const mustChangePassword = await principalMustChangePassword({
     sub: session.user_id,
     identifier: payload.identifier,
@@ -442,11 +439,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
 
 app.get("/api/auth/effective-permissions", requireAuth, asyncHandler(async (req, res) => {
   const rolePermissionsMap = await getRolePermissionsMap();
-  const permissions = mergeRolePermissions(
-    req.principal.role,
-    [...new Set([...(req.principal.permissions ?? []), ...rbacService.permissionsFor(req.principal.role)])],
-    rolePermissionsMap,
-  );
+  const permissions = mergeRolePermissions(req.principal.role, [], rolePermissionsMap);
   res.json({ permissions });
 }));
 
@@ -4544,78 +4537,6 @@ async function resolveUserPasswordLookupKeys(principal) {
 // Récupère la matrice de droits par rôle (configurée par le Super Admin dans le BackOffice).
 async function getRolePermissionsMap() {
   return repository.getRolePermissionsMap();
-}
-
-// Fusionne les droits de base (compte / RBAC) avec les droits accordés au rôle par le Super Admin.
-// Logique métier : un module accordé à un rôle devient visible (dashboard, onglets, menu) pour
-// tous les utilisateurs de ce rôle, sans jamais retirer un privilège déjà détenu par le compte.
-function mergeRolePermissions(role, basePermissions = [], rolePermissionsMap = null) {
-  if (rolePermissionsMap && typeof rolePermissionsMap === "object") {
-    const alias =
-      role === "Super Administrateur Somafrik" &&
-      Object.prototype.hasOwnProperty.call(rolePermissionsMap, "Super Administrateur OKAFRIK")
-        ? "Super Administrateur OKAFRIK"
-        : role;
-    if (Object.prototype.hasOwnProperty.call(rolePermissionsMap, alias)) {
-      const configured = Array.isArray(rolePermissionsMap[alias]) ? rolePermissionsMap[alias] : [];
-      return enforceBusinessRolePermissions(role, configured);
-    }
-    if (Object.keys(rolePermissionsMap).length > 0) {
-      return enforceBusinessRolePermissions(role, ["Voir tableau de bord"]);
-    }
-  }
-
-  const configured =
-    rolePermissionsMap && Array.isArray(rolePermissionsMap[role])
-      ? rolePermissionsMap[role]
-      : role === "Super Administrateur Somafrik" &&
-          Array.isArray(rolePermissionsMap?.["Super Administrateur OKAFRIK"])
-        ? rolePermissionsMap["Super Administrateur OKAFRIK"]
-        : null;
-
-  if (!configured || !configured.length) {
-    return enforceBusinessRolePermissions(role, basePermissions ?? []);
-  }
-
-  const merged = [...new Set([...(basePermissions ?? []), ...configured])];
-  return enforceBusinessRolePermissions(role, merged);
-}
-
-function enforceBusinessRolePermissions(role, permissions = []) {
-  let next = [...permissions];
-
-  if (role === "Admin Pays") {
-    next = next.filter((permission) => permission !== "Pays:CREATE" && permission !== "Pays:DELETE");
-  }
-
-  if (role !== "Admin School") {
-    return next;
-  }
-
-  const forbiddenFeatures = ["Établissements", "Abonnements"];
-  const forbiddenKeywords = ["abonnement", "etablissement", "établissement", "inscription", "tarif"];
-  return next.filter((permission) => {
-    if (String(permission).startsWith("Paramètres Établissement:")) {
-      return true;
-    }
-    if (String(permission).startsWith("Frais & tarifs:")) {
-      return true;
-    }
-
-    const normalizedPermission = normalizeBusinessPermission(permission);
-    if (normalizedPermission.startsWith("frais & tarifs")) return true;
-    return (
-      !forbiddenFeatures.some((feature) => String(permission).startsWith(feature)) &&
-      !forbiddenKeywords.some((keyword) => normalizedPermission.includes(keyword))
-    );
-  });
-}
-
-function normalizeBusinessPermission(permission) {
-  return String(permission ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 }
 
 function getPrincipalStudentIds(response) {

@@ -163,16 +163,23 @@ function createEstablishmentRolesPgStore(repo) {
 
   async function getPermissionsMap() {
     const rows = await all(
-      `SELECT er.role_name, erp.permission
+      `SELECT er.role_name, er.role_code, erp.permission
        FROM establishment_roles er
-       JOIN establishment_role_permissions erp ON erp.role_id = er.id
+       LEFT JOIN establishment_role_permissions erp ON erp.role_id = er.id
        WHERE er.status = 'active'
        ORDER BY er.role_name, erp.permission`,
     );
     const map = {};
     for (const row of rows) {
-      if (!map[row.role_name]) map[row.role_name] = [];
-      map[row.role_name].push(row.permission);
+      if (!map[row.role_name]) {
+        map[row.role_name] = [];
+        if (row.role_code) {
+          map[row.role_code] = map[row.role_name];
+        }
+      }
+      if (row.permission) {
+        map[row.role_name].push(row.permission);
+      }
     }
     return map;
   }

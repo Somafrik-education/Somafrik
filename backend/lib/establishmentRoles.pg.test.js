@@ -196,6 +196,15 @@ async function main() {
     );
     assert.ok(updated.permissions.includes("Classes:READ"));
 
+    const emptyRole = await repo.createEstablishmentRole(
+      { roleName: "Lot2 PG Vide", roleCode: "lot2_pg_vide", permissions: [], delegationPermissions: [] },
+      superPrincipal,
+      auditMeta,
+    );
+    const permissionsMap = await repo.getEstablishmentRolesStore().getPermissionsMap();
+    assert.ok(Object.prototype.hasOwnProperty.call(permissionsMap, "Lot2 PG Vide"));
+    assert.deepEqual(permissionsMap["Lot2 PG Vide"], []);
+
     const assignable = await repo.listEstablishmentRoles({ schoolAssignableOnly: true });
     assert.ok(assignable.some((row) => row.roleName === "Secrétaire"));
 

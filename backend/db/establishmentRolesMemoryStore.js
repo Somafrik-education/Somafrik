@@ -110,6 +110,9 @@ function createEstablishmentRolesMemoryStore(seed = {}) {
       const map = {};
       for (const row of roles.filter((item) => item.status === "active")) {
         map[row.role_name] = [...(permissions.get(row.id) ?? [])];
+        if (row.role_code) {
+          map[row.role_code] = map[row.role_name];
+        }
       }
       return map;
     },

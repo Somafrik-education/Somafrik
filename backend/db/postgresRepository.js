@@ -92,6 +92,7 @@ class PostgresRepository {
     await this.ensureFinanceCanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
     await this.ensurePlatformCanonicalSchema();
+    await this.ensurePlatformRolePermissionsBootstrap();
     await this.ensureClientsCanonicalSchema();
     await this.ensureResidualCanonicalSchema();
     await this.ensureEducationReferencePreflight();
@@ -451,6 +452,25 @@ class PostgresRepository {
     const { PLATFORM_SCHEMA_SQL, assertPlatformSchemaPreflight } = require("./platformSchema");
     await assertPlatformSchemaPreflight(this);
     await this.query(PLATFORM_SCHEMA_SQL);
+  }
+
+  async ensurePlatformRolePermissionsBootstrap() {
+    const seedData = require("../data");
+    const platformRoles = [
+      "Super Administrateur Somafrik",
+      "Super Administrateur OKAFRIK",
+      "Admin Pays",
+      "Admin School",
+    ];
+    for (const roleName of platformRoles) {
+      const existing = await this.one(`SELECT role_name FROM role_permissions WHERE role_name = $1`, [roleName]);
+      if (existing) continue;
+      await this.query(
+        `INSERT INTO role_permissions (role_name, permissions, updated_at)
+         VALUES ($1, $2::jsonb, NOW())`,
+        [roleName, JSON.stringify(seedData.rolePermissions?.[roleName] ?? [])],
+      );
+    }
   }
 
   async ensureClientsCanonicalSchema() {

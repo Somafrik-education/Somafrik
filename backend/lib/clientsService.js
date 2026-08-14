@@ -205,10 +205,11 @@ async function createUser(store, rawPayload, principal, auditMeta) {
 
 async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   const patch = ignoreClientScope(rawPatch);
+  let canonicalRole;
   if (patch.role !== undefined) {
-    const role = assertAssignableUserRole(principal, patch.role);
+    canonicalRole = assertAssignableUserRole(principal, patch.role);
     if (typeof store.assertEstablishmentRoleAssignable === "function") {
-      await store.assertEstablishmentRoleAssignable(role, principal);
+      canonicalRole = await store.assertEstablishmentRoleAssignable(canonicalRole, principal);
     }
   }
 
@@ -247,7 +248,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
         phone: nextPhone,
         gender: patch.gender ?? locked.gender,
         birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : locked.birth_date,
-        role: patch.role ? toDbRole(patch.role) : locked.role,
+        role: canonicalRole !== undefined ? toDbRole(canonicalRole) : locked.role,
         status: patch.status ? toDbStatus(patch.status) : locked.status,
         profile,
       });

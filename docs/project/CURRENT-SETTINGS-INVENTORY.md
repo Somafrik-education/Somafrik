@@ -398,7 +398,7 @@ Exemples visés : Secrétaire, Préfet des études, Directeur, Économe, autres 
 - API établissement (lecture) : `GET /api/establishment-roles/assignable`.
 - `config_payload.userRoles` : **lecture seule** (dérivée du catalogue assignable) ; écriture rejetée (`LEGACY_USER_ROLES_WRITE_FORBIDDEN`).
 - Matrice plateforme : `role_permissions` (Superadmin) ; matrice établissement : tables LOT 2.
-- JWT / `buildPrincipal` : permissions depuis `getRolePermissionsMap()` (PG), sans seed `data.js` sur le compte.
+- JWT / `buildPrincipal` : permissions depuis `getRolePermissionsMap()` (PG), sans seed `data.js` sur le compte ; rôle PG actif avec `permissions=[]` → JWT vide (fail-closed, pas de fallback « Voir tableau de bord »).
 - Web `ConfigurationPage` rôles-droits : catalogue assignable en lecture seule (plus de pilotage local ni liste `userRoles` éditable).
 - Defaults client (`internalRoleDefaults.ts`, Mobile `catalog.ts`) : ignorés dès qu’une matrice serveur est chargée.
 
