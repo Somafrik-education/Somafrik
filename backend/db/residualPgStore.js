@@ -1,6 +1,6 @@
 "use strict";
 
-const { withSystemActivePeriods, defaultAcademicPeriods, inferPeriodMode } = require("../lib/academicConfigDefaults");
+const { withSystemActivePeriods } = require("../lib/academicConfigDefaults");
 const seedData = require("../data");
 const { resolveRecordId } = require("./residualMemoryStore");
 const {
@@ -106,21 +106,31 @@ function createResidualPgStore(repo) {
       }
       const school = await resolveSchool(schoolCode);
       if (!school) return null;
-      const row = await one(
-        `SELECT config_payload FROM school_academic_configs WHERE school_id = $1`,
-        [school.id],
-      );
-      const storedConfig = parsePayload(row?.config_payload);
+      let levels = [];
+      let tracks = [];
+      let userRoles = [];
+      let evaluationTypes = [];
+      if (typeof repo.getSchoolEducationActiveLists === "function") {
+        const lists = await repo.getSchoolEducationActiveLists(school.school_code ?? school.code);
+        levels = lists.levels ?? [];
+        tracks = lists.tracks ?? [];
+      }
+      if (typeof repo.listEstablishmentRoles === "function") {
+        userRoles = (await repo.listEstablishmentRoles({ schoolAssignableOnly: true })).map((row) => row.roleName);
+      }
+      if (typeof repo.listEvaluationTypeNames === "function") {
+        evaluationTypes = await repo.listEvaluationTypeNames(school.school_code ?? school.code);
+      }
       return withSystemActivePeriods({
         schoolCode: school.school_code ?? school.code,
-        periodMode: storedConfig?.periodMode ?? inferPeriodMode(defaultAcademicPeriods()),
-        periods: defaultAcademicPeriods(),
-        evaluationTypes: [],
-        defaultScale: Number(storedConfig?.defaultScale ?? 20),
-        reportCardMode: storedConfig?.reportCardMode ?? "period",
-        levels: [],
-        tracks: [],
-        userRoles: [],
+        periodMode: "trimestre",
+        periods: [],
+        evaluationTypes,
+        defaultScale: 20,
+        reportCardMode: "period",
+        levels,
+        tracks,
+        userRoles,
         classNames: [],
         subjects: [],
       });
