@@ -256,6 +256,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/backoffice/subscriptions",
       "/api/backoffice/notifications",
       "/api/audit",
+      "/api/data-export",
       "/api/mvp/readiness",
       "/api/mvp/snapshot",
       "/api/mvp/dashboard",
@@ -279,13 +280,17 @@ app.get("/api/health", asyncHandler(async (_req, res) => {
   });
 }));
 
-if (process.env.SOMAFRIK_E2E === "true" || process.env.SOMAFRIK_DISABLE_LOGIN_LOCKOUT === "true") {
-  const { clearAllFailedLoginAttempts } = require("./lib/loginLockout");
-  app.post("/api/backoffice/e2e/clear-login-lockout", asyncHandler(async (_req, res) => {
-    clearAllFailedLoginAttempts();
+app.post(
+  "/api/backoffice/e2e/clear-login-lockout",
+  asyncHandler(async (_req, res) => {
+    const { isE2eLoginLockoutEndpointEnabled, clearAllFailedLoginAttempts } = require("./lib/loginLockout");
+    if (!isE2eLoginLockoutEndpointEnabled()) {
+      return res.status(404).json({ message: "Not found" });
+    }
+    await clearAllFailedLoginAttempts();
     res.json({ ok: true, message: "Verrous de connexion E2E réinitialisés." });
-  }));
-}
+  }),
+);
 
 // Audit causalité Pré-E1 — exposé uniquement si SOMAFRIK_AUTHZ_TRACE=1 (≠ validation CTO).
 if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
@@ -332,7 +337,7 @@ app.get("/api/schools/:code", asyncHandler(async (req, res) => {
 
 app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { backOfficeAccessService } = await getRuntime();
-  const response = handleBusinessAction(() => backOfficeAccessService.login(req.body));
+  const response = await handleBusinessAction(() => backOfficeAccessService.login(req.body));
   if (response?.user?.role === "Parent") {
     const state = await getAuthoritativeBackOfficeState();
     const schoolCode =
@@ -360,7 +365,7 @@ app.post("/api/identify", loginRateLimiter, asyncHandler(async (req, res) => {
 
 app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
-  const response = handleBusinessAction(() => authService.login(req.body));
+  const response = await handleBusinessAction(() => authService.login(req.body));
   if (response?.user?.role === "Parent") {
     const state = await getAuthoritativeBackOfficeState();
     const schoolCode =
@@ -860,6 +865,18 @@ app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academi
     return result;
   });
   res.json(saved);
+}));
+
+app.get("/api/data-export", requireAuth, requirePermission("GET /api/data-export"), asyncHandler(async (req, res) => {
+  const { exportSchoolData } = require("./lib/dataExportService");
+  const { dataExportAuditMetaFromRequest } = require("./lib/dataExportManagement");
+  const payload = await exportSchoolData(
+    repository,
+    req.principal,
+    req.query?.schoolCode,
+    dataExportAuditMetaFromRequest(req),
+  );
+  res.json(payload);
 }));
 
 app.get("/api/school-settings", requireAuth, requirePermission("GET /api/school-settings"), asyncHandler(async (req, res) => {
@@ -2691,9 +2708,9 @@ function handleBusinessResponse(res, action) {
   }
 }
 
-function handleBusinessAction(action) {
+async function handleBusinessAction(action) {
   try {
-    return action();
+    return await action();
   } catch (error) {
     if (error instanceof BusinessError) {
       throw error;
@@ -5298,6 +5315,8 @@ function warnIfUnsafeConfiguration() {
   assertDatabaseConfiguration();
   assertProductionSecrets();
   assertProductionSecurityConfiguration();
+  const { assertLoginLockoutProductionGuards } = require("./lib/loginLockout");
+  assertLoginLockoutProductionGuards();
   assertProductionCors();
   warnIfUnsafeDevelopmentSecrets();
 }

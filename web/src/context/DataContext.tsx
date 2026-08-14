@@ -256,6 +256,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const update = useCallback(
     async (patch: Partial<BackOfficeState>, options: UpdateOptions = {}) => {
+      if (options.partial === false) {
+        throw new Error("La restauration complète n'est pas disponible.");
+      }
       if ("exams" in patch || "bulletins" in patch || "documents" in patch) {
         throw new Error(
           "Les examens, bulletins et documents ne sont plus enregistrables via le JSON résiduel. Utilisez les APIs canoniques.",

@@ -9,7 +9,7 @@
 ## 1. Principes
 
 1. **PostgreSQL** est obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`).
-2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), **rôles établissement** (`establishment_roles` + permissions), **types d’évaluation** (`evaluation_types`), **paramètres établissement** (`school_settings` + `terms`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
+2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), **rôles établissement** (`establishment_roles` + permissions), **types d’évaluation** (`evaluation_types`), **paramètres établissement** (`school_settings` + `terms`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders), **examens/bulletins/documents**, **lockout** (`login_lockouts`) — le JSON BO n’est plus source de vérité pour ces écritures.
 3. Beaucoup de domaines restent encore dans le **snapshot JSON** `backoffice_state` (migration progressive).
 4. Pas de dossier `/migrations` versionné classique : le schéma est appliqué via `schema.sql` à l’init, puis des **ensures / migrations runtime** dans le repository.
 
@@ -133,6 +133,18 @@ Migration SQL : `backend/db/migrations/20260818_school_settings_canonical.sql`.
 **Boot (ordre obligatoire)** : preflight read-only → inventaire residual exam/bulletin/document → inventaire des `exams.status` → STOP `LEGACY_*_AMBIGUOUS` / `LEGACY_EXAM_STATUS_AMBIGUOUS` si ambigu → **ensuite** DDL (`DOCUMENTS_EXAMS_SCHEMA_DDL_SQL`) → normalisation déterministe uniquement (`published` → `completed`, backfill `academic_year_id` depuis `terms`) → CHECK status → strip residual. Aucune création heuristique d'examen / élève / classe. Aucun statut inconnu → `scheduled`.
 
 Migration SQL : `backend/db/migrations/20260819_exams_report_cards_documents_canonical.sql`.
+
+### 4.2sexies Export établissement + lockout login (LOT 6)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `login_lockouts` | SoT du lockout de connexion | UNIQUE `(school_scope, identifier_normalized)` · `school_id` nullable (plateforme = `school_scope='*'`) · compteur atomique `INSERT … ON CONFLICT DO UPDATE` |
+
+Clé : `school_scope` = code établissement UPPER, ou `*` pour un compte plateforme. Identifiant = trim + lower (email, téléphone, `user_code`, identifiant enseignant). Politique : 5 échecs → `locked_until` + 15 min. Succès → `DELETE`. Expiration → reset lazy. Pas de Map processus lorsque le moteur PostgreSQL est actif.
+
+Export : `GET /api/data-export` (enveloppe `format=somafrik-export`, `version=1`, `includedDomains` = domaines réellement lus). **Snapshot consistency = PostgreSQL `REPEATABLE READ`** : toutes les lectures (existence établissement + domaines) s’exécutent dans une transaction `READ ONLY ISOLATION LEVEL REPEATABLE READ` sur une seule connexion ; l’écriture d’audit `export_school_data` a lieu **après** le COMMIT du snapshot (fail-closed si l’audit échoue). Pas de `PUT /api/backoffice/state`. Pas de restauration globale. Moteur mémoire : pas de snapshot SQL (processus unique).
+
+Migration SQL : `backend/db/migrations/20260820_login_lockouts_canonical.sql`.
 
 ### 4.3 Notes (canonique PG)
 

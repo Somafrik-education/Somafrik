@@ -72,6 +72,9 @@ class FallbackRepository {
   }
 
   async init() {
+    if (this.ready) return;
+    const { attachMemoryLoginLockoutStore } = require("../lib/loginLockout");
+    attachMemoryLoginLockoutStore();
     this.ready = true;
   }
 
@@ -431,6 +434,10 @@ class FallbackRepository {
 
   async withTransaction(fn) {
     return fn(null);
+  }
+
+  async withReadOnlyRepeatableRead(fn) {
+    return fn(this);
   }
 
   async touchUserLastLogin(lookupKeys = []) {
@@ -2376,6 +2383,10 @@ class FallbackRepository {
 
   getPlatformSchoolByCode(code) {
     return this.getPlatformStore().getSchoolByCode(code);
+  }
+
+  getSchoolByCode(code) {
+    return this.getPlatformSchoolByCode(code);
   }
 
   async getRolePermissionsMap() {
