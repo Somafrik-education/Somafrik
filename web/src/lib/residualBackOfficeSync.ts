@@ -36,6 +36,7 @@ export async function syncResidualBackOfficePatch(
       delete payload.schoolId;
       delete payload.schoolCode;
       delete payload.countryCode;
+      // LOT 4 : ne pas retirer silencieusement periods/classNames/subjects/settings — l'API refuse (400).
       await api.put(
         `/backoffice/establishments/${encodeURIComponent(scopedSchool)}/academic-config`,
         payload,

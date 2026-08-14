@@ -91,6 +91,9 @@ const REPOSITORY_METHODS = Object.freeze([
   "createEvaluationType",
   "updateEvaluationType",
   "archiveEvaluationType",
+  "getSchoolSettings",
+  "patchSchoolSettings",
+  "replaceAcademicPeriods",
   // Plateforme métier (LOT 6 — PostgreSQL canonique)
   "listPlatformProjection",
   "getPlatformSchoolByCode",

@@ -63,17 +63,6 @@ test("persistance résiduelle PG sans lecture backoffice_state", { skip: !should
     const store = createResidualPgStore(repo);
     const saved = await store.saveAcademicConfig(school.school_code, {
       schoolCode: school.school_code,
-      periodMode: "trimestre",
-      periods: [
-        {
-          name: "Trimestre 1",
-          type: "Trimestre",
-          startDate: "01-09-2025",
-          endDate: "31-12-2025",
-          active: true,
-        },
-      ],
-      defaultScale: 20,
     });
     assert.equal(saved.schoolCode, school.school_code);
     const projection = await store.listProjection();

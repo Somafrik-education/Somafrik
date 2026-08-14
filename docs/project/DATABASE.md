@@ -9,7 +9,7 @@
 ## 1. Principes
 
 1. **PostgreSQL** est obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`).
-2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), **rôles établissement** (`establishment_roles` + permissions), **types d’évaluation** (`evaluation_types`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
+2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), **rôles établissement** (`establishment_roles` + permissions), **types d’évaluation** (`evaluation_types`), **paramètres établissement** (`school_settings` + `terms`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
 3. Beaucoup de domaines restent encore dans le **snapshot JSON** `backoffice_state` (migration progressive).
 4. Pas de dossier `/migrations` versionné classique : le schéma est appliqué via `schema.sql` à l’init, puis des **ensures / migrations runtime** dans le repository.
 
@@ -98,6 +98,23 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 **Boot (ordre obligatoire)** : preflight (`schools`, `evaluations`) → inventaire legacy `config_payload.evaluationTypes` → STOP `LEGACY_EVALUATION_TYPES_AMBIGUOUS` si le catalogue n’est pas **exactement** équivalent aux 8 types défaut (sous-ensemble, sur-ensemble ou combinaison différente) → schéma canonique → strip JSON → bootstrap contrôlé (seed défauts si l’établissement n’a aucune ligne). `absent` / `null` / `[]` autorisent le bootstrap. Nouvelle évaluation avec principal : type canonique explicite obligatoire, sinon `400 EVALUATION_TYPE_REQUIRED` (aucun fallback `"Devoir"`).
 
 Migration SQL : `backend/db/migrations/20260817_evaluation_types_canonical.sql`.
+
+### 4.2quater Paramètres établissement (canonique PG — LOT 4 Paramètres)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `school_settings` | Scalaires établissement : `period_mode`, `default_scale`, `report_card_mode` | PK `school_id` FK `schools` · CHECK modes / barème `> 0` et `<= 100` |
+| `terms` | Périodes académiques (année ouverte) | UNIQUE `(academic_year_id, name)` — **pas** de seconde table `periods` |
+
+`default_scale` = préremplissage UI uniquement. `evaluations.max_score` reste la valeur d’instance.
+
+`PUT /api/academic-config` refuse `periods`, `periodMode`, `classNames`, `subjects`, `subjectsByClass`, `defaultScale`, `reportCardMode`, `schoolYear`, `academicYear`, `allowCustom*`, `bulletinDesignByClass`, `defaultGradeScale`. `GET /api/academic-config` projette depuis PostgreSQL.
+
+**Boot (ordre obligatoire)** : preflight (`schools`, `academic_years`, `terms`) → inventaire JSON + **capture des scalaires B validés** (`periodMode`, `defaultScale`/`defaultGradeScale`, `reportCardMode`) → STOP `LEGACY_SCHOOL_SETTINGS_AMBIGUOUS` (ou codes spécialisés périodes/classes/matières) si non exactement équivalent → schéma `school_settings` (table + trigger `AFTER INSERT ON schools` + backfill) → bootstrap/matérialisation **depuis les valeurs capturées** (jamais relire le JSON) → vérification PostgreSQL = capturé → **puis** strip JSON.
+
+Un `INSERT` ultérieur dans `schools` crée transactionnellement la ligne `school_settings` (défauts SQL). `GET /api/school-settings` et `projectAcademicConfig()` matérialisent la ligne en PostgreSQL si elle manque ; ils ne synthétisent plus `trimestre` / `20` / `period` en mémoire.
+
+Migration SQL : `backend/db/migrations/20260818_school_settings_canonical.sql`.
 
 ### 4.3 Notes (canonique PG)
 

@@ -109,6 +109,7 @@ class PostgresRepository {
     await this.ensureEvaluationTypesCanonicalSchema();
     await this.stripLegacyEvaluationTypesPayloads();
     await this.ensureEvaluationTypesBootstrap();
+    await this.runSchoolSettingsCanonicalBoot();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -652,6 +653,61 @@ class PostgresRepository {
   getEvaluationTypesStore() {
     const { createEvaluationTypesPgStore } = require("./evaluationTypesPgStore");
     return createEvaluationTypesPgStore(this);
+  }
+
+  async runSchoolSettingsCanonicalBoot() {
+    const { runSchoolSettingsCanonicalBoot } = require("../lib/schoolSettingsService");
+    return runSchoolSettingsCanonicalBoot(this, console);
+  }
+
+  async ensureSchoolSettingsPreflight() {
+    const { assertSchoolSettingsSchemaPreflight } = require("./schoolSettingsSchema");
+    await assertSchoolSettingsSchemaPreflight(this);
+  }
+
+  async ensureSchoolSettingsCanonicalSchema() {
+    const { SCHOOL_SETTINGS_SCHEMA_SQL } = require("./schoolSettingsSchema");
+    await this.query(SCHOOL_SETTINGS_SCHEMA_SQL);
+  }
+
+  async stripLegacySchoolSettingsPayloads() {
+    const { stripLegacySchoolSettingsPayloads } = require("../lib/schoolSettingsService");
+    await stripLegacySchoolSettingsPayloads(this);
+  }
+
+  async ensureSchoolSettingsConstraints() {
+    const { ensureSchoolSettingsConstraints } = require("../lib/schoolSettingsService");
+    return ensureSchoolSettingsConstraints(this, console);
+  }
+
+  async ensureSchoolSettingsBootstrap(captured) {
+    const { ensureSchoolSettingsBootstrap } = require("../lib/schoolSettingsService");
+    await ensureSchoolSettingsBootstrap(this, captured);
+  }
+
+  async verifySchoolSettingsMaterialized(captured) {
+    const { verifySchoolSettingsMaterialized } = require("../lib/schoolSettingsService");
+    await verifySchoolSettingsMaterialized(this, captured);
+  }
+
+  getSchoolSettingsStore() {
+    const { createSchoolSettingsPgStore } = require("./schoolSettingsPgStore");
+    return createSchoolSettingsPgStore(this);
+  }
+
+  getSchoolSettings(principal, schoolCode) {
+    const { getSchoolSettings } = require("../lib/schoolSettingsService");
+    return getSchoolSettings(this, principal, schoolCode);
+  }
+
+  patchSchoolSettings(payload, principal, auditMeta, schoolCode) {
+    const { patchSchoolSettings } = require("../lib/schoolSettingsService");
+    return patchSchoolSettings(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  replaceAcademicPeriods(payload, principal, auditMeta, schoolCode) {
+    const { replaceAcademicPeriods } = require("../lib/schoolSettingsService");
+    return replaceAcademicPeriods(this, payload, principal, auditMeta, schoolCode);
   }
 
   listEvaluationTypes(schoolCode, options) {
@@ -5169,6 +5225,14 @@ class PostgresRepository {
   async persistEstablishment(record) {
     const saved = await this.getSchoolsRepository().persist(record);
     this.cachedDataset = null;
+    try {
+      const store = this.getSchoolSettingsStore();
+      if (saved?.id && typeof store.seedDefaultSettingsIfEmpty === "function") {
+        await store.seedDefaultSettingsIfEmpty(saved.id);
+      }
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
     return saved;
   }
 

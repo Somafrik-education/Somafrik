@@ -12,18 +12,13 @@ import {
   Input,
   SectionHeader,
   Select,
-  Textarea,
   useToast,
 } from "../design-system";
 import { SchoolEducationActivationPanel } from "../components/SchoolEducationActivationPanel";
 import { EvaluationTypesPanel } from "../components/EvaluationTypesPanel";
-import {
-  DEFAULT_CLASS_NAMES,
-  getAllSchoolSubjects,
-  getSchoolAcademicLists,
-  parseListLines,
-  resolveSubjectsByClass,
-} from "../lib/academicConfig";
+import { getSchoolAcademicLists } from "../lib/academicConfig";
+import { ApiError } from "../api/client";
+import { schoolSettingsApi } from "../lib/schoolSettingsApi";
 import {
   applySystemActivePeriod,
   coercePeriodMode,
@@ -43,21 +38,14 @@ import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { displayRoleName, normalize } from "../lib/format";
 import { establishmentRolesApi, type EstablishmentRole } from "../lib/establishmentRolesApi";
 
-type SavingSection =
-  | "periods"
-  | "evaluations"
-  | "levels"
-  | "tracks"
-  | "classNames"
-  | "subjects"
-  | null;
+type SavingSection = "periods" | "evaluations" | "levels" | "tracks" | null;
 
 /** Domaine de configuration affiché (hub Paramètres). Non défini = tout afficher. */
 export type ConfigurationSection = "annee-scolaire" | "structure" | "roles-droits";
 
 export function ConfigurationPage({ section }: { section?: ConfigurationSection } = {}) {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, invalidateDomains, ensureDomains } = useData();
   const ctx = usePermissionContext();
   const { showToast } = useToast();
   const user = session?.user ?? null;
@@ -104,7 +92,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const [periodRows, setPeriodRows] = useState<AcademicPeriodRow[]>(() =>
     normalizeStoredPeriods(academicConfig.periods, coercePeriodMode(academicConfig.periodMode)),
   );
-  const [selectedSubjectClass, setSelectedSubjectClass] = useState("");
   const [assignableRoles, setAssignableRoles] = useState<EstablishmentRole[]>([]);
   const [selectedCatalogueRoleId, setSelectedCatalogueRoleId] = useState("");
   const [rolesLoading, setRolesLoading] = useState(false);
@@ -120,13 +107,13 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
   const resolvedPeriodRows = useMemo(() => applySystemActivePeriod(periodRows), [periodRows]);
   const classNamesForSubjects = useMemo(() => {
-    if (isBulkConfiguration) return DEFAULT_CLASS_NAMES;
+    if (isBulkConfiguration) return [];
     return getSchoolAcademicLists(state, configTarget).classNames;
   }, [isBulkConfiguration, state.academicConfigs, configTarget]);
-  const subjectsByClass = useMemo(
-    () => resolveSubjectsByClass(academicConfig, classNamesForSubjects),
-    [academicConfig, classNamesForSubjects, academicFormKey],
-  );
+  const subjectsForSchool = useMemo(() => {
+    if (isBulkConfiguration) return [];
+    return getSchoolAcademicLists(state, configTarget).subjects;
+  }, [isBulkConfiguration, state.academicConfigs, configTarget]);
   useEffect(() => {
     setAcademicFormKey((current) => current + 1);
   }, [configTarget]);
@@ -172,14 +159,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     }
   }, [assignableRoles, selectedCatalogueRoleId]);
 
-  useEffect(() => {
-    if (!selectedSubjectClass && classNamesForSubjects.length) {
-      setSelectedSubjectClass(classNamesForSubjects[0]);
-    } else if (selectedSubjectClass && !classNamesForSubjects.includes(selectedSubjectClass)) {
-      setSelectedSubjectClass(classNamesForSubjects[0] ?? "");
-    }
-  }, [classNamesForSubjects, selectedSubjectClass]);
-
   if (!canAccessSchoolBackOffice(user?.role)) {
     return (
       <Card className="p-6">
@@ -201,11 +180,24 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     );
   }
 
-  async function saveAcademicPartial(
-    section: Exclude<SavingSection, null>,
-    partial: Record<string, unknown>,
-    successMessage: string,
-  ) {
+  function formatSettingsHttpError(error: unknown): string {
+    if (error instanceof ApiError) {
+      if (error.status === 400) return error.message || "Requête invalide.";
+      if (error.status === 403) return "Vous n'avez pas le droit de modifier les paramètres d'établissement.";
+      if (error.status === 404) return "Établissement ou période introuvable.";
+      if (error.status === 409) return error.message || "Conflit : une période est encore utilisée.";
+      if (error.status >= 500) return "Erreur serveur. Réessayez plus tard.";
+      return error.message;
+    }
+    return error instanceof Error ? error.message : "Erreur inattendue.";
+  }
+
+  function scopedSettingsSchoolCode() {
+    return isSuperAdminRole(user?.role) ? configTarget : undefined;
+  }
+
+  async function handlePeriodsSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
       showToast(
         "Sélectionnez un établissement précis. L'enregistrement multi-établissements n'est pas disponible sur cette API.",
@@ -213,56 +205,43 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
       );
       return;
     }
-
     const effectiveSchoolCode = String(configTarget ?? activeSchoolCode ?? "").trim();
     if (!effectiveSchoolCode || isAllSchoolsSelection(effectiveSchoolCode)) {
       showToast("Sélectionnez un établissement actif avant d'enregistrer.", "error");
       return;
     }
-
     if (!canConfigure) {
       showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
       return;
     }
-
-    setSavingSection(section);
-    try {
-      const existing = (state.academicConfigs?.[effectiveSchoolCode] ?? {}) as Record<string, unknown>;
-      const nextConfig = {
-        ...(typeof existing === "object" ? existing : {}),
-        schoolCode: effectiveSchoolCode,
-        ...partial,
-      };
-      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } }, { schoolCode: effectiveSchoolCode });
-      showToast(successMessage, "success");
-      setAcademicFormKey((current) => current + 1);
-    } catch {
-      showToast("Échec de l'enregistrement", "error");
-    } finally {
-      setSavingSection(null);
-    }
-  }
-
-  async function handlePeriodsSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
     const form = new FormData(event.currentTarget);
     const periods = serializePeriods(periodRows, periodMode);
     if (!periods.length) {
       showToast("Ajoutez au moins une sous-période", "error");
       return;
     }
-    await saveAcademicPartial(
-      "periods",
-      {
-        periodMode,
-        periods,
-        defaultScale: Number(form.get("defaultScale") ?? 20),
-        ...(canDesignBulletins
-          ? { reportCardMode: String(form.get("reportMode") ?? "period") }
-          : {}),
-      },
-      "Périodes et barème enregistrés",
-    );
+    const defaultScale = Number(form.get("defaultScale"));
+    setSavingSection("periods");
+    try {
+      const schoolCode = scopedSettingsSchoolCode();
+      await schoolSettingsApi.patch(
+        {
+          periodMode,
+          defaultScale,
+          ...(canDesignBulletins ? { reportCardMode: String(form.get("reportMode") ?? "period") } : {}),
+        },
+        schoolCode,
+      );
+      await schoolSettingsApi.replacePeriods(periods, schoolCode);
+      invalidateDomains(["academicConfigs"], { schoolCode: effectiveSchoolCode });
+      await ensureDomains(["academicConfigs"], { schoolCode: effectiveSchoolCode, force: true });
+      showToast("Périodes et barème enregistrés", "success");
+      setAcademicFormKey((current) => current + 1);
+    } catch (error) {
+      showToast(formatSettingsHttpError(error), "error");
+    } finally {
+      setSavingSection(null);
+    }
   }
 
   function handlePeriodModeChange(nextMode: PeriodMode) {
@@ -304,73 +283,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
           .map((row, rowIndex) => ({ ...row, order: rowIndex + 1 })),
       ),
     );
-  }
-
-  async function handleClassNamesSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const nextClassNames = parseListLines(String(form.get("classNames") ?? ""));
-    const currentByClass = resolveSubjectsByClass(academicConfig, classNamesForSubjects);
-    const nextByClass: Record<string, string[]> = {};
-    nextClassNames.forEach((className) => {
-      nextByClass[className] = currentByClass[className] ?? [];
-    });
-    await saveAcademicPartial(
-      "classNames",
-      {
-        classNames: nextClassNames,
-        subjectsByClass: nextByClass,
-        subjects: getAllSchoolSubjects(nextByClass),
-      },
-      "Classes enregistrées",
-    );
-  }
-
-  async function handleSubjectsSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
-      showToast(
-        "Sélectionnez un établissement précis. L'enregistrement multi-établissements n'est pas disponible sur cette API.",
-        "error",
-      );
-      return;
-    }
-    const effectiveSchoolCode = String(configTarget ?? activeSchoolCode ?? "").trim();
-    if (!canConfigure || !effectiveSchoolCode || !selectedSubjectClass) {
-      if (!canConfigure) {
-        showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
-      } else {
-        showToast("Sélectionnez d'abord une classe", "error");
-      }
-      return;
-    }
-    const form = new FormData(event.currentTarget);
-    const className = String(form.get("subjectClass") ?? selectedSubjectClass);
-    const subjects = parseListLines(String(form.get("subjects") ?? ""));
-
-    setSavingSection("subjects");
-    try {
-      const existing = (state.academicConfigs?.[effectiveSchoolCode] ?? {}) as Record<string, unknown>;
-      const classNames = getSchoolAcademicLists(state, effectiveSchoolCode).classNames;
-      const currentByClass = resolveSubjectsByClass(existing, classNames);
-      const nextByClass = {
-        ...currentByClass,
-        [className]: subjects,
-      };
-      const nextConfig = {
-        ...(typeof existing === "object" ? existing : {}),
-        schoolCode: effectiveSchoolCode,
-        subjectsByClass: nextByClass,
-        subjects: getAllSchoolSubjects(nextByClass),
-      };
-      await update({ academicConfigs: { [effectiveSchoolCode]: nextConfig } }, { schoolCode: effectiveSchoolCode });
-      showToast(`Matières enregistrées pour ${className}`, "success");
-      setAcademicFormKey((current) => current + 1);
-    } catch {
-      showToast("Échec de l'enregistrement", "error");
-    } finally {
-      setSavingSection(null);
-    }
   }
 
   const showAcademicConfig = canConfigure || canReadSettings;
@@ -522,7 +434,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                     name="defaultScale"
                     type="number"
                     min={1}
-                    defaultValue={String(academicConfig.defaultScale ?? 20)}
+                    defaultValue={academicConfig.defaultScale != null ? String(academicConfig.defaultScale) : ""}
                   />
                 </FormField>
                 {canDesignBulletins ? (
@@ -653,58 +565,39 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
           <Card key={`classNames-${academicFormKey}`} className="p-6">
             <SectionHeader
               title="Classes"
-              description="Une classe par ligne. Utilisées dans les listes déroulantes (élèves, matières, affectations)."
-            />
-            <form onSubmit={handleClassNamesSubmit} className="mt-4 space-y-4">
-              <FormField label="Classes">
-                <Textarea
-                  name="classNames"
-                  rows={4}
-                  defaultValue={(academicConfig.classNames as string[] | undefined)?.join("\n") ?? DEFAULT_CLASS_NAMES.join("\n")}
-                />
-              </FormField>
-              <Button type="submit" disabled={savingSection === "classNames"}>
-                Enregistrer
-              </Button>
-            </form>
-          </Card>
-
-          <Card key={`subjects-${academicFormKey}-${selectedSubjectClass}`} className="p-6">
-            <SectionHeader
-              title="Matières"
-              description="Sélectionnez une classe, puis saisissez les matières enseignées (une par ligne)."
+              description="Projection PostgreSQL des classes actives (référentiel /api/classes). Cette liste n'est plus une source de vérité locale."
             />
             {classNamesForSubjects.length ? (
-              <form onSubmit={handleSubjectsSubmit} className="mt-4 space-y-4">
-                <FormField label="Classe">
-                  <Select
-                    name="subjectClass"
-                    value={selectedSubjectClass}
-                    onChange={(e) => setSelectedSubjectClass(e.target.value)}
-                    options={classNamesForSubjects.map((className) => ({
-                      value: className,
-                      label: className,
-                    }))}
-                  />
-                </FormField>
-                <FormField label="Matières de la classe">
-                  <Textarea
-                    name="subjects"
-                    rows={6}
-                    key={`subjects-text-${selectedSubjectClass}-${academicFormKey}`}
-                    defaultValue={(subjectsByClass[selectedSubjectClass] ?? []).join("\n")}
-                    placeholder={"Mathématiques\nFrançais\nSciences"}
-                  />
-                </FormField>
-                <Button type="submit" disabled={savingSection === "subjects" || !selectedSubjectClass}>
-                  Enregistrer
-                </Button>
-              </form>
+              <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-ink">
+                {classNamesForSubjects.map((className) => (
+                  <li key={className}>{className}</li>
+                ))}
+              </ul>
             ) : (
               <EmptyState
                 className="mt-4"
-                title="Aucune classe configurée"
-                description="Enregistrez d'abord la liste des classes pour configurer les matières par classe."
+                title="Aucune classe canonique"
+                description="Créez les classes dans le module Classes. Elles apparaîtront ici par projection PostgreSQL."
+              />
+            )}
+          </Card>
+
+          <Card key={`subjects-${academicFormKey}`} className="p-6">
+            <SectionHeader
+              title="Matières"
+              description="Projection PostgreSQL des matières actives (référentiel /api/v2/subjects). Plus de saisie JSON par classe."
+            />
+            {subjectsForSchool.length ? (
+              <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-ink">
+                {subjectsForSchool.map((subject) => (
+                  <li key={subject}>{subject}</li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState
+                className="mt-4"
+                title="Aucune matière canonique"
+                description="Créez les matières dans le référentiel pédagogique. Elles apparaîtront ici par projection PostgreSQL."
               />
             )}
           </Card>

@@ -1,7 +1,5 @@
 "use strict";
 
-const { withSystemActivePeriods } = require("../lib/academicConfigDefaults");
-const seedData = require("../data");
 const {
   assertNoLegacyAcademicLevelsTracksWrite,
   stripLegacyAcademicLevelsTracks,
@@ -14,6 +12,10 @@ const {
   assertNoLegacyEvaluationTypesWrite,
   stripLegacyEvaluationTypes,
 } = require("../lib/evaluationTypesManagement");
+const {
+  assertNoLegacySchoolSettingsWrite,
+  stripLegacySchoolSettings,
+} = require("../lib/schoolSettingsManagement");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -59,26 +61,12 @@ function createResidualMemoryStore() {
       assertNoLegacyAcademicLevelsTracksWrite(config);
       assertNoLegacyUserRolesWrite(config);
       assertNoLegacyEvaluationTypesWrite(config);
-      const sanitizedConfig = stripLegacyEvaluationTypes(
-        stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config)),
+      assertNoLegacySchoolSettingsWrite(config);
+      stripLegacySchoolSettings(
+        stripLegacyEvaluationTypes(stripLegacyUserRoles(stripLegacyAcademicLevelsTracks(config))),
       );
       const normalized = asTrimmed(schoolCode).toUpperCase();
-      const saved = withSystemActivePeriods({
-        schoolCode: normalized,
-        periodMode: sanitizedConfig.periodMode ?? "trimestre",
-        periods: Array.isArray(sanitizedConfig.periods) && sanitizedConfig.periods.length ? sanitizedConfig.periods : [],
-        defaultScale: Number(sanitizedConfig.defaultScale ?? 20),
-        reportCardMode: sanitizedConfig.reportCardMode ?? "period",
-        allowCustomClasses: sanitizedConfig.allowCustomClasses !== false,
-        allowCustomCourses: sanitizedConfig.allowCustomCourses !== false,
-        allowCustomReportCards: sanitizedConfig.allowCustomReportCards !== false,
-        classNames: Array.isArray(sanitizedConfig.classNames) && sanitizedConfig.classNames.length
-          ? sanitizedConfig.classNames
-          : seedData.demoClassNames,
-        subjects: Array.isArray(sanitizedConfig.subjects) && sanitizedConfig.subjects.length
-          ? sanitizedConfig.subjects
-          : seedData.demoSubjects,
-      });
+      const saved = { schoolCode: normalized };
       academicConfigs.set(normalized, saved);
       return saved;
     },

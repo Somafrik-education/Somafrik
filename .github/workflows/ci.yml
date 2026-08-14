@@ -110,6 +110,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:evaluation-types-data
+      - name: verify:school-settings-data (LOT 4 paramètres établissement)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:school-settings-data
       - name: verify:clients-legacy-cleanup (mémoire)
         run: npm run verify:clients-legacy-cleanup
       - name: verify:backoffice-state-removal (mémoire + PostgreSQL CI)

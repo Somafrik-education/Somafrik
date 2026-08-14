@@ -54,10 +54,10 @@ Les cartes marquées `status: "soon"` restent cliquables : elles ouvrent un `Com
 |---------------|---------------|-------------------------|--------------------|------|
 | **Mon abonnement** `/parametres/mon-abonnement` | `MonAbonnementPage` + sous-routes factures / paiements / changer-offre / résiliation | APIs abonnements plateforme | **Oui** — tables `subscriptions`, `subscription_*` | Canonique PG |
 | **Profil établissement** `/parametres/profil` | `EstablishmentProfilePage` | `activeSchool` (domaine `schools`) | **Oui** — `PATCH /api/backoffice/establishments/:code` | Canonique PG + JSONB profil |
-| **Année scolaire** `/parametres/annee-scolaire` | `ConfigurationPage section="annee-scolaire"` | `state.academicConfigs[schoolCode]` (périodes, barème) + catalogue **`evaluation_types`** via `/api/evaluation-types` | **Oui** — PUT academic-config → `school_academic_configs.config_payload` (**pas** `academic_years` / `terms`). Types d’éval = table PG `evaluation_types` (LOT 3), plus le JSON | JSONB PG périodes ; **types = PG canonique** |
-| **Structure pédagogique** `/parametres/structure` | `ConfigurationPage section="structure"` | mêmes `academicConfigs` (`levels`, `tracks`, `classNames`, `subjects`) — **pas** `evaluationTypes` aujourd’hui | **Oui** — même PUT JSON ; **pas** sync `classes` / `subjects` / `school_courses`. Vocabulaire niveaux/filières créé par l’école. Cible CTO §4.A/C non implémentée | JSONB PG, dual |
+| **Année scolaire** `/parametres/annee-scolaire` | `ConfigurationPage section="annee-scolaire"` | `GET /api/school-settings` + projection `GET /api/academic-config` (périodes = `terms`) + catalogue **`evaluation_types`** | **Oui** — `PATCH /api/school-settings` + `PUT /api/academic-periods`. Types d’éval = `evaluation_types` (LOT 3) | **Canonique PG** |
+| **Structure pédagogique** `/parametres/structure` | `ConfigurationPage section="structure"` | niveaux/filières LOT 1 ; `classNames`/`subjects` = projection lecture `classes` / `subjects` | **Non** pour JSON classes/matières. Création via modules Classes / matières PG | **Canonique PG** |
 | **Rôles et droits** `/parametres/roles-droits` | `ConfigurationPage section="roles-droits"` | `academicConfigs.userRoles` + `state.rolePermissions` | **Partiel** : liste de rôles → JSON academic-config ; **pilotage** → `PUT /api/backoffice/role-permissions` (**Super Admin uniquement**) | Dual JSONB + `role_permissions` |
-| **Documents** `/parametres/documents` | `BulletinDesignPage` | `academicConfigs` (design par classe) + listes classes/matières | **Oui** si Superadmin — PUT academic-config. Page **redirige** les non-Superadmin | JSONB PG |
+| **Documents** `/parametres/documents` | `BulletinDesignPage` | listes classes/matières (projection) ; design local UI | **Non** via academic-config (`bulletinDesignByClass` interdit). Hors LOT 4 | JSON interdit |
 | **Sécurité** `/parametres/securite` | `SecuritySettingsPage` | Session AuthContext + `state.auditLog` + texte **codé en dur** | **Non** — lecture locale / export CSV client. **Pas** `GET /api/audit` | Calculé + écran trompeur |
 | **Données et sauvegarde** `/parametres/donnees` | `DataBackupSettingsPage` | `state` client (domaines déjà chargés) | Export CSV/JSON **local**. Restore appelle `DataContext.update` qui **strippe** écoles/élèves/enseignants/finance/pédagogie/plateforme/clients | Écriture legacy inopérante pour le métier |
 | **Finances** `/parametres/finances` | `SettingsFinancePage` | Aucune | **Non** — `ComingSoonState` | Écran résiduel (ops Finance existent ailleurs) |
@@ -98,38 +98,57 @@ Convention des fiches : propriétaire métier, UI, API, source, tables, RBAC, sc
 
 ---
 
-### 2.2 Paramètres académiques (JSON `school_academic_configs`)
+### 2.2 Paramètres académiques (projection `GET /api/academic-config`)
 
 **Propriétaire métier** : Admin School (Paramètres Établissement) ; Superadmin peut cibler un établissement dans `ConfigurationPage`.
 
-**UI** : `web/src/pages/ConfigurationPage.tsx` — sections `annee-scolaire` (périodes, barème, types d’évaluation, flags custom) et `structure` (niveaux, filières, classNames, subjects).
+**UI** : `web/src/pages/ConfigurationPage.tsx` — sections `annee-scolaire` (périodes via `terms`, barème `school_settings`, types d’évaluation LOT 3) et `structure` (niveaux/filières LOT 1, `classNames`/`subjects` en lecture seule).
 
-**API** :
+**API canonique LOT 4** :
 
-- `GET /api/academic-config` — `requireAuth` + tenant **sans** `requirePermission` (`backend/server.js`).
-- `PUT /api/academic-config` — `Gérer planning académique` / `Gérer classes` / `Paramètres Établissement:UPDATE` / `ALL_PRIVILEGES` / `COUNTRY_PRIVILEGES`.
-- `GET/PUT /api/backoffice/establishments/:schoolCode/academic-config` — mêmes familles de permissions ; utilisé par Web `residualBackOfficeSync.syncResidualBackOfficePatch`.
+- `GET/PATCH /api/school-settings` — tenant = principal JWT.
+- `PUT /api/academic-periods` — upsert `terms` de l’année ouverte.
+- `GET/PATCH /api/backoffice/establishments/:schoolCode/school-settings`
+- `PUT /api/backoffice/establishments/:schoolCode/academic-periods`
+- `GET /api/academic-config` — **projection PostgreSQL** (compat Web/Mobile).
+- `PUT /api/academic-config` — clés LOT 4 **interdites** (`LEGACY_SCHOOL_*_WRITE_FORBIDDEN`) ; `{}` autorisé (no-op, persist `{}`).
 
-**Persistance** : `residualPgStore.getAcademicConfig` / `saveAcademicConfig` (`backend/db/residualPgStore.js`) → `school_academic_configs.config_payload` (migration `backend/db/migrations/20260814_residual_state_canonical.sql`).
+**SoT** : `school_settings` (scalaires) + `terms` (périodes) + `classes` / `subjects` (listes) + `academic_years` (libellé année). `config_payload` n’est plus source de vérité.
 
-**Lecture réelle des périodes** (`getAcademicConfig`) :
+**Périodes** : `academic-config.periods` = projection de `terms` (année `active`/`open`). Pas de `school_settings.periods`. `evaluations.max_score` reste la valeur d’instance ; `default_scale` = préremplissage UI uniquement.
 
-1. Si `config_payload.periods[]` est non vide → **JSON prioritaire**.
-2. Sinon mapping des lignes `terms` (jointure `academic_years`) ou défauts `defaultAcademicPeriods()`.
-3. `saveAcademicConfig` **n’écrit que le JSON** ; **aucune** INSERT/UPDATE `terms` / `academic_years`.
+| Clé legacy | Catégorie | Traitement LOT 4 |
+|------------|-----------|------------------|
+| `levels` / `tracks` | A | LOT 1 — ne pas recréer |
+| `userRoles` | A | LOT 2 — ne pas recréer |
+| `evaluationTypes` | A | LOT 3 — ne pas recréer |
+| `schoolCode` | A | `schools.school_code` |
+| `periods` | A | Projection `terms` |
+| `classNames` | A | Projection `classes.name` actives |
+| `subjects` | A | Projection `subjects.name` actives |
+| `schoolYear` / `academicYear` | A | Projection `academic_years.name` |
+| `periodMode` | B | `school_settings.period_mode` |
+| `defaultScale` / `defaultGradeScale` | B | `school_settings.default_scale` (UI, jamais `evaluations.max_score`) |
+| `reportCardMode` | B | `school_settings.report_card_mode` |
+| `allowCustomClasses/Courses/ReportCards` | D | Strip, non migrés |
+| `subjectsByClass` | D | Non vide → `LEGACY_SCHOOL_SUBJECTS_AMBIGUOUS` |
+| `bulletinDesignByClass` | D (academic-config) | Objet non vide → ambigu ; documents hors LOT 4 |
+| Horaires / jours d’ouverture | — | Absents du dépôt, non inventés |
 
-Champs JSON typiques : `periodMode`, `periods[]`, `defaultScale`, `reportCardMode`, `allowCustomClasses|Courses|ReportCards`, `classNames`, `subjects` (map classe → matières), `bulletinDesignByClass` (page Documents). `levels` / `tracks` / `userRoles` / `evaluationTypes` : **lecture projection PG uniquement**, écriture interdite.
+**Boot** : preflight (`schools`, `academic_years`, `terms`) → inventaire JSON + capture des scalaires B validés → STOP `LEGACY_SCHOOL_SETTINGS_AMBIGUOUS` si non exactement équivalent → CREATE `school_settings` (trigger `AFTER INSERT ON schools` + backfill) → bootstrap depuis les valeurs capturées → vérification PG = capturé → **puis** strip JSON. `GET` / projection matérialisent `school_settings` si la ligne manque (pas de fallback mémoire `trimestre`/`20`/`period`).
+
+**Mobile** : `GET /academic-config` projection ; `ConfigurationScreen` lecture seule ; pas de PUT SoT.
 
 | Paramètre | Scope | Validations UI | Dual / legacy | Risque |
 |-----------|-------|----------------|---------------|--------|
-| Périodes / mode trimestre-semestre | Établissement | `academicPeriods.ts` (`coercePeriodMode`, `applySystemActivePeriod`) | Notes/évaluations utilisent `terms.id` (PG). Config hub n’alimente pas `terms`. | **P0** |
-| Barème `defaultScale` | Établissement | nombre | JSON `config_payload` uniquement | INFO |
-| Types d’évaluation | Établissement | catalogue PG via `EvaluationTypesPanel` (année scolaire) | **Table `evaluation_types`** (SoT LOT 3). `GET /api/academic-config.evaluationTypes` = projection des noms actifs. Écriture JSON interdite (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`). | INFO |
-| Niveaux, filières | Établissement | listes lignes | JSON `config_payload.levels` / `tracks` ; seed `backend/data.js` `demoLevels` / `demoTracks` si JSON vide. Gérés aujourd’hui par Admin établissement. Cible CTO (non implémentée) : §4.A | INFO |
-| `classNames` / `subjects` | Établissement | listes | **Non synchronisés** avec `classes`, `subjects`, `school_courses` | **P0** |
-| Flags `allowCustom*` | Établissement | booléens | Consommés planning / bulletins côté Web | INFO |
-| Design bulletins | Établissement + classe | Superadmin only UI | JSON dans le même `config_payload` | P1 |
-| Années scolaires relationnelles | Établissement | APIs v2 | `GET/POST /api/v2/academic-years` — **pas** branchées sur le hub Année scolaire | **P1** |
+| Périodes / mode trimestre-semestre | Établissement | `academicPeriods.ts` | **SoT `terms` + `school_settings.period_mode`**. GET academic-config = projection. PUT JSON interdit. | INFO (migré LOT 4) |
+| Barème `defaultScale` | Établissement | nombre > 0 ≤ 100 | `school_settings.default_scale` (UI). Jamais `evaluations.max_score`. | INFO |
+| Types d’évaluation | Établissement | catalogue PG via `EvaluationTypesPanel` | **Table `evaluation_types`** (LOT 3) | INFO |
+| Niveaux, filières | Établissement | activation LOT 1 | Tables `education_*` / `school_*` | INFO |
+| `classNames` / `subjects` | Établissement | lecture seule | Projection `classes` / `subjects`. Écriture JSON interdite. | INFO (migré LOT 4) |
+| Flags `allowCustom*` | — | — | Obsolètes, strippés, non migrés | INFO |
+| Design bulletins | Établissement + classe | Superadmin UI locale | `bulletinDesignByClass` interdit sur academic-config ; domaine documents hors LOT 4 | P1 |
+| Années scolaires relationnelles | Établissement | APIs v2 + hub | Hub projette `academic_years.name` ; périodes via `terms` | INFO |
 
 **Types d’évaluation — LOT 3 (canonique PostgreSQL).** La table `evaluations` stocke des **instances** (un devoir, une interrogation… : `title`, `term_id`, `class_id`, `subject_id`, `max_score`, …).
 
@@ -144,7 +163,7 @@ C’est un écart de modèle (catalogue JSON vs colonne d’instance), pas un se
 
 **RBAC lecture GET `/api/academic-config`** : tout utilisateur authentifié dans le tenant. **P1**.
 
-**Mobile** : `GET/PUT /academic-config` (`Mobile/src/services/api.ts`). L’écran `ConfigurationScreen` **affiche** un résumé (`periodMode`, `defaultScale`, counts) mais les cartes « Periodes académiques » / « Niveaux et filieres » **n’ont pas de `route`** : `onPress` no-op. **Écran partiellement mort.**
+**Mobile** : `GET /academic-config` projection ; `ConfigurationScreen` lecture seule (pas de PUT SoT). Les cartes « Periodes académiques » / « Niveaux et filieres » n’ont toujours pas de `route` d’édition — lecture du résumé uniquement.
 
 ---
 
@@ -457,10 +476,10 @@ Domaine | Paramètre | UI | API | Stockage | Scope | Écriture canonique ? | Leg
 Établissement | Profil identité / contacts / logo | `EstablishmentProfilePage` | PATCH `/api/backoffice/establishments/:code` | `schools` + `profile_payload` | Établissement | Oui | Non (PUT state 410) | Paramètres Établissement UPDATE / Établissements UPDATE | P1 | Relier Apparence au même PATCH ; documenter `GET /api/schools` public
 Établissement | `schoolYear` profil | implicite / seed | même PATCH | JSONB `profile_payload.schoolYear` | Établissement | Oui (JSON) | Dual `academic_years` | idem | P1 | Une seule année courante (`academic_years.is_current`) ; profil en lecture dérivée
 Établissement | `primaryColor` / timezone / langue | ComingSoon Apparence | PATCH establishments (clés acceptées, UI absente) | JSONB | Établissement | API oui, UI non | Écran mort | idem | P2 | Brancher l’écran Apparence ou retirer les clés
-Académique | Périodes / mode / barème | `ConfigurationPage` année-scolaire | GET/PUT `/api/academic-config` (+ establishments/…) | `school_academic_configs.config_payload` | Établissement | JSON oui ; **tables `terms` non** | Dual-read `terms` si JSON vide | PUT : Paramètres UPDATE / planning / classes. GET config : auth seul | **P0** | Sync transactionnelle JSON → `academic_years`/`terms` ou UI sur APIs v2
+Académique | Périodes / mode / barème | `ConfigurationPage` année-scolaire | `GET/PATCH /api/school-settings`, `PUT /api/academic-periods` | `school_settings` + `terms` | Établissement | Oui PG | PUT academic-config interdit | Paramètres UPDATE / planning | INFO | LOT 4 livré
+Académique | `classNames` / `subjects` JSON | structure (lecture) | projection academic-config | `classes` / `subjects` | Établissement | Non JSON | PUT interdit | lecture Paramètres | INFO | LOT 4 livré
 Académique | Niveaux / filières / séries / options | `ConfigurationPage` structure + `EducationReferencePage` | `GET/PUT /api/education-reference/*`, CRUD `/api/backoffice/education-*` | `education_levels`, `education_streams`, `school_levels`, `school_streams` | Pays + établissement | Oui PG | JSON `levels`/`tracks` retiré ; PUT academic-config interdit | Référentiels pédagogiques / Paramètres UPDATE | INFO → **migré LOT 1** | Superadmin catalogue ; établissement activation uniquement
 Académique | Types d’évaluation | `ConfigurationPage` année scolaire (`EvaluationTypesPanel`) | `GET/POST/PATCH /api/evaluation-types` (+ archive ; backoffice `:schoolCode`) | `evaluation_types` | Établissement | Oui PG | JSON `evaluationTypes` lecture projection ; PUT interdit | Paramètres UPDATE / planning ; GET notes enseignants | INFO → **migré LOT 3** | Catalogue établissement ; Superadmin modèles optionnels plus tard
-Académique | `classNames` / `subjects` JSON | structure | même PUT | JSON | Établissement | Oui JSON **sans** sync `classes`/`subjects`/`school_courses` | Dual opérationnel | idem | **P0** | Génération / mapping vers classes et matières PG ; interdire double saisie
 Académique | Année scolaire v2 | **pas le hub** | `/api/v2/academic-years` | `academic_years` | Établissement | Oui (autre écran/API) | Hub ignore | Années Académiques READ/WRITE | P1 | Hub Année scolaire → API v2
 Rôles | Matrice globale | `PermissionsPage` | PUT `/api/backoffice/role-permissions` | `role_permissions` | Plateforme | Oui Super Admin | Seed `data.js` + `mapUser` | ALL_PRIVILEGES + `assertSuperAdmin` | P1 | **Cible CTO §4.B (non implémentée) :** catalogue Superadmin + permissions centralisées. Login doit charger la matrice PG, pas le seed. Prévoir rôle canonique + permissions + scope/plafond de délégation
 Rôles | Liste `userRoles` (rôles généraux) | `ConfigurationPage` rôles | PUT academic-config | JSON `userRoles` | Établissement | Oui JSON (l’école **édite le catalogue**) | Défauts Web | Paramètres UPDATE | INFO | **Cible CTO §4.B (non implémentée) :** catalogue Superadmin ; établissement = affectation uniquement, pas de création de rôle général privilégié
