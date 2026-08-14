@@ -970,6 +970,37 @@ app.put("/api/backoffice/establishments/:schoolCode/education-reference/school-a
   res.json(saved);
 }));
 
+app.get("/api/backoffice/establishment-roles", requireAuth, requirePermission("GET /api/backoffice/establishment-roles"), asyncHandler(async (req, res) => {
+  const roles = await repository.listEstablishmentRoles({
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+    schoolAssignableOnly: String(req.query.schoolAssignableOnly ?? "") === "true",
+  });
+  res.json({ roles });
+}));
+
+app.post("/api/backoffice/establishment-roles", requireAuth, requirePermission("POST /api/backoffice/establishment-roles"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const created = await repository.createEstablishmentRole(req.body ?? {}, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/establishment-roles/:roleId", requireAuth, requirePermission("PATCH /api/backoffice/establishment-roles/:roleId"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const updated = await repository.updateEstablishmentRole(req.params.roleId, req.body ?? {}, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/establishment-roles/:roleId/archive", requireAuth, requirePermission("POST /api/backoffice/establishment-roles/:roleId/archive"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const archived = await repository.archiveEstablishmentRole(req.params.roleId, req.principal, establishmentRolesAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/establishment-roles/assignable", requireAuth, requirePermission("GET /api/establishment-roles/assignable"), asyncHandler(async (req, res) => {
+  const roles = await repository.listEstablishmentRoles({ schoolAssignableOnly: true });
+  res.json({ roles });
+}));
+
 app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
   const exams = await listResidualDomainForPrincipal(req.principal, "exams");
   res.json({ exams });
@@ -4414,11 +4445,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     rawRole === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : rawRole;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
   const countryCode = user.countryCode ?? countryCodeFromScope(user.countryScope) ?? school.countryCode ?? countryCodeFromSchoolOrCountry(schoolCode, school.country);
-  const permissions = mergeRolePermissions(
-    role,
-    [...new Set([...(user.permissions ?? []), ...rbacService.permissionsFor(role)])],
-    rolePermissionsMap
-  );
+  const permissions = mergeRolePermissions(role, [], rolePermissionsMap);
 
   const {
     filterActiveTeacherAssignments,
@@ -4523,6 +4550,21 @@ async function getRolePermissionsMap() {
 // Logique métier : un module accordé à un rôle devient visible (dashboard, onglets, menu) pour
 // tous les utilisateurs de ce rôle, sans jamais retirer un privilège déjà détenu par le compte.
 function mergeRolePermissions(role, basePermissions = [], rolePermissionsMap = null) {
+  if (rolePermissionsMap && typeof rolePermissionsMap === "object") {
+    const alias =
+      role === "Super Administrateur Somafrik" &&
+      Object.prototype.hasOwnProperty.call(rolePermissionsMap, "Super Administrateur OKAFRIK")
+        ? "Super Administrateur OKAFRIK"
+        : role;
+    if (Object.prototype.hasOwnProperty.call(rolePermissionsMap, alias)) {
+      const configured = Array.isArray(rolePermissionsMap[alias]) ? rolePermissionsMap[alias] : [];
+      return enforceBusinessRolePermissions(role, configured);
+    }
+    if (Object.keys(rolePermissionsMap).length > 0) {
+      return enforceBusinessRolePermissions(role, ["Voir tableau de bord"]);
+    }
+  }
+
   const configured =
     rolePermissionsMap && Array.isArray(rolePermissionsMap[role])
       ? rolePermissionsMap[role]

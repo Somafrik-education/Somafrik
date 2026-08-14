@@ -2287,8 +2287,10 @@ class FallbackRepository {
     return this.getPlatformStore().getSchoolByCode(code);
   }
 
-  getRolePermissionsMap() {
-    return this.getPlatformStore().getRolePermissionsMap();
+  async getRolePermissionsMap() {
+    const platformMap = (await this.getPlatformStore().getRolePermissionsMap()) ?? {};
+    const establishmentMap = await this.getEstablishmentRolesStore().getPermissionsMap();
+    return { ...platformMap, ...establishmentMap };
   }
 
   createPlatformCountry(payload, principal, auditMeta) {
@@ -2342,11 +2344,14 @@ class FallbackRepository {
   getClientsStore() {
     if (!this._clientsStore) {
       const { createClientsMemoryStore } = require("./clientsMemoryStore");
-      this._clientsStore = createClientsMemoryStore({
+      const store = createClientsMemoryStore({
         school: shouldSeedDemoData() ? seedData.school : null,
         platformSchools: this._managedSchools ?? (shouldSeedDemoData() ? seedData.platformSchools : []),
         students: shouldSeedDemoData() ? seedData.students : [],
       });
+      store.assertEstablishmentRoleAssignable = (role, principal) =>
+        this.assertEstablishmentRoleAssignable(role, principal);
+      this._clientsStore = store;
     }
     return this._clientsStore;
   }
@@ -2471,6 +2476,44 @@ class FallbackRepository {
   async ensureEducationReferenceConstraints() {
     const { ensureEducationReferenceConstraints } = require("../lib/educationReferenceService");
     return ensureEducationReferenceConstraints(this, console);
+  }
+
+  getEstablishmentRolesStore() {
+    if (!this._establishmentRolesStore) {
+      const { createEstablishmentRolesMemoryStore } = require("./establishmentRolesMemoryStore");
+      const { buildSeedRolesFromData } = require("../lib/establishmentRolesService");
+      this._establishmentRolesStore = createEstablishmentRolesMemoryStore({
+        roles: buildSeedRolesFromData().map((role, index) => ({
+          ...role,
+          displayOrder: index,
+        })),
+      });
+    }
+    return this._establishmentRolesStore;
+  }
+
+  listEstablishmentRoles(options) {
+    return this.getEstablishmentRolesStore().listRoles(options);
+  }
+
+  createEstablishmentRole(payload, principal, auditMeta) {
+    const { createRole } = require("../lib/establishmentRolesService");
+    return createRole(this, payload, principal, auditMeta);
+  }
+
+  updateEstablishmentRole(roleId, patch, principal, auditMeta) {
+    const { updateRole } = require("../lib/establishmentRolesService");
+    return updateRole(this, roleId, patch, principal, auditMeta);
+  }
+
+  archiveEstablishmentRole(roleId, principal, auditMeta) {
+    const { archiveRole } = require("../lib/establishmentRolesService");
+    return archiveRole(this, roleId, principal, auditMeta);
+  }
+
+  assertEstablishmentRoleAssignable(roleLabel, principal) {
+    const { assertEstablishmentRoleAssignable } = require("../lib/establishmentRolesService");
+    return assertEstablishmentRoleAssignable(this, roleLabel, principal);
   }
 }
 

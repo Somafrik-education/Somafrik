@@ -415,6 +415,10 @@ function createClientsPgStore(repo) {
     createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
     updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
     archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),
+    assertEstablishmentRoleAssignable: (role, principal) =>
+      typeof repo.assertEstablishmentRoleAssignable === "function"
+        ? repo.assertEstablishmentRoleAssignable(role, principal)
+        : Promise.resolve(role),
   };
 
   return store;

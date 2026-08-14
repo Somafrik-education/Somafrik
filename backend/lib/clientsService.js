@@ -104,7 +104,10 @@ async function createUser(store, rawPayload, principal, auditMeta) {
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
 
-  const role = assertAssignableUserRole(principal, asTrimmed(payload.role));
+  let role = assertAssignableUserRole(principal, asTrimmed(payload.role));
+  if (typeof store.assertEstablishmentRoleAssignable === "function") {
+    role = await store.assertEstablishmentRoleAssignable(role, principal);
+  }
   const firstName = asTrimmed(payload.firstName);
   const lastName = asTrimmed(payload.lastName);
   if (!firstName || !lastName) {
@@ -203,7 +206,10 @@ async function createUser(store, rawPayload, principal, auditMeta) {
 async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   const patch = ignoreClientScope(rawPatch);
   if (patch.role !== undefined) {
-    assertAssignableUserRole(principal, patch.role);
+    const role = assertAssignableUserRole(principal, patch.role);
+    if (typeof store.assertEstablishmentRoleAssignable === "function") {
+      await store.assertEstablishmentRoleAssignable(role, principal);
+    }
   }
 
   const existing = await store.getUserById(userId);

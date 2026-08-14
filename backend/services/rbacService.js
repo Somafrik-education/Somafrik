@@ -181,6 +181,18 @@ const routePermissions = {
     "Référentiels pédagogiques:UPDATE",
     "ALL_PRIVILEGES",
   ],
+  "GET /api/backoffice/establishment-roles": ["Rôles Établissement:READ", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/establishment-roles": ["Rôles Établissement:CREATE", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/establishment-roles/:roleId": ["Rôles Établissement:UPDATE", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/establishment-roles/:roleId/archive": ["Rôles Établissement:UPDATE", "ALL_PRIVILEGES"],
+  "GET /api/establishment-roles/assignable": [
+    "Paramètres Établissement:READ",
+    "Paramètres Établissement:UPDATE",
+    "Utilisateurs:READ",
+    "Utilisateurs:UPDATE",
+    "Gérer utilisateurs",
+    "ALL_PRIVILEGES",
+  ],
   "PUT /api/backoffice/planning-exams": [
     "Organiser examens",
     "Valider examens",
