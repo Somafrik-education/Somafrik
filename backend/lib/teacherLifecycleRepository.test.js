@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   FORBIDDEN_PATCH_KEYS,
   validateTeacherUpdateInput,
@@ -59,6 +61,14 @@ function main() {
   assert.equal(routePermissions["PATCH /api/teachers/:teacherCode"].includes("COUNTRY_PRIVILEGES"), false);
   assert.equal(routePermissions["DELETE /api/teachers/:teacherCode"].includes("COUNTRY_PRIVILEGES"), false);
   assert.ok(routePermissions["GET /api/teachers"].includes("COUNTRY_PRIVILEGES"));
+
+  const lifecycleSource = fs.readFileSync(
+    path.join(__dirname, "../db/teacherLifecycleRepository.js"),
+    "utf8",
+  );
+  assert.equal(lifecycleSource.includes("css.status"), false);
+  assert.ok(lifecycleSource.includes("css.ends_at > NOW()"));
+  assert.ok(lifecycleSource.includes("sc.status = 'active'"));
 
   console.log("teacherLifecycleRepository.test.js: OK");
 }

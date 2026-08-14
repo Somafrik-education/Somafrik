@@ -142,9 +142,9 @@ describe("TeachersListPage (création compte + fiche)", () => {
         mainSubject: "Mathématiques",
         schoolCode: "CD-2026-0001",
         status: "Actif",
-        gender: "",
-        birthDate: "",
-        entryDate: "",
+        gender: "Féminin",
+        birthDate: "1985-01-01",
+        entryDate: "2010-09-01",
       },
       {
         id: "CD-2026-0001-ENS-0002",
@@ -160,9 +160,9 @@ describe("TeachersListPage (création compte + fiche)", () => {
         mainSubject: "Français",
         schoolCode: "CD-2026-0001",
         status: "Actif",
-        gender: "",
-        birthDate: "",
-        entryDate: "",
+        gender: "Masculin",
+        birthDate: "1982-03-12",
+        entryDate: "2011-09-01",
       },
     ]);
   });
@@ -463,7 +463,7 @@ describe("TeachersListPage (création compte + fiche)", () => {
     expect(await screen.findByLabelText(/Classe/i)).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText(/Classe/i), "CLS-6A");
     await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
-    await user.click(screen.getByRole("button", { name: /^Affecter$/i }));
+    await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     await waitFor(() => {
       expect(teacherAssignmentsApiMock.create).toHaveBeenCalledWith({
         teacherCode: "CD-2026-0001-ENS-0001",
@@ -524,6 +524,46 @@ describe("TeachersListPage (création compte + fiche)", () => {
     expect(await screen.findByText("Enseignant introuvable.")).toBeInTheDocument();
   });
 
+  it("affiche les erreurs 400 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValueOnce(new ApiError("Au moins un moyen de contact est requis (phone ou email).", 400));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText(/moyen de contact/i)).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 403 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValue(new ApiError("Permission insuffisante", 403));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText("Permission insuffisante")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 409 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValue(new ApiError("Un compte avec cet email ou ce téléphone existe déjà.", 409));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText(/email ou ce téléphone/i)).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 500 de modification", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.update.mockRejectedValue(new ApiError("Erreur interne", 500));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Modifier" })[0]);
+    await user.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    expect(await screen.findByText("Erreur interne")).toBeInTheDocument();
+  });
+
   it("affiche les erreurs 409 d'affectation", async () => {
     const user = userEvent.setup();
     teacherAssignmentsApiMock.create.mockRejectedValue(
@@ -534,7 +574,7 @@ describe("TeachersListPage (création compte + fiche)", () => {
     await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
     await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
     await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
-    await user.click(screen.getByRole("button", { name: /^Affecter$/i }));
+    await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     expect(
       await screen.findByText("Ce cours est déjà affecté à un enseignant pour cette classe."),
     ).toBeInTheDocument();
@@ -550,5 +590,35 @@ describe("TeachersListPage (création compte + fiche)", () => {
     await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
     await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
     expect(await screen.findByText(/cours ou créneaux actifs/i)).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 403/404/500 de suppression", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockRejectedValueOnce(new ApiError("Permission insuffisante", 403));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    expect(await screen.findByText("Permission insuffisante")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 404 de suppression", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockRejectedValue(new ApiError("Enseignant introuvable.", 404));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    expect(await screen.findByText("Enseignant introuvable.")).toBeInTheDocument();
+  });
+
+  it("affiche les erreurs 500 de suppression", async () => {
+    const user = userEvent.setup();
+    teachersApiMock.remove.mockRejectedValue(new ApiError("Erreur interne", 500));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Supprimer" })[0]);
+    await user.click(screen.getByRole("button", { name: /Confirmer la suppression/i }));
+    expect(await screen.findByText("Erreur interne")).toBeInTheDocument();
   });
 });

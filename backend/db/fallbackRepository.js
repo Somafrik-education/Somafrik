@@ -1355,9 +1355,14 @@ class FallbackRepository {
             self._managedTeachers.push(row);
             return row;
           }
-          if (text.includes("FROM TEACHERS T") && text.includes("WHERE T.TEACHER_CODE")) {
-            const teacherCode = text.includes("FOR UPDATE") ? params[1] : params[0];
-            const schoolId = text.includes("FOR UPDATE") ? params[0] : params[1];
+          if (
+            text.includes("FROM TEACHERS T") &&
+            text.includes("T.TEACHER_CODE") &&
+            (text.includes("WHERE T.TEACHER_CODE") || text.includes("FOR UPDATE"))
+          ) {
+            const teacherCodeFirst = text.includes("WHERE T.TEACHER_CODE");
+            const teacherCode = teacherCodeFirst ? params[0] : params[1];
+            const schoolId = teacherCodeFirst ? params[1] : params[0];
             const teacher = (self._managedTeachers ?? []).find(
               (row) => row.teacher_code === teacherCode && row.school_id === schoolId,
             );
@@ -1600,6 +1605,10 @@ class FallbackRepository {
             const snapshotTeachers = clone(self._managedTeachers ?? []);
             const snapshotUsers = clone(self._managedTeacherUsers ?? []);
             const snapshotAssignments = clone(self._managedTeacherAssignments ?? []);
+            const snapshotSessions = [...self.sessions.entries()].map(([id, session]) => [
+              id,
+              { ...session },
+            ]);
             const tx = {
               one: (sql, params) => memoryAdapter.one(sql, params),
               all: (sql, params) => memoryAdapter.all(sql, params),
@@ -1611,6 +1620,12 @@ class FallbackRepository {
               self._managedTeachers = snapshotTeachers;
               self._managedTeacherUsers = snapshotUsers;
               self._managedTeacherAssignments = snapshotAssignments;
+              for (const [id, session] of snapshotSessions) {
+                const current = self.sessions.get(id);
+                if (!current) continue;
+                current.revoked_at = session.revoked_at;
+                current.revoke_reason = session.revoke_reason;
+              }
               throw error;
             }
           });
@@ -1928,22 +1943,29 @@ class FallbackRepository {
       updatedAt: new Date().toISOString(),
     };
     this._managedTeacherAssignments.push(created);
-    if (principal || auditMeta) {
-      await this.recordAudit({
-        schoolCode: code,
-        userId: principal?.sub || auditMeta?.userId,
-        action: "create_teacher_assignment",
-        entityType: "teacher_assignment",
-        entityId: created.id,
-        newValue: {
-          teacherCode: created.teacherCode,
-          classCode: created.classCode,
-          subjectCode: created.subjectCode,
+    try {
+      if (principal || auditMeta) {
+        await this.recordAudit({
           schoolCode: code,
-        },
-        ipAddress: auditMeta?.ipAddress,
-        userAgent: auditMeta?.userAgent,
-      });
+          userId: principal?.sub || auditMeta?.userId,
+          action: "create_teacher_assignment",
+          entityType: "teacher_assignment",
+          entityId: created.id,
+          newValue: {
+            teacherCode: created.teacherCode,
+            classCode: created.classCode,
+            subjectCode: created.subjectCode,
+            schoolCode: code,
+          },
+          ipAddress: auditMeta?.ipAddress,
+          userAgent: auditMeta?.userAgent,
+        });
+      }
+    } catch (error) {
+      this._managedTeacherAssignments = this._managedTeacherAssignments.filter(
+        (row) => String(row.id) !== String(created.id),
+      );
+      throw error;
     }
     return clone(created);
   }
@@ -2020,17 +2042,24 @@ class FallbackRepository {
       return { ...row, status: "deleted", updatedAt: new Date().toISOString() };
     });
     if (!managed) this._managedTeacherAssignments.push({ ...current, status: "deleted" });
-    if (principal || auditMeta) {
-      await this.recordAudit({
-        schoolCode,
-        userId: principal?.sub || auditMeta?.userId,
-        action: "delete_teacher_assignment",
-        entityType: "teacher_assignment",
-        entityId: current.id,
-        newValue: { id: current.id, deleted: true, schoolCode },
-        ipAddress: auditMeta?.ipAddress,
-        userAgent: auditMeta?.userAgent,
-      });
+    try {
+      if (principal || auditMeta) {
+        await this.recordAudit({
+          schoolCode,
+          userId: principal?.sub || auditMeta?.userId,
+          action: "delete_teacher_assignment",
+          entityType: "teacher_assignment",
+          entityId: current.id,
+          newValue: { id: current.id, deleted: true, schoolCode },
+          ipAddress: auditMeta?.ipAddress,
+          userAgent: auditMeta?.userAgent,
+        });
+      }
+    } catch (error) {
+      this._managedTeacherAssignments = this._managedTeacherAssignments.map((row) =>
+        String(row.id) === String(current.id) ? { ...current, status: "active" } : row,
+      );
+      throw error;
     }
     return { id: current.id, deleted: true };
   }

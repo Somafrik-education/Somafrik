@@ -65,6 +65,19 @@ async function login(identifier, schoolCode, password = "1234") {
   return { token, user: loginResponse.data.user };
 }
 
+async function loginWithoutPasswordGate(identifier, schoolCode, password = "1234") {
+  const session = await login(identifier, schoolCode, password);
+  if (!session.user?.mustChangePassword) return session;
+  const nextPassword = "PrefetPass12";
+  const changed = await request("/auth/change-password", {
+    method: "POST",
+    token: session.token,
+    body: { currentPassword: password, newPassword: nextPassword },
+  });
+  assert.ok(changed.status >= 200 && changed.status < 300, JSON.stringify(changed.data));
+  return login(identifier, schoolCode, nextPassword);
+}
+
 function teacherPayload(overrides = {}) {
   return {
     firstName: "Fatou",
@@ -440,7 +453,7 @@ async function main() {
       "l'affectation modifiée puis supprimée ne doit pas survivre en mémoire",
     );
 
-    const prefet = await login("prefet", "CD-2026-0001");
+    const prefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
 
     const patched = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
       method: "PATCH",

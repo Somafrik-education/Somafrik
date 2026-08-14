@@ -609,7 +609,7 @@ export function TeachersListPage() {
               Annuler
             </Button>
             <Button type="submit" disabled={assignSaving || !assignForm.classCode || !assignForm.subjectCode}>
-              {assignSaving ? "Enregistrement…" : "Affecter"}
+              {assignSaving ? "Enregistrement…" : "Enregistrer l'affectation"}
             </Button>
           </div>
         </form>
