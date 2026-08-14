@@ -4,9 +4,8 @@ import { useData } from "../../context/DataContext";
 import { scopedSchools } from "../../lib/scope";
 import {
   PAYMENT_METHODS,
-  registerManualPayment,
-  validateSubscriptionPayment,
 } from "../../lib/subscriptionModule";
+import { platformApi } from "../../lib/platformApi";
 import { normalize } from "../../lib/format";
 import { useFeaturePermissions } from "../../lib/usePermissionContext";
 import { Card, SectionHeader } from "../../components/ui/Card";
@@ -19,7 +18,7 @@ import type { SubscriptionPayment } from "../../types";
 
 export function SubscriptionPaymentsPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const { canCreate, canUpdate } = useFeaturePermissions("Abonnements");
@@ -51,17 +50,16 @@ export function SubscriptionPaymentsPage() {
       return;
     }
     setBusy(true);
-    const patch = registerManualPayment(state, {
-      schoolCode: form.schoolCode,
-      amount: Number(form.amount),
-      currency: form.currency,
-      method: form.method,
-      reference: form.reference.trim(),
-      notes: form.notes,
-      author: user?.identifier ?? user?.email,
-    });
     try {
-      await update(patch);
+      await platformApi.createSubscriptionPayment({
+        schoolCode: form.schoolCode,
+        amount: Number(form.amount),
+        currency: form.currency,
+        method: form.method,
+        reference: form.reference.trim(),
+        notes: form.notes,
+      });
+      await refresh();
       setForm({ ...form, reference: "", amount: "", notes: "" });
       showToast("Paiement enregistré — en attente de validation", "success");
     } catch {
@@ -73,13 +71,12 @@ export function SubscriptionPaymentsPage() {
 
   async function validate(payment: SubscriptionPayment) {
     setBusy(true);
-    const patch = validateSubscriptionPayment(
-      state,
-      payment.id,
-      user?.identifier ?? user?.email ?? "Admin",
-    );
     try {
-      await update(patch);
+      await platformApi.patchSubscriptionPayment(payment.reference || payment.id, {
+        status: "Validé",
+        validatedBy: user?.identifier ?? user?.email ?? "Admin",
+      });
+      await refresh();
       showToast("Paiement validé — abonnement réactivé", "success");
     } catch {
       showToast("Échec de la validation", "error");

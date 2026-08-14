@@ -253,6 +253,16 @@ class FallbackRepository {
     delete durable.evaluations;
     delete durable.notes;
     delete durable.presences;
+    delete durable.countries;
+    delete durable.subscriptions;
+    delete durable.subscriptionOffers;
+    delete durable.subscriptionPayments;
+    delete durable.subscriptionInvoices;
+    delete durable.subscriptionDiscounts;
+    delete durable.subscriptionAuditLog;
+    delete durable.notifications;
+    delete durable.rolePermissions;
+    delete durable.dashboardChartConfig;
     this.backOfficeState = durable;
     return this.getBackOfficeState();
   }
@@ -1957,6 +1967,113 @@ class FallbackRepository {
 
   async upsertSchoolAttendanceBatch(payload, principal) {
     return this.upsertAttendanceBatch(payload, principal);
+  }
+
+  getPlatformStore() {
+    if (!this._platformStore) {
+      const { createPlatformMemoryStore } = require("./platformMemoryStore");
+      const platformSeed = shouldSeedDemoData()
+        ? {
+            school: seedData.school,
+            platformSchools: this._managedSchools ?? seedData.platformSchools,
+            countries: seedData.countries,
+            subscriptions: seedData.subscriptions,
+            subscriptionOffers: seedData.subscriptionOffers ?? [],
+            platformNotifications: seedData.platformNotifications,
+            rolePermissions: seedData.rolePermissions,
+          }
+        : null;
+      this._platformStore = createPlatformMemoryStore({
+        getSchoolByCode: async (code) => {
+          const { getCountryCodeFromScope } = require("../lib/countryScope");
+          const dataset = await this.getDataset();
+          const school = (dataset.platformSchools ?? []).find(
+            (row) => String(row.code ?? row.schoolCode).toUpperCase() === String(code).toUpperCase(),
+          );
+          if (!school) return null;
+          const countryCode =
+            school.country_code ??
+            school.countryCode ??
+            getCountryCodeFromScope(school.country) ??
+            String(school.code ?? "").slice(0, 2).toUpperCase();
+          return {
+            ...school,
+            id: school.id ?? school.code ?? school.schoolCode,
+            school_code: school.school_code ?? school.code ?? school.schoolCode,
+            country_code: countryCode,
+            country_name: school.country_name ?? school.country,
+          };
+        },
+        getCountryByCode: async (code) => {
+          const dataset = await this.getDataset();
+          return (dataset.countries ?? []).find(
+            (country) => String(country.code).toUpperCase() === String(code).toUpperCase(),
+          );
+        },
+        seed: platformSeed,
+      });
+    }
+    return this._platformStore;
+  }
+
+  listPlatformProjection() {
+    return this.getPlatformStore().listProjection();
+  }
+
+  getPlatformSchoolByCode(code) {
+    return this.getPlatformStore().getSchoolByCode(code);
+  }
+
+  getRolePermissionsMap() {
+    return this.getPlatformStore().getRolePermissionsMap();
+  }
+
+  createPlatformCountry(payload, principal, auditMeta) {
+    return this.getPlatformStore().createCountry(payload, principal, auditMeta);
+  }
+
+  updatePlatformCountry(code, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateCountry(code, patch, principal, auditMeta);
+  }
+
+  upsertPlatformSubscription(payload, principal, auditMeta) {
+    return this.getPlatformStore().upsertSubscription(payload, principal, auditMeta);
+  }
+
+  createPlatformNotification(payload, principal, auditMeta) {
+    return this.getPlatformStore().createNotification(payload, principal, auditMeta);
+  }
+
+  updatePlatformNotification(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateNotification(id, patch, principal, auditMeta);
+  }
+
+  replacePlatformRolePermissions(map, principal, auditMeta) {
+    return this.getPlatformStore().replaceRolePermissions(map, principal, auditMeta);
+  }
+
+  savePlatformDashboardChartConfig(config, principal, auditMeta) {
+    return this.getPlatformStore().saveDashboardChartConfig(config, principal, auditMeta);
+  }
+
+  upsertPlatformSubscriptionOffer(payload, principal, auditMeta) {
+    return this.getPlatformStore().upsertSubscriptionOffer(payload, principal, auditMeta);
+  }
+
+  createPlatformSubscriptionPayment(payload, principal, auditMeta) {
+    return this.getPlatformStore().createSubscriptionPayment(payload, principal, auditMeta);
+  }
+
+  updatePlatformSubscriptionPayment(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateSubscriptionPayment(id, patch, principal, auditMeta);
+  }
+
+  createPlatformSubscriptionDiscount(payload, principal, auditMeta) {
+    return this.getPlatformStore().createSubscriptionDiscount(payload, principal, auditMeta);
+  }
+
+  updatePlatformSubscriptionDiscount(id, patch, principal, auditMeta) {
+    return this.getPlatformStore().updateSubscriptionDiscount(id, patch, principal, auditMeta);
   }
 }
 

@@ -23,10 +23,7 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
   "documents",
   "announcements",
   "messages",
-  "notifications",
-  "rolePermissions",
   "academicConfigs",
-  "dashboardChartConfig",
 ]);
 
 /**
@@ -35,7 +32,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
  * (Utilisateurs/Contacts/Notes/Frais = lecture seule ou « - »)
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
-  "notifications",
   "announcements",
   "messages",
   "documents",
@@ -55,7 +51,6 @@ const PREFET_WRITABLE_ENTITIES = Object.freeze([
   "documents",
   "announcements",
   "messages",
-  "notifications",
   "academicConfigs",
 ]);
 
@@ -68,11 +63,8 @@ const DIRECTOR_WRITABLE_ENTITIES = Object.freeze([
 
 const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([
   "users",
-  "countries",
   "contacts",
   "relations",
-  "subscriptions",
-  "notifications",
 ]);
 
 const ROLE_WRITABLE_ENTITIES = Object.freeze({
@@ -128,11 +120,19 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
           entity !== "courseSchedules" &&
           entity !== "evaluations" &&
           entity !== "notes" &&
-          entity !== "presences",
+          entity !== "presences" &&
+          entity !== "countries" &&
+          entity !== "subscriptions" &&
+          entity !== "subscriptionOffers" &&
+          entity !== "subscriptionPayments" &&
+          entity !== "subscriptionInvoices" &&
+          entity !== "subscriptionDiscounts" &&
+          entity !== "subscriptionAuditLog" &&
+          entity !== "notifications" &&
+          entity !== "rolePermissions" &&
+          entity !== "dashboardChartConfig",
       ),
-      "rolePermissions",
       "academicConfigs",
-      "dashboardChartConfig",
     ];
   }
 

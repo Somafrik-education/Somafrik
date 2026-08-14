@@ -25,6 +25,7 @@ import {
   formatCountryGmt,
   normalizeCountryGmt,
 } from "../lib/countryGmt";
+import { platformApi } from "../lib/platformApi";
 import {
   SUBSCRIPTION_PLAN_NAMES,
   resolveCountrySubscriptionPolicy,
@@ -81,7 +82,7 @@ function validateCountry(
 
 export function CountriesPage() {
   const { session } = useAuth();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const [busy, setBusy] = useState(false);
@@ -96,10 +97,15 @@ export function CountriesPage() {
   );
   const { canCreate, canUpdate, canDelete, canSuspend } = useFeaturePermissions("Pays");
 
-  async function persistCountries(next: Country[], message: string) {
+  async function persistCountry(country: Country, message: string, mode: "create" | "update", routeCode?: string) {
     setBusy(true);
     try {
-      await update({ countries: next });
+      if (mode === "create") {
+        await platformApi.createCountry(country as unknown as Record<string, unknown>);
+      } else {
+        await platformApi.updateCountry(routeCode || country.code, country as unknown as Record<string, unknown>);
+      }
+      await refresh();
       showToast(message, "success");
     } catch {
       showToast("Échec de la synchronisation", "error");
@@ -111,15 +117,14 @@ export function CountriesPage() {
 
   async function toggleSuspend(country: Country) {
     const nextStatus = country.status === "Suspendu" ? "Actif" : "Suspendu";
-    const next = state.countries.map((item) =>
-      item.code === country.code ? { ...item, status: nextStatus } : item,
-    );
+    const updated = { ...country, status: nextStatus };
     try {
-      await persistCountries(
-        next,
+      await persistCountry(
+        updated,
         nextStatus === "Suspendu"
           ? `Pays suspendu : l'admin pays et les établissements de ${country.name} ne pourront plus se connecter.`
           : `Pays réactivé : ${country.name}.`,
+        "update",
       );
       setDetail(null);
     } catch {
@@ -144,13 +149,8 @@ export function CountriesPage() {
     });
     if (!confirmed) return;
 
-    const next = state.countries.filter((item) => item.code !== country.code);
-    try {
-      await persistCountries(next, `Pays supprimé : ${country.name}`);
-      setDetail(null);
-    } catch {
-      /* toast affiché */
-    }
+    showToast("La suppression définitive d'un pays n'est pas disponible. Suspendez le pays si nécessaire.", "error");
+    return;
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -170,6 +170,12 @@ export function CountriesPage() {
       phonePrefix: editing.phonePrefix?.trim(),
       currency: editing.currency?.trim().toUpperCase(),
       timezone: normalizeCountryGmt(editing.timezone),
+      ...(exists
+        ? {}
+        : {
+            id: editing.id ?? `COUNTRY-${editing.code}`,
+            createdAt: editing.createdAt ?? new Date().toLocaleDateString("fr-FR"),
+          }),
     };
 
     const error = validateCountry(payload, state.countries, originalCode || undefined);
@@ -178,21 +184,8 @@ export function CountriesPage() {
       return;
     }
 
-    const next = exists
-      ? state.countries.map((item) =>
-          normalize(item.code) === normalize(originalCode) ? { ...item, ...payload } : item,
-        )
-      : [
-          {
-            ...payload,
-            id: payload.id ?? `COUNTRY-${payload.code}`,
-            createdAt: payload.createdAt ?? new Date().toLocaleDateString("fr-FR"),
-          },
-          ...state.countries,
-        ];
-
     try {
-      await persistCountries(next, exists ? "Pays modifié" : "Pays créé");
+      await persistCountry(payload, exists ? "Pays modifié" : "Pays créé", exists ? "update" : "create", originalCode || undefined);
       setEditing(null);
       setOriginalCode("");
     } catch {

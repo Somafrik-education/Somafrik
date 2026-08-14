@@ -4,6 +4,7 @@ import { Button } from "../ui/Button";
 import { Card, SectionHeader } from "../ui/Card";
 import { Field, Select } from "../ui/Field";
 import { useToast } from "../ui/Toast";
+import { platformApi } from "../../lib/platformApi";
 import {
   EMPTY_DASHBOARD_CHART_CONFIG,
   ESTABLISHMENT_CHART_CATALOG,
@@ -75,7 +76,7 @@ function CatalogSection({
 }
 
 export function ChartTypeSettingsPanel() {
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const { showToast } = useToast();
   const [draft, setDraft] = useState(() => cloneConfig(state.dashboardChartConfig));
   const [busy, setBusy] = useState(false);
@@ -106,7 +107,8 @@ export function ChartTypeSettingsPanel() {
   async function handleSave() {
     setBusy(true);
     try {
-      await update({ dashboardChartConfig: draft });
+      await platformApi.saveDashboardChartConfig(draft as unknown as Record<string, unknown>);
+      await refresh();
       showToast("Types de graphiques enregistrés", "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Échec de l'enregistrement", "error");

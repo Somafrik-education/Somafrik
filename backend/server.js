@@ -1393,25 +1393,147 @@ app.get("/api/announcements", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/backoffice/countries", requireAuth, requirePermission("GET /api/backoffice/countries"), asyncHandler(async (req, res) => {
-  const { countries } = await getRuntime();
-  res.json(tenantScopeService.filterRows(countries, req.principal, { countryField: "code" }));
+  const platform = await repository.listPlatformProjection();
+  res.json(tenantScopeService.filterRows(platform.countries ?? [], req.principal, { countryField: "code" }));
 }));
 
 app.get("/api/backoffice/subscriptions", requireAuth, requirePermission("GET /api/backoffice/subscriptions"), asyncHandler(async (req, res) => {
-  const { subscriptions } = await getRuntime();
-  sendList(res, tenantScopeService.filterRows(subscriptions, req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
+  const platform = await repository.listPlatformProjection();
+  sendList(res, tenantScopeService.filterRows(platform.subscriptions ?? [], req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
 }));
 
 app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /api/backoffice/notifications"), asyncHandler(async (req, res) => {
-  const { platformNotifications } = await getRuntime();
-  sendList(res, tenantScopeService.filterRows(platformNotifications, req.principal), req.query, ["title", "message", "type", "status"]);
+  const platform = await repository.listPlatformProjection();
+  sendList(res, tenantScopeService.filterRows(platform.notifications ?? [], req.principal), req.query, ["title", "message", "type", "status"]);
 }));
 
-app.get("/api/backoffice/subscription-access", requireAuth, asyncHandler(async (req, res) => {
-  const schoolCode = req.query.schoolCode || req.principal?.schoolCode;
+app.post("/api/backoffice/countries", requireAuth, requirePermission("POST /api/backoffice/countries"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformCountry(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/countries/:code", requireAuth, requirePermission("PATCH /api/backoffice/countries/:code"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformCountry(req.params.code, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/subscriptions", requireAuth, requirePermission("POST /api/backoffice/subscriptions"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscription(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(saved);
+}));
+
+app.patch("/api/backoffice/subscriptions/:subscriptionId", requireAuth, requirePermission("PATCH /api/backoffice/subscriptions/:subscriptionId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscription({ ...req.body, id: req.params.subscriptionId }, req.principal, platformAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/backoffice/notifications", requireAuth, requirePermission("POST /api/backoffice/notifications"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformNotification(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/notifications/:notificationId", requireAuth, requirePermission("PATCH /api/backoffice/notifications/:notificationId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformNotification(req.params.notificationId, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.get("/api/backoffice/role-permissions", requireAuth, requirePermission("GET /api/backoffice/role-permissions"), asyncHandler(async (req, res) => {
+  const map = (await repository.getRolePermissionsMap()) ?? {};
+  res.json(map);
+}));
+
+app.put("/api/backoffice/role-permissions", requireAuth, requirePermission("PUT /api/backoffice/role-permissions"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.replacePlatformRolePermissions(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("GET /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
+  const platform = await repository.listPlatformProjection();
+  res.json(sanitizeDashboardChartConfig(platform.dashboardChartConfig));
+}));
+
+app.put("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("PUT /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.savePlatformDashboardChartConfig(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/backoffice/subscription-offers", requireAuth, requirePermission("POST /api/backoffice/subscription-offers"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscriptionOffer(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(saved);
+}));
+
+app.patch("/api/backoffice/subscription-offers/:offerId", requireAuth, requirePermission("PATCH /api/backoffice/subscription-offers/:offerId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const saved = await repository.upsertPlatformSubscriptionOffer({ ...req.body, id: req.params.offerId }, req.principal, platformAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/backoffice/subscription-payments", requireAuth, requirePermission("POST /api/backoffice/subscription-payments"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformSubscriptionPayment(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/subscription-payments/:paymentId", requireAuth, requirePermission("PATCH /api/backoffice/subscription-payments/:paymentId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformSubscriptionPayment(req.params.paymentId, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/subscription-discounts", requireAuth, requirePermission("POST /api/backoffice/subscription-discounts"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const created = await repository.createPlatformSubscriptionDiscount(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/subscription-discounts/:discountId", requireAuth, requirePermission("PATCH /api/backoffice/subscription-discounts/:discountId"), asyncHandler(async (req, res) => {
+  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
+  const updated = await repository.updatePlatformSubscriptionDiscount(req.params.discountId, req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("GET /api/backoffice/subscription-access"), asyncHandler(async (req, res) => {
+  const {
+    asTrimmed,
+    isSuperAdminPrincipal,
+    isCountryAdminPrincipal,
+    assertSchoolScope,
+    resolvePrincipalCountryCode,
+  } = require("./lib/platformManagement");
+  const requestedSchoolCode = asTrimmed(req.query.schoolCode).toUpperCase();
+  const principalSchoolCode = asTrimmed(req.principal?.schoolCode).toUpperCase();
+  const schoolCode = requestedSchoolCode || principalSchoolCode;
+
   if (!schoolCode || schoolCode === "*") {
     return res.json({ level: "full", message: "" });
   }
+
+  if (requestedSchoolCode) {
+    if (isSuperAdminPrincipal(req.principal)) {
+      // accès global autorisé
+    } else if (isCountryAdminPrincipal(req.principal)) {
+      const school = await repository.getPlatformSchoolByCode(schoolCode);
+      const principalCountry = resolvePrincipalCountryCode(req.principal);
+      if (
+        !school ||
+        asTrimmed(school.country_code).toUpperCase() !== principalCountry.toUpperCase()
+      ) {
+        throw new BusinessError(403, "Accès refusé : établissement hors périmètre pays.");
+      }
+    } else {
+      assertSchoolScope(req.principal, schoolCode);
+    }
+  }
+
   const state = await getAuthoritativeBackOfficeState();
   res.json(schoolSubscriptionAccessService.resolveSchoolAccess(schoolCode, state));
 }));
@@ -1635,7 +1757,19 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     error.details = { rejectedKeys: preparedLegacyPedagogy.rejectedKeys };
     throw error;
   }
-  const rawBody = preparedLegacyPedagogy.body;
+  const {
+    stripLegacyPlatformStateWrite,
+    LEGACY_PLATFORM_STATE_WRITE_CODE,
+    LEGACY_PLATFORM_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacyPlatformStateWrite");
+  const preparedLegacyPlatform = stripLegacyPlatformStateWrite(preparedLegacyPedagogy.body);
+  if (preparedLegacyPlatform.rejectLegacyPlatformWrite) {
+    const error = new BusinessError(400, LEGACY_PLATFORM_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_PLATFORM_STATE_WRITE_CODE;
+    error.details = { rejectedKeys: preparedLegacyPlatform.rejectedKeys };
+    throw error;
+  }
+  const rawBody = preparedLegacyPlatform.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -1975,17 +2109,8 @@ function applyStoredStatusOverlay(dataset, storedState) {
     return;
   }
 
-  if (Array.isArray(storedState.countries)) {
-    const statusByCode = new Map(
-      storedState.countries
-        .filter((country) => country && country.code)
-        .map((country) => [String(country.code).trim().toUpperCase(), country.status])
-    );
-    dataset.countries = (dataset.countries ?? []).map((country) => {
-      const status = statusByCode.get(String(country.code ?? "").trim().toUpperCase());
-      return status ? { ...country, status } : country;
-    });
-  }
+  // LOT 6 — le statut pays provient exclusivement de la projection plateforme PostgreSQL.
+  // Ne plus superposer l'ancien snapshot JSON sur dataset.countries.
 }
 
 // Superpose les comptes gérés depuis le state BackOffice persistant sur le dataset
@@ -2216,10 +2341,23 @@ function getWebPlatformWritableEntities(principal) {
   const allowed = new Set();
 
   if (permissions.has("ALL_PRIVILEGES") || permissions.has("COUNTRY_PRIVILEGES")) {
-    backOfficeDeletableEntities.forEach((entity) => allowed.add(entity));
-    allowed.add("rolePermissions");
+    backOfficeDeletableEntities.forEach((entity) => {
+      if (
+        entity !== "countries" &&
+        entity !== "subscriptions" &&
+        entity !== "subscriptionOffers" &&
+        entity !== "subscriptionPayments" &&
+        entity !== "subscriptionInvoices" &&
+        entity !== "subscriptionDiscounts" &&
+        entity !== "subscriptionAuditLog" &&
+        entity !== "notifications" &&
+        entity !== "rolePermissions" &&
+        entity !== "dashboardChartConfig"
+      ) {
+        allowed.add(entity);
+      }
+    });
     allowed.add("academicConfigs");
-    allowed.add("dashboardChartConfig");
     return allowed;
   }
 
@@ -2505,7 +2643,26 @@ async function getAuthoritativeBackOfficeState() {
       ),
     };
   }
-  return overlayPedagogyProjection(await overlayFinanceProjection(nextState));
+  return overlayPlatformProjection(
+    await overlayPedagogyProjection(await overlayFinanceProjection(nextState)),
+  );
+}
+
+async function overlayPlatformProjection(state) {
+  const platform = await repository.listPlatformProjection();
+  return {
+    ...state,
+    countries: platform.countries ?? [],
+    subscriptions: platform.subscriptions ?? [],
+    notifications: platform.notifications ?? [],
+    subscriptionOffers: platform.subscriptionOffers ?? [],
+    subscriptionPayments: platform.subscriptionPayments ?? [],
+    subscriptionInvoices: platform.subscriptionInvoices ?? [],
+    subscriptionDiscounts: platform.subscriptionDiscounts ?? [],
+    subscriptionAuditLog: platform.subscriptionAuditLog ?? [],
+    rolePermissions: platform.rolePermissions ?? {},
+    dashboardChartConfig: platform.dashboardChartConfig ?? { platform: {}, establishment: {} },
+  };
 }
 
 async function overlayPedagogyProjection(state) {
@@ -4218,9 +4375,11 @@ async function resolveUserPasswordLookupKeys(principal) {
       return alias && keys.has(alias);
     });
 
-  const { users } = await getAuthoritativeBackOfficeState();
+  const { users: stateUsers } = await getAuthoritativeBackOfficeState();
   const runtime = await getRuntime();
-  const allAccounts = [...users, ...(runtime.userAccounts ?? [])];
+  const users = Array.isArray(stateUsers) ? stateUsers : [];
+  const runtimeAccounts = Array.isArray(runtime.userAccounts) ? runtime.userAccounts : [];
+  const allAccounts = [...users, ...runtimeAccounts];
 
   let changed = true;
   while (changed) {
@@ -4242,10 +4401,7 @@ async function resolveUserPasswordLookupKeys(principal) {
 
 // Récupère la matrice de droits par rôle (configurée par le Super Admin dans le BackOffice).
 async function getRolePermissionsMap() {
-  const storedState = await repository.getBackOfficeState();
-  return isPlainObject(storedState) && isPlainObject(storedState.rolePermissions)
-    ? storedState.rolePermissions
-    : null;
+  return repository.getRolePermissionsMap();
 }
 
 // Fusionne les droits de base (compte / RBAC) avec les droits accordés au rôle par le Super Admin.

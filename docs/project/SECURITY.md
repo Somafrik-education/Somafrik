@@ -1,7 +1,7 @@
 # Sécurité — Somafrik
 
 **Statut :** politique & contrôles de sécurité  
-**Dernière mise à jour :** 2026-07-26  
+**Dernière mise à jour :** 2026-08-13  
 **Liens :** [ARCHITECTURE.md](./ARCHITECTURE.md) · [DECISIONS.md](./DECISIONS.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -24,12 +24,13 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 
 | Rôle | Exemples de clés autorisées |
 |------|-----------------------------|
-| Super Admin | Toutes sauf `auditLog` et clés canoniques PG (écoles, élèves, enseignants/affectations, Finance, Pédagogie) |
-| Admin Pays | users, countries, subscriptions… (plus `schools`) |
-| Admin School | contacts, users, notes, documents… (plus Finance PUT) |
+| Super Admin | Toutes sauf `auditLog` et clés canoniques PG (écoles, élèves, enseignants/affectations, Finance, Pédagogie, **Plateforme**) |
+| Admin Pays | users, academicConfigs… (plus `schools`, **plus clés plateforme PUT**) |
+| Admin School | contacts, users, notes, documents… (plus Finance PUT, **plus plateforme PUT**) |
 | Secrétaire | presences, messages, documents… (paiements via APIs dédiées, plus PUT Finance) |
 | Comptable | **aucune** clé PUT state ; Finance exclusivement via `/api/payments` et `/api/finance/*` |
 | Pédagogie (cours, EDT, évaluations, notes, présences) | **aucune** clé PUT state ; exclusivement via `/api/courses`, `/api/course-schedules`, `/api/evaluations`, `/api/notes`, `/api/presences` |
+| Plateforme (pays, abonnements, notifications, RBAC graphiques) | **aucune** clé PUT state ; exclusivement via `/api/backoffice/countries`, `/subscriptions`, `/notifications`, `/role-permissions`, `/dashboard-chart-config`, collections abonnement |
 | Préfet / Proviseur / DA | pédagogie (notes, classes, teachers…) |
 | Enseignant | **uniquement** `evaluations` + `notes` (HOTFIX-SYNC-03) |
 

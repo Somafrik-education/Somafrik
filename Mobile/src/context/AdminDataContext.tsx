@@ -31,7 +31,14 @@ import {
 } from "../lib/activeSchool";
 import { normalize } from "../lib/format";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
-import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, BackOfficeStatePayload } from "../services/api";
+import {
+  applyCreatedPlatformNotification,
+  applyReadPlatformNotification,
+  buildPlatformNotificationCreatePayload,
+  buildPlatformNotificationReadPatch,
+  isUnreadNotification,
+} from "../lib/platformNotificationSync";
+import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, BackOfficeStatePayload } from "../services/api";
 import { SYNC_INTERVAL_MS } from "../config/env";
 import { useAuth } from "./AuthContext";
 
@@ -86,7 +93,8 @@ type AdminDataContextValue = {
   upsertNoteItem: (item: NoteItem) => void;
   updateRoleFeatureAccess: (role: string, feature: string, permissions: string[], enabled: boolean) => void;
   upsertNotification: (item: PlatformNotification) => void;
-  updateNotifications: (items: PlatformNotification[]) => void;
+  updateNotification: (item: PlatformNotification) => void;
+  markNotificationsRead: (items: PlatformNotification[]) => void;
 };
 
 const AdminDataContext = createContext<AdminDataContextValue | undefined>(undefined);
@@ -449,6 +457,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     };
 
     const commitEntity = (entity: AdminEntity, updater: (items: any[]) => any[]) => {
+      if (entity === "countries" || entity === "subscriptions") {
+        return;
+      }
       setters[entity]((items: any[]) => {
         const nextItems = enforceEntityScope(entity, updater(items), session, state);
         persistSyncedState({ ...state, [entity]: nextItems });
@@ -483,11 +494,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         );
 
         setUsersData(nextUsers as UserAccount[]);
-        persistSyncedState({
-          ...state,
-          users: nextUsers,
-          rolePermissions: nextPermissions,
-        });
+        void replacePlatformRolePermissions(nextPermissions).catch(() => setSyncStatus("offline"));
 
         return nextPermissions;
       });
@@ -571,15 +578,65 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         }),
       updateRoleFeatureAccess,
       upsertNotification: (item) => {
-        setNotificationsData((current) => {
-          const next = [item, ...current.filter((row) => row.id !== item.id)];
-          persistSyncedState({ ...stateSnapshot, notifications: next });
-          return next;
-        });
+        const clientId = item.id;
+        const payload = buildPlatformNotificationCreatePayload(item);
+        void createPlatformNotification(payload)
+          .then((created) => {
+            const saved = created as PlatformNotification;
+            setNotificationsData((current) =>
+              applyCreatedPlatformNotification(current, saved, clientId),
+            );
+            setSyncStatus("synced");
+          })
+          .catch(() => setSyncStatus("offline"));
       },
-      updateNotifications: (items) => {
-        setNotificationsData(items);
-        persistSyncedState({ ...stateSnapshot, notifications: items });
+      updateNotification: (item) => {
+        let patchTarget: { id: string; patch: Record<string, unknown> };
+        try {
+          patchTarget = buildPlatformNotificationReadPatch(item);
+        } catch {
+          setSyncStatus("offline");
+          return;
+        }
+        setNotificationsData((current) =>
+          current.map((row) => (row.id === item.id ? { ...row, ...item } : row)),
+        );
+        void updatePlatformNotification(patchTarget.id, patchTarget.patch)
+          .then((updated) => {
+            setNotificationsData((current) =>
+              applyReadPlatformNotification(current, updated as PlatformNotification),
+            );
+            setSyncStatus("synced");
+          })
+          .catch(() => setSyncStatus("offline"));
+      },
+      markNotificationsRead: (items) => {
+        const targets = items.filter((item) => item.id && isUnreadNotification(item));
+        if (!targets.length) return;
+
+        const targetIds = new Set(targets.map((item) => String(item.id)));
+        setNotificationsData((current) =>
+          current.map((row) =>
+            targetIds.has(String(row.id ?? "")) ? { ...row, status: "Lu" } : row,
+          ),
+        );
+
+        void Promise.all(
+          targets.map((item) => {
+            const { id, patch } = buildPlatformNotificationReadPatch(item);
+            return updatePlatformNotification(id, patch);
+          }),
+        )
+          .then((updatedRows) => {
+            const byId = new Map(
+              updatedRows.map((row) => [String((row as PlatformNotification).id), row as PlatformNotification]),
+            );
+            setNotificationsData((current) =>
+              current.map((row) => byId.get(String(row.id ?? "")) ?? row),
+            );
+            setSyncStatus("synced");
+          })
+          .catch(() => setSyncStatus("offline"));
       },
     };
   }, [

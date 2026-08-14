@@ -343,9 +343,40 @@ export function saveBackOfficeState(payload: BackOfficeStatePayload) {
   delete rest.evaluations;
   delete rest.notes;
   delete rest.presences;
+  delete rest.countries;
+  delete rest.subscriptions;
+  delete rest.subscriptionOffers;
+  delete rest.subscriptionPayments;
+  delete rest.subscriptionInvoices;
+  delete rest.subscriptionDiscounts;
+  delete rest.subscriptionAuditLog;
+  delete rest.notifications;
+  delete rest.rolePermissions;
+  delete rest.dashboardChartConfig;
   return request<BackOfficeStatePayload>("/backoffice/state", {
     method: "PUT",
     body: JSON.stringify(rest),
+  });
+}
+
+export function createPlatformNotification(payload: Record<string, unknown>) {
+  return request("/backoffice/notifications", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updatePlatformNotification(notificationId: string, payload: Record<string, unknown>) {
+  return request(`/backoffice/notifications/${encodeURIComponent(notificationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function replacePlatformRolePermissions(payload: Record<string, string[]>) {
+  return request("/backoffice/role-permissions", {
+    method: "PUT",
+    body: JSON.stringify(payload),
   });
 }
 

@@ -82,6 +82,8 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:finance-management` | Paiement/allocation atomiques, annulation/réversion, application concurrente de grille, cooldown reminders, isolation tenant, RBAC Super Admin / Admin School / Comptable / Secrétaire / Directeur / rôles non autorisés |
 | `npm run verify:pedagogy-legacy-cleanup` | PUT Pédagogie interdit (`courses`, `courseSchedules`, `evaluations`, `notes`, `presences` — vide, null, mixte) sans mutation partielle ; `rejectedKeys` déterministes |
 | `npm run verify:pedagogy-management` | Routes canoniques `/api/courses`, `/api/course-schedules`, `/api/evaluations`, `/api/notes`, `/api/presences` ; intégration PG (`pedagogyRepository.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:platform-legacy-cleanup` | PUT Plateforme interdit (10 clés — vide, null, mixte) sans mutation partielle ; writers Web/Mobile/BackOffice retirés |
+| `npm run verify:platform-management` | APIs `/api/backoffice/countries`, `/subscriptions`, `/notifications`, `/role-permissions`, collections abonnement ; isolation tenant HTTP ; `getRolePermissionsMap()` PostgreSQL ; audit transactionnel (`platformRepository.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
 | `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |
@@ -147,6 +149,16 @@ Après déploiement Render + Vercel (`develop`) :
 - [ ] PUT state avec une clé Finance, seule, mixte ou snapshot → 400 `LEGACY_FINANCE_STATE_WRITE_FORBIDDEN`
 - [ ] `GET state` Finance reflète PostgreSQL sans fusion des anciennes lignes JSON
 - [ ] E2E 0001 / 0009 / 0011 exécutés contre un backend PostgreSQL
+
+### Gate Plateforme (LOT 6)
+
+- [ ] Créer un pays via `POST /api/backoffice/countries` → 201, pas d'auto-création implicite
+- [ ] Upsert abonnement via `POST /api/backoffice/subscriptions` → scope établissement/pays depuis principal uniquement
+- [ ] Admin Pays hors pays → 403 `TENANT_MISMATCH`, zéro audit
+- [ ] `GET /api/backoffice/subscription-access` protégé par `requirePermission` (403 sans droit, 401 sans token)
+- [ ] `GET state.rolePermissions` projeté depuis PostgreSQL (`getRolePermissionsMap`)
+- [ ] PUT state avec une clé plateforme, seule, mixte ou snapshot → 400 `LEGACY_PLATFORM_STATE_WRITE_FORBIDDEN`
+- [ ] Persistance après redémarrage (`platformRepository.pg.test.js`)
 
 ### Gate Notes / sync enseignant
 

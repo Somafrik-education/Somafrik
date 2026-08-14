@@ -79,6 +79,13 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:finance-management
 
+      - name: verify:platform-management (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:platform-management
+      - name: verify:platform-legacy-cleanup (mémoire)
+        run: npm run verify:platform-legacy-cleanup
+
       - name: verify:students-fiche-consolidation (mémoire)
         run: npm run verify:students-fiche-consolidation
 
