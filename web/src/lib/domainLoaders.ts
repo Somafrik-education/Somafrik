@@ -116,15 +116,15 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
       };
     },
     exams: async () => {
-      const payload = await api.get<{ exams?: unknown[] }>("/backoffice/planning-exams");
+      const payload = await api.get<{ exams?: unknown[] }>("/exams");
       return { exams: (payload.exams ?? []) as BackOfficeState["exams"] };
     },
     bulletins: async () => {
-      const payload = await api.get<{ bulletins?: unknown[] }>("/backoffice/report-cards");
+      const payload = await api.get<{ bulletins?: unknown[] }>("/report-cards");
       return { bulletins: (payload.bulletins ?? []) as BackOfficeState["bulletins"] };
     },
     documents: async () => {
-      const payload = await api.get<{ documents?: unknown[] }>("/backoffice/establishment-documents");
+      const payload = await api.get<{ documents?: unknown[] }>("/school-documents");
       return { documents: (payload.documents ?? []) as BackOfficeState["documents"] };
     },
   };

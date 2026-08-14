@@ -5,6 +5,9 @@ import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { financeApi } from "../lib/financeApi";
 import { pedagogyApi } from "../lib/pedagogyApi";
+import { examsApi } from "../lib/examsApi";
+import { reportCardsApi } from "../lib/reportCardsApi";
+import { schoolDocumentsApi } from "../lib/schoolDocumentsApi";
 import { clientsApi } from "../lib/clientsApi";
 import { prepareContactForSave } from "../lib/contacts";
 import {
@@ -993,6 +996,75 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       return;
     }
 
+    if (module.key === "exams") {
+      try {
+        await persistPedagogyMutation(
+          () =>
+            exists
+              ? examsApi.patch(String(preparedItem.id), {
+                  status: preparedItem.status,
+                  name: preparedItem.name,
+                  className: preparedItem.className,
+                  subject: preparedItem.subject,
+                  examType: preparedItem.examType,
+                  date: preparedItem.date,
+                  period: preparedItem.period,
+                })
+              : examsApi.create(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "bulletins") {
+      try {
+        await persistPedagogyMutation(
+          async () => {
+            if (!exists) {
+              return reportCardsApi.generate({
+                studentId: preparedItem.studentId,
+                period: preparedItem.period,
+                className: preparedItem.className,
+              });
+            }
+            const status = String(preparedItem.status ?? "").toLowerCase();
+            if (status.includes("publi")) return reportCardsApi.publish(String(preparedItem.id));
+            if (status.includes("archiv")) return reportCardsApi.archive(String(preparedItem.id));
+            return reportCardsApi.generate({
+              studentId: preparedItem.studentId,
+              period: preparedItem.period,
+              className: preparedItem.className,
+            });
+          },
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "documents") {
+      try {
+        await persistPedagogyMutation(
+          () =>
+            exists
+              ? schoolDocumentsApi.patch(String(preparedItem.id), preparedItem)
+              : schoolDocumentsApi.create(preparedItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
     if (module.key === "students") {
       const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
       if (!code || code === "*") {
@@ -1109,6 +1181,33 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
           () => pedagogyApi.deleteCourse(String(row.id ?? row.publicId)),
           ENTITY_DELETED_MESSAGE,
         );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "exams") {
+      try {
+        await persistPedagogyMutation(() => examsApi.archive(String(row.id)), ENTITY_DELETED_MESSAGE);
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "bulletins") {
+      try {
+        await persistPedagogyMutation(() => reportCardsApi.archive(String(row.id)), ENTITY_DELETED_MESSAGE);
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "documents") {
+      try {
+        await persistPedagogyMutation(() => schoolDocumentsApi.archive(String(row.id)), ENTITY_DELETED_MESSAGE);
       } catch {
         /* toast */
       }

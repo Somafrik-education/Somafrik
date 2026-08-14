@@ -15,13 +15,13 @@ import {
   auditSchoolPlanningConsistency,
   canRepairSchoolPlanning,
   extractTimeFromIso,
-  mergePlanningLinkedExams,
   PLANNING_WEEKDAYS,
   repairSchoolCourseSchedules,
   scopedCourseSchedules,
   weekdayFromIso,
 } from "../../lib/coursePlanning";
 import { syncSchoolCourseSchedules } from "../../lib/pedagogyPlanningSync";
+import { syncPlanningLinkedExamsCanonical } from "../../lib/planningExamsSync";
 
 function weekdayLabel(value: number): string {
   return PLANNING_WEEKDAYS.find((row) => row.value === value)?.label ?? "—";
@@ -54,7 +54,7 @@ const columns: ColumnDef<ConflictRow>[] = [
 
 export function PlanningConflictsPage() {
   const { session } = useAuth();
-  const { state, update, refresh } = useData();
+  const { state, refresh } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
   const scopeUser = scopedUser ?? session?.user ?? null;
@@ -99,8 +99,7 @@ export function PlanningConflictsPage() {
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, report.slots);
-      const exams = mergePlanningLinkedExams(state, report.slots, previousSchoolSlots);
-      await update({ exams }, { partial: true });
+      await syncPlanningLinkedExamsCanonical(previousSchoolSlots, report.slots);
       await refresh();
       showToast("Données du planning corrigées.", "success");
     } catch {

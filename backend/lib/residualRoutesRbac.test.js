@@ -42,4 +42,7 @@ assert.ok(routePermissions["GET /api/backoffice/planning-exams"]?.includes("Exam
 assert.ok(routePermissions["GET /api/backoffice/report-cards"]?.includes("Bulletins:READ"));
 assert.ok(routePermissions["GET /api/backoffice/establishment-documents"]?.includes("Documents:READ"));
 
+assert.ok(rbac.canAccess(teacherPrincipal, "GET /api/exams"), "Enseignant avec Examens:READ peut lire /api/exams");
+assert.equal(rbac.canAccess(teacherPrincipal, "POST /api/exams"), false, "Enseignant read-only ne peut pas POST /api/exams");
+
 console.log("residualRoutesRbac.test.js: OK");

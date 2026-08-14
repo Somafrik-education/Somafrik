@@ -15,7 +15,6 @@ import { CoursePlanningCalendar } from "../components/planning/CoursePlanningCal
 import {
   ALL_PLANNING_PERIODS,
   auditSchoolPlanningConsistency,
-  buildSchoolPlanningResetPatch,
   buildExamSlotTimes,
   buildSlotTemplateTimes,
   canRepairSchoolPlanning,
@@ -32,7 +31,6 @@ import {
   getSchoolAcademicPeriods,
   isExamSchedule,
   isoToPeriodDate,
-  mergePlanningLinkedExams,
   normalizePlanningSlotForSave,
   normalizeScheduleKind,
   pickPlanningPeriodWithSlots,
@@ -48,6 +46,7 @@ import {
   type PlanningViewFilter,
 } from "../lib/coursePlanning";
 import { syncSchoolCourseSchedules } from "../lib/pedagogyPlanningSync";
+import { archiveSchoolPlanningExams, syncPlanningLinkedExamsCanonical } from "../lib/planningExamsSync";
 import { inputToPeriodDate, parsePeriodDate, periodDateToInput } from "../lib/academicPeriods";
 import type { BackOfficeState, SessionUser } from "../types";
 
@@ -134,7 +133,7 @@ function slotTimesFromForm(form: FormState): { start: string; end: string } {
 
 export function CoursePlanningPage() {
   const { session } = useAuth();
-  const { state, update, refresh } = useData();
+  const { state, refresh } = useData();
   const stateRef = useRef(state);
   stateRef.current = state;
   const { showToast } = useToast();
@@ -303,11 +302,10 @@ export function CoursePlanningPage() {
     const previousSchoolSlots = scopedCourseSchedules(scopeUser, stateRef.current).filter(
       (row) => normalize(row.schoolCode) === normalize(schoolCode),
     );
-    const resetPatch = buildSchoolPlanningResetPatch(stateRef.current, schoolCode);
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, []);
-      await update({ exams: resetPatch.exams }, { partial: true });
+      await archiveSchoolPlanningExams();
       await refresh();
       setForm(null);
       autoRepairRef.current = true;
@@ -386,8 +384,7 @@ export function CoursePlanningPage() {
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, nextSchoolSlots);
-      const exams = mergePlanningLinkedExams(stateRef.current, nextSchoolSlots, previousSchoolSlots);
-      await update({ exams }, { partial: true });
+      await syncPlanningLinkedExamsCanonical(previousSchoolSlots, nextSchoolSlots);
       await refresh();
       showToast(message, "success");
       if (!options.keepForm) {

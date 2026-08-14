@@ -82,16 +82,8 @@ function createResidualPgStore(repo) {
          JOIN schools s ON s.id = r.school_id
          WHERE r.archived_at IS NULL`,
       );
-      const exams = [];
-      const bulletins = [];
-      const documents = [];
-      for (const row of residualRows) {
-        const mapped = mapResidualRow(row, String(row.school_code).toUpperCase());
-        if (row.record_domain === "exam") exams.push(mapped);
-        if (row.record_domain === "bulletin") bulletins.push(mapped);
-        if (row.record_domain === "document") documents.push(mapped);
-      }
-      return { academicConfigs, exams, bulletins, documents };
+      void residualRows;
+      return { academicConfigs, exams: [], bulletins: [], documents: [] };
     },
 
     async getAcademicConfig(schoolCode) {
@@ -167,45 +159,12 @@ function createResidualPgStore(repo) {
     },
 
     async replaceDomainRecords(domain, schoolCode, items = [], tx = null) {
-      const school = await resolveSchool(schoolCode);
-      if (!school) {
-        const error = new Error("Établissement introuvable.");
-        error.statusCode = 404;
-        throw error;
-      }
-      const normalizedSchool = String(school.school_code ?? school.code).trim().toUpperCase();
-      const runner = tx ?? repo;
-      const scopedItems = (items ?? []).map((item) => ({
-        ...(item && typeof item === "object" ? item : {}),
-        schoolCode: normalizedSchool,
-      }));
-      const nextIds = new Set(scopedItems.map((item) => resolveRecordId(item)).filter(Boolean));
-
-      await runner.query(
-        `UPDATE establishment_residual_records
-         SET archived_at = NOW(), status = 'archived', updated_at = NOW()
-         WHERE school_id = $1 AND record_domain = $2 AND archived_at IS NULL
-           AND NOT (legacy_json_id = ANY($3::text[]))`,
-        [school.id, domain, [...nextIds]],
-      );
-
-      for (const item of scopedItems) {
-        const legacyId = resolveRecordId(item);
-        if (!legacyId) continue;
-        const payload = { ...item, schoolCode: normalizedSchool };
-        await runner.query(
-          `INSERT INTO establishment_residual_records (
-             school_id, record_domain, legacy_json_id, profile_payload, status, archived_at, updated_at
-           ) VALUES ($1, $2, $3, $4::jsonb, 'active', NULL, NOW())
-           ON CONFLICT (school_id, record_domain, legacy_json_id) DO UPDATE SET
-             profile_payload = EXCLUDED.profile_payload,
-             status = 'active',
-             archived_at = NULL,
-             updated_at = NOW()`,
-          [school.id, domain, legacyId, JSON.stringify(payload)],
-        );
-      }
-      return scopedItems;
+      const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+      assertLegacyResidualWriteForbidden(domain);
+      void schoolCode;
+      void items;
+      void tx;
+      return [];
     },
   };
 

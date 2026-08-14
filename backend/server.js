@@ -39,10 +39,7 @@ const { resolveParentChildren } = require("./lib/parentChildren");
 const { classNamesMatch, normalizePresenceDay } = require("./lib/dataIntegrityRules");
 const { getCountryCodeFromScope, schoolMatchesCountryScope } = require("./lib/countryScope");
 const { buildDesignPreviewReport } = require("./lib/bulletinDesignPreview");
-const {
-  applyBulletinDesignToReport,
-  resolveBulletinDesignForStudent,
-} = require("./lib/bulletinDesignResolver");
+const { applyBulletinDesignToReport } = require("./lib/bulletinDesignResolver");
 const { renderReportCardPdf, renderReportCardPreviewHtml } = require("./services/bulletinPdfRenderer");
 const { dedupeBackOfficeState } = require("./lib/backofficeDedupe");
 const {
@@ -1048,6 +1045,109 @@ app.post("/api/backoffice/establishments/:schoolCode/evaluation-types/:typeId/ar
   res.json(archived);
 }));
 
+app.get("/api/exams", requireAuth, requirePermission("GET /api/exams"), asyncHandler(async (req, res) => {
+  const exams = await repository.listExams(req.principal);
+  res.json({ exams });
+}));
+
+app.post("/api/exams", requireAuth, requirePermission("POST /api/exams"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const created = await repository.createExam(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.get("/api/exams/:examId", requireAuth, requirePermission("GET /api/exams/:examId"), asyncHandler(async (req, res) => {
+  const exam = await repository.getExam(req.params.examId, req.principal);
+  res.json(exam);
+}));
+
+app.patch("/api/exams/:examId", requireAuth, requirePermission("PATCH /api/exams/:examId"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const updated = await repository.patchExam(req.params.examId, req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/exams/:examId/validate", requireAuth, requirePermission("POST /api/exams/:examId/validate"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.validateExam(req.params.examId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/exams/:examId/cancel", requireAuth, requirePermission("POST /api/exams/:examId/cancel"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.cancelExam(req.params.examId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/exams/:examId/archive", requireAuth, requirePermission("POST /api/exams/:examId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveExam(req.params.examId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/report-cards", requireAuth, requirePermission("GET /api/report-cards"), asyncHandler(async (req, res) => {
+  const bulletins = await repository.listReportCards(req.principal);
+  res.json({ bulletins });
+}));
+
+app.post("/api/report-cards/generate", requireAuth, requirePermission("POST /api/report-cards/generate"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.generateReportCard(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.status(201).json(saved);
+}));
+
+app.post("/api/report-cards/:cardId/publish", requireAuth, requirePermission("POST /api/report-cards/:cardId/publish"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.publishReportCard(req.params.cardId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/report-cards/:cardId/archive", requireAuth, requirePermission("POST /api/report-cards/:cardId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveReportCard(req.params.cardId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/report-card-templates", requireAuth, requirePermission("GET /api/report-card-templates"), asyncHandler(async (req, res) => {
+  const templates = await repository.listReportCardTemplates(req.principal);
+  res.json({ templates });
+}));
+
+app.put("/api/report-card-templates", requireAuth, requirePermission("PUT /api/report-card-templates"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.upsertReportCardTemplate(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/report-card-templates/:templateId/archive", requireAuth, requirePermission("POST /api/report-card-templates/:templateId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveReportCardTemplate(req.params.templateId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.get("/api/school-documents", requireAuth, requirePermission("GET /api/school-documents"), asyncHandler(async (req, res) => {
+  const documents = await repository.listSchoolDocuments(req.principal);
+  res.json({ documents });
+}));
+
+app.post("/api/school-documents", requireAuth, requirePermission("POST /api/school-documents"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const created = await repository.createSchoolDocument(req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/school-documents/:documentId", requireAuth, requirePermission("PATCH /api/school-documents/:documentId"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.patchSchoolDocument(req.params.documentId, req.body ?? {}, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
+app.post("/api/school-documents/:documentId/archive", requireAuth, requirePermission("POST /api/school-documents/:documentId/archive"), asyncHandler(async (req, res) => {
+  const { documentsExamsAuditMetaFromRequest } = require("./lib/documentsExamsManagement");
+  const saved = await repository.archiveSchoolDocument(req.params.documentId, req.principal, documentsExamsAuditMetaFromRequest(req));
+  res.json(saved);
+}));
+
 app.get("/api/backoffice/education-levels", requireAuth, requirePermission("GET /api/backoffice/education-levels"), asyncHandler(async (req, res) => {
   const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
   const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
@@ -1178,78 +1278,33 @@ app.get("/api/establishment-roles/assignable", requireAuth, requirePermission("G
 }));
 
 app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
-  const exams = await listResidualDomainForPrincipal(req.principal, "exams");
+  const exams = await repository.listExams(req.principal);
   res.json({ exams });
 }));
 
-app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
-  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
-  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
-  const schoolCode = resolvePrincipalSchoolCode(req.principal);
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const exams = assertResidualReplacePayload(req.body, "exams");
-  const saved = await repository.replaceResidualExams(
-    schoolCode,
-    exams,
-    req.principal,
-    {
-      schoolCode,
-      userId: req.principal?.sub,
-      ipAddress: req.ip ?? "",
-      userAgent: req.get("user-agent") ?? "",
-    },
-  );
-  res.json({ exams: saved });
+app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async () => {
+  const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
+  assertLegacyResidualWriteForbidden("exam"); // LEGACY_EXAMS_WRITE_FORBIDDEN
 }));
 
 app.get("/api/backoffice/report-cards", requireAuth, requirePermission("GET /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
-  const bulletins = await listResidualDomainForPrincipal(req.principal, "bulletins");
+  const bulletins = await repository.listReportCards(req.principal);
   res.json({ bulletins });
 }));
 
-app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
-  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
-  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
-  const schoolCode = resolvePrincipalSchoolCode(req.principal);
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const bulletins = assertResidualReplacePayload(req.body, "bulletins");
-  const saved = await repository.replaceResidualBulletins(
-    schoolCode,
-    bulletins,
-    req.principal,
-    {
-      schoolCode,
-      userId: req.principal?.sub,
-      ipAddress: req.ip ?? "",
-      userAgent: req.get("user-agent") ?? "",
-    },
-  );
-  res.json({ bulletins: saved });
+app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async () => {
+  const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
+  assertLegacyResidualWriteForbidden("bulletin"); // LEGACY_REPORT_CARDS_WRITE_FORBIDDEN
 }));
 
 app.get("/api/backoffice/establishment-documents", requireAuth, requirePermission("GET /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
-  const documents = await listResidualDomainForPrincipal(req.principal, "documents");
+  const documents = await repository.listSchoolDocuments(req.principal);
   res.json({ documents });
 }));
 
-app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
-  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
-  const { assertResidualReplacePayload } = require("./lib/residualReplacePayload");
-  const schoolCode = resolvePrincipalSchoolCode(req.principal);
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const documents = assertResidualReplacePayload(req.body, "documents");
-  const saved = await repository.replaceResidualDocuments(
-    schoolCode,
-    documents,
-    req.principal,
-    {
-      schoolCode,
-      userId: req.principal?.sub,
-      ipAddress: req.ip ?? "",
-      userAgent: req.get("user-agent") ?? "",
-    },
-  );
-  res.json({ documents: saved });
+app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async () => {
+  const { assertLegacyResidualWriteForbidden } = require("./lib/documentsExamsManagement");
+  assertLegacyResidualWriteForbidden("document"); // LEGACY_DOCUMENTS_WRITE_FORBIDDEN
 }));
 
 app.get("/api/students", requireAuth, requirePermission("GET /api/students"), asyncHandler(async (req, res) => {
@@ -1473,7 +1528,8 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
   }
 
   const period = req.query.period ? String(req.query.period) : "Trimestre 1";
-  const design = resolveBulletinDesignForStudent(backOfficeState, student);
+  const { resolveBulletinLayoutForStudent } = require("./lib/documentsExamsService");
+  const design = await resolveBulletinLayoutForStudent(repository, student);
   const baseReport = gradeBookService.generateReport(student.id, period, "Publié");
   const report = applyBulletinDesignToReport(baseReport, design);
   const pdf = await reportPdfService.generateReportCardPdf(report);
@@ -2985,24 +3041,23 @@ async function listResidualDomainForPrincipal(principal, domain) {
 }
 
 async function overlayResidualProjection(state) {
-  if (typeof repository.listResidualProjection !== "function") {
-    return {
-      ...state,
-      exams: [],
-      bulletins: [],
-      documents: [],
-    };
-  }
-  const residual = await repository.listResidualProjection();
+  const residual =
+    typeof repository.listResidualProjection === "function"
+      ? await repository.listResidualProjection()
+      : { academicConfigs: {} };
+  const canonical =
+    typeof repository.listDocumentsExamsProjection === "function"
+      ? await repository.listDocumentsExamsProjection()
+      : { exams: [], bulletins: [], documents: [] };
   return {
     ...state,
     academicConfigs: {
       ...(state.academicConfigs ?? {}),
       ...(residual.academicConfigs ?? {}),
     },
-    exams: residual.exams ?? [],
-    bulletins: residual.bulletins ?? [],
-    documents: residual.documents ?? [],
+    exams: canonical.exams ?? [],
+    bulletins: canonical.bulletins ?? [],
+    documents: canonical.documents ?? [],
   };
 }
 

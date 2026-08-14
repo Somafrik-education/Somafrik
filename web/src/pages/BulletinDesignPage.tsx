@@ -16,13 +16,13 @@ import {
   defaultBulletinClassDesign,
   listClassNamesForSchool,
   listSubjectsForClass,
-  readBulletinDesignByClass,
   type BulletinClassDesign,
 } from "../lib/bulletinDesign";
 import {
   BulletinGrapesEditor,
   type BulletinEditorExport,
 } from "../components/bulletin/BulletinGrapesEditor";
+import { reportCardTemplatesApi } from "../lib/reportCardsApi";
 
 export function BulletinDesignPage() {
   const { session } = useAuth();
@@ -72,9 +72,34 @@ export function BulletinDesignPage() {
       setDraft(null);
       return;
     }
-    const config = (state.academicConfigs?.[schoolCode] ?? {}) as Record<string, unknown>;
-    setDraft(readBulletinDesignByClass(config, className, subjects));
-  }, [schoolCode, className, subjects, state.academicConfigs]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = await reportCardTemplatesApi.list();
+        const match = (payload.templates ?? []).find(
+          (row) =>
+            String(row.className ?? "").trim() === className &&
+            row.status === "active" &&
+            row.templateType === "bulletin",
+        );
+        if (cancelled) return;
+        if (match?.layout && typeof match.layout === "object") {
+          setDraft({
+            ...defaultBulletinClassDesign(className, subjects),
+            ...(match.layout as BulletinClassDesign),
+            className,
+          });
+          return;
+        }
+        setDraft(defaultBulletinClassDesign(className, subjects));
+      } catch {
+        if (!cancelled) setDraft(defaultBulletinClassDesign(className, subjects));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolCode, className, subjects]);
 
   const school = availableSchools.find((item) => normalize(item.code) === normalize(schoolCode)) ?? null;
 
@@ -101,10 +126,17 @@ export function BulletinDesignPage() {
 
   async function saveDesign() {
     if (!schoolCode || !className || !draft) return;
-    showToast(
-      "Le modèle bulletin n'est plus enregistrable via academic-config. La persistance documents est hors LOT 4.",
-      "error",
-    );
+    try {
+      await reportCardTemplatesApi.upsert({
+        className,
+        templateType: "bulletin",
+        layout: draft,
+      });
+      showToast("Modèle de bulletin enregistré.", "success");
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Échec de l'enregistrement du modèle";
+      showToast(message, "error");
+    }
   }
 
   async function previewDesign(format: "html" | "pdf") {

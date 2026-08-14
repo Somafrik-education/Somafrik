@@ -116,6 +116,24 @@ Un `INSERT` ultérieur dans `schools` crée transactionnellement la ligne `schoo
 
 Migration SQL : `backend/db/migrations/20260818_school_settings_canonical.sql`.
 
+### 4.2quinquies Examens, bulletins et documents (canonique PG — LOT 5)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `exams` | Instances d'examen (réutilise la table V2, pas de 3e SoT) | FK `school_id`, `class_id`, `subject_id`, `term_id`, `academic_year_id`, `evaluation_type_id` ; CHECK status `draft\|scheduled\|validated\|completed\|cancelled\|archived` |
+| `exam_results` | Scores par élève | UNIQUE `(exam_id, student_id)` |
+| `report_cards` | Publication de bulletin (pas de copie des notes) | UNIQUE `(school_id, student_id, academic_year_id, term_id)` ; moyenne **calculée** depuis `grades` à la lecture |
+| `report_card_templates` | Layout de rendu uniquement | JSONB `layout` allowlist ; unique actif école/classe/type |
+| `school_documents` | Métadonnées documents établissement | pas de binaire PG ; `student_documents` reste le dossier élève V2 |
+
+`PUT /api/backoffice/planning-exams` / `report-cards` / `establishment-documents` → `400 LEGACY_*_WRITE_FORBIDDEN`. GET = projection relationnelle.
+
+`GET /api/students/:id/report.pdf` applique le layout depuis `report_card_templates` (classe puis défaut établissement). `academicConfigs.bulletinDesignByClass` n'est plus lu.
+
+**Boot (ordre obligatoire)** : preflight read-only → inventaire residual exam/bulletin/document → inventaire des `exams.status` → STOP `LEGACY_*_AMBIGUOUS` / `LEGACY_EXAM_STATUS_AMBIGUOUS` si ambigu → **ensuite** DDL (`DOCUMENTS_EXAMS_SCHEMA_DDL_SQL`) → normalisation déterministe uniquement (`published` → `completed`, backfill `academic_year_id` depuis `terms`) → CHECK status → strip residual. Aucune création heuristique d'examen / élève / classe. Aucun statut inconnu → `scheduled`.
+
+Migration SQL : `backend/db/migrations/20260819_exams_report_cards_documents_canonical.sql`.
+
 ### 4.3 Notes (canonique PG)
 
 | Table | Rôle | Contraintes notables |

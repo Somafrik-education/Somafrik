@@ -44,14 +44,11 @@ function createResidualMemoryStore() {
 
   const store = {
     listProjection() {
-      const exams = records.exam.map((row) => mapResidualRow(row, row.schoolCode));
-      const bulletins = records.bulletin.map((row) => mapResidualRow(row, row.schoolCode));
-      const documents = records.document.map((row) => mapResidualRow(row, row.schoolCode));
       const configs = {};
       for (const [schoolCode, config] of academicConfigs.entries()) {
         configs[schoolCode] = config;
       }
-      return { academicConfigs: configs, exams, bulletins, documents };
+      return { academicConfigs: configs, exams: [], bulletins: [], documents: [] };
     },
     getAcademicConfig(schoolCode) {
       const normalized = asTrimmed(schoolCode).toUpperCase();
@@ -71,38 +68,11 @@ function createResidualMemoryStore() {
       return saved;
     },
     replaceDomainRecords(domain, schoolCode, items = []) {
-      const normalizedSchool = asTrimmed(schoolCode).toUpperCase();
-      const scopedItems = (items ?? []).map((item) => ({
-        ...(item && typeof item === "object" ? item : {}),
-        schoolCode: normalizedSchool,
-      }));
-      const nextIds = new Set(scopedItems.map((item) => resolveRecordId(item)).filter(Boolean));
-      records[domain] = records[domain].filter((row) => {
-        if (asTrimmed(row.schoolCode).toUpperCase() !== normalizedSchool) {
-          return true;
-        }
-        return nextIds.has(resolveRecordId(row));
-      });
-      for (const item of scopedItems) {
-        const legacyId = resolveRecordId(item);
-        if (!legacyId) continue;
-        const existingIndex = records[domain].findIndex(
-          (row) =>
-            asTrimmed(row.schoolCode).toUpperCase() === normalizedSchool &&
-            resolveRecordId(row) === legacyId,
-        );
-        const entry = {
-          schoolCode: normalizedSchool,
-          legacy_json_id: legacyId,
-          profile_payload: { ...item, schoolCode: normalizedSchool },
-        };
-        if (existingIndex >= 0) {
-          records[domain][existingIndex] = entry;
-        } else {
-          records[domain].push(entry);
-        }
-      }
-      return items;
+      const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+      assertLegacyResidualWriteForbidden(domain);
+      void schoolCode;
+      void items;
+      return [];
     },
   };
 

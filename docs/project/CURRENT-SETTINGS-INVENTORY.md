@@ -22,7 +22,7 @@ Chaque paramètre est classé dans **une** catégorie principale (la plus proche
 | **Canonique PostgreSQL relationnel** | Tables/colonnes dédiées ; CRUD via APIs métier. |
 | **JSONB canonique PG** | Persisté en PostgreSQL mais dans un payload JSON (`config_payload`, `profile_payload`, `establishment_residual_records`). Pas de colonnes métier 1:1. |
 | **Lecture legacy résiduelle** | Helper interne `getAuthoritativeBackOfficeState()` (`backend/server.js`) qui **agrège des projections PG** ; le nom est historique. **Ne lit plus** la table `backoffice_state` (`getBackOfficeState()` retourne `null`). |
-| **Écriture legacy encore possible** | PUT replace-all sur domaines résiduels (`exams` / `bulletins` / `documents`) ; restore JSON client ; `DataContext.update` résiduel. `PUT/GET /api/backoffice/state` = **410 Gone**. |
+| **Écriture legacy encore possible** | Restore JSON client pour domaines non migrés ; `DataContext.update` academic-config uniquement. Examens / bulletins / documents : PUT residual **400**. `PUT/GET /api/backoffice/state` = **410 Gone**. |
 | **Config statique / seed / env** | `backend/data.js`, `web/src/lib/internalRoleDefaults.ts`, `Mobile/src/data/catalog.ts`, variables d’environnement. |
 | **Calculé / non persisté** | Dérivé en mémoire (session, overlays, défauts si JSON vide). |
 | **Fonctionnalité morte / écran résiduel** | Carte « Bientôt », ComingSoon, cartes Mobile sans `route`, helpers non appelés, table `backoffice_state` orpheline. |
@@ -57,7 +57,7 @@ Les cartes marquées `status: "soon"` restent cliquables : elles ouvrent un `Com
 | **Année scolaire** `/parametres/annee-scolaire` | `ConfigurationPage section="annee-scolaire"` | `GET /api/school-settings` + projection `GET /api/academic-config` (périodes = `terms`) + catalogue **`evaluation_types`** | **Oui** — `PATCH /api/school-settings` + `PUT /api/academic-periods`. Types d’éval = `evaluation_types` (LOT 3) | **Canonique PG** |
 | **Structure pédagogique** `/parametres/structure` | `ConfigurationPage section="structure"` | niveaux/filières LOT 1 ; `classNames`/`subjects` = projection lecture `classes` / `subjects` | **Non** pour JSON classes/matières. Création via modules Classes / matières PG | **Canonique PG** |
 | **Rôles et droits** `/parametres/roles-droits` | `ConfigurationPage section="roles-droits"` | `academicConfigs.userRoles` + `state.rolePermissions` | **Partiel** : liste de rôles → JSON academic-config ; **pilotage** → `PUT /api/backoffice/role-permissions` (**Super Admin uniquement**) | Dual JSONB + `role_permissions` |
-| **Documents** `/parametres/documents` | `BulletinDesignPage` | listes classes/matières (projection) ; design local UI | **Non** via academic-config (`bulletinDesignByClass` interdit). Hors LOT 4 | JSON interdit |
+| **Documents** `/parametres/documents` | `BulletinDesignPage` | listes classes/matières (projection) ; design via `report_card_templates` | **SoT table dédiée** (`PUT /api/report-card-templates`) ; `bulletinDesignByClass` interdit | JSON interdit |
 | **Sécurité** `/parametres/securite` | `SecuritySettingsPage` | Session AuthContext + `state.auditLog` + texte **codé en dur** | **Non** — lecture locale / export CSV client. **Pas** `GET /api/audit` | Calculé + écran trompeur |
 | **Données et sauvegarde** `/parametres/donnees` | `DataBackupSettingsPage` | `state` client (domaines déjà chargés) | Export CSV/JSON **local**. Restore appelle `DataContext.update` qui **strippe** écoles/élèves/enseignants/finance/pédagogie/plateforme/clients | Écriture legacy inopérante pour le métier |
 | **Finances** `/parametres/finances` | `SettingsFinancePage` | Aucune | **Non** — `ComingSoonState` | Écran résiduel (ops Finance existent ailleurs) |
@@ -147,7 +147,7 @@ Convention des fiches : propriétaire métier, UI, API, source, tables, RBAC, sc
 | Niveaux, filières | Établissement | activation LOT 1 | Tables `education_*` / `school_*` | INFO |
 | `classNames` / `subjects` | Établissement | lecture seule | Projection `classes` / `subjects`. Écriture JSON interdite. | INFO (migré LOT 4) |
 | Flags `allowCustom*` | — | — | Obsolètes, strippés, non migrés | INFO |
-| Design bulletins | Établissement + classe | Superadmin UI locale | `bulletinDesignByClass` interdit sur academic-config ; domaine documents hors LOT 4 | P1 |
+| Design bulletins | Établissement + classe | Superadmin UI | Table `report_card_templates` (layout JSONB de rendu uniquement) | INFO |
 | Années scolaires relationnelles | Établissement | APIs v2 + hub | Hub projette `academic_years.name` ; périodes via `terms` | INFO |
 
 **Types d’évaluation — LOT 3 (canonique PostgreSQL).** La table `evaluations` stocke des **instances** (un devoir, une interrogation… : `title`, `term_id`, `class_id`, `subject_id`, `max_score`, …).
@@ -256,8 +256,10 @@ Ces objets sont des **données opérationnelles** avec des APIs PG. Le hub Param
 | **Évaluations (instances)** | notes / pédagogie | `POST/PATCH /api/evaluations` + feature abo `write_notes` | table `evaluations` : instance (`term_id`, `title`, `evaluation_type_id` FK canonique, `evaluation_type` TEXT projection) | abonnement + auth | Catalogue = `evaluation_types`. Type inconnu/étranger → 404 ; archivé → 409. Pas d’auto-création | INFO |
 | **Notes** | module Notes | `GET /api/notes` (auth seul) ; `POST /api/notes` + `write_notes` | `grades` | lecture large ; écriture feature | Filtrage principal / parent | P1 |
 | **Présences** | module Présences | `GET /api/presences` (auth) ; `POST` + `write_presence` | `attendance` | idem | Helper mort `savePresencesViaBackOfficeState` (défini, **aucun appelant**) | INFO |
-| **Examens résiduels** | planning exams | `GET/PUT /api/backoffice/planning-exams` | `establishment_residual_records` `record_domain='exam'` JSON | `Organiser/Valider examens` | Table relationnelle `exams` / `exam_results` **en parallèle** (APIs `/api/v2/exams`) | **P1** dual exams |
-| **Bulletins / documents résiduels** | bulletins ; hub Documents (design) | `GET/PUT /api/backoffice/report-cards`, `…/establishment-documents` | même table résiduelle `bulletin` / `document` | `Bulletins:*` / `Documents:*` | PUT = **replace-all** scoped école (`replaceDomainRecords`) | P1 |
+| **Examens** | planning + `/examens` | `GET/POST/PATCH /api/exams` (+ validate/cancel/archive) ; GET `/api/backoffice/planning-exams` = projection | tables `exams` / `exam_results` | `Organiser/Valider examens` | Plus de residual JSON ; PUT planning-exams = **400 LEGACY_EXAMS_WRITE_FORBIDDEN** | INFO |
+| **Bulletins** | bulletins / notes | `GET /api/report-cards`, `POST …/generate`, publish/archive | `report_cards` (publication) ; notes = `grades` | `Bulletins:*` | Pas de snapshot JSON des notes | INFO |
+| **Documents établissement** | hub Documents | `GET/POST /api/school-documents` | `school_documents` (métadonnées) | `Documents:*` | Fichiers hors PG ; `student_documents` reste V2 élève | INFO |
+| **Templates bulletin** | `BulletinDesignPage` | `GET/PUT /api/report-card-templates` | `report_card_templates.layout` JSONB de rendu | `Conception bulletins` / `Documents:UPDATE` | Aucune donnée scolaire métier dans le layout | INFO |
 
 ---
 
@@ -493,8 +495,8 @@ Enseignants | Fiches / cycle de vie | TeachersList | `/api/teachers`, assignment
 Pédagogie | Classes PG | Classes | `/api/classes` | `classes` | École + année | Oui | Dual JSON names | Gérer classes | P0 (dual) | Voir structure
 Pédagogie | Cours / EDT | Planning | `/api/courses`, `/api/course-schedules` | `school_courses`, `course_schedule_slots` | École | Oui | GET courses sans permission fine | Gérer cours | P1 | Aligner GET sur `requirePermission`
 Pédagogie | Notes / présences / instances d’évaluation | modules ops | `/api/notes`, `/api/presences`, POST/PATCH `/api/evaluations` | `grades`, `attendance`, `evaluations` (`evaluation_type_id` FK + TEXT projection) | École / élève | Oui pour l’instance | GET auth-only ; feature abo en écriture ; types = `evaluation_types` | write_notes / write_presence | INFO | Types : voir ligne Académique « Types d’évaluation » / §4.C
-Pédagogie | Examens JSON vs V2 | planning | PUT planning-exams vs `/api/v2/exams` | residual JSON vs `exams` | École | Deux écritures | Dual | Examens:* | P1 | Une SoT examens
-Pédagogie | Bulletins / documents JSON | Documents (design) + listing | PUT report-cards / establishment-documents | residual JSON | École | Replace-all | Oui | Documents/Bulletins | P1 | CRUD item, pas replace-all
+Pédagogie | Examens | planning / examens | `/api/exams` (GET planning-exams = projection) | `exams` / `exam_results` | École | CRUD item | Non | Examens:* | INFO | SoT unique PG
+Pédagogie | Bulletins / documents / templates | Documents (design) + listing | `/api/report-cards`, `/api/report-card-templates`, `/api/school-documents` | `report_cards`, `report_card_templates`, `school_documents` | École | CRUD item | Non | Documents/Bulletins | INFO | Residual JSON strippé
 Finance | Hub « Paramètres Finances » | ComingSoon | aucune | — | — | Non | Ops Finance ailleurs | — | P2 | Pointer vers fee-grids / payment-statuses
 Finance | Statuts paiement | Finance / Mobile CRUD | `/api/finance/payment-statuses` | `payment_statuses` | École | Oui | Mobile refresh incomplet | POST /api/payments | **P0** | Inclure le domaine dans `refreshBackOfficeState`
 Finance | Grilles / obligations | Finances | `/api/finance/fee-grids`, student-fees, payments | `fee_*`, `payments`, … | École | Oui | PUT state 410 | Paiements / Impayés | INFO | —

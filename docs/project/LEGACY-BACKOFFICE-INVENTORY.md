@@ -228,6 +228,10 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 | Présences (écriture canonique) | `attendance` | `POST /api/presences` | D3.5b |
 | Schools (CRUD) | `schools` (+ `profile_payload`) | `GET/POST/PATCH/DELETE /api/backoffice/establishments` | PUT `schools` **interdit** ; `verify:schools-legacy-cleanup` |
 | Finance | `payments`, `student_fee_obligations`, `payment_allocations`, `payment_reminders`, `fee_grids`, `school_fee_items`, `fee_tariff_history`, `payment_statuses` | `/api/payments`, `/api/finance/*`, unpaid reminders | PUT Finance **interdit** ; `verify:finance-legacy-cleanup` + `verify:finance-management` |
+| Examens | `exams`, `exam_results` | `/api/exams`, GET `/api/v2/exams`, GET planning-exams (projection) | PUT planning-exams **400 LEGACY_EXAMS_WRITE_FORBIDDEN** ; `verify:documents-exams-data` |
+| Bulletins | `report_cards` (publication) ; notes = `grades` | `/api/report-cards` | PUT report-cards **400** |
+| Templates bulletin | `report_card_templates` | `/api/report-card-templates` | layout JSONB de rendu uniquement |
+| Documents établissement | `school_documents` | `/api/school-documents` | PUT establishment-documents **400** |
 
 ### 5.2 Dual (JSON encore writable + sync / projection)
 
@@ -244,7 +248,9 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 
 ### 5.3 Encore majoritairement JSON (`backoffice_state`)
 
-`users`, `countries`, `contacts`, `relations`, `subscriptions` (+ offers/payments/invoices/discounts/audit), `notifications`, `courses`, `courseSchedules`, `exams`, `bulletins`, `documents`, `announcements`, `messages`, `rolePermissions`, `dashboardChartConfig`, `deletedRows`.
+`users`, `countries`, `contacts`, `relations`, `subscriptions` (+ offers/payments/invoices/discounts/audit), `notifications`, `courses`, `courseSchedules`, `announcements`, `messages`, `rolePermissions`, `dashboardChartConfig`, `deletedRows`.
+
+`exams` / `bulletins` / `documents` : **plus de JSON résiduel SoT** (LOT 5). Overlay = projection PostgreSQL. PUT residual interdit.
 
 ---
 

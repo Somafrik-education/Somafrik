@@ -110,6 +110,7 @@ class PostgresRepository {
     await this.stripLegacyEvaluationTypesPayloads();
     await this.ensureEvaluationTypesBootstrap();
     await this.runSchoolSettingsCanonicalBoot();
+    await this.runDocumentsExamsCanonicalBoot();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -710,6 +711,120 @@ class PostgresRepository {
     return replaceAcademicPeriods(this, payload, principal, auditMeta, schoolCode);
   }
 
+  async runDocumentsExamsCanonicalBoot() {
+    const { runDocumentsExamsCanonicalBoot } = require("../lib/documentsExamsService");
+    return runDocumentsExamsCanonicalBoot(this, console);
+  }
+
+  getDocumentsExamsStore() {
+    const { createDocumentsExamsPgStore } = require("./documentsExamsPgStore");
+    return createDocumentsExamsPgStore(this);
+  }
+
+  async listDocumentsExamsProjection() {
+    const schools = await this.all(`SELECT id, school_code FROM schools`);
+    const exams = [];
+    const bulletins = [];
+    const documents = [];
+    const store = this.getDocumentsExamsStore();
+    for (const school of schools) {
+      exams.push(...(await store.listExams(school.id)));
+      bulletins.push(...(await store.listReportCards(school.id)));
+      documents.push(...(await store.listSchoolDocuments(school.id)));
+    }
+    return { exams, bulletins, documents };
+  }
+
+  listExams(principal, schoolCode) {
+    const { listExams } = require("../lib/documentsExamsService");
+    return listExams(this, principal, schoolCode);
+  }
+
+  getExam(examId, principal, schoolCode) {
+    const { getExam } = require("../lib/documentsExamsService");
+    return getExam(this, principal, examId, schoolCode);
+  }
+
+  createExam(payload, principal, auditMeta, schoolCode) {
+    const { createExam } = require("../lib/documentsExamsService");
+    return createExam(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  patchExam(examId, payload, principal, auditMeta, schoolCode) {
+    const { patchExam } = require("../lib/documentsExamsService");
+    return patchExam(this, examId, payload, principal, auditMeta, schoolCode);
+  }
+
+  validateExam(examId, principal, auditMeta, schoolCode) {
+    const { validateExam } = require("../lib/documentsExamsService");
+    return validateExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  cancelExam(examId, principal, auditMeta, schoolCode) {
+    const { cancelExam } = require("../lib/documentsExamsService");
+    return cancelExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  archiveExam(examId, principal, auditMeta, schoolCode) {
+    const { archiveExam } = require("../lib/documentsExamsService");
+    return archiveExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  listReportCards(principal, schoolCode) {
+    const { listReportCards } = require("../lib/documentsExamsService");
+    return listReportCards(this, principal, schoolCode);
+  }
+
+  generateReportCard(payload, principal, auditMeta, schoolCode) {
+    const { generateReportCard } = require("../lib/documentsExamsService");
+    return generateReportCard(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  publishReportCard(cardId, principal, auditMeta, schoolCode) {
+    const { publishReportCard } = require("../lib/documentsExamsService");
+    return publishReportCard(this, cardId, principal, auditMeta, schoolCode);
+  }
+
+  archiveReportCard(cardId, principal, auditMeta, schoolCode) {
+    const { archiveReportCard } = require("../lib/documentsExamsService");
+    return archiveReportCard(this, cardId, principal, auditMeta, schoolCode);
+  }
+
+  listReportCardTemplates(principal, schoolCode) {
+    const { listTemplates } = require("../lib/documentsExamsService");
+    return listTemplates(this, principal, schoolCode);
+  }
+
+  upsertReportCardTemplate(payload, principal, auditMeta, schoolCode) {
+    const { upsertTemplate } = require("../lib/documentsExamsService");
+    return upsertTemplate(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  archiveReportCardTemplate(templateId, principal, auditMeta, schoolCode) {
+    const { archiveTemplate } = require("../lib/documentsExamsService");
+    return archiveTemplate(this, templateId, principal, auditMeta, schoolCode);
+  }
+
+  listSchoolDocuments(principal, schoolCode) {
+    const { listSchoolDocuments } = require("../lib/documentsExamsService");
+    return listSchoolDocuments(this, principal, schoolCode);
+  }
+
+  createSchoolDocument(payload, principal, auditMeta, schoolCode) {
+    const { createSchoolDocument } = require("../lib/documentsExamsService");
+    return createSchoolDocument(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  patchSchoolDocument(documentId, payload, principal, auditMeta, schoolCode) {
+    const { patchSchoolDocument } = require("../lib/documentsExamsService");
+    return patchSchoolDocument(this, documentId, payload, principal, auditMeta, schoolCode);
+  }
+
+  archiveSchoolDocument(documentId, principal, auditMeta, schoolCode) {
+    const { archiveSchoolDocument } = require("../lib/documentsExamsService");
+    return archiveSchoolDocument(this, documentId, principal, auditMeta, schoolCode);
+  }
+
   listEvaluationTypes(schoolCode, options) {
     return this.getEvaluationTypesStore().listBySchool(schoolCode, options);
   }
@@ -745,16 +860,19 @@ class PostgresRepository {
     return this.getResidualStore().listProjection();
   }
 
-  replaceResidualExams(schoolCode, items, principal, auditMeta) {
-    return this.withResidualReplace("exam", schoolCode, items, principal, auditMeta);
+  replaceResidualExams() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("exam");
   }
 
-  replaceResidualBulletins(schoolCode, items, principal, auditMeta) {
-    return this.withResidualReplace("bulletin", schoolCode, items, principal, auditMeta);
+  replaceResidualBulletins() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("bulletin");
   }
 
-  replaceResidualDocuments(schoolCode, items, principal, auditMeta) {
-    return this.withResidualReplace("document", schoolCode, items, principal, auditMeta);
+  replaceResidualDocuments() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("document");
   }
 
   async withResidualReplace(domain, schoolCode, items, principal, auditMeta) {
@@ -4387,7 +4505,7 @@ class PostgresRepository {
           `${["Interrogation", "Examen blanc", "Examen final"][index]} - ${subject.name}`,
           ["Interrogation", "Examen blanc", "Examen final"][index],
           `2026-06-${String(10 + index).padStart(2, "0")}`,
-          index === 0 ? "published" : "validated",
+          index === 0 ? "completed" : "validated",
           adminUser?.id ?? null,
         ]
       );
@@ -5592,8 +5710,11 @@ class PostgresRepository {
 
   fromExamStatus(status) {
     if (status === "draft") return "Brouillon";
+    if (status === "scheduled") return "Programmé";
     if (status === "validated") return "Validé";
-    if (status === "published") return "Publié";
+    if (status === "completed" || status === "published") return "Publié";
+    if (status === "cancelled") return "Annulé";
+    if (status === "archived") return "Archivé";
     return status;
   }
 
