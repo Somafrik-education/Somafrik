@@ -11,6 +11,16 @@ const USERS_PLATFORM_EMAIL_INDEX = "uq_users_platform_email";
 const USERS_PLATFORM_PHONE_INDEX = "uq_users_platform_phone";
 const USERS_LOGIN_IDENTITY_DUPLICATES_CODE = "USERS_LOGIN_IDENTITY_DUPLICATES";
 
+/** Comptes exclus de l'unicité identité (aligné inventaire + index + validation applicative). */
+const ACTIVE_USER_IDENTITY_STATUS_SQL = `COALESCE(status, 'active') NOT IN ('deleted', 'archived')`;
+
+const DROP_USERS_LOGIN_IDENTITY_INDEXES_SQL = [
+  `DROP INDEX IF EXISTS ${USERS_SCHOOL_EMAIL_INDEX}`,
+  `DROP INDEX IF EXISTS ${USERS_SCHOOL_PHONE_INDEX}`,
+  `DROP INDEX IF EXISTS ${USERS_PLATFORM_EMAIL_INDEX}`,
+  `DROP INDEX IF EXISTS ${USERS_PLATFORM_PHONE_INDEX}`,
+];
+
 const COUNT_SCHOOL_EMAIL_DUPLICATE_GROUPS_SQL = `
   SELECT COUNT(*)::int AS duplicate_groups
   FROM (
@@ -19,7 +29,7 @@ const COUNT_SCHOOL_EMAIL_DUPLICATE_GROUPS_SQL = `
     WHERE school_id IS NOT NULL
       AND email IS NOT NULL
       AND trim(email) <> ''
-      AND COALESCE(status, 'active') NOT IN ('deleted', 'archived')
+      AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
     GROUP BY school_id, lower(trim(email))
     HAVING COUNT(*) > 1
   ) d
@@ -33,7 +43,7 @@ const COUNT_SCHOOL_PHONE_DUPLICATE_GROUPS_SQL = `
     WHERE school_id IS NOT NULL
       AND phone IS NOT NULL
       AND trim(phone) <> ''
-      AND COALESCE(status, 'active') NOT IN ('deleted', 'archived')
+      AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
     GROUP BY school_id, lower(trim(phone))
     HAVING COUNT(*) > 1
   ) d
@@ -47,7 +57,7 @@ const COUNT_PLATFORM_EMAIL_DUPLICATE_GROUPS_SQL = `
     WHERE school_id IS NULL
       AND email IS NOT NULL
       AND trim(email) <> ''
-      AND COALESCE(status, 'active') NOT IN ('deleted', 'archived')
+      AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
     GROUP BY lower(trim(email))
     HAVING COUNT(*) > 1
   ) d
@@ -61,7 +71,7 @@ const COUNT_PLATFORM_PHONE_DUPLICATE_GROUPS_SQL = `
     WHERE school_id IS NULL
       AND phone IS NOT NULL
       AND trim(phone) <> ''
-      AND COALESCE(status, 'active') NOT IN ('deleted', 'archived')
+      AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
     GROUP BY lower(trim(phone))
     HAVING COUNT(*) > 1
   ) d
@@ -75,7 +85,7 @@ const LIST_SCHOOL_EMAIL_DUPLICATE_GROUPS_SQL = `
   WHERE u.school_id IS NOT NULL
     AND u.email IS NOT NULL
     AND trim(u.email) <> ''
-    AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
+    AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
   GROUP BY s.school_code, lower(trim(u.email))
   HAVING COUNT(*) > 1
   ORDER BY s.school_code, email_key
@@ -88,6 +98,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ${USERS_SCHOOL_EMAIL_INDEX}
   WHERE school_id IS NOT NULL
     AND email IS NOT NULL
     AND trim(email) <> ''
+    AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
 `;
 
 const CREATE_USERS_SCHOOL_PHONE_INDEX_SQL = `
@@ -96,6 +107,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ${USERS_SCHOOL_PHONE_INDEX}
   WHERE school_id IS NOT NULL
     AND phone IS NOT NULL
     AND trim(phone) <> ''
+    AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
 `;
 
 const CREATE_USERS_PLATFORM_EMAIL_INDEX_SQL = `
@@ -104,6 +116,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ${USERS_PLATFORM_EMAIL_INDEX}
   WHERE school_id IS NULL
     AND email IS NOT NULL
     AND trim(email) <> ''
+    AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
 `;
 
 const CREATE_USERS_PLATFORM_PHONE_INDEX_SQL = `
@@ -112,6 +125,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ${USERS_PLATFORM_PHONE_INDEX}
   WHERE school_id IS NULL
     AND phone IS NOT NULL
     AND trim(phone) <> ''
+    AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
 `;
 
 function formatUsersLoginIdentityDuplicateDiagnostic(samples = [], totalGroups = 0) {
@@ -198,6 +212,10 @@ async function ensureUsersLoginIdentityConstraints(db, logger = console) {
     });
   }
 
+  for (const sql of DROP_USERS_LOGIN_IDENTITY_INDEXES_SQL) {
+    await db.query(sql);
+  }
+
   for (const sql of [
     CREATE_USERS_SCHOOL_EMAIL_INDEX_SQL,
     CREATE_USERS_SCHOOL_PHONE_INDEX_SQL,
@@ -233,7 +251,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
          FROM users u
          WHERE u.school_id = ${schoolParam}
            AND lower(trim(u.email)) = ${emailParam}
-           AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
+           AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
            ${excludeClause}
          LIMIT 1`,
         params,
@@ -252,7 +270,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
          FROM users u
          WHERE u.school_id IS NULL
            AND lower(trim(u.email)) = ${emailParam}
-           AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
+           AND ${ACTIVE_USER_IDENTITY_STATUS_SQL}
            ${excludeClause}
          LIMIT 1`,
         params,
@@ -313,6 +331,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
 
 module.exports = {
   USERS_LOGIN_IDENTITY_DUPLICATES_CODE,
+  ACTIVE_USER_IDENTITY_STATUS_SQL,
   ensureUsersLoginIdentityConstraints,
   inventoryUsersLoginIdentityDuplicates,
   assertUniqueUserLoginIdentity,

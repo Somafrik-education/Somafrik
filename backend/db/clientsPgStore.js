@@ -18,6 +18,9 @@ function createClientsPgStore(repo) {
     const query = (sql, params) => (client.query ? client.query(sql, params) : repo.query(sql, params));
 
     return {
+      one,
+      all,
+      query,
       async getSchoolByCode(code) {
         return one(
           `SELECT s.*, c.iso_code AS country_code, c.name AS country_name

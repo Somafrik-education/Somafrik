@@ -4,9 +4,12 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
   USERS_LOGIN_IDENTITY_DUPLICATES_CODE,
+  ACTIVE_USER_IDENTITY_STATUS_SQL,
   formatUsersLoginIdentityDuplicateDiagnostic,
   isUsersLoginIdentityUniquenessViolation,
 } = require("./usersLoginIdentity");
+const fs = require("node:fs");
+const path = require("node:path");
 
 test("formatUsersLoginIdentityDuplicateDiagnostic inclut le code et les exemples", () => {
   const message = formatUsersLoginIdentityDuplicateDiagnostic(

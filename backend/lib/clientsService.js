@@ -84,6 +84,20 @@ function resolveWritableSchoolCode(principal, rawPayload) {
   return schoolCode.toUpperCase();
 }
 
+function rethrowLoginIdentityConflict(error) {
+  if (
+    error?.code === "USER_LOGIN_IDENTITY_DUPLICATE" ||
+    isUsersLoginIdentityUniquenessViolation(error)
+  ) {
+    throw createClientsError(
+      409,
+      error.message || "Un compte avec cet email ou ce téléphone existe déjà.",
+      CLIENTS_ERROR.DUPLICATE,
+    );
+  }
+  throw error;
+}
+
 async function createUser(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
@@ -118,7 +132,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       schoolId: school.id,
       email,
       phone,
-    });
+    }).catch(rethrowLoginIdentityConflict);
 
     const requiresSuperAdminValidation =
       isCountryAdminPrincipal(principal) && role === SCHOOL_ADMIN_ROLE;
@@ -167,14 +181,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
         profile,
       });
     } catch (error) {
-      if (isUsersLoginIdentityUniquenessViolation(error)) {
-        throw createClientsError(
-          409,
-          "Un compte avec cet email ou ce téléphone existe déjà.",
-          CLIENTS_ERROR.DUPLICATE,
-        );
-      }
-      throw error;
+      rethrowLoginIdentityConflict(error);
     }
 
     await writeClientsAudit(tx, principal, auditMeta, {
@@ -223,7 +230,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
       email: nextEmail,
       phone: nextPhone,
       excludeUserId: locked.id,
-    });
+    }).catch(rethrowLoginIdentityConflict);
 
     let saved;
     try {
@@ -239,14 +246,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
         profile,
       });
     } catch (error) {
-      if (isUsersLoginIdentityUniquenessViolation(error)) {
-        throw createClientsError(
-          409,
-          "Un compte avec cet email ou ce téléphone existe déjà.",
-          CLIENTS_ERROR.DUPLICATE,
-        );
-      }
-      throw error;
+      rethrowLoginIdentityConflict(error);
     }
 
     await writeClientsAudit(tx, principal, auditMeta, {
@@ -423,21 +423,32 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       secondaryRole: payload.secondaryRole,
     };
 
-    const user = await tx.insertUser({
+    await assertUniqueUserLoginIdentity(tx, {
       schoolId: contact.school_id,
-      userCode,
-      firstName: contact.first_name,
-      lastName: contact.last_name,
       email: contact.email,
       phone: contact.phone,
-      gender: contact.gender,
-      birthDate: contact.birth_date,
-      role: toDbRole(PROVISION_CONTACT_ROLE),
-      status: "active",
-      passwordHash: hashSecret(temporaryPassword),
-      mustChangePassword: true,
-      profile,
-    });
+    }).catch(rethrowLoginIdentityConflict);
+
+    let user;
+    try {
+      user = await tx.insertUser({
+        schoolId: contact.school_id,
+        userCode,
+        firstName: contact.first_name,
+        lastName: contact.last_name,
+        email: contact.email,
+        phone: contact.phone,
+        gender: contact.gender,
+        birthDate: contact.birth_date,
+        role: toDbRole(PROVISION_CONTACT_ROLE),
+        status: "active",
+        passwordHash: hashSecret(temporaryPassword),
+        mustChangePassword: true,
+        profile,
+      });
+    } catch (error) {
+      rethrowLoginIdentityConflict(error);
+    }
 
     const updatedContact = await tx.linkContactUser(contact.id, user.id, {
       ...parsePayload(contact.profile_payload),

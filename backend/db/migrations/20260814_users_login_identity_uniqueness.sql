@@ -1,6 +1,7 @@
 -- Unicité identité de connexion users (email / téléphone) — migration contrôlée.
 -- Idempotente. Appliquée aussi au boot via PostgresRepository.ensureUsersLoginIdentityConstraints.
 -- Interdit : suppression automatique des comptes en doublon.
+-- Politique : seuls les comptes actifs participent à l'unicité (deleted/archived exclus).
 
 DO $$
 DECLARE
@@ -56,18 +57,35 @@ BEGIN
   END IF;
 END $$;
 
+DROP INDEX IF EXISTS uq_users_school_email;
+DROP INDEX IF EXISTS uq_users_school_phone;
+DROP INDEX IF EXISTS uq_users_platform_email;
+DROP INDEX IF EXISTS uq_users_platform_phone;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_school_email
   ON users (school_id, lower(trim(email)))
-  WHERE school_id IS NOT NULL AND email IS NOT NULL AND trim(email) <> '';
+  WHERE school_id IS NOT NULL
+    AND email IS NOT NULL
+    AND trim(email) <> ''
+    AND COALESCE(status, 'active') NOT IN ('deleted', 'archived');
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_school_phone
   ON users (school_id, lower(trim(phone)))
-  WHERE school_id IS NOT NULL AND phone IS NOT NULL AND trim(phone) <> '';
+  WHERE school_id IS NOT NULL
+    AND phone IS NOT NULL
+    AND trim(phone) <> ''
+    AND COALESCE(status, 'active') NOT IN ('deleted', 'archived');
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_platform_email
   ON users (lower(trim(email)))
-  WHERE school_id IS NULL AND email IS NOT NULL AND trim(email) <> '';
+  WHERE school_id IS NULL
+    AND email IS NOT NULL
+    AND trim(email) <> ''
+    AND COALESCE(status, 'active') NOT IN ('deleted', 'archived');
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_platform_phone
   ON users (lower(trim(phone)))
-  WHERE school_id IS NULL AND phone IS NOT NULL AND trim(phone) <> '';
+  WHERE school_id IS NULL
+    AND phone IS NOT NULL
+    AND trim(phone) <> ''
+    AND COALESCE(status, 'active') NOT IN ('deleted', 'archived');

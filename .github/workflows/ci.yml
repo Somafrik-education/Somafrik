@@ -89,6 +89,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:clients-management
+      - name: verify:users-login-identity (PostgreSQL CI — archived + provision)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:users-login-identity
       - name: verify:clients-legacy-cleanup (mémoire)
         run: npm run verify:clients-legacy-cleanup
 
