@@ -48,6 +48,7 @@
     "verify:platform-legacy-cleanup": "node backend/scripts/verify-platform-legacy-cleanup.js",
     "verify:clients-management": "node --test backend/lib/legacyClientsStateWrite.test.js && node backend/lib/clientsRolePolicy.test.js && node backend/lib/clientsSecurity.test.js && node backend/lib/clientsMigration.pg.test.js && node backend/lib/clientsRepository.test.js && node backend/lib/clientsRepository.pg.test.js && node backend/lib/usersLoginIdentity.test.js && node backend/lib/usersLoginIdentity.pg.test.js && node backend/scripts/verify-clients-management.js",
     "verify:users-login-identity": "node backend/lib/usersLoginIdentity.test.js && node backend/lib/usersLoginIdentity.pg.test.js",
+    "verify:education-reference-data": "node backend/lib/educationReference.test.js && node backend/lib/educationReference.pg.test.js && node backend/scripts/verify-education-reference-management.js",
     "verify:clients-legacy-cleanup": "node backend/scripts/verify-clients-legacy-cleanup.js",
     "verify:backoffice-state-removal": "node --test backend/lib/backofficeStateRemoval.test.js backend/lib/backofficeStateRemoval.pg.test.js backend/lib/principalSchoolScope.test.js backend/lib/residualStateManagement.test.js backend/lib/residualReplacePayload.test.js backend/lib/residualRoutesRbac.test.js && node backend/scripts/verify-backoffice-state-removal.js",
     "inventory:teachers-school-user-duplicates": "node backend/scripts/inventory-teachers-school-user-duplicates.js",

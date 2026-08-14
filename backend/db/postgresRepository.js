@@ -94,6 +94,8 @@ class PostgresRepository {
     await this.ensurePlatformCanonicalSchema();
     await this.ensureClientsCanonicalSchema();
     await this.ensureResidualCanonicalSchema();
+    await this.ensureEducationReferenceCanonicalSchema();
+    await this.ensureEducationReferenceConstraints();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -452,6 +454,76 @@ class PostgresRepository {
   async ensureResidualCanonicalSchema() {
     const { RESIDUAL_STATE_SCHEMA_SQL } = require("./residualStateSchema");
     await this.query(RESIDUAL_STATE_SCHEMA_SQL);
+  }
+
+  async ensureEducationReferenceCanonicalSchema() {
+    const { EDUCATION_REFERENCE_SCHEMA_SQL, assertEducationReferenceSchemaPreflight } = require("./educationReferenceSchema");
+    await assertEducationReferenceSchemaPreflight(this);
+    await this.query(EDUCATION_REFERENCE_SCHEMA_SQL);
+  }
+
+  async ensureEducationReferenceConstraints() {
+    const { ensureEducationReferenceConstraints } = require("../lib/educationReferenceService");
+    await ensureEducationReferenceConstraints(this, console);
+  }
+
+  getEducationReferenceStore() {
+    if (!this._educationReferenceStore) {
+      const { createEducationReferencePgStore } = require("./educationReferencePgStore");
+      this._educationReferenceStore = createEducationReferencePgStore(this);
+    }
+    return this._educationReferenceStore;
+  }
+
+  getSchoolEducationActiveLists(schoolCode) {
+    return this.getEducationReferenceStore().getSchoolActiveLists(schoolCode);
+  }
+
+  listEducationLevelsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listLevelsByCountry(countryCode, options);
+  }
+
+  listEducationStreamsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listStreamsByCountry(countryCode, options);
+  }
+
+  getEducationSchoolCatalog(schoolCode) {
+    return this.getEducationReferenceStore().getSchoolCatalog(schoolCode);
+  }
+
+  createEducationLevel(payload, principal, auditMeta) {
+    const { createLevel } = require("../lib/educationReferenceService");
+    return createLevel(this, payload, principal, auditMeta);
+  }
+
+  updateEducationLevel(levelId, patch, principal, auditMeta) {
+    const { updateLevel } = require("../lib/educationReferenceService");
+    return updateLevel(this, levelId, patch, principal, auditMeta);
+  }
+
+  archiveEducationLevel(levelId, principal, auditMeta) {
+    const { archiveLevel } = require("../lib/educationReferenceService");
+    return archiveLevel(this, levelId, principal, auditMeta);
+  }
+
+  createEducationStream(payload, principal, auditMeta) {
+    const { createStream } = require("../lib/educationReferenceService");
+    return createStream(this, payload, principal, auditMeta);
+  }
+
+  updateEducationStream(streamId, patch, principal, auditMeta) {
+    const { updateStream } = require("../lib/educationReferenceService");
+    return updateStream(this, streamId, patch, principal, auditMeta);
+  }
+
+  archiveEducationStream(streamId, principal, auditMeta) {
+    const { archiveStream } = require("../lib/educationReferenceService");
+    return archiveStream(this, streamId, principal, auditMeta);
+  }
+
+  saveSchoolEducationActivation(schoolCode, activation, principal, auditMeta) {
+    const { saveSchoolActivation } = require("../lib/educationReferenceService");
+    return saveSchoolActivation(this, schoolCode, activation, principal, auditMeta);
   }
 
   getResidualStore() {

@@ -9,7 +9,7 @@
 ## 1. Principes
 
 1. **PostgreSQL** est obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`).
-2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
+2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
 3. Beaucoup de domaines restent encore dans le **snapshot JSON** `backoffice_state` (migration progressive).
 4. Pas de dossier `/migrations` versionné classique : le schéma est appliqué via `schema.sql` à l’init, puis des **ensures / migrations runtime** dans le repository.
 
@@ -60,20 +60,31 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 | `enrollments` | Inscriptions | liens élève / classe / année |
 | `assignments` | Affectations enseignant | classe / matière / enseignant |
 
-### 4.2 Notes (canonique PG)
+### 4.2 Référentiels pédagogiques (canonique PG — LOT 1 Paramètres)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `education_levels` | Niveaux scolaires par pays | FK `country_id` · UNIQUE `(country_id, level_code)` · `status` active/archived |
+| `education_streams` | Filières / séries / options par pays | FK `country_id` · optionnel `level_id` · `stream_type` filiere/serie/option · UNIQUE `(country_id, stream_code)` |
+| `school_levels` | Activation niveau par établissement | PK `(school_id, level_id)` · FK school + level · cross-country interdit |
+| `school_streams` | Activation filière par établissement | PK `(school_id, stream_id)` · FK school + stream · cross-country interdit |
+
+`PUT /api/academic-config` refuse `levels` et `tracks` ; lecture `GET /api/academic-config` projette `levels`/`tracks` depuis ces tables (noms actifs pour l'établissement).
+
+### 4.3 Notes (canonique PG)
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
 | `evaluations` | Devoirs / contrôles | FK school, class, subject, term, teacher? · UNIQUE `(school_id, legacy_json_id)` · CHECK status |
 | `grades` | Notes élève | FK evaluation, student, … · CHECK score · UNIQUE school+eval+student (ensure runtime après dédup) |
 
-### 4.3 Présences (canonique PG)
+### 4.4 Présences (canonique PG)
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
 | `attendance` | Appel du jour | UNIQUE `(school_id, student_id, attendance_date)` |
 
-### 4.4 Audit & état
+### 4.5 Audit & état
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
@@ -83,7 +94,7 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 
 Autres domaines (examens, documents, messages…) : voir `schema.sql` — souvent encore synchronisés via snapshot JSON.
 
-### 4.5 Finance (canonique PG — LOT 4)
+### 4.6 Finance (canonique PG — LOT 4)
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|

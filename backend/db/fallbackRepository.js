@@ -371,25 +371,27 @@ class FallbackRepository {
   async getAcademicConfig(schoolCode) {
     const store = this.getResidualStore();
     const normalizedSchoolCode = String(schoolCode && schoolCode !== "*" ? schoolCode : seedData.school.code).trim().toUpperCase();
-    return store.getAcademicConfig(normalizedSchoolCode) ?? store.saveAcademicConfig(normalizedSchoolCode, {
-      schoolCode: normalizedSchoolCode,
-      periodMode: "trimestre",
-      periods: [
-        { id: "trimestre-1", name: "Trimestre 1", type: "Trimestre", order: 1, startDate: "01-09-2025", endDate: "31-12-2025", active: false },
-        { id: "trimestre-2", name: "Trimestre 2", type: "Trimestre", order: 2, startDate: "01-01-2026", endDate: "31-03-2026", active: false },
-        { id: "trimestre-3", name: "Trimestre 3", type: "Trimestre", order: 3, startDate: "01-04-2026", endDate: "30-06-2026", active: false },
-      ],
-      evaluationTypes: ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
-      defaultScale: 20,
-      reportCardMode: "period",
-      allowCustomClasses: true,
-      allowCustomCourses: true,
-      allowCustomReportCards: true,
-      levels: seedData.demoLevels,
-      tracks: seedData.demoTracks,
-      classNames: seedData.demoClassNames,
-      subjects: seedData.demoSubjects,
-    });
+    const config =
+      (await store.getAcademicConfig(normalizedSchoolCode)) ??
+      (await store.saveAcademicConfig(normalizedSchoolCode, {
+        schoolCode: normalizedSchoolCode,
+        periodMode: "trimestre",
+        periods: [
+          { id: "trimestre-1", name: "Trimestre 1", type: "Trimestre", order: 1, startDate: "01-09-2025", endDate: "31-12-2025", active: false },
+          { id: "trimestre-2", name: "Trimestre 2", type: "Trimestre", order: 2, startDate: "01-01-2026", endDate: "31-03-2026", active: false },
+          { id: "trimestre-3", name: "Trimestre 3", type: "Trimestre", order: 3, startDate: "01-04-2026", endDate: "30-06-2026", active: false },
+        ],
+        evaluationTypes: ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
+        defaultScale: 20,
+        reportCardMode: "period",
+        allowCustomClasses: true,
+        allowCustomCourses: true,
+        allowCustomReportCards: true,
+        classNames: seedData.demoClassNames,
+        subjects: seedData.demoSubjects,
+      }));
+    const lists = await this.getSchoolEducationActiveLists(normalizedSchoolCode);
+    return { ...config, levels: lists.levels ?? [], tracks: lists.tracks ?? [] };
   }
 
   async saveAcademicConfig(schoolCode, config, tx = null) {
@@ -2399,6 +2401,76 @@ class FallbackRepository {
 
   archiveClientsAnnouncement(id, principal, auditMeta) {
     return this.getClientsStore().archiveAnnouncement(id, principal, auditMeta);
+  }
+
+  getEducationReferenceStore() {
+    if (!this._educationReferenceStore) {
+      const { createEducationReferenceMemoryStore } = require("./educationReferenceMemoryStore");
+      const datasetPromise = this.getDataset();
+      this._educationReferenceStore = createEducationReferenceMemoryStore({
+        school: seedData.school,
+        schools: seedData.platformSchools,
+        countries: seedData.countries,
+      });
+      this._educationReferenceStore._datasetPromise = datasetPromise;
+    }
+    return this._educationReferenceStore;
+  }
+
+  getSchoolEducationActiveLists(schoolCode) {
+    return this.getEducationReferenceStore().getSchoolActiveLists(schoolCode);
+  }
+
+  listEducationLevelsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listLevelsByCountry(countryCode, options);
+  }
+
+  listEducationStreamsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listStreamsByCountry(countryCode, options);
+  }
+
+  getEducationSchoolCatalog(schoolCode) {
+    return this.getEducationReferenceStore().getSchoolCatalog(schoolCode);
+  }
+
+  createEducationLevel(payload, principal, auditMeta) {
+    const { createLevel } = require("../lib/educationReferenceService");
+    return createLevel(this, payload, principal, auditMeta);
+  }
+
+  updateEducationLevel(levelId, patch, principal, auditMeta) {
+    const { updateLevel } = require("../lib/educationReferenceService");
+    return updateLevel(this, levelId, patch, principal, auditMeta);
+  }
+
+  archiveEducationLevel(levelId, principal, auditMeta) {
+    const { archiveLevel } = require("../lib/educationReferenceService");
+    return archiveLevel(this, levelId, principal, auditMeta);
+  }
+
+  createEducationStream(payload, principal, auditMeta) {
+    const { createStream } = require("../lib/educationReferenceService");
+    return createStream(this, payload, principal, auditMeta);
+  }
+
+  updateEducationStream(streamId, patch, principal, auditMeta) {
+    const { updateStream } = require("../lib/educationReferenceService");
+    return updateStream(this, streamId, patch, principal, auditMeta);
+  }
+
+  archiveEducationStream(streamId, principal, auditMeta) {
+    const { archiveStream } = require("../lib/educationReferenceService");
+    return archiveStream(this, streamId, principal, auditMeta);
+  }
+
+  saveSchoolEducationActivation(schoolCode, activation, principal, auditMeta) {
+    const { saveSchoolActivation } = require("../lib/educationReferenceService");
+    return saveSchoolActivation(this, schoolCode, activation, principal, auditMeta);
+  }
+
+  async ensureEducationReferenceConstraints() {
+    const { ensureEducationReferenceConstraints } = require("../lib/educationReferenceService");
+    return ensureEducationReferenceConstraints(this, console);
   }
 }
 

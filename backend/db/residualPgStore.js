@@ -3,6 +3,10 @@
 const { withSystemActivePeriods, defaultAcademicPeriods, inferPeriodMode } = require("../lib/academicConfigDefaults");
 const seedData = require("../data");
 const { resolveRecordId } = require("./residualMemoryStore");
+const {
+  assertNoLegacyAcademicLevelsTracksWrite,
+  stripLegacyAcademicLevelsTracks,
+} = require("../lib/educationReferenceManagement");
 
 function parsePayload(value) {
   if (!value) return {};
@@ -100,6 +104,14 @@ function createResidualPgStore(repo) {
           }))
         : defaultAcademicPeriods();
 
+      let levels = [];
+      let tracks = [];
+      if (typeof repo.getSchoolEducationActiveLists === "function") {
+        const lists = await repo.getSchoolEducationActiveLists(school.school_code ?? school.code);
+        levels = lists.levels ?? [];
+        tracks = lists.tracks ?? [];
+      }
+
       return withSystemActivePeriods({
         schoolCode: school.school_code ?? school.code,
         periodMode: storedConfig?.periodMode ?? inferPeriodMode(periods),
@@ -114,12 +126,8 @@ function createResidualPgStore(repo) {
         allowCustomClasses: storedConfig?.allowCustomClasses !== false,
         allowCustomCourses: storedConfig?.allowCustomCourses !== false,
         allowCustomReportCards: storedConfig?.allowCustomReportCards !== false,
-        levels: Array.isArray(storedConfig?.levels) && storedConfig.levels.length
-          ? storedConfig.levels
-          : seedData.demoLevels,
-        tracks: Array.isArray(storedConfig?.tracks) && storedConfig.tracks.length
-          ? storedConfig.tracks
-          : seedData.demoTracks,
+        levels,
+        tracks,
         classNames: Array.isArray(storedConfig?.classNames) && storedConfig.classNames.length
           ? storedConfig.classNames
           : seedData.demoClassNames,
@@ -130,6 +138,8 @@ function createResidualPgStore(repo) {
     },
 
     async saveAcademicConfig(schoolCode, config, tx = null) {
+      assertNoLegacyAcademicLevelsTracksWrite(config);
+      const sanitizedConfig = stripLegacyAcademicLevelsTracks(config);
       const school = await resolveSchool(schoolCode);
       if (!school) {
         const error = new Error("Établissement introuvable.");
@@ -140,23 +150,21 @@ function createResidualPgStore(repo) {
       const runner = tx && typeof tx.query === "function" ? tx : repo;
       const savedConfig = withSystemActivePeriods({
         schoolCode: normalizedSchoolCode,
-        periodMode: config.periodMode ?? "trimestre",
-        periods: Array.isArray(config.periods) && config.periods.length ? config.periods : defaultAcademicPeriods(),
-        evaluationTypes: Array.isArray(config.evaluationTypes) && config.evaluationTypes.length
-          ? config.evaluationTypes
+        periodMode: sanitizedConfig.periodMode ?? "trimestre",
+        periods: Array.isArray(sanitizedConfig.periods) && sanitizedConfig.periods.length ? sanitizedConfig.periods : defaultAcademicPeriods(),
+        evaluationTypes: Array.isArray(sanitizedConfig.evaluationTypes) && sanitizedConfig.evaluationTypes.length
+          ? sanitizedConfig.evaluationTypes
           : ["Interrogation", "Devoir", "Examen", "Travail pratique", "Projet"],
-        defaultScale: Number(config.defaultScale ?? 20),
-        reportCardMode: config.reportCardMode ?? "period",
-        allowCustomClasses: config.allowCustomClasses !== false,
-        allowCustomCourses: config.allowCustomCourses !== false,
-        allowCustomReportCards: config.allowCustomReportCards !== false,
-        levels: Array.isArray(config.levels) && config.levels.length ? config.levels : seedData.demoLevels,
-        tracks: Array.isArray(config.tracks) && config.tracks.length ? config.tracks : seedData.demoTracks,
-        classNames: Array.isArray(config.classNames) && config.classNames.length
-          ? config.classNames
+        defaultScale: Number(sanitizedConfig.defaultScale ?? 20),
+        reportCardMode: sanitizedConfig.reportCardMode ?? "period",
+        allowCustomClasses: sanitizedConfig.allowCustomClasses !== false,
+        allowCustomCourses: sanitizedConfig.allowCustomCourses !== false,
+        allowCustomReportCards: sanitizedConfig.allowCustomReportCards !== false,
+        classNames: Array.isArray(sanitizedConfig.classNames) && sanitizedConfig.classNames.length
+          ? sanitizedConfig.classNames
           : seedData.demoClassNames,
-        subjects: Array.isArray(config.subjects) && config.subjects.length
-          ? config.subjects
+        subjects: Array.isArray(sanitizedConfig.subjects) && sanitizedConfig.subjects.length
+          ? sanitizedConfig.subjects
           : seedData.demoSubjects,
       });
       await runner.query(
@@ -167,7 +175,11 @@ function createResidualPgStore(repo) {
            updated_at = NOW()`,
         [school.id, JSON.stringify(savedConfig)],
       );
-      return savedConfig;
+      if (typeof repo.getSchoolEducationActiveLists === "function") {
+        const lists = await repo.getSchoolEducationActiveLists(normalizedSchoolCode);
+        return { ...savedConfig, levels: lists.levels ?? [], tracks: lists.tracks ?? [] };
+      }
+      return { ...savedConfig, levels: [], tracks: [] };
     },
 
     async replaceDomainRecords(domain, schoolCode, items = [], tx = null) {
