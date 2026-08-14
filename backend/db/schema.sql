@@ -65,6 +65,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
 
+-- Unicité identité de connexion (email / téléphone) : index créés APRÈS inventaire fail-safe
+-- dans postgresRepository.ensureUsersLoginIdentityConstraints() /
+-- migration 20260814_users_login_identity_uniqueness.sql (bases legacy avec doublons).
+-- Ne pas créer les index ici : schema.sql s'exécute avant la migration contrôlée.
+
 CREATE TABLE IF NOT EXISTS academic_years (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),

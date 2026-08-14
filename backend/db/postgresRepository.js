@@ -87,6 +87,7 @@ class PostgresRepository {
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
     await this.ensureTeachersDomainConstraints();
+    await this.ensureUsersLoginIdentityConstraints();
     await this.ensureFinanceCanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
     await this.ensurePlatformCanonicalSchema();
@@ -526,10 +527,6 @@ class PostgresRepository {
     return this.getClientsStore().listProjection();
   }
 
-  listClientsAuthAccounts() {
-    return Promise.resolve([]);
-  }
-
   createClientsUser(payload, principal, auditMeta) {
     this.cachedDataset = null;
     return this.getClientsStore().createUser(payload, principal, auditMeta);
@@ -703,6 +700,18 @@ class PostgresRepository {
 
   createFinanceReminder(studentId, payload, principal, options) {
     return this.getFinanceStore().createFinanceReminder(studentId, payload, principal, options);
+  }
+
+  async ensureUsersLoginIdentityConstraints() {
+    const { ensureUsersLoginIdentityConstraints } = require("../lib/usersLoginIdentity");
+    await ensureUsersLoginIdentityConstraints(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
   }
 
   async ensureTeachersDomainConstraints() {
@@ -1225,66 +1234,6 @@ class PostgresRepository {
     return savedConfig;
   }
 
-  async findPasswordAccountTargets(lookupKeys) {
-    const state = (await this.getBackOfficeState()) ?? {};
-    const storedUsers = Array.isArray(state.users) ? state.users : [];
-    const dataset = await this.getDataset();
-    const runtimeUsers = dataset.userAccounts ?? [];
-    const targets = [];
-    const seen = new Set();
-
-    const register = (account) => {
-      const key = [account?.id, account?.publicId, account?.identifier]
-        .map((value) => String(value ?? "").trim().toLowerCase())
-        .filter(Boolean)
-        .join("|");
-      if (!key || seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      targets.push(account);
-    };
-
-    for (const account of [...storedUsers, ...runtimeUsers]) {
-      if (userMatchesLookup(account, lookupKeys)) {
-        register(account);
-      }
-    }
-
-    return { state, storedUsers, targets };
-  }
-
-  async persistBackOfficeUserPasswordUpdates(lookupKeys, transformAccount) {
-    const { state, storedUsers, targets } = await this.findPasswordAccountTargets(lookupKeys);
-    if (!targets.length) {
-      return null;
-    }
-
-    const users = [...storedUsers];
-    let updatedAccount = null;
-
-    for (const target of targets) {
-      const nextAccount = transformAccount(target);
-      updatedAccount = nextAccount;
-      const index = users.findIndex((account) =>
-        userMatchesLookup(account, [target.id, target.publicId, target.identifier]),
-      );
-      if (index >= 0) {
-        users[index] = nextAccount;
-      } else {
-        users.unshift(nextAccount);
-      }
-    }
-
-    await this.saveBackOfficeState({
-      ...state,
-      users,
-      updatedAt: new Date().toISOString(),
-    });
-    this.cachedDataset = null;
-    return updatedAccount;
-  }
-
   async resetUserPassword(userRef, temporaryPassword) {
     await this.init();
     const secretHash = hashSecret(temporaryPassword);
@@ -1319,18 +1268,9 @@ class PostgresRepository {
       }
     }
 
-    const updatedAccount = await this.persistBackOfficeUserPasswordUpdates(
-      lookupKeys,
-      (account) => buildResetPasswordUser(account, secretHash, temporaryPassword),
-    );
-
-    if (!updatedAccount) {
-      const error = new Error("Utilisateur introuvable");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    return updatedAccount;
+    const error = new Error("Utilisateur introuvable");
+    error.statusCode = 404;
+    throw error;
   }
 
   async changeUserPassword(userRef, newPassword) {
@@ -1350,20 +1290,6 @@ class PostgresRepository {
       );
       if (updated) {
         this.cachedDataset = null;
-        await this.persistBackOfficeUserPasswordUpdates(lookupKeys, (account) => {
-          const next = {
-            ...account,
-            passwordHash: secretHash,
-            pinHash: secretHash,
-            temporaryPassword: "",
-            mustChangePassword: false,
-            hasTemporaryPassword: false,
-          };
-          delete next.password;
-          delete next.pin;
-          return next;
-        });
-
         const row = await this.one(
           `SELECT u.*, s.school_code
            FROM users u
@@ -1375,30 +1301,9 @@ class PostgresRepository {
       }
     }
 
-    const updatedAccount = await this.persistBackOfficeUserPasswordUpdates(
-      lookupKeys,
-      (account) => {
-        const next = {
-          ...account,
-          passwordHash: secretHash,
-          pinHash: secretHash,
-          temporaryPassword: "",
-          mustChangePassword: false,
-          hasTemporaryPassword: false,
-        };
-        delete next.password;
-        delete next.pin;
-        return next;
-      },
-    );
-
-    if (!updatedAccount) {
-      const error = new Error("Utilisateur introuvable");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    return updatedAccount;
+    const error = new Error("Utilisateur introuvable");
+    error.statusCode = 404;
+    throw error;
   }
 
   /**
