@@ -28,7 +28,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Changed
 
-- Matrice S1.4 : clés Pédagogie (`courses`, `courseSchedules`, `evaluations`, `notes`, `presences`) retirées des writables PUT ; Web, Mobile et BackOffice les omettent des snapshots.
+- **LOT 2 correctifs CTO** : matrice `getPermissionsMap()` inclut les rôles actifs sans permission (LEFT JOIN) ; `mergeRolePermissions` fail-closed sans fallback dashboard ; bootstrap `role_permissions` plateforme ; canonicalisation du rôle sur `PATCH` utilisateur ; tests permissions vides / roleCode / rôle absent. (`courses`, `courseSchedules`, `evaluations`, `notes`, `presences`) retirées des writables PUT ; Web, Mobile et BackOffice les omettent des snapshots.
 - `saveBackOfficeState` ne persiste plus les projections Pédagogie dans `backoffice_state` et n'effectue aucun dual-write JSON.
 - Matrice S1.4 : clés Finance (`payments`, `paymentStatuses`, `feeGrids`, `schoolFeeItems`, `studentFees`, `feeTariffHistory`, `paymentReminders`) retirées des writables PUT ; Web, Mobile et BackOffice les omettent des snapshots.
 - `saveBackOfficeState` ne persiste plus les projections Finance dans `backoffice_state` et n'effectue aucun dual-write JSON.
