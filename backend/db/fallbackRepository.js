@@ -2217,10 +2217,6 @@ class FallbackRepository {
     const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
     const school = await this.getEvaluationTypesStore().requireSchoolByCode(schoolCode);
     const lookup = { ...scoped };
-    const hasExplicitType = Boolean(
-      lookup.evaluationTypeId || lookup.evaluation_type_id || lookup.evaluationType || lookup.type || lookup.evaluation_type,
-    );
-    if (!hasExplicitType) lookup.evaluationType = "Devoir";
     const resolved = await resolveEvaluationTypeForWrite(this, school.id, lookup, { required: true });
     const evaluation = {
       ...scoped,

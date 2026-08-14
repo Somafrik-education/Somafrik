@@ -309,6 +309,21 @@ async function runPgSuite(databaseUrl) {
     assert.equal(createdEval.status, 201, JSON.stringify(createdEval.data));
     assert.equal(createdEval.data.evaluationTypeId, prepared.typeAId);
 
+    const missingType = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Évaluation",
+        teacherId: "ENS-0001",
+        scale: 20,
+      },
+    });
+    assert.equal(missingType.status, 400, JSON.stringify(missingType.data));
+    assert.equal(missingType.data?.code, EVALUATION_TYPES_ERROR.EVALUATION_TYPE_REQUIRED);
+
     const foreignType = await request(PG_PORT, "/evaluations", {
       method: "POST",
       token: adminToken,

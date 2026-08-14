@@ -433,7 +433,8 @@ Exemples visés : Devoir, Interrogation, Examen, TP, Oral, Projet, Composition, 
 - `config_payload.evaluationTypes` : **lecture seule** (projection des noms actifs) ; écriture rejetée (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`).
 - Web `EvaluationTypesPanel` + `EvaluationFormModal` : catalogue API, identifiant canonique, types actifs uniquement.
 - Mobile `TeacherGradesScreen` : `GET /api/evaluation-types`, `evaluationTypeId` à l’enregistrement.
-- Boot PG : preflight → inventaire legacy JSON → STOP `LEGACY_EVALUATION_TYPES_AMBIGUOUS` si libellés custom → schéma → strip → bootstrap défauts si établissement vide.
+- Boot PG : preflight → inventaire legacy JSON → STOP `LEGACY_EVALUATION_TYPES_AMBIGUOUS` si le catalogue n’est pas exactement équivalent aux 8 types défaut (sous-ensemble inclus) → schéma → strip → bootstrap défauts si établissement vide (`absent` / `null` / `[]` autorisés).
+- Création d’évaluation authentifiée : type canonique explicite obligatoire (`400 EVALUATION_TYPE_REQUIRED`), sans fallback `"Devoir"`.
 - Aucune auto-création d’un type depuis une évaluation.
 
 **Legacy neutralisé**

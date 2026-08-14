@@ -95,7 +95,7 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 
 `PUT /api/academic-config` refuse `evaluationTypes` (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`) ; `GET /api/academic-config` projette les **noms actifs** depuis PostgreSQL. Jamais le JSON historique.
 
-**Boot (ordre obligatoire)** : preflight (`schools`, `evaluations`) → inventaire legacy `config_payload.evaluationTypes` → STOP `LEGACY_EVALUATION_TYPES_AMBIGUOUS` si libellés non trivialement équivalents au catalogue défaut → schéma canonique → strip JSON → bootstrap contrôlé (seed défauts si l’établissement n’a aucune ligne).
+**Boot (ordre obligatoire)** : preflight (`schools`, `evaluations`) → inventaire legacy `config_payload.evaluationTypes` → STOP `LEGACY_EVALUATION_TYPES_AMBIGUOUS` si le catalogue n’est pas **exactement** équivalent aux 8 types défaut (sous-ensemble, sur-ensemble ou combinaison différente) → schéma canonique → strip JSON → bootstrap contrôlé (seed défauts si l’établissement n’a aucune ligne). `absent` / `null` / `[]` autorisent le bootstrap. Nouvelle évaluation avec principal : type canonique explicite obligatoire, sinon `400 EVALUATION_TYPE_REQUIRED` (aucun fallback `"Devoir"`).
 
 Migration SQL : `backend/db/migrations/20260817_evaluation_types_canonical.sql`.
 

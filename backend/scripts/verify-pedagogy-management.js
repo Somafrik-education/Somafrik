@@ -414,6 +414,7 @@ async function runPostgresHttpGuards(databaseUrl) {
         period: "Trimestre 1",
         title: "Contrôle tenant",
         teacherId: "ENS-0001",
+        evaluationType: "Devoir",
         scale: 20,
       },
     });

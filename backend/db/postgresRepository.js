@@ -2165,19 +2165,17 @@ class PostgresRepository {
 
     const { resolveEvaluationTypeForWrite } = require("../lib/evaluationTypesService");
     const requireCanonicalType = Boolean(principal) && (!existing || typeFieldsTouched);
+    const hasExplicitType = Boolean(
+      asTrimmed(evaluation.evaluationTypeId) ||
+        asTrimmed(evaluation.evaluation_type_id) ||
+        asTrimmed(evaluation.evaluationType) ||
+        asTrimmed(evaluation.type) ||
+        asTrimmed(evaluation.evaluation_type) ||
+        asTrimmed(evaluation.evaluationTypeCode),
+    );
     let resolvedType = null;
     if (requireCanonicalType || typeFieldsTouched || !existing) {
       const lookupPayload = { ...evaluation };
-      const hasExplicitType = Boolean(
-        asTrimmed(lookupPayload.evaluationTypeId) ||
-          asTrimmed(lookupPayload.evaluation_type_id) ||
-          asTrimmed(lookupPayload.evaluationType) ||
-          asTrimmed(lookupPayload.type) ||
-          asTrimmed(lookupPayload.evaluation_type),
-      );
-      if (!hasExplicitType && requireCanonicalType) {
-        lookupPayload.evaluationType = "Devoir";
-      }
       if (hasExplicitType || requireCanonicalType) {
         if (requireCanonicalType) {
           resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
@@ -2251,6 +2249,13 @@ class PostgresRepository {
 
     if (principal && !existing && !evaluationTypeId) {
       const { createEvaluationTypesError, EVALUATION_TYPES_ERROR } = require("../lib/evaluationTypesManagement");
+      if (!hasExplicitType) {
+        throw createEvaluationTypesError(
+          400,
+          "Type d'évaluation canonique obligatoire (evaluationTypeId).",
+          EVALUATION_TYPES_ERROR.EVALUATION_TYPE_REQUIRED,
+        );
+      }
       throw createEvaluationTypesError(404, "Type d'évaluation introuvable.", EVALUATION_TYPES_ERROR.TYPE_NOT_FOUND);
     }
 

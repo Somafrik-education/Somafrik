@@ -179,7 +179,11 @@ async function resolveEvaluationTypeForWrite(repo, schoolId, payload, { required
   );
   if (!typeId && !label) {
     if (required) {
-      throw createEvaluationTypesError(400, "Type d'évaluation canonique obligatoire (evaluationTypeId).");
+      throw createEvaluationTypesError(
+        400,
+        "Type d'évaluation canonique obligatoire (evaluationTypeId).",
+        EVALUATION_TYPES_ERROR.EVALUATION_TYPE_REQUIRED,
+      );
     }
     return null;
   }
@@ -202,7 +206,7 @@ async function ensureEvaluationTypesConstraints(repo, logger = console) {
       .map((row) => `${row.schoolCode}(types=${row.typesCount}:${(row.typesSample ?? []).join(",")})`)
       .join("; ");
     const message =
-      `Types d'évaluation : ${ambiguous.length} établissement(s) ont un catalogue JSON evaluationTypes non trivialement équivalent. ` +
+      `Types d'évaluation : ${ambiguous.length} établissement(s) ont un catalogue JSON evaluationTypes non exactement équivalent aux 8 types défaut. ` +
       `Aucune correspondance automatique. Résolution explicite requise avant bascule canonique.` +
       (details ? ` Exemples: ${details}` : "");
     logError(`[evaluation-types] ${message}`);

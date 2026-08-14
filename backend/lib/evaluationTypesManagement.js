@@ -6,6 +6,7 @@ const EVALUATION_TYPES_ERROR = Object.freeze({
   DUPLICATE: "DUPLICATE",
   TYPE_NOT_FOUND: "TYPE_NOT_FOUND",
   TYPE_ARCHIVED: "TYPE_ARCHIVED",
+  EVALUATION_TYPE_REQUIRED: "EVALUATION_TYPE_REQUIRED",
   SCHOOL_NOT_FOUND: "SCHOOL_NOT_FOUND",
   LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN: "LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN",
   LEGACY_EVALUATION_TYPES_AMBIGUOUS: "LEGACY_EVALUATION_TYPES_AMBIGUOUS",
@@ -43,10 +44,6 @@ function normalizeTypeLabel(value) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 }
-
-const DEFAULT_TYPE_KEYS = new Set(
-  DEFAULT_EVALUATION_TYPES.flatMap((row) => [normalizeCode(row.code), normalizeTypeLabel(row.name)]),
-);
 
 function createEvaluationTypesError(status, message, code, details) {
   const error = new Error(message);
@@ -159,11 +156,19 @@ function stripLegacyEvaluationTypes(payload) {
 }
 
 function isTriviallyEquivalentLegacyType(value) {
+  return Boolean(mapLegacyLabelToDefaultCode(value));
+}
+
+function mapLegacyLabelToDefaultCode(value) {
   const label = asTrimmed(value);
-  if (!label) return true;
+  if (!label) return null;
   const code = normalizeCode(label);
   const name = normalizeTypeLabel(label);
-  return DEFAULT_TYPE_KEYS.has(code) || DEFAULT_TYPE_KEYS.has(name);
+  const byCode = DEFAULT_EVALUATION_TYPES.find((row) => normalizeCode(row.code) === code);
+  if (byCode) return byCode.code;
+  const byName = DEFAULT_EVALUATION_TYPES.find((row) => normalizeTypeLabel(row.name) === name);
+  if (byName) return byName.code;
+  return null;
 }
 
 function extractLegacyEvaluationTypeLabels(payload) {
@@ -175,10 +180,25 @@ function extractLegacyEvaluationTypeLabels(payload) {
   return payload.evaluationTypes.map((item) => asTrimmed(item)).filter(Boolean);
 }
 
+function isExactDefaultLegacyCatalogue(labels) {
+  if (!Array.isArray(labels) || labels.length !== DEFAULT_EVALUATION_TYPES.length) return false;
+  const mapped = new Set();
+  for (const label of labels) {
+    const code = mapLegacyLabelToDefaultCode(label);
+    if (!code || mapped.has(code)) return false;
+    mapped.add(code);
+  }
+  return mapped.size === DEFAULT_EVALUATION_TYPES.length;
+}
+
 function isLegacyEvaluationTypesAmbiguous(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  if (!Object.prototype.hasOwnProperty.call(payload, "evaluationTypes")) return false;
+  if (payload.evaluationTypes == null) return false;
+  if (!Array.isArray(payload.evaluationTypes)) return true;
   const labels = extractLegacyEvaluationTypeLabels(payload);
   if (!labels.length) return false;
-  return labels.some((label) => !isTriviallyEquivalentLegacyType(label));
+  return !isExactDefaultLegacyCatalogue(labels);
 }
 
 module.exports = {
@@ -199,6 +219,8 @@ module.exports = {
   assertNoLegacyEvaluationTypesWrite,
   stripLegacyEvaluationTypes,
   isTriviallyEquivalentLegacyType,
+  mapLegacyLabelToDefaultCode,
   extractLegacyEvaluationTypeLabels,
+  isExactDefaultLegacyCatalogue,
   isLegacyEvaluationTypesAmbiguous,
 };

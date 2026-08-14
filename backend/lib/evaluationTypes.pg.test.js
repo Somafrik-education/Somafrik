@@ -20,7 +20,7 @@ const {
   stripLegacyEvaluationTypesPayloads,
   ensureEvaluationTypesBootstrap,
 } = require("./evaluationTypesService");
-const { EVALUATION_TYPES_ERROR, assertNoLegacyEvaluationTypesWrite } = require("./evaluationTypesManagement");
+const { EVALUATION_TYPES_ERROR, assertNoLegacyEvaluationTypesWrite, DEFAULT_EVALUATION_TYPES } = require("./evaluationTypesManagement");
 const { createResidualPgStore } = require("../db/residualPgStore");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -173,7 +173,7 @@ async function testStripAfterCleanInventory(pool) {
   await pool.query(
     `INSERT INTO school_academic_configs (school_id, config_payload, updated_at)
      VALUES ($1, $2::jsonb, NOW())`,
-    [schoolAId, JSON.stringify({ evaluationTypes: ["Devoir", "Interrogation"], periods: [] })],
+    [schoolAId, JSON.stringify({ evaluationTypes: DEFAULT_EVALUATION_TYPES.map((row) => row.name), periods: [] })],
   );
   const repo = createRepo(pool);
   await assertEvaluationTypesSchemaPreflight(repo);
@@ -183,6 +183,25 @@ async function testStripAfterCleanInventory(pool) {
   const row = await pool.query(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [schoolAId]);
   assert.equal("evaluationTypes" in row.rows[0].config_payload, false);
   assert.ok(Array.isArray(row.rows[0].config_payload.periods));
+}
+
+async function testSubsetInventoryBlocksBoot(pool) {
+  await resetBaseSchema(pool);
+  const { schoolAId } = await seedSchools(pool);
+  await pool.query(
+    `INSERT INTO school_academic_configs (school_id, config_payload, updated_at)
+     VALUES ($1, $2::jsonb, NOW())`,
+    [schoolAId, JSON.stringify({ evaluationTypes: ["Devoir"], periods: [] })],
+  );
+  const repo = createRepo(pool);
+  await assertEvaluationTypesSchemaPreflight(repo);
+  await assert.rejects(
+    () => ensureEvaluationTypesConstraints(repo, console),
+    (error) => error.code === EVALUATION_TYPES_ERROR.LEGACY_EVALUATION_TYPES_AMBIGUOUS,
+  );
+  const row = await pool.query(`SELECT config_payload FROM school_academic_configs WHERE school_id = $1`, [schoolAId]);
+  assert.deepEqual(row.rows[0].config_payload.evaluationTypes, ["Devoir"]);
+  assert.equal("evaluationTypes" in row.rows[0].config_payload, true, "sous-ensemble : JSON non strippé");
 }
 
 async function main() {
@@ -209,6 +228,7 @@ async function main() {
 
   try {
     await testLegacyBootstrapInventory(pool);
+    await testSubsetInventoryBlocksBoot(pool);
     await testStripAfterCleanInventory(pool);
 
     await resetBaseSchema(pool);
@@ -288,6 +308,12 @@ async function main() {
       () =>
         resolveEvaluationTypeForWrite(repo, fixture.schoolAId, { evaluationType: "Type inventé" }, { required: true }),
       (error) => error.statusCode === 404,
+    );
+
+    await assert.rejects(
+      () =>
+        resolveEvaluationTypeForWrite(repo, fixture.schoolAId, { title: "Sans type" }, { required: true }),
+      (error) => error.statusCode === 400 && error.code === EVALUATION_TYPES_ERROR.EVALUATION_TYPE_REQUIRED,
     );
 
     const usable = await resolveEvaluationTypeForWrite(
