@@ -73,7 +73,6 @@ test("persistance résiduelle PG sans lecture backoffice_state", { skip: !should
           active: true,
         },
       ],
-      evaluationTypes: ["Devoir"],
       defaultScale: 20,
     });
     assert.equal(saved.schoolCode, school.school_code);

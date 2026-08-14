@@ -549,7 +549,8 @@ export interface Evaluation {
   teacherId?: string;
   teacherName?: string;
   period: string;
-  evaluationType: EvaluationType;
+  evaluationType: string;
+  evaluationTypeId?: string;
   title: string;
   date?: string;
   scale: number;

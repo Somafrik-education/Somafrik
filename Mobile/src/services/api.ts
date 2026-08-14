@@ -296,8 +296,22 @@ export function getCourseSchedules() {
   return request<unknown[]>("/course-schedules");
 }
 
+export type CanonicalEvaluationType = {
+  id: string;
+  schoolCode: string;
+  code: string;
+  name: string;
+  displayOrder: number;
+  status: "active" | "archived";
+};
+
 export function getAcademicConfig() {
   return request<AcademicConfigPayload>("/academic-config");
+}
+
+export function getEvaluationTypes(includeArchived = false) {
+  const query = includeArchived ? "?includeArchived=true" : "";
+  return request<{ types: CanonicalEvaluationType[] }>(`/evaluation-types${query}`);
 }
 
 export function saveAcademicConfig(payload: AcademicConfigPayload) {

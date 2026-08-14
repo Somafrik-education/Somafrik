@@ -1,6 +1,6 @@
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { AcademicGrade, GradeBookService } from "../domain/academics/GradeBookService";
@@ -14,7 +14,8 @@ import {
   resolveTeacherAssignmentsForSession,
   scopedStudentsForSession,
 } from "../lib/establishment";
-import { saveNote } from "../services/api";
+import { saveNote, getEvaluationTypes, type CanonicalEvaluationType } from "../services/api";
+import { ApiClientError } from "../services/httpClient";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 
@@ -26,6 +27,7 @@ type Assignment = {
 type GradeSession = {
   id: string;
   type: string;
+  typeId: string;
   period: string;
   date: string;
   scale: string;
@@ -70,6 +72,35 @@ export default function TeacherGradesScreen({ navigation }: any) {
     refreshBackOfficeState,
   } = useAdminData();
   const [gradeSession, setGradeSession] = useState<GradeSession | null>(null);
+  const [evaluationTypeCatalog, setEvaluationTypeCatalog] = useState<CanonicalEvaluationType[]>([]);
+  const [evaluationTypesError, setEvaluationTypesError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = await getEvaluationTypes();
+        if (cancelled) return;
+        setEvaluationTypeCatalog((payload.types ?? []).filter((row) => row.status === "active"));
+        setEvaluationTypesError("");
+      } catch (error) {
+        if (cancelled) return;
+        setEvaluationTypeCatalog([]);
+        if (error instanceof ApiClientError) {
+          if (error.status === 400) setEvaluationTypesError(error.message || "Requête invalide.");
+          else if (error.status === 403) setEvaluationTypesError("Accès refusé au catalogue des types d'évaluation.");
+          else if (error.status === 404) setEvaluationTypesError("Type d'évaluation introuvable.");
+          else if (error.status === 409) setEvaluationTypesError("Ce type d'évaluation n'est plus utilisable.");
+          else if ((error.status ?? 0) >= 500) setEvaluationTypesError("Erreur serveur lors du chargement des types.");
+          else setEvaluationTypesError(error.message);
+        } else {
+          setEvaluationTypesError(error instanceof Error ? error.message : "Impossible de charger les types d'évaluation.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
   const canCreateNotes = hasSecurityPermission(session, "Notes", "CREATE");
   const canUpdateNotes = hasSecurityPermission(session, "Notes", "UPDATE");
   const scopeState = useMemo(
@@ -89,7 +120,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
   const gradeBook = new GradeBookService(scopedStudents, notesData, coursesData);
   const todayLabel = formatDate(new Date());
   const todayIso = formatIsoDate(new Date());
-  const evaluationTypes = academicConfigData.evaluationTypes.length ? academicConfigData.evaluationTypes : ["Interrogation", "Devoir", "Examen"];
+  const evaluationTypes = evaluationTypeCatalog.filter((row) => row.status === "active");
   const periods = academicConfigData.periods.length
     ? academicConfigData.periods
     : [{ name: "Trimestre 1", type: "Trimestre", startDate: "", endDate: "", active: true }];
@@ -131,10 +162,19 @@ export default function TeacherGradesScreen({ navigation }: any) {
       return;
     }
 
+    if (!evaluationTypes.length) {
+      Alert.alert(
+        "Types d'évaluation indisponibles",
+        evaluationTypesError || "Aucun type actif n'est défini pour cet établissement.",
+      );
+      return;
+    }
+
     const type = evaluationTypes[0];
     setGradeSession({
       id: `EVAL-${Date.now()}`,
-      type,
+      type: type.name,
+      typeId: type.id,
       period: activePeriod,
       date: todayLabel,
       scale: String(academicConfigData.defaultScale || 20),
@@ -155,6 +195,7 @@ export default function TeacherGradesScreen({ navigation }: any) {
     setGradeSession({
       id: summary.id,
       type: summary.type,
+      typeId: evaluationTypes.find((row) => row.name === summary.type)?.id ?? "",
       period: summary.period,
       date: summary.date,
       scale: String(summary.scale),
@@ -189,8 +230,8 @@ export default function TeacherGradesScreen({ navigation }: any) {
     });
   };
 
-  const updateSessionType = (type: string) => {
-    setGradeSession((current) => current ? { ...current, type } : current);
+  const updateSessionType = (type: CanonicalEvaluationType) => {
+    setGradeSession((current) => current ? { ...current, type: type.name, typeId: type.id } : current);
   };
 
   const saveSession = async () => {
@@ -235,11 +276,16 @@ export default function TeacherGradesScreen({ navigation }: any) {
                 authorId,
               });
 
+          if (!gradeSession.typeId) {
+            throw new Error("Type d'évaluation canonique obligatoire.");
+          }
+
           return saveNote({
             ...baseGrade,
             studentId: resolveStudentApiId(student),
             evaluationTitle: gradeSession.type,
             evaluationType: gradeSession.type,
+            evaluationTypeId: gradeSession.typeId,
             period: gradeSession.period,
             scale,
           }) as Promise<AcademicGrade>;
@@ -250,7 +296,18 @@ export default function TeacherGradesScreen({ navigation }: any) {
       Alert.alert("Session enregistrée", `${presentStudents.length} note(s) enregistrée(s) ou mise(s) à jour.`);
       setGradeSession(null);
     } catch (error) {
-      Alert.alert("Session non enregistrée", error instanceof Error ? error.message : "Vérifiez les notes saisies.");
+      let message = "Vérifiez les notes saisies.";
+      if (error instanceof ApiClientError) {
+        if (error.status === 400) message = error.message || "Requête invalide.";
+        else if (error.status === 403) message = "Accès refusé.";
+        else if (error.status === 404) message = "Type d'évaluation introuvable.";
+        else if (error.status === 409) message = "Ce type d'évaluation n'est plus utilisable.";
+        else if ((error.status ?? 0) >= 500) message = "Erreur serveur. Réessayez plus tard.";
+        else message = error.message;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+      Alert.alert("Session non enregistrée", message);
     }
   };
 
@@ -271,11 +328,11 @@ export default function TeacherGradesScreen({ navigation }: any) {
         <View style={styles.typeRow}>
           {evaluationTypes.map((type) => (
             <TouchableOpacity
-              key={type}
-              style={[styles.typePill, gradeSession.type === type && styles.typePillActive]}
+              key={type.id}
+              style={[styles.typePill, gradeSession.typeId === type.id && styles.typePillActive]}
               onPress={() => updateSessionType(type)}
             >
-              <Text style={[styles.typeText, gradeSession.type === type && styles.typeTextActive]}>{type}</Text>
+              <Text style={[styles.typeText, gradeSession.typeId === type.id && styles.typeTextActive]}>{type.name}</Text>
             </TouchableOpacity>
           ))}
         </View>

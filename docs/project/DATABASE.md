@@ -1,7 +1,7 @@
 # Base de données — Somafrik
 
 **Statut :** référence schéma & conventions  
-**Dernière mise à jour :** 2026-08-13  
+**Dernière mise à jour :** 2026-08-14  
 **Sources :** `backend/db/schema.sql` · `backend/db/postgresRepository.js` · [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Principes
 
 1. **PostgreSQL** est obligatoire en préprod/prod (`SOMAFRIK_DB_REQUIRED=true`).
-2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), **rôles établissement** (`establishment_roles` + permissions), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
+2. Domaines **canoniques PG** : établissements (`schools` + `profile_payload`), **référentiels pédagogiques** (`education_levels`, `education_streams`, `school_levels`, `school_streams`), **rôles établissement** (`establishment_roles` + permissions), **types d’évaluation** (`evaluation_types`), notes (`evaluations` / `grades`), présences (`attendance`), classes, élèves, enseignants/affectations, **Finance** (paiements, grilles, obligations, reminders) — le JSON BO n’est plus source de vérité pour ces écritures.
 3. Beaucoup de domaines restent encore dans le **snapshot JSON** `backoffice_state` (migration progressive).
 4. Pas de dossier `/migrations` versionné classique : le schéma est appliqué via `schema.sql` à l’init, puis des **ensures / migrations runtime** dans le repository.
 
@@ -85,11 +85,25 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 
 **Boot** : preflight → inventaire legacy `userRoles` JSON (`LEGACY_ESTABLISHMENT_ROLES_AMBIGUOUS`) → schéma → strip `userRoles` → bootstrap seed si vide.
 
+### 4.2ter Types d’évaluation (canonique PG — LOT 3 Paramètres)
+
+| Table | Rôle | Contraintes notables |
+|-------|------|----------------------|
+| `evaluation_types` | Catalogue des types (Devoir, Interrogation, …) **par établissement** | FK `school_id` · UNIQUE `(school_id, code)` · unique `(school_id, lower(btrim(name)))` · `status` active/archived |
+
+`evaluations.evaluation_type_id` = **source de vérité** (FK). `evaluations.evaluation_type` TEXT = projection / compatibilité uniquement.
+
+`PUT /api/academic-config` refuse `evaluationTypes` (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`) ; `GET /api/academic-config` projette les **noms actifs** depuis PostgreSQL. Jamais le JSON historique.
+
+**Boot (ordre obligatoire)** : preflight (`schools`, `evaluations`) → inventaire legacy `config_payload.evaluationTypes` → STOP `LEGACY_EVALUATION_TYPES_AMBIGUOUS` si le catalogue n’est pas **exactement** équivalent aux 8 types défaut (sous-ensemble, sur-ensemble ou combinaison différente) → schéma canonique → strip JSON → bootstrap contrôlé (seed défauts si l’établissement n’a aucune ligne). `absent` / `null` / `[]` autorisent le bootstrap. Nouvelle évaluation avec principal : type canonique explicite obligatoire, sinon `400 EVALUATION_TYPE_REQUIRED` (aucun fallback `"Devoir"`).
+
+Migration SQL : `backend/db/migrations/20260817_evaluation_types_canonical.sql`.
+
 ### 4.3 Notes (canonique PG)
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
-| `evaluations` | Devoirs / contrôles | FK school, class, subject, term, teacher? · UNIQUE `(school_id, legacy_json_id)` · CHECK status |
+| `evaluations` | Devoirs / contrôles | FK school, class, subject, term, teacher? · FK `evaluation_type_id` → `evaluation_types` · UNIQUE `(school_id, legacy_json_id)` · CHECK status · `evaluation_type` TEXT = projection |
 | `grades` | Notes élève | FK evaluation, student, … · CHECK score · UNIQUE school+eval+student (ensure runtime après dédup) |
 
 ### 4.4 Présences (canonique PG)

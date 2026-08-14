@@ -220,7 +220,28 @@ ALTER TABLE teacher_assignments ADD COLUMN IF NOT EXISTS assignment_role TEXT NO
 -- Ne pas recréer UNIQUE (teacher_id, class_id, subject_id, academic_year_id, assignment_role)
 -- ici : une contrainte globale empêcherait la réaffectation après status='deleted'.
 
+-- LOT 3 : catalogue canonique des types d'évaluation (scopé établissement)
+CREATE TABLE IF NOT EXISTS evaluation_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT evaluation_types_status_check CHECK (status IN ('active', 'archived')),
+  CONSTRAINT evaluation_types_school_code_unique UNIQUE (school_id, code)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluation_types_school_name_norm
+  ON evaluation_types (school_id, lower(btrim(name)));
+
+CREATE INDEX IF NOT EXISTS idx_evaluation_types_school_status
+  ON evaluation_types (school_id, status, display_order);
+
 -- D3.6b : évaluations pédagogiques (entité distincte des notes)
+-- evaluation_type_id = source de vérité ; evaluation_type TEXT = projection/compatibilité
 CREATE TABLE IF NOT EXISTS evaluations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
@@ -230,6 +251,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
   term_id UUID NOT NULL REFERENCES terms(id),
   title TEXT NOT NULL,
   evaluation_type TEXT NOT NULL DEFAULT 'devoir',
+  evaluation_type_id UUID REFERENCES evaluation_types(id),
   evaluation_date DATE,
   max_score NUMERIC(8, 2) NOT NULL DEFAULT 20,
   coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1,
@@ -251,6 +273,9 @@ CREATE TABLE IF NOT EXISTS evaluations (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluations_school_legacy_json_id
   ON evaluations (school_id, legacy_json_id)
   WHERE legacy_json_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_evaluations_evaluation_type_id
+  ON evaluations (evaluation_type_id);
 
 CREATE TABLE IF NOT EXISTS grades (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -104,6 +104,11 @@ class PostgresRepository {
     await this.ensureEstablishmentRolesCanonicalSchema();
     await this.stripLegacyUserRolesPayloads();
     await this.ensureEstablishmentRolesBootstrap();
+    await this.ensureEvaluationTypesPreflight();
+    await this.ensureEvaluationTypesConstraints();
+    await this.ensureEvaluationTypesCanonicalSchema();
+    await this.stripLegacyEvaluationTypesPayloads();
+    await this.ensureEvaluationTypesBootstrap();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
       await this.ensurePlatformReferenceData();
@@ -619,6 +624,59 @@ class PostgresRepository {
     return assertEstablishmentRoleAssignable(this, roleLabel, principal);
   }
 
+  async ensureEvaluationTypesPreflight() {
+    const { assertEvaluationTypesSchemaPreflight } = require("./evaluationTypesSchema");
+    await assertEvaluationTypesSchemaPreflight(this);
+  }
+
+  async ensureEvaluationTypesCanonicalSchema() {
+    const { EVALUATION_TYPES_SCHEMA_SQL } = require("./evaluationTypesSchema");
+    await this.query(EVALUATION_TYPES_SCHEMA_SQL);
+  }
+
+  async stripLegacyEvaluationTypesPayloads() {
+    const { stripLegacyEvaluationTypesPayloads } = require("../lib/evaluationTypesService");
+    await stripLegacyEvaluationTypesPayloads(this);
+  }
+
+  async ensureEvaluationTypesConstraints() {
+    const { ensureEvaluationTypesConstraints } = require("../lib/evaluationTypesService");
+    await ensureEvaluationTypesConstraints(this, console);
+  }
+
+  async ensureEvaluationTypesBootstrap() {
+    const { ensureEvaluationTypesBootstrap } = require("../lib/evaluationTypesService");
+    await ensureEvaluationTypesBootstrap(this);
+  }
+
+  getEvaluationTypesStore() {
+    const { createEvaluationTypesPgStore } = require("./evaluationTypesPgStore");
+    return createEvaluationTypesPgStore(this);
+  }
+
+  listEvaluationTypes(schoolCode, options) {
+    return this.getEvaluationTypesStore().listBySchool(schoolCode, options);
+  }
+
+  listEvaluationTypeNames(schoolCode) {
+    return this.getEvaluationTypesStore().listActiveNames(schoolCode);
+  }
+
+  createEvaluationType(payload, principal, auditMeta, schoolCode) {
+    const { createEvaluationType } = require("../lib/evaluationTypesService");
+    return createEvaluationType(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  updateEvaluationType(typeId, patch, principal, auditMeta, schoolCode) {
+    const { updateEvaluationType } = require("../lib/evaluationTypesService");
+    return updateEvaluationType(this, typeId, patch, principal, auditMeta, schoolCode);
+  }
+
+  archiveEvaluationType(typeId, principal, auditMeta, schoolCode) {
+    const { archiveEvaluationType } = require("../lib/evaluationTypesService");
+    return archiveEvaluationType(this, typeId, principal, auditMeta, schoolCode);
+  }
+
   getResidualStore() {
     if (!this._residualStore) {
       const { createResidualPgStore } = require("./residualPgStore");
@@ -1061,13 +1119,15 @@ class PostgresRepository {
       `),
       this.all(`
         SELECT ev.*, s.school_code, cl.name AS class_name, sub.name AS subject_name,
-               t.teacher_code, term.name AS term_name
+               t.teacher_code, term.name AS term_name,
+               et.name AS evaluation_type_name, et.code AS evaluation_type_code
         FROM evaluations ev
         JOIN schools s ON s.id = ev.school_id
         JOIN classes cl ON cl.id = ev.class_id
         JOIN subjects sub ON sub.id = ev.subject_id
         JOIN terms term ON term.id = ev.term_id
         LEFT JOIN teachers t ON t.id = ev.teacher_id
+        LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
         ORDER BY ev.created_at
       `),
       this.all(`
@@ -1076,7 +1136,8 @@ class PostgresRepository {
                ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
                ev.title AS evaluation_title, ev.status AS evaluation_status,
                ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
-               ev.evaluation_type AS evaluation_type_pg
+               ev.evaluation_type AS evaluation_type_pg,
+               et.name AS evaluation_type_name, et.code AS evaluation_type_code
         FROM grades g
         JOIN schools s ON s.id = g.school_id
         JOIN students st ON st.id = g.student_id
@@ -1085,6 +1146,7 @@ class PostgresRepository {
         JOIN teachers t ON t.id = g.teacher_id
         JOIN terms term ON term.id = g.term_id
         LEFT JOIN evaluations ev ON ev.id = g.evaluation_id
+        LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
         ORDER BY g.created_at
       `),
       this.all(`
@@ -2083,6 +2145,7 @@ class PostgresRepository {
     let coefficient;
     let status;
     let evaluationType;
+    let evaluationTypeId;
     let evaluationDate;
     let active;
     let title;
@@ -2090,6 +2153,45 @@ class PostgresRepository {
     let subjectId;
     let termId;
     let teacherId;
+
+    const typeFieldsTouched = patchTouches([
+      "evaluationType",
+      "type",
+      "evaluation_type",
+      "evaluationTypeId",
+      "evaluation_type_id",
+      "evaluationTypeCode",
+    ]);
+
+    const { resolveEvaluationTypeForWrite } = require("../lib/evaluationTypesService");
+    const requireCanonicalType = Boolean(principal) && (!existing || typeFieldsTouched);
+    const hasExplicitType = Boolean(
+      asTrimmed(evaluation.evaluationTypeId) ||
+        asTrimmed(evaluation.evaluation_type_id) ||
+        asTrimmed(evaluation.evaluationType) ||
+        asTrimmed(evaluation.type) ||
+        asTrimmed(evaluation.evaluation_type) ||
+        asTrimmed(evaluation.evaluationTypeCode),
+    );
+    let resolvedType = null;
+    if (requireCanonicalType || typeFieldsTouched || !existing) {
+      const lookupPayload = { ...evaluation };
+      if (hasExplicitType || requireCanonicalType) {
+        if (requireCanonicalType) {
+          resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
+            required: true,
+          });
+        } else {
+          try {
+            resolvedType = await resolveEvaluationTypeForWrite(this, school.id, lookupPayload, {
+              required: false,
+            });
+          } catch (_error) {
+            resolvedType = null;
+          }
+        }
+      }
+    }
 
     if (existing) {
       maxScore = patchTouches(["scale", "max_score", "maxScore"])
@@ -2101,9 +2203,16 @@ class PostgresRepository {
       status = patchTouches(["status"])
         ? toEvaluationStatus(evaluation.status, String(existing.status ?? "draft"))
         : String(existing.status ?? "draft");
-      evaluationType = patchTouches(["evaluationType", "type", "evaluation_type"])
-        ? toDbEvaluationType(evaluation.evaluationType ?? evaluation.type)
-        : String(existing.evaluation_type ?? "devoir");
+      evaluationType = resolvedType
+        ? resolvedType.code
+        : typeFieldsTouched
+          ? toDbEvaluationType(evaluation.evaluationType ?? evaluation.type)
+          : String(existing.evaluation_type ?? "devoir");
+      evaluationTypeId = resolvedType
+        ? resolvedType.id
+        : typeFieldsTouched
+          ? null
+          : existing.evaluation_type_id ?? null;
       evaluationDate = patchTouches(["date", "evaluation_date"])
         ? this.parseDate(evaluation.date ?? evaluation.evaluation_date)
         : existing.evaluation_date ?? null;
@@ -2127,7 +2236,8 @@ class PostgresRepository {
       maxScore = Number(evaluation.scale ?? evaluation.max_score ?? evaluation.maxScore ?? 20);
       coefficient = Number(evaluation.coefficient ?? 1);
       status = toEvaluationStatus(evaluation.status, "draft");
-      evaluationType = toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
+      evaluationType = resolvedType ? resolvedType.code : toDbEvaluationType(evaluation.evaluationType ?? evaluation.type);
+      evaluationTypeId = resolvedType ? resolvedType.id : null;
       evaluationDate = this.parseDate(evaluation.date ?? evaluation.evaluation_date);
       active = evaluation.active !== false;
       title = String(evaluation.title ?? "Évaluation").trim() || "Évaluation";
@@ -2135,6 +2245,18 @@ class PostgresRepository {
       subjectId = subject.id;
       termId = term.id;
       teacherId = teacher?.id ?? null;
+    }
+
+    if (principal && !existing && !evaluationTypeId) {
+      const { createEvaluationTypesError, EVALUATION_TYPES_ERROR } = require("../lib/evaluationTypesManagement");
+      if (!hasExplicitType) {
+        throw createEvaluationTypesError(
+          400,
+          "Type d'évaluation canonique obligatoire (evaluationTypeId).",
+          EVALUATION_TYPES_ERROR.EVALUATION_TYPE_REQUIRED,
+        );
+      }
+      throw createEvaluationTypesError(404, "Type d'évaluation introuvable.", EVALUATION_TYPES_ERROR.TYPE_NOT_FOUND);
     }
 
     const contractError = validateEvaluationContract({ maxScore, coefficient, status });
@@ -2148,11 +2270,11 @@ class PostgresRepository {
       await this.query(
         `UPDATE evaluations
          SET class_id = $1, subject_id = $2, teacher_id = $3, term_id = $4,
-             title = $5, evaluation_type = $6, evaluation_date = $7,
-             max_score = $8, coefficient = $9, status = $10,
-             active = $11, legacy_json_id = COALESCE(legacy_json_id, $12),
+             title = $5, evaluation_type = $6, evaluation_type_id = $7, evaluation_date = $8,
+             max_score = $9, coefficient = $10, status = $11,
+             active = $12, legacy_json_id = COALESCE(legacy_json_id, $13),
              updated_at = NOW()
-         WHERE id = $13`,
+         WHERE id = $14`,
         [
           classId,
           subjectId,
@@ -2160,6 +2282,7 @@ class PostgresRepository {
           termId,
           title,
           evaluationType,
+          evaluationTypeId,
           evaluationDate,
           maxScore,
           coefficient,
@@ -2176,9 +2299,9 @@ class PostgresRepository {
     const inserted = await this.one(
       `INSERT INTO evaluations (
          school_id, class_id, subject_id, teacher_id, term_id,
-         title, evaluation_type, evaluation_date, max_score, coefficient,
+         title, evaluation_type, evaluation_type_id, evaluation_date, max_score, coefficient,
          status, active, legacy_json_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         school.id,
@@ -2188,6 +2311,7 @@ class PostgresRepository {
         term.id,
         title,
         evaluationType,
+        evaluationTypeId,
         evaluationDate,
         maxScore,
         coefficient,
@@ -4845,6 +4969,7 @@ class PostgresRepository {
       id: evaluation.legacy_json_id || evaluation.id,
       publicId: evaluation.legacy_json_id || evaluation.id,
       pgId: evaluation.id,
+      dbId: evaluation.id,
       schoolId: evaluation.school_id,
       schoolCode: evaluation.school_code,
       className: evaluation.class_name,
@@ -4852,7 +4977,9 @@ class PostgresRepository {
       teacherId: evaluation.teacher_code,
       period: evaluation.term_name,
       title: evaluation.title,
-      evaluationType: this.fromEvaluationType(evaluation.evaluation_type),
+      evaluationType: evaluation.evaluation_type_name || this.fromEvaluationType(evaluation.evaluation_type),
+      evaluationTypeId: evaluation.evaluation_type_id || undefined,
+      evaluationTypeCode: evaluation.evaluation_type_code || evaluation.evaluation_type,
       date: this.formatDate(evaluation.evaluation_date),
       scale: Number(evaluation.max_score ?? 20),
       coefficient: Number(evaluation.coefficient ?? 1),
@@ -4882,7 +5009,8 @@ class PostgresRepository {
       date: this.formatDate(grade.created_at),
       evaluationId,
       evaluationTitle: grade.evaluation_title || grade.comment || this.fromEvaluationType(grade.grade_type),
-      evaluationType: this.fromEvaluationType(grade.evaluation_type_pg || grade.grade_type),
+      evaluationType: grade.evaluation_type_name || this.fromEvaluationType(grade.evaluation_type_pg || grade.grade_type),
+      evaluationTypeId: grade.evaluation_type_id || undefined,
       period: grade.term_name,
       scale: Number(grade.evaluation_max_score ?? grade.max_score ?? 20),
       evaluationCoefficient: Number(grade.evaluation_coefficient ?? grade.coefficient ?? 1),
@@ -5234,7 +5362,8 @@ class PostgresRepository {
               ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
               ev.title AS evaluation_title, ev.status AS evaluation_status,
               ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
-              ev.evaluation_type AS evaluation_type_pg
+              ev.evaluation_type AS evaluation_type_pg, ev.evaluation_type_id,
+              et.name AS evaluation_type_name, et.code AS evaluation_type_code
        FROM grades g
        JOIN schools s ON s.id = g.school_id
        JOIN students st ON st.id = g.student_id
@@ -5243,6 +5372,7 @@ class PostgresRepository {
        JOIN teachers t ON t.id = g.teacher_id
        JOIN terms term ON term.id = g.term_id
        LEFT JOIN evaluations ev ON ev.id = g.evaluation_id
+       LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
        WHERE g.id = $1`,
       [id],
     );

@@ -1,7 +1,7 @@
 # Stratégie de tests — Somafrik
 
 **Statut :** référence qualité & gates  
-**Dernière mise à jour :** 2026-08-13
+**Dernière mise à jour :** 2026-08-14
 **Liens :** [RELEASES.md](./RELEASES.md) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -88,6 +88,7 @@ node backend/lib/teacherNotesWriteAccess.test.js
 | `npm run verify:clients-management` | APIs `/api/backoffice/users`, `/contacts`, `/relations`, `/messages`, `/announcements` ; provisionnement contact/parent ; isolation tenant ; pas de fuite `password_hash` (`clientsRepository.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:education-reference-data` | Référentiels pédagogiques canoniques PG : CRUD Superadmin niveaux/filières, activation établissement, unicité par pays, cross-country, rejet `levels`/`tracks` sur `PUT /api/academic-config` (`LEGACY_ACADEMIC_LEVELS_WRITE_FORBIDDEN` / `LEGACY_ACADEMIC_STREAMS_WRITE_FORBIDDEN`) ; audit transactionnel (`educationReference.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:establishment-roles-data` | Rôles établissement canoniques PG : CRUD Superadmin catalogue, affectation Admin School, rejet `userRoles` sur `PUT /api/academic-config` (`LEGACY_USER_ROLES_WRITE_FORBIDDEN`), escalade 403, rôle archivé non affectable, JWT depuis matrice PG (`establishmentRoles.pg.test.js` si `DATABASE_URL`) |
+| `npm run verify:evaluation-types-data` | Types d’évaluation canoniques PG : CRUD établissement, unicité par école, isolation tenant, archivage, rejet `evaluationTypes` sur `PUT /api/academic-config` (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`), boot fail-closed si legacy ambigu, création d’évaluation avec `evaluationTypeId`, refus type étranger/inventé/archivé (`evaluationTypes.pg.test.js` si `DATABASE_URL`) |
 | `npm run verify:notes-sync` | Sync Notes / outbox / rattachement |
 | `npm run verify:mobile-security` | SecureStore / HTTPS / client mobile |
 | `npm run verify:v2-foundation` | Structure V2, frontières legacy, invariants domaine et auth V2.1a |

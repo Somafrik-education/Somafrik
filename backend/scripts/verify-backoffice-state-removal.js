@@ -205,7 +205,6 @@ async function runResidualGuards(superToken) {
       schoolCode: "CD-2026-0001",
       periodMode: "bi-baseline",
       periods: [{ name: "Trimestre 1", type: "Trimestre", startDate: "01-09-2025", endDate: "20-12-2025", active: true }],
-      evaluationTypes: ["Devoir"],
       defaultScale: 20,
     },
   });
@@ -217,7 +216,6 @@ async function runResidualGuards(superToken) {
       schoolCode: "BI-2026-0002",
       periodMode: "cd-scoped-write",
       periods: [{ name: "Trimestre 1", type: "Trimestre", startDate: "01-09-2025", endDate: "20-12-2025", active: true }],
-      evaluationTypes: ["Devoir"],
       defaultScale: 20,
     },
   });
