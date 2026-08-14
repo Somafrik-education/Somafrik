@@ -54,7 +54,7 @@ Les cartes marquées `status: "soon"` restent cliquables : elles ouvrent un `Com
 |---------------|---------------|-------------------------|--------------------|------|
 | **Mon abonnement** `/parametres/mon-abonnement` | `MonAbonnementPage` + sous-routes factures / paiements / changer-offre / résiliation | APIs abonnements plateforme | **Oui** — tables `subscriptions`, `subscription_*` | Canonique PG |
 | **Profil établissement** `/parametres/profil` | `EstablishmentProfilePage` | `activeSchool` (domaine `schools`) | **Oui** — `PATCH /api/backoffice/establishments/:code` | Canonique PG + JSONB profil |
-| **Année scolaire** `/parametres/annee-scolaire` | `ConfigurationPage section="annee-scolaire"` | `state.academicConfigs[schoolCode]` (périodes, barème, **`evaluationTypes` actuellement ici**) | **Oui** — PUT academic-config → `school_academic_configs.config_payload` (**pas** `academic_years` / `terms`). Types d’éval = JSON, pas la table `evaluations` | JSONB PG, dual périodes avec tables relationnelles |
+| **Année scolaire** `/parametres/annee-scolaire` | `ConfigurationPage section="annee-scolaire"` | `state.academicConfigs[schoolCode]` (périodes, barème) + catalogue **`evaluation_types`** via `/api/evaluation-types` | **Oui** — PUT academic-config → `school_academic_configs.config_payload` (**pas** `academic_years` / `terms`). Types d’éval = table PG `evaluation_types` (LOT 3), plus le JSON | JSONB PG périodes ; **types = PG canonique** |
 | **Structure pédagogique** `/parametres/structure` | `ConfigurationPage section="structure"` | mêmes `academicConfigs` (`levels`, `tracks`, `classNames`, `subjects`) — **pas** `evaluationTypes` aujourd’hui | **Oui** — même PUT JSON ; **pas** sync `classes` / `subjects` / `school_courses`. Vocabulaire niveaux/filières créé par l’école. Cible CTO §4.A/C non implémentée | JSONB PG, dual |
 | **Rôles et droits** `/parametres/roles-droits` | `ConfigurationPage section="roles-droits"` | `academicConfigs.userRoles` + `state.rolePermissions` | **Partiel** : liste de rôles → JSON academic-config ; **pilotage** → `PUT /api/backoffice/role-permissions` (**Super Admin uniquement**) | Dual JSONB + `role_permissions` |
 | **Documents** `/parametres/documents` | `BulletinDesignPage` | `academicConfigs` (design par classe) + listes classes/matières | **Oui** si Superadmin — PUT academic-config. Page **redirige** les non-Superadmin | JSONB PG |
@@ -118,24 +118,27 @@ Convention des fiches : propriétaire métier, UI, API, source, tables, RBAC, sc
 2. Sinon mapping des lignes `terms` (jointure `academic_years`) ou défauts `defaultAcademicPeriods()`.
 3. `saveAcademicConfig` **n’écrit que le JSON** ; **aucune** INSERT/UPDATE `terms` / `academic_years`.
 
-Champs JSON typiques : `periodMode`, `periods[]`, `evaluationTypes`, `defaultScale`, `reportCardMode`, `allowCustomClasses|Courses|ReportCards`, `levels`, `tracks`, `classNames`, `subjects` (map classe → matières), `userRoles`, `bulletinDesignByClass` (page Documents).
+Champs JSON typiques : `periodMode`, `periods[]`, `defaultScale`, `reportCardMode`, `allowCustomClasses|Courses|ReportCards`, `classNames`, `subjects` (map classe → matières), `bulletinDesignByClass` (page Documents). `levels` / `tracks` / `userRoles` / `evaluationTypes` : **lecture projection PG uniquement**, écriture interdite.
 
 | Paramètre | Scope | Validations UI | Dual / legacy | Risque |
 |-----------|-------|----------------|---------------|--------|
 | Périodes / mode trimestre-semestre | Établissement | `academicPeriods.ts` (`coercePeriodMode`, `applySystemActivePeriod`) | Notes/évaluations utilisent `terms.id` (PG). Config hub n’alimente pas `terms`. | **P0** |
 | Barème `defaultScale` | Établissement | nombre | JSON `config_payload` uniquement | INFO |
-| Types d’évaluation `evaluationTypes` | Établissement | liste de libellés, **écran actuel = section année scolaire** (`ConfigurationPage` `savingSection === "evaluations"`) | **Catalogue JSON** dans `config_payload.evaluationTypes`. **Pas** un référentiel porté par la table `evaluations` (voir ci-dessous). Aucune table `evaluation_types`. | P1 |
+| Types d’évaluation | Établissement | catalogue PG via `EvaluationTypesPanel` (année scolaire) | **Table `evaluation_types`** (SoT LOT 3). `GET /api/academic-config.evaluationTypes` = projection des noms actifs. Écriture JSON interdite (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`). | INFO |
 | Niveaux, filières | Établissement | listes lignes | JSON `config_payload.levels` / `tracks` ; seed `backend/data.js` `demoLevels` / `demoTracks` si JSON vide. Gérés aujourd’hui par Admin établissement. Cible CTO (non implémentée) : §4.A | INFO |
 | `classNames` / `subjects` | Établissement | listes | **Non synchronisés** avec `classes`, `subjects`, `school_courses` | **P0** |
 | Flags `allowCustom*` | Établissement | booléens | Consommés planning / bulletins côté Web | INFO |
 | Design bulletins | Établissement + classe | Superadmin only UI | JSON dans le même `config_payload` | P1 |
 | Années scolaires relationnelles | Établissement | APIs v2 | `GET/POST /api/v2/academic-years` — **pas** branchées sur le hub Année scolaire | **P1** |
 
-**Types d’évaluation — imprécision à ne pas reproduire.** La table `evaluations` (`backend/db/schema.sql`) stocke des **instances** (un devoir, une interrogation… : `title`, `term_id`, `class_id`, `subject_id`, `max_score`, …). Elle possède `evaluation_type TEXT NOT NULL DEFAULT 'devoir'` : c’est la **valeur portée par chaque instance**, pas un catalogue. Aujourd’hui :
+**Types d’évaluation — LOT 3 (canonique PostgreSQL).** La table `evaluations` stocke des **instances** (un devoir, une interrogation… : `title`, `term_id`, `class_id`, `subject_id`, `max_score`, …).
 
-- `school_academic_configs.config_payload.evaluationTypes` = catalogue/configuration actuelle des types (tableau JSON, défauts `["Interrogation", "Devoir", "Examen", …]` dans `residualPgStore.js`) ;
-- `evaluations.evaluation_type` = texte libre sur l’instance (défaut `'devoir'`), **sans FK** vers le JSON ;
-- **il n’existe pas** de table canonique `evaluation_types`.
+- `evaluation_types` = **catalogue établissement** (SoT) : `id`, `school_id`, `code`, `name`, `status`, `display_order`.
+- `evaluations.evaluation_type_id` = **FK canonique** vers `evaluation_types.id`.
+- `evaluations.evaluation_type` TEXT = **projection / compatibilité uniquement**, plus la source de vérité.
+- `school_academic_configs.config_payload.evaluationTypes` : **écriture interdite** ; lecture = projection des noms actifs PostgreSQL.
+- `backoffice_state` : routes 410 ; aucune SoT `evaluationTypes` à l’exécution.
+- Seeds `data.js` / constantes Web `EVALUATION_TYPES` : **retirés comme catalogue**.
 
 C’est un écart de modèle (catalogue JSON vs colonne d’instance), pas un second référentiel relationnel. Cible CTO (non implémentée) : §4.C.
 
@@ -231,7 +234,7 @@ Ces objets sont des **données opérationnelles** avec des APIs PG. Le hub Param
 | **Matières V2** | limité | `GET/POST /api/v2/subjects`, `DELETE /api/v2/subjects/:code` | `subjects` | `Matières:*` / `Gérer cours` | JSON `subjects` academic-config ; cours `school_courses` | **P0** |
 | **Cours** | planning / classes | `GET /api/courses` (**auth seul**, pas `requirePermission`) ; POST/PATCH/DELETE avec `POST /api/courses` | `school_courses` | écriture `Gérer cours` | GET via overlay `getAuthoritativeBackOfficeState` | P1 lecture large |
 | **Emploi du temps** | `CoursePlanningPage` | `GET/POST/PATCH/DELETE /api/course-schedules` | `course_schedule_slots` | `POST /api/course-schedules` | Lit aussi `academicConfigs` (périodes JSON) | P1 |
-| **Évaluations (instances)** | notes / pédagogie | `POST/PATCH /api/evaluations` + feature abo `write_notes` | table `evaluations` : instance (`term_id`, `title`, `evaluation_type TEXT DEFAULT 'devoir'`, …). **Pas** un référentiel de types | abonnement + auth | Catalogue actuel = JSON `evaluationTypes`. Aucune table `evaluation_types`. Pas de GET `/api/evaluations` dédié listé | P1 |
+| **Évaluations (instances)** | notes / pédagogie | `POST/PATCH /api/evaluations` + feature abo `write_notes` | table `evaluations` : instance (`term_id`, `title`, `evaluation_type_id` FK canonique, `evaluation_type` TEXT projection) | abonnement + auth | Catalogue = `evaluation_types`. Type inconnu/étranger → 404 ; archivé → 409. Pas d’auto-création | INFO |
 | **Notes** | module Notes | `GET /api/notes` (auth seul) ; `POST /api/notes` + `write_notes` | `grades` | lecture large ; écriture feature | Filtrage principal / parent | P1 |
 | **Présences** | module Présences | `GET /api/presences` (auth) ; `POST` + `write_presence` | `attendance` | idem | Helper mort `savePresencesViaBackOfficeState` (défini, **aucun appelant**) | INFO |
 | **Examens résiduels** | planning exams | `GET/PUT /api/backoffice/planning-exams` | `establishment_residual_records` `record_domain='exam'` JSON | `Organiser/Valider examens` | Table relationnelle `exams` / `exam_results` **en parallèle** (APIs `/api/v2/exams`) | **P1** dual exams |
@@ -421,29 +424,28 @@ Exemples visés : Secrétaire, Préfet des études, Directeur, Économe, autres 
 
 Exemples visés : Devoir, Interrogation, Examen, TP, Oral, Projet, Composition, …
 
-**État actuel**
+**État LOT 3 (implémenté)**
 
-- Catalogue : `config_payload.evaluationTypes` (tableau JSON établissement).
-- UI actuelle : section **Année scolaire** (`ConfigurationPage` `savingSection === "evaluations"`), **pas** Structure pédagogique.
-- Instances : table `evaluations.evaluation_type` (`TEXT NOT NULL DEFAULT 'devoir'`) — valeur d’instance, **sans** table `evaluation_types`, **sans** FK vers le JSON.
+- Catalogue canonique PostgreSQL : `evaluation_types` scopé `school_id` (`UNIQUE (school_id, code)` + unicité nom normalisé).
+- API établissement : `GET/POST /api/evaluation-types`, `PATCH …/:id`, `POST …/:id/archive` (tenant JWT).
+- API Superadmin / backoffice : `GET/POST/PATCH /api/backoffice/establishments/:schoolCode/evaluation-types`.
+- `evaluations.evaluation_type_id` = SoT ; `evaluations.evaluation_type` TEXT = projection/compatibilité.
+- `config_payload.evaluationTypes` : **lecture seule** (projection des noms actifs) ; écriture rejetée (`LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN`).
+- Web `EvaluationTypesPanel` + `EvaluationFormModal` : catalogue API, identifiant canonique, types actifs uniquement.
+- Mobile `TeacherGradesScreen` : `GET /api/evaluation-types`, `evaluationTypeId` à l’enregistrement.
+- Boot PG : preflight → inventaire legacy JSON → STOP `LEGACY_EVALUATION_TYPES_AMBIGUOUS` si libellés custom → schéma → strip → bootstrap défauts si établissement vide.
+- Aucune auto-création d’un type depuis une évaluation.
 
-**Problème constaté**
+**Legacy neutralisé**
 
-- Pas de table canonique dédiée aux types.
-- Le catalogue JSON et le `TEXT` d’instance peuvent diverger (**P1** factuel, inchangé).
-- L’écran actuel mélange types d’évaluation et paramètres d’année scolaire.
+- `PUT /api/academic-config` avec clé `evaluationTypes` → 400.
+- UI textarea locale / constantes `EVALUATION_TYPES` / `data.js` : plus de catalogue autoritaire.
 
-**Cible validée (ne pas implémenter ici)**
-
-```
-Admin établissement
-  → Paramètres
-    → Structure pédagogique
-      → Types d'évaluation
-```
+**Cible validée (atteinte LOT 3)**
 
 - Le **catalogue est spécifique à l’établissement**.
-- Le Superadmin pourra **éventuellement** fournir plus tard des modèles / suggestions ; l’établissement choisit ses **types opérationnels**.
+- Admin School gère les types de **son** établissement ; enseignants : lecture.
+- Superadmin : gouvernance via routes backoffice `:schoolCode` (pas de tenant inventé dans le body).
 
 ---
 
@@ -456,7 +458,7 @@ Domaine | Paramètre | UI | API | Stockage | Scope | Écriture canonique ? | Leg
 Établissement | `primaryColor` / timezone / langue | ComingSoon Apparence | PATCH establishments (clés acceptées, UI absente) | JSONB | Établissement | API oui, UI non | Écran mort | idem | P2 | Brancher l’écran Apparence ou retirer les clés
 Académique | Périodes / mode / barème | `ConfigurationPage` année-scolaire | GET/PUT `/api/academic-config` (+ establishments/…) | `school_academic_configs.config_payload` | Établissement | JSON oui ; **tables `terms` non** | Dual-read `terms` si JSON vide | PUT : Paramètres UPDATE / planning / classes. GET config : auth seul | **P0** | Sync transactionnelle JSON → `academic_years`/`terms` ou UI sur APIs v2
 Académique | Niveaux / filières / séries / options | `ConfigurationPage` structure + `EducationReferencePage` | `GET/PUT /api/education-reference/*`, CRUD `/api/backoffice/education-*` | `education_levels`, `education_streams`, `school_levels`, `school_streams` | Pays + établissement | Oui PG | JSON `levels`/`tracks` retiré ; PUT academic-config interdit | Référentiels pédagogiques / Paramètres UPDATE | INFO → **migré LOT 1** | Superadmin catalogue ; établissement activation uniquement
-Académique | Types d’évaluation | `ConfigurationPage` **année scolaire** (écran actuel) | même PUT (`evaluationTypes`) | JSON `config_payload.evaluationTypes` | Établissement | Oui JSON catalogue | Instances : `evaluations.evaluation_type` TEXT ; **aucune** table `evaluation_types` | idem | P1 | **Cible CTO §4.C (non implémentée) :** catalogue canonique établissement dans Structure pédagogique (Paramètres → Structure → Types d’évaluation). Superadmin = modèles optionnels plus tard, pas le propriétaire opérationnel
+Académique | Types d’évaluation | `ConfigurationPage` année scolaire (`EvaluationTypesPanel`) | `GET/POST/PATCH /api/evaluation-types` (+ archive ; backoffice `:schoolCode`) | `evaluation_types` | Établissement | Oui PG | JSON `evaluationTypes` lecture projection ; PUT interdit | Paramètres UPDATE / planning ; GET notes enseignants | INFO → **migré LOT 3** | Catalogue établissement ; Superadmin modèles optionnels plus tard
 Académique | `classNames` / `subjects` JSON | structure | même PUT | JSON | Établissement | Oui JSON **sans** sync `classes`/`subjects`/`school_courses` | Dual opérationnel | idem | **P0** | Génération / mapping vers classes et matières PG ; interdire double saisie
 Académique | Année scolaire v2 | **pas le hub** | `/api/v2/academic-years` | `academic_years` | Établissement | Oui (autre écran/API) | Hub ignore | Années Académiques READ/WRITE | P1 | Hub Année scolaire → API v2
 Rôles | Matrice globale | `PermissionsPage` | PUT `/api/backoffice/role-permissions` | `role_permissions` | Plateforme | Oui Super Admin | Seed `data.js` + `mapUser` | ALL_PRIVILEGES + `assertSuperAdmin` | P1 | **Cible CTO §4.B (non implémentée) :** catalogue Superadmin + permissions centralisées. Login doit charger la matrice PG, pas le seed. Prévoir rôle canonique + permissions + scope/plafond de délégation
@@ -470,7 +472,7 @@ Enseignants | Fiches / cycle de vie | TeachersList | `/api/teachers`, assignment
 Élèves | Fiches / inscriptions | Élèves | `/api/students`, classes/students | `students`, `enrollments` | Établissement | Oui | Restore JSON no-op | Élèves:* | **P0** (restore) | Restore serveur ou retirer le bouton
 Pédagogie | Classes PG | Classes | `/api/classes` | `classes` | École + année | Oui | Dual JSON names | Gérer classes | P0 (dual) | Voir structure
 Pédagogie | Cours / EDT | Planning | `/api/courses`, `/api/course-schedules` | `school_courses`, `course_schedule_slots` | École | Oui | GET courses sans permission fine | Gérer cours | P1 | Aligner GET sur `requirePermission`
-Pédagogie | Notes / présences / instances d’évaluation | modules ops | `/api/notes`, `/api/presences`, POST/PATCH `/api/evaluations` | `grades`, `attendance`, `evaluations` (instances ; `evaluation_type` TEXT) | École / élève | Oui pour l’instance | GET auth-only ; feature abo en écriture ; types catalogue = JSON distinct | write_notes / write_presence | P1 | Permissions lecture explicites. Types : voir ligne Académique « Types d’évaluation » / §4.C — **ne pas** traiter `evaluations` comme un référentiel de types
+Pédagogie | Notes / présences / instances d’évaluation | modules ops | `/api/notes`, `/api/presences`, POST/PATCH `/api/evaluations` | `grades`, `attendance`, `evaluations` (`evaluation_type_id` FK + TEXT projection) | École / élève | Oui pour l’instance | GET auth-only ; feature abo en écriture ; types = `evaluation_types` | write_notes / write_presence | INFO | Types : voir ligne Académique « Types d’évaluation » / §4.C
 Pédagogie | Examens JSON vs V2 | planning | PUT planning-exams vs `/api/v2/exams` | residual JSON vs `exams` | École | Deux écritures | Dual | Examens:* | P1 | Une SoT examens
 Pédagogie | Bulletins / documents JSON | Documents (design) + listing | PUT report-cards / establishment-documents | residual JSON | École | Replace-all | Oui | Documents/Bulletins | P1 | CRUD item, pas replace-all
 Finance | Hub « Paramètres Finances » | ComingSoon | aucune | — | — | Non | Ops Finance ailleurs | — | P2 | Pointer vers fee-grids / payment-statuses
@@ -515,7 +517,6 @@ Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **
 - GET `/api/courses`, `/api/notes`, `/api/presences` : auth sans permission de feature.
 - Notifications plateforme vs announcements établissement ; policy pays vs `subscription_offers`.
 - Hub Année scolaire ignoré par `/api/v2/academic-years`.
-- Types d’évaluation : catalogue JSON `evaluationTypes` (écran année scolaire) vs `evaluations.evaluation_type` (TEXT d’instance, défaut `'devoir'`). **Pas** de table `evaluation_types`. Ce n’est **pas** un référentiel porté par `evaluations`.
 
 ### P2
 
@@ -529,7 +530,7 @@ Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **
 - Table et routes `backoffice_state` : 410 / `getBackOfficeState()=null` ; ADR LOT 8 appliqué au runtime.
 - `BackOffice/app.js` redirect.
 - Helpers snapshot / présences BO non appelés.
-- Domaines opérationnels enseignants/élèves/paiements : SoT PG via APIs dédiées (hors hub).
+- Types d’évaluation : `evaluation_types` = SoT PostgreSQL ; `academic-config.evaluationTypes` = projection lecture / écriture interdite ; `evaluations.evaluation_type_id` = FK canonique ; TEXT = projection.
 - Session JWT + table `sessions` canonique.
 - Mon abonnement : APIs plateforme PG.
 
