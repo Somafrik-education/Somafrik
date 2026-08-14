@@ -109,6 +109,7 @@ function fromDbStatus(status) {
   if (normalized === "inactive") return "Inactif";
   if (normalized === "archived") return "Archivé";
   if (normalized === "suspended") return "Suspendu";
+  if (normalized === "pending_validation") return "En attente de validation";
   return status || "Actif";
 }
 
@@ -118,6 +119,7 @@ function toDbStatus(status) {
   if (["inactif", "inactive"].includes(normalized)) return "inactive";
   if (["archivé", "archive", "archived"].includes(normalized)) return "archived";
   if (["suspendu", "suspended"].includes(normalized)) return "suspended";
+  if (normalized === "en attente de validation") return "pending_validation";
   return normalized || "active";
 }
 
@@ -214,6 +216,11 @@ function mapUserRow(row) {
     lastLoginAt: formatDate(row.last_login_at),
     createdBy: profile.createdBy ?? "PostgreSQL",
     history: profile.history ?? [],
+    validationStatus: profile.validationStatus ?? "",
+    validationRequestedBy: profile.validationRequestedBy ?? "",
+    validationRequestedAt: profile.validationRequestedAt ?? "",
+    validatedBy: profile.validatedBy ?? "",
+    validatedAt: profile.validatedAt ?? "",
   };
 }
 

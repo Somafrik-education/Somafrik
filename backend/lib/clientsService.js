@@ -31,6 +31,13 @@ const {
   mergeUserProfileForUpdate,
   PROVISION_CONTACT_ROLE,
 } = require("./clientsRolePolicy");
+const {
+  assertUniqueUserLoginIdentity,
+  isUsersLoginIdentityUniquenessViolation,
+} = require("./usersLoginIdentity");
+
+const SCHOOL_ADMIN_ROLE = "Admin School";
+const PENDING_VALIDATION_STATUS = "En attente de validation";
 
 async function assertStudentInContactSchool(tx, contact, studentId) {
   const student = await tx.getStudentById(studentId);
@@ -77,6 +84,20 @@ function resolveWritableSchoolCode(principal, rawPayload) {
   return schoolCode.toUpperCase();
 }
 
+function rethrowLoginIdentityConflict(error) {
+  if (
+    error?.code === "USER_LOGIN_IDENTITY_DUPLICATE" ||
+    isUsersLoginIdentityUniquenessViolation(error)
+  ) {
+    throw createClientsError(
+      409,
+      error.message || "Un compte avec cet email ou ce téléphone existe déjà.",
+      CLIENTS_ERROR.DUPLICATE,
+    );
+  }
+  throw error;
+}
+
 async function createUser(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
@@ -105,29 +126,63 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       userCode,
     });
 
+    const email = asTrimmed(payload.email);
+    const phone = asTrimmed(payload.phone);
+    await assertUniqueUserLoginIdentity(tx, {
+      schoolId: school.id,
+      email,
+      phone,
+    }).catch(rethrowLoginIdentityConflict);
+
+    const requiresSuperAdminValidation =
+      isCountryAdminPrincipal(principal) && role === SCHOOL_ADMIN_ROLE;
+    const requestedAt = new Date().toISOString();
+    const requestedBy = principal?.identifier || principal?.email || "Admin Pays";
+
     const profile = {
       contactId: payload.contactId,
       secondaryRoles: payload.secondaryRoles ?? [],
       identifier,
       accessChannel: payload.accessChannel ?? "Application",
       createdBy: principal?.identifier || principal?.email || "system",
+      ...(requiresSuperAdminValidation
+        ? {
+            validationStatus: PENDING_VALIDATION_STATUS,
+            validationRequestedBy: requestedBy,
+            validationRequestedAt: requestedAt,
+          }
+        : {}),
+      ...(payload.validationStatus ? { validationStatus: payload.validationStatus } : {}),
+      ...(payload.validationRequestedBy ? { validationRequestedBy: payload.validationRequestedBy } : {}),
+      ...(payload.validatedBy ? { validatedBy: payload.validatedBy } : {}),
+      ...(payload.validatedAt ? { validatedAt: payload.validatedAt } : {}),
+      ...(Array.isArray(payload.history) ? { history: payload.history } : {}),
     };
 
-    const saved = await tx.insertUser({
-      schoolId: school.id,
-      userCode,
-      firstName,
-      lastName,
-      email: asTrimmed(payload.email),
-      phone: asTrimmed(payload.phone),
-      gender: asTrimmed(payload.gender),
-      birthDate: toIsoDate(payload.birthDate),
-      role: toDbRole(role),
-      status: toDbStatus(payload.status || "Actif"),
-      passwordHash: hashSecret(temporaryPassword),
-      mustChangePassword: true,
-      profile,
-    });
+    const initialStatus = requiresSuperAdminValidation
+      ? PENDING_VALIDATION_STATUS
+      : payload.status || "Actif";
+
+    let saved;
+    try {
+      saved = await tx.insertUser({
+        schoolId: school.id,
+        userCode,
+        firstName,
+        lastName,
+        email,
+        phone,
+        gender: asTrimmed(payload.gender),
+        birthDate: toIsoDate(payload.birthDate),
+        role: toDbRole(role),
+        status: toDbStatus(initialStatus),
+        passwordHash: hashSecret(temporaryPassword),
+        mustChangePassword: true,
+        profile,
+      });
+    } catch (error) {
+      rethrowLoginIdentityConflict(error);
+    }
 
     await writeClientsAudit(tx, principal, auditMeta, {
       schoolCode,
@@ -167,18 +222,32 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
     }
 
     const profile = mergeUserProfileForUpdate(parsePayload(locked.profile_payload), patch);
+    const nextEmail = patch.email !== undefined ? asTrimmed(patch.email) : locked.email;
+    const nextPhone = patch.phone !== undefined ? asTrimmed(patch.phone) : locked.phone;
 
-    const saved = await tx.updateUser(locked.id, {
-      firstName: patch.firstName ?? locked.first_name,
-      lastName: patch.lastName ?? locked.last_name,
-      email: patch.email ?? locked.email,
-      phone: patch.phone ?? locked.phone,
-      gender: patch.gender ?? locked.gender,
-      birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : locked.birth_date,
-      role: patch.role ? toDbRole(patch.role) : locked.role,
-      status: patch.status ? toDbStatus(patch.status) : locked.status,
-      profile,
-    });
+    await assertUniqueUserLoginIdentity(tx, {
+      schoolId: locked.school_id,
+      email: nextEmail,
+      phone: nextPhone,
+      excludeUserId: locked.id,
+    }).catch(rethrowLoginIdentityConflict);
+
+    let saved;
+    try {
+      saved = await tx.updateUser(locked.id, {
+        firstName: patch.firstName ?? locked.first_name,
+        lastName: patch.lastName ?? locked.last_name,
+        email: nextEmail,
+        phone: nextPhone,
+        gender: patch.gender ?? locked.gender,
+        birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : locked.birth_date,
+        role: patch.role ? toDbRole(patch.role) : locked.role,
+        status: patch.status ? toDbStatus(patch.status) : locked.status,
+        profile,
+      });
+    } catch (error) {
+      rethrowLoginIdentityConflict(error);
+    }
 
     await writeClientsAudit(tx, principal, auditMeta, {
       schoolCode,
@@ -354,21 +423,32 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       secondaryRole: payload.secondaryRole,
     };
 
-    const user = await tx.insertUser({
+    await assertUniqueUserLoginIdentity(tx, {
       schoolId: contact.school_id,
-      userCode,
-      firstName: contact.first_name,
-      lastName: contact.last_name,
       email: contact.email,
       phone: contact.phone,
-      gender: contact.gender,
-      birthDate: contact.birth_date,
-      role: toDbRole(PROVISION_CONTACT_ROLE),
-      status: "active",
-      passwordHash: hashSecret(temporaryPassword),
-      mustChangePassword: true,
-      profile,
-    });
+    }).catch(rethrowLoginIdentityConflict);
+
+    let user;
+    try {
+      user = await tx.insertUser({
+        schoolId: contact.school_id,
+        userCode,
+        firstName: contact.first_name,
+        lastName: contact.last_name,
+        email: contact.email,
+        phone: contact.phone,
+        gender: contact.gender,
+        birthDate: contact.birth_date,
+        role: toDbRole(PROVISION_CONTACT_ROLE),
+        status: "active",
+        passwordHash: hashSecret(temporaryPassword),
+        mustChangePassword: true,
+        profile,
+      });
+    } catch (error) {
+      rethrowLoginIdentityConflict(error);
+    }
 
     const updatedContact = await tx.linkContactUser(contact.id, user.id, {
       ...parsePayload(contact.profile_payload),

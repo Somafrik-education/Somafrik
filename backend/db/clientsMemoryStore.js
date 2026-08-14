@@ -50,8 +50,41 @@ function createClientsMemoryStore(seed = {}) {
 
   const auditLog = [];
 
+  function isActiveUserStatus(status) {
+    const normalized = String(status ?? "active").toLowerCase();
+    return normalized !== "deleted" && normalized !== "archived";
+  }
+
   function bind() {
     return {
+      async one(sql, params = []) {
+        const query = String(sql ?? "");
+        if (!query.includes("FROM users u")) {
+          return null;
+        }
+        const excludeUserId = query.includes("u.id::text <>") ? String(params[params.length - 1] ?? "") : "";
+        const isEmail = query.includes("trim(u.email)");
+        const isPhone = query.includes("trim(u.phone)");
+        const isPlatform = query.includes("u.school_id IS NULL");
+        const schoolId = isPlatform ? null : params[0];
+        const identityKey = String(params[isPlatform ? 0 : 1] ?? "").toLowerCase();
+
+        const match = tables.users.find((user) => {
+          if (!isActiveUserStatus(user.status)) return false;
+          if (excludeUserId && String(user.id) === excludeUserId) return false;
+          if (isPlatform) {
+            if (user.school_id) return false;
+          } else if (user.school_id !== schoolId) {
+            return false;
+          }
+          const candidate = isEmail
+            ? String(user.email ?? "").trim().toLowerCase()
+            : String(user.phone ?? "").trim().toLowerCase();
+          return candidate && candidate === identityKey;
+        });
+
+        return match ? { id: match.id, user_code: match.user_code } : null;
+      },
       async getSchoolByCode(code) {
         const school = resolveSchool(code);
         if (!school) return null;

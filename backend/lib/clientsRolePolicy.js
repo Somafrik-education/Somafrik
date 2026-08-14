@@ -121,6 +121,15 @@ function assertSafeUserProfilePatch(profilePatch) {
   }
 }
 
+const USER_VALIDATION_PROFILE_KEYS = [
+  "validationStatus",
+  "validationRequestedBy",
+  "validationRequestedAt",
+  "validatedBy",
+  "validatedAt",
+  "history",
+];
+
 function mergeUserProfileForUpdate(existingProfile, patch = {}) {
   const merged = { ...existingProfile };
   if (patch.profile && typeof patch.profile === "object") {
@@ -135,6 +144,11 @@ function mergeUserProfileForUpdate(existingProfile, patch = {}) {
   }
   if (patch.secondaryRoles !== undefined) {
     merged.secondaryRoles = patch.secondaryRoles;
+  }
+  for (const key of USER_VALIDATION_PROFILE_KEYS) {
+    if (patch[key] !== undefined) {
+      merged[key] = patch[key];
+    }
   }
   delete merged.permissions;
   return merged;
