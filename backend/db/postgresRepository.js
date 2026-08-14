@@ -4962,6 +4962,7 @@ class PostgresRepository {
       id: evaluation.legacy_json_id || evaluation.id,
       publicId: evaluation.legacy_json_id || evaluation.id,
       pgId: evaluation.id,
+      dbId: evaluation.id,
       schoolId: evaluation.school_id,
       schoolCode: evaluation.school_code,
       className: evaluation.class_name,

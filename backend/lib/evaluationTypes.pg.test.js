@@ -62,12 +62,11 @@ function createRepo(pool) {
     listEvaluationTypeNames: (schoolCode) => createEvaluationTypesPgStore(repo).listActiveNames(schoolCode),
     createTxScope(tx) {
       if (!tx) return repo;
-      return {
+      const scoped = {
         ...repo,
         query: (sql, params) => tx.query(sql, params),
         one: async (sql, params) => (await tx.query(sql, params)).rows[0] ?? null,
         all: async (sql, params) => (await tx.query(sql, params)).rows,
-        getEvaluationTypesStore: () => createEvaluationTypesPgStore(this),
         recordAudit: async (payload) => {
           if (payload.newValue?.__failAudit || payload.__failAudit) {
             throw new Error("audit failed");
@@ -87,6 +86,9 @@ function createRepo(pool) {
           );
         },
       };
+      scoped.getEvaluationTypesStore = () => createEvaluationTypesPgStore(scoped);
+      scoped.listEvaluationTypeNames = (schoolCode) => createEvaluationTypesPgStore(scoped).listActiveNames(schoolCode);
+      return scoped;
     },
     withTransaction: async (fn) => {
       const client = await pool.connect();
@@ -305,10 +307,17 @@ async function main() {
 
     const failPrincipal = { ...adminA };
     const failRepo = createRepo(pool);
+    const originalCreateTxScope = failRepo.createTxScope.bind(failRepo);
     failRepo.createTxScope = (tx) => {
-      const scope = repo.createTxScope(tx);
+      const scope = originalCreateTxScope(tx);
       return {
         ...scope,
+        getEvaluationTypesStore: () => createEvaluationTypesPgStore({
+          ...scope,
+          recordAudit: async () => {
+            throw new Error("audit failed");
+          },
+        }),
         recordAudit: async () => {
           throw new Error("audit failed");
         },

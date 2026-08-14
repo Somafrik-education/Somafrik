@@ -335,11 +335,26 @@ function createPedagogyPgStore(repo) {
         return row ? mapScheduleRow(row) : null;
       },
       async upsertEvaluation(payload, principal, options = {}) {
-        return scopedRepo.upsertEvaluationFromLegacy(payload, {
+        const row = await scopedRepo.upsertEvaluationFromLegacy(payload, {
           principal,
           ensure: false,
           ...options,
         });
+        const mappedRow = await one(
+          `SELECT e.*, s.school_code, c.name AS class_name, sub.name AS subject_name,
+                  t.teacher_code, tm.name AS term_name,
+                  et.name AS evaluation_type_name, et.code AS evaluation_type_code
+           FROM evaluations e
+           JOIN schools s ON s.id = e.school_id
+           JOIN classes c ON c.id = e.class_id
+           JOIN subjects sub ON sub.id = e.subject_id
+           LEFT JOIN teachers t ON t.id = e.teacher_id
+           JOIN terms tm ON tm.id = e.term_id
+           LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
+           WHERE e.id = $1`,
+          [row.id],
+        );
+        return scopedRepo.mapEvaluation(mappedRow);
       },
       async upsertGrade(payload, principal) {
         return scopedRepo.upsertGrade(payload, principal);
