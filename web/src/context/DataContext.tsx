@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useAuth } from "./AuthContext";
 import { mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
-import { fetchDomainBackOfficeState } from "../lib/fetchDomainBackOfficeState";
+import { domainsFromPatch, loadDomains, type DomainKey } from "../lib/domainLoaders";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
@@ -37,14 +37,24 @@ import {
 } from "../lib/syncOutbox";
 import type { BackOfficeState, Session } from "../types";
 
+interface UpdateOptions {
+  sync?: boolean;
+  partial?: boolean;
+  /** École cible pour la synchronisation résiduelle (configuration multi-établissement). */
+  schoolCode?: string;
+}
+
 interface DataContextValue {
   state: BackOfficeState;
   loading: boolean;
   error: string | null;
   /** HOTFIX-SYNC-01 — journal des mutations non synchronisées. */
   syncJournal: SyncOutboxEntry[];
-  refresh: () => Promise<void>;
-  update: (patch: Partial<BackOfficeState>, options?: { sync?: boolean; partial?: boolean }) => Promise<void>;
+  /** Recharge les domaines déjà chargés, ou ceux passés en argument. */
+  refresh: (domains?: DomainKey[]) => Promise<void>;
+  /** Charge les domaines demandés s'ils ne le sont pas encore. */
+  ensureDomains: (domains: DomainKey[]) => Promise<void>;
+  update: (patch: Partial<BackOfficeState>, options?: UpdateOptions) => Promise<void>;
   retryFailedSync: () => Promise<void>;
 }
 
@@ -85,11 +95,6 @@ const EMPTY_STATE: BackOfficeState = {
 function stateFromSession(session: Session): BackOfficeState {
   const base: BackOfficeState = {
     ...EMPTY_STATE,
-    schools: session.schools ?? [],
-    users: session.users ?? [],
-    countries: session.countries ?? [],
-    subscriptions: session.subscriptions ?? [],
-    notifications: session.notifications ?? [],
     rolePermissions: session.rolePermissions ?? {},
     academicConfigs: (session.academicConfigs as Record<string, unknown>) ?? {},
     auditLog: session.auditLog ?? [],
@@ -114,6 +119,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
   const sessionUserRef = useRef(session?.user ?? null);
   sessionUserRef.current = session?.user ?? null;
+  const loadedDomainsRef = useRef<Set<DomainKey>>(new Set());
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,33 +130,61 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSyncJournal(listActiveOutboxEntries(entries));
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (!session || syncPausedRef.current) return;
-    setLoading(true);
-    try {
-      const remote = await fetchDomainBackOfficeState();
-      const outbox = loadSyncOutbox();
+  const mergeLoadedDomains = useCallback(
+    (remote: Partial<BackOfficeState>, domains: DomainKey[]) => {
+      for (const key of domains) loadedDomainsRef.current.add(key);
       setState((prev) => {
         const merged = mergeRemoteSnapshot(prev, remote);
-        const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries(outbox));
-        return session?.user ? applyClientScopeToState(withPending, session.user) : withPending;
+        const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
+        return sessionUserRef.current
+          ? applyClientScopeToState(withPending, sessionUserRef.current)
+          : withPending;
       });
-      const failure = formatOutboxFailureMessage(outbox);
-      if (failure) setError(failure);
-      else setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur de chargement");
-    } finally {
-      setLoading(false);
-    }
-  }, [session]);
+    },
+    [],
+  );
+
+  const refreshDomains = useCallback(
+    async (domains?: DomainKey[]) => {
+      if (!session || syncPausedRef.current) return;
+      const keys = domains?.length
+        ? domains
+        : [...loadedDomainsRef.current];
+      if (!keys.length) return;
+
+      setLoading(true);
+      try {
+        const remote = await loadDomains(keys);
+        mergeLoadedDomains(remote, keys);
+        const failure = formatOutboxFailureMessage(loadSyncOutbox());
+        setError(failure);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erreur de chargement");
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [session, mergeLoadedDomains],
+  );
+
+  const ensureDomains = useCallback(
+    async (domains: DomainKey[]) => {
+      if (!session) return;
+      const pending = domains.filter((key) => !loadedDomainsRef.current.has(key));
+      if (!pending.length) return;
+      await refreshDomains(pending);
+    },
+    [session, refreshDomains],
+  );
 
   useEffect(() => {
     if (session) {
+      loadedDomainsRef.current = new Set();
       const seeded = reapplyOutboxToState(stateFromSession(session), listActiveOutboxEntries());
       setState(seeded);
-      void refresh();
     } else {
+      loadedDomainsRef.current = new Set();
       setState(EMPTY_STATE);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,7 +208,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [state.rolePermissions, session?.accessToken, session?.user?.role, setSession]);
 
   const update = useCallback(
-    async (patch: Partial<BackOfficeState>, options: { sync?: boolean; partial?: boolean } = {}) => {
+    async (patch: Partial<BackOfficeState>, options: UpdateOptions = {}) => {
       syncPausedRef.current = true;
 
       const canonicalPatch = stripClientClientsFromPutPayload(
@@ -236,9 +270,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const schoolCode = String(sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase();
-        await syncResidualBackOfficePatch(residualPatch, schoolCode);
-        const remote = await fetchDomainBackOfficeState();
+        const sessionSchool = String(sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase();
+        const targetSchool =
+          String(options.schoolCode ?? sessionSchool).trim().toUpperCase() || sessionSchool;
+        await syncResidualBackOfficePatch(residualPatch, targetSchool);
+
+        const refreshKeys = domainsFromPatch(residualPatch);
+        if (refreshKeys.length) {
+          const remote = await loadDomains(refreshKeys);
+          mergeLoadedDomains(remote, refreshKeys);
+        }
 
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
           ack: {
@@ -248,14 +289,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           annotatedPatch,
         });
         persistJournal(workingOutbox);
-
-        setState((prev) => {
-          const base = mergeRemoteSnapshot(prev, remote);
-          const withPending = reapplyOutboxToState(base, listActiveOutboxEntries(workingOutbox));
-          return sessionUserRef.current
-            ? applyClientScopeToState(withPending, sessionUserRef.current)
-            : withPending;
-        });
 
         const failure = formatOutboxFailureMessage(workingOutbox);
         setError(failure);
@@ -286,7 +319,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }, 1500);
       }
     },
-    [persistJournal],
+    [mergeLoadedDomains, persistJournal],
   );
 
   const retryFailedSync = useCallback(async () => {
@@ -308,8 +341,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [update]);
 
   const value = useMemo<DataContextValue>(
-    () => ({ state, loading, error, syncJournal, refresh, update, retryFailedSync }),
-    [state, loading, error, syncJournal, refresh, update, retryFailedSync],
+    () => ({
+      state,
+      loading,
+      error,
+      syncJournal,
+      refresh: refreshDomains,
+      ensureDomains,
+      update,
+      retryFailedSync,
+    }),
+    [state, loading, error, syncJournal, refreshDomains, ensureDomains, update, retryFailedSync],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

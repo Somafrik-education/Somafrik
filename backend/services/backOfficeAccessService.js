@@ -135,12 +135,6 @@ class BackOfficeAccessService {
       scope: this.getScope(user),
       menus: this.getMenus(user),
       dashboard: this.getDashboard(user),
-      schools: this.getScopedSchools(user),
-      users: sanitizeUsersForResponse(this.getScopedUsers(user)),
-      countries: this.getScopedCountries(user),
-      subscriptions: this.getScopedSubscriptions(user),
-      notifications: this.getScopedNotifications(user),
-      unreadNotifications: this.communicationService.getUnreadCount(this.getScopedNotifications(user)),
     };
   }
 

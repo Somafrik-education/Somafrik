@@ -32,8 +32,13 @@ const ActiveSchoolContext = createContext<ActiveSchoolContextValue | null>(null)
 
 export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
-  const { state } = useData();
+  const { state, ensureDomains } = useData();
   const user = session?.user ?? null;
+
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    void ensureDomains(["schools"]);
+  }, [session?.accessToken, ensureDomains]);
 
   const availableSchools = useMemo(() => scopedSchools(user, state), [user, state]);
   const availableCodes = useMemo(() => availableSchools.map((school) => school.code), [availableSchools]);
