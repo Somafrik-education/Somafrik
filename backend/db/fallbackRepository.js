@@ -249,9 +249,7 @@ class FallbackRepository {
           store.saveAcademicConfig(String(schoolCode).toUpperCase(), {});
         }
         const defaultSchool = String(seedData.school?.code ?? "CD-2026-0001").toUpperCase();
-        store.replaceDomainRecords("exam", defaultSchool, seedData.exams ?? []);
-        store.replaceDomainRecords("bulletin", defaultSchool, seedData.bulletins ?? []);
-        store.replaceDomainRecords("document", defaultSchool, seedData.documents ?? []);
+        void defaultSchool;
       }
     }
     return this._residualStore;
@@ -275,16 +273,19 @@ class FallbackRepository {
     return { ...residual, academicConfigs };
   }
 
-  replaceResidualExams(schoolCode, items, principal, auditMeta) {
-    return this.withResidualReplace("exam", schoolCode, items, principal, auditMeta);
+  replaceResidualExams() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("exam");
   }
 
-  replaceResidualBulletins(schoolCode, items, principal, auditMeta) {
-    return this.withResidualReplace("bulletin", schoolCode, items, principal, auditMeta);
+  replaceResidualBulletins() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("bulletin");
   }
 
-  replaceResidualDocuments(schoolCode, items, principal, auditMeta) {
-    return this.withResidualReplace("document", schoolCode, items, principal, auditMeta);
+  replaceResidualDocuments() {
+    const { assertLegacyResidualWriteForbidden } = require("../lib/documentsExamsManagement");
+    assertLegacyResidualWriteForbidden("document");
   }
 
   async withResidualReplace(domain, schoolCode, items, principal, auditMeta) {
@@ -366,6 +367,7 @@ class FallbackRepository {
         await settingsStore.seedDefaultSettingsIfEmpty(registered.id);
       }
     }
+    this.getDocumentsExamsStore().registerSchool(saved);
     return saved;
   }
 
@@ -2683,6 +2685,142 @@ class FallbackRepository {
     if (this._schoolSettingsBootstrap) await this._schoolSettingsBootstrap;
     const { replaceAcademicPeriods } = require("../lib/schoolSettingsService");
     return replaceAcademicPeriods(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  getDocumentsExamsStore() {
+    if (!this._documentsExamsStore) {
+      const { createDocumentsExamsMemoryStore } = require("./documentsExamsMemoryStore");
+      this._documentsExamsStore = createDocumentsExamsMemoryStore({
+        school: seedData.school,
+        schools: seedData.platformSchools,
+      });
+      if (shouldSeedDemoData()) {
+        const store = this._documentsExamsStore;
+        for (const exam of seedData.exams ?? []) {
+          const school = store.registerSchool({ code: exam.schoolCode });
+          if (school) void store.insertExam(school.id, exam);
+        }
+        for (const bulletin of seedData.bulletins ?? []) {
+          const school = store.registerSchool({ code: bulletin.schoolCode });
+          if (school) void store.generateReportCard(school.id, bulletin);
+        }
+        for (const document of seedData.documents ?? []) {
+          const school = store.registerSchool({ code: document.schoolCode });
+          if (school) {
+            void store.insertSchoolDocument(school.id, {
+              ...document,
+              status: String(document.status).includes("génération") ? "generating" : "available",
+            });
+          }
+        }
+      }
+    }
+    return this._documentsExamsStore;
+  }
+
+  async listDocumentsExamsProjection() {
+    const store = this.getDocumentsExamsStore();
+    const exams = [];
+    const bulletins = [];
+    const documents = [];
+    for (const school of [seedData.school, ...(seedData.platformSchools ?? [])]) {
+      const registered = store.registerSchool(school);
+      if (!registered) continue;
+      exams.push(...(await store.listExams(registered.id)));
+      bulletins.push(...(await store.listReportCards(registered.id)));
+      documents.push(...(await store.listSchoolDocuments(registered.id)));
+    }
+    return { exams, bulletins, documents };
+  }
+
+  async listExams(principal, schoolCode) {
+    const { listExams } = require("../lib/documentsExamsService");
+    return listExams(this, principal, schoolCode);
+  }
+
+  async getExam(examId, principal, schoolCode) {
+    const { getExam } = require("../lib/documentsExamsService");
+    return getExam(this, principal, examId, schoolCode);
+  }
+
+  async createExam(payload, principal, auditMeta, schoolCode) {
+    const { createExam } = require("../lib/documentsExamsService");
+    return createExam(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  async patchExam(examId, payload, principal, auditMeta, schoolCode) {
+    const { patchExam } = require("../lib/documentsExamsService");
+    return patchExam(this, examId, payload, principal, auditMeta, schoolCode);
+  }
+
+  async validateExam(examId, principal, auditMeta, schoolCode) {
+    const { validateExam } = require("../lib/documentsExamsService");
+    return validateExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  async cancelExam(examId, principal, auditMeta, schoolCode) {
+    const { cancelExam } = require("../lib/documentsExamsService");
+    return cancelExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  async archiveExam(examId, principal, auditMeta, schoolCode) {
+    const { archiveExam } = require("../lib/documentsExamsService");
+    return archiveExam(this, examId, principal, auditMeta, schoolCode);
+  }
+
+  async listReportCards(principal, schoolCode) {
+    const { listReportCards } = require("../lib/documentsExamsService");
+    return listReportCards(this, principal, schoolCode);
+  }
+
+  async generateReportCard(payload, principal, auditMeta, schoolCode) {
+    const { generateReportCard } = require("../lib/documentsExamsService");
+    return generateReportCard(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  async publishReportCard(cardId, principal, auditMeta, schoolCode) {
+    const { publishReportCard } = require("../lib/documentsExamsService");
+    return publishReportCard(this, cardId, principal, auditMeta, schoolCode);
+  }
+
+  async archiveReportCard(cardId, principal, auditMeta, schoolCode) {
+    const { archiveReportCard } = require("../lib/documentsExamsService");
+    return archiveReportCard(this, cardId, principal, auditMeta, schoolCode);
+  }
+
+  async listReportCardTemplates(principal, schoolCode) {
+    const { listTemplates } = require("../lib/documentsExamsService");
+    return listTemplates(this, principal, schoolCode);
+  }
+
+  async upsertReportCardTemplate(payload, principal, auditMeta, schoolCode) {
+    const { upsertTemplate } = require("../lib/documentsExamsService");
+    return upsertTemplate(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  async archiveReportCardTemplate(templateId, principal, auditMeta, schoolCode) {
+    const { archiveTemplate } = require("../lib/documentsExamsService");
+    return archiveTemplate(this, templateId, principal, auditMeta, schoolCode);
+  }
+
+  async listSchoolDocuments(principal, schoolCode) {
+    const { listSchoolDocuments } = require("../lib/documentsExamsService");
+    return listSchoolDocuments(this, principal, schoolCode);
+  }
+
+  async createSchoolDocument(payload, principal, auditMeta, schoolCode) {
+    const { createSchoolDocument } = require("../lib/documentsExamsService");
+    return createSchoolDocument(this, payload, principal, auditMeta, schoolCode);
+  }
+
+  async patchSchoolDocument(documentId, payload, principal, auditMeta, schoolCode) {
+    const { patchSchoolDocument } = require("../lib/documentsExamsService");
+    return patchSchoolDocument(this, documentId, payload, principal, auditMeta, schoolCode);
+  }
+
+  async archiveSchoolDocument(documentId, principal, auditMeta, schoolCode) {
+    const { archiveSchoolDocument } = require("../lib/documentsExamsService");
+    return archiveSchoolDocument(this, documentId, principal, auditMeta, schoolCode);
   }
 }
 

@@ -44,25 +44,16 @@ export async function syncResidualBackOfficePatch(
     }
   }
 
-  if (Array.isArray(patch.exams)) {
-    await api.put("/backoffice/planning-exams", { exams: patch.exams });
-  }
-
-  if (Array.isArray(patch.bulletins)) {
-    await api.put("/backoffice/report-cards", { bulletins: patch.bulletins });
-  }
-
-  if (Array.isArray(patch.documents)) {
-    await api.put("/backoffice/establishment-documents", { documents: patch.documents });
+  if (Array.isArray(patch.exams) || Array.isArray(patch.bulletins) || Array.isArray(patch.documents)) {
+    throw new Error(
+      "Les examens, bulletins et documents ne sont plus enregistrables via le JSON résiduel. Utilisez les APIs canoniques.",
+    );
   }
 }
 
 export function extractResidualPatch(patch: Partial<BackOfficeState>): Partial<BackOfficeState> {
   const residual: Partial<BackOfficeState> = {};
   if (patch.academicConfigs) residual.academicConfigs = patch.academicConfigs;
-  if (patch.exams) residual.exams = patch.exams;
-  if (patch.bulletins) residual.bulletins = patch.bulletins;
-  if (patch.documents) residual.documents = patch.documents;
   return residual;
 }
 

@@ -82,9 +82,10 @@ function runStaticGuards() {
   assert.match(server, /sendBackOfficeStateReadRemoved/);
   assert.match(server, /sendBackOfficeStateReadRemoved/);
   assert.match(server, /overlayResidualProjection/);
-  assert.match(server, /exams: residual\.exams \?\? \[\]/);
+  assert.match(server, /exams: canonical\.exams \?\? \[\]/);
   assert.match(server, /requirePermission\("GET \/api\/backoffice\/planning-exams"\)/);
   assert.match(server, /requirePermission\("PUT \/api\/backoffice\/planning-exams"\)/);
+  assert.match(server, /LEGACY_EXAMS_WRITE_FORBIDDEN/);
   assert.match(domainLoaders, /loadDomains/);
   assert.doesNotMatch(dataContext, /fetchDomainBackOfficeState/);
   assert.doesNotMatch(dataContext, /api\.put\([\s\S]*\/backoffice\/state/);
@@ -226,7 +227,7 @@ async function runResidualGuards(superToken) {
 
   const beforeExams = await request("/backoffice/planning-exams", { token: adminCd });
   assert.equal(beforeExams.status, 200);
-  const runtimeExamCount = (beforeExams.data?.exams ?? []).length;
+  assert.ok(Array.isArray(beforeExams.data?.exams));
 
   const seeded = await request("/backoffice/planning-exams", {
     method: "PUT",
@@ -235,51 +236,15 @@ async function runResidualGuards(superToken) {
       exams: [{ id: "EXAM-EMPTY-1", schoolCode: "CD-2026-0001", title: "Provisoire" }],
     },
   });
-  assert.equal(seeded.status, 200, JSON.stringify(seeded.data));
+  assert.equal(seeded.status, 400, JSON.stringify(seeded.data));
+  assert.equal(seeded.data?.code, "LEGACY_EXAMS_WRITE_FORBIDDEN");
 
-  const cleared = await request("/backoffice/planning-exams", {
-    method: "PUT",
-    token: adminCd,
-    body: { exams: [] },
-  });
-  assert.equal(cleared.status, 200);
-
-  const afterExams = await request("/backoffice/planning-exams", { token: adminCd });
-  assert.equal(afterExams.status, 200);
-  assert.deepEqual(afterExams.data?.exams ?? [], [], "projection vide canonique après remplacement []");
-  if (runtimeExamCount > 0) {
-    assert.notDeepEqual(
-      afterExams.data?.exams ?? [],
-      beforeExams.data?.exams ?? [],
-      "le fallback runtime ne doit pas réapparaître après vidage PG",
-    );
-  }
-
-  const auditBeforeReplace = await countAuditRows(superToken, {
-    action: "replace_residual_exam",
-    schoolCode: "CD-2026-0001",
-  });
-  const allowed = await request("/backoffice/planning-exams", {
-    method: "PUT",
-    token: adminCd,
-    body: {
-      exams: [{ id: "EXAM-AUDIT-1", schoolCode: "CD-2026-0001", title: "Audit OK" }],
-    },
-  });
-  assert.equal(allowed.status, 200);
-  const auditAfterReplace = await countAuditRows(superToken, {
-    action: "replace_residual_exam",
-    schoolCode: "CD-2026-0001",
-  });
-  assert.ok(auditAfterReplace > auditBeforeReplace, "audit transactionnel attendu sur remplacement autorisé");
-
-  await request("/backoffice/planning-exams", {
-    method: "PUT",
-    token: adminCd,
-    body: {
-      exams: [{ id: "EXAM-KEEP-CD", schoolCode: "CD-2026-0001", title: "Canonique CD" }],
-    },
-  });
+  const afterForbidden = await request("/backoffice/planning-exams", { token: adminCd });
+  assert.equal(afterForbidden.status, 200);
+  assert.ok(
+    !(afterForbidden.data?.exams ?? []).some((exam) => exam.id === "EXAM-EMPTY-1"),
+    "aucun examen JSON n'est créé par PUT legacy",
+  );
 
   const invalidPayloadCases = [
     ["/backoffice/planning-exams", {}],
@@ -290,16 +255,12 @@ async function runResidualGuards(superToken) {
   ];
 
   for (const [route, body] of invalidPayloadCases) {
-    const auditAction = route.includes("planning")
-      ? "replace_residual_exam"
-      : route.includes("report")
-        ? "replace_residual_bulletin"
-        : "replace_residual_document";
-    const auditBefore = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
     const rejected = await request(route, { method: "PUT", token: adminCd, body });
-    assert.equal(rejected.status, 400, `${route} doit rejeter payload invalide: ${JSON.stringify(body)}`);
-    const auditAfter = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
-    assert.equal(auditAfter, auditBefore, `${route} ne doit pas auditer un payload invalide`);
+    assert.equal(rejected.status, 400, `${route} doit rejeter l'écriture legacy: ${JSON.stringify(body)}`);
+    assert.ok(
+      String(rejected.data?.code ?? "").includes("LEGACY_"),
+      `${route} code LEGACY_* attendu: ${JSON.stringify(rejected.data)}`,
+    );
   }
 
   const foreignCases = [
@@ -313,30 +274,22 @@ async function runResidualGuards(superToken) {
   ];
 
   for (const [route, key, item] of foreignCases) {
-    const auditAction = `replace_residual_${key === "exams" ? "exam" : key === "bulletins" ? "bulletin" : "document"}`;
-    const auditBefore = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
     const rejected = await request(route, {
       method: "PUT",
       token: adminCd,
       body: { [key]: [item] },
     });
     assert.equal(rejected.status, 400, `${route} doit rejeter schoolCode imbriqué BI`);
-    const auditAfter = await countAuditRows(superToken, { action: auditAction, schoolCode: "CD-2026-0001" });
-    assert.equal(auditAfter, auditBefore, `${route} ne doit pas auditer un payload rejeté`);
   }
 
   const preservedExams = await request("/backoffice/planning-exams", { token: adminCd });
   assert.equal(preservedExams.status, 200);
   assert.ok(
-    (preservedExams.data?.exams ?? []).some((exam) => exam.id === "EXAM-KEEP-CD"),
-    "les éléments CD existants ne doivent pas être archivés par un payload étranger rejeté",
-  );
-  assert.ok(
     !(preservedExams.data?.exams ?? []).some((exam) => exam.id === "EXAM-FOREIGN"),
     "aucun examen BI injecté ne doit apparaître en projection CD",
   );
 
-  console.log("OK http: RBAC résiduel, isolation CD/BI, projection vide, audit, schoolCode imbriqué");
+  console.log("OK http: RBAC résiduel, isolation CD/BI, PUT legacy forbidden, projection canonique");
 }
 
 async function runHttpGuards() {

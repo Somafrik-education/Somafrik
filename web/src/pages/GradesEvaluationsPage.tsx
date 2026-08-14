@@ -20,6 +20,7 @@ import {
   ToolLayout,
 } from "../design-system";
 import { pedagogyApi } from "../lib/pedagogyApi";
+import { reportCardsApi } from "../lib/reportCardsApi";
 import { classNamesMatch } from "../lib/classRules";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
 import {
@@ -70,7 +71,7 @@ function uniqueClassNames(students: Record<string, unknown>[], classes: Record<s
 
 export function GradesEvaluationsPage() {
   const { session } = useAuth();
-  const { state, update, refresh, loading, error: syncError, retryFailedSync } = useData();
+  const { state, refresh, loading, error: syncError, retryFailedSync } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -163,7 +164,15 @@ export function GradesEvaluationsPage() {
         }
       }
       if (patch.bulletins) {
-        await update({ bulletins: patch.bulletins });
+        for (const bulletin of patch.bulletins) {
+          const row = bulletin as Record<string, unknown>;
+          if (!row.studentId) continue;
+          await reportCardsApi.generate({
+            studentId: row.studentId,
+            period: row.period,
+            className: row.className,
+          });
+        }
       }
       await refresh();
       return { ok: true as const };

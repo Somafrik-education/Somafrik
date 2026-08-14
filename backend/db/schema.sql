@@ -358,15 +358,20 @@ CREATE TABLE IF NOT EXISTS exams (
   class_id UUID NOT NULL REFERENCES classes(id),
   subject_id UUID REFERENCES subjects(id),
   term_id UUID REFERENCES terms(id),
+  academic_year_id UUID REFERENCES academic_years(id),
+  evaluation_type_id UUID REFERENCES evaluation_types(id),
   exam_code VARCHAR(64) NOT NULL UNIQUE,
   name TEXT NOT NULL,
   exam_type TEXT NOT NULL,
   exam_date DATE NOT NULL,
+  starts_at TIMESTAMPTZ,
+  ends_at TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'draft',
   created_by UUID REFERENCES users(id),
   published_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT exams_status_check CHECK (status IN ('draft', 'scheduled', 'validated', 'completed', 'cancelled', 'archived'))
 );
 
 CREATE TABLE IF NOT EXISTS exam_results (
@@ -402,6 +407,60 @@ CREATE TABLE IF NOT EXISTS student_documents (
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS report_cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  student_id UUID NOT NULL REFERENCES students(id),
+  class_id UUID REFERENCES classes(id),
+  academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+  term_id UUID NOT NULL REFERENCES terms(id),
+  status TEXT NOT NULL DEFAULT 'generated',
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  published_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT report_cards_status_check CHECK (status IN ('draft', 'generated', 'published', 'archived')),
+  CONSTRAINT report_cards_student_term_unique UNIQUE (school_id, student_id, academic_year_id, term_id)
+);
+
+CREATE TABLE IF NOT EXISTS report_card_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  class_id UUID REFERENCES classes(id),
+  academic_year_id UUID REFERENCES academic_years(id),
+  template_type TEXT NOT NULL DEFAULT 'bulletin',
+  layout JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT 'active',
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT report_card_templates_status_check CHECK (status IN ('active', 'archived')),
+  CONSTRAINT report_card_templates_type_check CHECK (template_type IN ('bulletin', 'attestation', 'certificate'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_templates_school_class
+  ON report_card_templates (school_id, class_id, template_type)
+  WHERE class_id IS NOT NULL AND status = 'active';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_templates_school_default
+  ON report_card_templates (school_id, template_type)
+  WHERE class_id IS NULL AND status = 'active';
+
+CREATE TABLE IF NOT EXISTS school_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  student_id UUID REFERENCES students(id),
+  document_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  storage_key TEXT,
+  mime_type TEXT,
+  status TEXT NOT NULL DEFAULT 'available',
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT school_documents_status_check CHECK (status IN ('available', 'generating', 'archived'))
 );
 
 CREATE TABLE IF NOT EXISTS promotion_decisions (
