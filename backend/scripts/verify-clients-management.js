@@ -156,10 +156,10 @@ async function main() {
     });
     assert.equal(announcement.status, 201, JSON.stringify(announcement.data));
 
-    const state = await request("/backoffice/state", { token: schoolToken });
-    assert.equal(state.status, 200);
-    assert.ok(Array.isArray(state.data.contacts));
-    assert.ok(state.data.contacts.some((row) => row.phone === "+243900111222"));
+    const contactsList = await request("/backoffice/contacts", { token: schoolToken });
+    assert.equal(contactsList.status, 200);
+    assert.ok(Array.isArray(contactsList.data));
+    assert.ok(contactsList.data.some((row) => row.phone === "+243900111222"));
 
     const countryAdminToken = await login("admin-rdc", "1234");
     const crossTenant = await request("/backoffice/contacts", {

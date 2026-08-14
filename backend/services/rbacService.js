@@ -129,6 +129,21 @@ const routePermissions = {
     "ALL_PRIVILEGES",
     "COUNTRY_PRIVILEGES",
   ],
+  "GET /api/backoffice/establishments/:schoolCode/academic-config": [
+    "Gérer planning académique",
+    "Gérer classes",
+    "Paramètres Établissement:READ",
+    "Paramètres Établissement:UPDATE",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
+  "PUT /api/backoffice/establishments/:schoolCode/academic-config": [
+    "Gérer planning académique",
+    "Gérer classes",
+    "Paramètres Établissement:UPDATE",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
   "PUT /api/backoffice/planning-exams": [
     "Organiser examens",
     "Valider examens",

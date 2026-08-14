@@ -375,12 +375,12 @@ async function runPostgresHttpGuards(databaseUrl) {
     });
     assert.equal(validSchedule.status, 201, JSON.stringify(validSchedule.data));
 
-    const state = await request(PG_PORT, "/backoffice/state", { token: adminToken });
-    assert.equal(state.status, 200);
-    assert.ok(Array.isArray(state.data.courses), "projection courses en lecture");
+    const coursesList = await request(PG_PORT, "/courses", { token: adminToken });
+    assert.equal(coursesList.status, 200, JSON.stringify(coursesList.data));
+    assert.ok(Array.isArray(coursesList.data), "projection courses en lecture");
     assert.ok(
-      (state.data.courses ?? []).some((row) => row.className === "6ème A" && row.name === "Mathématiques"),
-      "cours canonique visible dans la projection",
+      (coursesList.data ?? []).some((row) => row.className === "6ème A" && row.name === "Mathématiques"),
+      "cours canonique visible via GET /courses",
     );
 
     const crossTenant = await request(PG_PORT, "/courses", {

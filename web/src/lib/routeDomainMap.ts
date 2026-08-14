@@ -1,8 +1,27 @@
 import type { DomainKey } from "./domainLoaders";
+import { filterDomainsByPermissions, layoutDomainsForContext } from "./domainPermissions";
+import type { PermissionContext } from "./permissions";
 
 const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
-  { prefix: "/tableau-de-bord", domains: ["schools", "users", "countries", "subscriptions", "dashboardChartConfig", "rolePermissions", "students", "teachers", "classes", "payments"] },
-  { prefix: "/etablissement/vue-ensemble", domains: ["schools", "students", "teachers", "classes", "users", "payments", "presences", "notes", "dashboardChartConfig"] },
+  {
+    prefix: "/tableau-de-bord",
+    domains: [
+      "schools",
+      "users",
+      "countries",
+      "subscriptions",
+      "dashboardChartConfig",
+      "rolePermissions",
+      "students",
+      "teachers",
+      "classes",
+      "payments",
+    ],
+  },
+  {
+    prefix: "/etablissement/vue-ensemble",
+    domains: ["schools", "students", "teachers", "classes", "users", "payments", "presences", "notes"],
+  },
   { prefix: "/etablissement/comptes-utilisateurs", domains: ["users", "contacts", "schools"] },
   { prefix: "/etablissement/relations-parent-enfant", domains: ["relations", "students", "contacts"] },
   { prefix: "/etablissement/eleves", domains: ["students", "classes", "schools"] },
@@ -32,14 +51,12 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   { prefix: "/administration", domains: ["users", "schools", "countries"] },
 ];
 
-/** Domaines chargés sur toutes les pages authentifiées (topbar, recherche). */
-export const LAYOUT_DOMAINS: DomainKey[] = ["schools", "notifications", "messages", "announcements"];
-
-export function domainsForPath(pathname: string): DomainKey[] {
+export function domainsForPath(pathname: string, ctx: PermissionContext): DomainKey[] {
   const match = ROUTE_DOMAIN_RULES.filter(
     (rule) => pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`),
   ).sort((a, b) => b.prefix.length - a.prefix.length)[0];
 
   const routeDomains = match?.domains ?? [];
-  return [...new Set([...LAYOUT_DOMAINS, ...routeDomains])];
+  const combined = [...new Set([...layoutDomainsForContext(ctx), ...routeDomains])];
+  return filterDomainsByPermissions(combined, ctx);
 }

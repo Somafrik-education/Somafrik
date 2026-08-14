@@ -32,13 +32,8 @@ const ActiveSchoolContext = createContext<ActiveSchoolContextValue | null>(null)
 
 export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
-  const { state, ensureDomains } = useData();
+  const { state, ensureDomains, invalidateDomains } = useData();
   const user = session?.user ?? null;
-
-  useEffect(() => {
-    if (!session?.accessToken) return;
-    void ensureDomains(["schools"]);
-  }, [session?.accessToken, ensureDomains]);
 
   const availableSchools = useMemo(() => scopedSchools(user, state), [user, state]);
   const availableCodes = useMemo(() => availableSchools.map((school) => school.code), [availableSchools]);
@@ -46,6 +41,19 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   const [activeSchoolCode, setActiveSchoolCodeState] = useState(() =>
     pickInitialSchoolCode(user, availableCodes),
   );
+
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    void ensureDomains(["schools"]).catch(() => undefined);
+  }, [session?.accessToken, ensureDomains]);
+
+  useEffect(() => {
+    invalidateDomains(["academicConfigs"], { schoolCode: activeSchoolCode });
+    if (!activeSchoolCode || activeSchoolCode === "*") return;
+    void ensureDomains(["academicConfigs"], { schoolCode: activeSchoolCode, force: true }).catch(
+      () => undefined,
+    );
+  }, [activeSchoolCode, ensureDomains, invalidateDomains]);
 
   useEffect(() => {
     setActiveSchoolCodeState((current) => {

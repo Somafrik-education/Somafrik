@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useAuth } from "./AuthContext";
 import { mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
-import { domainsFromPatch, loadDomains, type DomainKey } from "../lib/domainLoaders";
+import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
@@ -44,6 +44,11 @@ interface UpdateOptions {
   schoolCode?: string;
 }
 
+interface EnsureDomainsOptions {
+  schoolCode?: string;
+  force?: boolean;
+}
+
 interface DataContextValue {
   state: BackOfficeState;
   loading: boolean;
@@ -51,9 +56,11 @@ interface DataContextValue {
   /** HOTFIX-SYNC-01 — journal des mutations non synchronisées. */
   syncJournal: SyncOutboxEntry[];
   /** Recharge les domaines déjà chargés, ou ceux passés en argument. */
-  refresh: (domains?: DomainKey[]) => Promise<void>;
+  refresh: (domains?: DomainKey[], options?: EnsureDomainsOptions) => Promise<void>;
   /** Charge les domaines demandés s'ils ne le sont pas encore. */
-  ensureDomains: (domains: DomainKey[]) => Promise<void>;
+  ensureDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => Promise<void>;
+  /** Invalide le cache de domaines (ex. changement d'établissement actif). */
+  invalidateDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => void;
   update: (patch: Partial<BackOfficeState>, options?: UpdateOptions) => Promise<void>;
   retryFailedSync: () => Promise<void>;
 }
@@ -119,7 +126,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
   const sessionUserRef = useRef(session?.user ?? null);
   sessionUserRef.current = session?.user ?? null;
-  const loadedDomainsRef = useRef<Set<DomainKey>>(new Set());
+  const loadedDomainsRef = useRef<Set<string>>(new Set());
+  const activeSchoolCodeRef = useRef("");
+
+  const rememberSchoolCode = useCallback((schoolCode?: string) => {
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    if (normalized && normalized !== "*") {
+      activeSchoolCodeRef.current = normalized;
+    }
+  }, []);
   const syncPausedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,9 +145,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSyncJournal(listActiveOutboxEntries(entries));
   }, []);
 
+  const cacheKeysForDomains = useCallback((domains: DomainKey[], schoolCode?: string) => {
+    return domains.map((domain) => domainCacheKey(domain, schoolCode));
+  }, []);
+
   const mergeLoadedDomains = useCallback(
-    (remote: Partial<BackOfficeState>, domains: DomainKey[]) => {
-      for (const key of domains) loadedDomainsRef.current.add(key);
+    (remote: Partial<BackOfficeState>, cacheKeys: string[]) => {
+      for (const key of cacheKeys) loadedDomainsRef.current.add(key);
       setState((prev) => {
         const merged = mergeRemoteSnapshot(prev, remote);
         const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
@@ -144,38 +163,66 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const invalidateDomains = useCallback((domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
+    for (const domain of domains) {
+      loadedDomainsRef.current.delete(domainCacheKey(domain, options.schoolCode));
+    }
+  }, []);
+
   const refreshDomains = useCallback(
-    async (domains?: DomainKey[]) => {
+    async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
       if (!session || syncPausedRef.current) return;
-      const keys = domains?.length
-        ? domains
-        : [...loadedDomainsRef.current];
+      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
+      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+
+      let keys = domains;
+      if (!keys?.length) {
+        keys = [...new Set(
+          [...loadedDomainsRef.current].map((cacheKey) => cacheKey.split(":")[0] as DomainKey),
+        )];
+      }
       if (!keys.length) return;
 
       setLoading(true);
       try {
-        const remote = await loadDomains(keys);
-        mergeLoadedDomains(remote, keys);
+        const result = await loadDomains(keys, { schoolCode });
+        if (result.loaded.length) {
+          mergeLoadedDomains(result.data, cacheKeysForDomains(result.loaded, schoolCode));
+        }
         const failure = formatOutboxFailureMessage(loadSyncOutbox());
-        setError(failure);
+        const loadError = result.serverErrors.map((entry) => `${entry.domain}: ${entry.message}`).join(" ; ");
+        setError(failure || loadError || null);
+        if (result.serverErrors.length) {
+          throw new Error(loadError);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Erreur de chargement");
+        if (err instanceof Error && err.message) setError(err.message);
+        else setError("Erreur de chargement");
         throw err;
       } finally {
         setLoading(false);
       }
     },
-    [session, mergeLoadedDomains],
+    [session, mergeLoadedDomains, cacheKeysForDomains, rememberSchoolCode],
   );
 
   const ensureDomains = useCallback(
-    async (domains: DomainKey[]) => {
+    async (domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
       if (!session) return;
-      const pending = domains.filter((key) => !loadedDomainsRef.current.has(key));
+      rememberSchoolCode(options.schoolCode ?? activeSchoolCodeRef.current);
+      const schoolCode = options.schoolCode ?? activeSchoolCodeRef.current;
+      const pending = domains.filter((domain) => {
+        const cacheKey = domainCacheKey(domain, schoolCode);
+        if (options.force) return true;
+        return !loadedDomainsRef.current.has(cacheKey);
+      });
       if (!pending.length) return;
-      await refreshDomains(pending);
+      if (options.force) {
+        invalidateDomains(pending, { schoolCode });
+      }
+      await refreshDomains(pending, { schoolCode });
     },
-    [session, refreshDomains],
+    [session, refreshDomains, invalidateDomains, rememberSchoolCode],
   );
 
   useEffect(() => {
@@ -277,8 +324,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         const refreshKeys = domainsFromPatch(residualPatch);
         if (refreshKeys.length) {
-          const remote = await loadDomains(refreshKeys);
-          mergeLoadedDomains(remote, refreshKeys);
+          const targetSchool =
+            String(options.schoolCode ?? sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase() || undefined;
+          const result = await loadDomains(refreshKeys, { schoolCode: targetSchool });
+          if (result.loaded.length) {
+            mergeLoadedDomains(result.data, cacheKeysForDomains(result.loaded, targetSchool));
+          }
         }
 
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
@@ -319,7 +370,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }, 1500);
       }
     },
-    [mergeLoadedDomains, persistJournal],
+    [mergeLoadedDomains, persistJournal, cacheKeysForDomains],
   );
 
   const retryFailedSync = useCallback(async () => {
@@ -348,10 +399,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       syncJournal,
       refresh: refreshDomains,
       ensureDomains,
+      invalidateDomains,
       update,
       retryFailedSync,
     }),
-    [state, loading, error, syncJournal, refreshDomains, ensureDomains, update, retryFailedSync],
+    [state, loading, error, syncJournal, refreshDomains, ensureDomains, invalidateDomains, update, retryFailedSync],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

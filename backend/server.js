@@ -798,8 +798,49 @@ app.delete("/api/assignments/:assignmentId", requireAuth, requirePermission("DEL
 }));
 
 app.get("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
-  const config = await repository.getAcademicConfig(req.principal.schoolCode);
+  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const config = await repository.getAcademicConfig(schoolCode);
   res.json(config);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/academic-config", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/academic-config"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const config = await repository.getAcademicConfig(schoolCode);
+  res.json(config);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/academic-config", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/academic-config"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
+  const payload = stripClientSchoolCode(req.body ?? {});
+  const saved = await repository.withTransaction(async (tx) => {
+    const scope = repository.createTxScope(tx);
+    const result = await scope.saveAcademicConfig(schoolCode, payload, tx);
+    await scope.recordAudit(
+      {
+        schoolCode,
+        userId: req.principal?.sub,
+        action: "save_academic_config",
+        entityType: "academic_config",
+        entityId: schoolCode,
+        newValue: result,
+        ipAddress: req.ip ?? "",
+        userAgent: req.get("user-agent") ?? "",
+      },
+      tx,
+    );
+    if (typeof repository.invalidateCachedDataset === "function") {
+      repository.invalidateCachedDataset();
+    } else {
+      repository.cachedDataset = null;
+    }
+    return result;
+  });
+  res.json(saved);
 }));
 
 app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academic-config"), asyncHandler(async (req, res) => {

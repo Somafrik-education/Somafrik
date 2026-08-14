@@ -28,7 +28,10 @@ export async function syncResidualBackOfficePatch(
 
     if (scopedEntries.length === 1) {
       const [, config] = scopedEntries[0];
-      await api.put("/academic-config", config as Record<string, unknown>);
+      await api.put(
+        `/backoffice/establishments/${encodeURIComponent(scopedSchool)}/academic-config`,
+        config as Record<string, unknown>,
+      );
     }
   }
 

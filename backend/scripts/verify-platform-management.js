@@ -156,10 +156,6 @@ const subscription = await request("/backoffice/subscriptions", {
     assert.equal(roleMap.status, 200);
     assert.ok(Array.isArray(roleMap.data["Admin School"]));
 
-    const stateRoleMap = await request("/backoffice/state", { token: superToken });
-    assert.equal(stateRoleMap.status, 200);
-    assert.ok(Array.isArray(stateRoleMap.data.rolePermissions?.["Admin School"]));
-
     const access = await request("/backoffice/subscription-access?schoolCode=CD-2026-0001", {
       token: countryAdminToken,
     });
@@ -213,7 +209,7 @@ const subscription = await request("/backoffice/subscriptions", {
     const deniedUsersPut = await request("/backoffice/state", {
       method: "PUT",
       token: superToken,
-      body: { users: stateRoleMap.data.users ?? [] },
+      body: { users: [] },
     });
     assertBackOfficeStateWriteRemoved(deniedUsersPut);
 console.log("verify-platform-management.js OK");
