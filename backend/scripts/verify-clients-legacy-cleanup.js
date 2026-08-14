@@ -15,7 +15,7 @@ const {
   stripLegacyClientsStateWrite,
 } = require("../lib/legacyClientsStateWrite");
 const { getWritableBackOfficeEntitiesForPrincipal } = require("../lib/backOfficeWritableEntities");
-const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
+const { assertBackOfficeStateReadRemoved, assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -81,7 +81,7 @@ function runUnitGuards() {
   assert.match(postgres, /ensureClientsCanonicalSchema/);
   assert.match(dataContext, /stripClientClientsFromPutPayload/);
   assert.match(mobileApi, /BACKOFFICE_STATE_WRITE_REMOVED/);
-  assert.doesNotMatch(backOffice, /users:\s*state\.users/);
+  assert.doesNotMatch(backOffice, /\/backoffice\/state/);
 
   console.log("OK unit: Clients hors PUT state et clients legacy");
 }
@@ -113,7 +113,9 @@ async function runHttpGuards() {
       body: { contacts: [{ id: "x" }], users: [] },
     });
     assertBackOfficeStateWriteRemoved(denied);
-console.log("OK http: PUT clients fail-closed");
+    assertBackOfficeStateReadRemoved(await request("/backoffice/state", { token }));
+
+    console.log("OK http: PUT/GET clients fail-closed");
   } finally {
     child.kill("SIGTERM");
     await wait(300);

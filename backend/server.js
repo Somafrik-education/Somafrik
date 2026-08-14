@@ -833,6 +833,11 @@ app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academi
   res.json(saved);
 }));
 
+app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
+  const exams = await listResidualDomainForPrincipal(req.principal, "exams");
+  res.json({ exams });
+}));
+
 app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
   const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
   const schoolCode = resolvePrincipalSchoolCode(req.principal);
@@ -852,6 +857,11 @@ app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /a
   res.json({ exams: saved });
 }));
 
+app.get("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
+  const bulletins = await listResidualDomainForPrincipal(req.principal, "bulletins");
+  res.json({ bulletins });
+}));
+
 app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
   const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
   const schoolCode = resolvePrincipalSchoolCode(req.principal);
@@ -869,6 +879,11 @@ app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api
     },
   );
   res.json({ bulletins: saved });
+}));
+
+app.get("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
+  const documents = await listResidualDomainForPrincipal(req.principal, "documents");
+  res.json({ documents });
 }));
 
 app.put("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
@@ -1840,22 +1855,14 @@ app.post("/api/backoffice/finance/unpaid/:studentId/reminders", requireAuth, req
   res.status(201).json({ reminder, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
-app.get("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
-  assertBackOfficeReader(req.principal);
-  const state = await getAuthoritativeBackOfficeState();
-  res.json(scopedBackOfficeStateForResponse(state, req.principal));
+app.get("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {
+  const { sendBackOfficeStateReadRemoved } = require("./lib/backofficeStateRemoval");
+  sendBackOfficeStateReadRemoved(res);
 }));
 
 app.put("/api/backoffice/state", requireAuth, asyncHandler(async (_req, res) => {
-  const {
-    BACKOFFICE_STATE_WRITE_REMOVED_CODE,
-    BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
-    BACKOFFICE_STATE_WRITE_REMOVED_STATUS,
-  } = require("./lib/backofficeStateRemoval");
-  res.status(BACKOFFICE_STATE_WRITE_REMOVED_STATUS).json({
-    code: BACKOFFICE_STATE_WRITE_REMOVED_CODE,
-    message: BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
-  });
+  const { sendBackOfficeStateWriteRemoved } = require("./lib/backofficeStateRemoval");
+  sendBackOfficeStateWriteRemoved(res);
 }));
 
 app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(async (req, res) => {
@@ -2646,6 +2653,15 @@ async function getAuthoritativeBackOfficeState() {
       ),
     ),
   );
+}
+
+async function listResidualDomainForPrincipal(principal, domain) {
+  if (typeof repository.listResidualProjection !== "function") {
+    return [];
+  }
+  const residual = await repository.listResidualProjection();
+  const rows = residual[domain] ?? [];
+  return tenantScopeService.filterRows(rows, principal);
 }
 
 async function overlayResidualProjection(state) {

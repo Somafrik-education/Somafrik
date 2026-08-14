@@ -5,6 +5,9 @@ const {
   BACKOFFICE_STATE_WRITE_REMOVED_CODE,
   BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
   BACKOFFICE_STATE_WRITE_REMOVED_STATUS,
+  BACKOFFICE_STATE_READ_REMOVED_CODE,
+  BACKOFFICE_STATE_READ_REMOVED_MESSAGE,
+  BACKOFFICE_STATE_READ_REMOVED_STATUS,
 } = require("./backofficeStateRemoval");
 
 function assertBackOfficeStateWriteRemoved(response, context = "") {
@@ -14,6 +17,14 @@ function assertBackOfficeStateWriteRemoved(response, context = "") {
   assert.equal(response.data?.message, BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE, suffix);
 }
 
+function assertBackOfficeStateReadRemoved(response, context = "") {
+  const suffix = context ? ` (${context})` : "";
+  assert.equal(response.status, BACKOFFICE_STATE_READ_REMOVED_STATUS, `${suffix}: ${JSON.stringify(response.data)}`);
+  assert.equal(response.data?.code, BACKOFFICE_STATE_READ_REMOVED_CODE, suffix);
+  assert.equal(response.data?.message, BACKOFFICE_STATE_READ_REMOVED_MESSAGE, suffix);
+}
+
 module.exports = {
   assertBackOfficeStateWriteRemoved,
+  assertBackOfficeStateReadRemoved,
 };

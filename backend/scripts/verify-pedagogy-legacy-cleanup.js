@@ -12,7 +12,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
-const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
+const { assertBackOfficeStateReadRemoved, assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19675;
@@ -113,21 +113,17 @@ function runUnitGuards() {
   );
 
   const postgres = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
+  const saveState = postgres.match(/async saveBackOfficeState[\s\S]*?^  \}/m);
+  assert.ok(saveState, "saveBackOfficeState présent");
   assert.match(postgres, /async getBackOfficeState\(\)[\s\S]*return null/);
-  assert.match(saveState[0], /_legacyNotes/);
-  assert.doesNotMatch(saveState[0], /syncNotesDomainFromBackOffice/);
+  assert.match(saveState[0], /createBackOfficeStateWriteRemovedError/);
 
   const webContext = fs.readFileSync(path.join(ROOT, "web/src/context/DataContext.tsx"), "utf8");
   assert.match(webContext, /stripClientPedagogyFromPutPayload/);
 
   const legacyBackOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
-  const payloadFunction = legacyBackOffice.slice(
-    legacyBackOffice.indexOf("function getBackOfficeStatePayload"),
-    legacyBackOffice.indexOf("function scheduleBackOfficeSync"),
-  );
-  assert.doesNotMatch(payloadFunction, /courses:\s*state\.courses/);
-  assert.doesNotMatch(payloadFunction, /notes:\s*state\.notes/);
-  assert.doesNotMatch(payloadFunction, /presences:\s*state\.presences/);
+  assert.doesNotMatch(legacyBackOffice, /\/backoffice\/state/);
+  assert.doesNotMatch(legacyBackOffice, /courses:\s*state\.courses/);
 
   console.log("OK unit: Pédagogie hors PUT state et clients legacy");
 }
@@ -169,8 +165,11 @@ async function runHttpGuards() {
       throw new Error(`Backend exited early (${child.exitCode}): ${stderr}`);
     }
     const token = await loginAdmin();
-    const stateBefore = await request("/backoffice/state", { token });
-    assert.equal(stateBefore.status, 200, JSON.stringify(stateBefore.data));
+    const usersBefore = await request("/users", { token });
+    assert.equal(usersBefore.status, 200, JSON.stringify(usersBefore.data));
+    const baselineUserCount = Array.isArray(usersBefore.data) ? usersBefore.data.length : 0;
+
+    assertBackOfficeStateReadRemoved(await request("/backoffice/state", { token }));
 
     for (const key of PEDAGOGY_STATE_KEYS) {
       for (const value of [[], {}, null]) {
@@ -180,20 +179,25 @@ async function runHttpGuards() {
           body: { [key]: value },
         });
         assertBackOfficeStateWriteRemoved(rejected);
-}
+      }
     }
 
     const mixed = await request("/backoffice/state", {
       method: "PUT",
       token,
-      body: { users: stateBefore.data.users ?? [], notes: [] },
+      body: { users: usersBefore.data ?? [], notes: [] },
     });
     assertBackOfficeStateWriteRemoved(mixed);
-const stateAfter = await request("/backoffice/state", { token });
-    assert.equal(stateAfter.status, 200);
-    assert.deepEqual(stateAfter.data.users?.length, stateBefore.data.users?.length);
 
-    console.log("OK http: PUT pédagogie fail-closed");
+    const usersAfter = await request("/users", { token });
+    assert.equal(usersAfter.status, 200);
+    assert.equal(
+      Array.isArray(usersAfter.data) ? usersAfter.data.length : 0,
+      baselineUserCount,
+      "aucune mutation users via PUT state rejeté",
+    );
+
+    console.log("OK http: PUT pédagogie fail-closed + GET state retiré");
   } finally {
     child.kill("SIGTERM");
   }

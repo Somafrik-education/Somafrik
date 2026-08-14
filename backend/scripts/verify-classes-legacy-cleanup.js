@@ -9,7 +9,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
-const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
+const { assertBackOfficeStateReadRemoved, assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19561;
@@ -153,16 +153,18 @@ async function runHttpGuards() {
     const token = login.data.accessToken || login.data.token;
     assert.ok(token);
 
-    const stateBefore = await request("/backoffice/state", { token });
-    assert.equal(stateBefore.status, 200);
-    assert.ok(Array.isArray(stateBefore.data.classes), "state.classes projection lecture");
+    const classesBefore = await request("/classes", { token });
+    assert.equal(classesBefore.status, 200);
+    assert.ok(Array.isArray(classesBefore.data), "GET /classes lecture");
+
+    assertBackOfficeStateReadRemoved(await request("/backoffice/state", { token }));
 
     const forbidden = await request("/backoffice/state", {
       method: "PUT",
       token,
       body: {
         classes: [
-          ...(stateBefore.data.classes ?? []),
+          ...(classesBefore.data ?? []),
           {
             id: `CLS-LEGACY-${Date.now()}`,
             name: `Legacy Forbidden ${Date.now()}`,
@@ -171,8 +173,6 @@ async function runHttpGuards() {
         ],
       },
     });
-    assertBackOfficeStateWriteRemoved(forbidden);
-assert.match(String(forbidden.data?.message ?? ""), /\/api\/classes/i);
     assertBackOfficeStateWriteRemoved(forbidden);
 
     const stamp = Date.now();
@@ -190,15 +190,15 @@ assert.match(String(forbidden.data?.message ?? ""), /\/api\/classes/i);
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.ok(created.data.classCode);
 
-    const stateAfter = await request("/backoffice/state", { token });
+    const stateAfter = await request("/classes", { token });
     assert.equal(stateAfter.status, 200);
     assert.ok(
-      (stateAfter.data.classes ?? []).some(
+      (stateAfter.data ?? []).some(
         (row) =>
           String(row.name ?? "") === `Classe Cloture ${stamp}` ||
           String(row.id ?? row.publicId ?? "") === String(created.data.classCode),
       ),
-      "classe API visible dans projection state.classes",
+      "classe API visible via GET /classes",
     );
 
     const listed = await request("/classes", { token });
@@ -208,7 +208,7 @@ assert.match(String(forbidden.data?.message ?? ""), /\/api\/classes/i);
       "/api/classes liste la classe créée",
     );
 
-    console.log("OK http: legacy state write bloqué · /api/classes + projection OK");
+    console.log("OK http: legacy state write bloqué · /api/classes OK");
   } finally {
     child.kill("SIGTERM");
     await wait(200);

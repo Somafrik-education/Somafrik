@@ -10,7 +10,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("path");
 const fs = require("fs");
-const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
+const { assertBackOfficeStateReadRemoved, assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19571;
@@ -133,16 +133,11 @@ function runUnitGuards() {
   assert.match(adminData, /entity === "classes" \|\| entity === "schools"/);
 
   const mobileApi = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
-  assert.match(mobileApi, /delete rest\.schools/);
+  assert.match(mobileApi, /BACKOFFICE_STATE_WRITE_REMOVED/);
 
   const backOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
-  const payloadFn = backOffice.match(/function getBackOfficeStatePayload\(\) \{[\s\S]*?\n\}/);
-  assert.ok(payloadFn, "getBackOfficeStatePayload présent");
-  assert.doesNotMatch(
-    payloadFn[0],
-    /schools:\s*state\.schools/,
-    "BackOffice n'inclut plus schools dans le PUT state",
-  );
+  assert.doesNotMatch(backOffice, /\/backoffice\/state/);
+  assert.doesNotMatch(backOffice, /getBackOfficeStatePayload/);
 
   const schoolsRepo = fs.readFileSync(path.join(ROOT, "backend/db/schoolsRepository.js"), "utf8");
   assert.doesNotMatch(schoolsRepo, /\+243/);
@@ -231,12 +226,14 @@ async function runHttpGuards() {
       "/api/backoffice/establishments liste l'établissement créé",
     );
 
-    const stateAfter = await request("/backoffice/state", { token });
+    const stateAfter = await request("/backoffice/establishments", { token });
     assert.equal(stateAfter.status, 200);
-    assert.ok(Array.isArray(stateAfter.data.schools), "state.schools projection lecture");
+    const establishmentRows = Array.isArray(stateAfter.data)
+      ? stateAfter.data
+      : stateAfter.data?.items ?? stateAfter.data?.data ?? [];
     assert.ok(
-      (stateAfter.data.schools ?? []).some((row) => row.code === code),
-      "établissement API visible dans projection state.schools",
+      establishmentRows.some((row) => row.code === code),
+      "/api/backoffice/establishments liste l'établissement créé",
     );
 
     const patched = await request(`/backoffice/establishments/${encodeURIComponent(code)}`, {
@@ -252,7 +249,7 @@ async function runHttpGuards() {
       token,
       body: {
         schools: [
-          ...(stateAfter.data.schools ?? []),
+          ...establishmentRows,
           {
             code: `CD-LEGACY-${stamp}`,
             name: `Legacy Forbidden ${stamp}`,
@@ -263,7 +260,6 @@ async function runHttpGuards() {
       },
     });
     assertBackOfficeStateWriteRemoved(forbidden);
-assertBackOfficeStateWriteRemoved(forbidden);
 
     const france = await request("/backoffice/establishments", {
       method: "POST",
@@ -297,24 +293,40 @@ assertBackOfficeStateWriteRemoved(forbidden);
       "aucun pays FR créé dans le référentiel",
     );
 
-    const stateAfterFrance = await request("/backoffice/state", { token });
+    const stateAfterFrance = await request("/backoffice/countries", { token });
     assert.equal(stateAfterFrance.status, 200);
+    const countryRowsAfter = Array.isArray(stateAfterFrance.data)
+      ? stateAfterFrance.data
+      : stateAfterFrance.data?.items ?? stateAfterFrance.data?.data ?? [];
     assert.equal(
-      (stateAfterFrance.data.countries ?? []).some((row) => String(row.code ?? "").toUpperCase() === "FR"),
+      countryRowsAfter.some((row) => String(row.code ?? row.iso_code ?? "").toUpperCase() === "FR"),
       false,
     );
+    const schoolsAfterFrance = await request("/backoffice/establishments", { token });
+    assert.equal(schoolsAfterFrance.status, 200);
+    const schoolRowsAfter = Array.isArray(schoolsAfterFrance.data)
+      ? schoolsAfterFrance.data
+      : schoolsAfterFrance.data?.items ?? schoolsAfterFrance.data?.data ?? [];
     assert.equal(
-      (stateAfterFrance.data.schools ?? []).some(
+      schoolRowsAfter.some(
         (row) => String(row.countryCode ?? "").toUpperCase() === "FR" || /france/i.test(String(row.country ?? "")),
       ),
       false,
       "aucun établissement France persisté",
     );
 
+    const usersBaseline = await request("/backoffice/users", { token });
+    assert.equal(usersBaseline.status, 200);
+    const subscriptionsBaseline = await request("/backoffice/subscriptions", { token });
+    assert.equal(subscriptionsBaseline.status, 200);
+    const baselineUsers = Array.isArray(usersBaseline.data)
+      ? usersBaseline.data
+      : usersBaseline.data?.items ?? usersBaseline.data?.data ?? [];
+    const baselineSubs = Array.isArray(subscriptionsBaseline.data)
+      ? subscriptionsBaseline.data
+      : subscriptionsBaseline.data?.items ?? subscriptionsBaseline.data?.data ?? [];
     const userSentinelId = `USER-LOT1-MIXED-${stamp}`;
     const subSentinelId = `SUB-LOT1-MIXED-${stamp}`;
-    const baselineUsers = [...(stateAfterFrance.data.users ?? [])];
-    const baselineSubs = [...(stateAfterFrance.data.subscriptions ?? [])];
     const userSentinel = {
       id: userSentinelId,
       name: "Sentinel Mixed Schools",
@@ -337,54 +349,70 @@ assertBackOfficeStateWriteRemoved(forbidden);
       token,
       body: {
         schools: [
-          ...(stateAfterFrance.data.schools ?? []),
+          ...schoolRowsAfter,
           { code: `CD-MIXED-USERS-${stamp}`, name: "Hack Users", country: "RDC", city: "Goma" },
         ],
         users: [...baselineUsers, userSentinel],
       },
     });
     assertBackOfficeStateWriteRemoved(mixedUsers);
-const mixedSubs = await request("/backoffice/state", {
+
+    const mixedSubs = await request("/backoffice/state", {
       method: "PUT",
       token,
       body: {
         schools: [
-          ...(stateAfterFrance.data.schools ?? []),
+          ...schoolRowsAfter,
           { code: `CD-MIXED-SUBS-${stamp}`, name: "Hack Subs", country: "RDC", city: "Goma" },
         ],
         subscriptions: [...baselineSubs, subSentinel],
       },
     });
     assertBackOfficeStateWriteRemoved(mixedSubs);
-const snapshotPut = await request("/backoffice/state", {
+
+    const snapshotPut = await request("/backoffice/state", {
       method: "PUT",
       token,
       body: {
-        ...stateAfterFrance.data,
+        schools: schoolRowsAfter,
         users: [...baselineUsers, userSentinel],
         subscriptions: [...baselineSubs, subSentinel],
       },
     });
     assertBackOfficeStateWriteRemoved(snapshotPut);
-const afterMixed = await request("/backoffice/state", { token });
-    assert.equal(afterMixed.status, 200);
+
+    const usersAfterMixed = await request("/backoffice/users", { token });
+    const subsAfterMixed = await request("/backoffice/subscriptions", { token });
+    const schoolsAfterMixed = await request("/backoffice/establishments", { token });
+    assert.equal(usersAfterMixed.status, 200);
+    assert.equal(subsAfterMixed.status, 200);
+    assert.equal(schoolsAfterMixed.status, 200);
+    const usersRows = Array.isArray(usersAfterMixed.data)
+      ? usersAfterMixed.data
+      : usersAfterMixed.data?.items ?? usersAfterMixed.data?.data ?? [];
+    const subsRows = Array.isArray(subsAfterMixed.data)
+      ? subsAfterMixed.data
+      : subsAfterMixed.data?.items ?? subsAfterMixed.data?.data ?? [];
+    const schoolsRows = Array.isArray(schoolsAfterMixed.data)
+      ? schoolsAfterMixed.data
+      : schoolsAfterMixed.data?.items ?? schoolsAfterMixed.data?.data ?? [];
     assert.equal(
-      (afterMixed.data.users ?? []).some((row) => String(row.id) === userSentinelId),
+      usersRows.some((row) => String(row.id) === userSentinelId),
       false,
       "aucune mutation partielle users",
     );
     assert.equal(
-      (afterMixed.data.subscriptions ?? []).some((row) => String(row.id) === subSentinelId),
+      subsRows.some((row) => String(row.id) === subSentinelId),
       false,
       "aucune mutation partielle subscriptions",
     );
     assert.equal(
-      (afterMixed.data.schools ?? []).some((row) => String(row.code ?? "").includes("MIXED")),
+      schoolsRows.some((row) => String(row.code ?? "").includes("MIXED")),
       false,
       "aucune mutation partielle schools",
     );
-    assert.equal((afterMixed.data.users ?? []).length, baselineUsers.length);
-    assert.equal((afterMixed.data.subscriptions ?? []).length, baselineSubs.length);
+    assert.equal(usersRows.length, baselineUsers.length);
+    assert.equal(subsRows.length, baselineSubs.length);
 
     const adminLogin = await request("/backoffice/login", {
       method: "POST",
@@ -398,7 +426,8 @@ const afterMixed = await request("/backoffice/state", { token });
       body: { schools: [{ code: "CD-HACK", name: "Hack" }] },
     });
     assertBackOfficeStateWriteRemoved(adminPut);
-const teacherLogin = await request("/backoffice/login", {
+
+    const teacherLogin = await request("/backoffice/login", {
       method: "POST",
       body: { identifier: "admin", password: "1234", schoolCode: "CD-2026-0001" },
     });
@@ -415,7 +444,7 @@ const teacherLogin = await request("/backoffice/login", {
     );
 
     console.log(
-      "OK http: pays inconnu refusé · PUT schools mixte/snapshot rejeté sans mutation partielle · /establishments + projection OK",
+      "OK http: pays inconnu refusé · PUT schools mixte/snapshot rejeté sans mutation partielle · /establishments OK",
     );
   } finally {
     child.kill("SIGTERM");

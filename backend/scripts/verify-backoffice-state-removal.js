@@ -4,16 +4,14 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  assertBackOfficeStateReadRemoved,
+  assertBackOfficeStateWriteRemoved,
+} = require("../lib/backofficeStatePutExpectation");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19699;
 const BASE = `http://127.0.0.1:${PORT}/api`;
-
-const {
-  BACKOFFICE_STATE_WRITE_REMOVED_CODE,
-  BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE,
-  BACKOFFICE_STATE_WRITE_REMOVED_STATUS,
-} = require("../lib/backofficeStateRemoval");
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -52,26 +50,54 @@ async function waitForHealth(child) {
   throw new Error("Backend health timeout");
 }
 
+function walk(dir) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory() && entry.name !== "node_modules") {
+      files.push(...walk(full));
+    } else if (entry.isFile()) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
 function runStaticGuards() {
   const patterns = [
     "backend/server.js",
     "web/src/context/DataContext.tsx",
+    "web/src/lib/fetchDomainBackOfficeState.ts",
     "Mobile/src/services/api.ts",
+    "Mobile/src/context/AdminDataContext.tsx",
     "BackOffice/app.js",
     "backend/db/postgresRepository.js",
     "backend/db/fallbackRepository.js",
   ].map((rel) => fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
-  const [server, dataContext, mobileApi, backOffice, postgres, fallback] = patterns;
+  const [server, dataContext, fetchDomain, mobileApi, mobileContext, backOffice, postgres, fallback] = patterns;
 
   assert.match(server, /BACKOFFICE_STATE_WRITE_REMOVED_CODE/);
+  assert.match(server, /sendBackOfficeStateReadRemoved/);
+  assert.match(server, /sendBackOfficeStateReadRemoved/);
   assert.match(server, /overlayResidualProjection/);
   assert.match(server, /exams: residual\.exams \?\? \[\]/);
   assert.match(server, /requirePermission\("PUT \/api\/backoffice\/planning-exams"\)/);
+  assert.match(fetchDomain, /fetchDomainBackOfficeState/);
   assert.doesNotMatch(dataContext, /api\.put\([\s\S]*\/backoffice\/state/);
+  assert.doesNotMatch(dataContext, /api\.get\([\s\S]*\/backoffice\/state/);
+  assert.doesNotMatch(dataContext, /setInterval/);
   assert.doesNotMatch(mobileApi, /\/backoffice\/state[\s\S]{0,120}method:\s*"PUT"/);
   assert.doesNotMatch(mobileApi, /method:\s*"PUT"[\s\S]{0,120}\/backoffice\/state/);
-  assert.doesNotMatch(backOffice, /method:\s*"PUT"[\s\S]{0,120}\/backoffice\/state/);
+  assert.doesNotMatch(mobileApi, /\/backoffice\/state[\s\S]{0,120}method:\s*"GET"/);
+  assert.match(mobileApi, /BACKOFFICE_STATE_READ_REMOVED/);
+  assert.doesNotMatch(mobileContext, /getBackOfficeState\(/);
+  assert.doesNotMatch(mobileContext, /setInterval/);
+  assert.doesNotMatch(backOffice, /request\(["']\/backoffice\/state["']\)/);
+  assert.doesNotMatch(backOffice, /fetch\([^)]*\/backoffice\/state/);
+  assert.doesNotMatch(backOffice, /startRealtimeSync/);
+  assert.doesNotMatch(backOffice, /refreshBackOfficeStateFromBackend/);
   assert.match(postgres, /async getBackOfficeState\(\)[\s\S]*return null/);
   assert.match(fallback, /createBackOfficeStateWriteRemovedError/);
 
@@ -97,21 +123,7 @@ function runStaticGuards() {
     }
   }
 
-  console.log("OK static: aucun writer PUT state actif côté clients");
-}
-
-function walk(dir) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory() && entry.name !== "node_modules") {
-      files.push(...walk(full));
-    } else if (entry.isFile()) {
-      files.push(full);
-    }
-  }
-  return files;
+  console.log("OK static: aucun writer/reader global actif côté clients");
 }
 
 async function login(identifier, password, schoolCode) {
@@ -158,10 +170,14 @@ async function runResidualGuards(superToken) {
 
   for (const [roleLabel, token] of forbiddenTokens) {
     for (const [route, body] of residualRoutes) {
-      const auditBefore = await countAuditRows(superToken, { action: `replace_residual_${route.includes("planning") ? "exam" : route.includes("report") ? "bulletin" : "document"}` });
+      const auditBefore = await countAuditRows(superToken, {
+        action: `replace_residual_${route.includes("planning") ? "exam" : route.includes("report") ? "bulletin" : "document"}`,
+      });
       const denied = await request(route, { method: "PUT", token, body });
       assert.equal(denied.status, 403, `${roleLabel} ${route}`);
-      const auditAfter = await countAuditRows(superToken, { action: `replace_residual_${route.includes("planning") ? "exam" : route.includes("report") ? "bulletin" : "document"}` });
+      const auditAfter = await countAuditRows(superToken, {
+        action: `replace_residual_${route.includes("planning") ? "exam" : route.includes("report") ? "bulletin" : "document"}`,
+      });
       assert.equal(auditAfter, auditBefore, `${roleLabel} ${route} ne doit pas auditer`);
     }
   }
@@ -202,9 +218,9 @@ async function runResidualGuards(superToken) {
   assert.equal(biConfig.data?.periodMode, "bi-baseline");
   assert.equal(biConfig.data?.schoolCode, "BI-2026-0002");
 
-  const beforeState = await request("/backoffice/state", { token: adminCd });
-  assert.equal(beforeState.status, 200);
-  const runtimeExamCount = (beforeState.data?.exams ?? []).length;
+  const beforeExams = await request("/backoffice/planning-exams", { token: adminCd });
+  assert.equal(beforeExams.status, 200);
+  const runtimeExamCount = (beforeExams.data?.exams ?? []).length;
 
   const seeded = await request("/backoffice/planning-exams", {
     method: "PUT",
@@ -222,18 +238,21 @@ async function runResidualGuards(superToken) {
   });
   assert.equal(cleared.status, 200);
 
-  const afterState = await request("/backoffice/state", { token: adminCd });
-  assert.equal(afterState.status, 200);
-  assert.deepEqual(afterState.data?.exams ?? [], [], "projection vide canonique après remplacement []");
+  const afterExams = await request("/backoffice/planning-exams", { token: adminCd });
+  assert.equal(afterExams.status, 200);
+  assert.deepEqual(afterExams.data?.exams ?? [], [], "projection vide canonique après remplacement []");
   if (runtimeExamCount > 0) {
     assert.notDeepEqual(
-      afterState.data?.exams ?? [],
-      beforeState.data?.exams ?? [],
+      afterExams.data?.exams ?? [],
+      beforeExams.data?.exams ?? [],
       "le fallback runtime ne doit pas réapparaître après vidage PG",
     );
   }
 
-  const auditBeforeReplace = await countAuditRows(superToken, { action: "replace_residual_exam", schoolCode: "CD-2026-0001" });
+  const auditBeforeReplace = await countAuditRows(superToken, {
+    action: "replace_residual_exam",
+    schoolCode: "CD-2026-0001",
+  });
   const allowed = await request("/backoffice/planning-exams", {
     method: "PUT",
     token: adminCd,
@@ -242,7 +261,10 @@ async function runResidualGuards(superToken) {
     },
   });
   assert.equal(allowed.status, 200);
-  const auditAfterReplace = await countAuditRows(superToken, { action: "replace_residual_exam", schoolCode: "CD-2026-0001" });
+  const auditAfterReplace = await countAuditRows(superToken, {
+    action: "replace_residual_exam",
+    schoolCode: "CD-2026-0001",
+  });
   assert.ok(auditAfterReplace > auditBeforeReplace, "audit transactionnel attendu sur remplacement autorisé");
 
   await request("/backoffice/planning-exams", {
@@ -276,14 +298,14 @@ async function runResidualGuards(superToken) {
     assert.equal(auditAfter, auditBefore, `${route} ne doit pas auditer un payload rejeté`);
   }
 
-  const preservedState = await request("/backoffice/state", { token: adminCd });
-  assert.equal(preservedState.status, 200);
+  const preservedExams = await request("/backoffice/planning-exams", { token: adminCd });
+  assert.equal(preservedExams.status, 200);
   assert.ok(
-    (preservedState.data?.exams ?? []).some((exam) => exam.id === "EXAM-KEEP-CD"),
+    (preservedExams.data?.exams ?? []).some((exam) => exam.id === "EXAM-KEEP-CD"),
     "les éléments CD existants ne doivent pas être archivés par un payload étranger rejeté",
   );
   assert.ok(
-    !(preservedState.data?.exams ?? []).some((exam) => exam.id === "EXAM-FOREIGN"),
+    !(preservedExams.data?.exams ?? []).some((exam) => exam.id === "EXAM-FOREIGN"),
     "aucun examen BI injecté ne doit apparaître en projection CD",
   );
 
@@ -320,19 +342,15 @@ async function runHttpGuards() {
         token: superToken,
         body,
       });
-      assert.equal(denied.status, BACKOFFICE_STATE_WRITE_REMOVED_STATUS, JSON.stringify(body));
-      assert.equal(denied.data?.code, BACKOFFICE_STATE_WRITE_REMOVED_CODE);
-      assert.equal(denied.data?.message, BACKOFFICE_STATE_WRITE_REMOVED_MESSAGE);
+      assertBackOfficeStateWriteRemoved(denied, JSON.stringify(body));
     }
 
     const getState = await request("/backoffice/state", { token: superToken });
-    assert.equal(getState.status, 200);
-    assert.ok(Array.isArray(getState.data?.schools));
-    assert.ok(!String(JSON.stringify(getState.data)).includes("passwordHash"));
+    assertBackOfficeStateReadRemoved(getState);
 
     await runResidualGuards(superToken);
 
-    console.log("OK http: PUT 410 + GET projection read-only");
+    console.log("OK http: PUT/GET 410 + APIs résiduelles");
   } finally {
     child.kill("SIGTERM");
     await wait(300);
