@@ -96,6 +96,16 @@ function createClientsPgStore(repo) {
           [id],
         );
       },
+      async getContactByIdForUpdate(id) {
+        return one(
+          `SELECT c.*, s.school_code, s.name AS school_name
+           FROM contacts c
+           JOIN schools s ON s.id = c.school_id
+           WHERE c.id::text = $1
+           FOR UPDATE OF c`,
+          [id],
+        );
+      },
       async insertContact(row) {
         return one(
           `INSERT INTO contacts (

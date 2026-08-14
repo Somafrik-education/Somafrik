@@ -167,6 +167,43 @@ async function main() {
     const restartProjection = await store.listProjection();
     assert.equal(restartProjection.users.length, projection.users.length);
 
+    await assert.rejects(
+      () =>
+        store.createUser(
+          {
+            firstName: "Escalade",
+            lastName: "Admin",
+            role: "Super Administrateur Somafrik",
+            schoolCode: "CD-2026-0001",
+          },
+          principal,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403 && error.code === "FORBIDDEN",
+      "Admin School ne crée pas de Super Admin",
+    );
+
+    const raceContact = await store.createContact(
+      {
+        firstName: "Race",
+        lastName: "Parent",
+        contactType: "Parent",
+        phone: "+243900000099",
+        schoolCode: "CD-2026-0001",
+      },
+      principal,
+      auditMeta,
+    );
+    const beforeUsers = await pool.query(`SELECT COUNT(*)::int AS count FROM users`);
+    const [raceA, raceB] = await Promise.all([
+      store.provisionContactAccount(raceContact.id, { studentId: student.rows[0].id }, principal, auditMeta),
+      store.provisionContactAccount(raceContact.id, { studentId: student.rows[0].id }, principal, auditMeta),
+    ]);
+    const afterUsers = await pool.query(`SELECT COUNT(*)::int AS count FROM users`);
+    assert.equal(afterUsers.rows[0].count - beforeUsers.rows[0].count, 1, "un seul utilisateur créé en concurrence");
+    assert.equal([raceA, raceB].filter((row) => row.created).length, 1, "une seule branche created=true");
+    assert.equal(raceA.user.id, raceB.user.id, "même compte parent après concurrence");
+
     console.log("clientsRepository.pg.test.js OK");
   } finally {
     await pool.end();

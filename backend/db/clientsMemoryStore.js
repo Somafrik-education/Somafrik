@@ -48,6 +48,8 @@ function createClientsMemoryStore(seed = {}) {
     return asTrimmed(school.countryCode ?? school.country_code ?? "CD").toUpperCase();
   }
 
+  const auditLog = [];
+
   function bind() {
     return {
       async getSchoolByCode(code) {
@@ -124,6 +126,9 @@ function createClientsMemoryStore(seed = {}) {
           school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
           school_name: school?.name ?? "",
         };
+      },
+      async getContactByIdForUpdate(id) {
+        return this.getContactById(id);
       },
       async insertContact(row) {
         const saved = {
@@ -338,8 +343,8 @@ function createClientsMemoryStore(seed = {}) {
         };
         return this.getAnnouncementById(id);
       },
-      async recordClientsAudit() {
-        /* no-op in memory */
+      async recordClientsAudit(entry) {
+        auditLog.push({ ...entry });
       },
     };
   }
@@ -489,6 +494,10 @@ function createClientsMemoryStore(seed = {}) {
     createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
     updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
     archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),
+    getAuditLog: () => [...auditLog],
+    clearAuditLog: () => {
+      auditLog.length = 0;
+    },
     _tables: tables,
   };
 

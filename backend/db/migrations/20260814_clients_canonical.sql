@@ -1,5 +1,4 @@
 -- LOT 7 — Clients / comptes (idempotent, sans backfill JSON)
-\i clientsSchema fragment applied via backend/db/clientsSchema.js at runtime
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
 
@@ -97,3 +96,9 @@ CREATE TABLE IF NOT EXISTS school_message_reads (
   read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (message_id, user_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_contacts_school ON contacts (school_id);
+CREATE INDEX IF NOT EXISTS idx_contact_relations_contact ON contact_relations (contact_id);
+CREATE INDEX IF NOT EXISTS idx_contact_relations_student ON contact_relations (student_id);
+CREATE INDEX IF NOT EXISTS idx_school_messages_conversation ON school_messages (conversation_id);
+CREATE INDEX IF NOT EXISTS idx_school_messages_school ON school_messages (school_id);

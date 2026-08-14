@@ -23,6 +23,32 @@ const {
   mapAnnouncementRow,
   parsePayload,
 } = require("./clientsManagement");
+const {
+  assertAssignableUserRole,
+  assertProvisionContactRole,
+  toDbRole,
+  PROVISION_CONTACT_ROLE,
+} = require("./clientsRolePolicy");
+
+async function assertStudentInContactSchool(tx, contact, studentId) {
+  const student = await tx.getStudentById(studentId);
+  if (!student || student.school_id !== contact.school_id) {
+    throw createClientsError(404, "Élève introuvable dans cet établissement.", CLIENTS_ERROR.STUDENT_NOT_FOUND);
+  }
+  return student;
+}
+
+async function assertParticipantsInSchool(tx, school, participantUserIds) {
+  for (const userId of participantUserIds) {
+    const user = await tx.getUserById(userId);
+    if (!user) {
+      throw createClientsError(404, "Participant introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
+    }
+    if (user.school_id && user.school_id !== school.id) {
+      throw createClientsError(403, "Participant hors établissement.", CLIENTS_ERROR.FORBIDDEN);
+    }
+  }
+}
 
 async function writeClientsAudit(tx, principal, auditMeta, entry) {
   if (typeof tx.recordClientsAudit !== "function") {
@@ -55,11 +81,11 @@ async function createUser(store, rawPayload, principal, auditMeta) {
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
 
-  const role = asTrimmed(payload.role);
+  const role = assertAssignableUserRole(principal, asTrimmed(payload.role));
   const firstName = asTrimmed(payload.firstName);
   const lastName = asTrimmed(payload.lastName);
-  if (!role || !firstName || !lastName) {
-    throw createClientsError(400, "Rôle, prénom et nom obligatoires.");
+  if (!firstName || !lastName) {
+    throw createClientsError(400, "Prénom et nom obligatoires.");
   }
 
   return store.withTransaction(async (tx) => {
@@ -94,7 +120,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       phone: asTrimmed(payload.phone),
       gender: asTrimmed(payload.gender),
       birthDate: toIsoDate(payload.birthDate),
-      role: ROLE_TO_DB[role] ?? role,
+      role: toDbRole(role),
       status: toDbStatus(payload.status || "Actif"),
       passwordHash: hashSecret(temporaryPassword),
       mustChangePassword: true,
@@ -119,6 +145,10 @@ async function createUser(store, rawPayload, principal, auditMeta) {
 
 async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   const patch = ignoreClientScope(rawPatch);
+  if (patch.role !== undefined) {
+    assertAssignableUserRole(principal, patch.role);
+  }
+
   return store.withTransaction(async (tx) => {
     const existing = await tx.getUserById(userId);
     if (!existing) {
@@ -139,7 +169,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
       phone: patch.phone ?? existing.phone,
       gender: patch.gender ?? existing.gender,
       birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : existing.birth_date,
-      role: patch.role ? ROLE_TO_DB[patch.role] ?? patch.role : existing.role,
+      role: patch.role ? toDbRole(patch.role) : existing.role,
       status: patch.status ? toDbStatus(patch.status) : existing.status,
       profile,
     });
@@ -255,11 +285,11 @@ async function updateContact(store, contactId, rawPatch, principal, auditMeta) {
  */
 async function provisionContactAccount(store, contactId, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
-  const role = asTrimmed(payload.role || "Parent");
+  const role = assertProvisionContactRole(payload.role);
   const studentId = asTrimmed(payload.studentId || payload.toStudentId);
 
   return store.withTransaction(async (tx) => {
-    const contact = await tx.getContactById(contactId);
+    const contact = await tx.getContactByIdForUpdate(contactId);
     if (!contact) {
       throw createClientsError(404, "Contact introuvable.", CLIENTS_ERROR.CONTACT_NOT_FOUND);
     }
@@ -270,16 +300,25 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       const existingUser = await tx.getUserById(contact.user_id);
       let relation = null;
       if (studentId) {
-        relation = await tx.getRelationByContactAndStudent(contact.id, studentId);
+        const student = await assertStudentInContactSchool(tx, contact, studentId);
+        relation = await tx.getRelationByContactAndStudent(contact.id, student.id);
         if (!relation) {
           relation = await tx.insertRelation({
             schoolId: contact.school_id,
             countryId: contact.country_id,
             contactId: contact.id,
-            studentId,
+            studentId: student.id,
             profile: {
               fromContactName: `${contact.first_name} ${contact.last_name}`.trim(),
+              toStudentName: `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim(),
             },
+          });
+          await writeClientsAudit(tx, principal, auditMeta, {
+            schoolCode: contact.school_code,
+            action: "create_relation",
+            entityType: "relation",
+            entityId: relation.id,
+            newValue: mapRelationRow(relation),
           });
         }
       }
@@ -305,7 +344,7 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       identifier,
       accessChannel: "Application",
       createdBy: principal?.identifier || "system",
-      role,
+      role: PROVISION_CONTACT_ROLE,
       secondaryRole: payload.secondaryRole,
     };
 
@@ -318,7 +357,7 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       phone: contact.phone,
       gender: contact.gender,
       birthDate: contact.birth_date,
-      role: ROLE_TO_DB[role] ?? role,
+      role: toDbRole(PROVISION_CONTACT_ROLE),
       status: "active",
       passwordHash: hashSecret(temporaryPassword),
       mustChangePassword: true,
@@ -327,22 +366,19 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
 
     const updatedContact = await tx.linkContactUser(contact.id, user.id, {
       ...parsePayload(contact.profile_payload),
-      role,
+      role: PROVISION_CONTACT_ROLE,
       secondaryRole: payload.secondaryRole,
       hasAccess: "Oui",
     });
 
     let relation = null;
     if (studentId) {
-      const student = await tx.getStudentById(studentId);
-      if (!student || student.school_id !== contact.school_id) {
-        throw createClientsError(404, "Élève introuvable dans cet établissement.", CLIENTS_ERROR.STUDENT_NOT_FOUND);
-      }
+      const student = await assertStudentInContactSchool(tx, contact, studentId);
       relation = await tx.insertRelation({
         schoolId: contact.school_id,
         countryId: contact.country_id,
         contactId: contact.id,
-        studentId,
+        studentId: student.id,
         profile: {
           fromContactName: `${contact.first_name} ${contact.last_name}`.trim(),
           toStudentName: `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim(),
@@ -454,6 +490,7 @@ async function sendMessage(store, rawPayload, principal, auditMeta) {
         .filter(Boolean),
     );
     participantUserIds.add(senderUserId);
+    await assertParticipantsInSchool(tx, school, participantUserIds);
 
     const conversation = await tx.insertConversation({
       schoolId: school.id,
