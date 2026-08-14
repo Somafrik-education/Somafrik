@@ -42,9 +42,7 @@ import {
 import {
   buildContactDeleteAuditEntry,
   buildContactImportPlan,
-  buildContactMutationAuditEntries,
   buildContactPasswordResetGate,
-  buildContactPostMergePlan,
   buildContactPreSubmitPlan,
   buildCreateFicheFromSelectionPlan,
   defaultNewContactDraft,
@@ -55,7 +53,6 @@ import {
   buildParentChildBundleDeletePlan,
   buildParentChildBundleSubmitPlan,
   buildRelationDeleteAuditEntry,
-  buildRelationPostMergePlan,
   buildRelationPreSubmitPlan,
   defaultNewRelationDraft,
   filterAvailableParentStudentOptions,
@@ -1033,58 +1030,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     const patch: Partial<BackOfficeState> = buildPedagogyPatch(module.key, nextItem, nextAllRows);
 
     let successMessage = entityMutationSuccessMessage(module.label, exists);
-
-    // RB-003 / CONTACT-004 : aucun compte utilisateur n'est créé hors du
-    // sous-module Contacts. Les fiches enseignant se provisionnent uniquement
-    // depuis un contact (linkContactToOperationalRecord).
-
-    if (module.key === "contacts") {
-      const contactPlan = buildContactPostMergePlan(
-        {
-          scopeUser,
-          state,
-          showToast,
-          syncSingleUserToTeachers,
-        },
-        {
-          nextContact: nextItem as Record<string, unknown>,
-          nextAllRows,
-          basePatch: patch,
-          linkSchoolCode: schoolCode,
-          defaultSuccessMessage: successMessage,
-        },
-      );
-      if (!contactPlan.ok) return;
-      Object.assign(patch, contactPlan.patch);
-      successMessage = contactPlan.successMessage;
-      patch.auditLog = appendAuditLog(
-        state.auditLog,
-        ...buildContactMutationAuditEntries({
-          scopeUser,
-          nextContact: nextItem as Record<string, unknown>,
-          exists,
-          promotion: contactPlan.promotion,
-          ficheLink: contactPlan.ficheLink,
-        }),
-      );
-    }
-
-    if (module.key === "relations") {
-      const nextRelation = nextItem as Record<string, unknown>;
-      const currentRelations =
-        (patch.relations as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
-      const relationPlan = buildRelationPostMergePlan(
-        { scopeUser },
-        {
-          nextRelation,
-          nextAllRows,
-          baseRelations: currentRelations,
-          exists,
-        },
-      );
-      patch.relations = relationPlan.relations as unknown as BackOfficeState["relations"];
-      patch.auditLog = appendAuditLog(state.auditLog, relationPlan.auditEntry);
-    }
 
     const genericAudit = appendGenericMutationAudit(
       state.auditLog,

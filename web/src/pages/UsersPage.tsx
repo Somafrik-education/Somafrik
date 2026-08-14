@@ -22,7 +22,6 @@ import {
   validateUserAccount,
   resetUserAccountPassword,
 } from "../lib/userAccounts";
-import { applyUserTeacherSync, syncSingleUserToTeachers } from "../lib/userTeacherSync";
 import { clientsApi } from "../lib/clientsApi";
 import {
   COUNTRY_ADMIN_ROLE,
@@ -62,7 +61,7 @@ function toCsv(users: UserAccount[], schools: School[]): string {
 export function UsersPage() {
   const { session } = useAuth();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
-  const { state, update, refresh } = useData();
+  const { state, refresh } = useData();
   const ctx = usePermissionContext();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { showToast } = useToast();
@@ -132,7 +131,7 @@ export function UsersPage() {
     });
   }, [allUsers, search, roleFilter, statusFilter, pendingOnly]);
 
-  async function persistUsers(next: UserAccount[], message: string, syncedUser?: UserAccount) {
+  async function persistUsers(_next: UserAccount[], message: string, syncedUser?: UserAccount) {
     setBusy(true);
     try {
       if (syncedUser) {
@@ -151,8 +150,6 @@ export function UsersPage() {
         showToast(message, "success");
         return;
       }
-      const baseState = { ...state, users: next };
-      const teacherPatch = applyUserTeacherSync(baseState);
       await refresh();
       showToast(message, "success");
     } catch {
