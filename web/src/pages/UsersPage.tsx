@@ -22,7 +22,7 @@ import {
   validateUserAccount,
   resetUserAccountPassword,
 } from "../lib/userAccounts";
-import { applyUserTeacherSync, syncSingleUserToTeachers } from "../lib/userTeacherSync";
+import { clientsApi } from "../lib/clientsApi";
 import {
   COUNTRY_ADMIN_ROLE,
   isPendingValidationStatus,
@@ -61,7 +61,7 @@ function toCsv(users: UserAccount[], schools: School[]): string {
 export function UsersPage() {
   const { session } = useAuth();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
-  const { state, update } = useData();
+  const { state, refresh } = useData();
   const ctx = usePermissionContext();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { showToast } = useToast();
@@ -131,14 +131,26 @@ export function UsersPage() {
     });
   }, [allUsers, search, roleFilter, statusFilter, pendingOnly]);
 
-  async function persistUsers(next: UserAccount[], message: string, syncedUser?: UserAccount) {
+  async function persistUsers(_next: UserAccount[], message: string, syncedUser?: UserAccount) {
     setBusy(true);
     try {
-      const baseState = { ...state, users: next };
-      const teacherPatch = syncedUser
-        ? syncSingleUserToTeachers(baseState, syncedUser)
-        : applyUserTeacherSync(baseState);
-      await update({ users: next, teachers: teacherPatch.teachers });
+      if (syncedUser) {
+        const exists = Boolean(syncedUser.id) && state.users.some((u) => u.id === syncedUser.id);
+        if (exists) {
+          await clientsApi.updateUser(String(syncedUser.id), syncedUser as unknown as Record<string, unknown>);
+        } else {
+          const created = (await clientsApi.createUser(
+            syncedUser as unknown as Record<string, unknown>,
+          )) as UserAccount;
+          if (created.temporaryPassword) {
+            showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
+          }
+        }
+        await refresh();
+        showToast(message, "success");
+        return;
+      }
+      await refresh();
       showToast(message, "success");
     } catch {
       showToast("Échec de la synchronisation", "error");

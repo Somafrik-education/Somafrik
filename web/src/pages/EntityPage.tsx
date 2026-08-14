@@ -5,6 +5,8 @@ import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { financeApi } from "../lib/financeApi";
 import { pedagogyApi } from "../lib/pedagogyApi";
+import { clientsApi } from "../lib/clientsApi";
+import { prepareContactForSave } from "../lib/contacts";
 import {
   Button,
   EmptyState,
@@ -40,9 +42,7 @@ import {
 import {
   buildContactDeleteAuditEntry,
   buildContactImportPlan,
-  buildContactMutationAuditEntries,
   buildContactPasswordResetGate,
-  buildContactPostMergePlan,
   buildContactPreSubmitPlan,
   buildCreateFicheFromSelectionPlan,
   defaultNewContactDraft,
@@ -53,7 +53,6 @@ import {
   buildParentChildBundleDeletePlan,
   buildParentChildBundleSubmitPlan,
   buildRelationDeleteAuditEntry,
-  buildRelationPostMergePlan,
   buildRelationPreSubmitPlan,
   defaultNewRelationDraft,
   filterAvailableParentStudentOptions,
@@ -459,6 +458,37 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
   }
 
+  async function persistClientsMutation(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    onSuccess?: () => void,
+  ) {
+    setBusy(true);
+    try {
+      const result = await action();
+      await refresh();
+      if (
+        result &&
+        typeof result === "object" &&
+        "temporaryPassword" in result &&
+        String((result as { temporaryPassword?: string }).temporaryPassword ?? "").trim()
+      ) {
+        showToast(
+          `${successMessage} · mot de passe provisoire : ${(result as { temporaryPassword: string }).temporaryPassword}`,
+          "success",
+        );
+      } else {
+        showToast(successMessage, "success");
+      }
+      onSuccess?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Échec de l'opération Clients", "error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function closeCancelModal() {
     setCancellingPayment(null);
     setCancelReason("");
@@ -814,6 +844,75 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       return;
     }
 
+    if (module.key === "contacts") {
+      const payload = prepareContactForSave(workingItem, state);
+      const exists = Boolean(editing.id);
+      try {
+        await persistClientsMutation(
+          async () => {
+            const saved = (exists
+              ? await clientsApi.updateContact(String(editing.id), payload)
+              : await clientsApi.createContact(payload)) as Record<string, unknown>;
+            if (String(saved.hasAccess ?? payload.hasAccess ?? "") === "Oui") {
+              return clientsApi.provisionContactAccount(String(saved.id), {
+                role: saved.role ?? payload.role,
+                studentId: payload.studentId,
+              });
+            }
+            return saved;
+          },
+          exists ? "Contact modifié" : "Contact créé",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "relations") {
+      try {
+        await persistClientsMutation(
+          () => clientsApi.createRelation(workingItem),
+          "Relation enregistrée",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "announcements") {
+      const exists = Boolean(editing.id);
+      try {
+        await persistClientsMutation(
+          () =>
+            exists
+              ? clientsApi.updateAnnouncement(String(editing.id), workingItem)
+              : clientsApi.createAnnouncement(workingItem),
+          entityMutationSuccessMessage(module.label, exists),
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
+    if (module.key === "messages") {
+      try {
+        await persistClientsMutation(
+          () => clientsApi.sendMessage(workingItem),
+          "Message envoyé",
+          () => setEditing(null),
+        );
+      } catch {
+        /* toast */
+      }
+      return;
+    }
+
     if (!exists) {
       const featureByModule: Partial<Record<string, SubscriptionFeature>> = {
         students: "create_student",
@@ -930,59 +1029,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     const nextAllRows = mergeResult.rows;
     const patch: Partial<BackOfficeState> = buildPedagogyPatch(module.key, nextItem, nextAllRows);
 
-    let successMessage = entityMutationSuccessMessage(module.label, exists);
-
-    // RB-003 / CONTACT-004 : aucun compte utilisateur n'est créé hors du
-    // sous-module Contacts. Les fiches enseignant se provisionnent uniquement
-    // depuis un contact (linkContactToOperationalRecord).
-
-    if (module.key === "contacts") {
-      const contactPlan = buildContactPostMergePlan(
-        {
-          scopeUser,
-          state,
-          showToast,
-          syncSingleUserToTeachers,
-        },
-        {
-          nextContact: nextItem as Record<string, unknown>,
-          nextAllRows,
-          basePatch: patch,
-          linkSchoolCode: schoolCode,
-          defaultSuccessMessage: successMessage,
-        },
-      );
-      if (!contactPlan.ok) return;
-      Object.assign(patch, contactPlan.patch);
-      successMessage = contactPlan.successMessage;
-      patch.auditLog = appendAuditLog(
-        state.auditLog,
-        ...buildContactMutationAuditEntries({
-          scopeUser,
-          nextContact: nextItem as Record<string, unknown>,
-          exists,
-          promotion: contactPlan.promotion,
-          ficheLink: contactPlan.ficheLink,
-        }),
-      );
-    }
-
-    if (module.key === "relations") {
-      const nextRelation = nextItem as Record<string, unknown>;
-      const currentRelations =
-        (patch.relations as unknown as Record<string, unknown>[] | undefined) ?? nextAllRows;
-      const relationPlan = buildRelationPostMergePlan(
-        { scopeUser },
-        {
-          nextRelation,
-          nextAllRows,
-          baseRelations: currentRelations,
-          exists,
-        },
-      );
-      patch.relations = relationPlan.relations as unknown as BackOfficeState["relations"];
-      patch.auditLog = appendAuditLog(state.auditLog, relationPlan.auditEntry);
-    }
+    const successMessage = entityMutationSuccessMessage(module.label, exists);
 
     const genericAudit = appendGenericMutationAudit(
       state.auditLog,

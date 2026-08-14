@@ -102,6 +102,20 @@ const REPOSITORY_METHODS = Object.freeze([
   "updatePlatformSubscriptionPayment",
   "createPlatformSubscriptionDiscount",
   "updatePlatformSubscriptionDiscount",
+  // Clients / comptes (LOT 7 — PostgreSQL canonique)
+  "listClientsProjection",
+  "listClientsAuthAccounts",
+  "createClientsUser",
+  "updateClientsUser",
+  "createClientsContact",
+  "updateClientsContact",
+  "provisionClientsContactAccount",
+  "createClientsRelation",
+  "sendClientsMessage",
+  "markClientsMessageRead",
+  "createClientsAnnouncement",
+  "updateClientsAnnouncement",
+  "archiveClientsAnnouncement",
 ]);
 
 /**

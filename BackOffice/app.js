@@ -2488,9 +2488,6 @@ function applyBackOfficeState(backendState = {}) {
 
 function getBackOfficeStatePayload() {
   return {
-    users: state.users,
-    announcements: state.announcements,
-    messages: state.messages,
     auditLog: state.auditLog,
     academicConfigs: state.academicConfigs,
   };

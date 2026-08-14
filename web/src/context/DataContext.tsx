@@ -21,6 +21,7 @@ import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientPedagogyStaffFromPutPayload } from "../lib/stripClientPedagogyStaff";
 import { stripClientPedagogyFromPutPayload } from "../lib/stripClientPedagogy";
 import { stripClientPlatformFromPutPayload } from "../lib/stripClientPlatform";
+import { stripClientClientsFromPutPayload } from "../lib/stripClientClients";
 import {
   enqueuePatchMutations,
   formatOutboxFailureMessage,
@@ -187,10 +188,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       syncPausedRef.current = true;
       const usePartial = options.partial !== false;
 
-      const canonicalPatch = stripClientPlatformFromPutPayload(
-        stripClientPedagogyFromPutPayload(
-          stripClientFinanceFromPutPayload(
-            stripClientPedagogyStaffFromPutPayload(patch as Record<string, unknown>),
+      const canonicalPatch = stripClientClientsFromPutPayload(
+        stripClientPlatformFromPutPayload(
+          stripClientPedagogyFromPutPayload(
+            stripClientFinanceFromPutPayload(
+              stripClientPedagogyStaffFromPutPayload(patch as Record<string, unknown>),
+            ),
           ),
         ),
       ) as Partial<BackOfficeState>;
@@ -233,13 +236,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? (annotatedPatch as Partial<BackOfficeState>)
           : { ...stateRef.current, ...(annotatedPatch as Partial<BackOfficeState>) };
         // HOTFIX-RBAC-ADMIN-01 : jamais envoyer auditLog (non writable client → 403).
-        const payload = stripClientPlatformFromPutPayload(
-          stripClientPedagogyFromPutPayload(
-            stripClientFinanceFromPutPayload(
-              stripClientPedagogyStaffFromPutPayload(
-                stripClientStudentsFromPutPayload(
-                  stripClientSchoolsFromPutPayload(
-                    stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
+        const payload = stripClientClientsFromPutPayload(
+          stripClientPlatformFromPutPayload(
+            stripClientPedagogyFromPutPayload(
+              stripClientFinanceFromPutPayload(
+                stripClientPedagogyStaffFromPutPayload(
+                  stripClientStudentsFromPutPayload(
+                    stripClientSchoolsFromPutPayload(
+                      stripClientAuditLogFromPutPayload(rawPayload as Record<string, unknown>),
+                    ),
                   ),
                 ),
               ),

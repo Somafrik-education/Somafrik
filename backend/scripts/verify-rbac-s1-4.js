@@ -31,7 +31,11 @@ function runMatrixUnitTests() {
   const accountant = { role: "Comptable", schoolCode: "CD-2026-0001" };
   const allEntities = ["students", "users", "notes", "payments", "auditLog"];
 
-  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("users"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("contacts"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("relations"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("messages"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("announcements"));
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("notes"));
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("presences"));
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("courses"));
@@ -270,16 +274,22 @@ async function runHttpTestsIfAvailable() {
     mustChangePassword: false,
     permissions: ["Gérer paiements", "Voir rapports financiers", "Paiements:CREATE", "Paiements:UPDATE"],
   };
-  const putComptable = await request("/backoffice/state", {
-    method: "PUT",
+  const createComptable = await request("/backoffice/users", {
+    method: "POST",
     token: schoolAdmin.accessToken,
     body: {
-      users: [...(state.users ?? []).filter((u) => u.id !== comptableUser.id), comptableUser],
+      firstName: comptableUser.firstName,
+      lastName: comptableUser.lastName,
+      role: comptableUser.role,
+      email: comptableUser.email,
+      schoolCode: comptableUser.schoolCode,
+      status: comptableUser.status,
+      temporaryPassword: comptableUser.temporaryPassword,
     },
   });
-  assert.ok(putComptable.status >= 200 && putComptable.status < 300, `create comptable: ${putComptable.status}`);
+  assert.strictEqual(createComptable.status, 201, `create comptable: ${createComptable.status}`);
 
-  const accountant = await login("comptable-s14", "Soma1234", "CD-2026-0001");
+  const accountant = await login(comptableUser.email, "Soma1234", "CD-2026-0001");
 
   // A1/A2 — LOT 2 : toute présence de students est refusée avant la matrice RBAC.
   for (const [label, token] of [
@@ -323,7 +333,7 @@ async function runHttpTestsIfAvailable() {
   assert.strictEqual(accOk.status, 400, `Comptable payments write: ${accOk.status}`);
   assert.strictEqual(accOk.data?.code, "LEGACY_FINANCE_STATE_WRITE_FORBIDDEN");
 
-  // A5 — Comptable : users interdit → 403
+  // A5 — Comptable : users interdit → 400 LEGACY_CLIENTS (LOT 7)
   const accForbidden = await request("/backoffice/state", {
     method: "PUT",
     token: accountant.accessToken,
@@ -331,7 +341,8 @@ async function runHttpTestsIfAvailable() {
       users: state.users ?? [],
     },
   });
-  assert.strictEqual(accForbidden.status, 403, "Comptable users doit être 403");
+  assert.strictEqual(accForbidden.status, 400, "Comptable users doit être 400 LEGACY_CLIENTS");
+  assert.strictEqual(accForbidden.data?.code, "LEGACY_CLIENTS_STATE_WRITE_FORBIDDEN");
 
   // A5b — auditLog interdit pour les rôles métier
   for (const [label, token] of [

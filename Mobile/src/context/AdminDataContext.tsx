@@ -38,7 +38,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getBackOfficeState, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, saveBackOfficeState, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
 import { SYNC_INTERVAL_MS } from "../config/env";
 import { useAuth } from "./AuthContext";
 
@@ -460,6 +460,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       if (entity === "countries" || entity === "subscriptions") {
         return;
       }
+      if (entity === "users" || entity === "announcements" || entity === "messages") {
+        setters[entity]((items: any[]) =>
+          enforceEntityScope(entity, updater(items), session, state),
+        );
+        return;
+      }
       setters[entity]((items: any[]) => {
         const nextItems = enforceEntityScope(entity, updater(items), session, state);
         persistSyncedState({ ...state, [entity]: nextItems });
@@ -534,6 +540,24 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           entity === "payments" || entity === "paymentStatuses" ||
           entity === "courses"
         ) return;
+        if (entity === "announcements") {
+          void createClientsAnnouncement(item as Record<string, unknown>)
+            .then((created) => setAnnouncementsData((current) => [created as Announcement, ...current]))
+            .catch(() => setSyncStatus("offline"));
+          return;
+        }
+        if (entity === "messages") {
+          void sendClientsMessage(item as Record<string, unknown>)
+            .then((created) => setMessagesData((current) => [created as SchoolMessage, ...current]))
+            .catch(() => setSyncStatus("offline"));
+          return;
+        }
+        if (entity === "users") {
+          void createClientsUser(item as Record<string, unknown>)
+            .then((created) => setUsersData((current) => [created as UserAccount, ...current]))
+            .catch(() => setSyncStatus("offline"));
+          return;
+        }
         commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
       },
       updateItem: (entity, item) => {
@@ -543,6 +567,26 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           entity === "payments" || entity === "paymentStatuses" ||
           entity === "courses"
         ) return;
+        if (entity === "announcements") {
+          void updateClientsAnnouncement(String(item.id), item as Record<string, unknown>)
+            .then((updated) =>
+              setAnnouncementsData((current) =>
+                current.map((row) => (row.id === item.id ? (updated as Announcement) : row)),
+              ),
+            )
+            .catch(() => setSyncStatus("offline"));
+          return;
+        }
+        if (entity === "users") {
+          void updateClientsUser(String(item.id), item as Record<string, unknown>)
+            .then((updated) =>
+              setUsersData((current) =>
+                current.map((row) => (row.id === item.id ? (updated as UserAccount) : row)),
+              ),
+            )
+            .catch(() => setSyncStatus("offline"));
+          return;
+        }
         commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
       },
       deleteItem: (entity, id) => {

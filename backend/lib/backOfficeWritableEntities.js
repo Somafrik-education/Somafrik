@@ -15,14 +15,9 @@ const {
 
 /** Entités établissement historiquement accessibles à Admin School (liste actuelle). */
 const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
-  "contacts",
-  "relations",
-  "users",
   "exams",
   "bulletins",
   "documents",
-  "announcements",
-  "messages",
   "academicConfigs",
 ]);
 
@@ -32,8 +27,6 @@ const ADMIN_SCHOOL_WRITABLE_ENTITIES = Object.freeze([
  * (Utilisateurs/Contacts/Notes/Frais = lecture seule ou « - »)
  */
 const SECRETARY_WRITABLE_ENTITIES = Object.freeze([
-  "announcements",
-  "messages",
   "documents",
 ]);
 
@@ -49,8 +42,6 @@ const PREFET_WRITABLE_ENTITIES = Object.freeze([
   "exams",
   "bulletins",
   "documents",
-  "announcements",
-  "messages",
   "academicConfigs",
 ]);
 
@@ -58,14 +49,10 @@ const PREFET_WRITABLE_ENTITIES = Object.freeze([
  * Directeur — seed : Gérer utilisateurs, Modifier notes, Gérer paiements + socle préfet.
  */
 const DIRECTOR_WRITABLE_ENTITIES = Object.freeze([
-  ...new Set([...PREFET_WRITABLE_ENTITIES, "users", "contacts", "relations"]),
+  ...new Set([...PREFET_WRITABLE_ENTITIES]),
 ]);
 
-const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([
-  "users",
-  "contacts",
-  "relations",
-]);
+const COUNTRY_ADMIN_WRITABLE_ENTITIES = Object.freeze([]);
 
 const ROLE_WRITABLE_ENTITIES = Object.freeze({
   "Admin School": ADMIN_SCHOOL_WRITABLE_ENTITIES,
@@ -130,7 +117,12 @@ function getWritableBackOfficeEntitiesForPrincipal(principal, allEntities = []) 
           entity !== "subscriptionAuditLog" &&
           entity !== "notifications" &&
           entity !== "rolePermissions" &&
-          entity !== "dashboardChartConfig",
+          entity !== "dashboardChartConfig" &&
+          entity !== "users" &&
+          entity !== "contacts" &&
+          entity !== "relations" &&
+          entity !== "messages" &&
+          entity !== "announcements",
       ),
       "academicConfigs",
     ];

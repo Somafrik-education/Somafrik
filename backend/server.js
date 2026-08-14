@@ -1501,6 +1501,91 @@ app.patch("/api/backoffice/subscription-discounts/:discountId", requireAuth, req
   res.json(updated);
 }));
 
+const { clientsAuditMetaFromRequest } = require("./lib/clientsManagement");
+
+app.get("/api/backoffice/users", requireAuth, requirePermission("GET /api/backoffice/users"), asyncHandler(async (req, res) => {
+  const clients = await repository.listClientsProjection();
+  sendList(res, sanitizeUsersForResponse(tenantScopeService.filterRows(clients.users ?? [], req.principal)), req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
+}));
+
+app.post("/api/backoffice/users", requireAuth, requirePermission("POST /api/backoffice/users"), asyncHandler(async (req, res) => {
+  const created = await repository.createClientsUser(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(sanitizeUserForResponse(created));
+}));
+
+app.patch("/api/backoffice/users/:userId", requireAuth, requirePermission("PATCH /api/backoffice/users/:userId"), asyncHandler(async (req, res) => {
+  const updated = await repository.updateClientsUser(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(sanitizeUserForResponse(updated));
+}));
+
+app.get("/api/backoffice/contacts", requireAuth, requirePermission("GET /api/backoffice/contacts"), asyncHandler(async (req, res) => {
+  const clients = await repository.listClientsProjection();
+  sendList(res, tenantScopeService.filterRows(clients.contacts ?? [], req.principal), req.query, ["firstName", "lastName", "contactType", "phone", "email"]);
+}));
+
+app.post("/api/backoffice/contacts", requireAuth, requirePermission("POST /api/backoffice/contacts"), asyncHandler(async (req, res) => {
+  const created = await repository.createClientsContact(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/contacts/:contactId", requireAuth, requirePermission("PATCH /api/backoffice/contacts/:contactId"), asyncHandler(async (req, res) => {
+  const updated = await repository.updateClientsContact(req.params.contactId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/contacts/:contactId/provision-account", requireAuth, requirePermission("POST /api/backoffice/contacts/:contactId/provision-account"), asyncHandler(async (req, res) => {
+  const result = await repository.provisionClientsContactAccount(req.params.contactId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(result.created ? 201 : 200).json({
+    ...result,
+    user: sanitizeUserForResponse(result.user),
+  });
+}));
+
+app.get("/api/backoffice/relations", requireAuth, requirePermission("GET /api/backoffice/relations"), asyncHandler(async (req, res) => {
+  const clients = await repository.listClientsProjection();
+  sendList(res, tenantScopeService.filterRows(clients.relations ?? [], req.principal), req.query, ["relationType", "fromContactName", "toStudentName"]);
+}));
+
+app.post("/api/backoffice/relations", requireAuth, requirePermission("POST /api/backoffice/relations"), asyncHandler(async (req, res) => {
+  const created = await repository.createClientsRelation(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.get("/api/backoffice/messages", requireAuth, requirePermission("GET /api/backoffice/messages"), asyncHandler(async (req, res) => {
+  const clients = await repository.listClientsProjection();
+  sendList(res, tenantScopeService.filterRows(clients.messages ?? [], req.principal), req.query, ["theme", "message", "status", "direction"]);
+}));
+
+app.post("/api/backoffice/messages", requireAuth, requirePermission("POST /api/backoffice/messages"), asyncHandler(async (req, res) => {
+  const created = await repository.sendClientsMessage(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/messages/:messageId/read", requireAuth, requirePermission("PATCH /api/backoffice/messages/:messageId/read"), asyncHandler(async (req, res) => {
+  const updated = await repository.markClientsMessageRead(req.params.messageId, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.get("/api/backoffice/announcements", requireAuth, requirePermission("GET /api/backoffice/announcements"), asyncHandler(async (req, res) => {
+  const clients = await repository.listClientsProjection();
+  sendList(res, tenantScopeService.filterRows(clients.announcements ?? [], req.principal), req.query, ["title", "message", "audience", "status"]);
+}));
+
+app.post("/api/backoffice/announcements", requireAuth, requirePermission("POST /api/backoffice/announcements"), asyncHandler(async (req, res) => {
+  const created = await repository.createClientsAnnouncement(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/announcements/:announcementId", requireAuth, requirePermission("PATCH /api/backoffice/announcements/:announcementId"), asyncHandler(async (req, res) => {
+  const updated = await repository.updateClientsAnnouncement(req.params.announcementId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/announcements/:announcementId/archive", requireAuth, requirePermission("POST /api/backoffice/announcements/:announcementId/archive"), asyncHandler(async (req, res) => {
+  const archived = await repository.archiveClientsAnnouncement(req.params.announcementId, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
 app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("GET /api/backoffice/subscription-access"), asyncHandler(async (req, res) => {
   const {
     asTrimmed,
@@ -1769,7 +1854,19 @@ app.put("/api/backoffice/state", requireAuth, asyncHandler(async (req, res) => {
     error.details = { rejectedKeys: preparedLegacyPlatform.rejectedKeys };
     throw error;
   }
-  const rawBody = preparedLegacyPlatform.body;
+  const {
+    stripLegacyClientsStateWrite,
+    LEGACY_CLIENTS_STATE_WRITE_CODE,
+    LEGACY_CLIENTS_STATE_WRITE_MESSAGE,
+  } = require("./lib/legacyClientsStateWrite");
+  const preparedLegacyClients = stripLegacyClientsStateWrite(preparedLegacyPlatform.body);
+  if (preparedLegacyClients.rejectLegacyClientsWrite) {
+    const error = new BusinessError(400, LEGACY_CLIENTS_STATE_WRITE_MESSAGE);
+    error.code = LEGACY_CLIENTS_STATE_WRITE_CODE;
+    error.details = { rejectedKeys: preparedLegacyClients.rejectedKeys };
+    throw error;
+  }
+  const rawBody = preparedLegacyClients.body;
   const touchedKeys = resolveTouchedBackOfficeKeys(rawBody);
   assertBackOfficeWriter(req.principal, touchedKeys);
   const currentState = await getAuthoritativeBackOfficeState();
@@ -2013,6 +2110,7 @@ async function getRuntime() {
   applyStoredStatusOverlay(dataset, storedState);
   applyStoredSchoolOverlay(dataset, storedState);
   applyStoredUserOverlay(dataset, storedState);
+  await applyClientsAuthOverlay(dataset);
   // LOT 2 — aucune identité élève ne provient plus du snapshot JSON.
   const mergedStudents = dataset.students ?? [];
   const mergedRelations = mergeRowsByIdentity([], storedState?.relations ?? []);
@@ -2209,6 +2307,46 @@ function normalizeBackOfficeUserCredentials(user = {}) {
   }
 
   return next;
+}
+
+async function applyClientsAuthOverlay(dataset) {
+  if (!dataset || typeof repository.listClientsAuthAccounts !== "function") {
+    return;
+  }
+
+  const authAccounts = await repository.listClientsAuthAccounts();
+  if (!Array.isArray(authAccounts) || authAccounts.length === 0) {
+    return;
+  }
+
+  const byPrimaryKey = new Map();
+  const aliasToPrimaryKey = new Map();
+
+  const registerUser = (user, primaryKey) => {
+    if (!primaryKey || !user) {
+      return;
+    }
+    byPrimaryKey.set(primaryKey, user);
+    for (const alias of userOverlayKeys(user)) {
+      aliasToPrimaryKey.set(alias, primaryKey);
+    }
+  };
+
+  for (const user of dataset.userAccounts ?? []) {
+    registerUser(user, resolveUserOverlayPrimaryKey(user, aliasToPrimaryKey));
+  }
+
+  for (const stored of authAccounts) {
+    const primaryKey = resolveUserOverlayPrimaryKey(stored, aliasToPrimaryKey);
+    if (!primaryKey) {
+      continue;
+    }
+    const base = byPrimaryKey.get(primaryKey) ?? {};
+    const merged = normalizeBackOfficeUserCredentials({ ...base, ...stored });
+    registerUser(merged, primaryKey);
+  }
+
+  dataset.userAccounts = [...byPrimaryKey.values()];
 }
 
 function applyStoredUserOverlay(dataset, storedState) {
@@ -2643,9 +2781,23 @@ async function getAuthoritativeBackOfficeState() {
       ),
     };
   }
-  return overlayPlatformProjection(
-    await overlayPedagogyProjection(await overlayFinanceProjection(nextState)),
+  return overlayClientsProjection(
+    await overlayPlatformProjection(
+      await overlayPedagogyProjection(await overlayFinanceProjection(nextState)),
+    ),
   );
+}
+
+async function overlayClientsProjection(state) {
+  const clients = await repository.listClientsProjection();
+  return {
+    ...state,
+    users: clients.users ?? [],
+    contacts: clients.contacts ?? [],
+    relations: clients.relations ?? [],
+    messages: clients.messages ?? [],
+    announcements: clients.announcements ?? [],
+  };
 }
 
 async function overlayPlatformProjection(state) {

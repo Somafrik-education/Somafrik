@@ -263,6 +263,11 @@ class FallbackRepository {
     delete durable.notifications;
     delete durable.rolePermissions;
     delete durable.dashboardChartConfig;
+    delete durable.users;
+    delete durable.contacts;
+    delete durable.relations;
+    delete durable.messages;
+    delete durable.announcements;
     this.backOfficeState = durable;
     return this.getBackOfficeState();
   }
@@ -429,11 +434,16 @@ class FallbackRepository {
       );
     const seedUserIndex = seedData.userAccounts.findIndex(matchesLookup);
     const stateUser = existingStateUsers.find(matchesLookup);
+    const clientsUser = this.getClientsStore().resetUserPassword(lookupKeys, temporaryPassword);
 
-    if (!stateUser && seedUserIndex === -1) {
+    if (!stateUser && seedUserIndex === -1 && !clientsUser) {
       const error = new Error("Utilisateur introuvable");
       error.statusCode = 404;
       throw error;
+    }
+
+    if (clientsUser) {
+      return clone(clientsUser);
     }
 
     const sourceUser = stateUser ?? seedData.userAccounts[seedUserIndex];
@@ -477,11 +487,16 @@ class FallbackRepository {
       );
     const seedUserIndex = seedData.userAccounts.findIndex(matchesLookup);
     const stateUser = existingStateUsers.find(matchesLookup);
+    const clientsUser = this.getClientsStore().changeUserPassword(lookupKeys, newPassword);
 
-    if (!stateUser && seedUserIndex === -1) {
+    if (!stateUser && seedUserIndex === -1 && !clientsUser) {
       const error = new Error("Utilisateur introuvable");
       error.statusCode = 404;
       throw error;
+    }
+
+    if (clientsUser) {
+      return clone(clientsUser);
     }
 
     const sourceUser = stateUser ?? seedData.userAccounts[seedUserIndex];
@@ -2074,6 +2089,70 @@ class FallbackRepository {
 
   updatePlatformSubscriptionDiscount(id, patch, principal, auditMeta) {
     return this.getPlatformStore().updateSubscriptionDiscount(id, patch, principal, auditMeta);
+  }
+
+  getClientsStore() {
+    if (!this._clientsStore) {
+      const { createClientsMemoryStore } = require("./clientsMemoryStore");
+      this._clientsStore = createClientsMemoryStore({
+        school: shouldSeedDemoData() ? seedData.school : null,
+        platformSchools: this._managedSchools ?? (shouldSeedDemoData() ? seedData.platformSchools : []),
+        students: shouldSeedDemoData() ? seedData.students : [],
+      });
+    }
+    return this._clientsStore;
+  }
+
+  listClientsProjection() {
+    return Promise.resolve(this.getClientsStore().listProjection());
+  }
+
+  listClientsAuthAccounts() {
+    return Promise.resolve(this.getClientsStore().listAuthAccounts());
+  }
+
+  createClientsUser(payload, principal, auditMeta) {
+    return this.getClientsStore().createUser(payload, principal, auditMeta);
+  }
+
+  updateClientsUser(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
+  }
+
+  createClientsContact(payload, principal, auditMeta) {
+    return this.getClientsStore().createContact(payload, principal, auditMeta);
+  }
+
+  updateClientsContact(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateContact(id, patch, principal, auditMeta);
+  }
+
+  provisionClientsContactAccount(contactId, payload, principal, auditMeta) {
+    return this.getClientsStore().provisionContactAccount(contactId, payload, principal, auditMeta);
+  }
+
+  createClientsRelation(payload, principal, auditMeta) {
+    return this.getClientsStore().createRelation(payload, principal, auditMeta);
+  }
+
+  sendClientsMessage(payload, principal, auditMeta) {
+    return this.getClientsStore().sendMessage(payload, principal, auditMeta);
+  }
+
+  markClientsMessageRead(messageId, principal, auditMeta) {
+    return this.getClientsStore().markMessageRead(messageId, principal, auditMeta);
+  }
+
+  createClientsAnnouncement(payload, principal, auditMeta) {
+    return this.getClientsStore().createAnnouncement(payload, principal, auditMeta);
+  }
+
+  updateClientsAnnouncement(id, patch, principal, auditMeta) {
+    return this.getClientsStore().updateAnnouncement(id, patch, principal, auditMeta);
+  }
+
+  archiveClientsAnnouncement(id, principal, auditMeta) {
+    return this.getClientsStore().archiveAnnouncement(id, principal, auditMeta);
   }
 }
 
