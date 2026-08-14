@@ -83,6 +83,7 @@ function runStaticGuards() {
   assert.match(server, /sendBackOfficeStateReadRemoved/);
   assert.match(server, /overlayResidualProjection/);
   assert.match(server, /exams: residual\.exams \?\? \[\]/);
+  assert.match(server, /requirePermission\("GET \/api\/backoffice\/planning-exams"\)/);
   assert.match(server, /requirePermission\("PUT \/api\/backoffice\/planning-exams"\)/);
   assert.match(domainLoaders, /loadDomains/);
   assert.doesNotMatch(dataContext, /fetchDomainBackOfficeState/);
@@ -181,6 +182,18 @@ async function runResidualGuards(superToken) {
       });
       assert.equal(auditAfter, auditBefore, `${roleLabel} ${route} ne doit pas auditer`);
     }
+  }
+
+  const readOnlyCases = [
+    ["/backoffice/planning-exams", { exams: [] }],
+    ["/backoffice/report-cards", { bulletins: [] }],
+    ["/backoffice/establishment-documents", { documents: [] }],
+  ];
+  for (const [route, body] of readOnlyCases) {
+    const read = await request(route, { token: teacherToken });
+    assert.equal(read.status, 200, `Enseignant lecture autorisée sur ${route}`);
+    const write = await request(route, { method: "PUT", token: teacherToken, body });
+    assert.equal(write.status, 403, `Enseignant écriture refusée sur ${route}`);
   }
 
   const baselineBi = await request("/academic-config", { token: adminBi });

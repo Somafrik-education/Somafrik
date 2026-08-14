@@ -874,7 +874,7 @@ app.put("/api/academic-config", requireAuth, requirePermission("PUT /api/academi
   res.json(saved);
 }));
 
-app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
+app.get("/api/backoffice/planning-exams", requireAuth, requirePermission("GET /api/backoffice/planning-exams"), asyncHandler(async (req, res) => {
   const exams = await listResidualDomainForPrincipal(req.principal, "exams");
   res.json({ exams });
 }));
@@ -899,7 +899,7 @@ app.put("/api/backoffice/planning-exams", requireAuth, requirePermission("PUT /a
   res.json({ exams: saved });
 }));
 
-app.get("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
+app.get("/api/backoffice/report-cards", requireAuth, requirePermission("GET /api/backoffice/report-cards"), asyncHandler(async (req, res) => {
   const bulletins = await listResidualDomainForPrincipal(req.principal, "bulletins");
   res.json({ bulletins });
 }));
@@ -924,7 +924,7 @@ app.put("/api/backoffice/report-cards", requireAuth, requirePermission("PUT /api
   res.json({ bulletins: saved });
 }));
 
-app.get("/api/backoffice/establishment-documents", requireAuth, requirePermission("PUT /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
+app.get("/api/backoffice/establishment-documents", requireAuth, requirePermission("GET /api/backoffice/establishment-documents"), asyncHandler(async (req, res) => {
   const documents = await listResidualDomainForPrincipal(req.principal, "documents");
   res.json({ documents });
 }));
