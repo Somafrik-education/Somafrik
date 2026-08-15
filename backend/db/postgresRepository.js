@@ -94,6 +94,7 @@ class PostgresRepository {
     await this.ensurePlatformCanonicalSchema();
     await this.ensurePlatformRolePermissionsBootstrap();
     await this.ensureClientsCanonicalSchema();
+    await this.ensureUserRolesCanonicalSchema();
     await this.ensureResidualCanonicalSchema();
     await this.ensureEducationReferencePreflight();
     await this.ensureEducationReferenceConstraints();
@@ -483,6 +484,30 @@ class PostgresRepository {
   async ensureClientsCanonicalSchema() {
     const { CLIENTS_SCHEMA_SQL } = require("./clientsSchema");
     await this.query(CLIENTS_SCHEMA_SQL);
+  }
+
+  async ensureUserRolesCanonicalSchema() {
+    const {
+      USER_ROLES_SCHEMA_SQL,
+      USER_ROLES_MIGRATION_AMBIGUOUS,
+      INVENTORY_UNKNOWN_USERS_ROLE_SQL,
+      INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL,
+      BACKFILL_FROM_USERS_ROLE_SQL,
+      BACKFILL_FROM_SECONDARY_ROLES_SQL,
+    } = require("./userRolesSchema");
+    const unknownRoles = await this.all(INVENTORY_UNKNOWN_USERS_ROLE_SQL);
+    const unknownSecondary = await this.all(INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL);
+    if (unknownRoles.length || unknownSecondary.length) {
+      const error = new Error(
+        "USER_ROLES_MIGRATION_AMBIGUOUS: rôles utilisateurs non déterministes. Conversion refusée.",
+      );
+      error.code = USER_ROLES_MIGRATION_AMBIGUOUS;
+      error.details = { unknownRoles, unknownSecondary };
+      throw error;
+    }
+    await this.query(USER_ROLES_SCHEMA_SQL);
+    await this.query(BACKFILL_FROM_USERS_ROLE_SQL);
+    await this.query(BACKFILL_FROM_SECONDARY_ROLES_SQL);
   }
 
   async ensureResidualCanonicalSchema() {
@@ -971,13 +996,39 @@ class PostgresRepository {
        LEFT JOIN countries c ON c.id = s.country_id
        WHERE COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')`,
     );
+    const roleRows = rows.length
+      ? await this.all(
+          `SELECT user_id, role_key FROM user_roles
+           WHERE status = 'active' AND revoked_at IS NULL AND user_id = ANY($1::uuid[])`,
+          [rows.map((row) => row.id)],
+        ).catch(() => [])
+      : [];
+    const rolesByUser = new Map();
+    for (const row of roleRows) {
+      const list = rolesByUser.get(String(row.user_id)) ?? [];
+      list.push(row.role_key);
+      rolesByUser.set(String(row.user_id), list);
+    }
+    const teacherRows = rows.length
+      ? await this.all(
+          `SELECT user_id, teacher_code FROM teachers
+           WHERE user_id = ANY($1::uuid[])
+             AND COALESCE(status, 'active') NOT IN ('deleted', 'archived')`,
+          [rows.map((row) => row.id)],
+        ).catch(() => [])
+      : [];
+    const teacherLoginByUserId = new Map(
+      teacherRows
+        .filter((row) => row.user_id)
+        .map((row) => [row.user_id, this.extractTeacherLoginId(row.teacher_code)]),
+    );
     const schoolRows = await this.all(`
       SELECT s.*, c.name AS country_name, c.iso_code
       FROM schools s
       LEFT JOIN countries c ON c.id = s.country_id
     `);
     const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
-    return rows.map((row) => this.mapUser(row, schoolByCode));
+    return rows.map((row) => this.mapUser(row, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(row.id)) ?? []));
   }
 
   createClientsUser(payload, principal, auditMeta) {
@@ -988,6 +1039,31 @@ class PostgresRepository {
   updateClientsUser(id, patch, principal, auditMeta) {
     this.cachedDataset = null;
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
+  }
+
+  grantClientsUserRole(userId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().grantUserRole(userId, payload, principal, auditMeta);
+  }
+
+  revokeClientsUserRole(userId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().revokeUserRole(userId, payload, principal, auditMeta);
+  }
+
+  listAssignableClientsUserRoles(principal) {
+    return this.getClientsStore().listAssignableUserRoles(principal);
+  }
+
+  listActiveUserRoleKeys(userId) {
+    const store = this.getClientsStore();
+    if (typeof store.bind === "function") {
+      return store.bind({}).listActiveUserRoleKeys(userId);
+    }
+    if (typeof store.listActiveUserRoleKeys === "function") {
+      return store.listActiveUserRoleKeys(userId);
+    }
+    return Promise.resolve([]);
   }
 
   createClientsContact(payload, principal, auditMeta) {
@@ -4964,8 +5040,16 @@ class PostgresRepository {
     };
   }
 
-  mapUser(user, schoolByCode, teacherLoginByUserId = new Map()) {
-    const role = roleFromDb[user.role] ?? user.role;
+  mapUser(user, schoolByCode, teacherLoginByUserId = new Map(), roleKeys = []) {
+    const { displayRoles, toRoleKey } = require("../lib/userRoleLifecycle");
+    const inferredKeys =
+      Array.isArray(roleKeys) && roleKeys.length > 0
+        ? roleKeys
+        : user.role
+          ? [toRoleKey(user.role)].filter(Boolean)
+          : [];
+    const display = displayRoles(inferredKeys);
+    const role = display.role;
     const school = role === "Admin Pays" ? null : user.school_code ? schoolByCode.get(user.school_code) : null;
     const teacherLoginId = teacherLoginByUserId.get(user.id) ?? "";
     const identifier = this.getUserIdentifier(user, role, teacherLoginId);
@@ -4983,7 +5067,10 @@ class PostgresRepository {
       phone: user.phone,
       email: user.email,
       role,
-      secondaryRoles: [],
+      roles: display.roles,
+      roleKeys: display.roleKeys,
+      secondaryRoles: display.roles.slice(1),
+      assignmentStatus: display.assignmentStatus,
       scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
       countryScope,
       countryCode,

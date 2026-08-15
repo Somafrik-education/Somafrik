@@ -24,7 +24,6 @@ const {
   parsePayload,
 } = require("./clientsManagement");
 const {
-  assertAssignableUserRole,
   assertProvisionContactRole,
   toDbRole,
   assertSafeUserPatch,
@@ -32,6 +31,19 @@ const {
   PROVISION_CONTACT_ROLE,
 } = require("./clientsRolePolicy");
 const {
+  allocateUserCode,
+  hydrateUser,
+  FORBIDDEN_CREATE_KEYS,
+  FORBIDDEN_IDENTITY_PATCH_KEYS,
+} = require("./userRoleLifecycleService");
+const {
+  USER_ROLE_ERROR,
+  assertNoClientPrivilegeKeys,
+  displayRoles,
+  toRoleKey,
+} = require("./userRoleLifecycle");
+const {
+  findActiveUserByLoginIdentity,
   assertUniqueUserLoginIdentity,
   isUsersLoginIdentityUniquenessViolation,
 } = require("./usersLoginIdentity");
@@ -99,15 +111,12 @@ function rethrowLoginIdentityConflict(error) {
 }
 
 async function createUser(store, rawPayload, principal, auditMeta) {
+  assertNoClientPrivilegeKeys(rawPayload, FORBIDDEN_CREATE_KEYS, USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE);
   const payload = ignoreClientScope(rawPayload);
   const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
 
-  let role = assertAssignableUserRole(principal, asTrimmed(payload.role));
-  if (typeof store.assertEstablishmentRoleAssignable === "function") {
-    role = await store.assertEstablishmentRoleAssignable(role, principal);
-  }
   const firstName = asTrimmed(payload.firstName);
   const lastName = asTrimmed(payload.lastName);
   if (!firstName || !lastName) {
@@ -121,9 +130,9 @@ async function createUser(store, rawPayload, principal, auditMeta) {
     }
 
     const temporaryPassword = asTrimmed(payload.temporaryPassword) || generateTemporaryPassword();
-    const userCode = generateUserCode();
+    const userCode = await allocateUserCode(tx);
     const identifier = resolveUserIdentifier({
-      role,
+      role: "",
       phone: payload.phone,
       email: payload.email,
       userCode,
@@ -137,24 +146,11 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       phone,
     }).catch(rethrowLoginIdentityConflict);
 
-    const requiresSuperAdminValidation =
-      isCountryAdminPrincipal(principal) && role === SCHOOL_ADMIN_ROLE;
-    const requestedAt = new Date().toISOString();
-    const requestedBy = principal?.identifier || principal?.email || "Admin Pays";
-
     const profile = {
       contactId: payload.contactId,
-      secondaryRoles: payload.secondaryRoles ?? [],
       identifier,
       accessChannel: payload.accessChannel ?? "Application",
       createdBy: principal?.identifier || principal?.email || "system",
-      ...(requiresSuperAdminValidation
-        ? {
-            validationStatus: PENDING_VALIDATION_STATUS,
-            validationRequestedBy: requestedBy,
-            validationRequestedAt: requestedAt,
-          }
-        : {}),
       ...(payload.validationStatus ? { validationStatus: payload.validationStatus } : {}),
       ...(payload.validationRequestedBy ? { validationRequestedBy: payload.validationRequestedBy } : {}),
       ...(payload.validatedBy ? { validatedBy: payload.validatedBy } : {}),
@@ -162,9 +158,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       ...(Array.isArray(payload.history) ? { history: payload.history } : {}),
     };
 
-    const initialStatus = requiresSuperAdminValidation
-      ? PENDING_VALIDATION_STATUS
-      : payload.status || "Actif";
+    const initialStatus = payload.status || "Actif";
 
     let saved;
     try {
@@ -177,7 +171,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
         phone,
         gender: asTrimmed(payload.gender),
         birthDate: toIsoDate(payload.birthDate),
-        role: toDbRole(role),
+        role: null,
         status: toDbStatus(initialStatus),
         passwordHash: hashSecret(temporaryPassword),
         mustChangePassword: true,
@@ -187,16 +181,17 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       rethrowLoginIdentityConflict(error);
     }
 
+    const hydrated = hydrateUser(saved, []);
     await writeClientsAudit(tx, principal, auditMeta, {
       schoolCode,
       action: "create_user",
       entityType: "user",
       entityId: saved.id,
-      newValue: mapUserRow(saved),
+      newValue: hydrated,
     });
 
     return {
-      ...mapUserRow(saved),
+      ...hydrated,
       temporaryPassword,
       hasTemporaryPassword: true,
     };
@@ -204,14 +199,8 @@ async function createUser(store, rawPayload, principal, auditMeta) {
 }
 
 async function updateUser(store, userId, rawPatch, principal, auditMeta) {
+  assertNoClientPrivilegeKeys(rawPatch, FORBIDDEN_IDENTITY_PATCH_KEYS, USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_PATCH);
   const patch = ignoreClientScope(rawPatch);
-  let canonicalRole;
-  if (patch.role !== undefined) {
-    canonicalRole = assertAssignableUserRole(principal, patch.role);
-    if (typeof store.assertEstablishmentRoleAssignable === "function") {
-      canonicalRole = await store.assertEstablishmentRoleAssignable(canonicalRole, principal);
-    }
-  }
 
   const existing = await store.getUserById(userId);
   if (!existing) {
@@ -248,7 +237,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
         phone: nextPhone,
         gender: patch.gender ?? locked.gender,
         birthDate: patch.birthDate !== undefined ? toIsoDate(patch.birthDate) : locked.birth_date,
-        role: canonicalRole !== undefined ? toDbRole(canonicalRole) : locked.role,
+        role: locked.role,
         status: patch.status ? toDbStatus(patch.status) : locked.status,
         profile,
       });
@@ -256,15 +245,17 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
       rethrowLoginIdentityConflict(error);
     }
 
+    const roleKeys =
+      typeof tx.listActiveUserRoleKeys === "function" ? await tx.listActiveUserRoleKeys(saved.id) : [];
     await writeClientsAudit(tx, principal, auditMeta, {
       schoolCode,
       action: "update_user",
       entityType: "user",
       entityId: saved.id,
-      oldValue: mapUserRow(locked),
-      newValue: mapUserRow(saved),
+      oldValue: hydrateUser(locked, roleKeys),
+      newValue: hydrateUser(saved, roleKeys),
     });
-    return mapUserRow(saved);
+    return hydrateUser(saved, roleKeys);
   });
 }
 
@@ -412,8 +403,74 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       };
     }
 
+    const existingIdentity = await findActiveUserByLoginIdentity(tx, {
+      schoolId: contact.school_id,
+      email: contact.email,
+      phone: contact.phone,
+    });
+    if (existingIdentity?.id) {
+      const reused = await tx.getUserById(existingIdentity.id);
+      if (!reused) {
+        throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
+      }
+      const updatedContact = await tx.linkContactUser(contact.id, reused.id, {
+        ...parsePayload(contact.profile_payload),
+        role: PROVISION_CONTACT_ROLE,
+        secondaryRole: payload.secondaryRole,
+        hasAccess: "Oui",
+        reusedUserId: reused.id,
+      });
+      if (typeof tx.insertUserRole === "function") {
+        const keys =
+          typeof tx.listActiveUserRoleKeys === "function" ? await tx.listActiveUserRoleKeys(reused.id) : [];
+        if (!keys.includes(toRoleKey(PROVISION_CONTACT_ROLE))) {
+          try {
+            await tx.insertUserRole({
+              userId: reused.id,
+              schoolId: contact.school_id,
+              roleKey: toRoleKey(PROVISION_CONTACT_ROLE),
+              grantedBy: principal?.sub || principal?.id || null,
+            });
+          } catch (error) {
+            if (!String(error?.constraint ?? "").includes("user_roles")) throw error;
+          }
+        }
+      }
+      let relation = null;
+      if (studentId) {
+        const student = await assertStudentInContactSchool(tx, contact, studentId);
+        relation = await tx.getRelationByContactAndStudent(contact.id, student.id);
+        if (!relation) {
+          relation = await tx.insertRelation({
+            schoolId: contact.school_id,
+            countryId: contact.country_id,
+            contactId: contact.id,
+            studentId: student.id,
+            profile: {
+              fromContactName: `${contact.first_name} ${contact.last_name}`.trim(),
+              toStudentName: `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim(),
+            },
+          });
+        }
+      }
+      await writeClientsAudit(tx, principal, auditMeta, {
+        schoolCode: contact.school_code,
+        action: "provision_contact_account",
+        entityType: "contact",
+        entityId: contact.id,
+        newValue: { userId: reused.id, reused: true, relationId: relation?.id ?? null },
+      });
+      return {
+        contact: mapContactRow(updatedContact),
+        user: mapUserRow(reused),
+        relation: relation ? mapRelationRow(relation) : null,
+        created: false,
+        reused: true,
+      };
+    }
+
     const temporaryPassword = generateTemporaryPassword();
-    const userCode = generateUserCode();
+    const userCode = await allocateUserCode(tx);
     const identifier = resolveUserIdentifier({
       role,
       phone: contact.phone,
@@ -455,6 +512,15 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       });
     } catch (error) {
       rethrowLoginIdentityConflict(error);
+    }
+
+    if (typeof tx.insertUserRole === "function") {
+      await tx.insertUserRole({
+        userId: user.id,
+        schoolId: contact.school_id,
+        roleKey: toRoleKey(PROVISION_CONTACT_ROLE),
+        grantedBy: principal?.sub || principal?.id || null,
+      });
     }
 
     const updatedContact = await tx.linkContactUser(contact.id, user.id, {

@@ -232,6 +232,89 @@ async function ensureUsersLoginIdentityConstraints(db, logger = console) {
   }
 }
 
+async function lookupActiveUserByEmail(tx, { schoolId, email, excludeUserId }) {
+  const emailKey = String(email ?? "").trim().toLowerCase();
+  if (!emailKey) return null;
+  const params = [];
+  const excludeClause = excludeUserId ? `AND u.id::text <> $${params.push(excludeUserId)}` : "";
+  if (schoolId) {
+    const schoolParam = `$${params.push(schoolId)}`;
+    const emailParam = `$${params.push(emailKey)}`;
+    return tx.one(
+      `SELECT u.id::text AS id, u.user_code
+       FROM users u
+       WHERE u.school_id = ${schoolParam}
+         AND lower(trim(u.email)) = ${emailParam}
+         AND ${activeIdentityStatusSql("u")}
+         ${excludeClause}
+       LIMIT 1`,
+      params,
+    );
+  }
+  const emailParam = `$${params.push(emailKey)}`;
+  return tx.one(
+    `SELECT u.id::text AS id, u.user_code
+     FROM users u
+     WHERE u.school_id IS NULL
+       AND lower(trim(u.email)) = ${emailParam}
+       AND ${activeIdentityStatusSql("u")}
+       ${excludeClause}
+     LIMIT 1`,
+    params,
+  );
+}
+
+async function lookupActiveUserByPhone(tx, { schoolId, phone, excludeUserId }) {
+  const phoneKey = String(phone ?? "").trim().toLowerCase();
+  if (!phoneKey) return null;
+  const params = [];
+  const excludeClause = excludeUserId ? `AND u.id::text <> $${params.push(excludeUserId)}` : "";
+  if (schoolId) {
+    const schoolParam = `$${params.push(schoolId)}`;
+    const phoneParam = `$${params.push(phoneKey)}`;
+    return tx.one(
+      `SELECT u.id::text AS id, u.user_code
+       FROM users u
+       WHERE u.school_id = ${schoolParam}
+         AND lower(trim(u.phone)) = ${phoneParam}
+         AND ${activeIdentityStatusSql("u")}
+         ${excludeClause}
+       LIMIT 1`,
+      params,
+    );
+  }
+  const phoneParam = `$${params.push(phoneKey)}`;
+  return tx.one(
+    `SELECT u.id::text AS id, u.user_code
+     FROM users u
+     WHERE u.school_id IS NULL
+       AND lower(trim(u.phone)) = ${phoneParam}
+       AND ${activeIdentityStatusSql("u")}
+       ${excludeClause}
+     LIMIT 1`,
+    params,
+  );
+}
+
+/**
+ * Compte actif portant le même email ou téléphone (même établissement, ou plateforme).
+ */
+async function findActiveUserByLoginIdentity(tx, input) {
+  const excludeUserId = String(input.excludeUserId ?? "").trim();
+  const schoolId = input.schoolId ?? null;
+  const byEmail = await lookupActiveUserByEmail(tx, {
+    schoolId,
+    email: input.email,
+    excludeUserId,
+  });
+  if (byEmail) return byEmail;
+  return lookupActiveUserByPhone(tx, {
+    schoolId,
+    phone: input.phone,
+    excludeUserId,
+  });
+}
+
 /**
  * Vérifie l'unicité applicative avant INSERT/UPDATE (complète les index PG).
  * @param {{ one: Function }} tx
@@ -242,95 +325,33 @@ async function assertUniqueUserLoginIdentity(tx, input) {
   const phone = String(input.phone ?? "").trim();
   const excludeUserId = String(input.excludeUserId ?? "").trim();
   const schoolId = input.schoolId ?? null;
-
-  const params = [];
-  const excludeClause = excludeUserId ? `AND u.id::text <> $${params.push(excludeUserId)}` : "";
+  const platform = !schoolId;
 
   if (email) {
-    const emailKey = email.toLowerCase();
-    if (schoolId) {
-      params.length = excludeUserId ? 1 : 0;
-      const schoolParam = `$${params.push(schoolId)}`;
-      const emailParam = `$${params.push(emailKey)}`;
-      const row = await tx.one(
-        `SELECT u.id::text AS id, u.user_code
-         FROM users u
-         WHERE u.school_id = ${schoolParam}
-           AND lower(trim(u.email)) = ${emailParam}
-           AND ${activeIdentityStatusSql("u")}
-           ${excludeClause}
-         LIMIT 1`,
-        params,
+    const row = await lookupActiveUserByEmail(tx, { schoolId, email, excludeUserId });
+    if (row) {
+      const error = new Error(
+        platform
+          ? "Un compte plateforme avec cet email existe déjà."
+          : "Un compte avec cet email existe déjà dans cet établissement.",
       );
-      if (row) {
-        const error = new Error("Un compte avec cet email existe déjà dans cet établissement.");
-        error.statusCode = 409;
-        error.code = "USER_LOGIN_IDENTITY_DUPLICATE";
-        throw error;
-      }
-    } else {
-      params.length = excludeUserId ? 1 : 0;
-      const emailParam = `$${params.push(emailKey)}`;
-      const row = await tx.one(
-        `SELECT u.id::text AS id, u.user_code
-         FROM users u
-         WHERE u.school_id IS NULL
-           AND lower(trim(u.email)) = ${emailParam}
-           AND ${activeIdentityStatusSql("u")}
-           ${excludeClause}
-         LIMIT 1`,
-        params,
-      );
-      if (row) {
-        const error = new Error("Un compte plateforme avec cet email existe déjà.");
-        error.statusCode = 409;
-        error.code = "USER_LOGIN_IDENTITY_DUPLICATE";
-        throw error;
-      }
+      error.statusCode = 409;
+      error.code = "USER_LOGIN_IDENTITY_DUPLICATE";
+      throw error;
     }
   }
 
   if (phone) {
-    const phoneKey = phone.toLowerCase();
-    const phoneParams = [];
-    const phoneExclude = excludeUserId ? `AND u.id::text <> $${phoneParams.push(excludeUserId)}` : "";
-    if (schoolId) {
-      const schoolParam = `$${phoneParams.push(schoolId)}`;
-      const phoneParam = `$${phoneParams.push(phoneKey)}`;
-      const row = await tx.one(
-        `SELECT u.id::text AS id, u.user_code
-         FROM users u
-         WHERE u.school_id = ${schoolParam}
-           AND lower(trim(u.phone)) = ${phoneParam}
-           AND ${activeIdentityStatusSql("u")}
-           ${phoneExclude}
-         LIMIT 1`,
-        phoneParams,
+    const row = await lookupActiveUserByPhone(tx, { schoolId, phone, excludeUserId });
+    if (row) {
+      const error = new Error(
+        platform
+          ? "Un compte plateforme avec ce téléphone existe déjà."
+          : "Un compte avec ce téléphone existe déjà dans cet établissement.",
       );
-      if (row) {
-        const error = new Error("Un compte avec ce téléphone existe déjà dans cet établissement.");
-        error.statusCode = 409;
-        error.code = "USER_LOGIN_IDENTITY_DUPLICATE";
-        throw error;
-      }
-    } else {
-      const phoneParam = `$${phoneParams.push(phoneKey)}`;
-      const row = await tx.one(
-        `SELECT u.id::text AS id, u.user_code
-         FROM users u
-         WHERE u.school_id IS NULL
-           AND lower(trim(u.phone)) = ${phoneParam}
-           AND ${activeIdentityStatusSql("u")}
-           ${phoneExclude}
-         LIMIT 1`,
-        phoneParams,
-      );
-      if (row) {
-        const error = new Error("Un compte plateforme avec ce téléphone existe déjà.");
-        error.statusCode = 409;
-        error.code = "USER_LOGIN_IDENTITY_DUPLICATE";
-        throw error;
-      }
+      error.statusCode = 409;
+      error.code = "USER_LOGIN_IDENTITY_DUPLICATE";
+      throw error;
     }
   }
 }
@@ -341,6 +362,7 @@ module.exports = {
   ACTIVE_USER_IDENTITY_STATUS_SQL,
   ensureUsersLoginIdentityConstraints,
   inventoryUsersLoginIdentityDuplicates,
+  findActiveUserByLoginIdentity,
   assertUniqueUserLoginIdentity,
   isUsersLoginIdentityUniquenessViolation,
   formatUsersLoginIdentityDuplicateDiagnostic,

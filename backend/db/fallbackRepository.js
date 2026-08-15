@@ -1756,15 +1756,62 @@ class FallbackRepository {
     return this._teacherLifecycleRepo;
   }
 
+  projectClientsTeachers(schoolCode) {
+    const store = this._clientsStore;
+    const tables = store?._tables;
+    if (!tables) return [];
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    const school = tables.schools.find(
+      (row) => String(row.code ?? row.schoolCode ?? "").trim().toUpperCase() === normalized,
+    );
+    if (!school) return [];
+    return tables.teachers
+      .filter((row) => row.school_id === school.id)
+      .filter((row) => !["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase()))
+      .map((teacher) => {
+        const user = tables.users.find((row) => row.id === teacher.user_id);
+        const identifier = String(teacher.teacher_code ?? "").match(/(ENS-\d+)$/i)?.[1]?.toUpperCase() ?? teacher.teacher_code;
+        return {
+          id: teacher.teacher_code,
+          teacherCode: teacher.teacher_code,
+          publicId: teacher.teacher_code,
+          identifier,
+          userId: teacher.user_id,
+          firstName: user?.first_name ?? "",
+          lastName: user?.last_name ?? "",
+          name: `${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim(),
+          gender: user?.gender ?? "",
+          birthDate: user?.birth_date ?? "",
+          entryDate: teacher.hire_date ?? "",
+          phone: user?.phone ?? "",
+          email: user?.email ?? "",
+          speciality: teacher.speciality ?? "",
+          mainSubject: teacher.speciality ?? "",
+          schoolCode: normalized,
+          status: String(teacher.status ?? "active").toLowerCase() === "inactive" ? "Inactif" : "Actif",
+          mustChangePassword: Boolean(user?.must_change_password),
+          assignments: [],
+          assignedClasses: [],
+          courses: [],
+        };
+      });
+  }
+
   async listSchoolTeachers(schoolCode) {
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
     const managed = await this.getTeachersRepository().listBySchoolCode(schoolCode);
+    const clientsTeachers = this.projectClientsTeachers(normalized);
     const seeded = (seedData.teachers ?? [])
       .filter((row) => String(row.schoolCode ?? "").trim().toUpperCase() === normalized)
       .filter((row) => !["archived", "deleted", "archivé"].includes(String(row.status ?? "actif").toLowerCase()))
       .filter(
         (row) =>
           !managed.some(
+            (item) =>
+              String(item.teacherCode ?? item.publicId ?? "") ===
+              String(row.publicId ?? row.id ?? ""),
+          ) &&
+          !clientsTeachers.some(
             (item) =>
               String(item.teacherCode ?? item.publicId ?? "") ===
               String(row.publicId ?? row.id ?? ""),
@@ -1795,7 +1842,13 @@ class FallbackRepository {
         ],
         courses: [...new Set((row.assignments ?? []).map((item) => item.course).filter(Boolean))],
       }));
-    const rows = [...seeded, ...managed];
+    const rows = [...seeded, ...managed, ...clientsTeachers.filter((teacher) =>
+      ![...seeded, ...managed].some(
+        (item) =>
+          String(item.teacherCode ?? item.publicId ?? "") === String(teacher.teacherCode ?? teacher.publicId ?? "") ||
+          String(item.userId ?? "") === String(teacher.userId ?? ""),
+      ),
+    )];
     const assignments = await this.listSchoolTeacherAssignments(schoolCode);
     return rows.map((teacher) => {
       const teacherAssignments = assignments
@@ -2438,10 +2491,18 @@ class FallbackRepository {
       const store = createClientsMemoryStore({
         school: shouldSeedDemoData() ? seedData.school : null,
         platformSchools: this._managedSchools ?? (shouldSeedDemoData() ? seedData.platformSchools : []),
-        students: shouldSeedDemoData() ? seedData.students : [],
+        students: shouldSeedDemoData()
+          ? (seedData.students ?? []).map((student) => ({
+              ...student,
+              school_id: seedData.school.id,
+              student_code: student.studentCode ?? student.matricule ?? student.publicId ?? student.id,
+            }))
+          : [],
       });
       store.assertEstablishmentRoleAssignable = (role, principal) =>
         this.assertEstablishmentRoleAssignable(role, principal);
+      store.listEstablishmentAssignableRoles = (principal) =>
+        this.listEstablishmentRoles({ schoolAssignableOnly: true, principal });
       this._clientsStore = store;
     }
     return this._clientsStore;
@@ -2461,6 +2522,24 @@ class FallbackRepository {
 
   updateClientsUser(id, patch, principal, auditMeta) {
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
+  }
+
+  grantClientsUserRole(userId, payload, principal, auditMeta) {
+    return this.getClientsStore().grantUserRole(userId, payload, principal, auditMeta);
+  }
+
+  revokeClientsUserRole(userId, payload, principal, auditMeta) {
+    return this.getClientsStore().revokeUserRole(userId, payload, principal, auditMeta);
+  }
+
+  listAssignableClientsUserRoles(principal) {
+    return this.getClientsStore().listAssignableUserRoles(principal);
+  }
+
+  listActiveUserRoleKeys(userId) {
+    const store = this.getClientsStore();
+    if (store?.bind) return store.bind().listActiveUserRoleKeys(userId);
+    return Promise.resolve([]);
   }
 
   createClientsContact(payload, principal, auditMeta) {
