@@ -1,21 +1,89 @@
 -- Code établissement canonique de connexion.
--- Format : {ISO_PAYS}-{INITIALES_ETAB}-{YY_CREATION}-{SEQ3}, ex. CD-IK-26-001.
+-- Format public : {ISO_PAYS}-{INITIALES_ETAB}-{YY_CREATION}-{SEQ3}, ex. CD-IK-26-001.
 -- `school_code` et `short_code` restent des identifiants internes/aliases de compatibilité.
 -- L'année est figée depuis created_at de la fiche établissement ; le code ne change jamais ensuite.
 
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
 
+-- #187 garde short_code unique par pays pour les identités déjà émises.
+-- Deux établissements portant les mêmes initiales reçoivent donc IK, IK2, IK3 en interne,
+-- mais leur code public est séquencé sur les initiales naturelles : CD-IK-26-001, ...002, etc.
+CREATE OR REPLACE FUNCTION somafrik_prepare_school_short_code()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  base_code TEXT;
+  candidate TEXT;
+  suffix INTEGER := 1;
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND OLD.short_code IS NOT NULL
+     AND NEW.short_code IS DISTINCT FROM OLD.short_code THEN
+    RAISE EXCEPTION 'SCHOOL_SHORT_CODE_IMMUTABLE: %', OLD.short_code;
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND OLD.short_code IS NOT NULL THEN
+    NEW.short_code := OLD.short_code;
+    RETURN NEW;
+  END IF;
+
+  IF nullif(btrim(NEW.short_code), '') IS NULL THEN
+    base_code := somafrik_school_short_code(NEW.name);
+  ELSE
+    base_code := regexp_replace(somafrik_ascii_upper(NEW.short_code), '[^A-Z0-9]', '', 'g');
+  END IF;
+
+  IF length(base_code) < 2 OR length(base_code) > 5 THEN
+    RAISE EXCEPTION 'SCHOOL_SHORT_CODE_INVALID: %', base_code;
+  END IF;
+
+  candidate := base_code;
+  WHILE EXISTS (
+    SELECT 1
+    FROM schools other
+    WHERE other.country_id IS NOT DISTINCT FROM NEW.country_id
+      AND upper(btrim(other.short_code)) = candidate
+  ) LOOP
+    suffix := suffix + 1;
+    IF suffix > 999 THEN
+      RAISE EXCEPTION 'SCHOOL_SHORT_CODE_AMBIGUOUS: %', base_code;
+    END IF;
+    candidate := left(base_code, greatest(1, 5 - length(suffix::text))) || suffix::text;
+  END LOOP;
+
+  NEW.short_code := candidate;
+  RETURN NEW;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS school_login_code_counters (
   country_id UUID NOT NULL REFERENCES countries(id),
   school_initials TEXT NOT NULL,
   creation_year SMALLINT NOT NULL,
-  last_value INTEGER NOT NULL DEFAULT 0 CHECK (last_value >= 0 AND last_value <= 999),
+  last_value INTEGER NOT NULL DEFAULT 0 CHECK (last_value >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (country_id, school_initials, creation_year)
 );
 
--- Backfill déterministe : plusieurs établissements peuvent partager les mêmes initiales.
+-- Avant le backfill, refuser explicitement un groupe qui dépasserait la capacité SEQ3.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM schools s
+    GROUP BY
+      s.country_id,
+      somafrik_school_short_code(s.name),
+      extract(year FROM coalesce(s.created_at, NOW()))::integer
+    HAVING count(*) > 999
+  ) THEN
+    RAISE EXCEPTION 'SCHOOL_LOGIN_SEQUENCE_EXHAUSTED_BACKFILL';
+  END IF;
+END $$;
+
+-- Backfill déterministe : plusieurs établissements peuvent partager les mêmes initiales naturelles.
 WITH ranked AS (
   SELECT
     s.id,
@@ -78,19 +146,16 @@ ALTER TABLE schools ALTER COLUMN login_code SET NOT NULL;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  IF EXISTS (
     SELECT 1
     FROM pg_constraint
     WHERE conname = 'schools_login_code_format_check'
       AND conrelid = 'schools'::regclass
   ) THEN
-    ALTER TABLE schools ADD CONSTRAINT schools_login_code_format_check
-      CHECK (login_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$') NOT VALID;
-  ELSE
     ALTER TABLE schools DROP CONSTRAINT schools_login_code_format_check;
-    ALTER TABLE schools ADD CONSTRAINT schools_login_code_format_check
-      CHECK (login_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$') NOT VALID;
   END IF;
+  ALTER TABLE schools ADD CONSTRAINT schools_login_code_format_check
+    CHECK (login_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$') NOT VALID;
 END $$;
 ALTER TABLE schools VALIDATE CONSTRAINT schools_login_code_format_check;
 
