@@ -168,7 +168,7 @@ function mapEstablishmentRow(row, subscription = null) {
     id: row.id,
     countryId: row.country_id,
     countryCode: profile.countryCode || row.iso_code,
-    publicId: profile.publicId || legacySchoolCode,
+    publicId: canonicalLoginCode || profile.publicId || legacySchoolCode,
     code: legacySchoolCode,
     loginCode: canonicalLoginCode,
     shortCode: asTrimmedString(row.short_code).toUpperCase(),
