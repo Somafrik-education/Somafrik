@@ -9,8 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { mergeRemoteSnapshot } from "../lib/backofficeStateMerge";
+import { mergeRemoteSnapshot, purgeInactiveSchoolFromState } from "../lib/backofficeStateMerge";
+import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
 import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
+import { logDomainSync } from "../lib/domainSyncTelemetry";
 import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
@@ -61,6 +63,8 @@ interface DataContextValue {
   ensureDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => Promise<void>;
   /** Invalide le cache de domaines (ex. changement d'établissement actif). */
   invalidateDomains: (domains: DomainKey[], options?: EnsureDomainsOptions) => void;
+  /** Purge les données scopées d'un établissement inactif (changement d'établissement). */
+  purgeSchoolScopedState: (inactiveSchoolCode: string) => void;
   update: (patch: Partial<BackOfficeState>, options?: UpdateOptions) => Promise<void>;
   retryFailedSync: () => Promise<void>;
 }
@@ -128,6 +132,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   sessionUserRef.current = session?.user ?? null;
   const loadedDomainsRef = useRef<Set<string>>(new Set());
   const activeSchoolCodeRef = useRef("");
+  const domainFetchGenerationRef = useRef(new Map<string, number>());
 
   const rememberSchoolCode = useCallback((schoolCode?: string) => {
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
@@ -150,24 +155,57 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const mergeLoadedDomains = useCallback(
-    (remote: Partial<BackOfficeState>, cacheKeys: string[]) => {
+    (
+      remote: Partial<BackOfficeState>,
+      cacheKeys: string[],
+      loadedKeys: DomainKey[],
+      schoolCode?: string,
+      expectedGenerations?: Map<string, number>,
+    ) => {
+      if (expectedGenerations) {
+        for (const key of cacheKeys) {
+          if (domainFetchGenerationRef.current.get(key) !== expectedGenerations.get(key)) {
+            return false;
+          }
+        }
+      }
+
       for (const key of cacheKeys) loadedDomainsRef.current.add(key);
       setState((prev) => {
-        const merged = mergeRemoteSnapshot(prev, remote);
+        const merged = mergeRemoteSnapshot(prev, remote, {
+          activeSchoolCode: schoolCode ?? activeSchoolCodeRef.current,
+          loadedKeys,
+        });
+        logDomainSync("DOMAIN_SERVER_REPLACE", {
+          domains: loadedKeys,
+          schoolCode,
+          count: loadedKeys.length,
+        });
         const withPending = reapplyOutboxToState(merged, listActiveOutboxEntries());
         return sessionUserRef.current
           ? applyClientScopeToState(withPending, sessionUserRef.current)
           : withPending;
       });
+      return true;
     },
     [],
   );
 
   const invalidateDomains = useCallback((domains: DomainKey[], options: EnsureDomainsOptions = {}) => {
     for (const domain of domains) {
-      loadedDomainsRef.current.delete(domainCacheKey(domain, options.schoolCode));
+      const cacheKey = domainCacheKey(domain, options.schoolCode);
+      loadedDomainsRef.current.delete(cacheKey);
+      logDomainSync("DOMAIN_INVALIDATED", { domain, schoolCode: options.schoolCode });
     }
   }, []);
+
+  const purgeSchoolScopedState = useCallback((inactiveSchoolCode: string) => {
+    const normalized = String(inactiveSchoolCode ?? "").trim().toUpperCase();
+    if (!normalized || normalized === "*") return;
+    setState((prev) => purgeInactiveSchoolFromState(prev, normalized));
+    const domains = [...SCHOOL_SCOPED_CANONICAL_KEYS, "academicConfigs"] as DomainKey[];
+    invalidateDomains(domains, { schoolCode: normalized });
+  }, [invalidateDomains]);
 
   const refreshDomains = useCallback(
     async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
@@ -185,9 +223,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       setLoading(true);
       try {
+        const cacheKeys = cacheKeysForDomains(keys, schoolCode);
+        const expectedGenerations = new Map<string, number>();
+        for (const key of cacheKeys) {
+          const nextGen = (domainFetchGenerationRef.current.get(key) ?? 0) + 1;
+          domainFetchGenerationRef.current.set(key, nextGen);
+          expectedGenerations.set(key, nextGen);
+        }
+        logDomainSync("DOMAIN_FETCH_START", { domains: keys, schoolCode });
+
         const result = await loadDomains(keys, { schoolCode });
         if (result.loaded.length) {
-          mergeLoadedDomains(result.data, cacheKeysForDomains(result.loaded, schoolCode));
+          const applied = mergeLoadedDomains(
+            result.data,
+            cacheKeysForDomains(result.loaded, schoolCode),
+            result.loaded,
+            schoolCode,
+            expectedGenerations,
+          );
+          if (applied) {
+            logDomainSync("DOMAIN_FETCH_SUCCESS", { domains: result.loaded, schoolCode });
+          }
+        }
+        if (result.serverErrors.length) {
+          for (const entry of result.serverErrors) {
+            logDomainSync("DOMAIN_FETCH_ERROR", { domain: entry.domain, error: entry.message });
+          }
         }
         const failure = formatOutboxFailureMessage(loadSyncOutbox());
         const loadError = result.serverErrors.map((entry) => `${entry.domain}: ${entry.message}`).join(" ; ");
@@ -336,7 +397,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
             String(options.schoolCode ?? sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase() || undefined;
           const result = await loadDomains(refreshKeys, { schoolCode: targetSchool });
           if (result.loaded.length) {
-            mergeLoadedDomains(result.data, cacheKeysForDomains(result.loaded, targetSchool));
+            mergeLoadedDomains(
+              result.data,
+              cacheKeysForDomains(result.loaded, targetSchool),
+              result.loaded,
+              targetSchool,
+            );
           }
         }
 
@@ -408,10 +474,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refresh: refreshDomains,
       ensureDomains,
       invalidateDomains,
+      purgeSchoolScopedState,
       update,
       retryFailedSync,
     }),
-    [state, loading, error, syncJournal, refreshDomains, ensureDomains, invalidateDomains, update, retryFailedSync],
+    [state, loading, error, syncJournal, refreshDomains, ensureDomains, invalidateDomains, purgeSchoolScopedState, update, retryFailedSync],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
