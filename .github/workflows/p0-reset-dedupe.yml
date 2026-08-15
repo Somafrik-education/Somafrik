@@ -1,0 +1,47 @@
+name: P0 Reset Dedupe
+on:
+  push:
+    branches: [agent/p0-password-reset-lockout]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p0-password-reset-lockout
+          fetch-depth: 0
+      - name: Remove duplicated reset scenario
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/scripts/verify-admin-user-creation.js')
+          text = p.read_text()
+          marker = '    // P0 reset password : verrouiller volontairement le compte, puis exiger un reset qui\n'
+          positions = []
+          start = 0
+          while True:
+              idx = text.find(marker, start)
+              if idx < 0: break
+              positions.append(idx)
+              start = idx + 1
+          if len(positions) != 2:
+              raise SystemExit(f'expected exactly 2 reset blocks, found {len(positions)}')
+          second = positions[1]
+          end_marker = '    // 4) Admin School -> utilisateur standard -> GRANT Secrétaire.\n'
+          end = text.find(end_marker, second)
+          if end < 0:
+              raise SystemExit('section 4 marker not found after duplicate block')
+          p.write_text(text[:second] + text[end:])
+          PY
+          node --check backend/scripts/verify-admin-user-creation.js
+          git diff --check
+      - name: Commit and push
+        run: |
+          git config user.name "somafrik-cto-bot"
+          git config user.email "cto-bot@somafrik.local"
+          git add backend/scripts/verify-admin-user-creation.js
+          git commit -m "test(auth): supprimer doublon scénario reset password"
+          git push origin HEAD:agent/p0-password-reset-lockout
