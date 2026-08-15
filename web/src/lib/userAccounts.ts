@@ -38,8 +38,24 @@ export function isPlatformUserRole(role?: string): boolean {
   return [...PLATFORM_ROLES].some((platformRole) => normalizedPlatformRoleKey(platformRole) === key);
 }
 
-/** Comptes plateforme gérables par le Superadmin (dont ceux créés par un Admin Pays). */
-export function isSuperadminManagedUser(user: Pick<UserAccount, "role">): boolean {
+export function isUnassignedUserAccount(
+  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
+): boolean {
+  const role = normalize(String(user.role ?? ""));
+  const roles = Array.isArray(user.roles) ? user.roles.filter((item) => normalize(item)) : [];
+  const assignmentStatus = normalize(String(user.assignmentStatus ?? ""));
+  return (
+    roles.length === 0 &&
+    (!role || role === "sans affectation") &&
+    (!assignmentStatus || assignmentStatus === "sans affectation")
+  );
+}
+
+/** Comptes plateforme gérables par le Superadmin (dont les identités encore sans rôle). */
+export function isSuperadminManagedUser(
+  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
+): boolean {
+  if (isUnassignedUserAccount(user)) return true;
   const key = normalizedPlatformRoleKey(user.role);
   return (
     normalizedPlatformRoleKey(COUNTRY_ADMIN_ROLE) === key ||
@@ -74,7 +90,8 @@ export function canManageUserAccount(
   }
   if (actor.role === COUNTRY_ADMIN_ROLE) {
     return (
-      normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) &&
+      (normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) ||
+        isUnassignedUserAccount(target)) &&
       (action === "READ" || action === "CREATE" || action === "UPDATE" || action === "SUSPEND")
     );
   }
