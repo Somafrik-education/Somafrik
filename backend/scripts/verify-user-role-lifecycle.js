@@ -117,7 +117,13 @@ async function main() {
     const created = await request("/backoffice/users", {
       method: "POST",
       token: school.token,
-      body: { firstName: "Marie", lastName: "Kabeya", email: "marie.lifecycle@test.local", phone: "+243900222111" },
+      body: {
+        firstName: "Marie",
+        lastName: "Kabeya",
+        email: "marie.lifecycle@test.local",
+        phone: "+243900222111",
+        temporaryPassword: "LifecyclePass12",
+      },
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.match(String(created.data.id), /^[0-9a-f-]{36}$/i);
@@ -156,6 +162,13 @@ async function main() {
     assert.equal(grantTeacher.status, 200, JSON.stringify(grantTeacher.data));
     assert.deepEqual(grantTeacher.data.roleKeys, ["PREFET_ETUDES", "TEACHER"]);
     assert.equal(grantTeacher.data.roles[0], "Préfet des études");
+
+    const afterGrantSession = await login(created.data.publicId, "LifecyclePass12", "CD-2026-0001");
+    assert.deepEqual(afterGrantSession.user.roleKeys, ["PREFET_ETUDES", "TEACHER"]);
+    assert.equal(afterGrantSession.user.role, "Préfet des études");
+    const grantedPermissions = new Set(afterGrantSession.user.permissions ?? []);
+    assert.ok(grantedPermissions.size > 0, "JWT après GRANT : permissions issues des rôles actifs");
+    assert.equal(grantedPermissions.has("ALL_PRIVILEGES"), false);
 
     const teachers = await request("/teachers", { token: school.token });
     assert.equal(teachers.status, 200);
@@ -254,6 +267,25 @@ async function main() {
     assert.equal(revokeLast.status, 200, JSON.stringify(revokeLast.data));
     assert.equal(revokeLast.data.assignmentStatus, "Sans affectation");
     assert.deepEqual(revokeLast.data.roleKeys ?? [], []);
+
+    const afterRevokeSession = await login(created.data.publicId, "LifecyclePass12", "CD-2026-0001");
+    assert.deepEqual(afterRevokeSession.user.roleKeys ?? [], []);
+    assert.ok(
+      !afterRevokeSession.user.role || afterRevokeSession.user.role === "Sans affectation",
+      `plus de privilège résiduel via users.role: ${afterRevokeSession.user.role}`,
+    );
+    const revokedPermissions = new Set(afterRevokeSession.user.permissions ?? []);
+    assert.equal(revokedPermissions.has("ALL_PRIVILEGES"), false);
+    assert.equal(revokedPermissions.has("Enseignants:UPDATE"), false);
+    assert.equal(revokedPermissions.has("Gérer enseignants"), false);
+    for (const permission of grantedPermissions) {
+      if (permission === "Voir tableau de bord") continue;
+      assert.equal(
+        revokedPermissions.has(permission),
+        false,
+        `permission résiduelle après dernier REVOKE: ${permission}`,
+      );
+    }
 
     const listed = await request("/backoffice/users", { token: school.token });
     const afterRevoke = (listed.data ?? []).find((row) => row.id === created.data.id);

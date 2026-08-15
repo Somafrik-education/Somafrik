@@ -40,7 +40,12 @@ CREATE TABLE IF NOT EXISTS user_code_counters (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-UPDATE establishment_roles
-SET school_assignable = FALSE, updated_at = NOW()
-WHERE role_code IN ('PARENT', 'STUDENT')
-   OR role_name IN ('Parent', 'Élève / Étudiant');
+DO $$
+BEGIN
+  IF to_regclass('public.establishment_roles') IS NOT NULL THEN
+    UPDATE establishment_roles
+    SET school_assignable = FALSE, updated_at = NOW()
+    WHERE role_code IN ('PARENT', 'STUDENT')
+       OR role_name IN ('Parent', 'Élève / Étudiant');
+  END IF;
+END $$;

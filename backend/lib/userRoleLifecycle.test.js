@@ -10,6 +10,11 @@ const {
   FORBIDDEN_CREATE_KEYS,
 } = require("./userRoleLifecycle");
 
+function storedPrimaryRole(store, userId) {
+  const row = store._tables.users.find((user) => user.id === userId);
+  return row?.role ?? null;
+}
+
 function buildStore() {
   return createClientsMemoryStore({
     platformSchools: [
@@ -58,6 +63,7 @@ async function main() {
   assert.match(created.publicId, /^USR-\d{4}-\d{5}$/);
   assert.equal(created.assignmentStatus, "Sans affectation");
   assert.deepEqual(created.roleKeys, []);
+  assert.equal(storedPrimaryRole(store, created.id), null);
   assert.ok(store.getAuditLog().some((row) => row.action === "create_user"));
 
   await expectRejection(
@@ -79,11 +85,13 @@ async function main() {
 
   const granted = await store.grantUserRole(created.id, { role: "Secrétaire" }, schoolAdmin, auditMeta);
   assert.deepEqual(granted.roleKeys, ["SECRETARY"]);
+  assert.equal(storedPrimaryRole(store, created.id), "SECRETARY");
   assert.ok(store.getAuditLog().some((row) => row.action === "grant_role" && row.newValue?.operation === "GRANT"));
 
   const multi = await store.grantUserRole(created.id, { role: "Enseignant" }, schoolAdmin, auditMeta);
   assert.deepEqual(multi.roleKeys, ["SECRETARY", "TEACHER"]);
   assert.equal(multi.roles[0], "Secrétaire");
+  assert.equal(storedPrimaryRole(store, created.id), "SECRETARY");
   assert.ok(store._tables.teachers.some((row) => row.user_id === created.id));
 
   await expectRejection(
@@ -121,15 +129,18 @@ async function main() {
 
   const revoked = await store.revokeUserRole(created.id, { role: "Secrétaire" }, schoolAdmin, auditMeta);
   assert.deepEqual(revoked.roleKeys, ["TEACHER"]);
+  assert.equal(storedPrimaryRole(store, created.id), "TEACHER");
   assert.ok(store.getAuditLog().some((row) => row.action === "revoke_role" && row.oldValue?.operation === "REVOKE"));
 
   const last = await store.revokeUserRole(created.id, { role: "Enseignant" }, schoolAdmin, auditMeta);
   assert.deepEqual(last.roleKeys, []);
   assert.equal(last.assignmentStatus, "Sans affectation");
+  assert.equal(storedPrimaryRole(store, created.id), null);
   assert.equal(store._tables.teachers.find((row) => row.user_id === created.id)?.status, "inactive");
 
   const regranted = await store.grantUserRole(created.id, { role: "Enseignant" }, schoolAdmin, auditMeta);
   assert.deepEqual(regranted.roleKeys, ["TEACHER"]);
+  assert.equal(storedPrimaryRole(store, created.id), "TEACHER");
   assert.equal(store._tables.teachers.filter((row) => row.user_id === created.id).length, 1);
 
   const contact = await store.createContact(

@@ -102,7 +102,9 @@ async function main() {
     assert.equal(row.rows[0].role, null);
 
     await store.grantUserRole(created.id, { role: "Secrétaire" }, principal, auditMeta);
+    assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "SECRETARY");
     await store.grantUserRole(created.id, { role: "Enseignant" }, principal, auditMeta);
+    assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "SECRETARY");
     const roles = await pool.query(
       `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active' ORDER BY role_key`,
       [created.id],
@@ -125,6 +127,23 @@ async function main() {
       [created.id],
     );
     assert.equal(accountant.rows[0].count, 1);
+    assert.equal(
+      (await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role,
+      "ACCOUNTANT",
+      "plusieurs rôles → users.role = priorité canonique (ACCOUNTANT > SECRETARY > TEACHER)",
+    );
+
+    await store.revokeUserRole(created.id, { role: "Comptable" }, principal, auditMeta);
+    assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "SECRETARY");
+    await store.revokeUserRole(created.id, { role: "Secrétaire" }, principal, auditMeta);
+    assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "TEACHER");
+    await store.revokeUserRole(created.id, { role: "Enseignant" }, principal, auditMeta);
+    assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, null);
+    const leftoverAfterLast = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM user_roles WHERE user_id = $1 AND status = 'active'`,
+      [created.id],
+    );
+    assert.equal(leftoverAfterLast.rows[0].count, 0);
 
     const [codeA, codeB] = await Promise.all([
       store.createUser({ firstName: "A", lastName: "Un", email: "a.un@test.local" }, principal, auditMeta),
@@ -157,6 +176,32 @@ async function main() {
       [isolated.id],
     );
     assert.equal(leftover.rows[0].count, 0, "rollback total si audit GRANT échoue");
+    assert.equal(
+      (await pool.query(`SELECT role FROM users WHERE id = $1`, [isolated.id])).rows[0].role,
+      null,
+      "users.role rollbacké avec user_roles si audit GRANT échoue",
+    );
+
+    await store.grantUserRole(isolated.id, { role: "Secrétaire" }, principal, auditMeta);
+    assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [isolated.id])).rows[0].role, "SECRETARY");
+    await assert.rejects(
+      () => failStore.grantUserRole(isolated.id, { role: "Enseignant" }, principal, auditMeta),
+      /audit failed/,
+    );
+    assert.equal(
+      (await pool.query(`SELECT role FROM users WHERE id = $1`, [isolated.id])).rows[0].role,
+      "SECRETARY",
+      "users.role inchangé si GRANT suivant rollback",
+    );
+    assert.equal(
+      (
+        await pool.query(
+          `SELECT COUNT(*)::int AS count FROM user_roles WHERE user_id = $1 AND role_key = 'TEACHER' AND status = 'active'`,
+          [isolated.id],
+        )
+      ).rows[0].count,
+      0,
+    );
 
     console.log("userRoleLifecycle.pg.test.js OK");
   } finally {
