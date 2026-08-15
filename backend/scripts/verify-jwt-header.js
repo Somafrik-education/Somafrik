@@ -437,7 +437,7 @@ async function assertPositivePdf(base, token, studentId) {
 }
 
 async function runHttpTests(base) {
-  const probePath = "/school";
+  const probePath = "/backoffice/users";
   const token = await login(base);
 
   // Positif — Bearer valide
