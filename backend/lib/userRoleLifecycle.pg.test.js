@@ -98,8 +98,10 @@ async function main() {
       auditMeta,
     );
     assert.match(created.id, /^[0-9a-f-]{36}$/i);
-    assert.match(created.publicId, /^USR-\d{4}-\d{5}$/);
+    assert.equal(created.publicId, "CD-IK-GK-26-00001");
+    assert.equal(created.identityCode, "CD-IK-GK-26-00001");
     assert.equal(created.identifier, "GK-26-00001", "login court permanent exposé par le compte");
+    assert.match(created.userCode, /^USR-\d{4}-\d{5}$/, "alias user_code legacy conservé");
     assert.equal(created.assignmentStatus, "Sans affectation");
 
     const row = await pool.query(
@@ -108,7 +110,7 @@ async function main() {
       [created.id],
     );
     assert.equal(row.rows[0].id, created.id);
-    assert.equal(row.rows[0].user_code, created.publicId, "user_code legacy conservé comme alias de compatibilité");
+    assert.equal(row.rows[0].user_code, created.userCode, "user_code legacy conservé comme alias de compatibilité");
     assert.equal(row.rows[0].role, null);
     assert.equal(row.rows[0].identity_initials, "GK");
     assert.equal(Number(row.rows[0].identity_year), 2026);
