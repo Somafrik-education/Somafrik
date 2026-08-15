@@ -1,0 +1,48 @@
+name: P0 School Login Fix 2
+
+on:
+  push:
+    branches: [agent/p0-school-login]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p0-school-login
+          fetch-depth: 0
+      - name: Apply canonical identity fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          repo = Path('backend/db/postgresRepository.js')
+          text = repo.read_text()
+          old = 'const identityCode = String(profilePayload.identityCode ?? user.identity_code ?? "").trim();'
+          new = 'const identityCode = String(user.identity_code ?? profilePayload.identityCode ?? "").trim();'
+          if text.count(old) != 1:
+              raise SystemExit(f'identity precedence patch expected once, found {text.count(old)}')
+          repo.write_text(text.replace(old, new, 1))
+
+          test = Path('backend/scripts/verify-admin-user-creation.js')
+          text = test.read_text()
+          old = '''    await pool.query(\n      `UPDATE users\n          SET profile_payload = jsonb_set(COALESCE(profile_payload, '{}'::jsonb), '{identityCode}', to_jsonb($2::text), true),\n              updated_at = NOW()\n        WHERE id = $1`,\n      [activeSchoolIdentity.id, displayedSchoolAdminId],\n    );'''
+          new = '''    await pool.query(\n      `UPDATE users\n          SET identity_code = $2,\n              updated_at = NOW()\n        WHERE id = $1`,\n      [activeSchoolIdentity.id, displayedSchoolAdminId],\n    );'''
+          if text.count(old) != 1:
+              raise SystemExit(f'E2E identity column patch expected once, found {text.count(old)}')
+          test.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff -- backend/db/postgresRepository.js backend/scripts/verify-admin-user-creation.js
+      - name: Commit fix
+        run: |
+          git config user.name "somafrik-cto-bot"
+          git config user.email "cto-bot@somafrik.local"
+          git add backend/db/postgresRepository.js backend/scripts/verify-admin-user-creation.js
+          git commit -m "fix(auth): utiliser identity_code canonique au login"
+          git push origin HEAD:agent/p0-school-login
