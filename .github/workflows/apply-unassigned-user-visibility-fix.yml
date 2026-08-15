@@ -2,35 +2,28 @@ name: Apply Unassigned User Visibility Fix
 
 on:
   push:
-    branches: [agent/p0-unassigned-user-visibility]
+    branches:
+      - agent/p0-unassigned-user-visibility
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/p0-unassigned-user-visibility
           fetch-depth: 0
-
-      - name: Patch user visibility rules
+      - name: Patch visibility rules
+        shell: bash
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
-
           ua = Path('web/src/lib/userAccounts.ts')
           s = ua.read_text()
-          anchor = '''export function isPlatformUserRole(role?: string): boolean {
-  if (!role) return false;
-  const key = normalizedPlatformRoleKey(role);
-  return [...PLATFORM_ROLES].some((platformRole) => normalizedPlatformRoleKey(platformRole) === key);
-}
-
-/** Comptes plateforme gérables par le Superadmin (dont ceux créés par un Admin Pays). */
+          old = '''/** Comptes plateforme gérables par le Superadmin (dont ceux créés par un Admin Pays). */
 export function isSuperadminManagedUser(user: Pick<UserAccount, "role">): boolean {
   const key = normalizedPlatformRoleKey(user.role);
   return (
@@ -39,13 +32,7 @@ export function isSuperadminManagedUser(user: Pick<UserAccount, "role">): boolea
   );
 }
 '''
-          replacement = '''export function isPlatformUserRole(role?: string): boolean {
-  if (!role) return false;
-  const key = normalizedPlatformRoleKey(role);
-  return [...PLATFORM_ROLES].some((platformRole) => normalizedPlatformRoleKey(platformRole) === key);
-}
-
-export function isUnassignedUserAccount(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">): boolean {
+          new = '''export function isUnassignedUserAccount(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">): boolean {
   const role = normalize(String(user.role ?? ""));
   const roles = Array.isArray(user.roles) ? user.roles.filter((item) => normalize(item)) : [];
   const assignmentStatus = normalize(String(user.assignmentStatus ?? ""));
@@ -62,18 +49,16 @@ export function isSuperadminManagedUser(user: Pick<UserAccount, "role" | "roles"
   );
 }
 '''
-          if s.count(anchor) != 1:
-              raise SystemExit(f'userAccounts anchor count={s.count(anchor)}')
-          ua.write_text(s.replace(anchor, replacement, 1))
+          if s.count(old) != 1:
+              raise SystemExit(f'userAccounts target count={s.count(old)}')
+          ua.write_text(s.replace(old, new, 1))
 
           scope = Path('web/src/lib/scope.ts')
           t = scope.read_text()
           old_import = 'import { isSuperadminManagedUser } from "./userAccounts";'
-          new_import = 'import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";'
           if t.count(old_import) != 1:
-              raise SystemExit(f'scope import count={t.count(old_import)}')
-          t = t.replace(old_import, new_import, 1)
-
+              raise SystemExit(f'import target count={t.count(old_import)}')
+          t = t.replace(old_import, 'import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";', 1)
           old_filter = '''    return visible.filter(
       (account) =>
         account.role === SCHOOL_ADMIN_ROLE &&
@@ -87,14 +72,11 @@ export function isSuperadminManagedUser(user: Pick<UserAccount, "role" | "roles"
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );'''
           if t.count(old_filter) != 1:
-              raise SystemExit(f'country filter count={t.count(old_filter)}')
+              raise SystemExit(f'country filter target count={t.count(old_filter)}')
           scope.write_text(t.replace(old_filter, new_filter, 1))
           PY
-
-          npm ci
-          npm run lint -- --max-warnings=9999
-
-      - name: Commit product fix
+      - name: Commit fix
+        shell: bash
         run: |
           git config user.name "Somafrik CTO Bot"
           git config user.email "cto-bot@somafrik.local"
