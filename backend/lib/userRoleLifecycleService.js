@@ -95,9 +95,21 @@ function assertNotSelfTarget(principal, targetUserId) {
 }
 
 async function assertGrantableRole(store, principal, roleInput) {
-  const roleKey = toRoleKey(roleInput);
-  if (!roleKey || !isKnownRoleKey(roleKey)) {
-    throw createUserRoleError(400, "Rôle inconnu.", USER_ROLE_ERROR.ROLE_UNKNOWN);
+  let roleKey = toRoleKey(roleInput);
+  let label = toRoleLabel(roleKey) || asTrimmed(roleInput);
+  if (!isKnownRoleKey(roleKey)) {
+    if (typeof store.assertEstablishmentRoleAssignable !== "function") {
+      throw createUserRoleError(400, "Rôle inconnu.", USER_ROLE_ERROR.ROLE_UNKNOWN);
+    }
+    try {
+      label = await store.assertEstablishmentRoleAssignable(roleInput, principal);
+      roleKey = toRoleKey(label || roleInput);
+    } catch (error) {
+      if (error?.statusCode === 404) {
+        throw createUserRoleError(400, "Rôle inconnu.", USER_ROLE_ERROR.ROLE_UNKNOWN);
+      }
+      throw error;
+    }
   }
 
   if (isForbiddenAssignRoleKey(roleKey)) {
@@ -136,9 +148,8 @@ async function assertGrantableRole(store, principal, roleInput) {
     );
   }
 
-  const label = toRoleLabel(roleKey);
   if (typeof store.assertEstablishmentRoleAssignable === "function" && !isPlatformRoleKey(roleKey) && !SCHOOL_PLATFORM_ROLE_KEYS.includes(roleKey)) {
-    await store.assertEstablishmentRoleAssignable(label, principal);
+    label = (await store.assertEstablishmentRoleAssignable(label || roleInput, principal)) || label;
   }
 
   return { roleKey, label };
@@ -420,12 +431,12 @@ async function listAssignableRolesForPrincipal(store, principal) {
     return catalogue
       .map((row) => ({
         roleKey: toRoleKey(row.roleCode || row.roleName),
-        roleName: toRoleLabel(toRoleKey(row.roleCode || row.roleName)) || row.roleName,
+        roleName: row.roleName,
       }))
       .filter(
         (row) =>
           row.roleKey &&
-          isKnownRoleKey(row.roleKey) &&
+          row.roleName &&
           !isForbiddenAssignRoleKey(row.roleKey) &&
           !isForbiddenAssignRoleKey(row.roleName) &&
           !isPlatformRoleKey(row.roleKey),
