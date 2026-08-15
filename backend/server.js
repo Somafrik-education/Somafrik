@@ -397,7 +397,11 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
   if (typeof repository.listActiveUserRoleKeys === "function" && session.user_id) {
     try {
       const loaded = await repository.listActiveUserRoleKeys(session.user_id);
-      if (Array.isArray(loaded) && loaded.length) roleKeys = loaded;
+      if (Array.isArray(loaded) && loaded.length) {
+        roleKeys = loaded;
+      } else if (Array.isArray(loaded) && (!session.role || session.role === "Sans affectation")) {
+        roleKeys = [];
+      }
     } catch {
       /* fail-closed: keep session.role */
     }
@@ -481,6 +485,16 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
     ...sanitizeUserForResponse(updatedUser),
     mustChangePassword: false,
   };
+  if (typeof repository.listActiveUserRoleKeys === "function" && (safeUser.id || updatedUser?.id)) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(safeUser.id || updatedUser.id);
+      if (Array.isArray(loaded)) {
+        safeUser = { ...safeUser, roleKeys: loaded };
+      }
+    } catch {
+      /* fail-closed: keep updated user projection */
+    }
+  }
   // HOTFIX-PRE-E1-02 : ne pas perdre assignedClasses après change-password.
   if (safeUser.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
@@ -500,7 +514,13 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   });
   res.json({
     message: "Mot de passe mis à jour.",
-    user: safeUser,
+    user: {
+      ...safeUser,
+      role: principal.role,
+      roles: principal.roles,
+      roleKeys: principal.roleKeys,
+      permissions: principal.permissions,
+    },
     accessToken,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,
@@ -4631,6 +4651,17 @@ function isPlainObject(value) {
 
 async function sendAuthenticatedResponse(req, res, response, action) {
   const rolePermissionsMap = await getRolePermissionsMap();
+  const userId = response.user?.id ?? response.user?.userId;
+  if (typeof repository.listActiveUserRoleKeys === "function" && userId) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(userId);
+      if (Array.isArray(loaded)) {
+        response.user = { ...response.user, roleKeys: loaded };
+      }
+    } catch {
+      /* fail-closed: keep the login projection */
+    }
+  }
   const principal = buildPrincipal(response, rolePermissionsMap);
   if (principal.role === "Parent" && (!principal.studentIds?.length) && Array.isArray(response.user?.children)) {
     principal.studentIds = response.user.children
@@ -4678,7 +4709,13 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   const safePayload = sanitizeAuthPayloadForResponse({
     ...response,
     user: response.user
-      ? { ...response.user, role: principal.role, permissions: principal.permissions }
+      ? {
+          ...response.user,
+          role: principal.role,
+          roles: principal.roles,
+          roleKeys: principal.roleKeys,
+          permissions: principal.permissions,
+        }
       : response.user,
   });
 
@@ -4698,13 +4735,18 @@ function buildPrincipal(response, rolePermissionsMap = null) {
   const user = response.user ?? {};
   const school = response.schoolContext ?? response.school ?? {};
   const rawRole = user.role ?? roleLabelFromMobileRole(response.role);
-  const roleKeys = Array.isArray(user.roleKeys) && user.roleKeys.length
-    ? user.roleKeys.map(toRoleKey)
-    : Array.isArray(user.roles) && user.roles.length
-      ? user.roles.map(toRoleKey)
-      : rawRole
-        ? [toRoleKey(rawRole)].filter(Boolean)
-        : [];
+  const loadedKeys = Array.isArray(user.roleKeys)
+    ? user.roleKeys.map(toRoleKey).filter(Boolean)
+    : null;
+  const roleKeys = loadedKeys?.length
+    ? loadedKeys
+    : loadedKeys && (!rawRole || rawRole === "Sans affectation")
+      ? []
+      : Array.isArray(user.roles) && user.roles.length
+        ? user.roles.map(toRoleKey)
+        : rawRole && rawRole !== "Sans affectation"
+          ? [toRoleKey(rawRole)].filter(Boolean)
+          : [];
   const display = displayRoles(roleKeys);
   const role =
     display.role === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : display.role;
