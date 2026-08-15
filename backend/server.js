@@ -473,8 +473,12 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
   });
+  const sanitizedUpdatedUser = sanitizeUserForResponse(updatedUser);
   let safeUser = {
-    ...sanitizeUserForResponse(updatedUser),
+    ...sanitizedUpdatedUser,
+    schoolCode: sanitizedUpdatedUser?.schoolCode || req.principal.schoolCode || "",
+    countryCode: sanitizedUpdatedUser?.countryCode || req.principal.countryCode || "",
+    countryScope: sanitizedUpdatedUser?.countryScope || req.principal.countryScope || "",
     mustChangePassword: false,
   };
   if (typeof repository.listActiveUserRoleKeys === "function" && (safeUser.id || updatedUser?.id)) {
@@ -4752,7 +4756,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
   const role =
     display.role === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : display.role;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
-  const countryCode = user.countryCode ?? countryCodeFromScope(user.countryScope) ?? school.countryCode ?? countryCodeFromSchoolOrCountry(schoolCode, school.country);
+  const countryCode = user.countryCode || countryCodeFromScope(user.countryScope) || school.countryCode || countryCodeFromSchoolOrCountry(schoolCode, school.country);
   const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
 
   const {
