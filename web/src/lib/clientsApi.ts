@@ -1,8 +1,21 @@
 import { api } from "../api/client";
+import { readStoredSchoolCode } from "./activeSchool";
+
+export function buildCreateUserPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const explicitSchoolCode = String(payload.schoolCode ?? "").trim();
+  const activeSchoolCode = readStoredSchoolCode();
+  const schoolCode = explicitSchoolCode || activeSchoolCode;
+
+  if (!schoolCode || schoolCode === "*") {
+    return { ...payload };
+  }
+
+  return { ...payload, schoolCode };
+}
 
 export const clientsApi = {
   listUsers: () => api.get<unknown[]>("/backoffice/users"),
-  createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", payload),
+  createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", buildCreateUserPayload(payload)),
   updateUser: (userId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/users/${encodeURIComponent(userId)}`, payload),
   listAssignableRoles: () => api.get<{ roles: Array<{ roleKey: string; roleName: string }> }>("/backoffice/users/assignable-roles"),
