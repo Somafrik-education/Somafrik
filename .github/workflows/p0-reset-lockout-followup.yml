@@ -1,0 +1,59 @@
+name: P0 Reset Lockout Followup
+
+on:
+  push:
+    branches: [agent/p0-password-reset-lockout]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p0-password-reset-lockout
+          fetch-depth: 0
+      - name: Strengthen reset E2E
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/scripts/verify-admin-user-creation.js')
+          text = p.read_text()
+          anchor = '''    assert.equal(reset.data.user?.mustChangePassword, true, "mustChangePassword absent après reset");
+
+    const immediate = await request("/backoffice/login", {'''
+          insert = '''    assert.equal(reset.data.user?.mustChangePassword, true, "mustChangePassword absent après reset");
+
+    const lockoutAfterReset = await pool.query(
+      `SELECT count(*)::int AS c FROM login_lockouts
+       WHERE school_scope = $1 AND identifier_normalized = lower($2)`,
+      [SCHOOL_CD, displayedSchoolAdminId],
+    );
+    assert.equal(lockoutAfterReset.rows[0].c, 0, "lockout encore présent après reset");
+    const revokedAfterReset = await pool.query(
+      `SELECT count(*)::int AS c FROM sessions WHERE user_id = $1 AND revoked_at IS NOT NULL`,
+      [activeSchoolIdentity.id],
+    );
+    assert.ok(revokedAfterReset.rows[0].c >= 1, "sessions antérieures non révoquées après reset");
+
+    const immediate = await request("/backoffice/login", {'''
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected reset anchor once, found {text.count(anchor)}')
+          text = text.replace(anchor, insert, 1)
+          old = '''    const standardUser = await createIdentity(schoolAdmin.token, {'''
+          new = '''    const standardUser = await createIdentity(finalLogin.token, {'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected standard user token anchor once, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+      - name: Commit and push
+        run: |
+          git config user.name "somafrik-cto-bot"
+          git config user.email "cto-bot@somafrik.local"
+          git add backend/scripts/verify-admin-user-creation.js
+          git commit -m "test(auth): vérifier lockout et sessions après reset"
+          git push origin HEAD:agent/p0-password-reset-lockout
