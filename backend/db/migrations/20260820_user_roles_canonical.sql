@@ -149,8 +149,18 @@ BEGIN
 END $$;
 
 ALTER TABLE schools ALTER COLUMN short_code SET NOT NULL;
-ALTER TABLE schools ADD CONSTRAINT schools_short_code_format_check
-  CHECK (short_code ~ '^[A-Z0-9]{2,5}$') NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'schools_short_code_format_check'
+      AND conrelid = 'schools'::regclass
+  ) THEN
+    ALTER TABLE schools ADD CONSTRAINT schools_short_code_format_check
+      CHECK (short_code ~ '^[A-Z0-9]{2,5}$') NOT VALID;
+  END IF;
+END $$;
 ALTER TABLE schools VALIDATE CONSTRAINT schools_short_code_format_check;
 CREATE UNIQUE INDEX IF NOT EXISTS schools_country_short_code_unique
   ON schools (country_id, upper(short_code));
@@ -179,9 +189,14 @@ BEGIN
 END
 $$;
 
-DROP TRIGGER IF EXISTS schools_short_code_guard ON schools;
-CREATE TRIGGER schools_short_code_guard
-BEFORE INSERT OR UPDATE OF short_code, name ON schools
+DROP TRIGGER IF EXISTS schools_short_code_insert ON schools;
+CREATE TRIGGER schools_short_code_insert
+BEFORE INSERT ON schools
+FOR EACH ROW EXECUTE FUNCTION somafrik_prepare_school_short_code();
+
+DROP TRIGGER IF EXISTS schools_short_code_update ON schools;
+CREATE TRIGGER schools_short_code_update
+BEFORE UPDATE OF short_code, name ON schools
 FOR EACH ROW EXECUTE FUNCTION somafrik_prepare_school_short_code();
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_code TEXT;
@@ -192,7 +207,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_year SMALLINT;
 CREATE TABLE IF NOT EXISTS identity_counters (
   school_id UUID NOT NULL REFERENCES schools(id),
   creation_year SMALLINT NOT NULL,
-  last_value INTEGER NOT NULL DEFAULT 0 CHECK (last_value BETWEEN 0 AND 99999),
+  last_value INTEGER NOT NULL DEFAULT 0 CHECK (last_value >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (school_id, creation_year)
