@@ -1,0 +1,103 @@
+name: Apply Unassigned User Visibility Fix
+
+on:
+  push:
+    branches: [agent/p0-unassigned-user-visibility]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/p0-unassigned-user-visibility
+          fetch-depth: 0
+
+      - name: Patch user visibility rules
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          ua = Path('web/src/lib/userAccounts.ts')
+          s = ua.read_text()
+          anchor = '''export function isPlatformUserRole(role?: string): boolean {
+  if (!role) return false;
+  const key = normalizedPlatformRoleKey(role);
+  return [...PLATFORM_ROLES].some((platformRole) => normalizedPlatformRoleKey(platformRole) === key);
+}
+
+/** Comptes plateforme gérables par le Superadmin (dont ceux créés par un Admin Pays). */
+export function isSuperadminManagedUser(user: Pick<UserAccount, "role">): boolean {
+  const key = normalizedPlatformRoleKey(user.role);
+  return (
+    normalizedPlatformRoleKey(COUNTRY_ADMIN_ROLE) === key ||
+    normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) === key
+  );
+}
+'''
+          replacement = '''export function isPlatformUserRole(role?: string): boolean {
+  if (!role) return false;
+  const key = normalizedPlatformRoleKey(role);
+  return [...PLATFORM_ROLES].some((platformRole) => normalizedPlatformRoleKey(platformRole) === key);
+}
+
+export function isUnassignedUserAccount(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">): boolean {
+  const role = normalize(String(user.role ?? ""));
+  const roles = Array.isArray(user.roles) ? user.roles.filter((item) => normalize(item)) : [];
+  const assignmentStatus = normalize(String(user.assignmentStatus ?? ""));
+  return roles.length === 0 && (!role || role === "sans affectation") && (!assignmentStatus || assignmentStatus === "sans affectation");
+}
+
+/** Comptes plateforme gérables par le Superadmin (dont les identités encore sans rôle). */
+export function isSuperadminManagedUser(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">): boolean {
+  if (isUnassignedUserAccount(user)) return true;
+  const key = normalizedPlatformRoleKey(user.role);
+  return (
+    normalizedPlatformRoleKey(COUNTRY_ADMIN_ROLE) === key ||
+    normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) === key
+  );
+}
+'''
+          if s.count(anchor) != 1:
+              raise SystemExit(f'userAccounts anchor count={s.count(anchor)}')
+          ua.write_text(s.replace(anchor, replacement, 1))
+
+          scope = Path('web/src/lib/scope.ts')
+          t = scope.read_text()
+          old_import = 'import { isSuperadminManagedUser } from "./userAccounts";'
+          new_import = 'import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";'
+          if t.count(old_import) != 1:
+              raise SystemExit(f'scope import count={t.count(old_import)}')
+          t = t.replace(old_import, new_import, 1)
+
+          old_filter = '''    return visible.filter(
+      (account) =>
+        account.role === SCHOOL_ADMIN_ROLE &&
+        (countryScopeMatches(account.countryScope, user.countryScope) ||
+          countrySchoolCodes.has(normalize(account.schoolCode))),
+    );'''
+          new_filter = '''    return visible.filter(
+      (account) =>
+        (account.role === SCHOOL_ADMIN_ROLE || isUnassignedUserAccount(account)) &&
+        (countryScopeMatches(account.countryScope, user.countryScope) ||
+          countrySchoolCodes.has(normalize(account.schoolCode))),
+    );'''
+          if t.count(old_filter) != 1:
+              raise SystemExit(f'country filter count={t.count(old_filter)}')
+          scope.write_text(t.replace(old_filter, new_filter, 1))
+          PY
+
+          npm ci
+          npm run lint -- --max-warnings=9999
+
+      - name: Commit product fix
+        run: |
+          git config user.name "Somafrik CTO Bot"
+          git config user.email "cto-bot@somafrik.local"
+          git add web/src/lib/userAccounts.ts web/src/lib/scope.ts
+          git commit -m "fix(users): garder visibles les identités sans rôle"
+          git push origin HEAD:agent/p0-unassigned-user-visibility
