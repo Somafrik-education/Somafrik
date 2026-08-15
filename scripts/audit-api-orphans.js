@@ -25,7 +25,10 @@ function walk(dir) {
 }
 
 function normalizeRoute(route) {
-  const staticPath = String(route).split("${", 1)[0].split("?", 1)[0];
+  // Conserver les segments dynamiques des template strings avant de supprimer la query string.
+  // `/schools/${code}?x=1` doit matcher `/schools/:code`, pas `/schools`.
+  const withTemplateParams = String(route).replace(/\$\{[^}]+\}/g, ":param");
+  const staticPath = withTemplateParams.split("?", 1)[0];
   const normalized = staticPath
     .replace(/:[A-Za-z0-9_]+/g, ":param")
     .replace(/\/+/g, "/")
@@ -53,6 +56,21 @@ function extractRbacRoutes(source) {
   return routes;
 }
 
+function extractPermissionRefs(file, source) {
+  const refs = [];
+  const re = /requirePermission\(\s*["'`](GET|POST|PUT|PATCH|DELETE)\s+([^"'`]+)["'`]\s*\)/g;
+  let match;
+  while ((match = re.exec(source))) {
+    refs.push({
+      method: match[1],
+      path: match[2],
+      normalized: normalizeRoute(match[2]),
+      file: path.relative(ROOT, file),
+    });
+  }
+  return refs;
+}
+
 function extractHttpRefs(file, source) {
   const refs = [];
   const re = /\b(get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*["'`]([^"'`]+)["'`]/gi;
@@ -61,6 +79,50 @@ function extractHttpRefs(file, source) {
     const raw = match[2];
     if (!raw.startsWith("/")) continue;
     refs.push({ method: match[1].toUpperCase(), path: raw, normalized: normalizeRoute(raw), file: path.relative(ROOT, file) });
+  }
+  return refs;
+}
+
+function findQuotedArgumentEnd(source, quoteIndex, quote) {
+  let escaped = false;
+  for (let index = quoteIndex + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === quote) return index;
+  }
+  return -1;
+}
+
+function extractWrappedRequestRefs(file, source) {
+  const refs = [];
+  // Mobile/src/services/api.ts utilise `request(...)` autour de httpRequest ;
+  // certains modules historiques utilisent aussi `apiRequest(...)`.
+  const re = /\b(?:apiRequest|request)\s*(?:<[^>]+>)?\s*\(\s*(["'`])/g;
+  let match;
+  while ((match = re.exec(source))) {
+    const quote = match[1];
+    const quoteIndex = re.lastIndex - 1;
+    const end = findQuotedArgumentEnd(source, quoteIndex, quote);
+    if (end < 0) continue;
+    const raw = source.slice(quoteIndex + 1, end);
+    if (!raw.startsWith("/")) continue;
+
+    // Les wrappers utilisent GET par défaut et déclarent les autres méthodes
+    // dans l'objet options qui suit le premier argument.
+    const tail = source.slice(end + 1, Math.min(source.length, end + 700));
+    const close = tail.indexOf(");");
+    const callTail = close >= 0 ? tail.slice(0, close) : tail;
+    const methodMatch = callTail.match(/\bmethod\s*:\s*["'`](GET|POST|PUT|PATCH|DELETE)["'`]/i);
+    const method = (methodMatch?.[1] ?? "GET").toUpperCase();
+    refs.push({ method, path: raw, normalized: normalizeRoute(raw), file: path.relative(ROOT, file) });
+    re.lastIndex = end + 1;
   }
   return refs;
 }
@@ -79,10 +141,15 @@ function groupRefs(refs) {
   return map;
 }
 
-const serverRoutes = extractServerRoutes(read(SERVER));
+const serverSource = read(SERVER);
+const serverRoutes = extractServerRoutes(serverSource);
 const rbacRoutes = extractRbacRoutes(read(RBAC));
+const permissionRefs = extractPermissionRefs(SERVER, serverSource);
 const clientRefs = CLIENT_ROOTS.flatMap((root) =>
-  walk(root).flatMap((file) => extractHttpRefs(file, read(file))),
+  walk(root).flatMap((file) => {
+    const source = read(file);
+    return [...extractHttpRefs(file, source), ...extractWrappedRequestRefs(file, source)];
+  }),
 );
 const internalRefs = INTERNAL_ROOTS.flatMap((root) =>
   walk(root)
@@ -94,12 +161,14 @@ const serverMap = new Map(serverRoutes.map((route) => [key(route), route]));
 const rbacMap = new Map(rbacRoutes.map((route) => [key(route), route]));
 const clientsByKey = groupRefs(clientRefs);
 const internalByKey = groupRefs(internalRefs);
+const permissionRefsByKey = groupRefs(permissionRefs);
 
 const allKeys = [...new Set([
   ...serverMap.keys(),
   ...rbacMap.keys(),
   ...clientsByKey.keys(),
   ...internalByKey.keys(),
+  ...permissionRefsByKey.keys(),
 ])].sort();
 
 const rows = allKeys.map((routeKey) => {
@@ -107,14 +176,24 @@ const rows = allKeys.map((routeKey) => {
   const rbac = rbacMap.get(routeKey);
   const clients = [...new Set(clientsByKey.get(routeKey) ?? [])].sort();
   const internalRefsForRoute = [...new Set(internalByKey.get(routeKey) ?? [])].sort();
+  const permissionRefsForRoute = [...new Set(permissionRefsByKey.get(routeKey) ?? [])].sort();
   let classification = "ACTIVE";
-  if (server && !clients.length && internalRefsForRoute.length) classification = "INTERNAL_ONLY";
+  if (!server && rbac && permissionRefsForRoute.length) classification = "RBAC_PERMISSION_KEY";
+  else if (server && !clients.length && internalRefsForRoute.length) classification = "INTERNAL_ONLY";
   else if (server && !clients.length && !rbac) classification = "ORPHAN_CANDIDATE";
   else if (server && !clients.length && rbac) classification = "SERVER_RBAC_NO_CLIENT";
   else if (!server && rbac && !clients.length && !internalRefsForRoute.length) classification = "RBAC_ONLY";
   else if (!server && (clients.length || internalRefsForRoute.length)) classification = "CALLER_ONLY";
   else if (server && clients.length && !rbac) classification = "ACTIVE_NO_RBAC_KEY";
-  return { route: routeKey, classification, server: Boolean(server), rbac: Boolean(rbac), clients, internalRefs: internalRefsForRoute };
+  return {
+    route: routeKey,
+    classification,
+    server: Boolean(server),
+    rbac: Boolean(rbac),
+    clients,
+    internalRefs: internalRefsForRoute,
+    permissionRefs: permissionRefsForRoute,
+  };
 });
 
 const summary = rows.reduce((acc, row) => {
@@ -129,8 +208,10 @@ const result = {
   caveats: [
     "Scanner statique: les routes construites intégralement de façon dynamique peuvent nécessiter une revue manuelle.",
     "Le préfixe de transport /api est normalisé: /api/backoffice/users et /backoffice/users représentent la même route applicative.",
-    "Les query strings et suffixes `${...}` sont ramenés au path statique du handler.",
+    "Les segments `${...}` des template strings sont normalisés en :param avant suppression de la query string.",
+    "Les wrappers Mobile request(...) / apiRequest(...) sont détectés, avec GET par défaut et lecture de l'option method.",
     "Les références scripts/backend sont séparées des consommateurs Web/Mobile afin d'identifier les routes tests/ops/internal.",
+    "Les clés RBAC appelées explicitement par requirePermission(...) sont classées RBAC_PERMISSION_KEY même si leur libellé n'est pas un handler Express exact.",
     "ORPHAN_CANDIDATE signifie absence de référence statique détectée, pas autorisation automatique de suppression.",
   ],
 };

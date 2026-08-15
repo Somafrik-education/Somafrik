@@ -29,7 +29,7 @@ const manifest = [
   ["subscriptions", ["/backoffice/subscriptions"], ["subscriptions"]],
   ["notifications", ["/backoffice/notifications"], ["notifications"]],
   ["rolePermissions", ["/backoffice/role-permissions"], ["role_permissions"]],
-  ["dashboardChartConfig", ["/backoffice/dashboard-chart-config"], ["dashboard_chart_configs"]],
+  ["dashboardChartConfig", ["/backoffice/dashboard-chart-config"], ["dashboard_chart_config"]],
   ["users", ["/backoffice/users"], ["users", "user_roles", "schools"]],
   ["contacts", ["/backoffice/contacts"], ["contacts", "users", "schools"]],
   ["relations", ["/backoffice/relations"], ["contact_relations", "contacts", "students"]],
