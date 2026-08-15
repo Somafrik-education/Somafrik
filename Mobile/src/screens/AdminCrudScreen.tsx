@@ -239,7 +239,6 @@ const configs: Record<
       { key: "firstName", label: "Prénom", placeholder: "Prénom" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
       { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
-      { key: "role", label: "Rôle", placeholder: "Choisir le rôle", type: "select" },
       { key: "schoolCode", label: "Établissement", placeholder: "Choisir l'établissement", type: "select" },
       { key: "accessChannel", label: "Canal d'accès", placeholder: "Plateforme ou Application", type: "select" },
       { key: "identifier", label: "Identifiant unique", placeholder: "Généré par le système" },
@@ -1455,14 +1454,10 @@ function getInitialForm(entity: AdminEntity, context?: any): Record<string, stri
 
   if (entity === "users") {
     const schoolCode = getDefaultSchoolCode(context?.schoolsData ?? [], context?.session);
-    const role = "Secrétaire";
     return {
       gender: "Non renseigné",
-      role,
-      ...getRoleDefaults(role, schoolCode),
       schoolCode,
       accessChannel: "Application",
-      identifier: generateUserIdentifier(context?.usersData ?? [], role),
       status: "Actif",
       temporaryPassword: generateTemporaryPassword(),
       createdBy: context?.session?.user?.name ?? "Administrateur",
@@ -1676,52 +1671,26 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
 
   if (entity === "users") {
     const userSchoolCode = form.schoolCode || schoolCodeFromContext(context);
-    const defaults = getRoleDefaults(form.role, userSchoolCode);
     const isCreating = !id;
     const generatedTemporaryPassword = isCreating ? form.temporaryPassword || generateTemporaryPassword() : "";
-    if (
-      !form.lastName ||
-      !form.firstName ||
-      !form.role ||
-      isPlatformUserRole(form.role) ||
-      !userSchoolCode
-    ) {
+    if (!form.lastName || !form.firstName || !userSchoolCode) {
       return null;
     }
 
-    const permissions = rolePermissions[form.role] ?? [];
-    const publicId = form.publicId || generatePublicId("USR", year, context?.usersData ?? [], 6);
-    const identifier = form.identifier?.trim() || generateUserIdentifier(context?.usersData ?? [], form.role);
-
     return {
-      id: id ?? `USER-${Date.now()}`,
-      publicId,
       lastName: form.lastName,
       firstName: form.firstName,
       gender: form.gender,
       phone: form.phone,
-      email: "",
-      role: form.role,
-      secondaryRoles: splitList(form.secondaryRoles),
-      scopeLevel: form.scopeLevel || defaults.scopeLevel,
-      countryScope: form.countryScope ?? "",
+      email: form.email ?? "",
       schoolCode: userSchoolCode,
-      accessChannel: form.accessChannel || defaults.accessChannel,
-      identifier,
+      accessChannel: form.accessChannel || "Application",
       status: form.status || "Actif",
-      permissions,
       temporaryPassword: isCreating ? generatedTemporaryPassword : form.temporaryPassword ?? "",
       ...(isCreating
-        ? { password: generatedTemporaryPassword, pin: generatedTemporaryPassword, mustChangePassword: true }
+        ? { mustChangePassword: true }
         : { mustChangePassword: form.mustChangePassword === "true" }),
       photoUrl: form.photoUrl ?? "",
-      createdAt: form.createdAt || formatDate(new Date()),
-      lastLoginAt: form.lastLoginAt ?? "",
-      createdBy: form.createdBy || context?.session?.user?.name || "Administrateur",
-      history: [
-        ...(splitList(form.history).length ? splitList(form.history) : []),
-        `${id ? "Compte modifié" : `Compte créé avec identifiant ${identifier} et mot de passe temporaire ${generatedTemporaryPassword}`} le ${formatDate(new Date())}`,
-      ],
     };
   }
 

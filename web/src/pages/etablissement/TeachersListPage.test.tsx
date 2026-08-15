@@ -110,7 +110,7 @@ function renderPage() {
   );
 }
 
-describe("TeachersListPage (création compte + fiche)", () => {
+describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
   beforeEach(() => {
     permissions.canRead = true;
     permissions.canCreate = true;
@@ -175,174 +175,12 @@ describe("TeachersListPage (création compte + fiche)", () => {
     expect(teachersApiMock.list).toHaveBeenCalled();
   });
 
-  it("crée un enseignant puis recharge la liste", async () => {
-    const user = userEvent.setup();
-    teachersApiMock.create.mockResolvedValue({
-      teacherCode: "CD-2026-0001-ENS-0003",
-      identifier: "ENS-0003",
-    });
-    teachersApiMock.list
-      .mockResolvedValueOnce([
-        {
-          id: "CD-2026-0001-ENS-0001",
-          teacherCode: "CD-2026-0001-ENS-0001",
-          publicId: "CD-2026-0001-ENS-0001",
-          identifier: "ENS-0001",
-          firstName: "Aïssatou",
-          lastName: "Ndiaye",
-          name: "Aïssatou Ndiaye",
-          phone: "+243",
-          email: "",
-          speciality: "",
-          mainSubject: "",
-          schoolCode: "CD-2026-0001",
-          status: "Actif",
-          gender: "",
-          birthDate: "",
-          entryDate: "",
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: "CD-2026-0001-ENS-0001",
-          teacherCode: "CD-2026-0001-ENS-0001",
-          publicId: "CD-2026-0001-ENS-0001",
-          identifier: "ENS-0001",
-          firstName: "Aïssatou",
-          lastName: "Ndiaye",
-          name: "Aïssatou Ndiaye",
-          phone: "+243",
-          email: "",
-          speciality: "",
-          mainSubject: "",
-          schoolCode: "CD-2026-0001",
-          status: "Actif",
-          gender: "",
-          birthDate: "",
-          entryDate: "",
-        },
-        {
-          id: "CD-2026-0001-ENS-0003",
-          teacherCode: "CD-2026-0001-ENS-0003",
-          publicId: "CD-2026-0001-ENS-0003",
-          identifier: "ENS-0003",
-          firstName: "Fatou",
-          lastName: "Sow",
-          name: "Fatou Sow",
-          phone: "+243 811",
-          email: "",
-          speciality: "",
-          mainSubject: "",
-          schoolCode: "CD-2026-0001",
-          status: "Actif",
-          gender: "",
-          birthDate: "",
-          entryDate: "",
-        },
-      ]);
-
+  it("n'affiche plus le bouton de création d'enseignant", async () => {
     renderPage();
-    await screen.findByText("Ndiaye");
-    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
-    await user.type(screen.getByLabelText(/Prénom/i), "Fatou");
-    await user.type(screen.getByLabelText(/^Nom/i), "Sow");
-    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-05-01");
-    await user.type(screen.getByLabelText(/Téléphone/i), "+243 811");
-    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
-    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
-
-    await waitFor(() => {
-      expect(teachersApiMock.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          firstName: "Fatou",
-          lastName: "Sow",
-          birthDate: "1990-05-01",
-          phone: "+243 811",
-          temporaryPassword: "TempPass1",
-        }),
-      );
-    });
-    expect(await screen.findByText("Sow")).toBeInTheDocument();
-    expect(showToast).toHaveBeenCalledWith(
-      "Enseignant créé avec son compte de connexion.",
-      "success",
-    );
-  });
-
-  it("affiche les erreurs 409 dans le formulaire", async () => {
-    const user = userEvent.setup();
-    teachersApiMock.create.mockRejectedValue(
-      new ApiError("Identité enseignant ambiguë", 409),
-    );
-    renderPage();
-    await screen.findByText("Ndiaye");
-    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
-    await user.type(screen.getByLabelText(/Prénom/i), "Aïssatou");
-    await user.type(screen.getByLabelText(/^Nom/i), "Ndiaye");
-    await user.type(screen.getByLabelText(/Date de naissance/i), "1985-01-01");
-    await user.type(screen.getByLabelText(/Email/i), "a@example.com");
-    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
-    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
-
-    expect(await screen.findByText("Identité enseignant ambiguë")).toBeInTheDocument();
-    expect(showToast).toHaveBeenCalledWith("Identité enseignant ambiguë", "error");
-  });
-
-  it("affiche les erreurs 400 dans le formulaire", async () => {
-    const user = userEvent.setup();
-    teachersApiMock.create.mockRejectedValue(
-      new ApiError("Au moins un moyen de contact est requis (phone ou email).", 400),
-    );
-    renderPage();
-    await screen.findByText("Ndiaye");
-    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
-    await user.type(screen.getByLabelText(/Prénom/i), "Invalide");
-    await user.type(screen.getByLabelText(/^Nom/i), "Contact");
-    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-01-01");
-    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
-    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
-
-    expect(
-      await screen.findByText("Au moins un moyen de contact est requis (phone ou email)."),
-    ).toBeInTheDocument();
-    expect(showToast).toHaveBeenCalledWith(
-      "Au moins un moyen de contact est requis (phone ou email).",
-      "error",
-    );
-  });
-
-  it("affiche les erreurs 403 dans le formulaire", async () => {
-    const user = userEvent.setup();
-    teachersApiMock.create.mockRejectedValue(new ApiError("Permission insuffisante", 403));
-    renderPage();
-    await screen.findByText("Ndiaye");
-    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
-    await user.type(screen.getByLabelText(/Prénom/i), "Refuse");
-    await user.type(screen.getByLabelText(/^Nom/i), "Authz");
-    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-01-01");
-    await user.type(screen.getByLabelText(/Téléphone/i), "+243 1");
-    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
-    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
-
-    expect(await screen.findByText("Permission insuffisante")).toBeInTheDocument();
-    expect(showToast).toHaveBeenCalledWith("Permission insuffisante", "error");
-  });
-
-  it("affiche les erreurs serveur 500 dans le formulaire", async () => {
-    const user = userEvent.setup();
-    teachersApiMock.create.mockRejectedValue(new ApiError("Erreur interne", 500));
-    renderPage();
-    await screen.findByText("Ndiaye");
-    await user.click(screen.getByRole("button", { name: "Ajouter un enseignant" }));
-    await user.type(screen.getByLabelText(/Prénom/i), "Serveur");
-    await user.type(screen.getByLabelText(/^Nom/i), "Erreur");
-    await user.type(screen.getByLabelText(/Date de naissance/i), "1990-01-01");
-    await user.type(screen.getByLabelText(/Email/i), "s@example.com");
-    await user.type(screen.getByLabelText(/Mot de passe temporaire/i), "TempPass1");
-    await user.click(screen.getByRole("button", { name: /Créer l'enseignant/i }));
-
-    expect(await screen.findByText("Erreur interne")).toBeInTheDocument();
-    expect(showToast).toHaveBeenCalledWith("Erreur interne", "error");
+    expect(await screen.findByText("Ndiaye")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ajouter un enseignant" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Créer l'enseignant/i })).not.toBeInTheDocument();
+    expect(teachersApiMock.create).not.toHaveBeenCalled();
   });
 
   it("affiche une erreur de chargement liste (serveur)", async () => {

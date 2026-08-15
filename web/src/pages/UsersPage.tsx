@@ -9,12 +9,12 @@ import { canManageRolePermissions, canResetTargetUserPassword } from "../lib/per
 import { USER_ACCOUNT_STATUS_OPTIONS, validatePasswordPolicy } from "../lib/userAccountRules";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import {
-  applyRoleChangeToUser,
   buildNewUserDraft,
   canManageUserAccount,
   canSuperadminManageUser,
   formatAccessChannelLabel,
   getCountryScopeOptions,
+  formatUserRolesDisplay,
   getCreatableUserRoles,
   getUserEstablishmentLabel,
   getUserFormFieldPolicy,
@@ -42,16 +42,11 @@ import { useToast } from "../components/ui/Toast";
 import { usePrompt } from "../components/ui/PromptDialog";
 import type { School, UserAccount } from "../types";
 
-function newId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function toCsv(users: UserAccount[], schools: School[]): string {
-  const headers = ["Prénom", "Nom", "Rôle", "Identifiant", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
+  const headers = ["Prénom", "Nom", "Identifiant", "Rôle(s)", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
   const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = users.map((u) =>
-    [u.firstName, u.lastName, u.role, u.identifier, u.email, u.phone, getUserEstablishmentLabel(u, schools), u.countryScope, u.status]
+    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatUserRolesDisplay(u), u.email, u.phone, getUserEstablishmentLabel(u, schools), u.countryScope, u.status]
       .map(escape)
       .join(","),
   );
@@ -85,6 +80,9 @@ export function UsersPage() {
   const [pendingOnly, setPendingOnly] = useState(false);
   const [detail, setDetail] = useState<UserAccount | null>(null);
   const [editing, setEditing] = useState<UserAccount | null>(null);
+  const [assigning, setAssigning] = useState<UserAccount | null>(null);
+  const [assignableRoles, setAssignableRoles] = useState<Array<{ roleKey: string; roleName: string }>>([]);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
   const creatableRoles = useMemo(
@@ -120,10 +118,14 @@ export function UsersPage() {
     return allUsers.filter((u) => {
       const matchesQuery =
         !q ||
-        [u.firstName, u.lastName, u.identifier, u.role, u.schoolCode, u.email].some((v) =>
+        [u.firstName, u.lastName, u.identifier, u.publicId, formatUserRolesDisplay(u), u.schoolCode, u.email].some((v) =>
           normalize(v).includes(q),
         );
-      const matchesRole = !roleFilter || u.role === roleFilter;
+      const matchesRole =
+        !roleFilter ||
+        formatUserRolesDisplay(u) === roleFilter ||
+        (u.roles ?? []).includes(roleFilter) ||
+        u.role === roleFilter;
       const matchesStatus = !statusFilter || String(u.status ?? "Actif") === statusFilter;
       const matchesPending =
         !pendingOnly || isPendingValidationStatus(u.validationStatus ?? u.status);
@@ -154,11 +156,19 @@ export function UsersPage() {
       if (syncedUser) {
         const exists = Boolean(syncedUser.id) && state.users.some((u) => u.id === syncedUser.id);
         if (exists) {
-          await clientsApi.updateUser(String(syncedUser.id), syncedUser as unknown as Record<string, unknown>);
+          const { role: _role, roles: _roles, roleKeys: _keys, secondaryRoles: _secondary, id: _id, publicId: _publicId, ...identity } =
+            syncedUser;
+          await clientsApi.updateUser(String(syncedUser.id), identity as unknown as Record<string, unknown>);
         } else {
-          const created = (await clientsApi.createUser(
-            syncedUser as unknown as Record<string, unknown>,
-          )) as UserAccount;
+          const created = (await clientsApi.createUser({
+            firstName: syncedUser.firstName,
+            lastName: syncedUser.lastName,
+            email: syncedUser.email,
+            phone: syncedUser.phone,
+            gender: syncedUser.gender,
+            status: syncedUser.status,
+            temporaryPassword: syncedUser.temporaryPassword,
+          })) as UserAccount;
           if (created.temporaryPassword) {
             showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
           }
@@ -256,28 +266,10 @@ export function UsersPage() {
       ...editing,
       firstName: editing.firstName?.trim(),
       lastName: editing.lastName?.trim(),
-      identifier: editing.identifier?.trim(),
     };
 
-    const next = exists
-      ? state.users.map((u) => (u.id === editing.id ? { ...u, ...payload } : u))
-      : [
-          {
-            ...payload,
-            id: payload.id ?? newId(),
-            createdAt: new Date().toISOString(),
-            history: [
-              `Compte créé avec identifiant ${payload.identifier} et mot de passe temporaire ${payload.temporaryPassword ?? "—"}`,
-            ],
-          },
-          ...state.users,
-        ];
-
     try {
-      const savedUser = exists
-        ? (next.find((u) => u.id === editing.id) ?? payload)
-        : (next[0] ?? payload);
-      await persistUsers(next, exists ? "Utilisateur modifié" : "Utilisateur créé", savedUser);
+      await persistUsers(state.users, exists ? "Utilisateur modifié" : "Utilisateur créé", payload);
       if (!exists && payload.temporaryPassword) {
         showToast(`Mot de passe temporaire : ${payload.temporaryPassword}`, "success");
       }
@@ -289,13 +281,47 @@ export function UsersPage() {
 
   function openCreateFlow() {
     if (!session) return;
-    const defaultRole = creatableRoles[0] ?? "";
-    if (!defaultRole) {
-      showToast("Configurez d'abord les rôles dans Configuration → Rôles.", "error");
-      return;
-    }
-    setEditing(buildNewUserDraft(defaultRole, session, state));
+    setEditing(buildNewUserDraft("", session, state));
     setDetail(null);
+  }
+
+  async function openAssignFlow(user: UserAccount) {
+    setAssigning(user);
+    setDetail(null);
+    setSelectedRoles(user.roles?.length ? [...user.roles] : user.role && user.role !== "Sans affectation" ? [user.role] : []);
+    try {
+      const response = await clientsApi.listAssignableRoles();
+      const roles = Array.isArray(response?.roles) ? response.roles : [];
+      setAssignableRoles(roles.filter((role) => role.roleName !== "Parent" && role.roleName !== "Élève / Étudiant"));
+    } catch {
+      setAssignableRoles(creatableRoles.filter((role) => role !== "Parent" && role !== "Élève / Étudiant").map((roleName) => ({ roleKey: roleName, roleName })));
+    }
+  }
+
+  async function submitAssign() {
+    if (!assigning?.id) return;
+    const current = new Set(assigning.roles?.length ? assigning.roles : assigning.role && assigning.role !== "Sans affectation" ? [assigning.role] : []);
+    const next = new Set(selectedRoles);
+    setBusy(true);
+    try {
+      for (const role of next) {
+        if (!current.has(role)) {
+          await clientsApi.grantUserRole(String(assigning.id), role);
+        }
+      }
+      for (const role of current) {
+        if (!next.has(role)) {
+          await clientsApi.revokeUserRole(String(assigning.id), role);
+        }
+      }
+      await refresh();
+      showToast("Rôles mis à jour.", "success");
+      setAssigning(null);
+    } catch {
+      showToast("Échec de l'attribution des rôles.", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function closeEditor() {
@@ -326,14 +352,43 @@ export function UsersPage() {
             <p className="font-semibold text-ink">
               {u.firstName} {u.lastName}
             </p>
-            <p className="text-xs text-muted">{u.identifier}</p>
+            <p className="text-xs text-muted">{u.publicId ?? u.identifier}</p>
           </div>
         </div>
       ),
     },
-    { key: "role", header: "Rôle" },
-    { key: "schoolCode", header: "Établissement", render: (u) => getUserEstablishmentLabel(u, schoolsForLabels) },
+    { key: "publicId", header: "Identifiant", render: (u) => u.publicId ?? u.identifier ?? "—" },
     { key: "status", header: "Statut", render: (u) => <StatusBadge status={u.status} /> },
+    { key: "roles", header: "Rôle(s)", render: (u) => formatUserRolesDisplay(u) },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (u) => {
+        const canEditTarget =
+          canUpdate && (isSuperadminView ? canManageUserAccount(session?.user, u, "UPDATE") : true);
+        return (
+          <div className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
+            {canEditTarget ? (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setEditing(u);
+                    setDetail(null);
+                  }}
+                >
+                  Modifier
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => void openAssignFlow(u)}>
+                  Attribuer
+                </Button>
+              </>
+            ) : null}
+          </div>
+        );
+      },
+    },
     ...(isSuperadminView
       ? [
           {
@@ -428,7 +483,7 @@ export function UsersPage() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail ? `${detail.firstName ?? ""} ${detail.lastName ?? ""}`.trim() : ""}
-        description={detail?.role}
+        description={detail ? formatUserRolesDisplay(detail) : undefined}
         footer={
           detail ? (
             (() => {
@@ -481,15 +536,20 @@ export function UsersPage() {
               return (
                 <>
                   {canEditTarget ? (
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setEditing(detail);
-                        setDetail(null);
-                      }}
-                    >
-                      Modifier
-                    </Button>
+                    <>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setEditing(detail);
+                          setDetail(null);
+                        }}
+                      >
+                        Modifier
+                      </Button>
+                      <Button variant="secondary" onClick={() => void openAssignFlow(detail)}>
+                        Attribuer
+                      </Button>
+                    </>
                   ) : null}
                   {canResetTarget ? (
                     <Button variant="secondary" disabled={busy} onClick={() => void resetPassword(detail)}>
@@ -526,7 +586,8 @@ export function UsersPage() {
               </div>
             ) : null}
             <dl className="grid grid-cols-2 gap-4 text-sm">
-              <Row label="Identifiant" value={detail.identifier} />
+              <Row label="Identifiant" value={detail.publicId ?? detail.identifier} />
+              <Row label="Rôle(s)" value={formatUserRolesDisplay(detail)} />
               <Row label="Email" value={detail.email} />
               <Row label="Téléphone" value={detail.phone} />
               <Row label="Périmètre" value={detail.scopeLevel} />
@@ -559,25 +620,16 @@ export function UsersPage() {
       >
         {editing ? (
           <form id="user-form" onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Rôle" hint={isSuperadminView ? "Admin Pays ou Admin School" : "Liste définie dans Configuration → Rôles"}>
-              <Select
-                value={editing.role}
-                onChange={(e) => {
-                  if (!session) return;
-                  const nextRole = e.target.value;
-                  setEditing(applyRoleChangeToUser(editing, nextRole, session, state));
-                }}
-                options={creatableRoles.map((r) => ({ value: r, label: r }))}
-                disabled={isEditingExisting}
-              />
-            </Field>
-            <Field label="Identifiant" hint="Généré automatiquement selon le rôle" required>
-              <Input
-                value={editing.identifier ?? ""}
-                onChange={(e) => setEditing({ ...editing, identifier: e.target.value })}
-                required
-              />
-            </Field>
+            {isEditingExisting ? (
+              <Field label="Identifiant" hint="Généré par le serveur, non modifiable">
+                <Input value={editing.publicId ?? editing.identifier ?? ""} readOnly />
+              </Field>
+            ) : (
+              <p className="sm:col-span-2 text-sm text-muted">
+                L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création.
+                Utilisez ensuite <strong>Attribuer</strong>.
+              </p>
+            )}
             <Field label="Prénom" required>
               <Input
                 value={editing.firstName ?? ""}
@@ -729,6 +781,46 @@ export function UsersPage() {
             ) : null}
           </form>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(assigning)}
+        onClose={() => setAssigning(null)}
+        title="Attribuer les rôles"
+        description={assigning ? `${assigning.firstName ?? ""} ${assigning.lastName ?? ""}`.trim() : ""}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAssigning(null)}>
+              Annuler
+            </Button>
+            <Button disabled={busy} onClick={() => void submitAssign()}>
+              Enregistrer
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-2">
+          {assignableRoles.length === 0 ? (
+            <p className="text-sm text-muted">Aucun rôle attribuable pour votre périmètre.</p>
+          ) : (
+            assignableRoles.map((role) => (
+              <label key={role.roleKey} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selectedRoles.includes(role.roleName)}
+                  onChange={(event) => {
+                    setSelectedRoles((current) =>
+                      event.target.checked
+                        ? [...current, role.roleName]
+                        : current.filter((item) => item !== role.roleName),
+                    );
+                  }}
+                />
+                {role.roleName}
+              </label>
+            ))
+          )}
+        </div>
       </Modal>
     </>
   );
