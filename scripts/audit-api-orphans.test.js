@@ -20,6 +20,12 @@ function expectClassification(route, classification) {
   assert.strictEqual(row.classification, classification, `${route} doit être ${classification}`);
 }
 
+function expectClient(route, client) {
+  const row = byRoute.get(route);
+  assert(row, `Route absente du scanner: ${route}`);
+  assert(row.clients.includes(client), `${route} doit référencer ${client}`);
+}
+
 expectClassification("GET /", "INFRASTRUCTURE_ROUTE");
 expectClassification("GET /web", "INFRASTRUCTURE_ROUTE");
 expectClassification("POST /auth/refresh", "AUTH_SESSION_ROUTE");
@@ -40,5 +46,15 @@ assert.notStrictEqual(
   "ORPHAN_CANDIDATE",
   "Le bulletin PDF Mobile ne doit jamais redevenir un faux orphelin",
 );
+
+expectClient(
+  "GET /backoffice/establishments/:param/subscription",
+  "web/src/lib/establishmentsApi.ts",
+);
+expectClient("GET /backoffice/subscription-access", "web/src/lib/establishmentsApi.ts");
+
+for (const row of audit.rows) {
+  assert(!row.route.includes("${"), `Route mal normalisée avec interpolation: ${row.route}`);
+}
 
 console.log("audit-api-orphans.test.js OK");
