@@ -18,6 +18,10 @@ La PR #182 corrige le merge React, mais plusieurs **GET backend** lisaient encor
 | `POST /api/notes` (validation) | `getAuthoritativeBackOfficeState()` | `loadCanonicalPedagogyForPrincipal()` |
 | `POST /api/presences` (validation) | idem | idem |
 
+## Correctif contrat HTTP 400/404 (P0 bloquant)
+
+`assertPresenceWrite` / `assertNoteWrite` / `assertPaymentWrite` mappent désormais les messages `*introuvable*` en **HTTP 404** (au lieu de 400). Cela restaure le contrat observable de `verify:pedagogy-management` lorsque l'élève n'est pas dans le scope canonique (`loadCanonicalPedagogyForPrincipal`).
+
 ## Suite contractuelle
 
 ```bash
