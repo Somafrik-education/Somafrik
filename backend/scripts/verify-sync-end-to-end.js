@@ -1,0 +1,512 @@
+"use strict";
+
+/**
+ * P0 SYNC-END-TO-END — vérifie la chaîne réelle pour les domaines critiques :
+ * POST/PATCH/DELETE → PostgreSQL → GET API → reload GET → cohérence.
+ *
+ * Exécution : DATABASE_URL=postgresql://... npm run verify:sync-end-to-end
+ */
+
+const assert = require("node:assert/strict");
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const { Pool } = require("pg");
+const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
+const { FINANCE_SCHEMA_SQL } = require("../db/financeSchema");
+const { hashSecret } = require("../services/credentialService");
+
+const ROOT = path.resolve(__dirname, "../..");
+const PORT = 19690;
+const PG_DATABASE = String(process.env.SOMAFRIK_SYNC_E2E_DATABASE ?? "somafrik_sync_e2e_it")
+  .trim()
+  .replace(/[^a-zA-Z0-9_]/g, "");
+
+function withDatabaseName(databaseUrl, databaseName) {
+  const parsed = new URL(databaseUrl);
+  parsed.pathname = `/${databaseName}`;
+  return parsed.toString();
+}
+
+async function ensureIsolatedDatabase(databaseUrl, databaseName) {
+  const pool = new Pool({ connectionString: withDatabaseName(databaseUrl, "postgres") });
+  try {
+    const existing = await pool.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
+    if (!existing.rowCount) await pool.query(`CREATE DATABASE ${databaseName}`);
+  } finally {
+    await pool.end();
+  }
+  return withDatabaseName(databaseUrl, databaseName);
+}
+
+async function prepareDatabase(databaseUrl) {
+  const isolatedUrl = await ensureIsolatedDatabase(databaseUrl, PG_DATABASE);
+  const pool = new Pool({ connectionString: isolatedUrl });
+  const passwordHash = hashSecret("1234");
+  try {
+    await pool.query("DROP SCHEMA public CASCADE");
+    await pool.query("CREATE SCHEMA public");
+    await pool.query(fs.readFileSync(path.join(ROOT, "backend/db/schema.sql"), "utf8"));
+    await pool.query(PEDAGOGY_SCHEMA_SQL);
+    await pool.query(FINANCE_SCHEMA_SQL);
+
+    const country = await pool.query(
+      `INSERT INTO countries (name, iso_code, phone_code, currency)
+       VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
+    );
+    const school = await pool.query(
+      `INSERT INTO schools (country_id, school_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'Lycée SYNC-E2E', 'active') RETURNING id`,
+      [country.rows[0].id],
+    );
+    const schoolId = school.rows[0].id;
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
+       VALUES ($1, 'ADMIN-SYNC-E2E', 'Admin', 'Sync', 'admin-sync-e2e@test.cd', $2, $2, 'SCHOOL_ADMIN', 'active')`,
+      [schoolId, passwordHash],
+    );
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
+       VALUES (NULL, 'SUPER-SYNC-E2E', 'Super', 'Sync', 'super-sync-e2e@test.cd', $1, $1, 'SUPER_ADMIN', 'active')`,
+      [passwordHash],
+    );
+    const year = await pool.query(
+      `INSERT INTO academic_years (school_id, name, status) VALUES ($1, '2025-2026', 'open') RETURNING id`,
+      [schoolId],
+    );
+    const klass = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-SYNC-6A', '6ème A', 'active') RETURNING id`,
+      [schoolId, year.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
+       VALUES ($1, 'SUB-MATH', 'Mathématiques', 2, 'active')`,
+      [schoolId],
+    );
+    const teacherUser = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
+       VALUES ($1, 'ENS-SYNC-01', 'Paul', 'Prof', 'ens-sync-e2e@test.cd', $2, $2, 'TEACHER', 'active') RETURNING id`,
+      [schoolId, passwordHash],
+    );
+    const teacher = await pool.query(
+      `INSERT INTO teachers (school_id, user_id, teacher_code, status)
+       VALUES ($1, $2, 'ENS-SYNC-01', 'active') RETURNING id`,
+      [schoolId, teacherUser.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+       SELECT $1, $2, $3, s.id, $4, 'active'
+       FROM subjects s WHERE s.school_id = $1 AND s.subject_code = 'SUB-MATH'`,
+      [schoolId, teacher.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO terms (academic_year_id, name, status) VALUES ($1, 'Trimestre 1', 'open')`,
+      [year.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO subscriptions (school_id, plan_name, price_per_student, billing_currency, billing_cycle, status, start_date)
+       VALUES ($1, 'Premium', 10, 'CDF', 'monthly', 'active', '2025-09-01')`,
+      [schoolId],
+    );
+  } finally {
+    await pool.end();
+  }
+  return isolatedUrl;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function baseUrl() {
+  return `http://127.0.0.1:${PORT}/api`;
+}
+
+async function request(pathname, { method = "GET", token, body } = {}) {
+  const response = await fetch(`${baseUrl()}${pathname}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  return { status: response.status, data };
+}
+
+function extractList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  return [];
+}
+
+async function login(identifier, password, schoolCode) {
+  const result = await request("/backoffice/login", {
+    method: "POST",
+    body: { identifier, password, ...(schoolCode ? { schoolCode } : {}) },
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  return result.data.accessToken || result.data.token;
+}
+
+function spawnBackend(databaseUrl) {
+  return spawn("node", ["backend/server.js"], {
+    cwd: ROOT,
+    env: {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      NODE_ENV: "development",
+      PORT: String(PORT),
+      SOMAFRIK_DB_REQUIRED: "true",
+      SOMAFRIK_DISABLE_LOGIN_LOCKOUT: "true",
+      SOMAFRIK_SKIP_DEMO_SEED: "true",
+      DATABASE_URL: databaseUrl,
+      JWT_SECRET: process.env.JWT_SECRET || "verify-sync-end-to-end-test-secret-32chars",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+async function waitForHealth(child) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`Backend exited early: ${child.exitCode}`);
+    try {
+      const response = await fetch(`${baseUrl()}/health`);
+      if (response.ok) return;
+    } catch {
+      /* retry */
+    }
+    await wait(300);
+  }
+  throw new Error("Backend health timeout");
+}
+
+async function assertReloadStable(label, fetchList, pickId) {
+  const first = extractList((await fetchList()).data);
+  const second = extractList((await fetchList()).data);
+  const ids1 = first.map(pickId).sort();
+  const ids2 = second.map(pickId).sort();
+  assert.deepEqual(ids1, ids2, `${label}: reload GET divergent`);
+  return first;
+}
+
+async function runSyncEndToEnd(databaseUrl) {
+  const isolatedUrl = await prepareDatabase(databaseUrl);
+  const pool = new Pool({ connectionString: isolatedUrl });
+  const child = spawnBackend(isolatedUrl);
+  const stamp = Date.now();
+
+  try {
+    await waitForHealth(child);
+    const adminToken = await login("admin-sync-e2e@test.cd", "1234", "CD-2026-0001");
+    const superToken = await login("super-sync-e2e@test.cd", "1234");
+
+    // --- Users ---
+    const createdUser = await request("/backoffice/users", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        firstName: "User",
+        lastName: `Sync${stamp}`,
+        role: "Secrétaire",
+        identifier: `sec-sync-${stamp}@test.cd`,
+        schoolCode: "CD-2026-0001",
+        status: "Actif",
+        password: "E2eTest!2026",
+      },
+    });
+    assert.equal(createdUser.status, 201, JSON.stringify(createdUser.data));
+    const userId = String(createdUser.data.id ?? "");
+    assert.ok(userId, "UUID serveur users");
+    const pgUser = await pool.query(`SELECT count(*)::int AS c FROM users WHERE user_code = $1 OR email = $2`, [
+      createdUser.data.identifier ?? `sec-sync-${stamp}@test.cd`,
+      createdUser.data.identifier ?? `sec-sync-${stamp}@test.cd`,
+    ]);
+    assert.ok(pgUser.rows[0].c >= 1, "users: ligne PostgreSQL");
+    let usersGet = await assertReloadStable(
+      "users",
+      () => request("/backoffice/users", { token: adminToken }),
+      (row) => String(row.id),
+    );
+    assert.ok(usersGet.some((row) => String(row.id) === userId), "users: GET contient POST");
+    await request(`/backoffice/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Inactif" },
+    });
+    usersGet = extractList((await request("/backoffice/users", { token: adminToken })).data);
+    const patched = usersGet.find((row) => String(row.id) === userId);
+    assert.equal(patched?.status, "Inactif", "users: PATCH reflété par GET");
+
+    // --- Teachers ---
+    const createdTeacher = await request("/teachers", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        firstName: "Marie",
+        lastName: `Sync${stamp}`,
+        email: `teacher-sync-${stamp}@test.cd`,
+        phone: `+243820${String(stamp).slice(-6)}`,
+        mainSubject: "Mathématiques",
+      },
+    });
+    assert.equal(createdTeacher.status, 201, JSON.stringify(createdTeacher.data));
+    const teacherCode = String(createdTeacher.data.teacherCode ?? createdTeacher.data.id ?? "");
+    const pgTeacher = await pool.query(`SELECT count(*)::int AS c FROM teachers WHERE teacher_code = $1`, [teacherCode]);
+    assert.equal(pgTeacher.rows[0].c, 1, "teachers: PostgreSQL");
+    let teachersGet = await assertReloadStable(
+      "teachers",
+      () => request("/teachers", { token: adminToken }),
+      (row) => String(row.teacherCode ?? row.id),
+    );
+    assert.ok(
+      teachersGet.some((row) => String(row.teacherCode ?? row.id) === teacherCode),
+      "teachers: GET contient POST",
+    );
+    await request(`/teachers/${encodeURIComponent(teacherCode)}`, { method: "DELETE", token: adminToken });
+    teachersGet = extractList((await request("/teachers", { token: adminToken })).data);
+    assert.ok(
+      !teachersGet.some((row) => String(row.teacherCode ?? row.id) === teacherCode),
+      "teachers: DELETE absent du GET",
+    );
+
+    // --- Classes ---
+    const createdClass = await request("/classes", {
+      method: "POST",
+      token: adminToken,
+      body: { name: `CLS-SYNC-${stamp}`, academicYearName: "2025-2026", status: "active" },
+    });
+    assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
+    const classCode = String(createdClass.data.classCode ?? "");
+    const pgClass = await pool.query(`SELECT count(*)::int AS c FROM classes WHERE class_code = $1`, [classCode]);
+    assert.equal(pgClass.rows[0].c, 1, "classes: PostgreSQL");
+    let classesGet = await assertReloadStable(
+      "classes",
+      () => request("/classes", { token: adminToken }),
+      (row) => String(row.classCode ?? row.id),
+    );
+    assert.ok(classesGet.some((row) => String(row.classCode) === classCode), "classes: GET contient POST");
+
+    // --- Students ---
+    const enrolled = await request(`/classes/${encodeURIComponent(classCode)}/students`, {
+      method: "POST",
+      token: adminToken,
+      body: {
+        firstName: "Awa",
+        lastName: `Sync${stamp}`,
+        gender: "Féminin",
+        birthDate: "2012-03-01",
+      },
+    });
+    assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
+    const studentCode = String(enrolled.data.studentCode ?? enrolled.data.id ?? "");
+    const pgStudent = await pool.query(`SELECT count(*)::int AS c FROM students WHERE student_code = $1`, [studentCode]);
+    assert.equal(pgStudent.rows[0].c, 1, "students: PostgreSQL");
+    let studentsGet = await assertReloadStable(
+      "students",
+      () => request("/students", { token: adminToken }),
+      (row) => String(row.studentCode ?? row.id),
+    );
+    assert.ok(
+      studentsGet.some((row) => String(row.studentCode ?? row.id) === studentCode),
+      "students: GET contient POST",
+    );
+
+    // --- Notes / Présences (évaluation requise) ---
+    const evaluation = await request("/evaluations", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        className: createdClass.data.name,
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: `Eval Sync ${stamp}`,
+        teacherId: "ENS-SYNC-01",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+    });
+    assert.equal(evaluation.status, 201, JSON.stringify(evaluation.data));
+    const evaluationId = String(evaluation.data.id ?? "");
+
+    const notePost = await request("/notes", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        evaluationId,
+        studentId: studentCode,
+        teacherId: "ENS-SYNC-01",
+        value: 14,
+        scale: 20,
+      },
+    });
+    assert.equal(notePost.status, 201, JSON.stringify(notePost.data));
+    const noteId = String(notePost.data.id ?? "");
+    const pgNote = await pool.query(
+      `SELECT count(*)::int AS c FROM grades g
+       JOIN evaluations e ON e.id = g.evaluation_id
+       WHERE e.legacy_json_id = $1 OR g.legacy_json_id = $2`,
+      [evaluationId, noteId],
+    );
+    assert.ok(pgNote.rows[0].c >= 1, "notes: PostgreSQL");
+    let notesGet = await assertReloadStable(
+      "notes",
+      () => request("/notes", { token: adminToken }),
+      (row) => String(row.id),
+    );
+    assert.ok(notesGet.some((row) => String(row.id) === noteId), "notes: GET contient POST");
+    await pool.query(`DELETE FROM grades WHERE legacy_json_id = $1`, [noteId]);
+    notesGet = extractList((await request("/notes", { token: adminToken })).data);
+    assert.ok(!notesGet.some((row) => String(row.id) === noteId), "notes: suppression PG reflétée par GET");
+
+    const presencePost = await request("/presences", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        items: [
+          {
+            studentId: studentCode,
+            className: createdClass.data.name,
+            date: "2026-09-15",
+            status: "present",
+            teacherId: "ENS-SYNC-01",
+          },
+        ],
+      },
+    });
+    assert.equal(presencePost.status, 201, JSON.stringify(presencePost.data));
+    const presenceRows = Array.isArray(presencePost.data) ? presencePost.data : [presencePost.data];
+    const presenceId = String(presenceRows[0]?.id ?? "");
+    const pgPresence = await pool.query(
+      `SELECT count(*)::int AS c FROM attendance a
+       JOIN students s ON s.id = a.student_id
+       WHERE s.student_code = $1 AND a.attendance_date = '2026-09-15'`,
+      [studentCode],
+    );
+    assert.ok(pgPresence.rows[0].c >= 1, "presences: PostgreSQL");
+    let presencesGet = await assertReloadStable(
+      "presences",
+      () => request("/presences", { token: adminToken }),
+      (row) => `${row.studentId}|${row.date}|${row.status}`,
+    );
+    assert.ok(
+      presencesGet.some((row) => String(row.studentId) === studentCode && String(row.date) === "2026-09-15"),
+      "presences: GET contient POST",
+    );
+    if (presenceId) {
+      await pool.query(`DELETE FROM attendance WHERE legacy_json_id = $1`, [presenceId]);
+    } else {
+      await pool.query(
+        `DELETE FROM attendance a USING students s
+         WHERE s.id = a.student_id AND s.student_code = $1 AND a.attendance_date = '2026-09-15'`,
+        [studentCode],
+      );
+    }
+    presencesGet = extractList((await request("/presences", { token: adminToken })).data);
+    assert.ok(
+      !presencesGet.some((row) => String(row.studentId) === studentCode && String(row.date) === "2026-09-15"),
+      "presences: suppression PG reflétée par GET",
+    );
+
+    // --- Finance (paiement) ---
+    const paymentPost = await request("/payments", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        studentId: studentCode,
+        amount: 5000,
+        currency: "CDF",
+        method: "Espèces",
+        status: "Validé",
+        label: `Paiement Sync ${stamp}`,
+      },
+    });
+    assert.equal(paymentPost.status, 201, JSON.stringify(paymentPost.data));
+    const paymentId = String(paymentPost.data.id ?? "");
+    const pgPayment = await pool.query(
+      `SELECT count(*)::int AS c FROM payments p
+       JOIN schools s ON s.id = p.school_id
+       WHERE s.school_code = 'CD-2026-0001' AND (p.payment_code = $1 OR p.id::text = $1)`,
+      [paymentId],
+    );
+    assert.ok(pgPayment.rows[0].c >= 1, "payments: PostgreSQL");
+    let paymentsGet = await assertReloadStable(
+      "payments",
+      () => request("/payments", { token: adminToken }),
+      (row) => String(row.id),
+    );
+    assert.ok(paymentsGet.some((row) => String(row.id) === paymentId), "payments: GET contient POST");
+    await pool.query(
+      `DELETE FROM payments p USING schools s
+       WHERE p.school_id = s.id AND s.school_code = 'CD-2026-0001'
+         AND (p.payment_code = $1 OR p.id::text = $1)`,
+      [paymentId],
+    );
+    paymentsGet = extractList((await request("/payments", { token: adminToken })).data);
+    assert.ok(!paymentsGet.some((row) => String(row.id) === paymentId), "payments: suppression PG reflétée par GET");
+
+    // --- Notifications ---
+    const notifPost = await request("/backoffice/notifications", {
+      method: "POST",
+      token: superToken,
+      body: {
+        title: `Notif Sync ${stamp}`,
+        message: "Test convergence",
+        type: "Information",
+        audience: "etablissement",
+        schoolCode: "CD-2026-0001",
+        status: "Non lu",
+      },
+    });
+    assert.equal(notifPost.status, 201, JSON.stringify(notifPost.data));
+    const notifId = String(notifPost.data.id ?? "");
+    const pgNotif = await pool.query(
+      `SELECT count(*)::int AS c FROM notifications n
+       LEFT JOIN schools s ON s.id = n.school_id
+       WHERE n.id::text = $1 OR n.title = $2`,
+      [notifId, `Notif Sync ${stamp}`],
+    );
+    assert.ok(pgNotif.rows[0].c >= 1, "notifications: PostgreSQL");
+    let notifsGet = await assertReloadStable(
+      "notifications",
+      () => request("/backoffice/notifications", { token: superToken }),
+      (row) => String(row.id),
+    );
+    assert.ok(notifsGet.some((row) => String(row.id) === notifId), "notifications: GET contient POST");
+    await pool.query(`DELETE FROM notifications WHERE id::text = $1 OR title = $2`, [
+      notifId,
+      `Notif Sync ${stamp}`,
+    ]);
+    notifsGet = extractList((await request("/backoffice/notifications", { token: superToken })).data);
+    assert.ok(!notifsGet.some((row) => String(row.id) === notifId), "notifications: suppression PG reflétée par GET");
+
+    console.log("OK verify:sync-end-to-end — Users, Teachers, Students, Classes, Notes, Presences, Finance, Notifications");
+  } finally {
+    child.kill("SIGTERM");
+    await pool.end().catch(() => {});
+    await wait(300);
+  }
+}
+
+async function main() {
+  const databaseUrl = String(process.env.DATABASE_URL ?? "").trim();
+  if (!databaseUrl) {
+    console.log("verify-sync-end-to-end.js: SKIP (DATABASE_URL absent — exécuter en CI PostgreSQL)");
+    return;
+  }
+  await runSyncEndToEnd(databaseUrl);
+}
+
+main().catch((error) => {
+  console.error("FAIL verify:sync-end-to-end:", error.message || error);
+  process.exit(1);
+});

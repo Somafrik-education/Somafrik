@@ -58,6 +58,7 @@
     "verify:clients-legacy-cleanup": "node backend/scripts/verify-clients-legacy-cleanup.js",
     "verify:backoffice-state-removal": "node --test backend/lib/backofficeStateRemoval.test.js backend/lib/backofficeStateRemoval.pg.test.js backend/lib/principalSchoolScope.test.js backend/lib/residualStateManagement.test.js backend/lib/residualReplacePayload.test.js backend/lib/residualRoutesRbac.test.js && node backend/scripts/verify-backoffice-state-removal.js",
     "verify:canonical-state-convergence": "npm --prefix web run verify:canonical-state-convergence",
+    "verify:sync-end-to-end": "node backend/scripts/verify-sync-end-to-end.js",
     "inventory:teachers-school-user-duplicates": "node backend/scripts/inventory-teachers-school-user-duplicates.js",
     "verify:pre-e1-hotfix-02": "node --test backend/lib/legacyPedagogyStaffStateWrite.test.js backend/lib/teacherAssignmentsManagement.test.js && node backend/lib/evaluationAttachment.test.js",
     "verify:pre-e1-hotfix-02b": "node --test backend/lib/legacyPedagogyStaffStateWrite.test.js backend/lib/teacherAssignmentsManagement.test.js && node backend/lib/backofficeDedupe.teachers.test.js && node scripts/verify-pre-e1-hotfix-02b.js",
