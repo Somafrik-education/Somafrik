@@ -2,6 +2,9 @@
 
 const fs = require("fs");
 const path = require("path");
+const {
+  disableLegacyBackOfficeRuntimeMigrations,
+} = require("../backend/db/repositoryFactory");
 
 const root = path.join(__dirname, "..");
 const legacyDir = path.join(root, "BackOffice");
@@ -25,7 +28,7 @@ if (!fs.existsSync(tombstone)) {
   throw new Error("LEGACY_BACKOFFICE_TOMBSTONE_REQUIRED");
 }
 const tombstoneSource = fs.readFileSync(tombstone, "utf8");
-for (const forbidden of ["fetch(", "axios", "/api/", "document.", "window.", "React", "createRoot"] ) {
+for (const forbidden of ["fetch(", "axios", "/api/", "document.", "window.", "React", "createRoot"]) {
   if (tombstoneSource.includes(forbidden)) {
     throw new Error(`LEGACY_BACKOFFICE_TOMBSTONE_MUST_BE_INERT: ${forbidden}`);
   }
@@ -45,4 +48,46 @@ if (!serverSource.includes("sendBackOfficeStateWriteRemoved")) {
   throw new Error("BACKOFFICE_STATE_WRITE_MUST_FAIL_CLOSED");
 }
 
-console.log("OK verify:remove-legacy-sync-core — BackOffice UI supprimé, tombstone inerte, state global fail-closed");
+let evaluationMigrationCalls = 0;
+let noteMigrationCalls = 0;
+const postgresProbe = {
+  engine: "postgresql",
+  migrateEvaluationsFromBackOffice: async () => {
+    evaluationMigrationCalls += 1;
+  },
+  migrateNotesFromBackOffice: async () => {
+    noteMigrationCalls += 1;
+  },
+};
+disableLegacyBackOfficeRuntimeMigrations(postgresProbe);
+Promise.resolve()
+  .then(() => postgresProbe.migrateEvaluationsFromBackOffice())
+  .then(() => postgresProbe.migrateNotesFromBackOffice())
+  .then(() => {
+    if (evaluationMigrationCalls !== 0 || noteMigrationCalls !== 0) {
+      throw new Error("LEGACY_BACKOFFICE_RUNTIME_MIGRATION_STILL_ACTIVE");
+    }
+
+    const memoryEvaluation = async () => "memory-eval";
+    const memoryNotes = async () => "memory-note";
+    const memoryProbe = {
+      engine: "memory",
+      migrateEvaluationsFromBackOffice: memoryEvaluation,
+      migrateNotesFromBackOffice: memoryNotes,
+    };
+    disableLegacyBackOfficeRuntimeMigrations(memoryProbe);
+    if (
+      memoryProbe.migrateEvaluationsFromBackOffice !== memoryEvaluation ||
+      memoryProbe.migrateNotesFromBackOffice !== memoryNotes
+    ) {
+      throw new Error("MEMORY_REPOSITORY_MUST_NOT_BE_PATCHED");
+    }
+
+    console.log(
+      "OK verify:remove-legacy-sync-core — BackOffice UI supprimé, state global fail-closed, migrations runtime legacy neutralisées",
+    );
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
