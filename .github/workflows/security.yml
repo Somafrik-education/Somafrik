@@ -252,6 +252,9 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:backoffice-state-removal
 
+      - name: verify:canonical-state-convergence (P0 SYNC-CANONICAL-STATE)
+        run: npm run verify:canonical-state-convergence
+
       - name: verify:teachers-domain-constraints-boot (P0 préprod)
         run: npm run verify:teachers-domain-constraints-boot
 
