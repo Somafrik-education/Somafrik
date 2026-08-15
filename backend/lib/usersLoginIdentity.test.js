@@ -9,6 +9,9 @@ const {
   formatUsersLoginIdentityDuplicateDiagnostic,
   isUsersLoginIdentityUniquenessViolation,
 } = require("./usersLoginIdentity");
+const { AuthService } = require("../services/authService");
+const { BackOfficeAccessService } = require("../services/backOfficeAccessService");
+const { attachMemoryLoginLockoutStore } = require("./loginLockout");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -51,4 +54,87 @@ test("migration et module alignent index partiels sur archived/deleted", () => {
   for (const block of indexBlocks) {
     assert.match(block, /NOT IN \('deleted', 'archived'\)/);
   }
+});
+
+function schoolLoginFixture() {
+  const school = {
+    id: "school-ik",
+    code: "CD-2026-0001",
+    legacySchoolCode: "CD-2026-0001",
+    publicId: "CD-2026-0001",
+    loginCode: "CD-IK",
+    shortCode: "IK",
+    country: "RDC",
+    countryCode: "CD",
+    name: "Institut K",
+    status: "Actif",
+    validationStatus: "Validé",
+  };
+  const user = {
+    id: "user-gk",
+    userCode: "GK-26-00001",
+    identifier: "GK-26-00001",
+    publicId: "GK-26-00001",
+    schoolCode: school.code,
+    firstName: "Grace",
+    lastName: "Kabongo",
+    role: "Admin School",
+    accessChannel: "Application",
+    status: "Actif",
+    password: "Somafrik26!",
+    mustChangePassword: false,
+    permissions: [],
+  };
+  return { school, user };
+}
+
+test("AuthService accepte le code établissement canonique CD-IK avec GK-26-00001", async () => {
+  attachMemoryLoginLockoutStore();
+  const { school, user } = schoolLoginFixture();
+  const service = new AuthService({
+    school,
+    schools: [school],
+    teachers: [],
+    students: [],
+    userAccounts: [user],
+    countries: [],
+    subscriptions: [],
+  });
+
+  assert.deepEqual(service.identify({ schoolCode: "CD-IK", identifier: "GK-26-00001" }), {
+    role: "school_admin",
+    roleLabel: "Admin Établissement",
+  });
+
+  const result = await service.login({
+    role: "school_admin",
+    schoolCode: "CD-IK",
+    identifier: "GK-26-00001",
+    pin: "Somafrik26!",
+  });
+  assert.equal(result.school.loginCode, "CD-IK");
+  assert.equal(result.user.id, user.id);
+  assert.equal(result.user.schoolCode, school.code);
+});
+
+test("BackOfficeAccessService résout CD-IK vers le tenant historique sans perdre le compte", async () => {
+  attachMemoryLoginLockoutStore();
+  const { school, user } = schoolLoginFixture();
+  const service = new BackOfficeAccessService({
+    school,
+    schools: [school],
+    userAccounts: [user],
+    students: [],
+    countries: [],
+    subscriptions: [],
+  });
+
+  const result = await service.login({
+    schoolCode: "CD-IK",
+    identifier: "GK-26-00001",
+    password: "Somafrik26!",
+  });
+  assert.equal(result.user.id, user.id);
+  assert.equal(result.schoolContext.loginCode, "CD-IK");
+  assert.equal(result.schoolContext.code, school.code);
 });
