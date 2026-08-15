@@ -6,6 +6,7 @@ import type { School } from "../types";
 const { showToast, refresh, update, create, patch, school } = vi.hoisted(() => {
   const school = {
     code: "CD-2026-0001",
+    publicId: "CD-IK-26-001",
     name: "Lycée Test",
     type: "Lycée",
     city: "Kinshasa",
@@ -109,5 +110,16 @@ describe("SchoolsPage (LOT 1 — API establishments)", () => {
     expect(screen.getByText("Lycée Test")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nouvel établissement" })).toBeInTheDocument();
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("affiche le code public canonique sans exposer l'ancien code interne", () => {
+    render(
+      <MemoryRouter>
+        <SchoolsPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("CD-IK-26-001")).toBeInTheDocument();
+    expect(screen.queryByText("CD-2026-0001")).not.toBeInTheDocument();
   });
 });
