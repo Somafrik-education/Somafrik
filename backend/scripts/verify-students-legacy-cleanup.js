@@ -225,7 +225,7 @@ async function runHttpGuards() {
       "GET /students projette l'élève PostgreSQL",
     );
 
-    const usersBefore = await request("/users", { token });
+    const usersBefore = await request("/backoffice/users", { token });
     assert.equal(usersBefore.status, 200);
     const baselineUsers = usersBefore.data ?? [];
 
@@ -267,7 +267,7 @@ async function runHttpGuards() {
     });
     assertBackOfficeStateWriteRemoved(snapshot);
 
-    const usersAfter = await request("/users", { token });
+    const usersAfter = await request("/backoffice/users", { token });
     const studentsAfter = await request("/students", { token });
     assert.equal(usersAfter.status, 200);
     assert.equal(studentsAfter.status, 200);
