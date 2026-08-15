@@ -67,7 +67,6 @@ CREATE TABLE IF NOT EXISTS school_login_code_counters (
   PRIMARY KEY (country_id, school_initials, creation_year)
 );
 
--- Avant le backfill, refuser explicitement un groupe qui dépasserait la capacité SEQ3.
 DO $$
 BEGIN
   IF EXISTS (
@@ -83,7 +82,6 @@ BEGIN
   END IF;
 END $$;
 
--- Backfill déterministe : plusieurs établissements peuvent partager les mêmes initiales naturelles.
 WITH ranked AS (
   SELECT
     s.id,
@@ -125,7 +123,6 @@ BEGIN
   END IF;
 END $$;
 
--- Aligner les compteurs sur le backfill pour que la prochaine création continue à N+1.
 INSERT INTO school_login_code_counters (country_id, school_initials, creation_year, last_value)
 SELECT
   s.country_id,
@@ -169,7 +166,7 @@ AS $$
 DECLARE
   iso TEXT;
   base_initials TEXT;
-  creation_year INTEGER;
+  school_creation_year INTEGER;
   sequence_value INTEGER;
 BEGIN
   IF TG_OP = 'UPDATE' AND OLD.login_code IS NOT NULL THEN
@@ -191,7 +188,7 @@ BEGIN
   END IF;
 
   base_initials := somafrik_school_short_code(NEW.name);
-  creation_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
+  school_creation_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
 
   INSERT INTO school_login_code_counters (
     country_id,
@@ -199,7 +196,7 @@ BEGIN
     creation_year,
     last_value
   )
-  VALUES (NEW.country_id, base_initials, creation_year, 1)
+  VALUES (NEW.country_id, base_initials, school_creation_year, 1)
   ON CONFLICT (country_id, school_initials, creation_year)
   DO UPDATE SET
     last_value = school_login_code_counters.last_value + 1,
@@ -208,13 +205,12 @@ BEGIN
 
   IF sequence_value > 999 THEN
     RAISE EXCEPTION 'SCHOOL_LOGIN_SEQUENCE_EXHAUSTED: country %, initials %, year %',
-      iso, base_initials, creation_year;
+      iso, base_initials, school_creation_year;
   END IF;
 
-  -- Le client ne choisit jamais le code canonique : PostgreSQL le dérive.
   NEW.login_code :=
     iso || '-' || base_initials || '-' ||
-    lpad((creation_year % 100)::text, 2, '0') || '-' ||
+    lpad((school_creation_year % 100)::text, 2, '0') || '-' ||
     lpad(sequence_value::text, 3, '0');
   RETURN NEW;
 END
