@@ -5,6 +5,7 @@ on:
     branches: [develop]
     paths:
       - 'scripts/audit-api-orphans.js'
+      - 'scripts/audit-api-orphans.test.js'
       - 'scripts/audit-feature-pg-relations.js'
       - 'scripts/verify-api-legacy-aliases.js'
       - '.github/workflows/architecture-audit.yml'
@@ -23,6 +24,8 @@ jobs:
           node-version: '22.12.0'
       - name: Verify removed legacy API aliases
         run: node scripts/verify-api-legacy-aliases.js
+      - name: Test API orphan scanner classifications
+        run: node scripts/audit-api-orphans.test.js
       - name: Run API orphan audit
         run: node scripts/audit-api-orphans.js architecture-api-audit.json
       - name: Run feature/API/PostgreSQL audit
