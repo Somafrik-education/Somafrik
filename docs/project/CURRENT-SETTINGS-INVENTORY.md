@@ -22,7 +22,7 @@ Chaque paramètre est classé dans **une** catégorie principale (la plus proche
 | **Canonique PostgreSQL relationnel** | Tables/colonnes dédiées ; CRUD via APIs métier. |
 | **JSONB canonique PG** | Persisté en PostgreSQL mais dans un payload JSON (`config_payload`, `profile_payload`, `establishment_residual_records`). Pas de colonnes métier 1:1. |
 | **Lecture legacy résiduelle** | Helper interne `getAuthoritativeBackOfficeState()` (`backend/server.js`) qui **agrège des projections PG** ; le nom est historique. **Ne lit plus** la table `backoffice_state` (`getBackOfficeState()` retourne `null`). |
-| **Écriture legacy encore possible** | Restore JSON client pour domaines non migrés ; `DataContext.update` academic-config uniquement. Examens / bulletins / documents : PUT residual **400**. `PUT/GET /api/backoffice/state` = **410 Gone**. |
+| **Écriture legacy encore possible** | `DataContext.update` academic-config uniquement (`partial: false` refusé). Examens / bulletins / documents : PUT residual **400**. `PUT/GET /api/backoffice/state` = **410 Gone**. Restauration JSON globale **retirée**. |
 | **Config statique / seed / env** | `backend/data.js`, `web/src/lib/internalRoleDefaults.ts`, `Mobile/src/data/catalog.ts`, variables d’environnement. |
 | **Calculé / non persisté** | Dérivé en mémoire (session, overlays, défauts si JSON vide). |
 | **Fonctionnalité morte / écran résiduel** | Carte « Bientôt », ComingSoon, cartes Mobile sans `route`, helpers non appelés, table `backoffice_state` orpheline. |
@@ -59,7 +59,7 @@ Les cartes marquées `status: "soon"` restent cliquables : elles ouvrent un `Com
 | **Rôles et droits** `/parametres/roles-droits` | `ConfigurationPage section="roles-droits"` | `academicConfigs.userRoles` + `state.rolePermissions` | **Partiel** : liste de rôles → JSON academic-config ; **pilotage** → `PUT /api/backoffice/role-permissions` (**Super Admin uniquement**) | Dual JSONB + `role_permissions` |
 | **Documents** `/parametres/documents` | `BulletinDesignPage` | listes classes/matières (projection) ; design via `report_card_templates` | **SoT table dédiée** (`PUT /api/report-card-templates`) ; `bulletinDesignByClass` interdit | JSON interdit |
 | **Sécurité** `/parametres/securite` | `SecuritySettingsPage` | Session AuthContext + `state.auditLog` + texte **codé en dur** | **Non** — lecture locale / export CSV client. **Pas** `GET /api/audit` | Calculé + écran trompeur |
-| **Données et sauvegarde** `/parametres/donnees` | `DataBackupSettingsPage` | `state` client (domaines déjà chargés) | Export CSV/JSON **local**. Restore appelle `DataContext.update` qui **strippe** écoles/élèves/enseignants/finance/pédagogie/plateforme/clients | Écriture legacy inopérante pour le métier |
+| **Données et sauvegarde** `/parametres/donnees` | `DataBackupSettingsPage` | aperçu client + **`GET /api/data-export`** | CSV = extrait affiché. JSON = enveloppe `somafrik-export` v1, snapshot PG **`REPEATABLE READ`**. **Pas de restauration globale** | Canonique PG (export) |
 | **Finances** `/parametres/finances` | `SettingsFinancePage` | Aucune | **Non** — `ComingSoonState` | Écran résiduel (ops Finance existent ailleurs) |
 | **Notifications** `/parametres/notifications` | `SettingsNotificationsPage` | Aucune | **Non** — ComingSoon | Écran résiduel (annonces / `notifications` existent ailleurs) |
 | **Apparence** `/parametres/apparence` | `SettingsAppearancePage` | Aucune | **Non** — ComingSoon. Champs `logoUrl` / `primaryColor` existent pourtant sur l’établissement | Écran mort ; données ailleurs |
@@ -199,7 +199,7 @@ C’est un écart de modèle (catalogue JSON vs colonne d’instance), pas un se
 | Compte (identité, rôle, statut, e-mail, téléphone) | modules Utilisateurs / Contacts | `GET/POST/PATCH /api/backoffice/users` ; `GET /api/users` (projection overlay) | Canonique PG | `users` : `user_code`, `first_name`, `last_name`, `email`, `phone`, `role`, `status`, `school_id`, `birth_date`, `gender`, `must_change_password`, `last_login_at` | `Utilisateurs:*` / `Gérer utilisateurs` / privilèges pays/global | Utilisateur + établissement (`school_id` nullable Superadmin) | `userAccountRules.js` (statuts Actif/Inactif/Suspendu/Verrouillé/…) | Provision depuis contact `POST …/contacts/:id/provision-account` | INFO |
 | Mot de passe / PIN | flux login, reset, Mobile | `POST /api/users/:id/reset-password` ; login `POST /api/backoffice/login` | Hash PG | `users.password_hash`, `users.pin_hash` | Reset : `canResetUserPassword` (ALL/COUNTRY/`Utilisateurs:UPDATE`/`Gérer utilisateurs`) — **pas** `requirePermission` route-key | Utilisateur | `validatePasswordPolicy` : ≥8, 1 lettre, 1 chiffre. PIN : 6 chiffres + denylist faibles | Écran Sécurité **affiche** les règles en dur, **n’édite pas** | P1 (UI vs API) |
 | Session | calculé à l’écran Sécurité | login / refresh | Canonique PG sessions + JWT | `sessions` (`refresh_token_hash`, `expires_at`, `revoked_at`) | Authentifié | Utilisateur | TTL JWT / refresh | — | INFO |
-| Lockout login | **aucun écran** | `loginLockout.js` | **Mémoire processus** `Map` | — | — | identifiant + schoolCode | 5 échecs / 15 min ; off si `SOMAFRIK_DISABLE_LOGIN_LOCKOUT`, E2E, `NODE_ENV=test` | Endpoint E2E `POST /api/backoffice/e2e/clear-login-lockout` | **P0** |
+| Lockout login | **aucun écran** | `loginLockout.js` → `login_lockouts` | **PostgreSQL** (mémoire seulement si moteur fallback) | `school_scope` + identifiant normalisé | 5 échecs / 15 min ; off si `SOMAFRIK_DISABLE_LOGIN_LOCKOUT` ou E2E (**interdit prod**) | Endpoint E2E `POST /api/backoffice/e2e/clear-login-lockout` → **404** hors E2E non-prod | INFO |
 | Contacts / relations / messages | CRM, pas hub Paramètres | `/api/backoffice/contacts`, `relations`, `messages` | Canonique PG | `contacts`, `contact_relations`, `school_messages`, … | `Contacts:*` / `Messages:*` | Établissement | — | — | INFO |
 
 `GET /api/users` passe par `getAuthoritativeBackOfficeState()` → overlay `listClientsProjection()` (PG), **pas** `backoffice_state`.
@@ -237,7 +237,7 @@ C’est un écart de modèle (catalogue JSON vs colonne d’instance), pas un se
 - RBAC : `Élèves:*` / `Gérer élèves`
 - PUT state élèves : 410 + `legacyStudentsStateWrite.js`
 
-**Restore JSON** du hub Données **prétend** restaurer les élèves puis les strippe. **P0** (voir §2.11).
+**Restore JSON** du hub Données : bouton retiré ; `DataContext.update({ partial: false })` refuse. Export via `GET /api/data-export` (snapshot PG `REPEATABLE READ`).
 
 ---
 
@@ -306,7 +306,7 @@ PUT state Finance : 410 + `legacyFinanceStateWrite.js`.
 | Politique PIN | idem | `validatePinPolicy` (6 chiffres + denylist) | Statique | Non | INFO |
 | Journal d’audit (écran Paramètres) | `state.auditLog` DataContext | **n’appelle pas** `GET /api/audit` | Client / contacts locaux | Non = PG `audit_logs` | **P1** |
 | Journal d’audit réel | pas dans le hub | `GET /api/audit` — Super Admin / Admin Pays uniquement (`server.js`) | `audit_logs` | Oui | INFO |
-| Lockout | — | `backend/lib/loginLockout.js` | RAM processus | Perdu au restart / multi-instance | **P0** |
+| Lockout | — | `backend/lib/loginLockout.js` | Table `login_lockouts` | Partagé multi-instance / restart | INFO |
 | `SOMAFRIK_AUTH_OPTIONAL` | — | `rbacService.canAccess` | Env | Bypass RBAC si true | **P1** (bloqué prod) |
 | Secrets JWT / DB | — | `productionSecrets.js` | Env `JWT_SECRET`, `DATABASE_URL`, … | Déploiement | INFO |
 | `GET /api/schools` | login picker | **sans** `requireAuth` | Projection écoles | Catalogue public | P1 |
@@ -325,7 +325,7 @@ PUT state Finance : 410 + `legacyFinanceStateWrite.js`.
 | `ensureRepositoryBackOfficeSnapshot` / `savePresencesViaBackOfficeState` | **Définis, aucun appelant** (grep) | Code mort |
 | Loaders Web `domainLoaders.ts` | Un GET par domaine (establishments, students, academic-config, finance, …) | Canonique |
 | `DataContext.update` | Strip écoles/élèves/staff/finance/pédagogie/plateforme/clients puis `syncResidualBackOfficePatch` (academicConfigs, exams, bulletins, documents uniquement) | Écriture résiduelle JSONB |
-| Restore JSON `SettingsDataPage` | Confirme un remplacement métier puis `update(restoreState)` → strips → **ne restaure pas** students/teachers/classes/payments/notes/presences | **P0** UX dangereuse |
+| Restore JSON `SettingsDataPage` | Restauration globale **retirée** ; message « La restauration complète n'est pas disponible. » ; export versionné `GET /api/data-export` | INFO |
 | `docs/project/DATABASE.md` / inventaire LOT 0 | Peuvent encore parler du snapshot comme SoT | Doc **stale** (hors périmètre de correctif) |
 
 Domaines encore en **JSONB résiduel** (écriture possible) : `academicConfigs`, `exams`, `bulletins`, `documents` via APIs dédiées (pas via PUT state).
@@ -354,12 +354,12 @@ Domaines encore en **JSONB résiduel** (écriture possible) : `academicConfigs`,
 
 | Catégorie | Exemples concrets |
 |-----------|-------------------|
-| **Canonique PostgreSQL relationnel** | `schools` colonnes, `users`, `teachers`, `students`, `classes`, `subjects`, `school_courses`, `terms`, `academic_years`, `grades`, `attendance`, `payments`, `fee_*`, `role_permissions`, `subscriptions`, `sessions`, `audit_logs` |
+| **Canonique PostgreSQL relationnel** | `schools` colonnes, `users`, `teachers`, `students`, `classes`, `subjects`, `school_courses`, `terms`, `academic_years`, `grades`, `attendance`, `payments`, `fee_*`, `role_permissions`, `subscriptions`, `sessions`, `audit_logs`, `login_lockouts` |
 | **JSONB canonique PG** | `schools.profile_payload`, `countries.profile_payload.subscriptionPolicy`, `school_academic_configs.config_payload`, `establishment_residual_records.profile_payload`, `dashboard_chart_config.chart_overrides` |
 | **Lecture legacy résiduelle** | `getAuthoritativeBackOfficeState` sur GET users/courses/notes/presences ; GET academic-config qui **préfère** JSON `periods` aux `terms` |
-| **Écriture legacy encore possible** | PUT replace-all exams/bulletins/documents ; PUT academic-config JSON (sans sync relationnel) ; restore JSON client (no-op métier après strip) |
+| **Écriture legacy encore possible** | PUT academic-config JSON (sans sync relationnel). Restore JSON globale **retirée** (LOT 6). Examens/bulletins/documents : PUT residual 400. |
 | **Config statique / env** | `backend/data.js` permissions & défauts ; `internalRoleDefaults.ts` ; `GLOBAL_SUBSCRIPTION_POLICY` ; `SOMAFRIK_*` ; politique MDP/PIN dans le code |
-| **Calculé / non persisté** | Session affichée ; lockout RAM ; overlay permissions client ; `chartPeriod` localStorage ; ComingSoon |
+| **Calculé / non persisté** | Session affichée ; overlay permissions client ; `chartPeriod` localStorage ; ComingSoon |
 | **Morte / résiduelle** | Hub Finances/Notifications/Apparence/Intégrations ; cartes Mobile sans route ; `GET/PUT /api/backoffice/state` 410 ; table `backoffice_state` ; `BackOffice/app.js` redirect ; helpers snapshot non appelés |
 
 ---
@@ -489,9 +489,9 @@ Rôles | Pilotage local fonctions | `saveRolePilotage` | PUT role-permissions (g
 Rôles | Defaults client | — | — | `internalRoleDefaults.ts` / Mobile `catalog.ts` | Build | Non | Triple source | UI | P1 | Une source générée depuis PG
 Utilisateurs | Comptes | Utilisateurs / Contacts | `/api/backoffice/users`, `/api/users` | `users` | Utilisateur / école | Oui | Overlay nommage legacy | Utilisateurs:* | INFO | —
 Utilisateurs | MDP / PIN | Sécurité (lecture) + reset | reset-password ; login | hashes `users` | Utilisateur | Politique **code** | Écran non éditable | UPDATE utilisateurs | P1 | Si politique un jour configurable : table + écran
-Utilisateurs | Lockout | aucun | login | RAM | Instance | Non | — | — | **P0** | Persister lockout (PG) + partage multi-instance
+Utilisateurs | Lockout | aucun | login | `login_lockouts` | Établissement ou `*` plateforme | Oui | concurrent +2 | — | INFO | LOT 6 PG SoT
 Enseignants | Fiches / cycle de vie | TeachersList | `/api/teachers`, assignments | `teachers`, `teacher_assignments` | Établissement | Oui | PUT state 410 | Enseignants:* | INFO | —
-Élèves | Fiches / inscriptions | Élèves | `/api/students`, classes/students | `students`, `enrollments` | Établissement | Oui | Restore JSON no-op | Élèves:* | **P0** (restore) | Restore serveur ou retirer le bouton
+Élèves | Fiches / inscriptions | Élèves | `/api/students`, classes/students | `students`, `enrollments` | Établissement | Oui | — | Élèves:* | INFO | Restore global retiré (LOT 6)
 Pédagogie | Classes PG | Classes | `/api/classes` | `classes` | École + année | Oui | Dual JSON names | Gérer classes | P0 (dual) | Voir structure
 Pédagogie | Cours / EDT | Planning | `/api/courses`, `/api/course-schedules` | `school_courses`, `course_schedule_slots` | École | Oui | GET courses sans permission fine | Gérer cours | P1 | Aligner GET sur `requirePermission`
 Pédagogie | Notes / présences / instances d’évaluation | modules ops | `/api/notes`, `/api/presences`, POST/PATCH `/api/evaluations` | `grades`, `attendance`, `evaluations` (`evaluation_type_id` FK + TEXT projection) | École / élève | Oui pour l’instance | GET auth-only ; feature abo en écriture ; types = `evaluation_types` | write_notes / write_presence | INFO | Types : voir ligne Académique « Types d’évaluation » / §4.C
@@ -508,7 +508,7 @@ Abo école | Mon abonnement | `MonAbonnement*` | subscriptions / payments / invo
 Sécurité | Audit UI | `SecuritySettingsPage` | **pas** GET `/api/audit` | `state.auditLog` client | Session | Non | PG `audit_logs` ailleurs | configuration view | P1 | Brancher GET audit ou retirer le journal
 Sécurité | Auth optional | — | env | process | Déploiement | — | Bypass RBAC | — | P1 | Conserver garde prod
 Legacy | Snapshot global | — | GET/PUT state | table orpheline | — | **410** | Helpers morts | — | INFO | Drop table + dead code (lot ultérieur)
-Legacy | Restore JSON | Données | `DataContext.update` | strips | École | **Non** pour le métier | Résiduel academic/exams/docs seulement | canManage settings | **P0** | Désactiver restore ou restore API domaine par domaine
+Legacy | Restore JSON | Données | désactivé | — | École | Non | Message UI | — | INFO | LOT 6 : pas de restore global tant qu'un moteur transactionnel n'existe pas
 Mobile | Hub Configuration | `ConfigurationScreen` | GET academic-config | JSON + résumé | École | Édition périodes **absente** | Cartes mortes | Configuration view | P2 | Naviguer vers éditeurs ou retirer cartes
 BackOffice | App autonome | `BackOffice/app.js` | redirect `/web/` | — | — | Non | Coquille | — | INFO | Retirer artefact déploiement
 
@@ -523,9 +523,9 @@ Les recommandations de la dernière colonne sont **hors lot** : elles ne sont **
 1. **Périodes académiques duales** : hub enregistre `config_payload.periods` ; notes/évaluations s’appuient sur `terms` / `academic_years`. `saveAcademicConfig` ne synchronise pas. Lecture : JSON gagne s’il est non vide.
 2. **Référentiel classes/matières dual** : `classNames` / `subjects` JSON vs `classes` / `subjects` / `school_courses`.
 3. **Pilotage des rôles établissement non persistable** : `saveRolePilotage` → `replaceRolePermissions` + `assertSuperAdmin` ; Admin School échoue. Patch `users` strippé.
-4. **Restore JSON** : UI promet un remplacement irréversible des jeux élèves/enseignants/finance/notes ; `update()` strippe ces domaines.
-5. **Lockout login en RAM** : non partagé, non survivant au restart.
-6. **Mobile paymentStatuses** : écriture PG puis refresh qui **omet** le domaine → liste locale potentiellement fausse.
+4. **Mobile paymentStatuses** : écriture PG puis refresh qui **omet** le domaine → liste locale potentiellement fausse.
+
+Clos LOT 6 : restore JSON trompeur (bouton retiré) ; lockout RAM (table `login_lockouts`) ; export JSON = snapshot PostgreSQL `REPEATABLE READ` (P1).
 
 ### P1
 

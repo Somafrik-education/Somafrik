@@ -122,6 +122,14 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:documents-exams-data
+      - name: verify:login-lockout-data (LOT 6 lockout PostgreSQL)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:login-lockout-data
+      - name: verify:data-export-safety (LOT 6 export / pas de restore)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:data-export-safety
       - name: verify:clients-legacy-cleanup (mémoire)
         run: npm run verify:clients-legacy-cleanup
       - name: verify:backoffice-state-removal (mémoire + PostgreSQL CI)

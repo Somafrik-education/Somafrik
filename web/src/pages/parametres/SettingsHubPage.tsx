@@ -92,7 +92,7 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/donnees",
     title: "Données et sauvegarde",
-    description: "Exports Excel/CSV, sauvegarde et restauration des données.",
+    description: "Export CSV d'extrait affiché et export JSON versionné. La restauration complète n'est pas disponible.",
     icon: DatabaseBackup,
     status: "available",
     view: "configuration",

@@ -29,7 +29,7 @@ function assertNoSensitiveFields(payload, label, options = {}) {
   );
 }
 
-function runServiceLoginTests() {
+async function runServiceLoginTests() {
   const data = require("../data");
   const { BackOfficeAccessService } = require("../services/backOfficeAccessService");
   const { AuthService } = require("../services/authService");
@@ -61,7 +61,7 @@ function runServiceLoginTests() {
     notifications: data.platformNotifications ?? [],
   });
 
-  const login = backOffice.login({
+  const login = await backOffice.login({
     identifier: "superadmin@somafrik.app",
     password: "1234",
   });
@@ -79,7 +79,7 @@ function runServiceLoginTests() {
     countries: data.countries ?? [],
     subscriptions: data.subscriptions ?? [],
   });
-  const mobile = auth.login({
+  const mobile = await auth.login({
     role: "school_admin",
     schoolCode: school.code,
     identifier: "admin",
@@ -247,7 +247,7 @@ async function runHttpTestsIfAvailable() {
 
 async function main() {
   runUnitTests();
-  runServiceLoginTests();
+  await runServiceLoginTests();
   await runHttpTestsIfAvailable();
   console.log("verify-sanitize-user-responses: SUCCESS");
 }

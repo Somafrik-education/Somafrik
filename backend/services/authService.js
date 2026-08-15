@@ -184,23 +184,26 @@ class AuthService {
     return managedMobileRole;
   }
 
-  login({ role, schoolCode, identifier, pin }) {
+  async login({ role, schoolCode, identifier, pin }) {
     this.assertRequiredFields({ role, schoolCode, identifier, pin }, "Champs manquants");
     const schoolContext = this.assertSchoolCanConnect(schoolCode);
 
     const loginKey = getLoginAttemptKey(schoolCode, identifier);
     try {
-      assertLoginNotLocked(loginKey);
-    } catch {
-      throw new BusinessError(
-        423,
-        "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
-      );
+      await assertLoginNotLocked(loginKey);
+    } catch (error) {
+      if (error?.code === "LOGIN_LOCKED" || error?.message === "LOCKED") {
+        throw new BusinessError(
+          423,
+          "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
+        );
+      }
+      throw error;
     }
 
     const managedUser = this.findManagedUser(identifier, schoolCode, role);
     if (!managedUser) {
-      recordFailedLoginAttempt(loginKey);
+      await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
@@ -208,16 +211,16 @@ class AuthService {
 
     const managedMobileRole = this.getManagedMobileRole(managedUser);
     if (!managedMobileRole || managedMobileRole.role !== role) {
-      recordFailedLoginAttempt(loginKey);
+      await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
     if (!this.verifyUserSecret(managedUser, pin)) {
-      recordFailedLoginAttempt(loginKey);
+      await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
-    clearFailedLoginAttempts(loginKey);
+    await clearFailedLoginAttempts(loginKey);
     return {
       role,
       user: this.buildManagedMobileUser(managedUser),

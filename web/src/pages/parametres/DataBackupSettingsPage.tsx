@@ -1,25 +1,21 @@
-import { useMemo, useRef, useState } from "react";
-import { Database, DatabaseBackup, Download, FileSpreadsheet, Upload } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Database, DatabaseBackup, Download, FileSpreadsheet } from "lucide-react";
 import { useData } from "../../context/DataContext";
 import { useAuth } from "../../context/AuthContext";
-import { usePermissionContext } from "../../lib/usePermissionContext";
-import { canManageEstablishmentSettings } from "../../lib/permissions";
+import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { getScopedEntityRows, type SchoolEntityKey } from "../../lib/entityModules";
 import { rowsToCsv, downloadCsv } from "../../lib/csv";
+import { api } from "../../api/client";
 import {
   Button,
   Card,
   DashboardLayout,
   InlineAlert,
   SectionHeader,
-  useConfirm,
   useToast,
 } from "../../design-system";
-import type { BackOfficeState } from "../../types";
 
 type Row = Record<string, unknown>;
-
-const BACKUP_VERSION = 1;
 
 interface DatasetConfig {
   key: SchoolEntityKey;
@@ -76,19 +72,17 @@ function downloadJson(filename: string, data: unknown): void {
   URL.revokeObjectURL(url);
 }
 
-/** Paramètres Données & sauvegarde — aperçu, export CSV, sauvegarde et restauration JSON. */
+/** Paramètres Données & sauvegarde — extrait CSV et export JSON versionné (pas de restauration globale). */
 export function SettingsDataPage() {
-  const { state, update } = useData();
+  const { state } = useData();
   const { session } = useAuth();
-  const ctx = usePermissionContext();
+  const { activeSchoolCode } = useActiveSchool();
   const { showToast } = useToast();
-  const { confirm } = useConfirm();
-  const canManage = canManageEstablishmentSettings(ctx);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
   const user = session?.user ?? null;
-  const schoolCode = user?.schoolCode && user.schoolCode !== "*" ? user.schoolCode : "";
+  const jwtSchool = user?.schoolCode && user.schoolCode !== "*" ? user.schoolCode : "";
+  const exportSchoolCode = jwtSchool || activeSchoolCode || "";
 
   const datasetRows = useMemo(() => {
     const map = new Map<SchoolEntityKey, Row[]>();
@@ -107,70 +101,20 @@ export function SettingsDataPage() {
     const { rows: flatRows, columns } = buildGenericExport(rows);
     const stamp = new Date().toISOString().slice(0, 10);
     downloadCsv(`${dataset.key}-${stamp}`, rowsToCsv(flatRows, columns));
-    showToast(`${rows.length} ligne(s) exportée(s).`, "success");
+    showToast(`${rows.length} ligne(s) exportée(s) (extrait affiché).`, "success");
   }
 
-  function handleBackup() {
-    const backup = {
-      version: BACKUP_VERSION,
-      exportedAt: new Date().toISOString(),
-      schoolCode: schoolCode || "*",
-      exportedBy: user?.identifier ?? user?.firstName ?? "—",
-      data: state,
-    };
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    downloadJson(`somafrik-sauvegarde-${schoolCode || "global"}-${stamp}`, backup);
-    showToast("Sauvegarde JSON téléchargée.", "success");
-  }
-
-  function triggerRestore() {
-    fileInputRef.current?.click();
-  }
-
-  async function handleRestoreFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(await file.text());
-    } catch {
-      showToast("Fichier JSON invalide ou illisible.", "error");
-      return;
-    }
-
-    const container = parsed as { data?: unknown; version?: number } | null;
-    const candidate =
-      container && typeof container === "object" && "data" in container ? container.data : parsed;
-
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-      showToast("Ce fichier ne correspond pas à une sauvegarde Somafrik.", "error");
-      return;
-    }
-
-    const restoreState = candidate as Partial<BackOfficeState>;
-    const summary = DATASETS.map((dataset) => {
-      const rows = restoreState[dataset.key as keyof BackOfficeState];
-      const count = Array.isArray(rows) ? rows.length : 0;
-      return `${dataset.label} : ${count}`;
-    }).join(" · ");
-
-    const confirmed = await confirm({
-      title: "Restaurer cette sauvegarde ?",
-      description: `Les données actuelles seront remplacées par celles du fichier.\n\n${summary}\n\nCette action est irréversible.`,
-      confirmLabel: "Restaurer",
-      cancelLabel: "Annuler",
-      tone: "danger",
-    });
-    if (!confirmed) return;
-
+  async function handleCanonicalExport() {
     setBusy(true);
     try {
-      await update(restoreState, { partial: false });
-      showToast("Sauvegarde restaurée avec succès.", "success");
+      const query = exportSchoolCode ? `?schoolCode=${encodeURIComponent(exportSchoolCode)}` : "";
+      const payload = await api.get<Record<string, unknown>>(`/data-export${query}`);
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const school = String(payload.schoolCode ?? exportSchoolCode ?? "etablissement");
+      downloadJson(`somafrik-export-${school}-${stamp}`, payload);
+      showToast("Export JSON versionné téléchargé.", "success");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Échec de la restauration.", "error");
+      showToast(error instanceof Error ? error.message : "Échec de l'export.", "error");
     } finally {
       setBusy(false);
     }
@@ -181,11 +125,16 @@ export function SettingsDataPage() {
       <DashboardLayout.Header>
         <SectionHeader
           title="Données et sauvegarde"
-          description="Exports CSV, sauvegarde et restauration JSON."
+          description="Sauvegarde/export disponible. Restauration complète indisponible."
         />
       </DashboardLayout.Header>
       <DashboardLayout.Content>
       <div className="space-y-5">
+      <InlineAlert tone="info">
+        La restauration complète n&apos;est pas disponible. L&apos;export JSON versionné provient
+        des APIs PostgreSQL (pas d&apos;une copie du state client).
+      </InlineAlert>
+
       <Card className="p-6">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand">
@@ -194,7 +143,8 @@ export function SettingsDataPage() {
           <div>
             <h2 className="text-lg font-bold text-ink">Aperçu des données</h2>
             <p className="text-sm text-muted">
-              Volume de données{schoolCode ? ` de l'établissement ${schoolCode}` : ""}.
+              Volume affiché à l&apos;écran{exportSchoolCode ? ` (${exportSchoolCode})` : ""}.
+              Ce n&apos;est pas une sauvegarde complète.
             </p>
           </div>
         </div>
@@ -215,7 +165,7 @@ export function SettingsDataPage() {
       <Card className="p-6">
         <SectionHeader
           title="Exports Excel / CSV"
-          description="Téléchargez chaque jeu de données au format CSV (compatible Excel)."
+          description="Extrait affiché des lignes déjà chargées. Ce n'est pas une sauvegarde PostgreSQL complète."
         />
         <div className="mt-4 flex flex-wrap gap-2">
           {DATASETS.map((dataset) => {
@@ -238,57 +188,26 @@ export function SettingsDataPage() {
 
       <Card className="p-6">
         <SectionHeader
-          title="Sauvegarde & restauration"
-          description="Exportez une sauvegarde complète au format JSON, ou restaurez un fichier existant."
+          title="Export JSON versionné"
+          description="Sauvegarde/export disponible. Domaines canoniques PostgreSQL uniquement (élèves, classes, enseignants, paramètres)."
         />
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-line p-5">
-            <div className="flex items-center gap-2 text-brand">
-              <DatabaseBackup className="h-5 w-5" strokeWidth={1.8} />
-              <h3 className="text-sm font-black uppercase tracking-wide">Sauvegarde</h3>
-            </div>
-            <p className="mt-2 text-sm text-muted">
-              Génère un fichier JSON horodaté contenant l'ensemble des données accessibles à votre
-              compte. Conservez-le en lieu sûr.
-            </p>
-            <Button type="button" className="mt-4" onClick={handleBackup}>
-              <Download className="h-4 w-4" />
-              Télécharger la sauvegarde
-            </Button>
+        <div className="mt-4 rounded-xl border border-line p-5">
+          <div className="flex items-center gap-2 text-brand">
+            <DatabaseBackup className="h-5 w-5" strokeWidth={1.8} />
+            <h3 className="text-sm font-black uppercase tracking-wide">Export établissement</h3>
           </div>
-
-          <div className="rounded-xl border border-line p-5">
-            <div className="flex items-center gap-2 text-danger">
-              <Upload className="h-5 w-5" strokeWidth={1.8} />
-              <h3 className="text-sm font-black uppercase tracking-wide">Restauration</h3>
-            </div>
-            <p className="mt-2 text-sm text-muted">
-              Importez un fichier de sauvegarde Somafrik pour remplacer les données actuelles. Action
-              irréversible, réservée à l'administrateur.
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={(event) => void handleRestoreFile(event)}
-            />
-            <Button
-              type="button"
-              variant="danger"
-              className="mt-4"
-              onClick={triggerRestore}
-              disabled={!canManage || busy}
-            >
-              <Upload className="h-4 w-4" />
-              {busy ? "Restauration…" : "Restaurer une sauvegarde"}
-            </Button>
-            {!canManage ? (
-              <InlineAlert tone="warning" className="mt-2">
-                Seul l&apos;Admin School peut restaurer une sauvegarde.
-              </InlineAlert>
-            ) : null}
-          </div>
+          <p className="mt-2 text-sm text-muted">
+            Génère un fichier <code>somafrik-export</code> horodaté, avec la liste explicite des
+            domaines inclus. Aucun secret (hash, jeton, mot de passe) n&apos;est exporté.
+          </p>
+          <Button type="button" className="mt-4" onClick={() => void handleCanonicalExport()} disabled={busy}>
+            <Download className="h-4 w-4" />
+            {busy ? "Export…" : "Télécharger l'export"}
+          </Button>
+        </div>
+        <div className="mt-4 rounded-xl border border-line bg-slate-50 p-5">
+          <h3 className="text-sm font-black uppercase tracking-wide text-muted">Restauration</h3>
+          <p className="mt-2 text-sm text-muted">La restauration complète n&apos;est pas disponible.</p>
         </div>
       </Card>
       </div>

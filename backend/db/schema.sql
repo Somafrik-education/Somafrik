@@ -592,6 +592,26 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- LOT 6 — Lockout de connexion (SoT PostgreSQL, pas de Map processus)
+CREATE TABLE IF NOT EXISTS login_lockouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID REFERENCES schools(id) ON DELETE CASCADE,
+  school_scope TEXT NOT NULL,
+  identifier_normalized TEXT NOT NULL,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  first_failed_at TIMESTAMPTZ,
+  last_failed_at TIMESTAMPTZ,
+  locked_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT login_lockouts_scope_identifier_unique UNIQUE (school_scope, identifier_normalized),
+  CONSTRAINT login_lockouts_failed_attempts_nonneg CHECK (failed_attempts >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_lockouts_locked_until
+  ON login_lockouts (locked_until)
+  WHERE locked_until IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS backoffice_state (
   state_key TEXT PRIMARY KEY,
   state_payload JSONB NOT NULL,
@@ -764,4 +784,5 @@ CREATE INDEX IF NOT EXISTS idx_exams_school_date ON exams(school_id, exam_date);
 CREATE INDEX IF NOT EXISTS idx_exam_results_exam_id ON exam_results(exam_id);
 CREATE INDEX IF NOT EXISTS idx_student_documents_student_id ON student_documents(student_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_filters ON audit_logs(school_id, user_id, action, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_lockouts_scope_identifier ON login_lockouts(school_scope, identifier_normalized);
 CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(user_id, session_code) WHERE revoked_at IS NULL;
