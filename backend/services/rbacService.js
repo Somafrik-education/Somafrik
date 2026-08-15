@@ -12,7 +12,6 @@ const roleAliases = {
 };
 
 const routePermissions = {
-  "GET /api/users": ["Utilisateurs:READ", "Gérer utilisateurs", "Auditer utilisateurs pays", "ALL_PRIVILEGES"],
   "POST /api/users/:id/reset-password": [
     "Utilisateurs:UPDATE",
     "Gérer utilisateurs",

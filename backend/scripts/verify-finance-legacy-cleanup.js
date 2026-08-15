@@ -201,7 +201,7 @@ async function runHttpGuards() {
     const token = await loginAdmin();
     const stamp = Date.now();
 
-    const usersBefore = await request("/users", { token });
+    const usersBefore = await request("/backoffice/users", { token });
     assert.equal(usersBefore.status, 200);
     const baselineUserCount = Array.isArray(usersBefore.data) ? usersBefore.data.length : 0;
 
@@ -236,7 +236,7 @@ async function runHttpGuards() {
     });
     assertBackOfficeStateWriteRemoved(mixed);
 
-    const usersAfter = await request("/users", { token });
+    const usersAfter = await request("/backoffice/users", { token });
     assert.equal(usersAfter.status, 200);
     assert.equal(
       (usersAfter.data ?? []).some((row) => String(row.id) === userSentinelId),

@@ -220,14 +220,12 @@ app.get("/", asyncHandler(async (req, res) => {
     mode: apiOnly ? "api-only" : "integrated",
     endpoints: [
       "/api/health",
-      "/api/schools",
       "/api/schools/:code",
       "/api/identify",
       "/api/login",
       "/api/auth/refresh",
       "/api/auth/logout",
       "/api/backoffice/login",
-      "/api/school",
       "/api/classes",
       "/api/classes/:classCode/students",
       "/api/courses",
@@ -249,9 +247,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/presences",
       "/api/students/:id/payments",
       "/api/teachers",
-      "/api/users",
       "/api/payments",
-      "/api/announcements",
       "/api/backoffice/countries",
       "/api/backoffice/subscriptions",
       "/api/backoffice/notifications",
@@ -314,10 +310,6 @@ if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
   );
 }
 
-app.get("/api/schools", asyncHandler(async (_req, res) => {
-  const { platformSchools } = await getRuntime();
-  res.json(platformSchools.map(toPublicSchool));
-}));
 
 app.get("/api/schools/:code", asyncHandler(async (req, res) => {
   const { platformSchools } = await getRuntime();
@@ -527,10 +519,6 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   });
 }));
 
-app.get("/api/school", requireAuth, asyncHandler(async (_req, res) => {
-  const { school } = await getRuntime();
-  res.json(school);
-}));
 
 app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
@@ -1726,11 +1714,6 @@ app.delete("/api/teachers/:teacherCode", requireAuth, requirePermission("DELETE 
   res.json(result);
 }));
 
-app.get("/api/users", requireAuth, requirePermission("GET /api/users"), asyncHandler(async (req, res) => {
-  const { users } = await getAuthoritativeBackOfficeState();
-  const result = sanitizeUsersForResponse(tenantScopeService.filterRows(users, req.principal));
-  sendList(res, result, req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
-}));
 
 function canResetUserPassword(principal) {
   const permissions = new Set(principal?.permissions ?? []);
@@ -1952,17 +1935,6 @@ app.post("/api/finance/student-fees/:obligationId/adjust", requireAuth, requireP
   res.json(row);
 }));
 
-app.get("/api/announcements", requireAuth, asyncHandler(async (req, res) => {
-  const { announcements } = await getAuthoritativeBackOfficeState();
-  let result = tenantScopeService.filterRows(announcements, req.principal);
-  if (!result.length && req.principal?.role === "Parent" && req.principal?.schoolCode) {
-    const schoolCode = normalizeSchoolCodeKey(req.principal.schoolCode);
-    result = announcements.filter(
-      (row) => normalizeSchoolCodeKey(row.schoolCode) === schoolCode || tenantScopeService.isSystemBroadcast(row),
-    );
-  }
-  res.json(result);
-}));
 
 app.get("/api/backoffice/countries", requireAuth, requirePermission("GET /api/backoffice/countries"), asyncHandler(async (req, res) => {
   const platform = await repository.listPlatformProjection();

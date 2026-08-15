@@ -154,7 +154,7 @@ async function runHttpGuards() {
   try {
     await waitForHealth(child);
     const token = await loginAdmin();
-    const usersBefore = await request("/users", { token });
+    const usersBefore = await request("/backoffice/users", { token });
     assert.equal(usersBefore.status, 200, JSON.stringify(usersBefore.data));
     const baselineUserCount = Array.isArray(usersBefore.data) ? usersBefore.data.length : 0;
 
@@ -178,7 +178,7 @@ async function runHttpGuards() {
     });
     assertBackOfficeStateWriteRemoved(mixed);
 
-    const usersAfter = await request("/users", { token });
+    const usersAfter = await request("/backoffice/users", { token });
     assert.equal(usersAfter.status, 200);
     assert.equal(
       Array.isArray(usersAfter.data) ? usersAfter.data.length : 0,
