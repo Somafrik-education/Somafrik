@@ -72,6 +72,8 @@ async function main() {
     await pool.query(schema);
     await pool.query(CLIENTS_SCHEMA_SQL);
     await pool.query(USER_ROLES_SCHEMA_SQL);
+    // Le SQL est rejoué au boot : il doit être strictement idempotent.
+    await pool.query(USER_ROLES_SCHEMA_SQL);
 
     const country = await pool.query(
       `INSERT INTO countries (name, iso_code, phone_code, currency)
@@ -79,9 +81,11 @@ async function main() {
     );
     await pool.query(
       `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Test', 'active')`,
+       VALUES ($1, 'CD-2026-0001', 'Institut Kibwija', 'active')`,
       [country.rows[0].id],
     );
+    const schoolRow = await pool.query(`SELECT id, short_code FROM schools WHERE school_code = 'CD-2026-0001'`);
+    assert.equal(schoolRow.rows[0].short_code, "IK", "code court établissement dérivé une seule fois");
 
     const repo = createRepo(pool);
     const store = createClientsPgStore(repo);
@@ -89,23 +93,64 @@ async function main() {
     const auditMeta = { ipAddress: "127.0.0.1", userAgent: "pg-lifecycle" };
 
     const created = await store.createUser(
-      { firstName: "Jean", lastName: "Dupont", email: "jean.dupont@test.local" },
+      { firstName: "Grâce", lastName: "Kabeya", email: "grace.kabeya@test.local" },
       principal,
       auditMeta,
     );
     assert.match(created.id, /^[0-9a-f-]{36}$/i);
-    assert.match(created.publicId, /^USR-\d{4}-\d{5}$/);
+    assert.equal(created.publicId, "CD-IK-GK-26-00001");
+    assert.equal(created.identityCode, "CD-IK-GK-26-00001");
+    assert.equal(created.identifier, "GK-26-00001", "login court permanent exposé par le compte");
+    assert.match(created.userCode, /^USR-\d{4}-\d{5}$/, "alias user_code legacy conservé");
     assert.equal(created.assignmentStatus, "Sans affectation");
 
-    const row = await pool.query(`SELECT id, user_code, role FROM users WHERE id = $1`, [created.id]);
+    const row = await pool.query(
+      `SELECT id, user_code, role, identity_code, login_code, identity_initials, identity_year, profile_payload
+       FROM users WHERE id = $1`,
+      [created.id],
+    );
     assert.equal(row.rows[0].id, created.id);
-    assert.equal(row.rows[0].user_code, created.publicId);
+    assert.equal(row.rows[0].user_code, created.userCode, "user_code legacy conservé comme alias de compatibilité");
     assert.equal(row.rows[0].role, null);
+    assert.equal(row.rows[0].identity_initials, "GK");
+    assert.equal(Number(row.rows[0].identity_year), 2026);
+    assert.equal(row.rows[0].login_code, "GK-26-00001");
+    assert.equal(row.rows[0].identity_code, "CD-IK-GK-26-00001");
+    assert.equal(row.rows[0].profile_payload.identifier, "GK-26-00001");
+    assert.equal(row.rows[0].profile_payload.identityCode, "CD-IK-GK-26-00001");
+
+    const student = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'ELE-CD-0001-0001-000001', 'Grâce', 'Kabeya', 'active')
+       RETURNING id, student_code, identity_code, login_code, identity_initials, identity_year`,
+      [schoolRow.rows[0].id],
+    );
+    assert.equal(student.rows[0].student_code, "ELE-CD-0001-0001-000001", "student_code legacy conservé");
+    assert.equal(student.rows[0].identity_code, "CD-IK-GK-26-00002", "élève utilise le compteur partagé");
+    assert.equal(student.rows[0].login_code, "GK-26-00002");
+    assert.equal(student.rows[0].identity_initials, "GK");
+    assert.equal(Number(student.rows[0].identity_year), 2026);
+    await pool.query(`UPDATE students SET last_name = 'Mukendi' WHERE id = $1`, [student.rows[0].id]);
+    const stableStudent = await pool.query(
+      `SELECT last_name, identity_code, login_code FROM students WHERE id = $1`,
+      [student.rows[0].id],
+    );
+    assert.equal(stableStudent.rows[0].last_name, "Mukendi");
+    assert.equal(stableStudent.rows[0].identity_code, "CD-IK-GK-26-00002", "nom élève ne renumérote pas le parcours");
+    assert.equal(stableStudent.rows[0].login_code, "GK-26-00002");
+    await assert.rejects(
+      () => pool.query(`UPDATE students SET identity_code = 'CD-IK-GK-26-99999' WHERE id = $1`, [student.rows[0].id]),
+      /PERMANENT_STUDENT_IDENTITY_IMMUTABLE/,
+    );
 
     await store.grantUserRole(created.id, { role: "Secrétaire" }, principal, auditMeta);
     assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "SECRETARY");
     await store.grantUserRole(created.id, { role: "Enseignant" }, principal, auditMeta);
     assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "SECRETARY");
+    const stableAfterRoles = await pool.query(`SELECT identity_code, login_code FROM users WHERE id = $1`, [created.id]);
+    assert.equal(stableAfterRoles.rows[0].identity_code, "CD-IK-GK-26-00001", "GRANT ne renumérote pas l'identité");
+    assert.equal(stableAfterRoles.rows[0].login_code, "GK-26-00001");
+
     const roles = await pool.query(
       `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active' ORDER BY role_key`,
       [created.id],
@@ -145,12 +190,54 @@ async function main() {
       [created.id],
     );
     assert.equal(leftoverAfterLast.rows[0].count, 0);
+    const stableAfterRevokes = await pool.query(`SELECT identity_code, login_code FROM users WHERE id = $1`, [created.id]);
+    assert.equal(stableAfterRevokes.rows[0].identity_code, "CD-IK-GK-26-00001", "REVOKE ne renumérote pas l'identité");
+
+    await store.updateUser(created.id, { lastName: "Mukendi" }, principal, auditMeta);
+    const stableAfterRename = await pool.query(
+      `SELECT identity_code, login_code, last_name FROM users WHERE id = $1`,
+      [created.id],
+    );
+    assert.equal(stableAfterRename.rows[0].last_name, "Mukendi");
+    assert.equal(stableAfterRename.rows[0].identity_code, "CD-IK-GK-26-00001", "changement de nom sans renumérotation");
+    assert.equal(stableAfterRename.rows[0].login_code, "GK-26-00001");
+
+    await assert.rejects(
+      () => pool.query(`UPDATE users SET identity_code = 'CD-IK-HACK-26-99999' WHERE id = $1`, [created.id]),
+      /PERMANENT_IDENTITY_IMMUTABLE/,
+    );
+    await assert.rejects(
+      () => pool.query(`UPDATE schools SET short_code = 'ZZ' WHERE school_code = 'CD-2026-0001'`),
+      /SCHOOL_SHORT_CODE_IMMUTABLE/,
+    );
 
     const [codeA, codeB] = await Promise.all([
       store.createUser({ firstName: "A", lastName: "Un", email: "a.un@test.local" }, principal, auditMeta),
       store.createUser({ firstName: "B", lastName: "Deux", email: "b.deux@test.local" }, principal, auditMeta),
     ]);
     assert.notEqual(codeA.publicId, codeB.publicId);
+    assert.notEqual(codeA.identifier, codeB.identifier);
+
+    const concurrent = await Promise.all(
+      Array.from({ length: 100 }, (_, index) =>
+        store.createUser(
+          {
+            firstName: "Grâce",
+            lastName: "Kabeya",
+            email: `concurrent.identity.${index}@test.local`,
+          },
+          principal,
+          auditMeta,
+        ),
+      ),
+    );
+    assert.equal(new Set(concurrent.map((item) => item.identifier)).size, 100, "100 logins concurrents uniques");
+    const concurrentRows = await pool.query(
+      `SELECT identity_code, login_code FROM users WHERE email LIKE 'concurrent.identity.%@test.local'`,
+    );
+    assert.equal(concurrentRows.rowCount, 100);
+    assert.equal(new Set(concurrentRows.rows.map((item) => item.identity_code)).size, 100);
+    assert.equal(new Set(concurrentRows.rows.map((item) => item.login_code)).size, 100);
 
     const failStore = {
       ...store,
