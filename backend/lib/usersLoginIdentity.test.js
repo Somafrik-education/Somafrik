@@ -62,7 +62,7 @@ function schoolLoginFixture() {
     code: "CD-2026-0001",
     legacySchoolCode: "CD-2026-0001",
     publicId: "CD-2026-0001",
-    loginCode: "CD-IK",
+    loginCode: "CD-IK-26-001",
     shortCode: "IK",
     country: "RDC",
     countryCode: "CD",
@@ -88,7 +88,7 @@ function schoolLoginFixture() {
   return { school, user };
 }
 
-test("AuthService accepte le code établissement canonique CD-IK avec GK-26-00001", async () => {
+test("AuthService accepte CD-IK-26-001 avec GK-26-00001", async () => {
   attachMemoryLoginLockoutStore();
   const { school, user } = schoolLoginFixture();
   const service = new AuthService({
@@ -101,23 +101,23 @@ test("AuthService accepte le code établissement canonique CD-IK avec GK-26-0000
     subscriptions: [],
   });
 
-  assert.deepEqual(service.identify({ schoolCode: "CD-IK", identifier: "GK-26-00001" }), {
+  assert.deepEqual(service.identify({ schoolCode: "CD-IK-26-001", identifier: "GK-26-00001" }), {
     role: "school_admin",
     roleLabel: "Admin Établissement",
   });
 
   const result = await service.login({
     role: "school_admin",
-    schoolCode: "CD-IK",
+    schoolCode: "CD-IK-26-001",
     identifier: "GK-26-00001",
     pin: "Somafrik26!",
   });
-  assert.equal(result.school.loginCode, "CD-IK");
+  assert.equal(result.school.loginCode, "CD-IK-26-001");
   assert.equal(result.user.id, user.id);
   assert.equal(result.user.schoolCode, school.code);
 });
 
-test("BackOfficeAccessService résout CD-IK vers le tenant historique sans perdre le compte", async () => {
+test("BackOfficeAccessService résout CD-IK-26-001 vers le tenant historique", async () => {
   attachMemoryLoginLockoutStore();
   const { school, user } = schoolLoginFixture();
   const service = new BackOfficeAccessService({
@@ -130,11 +130,11 @@ test("BackOfficeAccessService résout CD-IK vers le tenant historique sans perdr
   });
 
   const result = await service.login({
-    schoolCode: "CD-IK",
+    schoolCode: "CD-IK-26-001",
     identifier: "GK-26-00001",
     password: "Somafrik26!",
   });
   assert.equal(result.user.id, user.id);
-  assert.equal(result.schoolContext.loginCode, "CD-IK");
+  assert.equal(result.schoolContext.loginCode, "CD-IK-26-001");
   assert.equal(result.schoolContext.code, school.code);
 });
