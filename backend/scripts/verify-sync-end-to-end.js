@@ -67,6 +67,11 @@ async function prepareDatabase(databaseUrl) {
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
+       VALUES ($1, 'PREFET-SYNC-E2E', 'Samuel', 'Prefet', 'prefet-sync-e2e@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+      [schoolId, passwordHash],
+    );
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
        VALUES (NULL, 'SUPER-SYNC-E2E', 'Super', 'Sync', 'super-sync-e2e@test.cd', $1, $1, 'SUPER_ADMIN', 'active')`,
       [passwordHash],
     );
@@ -149,6 +154,30 @@ function extractList(payload) {
   return [];
 }
 
+/** Contrat canonique — aligné sur verify-teacher-account-creation.js */
+function teacherCreatePayload(overrides = {}) {
+  return {
+    firstName: "Fatou",
+    lastName: "Sow",
+    birthDate: "1990-05-01",
+    phone: "+243 811 000 001",
+    temporaryPassword: "TempPass1",
+    speciality: "Histoire",
+    ...overrides,
+  };
+}
+
+/** Contrat canonique — aligné sur verify-class-student-enrollment.js */
+function studentEnrollPayload(overrides = {}) {
+  return {
+    firstName: "Awa",
+    lastName: "Diop",
+    gender: "Féminin",
+    birthDate: "2012-04-12",
+    ...overrides,
+  };
+}
+
 async function login(identifier, password, schoolCode) {
   const result = await request("/backoffice/login", {
     method: "POST",
@@ -208,6 +237,7 @@ async function runSyncEndToEnd(databaseUrl) {
   try {
     await waitForHealth(child);
     const adminToken = await login("admin-sync-e2e@test.cd", "1234", "CD-2026-0001");
+    const prefetToken = await login("prefet-sync-e2e@test.cd", "1234", "CD-2026-0001");
     const superToken = await login("super-sync-e2e@test.cd", "1234");
 
     // --- Users ---
@@ -251,13 +281,13 @@ async function runSyncEndToEnd(databaseUrl) {
     const createdTeacher = await request("/teachers", {
       method: "POST",
       token: adminToken,
-      body: {
+      body: teacherCreatePayload({
         firstName: "Marie",
         lastName: `Sync${stamp}`,
         email: `teacher-sync-${stamp}@test.cd`,
         phone: `+243820${String(stamp).slice(-6)}`,
-        mainSubject: "Mathématiques",
-      },
+        speciality: "Mathématiques",
+      }),
     });
     assert.equal(createdTeacher.status, 201, JSON.stringify(createdTeacher.data));
     const teacherCode = String(createdTeacher.data.teacherCode ?? createdTeacher.data.id ?? "");
@@ -272,7 +302,12 @@ async function runSyncEndToEnd(databaseUrl) {
       teachersGet.some((row) => String(row.teacherCode ?? row.id) === teacherCode),
       "teachers: GET contient POST",
     );
-    await request(`/teachers/${encodeURIComponent(teacherCode)}`, { method: "DELETE", token: adminToken });
+    const deletedTeacher = await request(`/teachers/${encodeURIComponent(teacherCode)}`, {
+      method: "DELETE",
+      token: prefetToken,
+    });
+    assert.equal(deletedTeacher.status, 200, JSON.stringify(deletedTeacher.data));
+    assert.equal(deletedTeacher.data?.archived, true, "teachers: DELETE archive");
     teachersGet = extractList((await request("/teachers", { token: adminToken })).data);
     assert.ok(
       !teachersGet.some((row) => String(row.teacherCode ?? row.id) === teacherCode),
@@ -300,12 +335,7 @@ async function runSyncEndToEnd(databaseUrl) {
     const enrolled = await request(`/classes/${encodeURIComponent(classCode)}/students`, {
       method: "POST",
       token: adminToken,
-      body: {
-        firstName: "Awa",
-        lastName: `Sync${stamp}`,
-        gender: "Féminin",
-        birthDate: "2012-03-01",
-      },
+      body: studentEnrollPayload(),
     });
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
     const studentCode = String(enrolled.data.studentCode ?? enrolled.data.id ?? "");
@@ -353,9 +383,8 @@ async function runSyncEndToEnd(databaseUrl) {
     const noteId = String(notePost.data.id ?? "");
     const pgNote = await pool.query(
       `SELECT count(*)::int AS c FROM grades g
-       JOIN evaluations e ON e.id = g.evaluation_id
-       WHERE e.legacy_json_id = $1 OR g.legacy_json_id = $2`,
-      [evaluationId, noteId],
+       WHERE g.id::text = $1`,
+      [noteId],
     );
     assert.ok(pgNote.rows[0].c >= 1, "notes: PostgreSQL");
     let notesGet = await assertReloadStable(
@@ -364,7 +393,7 @@ async function runSyncEndToEnd(databaseUrl) {
       (row) => String(row.id),
     );
     assert.ok(notesGet.some((row) => String(row.id) === noteId), "notes: GET contient POST");
-    await pool.query(`DELETE FROM grades WHERE legacy_json_id = $1`, [noteId]);
+    await pool.query(`DELETE FROM grades WHERE id::text = $1`, [noteId]);
     notesGet = extractList((await request("/notes", { token: adminToken })).data);
     assert.ok(!notesGet.some((row) => String(row.id) === noteId), "notes: suppression PG reflétée par GET");
 
@@ -403,7 +432,7 @@ async function runSyncEndToEnd(databaseUrl) {
       "presences: GET contient POST",
     );
     if (presenceId) {
-      await pool.query(`DELETE FROM attendance WHERE legacy_json_id = $1`, [presenceId]);
+      await pool.query(`DELETE FROM attendance WHERE id::text = $1`, [presenceId]);
     } else {
       await pool.query(
         `DELETE FROM attendance a USING students s
@@ -418,41 +447,85 @@ async function runSyncEndToEnd(databaseUrl) {
     );
 
     // --- Finance (paiement) ---
+    const feeGrid = await request("/finance/fee-grids", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        className: createdClass.data.name,
+        academicYear: "2025-2026",
+        currency: "CDF",
+        items: [
+          {
+            feeType: "Inscription",
+            label: "Inscription",
+            amount: 10_000,
+            dueDate: "2026-01-01",
+            status: "Actif",
+          },
+        ],
+      },
+    });
+    assert.equal(feeGrid.status, 201, JSON.stringify(feeGrid.data));
+    const activatedGrid = await request(`/finance/fee-grids/${encodeURIComponent(feeGrid.data.id)}/activate`, {
+      method: "POST",
+      token: adminToken,
+    });
+    assert.equal(activatedGrid.status, 200, JSON.stringify(activatedGrid.data));
+    const appliedGrid = await request(`/finance/fee-grids/${encodeURIComponent(feeGrid.data.id)}/apply`, {
+      method: "POST",
+      token: adminToken,
+    });
+    assert.equal(appliedGrid.status, 200, JSON.stringify(appliedGrid.data));
+
     const paymentPost = await request("/payments", {
       method: "POST",
       token: adminToken,
       body: {
         studentId: studentCode,
-        amount: 5000,
-        currency: "CDF",
+        feeType: "Inscription",
+        amount: 10_000,
         method: "Espèces",
-        status: "Validé",
-        label: `Paiement Sync ${stamp}`,
+        date: "2026-08-13",
       },
     });
     assert.equal(paymentPost.status, 201, JSON.stringify(paymentPost.data));
-    const paymentId = String(paymentPost.data.id ?? "");
+    const paymentRef = String(paymentPost.data.reference ?? paymentPost.data.id ?? "");
     const pgPayment = await pool.query(
       `SELECT count(*)::int AS c FROM payments p
        JOIN schools s ON s.id = p.school_id
        WHERE s.school_code = 'CD-2026-0001' AND (p.payment_code = $1 OR p.id::text = $1)`,
-      [paymentId],
+      [paymentRef],
     );
     assert.ok(pgPayment.rows[0].c >= 1, "payments: PostgreSQL");
     let paymentsGet = await assertReloadStable(
       "payments",
       () => request("/payments", { token: adminToken }),
-      (row) => String(row.id),
+      (row) => String(row.reference ?? row.id),
     );
-    assert.ok(paymentsGet.some((row) => String(row.id) === paymentId), "payments: GET contient POST");
+    assert.ok(
+      paymentsGet.some((row) => String(row.reference ?? row.id) === paymentRef),
+      "payments: GET contient POST",
+    );
+    await pool.query(
+      `DELETE FROM payment_allocations pa
+       USING payments p, schools s
+       WHERE pa.payment_id = p.id
+         AND p.school_id = s.id
+         AND s.school_code = 'CD-2026-0001'
+         AND (p.payment_code = $1 OR p.id::text = $1)`,
+      [paymentRef],
+    );
     await pool.query(
       `DELETE FROM payments p USING schools s
        WHERE p.school_id = s.id AND s.school_code = 'CD-2026-0001'
          AND (p.payment_code = $1 OR p.id::text = $1)`,
-      [paymentId],
+      [paymentRef],
     );
     paymentsGet = extractList((await request("/payments", { token: adminToken })).data);
-    assert.ok(!paymentsGet.some((row) => String(row.id) === paymentId), "payments: suppression PG reflétée par GET");
+    assert.ok(
+      !paymentsGet.some((row) => String(row.reference ?? row.id) === paymentRef),
+      "payments: suppression PG reflétée par GET",
+    );
 
     // --- Notifications ---
     const notifPost = await request("/backoffice/notifications", {
