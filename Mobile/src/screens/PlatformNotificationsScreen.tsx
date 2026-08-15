@@ -12,11 +12,15 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import SchoolSelector from "../components/SchoolSelector";
-import { canMutateEntity, hasSecurityPermission } from "../domain/security/permissions";
+import { hasSecurityPermission } from "../domain/security/permissions";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import type { PlatformNotification } from "../lib/scope";
-import { isUnreadNotification } from "../lib/platformNotificationSync";
+import {
+  buildPlatformNotificationReadPatch,
+  isUnreadNotification,
+} from "../lib/platformNotificationSync";
+import { updatePlatformNotification } from "../services/api";
 
 const TYPE_OPTIONS = ["Information", "Alerte", "Paiement", "Académique", "Système"];
 const PRIORITY_OPTIONS = ["Normale", "Haute", "Critique"];
@@ -24,10 +28,11 @@ const AUDIENCE_OPTIONS = ["Tous", "Super Administrateur Somafrik", "Admin Pays",
 
 export default function PlatformNotificationsScreen() {
   const { session } = useAuth();
-  const { notificationsData, upsertNotification, markNotificationsRead } = useAdminData();
+  const { notificationsData, upsertNotification, refreshBackOfficeState } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
   const [composing, setComposing] = useState<Partial<PlatformNotification> | null>(null);
+  const [markingRead, setMarkingRead] = useState(false);
 
   const canCreate = hasSecurityPermission(session, "Notifications", "CREATE");
   const canUpdate = hasSecurityPermission(session, "Notifications", "UPDATE");
@@ -37,12 +42,37 @@ export default function PlatformNotificationsScreen() {
     [notificationsData],
   );
 
+  const persistReadTargets = async (targets: PlatformNotification[]) => {
+    const unreadTargets = targets.filter((item) => item.id && isUnreadNotification(item));
+    if (!unreadTargets.length || markingRead) return;
+
+    setMarkingRead(true);
+    try {
+      await Promise.all(
+        unreadTargets.map((item) => {
+          const { id, patch } = buildPlatformNotificationReadPatch(item);
+          return updatePlatformNotification(id, patch);
+        }),
+      );
+      await refreshBackOfficeState();
+    } catch (error) {
+      Alert.alert(
+        "Synchronisation impossible",
+        error instanceof Error
+          ? error.message
+          : "La notification n'a pas été modifiée dans la base.",
+      );
+    } finally {
+      setMarkingRead(false);
+    }
+  };
+
   const markAllRead = () => {
-    markNotificationsRead(notificationsData.filter((item) => isUnreadNotification(item)));
+    void persistReadTargets(notificationsData);
   };
 
   const markRead = (item: PlatformNotification) => {
-    markNotificationsRead([item]);
+    void persistReadTargets([item]);
   };
 
   const saveNotification = () => {
@@ -81,8 +111,14 @@ export default function PlatformNotificationsScreen() {
           <Text style={styles.subtitle}>{unreadCount} non lue(s)</Text>
         </View>
         {canUpdate && unreadCount > 0 && (
-          <TouchableOpacity style={styles.secondaryBtn} onPress={markAllRead}>
-            <Text style={styles.secondaryBtnText}>Tout marquer lu</Text>
+          <TouchableOpacity
+            style={[styles.secondaryBtn, markingRead && styles.disabledBtn]}
+            disabled={markingRead}
+            onPress={markAllRead}
+          >
+            <Text style={styles.secondaryBtnText}>
+              {markingRead ? "Synchronisation…" : "Tout marquer lu"}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -110,6 +146,7 @@ export default function PlatformNotificationsScreen() {
           <TouchableOpacity
             key={item.id}
             style={[styles.card, item.status === "Non lu" && styles.cardUnread]}
+            disabled={markingRead}
             onPress={() => canUpdate && markRead(item)}
           >
             <View style={styles.cardHeader}>
@@ -201,6 +238,7 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: "#FFF", fontWeight: "800", textAlign: "center" },
   secondaryBtn: { backgroundColor: "#E2E8F0", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   secondaryBtnText: { color: "#334155", fontWeight: "700" },
+  disabledBtn: { opacity: 0.55 },
   list: { gap: 12 },
   listTablet: { flexDirection: "row", flexWrap: "wrap" },
   card: {
