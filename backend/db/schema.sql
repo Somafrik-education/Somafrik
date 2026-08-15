@@ -339,6 +339,16 @@ CREATE TABLE IF NOT EXISTS evaluations (
   )
 );
 
+-- D3.6b / LOT 3 : compatibilité boot sur bases existantes.
+-- CREATE TABLE IF NOT EXISTS ne fait pas évoluer une table déjà présente ; les colonnes
+-- canoniques doivent donc exister avant les index et les migrations runtime.
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS evaluation_type_id UUID REFERENCES evaluation_types(id);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS linked_exam_id UUID;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS legacy_json_id TEXT;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_evaluations_school_legacy_json_id
   ON evaluations (school_id, legacy_json_id)
   WHERE legacy_json_id IS NOT NULL;
