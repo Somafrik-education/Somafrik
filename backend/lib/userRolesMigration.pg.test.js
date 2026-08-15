@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { PostgresRepository } = require("../db/postgresRepository");
+const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { USER_ROLES_MIGRATION_AMBIGUOUS } = require("../db/userRolesSchema");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -180,6 +181,52 @@ async function main() {
           [teacher.id, schoolA],
         ),
       /user_roles_active_school_unique/,
+    );
+
+    await pool.query(CLIENTS_SCHEMA_SQL);
+    await pool.query(
+      `UPDATE users SET profile_payload = '{"secondaryRoles":["Enseignant"]}'::jsonb WHERE id = $1`,
+      [unaffect.id],
+    );
+    await applyUserRolesCanonical(pool);
+    const secondary = await pool.query(
+      `SELECT role_key FROM user_roles WHERE user_id = $1 AND status = 'active' ORDER BY role_key`,
+      [unaffect.id],
+    );
+    assert.deepEqual(
+      secondary.rows.map((row) => row.role_key),
+      ["TEACHER"],
+      "backfill secondaryRoles après ajout de profile_payload",
+    );
+
+    const ambiguousSecondary = await insertUser(pool, {
+      schoolId: schoolA,
+      userCode: "USR-2026-00005",
+      firstName: "Second",
+      lastName: "Ambigu",
+      role: null,
+    });
+    await pool.query(
+      `UPDATE users SET profile_payload = '{"secondaryRoles":["Wizard"]}'::jsonb WHERE id = $1`,
+      [ambiguousSecondary.id],
+    );
+    const usersBeforeSecondaryFail = (await pool.query(`SELECT COUNT(*)::int AS count FROM users`)).rows[0].count;
+    const rolesBeforeSecondaryFail = (await pool.query(`SELECT COUNT(*)::int AS count FROM user_roles`)).rows[0]
+      .count;
+    await assert.rejects(
+      () => applyUserRolesCanonical(pool),
+      (error) => error.code === USER_ROLES_MIGRATION_AMBIGUOUS,
+      "secondaryRoles legacy ambigu → USER_ROLES_MIGRATION_AMBIGUOUS",
+    );
+    assert.equal(
+      (await pool.query(`SELECT COUNT(*)::int AS count FROM users`)).rows[0].count,
+      usersBeforeSecondaryFail,
+      "aucun compte perdu sur ambiguïté secondaryRoles",
+    );
+    assert.equal(
+      (await pool.query(`SELECT COUNT(*)::int AS count FROM user_roles`)).rows[0].count,
+      rolesBeforeSecondaryFail,
+      "aucun backfill si secondaryRoles fail-closed",
     );
 
     console.log("userRolesMigration.pg.test.js OK");

@@ -536,7 +536,15 @@ class PostgresRepository {
       BACKFILL_FROM_SECONDARY_ROLES_SQL,
     } = require("./userRolesSchema");
     const unknownRoles = await this.all(INVENTORY_UNKNOWN_USERS_ROLE_SQL);
-    const unknownSecondary = await this.all(INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL);
+    const profilePayloadColumns = await this.all(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'users'
+         AND column_name = 'profile_payload'`,
+    );
+    const hasProfilePayload = profilePayloadColumns.length > 0;
+    const unknownSecondary = hasProfilePayload ? await this.all(INVENTORY_UNKNOWN_SECONDARY_ROLES_SQL) : [];
     if (unknownRoles.length || unknownSecondary.length) {
       const error = new Error(
         "USER_ROLES_MIGRATION_AMBIGUOUS: rôles utilisateurs non déterministes. Conversion refusée.",
@@ -547,7 +555,9 @@ class PostgresRepository {
     }
     await this.query(USER_ROLES_SCHEMA_SQL);
     await this.query(BACKFILL_FROM_USERS_ROLE_SQL);
-    await this.query(BACKFILL_FROM_SECONDARY_ROLES_SQL);
+    if (hasProfilePayload) {
+      await this.query(BACKFILL_FROM_SECONDARY_ROLES_SQL);
+    }
   }
 
   async ensureResidualCanonicalSchema() {
