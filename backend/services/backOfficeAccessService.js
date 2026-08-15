@@ -124,7 +124,7 @@ class BackOfficeAccessService {
       user.mustChangePassword === false
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim());
-    const scopedSchoolCode = resolvedSchoolCode || user.schoolCode || "";
+    const scopedSchoolCode = schoolContext?.code || resolvedSchoolCode || user.schoolCode || "";
     const safeUser = sanitizeUserForResponse(user);
     const enrichedUser =
       user.role === "Parent"
@@ -145,7 +145,7 @@ class BackOfficeAccessService {
 
   findUserAccount(identifier, schoolCode) {
     const normalizedIdentifier = String(identifier).trim().toLowerCase();
-    const normalizedSchoolCode = String(schoolCode ?? "").trim().toUpperCase();
+    const normalizedSchoolCode = this.resolveAccountSchoolCode(schoolCode);
     const matches = this.userAccounts.filter((account) =>
       [account.identifier, account.email, account.phone, account.publicId].some(
         (value) => String(value ?? "").trim().toLowerCase() === normalizedIdentifier
@@ -209,13 +209,23 @@ class BackOfficeAccessService {
     return canAccessBackOfficeRole(user.role);
   }
 
-  resolveSchoolContext(schoolCode, { forPlatformAdmin = false } = {}) {
-    const normalizedCode = String(schoolCode).trim().toUpperCase();
-    const school = this.schools.find((item) =>
-      [item.code, item.publicId].some(
+  findSchoolByAnyCode(schoolCode) {
+    const normalizedCode = String(schoolCode ?? "").trim().toUpperCase();
+    if (!normalizedCode) return undefined;
+    return this.schools.find((item) =>
+      [item.loginCode, item.code, item.publicId, item.legacySchoolCode].some(
         (value) => String(value ?? "").trim().toUpperCase() === normalizedCode
       )
     );
+  }
+
+  resolveAccountSchoolCode(schoolCode) {
+    const school = this.findSchoolByAnyCode(schoolCode);
+    return String(school?.code ?? schoolCode ?? "").trim().toUpperCase();
+  }
+
+  resolveSchoolContext(schoolCode, { forPlatformAdmin = false } = {}) {
+    const school = this.findSchoolByAnyCode(schoolCode);
 
     if (!school) {
       throw new BusinessError(404, "Code établissement invalide");

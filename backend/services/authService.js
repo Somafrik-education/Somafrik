@@ -161,9 +161,10 @@ class AuthService {
 
   identify({ schoolCode, identifier }) {
     this.assertRequiredFields({ schoolCode, identifier }, "Champs manquants");
-    this.assertSchoolCanConnect(schoolCode);
+    const schoolContext = this.assertSchoolCanConnect(schoolCode);
+    const accountSchoolCode = this.resolveSchoolAccountCode(schoolContext);
 
-    const managedUser = this.findManagedUser(identifier, schoolCode);
+    const managedUser = this.findManagedUser(identifier, accountSchoolCode);
     if (!managedUser) {
       throw new BusinessError(
         404,
@@ -187,8 +188,10 @@ class AuthService {
   async login({ role, schoolCode, identifier, pin }) {
     this.assertRequiredFields({ role, schoolCode, identifier, pin }, "Champs manquants");
     const schoolContext = this.assertSchoolCanConnect(schoolCode);
+    const accountSchoolCode = this.resolveSchoolAccountCode(schoolContext);
+    const canonicalSchoolCode = schoolContext.loginCode || schoolCode;
 
-    const loginKey = getLoginAttemptKey(schoolCode, identifier);
+    const loginKey = getLoginAttemptKey(canonicalSchoolCode, identifier);
     try {
       await assertLoginNotLocked(loginKey);
     } catch (error) {
@@ -201,7 +204,7 @@ class AuthService {
       throw error;
     }
 
-    const managedUser = this.findManagedUser(identifier, schoolCode, role);
+    const managedUser = this.findManagedUser(identifier, accountSchoolCode, role);
     if (!managedUser) {
       await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
@@ -424,7 +427,7 @@ class AuthService {
     }
 
     const { assertSchoolCanConnect } = require("./schoolSubscriptionAccessService");
-    assertSchoolCanConnect(schoolCode, {
+    assertSchoolCanConnect(this.resolveSchoolAccountCode(school), {
       schools: this.schools,
       subscriptions: this.subscriptions,
     });
@@ -497,6 +500,10 @@ class AuthService {
     return String(user.password ?? "") === normalizedSecret || String(user.pin ?? "") === normalizedSecret;
   }
 
+  resolveSchoolAccountCode(school) {
+    return String(school?.code ?? school?.legacySchoolCode ?? school?.publicId ?? "").trim().toUpperCase();
+  }
+
   matchesSchoolCode(schoolCode) {
     return Boolean(this.findSchoolByCode(schoolCode));
   }
@@ -504,7 +511,7 @@ class AuthService {
   findSchoolByCode(schoolCode) {
     const normalizedCode = String(schoolCode).trim().toUpperCase();
     return this.schools.find((school) =>
-      [school.code, school.publicId].some(
+      [school.loginCode, school.code, school.publicId, school.legacySchoolCode].some(
         (value) => String(value ?? "").trim().toUpperCase() === normalizedCode
       )
     );
