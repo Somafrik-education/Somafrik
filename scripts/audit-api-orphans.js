@@ -102,6 +102,14 @@ function findLiteralEnd(source, quoteIndex, quote) {
     : findQuotedArgumentEnd(source, quoteIndex, quote);
 }
 
+function isQueryOnlyInterpolation(expression) {
+  const trimmed = String(expression).trim();
+  return (
+    /["'`]\?/.test(trimmed) ||
+    /^(?:query|queryString|search|searchParams|qs)$/i.test(trimmed)
+  );
+}
+
 function normalizeTemplateRoute(route) {
   const source = String(route);
   let result = "";
@@ -113,10 +121,9 @@ function normalizeTemplateRoute(route) {
         break;
       }
       const expression = source.slice(index + 2, end);
-      // Une interpolation qui injecte uniquement une query string optionnelle
-      // ne constitue pas un segment de route. Les autres interpolations sont
-      // normalisées en paramètre dynamique.
-      result += /["'`]\?/.test(expression) ? "" : ":param";
+      // Une interpolation de query string optionnelle ne constitue pas un segment
+      // de route. Les autres interpolations sont normalisées en paramètre dynamique.
+      result += isQueryOnlyInterpolation(expression) ? "" : ":param";
       index = end;
       continue;
     }
@@ -330,7 +337,7 @@ const result = {
   caveats: [
     "Scanner statique: les routes construites intégralement de façon dynamique peuvent nécessiter une revue manuelle.",
     "Le préfixe de transport /api est normalisé: /api/backoffice/users et /backoffice/users représentent la même route applicative.",
-    "Les template strings sont parsées avec leurs interpolations imbriquées ; les segments dynamiques deviennent :param et les query strings conditionnelles sont retirées du path.",
+    "Les template strings sont parsées avec leurs interpolations imbriquées ; les segments dynamiques deviennent :param et les suffixes de query variables usuels sont retirés du path.",
     "Les appels TypeScript avec génériques imbriqués (ex. api.get<Record<string, unknown>>(...)) sont détectés.",
     "Les wrappers Mobile request(...) / apiRequest(...) sont détectés, avec GET par défaut et lecture de l'option method.",
     "Les URL GET construites directement depuis getApiBaseUrl()/resolveApiBaseUrl()/API_BASE_URL sont détectées pour les adaptateurs natifs de téléchargement.",
