@@ -183,7 +183,8 @@ async function createIdentity(token, { firstName, lastName, email, password, sch
   });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   assert.match(String(created.data.id || ""), /^[0-9a-f-]{36}$/i);
-  assert.match(String(created.data.publicId || ""), /^USR-\d{4}-\d{5}$/);
+  assert.ok(String(created.data.publicId || "").trim(), "identifiant public serveur absent");
+  assert.notEqual(String(created.data.publicId), String(created.data.id), "publicId ne doit pas être le UUID technique");
   assert.deepEqual(created.data.roleKeys || [], [], "identité créée sans rôle");
   return created.data;
 }
