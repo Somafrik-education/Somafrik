@@ -1,21 +1,6 @@
 "use strict";
 
-/**
- * LOT 8 — BackOffice autonome retiré.
- * Plus de snapshot global côté client, plus de polling.
- */
-
-const WEB_APP_PATH = "/web/";
-
-function redirectToWebApp() {
-  const path = window.location.pathname.toLowerCase();
-  if (path === "/" || path.endsWith("/backoffice/") || path.endsWith("/backoffice")) {
-    window.location.replace(WEB_APP_PATH);
-  }
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", redirectToWebApp);
-} else {
-  redirectToWebApp();
-}
+// Tombstone volontaire : l'application BackOffice legacy a été supprimée.
+// Ce fichier subsiste temporairement uniquement parce que les anciens scripts de
+// validation exécutent encore `node --check BackOffice/app.js`.
+// Ne pas ajouter de logique, de route, d'appel API ou de bootstrap UI ici.

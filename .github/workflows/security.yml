@@ -264,6 +264,9 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:sync-end-to-end
 
+      - name: verify:remove-legacy-sync-core (P1 legacy UI/state guard)
+        run: node scripts/verify-remove-legacy-sync-core.js
+
       - name: verify:teachers-domain-constraints-boot (P0 préprod)
         run: npm run verify:teachers-domain-constraints-boot
 
