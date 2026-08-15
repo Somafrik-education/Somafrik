@@ -389,7 +389,9 @@ export function getUserEstablishmentLabel(user: UserAccount, schools: School[] =
   }
 
   const school = schools.find((item) => normalize(item.code) === normalize(user.schoolCode));
-  return school ? `${school.name} (${school.code})` : (user.schoolCode as string);
+  if (!school) return user.schoolCode as string;
+  const publicCode = school.publicId?.trim() || school.code;
+  return `${school.name} (${publicCode})`;
 }
 
 export function getCountryScopeOptions(countries: Country[]) {
