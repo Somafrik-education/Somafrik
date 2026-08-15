@@ -37,7 +37,7 @@ describe("syncOutbox (P0 SYNC-CANONICAL-STATE)", () => {
 
   it("reapplyOutboxToState conserve pending", () => {
     const state = { notes: [] as Record<string, unknown>[] };
-    let entries = upsertOutboxEntry([], {
+    const entries = upsertOutboxEntry([], {
       clientMutationId: "cm-2",
       entity: "notes",
       op: "upsert",
