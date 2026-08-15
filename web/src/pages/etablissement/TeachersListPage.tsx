@@ -226,18 +226,17 @@ export function TeachersListPage() {
     try {
       if (!editing) return;
       await teachersApi.update(editing.teacherCode || editing.publicId || editing.id, {
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim(),
-          gender: form.gender || null,
-          birthDate: form.birthDate,
-          entryDate: form.entryDate || undefined,
-          phone: form.phone.trim() || null,
-          email: form.email.trim() || null,
-          speciality: form.speciality.trim() || null,
-        });
-        setModalOpen(false);
-        showToast("Enseignant modifié.", "success");
-      }
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        gender: form.gender || null,
+        birthDate: form.birthDate,
+        entryDate: form.entryDate || undefined,
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        speciality: form.speciality.trim() || null,
+      });
+      setModalOpen(false);
+      showToast("Enseignant modifié.", "success");
       await load();
     } catch (err) {
       const message = mapApiError(err, editing ? "Modification impossible." : "Création impossible.");

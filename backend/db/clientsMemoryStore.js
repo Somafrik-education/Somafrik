@@ -263,10 +263,11 @@ function createClientsMemoryStore(seed = {}) {
         if (existing) return existing;
         const { randomUUID } = require("node:crypto");
         const { generateNextTeacherCodes } = require("../lib/teacherCodeAllocation");
-        const codes = generateNextTeacherCodes(
-          row.schoolCode,
-          tables.teachers.map((item) => item.teacher_code),
-        );
+        const seedData = require("../data");
+        const codes = generateNextTeacherCodes(row.schoolCode, [
+          ...tables.teachers.map((item) => item.teacher_code),
+          ...(seedData.teachers ?? []).map((item) => item.publicId ?? item.identifier ?? item.id),
+        ]);
         const saved = {
           id: randomUUID(),
           school_id: row.schoolId,
