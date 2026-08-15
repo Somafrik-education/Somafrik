@@ -9,6 +9,7 @@ const { USER_ROLES_SCHEMA_SQL } = require("../db/userRolesSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const { USER_ROLE_ERROR } = require("./userRoleLifecycle");
+const userRoleLifecycleService = require("./userRoleLifecycleService");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DB = String(process.env.SOMAFRIK_USER_ROLES_IT_DATABASE ?? "somafrik_user_roles_it")
@@ -153,15 +154,17 @@ async function main() {
 
     const failStore = {
       ...store,
-      withTransaction: (fn) =>
-        repo.withTransaction(async (tx) => {
+      withTransaction(fn) {
+        return repo.withTransaction(async (tx) => {
           const bound = store.bind(tx);
           bound.recordClientsAudit = async () => {
             throw new Error("audit failed");
           };
           return fn(bound);
-        }),
+        });
+      },
     };
+    failStore.grantUserRole = (...args) => userRoleLifecycleService.grantRole(failStore, ...args);
     const isolated = await store.createUser(
       { firstName: "Audit", lastName: "Rollback", email: "audit.rollback@test.local" },
       principal,
