@@ -52,6 +52,9 @@ expectClient(
   "web/src/lib/establishmentsApi.ts",
 );
 expectClient("GET /backoffice/subscription-access", "web/src/lib/establishmentsApi.ts");
+expectClient("GET /backoffice/finance/unpaid", "web/src/lib/financeApi.ts");
+expectClient("GET /data-export", "web/src/pages/parametres/DataBackupSettingsPage.tsx");
+expectClient("GET /evaluation-types", "Mobile/src/services/api.ts");
 
 for (const row of audit.rows) {
   assert(!row.route.includes("${"), `Route mal normalisée avec interpolation: ${row.route}`);
