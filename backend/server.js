@@ -1734,10 +1734,14 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     throw new BusinessError(403, "Permission insuffisante pour réinitialiser le mot de passe.");
   }
 
-  const { users } = await getAuthoritativeBackOfficeState();
-  const scopedUsers = tenantScopeService.filterRows(users, req.principal);
+  // Comptes utilisateurs = PostgreSQL canonique. Aucun lookup via backoffice_state.
+  const canonicalUsers = await repository.listClientsProjection();
+  const scopedUsers = tenantScopeService.filterRows(canonicalUsers, req.principal);
+  const requested = String(req.params.id);
   const target = scopedUsers.find((user) =>
-    [user.id, user.publicId, user.identifier].some((value) => String(value ?? "") === String(req.params.id))
+    [user.id, user.publicId, user.identityCode, user.userCode, user.identifier].some(
+      (value) => String(value ?? "") === requested,
+    ),
   );
 
   if (!target) {
@@ -1747,7 +1751,7 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
   if (isPendingValidationUser(target) && !isSuperAdminPrincipal(req.principal)) {
     throw new BusinessError(
       409,
-      "Compte en attente de validation par le Super Administrateur. Aucune action n'est possible avant validation."
+      "Compte en attente de validation par le Super Administrateur. Aucune action n'est possible avant validation.",
     );
   }
 
@@ -1757,16 +1761,64 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
     throw new BusinessError(400, passwordError);
   }
 
-  const updatedUser = await repository.resetUserPassword(
-    [target.id, target.publicId, target.identifier].filter(Boolean),
-    temporaryPassword,
-  );
+  const lookupAliases = [
+    target.id,
+    target.publicId,
+    target.identityCode,
+    target.userCode,
+    target.identifier,
+  ].filter(Boolean);
+  const lockoutAliases = [
+    target.publicId,
+    target.identityCode,
+    target.userCode,
+    target.identifier,
+    target.email,
+    target.phone,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  const schoolScopes = [...new Set([
+    target.schoolCode,
+    req.principal?.schoolCode,
+    "*",
+  ]
+    .map((value) => String(value ?? "").trim().toUpperCase())
+    .filter(Boolean))];
+
+  // Reset + révocation sessions + déverrouillage dans la même transaction PostgreSQL.
+  const updatedUser = await repository.withTransaction(async (tx) => {
+    const txRepo = repository.createTxScope(tx);
+    const updated = await txRepo.resetUserPassword(lookupAliases, temporaryPassword);
+    if (!updated) {
+      throw new BusinessError(404, "Utilisateur introuvable dans votre établissement.");
+    }
+
+    await tx.query(
+      `UPDATE sessions
+       SET revoked_at = NOW(), revoke_reason = 'password_reset'
+       WHERE user_id = $1 AND revoked_at IS NULL`,
+      [target.id],
+    );
+
+    if (lockoutAliases.length && schoolScopes.length) {
+      await tx.query(
+        `DELETE FROM login_lockouts
+         WHERE identifier_normalized = ANY($1::text[])
+           AND school_scope = ANY($2::text[])`,
+        [lockoutAliases, schoolScopes],
+      );
+    }
+    return updated;
+  });
+
   await auditService.record(req, "reset_user_password", "user", target.id, {
-    user: target.identifier,
+    user: target.identifier ?? target.publicId,
     oldPasswordInvalidated: true,
+    sessionsRevoked: true,
+    loginLockoutCleared: true,
   });
   res.json({
-    // Mot de passe provisoire renvoyé uniquement au top-level (handoff admin).
     temporaryPassword,
     user: {
       ...sanitizeUserForResponse(updatedUser),
