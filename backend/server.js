@@ -1416,7 +1416,7 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
 }));
 
 app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
-  const { notes, students, evaluations } = await getAuthoritativeBackOfficeState();
+  const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
     return res.json([]);
@@ -1427,7 +1427,7 @@ app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) =>
 }));
 
 app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
-  const { notes, students, evaluations } = await getAuthoritativeBackOfficeState();
+  const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   let scopedStudents = tenantScopeService.filterRows(students, req.principal);
   if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
     const linkedIds = principalLinkedStudentIds(req.principal);
@@ -1439,7 +1439,7 @@ app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
-  const { presences, students } = await getAuthoritativeBackOfficeState();
+  const { presences, students } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const { className, date } = req.query;
   let scopedStudents = tenantScopeService.filterRows(students, req.principal)
     .filter((student) => !className || student.className === className);
@@ -1466,7 +1466,7 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
     principal: req.principal,
     handler: async () => {
       assertCanManageNotes(req.principal);
-      const state = await getAuthoritativeBackOfficeState();
+      const state = await loadCanonicalPedagogyForPrincipal(req.principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
       const body = ignoreClientScope(req.body ?? {});
@@ -1496,7 +1496,7 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
     principal: req.principal,
     handler: async () => {
       assertCanManagePresences(req.principal);
-      const state = await getAuthoritativeBackOfficeState();
+      const state = await loadCanonicalPedagogyForPrincipal(req.principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const rawBody = req.body ?? {};
       const body = Array.isArray(rawBody.items)
@@ -1559,7 +1559,7 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
 }));
 
 app.get("/api/students/:id/presences", requireAuth, asyncHandler(async (req, res) => {
-  const { presences, students } = await getAuthoritativeBackOfficeState();
+  const { presences, students } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
     return res.json([]);
@@ -1569,7 +1569,7 @@ app.get("/api/students/:id/presences", requireAuth, asyncHandler(async (req, res
 }));
 
 app.get("/api/students/:id/payments", requireAuth, asyncHandler(async (req, res) => {
-  const { payments, students } = await getAuthoritativeBackOfficeState();
+  const { payments, students } = await loadCanonicalFinanceForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
     return res.json([]);
@@ -1776,9 +1776,8 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
 }));
 
 app.get("/api/payments", requireAuth, requirePermission("GET /api/payments"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const { payments, students } = state;
-  const scope = deriveSchoolScope(req.principal, state);
+  const { payments, students } = await loadCanonicalFinanceForPrincipal(req.principal);
+  const scope = deriveSchoolScope(req.principal, { students });
   let scopedPayments = tenantScopeService.filterRows(payments, req.principal, scope);
   const result = scopedPayments.map((payment) => {
     const student = students.find((item) => item.id === payment.studentId);
@@ -3026,6 +3025,41 @@ const backOfficeDeletableEntities = [
   "announcements",
   "messages",
 ];
+
+async function listCanonicalStudentsForPrincipal(principal) {
+  const schoolCode = String(principal?.schoolCode ?? "").trim();
+  if (schoolCode && schoolCode !== "*" && typeof repository.listSchoolStudents === "function") {
+    return repository.listSchoolStudents(schoolCode);
+  }
+  const runtime = await getRuntime();
+  return runtime.students ?? [];
+}
+
+async function loadCanonicalPedagogyForPrincipal(principal) {
+  const pedagogy =
+    typeof repository.listPedagogyProjection === "function"
+      ? await repository.listPedagogyProjection()
+      : { notes: [], presences: [], evaluations: [] };
+  const students = await listCanonicalStudentsForPrincipal(principal);
+  return {
+    notes: pedagogy.notes ?? [],
+    presences: pedagogy.presences ?? [],
+    evaluations: pedagogy.evaluations ?? [],
+    students,
+  };
+}
+
+async function loadCanonicalFinanceForPrincipal(principal) {
+  const finance =
+    typeof repository.listFinanceProjection === "function"
+      ? await repository.listFinanceProjection()
+      : { payments: [] };
+  const students = await listCanonicalStudentsForPrincipal(principal);
+  return {
+    payments: finance.payments ?? [],
+    students,
+  };
+}
 
 async function getAuthoritativeBackOfficeState() {
   const runtime = await getRuntime();
