@@ -188,9 +188,14 @@ function mapUserRow(row) {
   const profile = parsePayload(row.profile_payload);
   const role = ROLE_FROM_DB[row.role] ?? row.role;
   const schoolCode = row.school_code ?? (role === "Admin Pays" ? "*" : "");
+  const identityCode = row.identity_code ?? profile.identityCode ?? "";
+  const loginCode = row.login_code ?? profile.identifier ?? "";
   return {
     id: row.id,
     publicId: row.user_code,
+    identityCode,
+    loginCode,
+    legacyUserCode: row.user_code,
     contactId: profile.contactId || row.contact_id || "",
     firstName: row.first_name,
     lastName: row.last_name,
@@ -206,7 +211,7 @@ function mapUserRow(row) {
     schoolCode,
     schoolId: row.school_id,
     accessChannel: profile.accessChannel ?? "Application",
-    identifier: profile.identifier || resolveUserIdentifier({ role, phone: row.phone, email: row.email, userCode: row.user_code }),
+    identifier: loginCode || resolveUserIdentifier({ role, phone: row.phone, email: row.email, userCode: row.user_code }),
     status: fromDbStatus(row.status),
     permissions: [],
     hasTemporaryPassword: Boolean(row.must_change_password),
