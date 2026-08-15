@@ -41,19 +41,25 @@ function validateWritePayload(state = {}, payload = {}, touchedKeys = []) {
   };
 }
 
+function httpStatusForIntegrityMessage(message) {
+  if (!message) return 400;
+  if (/introuvable/i.test(message)) return 404;
+  return 400;
+}
+
 function assertNoteWrite(state, note, options = {}) {
   const message = validateNoteWrite(state, note, options);
-  if (message) throw new BusinessError(400, message);
+  if (message) throw new BusinessError(httpStatusForIntegrityMessage(message), message);
 }
 
 function assertPresenceWrite(state, presence, options = {}) {
   const message = validatePresenceWrite(state, presence, options);
-  if (message) throw new BusinessError(400, message);
+  if (message) throw new BusinessError(httpStatusForIntegrityMessage(message), message);
 }
 
 function assertPaymentWrite(state, payment, options = {}) {
   const message = validatePaymentWrite(state, payment, options);
-  if (message) throw new BusinessError(400, message);
+  if (message) throw new BusinessError(httpStatusForIntegrityMessage(message), message);
 }
 
 module.exports = {

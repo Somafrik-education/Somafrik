@@ -255,6 +255,11 @@ jobs:
       - name: verify:canonical-state-convergence (P0 SYNC-CANONICAL-STATE)
         run: npm run verify:canonical-state-convergence
 
+      - name: verify:sync-end-to-end (P0 SYNC-END-TO-END — PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:sync-end-to-end
+
       - name: verify:teachers-domain-constraints-boot (P0 préprod)
         run: npm run verify:teachers-domain-constraints-boot
 
