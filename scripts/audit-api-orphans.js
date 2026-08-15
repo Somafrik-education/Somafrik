@@ -24,11 +24,15 @@ function walk(dir) {
 }
 
 function normalizeRoute(route) {
-  return String(route)
+  const normalized = String(route)
     .replace(/\$\{[^}]+\}/g, ":param")
     .replace(/:[A-Za-z0-9_]+/g, ":param")
     .replace(/\/+/g, "/")
     .replace(/\/$/, "") || "/";
+  // Le client HTTP Web/Mobile est déjà monté sur /api et utilise donc
+  // /backoffice/users, tandis que server.js/RBAC déclarent /api/backoffice/users.
+  // Comparer la route applicative sans le préfixe de transport évite les faux orphelins.
+  return normalized.replace(/^\/api(?=\/|$)/, "") || "/";
 }
 
 function extractServerRoutes(source) {
@@ -113,6 +117,7 @@ const result = {
   rows,
   caveats: [
     "Scanner statique: les routes construites intégralement de façon dynamique peuvent nécessiter une revue manuelle.",
+    "Le préfixe de transport /api est normalisé: /api/backoffice/users et /backoffice/users représentent la même route applicative.",
     "Une route sans client peut être volontairement publique, ops, E2E ou intégration externe: ORPHAN est un candidat, pas une suppression automatique.",
   ],
 };
