@@ -1,5 +1,6 @@
 import { api } from "../api/client";
 import { readStoredSchoolCode } from "./activeSchool";
+import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
 
 export function buildCreateUserPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const explicitSchoolCode = String(payload.schoolCode ?? "").trim();
@@ -13,12 +14,35 @@ export function buildCreateUserPayload(payload: Record<string, unknown>): Record
   return { ...payload, schoolCode };
 }
 
+interface AssignableRole {
+  roleKey: string;
+  roleName: string;
+}
+
+function withPlatformAssignableRoles(roles: AssignableRole[]): AssignableRole[] {
+  const merged = [
+    ...roles,
+    { roleKey: "COUNTRY_ADMIN", roleName: COUNTRY_ADMIN_ROLE },
+    { roleKey: "SCHOOL_ADMIN", roleName: SCHOOL_ADMIN_ROLE },
+  ];
+  const seen = new Set<string>();
+  return merged.filter((entry) => {
+    const key = String(entry.roleName ?? "").trim().toLocaleLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export const clientsApi = {
   listUsers: () => api.get<unknown[]>("/backoffice/users"),
   createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", buildCreateUserPayload(payload)),
   updateUser: (userId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/users/${encodeURIComponent(userId)}`, payload),
-  listAssignableRoles: () => api.get<{ roles: Array<{ roleKey: string; roleName: string }> }>("/backoffice/users/assignable-roles"),
+  listAssignableRoles: async () => {
+    const response = await api.get<{ roles: AssignableRole[] }>("/backoffice/users/assignable-roles");
+    return { ...response, roles: withPlatformAssignableRoles(response.roles ?? []) };
+  },
   grantUserRole: (userId: string, role: string) =>
     api.post(`/backoffice/users/${encodeURIComponent(userId)}/roles/grant`, { role }),
   revokeUserRole: (userId: string, role: string) =>
