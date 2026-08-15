@@ -265,11 +265,21 @@ async function main() {
       auditMeta,
     );
 
-    await assert.rejects(
-      () => store.provisionContactAccount(blockedContact.id, { role: "Parent" }, principal, auditMeta),
-      (error) => error.statusCode === 409 && error.code === "DUPLICATE",
-      "provisionContactAccount rejette email/téléphone déjà actifs",
+    const provisioned = await store.provisionContactAccount(
+      blockedContact.id,
+      { role: "Parent" },
+      principal,
+      auditMeta,
     );
+    assert.equal(provisioned.reused, true, "provision rattache le contact au compte existant");
+    assert.equal(provisioned.created, false);
+    assert.equal(provisioned.user.id, blockingUser.id);
+    const usersWithEmail = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM users
+       WHERE lower(coalesce(email, '')) = lower($1) AND status = 'active'`,
+      ["parent.block@test"],
+    );
+    assert.equal(usersWithEmail.rows[0].count, 1, "compte unique : pas de second user pour le même email");
 
     // Concurrence provisioning : un seul user créé
     const raceContact = await store.createContact(
