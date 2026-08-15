@@ -192,9 +192,10 @@ function mapUserRow(row) {
   const loginCode = row.login_code ?? profile.identifier ?? "";
   return {
     id: row.id,
-    publicId: row.user_code,
+    publicId: identityCode || row.user_code,
     identityCode,
     loginCode,
+    userCode: row.user_code,
     legacyUserCode: row.user_code,
     contactId: profile.contactId || row.contact_id || "",
     firstName: row.first_name,
