@@ -4,10 +4,11 @@
  * Prouve le chemin critique préprod :
  *   repository.init()
  *   → getDataset()
- *   → GET /api/schools
+ *   → GET /api/schools/:code (lookup public canonique)
  *   → POST /api/identify
  *   → POST /api/backoffice/login
  *
+ * Lookup avec code inexistant → 404 (métier), jamais 500.
  * Login avec faux credentials → 401 (métier), jamais 500.
  *
  * Usage :
@@ -98,8 +99,10 @@ async function runRepositoryBootstrap() {
   assert.ok(repository.ready, "repository.ready");
   const dataset = await repository.getDataset();
   assert.ok(dataset, "getDataset() doit retourner un objet");
-  assert.ok(Array.isArray(dataset.platformSchools) || dataset.school != null || Array.isArray(dataset.userAccounts),
-    "getDataset() doit exposer schools/users");
+  assert.ok(
+    Array.isArray(dataset.platformSchools) || dataset.school != null || Array.isArray(dataset.userAccounts),
+    "getDataset() doit exposer schools/users",
+  );
   assert.notStrictEqual(repository.engine, "memory", "bootstrap exige PostgreSQL, pas mémoire");
   await repository.close?.();
   console.log("OK repository: init + getDataset (postgresql)");
@@ -145,10 +148,18 @@ async function runHttpBootstrap() {
     assert.strictEqual(health.data?.status, "ok");
     console.log("OK http: GET /api/health → 200");
 
-    const schools = await request("GET", "/api/schools");
-    assert.strictEqual(schools.status, 200, `GET /api/schools → ${schools.status} ${schools.text}`);
-    assert.ok(Array.isArray(schools.data), "GET /api/schools doit renvoyer un tableau");
-    console.log(`OK http: GET /api/schools → 200 (${schools.data.length} établissements)`);
+    const schoolLookup = await request("GET", "/api/schools/BOOTSTRAP-PROBE-NOT-FOUND");
+    assert.notStrictEqual(
+      schoolLookup.status,
+      500,
+      "GET /api/schools/:code ne doit jamais être 500 pour un code inconnu",
+    );
+    assert.strictEqual(
+      schoolLookup.status,
+      404,
+      `GET /api/schools/:code code inconnu → 404, reçu ${schoolLookup.status} ${schoolLookup.text}`,
+    );
+    console.log("OK http: GET /api/schools/:code → 404 (code inconnu, pas 500)");
 
     const identifyMissing = await request("POST", "/api/identify", { identifier: "bootstrap-probe" });
     assert.notStrictEqual(identifyMissing.status, 500, "POST /api/identify ne doit jamais être 500");
