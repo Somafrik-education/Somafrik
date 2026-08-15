@@ -1,16 +1,16 @@
 name: Apply API Orphan Cleanup Wave 2
 
 on:
-  push:
-    branches:
-      - agent/api-orphan-cleanup-wave2
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   apply-cleanup:
-    if: ${{ !contains(github.event.head_commit.message, '[api-cleanup-applied]') }}
+    if: ${{ github.head_ref == 'agent/api-orphan-cleanup-wave2' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,11 +20,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
+      - name: Skip when cleanup already applied
+        id: state
+        run: |
+          if node scripts/api-orphan-cleanup-wave2.js >/dev/null 2>&1; then
+            echo "applied=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Apply fail-closed cleanup
+        if: steps.state.outputs.applied != 'true'
         run: node scripts/api-orphan-cleanup-wave2.js --apply
       - name: Verify cleanup
         run: node scripts/api-orphan-cleanup-wave2.js
       - name: Commit generated cleanup
+        if: steps.state.outputs.applied != 'true'
         run: |
           if git diff --quiet; then
             echo "No cleanup diff produced" >&2
