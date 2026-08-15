@@ -227,7 +227,7 @@ AS $$
 DECLARE
   school_row RECORD;
   country_code TEXT;
-  creation_year INTEGER;
+  identity_creation_year INTEGER;
   year_short TEXT;
   initials TEXT;
   sequence_value INTEGER;
@@ -266,25 +266,25 @@ BEGIN
   END IF;
 
   country_code := upper(btrim(school_row.iso_code));
-  creation_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
-  year_short := lpad((creation_year % 100)::text, 2, '0');
+  identity_creation_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
+  year_short := lpad((identity_creation_year % 100)::text, 2, '0');
   initials := somafrik_identity_initials(NEW.first_name, NEW.last_name);
 
   INSERT INTO identity_counters (school_id, creation_year, last_value)
-  VALUES (NEW.school_id, creation_year, 1)
+  VALUES (NEW.school_id, identity_creation_year, 1)
   ON CONFLICT (school_id, creation_year)
   DO UPDATE SET last_value = identity_counters.last_value + 1, updated_at = NOW()
   RETURNING last_value INTO sequence_value;
 
   IF sequence_value > 99999 THEN
-    RAISE EXCEPTION 'IDENTITY_SEQUENCE_EXHAUSTED: school %, year %', NEW.school_id, creation_year;
+    RAISE EXCEPTION 'IDENTITY_SEQUENCE_EXHAUSTED: school %, year %', NEW.school_id, identity_creation_year;
   END IF;
 
   short_login := initials || '-' || year_short || '-' || lpad(sequence_value::text, 5, '0');
   full_identity := country_code || '-' || upper(school_row.short_code) || '-' || short_login;
 
   NEW.identity_initials := initials;
-  NEW.identity_year := creation_year;
+  NEW.identity_year := identity_creation_year;
   NEW.login_code := short_login;
   NEW.identity_code := full_identity;
 
