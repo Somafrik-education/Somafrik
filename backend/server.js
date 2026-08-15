@@ -2188,11 +2188,6 @@ app.get("/api/backoffice/establishments", requireAuth, requirePermission("GET /a
   sendList(res, rows, req.query, ["name", "code", "country", "city", "type", "status", "principalName"]);
 }));
 
-app.get("/api/backoffice/establishments/:code/users", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  res.json(sanitizeUsersForResponse(establishmentService.getUsers(req.params.code, state, req.principal)));
-}));
-
 app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   res.json(establishmentService.getSubscription(req.params.code, state, req.principal));
