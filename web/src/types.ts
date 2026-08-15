@@ -251,7 +251,10 @@ export interface UserAccount {
   gender?: string;
   phone?: string;
   email?: string;
-  role: string;
+  role?: string;
+  roles?: string[];
+  roleKeys?: string[];
+  assignmentStatus?: string;
   secondaryRoles?: string[];
   scopeLevel?: string;
   countryScope?: string;

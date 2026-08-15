@@ -8,6 +8,19 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function isTerminalTeacherStatus(status) {
+  return ["deleted", "archived"].includes(String(status ?? "").toLowerCase());
+}
+
+function managedSchoolIdForClientsTeacher(teacher, tables) {
+  const school = (tables.schools ?? []).find((row) => String(row.id) === String(teacher.school_id));
+  const code = String(school?.code ?? school?.schoolCode ?? "").trim().toUpperCase();
+  if (code && code === String(seedData.school.code).toUpperCase()) {
+    return seedData.school.id;
+  }
+  return teacher.school_id;
+}
+
 function normalizeClassNameKey(value) {
   return String(value ?? "")
     .normalize("NFD")
@@ -1763,15 +1776,147 @@ class FallbackRepository {
     return this._teacherLifecycleRepo;
   }
 
+  writeManagedTeacherToClients(snapshot = {}) {
+    const tables = this.getClientsStore()?._tables;
+    if (!tables) return;
+    const teacherCode = String(snapshot.teacherCode ?? snapshot.teacher_code ?? "").trim();
+    if (!teacherCode) return;
+    const teacher = (tables.teachers ?? []).find(
+      (row) => String(row.teacher_code ?? "") === teacherCode,
+    );
+    if (!teacher) return;
+    if (snapshot.speciality !== undefined) teacher.speciality = snapshot.speciality;
+    if (snapshot.entryDate !== undefined || snapshot.hire_date !== undefined) {
+      teacher.hire_date = snapshot.entryDate ?? snapshot.hire_date;
+    }
+    if (snapshot.status !== undefined) teacher.status = snapshot.status;
+    const user = (tables.users ?? []).find((row) => String(row.id) === String(teacher.user_id));
+    if (!user) return;
+    if (snapshot.firstName !== undefined) user.first_name = snapshot.firstName;
+    if (snapshot.lastName !== undefined) user.last_name = snapshot.lastName;
+    if (snapshot.email !== undefined) user.email = snapshot.email;
+    if (snapshot.phone !== undefined) user.phone = snapshot.phone;
+    if (snapshot.birthDate !== undefined) user.birth_date = snapshot.birthDate;
+    if (snapshot.gender !== undefined) user.gender = snapshot.gender;
+    if (snapshot.userStatus !== undefined) user.status = snapshot.userStatus;
+  }
+
+  syncClientsTeachersIntoManaged() {
+    const tables = this.getClientsStore()?._tables;
+    if (!tables) return;
+    this.getTeachersRepository();
+    if (!this._managedTeachers) this._managedTeachers = [];
+    if (!this._managedTeacherUsers) this._managedTeacherUsers = [];
+    for (const teacher of tables.teachers ?? []) {
+      const managedSchoolId = managedSchoolIdForClientsTeacher(teacher, tables);
+      const existing = this._managedTeachers.find(
+        (row) =>
+          String(row.teacher_code ?? "") === String(teacher.teacher_code ?? "") ||
+          (String(row.user_id) === String(teacher.user_id) &&
+            (String(row.school_id) === String(teacher.school_id) ||
+              String(row.school_id) === String(managedSchoolId))),
+      );
+      if (existing) {
+        if (!isTerminalTeacherStatus(existing.status) || isTerminalTeacherStatus(teacher.status)) {
+          existing.status = teacher.status;
+        }
+        existing.speciality = teacher.speciality || existing.speciality;
+        existing.teacher_code = teacher.teacher_code || existing.teacher_code;
+        existing.school_id = managedSchoolId;
+        continue;
+      }
+      const user = tables.users.find((row) => row.id === teacher.user_id);
+      if (user && !this._managedTeacherUsers.some((row) => String(row.id) === String(user.id))) {
+        this._managedTeacherUsers.push({
+          id: user.id,
+          school_id: managedSchoolId,
+          user_code: user.user_code,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          email: user.email,
+          phone: user.phone,
+          password_hash: user.password_hash,
+          pin_hash: user.pin_hash,
+          must_change_password: user.must_change_password,
+          role: "TEACHER",
+          status: user.status,
+          birth_date: user.birth_date,
+          gender: user.gender,
+          created_at: user.created_at,
+          updated_at: user.updated_at,
+        });
+      }
+      this._managedTeachers.push({
+        id: teacher.id,
+        school_id: managedSchoolId,
+        user_id: teacher.user_id,
+        teacher_code: teacher.teacher_code,
+        speciality: teacher.speciality,
+        hire_date: teacher.hire_date,
+        status: teacher.status ?? "active",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  projectClientsTeachers(schoolCode) {
+    const store = this._clientsStore;
+    const tables = store?._tables;
+    if (!tables) return [];
+    const normalized = String(schoolCode ?? "").trim().toUpperCase();
+    const school = tables.schools.find(
+      (row) => String(row.code ?? row.schoolCode ?? "").trim().toUpperCase() === normalized,
+    );
+    if (!school) return [];
+    return tables.teachers
+      .filter((row) => row.school_id === school.id)
+      .filter((row) => !["deleted", "archived"].includes(String(row.status ?? "active").toLowerCase()))
+      .map((teacher) => {
+        const user = tables.users.find((row) => row.id === teacher.user_id);
+        const identifier = String(teacher.teacher_code ?? "").match(/(ENS-\d+)$/i)?.[1]?.toUpperCase() ?? teacher.teacher_code;
+        return {
+          id: teacher.teacher_code,
+          teacherCode: teacher.teacher_code,
+          publicId: teacher.teacher_code,
+          identifier,
+          userId: teacher.user_id,
+          firstName: user?.first_name ?? "",
+          lastName: user?.last_name ?? "",
+          name: `${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim(),
+          gender: user?.gender ?? "",
+          birthDate: user?.birth_date ?? "",
+          entryDate: teacher.hire_date ?? "",
+          phone: user?.phone ?? "",
+          email: user?.email ?? "",
+          speciality: teacher.speciality ?? "",
+          mainSubject: teacher.speciality ?? "",
+          schoolCode: normalized,
+          status: String(teacher.status ?? "active").toLowerCase() === "inactive" ? "Inactif" : "Actif",
+          mustChangePassword: Boolean(user?.must_change_password),
+          assignments: [],
+          assignedClasses: [],
+          courses: [],
+        };
+      });
+  }
+
   async listSchoolTeachers(schoolCode) {
+    this.syncClientsTeachersIntoManaged();
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
     const managed = await this.getTeachersRepository().listBySchoolCode(schoolCode);
+    const clientsTeachers = this.projectClientsTeachers(normalized);
     const seeded = (seedData.teachers ?? [])
       .filter((row) => String(row.schoolCode ?? "").trim().toUpperCase() === normalized)
       .filter((row) => !["archived", "deleted", "archivé"].includes(String(row.status ?? "actif").toLowerCase()))
       .filter(
         (row) =>
           !managed.some(
+            (item) =>
+              String(item.teacherCode ?? item.publicId ?? "") ===
+              String(row.publicId ?? row.id ?? ""),
+          ) &&
+          !clientsTeachers.some(
             (item) =>
               String(item.teacherCode ?? item.publicId ?? "") ===
               String(row.publicId ?? row.id ?? ""),
@@ -1802,7 +1947,13 @@ class FallbackRepository {
         ],
         courses: [...new Set((row.assignments ?? []).map((item) => item.course).filter(Boolean))],
       }));
-    const rows = [...seeded, ...managed];
+    const rows = [...seeded, ...managed, ...clientsTeachers.filter((teacher) =>
+      ![...seeded, ...managed].some(
+        (item) =>
+          String(item.teacherCode ?? item.publicId ?? "") === String(teacher.teacherCode ?? teacher.publicId ?? "") ||
+          String(item.userId ?? "") === String(teacher.userId ?? ""),
+      ),
+    )];
     const assignments = await this.listSchoolTeacherAssignments(schoolCode);
     return rows.map((teacher) => {
       const teacherAssignments = assignments
@@ -1851,13 +2002,15 @@ class FallbackRepository {
   }
 
   async updateSchoolTeacher(teacherCode, body, schoolCode, principal, auditMeta) {
-    await this.getTeacherLifecycleRepository().update(
+    this.syncClientsTeachersIntoManaged();
+    const snapshot = await this.getTeacherLifecycleRepository().update(
       teacherCode,
       body,
       schoolCode,
       principal,
       auditMeta,
     );
+    this.writeManagedTeacherToClients(snapshot);
     const updated = await this.getSchoolTeacherByCode(teacherCode, schoolCode);
     const seedIdx = (seedData.teachers ?? []).findIndex(
       (row) => String(row.publicId ?? row.id ?? "") === String(teacherCode),
@@ -1881,12 +2034,17 @@ class FallbackRepository {
   }
 
   async archiveSchoolTeacher(teacherCode, schoolCode, principal, auditMeta) {
+    this.syncClientsTeachersIntoManaged();
     const result = await this.getTeacherLifecycleRepository().archive(
       teacherCode,
       schoolCode,
       principal,
       auditMeta,
     );
+    this.writeManagedTeacherToClients({
+      teacherCode: result.teacherCode ?? teacherCode,
+      status: "archived",
+    });
     const seedIdx = (seedData.teachers ?? []).findIndex(
       (row) => String(row.publicId ?? row.id ?? "") === String(teacherCode),
     );
@@ -2449,10 +2607,18 @@ class FallbackRepository {
       const store = createClientsMemoryStore({
         school: shouldSeedDemoData() ? seedData.school : null,
         platformSchools: this._managedSchools ?? (shouldSeedDemoData() ? seedData.platformSchools : []),
-        students: shouldSeedDemoData() ? seedData.students : [],
+        students: shouldSeedDemoData()
+          ? (seedData.students ?? []).map((student) => ({
+              ...student,
+              school_id: seedData.school.id,
+              student_code: student.studentCode ?? student.matricule ?? student.publicId ?? student.id,
+            }))
+          : [],
       });
       store.assertEstablishmentRoleAssignable = (role, principal) =>
         this.assertEstablishmentRoleAssignable(role, principal);
+      store.listEstablishmentAssignableRoles = (principal) =>
+        this.listEstablishmentRoles({ schoolAssignableOnly: true, principal });
       this._clientsStore = store;
     }
     return this._clientsStore;
@@ -2472,6 +2638,28 @@ class FallbackRepository {
 
   updateClientsUser(id, patch, principal, auditMeta) {
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
+  }
+
+  async grantClientsUserRole(userId, payload, principal, auditMeta) {
+    const result = await this.getClientsStore().grantUserRole(userId, payload, principal, auditMeta);
+    this.syncClientsTeachersIntoManaged();
+    return result;
+  }
+
+  async revokeClientsUserRole(userId, payload, principal, auditMeta) {
+    const result = await this.getClientsStore().revokeUserRole(userId, payload, principal, auditMeta);
+    this.syncClientsTeachersIntoManaged();
+    return result;
+  }
+
+  listAssignableClientsUserRoles(principal) {
+    return this.getClientsStore().listAssignableUserRoles(principal);
+  }
+
+  listActiveUserRoleKeys(userId) {
+    const store = this.getClientsStore();
+    if (store?.bind) return store.bind().listActiveUserRoleKeys(userId);
+    return Promise.resolve([]);
   }
 
   createClientsContact(payload, principal, auditMeta) {

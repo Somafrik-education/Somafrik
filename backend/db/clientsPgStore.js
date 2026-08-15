@@ -1,6 +1,7 @@
 "use strict";
 
 const clientsService = require("../lib/clientsService");
+const userRoleLifecycleService = require("../lib/userRoleLifecycleService");
 const {
   asTrimmed,
   parsePayload,
@@ -59,7 +60,7 @@ function createClientsPgStore(repo) {
             row.gender || null,
             row.birthDate || null,
             row.passwordHash,
-            row.role,
+            row.role || null,
             row.status,
             JSON.stringify(row.profile ?? {}),
           ],
@@ -84,10 +85,168 @@ function createClientsPgStore(repo) {
             row.phone || null,
             row.gender || null,
             row.birthDate || null,
-            row.role,
+            row.role || null,
             row.status,
             JSON.stringify(mergedProfile),
           ],
+        );
+      },
+      async lockUserById(id) {
+        return one(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [id]);
+      },
+      async listActiveUserRoleKeys(userId) {
+        const rows = await all(
+          `SELECT role_key
+           FROM user_roles
+           WHERE user_id = $1 AND status = 'active' AND revoked_at IS NULL
+           ORDER BY granted_at ASC`,
+          [userId],
+        );
+        return rows.map((row) => row.role_key);
+      },
+      async listActiveUserRolesByUserIds(userIds = []) {
+        if (!userIds.length) return [];
+        return all(
+          `SELECT user_id, role_key
+           FROM user_roles
+           WHERE user_id = ANY($1::uuid[]) AND status = 'active' AND revoked_at IS NULL`,
+          [userIds],
+        );
+      },
+      async listUserCodes() {
+        const rows = await all(`SELECT user_code FROM users`);
+        return rows.map((row) => row.user_code);
+      },
+      async allocateUserCode(year) {
+        await query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`user-code:${year}`]);
+        const current = await one(
+          `SELECT GREATEST(
+             COALESCE((SELECT last_value FROM user_code_counters WHERE year = $1), 0),
+             COALESCE((
+               SELECT MAX(CAST(substring(user_code from 'USR-' || $1::text || '-(.*)$') AS INTEGER))
+               FROM users
+               WHERE user_code ~ ('^USR-' || $1::text || '-[0-9]+$')
+             ), 0)
+           ) AS current`,
+          [year],
+        );
+        const nextValue = Number(current?.current ?? 0) + 1;
+        await query(
+          `INSERT INTO user_code_counters (year, last_value, updated_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (year) DO UPDATE SET last_value = EXCLUDED.last_value, updated_at = NOW()`,
+          [year, nextValue],
+        );
+        const { formatUserCode } = require("../lib/userRoleLifecycle");
+        return formatUserCode(year, nextValue);
+      },
+      async insertUserRole(row) {
+        return one(
+          `INSERT INTO user_roles (user_id, school_id, role_key, granted_by, granted_at, status)
+           VALUES ($1, $2, $3, $4, NOW(), 'active')
+           RETURNING *`,
+          [row.userId, row.schoolId || null, row.roleKey, row.grantedBy || null],
+        );
+      },
+      async revokeUserRole(row) {
+        return one(
+          `UPDATE user_roles
+           SET status = 'revoked', revoked_at = NOW(), revoked_by = $4, updated_at = NOW()
+           WHERE user_id = $1
+             AND role_key = $2
+             AND status = 'active'
+             AND revoked_at IS NULL
+             AND (
+               ($3::uuid IS NULL AND school_id IS NULL)
+               OR school_id IS NOT DISTINCT FROM $3::uuid
+             )
+           RETURNING *`,
+          [row.userId, row.roleKey, row.schoolId || null, row.revokedBy || null],
+        );
+      },
+      async syncUserPrimaryRole(userId, roleKey) {
+        return one(
+          `UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1 RETURNING id, role`,
+          [userId, roleKey || null],
+        );
+      },
+      async getTeacherBySchoolUser(schoolId, userId) {
+        return one(
+          `SELECT * FROM teachers WHERE school_id = $1 AND user_id = $2 LIMIT 1`,
+          [schoolId, userId],
+        );
+      },
+      async findAmbiguousTeacherIdentity(schoolId, identity) {
+        const { isExactTeacherCivilIdentity } = require("../lib/teachersManagement");
+        const { formatIsoDate } = require("./teachersRepository");
+        const rows = await all(
+          `SELECT t.id, t.user_id, u.first_name, u.last_name, u.birth_date, u.gender
+           FROM teachers t
+           JOIN users u ON u.id = t.user_id
+           WHERE t.school_id = $1
+             AND t.user_id IS NOT NULL
+             AND t.user_id <> $2
+             AND COALESCE(t.status, 'active') NOT IN ('deleted')`,
+          [schoolId, identity.excludeUserId],
+        );
+        return rows.find((row) =>
+          isExactTeacherCivilIdentity(identity, {
+            firstName: row.first_name,
+            lastName: row.last_name,
+            birthDate: formatIsoDate(row.birth_date),
+            gender: row.gender,
+          }),
+        ) ?? null;
+      },
+      async insertTeacherForUser(row) {
+        const {
+          allocateTeacherCodesLocked,
+          acquireTeacherSchoolCreationLock,
+        } = require("../lib/teacherCodeAllocation");
+        const { isTeachersSchoolUserUniquenessViolation } = require("../lib/teachersUniqueness");
+        await acquireTeacherSchoolCreationLock({ query }, row.schoolId);
+        const existing = await this.getTeacherBySchoolUser(row.schoolId, row.userId);
+        if (existing) return existing;
+        const codes = await allocateTeacherCodesLocked(
+          { query, all },
+          row.schoolId,
+          row.schoolCode,
+          { alreadyLocked: true },
+        );
+        try {
+          return await one(
+            `INSERT INTO teachers (school_id, user_id, teacher_code, speciality, hire_date, status)
+             VALUES ($1, $2, $3, $4, $5, 'active')
+             RETURNING *`,
+            [row.schoolId, row.userId, codes.teacherCode, row.speciality, row.hireDate],
+          );
+        } catch (error) {
+          if (isTeachersSchoolUserUniquenessViolation(error)) {
+            const reused = await this.getTeacherBySchoolUser(row.schoolId, row.userId);
+            if (reused) return reused;
+          }
+          throw error;
+        }
+      },
+      async countActiveTeacherAssignments(teacherId) {
+        const row = await one(
+          `SELECT COUNT(*)::int AS count
+           FROM teacher_assignments
+           WHERE teacher_id = $1 AND COALESCE(status, 'active') = 'active'`,
+          [teacherId],
+        );
+        return Number(row?.count ?? 0);
+      },
+      async deactivateTeacherProfile(teacherId) {
+        return one(
+          `UPDATE teachers SET status = 'inactive', updated_at = NOW() WHERE id = $1 RETURNING *`,
+          [teacherId],
+        );
+      },
+      async reactivateTeacherProfile(teacherId) {
+        return one(
+          `UPDATE teachers SET status = 'active', updated_at = NOW() WHERE id = $1 RETURNING *`,
+          [teacherId],
         );
       },
       async getContactById(id) {
@@ -365,6 +524,19 @@ function createClientsPgStore(repo) {
          LEFT JOIN countries c ON c.id = s.country_id
          ORDER BY u.created_at`,
       );
+      const roleRows = users.length
+        ? await repo.all(
+            `SELECT user_id, role_key FROM user_roles
+             WHERE status = 'active' AND revoked_at IS NULL AND user_id = ANY($1::uuid[])`,
+            [users.map((row) => row.id)],
+          )
+        : [];
+      const rolesByUser = new Map();
+      for (const row of roleRows) {
+        const list = rolesByUser.get(String(row.user_id)) ?? [];
+        list.push(row.role_key);
+        rolesByUser.set(String(row.user_id), list);
+      }
       const contacts = await repo.all(
         `SELECT c.*, s.school_code, s.name AS school_name
          FROM contacts c
@@ -397,7 +569,9 @@ function createClientsPgStore(repo) {
          ORDER BY a.created_at DESC`,
       );
       return {
-        users: users.map(mapUserRow),
+        users: users.map((row) =>
+          userRoleLifecycleService.hydrateUser(row, rolesByUser.get(String(row.id)) ?? []),
+        ),
         contacts: contacts.map(mapContactRow),
         relations: relations.map(mapRelationRow),
         messages: messages.map(mapMessageRow),
@@ -406,6 +580,10 @@ function createClientsPgStore(repo) {
     },
     createUser: (...args) => clientsService.createUser(store, ...args),
     updateUser: (...args) => clientsService.updateUser(store, ...args),
+    grantUserRole: (...args) => userRoleLifecycleService.grantRole(store, ...args),
+    revokeUserRole: (...args) => userRoleLifecycleService.revokeRole(store, ...args),
+    listAssignableUserRoles: (...args) =>
+      userRoleLifecycleService.listAssignableRolesForPrincipal(store, ...args),
     createContact: (...args) => clientsService.createContact(store, ...args),
     updateContact: (...args) => clientsService.updateContact(store, ...args),
     provisionContactAccount: (...args) => clientsService.provisionContactAccount(store, ...args),
@@ -419,6 +597,10 @@ function createClientsPgStore(repo) {
       typeof repo.assertEstablishmentRoleAssignable === "function"
         ? repo.assertEstablishmentRoleAssignable(role, principal)
         : Promise.resolve(role),
+    listEstablishmentAssignableRoles: (principal) =>
+      typeof repo.listEstablishmentRoles === "function"
+        ? repo.listEstablishmentRoles({ schoolAssignableOnly: true, principal })
+        : Promise.resolve([]),
   };
 
   return store;

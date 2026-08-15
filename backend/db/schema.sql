@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT,
   pin_hash TEXT,
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
-  role TEXT NOT NULL,
+  role TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   last_login_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -64,6 +64,44 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
+ALTER TABLE users ALTER COLUMN role DROP NOT NULL;
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id),
+  school_id UUID REFERENCES schools(id),
+  role_key TEXT NOT NULL,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  granted_by UUID REFERENCES users(id),
+  revoked_at TIMESTAMPTZ,
+  revoked_by UUID REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT user_roles_status_check CHECK (status IN ('active', 'revoked')),
+  CONSTRAINT user_roles_revoked_consistency CHECK (
+    (status = 'active' AND revoked_at IS NULL AND revoked_by IS NULL)
+    OR (status = 'revoked' AND revoked_at IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_roles_active_school_unique
+  ON user_roles (user_id, school_id, role_key)
+  WHERE status = 'active' AND revoked_at IS NULL AND school_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_roles_active_platform_unique
+  ON user_roles (user_id, role_key)
+  WHERE status = 'active' AND revoked_at IS NULL AND school_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_school ON user_roles (school_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_key ON user_roles (role_key);
+
+CREATE TABLE IF NOT EXISTS user_code_counters (
+  year INTEGER PRIMARY KEY,
+  last_value INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- Unicité identité de connexion (email / téléphone) : index créés APRÈS inventaire fail-safe
 -- dans postgresRepository.ensureUsersLoginIdentityConstraints() /

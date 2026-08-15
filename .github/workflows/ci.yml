@@ -94,6 +94,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:clients-management
+      - name: verify:user-role-lifecycle (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:user-role-lifecycle
       - name: verify:users-login-identity (PostgreSQL CI — archived + provision)
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik

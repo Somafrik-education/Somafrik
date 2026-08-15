@@ -6,4 +6,4 @@ export function entityCreateViaContactsOnly(entity: string): boolean {
 }
 
 export const CONTACT_PROVISIONING_HINT =
-  "Créez d'abord un contact (Élève, Enseignant, etc.) depuis le backoffice web — section Contacts.";
+  "Créez d'abord le compte depuis Comptes utilisateurs, puis attribuez le rôle Enseignant.";

@@ -210,9 +210,8 @@ async function main() {
     await pool.query(`UPDATE users SET status = 'archived' WHERE user_code = 'USR-ACTIVE'`);
     const recreated = await store.createUser(
       {
-        firstName: "Nouveau",
-        lastName: "Compte",
-        role: "Secrétaire",
+        firstName: "Actif",
+        lastName: "User",
         email: "reuse@school.test",
         schoolCode: "CD-2026-0001",
       },
@@ -220,6 +219,7 @@ async function main() {
       auditMeta,
     );
     assert.equal(recreated.email, "reuse@school.test");
+    assert.equal(recreated.assignmentStatus, "Sans affectation");
 
     // Deux actifs même email → rejet applicatif 409
     await assert.rejects(
@@ -228,7 +228,6 @@ async function main() {
           {
             firstName: "Collision",
             lastName: "Email",
-            role: "Secrétaire",
             email: "reuse@school.test",
             schoolCode: "CD-2026-0001",
           },
@@ -244,7 +243,6 @@ async function main() {
       {
         firstName: "Bloque",
         lastName: "Parent",
-        role: "Parent",
         email: "parent.block@test",
         phone: "+243900000010",
         schoolCode: "CD-2026-0001",
@@ -267,11 +265,21 @@ async function main() {
       auditMeta,
     );
 
-    await assert.rejects(
-      () => store.provisionContactAccount(blockedContact.id, { role: "Parent" }, principal, auditMeta),
-      (error) => error.statusCode === 409 && error.code === "DUPLICATE",
-      "provisionContactAccount rejette email/téléphone déjà actifs",
+    const provisioned = await store.provisionContactAccount(
+      blockedContact.id,
+      { role: "Parent" },
+      principal,
+      auditMeta,
     );
+    assert.equal(provisioned.reused, true, "provision rattache le contact au compte existant");
+    assert.equal(provisioned.created, false);
+    assert.equal(provisioned.user.id, blockingUser.id);
+    const usersWithEmail = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM users
+       WHERE lower(coalesce(email, '')) = lower($1) AND status = 'active'`,
+      ["parent.block@test"],
+    );
+    assert.equal(usersWithEmail.rows[0].count, 1, "compte unique : pas de second user pour le même email");
 
     // Concurrence provisioning : un seul user créé
     const raceContact = await store.createContact(

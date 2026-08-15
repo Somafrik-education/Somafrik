@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const { createClientsMemoryStore } = require("../db/clientsMemoryStore");
 const { CLIENTS_ERROR, parsePayload } = require("./clientsManagement");
-const { TEACHER_ACCOUNT_ENTRY_ERROR } = require("./clientsRolePolicy");
+const { USER_ROLE_ERROR } = require("./userRoleLifecycle");
 
 function buildStore() {
   return createClientsMemoryStore({
@@ -37,8 +37,7 @@ async function main() {
   const superAdmin = { sub: "super", role: "Super Administrateur Somafrik", identifier: "superadmin" };
   const auditMeta = { ipAddress: "127.0.0.1", userAgent: "security-test" };
 
-  // Un compte TEACHER ne doit jamais pouvoir être créé par le module Utilisateurs.
-  // La création canonique est réservée à /teachers, qui persiste users + teachers atomiquement.
+  // La création d'identité n'accepte plus de rôle (ni TEACHER, ni plateforme).
   for (const principal of [schoolAdmin, countryAdmin, superAdmin]) {
     store.clearAuditLog();
     const beforeUsers = store.listProjection().users.length;
@@ -54,10 +53,10 @@ async function main() {
         principal,
         auditMeta,
       ),
-      { status: 403, code: TEACHER_ACCOUNT_ENTRY_ERROR },
+      { status: 400, code: USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE },
     );
-    assert.equal(store.listProjection().users.length, beforeUsers, "aucun user TEACHER orphelin persisté");
-    assert.equal(store.getAuditLog().length, 0, "rejet TEACHER : aucun audit de mutation");
+    assert.equal(store.listProjection().users.length, beforeUsers, "aucun user persisté si rôle fourni");
+    assert.equal(store.getAuditLog().length, 0, "rejet rôle à la création : aucun audit de mutation");
   }
 
   store.clearAuditLog();
@@ -72,7 +71,7 @@ async function main() {
       schoolAdmin,
       auditMeta,
     ),
-    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+    { status: 400, code: USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE },
   );
   assert.equal(store.getAuditLog().length, 0, "createUser privilégié : aucun audit");
 
@@ -88,7 +87,7 @@ async function main() {
       schoolAdmin,
       auditMeta,
     ),
-    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+    { status: 400, code: USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE },
   );
   assert.equal(store.getAuditLog().length, 0);
 
@@ -104,7 +103,7 @@ async function main() {
       countryAdmin,
       auditMeta,
     ),
-    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+    { status: 400, code: USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE },
   );
   assert.equal(store.getAuditLog().length, 0);
 
@@ -112,26 +111,26 @@ async function main() {
     {
       firstName: "Sec",
       lastName: "Ret",
-      role: "Secrétaire",
       schoolCode: "CD-2026-0001",
     },
     schoolAdmin,
     auditMeta,
   );
+  assert.equal(staff.assignmentStatus, "Sans affectation");
 
   store.clearAuditLog();
   await expectRejection(
     store.updateUser(staff.id, { role: "Super Administrateur Somafrik" }, schoolAdmin, auditMeta),
-    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+    { status: 400, code: USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_PATCH },
   );
-  assert.equal(store.getAuditLog().length, 0, "updateUser privilégié : aucun audit");
+  assert.equal(store.getAuditLog().length, 0, "updateUser rôle : aucun audit");
 
   store.clearAuditLog();
   await expectRejection(
     store.updateUser(staff.id, { role: "TEACHER" }, schoolAdmin, auditMeta),
-    { status: 403, code: TEACHER_ACCOUNT_ENTRY_ERROR },
+    { status: 400, code: USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_PATCH },
   );
-  assert.equal(store.getAuditLog().length, 0, "promotion TEACHER générique : aucun audit");
+  assert.equal(store.getAuditLog().length, 0, "promotion TEACHER via PATCH : aucun audit");
 
   store.clearAuditLog();
   await expectRejection(
@@ -150,7 +149,7 @@ async function main() {
   store.clearAuditLog();
   await expectRejection(
     store.updateUser(staff.id, { permissions: ["ALL_PRIVILEGES"] }, schoolAdmin, auditMeta),
-    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+    { status: 400, code: USER_ROLE_ERROR.CLIENT_IDENTITY_FIELD_FORBIDDEN },
   );
   assert.equal(store.getAuditLog().length, 0, "permissions top-level : aucun audit");
 
@@ -193,7 +192,6 @@ async function main() {
     {
       firstName: "User",
       lastName: "BI",
-      role: "Secrétaire",
       schoolCode: "BI-2026-0001",
     },
     superAdmin,
@@ -203,7 +201,6 @@ async function main() {
     {
       firstName: "Sender",
       lastName: "CD",
-      role: "Secrétaire",
       schoolCode: "CD-2026-0001",
     },
     schoolAdmin,

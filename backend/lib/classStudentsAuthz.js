@@ -1,6 +1,7 @@
 "use strict";
 
 const { BusinessError } = require("../services/authService");
+const { principalHasRole, principalHasAnyRole } = require("./userRoleLifecycle");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
@@ -132,7 +133,7 @@ function filterActiveTeacherAssignments(assignments = []) {
  * @returns {boolean}
  */
 function teacherHasActiveClassAssignment(principal, classContext) {
-  if (!principal || principal.role !== "Enseignant") {
+  if (!principal || !principalHasRole(principal, "Enseignant")) {
     return false;
   }
 
@@ -165,10 +166,10 @@ function principalHasClassAccess(principal, className) {
   if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
     return true;
   }
-  if (SCHOOL_WIDE_STUDENT_READ_ROLES.has(principal.role)) {
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return true;
   }
-  if (principal.role !== "Enseignant") {
+  if (!principalHasRole(principal, "Enseignant")) {
     return false;
   }
   // Routes élèves : le nom seul ne suffit plus.
@@ -189,11 +190,11 @@ function scopeClassStudentsForPrincipal(principal, classContext, rows, resolveAu
     return rows;
   }
 
-  if (SCHOOL_WIDE_STUDENT_READ_ROLES.has(principal.role)) {
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return rows;
   }
 
-  if (principal.role === "Enseignant") {
+  if (principalHasRole(principal, "Enseignant")) {
     if (!teacherHasActiveClassAssignment(principal, classContext)) {
       throw new BusinessError(403, "Accès refusé: classe hors périmètre.");
     }
@@ -228,11 +229,11 @@ function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStude
     return rows;
   }
 
-  if (SCHOOL_WIDE_STUDENT_READ_ROLES.has(principal.role)) {
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return rows;
   }
 
-  if (principal.role === "Enseignant") {
+  if (principalHasRole(principal, "Enseignant")) {
     const { classCodes, classIds } = collectTeacherAssignmentRefs(principal);
     if (!classCodes.size && !classIds.size) {
       throw new BusinessError(403, "Accès refusé: aucune classe affectée.");

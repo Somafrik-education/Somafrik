@@ -146,70 +146,58 @@ async function main() {
 
     const stamp = Date.now();
     const staffPassword = "Lot2Test!2026";
-    const staff = await request("/backoffice/users", {
-      method: "POST",
-      token: adminToken,
-      body: {
-        firstName: "Lot2",
-        lastName: "Agent",
-        role: "Secrétaire",
-        email: `lot2-agent-${stamp}@test.local`,
-        schoolCode: "CD-2026-0001",
-        temporaryPassword: staffPassword,
-      },
-    });
-    assert.equal(staff.status, 201, JSON.stringify(staff.data));
+    async function createIdentity(lastName, email) {
+      const created = await request("/backoffice/users", {
+        method: "POST",
+        token: adminToken,
+        body: {
+          firstName: "Lot2",
+          lastName,
+          email,
+          temporaryPassword: staffPassword,
+        },
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.data));
+      return created.data;
+    }
+    async function grantRole(userId, role) {
+      return request(`/backoffice/users/${encodeURIComponent(userId)}/roles/grant`, {
+        method: "POST",
+        token: adminToken,
+        body: { role },
+      });
+    }
 
-    const codeStaff = await request("/backoffice/users", {
-      method: "POST",
-      token: adminToken,
-      body: {
-        firstName: "Lot2",
-        lastName: "Code",
-        role: "Secrétaire",
-        email: `lot2-code-${stamp}@test.local`,
-        schoolCode: "CD-2026-0001",
-        temporaryPassword: staffPassword,
-      },
-    });
-    assert.equal(codeStaff.status, 201, JSON.stringify(codeStaff.data));
+    const staff = await createIdentity("Agent", `lot2-agent-${stamp}@test.local`);
+    const secretaryGrant = await grantRole(staff.id, "Secrétaire");
+    assert.equal(secretaryGrant.status, 200, JSON.stringify(secretaryGrant.data));
 
-    const assignByCode = await request(`/backoffice/users/${encodeURIComponent(codeStaff.data.id)}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: { role: "lot2_code_role" },
-    });
+    const codeStaff = await createIdentity("Code", `lot2-code-${stamp}@test.local`);
+    const seedCodeRole = await grantRole(codeStaff.id, "Secrétaire");
+    assert.equal(seedCodeRole.status, 200, JSON.stringify(seedCodeRole.data));
+
+    const assignByCode = await grantRole(codeStaff.id, "lot2_code_role");
     assert.equal(assignByCode.status, 200, JSON.stringify(assignByCode.data));
-    assert.equal(assignByCode.data.role, "Lot2 Code Label");
+    assert.ok(
+      (assignByCode.data.roleKeys ?? []).some((key) => String(key).includes("LOT2")) ||
+        (assignByCode.data.roles ?? []).some((name) => String(name).toLowerCase().includes("lot2")),
+      JSON.stringify(assignByCode.data),
+    );
 
-    const assignByName = await request(`/backoffice/users/${encodeURIComponent(codeStaff.data.id)}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: { role: "Lot2 Code Label" },
-    });
-    assert.equal(assignByName.status, 200, JSON.stringify(assignByName.data));
-    assert.equal(assignByName.data.role, "Lot2 Code Label");
+    const assignByName = await grantRole(codeStaff.id, "Lot2 Code Label");
+    assert.equal(assignByName.status, 409, JSON.stringify(assignByName.data));
 
-    const assignOk = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: { role: "Comptable" },
-    });
+    const assignOk = await grantRole(staff.id, "Comptable");
     assert.equal(assignOk.status, 200, JSON.stringify(assignOk.data));
 
-    const assignForbidden = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: { role: "Super Administrateur Somafrik" },
-    });
+    const assignForbidden = await grantRole(staff.id, "Super Administrateur Somafrik");
     assert.equal(assignForbidden.status, 403, JSON.stringify(assignForbidden.data));
 
-    const assignUnknown = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: { role: "Rôle Inventé Lot2" },
-    });
-    assert.equal(assignUnknown.status, 404, JSON.stringify(assignUnknown.data));
+    const assignUnknown = await grantRole(staff.id, "Rôle Inventé Lot2");
+    assert.ok(
+      assignUnknown.status === 404 || assignUnknown.status === 400,
+      JSON.stringify(assignUnknown.data),
+    );
 
     const archived = await request(`/backoffice/establishment-roles/${encodeURIComponent(created.data.id)}/archive`, {
       method: "POST",
@@ -217,11 +205,7 @@ async function main() {
     });
     assert.equal(archived.status, 200, JSON.stringify(archived.data));
 
-    const assignArchived = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: { role: "Lot2 Auditeur" },
-    });
+    const assignArchived = await grantRole(staff.id, "Lot2 Auditeur");
     assert.equal(assignArchived.status, 409, JSON.stringify(assignArchived.data));
 
     const legacyPut = await request("/academic-config", {
@@ -234,21 +218,21 @@ async function main() {
 
     const beforeSession = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
+      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-2026-0001" },
     });
     assert.equal(beforeSession.status, 200, JSON.stringify(beforeSession.data));
     const beforePermissions = beforeSession.data.permissions ?? [];
 
-    const assignBack = await request(`/backoffice/users/${encodeURIComponent(staff.data.id)}`, {
-      method: "PATCH",
+    const assignBack = await request(`/backoffice/users/${encodeURIComponent(staff.id)}/roles/revoke`, {
+      method: "POST",
       token: adminToken,
-      body: { role: "Secrétaire" },
+      body: { role: "Comptable" },
     });
     assert.equal(assignBack.status, 200, JSON.stringify(assignBack.data));
 
     const afterSession = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
+      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-2026-0001" },
     });
     assert.equal(afterSession.status, 200, JSON.stringify(afterSession.data));
     const afterPermissions = afterSession.data.permissions ?? [];
@@ -260,7 +244,7 @@ async function main() {
 
     const usersList = await request("/backoffice/users", { token: adminToken });
     assert.equal(usersList.status, 200);
-    assert.ok(listItems(usersList.data).some((row) => row.id === staff.data.id));
+    assert.ok(listItems(usersList.data).some((row) => row.id === staff.id));
 
     const secretaireRole = catalogue.data.roles.find((row) => row.roleName === "Secrétaire");
     assert.ok(secretaireRole, "rôle Secrétaire attendu dans le catalogue");
@@ -273,7 +257,7 @@ async function main() {
 
     const emptySession = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: staff.data.identifier, password: staffPassword, schoolCode: "CD-2026-0001" },
+      body: { identifier: staff.identifier || staff.publicId, password: staffPassword, schoolCode: "CD-2026-0001" },
     });
     assert.equal(emptySession.status, 200, JSON.stringify(emptySession.data));
     const emptyPermissions = emptySession.data.permissions ?? emptySession.data.user?.permissions ?? [];

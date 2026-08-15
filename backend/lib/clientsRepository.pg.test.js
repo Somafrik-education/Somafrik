@@ -179,8 +179,8 @@ async function main() {
           principal,
           auditMeta,
         ),
-      (error) => error.statusCode === 403 && error.code === "FORBIDDEN",
-      "Admin School ne crée pas de Super Admin",
+      (error) => error.statusCode === 400 && error.code === "ROLE_NOT_ALLOWED_ON_CREATE",
+      "Admin School ne fournit pas de rôle à la création",
     );
 
     const raceContact = await store.createContact(

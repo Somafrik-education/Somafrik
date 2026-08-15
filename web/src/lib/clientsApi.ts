@@ -5,6 +5,11 @@ export const clientsApi = {
   createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", payload),
   updateUser: (userId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/users/${encodeURIComponent(userId)}`, payload),
+  listAssignableRoles: () => api.get<{ roles: Array<{ roleKey: string; roleName: string }> }>("/backoffice/users/assignable-roles"),
+  grantUserRole: (userId: string, role: string) =>
+    api.post(`/backoffice/users/${encodeURIComponent(userId)}/roles/grant`, { role }),
+  revokeUserRole: (userId: string, role: string) =>
+    api.post(`/backoffice/users/${encodeURIComponent(userId)}/roles/revoke`, { role }),
 
   listContacts: () => api.get<unknown[]>("/backoffice/contacts"),
   createContact: (payload: Record<string, unknown>) => api.post("/backoffice/contacts", payload),

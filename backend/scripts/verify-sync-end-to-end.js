@@ -154,19 +154,6 @@ function extractList(payload) {
   return [];
 }
 
-/** Contrat canonique — aligné sur verify-teacher-account-creation.js */
-function teacherCreatePayload(overrides = {}) {
-  return {
-    firstName: "Fatou",
-    lastName: "Sow",
-    birthDate: "1990-05-01",
-    phone: "+243 811 000 001",
-    temporaryPassword: "TempPass1",
-    speciality: "Histoire",
-    ...overrides,
-  };
-}
-
 /** Contrat canonique — aligné sur verify-class-student-enrollment.js */
 function studentEnrollPayload(overrides = {}) {
   return {
@@ -240,68 +227,89 @@ async function runSyncEndToEnd(databaseUrl) {
     const prefetToken = await login("prefet-sync-e2e@test.cd", "1234", "CD-2026-0001");
     const superToken = await login("super-sync-e2e@test.cd", "1234");
 
-    // --- Users ---
+    // --- Users : identité d'abord, rôle ensuite ---
+    const userEmail = `sec-sync-${stamp}@test.cd`;
     const createdUser = await request("/backoffice/users", {
       method: "POST",
       token: adminToken,
       body: {
         firstName: "User",
         lastName: `Sync${stamp}`,
-        role: "Secrétaire",
-        identifier: `sec-sync-${stamp}@test.cd`,
-        schoolCode: "CD-2026-0001",
-        status: "Actif",
-        password: "E2eTest!2026",
+        email: userEmail,
+        temporaryPassword: "E2eTest!2026",
       },
     });
     assert.equal(createdUser.status, 201, JSON.stringify(createdUser.data));
     const userId = String(createdUser.data.id ?? "");
     assert.ok(userId, "UUID serveur users");
-    const pgUser = await pool.query(`SELECT count(*)::int AS c FROM users WHERE user_code = $1 OR email = $2`, [
-      createdUser.data.identifier ?? `sec-sync-${stamp}@test.cd`,
-      createdUser.data.identifier ?? `sec-sync-${stamp}@test.cd`,
-    ]);
-    assert.ok(pgUser.rows[0].c >= 1, "users: ligne PostgreSQL");
+    assert.deepEqual(createdUser.data.roleKeys ?? [], [], "users: création sans rôle");
+    const grantSecretary = await request(`/backoffice/users/${encodeURIComponent(userId)}/roles/grant`, {
+      method: "POST",
+      token: adminToken,
+      body: { role: "Secrétaire" },
+    });
+    assert.equal(grantSecretary.status, 200, JSON.stringify(grantSecretary.data));
+    assert.ok((grantSecretary.data.roleKeys ?? []).includes("SECRETARY"), "users: rôle Secrétaire attribué");
+    const pgUser = await pool.query(`SELECT count(*)::int AS c FROM users WHERE id = $1 AND email = $2`, [userId, userEmail]);
+    assert.equal(pgUser.rows[0].c, 1, "users: ligne PostgreSQL");
+    const pgSecretaryRole = await pool.query(
+      `SELECT count(*)::int AS c FROM user_roles WHERE user_id = $1 AND role_key = 'SECRETARY' AND status = 'active'`,
+      [userId],
+    );
+    assert.equal(pgSecretaryRole.rows[0].c, 1, "users: GRANT PostgreSQL");
     let usersGet = await assertReloadStable(
       "users",
       () => request("/backoffice/users", { token: adminToken }),
       (row) => String(row.id),
     );
     assert.ok(usersGet.some((row) => String(row.id) === userId), "users: GET contient POST");
-    await request(`/backoffice/users/${encodeURIComponent(userId)}`, {
+    const patchedUser = await request(`/backoffice/users/${encodeURIComponent(userId)}`, {
       method: "PATCH",
       token: adminToken,
       body: { status: "Inactif" },
     });
+    assert.equal(patchedUser.status, 200, JSON.stringify(patchedUser.data));
     usersGet = extractList((await request("/backoffice/users", { token: adminToken })).data);
     const patched = usersGet.find((row) => String(row.id) === userId);
     assert.equal(patched?.status, "Inactif", "users: PATCH reflété par GET");
 
-    // --- Teachers ---
-    const createdTeacher = await request("/teachers", {
+    // --- Teachers : identité utilisateur + GRANT Enseignant ---
+    const teacherEmail = `teacher-sync-${stamp}@test.cd`;
+    const teacherIdentity = await request("/backoffice/users", {
       method: "POST",
       token: adminToken,
-      body: teacherCreatePayload({
+      body: {
         firstName: "Marie",
         lastName: `Sync${stamp}`,
-        email: `teacher-sync-${stamp}@test.cd`,
+        email: teacherEmail,
         phone: `+243820${String(stamp).slice(-6)}`,
-        speciality: "Mathématiques",
-      }),
+        temporaryPassword: "TeacherSync!2026",
+      },
     });
-    assert.equal(createdTeacher.status, 201, JSON.stringify(createdTeacher.data));
-    const teacherCode = String(createdTeacher.data.teacherCode ?? createdTeacher.data.id ?? "");
-    const pgTeacher = await pool.query(`SELECT count(*)::int AS c FROM teachers WHERE teacher_code = $1`, [teacherCode]);
-    assert.equal(pgTeacher.rows[0].c, 1, "teachers: PostgreSQL");
+    assert.equal(teacherIdentity.status, 201, JSON.stringify(teacherIdentity.data));
+    const teacherUserId = String(teacherIdentity.data.id ?? "");
+    assert.ok(teacherUserId, "teachers: UUID identité serveur");
+    const grantTeacher = await request(`/backoffice/users/${encodeURIComponent(teacherUserId)}/roles/grant`, {
+      method: "POST",
+      token: adminToken,
+      body: { role: "Enseignant" },
+    });
+    assert.equal(grantTeacher.status, 200, JSON.stringify(grantTeacher.data));
+    assert.ok((grantTeacher.data.roleKeys ?? []).includes("TEACHER"), "teachers: rôle Enseignant attribué");
     let teachersGet = await assertReloadStable(
       "teachers",
       () => request("/teachers", { token: adminToken }),
       (row) => String(row.teacherCode ?? row.id),
     );
-    assert.ok(
-      teachersGet.some((row) => String(row.teacherCode ?? row.id) === teacherCode),
-      "teachers: GET contient POST",
-    );
+    const createdTeacher = teachersGet.find((row) => String(row.userId) === teacherUserId);
+    assert.ok(createdTeacher, "teachers: GET contient le profil créé par GRANT");
+    const teacherCode = String(createdTeacher.teacherCode ?? createdTeacher.id ?? "");
+    assert.ok(teacherCode, "teachers: teacherCode canonique");
+    const pgTeacher = await pool.query(`SELECT count(*)::int AS c FROM teachers WHERE user_id = $1 AND teacher_code = $2`, [
+      teacherUserId,
+      teacherCode,
+    ]);
+    assert.equal(pgTeacher.rows[0].c, 1, "teachers: PostgreSQL");
     const deletedTeacher = await request(`/teachers/${encodeURIComponent(teacherCode)}`, {
       method: "DELETE",
       token: prefetToken,

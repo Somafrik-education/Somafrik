@@ -16,7 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
-import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_SUBJECTS, DEFAULT_TRACKS, UserAccount } from "../data/catalog";
+import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_SUBJECTS, DEFAULT_TRACKS } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
 import {
@@ -35,13 +35,7 @@ import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
 import { CONTACT_PROVISIONING_HINT, entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import {
-  applyTeacherSyncUiAfterUserSave,
-  createTeacherRecordId,
-  isTeacherUserRole,
-  upsertTeacherFromUser,
-  type TeacherIdentitySkip,
-} from "../lib/userTeacherSync";
+import { createTeacherRecordId, isTeacherUserRole } from "../lib/userTeacherSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 
@@ -239,7 +233,6 @@ const configs: Record<
       { key: "firstName", label: "Prénom", placeholder: "Prénom" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
       { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
-      { key: "role", label: "Rôle", placeholder: "Choisir le rôle", type: "select" },
       { key: "schoolCode", label: "Établissement", placeholder: "Choisir l'établissement", type: "select" },
       { key: "accessChannel", label: "Canal d'accès", placeholder: "Plateforme ou Application", type: "select" },
       { key: "identifier", label: "Identifiant unique", placeholder: "Généré par le système" },
@@ -622,45 +615,6 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       updateItem(entity as any, nextItem as any);
     } else {
       createItem(entity as any, nextItem as any);
-    }
-
-    if (entity === "users") {
-      const userItem = nextItem as UserAccount;
-      if (isTeacherUserRole(userItem.role)) {
-        const skips: TeacherIdentitySkip[] = [];
-        let syncedTeachers;
-        try {
-          syncedTeachers = upsertTeacherFromUser(teachersData, userItem, {
-            assignments: assignmentsData,
-            skips,
-          });
-        } catch (error: any) {
-          if (error?.code === "TEACHER_CANON_AMBIGUOUS") {
-            Alert.alert(
-              "Ambiguïté enseignant",
-              `${String(error.message)}\n\nCode: TEACHER_CANON_AMBIGUOUS`,
-            );
-            return;
-          }
-          throw error;
-        }
-
-        const uiResult = applyTeacherSyncUiAfterUserSave({
-          teachersBefore: teachersData,
-          user: userItem,
-          syncedTeachers,
-          skips,
-          createTeacher: (teacher) => createItem("teachers", teacher as any),
-          updateTeacher: (teacher) => updateItem("teachers", teacher as any),
-        });
-
-        // AC-M7 UI : skip multi-twin → alerte + arrêt immédiat (0 create/update fiche)
-        if (uiResult.stopped) {
-          Alert.alert("Identité enseignant", uiResult.operatorMessage ?? "Mutation enseignant bloquée.");
-          setVisible(false);
-          return;
-        }
-      }
     }
 
     setVisible(false);
@@ -1455,14 +1409,10 @@ function getInitialForm(entity: AdminEntity, context?: any): Record<string, stri
 
   if (entity === "users") {
     const schoolCode = getDefaultSchoolCode(context?.schoolsData ?? [], context?.session);
-    const role = "Secrétaire";
     return {
       gender: "Non renseigné",
-      role,
-      ...getRoleDefaults(role, schoolCode),
       schoolCode,
       accessChannel: "Application",
-      identifier: generateUserIdentifier(context?.usersData ?? [], role),
       status: "Actif",
       temporaryPassword: generateTemporaryPassword(),
       createdBy: context?.session?.user?.name ?? "Administrateur",
@@ -1676,52 +1626,26 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
 
   if (entity === "users") {
     const userSchoolCode = form.schoolCode || schoolCodeFromContext(context);
-    const defaults = getRoleDefaults(form.role, userSchoolCode);
     const isCreating = !id;
     const generatedTemporaryPassword = isCreating ? form.temporaryPassword || generateTemporaryPassword() : "";
-    if (
-      !form.lastName ||
-      !form.firstName ||
-      !form.role ||
-      isPlatformUserRole(form.role) ||
-      !userSchoolCode
-    ) {
+    if (!form.lastName || !form.firstName || !userSchoolCode) {
       return null;
     }
 
-    const permissions = rolePermissions[form.role] ?? [];
-    const publicId = form.publicId || generatePublicId("USR", year, context?.usersData ?? [], 6);
-    const identifier = form.identifier?.trim() || generateUserIdentifier(context?.usersData ?? [], form.role);
-
     return {
-      id: id ?? `USER-${Date.now()}`,
-      publicId,
       lastName: form.lastName,
       firstName: form.firstName,
       gender: form.gender,
       phone: form.phone,
-      email: "",
-      role: form.role,
-      secondaryRoles: splitList(form.secondaryRoles),
-      scopeLevel: form.scopeLevel || defaults.scopeLevel,
-      countryScope: form.countryScope ?? "",
+      email: form.email ?? "",
       schoolCode: userSchoolCode,
-      accessChannel: form.accessChannel || defaults.accessChannel,
-      identifier,
+      accessChannel: form.accessChannel || "Application",
       status: form.status || "Actif",
-      permissions,
       temporaryPassword: isCreating ? generatedTemporaryPassword : form.temporaryPassword ?? "",
       ...(isCreating
-        ? { password: generatedTemporaryPassword, pin: generatedTemporaryPassword, mustChangePassword: true }
+        ? { mustChangePassword: true }
         : { mustChangePassword: form.mustChangePassword === "true" }),
       photoUrl: form.photoUrl ?? "",
-      createdAt: form.createdAt || formatDate(new Date()),
-      lastLoginAt: form.lastLoginAt ?? "",
-      createdBy: form.createdBy || context?.session?.user?.name || "Administrateur",
-      history: [
-        ...(splitList(form.history).length ? splitList(form.history) : []),
-        `${id ? "Compte modifié" : `Compte créé avec identifiant ${identifier} et mot de passe temporaire ${generatedTemporaryPassword}`} le ${formatDate(new Date())}`,
-      ],
     };
   }
 

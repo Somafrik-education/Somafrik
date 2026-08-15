@@ -87,7 +87,9 @@ class BackOfficeAccessService {
       throw new BusinessError(403, loginBlockedMessage(user));
     }
 
-    if (!canAccessWebPlatformRole(user.role) && user.accessChannel !== "BackOffice") {
+    const unaffect =
+      !user.role || user.role === "Sans affectation" || user.assignmentStatus === "Sans affectation";
+    if (!unaffect && !canAccessWebPlatformRole(user.role) && user.accessChannel !== "BackOffice") {
       throw new BusinessError(403, "Ce compte n'a pas accès à la plateforme");
     }
 

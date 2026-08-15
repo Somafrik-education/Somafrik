@@ -392,7 +392,21 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
   }
 
   const rolePermissionsMap = await getRolePermissionsMap();
-  const permissions = mergeRolePermissions(session.role, [], rolePermissionsMap);
+  const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
+  let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
+  if (typeof repository.listActiveUserRoleKeys === "function" && session.user_id) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(session.user_id);
+      if (Array.isArray(loaded) && loaded.length) {
+        roleKeys = loaded;
+      } else if (Array.isArray(loaded) && (!session.role || session.role === "Sans affectation")) {
+        roleKeys = [];
+      }
+    } catch {
+      /* fail-closed: keep session.role */
+    }
+  }
+  const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
   const mustChangePassword = await principalMustChangePassword({
     sub: session.user_id,
     identifier: payload.identifier,
@@ -401,7 +415,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
 
   // Reconstruire les affectations depuis l'état autoritatif (pas depuis l'ancien jeton).
   let assignmentFields = {};
-  if (session.role === "Enseignant") {
+  if (principalHasRole({ role: session.role, roleKeys }, "Enseignant")) {
     const state = await getAuthoritativeBackOfficeState();
     const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
     assignmentFields = teacherPrincipalAssignmentFields(
@@ -471,6 +485,16 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
     ...sanitizeUserForResponse(updatedUser),
     mustChangePassword: false,
   };
+  if (typeof repository.listActiveUserRoleKeys === "function" && (safeUser.id || updatedUser?.id)) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(safeUser.id || updatedUser.id);
+      if (Array.isArray(loaded)) {
+        safeUser = { ...safeUser, roleKeys: loaded };
+      }
+    } catch {
+      /* fail-closed: keep updated user projection */
+    }
+  }
   // HOTFIX-PRE-E1-02 : ne pas perdre assignedClasses après change-password.
   if (safeUser.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
@@ -490,7 +514,13 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   });
   res.json({
     message: "Mot de passe mis à jour.",
-    user: safeUser,
+    user: {
+      ...safeUser,
+      role: principal.role,
+      roles: principal.roles,
+      roleKeys: principal.roleKeys,
+      permissions: principal.permissions,
+    },
     accessToken,
     tokenType: "Bearer",
     expiresIn: tokenService.accessTokenTtlSeconds,
@@ -1639,27 +1669,10 @@ app.get("/api/teachers/:teacherCode", requireAuth, requirePermission("GET /api/t
   });
 }));
 
-app.post("/api/teachers", requireAuth, requirePermission("POST /api/teachers"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(400, "schoolCode établissement requis.");
-  }
-  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const { withIdempotency } = require("./services/idempotencyService");
-  await withIdempotency({
-    req,
-    res,
-    routeKey: "POST /api/teachers",
-    principal: req.principal,
-    handler: async () => {
-      const created = await repository.createSchoolTeacher(
-        req.body ?? {},
-        schoolCode,
-        req.principal,
-        auditMetaFromRequest(req),
-      );
-      return { statusCode: 201, body: sanitizeUserForResponse(created) };
-    },
+app.post("/api/teachers", requireAuth, requirePermission("POST /api/teachers"), asyncHandler(async (_req, res) => {
+  res.status(403).json({
+    error: "La création d'une identité utilisateur ne part plus du module Enseignants. Créez le compte dans Comptes utilisateurs puis attribuez le rôle Enseignant.",
+    code: "TEACHER_IDENTITY_MUST_COME_FROM_USERS",
   });
 }));
 
@@ -2067,6 +2080,11 @@ app.get("/api/backoffice/users", requireAuth, requirePermission("GET /api/backof
   sendList(res, sanitizeUsersForResponse(tenantScopeService.filterRows(clients.users ?? [], req.principal)), req.query, ["firstName", "lastName", "identifier", "role", "schoolCode"]);
 }));
 
+app.get("/api/backoffice/users/assignable-roles", requireAuth, requirePermission("GET /api/backoffice/users/assignable-roles"), asyncHandler(async (req, res) => {
+  const roles = await repository.listAssignableClientsUserRoles(req.principal);
+  res.json({ roles });
+}));
+
 app.post("/api/backoffice/users", requireAuth, requirePermission("POST /api/backoffice/users"), asyncHandler(async (req, res) => {
   const created = await repository.createClientsUser(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
   res.status(201).json(sanitizeUserForResponse(created));
@@ -2074,6 +2092,16 @@ app.post("/api/backoffice/users", requireAuth, requirePermission("POST /api/back
 
 app.patch("/api/backoffice/users/:userId", requireAuth, requirePermission("PATCH /api/backoffice/users/:userId"), asyncHandler(async (req, res) => {
   const updated = await repository.updateClientsUser(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(sanitizeUserForResponse(updated));
+}));
+
+app.post("/api/backoffice/users/:userId/roles/grant", requireAuth, requirePermission("POST /api/backoffice/users/:userId/roles/grant"), asyncHandler(async (req, res) => {
+  const updated = await repository.grantClientsUserRole(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.json(sanitizeUserForResponse(updated));
+}));
+
+app.post("/api/backoffice/users/:userId/roles/revoke", requireAuth, requirePermission("POST /api/backoffice/users/:userId/roles/revoke"), asyncHandler(async (req, res) => {
+  const updated = await repository.revokeClientsUserRole(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
   res.json(sanitizeUserForResponse(updated));
 }));
 
@@ -4657,6 +4685,17 @@ function isPlainObject(value) {
 
 async function sendAuthenticatedResponse(req, res, response, action) {
   const rolePermissionsMap = await getRolePermissionsMap();
+  const userId = response.user?.id ?? response.user?.userId;
+  if (typeof repository.listActiveUserRoleKeys === "function" && userId) {
+    try {
+      const loaded = await repository.listActiveUserRoleKeys(userId);
+      if (Array.isArray(loaded)) {
+        response.user = { ...response.user, roleKeys: loaded };
+      }
+    } catch {
+      /* fail-closed: keep the login projection */
+    }
+  }
   const principal = buildPrincipal(response, rolePermissionsMap);
   if (principal.role === "Parent" && (!principal.studentIds?.length) && Array.isArray(response.user?.children)) {
     principal.studentIds = response.user.children
@@ -4704,7 +4743,13 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   const safePayload = sanitizeAuthPayloadForResponse({
     ...response,
     user: response.user
-      ? { ...response.user, role: principal.role, permissions: principal.permissions }
+      ? {
+          ...response.user,
+          role: principal.role,
+          roles: principal.roles,
+          roleKeys: principal.roleKeys,
+          permissions: principal.permissions,
+        }
       : response.user,
   });
 
@@ -4720,14 +4765,28 @@ async function sendAuthenticatedResponse(req, res, response, action) {
 }
 
 function buildPrincipal(response, rolePermissionsMap = null) {
+  const { displayRoles, mergePermissionsForRoles, toRoleKey } = require("./lib/userRoleLifecycle");
   const user = response.user ?? {};
   const school = response.schoolContext ?? response.school ?? {};
   const rawRole = user.role ?? roleLabelFromMobileRole(response.role);
+  const loadedKeys = Array.isArray(user.roleKeys)
+    ? user.roleKeys.map(toRoleKey).filter(Boolean)
+    : null;
+  const roleKeys = loadedKeys?.length
+    ? loadedKeys
+    : loadedKeys && (!rawRole || rawRole === "Sans affectation")
+      ? []
+      : Array.isArray(user.roles) && user.roles.length
+        ? user.roles.map(toRoleKey)
+        : rawRole && rawRole !== "Sans affectation"
+          ? [toRoleKey(rawRole)].filter(Boolean)
+          : [];
+  const display = displayRoles(roleKeys);
   const role =
-    rawRole === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : rawRole;
+    display.role === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : display.role;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
   const countryCode = user.countryCode ?? countryCodeFromScope(user.countryScope) ?? school.countryCode ?? countryCodeFromSchoolOrCountry(schoolCode, school.country);
-  const permissions = mergeRolePermissions(role, [], rolePermissionsMap);
+  const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
 
   const {
     filterActiveTeacherAssignments,
@@ -4742,6 +4801,8 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     publicId: user.publicId,
     contactId: user.contactId,
     role,
+    roles: display.roles,
+    roleKeys: display.roleKeys,
     schoolCode,
     countryCode,
     countryScope: user.countryScope ?? "",
@@ -4751,6 +4812,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim()),
     studentIds: getPrincipalStudentIds(response),
+    guardianStudentIds: getPrincipalGuardianStudentIds(response),
     // Uniquement dérivé des affectations explicitement actives (fail-closed).
     classNames: [
       ...new Set(activeAssignments.map((item) => item.className).filter(Boolean)),
@@ -4826,6 +4888,16 @@ async function resolveUserPasswordLookupKeys(principal) {
 // Récupère la matrice de droits par rôle (configurée par le Super Admin dans le BackOffice).
 async function getRolePermissionsMap() {
   return repository.getRolePermissionsMap();
+}
+
+function getPrincipalGuardianStudentIds(response) {
+  const user = response.user ?? {};
+  const fromChildren = (user.children ?? [])
+    .flatMap((student) => [student.id, student.publicId, student.matricule])
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  const fromRelations = Array.isArray(user.guardianStudentIds) ? user.guardianStudentIds.map(String) : [];
+  return [...new Set([...fromChildren, ...fromRelations])];
 }
 
 function getPrincipalStudentIds(response) {

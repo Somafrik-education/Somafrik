@@ -12,7 +12,7 @@ import {
 import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { ApiError, api } from "../../api/client";
-import { teachersApi, type CreateTeacherPayload, type SchoolTeacher } from "../../lib/teachersApi";
+import { teachersApi, type SchoolTeacher } from "../../lib/teachersApi";
 import { teacherAssignmentsApi } from "../../lib/teacherAssignmentsApi";
 import { classesApi, type SchoolClass } from "../../lib/classesApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
@@ -182,13 +182,6 @@ export function TeachersListPage() {
     );
   }, [rows, search]);
 
-  function openCreate() {
-    setEditing(null);
-    setForm(EMPTY_FORM);
-    setFormError(null);
-    setModalOpen(true);
-  }
-
   function openEdit(row: SchoolTeacher) {
     setEditing(row);
     setForm(teacherFormFromRow(row));
@@ -231,35 +224,19 @@ export function TeachersListPage() {
     setSaving(true);
     setFormError(null);
     try {
-      if (editing) {
-        await teachersApi.update(editing.teacherCode || editing.publicId || editing.id, {
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim(),
-          gender: form.gender || null,
-          birthDate: form.birthDate,
-          entryDate: form.entryDate || undefined,
-          phone: form.phone.trim() || null,
-          email: form.email.trim() || null,
-          speciality: form.speciality.trim() || null,
-        });
-        setModalOpen(false);
-        showToast("Enseignant modifié.", "success");
-      } else {
-        const payload: CreateTeacherPayload = {
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim(),
-          gender: form.gender || undefined,
-          birthDate: form.birthDate,
-          entryDate: form.entryDate || undefined,
-          phone: form.phone.trim() || undefined,
-          email: form.email.trim() || undefined,
-          speciality: form.speciality.trim() || undefined,
-          temporaryPassword: form.temporaryPassword,
-        };
-        await teachersApi.create(payload);
-        setModalOpen(false);
-        showToast("Enseignant créé avec son compte de connexion.", "success");
-      }
+      if (!editing) return;
+      await teachersApi.update(editing.teacherCode || editing.publicId || editing.id, {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        gender: form.gender || null,
+        birthDate: form.birthDate,
+        entryDate: form.entryDate || undefined,
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        speciality: form.speciality.trim() || null,
+      });
+      setModalOpen(false);
+      showToast("Enseignant modifié.", "success");
       await load();
     } catch (err) {
       const message = mapApiError(err, editing ? "Modification impossible." : "Création impossible.");
@@ -385,7 +362,7 @@ export function TeachersListPage() {
     <>
       <EntityListShell
         title="Enseignants"
-        description="Création, modification, affectation et archivage des enseignants."
+        description="Consultation, fiche, affectations et statut métier. La création d'identité se fait depuis Comptes utilisateurs."
         alerts={
           error ? (
             <InlineAlert tone="danger" title="Erreur">
@@ -401,13 +378,7 @@ export function TeachersListPage() {
             aria-label="Rechercher dans enseignants"
           />
         }
-        primaryActions={
-          permissions.canCreate ? (
-            <Button type="button" onClick={openCreate}>
-              Ajouter un enseignant
-            </Button>
-          ) : null
-        }
+        primaryActions={null}
         secondaryActions={
           <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
             Actualiser
@@ -433,21 +404,17 @@ export function TeachersListPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? "Modifier l'enseignant" : "Ajouter un enseignant"}
+        title="Modifier l'enseignant"
       >
         <form className="space-y-3" onSubmit={(event) => void onSubmit(event)}>
           {formError ? (
             <InlineAlert tone="danger" title="Erreur">
               {formError}
             </InlineAlert>
-          ) : editing ? (
+          ) : (
             <InlineAlert tone="info" title="Identité canonique">
               L&apos;établissement, le rôle et les identifiants techniques restent imposés par le serveur.
-            </InlineAlert>
-          ) : (
-            <InlineAlert tone="info" title="Compte de connexion">
-              L&apos;identifiant et le code enseignant sont générés automatiquement. Le mot de passe
-              temporaire devra être changé à la première connexion.
+              La création d&apos;un compte se fait depuis Comptes utilisateurs.
             </InlineAlert>
           )}
           <Field label="Prénom" htmlFor="teacher-first-name" required>
@@ -524,32 +491,12 @@ export function TeachersListPage() {
               }
             />
           </Field>
-          {editing ? null : (
-            <Field label="Mot de passe temporaire" htmlFor="teacher-temp-password" required>
-              <Input
-                id="teacher-temp-password"
-                type="password"
-                autoComplete="new-password"
-                value={form.temporaryPassword}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, temporaryPassword: event.target.value }))
-                }
-                required
-              />
-            </Field>
-          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               Annuler
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving
-                ? editing
-                  ? "Enregistrement…"
-                  : "Création…"
-                : editing
-                  ? "Enregistrer"
-                  : "Créer l'enseignant"}
+              {saving ? "Enregistrement…" : "Enregistrer"}
             </Button>
           </div>
         </form>
