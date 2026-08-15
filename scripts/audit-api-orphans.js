@@ -172,7 +172,9 @@ function extractPermissionRefs(file, source) {
 
 function extractHttpRefs(file, source) {
   const refs = [];
-  const re = /\b(get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*(["'`])/gi;
+  // Le segment générique peut lui-même contenir des génériques (ex. Record<string, unknown>),
+  // donc on accepte tout jusqu'à la parenthèse d'appel plutôt que de s'arrêter au premier >.
+  const re = /\b(get|post|put|patch|delete)\s*(?:<[^\n(]+>)?\s*\(\s*(["'`])/gi;
   let match;
   while ((match = re.exec(source))) {
     const quote = match[2];
@@ -197,7 +199,7 @@ function extractWrappedRequestRefs(file, source) {
   const refs = [];
   // Mobile/src/services/api.ts utilise `request(...)` autour de httpRequest ;
   // certains modules historiques utilisent aussi `apiRequest(...)`.
-  const re = /\b(?:apiRequest|request)\s*(?:<[^>]+>)?\s*\(\s*(["'`])/g;
+  const re = /\b(?:apiRequest|request)\s*(?:<[^\n(]+>)?\s*\(\s*(["'`])/g;
   let match;
   while ((match = re.exec(source))) {
     const quote = match[1];
@@ -329,6 +331,7 @@ const result = {
     "Scanner statique: les routes construites intégralement de façon dynamique peuvent nécessiter une revue manuelle.",
     "Le préfixe de transport /api est normalisé: /api/backoffice/users et /backoffice/users représentent la même route applicative.",
     "Les template strings sont parsées avec leurs interpolations imbriquées ; les segments dynamiques deviennent :param et les query strings conditionnelles sont retirées du path.",
+    "Les appels TypeScript avec génériques imbriqués (ex. api.get<Record<string, unknown>>(...)) sont détectés.",
     "Les wrappers Mobile request(...) / apiRequest(...) sont détectés, avec GET par défaut et lecture de l'option method.",
     "Les URL GET construites directement depuis getApiBaseUrl()/resolveApiBaseUrl()/API_BASE_URL sont détectées pour les adaptateurs natifs de téléchargement.",
     "Les références scripts/backend sont séparées des consommateurs Web/Mobile afin d'identifier les routes tests/ops/internal.",
