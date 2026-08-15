@@ -47,23 +47,28 @@ function resolveAccessLevel(subscription = {}, school = {}) {
   return "full";
 }
 
-function findSubscriptionForSchool(subscriptions = [], schoolCode) {
+function schoolMatchesCode(school, schoolCode) {
   const code = String(schoolCode ?? "").trim().toUpperCase();
-  return subscriptions.find((row) => String(row.schoolCode ?? "").trim().toUpperCase() === code);
+  return [school?.loginCode, school?.code, school?.publicId, school?.legacySchoolCode]
+    .some((value) => String(value ?? "").trim().toUpperCase() === code);
 }
 
 function findSchool(state, schoolCode) {
-  const code = String(schoolCode ?? "").trim().toUpperCase();
-  return (state.schools ?? []).find(
-    (school) =>
-      String(school.code ?? "").trim().toUpperCase() === code ||
-      String(school.publicId ?? "").trim().toUpperCase() === code,
+  return (state.schools ?? []).find((school) => schoolMatchesCode(school, schoolCode));
+}
+
+function findSubscriptionForSchool(subscriptions = [], schoolCode, school = null) {
+  const acceptedCodes = new Set(
+    [schoolCode, school?.code, school?.legacySchoolCode, school?.loginCode, school?.publicId]
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .filter(Boolean),
   );
+  return subscriptions.find((row) => acceptedCodes.has(String(row.schoolCode ?? "").trim().toUpperCase()));
 }
 
 function resolveSchoolAccess(schoolCode, state = {}) {
   const school = findSchool(state, schoolCode);
-  const subscription = findSubscriptionForSchool(state.subscriptions, schoolCode);
+  const subscription = findSubscriptionForSchool(state.subscriptions, schoolCode, school);
   const level = resolveAccessLevel(subscription ?? {}, school ?? {});
   const lifecycle = resolveLifecycleStatus(subscription ?? {}, school ?? {});
   const daysLate = computeDelinquencyDays(subscription ?? {});
@@ -73,7 +78,7 @@ function resolveSchoolAccess(schoolCode, state = {}) {
   else if (level === "limited") message = LIMITED_MESSAGE;
 
   return {
-    schoolCode,
+    schoolCode: school?.loginCode || schoolCode,
     level,
     lifecycle,
     daysLate,

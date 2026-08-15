@@ -81,7 +81,9 @@ function createSchoolsRepository(db) {
         `SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency
          FROM schools s
          JOIN countries c ON c.id = s.country_id
-         WHERE s.school_code = $1`,
+         WHERE upper(s.school_code) = $1
+            OR upper(coalesce(s.login_code, '')) = $1
+         LIMIT 1`,
         [code],
       );
       return mapEstablishmentRow(row);
@@ -92,7 +94,7 @@ function createSchoolsRepository(db) {
      * @param {object} record
      */
     async persist(record) {
-      const code = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.publicId);
+      const code = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.legacySchoolCode ?? record?.publicId);
       if (!code || code === "*") {
         throw createHttpError(400, "Code établissement requis.", "SCHOOL_CODE_REQUIRED");
       }

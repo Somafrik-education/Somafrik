@@ -41,8 +41,13 @@ function createMemoryDb() {
           country_currency: country?.currency,
         };
       }
-      if (text.includes("FROM SCHOOLS S") && text.includes("WHERE S.SCHOOL_CODE")) {
-        const school = schools.find((row) => row.school_code === params[0]);
+      if (text.includes("FROM SCHOOLS S") && text.includes("S.SCHOOL_CODE") && text.includes("WHERE")) {
+        const requested = String(params[0] ?? "").trim().toUpperCase();
+        const school = schools.find(
+          (row) =>
+            String(row.login_code ?? "").trim().toUpperCase() === requested ||
+            String(row.school_code ?? "").trim().toUpperCase() === requested,
+        );
         if (!school) return null;
         const country = countries.find((row) => row.id === school.country_id);
         return {
@@ -155,6 +160,12 @@ async function main() {
   const reread = await repo.getByCode("cd-2026-0401");
   assert.equal(reread.name, "Lycée Lot 1 Persisté");
   assert.equal(reread.principalName, "Awa Kabila");
+
+  db.schools[0].login_code = "CD-LL1-26-001";
+  const rereadCanonical = await repo.getByCode("cd-ll1-26-001");
+  assert.equal(rereadCanonical.name, "Lycée Lot 1 Persisté");
+  assert.equal(rereadCanonical.code, "CD-2026-0401");
+  assert.equal(rereadCanonical.loginCode, "CD-LL1-26-001");
   assert.equal(db.schools.length, 1);
 
   await assert.rejects(
@@ -181,7 +192,7 @@ async function main() {
     "aucun pays FR inventé dans le référentiel",
   );
 
-  console.log("OK schoolsRepository mémoire: persist / list / update / pays inconnu refusé");
+  console.log("OK schoolsRepository mémoire: persist / list / update / code canonique + alias / pays inconnu refusé");
 }
 
 main().catch((error) => {

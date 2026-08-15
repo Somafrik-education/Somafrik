@@ -161,13 +161,18 @@ function mapEstablishmentRow(row, subscription = null) {
   const countryName =
     profile.country ||
     (row.country_name === "République Démocratique du Congo" ? "RDC" : row.country_name);
+  const canonicalLoginCode = asTrimmedString(row.login_code).toUpperCase();
+  const legacySchoolCode = asTrimmedString(row.school_code).toUpperCase();
   const mapped = {
     ...profile,
     id: row.id,
     countryId: row.country_id,
     countryCode: profile.countryCode || row.iso_code,
-    publicId: profile.publicId || row.school_code,
-    code: row.school_code,
+    publicId: canonicalLoginCode || profile.publicId || legacySchoolCode,
+    code: legacySchoolCode,
+    loginCode: canonicalLoginCode,
+    shortCode: asTrimmedString(row.short_code).toUpperCase(),
+    legacySchoolCode,
     name: row.name,
     type: row.school_type || profile.type || "Établissement",
     city: row.city || profile.city || "",
