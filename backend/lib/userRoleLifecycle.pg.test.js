@@ -119,6 +119,30 @@ async function main() {
     assert.equal(row.rows[0].profile_payload.identifier, "GK-26-00001");
     assert.equal(row.rows[0].profile_payload.identityCode, "CD-IK-GK-26-00001");
 
+    const student = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'ELE-CD-0001-0001-000001', 'Grâce', 'Kabeya', 'active')
+       RETURNING id, student_code, identity_code, login_code, identity_initials, identity_year`,
+      [schoolRow.rows[0].id],
+    );
+    assert.equal(student.rows[0].student_code, "ELE-CD-0001-0001-000001", "student_code legacy conservé");
+    assert.equal(student.rows[0].identity_code, "CD-IK-GK-26-00002", "élève utilise le compteur partagé");
+    assert.equal(student.rows[0].login_code, "GK-26-00002");
+    assert.equal(student.rows[0].identity_initials, "GK");
+    assert.equal(Number(student.rows[0].identity_year), 2026);
+    await pool.query(`UPDATE students SET last_name = 'Mukendi' WHERE id = $1`, [student.rows[0].id]);
+    const stableStudent = await pool.query(
+      `SELECT last_name, identity_code, login_code FROM students WHERE id = $1`,
+      [student.rows[0].id],
+    );
+    assert.equal(stableStudent.rows[0].last_name, "Mukendi");
+    assert.equal(stableStudent.rows[0].identity_code, "CD-IK-GK-26-00002", "nom élève ne renumérote pas le parcours");
+    assert.equal(stableStudent.rows[0].login_code, "GK-26-00002");
+    await assert.rejects(
+      () => pool.query(`UPDATE students SET identity_code = 'CD-IK-GK-26-99999' WHERE id = $1`, [student.rows[0].id]),
+      /PERMANENT_STUDENT_IDENTITY_IMMUTABLE/,
+    );
+
     await store.grantUserRole(created.id, { role: "Secrétaire" }, principal, auditMeta);
     assert.equal((await pool.query(`SELECT role FROM users WHERE id = $1`, [created.id])).rows[0].role, "SECRETARY");
     await store.grantUserRole(created.id, { role: "Enseignant" }, principal, auditMeta);
