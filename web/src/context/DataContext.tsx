@@ -11,6 +11,7 @@ import {
 import { useAuth } from "./AuthContext";
 import { mergeRemoteSnapshot, purgeInactiveSchoolFromState } from "../lib/backofficeStateMerge";
 import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
+import { assertNoStrippedCanonicalWrites } from "../lib/canonicalStateWriteGuard";
 import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
 import { logDomainSync } from "../lib/domainSyncTelemetry";
 import { resolveEffectivePermissions } from "../lib/permissions";
@@ -325,7 +326,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           "Les examens, bulletins et documents ne sont plus enregistrables via le JSON résiduel. Utilisez les APIs canoniques.",
         );
       }
-      syncPausedRef.current = true;
 
       const canonicalPatch = stripClientClientsFromPutPayload(
         stripClientPlatformFromPutPayload(
@@ -340,10 +340,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ),
         ),
       ) as Partial<BackOfficeState>;
+      assertNoStrippedCanonicalWrites(patch, canonicalPatch);
       if (Object.keys(canonicalPatch).length === 0) {
-        syncPausedRef.current = false;
         return;
       }
+      syncPausedRef.current = true;
+
       const currentOutbox = loadSyncOutbox();
       const { entries: enqueued, annotatedPatch } = enqueuePatchMutations(
         currentOutbox,
