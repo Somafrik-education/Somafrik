@@ -281,14 +281,18 @@ async function runHttpTestsIfAvailable() {
     body: {
       firstName: comptableUser.firstName,
       lastName: comptableUser.lastName,
-      role: comptableUser.role,
       email: comptableUser.email,
-      schoolCode: comptableUser.schoolCode,
       status: comptableUser.status,
       temporaryPassword: comptableUser.temporaryPassword,
     },
   });
   assert.strictEqual(createComptable.status, 201, `create comptable: ${createComptable.status}`);
+  const grantComptable = await request(`/backoffice/users/${createComptable.data.id}/roles/grant`, {
+    method: "POST",
+    token: schoolAdmin.accessToken,
+    body: { role: comptableUser.role },
+  });
+  assert.strictEqual(grantComptable.status, 200, `grant comptable: ${JSON.stringify(grantComptable.data)}`);
 
   const accountant = await login(comptableUser.email, "Soma1234", "CD-2026-0001");
 

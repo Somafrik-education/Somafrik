@@ -149,14 +149,18 @@ async function main() {
         body: {
           firstName: userPayload.firstName,
           lastName: userPayload.lastName,
-          role: userPayload.role,
-          schoolCode: userPayload.schoolCode,
           status: userPayload.status,
           temporaryPassword: userPayload.temporaryPassword || userPayload.password,
         },
       });
       assert.equal(created.status, 201, JSON.stringify(created.data));
-      return created.data;
+      const granted = await request(`/backoffice/users/${created.data.id}/roles/grant`, {
+        method: "POST",
+        token: adminToken,
+        body: { role: userPayload.role },
+      });
+      assert.equal(granted.status, 200, JSON.stringify(granted.data));
+      return { ...created.data, ...granted.data };
     }
 
     const accountant = await createStaffUser(accountantUser);

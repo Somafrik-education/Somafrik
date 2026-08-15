@@ -185,13 +185,17 @@ async function main() {
       body: {
         firstName: "Second",
         lastName: "Admin",
-        role: "Admin School",
         email: `admin-school-${stamp}@test.local`,
-        schoolCode: "CD-2026-0001",
         temporaryPassword: adminSchoolPassword,
       },
     });
     assert.equal(secondAdmin.status, 201, JSON.stringify(secondAdmin.data));
+    const grantAdmin = await request(`/backoffice/users/${encodeURIComponent(secondAdmin.data.id)}/roles/grant`, {
+      method: "POST",
+      token: superToken,
+      body: { role: "Admin School" },
+    });
+    assert.equal(grantAdmin.status, 200, JSON.stringify(grantAdmin.data));
 
     const beforeSession = await loginSession(
       secondAdmin.data.identifier,
