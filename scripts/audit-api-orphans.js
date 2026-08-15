@@ -32,10 +32,101 @@ function walk(dir) {
   return out;
 }
 
+function findQuotedArgumentEnd(source, quoteIndex, quote) {
+  let escaped = false;
+  for (let index = quoteIndex + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === quote) return index;
+  }
+  return -1;
+}
+
+function findInterpolationEnd(source, startIndex) {
+  let depth = 1;
+  for (let index = startIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "'" || char === '"') {
+      const end = findQuotedArgumentEnd(source, index, char);
+      if (end < 0) return -1;
+      index = end;
+      continue;
+    }
+    if (char === "`") {
+      const end = findTemplateLiteralEnd(source, index);
+      if (end < 0) return -1;
+      index = end;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function findTemplateLiteralEnd(source, tickIndex) {
+  let escaped = false;
+  for (let index = tickIndex + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "`") return index;
+    if (char === "$" && source[index + 1] === "{") {
+      const end = findInterpolationEnd(source, index + 2);
+      if (end < 0) return -1;
+      index = end;
+    }
+  }
+  return -1;
+}
+
+function findLiteralEnd(source, quoteIndex, quote) {
+  return quote === "`"
+    ? findTemplateLiteralEnd(source, quoteIndex)
+    : findQuotedArgumentEnd(source, quoteIndex, quote);
+}
+
+function normalizeTemplateRoute(route) {
+  const source = String(route);
+  let result = "";
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "$" && source[index + 1] === "{") {
+      const end = findInterpolationEnd(source, index + 2);
+      if (end < 0) {
+        result += ":param";
+        break;
+      }
+      const expression = source.slice(index + 2, end);
+      // Une interpolation qui injecte uniquement une query string optionnelle
+      // ne constitue pas un segment de route. Les autres interpolations sont
+      // normalisées en paramètre dynamique.
+      result += /["'`]\?/.test(expression) ? "" : ":param";
+      index = end;
+      continue;
+    }
+    result += source[index];
+  }
+  return result;
+}
+
 function normalizeRoute(route) {
-  // Conserver les segments dynamiques des template strings avant de supprimer la query string.
-  // `/schools/${code}?x=1` doit matcher `/schools/:code`, pas `/schools`.
-  const withTemplateParams = String(route).replace(/\$\{[^}]+\}/g, ":param");
+  const withTemplateParams = normalizeTemplateRoute(route);
   const staticPath = withTemplateParams.split("?", 1)[0];
   const normalized = staticPath
     .replace(/:[A-Za-z0-9_]+/g, ":param")
@@ -81,31 +172,25 @@ function extractPermissionRefs(file, source) {
 
 function extractHttpRefs(file, source) {
   const refs = [];
-  const re = /\b(get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*["'`]([^"'`]+)["'`]/gi;
+  const re = /\b(get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*(["'`])/gi;
   let match;
   while ((match = re.exec(source))) {
-    const raw = match[2];
-    if (!raw.startsWith("/")) continue;
-    refs.push({ method: match[1].toUpperCase(), path: raw, normalized: normalizeRoute(raw), file: path.relative(ROOT, file) });
+    const quote = match[2];
+    const quoteIndex = re.lastIndex - 1;
+    const end = findLiteralEnd(source, quoteIndex, quote);
+    if (end < 0) continue;
+    const raw = source.slice(quoteIndex + 1, end);
+    if (raw.startsWith("/")) {
+      refs.push({
+        method: match[1].toUpperCase(),
+        path: raw,
+        normalized: normalizeRoute(raw),
+        file: path.relative(ROOT, file),
+      });
+    }
+    re.lastIndex = end + 1;
   }
   return refs;
-}
-
-function findQuotedArgumentEnd(source, quoteIndex, quote) {
-  let escaped = false;
-  for (let index = quoteIndex + 1; index < source.length; index += 1) {
-    const char = source[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === quote) return index;
-  }
-  return -1;
 }
 
 function extractWrappedRequestRefs(file, source) {
@@ -117,7 +202,7 @@ function extractWrappedRequestRefs(file, source) {
   while ((match = re.exec(source))) {
     const quote = match[1];
     const quoteIndex = re.lastIndex - 1;
-    const end = findQuotedArgumentEnd(source, quoteIndex, quote);
+    const end = findLiteralEnd(source, quoteIndex, quote);
     if (end < 0) continue;
     const raw = source.slice(quoteIndex + 1, end);
     if (!raw.startsWith("/")) continue;
@@ -243,7 +328,7 @@ const result = {
   caveats: [
     "Scanner statique: les routes construites intégralement de façon dynamique peuvent nécessiter une revue manuelle.",
     "Le préfixe de transport /api est normalisé: /api/backoffice/users et /backoffice/users représentent la même route applicative.",
-    "Les segments `${...}` des template strings sont normalisés en :param avant suppression de la query string.",
+    "Les template strings sont parsées avec leurs interpolations imbriquées ; les segments dynamiques deviennent :param et les query strings conditionnelles sont retirées du path.",
     "Les wrappers Mobile request(...) / apiRequest(...) sont détectés, avec GET par défaut et lecture de l'option method.",
     "Les URL GET construites directement depuis getApiBaseUrl()/resolveApiBaseUrl()/API_BASE_URL sont détectées pour les adaptateurs natifs de téléchargement.",
     "Les références scripts/backend sont séparées des consommateurs Web/Mobile afin d'identifier les routes tests/ops/internal.",
