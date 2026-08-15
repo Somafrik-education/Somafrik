@@ -48,6 +48,20 @@ if (!serverSource.includes("sendBackOfficeStateWriteRemoved")) {
   throw new Error("BACKOFFICE_STATE_WRITE_MUST_FAIL_CLOSED");
 }
 
+const notificationsScreenSource = fs.readFileSync(
+  path.join(root, "Mobile", "src", "screens", "PlatformNotificationsScreen.tsx"),
+  "utf8",
+);
+if (notificationsScreenSource.includes("markNotificationsRead")) {
+  throw new Error("MOBILE_NOTIFICATION_OPTIMISTIC_READ_FORBIDDEN");
+}
+if (!notificationsScreenSource.includes("updatePlatformNotification")) {
+  throw new Error("MOBILE_NOTIFICATION_SERVER_PATCH_REQUIRED");
+}
+if (!notificationsScreenSource.includes("await refreshBackOfficeState()")) {
+  throw new Error("MOBILE_NOTIFICATION_CANONICAL_REFRESH_REQUIRED");
+}
+
 let evaluationMigrationCalls = 0;
 let noteMigrationCalls = 0;
 const postgresProbe = {
@@ -84,7 +98,7 @@ Promise.resolve()
     }
 
     console.log(
-      "OK verify:remove-legacy-sync-core — BackOffice UI supprimé, state global fail-closed, migrations runtime legacy neutralisées",
+      "OK verify:remove-legacy-sync-core — BackOffice supprimé, migrations runtime legacy neutralisées, notifications Mobile server-first",
     );
   })
   .catch((error) => {
