@@ -285,12 +285,31 @@ async function main() {
       password: schoolAdminPassword,
       schoolCode: SCHOOL_CD,
     });
+    // Reproduit le contrat préprod : l'identifiant affiché dans la liste peut être un identityCode
+    // distinct du user_code technique. Cet identifiant public doit être utilisable au login.
+    const displayedSchoolAdminId = "KT-26-00001";
+    await pool.query(
+      `UPDATE users
+          SET profile_payload = jsonb_set(COALESCE(profile_payload, '{}'::jsonb), '{identityCode}', to_jsonb($2::text), true),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [activeSchoolIdentity.id, displayedSchoolAdminId],
+    );
+
     const activeSchoolGranted = await grantRole(superadmin.token, activeSchoolIdentity.id, "Admin School", "SCHOOL_ADMIN");
     assert.equal(activeSchoolGranted.status, "Actif");
     const activeSchoolPg = await assertPgRole(pool, activeSchoolIdentity.id, "SCHOOL_ADMIN");
     assert.equal(activeSchoolPg.status, "active");
-    const schoolAdmin = await login(schoolAdminEmail, schoolAdminPassword, SCHOOL_CD);
-    assert.ok((schoolAdmin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "login Admin School sans SCHOOL_ADMIN");
+
+    const listedSchoolAdmins = extractList((await request("/backoffice/users", { token: superadmin.token })).data);
+    const listedSchoolAdmin = listedSchoolAdmins.find((row) => String(row.id) === String(activeSchoolIdentity.id));
+    assert.ok(listedSchoolAdmin, "Admin School absent de GET /backoffice/users");
+    assert.equal(listedSchoolAdmin.publicId, displayedSchoolAdminId, "identifiant affiché inattendu");
+
+    const schoolAdmin = await login(displayedSchoolAdminId, schoolAdminPassword, SCHOOL_CD);
+    assert.ok((schoolAdmin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "login Admin School par publicId sans SCHOOL_ADMIN");
+    const schoolAdminReload = await login(displayedSchoolAdminId, schoolAdminPassword, SCHOOL_CD);
+    assert.ok((schoolAdminReload.user.roleKeys || []).includes("SCHOOL_ADMIN"), "relogin Admin School par publicId échoué");
 
     // 4) Admin School -> utilisateur standard -> GRANT Secrétaire.
     const userEmail = `user-created-${stamp}@test.local`;
