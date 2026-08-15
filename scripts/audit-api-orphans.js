@@ -7,6 +7,7 @@ const ROOT = path.resolve(__dirname, "..");
 const SERVER = path.join(ROOT, "backend", "server.js");
 const RBAC = path.join(ROOT, "backend", "services", "rbacService.js");
 const CLIENT_ROOTS = [path.join(ROOT, "web", "src"), path.join(ROOT, "Mobile", "src")];
+const INTERNAL_ROOTS = [path.join(ROOT, "scripts"), path.join(ROOT, "backend")];
 
 function read(file) {
   return fs.readFileSync(file, "utf8");
@@ -24,14 +25,11 @@ function walk(dir) {
 }
 
 function normalizeRoute(route) {
-  const normalized = String(route)
-    .replace(/\$\{[^}]+\}/g, ":param")
+  const staticPath = String(route).split("${", 1)[0].split("?", 1)[0];
+  const normalized = staticPath
     .replace(/:[A-Za-z0-9_]+/g, ":param")
     .replace(/\/+/g, "/")
     .replace(/\/$/, "") || "/";
-  // Le client HTTP Web/Mobile est déjà monté sur /api et utilise donc
-  // /backoffice/users, tandis que server.js/RBAC déclarent /api/backoffice/users.
-  // Comparer la route applicative sans le préfixe de transport évite les faux orphelins.
   return normalized.replace(/^\/api(?=\/|$)/, "") || "/";
 }
 
@@ -55,7 +53,7 @@ function extractRbacRoutes(source) {
   return routes;
 }
 
-function extractClientRefs(file, source) {
+function extractHttpRefs(file, source) {
   const refs = [];
   const re = /\b(get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*["'`]([^"'`]+)["'`]/gi;
   let match;
@@ -71,39 +69,52 @@ function key(route) {
   return `${route.method} ${route.normalized}`;
 }
 
+function groupRefs(refs) {
+  const map = new Map();
+  for (const ref of refs) {
+    const list = map.get(key(ref)) ?? [];
+    list.push(ref.file);
+    map.set(key(ref), list);
+  }
+  return map;
+}
+
 const serverRoutes = extractServerRoutes(read(SERVER));
 const rbacRoutes = extractRbacRoutes(read(RBAC));
 const clientRefs = CLIENT_ROOTS.flatMap((root) =>
-  walk(root).flatMap((file) => extractClientRefs(file, read(file))),
+  walk(root).flatMap((file) => extractHttpRefs(file, read(file))),
+);
+const internalRefs = INTERNAL_ROOTS.flatMap((root) =>
+  walk(root)
+    .filter((file) => file !== SERVER && file !== RBAC && path.basename(file) !== "audit-api-orphans.js")
+    .flatMap((file) => extractHttpRefs(file, read(file))),
 );
 
 const serverMap = new Map(serverRoutes.map((route) => [key(route), route]));
 const rbacMap = new Map(rbacRoutes.map((route) => [key(route), route]));
-const clientsByKey = new Map();
-for (const ref of clientRefs) {
-  const list = clientsByKey.get(key(ref)) ?? [];
-  list.push(ref.file);
-  clientsByKey.set(key(ref), list);
-}
+const clientsByKey = groupRefs(clientRefs);
+const internalByKey = groupRefs(internalRefs);
 
-const allKeys = [...new Set([...serverMap.keys(), ...rbacMap.keys(), ...clientsByKey.keys()])].sort();
+const allKeys = [...new Set([
+  ...serverMap.keys(),
+  ...rbacMap.keys(),
+  ...clientsByKey.keys(),
+  ...internalByKey.keys(),
+])].sort();
+
 const rows = allKeys.map((routeKey) => {
   const server = serverMap.get(routeKey);
   const rbac = rbacMap.get(routeKey);
   const clients = [...new Set(clientsByKey.get(routeKey) ?? [])].sort();
+  const internalRefsForRoute = [...new Set(internalByKey.get(routeKey) ?? [])].sort();
   let classification = "ACTIVE";
-  if (server && !clients.length && !rbac) classification = "ORPHAN";
+  if (server && !clients.length && internalRefsForRoute.length) classification = "INTERNAL_ONLY";
+  else if (server && !clients.length && !rbac) classification = "ORPHAN_CANDIDATE";
   else if (server && !clients.length && rbac) classification = "SERVER_RBAC_NO_CLIENT";
-  else if (!server && rbac && !clients.length) classification = "RBAC_ONLY";
-  else if (!server && clients.length) classification = "CLIENT_ONLY";
+  else if (!server && rbac && !clients.length && !internalRefsForRoute.length) classification = "RBAC_ONLY";
+  else if (!server && (clients.length || internalRefsForRoute.length)) classification = "CALLER_ONLY";
   else if (server && clients.length && !rbac) classification = "ACTIVE_NO_RBAC_KEY";
-  return {
-    route: routeKey,
-    classification,
-    server: Boolean(server),
-    rbac: Boolean(rbac),
-    clients,
-  };
+  return { route: routeKey, classification, server: Boolean(server), rbac: Boolean(rbac), clients, internalRefs: internalRefsForRoute };
 });
 
 const summary = rows.reduce((acc, row) => {
@@ -118,7 +129,9 @@ const result = {
   caveats: [
     "Scanner statique: les routes construites intégralement de façon dynamique peuvent nécessiter une revue manuelle.",
     "Le préfixe de transport /api est normalisé: /api/backoffice/users et /backoffice/users représentent la même route applicative.",
-    "Une route sans client peut être volontairement publique, ops, E2E ou intégration externe: ORPHAN est un candidat, pas une suppression automatique.",
+    "Les query strings et suffixes `${...}` sont ramenés au path statique du handler.",
+    "Les références scripts/backend sont séparées des consommateurs Web/Mobile afin d'identifier les routes tests/ops/internal.",
+    "ORPHAN_CANDIDATE signifie absence de référence statique détectée, pas autorisation automatique de suppression.",
   ],
 };
 
