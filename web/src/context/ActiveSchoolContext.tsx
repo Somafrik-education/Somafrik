@@ -60,6 +60,7 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
       invalidateDomains(scopedDomains);
     }
     previousSchoolRef.current = activeSchoolCode;
+    writeStoredSchoolCode(activeSchoolCode);
 
     invalidateDomains(["academicConfigs"], { schoolCode: activeSchoolCode });
     if (!activeSchoolCode || activeSchoolCode === "*") return;
