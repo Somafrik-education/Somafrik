@@ -210,13 +210,16 @@ async function main() {
     await pool.query(`UPDATE users SET status = 'archived' WHERE user_code = 'USR-ACTIVE'`);
     const recreated = await store.createUser(
       {
-        role: "Secrétaire",
+        firstName: "Actif",
+        lastName: "User",
+        email: "reuse@school.test",
         schoolCode: "CD-2026-0001",
       },
       principal,
       auditMeta,
     );
     assert.equal(recreated.email, "reuse@school.test");
+    assert.equal(recreated.assignmentStatus, "Sans affectation");
 
     // Deux actifs même email → rejet applicatif 409
     await assert.rejects(
