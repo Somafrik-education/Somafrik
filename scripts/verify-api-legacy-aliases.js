@@ -12,6 +12,7 @@ const removedRoutes = [
   ["get", "/api/schools"],
   ["get", "/api/school"],
   ["get", "/api/announcements"],
+  ["get", "/api/backoffice/establishments/:code/users"],
 ];
 
 const protectedRoutes = [
@@ -20,6 +21,7 @@ const protectedRoutes = [
   ["post", "/api/identify"],
   ["get", "/api/backoffice/users"],
   ["get", "/api/backoffice/establishments"],
+  ["get", "/api/backoffice/establishments/:code/subscription"],
   ["get", "/api/backoffice/announcements"],
 ];
 
@@ -49,4 +51,4 @@ for (const [method, route] of protectedRoutes) {
   }
 }
 
-console.log("OK verify-api-legacy-aliases — 4 alias absents, routes Mobile/canoniques protégées");
+console.log("OK verify-api-legacy-aliases — 5 alias absents, routes Mobile/canoniques protégées");
