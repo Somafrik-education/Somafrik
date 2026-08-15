@@ -2,7 +2,6 @@ import type { BackOfficeState, Country, School, Session, SessionUser, UserAccoun
 import { getSchoolAcademicLists, mergeSelectOptions } from "./academicConfig";
 import {
   canonicalCountryScope,
-  countryScopeMatches,
   isInternalSchoolRole,
   isSchoolAdminRole,
   normalize,
@@ -14,11 +13,9 @@ import {
   isPendingValidationStatus,
   isSuperAdminRole,
   normalizePlatformRole,
-  PENDING_VALIDATION_STATUS,
   SCHOOL_ADMIN_ROLE,
   SUPER_ADMIN_ROLE,
 } from "./orgHierarchy";
-import { isTeacherUserRole } from "./userTeacherSync";
 import { resolveEffectivePermissions } from "./permissions";
 import { api } from "../api/client";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
@@ -266,21 +263,6 @@ export function generateTemporaryPassword(): string {
   return `SF-${token}-${String(bytes[0]).padStart(3, "0")}`;
 }
 
-function generateUserRecordId(users: UserAccount[]): string {
-  const existing = new Set(users.map((user) => String(user.id ?? "").trim()).filter(Boolean));
-  let attempt =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  while (existing.has(attempt)) {
-    attempt =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-  return attempt;
-}
-
 function findSchoolInScope(state: BackOfficeState, session: Session, schoolCode?: string) {
   const code = schoolCode ?? getDefaultSchoolCode(session, state);
   return state.schools.find((item) => normalize(item.code) === normalize(code));
@@ -423,31 +405,6 @@ export interface ValidateUserAccountOptions {
   teachers?: unknown[];
 }
 
-function findDuplicateCivilIdentity(users: UserAccount[], candidate: UserAccount): UserAccount | undefined {
-  const normalizedPersonName = (value: unknown) => normalize(String(value ?? "")).replace(/\s+/g, " ");
-  const firstName = normalizedPersonName(candidate.firstName);
-  const lastName = normalizedPersonName(candidate.lastName);
-  const schoolCode = normalize(candidate.schoolCode);
-  const role = normalize(candidate.role);
-  const birthDate = String(candidate.birthDate ?? "").trim();
-  if (!firstName || !lastName || !schoolCode || !role) return undefined;
-
-  return users.find((user) => {
-    if (String(user.id ?? "") === String(candidate.id ?? "")) return false;
-    if (
-      normalizedPersonName(user.firstName) !== firstName ||
-      normalizedPersonName(user.lastName) !== lastName ||
-      normalize(user.schoolCode) !== schoolCode ||
-      normalize(user.role) !== role
-    ) {
-      return false;
-    }
-    const existingBirthDate = String(user.birthDate ?? "").trim();
-    // Deux dates de naissance différentes permettent de distinguer de vrais homonymes.
-    return !birthDate || !existingBirthDate || birthDate === existingBirthDate;
-  });
-}
-
 export function validateUserAccount(
   user: UserAccount,
   users: UserAccount[],
@@ -458,6 +415,16 @@ export function validateUserAccount(
 
   if (!user.firstName?.trim() || !user.lastName?.trim()) {
     return "Prénom et nom sont obligatoires.";
+  }
+  const requestedRole = String(user.role ?? "").trim();
+  if (
+    !user.id &&
+    requestedRole &&
+    requestedRole !== "Sans affectation" &&
+    creatableRoles.length > 0 &&
+    !creatableRoles.includes(requestedRole)
+  ) {
+    return "Ce rôle n'est pas attribuable à la création depuis Comptes utilisateurs.";
   }
   if (user.email?.trim()) {
     const duplicate = findDuplicateLoginIdentifier(users, user);

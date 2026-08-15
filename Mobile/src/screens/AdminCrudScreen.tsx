@@ -16,7 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
-import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_SUBJECTS, DEFAULT_TRACKS, UserAccount } from "../data/catalog";
+import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_SUBJECTS, DEFAULT_TRACKS } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
 import {
@@ -35,13 +35,7 @@ import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
 import { CONTACT_PROVISIONING_HINT, entityCreateViaContactsOnly } from "../lib/contactProvisioning";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import {
-  applyTeacherSyncUiAfterUserSave,
-  createTeacherRecordId,
-  isTeacherUserRole,
-  upsertTeacherFromUser,
-  type TeacherIdentitySkip,
-} from "../lib/userTeacherSync";
+import { createTeacherRecordId, isTeacherUserRole } from "../lib/userTeacherSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 
@@ -621,45 +615,6 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       updateItem(entity as any, nextItem as any);
     } else {
       createItem(entity as any, nextItem as any);
-    }
-
-    if (entity === "users") {
-      const userItem = nextItem as UserAccount;
-      if (isTeacherUserRole(userItem.role)) {
-        const skips: TeacherIdentitySkip[] = [];
-        let syncedTeachers;
-        try {
-          syncedTeachers = upsertTeacherFromUser(teachersData, userItem, {
-            assignments: assignmentsData,
-            skips,
-          });
-        } catch (error: any) {
-          if (error?.code === "TEACHER_CANON_AMBIGUOUS") {
-            Alert.alert(
-              "Ambiguïté enseignant",
-              `${String(error.message)}\n\nCode: TEACHER_CANON_AMBIGUOUS`,
-            );
-            return;
-          }
-          throw error;
-        }
-
-        const uiResult = applyTeacherSyncUiAfterUserSave({
-          teachersBefore: teachersData,
-          user: userItem,
-          syncedTeachers,
-          skips,
-          createTeacher: (teacher) => createItem("teachers", teacher as any),
-          updateTeacher: (teacher) => updateItem("teachers", teacher as any),
-        });
-
-        // AC-M7 UI : skip multi-twin → alerte + arrêt immédiat (0 create/update fiche)
-        if (uiResult.stopped) {
-          Alert.alert("Identité enseignant", uiResult.operatorMessage ?? "Mutation enseignant bloquée.");
-          setVisible(false);
-          return;
-        }
-      }
     }
 
     setVisible(false);

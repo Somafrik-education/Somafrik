@@ -90,10 +90,10 @@ export function UsersPage() {
     [scopeUser, state, schoolCode],
   );
 
-  const roleOptions = useMemo(
-    () => [...new Set([...creatableRoles, ...allUsers.map((u) => u.role).filter(Boolean)])],
-    [allUsers, creatableRoles],
-  );
+  const roleOptions = useMemo(() => {
+    const labels = [...creatableRoles, ...allUsers.map((user) => user.role)].filter(isCanonicalRoleLabel);
+    return [...new Set(labels)];
+  }, [allUsers, creatableRoles]);
 
   const countryOptions = useMemo(
     () => getCountryScopeOptions(scopedCountries(scopeUser, state)),
@@ -156,9 +156,7 @@ export function UsersPage() {
       if (syncedUser) {
         const exists = Boolean(syncedUser.id) && state.users.some((u) => u.id === syncedUser.id);
         if (exists) {
-          const { role: _role, roles: _roles, roleKeys: _keys, secondaryRoles: _secondary, id: _id, publicId: _publicId, ...identity } =
-            syncedUser;
-          await clientsApi.updateUser(String(syncedUser.id), identity as unknown as Record<string, unknown>);
+          await clientsApi.updateUser(String(syncedUser.id), identityFieldsFromUser(syncedUser));
         } else {
           const created = (await clientsApi.createUser({
             firstName: syncedUser.firstName,
@@ -292,9 +290,14 @@ export function UsersPage() {
     try {
       const response = await clientsApi.listAssignableRoles();
       const roles = Array.isArray(response?.roles) ? response.roles : [];
-      setAssignableRoles(roles.filter((role) => role.roleName !== "Parent" && role.roleName !== "Élève / Étudiant"));
+      setAssignableRoles(roles.filter(isCanonicalAssignableRole).filter(isAdministrableAssignableRole));
     } catch {
-      setAssignableRoles(creatableRoles.filter((role) => role !== "Parent" && role !== "Élève / Étudiant").map((roleName) => ({ roleKey: roleName, roleName })));
+      setAssignableRoles(
+        creatableRoles.filter(isCanonicalRoleLabel).filter(isAdministrableRoleLabel).map((roleName) => ({
+          roleKey: roleName,
+          roleName,
+        })),
+      );
     }
   }
 
@@ -824,6 +827,40 @@ export function UsersPage() {
       </Modal>
     </>
   );
+}
+
+const IDENTITY_UPDATE_OMIT = new Set([
+  "role",
+  "roles",
+  "roleKeys",
+  "secondaryRoles",
+  "id",
+  "publicId",
+  "permissions",
+]);
+
+function identityFieldsFromUser(user: UserAccount): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(user).filter(([key]) => !IDENTITY_UPDATE_OMIT.has(key)),
+  );
+}
+
+function isCanonicalRoleLabel(role: string | undefined | null): role is string {
+  return typeof role === "string" && role.trim().length > 0 && role !== "Sans affectation";
+}
+
+function isAdministrableRoleLabel(role: string): boolean {
+  return role !== "Parent" && role !== "Élève / Étudiant";
+}
+
+function isCanonicalAssignableRole(
+  role: { roleKey?: string; roleName?: string },
+): role is { roleKey: string; roleName: string } {
+  return Boolean(role.roleKey?.trim() && role.roleName?.trim());
+}
+
+function isAdministrableAssignableRole(role: { roleName: string }): boolean {
+  return isAdministrableRoleLabel(role.roleName);
 }
 
 function Row({ label, value }: { label: string; value?: string }) {
