@@ -28,6 +28,29 @@ function hasResolvableDatabaseConfig(env = process.env) {
 }
 
 /**
+ * P1 REMOVE-LEGACY-SYNC-CORE — neutralise les anciennes migrations runtime qui
+ * relisaient `backoffice_state.state_payload` pour réinjecter evaluations/notes.
+ *
+ * Les données historiques restent en base pour audit/cleanup explicite : on ne
+ * les efface pas ici. La seule règle est qu'elles ne peuvent plus redevenir une
+ * source d'écriture vers les tables PostgreSQL canoniques au démarrage.
+ */
+function disableLegacyBackOfficeRuntimeMigrations(repository) {
+  if (!repository || (repository.engine ?? "postgresql") !== "postgresql") {
+    return repository;
+  }
+
+  if (typeof repository.migrateEvaluationsFromBackOffice === "function") {
+    repository.migrateEvaluationsFromBackOffice = async () => undefined;
+  }
+  if (typeof repository.migrateNotesFromBackOffice === "function") {
+    repository.migrateNotesFromBackOffice = async () => undefined;
+  }
+
+  return repository;
+}
+
+/**
  * Crée le dépôt PostgreSQL (non initialisé).
  * @param {string|object|null} [databaseConfig] URL ou config pool explicite.
  * @param {NodeJS.ProcessEnv} [env]
@@ -120,6 +143,7 @@ async function initializeRepository({
 
   // Laisser createPostgresRepository gérer le mode mémoire (placeholder si besoin).
   const primary = repository ?? createPostgresRepository(databaseUrl, env);
+  disableLegacyBackOfficeRuntimeMigrations(primary);
 
   try {
     await primary.init();
@@ -172,4 +196,5 @@ module.exports = {
   createPostgresRepository,
   createFallbackRepository,
   initializeRepository,
+  disableLegacyBackOfficeRuntimeMigrations,
 };
