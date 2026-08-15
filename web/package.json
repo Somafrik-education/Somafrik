@@ -22,7 +22,8 @@
     "verify:student-medical": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-medical.ts",
     "verify:student-documents": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-documents.ts",
     "verify:student-history": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-history.ts",
-    "verify:student-editing": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-editing.ts"
+    "verify:student-editing": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-editing.ts",
+    "verify:canonical-state-convergence": "vitest run src/lib/canonicalStateConvergence.test.ts src/lib/backofficeStateMerge.test.ts src/lib/syncOutbox.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

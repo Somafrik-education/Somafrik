@@ -1,6 +1,11 @@
 import type { BackOfficeState } from "../types";
+import {
+  isOfflineCapableDomain,
+  isSchoolScopedCanonicalKey,
+  SCHOOL_SCOPED_CANONICAL_KEYS,
+} from "./canonicalDomains";
 import { dedupeAssignments } from "./pedagogySync";
-import { isProtectedSyncStatus } from "./syncOutbox";
+import { isPendingSyncStatus } from "./syncOutbox";
 
 type Row = Record<string, unknown> & {
   id?: string;
@@ -9,6 +14,13 @@ type Row = Record<string, unknown> & {
   publicId?: string;
   syncStatus?: string;
 };
+
+export interface MergeRemoteSnapshotOptions {
+  /** Établissement actif — nécessaire pour remplacer un scope vide (GET []). */
+  activeSchoolCode?: string;
+  /** Clés effectivement chargées dans ce snapshot (remplacement partiel). */
+  loadedKeys?: (keyof BackOfficeState)[];
+}
 
 function rowId(row: Row): string {
   return String(row.id ?? "");
@@ -20,27 +32,6 @@ function userIdentityKey(row: Row): string {
     .trim()
     .toLowerCase();
   return identity ? `${school}|${identity}` : "";
-}
-
-function mergeUsersByIdentity<T extends Row>(prev: T[] = [], remote: T[] = []): T[] {
-  const map = new Map<string, T>();
-  for (const row of prev) {
-    const key = userIdentityKey(row);
-    if (key) map.set(key, row);
-  }
-  for (const row of remote) {
-    const key = userIdentityKey(row);
-    if (key) map.set(key, row);
-  }
-  return [...map.values()];
-}
-
-function mergeScopedUserRows(prev: Row[] = [], remote: Row[] = []): Row[] {
-  if (!remote.length && prev.length) return prev;
-  const scope = schoolCodesInRows(remote);
-  if (!scope.size) return remote.length ? remote : prev;
-  const kept = prev.filter((row) => !scope.has(normalizeSchoolCode(row.schoolCode)));
-  return mergeUsersByIdentity(kept, remote);
 }
 
 function normalizeSchoolCode(value: unknown): string {
@@ -56,103 +47,109 @@ function schoolCodesInRows(rows: Row[]): Set<string> {
   return codes;
 }
 
-/**
- * Fusionne deux listes par identifiant.
- * HOTFIX-SYNC-01 : une ligne locale pending/syncing/failed n'est jamais écrasée
- * par l'absence ou une version serveur plus ancienne.
- */
-export function mergeRowsById<T extends Row>(prev: T[] = [], remote: T[] = []): T[] {
-  const map = new Map<string, T>();
+function scopesToReplace(remote: Row[], activeSchoolCode?: string): Set<string> {
+  const scopes = schoolCodesInRows(remote);
+  const active = normalizeSchoolCode(activeSchoolCode);
+  if (active && active !== "*") scopes.add(active);
+  return scopes;
+}
 
+/**
+ * Remplace les lignes d'un scope établissement par la réponse serveur.
+ * GET scope S réussi → toutes les lignes du scope S = remote (y compris []).
+ */
+export function replaceScopedSchoolRows<T extends Row>(
+  prev: T[] = [],
+  remote: T[] = [],
+  options: { activeSchoolCode?: string; domainKey?: string } = {},
+): T[] {
+  const scopes = scopesToReplace(remote, options.activeSchoolCode);
+  const domainKey = options.domainKey ?? "";
+
+  if (!scopes.size) {
+    return remote;
+  }
+
+  const kept = prev.filter((row) => !scopes.has(normalizeSchoolCode(row.schoolCode)));
+
+  let authoritative = [...remote];
+
+  if (isOfflineCapableDomain(domainKey)) {
+    const pendingInScope = prev.filter(
+      (row) =>
+        scopes.has(normalizeSchoolCode(row.schoolCode)) && isPendingSyncStatus(row.syncStatus),
+    );
+    authoritative = overlayPendingRows(authoritative, pendingInScope);
+  }
+
+  return [...kept, ...authoritative];
+}
+
+/** Remplace une liste globale par la réponse serveur (remote = [] efface le domaine). */
+export function replaceGlobalRows<T extends Row>(
+  prev: T[] = [],
+  remote: T[] = [],
+  options: { domainKey?: string } = {},
+): T[] {
+  const domainKey = options.domainKey ?? "";
+  let authoritative = [...remote];
+
+  if (isOfflineCapableDomain(domainKey)) {
+    const pending = prev.filter((row) => isPendingSyncStatus(row.syncStatus));
+    authoritative = overlayPendingRows(authoritative, pending);
+  }
+
+  return authoritative;
+}
+
+/** Conserve uniquement les lignes pending/syncing locales absentes du serveur. */
+function overlayPendingRows<T extends Row>(remote: T[], pending: T[]): T[] {
+  if (!pending.length) return remote;
+  const map = new Map<string, T>();
   for (const row of remote) {
     const id = rowId(row);
     if (id) map.set(id, row);
   }
-
-  for (const row of prev) {
+  for (const row of pending) {
     const id = rowId(row);
     if (!id) continue;
-    if (isProtectedSyncStatus(row.syncStatus)) {
+    if (!map.has(id)) {
       map.set(id, row);
       continue;
     }
-    if (!map.has(id)) {
-      map.set(id, row);
-    }
+    map.set(id, { ...map.get(id)!, ...row, syncStatus: row.syncStatus });
   }
-
   return [...map.values()];
 }
 
-/**
- * Remplace les lignes des établissements présents dans `remote`, conserve le reste.
- * HOTFIX-SYNC-01 : conserve toujours les lignes locales non ACK du scope.
- */
-export function mergeScopedSchoolRows<T extends Row>(prev: T[] = [], remote: T[] = []): T[] {
-  if (!remote.length && prev.length) return prev;
+function mergeUsersByIdentity<T extends Row>(prev: T[] = [], remote: T[] = []): T[] {
+  const map = new Map<string, T>();
+  for (const row of prev) {
+    const key = userIdentityKey(row);
+    if (key) map.set(key, row);
+  }
+  for (const row of remote) {
+    const key = userIdentityKey(row);
+    if (key) map.set(key, row);
+  }
+  return [...map.values()];
+}
 
-  const scope = schoolCodesInRows(remote);
-  if (!scope.size) return remote.length ? remote : prev;
+function replaceScopedUserRows(
+  prev: Row[] = [],
+  remote: Row[] = [],
+  activeSchoolCode?: string,
+): Row[] {
+  const scopes = scopesToReplace(remote, activeSchoolCode);
+  if (!scopes.size) return remote;
 
-  const pendingLocal = prev.filter((row) => isProtectedSyncStatus(row.syncStatus));
-  const kept = prev.filter(
-    (row) =>
-      isProtectedSyncStatus(row.syncStatus) ||
-      !scope.has(normalizeSchoolCode(row.schoolCode)),
+  const kept = prev.filter((row) => !scopes.has(normalizeSchoolCode(row.schoolCode)));
+  const authoritative = mergeUsersByIdentity(
+    prev.filter((row) => scopes.has(normalizeSchoolCode(row.schoolCode)) && isPendingSyncStatus(row.syncStatus)),
+    remote,
   );
-
-  const merged = mergeRowsById(kept, remote);
-  // Réinjecte explicitement les pending (filet si remote a le même id sans syncStatus).
-  return mergeRowsById(merged, pendingLocal);
+  return mergeUsersByIdentity(kept, authoritative);
 }
-
-/**
- * Ne remplace pas une liste locale non vide par un tableau vide reçu du serveur
- * (réponse partielle ou synchronisation incomplète).
- */
-export function preferNonEmptyRemote<T>(prev: T[] | undefined, remote: T[] | undefined): T[] {
-  const local = prev ?? [];
-  const incoming = remote ?? [];
-  if (!incoming.length && local.length) return local;
-  return incoming.length ? incoming : local;
-}
-
-const SCHOOL_SCOPED_LIST_KEYS = [
-  "contacts",
-  "relations",
-  "students",
-  "teachers",
-  "classes",
-  "courses",
-  "assignments",
-  "courseSchedules",
-  "payments",
-  "paymentStatuses",
-  "feeGrids",
-  "schoolFeeItems",
-  "studentFees",
-  "feeTariffHistory",
-  "presences",
-  "notes",
-  "evaluations",
-  "exams",
-  "bulletins",
-  "documents",
-  "announcements",
-  "messages",
-  "users",
-] as const;
-
-const GLOBAL_LIST_KEYS = [
-  "countries",
-  "subscriptions",
-  "subscriptionOffers",
-  "subscriptionPayments",
-  "subscriptionInvoices",
-  "subscriptionDiscounts",
-  "subscriptionAuditLog",
-  "notifications",
-] as const;
 
 function mergeUserRowsPreservingCredentials(prev: Row[] = [], remote: Row[] = []): Row[] {
   const prevByKey = new Map<string, Row>();
@@ -161,7 +158,7 @@ function mergeUserRowsPreservingCredentials(prev: Row[] = [], remote: Row[] = []
     if (key) prevByKey.set(key, row);
   }
 
-  return mergeUsersByIdentity(prev, remote).map((row) => {
+  return remote.map((row) => {
     const key = userIdentityKey(row);
     const existing = key ? prevByKey.get(key) : undefined;
     if (!existing) return row;
@@ -189,21 +186,26 @@ function mergeUserRowsPreservingCredentials(prev: Row[] = [], remote: Row[] = []
 function mergeSchoolScopedListKey(
   prev: BackOfficeState,
   remote: Partial<BackOfficeState>,
-  key: (typeof SCHOOL_SCOPED_LIST_KEYS)[number],
+  key: (typeof SCHOOL_SCOPED_CANONICAL_KEYS)[number],
+  activeSchoolCode?: string,
 ): unknown {
   if (remote[key] === undefined) {
     return prev[key];
   }
 
+  const remoteRows = (remote[key] as Row[] | undefined) ?? [];
+
   const merged =
     key === "users"
-      ? mergeScopedUserRows(
+      ? replaceScopedUserRows(
           (prev[key] as unknown as Row[] | undefined) ?? [],
-          (remote[key] as unknown as Row[] | undefined) ?? [],
+          remoteRows,
+          activeSchoolCode,
         )
-      : mergeScopedSchoolRows(
+      : replaceScopedSchoolRows(
           (prev[key] as Row[] | undefined) ?? [],
-          (remote[key] as Row[] | undefined) ?? [],
+          remoteRows,
+          { activeSchoolCode, domainKey: key },
         );
 
   if (key === "users") {
@@ -216,32 +218,68 @@ function mergeSchoolScopedListKey(
   return key === "assignments" ? dedupeAssignments(merged) : merged;
 }
 
-/** Applique uniquement les clés présentes dans le patch (réponse PUT partielle). */
+function mergeAcademicConfigs(
+  prev: BackOfficeState["academicConfigs"],
+  remote: BackOfficeState["academicConfigs"] | undefined,
+  activeSchoolCode?: string,
+): BackOfficeState["academicConfigs"] {
+  if (!remote) return prev;
+  const next = { ...prev };
+  const active = normalizeSchoolCode(activeSchoolCode);
+  if (active && active !== "*") {
+    if (remote[activeSchoolCode!] !== undefined) {
+      next[activeSchoolCode!] = remote[activeSchoolCode!];
+    } else {
+      const match = Object.entries(remote).find(
+        ([code]) => normalizeSchoolCode(code) === active,
+      );
+      if (match) next[match[0]] = match[1];
+      else delete next[activeSchoolCode!];
+    }
+    return next;
+  }
+  return { ...next, ...remote };
+}
+
+/** Applique uniquement les clés présentes dans le patch (réponse PUT partielle résiduelle). */
 export function applyPartialSave(
   prev: BackOfficeState,
   saved: Partial<BackOfficeState>,
   patch: Partial<BackOfficeState>,
+  options: MergeRemoteSnapshotOptions = {},
 ): BackOfficeState {
   const next: BackOfficeState = { ...prev };
+  const activeSchoolCode = options.activeSchoolCode;
 
   for (const key of Object.keys(patch) as (keyof BackOfficeState)[]) {
     if (!Object.prototype.hasOwnProperty.call(saved, key)) continue;
     const value = saved[key];
     if (value === undefined) continue;
 
-    if ((SCHOOL_SCOPED_LIST_KEYS as readonly string[]).includes(key) && Array.isArray(value)) {
+    if (isSchoolScopedCanonicalKey(key) && Array.isArray(value)) {
       (next as unknown as Record<string, unknown>)[key as string] = mergeSchoolScopedListKey(
         prev,
         { [key]: value } as Partial<BackOfficeState>,
-        key as (typeof SCHOOL_SCOPED_LIST_KEYS)[number],
+        key as (typeof SCHOOL_SCOPED_CANONICAL_KEYS)[number],
+        activeSchoolCode,
       );
       continue;
     }
 
-    if ((GLOBAL_LIST_KEYS as readonly string[]).includes(key) && Array.isArray(value)) {
-      (next as unknown as Record<string, unknown>)[key as string] = mergeRowsById(
+    if (key === "schools" && Array.isArray(value)) {
+      (next as unknown as Record<string, unknown>)[key as string] = replaceGlobalRows(
+        (prev.schools as unknown as Row[] | undefined) ?? [],
+        value as unknown as Row[],
+        { domainKey: "schools" },
+      );
+      continue;
+    }
+
+    if (Array.isArray(value) && key !== "auditLog") {
+      (next as unknown as Record<string, unknown>)[key as string] = replaceGlobalRows(
         (prev[key] as Row[] | undefined) ?? [],
         value as Row[],
+        { domainKey: String(key) },
       );
       continue;
     }
@@ -252,36 +290,109 @@ export function applyPartialSave(
   return next;
 }
 
-/** Fusion prudente d'un instantané GET avec l'état local. */
+/**
+ * Fusion d'un instantané GET avec l'état local.
+ * PostgreSQL gagne : une ligne absente du GET disparaît (sauf pending offline-capable).
+ */
 export function mergeRemoteSnapshot(
   prev: BackOfficeState,
   remote: Partial<BackOfficeState>,
+  options: MergeRemoteSnapshotOptions = {},
 ): BackOfficeState {
   const remoteWithoutAck = { ...remote };
   delete (remoteWithoutAck as { syncAck?: unknown }).syncAck;
 
-  const merged: BackOfficeState = { ...prev, ...remoteWithoutAck };
+  const loadedKeys = options.loadedKeys ?? (Object.keys(remoteWithoutAck) as (keyof BackOfficeState)[]);
+  const activeSchoolCode = options.activeSchoolCode;
+  const merged: BackOfficeState = { ...prev };
 
-  if (remoteWithoutAck.schools !== undefined) {
-    merged.schools = preferNonEmptyRemote(prev.schools, remoteWithoutAck.schools);
-  }
+  for (const key of loadedKeys) {
+    if (remoteWithoutAck[key] === undefined) continue;
 
-  for (const key of SCHOOL_SCOPED_LIST_KEYS) {
-    (merged as unknown as Record<string, unknown>)[key] = mergeSchoolScopedListKey(
-      prev,
-      remoteWithoutAck,
-      key,
-    );
-  }
+    if (isSchoolScopedCanonicalKey(key)) {
+      (merged as unknown as Record<string, unknown>)[key as string] = mergeSchoolScopedListKey(
+        prev,
+        remoteWithoutAck,
+        key as (typeof SCHOOL_SCOPED_CANONICAL_KEYS)[number],
+        activeSchoolCode,
+      );
+      continue;
+    }
 
-  for (const key of GLOBAL_LIST_KEYS) {
-    if (remoteWithoutAck[key] !== undefined) {
-      merged[key] = mergeRowsById(
+    if (key === "schools" && Array.isArray(remoteWithoutAck.schools)) {
+      merged.schools = replaceGlobalRows(
+        (prev.schools as unknown as Row[] | undefined) ?? [],
+        remoteWithoutAck.schools as unknown as Row[],
+        { domainKey: "schools" },
+      ) as unknown as BackOfficeState["schools"];
+      continue;
+    }
+
+    if (key === "academicConfigs") {
+      merged.academicConfigs = mergeAcademicConfigs(
+        prev.academicConfigs,
+        remoteWithoutAck.academicConfigs,
+        activeSchoolCode,
+      );
+      continue;
+    }
+
+    if (key === "rolePermissions" || key === "dashboardChartConfig") {
+      merged[key] = remoteWithoutAck[key] as never;
+      continue;
+    }
+
+    if (Array.isArray(remoteWithoutAck[key])) {
+      (merged as unknown as Record<string, unknown>)[key as string] = replaceGlobalRows(
         (prev[key] as Row[] | undefined) ?? [],
-        (remoteWithoutAck[key] as Row[] | undefined) ?? [],
-      ) as never;
+        remoteWithoutAck[key] as Row[],
+        { domainKey: String(key) },
+      );
+    } else {
+      (merged as unknown as Record<string, unknown>)[key as string] = remoteWithoutAck[key];
     }
   }
 
   return merged;
 }
+
+/** Retire les données d'un établissement inactif des listes scopées (changement d'établissement). */
+export function purgeSchoolScopedRowsForCode<T extends Row>(
+  rows: T[] | undefined,
+  schoolCode: string,
+): T[] {
+  const scope = normalizeSchoolCode(schoolCode);
+  if (!scope || scope === "*") return rows ?? [];
+  return (rows ?? []).filter((row) => normalizeSchoolCode(row.schoolCode) !== scope);
+}
+
+export function purgeInactiveSchoolFromState(
+  state: BackOfficeState,
+  inactiveSchoolCode: string,
+): BackOfficeState {
+  const scope = normalizeSchoolCode(inactiveSchoolCode);
+  if (!scope || scope === "*") return state;
+
+  const next: BackOfficeState = { ...state };
+  for (const key of SCHOOL_SCOPED_CANONICAL_KEYS) {
+    const list = state[key];
+    if (Array.isArray(list)) {
+      (next as unknown as Record<string, unknown>)[key] = purgeSchoolScopedRowsForCode(
+        list as Row[],
+        inactiveSchoolCode,
+      );
+    }
+  }
+
+  const configs = { ...state.academicConfigs };
+  for (const code of Object.keys(configs)) {
+    if (normalizeSchoolCode(code) === scope) delete configs[code];
+  }
+  next.academicConfigs = configs;
+
+  return next;
+}
+
+// Rétrocompatibilité tests / imports existants
+export const mergeRowsById = replaceGlobalRows;
+export const mergeScopedSchoolRows = replaceScopedSchoolRows;

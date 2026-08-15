@@ -43,8 +43,10 @@ export interface SyncAck {
 export const PROTECTED_SYNC_STATUSES = new Set<SyncMutationStatus>([
   "pending",
   "syncing",
-  "failed",
 ]);
+
+/** Statuts encore en attente d'ACK serveur (peuvent être superposés à l'état canonique). */
+export const PENDING_SYNC_STATUSES = new Set<SyncMutationStatus>(["pending", "syncing"]);
 
 const STORAGE_KEY = "somafrik.syncOutbox.v1";
 
@@ -61,6 +63,10 @@ export function createClientMutationId(): string {
 
 export function isProtectedSyncStatus(value: unknown): boolean {
   return PROTECTED_SYNC_STATUSES.has(String(value ?? "") as SyncMutationStatus);
+}
+
+export function isPendingSyncStatus(value: unknown): boolean {
+  return PENDING_SYNC_STATUSES.has(String(value ?? "") as SyncMutationStatus);
 }
 
 function canUseStorage(): boolean {
@@ -291,7 +297,7 @@ export function reapplyOutboxToState<T>(
 ): T {
   const next: Record<string, unknown> = { ...(state as Record<string, unknown>) };
   for (const entry of entries) {
-    if (!PROTECTED_SYNC_STATUSES.has(entry.status) && entry.status !== "syncing") continue;
+    if (!isPendingSyncStatus(entry.status)) continue;
     const key = entry.entity;
     const list = Array.isArray(next[key]) ? [...(next[key] as Record<string, unknown>[])] : [];
     const idx = list.findIndex((row) => String(row.id ?? "") === entry.recordId);
