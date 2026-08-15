@@ -221,7 +221,8 @@ Client legacy additionnel : `BackOffice/app.js` (SPA historique hors `web/`).
 | Classes | `classes` (+ `academic_years`) | `GET/POST/PATCH /api/classes` | PUT `classes` **interdit** ; `verify:classes-legacy-cleanup` |
 | Inscription élève | `students`, `enrollments` | `POST /api/classes/:classCode/students` | `verify:class-student-enrollment` |
 | Fiche / liste élèves | `students`, `enrollments`, … | `GET/PATCH /api/students` | `verify:students-fiche-consolidation` |
-| Enseignants | `teachers`, `users` | `GET/POST /api/teachers` | `verify:teacher-account-creation` |
+| Enseignants | `teachers`, `users` | `GET/PATCH/DELETE /api/teachers` ; création identité via `/api/backoffice/users` + GRANT Enseignant | `POST /api/teachers` **403** ; `verify:teacher-account-creation` + `verify:user-role-lifecycle` |
+| Comptes / rôles | `users`, `user_roles` | `POST /api/backoffice/users` (identité) ; `.../roles/grant` ; `.../roles/revoke` | PUT state users **interdit** ; `verify:user-role-lifecycle` |
 | Affectations enseignants | `teacher_assignments` | `GET/POST/PATCH/DELETE /api/assignments` | `verify:teachers-assignments-legacy-cleanup` |
 | Années scolaires | `academic_years` | `GET/POST /api/v2/academic-years` | Hotfix #160 + preuve préprod |
 | Notes (écriture canonique) | `evaluations`, `grades` | `POST /api/notes` | D3.6b |

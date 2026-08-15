@@ -362,6 +362,8 @@ Inclus :
 - identité active ⇒ `disabledAt === null` ; identité désactivée ⇒ `disabledAt` canonique ≥ `createdAt` ;
 - séparation stricte : identité ≠ identifiants de connexion, secrets, sessions, JWT, rôle, tenant, principal.
 
+Alignement runtime actuel (hors package V2) : `users` = identité, `user_roles` = autorisations, `teachers` = profil métier, `contact_relations` = relation responsable/élève. Un enseignant parent n'a qu'un `users.id`.
+
 Séparation des concepts V2 :
 
 - l’identité détermine si l’utilisateur existe et est globalement actif ;

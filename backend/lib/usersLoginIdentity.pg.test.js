@@ -210,10 +210,7 @@ async function main() {
     await pool.query(`UPDATE users SET status = 'archived' WHERE user_code = 'USR-ACTIVE'`);
     const recreated = await store.createUser(
       {
-        firstName: "Nouveau",
-        lastName: "Compte",
         role: "Secrétaire",
-        email: "reuse@school.test",
         schoolCode: "CD-2026-0001",
       },
       principal,
@@ -228,7 +225,6 @@ async function main() {
           {
             firstName: "Collision",
             lastName: "Email",
-            role: "Secrétaire",
             email: "reuse@school.test",
             schoolCode: "CD-2026-0001",
           },
@@ -244,7 +240,6 @@ async function main() {
       {
         firstName: "Bloque",
         lastName: "Parent",
-        role: "Parent",
         email: "parent.block@test",
         phone: "+243900000010",
         schoolCode: "CD-2026-0001",

@@ -136,9 +136,7 @@ async function main() {
       body: {
         firstName: "Agent",
         lastName: "Test",
-        role: "Secrétaire",
         email: "lot7-agent@test.local",
-        schoolCode: "CD-2026-0001",
       },
     });
     assert.equal(user.status, 201, JSON.stringify(user.data));

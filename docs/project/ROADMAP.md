@@ -187,7 +187,7 @@ Sous réserve de validation préprod post-RBAC-ADMIN-01 :
 | **Préconditions** | Vie scolaire stabilisée ; instruction CTO |
 | **Fonctionnalités** | Grilles tarifaires, paiements, relances, reporting financier |
 | **Critères de validation** | RBAC Comptable/Secrétaire ; audit serveur ; pas d’`auditLog` client |
-| **Statut** | ✅ Persistance LOT 6 (PostgreSQL SoT plateforme) · ✅ LOT 7 Clients/comptes (PostgreSQL SoT users/contacts/relations/messages/announcements) · LOT 8 bloqué |
+| **Statut** | ✅ Persistance LOT 6 (PostgreSQL SoT plateforme) · ✅ LOT 7 Clients/comptes (PostgreSQL SoT users/contacts/relations/messages/announcements) · ✅ Comptes V2 identité ≠ rôle (`user_roles`, GRANT/REVOKE) · LOT 8 bloqué |
 
 ### Phase G — Communication
 

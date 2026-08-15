@@ -51,7 +51,9 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 |-------|------|----------------------|
 | `countries` | Référentiel pays canonique | UNIQUE `iso_code` — pas d’auto-création d’un ISO inconnu (refus `COUNTRY_NOT_FOUND`) |
 | `schools` | Établissements (SoT LOT 1) | UNIQUE `school_code` · FK country · `profile_payload` JSONB · `deleted_at` |
-| `users` | Comptes | liens école / rôle |
+| `users` | Comptes / identité | `role` nullable (dénormalisation du rôle primaire) · `user_code` UNIQUE généré backend |
+| `user_roles` | Rôles actifs / révoqués | UNIQUE partiel actif `(user_id, school_id, role_key)` et plateforme `(user_id, role_key)` |
+| `user_code_counters` | Séquence atomique `USR-{année}-{n}` | PK `year` + advisory lock |
 | `academic_years` / `terms` | Calendrier | FK school |
 | `subjects` | Matières | FK school |
 | `classes` | Classes | UNIQUE `class_code` · FK school + année |
@@ -59,6 +61,23 @@ Helper annexe : `backend/scripts/migrate-test-data.js`.
 | `students` | Élèves | UNIQUE `student_code` · FK school |
 | `enrollments` | Inscriptions | liens élève / classe / année |
 | `assignments` | Affectations enseignant | classe / matière / enseignant |
+
+### 4.1bis Identité ≠ rôle ≠ profil métier ≠ relation
+
+```text
+IDENTITÉ UTILISATEUR (users)
+        ↓
+PROFILS / RELATIONS MÉTIER (teachers, contacts, contact_relations)
+        ↓
+RÔLES ET PERMISSIONS (user_roles → RBAC PostgreSQL)
+```
+
+- Un compte peut exister **sans rôle** (`users.role` NULL, aucune ligne `user_roles` active) : état UI `Sans affectation`.
+- `user_code` et `users.id` sont générés côté PostgreSQL/backend. Le client ne peut pas les fournir.
+- GRANT / REVOKE sont des opérations explicites (`POST /api/backoffice/users/:id/roles/grant|revoke`). Pas de remplacement d’un JSON `roles`.
+- `PARENT` et `STUDENT` ne sont pas attribuables depuis Attribuer (`school_assignable = FALSE`). L’accès parent vient de `contact_relations` ; un enseignant parent réutilise le même `users.id`.
+- La hiérarchie d’affichage des rôles est **uniquement UI**. Les permissions restent l’union RBAC des `role_key` actifs.
+- Migration : `backend/db/migrations/20260820_user_roles_canonical.sql` + boot `ensureUserRolesCanonicalSchema()` (inventaire fail-closed `USER_ROLES_MIGRATION_AMBIGUOUS`).
 
 ### 4.2 Référentiels pédagogiques (canonique PG — LOT 1 Paramètres)
 

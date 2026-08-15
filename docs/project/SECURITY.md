@@ -1,7 +1,7 @@
 # Sécurité — Somafrik
 
 **Statut :** politique & contrôles de sécurité  
-**Dernière mise à jour :** 2026-08-13  
+**Dernière mise à jour :** 2026-08-14  
 **Liens :** [ARCHITECTURE.md](./ARCHITECTURE.md) · [DECISIONS.md](./DECISIONS.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -44,6 +44,20 @@ Source : `backend/lib/backOfficeWritableEntities.js` (ADR-002).
 - Web : `web/src/lib/permissions.ts`
 - Mobile : `Mobile/src/domain/security/permissions.ts`
 - UI : routes / actions masquées **et** refus serveur (jamais confiance UI seule).
+
+### 2.3 Attribution des rôles (Comptes V2)
+
+Le backend fait autorité. Ne jamais faire confiance à `schoolCode`, `schoolId`, `role`, `roles`, `permissions`, `userId` provenant du client sans résolution depuis le principal authentifié.
+
+| Règle | Détail |
+|-------|--------|
+| Création | Identité seule. `id` / `user_code` / `role` / `roles` client → 400 |
+| GRANT / REVOKE | `POST /api/backoffice/users/:userId/roles/grant` et `.../revoke` — une opération, une transaction, un audit |
+| Interdits Attribuer | `PARENT`, `STUDENT`, `SUPER_ADMIN`, rôles plateforme, tenant étranger, auto-promotion |
+| Permissions | Union RBAC des `user_roles` actifs — jamais déduites du classement UI |
+| Legacy | `PUT /api/backoffice/state` reste 410 / fail-closed ; aucun écriture `backoffice_state.users` |
+
+Tests : `npm run verify:user-role-lifecycle`
 
 ---
 

@@ -78,6 +78,41 @@ async function loginWithoutPasswordGate(identifier, schoolCode, password = "1234
   return login(identifier, schoolCode, nextPassword);
 }
 
+async function createTeacherViaUsers(token, payload) {
+  const user = await request("/backoffice/users", {
+    method: "POST",
+    token,
+    body: {
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      birthDate: payload.birthDate,
+      phone: payload.phone,
+      email: payload.email,
+      gender: payload.gender,
+      temporaryPassword: payload.temporaryPassword,
+    },
+  });
+  assert.equal(user.status, 201, `create user ${JSON.stringify(user.data)}`);
+  const granted = await request(`/backoffice/users/${encodeURIComponent(user.data.id)}/roles/grant`, {
+    method: "POST",
+    token,
+    body: { role: "Enseignant" },
+  });
+  assert.equal(granted.status, 200, `grant teacher ${JSON.stringify(granted.data)}`);
+  const listed = await request("/teachers", { token });
+  assert.equal(listed.status, 200, JSON.stringify(listed.data));
+  const teacher = (listed.data ?? []).find((row) => String(row.userId) === String(user.data.id));
+  assert.ok(teacher, "profil enseignant attendu après GRANT Enseignant");
+  return {
+    status: 201,
+    data: {
+      ...teacher,
+      mustChangePassword: true,
+      userId: user.data.id,
+    },
+  };
+}
+
 function teacherPayload(overrides = {}) {
   return {
     firstName: "Fatou",
@@ -141,12 +176,15 @@ async function main() {
       "régression : affectations absentes du détail",
     );
 
-    const created = await request("/teachers", {
+    const blockedCreate = await request("/teachers", {
       method: "POST",
       token: admin.token,
       body: teacherPayload(),
-      headers: { "Idempotency-Key": "teacher-create-1" },
     });
+    assert.equal(blockedCreate.status, 403, JSON.stringify(blockedCreate.data));
+    assert.equal(blockedCreate.data.code, "TEACHER_IDENTITY_MUST_COME_FROM_USERS");
+
+    const created = await createTeacherViaUsers(admin.token, teacherPayload());
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.match(String(created.data.teacherCode), /ENS-\d{4}$/);
     assert.equal(created.data.identifier.startsWith("ENS-"), true);
@@ -156,11 +194,8 @@ async function main() {
       method: "POST",
       token: admin.token,
       body: teacherPayload(),
-      headers: { "Idempotency-Key": "teacher-create-1" },
     });
-    assert.equal(replay.status, 201, JSON.stringify(replay.data));
-    assert.equal(replay.data.teacherCode, created.data.teacherCode);
-    assert.equal(replay.data.idempotentReplay, true);
+    assert.equal(replay.status, 403, JSON.stringify(replay.data));
 
     const listedAfter = await request("/teachers", { token: admin.token });
     assert.equal(listedAfter.status, 200);
@@ -209,29 +244,37 @@ async function main() {
     assert.equal(relogin.data.user.mustChangePassword, false);
 
     // Homonyme accepté
-    const homonym = await request("/teachers", {
-      method: "POST",
-      token: admin.token,
-      body: teacherPayload({
+    const homonym = await createTeacherViaUsers(
+      admin.token,
+      teacherPayload({
         birthDate: "1988-01-01",
         phone: "+243 811 000 002",
         temporaryPassword: "TempPass2",
       }),
-    });
+    );
     assert.equal(homonym.status, 201, JSON.stringify(homonym.data));
     assert.notEqual(homonym.data.teacherCode, created.data.teacherCode);
 
     // Identité canonique ambiguë refusée
-    const ambiguous = await request("/teachers", {
+    const ambiguous = await request("/backoffice/users", {
       method: "POST",
       token: admin.token,
-      body: teacherPayload({
+      body: {
+        firstName: "Fatou",
+        lastName: "Sow",
+        birthDate: "1990-05-01",
         phone: "+243 811 000 003",
         temporaryPassword: "TempPass3",
-      }),
+      },
     });
-    assert.equal(ambiguous.status, 409, JSON.stringify(ambiguous.data));
-    assert.equal(ambiguous.data.code, "TEACHER_CANON_AMBIGUOUS");
+    assert.equal(ambiguous.status, 201, JSON.stringify(ambiguous.data));
+    const ambiguousGrant = await request(`/backoffice/users/${encodeURIComponent(ambiguous.data.id)}/roles/grant`, {
+      method: "POST",
+      token: admin.token,
+      body: { role: "Enseignant" },
+    });
+    assert.equal(ambiguousGrant.status, 409, JSON.stringify(ambiguousGrant.data));
+    assert.equal(ambiguousGrant.data.code, "TEACHER_PROFILE_AMBIGUOUS");
 
     // Dates invalides / âge < 18
     const futureBirth = await request("/teachers", {
@@ -245,7 +288,8 @@ async function main() {
         temporaryPassword: "TempPass4",
       }),
     });
-    assert.equal(futureBirth.status, 400);
+    assert.equal(futureBirth.status, 403);
+    assert.equal(futureBirth.data.code, "TEACHER_IDENTITY_MUST_COME_FROM_USERS");
 
     const underage = await request("/teachers", {
       method: "POST",
@@ -259,7 +303,7 @@ async function main() {
         temporaryPassword: "TempPass5",
       }),
     });
-    assert.equal(underage.status, 400);
+    assert.equal(underage.status, 403);
 
     // Falsification tenant / champs techniques
     const forged = await request("/teachers", {
@@ -275,7 +319,7 @@ async function main() {
         teacherCode: "HACK",
       }),
     });
-    assert.equal(forged.status, 400);
+    assert.equal(forged.status, 403);
 
     // Isolation : admin BI ne voit pas l'enseignant CD
     const listedBi = await request("/teachers", { token: adminBi.token });
