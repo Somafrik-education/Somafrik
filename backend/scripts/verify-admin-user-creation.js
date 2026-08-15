@@ -353,6 +353,49 @@ async function main() {
     const finalLogin = await login(displayedSchoolAdminId, finalPassword, SCHOOL_CD);
     assert.ok((finalLogin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "relogin final après reset échoué");
 
+    // P0 reset password : verrouiller volontairement le compte, puis exiger un reset qui
+    // déverrouille immédiatement, révoque les sessions et impose le changement du secret.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const failed = await request("/backoffice/login", {
+        method: "POST",
+        body: { identifier: displayedSchoolAdminId, password: "WrongPassword!2026", schoolCode: SCHOOL_CD },
+      });
+      assert.equal(failed.status, 401, `échec login ${attempt + 1}: ${JSON.stringify(failed.data)}`);
+    }
+    const locked = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: displayedSchoolAdminId, password: schoolAdminPassword, schoolCode: SCHOOL_CD },
+    });
+    assert.equal(locked.status, 423, `compte non verrouillé après 5 échecs: ${JSON.stringify(locked.data)}`);
+
+    const resetTemporaryPassword = "ResetSchool!2026";
+    const reset = await request(`/users/${encodeURIComponent(activeSchoolIdentity.id)}/reset-password`, {
+      method: "POST",
+      token: superadmin.token,
+      body: { temporaryPassword: resetTemporaryPassword },
+    });
+    assert.equal(reset.status, 200, `reset password: ${JSON.stringify(reset.data)}`);
+    assert.equal(reset.data.temporaryPassword, resetTemporaryPassword);
+    assert.equal(reset.data.user?.mustChangePassword, true, "mustChangePassword absent après reset");
+
+    const immediate = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: displayedSchoolAdminId, password: resetTemporaryPassword, schoolCode: SCHOOL_CD },
+    });
+    assert.equal(immediate.status, 200, `login immédiat après reset: ${JSON.stringify(immediate.data)}`);
+    assert.equal(immediate.data.user?.mustChangePassword, true, "login reset doit imposer changement mot de passe");
+
+    const resetToken = immediate.data.accessToken || immediate.data.token;
+    const finalPassword = "SchoolAdminFinal!2026";
+    const changedAfterReset = await request("/auth/change-password", {
+      method: "POST",
+      token: resetToken,
+      body: { newPassword: finalPassword },
+    });
+    assert.equal(changedAfterReset.status, 200, `change-password après reset: ${JSON.stringify(changedAfterReset.data)}`);
+    const finalLogin = await login(displayedSchoolAdminId, finalPassword, SCHOOL_CD);
+    assert.ok((finalLogin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "relogin final après reset échoué");
+
     // 4) Admin School -> utilisateur standard -> GRANT Secrétaire.
     const userEmail = `user-created-${stamp}@test.local`;
     const standardUser = await createIdentity(schoolAdmin.token, {
