@@ -290,7 +290,7 @@ async function main() {
     const displayedSchoolAdminId = "KT-26-00001";
     await pool.query(
       `UPDATE users
-          SET profile_payload = jsonb_set(COALESCE(profile_payload, '{}'::jsonb), '{identityCode}', to_jsonb($2::text), true),
+          SET identity_code = $2,
               updated_at = NOW()
         WHERE id = $1`,
       [activeSchoolIdentity.id, displayedSchoolAdminId],

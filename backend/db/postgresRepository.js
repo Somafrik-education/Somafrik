@@ -5115,7 +5115,7 @@ class PostgresRepository {
         profilePayload = {};
       }
     }
-    const identityCode = String(profilePayload.identityCode ?? user.identity_code ?? "").trim();
+    const identityCode = String(user.identity_code ?? profilePayload.identityCode ?? "").trim();
 
     return {
       id: user.id,
