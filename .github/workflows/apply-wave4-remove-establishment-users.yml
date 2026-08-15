@@ -1,0 +1,59 @@
+name: Apply Wave4 establishment users removal
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - '.github/workflows/apply-wave4-remove-establishment-users.yml'
+      - 'scripts/verify-api-legacy-aliases.js'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'agent/api-orphan-cleanup-wave4'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/api-orphan-cleanup-wave4
+          fetch-depth: 0
+      - name: Remove legacy establishment users route
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/server.js')
+          source = path.read_text()
+          block = '''app.get("/api/backoffice/establishments/:code/users", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
+            const state = await getAuthoritativeBackOfficeState();
+            res.json(sanitizeUsersForResponse(establishmentService.getUsers(req.params.code, state, req.principal)));
+          }));
+
+          '''
+          count = source.count(block)
+          if count != 1:
+              raise SystemExit(f'expected exactly one legacy establishment users handler, found {count}')
+          source = source.replace(block, '', 1)
+          if '/api/backoffice/establishments/:code/users' in source:
+              raise SystemExit('legacy establishment users route still present')
+          for protected in [
+              'app.get("/api/backoffice/users"',
+              'app.get("/api/backoffice/establishments/:code/subscription"',
+          ]:
+              if protected not in source:
+                  raise SystemExit(f'protected route missing after patch: {protected}')
+          path.write_text(source)
+          PY
+          node scripts/verify-api-legacy-aliases.js
+      - name: Commit production change
+        run: |
+          if git diff --quiet -- backend/server.js; then
+            echo "No production diff generated" >&2
+            exit 1
+          fi
+          git config user.name "Somafrik CTO Bot"
+          git config user.email "cto-bot@somafrik.local"
+          git add backend/server.js
+          git commit -m "refactor(api): supprimer users établissement legacy"
+          git push origin HEAD:agent/api-orphan-cleanup-wave4
