@@ -420,9 +420,16 @@ async function listAssignableRolesForPrincipal(store, principal) {
     return catalogue
       .map((row) => ({
         roleKey: toRoleKey(row.roleCode || row.roleName),
-        roleName: row.roleName,
+        roleName: toRoleLabel(toRoleKey(row.roleCode || row.roleName)) || row.roleName,
       }))
-      .filter((row) => row.roleKey && !isForbiddenAssignRoleKey(row.roleKey) && !isPlatformRoleKey(row.roleKey));
+      .filter(
+        (row) =>
+          row.roleKey &&
+          isKnownRoleKey(row.roleKey) &&
+          !isForbiddenAssignRoleKey(row.roleKey) &&
+          !isForbiddenAssignRoleKey(row.roleName) &&
+          !isPlatformRoleKey(row.roleKey),
+      );
   }
   const defaults = ["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "ACCOUNTANT", "SECRETARY", "SUPERVISOR", "TEACHER"];
   const allowed = isSuperAdminPrincipal(principal)

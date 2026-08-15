@@ -78,6 +78,18 @@ const ROLE_LABEL_ALIASES = Object.freeze({
   "Élève / Etudiant": "STUDENT",
 });
 
+const ROLE_CODE_ALIASES = Object.freeze({
+  ELEVE_ETUDIANT: "STUDENT",
+  ELEVE: "STUDENT",
+  ETUDIANT: "STUDENT",
+  PREFET_DES_ETUDES: "PREFET_ETUDES",
+  ENSEIGNANT: "TEACHER",
+  SECRETAIRE: "SECRETARY",
+  COMPTABLE: "ACCOUNTANT",
+  SURVEILLANT: "SUPERVISOR",
+  DIRECTEUR: "PRINCIPAL",
+});
+
 function createUserRoleError(status, message, code, details) {
   return createClientsError(status, message, code, details);
 }
@@ -88,6 +100,7 @@ function toRoleKey(role) {
   if (ROLE_LABEL_ALIASES[trimmed]) return ROLE_LABEL_ALIASES[trimmed];
   if (ROLE_TO_DB[trimmed]) return ROLE_TO_DB[trimmed];
   const upper = trimmed.toUpperCase().replace(/\s+/g, "_");
+  if (ROLE_CODE_ALIASES[upper]) return ROLE_CODE_ALIASES[upper];
   if (ROLE_FROM_DB[upper]) return upper;
   if (ROLE_FROM_DB[trimmed]) return trimmed;
   return upper;

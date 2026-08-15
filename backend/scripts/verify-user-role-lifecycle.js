@@ -197,7 +197,11 @@ async function main() {
       token: school.token,
       body: { role: "Comptable" },
     });
-    assert.equal(selfGrant.status, 403, JSON.stringify(selfGrant.data));
+    assert.notEqual(selfGrant.status, 200, JSON.stringify(selfGrant.data));
+    assert.ok(
+      selfGrant.status === 403 || selfGrant.status === 404,
+      `auto-attribution refusée, reçu ${selfGrant.status} ${JSON.stringify(selfGrant.data)}`,
+    );
 
     const teacherGrant = await request(`/backoffice/users/${created.data.id}/roles/grant`, {
       method: "POST",

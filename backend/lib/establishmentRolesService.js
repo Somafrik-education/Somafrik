@@ -57,7 +57,7 @@ function buildSeedRolesFromData() {
       roleCode: ROLE_FROM_DB[roleName] ?? normalizeRoleCode(roleName),
       permissions,
       delegationPermissions: permissions,
-      schoolAssignable: true,
+      schoolAssignable: !["Parent", "Élève / Étudiant", "Élève", "Étudiant"].includes(roleName),
     });
   }
   return entries;

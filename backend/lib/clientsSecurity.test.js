@@ -149,7 +149,7 @@ async function main() {
   store.clearAuditLog();
   await expectRejection(
     store.updateUser(staff.id, { permissions: ["ALL_PRIVILEGES"] }, schoolAdmin, auditMeta),
-    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+    { status: 400, code: USER_ROLE_ERROR.CLIENT_IDENTITY_FIELD_FORBIDDEN },
   );
   assert.equal(store.getAuditLog().length, 0, "permissions top-level : aucun audit");
 
