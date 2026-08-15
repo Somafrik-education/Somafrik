@@ -43,6 +43,10 @@ import type { BackOfficeState, School } from "../types";
 
 const PAGE_SIZE = 10;
 
+function schoolPublicCode(school: School): string {
+  return school.publicId?.trim() || school.code;
+}
+
 const EMPTY_SCHOOL: School = {
   code: "",
   name: "",
@@ -126,7 +130,7 @@ export function SchoolsPage() {
       const subscriptionInfo = resolveSchoolSubscription(school, state);
       const matchesQuery =
         !q ||
-        [school.name, school.code, school.city, school.email, school.principalName].some((v) =>
+        [school.name, schoolPublicCode(school), school.code, school.city, school.email, school.principalName].some((v) =>
           normalize(v).includes(q),
         );
       const matchesCountry = !country || school.country === country;
@@ -397,7 +401,7 @@ export function SchoolsPage() {
     {
       key: "code",
       header: "Code",
-      render: (s) => <span className="font-mono text-xs font-semibold">{s.code}</span>,
+      render: (s) => <span className="font-mono text-xs font-semibold">{schoolPublicCode(s)}</span>,
     },
     {
       key: "name",
@@ -440,7 +444,7 @@ export function SchoolsPage() {
       <Card className="p-6">
         <SectionHeader
           title="Établissements"
-          description={`${filtered.length} établissement(s) dans votre périmètre. Code auto : Pays-AAAA-0001.`}
+          description={`${filtered.length} établissement(s) dans votre périmètre. Code public généré automatiquement.`}
           actions={
             <>
               <PrintButton documentTitle="Établissements — Somafrik" />
@@ -563,7 +567,7 @@ export function SchoolsPage() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail?.name ?? ""}
-        description={detail?.code}
+        description={detail ? schoolPublicCode(detail) : undefined}
         size="lg"
         footer={
           detail ? (
@@ -652,22 +656,15 @@ export function SchoolsPage() {
             </Field>
             <Field
               label="Code établissement"
-              required
               hint={
-                isEditingExisting && !isSuperAdmin
-                  ? "Modifiable uniquement par le Super Administrateur."
-                  : "Généré automatiquement à la sélection du pays."
+                isEditingExisting
+                  ? "Code public canonique généré par Somafrik et immuable."
+                  : "Le code public canonique sera généré automatiquement à l'enregistrement."
               }
             >
               <Input
-                value={editing.code}
-                onChange={(e) => {
-                  if (isSuperAdmin && isEditingExisting) {
-                    setEditing({ ...editing, code: e.target.value.toUpperCase() });
-                  }
-                }}
-                required
-                readOnly={!isEditingExisting || !isSuperAdmin}
+                value={isEditingExisting ? schoolPublicCode(editing) : "Généré à l'enregistrement"}
+                readOnly
               />
             </Field>
             <Field label="Type" required>
@@ -802,7 +799,7 @@ export function SchoolsPage() {
         <ul className="mt-3 space-y-2 text-sm">
           {duplicateCandidates?.map((school) => (
             <li key={school.code} className="rounded-lg border border-line px-3 py-2">
-              <span className="font-semibold">{school.name}</span> — {school.code} · {school.city}
+              <span className="font-semibold">{school.name}</span> — {schoolPublicCode(school)} · {school.city}
             </li>
           ))}
         </ul>
@@ -829,7 +826,7 @@ function SchoolDetailView({ school, state }: { school: School; state: BackOffice
       ) : null}
 
       <DetailSection title="Informations générales">
-        <DetailRow label="Code" value={school.code} />
+        <DetailRow label="Code" value={schoolPublicCode(school)} />
         <DetailRow label="Type" value={school.type} />
         <DetailRow label="Pays" value={school.country} />
         <DetailRow label="Ville" value={school.city} />
