@@ -6,7 +6,22 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const DOMAIN_LOADERS = fs.readFileSync(path.join(ROOT, "web", "src", "lib", "domainLoaders.ts"), "utf8");
 const SERVER = fs.readFileSync(path.join(ROOT, "backend", "server.js"), "utf8");
-const SCHEMA = fs.readFileSync(path.join(ROOT, "backend", "db", "schema.sql"), "utf8");
+
+function walkSql(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walkSql(full));
+    else if (/\.sql$/i.test(entry.name)) files.push(full);
+  }
+  return files;
+}
+
+const SQL_FILES = [...walkSql(path.join(ROOT, "backend", "db")), ...walkSql(path.join(ROOT, "backend", "migrations"))];
+const SQL_CORPUS = [...new Set(SQL_FILES)]
+  .map((file) => `\n-- ${path.relative(ROOT, file)}\n${fs.readFileSync(file, "utf8")}`)
+  .join("\n");
 
 const manifest = [
   ["schools", ["/backoffice/establishments"], ["schools", "countries"]],
@@ -39,28 +54,23 @@ const manifest = [
 ];
 
 function hasRouteToken(token) {
-  const staticToken = token.replace(/:[A-Za-z0-9_]+/g, "");
-  return DOMAIN_LOADERS.includes(staticToken) || SERVER.includes(staticToken);
+  const variants = [token, `/api${token}`];
+  return variants.some((variant) => DOMAIN_LOADERS.includes(variant) || SERVER.includes(variant));
 }
 
 function tableDeclared(table) {
   const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+${escaped}\\b`, "i").test(SCHEMA) ||
-    new RegExp(`CREATE\\s+TABLE\\s+${escaped}\\b`, "i").test(SCHEMA);
+  return new RegExp(`CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+${escaped}\\b`, "i").test(SQL_CORPUS) || new RegExp(`CREATE\\s+TABLE\\s+${escaped}\\b`, "i").test(SQL_CORPUS);
 }
 
 function foreignKeyEvidence(table) {
   const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`REFERENCES\\s+${escaped}\\s*\\(`, "i").test(SCHEMA);
+  return new RegExp(`REFERENCES\\s+${escaped}\\s*\\(`, "i").test(SQL_CORPUS);
 }
 
 const rows = manifest.map(([domain, routes, tables]) => {
   const routeEvidence = routes.map((route) => ({ route, found: hasRouteToken(route) }));
-  const tableEvidence = tables.map((table) => ({
-    table,
-    declared: tableDeclared(table),
-    referencedByForeignKey: foreignKeyEvidence(table),
-  }));
+  const tableEvidence = tables.map((table) => ({ table, declared: tableDeclared(table), referencedByForeignKey: foreignKeyEvidence(table) }));
   const missingRoutes = routeEvidence.filter((entry) => !entry.found).map((entry) => entry.route);
   const missingTables = tableEvidence.filter((entry) => !entry.declared).map((entry) => entry.table);
   let verdict = "CANONICAL_CANDIDATE";
@@ -72,10 +82,13 @@ const rows = manifest.map(([domain, routes, tables]) => {
 
 const result = {
   generatedAt: new Date().toISOString(),
+  sqlFilesScanned: SQL_FILES.map((file) => path.relative(ROOT, file)),
   rows,
   caveats: [
     "La présence d'une table ne prouve pas à elle seule qu'une mutation est transactionnelle ni que la FK métier attendue est complète.",
-    "Certaines tables sont créées par migrations/boot SQL hors schema.sql : NO_SCHEMA_EVIDENCE exige une revue des migrations avant conclusion.",
+    "Le scanner parcourt schema.sql et les migrations SQL sous backend/db et backend/migrations.",
+    "Les routes sont recherchées avec et sans le préfixe de transport /api.",
+    "Les tables créées dynamiquement uniquement en JavaScript de boot restent à vérifier manuellement.",
     "CANONICAL_CANDIDATE signifie API + schéma détectés statiquement, pas validation métier finale.",
   ],
 };
