@@ -1,0 +1,58 @@
+name: Fix Wave2 stale test aliases
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-stale-test-aliases:
+    if: ${{ github.head_ref == 'agent/api-orphan-cleanup-wave2' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/api-orphan-cleanup-wave2
+          fetch-depth: 0
+      - name: Patch stale test consumers fail-closed
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          function replaceExact(file, from, to, expectedCount) {
+            const source = fs.readFileSync(file, 'utf8');
+            const count = source.split(from).length - 1;
+            if (count !== expectedCount) {
+              throw new Error(`${file}: expected ${expectedCount} occurrences of ${JSON.stringify(from)}, found ${count}`);
+            }
+            fs.writeFileSync(file, source.split(from).join(to));
+          }
+
+          replaceExact(
+            'backend/scripts/verify-jwt-header.js',
+            'const probePath = "/school";',
+            'const probePath = "/backoffice/users";',
+            1,
+          );
+          replaceExact(
+            'backend/scripts/verify-finance-legacy-cleanup.js',
+            'request("/users", { token })',
+            'request("/backoffice/users", { token })',
+            2,
+          );
+          NODE
+      - name: Verify production aliases stay removed
+        run: node scripts/verify-api-legacy-aliases.js
+      - name: Commit test migration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/scripts/verify-jwt-header.js backend/scripts/verify-finance-legacy-cleanup.js
+          git diff --cached --check
+          git commit -m "test(api): migrer les probes vers les routes canoniques"
+          git push origin HEAD:agent/api-orphan-cleanup-wave2
