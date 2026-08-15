@@ -5105,11 +5105,24 @@ class PostgresRepository {
     const identifier = this.getUserIdentifier(user, role, teacherLoginId);
     const countryCode = school?.iso_code ?? this.getCountryCodeForUser(user, role);
     const countryScope = this.getCountryScopeForUser(school, countryCode);
+    let profilePayload = {};
+    if (user.profile_payload && typeof user.profile_payload === "object") {
+      profilePayload = user.profile_payload;
+    } else if (typeof user.profile_payload === "string" && user.profile_payload.trim()) {
+      try {
+        profilePayload = JSON.parse(user.profile_payload);
+      } catch {
+        profilePayload = {};
+      }
+    }
+    const identityCode = String(user.identity_code ?? profilePayload.identityCode ?? "").trim();
 
     return {
       id: user.id,
       schoolId: user.school_id,
-      publicId: user.user_code,
+      publicId: identityCode || user.user_code,
+      identityCode: identityCode || user.user_code,
+      userCode: user.user_code,
       lastName: user.last_name,
       firstName: user.first_name,
       gender: user.gender ?? "",

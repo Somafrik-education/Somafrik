@@ -289,8 +289,26 @@ async function main() {
     assert.equal(activeSchoolGranted.status, "Actif");
     const activeSchoolPg = await assertPgRole(pool, activeSchoolIdentity.id, "SCHOOL_ADMIN");
     assert.equal(activeSchoolPg.status, "active");
-    const schoolAdmin = await login(schoolAdminEmail, schoolAdminPassword, SCHOOL_CD);
-    assert.ok((schoolAdmin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "login Admin School sans SCHOOL_ADMIN");
+
+    // Contrat P0 : l'identifiant permanent généré par PostgreSQL et affiché par l'API
+    // doit être exactement le même alias accepté par le login établissement.
+    const identityRow = await pool.query(
+      `SELECT identity_code, user_code FROM users WHERE id = $1`,
+      [activeSchoolIdentity.id],
+    );
+    assert.equal(identityRow.rowCount, 1, "PostgreSQL: identité Admin School absente");
+    const displayedSchoolAdminId = String(identityRow.rows[0].identity_code || identityRow.rows[0].user_code || "").trim();
+    assert.ok(displayedSchoolAdminId, "PostgreSQL: identité permanente Admin School absente");
+
+    const listedSchoolAdmins = extractList((await request("/backoffice/users", { token: superadmin.token })).data);
+    const listedSchoolAdmin = listedSchoolAdmins.find((row) => String(row.id) === String(activeSchoolIdentity.id));
+    assert.ok(listedSchoolAdmin, "Admin School absent de GET /backoffice/users");
+    assert.equal(listedSchoolAdmin.publicId, displayedSchoolAdminId, "GET /backoffice/users diverge de l'identité PostgreSQL");
+
+    const schoolAdmin = await login(displayedSchoolAdminId, schoolAdminPassword, SCHOOL_CD);
+    assert.ok((schoolAdmin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "login Admin School par publicId sans SCHOOL_ADMIN");
+    const schoolAdminReload = await login(displayedSchoolAdminId, schoolAdminPassword, SCHOOL_CD);
+    assert.ok((schoolAdminReload.user.roleKeys || []).includes("SCHOOL_ADMIN"), "relogin Admin School par publicId échoué");
 
     // 4) Admin School -> utilisateur standard -> GRANT Secrétaire.
     const userEmail = `user-created-${stamp}@test.local`;
