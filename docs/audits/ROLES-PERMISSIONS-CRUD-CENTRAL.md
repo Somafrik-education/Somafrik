@@ -1,7 +1,8 @@
 # Audit & implémentation — gestion centralisée des rôles & droits CRUD
 
 **Branche :** `cursor/roles-permissions-crud-92b2`  
-**Base :** `develop` (`805ed9da`)  
+**Base :** `develop` (`805ed9daff25715558110494070dd2948619495b`)  
+**Head :** `42e24a7c4fbdd195f6b4de7a181a5e01ea7e36cb`  
 **Statut :** Draft — STOP revalidation CTO — aucun Ready / aucun merge
 
 ## 1. Audit de l’existant
@@ -167,9 +168,13 @@ E2E métier : Superadmin RDC → INSTITUT NURU → Préfet → Élèves → reti
 **Rollback :** `DROP TABLE role_module_permissions; DROP TABLE functional_modules; ALTER TABLE establishment_roles DROP COLUMN system_protected;`  
 La lecture JSONB `role_permissions` reste disponible (projection). Réactiver PUT legacy serait un rollback produit, pas un rollback schéma.
 
-## 15–16. SHA
+## 15. Base SHA
 
-Renseignés dans la PR (Base = `develop` `805ed9da`, Head = SHA du commit de cette branche).
+`805ed9daff25715558110494070dd2948619495b` (`develop`)
+
+## 16. Head SHA
+
+`42e24a7c4fbdd195f6b4de7a181a5e01ea7e36cb` (`cursor/roles-permissions-crud-92b2`)
 
 ## 17. CI / Security
 
