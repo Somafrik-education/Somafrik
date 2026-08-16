@@ -7,6 +7,8 @@ const {
   isCountryAdminPrincipal,
   assertSchoolScope,
   assertSchoolInPrincipalCountry,
+  requestedCountryCodeFromPayload,
+  assertRequestedCountryMatchesSchool,
   mapUserRow,
   toDbStatus,
   parsePayload,
@@ -259,6 +261,15 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
     const school = schoolCode && schoolCode !== "*" ? await tx.getSchoolByCode(schoolCode) : null;
     if (schoolCode && schoolCode !== "*" && !school) {
       throw createUserRoleError(404, "Établissement introuvable.", USER_ROLE_ERROR.SCHOOL_NOT_FOUND);
+    }
+    const requestedCountry = requestedCountryCodeFromPayload(rawPayload);
+    assertRequestedCountryMatchesSchool(school, requestedCountry);
+    if (roleKey === SCHOOL_ADMIN_KEY && !school && !locked.school_id) {
+      throw createUserRoleError(
+        400,
+        "Établissement obligatoire pour le rôle Admin School.",
+        USER_ROLE_ERROR.INVALID_TENANT_SCOPE,
+      );
     }
 
     let teacherEffect = null;

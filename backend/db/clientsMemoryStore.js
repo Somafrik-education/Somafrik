@@ -47,10 +47,26 @@ function createClientsMemoryStore(seed = {}) {
   }
 
   function resolveSchoolCountryCode(school) {
+    const explicit = asTrimmed(school.countryCode ?? school.country_code).toUpperCase();
+    if (explicit) return explicit;
     const code = asTrimmed(school.code ?? school.schoolCode).toUpperCase();
     const prefix = code.split("-")[0];
     if (/^[A-Z]{2}$/.test(prefix)) return prefix;
-    return asTrimmed(school.countryCode ?? school.country_code ?? "CD").toUpperCase();
+    return "";
+  }
+
+  function userCountryProjection(row, school) {
+    if (school) {
+      return {
+        country_code: resolveSchoolCountryCode(school),
+        country_name: school.country ?? school.country_name ?? "",
+      };
+    }
+    const profile = parsePayload(row?.profile_payload);
+    return {
+      country_code: asTrimmed(profile.countryCode).toUpperCase(),
+      country_name: profile.countryScope || profile.countryName || "",
+    };
   }
 
   const auditLog = [];
@@ -99,7 +115,7 @@ function createClientsMemoryStore(seed = {}) {
           name: school.name,
           country_id: school.countryId ?? school.country_id ?? "country-seed",
           country_code: resolveSchoolCountryCode(school),
-          country_name: school.country ?? school.country_name ?? "RDC",
+          country_name: school.country ?? school.country_name ?? "",
         };
       },
       async getUserById(id) {
@@ -109,8 +125,7 @@ function createClientsMemoryStore(seed = {}) {
         return {
           ...row,
           ...schoolPublicProjectionFromSchool(school, "*"),
-          country_code: school?.countryCode ?? "CD",
-          country_name: school?.country ?? "RDC",
+          ...userCountryProjection(row, school),
         };
       },
       async insertUser(row) {
@@ -548,8 +563,7 @@ function createClientsMemoryStore(seed = {}) {
           {
             ...row,
             ...schoolPublicProjectionFromSchool(school, "*"),
-            country_code: school?.countryCode ?? "CD",
-            country_name: school?.country ?? "RDC",
+            ...userCountryProjection(row, school),
           },
           roleKeys,
         );
@@ -596,8 +610,7 @@ function createClientsMemoryStore(seed = {}) {
         const account = mapUserRowToAuthAccount({
           ...row,
           ...schoolPublicProjectionFromSchool(school, "*"),
-          country_code: school?.countryCode ?? "CD",
-          country_name: school?.country ?? "RDC",
+          ...userCountryProjection(row, school),
         });
         const hydrated = userRoleLifecycleService.hydrateUser(
           {
@@ -632,8 +645,7 @@ function createClientsMemoryStore(seed = {}) {
         const mapped = mapUserRowToAuthAccount({
           ...row,
           ...schoolPublicProjectionFromSchool(school, "*"),
-          country_code: school?.countryCode ?? "CD",
-          country_name: school?.country ?? "RDC",
+          ...userCountryProjection(row, school),
         });
         return [mapped.id, mapped.publicId, mapped.identifier].some((value) =>
           keys.has(String(value ?? "").trim()),
@@ -654,8 +666,7 @@ function createClientsMemoryStore(seed = {}) {
       return mapUserRowToAuthAccount({
         ...tables.users[index],
         ...schoolPublicProjectionFromSchool(school, "*"),
-        country_code: school?.countryCode ?? "CD",
-        country_name: school?.country ?? "RDC",
+        ...userCountryProjection(tables.users[index], school),
       });
     },
     resetUserPassword(lookupKeys, temporaryPassword) {
@@ -669,8 +680,7 @@ function createClientsMemoryStore(seed = {}) {
         const mapped = mapUserRowToAuthAccount({
           ...row,
           ...schoolPublicProjectionFromSchool(school, "*"),
-          country_code: school?.countryCode ?? "CD",
-          country_name: school?.country ?? "RDC",
+          ...userCountryProjection(row, school),
         });
         return [mapped.id, mapped.publicId, mapped.identifier].some((value) =>
           keys.has(String(value ?? "").trim()),
@@ -691,8 +701,7 @@ function createClientsMemoryStore(seed = {}) {
       return mapUserRowToAuthAccount({
         ...tables.users[index],
         ...schoolPublicProjectionFromSchool(school, "*"),
-        country_code: school?.countryCode ?? "CD",
-        country_name: school?.country ?? "RDC",
+        ...userCountryProjection(tables.users[index], school),
       });
     },
     createUser: (...args) => clientsService.createUser(store, ...args),

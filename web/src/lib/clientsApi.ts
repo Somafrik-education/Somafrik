@@ -3,9 +3,19 @@ import { readStoredSchoolCode } from "./activeSchool";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
 
 export function buildCreateUserPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const hasExplicitSchoolCode = Object.prototype.hasOwnProperty.call(payload, "schoolCode");
   const explicitSchoolCode = String(payload.schoolCode ?? "").trim();
+  if (hasExplicitSchoolCode) {
+    if (!explicitSchoolCode || explicitSchoolCode === "*") {
+      const next = { ...payload };
+      delete next.schoolCode;
+      return next;
+    }
+    return { ...payload, schoolCode: explicitSchoolCode };
+  }
+
   const activeSchoolCode = readStoredSchoolCode();
-  const schoolCode = explicitSchoolCode || activeSchoolCode;
+  const schoolCode = String(activeSchoolCode ?? "").trim();
 
   if (!schoolCode || schoolCode === "*") {
     return { ...payload };

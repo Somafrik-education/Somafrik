@@ -29,4 +29,12 @@ describe("buildCreateUserPayload", () => {
 
     expect(buildCreateUserPayload({ firstName: "Awa" })).not.toHaveProperty("schoolCode");
   });
+
+  it("n'injecte pas l'établissement actif si schoolCode est explicitement vide", () => {
+    sessionStorage.setItem(STORAGE_KEY, "CD-2026-0001");
+
+    expect(
+      buildCreateUserPayload({ firstName: "Amina", lastName: "Ndayishimiye", schoolCode: "" }),
+    ).not.toHaveProperty("schoolCode");
+  });
 });

@@ -310,6 +310,76 @@ async function main() {
     const schoolAdminReload = await login(displayedSchoolAdminId, schoolAdminPassword, SCHOOL_CD);
     assert.ok((schoolAdminReload.user.roleKeys || []).includes("SCHOOL_ADMIN"), "relogin Admin School par publicId échoué");
 
+    // P0 tenant : Superadmin crée un Admin School Burundi — jamais rattaché à la RDC.
+    const mismatch = await request("/backoffice/users", {
+      method: "POST",
+      token: superadmin.token,
+      body: {
+        firstName: "Wrong",
+        lastName: `Tenant${stamp}`,
+        email: `wrong-tenant-${stamp}@test.local`,
+        temporaryPassword: "WrongTenant!2026",
+        schoolCode: SCHOOL_CD,
+        countryCode: "BI",
+      },
+    });
+    assert.equal(mismatch.status, 409, JSON.stringify(mismatch.data));
+    assert.equal(mismatch.data.code, "INVALID_TENANT_SCOPE");
+
+    const missingSchoolGrantIdentity = await createIdentity(superadmin.token, {
+      firstName: "NoSchool",
+      lastName: `Grant${stamp}`,
+      email: `noschool-grant-${stamp}@test.local`,
+      password: "NoSchoolGrant!2026",
+    });
+    const missingSchoolGrant = await request(
+      `/backoffice/users/${encodeURIComponent(missingSchoolGrantIdentity.id)}/roles/grant`,
+      {
+        method: "POST",
+        token: superadmin.token,
+        body: { role: "Admin School" },
+      },
+    );
+    assert.equal(missingSchoolGrant.status, 400, JSON.stringify(missingSchoolGrant.data));
+    assert.equal(missingSchoolGrant.data.code, "INVALID_TENANT_SCOPE");
+
+    const biSchoolEmail = `school-admin-bi-${stamp}@test.local`;
+    const biSchoolPassword = "SchoolAdminBI!2026";
+    const biIdentity = await request("/backoffice/users", {
+      method: "POST",
+      token: superadmin.token,
+      body: {
+        firstName: "Diane",
+        lastName: `SchoolBI${stamp}`,
+        email: biSchoolEmail,
+        temporaryPassword: biSchoolPassword,
+        schoolCode: SCHOOL_BI,
+        countryCode: "BI",
+      },
+    });
+    assert.equal(biIdentity.status, 201, JSON.stringify(biIdentity.data));
+    assert.equal(biIdentity.data.schoolCode, SCHOOL_BI);
+    assert.equal(biIdentity.data.countryCode, "BI");
+    const biGranted = await grantRole(superadmin.token, biIdentity.data.id, "Admin School", "SCHOOL_ADMIN");
+    assert.equal(biGranted.status, "Actif");
+    const biPg = await assertPgRole(pool, biIdentity.data.id, "SCHOOL_ADMIN");
+    assert.equal(biPg.school_code, SCHOOL_BI);
+    assert.equal(biPg.country_code, "BI");
+    assert.equal(String(biPg.school_id), String(biPg.role_school_id));
+    assert.notEqual(biPg.country_code, "CD");
+
+    const biSchoolAdmin = await login(biSchoolEmail, biSchoolPassword, SCHOOL_BI);
+    assert.ok((biSchoolAdmin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "login Admin School BI sans SCHOOL_ADMIN");
+    assert.equal(biSchoolAdmin.user.countryCode, "BI");
+    assert.equal(biSchoolAdmin.user.schoolCode, SCHOOL_BI);
+
+    const cdDenied = await request(`/backoffice/users/${encodeURIComponent(activeSchoolIdentity.id)}`, {
+      method: "PATCH",
+      token: biSchoolAdmin.token,
+      body: { firstName: "Hacked" },
+    });
+    assert.equal(cdDenied.status, 403, JSON.stringify(cdDenied.data));
+
     // P0 reset password : verrouiller volontairement le compte, puis exiger un reset qui
     // déverrouille immédiatement, révoque les sessions et impose le changement du secret.
     for (let attempt = 0; attempt < 5; attempt += 1) {

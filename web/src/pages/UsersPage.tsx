@@ -9,6 +9,7 @@ import { canManageRolePermissions, canResetTargetUserPassword } from "../lib/per
 import { USER_ACCOUNT_STATUS_OPTIONS, validatePasswordPolicy } from "../lib/userAccountRules";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import {
+  applyRoleChangeToUser,
   buildNewUserDraft,
   canManageUserAccount,
   canSuperadminManageUser,
@@ -19,6 +20,8 @@ import {
   getUserEstablishmentLabel,
   getUserFormFieldPolicy,
   isCountryAdminProvisionedUser,
+  schoolsMatchingCountryScope,
+  toCreateUserApiPayload,
   validateUserAccount,
   resetUserAccountPassword,
 } from "../lib/userAccounts";
@@ -28,6 +31,7 @@ import {
   isPendingValidationStatus,
   isSuperAdminRole,
   PENDING_VALIDATION_STATUS,
+  SCHOOL_ADMIN_ROLE,
   VALIDATED_STATUS,
 } from "../lib/orgHierarchy";
 
@@ -101,17 +105,22 @@ export function UsersPage() {
   );
 
   const schoolOptions = useMemo(() => {
-    return scopedSchools(scopeUser, state).map((item) => ({
+    const source = isSuperadminView
+      ? schoolsMatchingCountryScope(schoolsForLabels, editing?.countryScope)
+      : schoolsForLabels;
+    return source.map((item) => ({
       value: item.code,
       label: `${item.name} (${item.code})`,
     }));
-  }, [scopeUser, state]);
+  }, [editing?.countryScope, isSuperadminView, schoolsForLabels]);
 
-  const fieldPolicy = getUserFormFieldPolicy(scopeUser, editing?.role ?? creatableRoles[0] ?? "");
+  const fieldPolicy = getUserFormFieldPolicy(scopeUser, editing?.role ?? "");
   const allowedSchoolCodes = useMemo(
     () => schoolOptions.map((option) => normalize(option.value)),
     [schoolOptions],
   );
+  const countrySelected = Boolean(String(editing?.countryScope ?? "").trim());
+  const schoolSelectDisabled = isSuperadminView && !countrySelected;
 
   const filtered = useMemo(() => {
     const q = normalize(search);
@@ -158,17 +167,12 @@ export function UsersPage() {
         if (exists) {
           await clientsApi.updateUser(String(syncedUser.id), identityFieldsFromUser(syncedUser));
         } else {
-          const created = (await clientsApi.createUser({
-            firstName: syncedUser.firstName,
-            lastName: syncedUser.lastName,
-            email: syncedUser.email,
-            phone: syncedUser.phone,
-            gender: syncedUser.gender,
-            status: syncedUser.status,
-            temporaryPassword: syncedUser.temporaryPassword,
-          })) as UserAccount;
+          const created = (await clientsApi.createUser(toCreateUserApiPayload(syncedUser))) as UserAccount;
           if (created.temporaryPassword) {
             showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
+          }
+          if (syncedUser.role && created?.id) {
+            await clientsApi.grantUserRole(String(created.id), syncedUser.role);
           }
         }
         await refresh();
@@ -253,6 +257,7 @@ export function UsersPage() {
       creator: session.user,
       allowedSchoolCodes,
       teachers: state.teachers,
+      schools: schoolsForLabels,
     });
     if (error) {
       showToast(error, "error");
@@ -664,13 +669,37 @@ export function UsersPage() {
             <Field label="Email">
               <Input type="email" value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
             </Field>
-            <Field label="Pays" hint="Périmètre géographique du compte">
+            {!isEditingExisting ? (
+              <Field label="Rôle" hint="L'identité est créée d'abord, puis le rôle est attribué">
+                <Select
+                  value={editing.role ?? ""}
+                  onChange={(e) => {
+                    if (!session) return;
+                    setEditing(applyRoleChangeToUser(editing, e.target.value, session, state));
+                  }}
+                  options={[
+                    { value: "", label: "Sans affectation (plus tard)" },
+                    ...creatableRoles.map((role) => ({ value: role, label: role })),
+                  ]}
+                />
+              </Field>
+            ) : null}
+            <Field label="Pays" hint="Périmètre géographique du compte" required={editing.role === SCHOOL_ADMIN_ROLE || editing.role === COUNTRY_ADMIN_ROLE}>
               {fieldPolicy.countryScope === "select" ? (
                 <Select
                   value={editing.countryScope ?? ""}
-                  onChange={(e) => setEditing({ ...editing, countryScope: e.target.value })}
+                  onChange={(e) => {
+                    const countryScope = e.target.value;
+                    const keepGlobalSchool =
+                      editing.role === COUNTRY_ADMIN_ROLE || editing.schoolCode === "*";
+                    setEditing({
+                      ...editing,
+                      countryScope,
+                      schoolCode: keepGlobalSchool ? "*" : "",
+                    });
+                  }}
                   options={[
-                    { value: "", label: "Sélectionner un pays" },
+                    { value: "", label: "Choisir un pays..." },
                     ...countryOptions,
                     ...(editing.countryScope &&
                     !countryOptions.some((option) => option.value === editing.countryScope)
@@ -711,6 +740,7 @@ export function UsersPage() {
                 {fieldPolicy.schoolCode === "select" ? (
                   <Select
                     value={editing.schoolCode ?? ""}
+                    disabled={schoolSelectDisabled}
                     onChange={(e) => {
                       const schoolCode = e.target.value;
                       const selected = schoolsForLabels.find((item) => item.code === schoolCode);
@@ -723,7 +753,12 @@ export function UsersPage() {
                       });
                     }}
                     options={[
-                      { value: "", label: "Sélectionner un établissement" },
+                      {
+                        value: "",
+                        label: schoolSelectDisabled
+                          ? "Choisir un pays d'abord"
+                          : "Sélectionner un établissement",
+                      },
                       ...schoolOptions,
                     ]}
                   />
