@@ -60,7 +60,7 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
         identifier: "admin",
         password: DEMO_PASSWORD,
         profile: "school",
-        schoolCode: "CD-IN-26-001",
+        schoolCode: DEMO_SCHOOL_CODE,
       },
       {
         label: "Admin école CG",
@@ -68,7 +68,7 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
         identifier: "admin-cg",
         password: DEMO_PASSWORD,
         profile: "school",
-        schoolCode: "CG-IN-26-001",
+        schoolCode: "CG-2026-0001",
       },
       {
         label: "Admin école BI",
@@ -76,7 +76,7 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
         identifier: "admin-bi",
         password: DEMO_PASSWORD,
         profile: "school",
-        schoolCode: "BI-IN-26-001",
+        schoolCode: "BI-2026-0001",
       },
     ],
   },
