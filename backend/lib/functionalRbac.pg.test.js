@@ -46,13 +46,11 @@ function createRepo(pool, { failAudit = false } = {}) {
     listEstablishmentRoles: (options) => createEstablishmentRolesPgStore(repo).listRoles(options),
     createTxScope(tx) {
       if (!tx) return repo;
-      return {
+      const scoped = {
         ...repo,
         query: (sql, params) => tx.query(sql, params),
         one: async (sql, params) => (await tx.query(sql, params)).rows[0] ?? null,
         all: async (sql, params) => (await tx.query(sql, params)).rows,
-        getFunctionalRbacStore: () => createFunctionalRbacPgStore(this),
-        getEstablishmentRolesStore: () => createEstablishmentRolesPgStore(this),
         recordAudit: async (payload) => {
           if (failAudit) throw new Error("audit write failed");
           await tx.query(
@@ -70,6 +68,9 @@ function createRepo(pool, { failAudit = false } = {}) {
           );
         },
       };
+      scoped.getFunctionalRbacStore = () => createFunctionalRbacPgStore(scoped);
+      scoped.getEstablishmentRolesStore = () => createEstablishmentRolesPgStore(scoped);
+      return scoped;
     },
     withTransaction: async (fn) => {
       const client = await pool.connect();
