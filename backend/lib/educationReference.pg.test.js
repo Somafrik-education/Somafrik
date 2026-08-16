@@ -7,6 +7,7 @@ const { Pool } = require("pg");
 const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
+const { ensureSchoolLoginCodeColumn } = require("../db/ensureSchoolLoginCodeColumn");
 const { EDUCATION_REFERENCE_SCHEMA_SQL, assertEducationReferenceSchemaPreflight } = require("../db/educationReferenceSchema");
 const { createEducationReferencePgStore } = require("../db/educationReferencePgStore");
 const {
@@ -136,6 +137,7 @@ async function resetBaseSchema(pool) {
   await pool.query("CREATE SCHEMA public");
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
   await pool.query(CLIENTS_SCHEMA_SQL);
+  await ensureSchoolLoginCodeColumn((sql) => pool.query(sql));
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
 }
 

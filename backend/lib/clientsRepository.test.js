@@ -6,8 +6,8 @@ const { collectSensitiveUserFieldPaths } = require("./sanitizeUserForResponse");
 
 async function main() {
   const store = createClientsMemoryStore({
-    school: { id: "school-1", code: "CD-2026-0001", name: "Test", countryId: "country-1", countryCode: "CD" },
-    platformSchools: [{ id: "school-1", code: "CD-2026-0001", name: "Test", countryId: "country-1", countryCode: "CD" }],
+    school: { id: "school-1", code: "CD-2026-0001", loginCode: "CD-IN-26-001", name: "INSTITUT NURU", countryId: "country-1", countryCode: "CD" },
+    platformSchools: [{ id: "school-1", code: "CD-2026-0001", loginCode: "CD-IN-26-001", name: "INSTITUT NURU", countryId: "country-1", countryCode: "CD" }],
     students: [{ id: "student-1", school_id: "school-1", first_name: "Jean", last_name: "Kabila", studentCode: "STU-1" }],
   });
 
@@ -45,6 +45,10 @@ async function main() {
 
   const projection = store.listProjection();
   assert.ok(projection.users.length >= 1);
+  const projected = projection.users.find((row) => row.id === provisioned.user.id);
+  assert.equal(projected.schoolCode, "CD-2026-0001");
+  assert.equal(projected.schoolPublicCode, "CD-IN-26-001");
+  assert.equal(projected.schoolName, "INSTITUT NURU");
   assert.ok(projection.contacts.length >= 1);
   assert.ok(projection.relations.length >= 1);
 

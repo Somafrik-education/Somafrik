@@ -33,6 +33,8 @@ test("mapUserRow expose validationStatus depuis profile_payload", () => {
     role: "SCHOOL_ADMIN",
     status: "pending_validation",
     school_code: "CD-2026-0001",
+    school_login_code: "CD-IN-26-001",
+    school_name: "INSTITUT NURU",
     profile_payload: {
       identifier: "ada@school.test",
       validationStatus: "En attente de validation",
@@ -42,4 +44,7 @@ test("mapUserRow expose validationStatus depuis profile_payload", () => {
   assert.equal(row.status, "En attente de validation");
   assert.equal(row.validationStatus, "En attente de validation");
   assert.equal(row.validationRequestedBy, "country-admin");
+  assert.equal(row.schoolCode, "CD-2026-0001");
+  assert.equal(row.schoolPublicCode, "CD-IN-26-001");
+  assert.equal(row.schoolName, "INSTITUT NURU");
 });

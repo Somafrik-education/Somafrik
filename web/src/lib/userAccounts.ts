@@ -1,4 +1,4 @@
-import type { BackOfficeState, Country, School, Session, SessionUser, UserAccount } from "../types";
+import type { BackOfficeState, Country, Session, SessionUser, UserAccount } from "../types";
 import { getSchoolAcademicLists, mergeSelectOptions } from "./academicConfig";
 import {
   canonicalCountryScope,
@@ -390,7 +390,7 @@ export function applyRoleChangeToUser(
  *  - Admin Pays   → tous les établissements de son pays ;
  *  - Admin École / rôles internes → l'établissement rattaché.
  */
-export function getUserEstablishmentLabel(user: UserAccount, schools: School[] = []): string {
+export function getUserEstablishmentLabel(user: UserAccount): string {
   const hasGlobalScope = !user.schoolCode || user.schoolCode === "*";
 
   if (hasGlobalScope) {
@@ -405,15 +405,10 @@ export function getUserEstablishmentLabel(user: UserAccount, schools: School[] =
     return "Périmètre non défini";
   }
 
-  const userSchoolCode = normalize(user.schoolCode);
-  const school = schools.find((item) =>
-    [item.code, item.publicId, item.schoolCode].some(
-      (candidate) => normalize(candidate) === userSchoolCode,
-    ),
-  );
-  if (!school) return user.schoolCode as string;
-  const publicCode = school.publicId?.trim() || school.code;
-  return `${school.name} (${publicCode})`;
+  const publicCode = String(user.schoolPublicCode ?? "").trim().toUpperCase();
+  if (!publicCode) return "—";
+  const schoolName = String(user.schoolName ?? "").trim();
+  return schoolName ? `${schoolName} (${publicCode})` : publicCode;
 }
 
 export function getCountryScopeOptions(countries: Country[]) {

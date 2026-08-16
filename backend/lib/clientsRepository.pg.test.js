@@ -11,6 +11,7 @@ const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const { hashSecret, verifySecret } = require("../services/credentialService");
+const { ensureSchoolLoginCodeColumn } = require("../db/ensureSchoolLoginCodeColumn");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DB = String(process.env.SOMAFRIK_CLIENTS_IT_DATABASE ?? "somafrik_clients_it")
@@ -72,14 +73,15 @@ async function main() {
     const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
     await pool.query(schema);
     await pool.query(CLIENTS_SCHEMA_SQL);
+    await ensureSchoolLoginCodeColumn((sql) => pool.query(sql));
 
     const country = await pool.query(
       `INSERT INTO countries (name, iso_code, phone_code, currency)
        VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const school = await pool.query(
-      `INSERT INTO schools (country_id, school_code, name, status)
-       VALUES ($1, 'CD-2026-0001', 'Test', 'active') RETURNING id`,
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, 'CD-2026-0001', 'CD-IN-26-001', 'INSTITUT NURU', 'active') RETURNING id`,
       [country.rows[0].id],
     );
     const student = await pool.query(
@@ -160,6 +162,10 @@ async function main() {
 
     const projection = await store.listProjection();
     assert.ok(projection.users.some((row) => row.id === provisioned.user.id));
+    const projectedUser = projection.users.find((row) => row.id === provisioned.user.id);
+    assert.equal(projectedUser.schoolCode, "CD-2026-0001");
+    assert.equal(projectedUser.schoolPublicCode, "CD-IN-26-001");
+    assert.equal(projectedUser.schoolName, "INSTITUT NURU");
     assert.ok(projection.contacts.some((row) => row.id === contact.id));
     assert.ok(projection.relations.length >= 1);
     assert.ok(projection.announcements.some((row) => row.id === announcement.id));

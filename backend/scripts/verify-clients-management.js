@@ -241,6 +241,17 @@ async function main() {
     assert.ok(projectedAfter, "admin secondaire toujours projeté");
     assert.equal(projectedAfter.permissions?.includes("ALL_PRIVILEGES"), false, "projection sans ALL_PRIVILEGES");
     assert.equal(projectedAfter.firstName, projectedBefore.firstName, "projection inchangée (zéro mutation)");
+    assert.equal(projectedAfter.schoolCode, "CD-2026-0001", "schoolCode tenant inchangé");
+    assert.equal(
+      decodeJwtPayload(adminSchoolOwnToken).schoolCode,
+      "CD-2026-0001",
+      "JWT schoolCode reste l'alias historique",
+    );
+    assert.equal(
+      decodeJwtPayload(adminSchoolOwnToken).schoolPublicCode,
+      undefined,
+      "JWT ne transporte pas schoolPublicCode",
+    );
 
     console.log("verify-clients-management.js OK");
   } finally {

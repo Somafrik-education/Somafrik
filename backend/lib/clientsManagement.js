@@ -184,6 +184,27 @@ function resolveUserIdentifier({ role, phone, email, userCode }) {
   return asTrimmed(userCode);
 }
 
+/**
+ * Projection établissement pour un compte : school_code reste l'alias tenant,
+ * school_login_code / school_name portent le code public et le nom.
+ * Ne jamais lire users.login_code ici (identité personne).
+ */
+function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
+  if (!school) {
+    return {
+      school_code: fallbackSchoolCode,
+      school_login_code: "",
+      school_name: "",
+    };
+  }
+  return {
+    school_code:
+      asTrimmed(school.code ?? school.schoolCode ?? school.school_code).toUpperCase() || fallbackSchoolCode,
+    school_login_code: asTrimmed(school.loginCode ?? school.login_code).toUpperCase(),
+    school_name: asTrimmed(school.name),
+  };
+}
+
 function mapUserRow(row) {
   const profile = parsePayload(row.profile_payload);
   const role = ROLE_FROM_DB[row.role] ?? row.role;
@@ -210,6 +231,8 @@ function mapUserRow(row) {
     countryScope: row.country_name ?? profile.countryScope ?? "",
     countryCode: row.country_code ?? profile.countryCode ?? "",
     schoolCode,
+    schoolPublicCode: asTrimmed(row.school_login_code ?? row.schoolPublicCode).toUpperCase(),
+    schoolName: asTrimmed(row.school_name ?? row.schoolName),
     schoolId: row.school_id,
     accessChannel: profile.accessChannel ?? "Application",
     identifier: loginCode || resolveUserIdentifier({ role, phone: row.phone, email: row.email, userCode: row.user_code }),
@@ -354,6 +377,7 @@ module.exports = {
   generateTemporaryPassword,
   generateUserCode,
   resolveUserIdentifier,
+  schoolPublicProjectionFromSchool,
   mapUserRow,
   mapUserRowToAuthAccount,
   mapContactRow,

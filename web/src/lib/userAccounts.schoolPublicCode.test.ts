@@ -1,44 +1,41 @@
 import { describe, expect, it } from "vitest";
-import type { School, UserAccount } from "../types";
+import type { UserAccount } from "../types";
 import { getUserEstablishmentLabel } from "./userAccounts";
 
 describe("getUserEstablishmentLabel", () => {
-  const school = {
-    code: "CD-2026-0001",
-    publicId: "CD-IN-26-001",
-    name: "INSTITUT NURU",
-    country: "RDC",
-    countryCode: "CD",
-  } as School;
-
-  const user = {
+  const prefet = {
     schoolCode: "CD-2026-0001",
-    role: "Secrétaire",
+    schoolPublicCode: "CD-IN-26-001",
+    schoolName: "INSTITUT NURU",
+    role: "Préfet des études",
   } as UserAccount;
 
-  it("affiche le code public canonique sans exposer le code interne historique", () => {
-    const label = getUserEstablishmentLabel(user, [school]);
+  it("affiche le code public depuis l'utilisateur sans domaine schools", () => {
+    const label = getUserEstablishmentLabel(prefet);
 
     expect(label).toBe("INSTITUT NURU (CD-IN-26-001)");
     expect(label).not.toContain("CD-2026-0001");
   });
 
-  it("résout un compte encore lié à l'alias historique quand l'établissement expose déjà le code canonique", () => {
-    const canonicalSchool = {
-      ...school,
-      code: "CD-IN-26-001",
-      schoolCode: "CD-2026-0001",
-    } as School;
+  it("n'utilise jamais schoolCode comme fallback visuel", () => {
+    const label = getUserEstablishmentLabel(
+      { schoolCode: "CD-2026-0001", role: "Préfet des études" } as UserAccount,
+    );
 
-    const label = getUserEstablishmentLabel(user, [canonicalSchool]);
-
-    expect(label).toBe("INSTITUT NURU (CD-IN-26-001)");
+    expect(label).toBe("—");
     expect(label).not.toContain("CD-2026-0001");
   });
 
-  it("conserve le code interne comme fallback si aucun code public n'existe", () => {
-    const label = getUserEstablishmentLabel(user, [{ ...school, publicId: undefined }]);
-
-    expect(label).toBe("INSTITUT NURU (CD-2026-0001)");
+  it("conserve les libellés globaux Super Admin / Admin Pays", () => {
+    expect(
+      getUserEstablishmentLabel({ schoolCode: "*", role: "Super Administrateur Somafrik" } as UserAccount),
+    ).toBe("Tous les établissements (système Somafrik)");
+    expect(
+      getUserEstablishmentLabel({
+        schoolCode: "*",
+        role: "Admin Pays",
+        countryScope: "RDC",
+      } as UserAccount),
+    ).toBe("Tous les établissements — RDC");
   });
 });

@@ -11,6 +11,7 @@ const { Pool } = require("pg");
 const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
+const { ensureSchoolLoginCodeColumn } = require("../db/ensureSchoolLoginCodeColumn");
 const {
   USERS_LOGIN_IDENTITY_DUPLICATES_CODE,
   ensureUsersLoginIdentityConstraints,
@@ -87,6 +88,7 @@ async function resetSchema(pool) {
   const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
   await pool.query(schema);
   await pool.query(CLIENTS_SCHEMA_SQL);
+  await ensureSchoolLoginCodeColumn((sql) => pool.query(sql));
 }
 
 function assertUsersLoginIdentityDuplicatesError(error, label) {
