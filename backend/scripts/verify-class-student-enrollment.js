@@ -56,10 +56,24 @@ async function login(identifier, schoolCode) {
   return session.token;
 }
 
-async function loginSession(identifier, schoolCode) {
+async function loginWithoutPasswordGate(identifier, schoolCode) {
+  const session = await loginSession(identifier, schoolCode);
+  if (!session.user?.mustChangePassword) return session.token;
+  const nextPassword = "PrefetPass12";
+  const changed = await request("/auth/change-password", {
+    method: "POST",
+    token: session.token,
+    body: { currentPassword: "1234", newPassword: nextPassword },
+  });
+  assert.ok(changed.status >= 200 && changed.status < 300, JSON.stringify(changed.data));
+  const next = await loginSessionWithPassword(identifier, schoolCode, nextPassword);
+  return next.token;
+}
+
+async function loginSessionWithPassword(identifier, schoolCode, password) {
   const loginResponse = await request("/backoffice/login", {
     method: "POST",
-    body: { identifier, password: "1234", schoolCode },
+    body: { identifier, password, schoolCode },
   });
   assert.equal(loginResponse.status, 200, JSON.stringify(loginResponse.data));
   const token = loginResponse.data.accessToken || loginResponse.data.token;
@@ -67,6 +81,10 @@ async function loginSession(identifier, schoolCode) {
   assert.ok(token, `missing token for ${identifier}@${schoolCode}`);
   assert.ok(refreshToken, `missing refreshToken for ${identifier}@${schoolCode}`);
   return { token, refreshToken, user: loginResponse.data.user };
+}
+
+async function loginSession(identifier, schoolCode) {
+  return loginSessionWithPassword(identifier, schoolCode, "1234");
 }
 
 async function refreshAccessToken(refreshToken) {
@@ -79,8 +97,8 @@ async function refreshAccessToken(refreshToken) {
   return refreshed.data.accessToken;
 }
 
-async function replaceTeacherAssignmentsViaApi(adminToken, teacherIdentifier, assignments) {
-  const teacherResponse = await request("/teachers", { token: adminToken });
+async function replaceTeacherAssignmentsViaApi(assignmentToken, teacherIdentifier, assignments) {
+  const teacherResponse = await request("/teachers", { token: assignmentToken });
   assert.equal(teacherResponse.status, 200, JSON.stringify(teacherResponse.data));
   const teacherKey = String(teacherIdentifier).trim().toUpperCase();
   const teacher = teacherResponse.data.find((row) =>
@@ -96,14 +114,14 @@ async function replaceTeacherAssignmentsViaApi(adminToken, teacherIdentifier, as
       .map((value) => String(value ?? "").trim())
       .filter(Boolean),
   );
-  const current = await request("/assignments", { token: adminToken });
+  const current = await request("/assignments", { token: assignmentToken });
   assert.equal(current.status, 200, JSON.stringify(current.data));
   for (const assignment of current.data) {
     if (!classRefs.has(String(assignment.classCode ?? "").trim()) &&
         !classRefs.has(String(assignment.className ?? "").trim())) continue;
     const removed = await request(`/assignments/${encodeURIComponent(assignment.id)}`, {
       method: "DELETE",
-      token: adminToken,
+      token: assignmentToken,
     });
     assert.equal(removed.status, 200, JSON.stringify(removed.data));
   }
@@ -111,7 +129,7 @@ async function replaceTeacherAssignmentsViaApi(adminToken, teacherIdentifier, as
   for (const assignment of desired.filter((row) => row.status === "active")) {
     const created = await request("/assignments", {
       method: "POST",
-      token: adminToken,
+      token: assignmentToken,
       body: {
         teacherCode: canonicalTeacherCode,
         classCode: assignment.classCode,
@@ -161,6 +179,7 @@ async function main() {
     const tokenCd = await login("admin", "CD-2026-0001");
     const tokenBi = await login("admin", "BI-2026-0002");
     const tokenTeacher = await login("ENS-0001", "CD-2026-0001");
+    const tokenPrefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
 
     const activeClass = await createActiveClass(tokenCd, "Classe active");
     const inactiveClass = await createActiveClass(tokenCd, "Classe à désactiver");
@@ -235,7 +254,7 @@ async function main() {
     assert.equal(unknownYear.status, 400, JSON.stringify(unknownYear.data));
 
     // Connexion réelle : affectation active + classCode → 200 avant et après refresh.
-    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -275,7 +294,7 @@ async function main() {
     );
 
     // Affectation retirée avant refresh → accès refusé après refresh.
-    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -307,7 +326,7 @@ async function main() {
     );
 
     // Le client ne peut pas créer une affectation sans statut actif → refus fail-closed.
-    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
       {
         className: activeClass.name,
         classCode: activeClass.classCode,
@@ -369,7 +388,7 @@ async function main() {
     );
     assert.equal(enrolledHomonym.status, 201, JSON.stringify(enrolledHomonym.data));
 
-    await replaceTeacherAssignmentsViaApi(tokenCd, "ENS-0001", [
+    await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
       {
         classCode: priorYear.data.classCode,
         className: priorYearName,

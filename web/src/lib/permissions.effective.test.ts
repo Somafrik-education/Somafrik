@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveEffectivePermissions } from "./permissions";
+import { getFeaturePermissions, resolveEffectivePermissions } from "./permissions";
 
 describe("resolveEffectivePermissions — autorité serveur", () => {
   it("n'enrichit pas une liste serveur avec la carte locale", () => {
@@ -26,3 +26,35 @@ describe("resolveEffectivePermissions — autorité serveur", () => {
     expect(result).toContain("Élèves:READ");
   });
 });
+
+describe("Affectations:CREATE — bouton Affecter", () => {
+  it("autorise CREATE seulement si le jeton live est présent", () => {
+    const allowed = getFeaturePermissions(
+      {
+        user: {
+          id: "u1",
+          role: "Admin School",
+          permissions: ["Enseignants:UPDATE", "Affectations:CREATE"],
+        } as never,
+        rolePermissions: {},
+      },
+      "Affectations",
+    );
+    expect(allowed.canCreate).toBe(true);
+    expect(allowed.canUpdate).toBe(false);
+
+    const denied = getFeaturePermissions(
+      {
+        user: {
+          id: "u1",
+          role: "Admin School",
+          permissions: ["Enseignants:READ", "Enseignants:UPDATE", "Matières:CREATE"],
+        } as never,
+        rolePermissions: {},
+      },
+      "Affectations",
+    );
+    expect(denied.canCreate).toBe(false);
+  });
+});
+

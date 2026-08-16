@@ -489,7 +489,7 @@ async function main() {
     assert.equal(reassigned.teacherCode, created.teacherCode);
     await assert.rejects(
       () => assignmentsRepo.update(createdAssignment.id, { teacherCode: otherSchool.teacherCode }, "CD-2026-0001"),
-      (error) => error.statusCode === 400 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+      (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
     );
     assert.deepEqual(
       await assignmentsRepo.remove(createdAssignment.id, "CD-2026-0001"),

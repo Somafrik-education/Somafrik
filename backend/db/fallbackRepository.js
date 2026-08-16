@@ -2117,9 +2117,23 @@ class FallbackRepository {
     const subject = matchingSubjects.find(
       (row) => String(row.className ?? "") === String(schoolClass?.name ?? ""),
     ) ?? matchingSubjects[0];
-    if (!teacher) throw assignmentError(400, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
-    if (!schoolClass) throw assignmentError(400, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
-    if (!subject) throw assignmentError(400, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+    if (!teacher) throw assignmentError(404, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
+    if (!schoolClass) throw assignmentError(404, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
+    if (!subject) throw assignmentError(404, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+    if (
+      existing.some(
+        (row) =>
+          String(row.teacherCode ?? row.teacherId) === String(teacher.teacherCode ?? teacher.publicId ?? teacher.id) &&
+          row.className === schoolClass.name &&
+          String(row.subject ?? row.course) === subject.name,
+      )
+    ) {
+      throw assignmentError(
+        409,
+        "Cette affectation existe déjà pour cet enseignant.",
+        "TEACHER_ASSIGNMENT_ALREADY_EXISTS",
+      );
+    }
     if (
       existing.some(
         (row) => row.className === schoolClass.name && String(row.subject ?? row.course) === subject.name,

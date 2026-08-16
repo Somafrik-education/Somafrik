@@ -277,6 +277,61 @@ async function main() {
     );
     assert.equal(auditsAfter.rows[0].c, auditsBefore.rows[0].c);
 
+    const schoolAdminAssignments = await store.listGrantsForScope({
+      roleKey: "SCHOOL_ADMIN",
+      scopeType: "global",
+      countryId: null,
+      schoolId: null,
+    });
+    const seededAssignments = schoolAdminAssignments.find((row) => row.moduleKey === "assignments");
+    assert.ok(seededAssignments, "bootstrap initial insère assignments pour SCHOOL_ADMIN");
+    assert.equal(seededAssignments.canCreate, true);
+    assert.equal(seededAssignments.canDelete, false);
+
+    await pool.query(
+      `DELETE FROM role_module_permissions
+        WHERE upper(role_key) = 'SCHOOL_ADMIN'
+          AND module_key = 'assignments'
+          AND scope_type = 'global'
+          AND country_id IS NULL
+          AND school_id IS NULL`,
+    );
+    await ensureFunctionalRbacBootstrap(repo);
+    const restoredAssignments = (await store.listGrantsForScope({
+      roleKey: "SCHOOL_ADMIN",
+      scopeType: "global",
+      countryId: null,
+      schoolId: null,
+    })).find((row) => row.moduleKey === "assignments");
+    assert.ok(restoredAssignments, "backfill modules manquants restaure assignments");
+    assert.equal(restoredAssignments.canCreate, true);
+    assert.equal(restoredAssignments.canDelete, false);
+
+    await store.upsertGrant({
+      roleKey: "SCHOOL_ADMIN",
+      scopeType: "global",
+      countryId: null,
+      schoolId: null,
+      moduleKey: "assignments",
+      canCreate: false,
+      canRead: false,
+      canUpdate: false,
+      canDelete: false,
+      updatedBy: "superadmin",
+    });
+    const countBeforeIdempotent = await store.countActiveGrants();
+    await ensureFunctionalRbacBootstrap(repo);
+    await ensureFunctionalRbacBootstrap(repo);
+    const deniedAssignments = (await store.listGrantsForScope({
+      roleKey: "SCHOOL_ADMIN",
+      scopeType: "global",
+      countryId: null,
+      schoolId: null,
+    })).find((row) => row.moduleKey === "assignments");
+    assert.equal(deniedAssignments.canCreate, false, "DENY explicite non écrasé");
+    assert.equal(deniedAssignments.canRead, false);
+    assert.equal(await store.countActiveGrants(), countBeforeIdempotent, "bootstrap idempotent");
+
     console.log("functionalRbac.pg.test.js OK");
   } finally {
     await pool.end();

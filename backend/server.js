@@ -753,40 +753,23 @@ app.patch("/api/evaluations/:evaluationId", requireAuth, requireSchoolSubscripti
 }));
 
 app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  let rows = tenantScopeService.filterRows(state.assignments ?? [], req.principal, scope);
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  let rows = await repository.listSchoolTeacherAssignments(schoolCode);
 
   if (req.principal.role === "Enseignant") {
-    const { assignmentMatchesTeacher } = require("./services/authService");
-    const normalizeTeacherKey = (value) =>
-      String(value ?? "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim()
-        .toLowerCase();
-    const teacher = (state.teachers ?? []).find((item) => {
-      const userId = String(req.principal.sub ?? "").trim();
-      const identifier = normalizeTeacherKey(req.principal.identifier);
-      if (userId && String(item.userId ?? "") === userId) return true;
-      if (userId && String(item.id ?? "") === userId) return true;
-      if (identifier && normalizeTeacherKey(item.identifier) === identifier) return true;
-      return false;
-    });
-
-    if (teacher) {
-      rows = rows.filter((assignment) =>
-        assignmentMatchesTeacher(assignment, teacher, {
-          id: req.principal.sub,
-          firstName: req.principal.firstName,
-          lastName: req.principal.lastName,
-          name: req.principal.name,
-        }),
-      );
-    } else if ((req.principal.classNames ?? []).length) {
-      const classNames = new Set(req.principal.classNames);
-      rows = rows.filter((assignment) => classNames.has(assignment.className));
-    }
+    const identityKeys = new Set(
+      [req.principal.sub, req.principal.identifier, req.principal.teacherCode, req.principal.teacherId]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    );
+    rows = rows.filter((assignment) =>
+      identityKeys.has(String(assignment.teacherCode ?? "").trim()) ||
+      identityKeys.has(String(assignment.teacherId ?? "").trim()),
+    );
   }
 
   sendList(res, rows, req.query, ["className", "course", "teacherName", "teacherId"]);

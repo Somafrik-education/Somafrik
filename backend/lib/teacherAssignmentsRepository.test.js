@@ -17,6 +17,7 @@ function createMemoryAdapter() {
   ];
   const classes = [
     { id: "class-1", school_id: "school-1", class_code: "CLS-6A", name: "6ème A", academic_year_id: "year-1" },
+    { id: "class-2", school_id: "school-2", class_code: "CLS-B", name: "6ème B", academic_year_id: "year-1" },
   ];
   const subjects = [
     { id: "subject-1", school_id: "school-1", subject_code: "SUB-MATH", name: "Mathématiques" },
@@ -186,7 +187,7 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
   assert.equal(updated.teacherName, "Moussa Ba");
   await assert.rejects(
     () => repo.update(created.id, { teacherCode: "CD-2026-0002-ENS-0001" }, "CD-2026-0001"),
-    (error) => error.statusCode === 400 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+    (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
   );
   await assert.rejects(
     () => repo.remove(created.id, "CD-2026-0002"),
@@ -206,10 +207,42 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
   await assert.rejects(
     () =>
       repo.create(
+        { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+        "CD-2026-0001",
+      ),
+    (error) => error.statusCode === 409 && error.code === "TEACHER_ASSIGNMENT_ALREADY_EXISTS",
+  );
+  await assert.rejects(
+    () =>
+      repo.create(
+        { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-UNKNOWN" },
+        "CD-2026-0001",
+      ),
+    (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
+  );
+  await assert.rejects(
+    () =>
+      repo.create(
         { teacherCode: "CD-2026-0001-ENS-0099", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
         "CD-2026-0001",
       ),
-    (error) => error.statusCode === 400 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+    (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+  );
+  await assert.rejects(
+    () =>
+      repo.create(
+        { teacherCode: "CD-2026-0002-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+        "CD-2026-0001",
+      ),
+    (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+  );
+  await assert.rejects(
+    () =>
+      repo.create(
+        { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-B", subjectCode: "SUB-MATH" },
+        "CD-2026-0001",
+      ),
+    (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_CLASS_NOT_FOUND",
   );
 });
 

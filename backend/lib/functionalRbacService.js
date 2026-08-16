@@ -71,6 +71,7 @@ async function ensureFunctionalRbacBootstrap(repo) {
     await store.markSystemProtected([...PROTECTED_SYSTEM_ROLE_KEYS]);
   }
   await backfillGlobalGrantsFromLegacyMaps(repo, store);
+  await backfillMissingGlobalModuleGrants(repo, store);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
@@ -221,6 +222,44 @@ async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
     }
   }
   return true;
+}
+
+/**
+ * Complète les modules absents d'une matrice déjà peuplée (ex. Affectations
+ * ajouté au catalogue après le backfill initial #221). N'écrase jamais un
+ * grant déjà présent, y compris un DENY explicite (tous flags false).
+ */
+async function backfillMissingGlobalModuleGrants(repo, store) {
+  const merged = await loadLegacyRolePermissionMaps(repo);
+  let inserted = 0;
+  for (const [roleName, permissions] of Object.entries(merged)) {
+    const roleKey = toRoleKey(roleName);
+    if (!roleKey) continue;
+    const existing = await store.listGrantsForScope({
+      roleKey,
+      scopeType: "global",
+      countryId: null,
+      schoolId: null,
+    });
+    const have = new Set(existing.map((row) => row.moduleKey));
+    const modulesCrud = parsePermissionStringsToModuleCrud(permissions);
+    for (const module of listFunctionalModules()) {
+      if (have.has(module.moduleKey)) continue;
+      const crud = modulesCrud[module.moduleKey] || emptyCrud();
+      if (!crud.canCreate && !crud.canRead && !crud.canUpdate && !crud.canDelete) continue;
+      await store.upsertGrant({
+        roleKey,
+        scopeType: "global",
+        countryId: null,
+        schoolId: null,
+        moduleKey: module.moduleKey,
+        ...crud,
+        updatedBy: "bootstrap-missing-modules",
+      });
+      inserted += 1;
+    }
+  }
+  return inserted;
 }
 
 async function resolveScopeIds(store, payload) {
@@ -661,4 +700,5 @@ module.exports = {
   throwLegacyRolePermissionsWrite,
   getModuleOrThrow,
   mergeRolePermissionMaps,
+  backfillMissingGlobalModuleGrants,
 };

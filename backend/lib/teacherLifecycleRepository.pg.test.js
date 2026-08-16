@@ -375,6 +375,9 @@ function createDbAdapter(pool, options = {}) {
         dbUserId = user?.id ?? null;
       }
       if (adapter.failAudit && payload.action === adapter.failAudit) {
+        // Adapter de test uniquement : INSERT action=NULL pour déclencher 23502
+        // et prouver le ROLLBACK de la transaction métier. postgresRepository.recordAudit
+        // n'écrit jamais NULL (garde AUDIT_ACTION_REQUIRED).
         await executor.query(
           `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id)
            VALUES ($1, $2, NULL, $3, $4)`,
@@ -644,7 +647,7 @@ async function main() {
           { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
           "CD-2026-0001",
         ),
-      (error) => error.statusCode === 400 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+      (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
     );
 
     const blocked = await teachers.create(
