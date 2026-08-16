@@ -405,7 +405,12 @@ export function getUserEstablishmentLabel(user: UserAccount, schools: School[] =
     return "Périmètre non défini";
   }
 
-  const school = schools.find((item) => normalize(item.code) === normalize(user.schoolCode));
+  const userSchoolCode = normalize(user.schoolCode);
+  const school = schools.find((item) =>
+    [item.code, item.publicId, item.schoolCode].some(
+      (candidate) => normalize(candidate) === userSchoolCode,
+    ),
+  );
   if (!school) return user.schoolCode as string;
   const publicCode = school.publicId?.trim() || school.code;
   return `${school.name} (${publicCode})`;

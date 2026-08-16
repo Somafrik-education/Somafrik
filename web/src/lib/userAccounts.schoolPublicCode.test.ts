@@ -23,6 +23,19 @@ describe("getUserEstablishmentLabel", () => {
     expect(label).not.toContain("CD-2026-0001");
   });
 
+  it("résout un compte encore lié à l'alias historique quand l'établissement expose déjà le code canonique", () => {
+    const canonicalSchool = {
+      ...school,
+      code: "CD-IN-26-001",
+      schoolCode: "CD-2026-0001",
+    } as School;
+
+    const label = getUserEstablishmentLabel(user, [canonicalSchool]);
+
+    expect(label).toBe("INSTITUT NURU (CD-IN-26-001)");
+    expect(label).not.toContain("CD-2026-0001");
+  });
+
   it("conserve le code interne comme fallback si aucun code public n'existe", () => {
     const label = getUserEstablishmentLabel(user, [{ ...school, publicId: undefined }]);
 
