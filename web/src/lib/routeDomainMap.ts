@@ -40,7 +40,7 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   { prefix: "/notifications", domains: ["notifications"] },
   { prefix: "/messages", domains: ["messages"] },
   { prefix: "/annonces", domains: ["announcements"] },
-  { prefix: "/administration/utilisateurs", domains: ["users", "teachers"] },
+  { prefix: "/administration/utilisateurs", domains: ["users", "schools", "teachers"] },
   { prefix: "/administration/permissions", domains: ["rolePermissions"] },
   { prefix: "/administration/conformite", domains: ["users", "schools"] },
   { prefix: "/parametres/roles-droits", domains: ["academicConfigs", "users", "rolePermissions"] },
