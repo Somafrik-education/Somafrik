@@ -120,7 +120,7 @@ const rolePermissions = {
   ],
   Directeur: ["Voir élèves", "Modifier notes", "Gérer paiements", "Gérer utilisateurs", "Voir rapports"],
   Secrétaire: ["Voir élèves", "Gérer élèves", "Gérer paiements", "Gérer appels"],
-  Enseignant: ["Voir élèves", "Modifier notes", "Faire appel", "Messages parents"],
+  Enseignant: ["Voir élèves", "Modifier notes", "Faire appel", "Messages parents", "Voir examens", "Voir bulletins", "Voir documents"],
   Parent: ["Voir enfant", "Voir paiements", "Messages école"],
   "Élève / Étudiant": ["Voir notes", "Voir présences", "Voir paiements"],
   Comptable: ["Gérer paiements", "Voir rapports financiers"],
