@@ -138,6 +138,7 @@ const REPOSITORY_METHODS = Object.freeze([
   // Clients / comptes (LOT 7 — PostgreSQL canonique)
   "listClientsProjection",
   "createClientsUser",
+  "provisionClientsUser",
   "updateClientsUser",
   "reassignClientsUserSchool",
   "createClientsContact",

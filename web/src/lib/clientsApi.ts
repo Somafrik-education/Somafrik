@@ -47,6 +47,7 @@ function withPlatformAssignableRoles(roles: AssignableRole[]): AssignableRole[] 
 export const clientsApi = {
   listUsers: () => api.get<unknown[]>("/backoffice/users"),
   createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", buildCreateUserPayload(payload)),
+  provisionUser: (payload: Record<string, unknown>) => api.post("/backoffice/users/provision", payload),
   updateUser: (userId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/users/${encodeURIComponent(userId)}`, payload),
   reassignUserSchool: (userId: string, payload: Record<string, unknown>) =>

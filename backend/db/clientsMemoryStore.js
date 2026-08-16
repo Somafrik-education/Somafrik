@@ -34,6 +34,7 @@ function createClientsMemoryStore(seed = {}) {
     reads: [],
     announcements: [],
     schools: clone(seed.platformSchools ?? []),
+    countries: clone(seed.countries ?? []),
     students: clone(seed.students ?? []),
     sessions: clone(seed.sessions ?? []),
   };
@@ -117,6 +118,27 @@ function createClientsMemoryStore(seed = {}) {
           country_id: school.countryId ?? school.country_id ?? "country-seed",
           country_code: resolveSchoolCountryCode(school),
           country_name: school.country ?? school.country_name ?? "",
+        };
+      },
+      async getCountryByCode(code) {
+        const normalized = asTrimmed(code).toUpperCase();
+        if (!normalized) return null;
+        const fromTable = (tables.countries || []).find(
+          (row) => asTrimmed(row.iso_code ?? row.code).toUpperCase() === normalized,
+        );
+        if (fromTable) {
+          return {
+            id: fromTable.id,
+            iso_code: normalized,
+            name: fromTable.name ?? normalized,
+          };
+        }
+        const school = tables.schools.find((row) => resolveSchoolCountryCode(row) === normalized);
+        if (!school) return null;
+        return {
+          id: school.countryId ?? school.country_id ?? `country-${normalized.toLowerCase()}`,
+          iso_code: normalized,
+          name: school.country ?? school.country_name ?? normalized,
         };
       },
       async getUserById(id) {
@@ -583,6 +605,7 @@ function createClientsMemoryStore(seed = {}) {
   const store = {
     bind,
     getSchoolByCode: (code) => txApi.getSchoolByCode(code),
+    getCountryByCode: (code) => txApi.getCountryByCode(code),
     getUserById: (id) => txApi.getUserById(id),
     async withTransaction(fn) {
       const snapshot = clone(tables);
@@ -750,6 +773,7 @@ function createClientsMemoryStore(seed = {}) {
       });
     },
     createUser: (...args) => clientsService.createUser(store, ...args),
+    provisionUser: (...args) => clientsService.provisionUser(store, ...args),
     updateUser: (...args) => clientsService.updateUser(store, ...args),
     reassignUserSchool: (...args) => clientsService.reassignUserSchool(store, ...args),
     grantUserRole: (...args) => userRoleLifecycleService.grantRole(store, ...args),

@@ -79,6 +79,7 @@ vi.mock("../lib/clientsApi", () => ({
     revokeUserRole: vi.fn(),
     updateUser: vi.fn(),
     createUser: vi.fn(),
+    provisionUser: vi.fn(),
   },
   buildCreateUserPayload: (payload: Record<string, unknown>) => payload,
 }));
@@ -88,6 +89,7 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     permissions.canRead = true;
     permissions.canCreate = true;
     vi.mocked(clientsApi.createUser).mockReset();
+    vi.mocked(clientsApi.provisionUser).mockReset();
     vi.mocked(clientsApi.grantUserRole).mockReset();
     sessionStorage.setItem("somafrik.activeSchoolCode", "CD-2026-0001");
   });
@@ -147,15 +149,16 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
     fireEvent.submit(document.getElementById("user-form")!);
     expect(clientsApi.createUser).not.toHaveBeenCalled();
+    expect(clientsApi.provisionUser).not.toHaveBeenCalled();
   });
 
-  it("soumet BI + école BI + Admin School sans hériter de la session CD", async () => {
-    vi.mocked(clientsApi.createUser).mockResolvedValue({
+  it("soumet BI + école BI + Admin School via provision, sans GRANT ni session CD", async () => {
+    vi.mocked(clientsApi.provisionUser).mockResolvedValue({
       id: "user-bi-1",
       schoolCode: "BI-2026-0001",
       countryCode: "BI",
+      roleKeys: ["SCHOOL_ADMIN"],
     });
-    vi.mocked(clientsApi.grantUserRole).mockResolvedValue({ roleKeys: ["SCHOOL_ADMIN"] });
     openCreateForm();
     fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Grace" } });
     fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Ndayishimiye" } });
@@ -163,15 +166,44 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
     fireEvent.change(screen.getByLabelText(/Établissement/i), { target: { value: "BI-2026-0001" } });
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
-    await waitFor(() => expect(clientsApi.createUser).toHaveBeenCalled());
-    expect(clientsApi.createUser).toHaveBeenCalledWith(
+    await waitFor(() => expect(clientsApi.provisionUser).toHaveBeenCalledTimes(1));
+    expect(clientsApi.provisionUser).toHaveBeenCalledWith(
       expect.objectContaining({
         firstName: "Grace",
         lastName: "Ndayishimiye",
         schoolCode: "BI-2026-0001",
         countryCode: "BI",
+        roleKey: "SCHOOL_ADMIN",
       }),
     );
-    expect(clientsApi.grantUserRole).toHaveBeenCalledWith("user-bi-1", "Admin School");
+    expect(clientsApi.createUser).not.toHaveBeenCalled();
+    expect(clientsApi.grantUserRole).not.toHaveBeenCalled();
+  });
+
+  it("soumet Admin Pays BI via provision, sans établissement ni GRANT", async () => {
+    vi.mocked(clientsApi.provisionUser).mockResolvedValue({
+      id: "user-pays-bi-1",
+      schoolCode: "*",
+      countryCode: "BI",
+      roleKeys: ["COUNTRY_ADMIN"],
+    });
+    openCreateForm();
+    fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Amina" } });
+    fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Nshimirimana" } });
+    fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "Admin Pays" } });
+    fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(clientsApi.provisionUser).toHaveBeenCalledTimes(1));
+    expect(clientsApi.provisionUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        firstName: "Amina",
+        lastName: "Nshimirimana",
+        countryCode: "BI",
+        roleKey: "COUNTRY_ADMIN",
+      }),
+    );
+    expect(vi.mocked(clientsApi.provisionUser).mock.calls[0][0]).not.toHaveProperty("schoolCode");
+    expect(clientsApi.createUser).not.toHaveBeenCalled();
+    expect(clientsApi.grantUserRole).not.toHaveBeenCalled();
   });
 });

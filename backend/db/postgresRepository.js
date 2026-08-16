@@ -1136,6 +1136,11 @@ class PostgresRepository {
     return this.getClientsStore().createUser(payload, principal, auditMeta);
   }
 
+  provisionClientsUser(payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().provisionUser(payload, principal, auditMeta);
+  }
+
   updateClientsUser(id, patch, principal, auditMeta) {
     this.cachedDataset = null;
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
@@ -5172,8 +5177,6 @@ class PostgresRepository {
     const school = role === "Admin Pays" ? null : user.school_code ? schoolByCode.get(user.school_code) : null;
     const teacherLoginId = teacherLoginByUserId.get(user.id) ?? "";
     const identifier = this.getUserIdentifier(user, role, teacherLoginId);
-    const countryCode = school?.iso_code ?? this.getCountryCodeForUser(user, role);
-    const countryScope = this.getCountryScopeForUser(school, countryCode);
     let profilePayload = {};
     if (user.profile_payload && typeof user.profile_payload === "object") {
       profilePayload = user.profile_payload;
@@ -5184,6 +5187,8 @@ class PostgresRepository {
         profilePayload = {};
       }
     }
+    const countryCode = school?.iso_code ?? this.getCountryCodeForUser(user, role, profilePayload);
+    const countryScope = this.getCountryScopeForUser(school, countryCode, profilePayload);
     const identityCode = String(user.identity_code ?? profilePayload.identityCode ?? "").trim();
 
     return {
@@ -5223,24 +5228,28 @@ class PostgresRepository {
     };
   }
 
-  getCountryCodeForUser(user, role) {
+  getCountryCodeForUser(user, role, profilePayload = {}) {
+    const fromProfile = String(profilePayload.countryCode ?? "").trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(fromProfile)) return fromProfile;
+    const { getCountryCodeFromScope } = require("../lib/countryScope");
+    const fromScope = String(getCountryCodeFromScope(profilePayload.countryScope)).trim().toUpperCase();
+    if (fromScope) return fromScope;
     if (role === "Admin Pays") {
       const match = String(user.user_code ?? "").match(/^ADM-([A-Z]{2})-/i);
       if (match) return match[1].toUpperCase();
     }
-
-    return "";
+    return String(user.country_code ?? "").trim().toUpperCase();
   }
 
-  getCountryScopeForUser(school, countryCode) {
+  getCountryScopeForUser(school, countryCode, profilePayload = {}) {
     if (school?.country_name) {
       return school.country_name === "République Démocratique du Congo" ? "RDC" : school.country_name;
     }
-
+    const fromProfile = String(profilePayload.countryScope ?? "").trim();
+    if (fromProfile) return fromProfile;
     if (countryCode === "CD") {
       return "RDC";
     }
-
     return countryCode;
   }
 

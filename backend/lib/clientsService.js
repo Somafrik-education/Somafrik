@@ -43,6 +43,7 @@ const {
   assertNoClientPrivilegeKeys,
   displayRoles,
   toRoleKey,
+  isUserRolesUniqueViolation,
 } = require("./userRoleLifecycle");
 const {
   findActiveUserByLoginIdentity,
@@ -52,6 +53,13 @@ const {
 
 const SCHOOL_ADMIN_ROLE = "Admin School";
 const PENDING_VALIDATION_STATUS = "En attente de validation";
+const PROVISIONABLE_ROLE_KEYS = Object.freeze(["COUNTRY_ADMIN", "SCHOOL_ADMIN"]);
+const COUNTRY_ADMIN_KEY = "COUNTRY_ADMIN";
+const SCHOOL_ADMIN_KEY = "SCHOOL_ADMIN";
+
+function actorUserId(principal) {
+  return asTrimmed(principal?.sub || principal?.id || principal?.userId);
+}
 
 async function assertStudentInContactSchool(tx, contact, studentId) {
   const student = await tx.getStudentById(studentId);
@@ -211,6 +219,195 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       entityType: "user",
       entityId: saved.id,
       newValue: hydrated,
+    });
+
+    return {
+      ...hydrated,
+      temporaryPassword,
+      hasTemporaryPassword: true,
+    };
+  });
+}
+
+function rethrowProvisionLoginIdentityConflict(error) {
+  if (
+    error?.code === "USER_LOGIN_IDENTITY_DUPLICATE" ||
+    error?.code === CLIENTS_ERROR.USER_LOGIN_IDENTITY_DUPLICATE ||
+    isUsersLoginIdentityUniquenessViolation(error)
+  ) {
+    throw createClientsError(
+      409,
+      error.message || "Un compte avec cet email ou ce téléphone existe déjà.",
+      CLIENTS_ERROR.USER_LOGIN_IDENTITY_DUPLICATE,
+    );
+  }
+  throw error;
+}
+
+async function provisionUser(store, rawPayload, principal, auditMeta) {
+  if (!isSuperAdminPrincipal(principal)) {
+    throw createClientsError(
+      403,
+      "Le provisioning Admin Pays / Admin School est réservé au Superadmin.",
+      USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN,
+    );
+  }
+
+  const roleKey = toRoleKey(rawPayload?.roleKey ?? rawPayload?.role);
+  if (!roleKey || !PROVISIONABLE_ROLE_KEYS.includes(roleKey)) {
+    throw createClientsError(
+      400,
+      "Rôle non provisionnable. Utilisez COUNTRY_ADMIN ou SCHOOL_ADMIN.",
+      CLIENTS_ERROR.ROLE_NOT_ALLOWED,
+    );
+  }
+
+  const payload = ignoreClientScope(rawPayload);
+  const requestedCountry = requestedCountryCodeFromPayload(rawPayload);
+  const schoolCode = asTrimmed(rawPayload.schoolCode || rawPayload.schoolId).toUpperCase();
+  const hasConcreteSchool = Boolean(schoolCode) && schoolCode !== "*";
+
+  if (!requestedCountry) {
+    throw createClientsError(
+      400,
+      roleKey === COUNTRY_ADMIN_KEY
+        ? "Pays obligatoire pour un Admin Pays."
+        : "Pays obligatoire pour un Admin School.",
+      CLIENTS_ERROR.INVALID_TENANT_SCOPE,
+    );
+  }
+
+  if (roleKey === SCHOOL_ADMIN_KEY && !hasConcreteSchool) {
+    throw createClientsError(
+      400,
+      "Établissement obligatoire pour le rôle Admin School.",
+      CLIENTS_ERROR.INVALID_TENANT_SCOPE,
+    );
+  }
+
+  if (roleKey === COUNTRY_ADMIN_KEY && hasConcreteSchool) {
+    throw createClientsError(
+      409,
+      "Un Admin Pays ne peut pas être rattaché à un établissement.",
+      CLIENTS_ERROR.ROLE_SCOPE_CONFLICT,
+    );
+  }
+
+  const firstName = asTrimmed(payload.firstName);
+  const lastName = asTrimmed(payload.lastName);
+  if (!firstName || !lastName) {
+    throw createClientsError(400, "Prénom et nom obligatoires.");
+  }
+
+  return store.withTransaction(async (tx) => {
+    if (typeof tx.getCountryByCode !== "function") {
+      throw createClientsError(500, "Validation pays indisponible dans la transaction.");
+    }
+    const country = await tx.getCountryByCode(requestedCountry);
+    if (!country) {
+      throw createClientsError(404, "Pays introuvable.", CLIENTS_ERROR.COUNTRY_NOT_FOUND);
+    }
+
+    let school = null;
+    if (roleKey === SCHOOL_ADMIN_KEY) {
+      school = await tx.getSchoolByCode(schoolCode);
+      if (!school) {
+        throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
+      }
+      assertRequestedCountryMatchesSchool(school, requestedCountry);
+    }
+
+    const temporaryPassword = asTrimmed(payload.temporaryPassword) || generateTemporaryPassword();
+    const userCode = await allocateUserCode(tx);
+    const identifier = resolveUserIdentifier({
+      role: "",
+      phone: payload.phone,
+      email: payload.email,
+      userCode,
+    });
+
+    const email = asTrimmed(payload.email);
+    const phone = asTrimmed(payload.phone);
+    await assertUniqueUserLoginIdentity(tx, {
+      schoolId: school?.id ?? null,
+      email,
+      phone,
+    }).catch(rethrowProvisionLoginIdentityConflict);
+
+    const countryName = asTrimmed(country.name || country.country_name || rawPayload.countryScope);
+    const profile = {
+      contactId: payload.contactId,
+      identifier,
+      accessChannel: payload.accessChannel ?? "Application",
+      createdBy: principal?.identifier || principal?.email || "system",
+      countryCode: requestedCountry,
+      countryScope: asTrimmed(rawPayload.countryScope) || countryName || requestedCountry,
+      ...(payload.validationStatus ? { validationStatus: payload.validationStatus } : {}),
+      ...(payload.validationRequestedBy ? { validationRequestedBy: payload.validationRequestedBy } : {}),
+      ...(payload.validatedBy ? { validatedBy: payload.validatedBy } : {}),
+      ...(payload.validatedAt ? { validatedAt: payload.validatedAt } : {}),
+      ...(Array.isArray(payload.history) ? { history: payload.history } : {}),
+    };
+
+    let saved;
+    try {
+      saved = await tx.insertUser({
+        schoolId: school?.id ?? null,
+        userCode,
+        firstName,
+        lastName,
+        email,
+        phone,
+        gender: asTrimmed(payload.gender),
+        birthDate: toIsoDate(payload.birthDate),
+        role: null,
+        status: toDbStatus(payload.status || "Actif"),
+        passwordHash: hashSecret(temporaryPassword),
+        mustChangePassword: true,
+        profile,
+      });
+    } catch (error) {
+      rethrowProvisionLoginIdentityConflict(error);
+    }
+
+    try {
+      await tx.insertUserRole({
+        userId: saved.id,
+        schoolId: school?.id ?? null,
+        roleKey,
+        grantedBy: actorUserId(principal) || null,
+      });
+    } catch (error) {
+      if (error?.statusCode) throw error;
+      if (isUserRolesUniqueViolation(error)) {
+        throw createClientsError(409, "Ce rôle est déjà attribué.", USER_ROLE_ERROR.ROLE_ALREADY_GRANTED);
+      }
+      throw createClientsError(
+        500,
+        error?.message || "Échec de l'attribution du rôle.",
+        CLIENTS_ERROR.USER_ROLE_GRANT_FAILED,
+      );
+    }
+
+    if (typeof tx.syncUserPrimaryRole === "function") {
+      await tx.syncUserPrimaryRole(saved.id, roleKey);
+    }
+
+    const persisted = (await tx.getUserById(saved.id)) || saved;
+    const roleKeys =
+      typeof tx.listActiveUserRoleKeys === "function" ? await tx.listActiveUserRoleKeys(persisted.id) : [roleKey];
+    const hydrated = hydrateUser(persisted, roleKeys);
+
+    await writeClientsAudit(tx, principal, auditMeta, {
+      schoolCode: roleKey === SCHOOL_ADMIN_KEY ? schoolCode : "*",
+      action: "provision_user",
+      entityType: "user",
+      entityId: persisted.id,
+      newValue: {
+        ...hydrated,
+        roleKey,
+        operation: "PROVISION",
+      },
     });
 
     return {
@@ -933,6 +1130,7 @@ async function archiveAnnouncement(store, announcementId, principal, auditMeta) 
 
 module.exports = {
   createUser,
+  provisionUser,
   updateUser,
   reassignUserSchool,
   createContact,

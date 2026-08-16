@@ -39,6 +39,11 @@ function createClientsPgStore(repo) {
           [asTrimmed(code).toUpperCase()],
         );
       },
+      async getCountryByCode(code) {
+        const normalized = asTrimmed(code).toUpperCase();
+        if (!normalized) return null;
+        return one("SELECT * FROM countries WHERE iso_code = $1", [normalized]);
+      },
       async getUserById(id) {
         return one(
           `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
@@ -553,6 +558,7 @@ function createClientsPgStore(repo) {
   const store = {
     bind,
     getSchoolByCode: (code) => bind({}).getSchoolByCode(code),
+    getCountryByCode: (code) => bind({}).getCountryByCode(code),
     getUserById: (id) => bind({}).getUserById(id),
     withTransaction(fn) {
       return repo.withTransaction((tx) => fn(bind(tx)));
@@ -620,6 +626,7 @@ function createClientsPgStore(repo) {
       };
     },
     createUser: (...args) => clientsService.createUser(store, ...args),
+    provisionUser: (...args) => clientsService.provisionUser(store, ...args),
     updateUser: (...args) => clientsService.updateUser(store, ...args),
     reassignUserSchool: (...args) => clientsService.reassignUserSchool(store, ...args),
     grantUserRole: (...args) => userRoleLifecycleService.grantRole(store, ...args),

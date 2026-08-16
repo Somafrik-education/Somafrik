@@ -2231,6 +2231,11 @@ app.post("/api/backoffice/users", requireAuth, requirePermission("POST /api/back
   res.status(201).json(sanitizeUserForResponse(created));
 }));
 
+app.post("/api/backoffice/users/provision", requireAuth, requirePermission("POST /api/backoffice/users/provision"), asyncHandler(async (req, res) => {
+  const created = await repository.provisionClientsUser(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(201).json(sanitizeUserForResponse(created));
+}));
+
 app.patch("/api/backoffice/users/:userId", requireAuth, requirePermission("PATCH /api/backoffice/users/:userId"), asyncHandler(async (req, res) => {
   const updated = await repository.updateClientsUser(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
   res.json(sanitizeUserForResponse(updated));

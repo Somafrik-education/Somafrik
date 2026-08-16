@@ -87,6 +87,7 @@ vi.mock("../lib/clientsApi", () => ({
     revokeUserRole: vi.fn(),
     updateUser: vi.fn(),
     createUser: vi.fn(),
+    provisionUser: vi.fn(),
   },
 }));
 

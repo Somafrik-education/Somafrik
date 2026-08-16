@@ -2717,6 +2717,10 @@ class FallbackRepository {
     return this.getClientsStore().createUser(payload, principal, auditMeta);
   }
 
+  provisionClientsUser(payload, principal, auditMeta) {
+    return this.getClientsStore().provisionUser(payload, principal, auditMeta);
+  }
+
   updateClientsUser(id, patch, principal, auditMeta) {
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
   }
