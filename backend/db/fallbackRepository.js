@@ -215,6 +215,13 @@ class FallbackRepository {
     return session;
   }
 
+  async findActiveAccessSession(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.revoked_at) return null;
+    if (new Date(session.expires_at).getTime() <= Date.now()) return null;
+    return session;
+  }
+
   async revokeSession(sessionId, reason = "logout") {
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -2712,6 +2719,19 @@ class FallbackRepository {
 
   updateClientsUser(id, patch, principal, auditMeta) {
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
+  }
+
+  reassignClientsUserSchool(id, payload, principal, auditMeta) {
+    return this.getClientsStore().reassignUserSchool(id, payload, principal, auditMeta).then((result) => {
+      const userId = String(result?.id ?? id);
+      for (const session of this.sessions.values()) {
+        if (String(session.user_id ?? "") === userId && !session.revoked_at) {
+          session.revoked_at = new Date();
+          session.revoke_reason = "tenant_reassign";
+        }
+      }
+      return result;
+    });
   }
 
   async grantClientsUserRole(userId, payload, principal, auditMeta) {

@@ -99,6 +99,39 @@ function createClientsPgStore(repo) {
           ],
         );
       },
+      async updateUserSchoolId(id, schoolId) {
+        return one(
+          `UPDATE users
+           SET school_id = $2,
+               profile_payload = COALESCE(profile_payload, '{}'::jsonb)
+                 - 'countryCode' - 'countryScope' - 'schoolCode' - 'schoolId' - 'country',
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *, ${userSchoolReturningSql("$2")},
+             (SELECT c.iso_code FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $2) AS country_code,
+             (SELECT c.name FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $2) AS country_name`,
+          [id, schoolId],
+        );
+      },
+      async reassignActiveUserRolesSchool(userId, _fromSchoolId, toSchoolId) {
+        await query(
+          `UPDATE user_roles
+           SET school_id = $2, updated_at = NOW()
+           WHERE user_id = $1
+             AND status = 'active'
+             AND revoked_at IS NULL`,
+          [userId, toSchoolId],
+        );
+      },
+      async revokeUserSessions(userId, reason) {
+        const result = await query(
+          `UPDATE sessions
+           SET revoked_at = NOW(), revoke_reason = $2
+           WHERE user_id = $1 AND revoked_at IS NULL`,
+          [userId, reason],
+        );
+        return result?.rowCount ?? 0;
+      },
       async lockUserById(id) {
         return one(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [id]);
       },
@@ -588,6 +621,7 @@ function createClientsPgStore(repo) {
     },
     createUser: (...args) => clientsService.createUser(store, ...args),
     updateUser: (...args) => clientsService.updateUser(store, ...args),
+    reassignUserSchool: (...args) => clientsService.reassignUserSchool(store, ...args),
     grantUserRole: (...args) => userRoleLifecycleService.grantRole(store, ...args),
     revokeUserRole: (...args) => userRoleLifecycleService.revokeRole(store, ...args),
     listAssignableUserRoles: (...args) =>

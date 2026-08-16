@@ -35,6 +35,7 @@ function createClientsMemoryStore(seed = {}) {
     announcements: [],
     schools: clone(seed.platformSchools ?? []),
     students: clone(seed.students ?? []),
+    sessions: clone(seed.sessions ?? []),
   };
 
   if (seed.school) {
@@ -175,6 +176,39 @@ function createClientsMemoryStore(seed = {}) {
           updated_at: new Date(),
         };
         return this.getUserById(id);
+      },
+      async updateUserSchoolId(id, schoolId) {
+        const index = tables.users.findIndex((user) => user.id === id);
+        if (index < 0) return null;
+        const existing = tables.users[index];
+        const profile = { ...parsePayload(existing.profile_payload) };
+        delete profile.countryCode;
+        delete profile.countryScope;
+        delete profile.schoolCode;
+        delete profile.schoolId;
+        delete profile.country;
+        tables.users[index] = {
+          ...existing,
+          school_id: schoolId,
+          profile_payload: profile,
+          updated_at: new Date(),
+        };
+        return this.getUserById(id);
+      },
+      async reassignActiveUserRolesSchool(userId, _fromSchoolId, toSchoolId) {
+        tables.userRoles = tables.userRoles.map((row) => {
+          if (row.user_id !== userId || row.status !== "active" || row.revoked_at) return row;
+          return { ...row, school_id: toSchoolId, updated_at: new Date() };
+        });
+      },
+      async revokeUserSessions(userId, reason) {
+        let count = 0;
+        tables.sessions = tables.sessions.map((row) => {
+          if (row.user_id !== userId || row.revoked_at) return row;
+          count += 1;
+          return { ...row, revoked_at: new Date(), revoke_reason: reason };
+        });
+        return count;
       },
       async lockUserById(id) {
         return this.getUserById(id);
@@ -550,8 +584,19 @@ function createClientsMemoryStore(seed = {}) {
     bind,
     getSchoolByCode: (code) => txApi.getSchoolByCode(code),
     getUserById: (id) => txApi.getUserById(id),
-    withTransaction(fn) {
-      return fn(txApi);
+    async withTransaction(fn) {
+      const snapshot = clone(tables);
+      const auditSnapshot = [...auditLog];
+      try {
+        return await fn(txApi);
+      } catch (error) {
+        Object.keys(tables).forEach((key) => {
+          tables[key] = snapshot[key];
+        });
+        auditLog.length = 0;
+        auditLog.push(...auditSnapshot);
+        throw error;
+      }
     },
     listProjection() {
       const users = tables.users.map((row) => {
@@ -706,6 +751,7 @@ function createClientsMemoryStore(seed = {}) {
     },
     createUser: (...args) => clientsService.createUser(store, ...args),
     updateUser: (...args) => clientsService.updateUser(store, ...args),
+    reassignUserSchool: (...args) => clientsService.reassignUserSchool(store, ...args),
     grantUserRole: (...args) => userRoleLifecycleService.grantRole(store, ...args),
     revokeUserRole: (...args) => userRoleLifecycleService.revokeRole(store, ...args),
     listAssignableUserRoles: (...args) =>

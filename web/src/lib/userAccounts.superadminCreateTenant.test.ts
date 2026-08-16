@@ -44,6 +44,9 @@ describe("Superadmin create-user tenant defaults", () => {
     const policy = getUserFormFieldPolicy(superadminSession.user, "");
     expect(policy.countryScope).toBe("select");
     expect(policy.schoolCode).toBe("select");
+    const editPolicy = getUserFormFieldPolicy(superadminSession.user, "Admin School", { mode: "edit" });
+    expect(editPolicy.countryScope).toBe("readonly");
+    expect(editPolicy.schoolCode).toBe("readonly");
   });
 
   it("ne préremplit pas une école CD quand le rôle Admin School est choisi", () => {

@@ -1141,6 +1141,11 @@ class PostgresRepository {
     return this.getClientsStore().updateUser(id, patch, principal, auditMeta);
   }
 
+  reassignClientsUserSchool(id, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().reassignUserSchool(id, payload, principal, auditMeta);
+  }
+
   grantClientsUserRole(userId, payload, principal, auditMeta) {
     this.cachedDataset = null;
     return this.getClientsStore().grantUserRole(userId, payload, principal, auditMeta);
@@ -1636,6 +1641,20 @@ class PostgresRepository {
          AND sess.revoked_at IS NULL
          AND sess.expires_at > NOW()`,
       [sessionId, refreshTokenHash]
+    );
+  }
+
+  async findActiveAccessSession(sessionId) {
+    await this.init();
+    const code = String(sessionId ?? "").trim();
+    if (!code) return null;
+    return this.one(
+      `SELECT session_code, user_id, revoked_at, expires_at
+       FROM sessions
+       WHERE session_code = $1
+         AND revoked_at IS NULL
+         AND expires_at > NOW()`,
+      [code],
     );
   }
 

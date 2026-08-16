@@ -49,6 +49,8 @@ export const clientsApi = {
   createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", buildCreateUserPayload(payload)),
   updateUser: (userId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/users/${encodeURIComponent(userId)}`, payload),
+  reassignUserSchool: (userId: string, payload: Record<string, unknown>) =>
+    api.post(`/backoffice/users/${encodeURIComponent(userId)}/reassign-school`, payload),
   listAssignableRoles: async () => {
     const response = await api.get<{ roles: AssignableRole[] }>("/backoffice/users/assignable-roles");
     return { ...response, roles: withPlatformAssignableRoles(response.roles ?? []) };

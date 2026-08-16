@@ -380,6 +380,157 @@ async function main() {
     });
     assert.equal(cdDenied.status, 403, JSON.stringify(cdDenied.data));
 
+    // P0 réaffectation tenant : SCHOOL_ADMIN CD → BI, compte dédié (ne pas toucher activeSchoolIdentity).
+    const reassignEmail = `school-admin-reassign-${stamp}@test.local`;
+    const reassignPassword = "SchoolReassign!2026";
+    const reassignIdentity = await createIdentity(superadmin.token, {
+      firstName: "Irène",
+      lastName: `Reassign${stamp}`,
+      email: reassignEmail,
+      password: reassignPassword,
+      schoolCode: SCHOOL_CD,
+    });
+    await grantRole(superadmin.token, reassignIdentity.id, "Admin School", "SCHOOL_ADMIN");
+
+    const forbiddenIdentityPatch = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}`, {
+      method: "PATCH",
+      token: superadmin.token,
+      body: {
+        firstName: "Irène",
+        schoolCode: SCHOOL_BI,
+        countryCode: "BI",
+        userCode: "SHOULD-BE-FORBIDDEN",
+      },
+    });
+    assert.equal(forbiddenIdentityPatch.status, 400, JSON.stringify(forbiddenIdentityPatch.data));
+    assert.equal(forbiddenIdentityPatch.data.code, "CLIENT_IDENTITY_FIELD_FORBIDDEN");
+
+    // Régression #222 : utilisateur PG existant, PATCH identité sans changer le tenant → 200.
+    // Contrat UI post-#223 : allowlist (pas de userCode / schoolCode / countryCode / role).
+    const identityOnly = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}`, {
+      method: "PATCH",
+      token: superadmin.token,
+      body: { firstName: "Irène-Edit" },
+    });
+    assert.equal(identityOnly.status, 200, JSON.stringify(identityOnly.data));
+    assert.equal(identityOnly.data.firstName, "Irène-Edit");
+    assert.equal(identityOnly.data.schoolCode, SCHOOL_CD);
+
+    const identityKept = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}`, {
+      method: "PATCH",
+      token: superadmin.token,
+      body: {
+        firstName: "Irène-Maj",
+        schoolCode: SCHOOL_BI,
+        countryCode: "BI",
+      },
+    });
+    assert.equal(identityKept.status, 200, JSON.stringify(identityKept.data));
+    assert.equal(identityKept.data.firstName, "Irène-Maj");
+    assert.equal(identityKept.data.schoolCode, SCHOOL_CD);
+    assert.notEqual(identityKept.data.schoolCode, SCHOOL_BI);
+
+    const beforeReassign = await pool.query(
+      `SELECT u.id, u.user_code, u.school_id, s.school_code, s.login_code, s.name, c.iso_code,
+              ur.school_id AS role_school_id, ur.role_key
+         FROM users u
+         LEFT JOIN schools s ON s.id = u.school_id
+         LEFT JOIN countries c ON c.id = s.country_id
+         JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
+        WHERE u.id = $1`,
+      [reassignIdentity.id],
+    );
+    assert.equal(beforeReassign.rows[0].school_code, SCHOOL_CD);
+    assert.equal(beforeReassign.rows[0].iso_code, "CD");
+    assert.equal(String(beforeReassign.rows[0].school_id), String(beforeReassign.rows[0].role_school_id));
+
+    const loggedReassign = await login(reassignEmail, reassignPassword, SCHOOL_CD);
+    const staleToken = loggedReassign.token;
+
+    const mismatchReassign = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}/reassign-school`, {
+      method: "POST",
+      token: superadmin.token,
+      body: { schoolCode: SCHOOL_BI, countryCode: "CD" },
+    });
+    assert.equal(mismatchReassign.status, 409, JSON.stringify(mismatchReassign.data));
+    assert.equal(mismatchReassign.data.code, "INVALID_TENANT_SCOPE");
+
+    const countryDenied = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}/reassign-school`, {
+      method: "POST",
+      token: countryAdmin.token,
+      body: { schoolCode: SCHOOL_BI, countryCode: "BI" },
+    });
+    assert.equal(countryDenied.status, 403, JSON.stringify(countryDenied.data));
+
+    const platformDenied = await request(`/backoffice/users/${encodeURIComponent(countryIdentity.id)}/reassign-school`, {
+      method: "POST",
+      token: superadmin.token,
+      body: { schoolCode: SCHOOL_BI, countryCode: "BI" },
+    });
+    assert.equal(platformDenied.status, 409, JSON.stringify(platformDenied.data));
+    assert.equal(platformDenied.data.code, "ROLE_SCOPE_CONFLICT");
+
+    const reassigned = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}/reassign-school`, {
+      method: "POST",
+      token: superadmin.token,
+      body: { schoolCode: SCHOOL_BI, countryCode: "BI" },
+    });
+    assert.equal(reassigned.status, 200, JSON.stringify(reassigned.data));
+    assert.equal(reassigned.data.schoolCode, SCHOOL_BI);
+    assert.equal(reassigned.data.countryCode, "BI");
+
+    const afterReassign = await pool.query(
+      `SELECT u.id, u.user_code, u.school_id, s.school_code, s.login_code, s.name, c.iso_code,
+              ur.school_id AS role_school_id, ur.role_key, u.profile_payload
+         FROM users u
+         LEFT JOIN schools s ON s.id = u.school_id
+         LEFT JOIN countries c ON c.id = s.country_id
+         JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
+        WHERE u.id = $1`,
+      [reassignIdentity.id],
+    );
+    assert.equal(afterReassign.rows[0].school_code, SCHOOL_BI);
+    assert.equal(afterReassign.rows[0].iso_code, "BI");
+    assert.equal(afterReassign.rows[0].role_key, "SCHOOL_ADMIN");
+    assert.equal(String(afterReassign.rows[0].school_id), String(afterReassign.rows[0].role_school_id));
+    assert.equal(afterReassign.rows[0].profile_payload?.schoolCode, undefined);
+    assert.equal(afterReassign.rows[0].profile_payload?.countryCode, undefined);
+
+    const revokedSessions = await pool.query(
+      `SELECT revoke_reason, revoked_at FROM sessions WHERE user_id = $1`,
+      [reassignIdentity.id],
+    );
+    assert.ok(revokedSessions.rowCount > 0, "aucune session à révoquer");
+    assert.ok(
+      revokedSessions.rows.every((row) => row.revoked_at && row.revoke_reason === "tenant_reassign"),
+      JSON.stringify(revokedSessions.rows),
+    );
+
+    const staleAccess = await request("/backoffice/users", { token: staleToken });
+    assert.equal(staleAccess.status, 401, JSON.stringify(staleAccess.data));
+
+    const newLogin = await login(reassignEmail, reassignPassword, SCHOOL_BI);
+    assert.equal(newLogin.user.countryCode, "BI");
+    assert.equal(newLogin.user.schoolCode, SCHOOL_BI);
+
+    const oldTenantDenied = await request(`/backoffice/users/${encodeURIComponent(activeSchoolIdentity.id)}`, {
+      method: "PATCH",
+      token: newLogin.token,
+      body: { firstName: "Hacked" },
+    });
+    assert.equal(oldTenantDenied.status, 403, JSON.stringify(oldTenantDenied.data));
+
+    const selfReassignForbidden = await request(
+      `/backoffice/users/${encodeURIComponent(reassignIdentity.id)}/reassign-school`,
+      {
+        method: "POST",
+        token: newLogin.token,
+        body: { schoolCode: SCHOOL_CD, countryCode: "CD" },
+      },
+    );
+    assert.equal(selfReassignForbidden.status, 403, JSON.stringify(selfReassignForbidden.data));
+    assert.equal(selfReassignForbidden.data.code, "USER_TENANT_REASSIGN_FORBIDDEN");
+
     // P0 reset password : verrouiller volontairement le compte, puis exiger un reset qui
     // déverrouille immédiatement, révoque les sessions et impose le changement du secret.
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -424,21 +575,23 @@ async function main() {
     assert.ok((finalLogin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "relogin final après reset échoué");
 
     // 4) Admin School -> utilisateur standard -> GRANT Secrétaire.
+    // schoolAdmin.token a été émis avant le reset : la session est révoquée (fail-closed).
+    const schoolAdminLiveToken = finalLogin.token;
     const userEmail = `user-created-${stamp}@test.local`;
-    const standardUser = await createIdentity(schoolAdmin.token, {
+    const standardUser = await createIdentity(schoolAdminLiveToken, {
       firstName: "Nadia",
       lastName: `User${stamp}`,
       email: userEmail,
       password: "StandardUser!2026",
     });
-    const userGranted = await grantRole(schoolAdmin.token, standardUser.id, "Secrétaire", "SECRETARY");
+    const userGranted = await grantRole(schoolAdminLiveToken, standardUser.id, "Secrétaire", "SECRETARY");
     assert.equal(userGranted.role, "Secrétaire");
     const userPg = await assertPgRole(pool, standardUser.id, "SECRETARY");
     assert.equal(userPg.school_code, SCHOOL_CD);
     assert.equal(userPg.status, "active");
 
-    const firstGet = extractList((await request("/backoffice/users", { token: schoolAdmin.token })).data);
-    const secondGet = extractList((await request("/backoffice/users", { token: schoolAdmin.token })).data);
+    const firstGet = extractList((await request("/backoffice/users", { token: schoolAdminLiveToken })).data);
+    const secondGet = extractList((await request("/backoffice/users", { token: schoolAdminLiveToken })).data);
     const first = firstGet.find((row) => String(row.id) === String(standardUser.id));
     const second = secondGet.find((row) => String(row.id) === String(standardUser.id));
     assert.ok(first, "GET utilisateurs ne contient pas l'utilisateur créé");
