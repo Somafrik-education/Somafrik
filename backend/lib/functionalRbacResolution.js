@@ -223,9 +223,19 @@ function parsePermissionStringsToModuleCrud(permissions = []) {
       if (normalized.startsWith("ajouter ") || normalized.startsWith("creer ")) {
         modulesCrud[module.moduleKey].canCreate = true;
       }
-      if (normalized.startsWith("modifier ") || normalized.startsWith("faire ")) {
+      if (
+        normalized.startsWith("modifier ") ||
+        normalized.startsWith("faire ") ||
+        normalized.startsWith("valider ") ||
+        normalized.startsWith("publier ")
+      ) {
         modulesCrud[module.moduleKey].canUpdate = true;
-        if (normalized.startsWith("faire ")) modulesCrud[module.moduleKey].canRead = true;
+        modulesCrud[module.moduleKey].canRead = true;
+      }
+      if (normalized.startsWith("organiser ")) {
+        modulesCrud[module.moduleKey].canCreate = true;
+        modulesCrud[module.moduleKey].canUpdate = true;
+        modulesCrud[module.moduleKey].canRead = true;
       }
       if (normalized.startsWith("gerer ") || normalized.includes("crud")) {
         modulesCrud[module.moduleKey] = {

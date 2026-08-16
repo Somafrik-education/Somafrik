@@ -143,11 +143,13 @@ test("backfill parse Module:ACTION et Gérer", () => {
   const added = parsePermissionStringsToModuleCrud(["Ajouter enseignants", "Modifier notes"]);
   assert.equal(added.teachers.canCreate, true);
   assert.equal(added.grades.canUpdate, true);
-  const aliases = parsePermissionStringsToModuleCrud(["Voir enfant", "Faire appel", "Gérer appels"]);
+  const aliases = parsePermissionStringsToModuleCrud(["Voir enfant", "Faire appel", "Gérer appels", "Valider bulletins"]);
   assert.equal(aliases.students.canRead, true);
   assert.equal(aliases.attendance.canRead, true);
   assert.equal(aliases.attendance.canUpdate, true);
   assert.equal(aliases.attendance.canCreate, true);
+  assert.equal(aliases.report_cards.canUpdate, true);
+  assert.equal(aliases.report_cards.canRead, true);
 });
 
 test("409 expectedUpdatedAt et audit rollback mémoire si audit échoue", async () => {
@@ -343,6 +345,19 @@ test("POST /api/classes accepte Classes:CREATE après overlay live", () => {
   );
   assert.equal(
     rbac.canAccess({ role: "Admin School", permissions: ["Classes:READ"] }, "POST /api/classes"),
+    false,
+  );
+});
+
+test("PUT planning-exams accepte Examens:UPDATE après overlay live", () => {
+  const { RbacService } = require("../services/rbacService");
+  const rbac = new RbacService({ rolePermissions: {} });
+  assert.equal(
+    rbac.canAccess({ role: "Admin School", permissions: ["Examens:UPDATE"] }, "PUT /api/backoffice/planning-exams"),
+    true,
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Admin School", permissions: ["Examens:READ"] }, "PUT /api/backoffice/planning-exams"),
     false,
   );
 });

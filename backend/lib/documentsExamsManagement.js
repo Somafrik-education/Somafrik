@@ -154,7 +154,7 @@ function assertExamsRead(principal) {
 
 function assertExamsWrite(principal) {
   if (isSuperAdminPrincipal(principal)) return;
-  const allowed = ["Organiser examens", "Valider examens", "Examens:UPDATE", "ALL_PRIVILEGES"];
+  const allowed = ["Organiser examens", "Valider examens", "Examens:CREATE", "Examens:UPDATE", "ALL_PRIVILEGES"];
   if (!principalHasAnyPermission(principal, allowed)) {
     throw createDocumentsExamsError(403, "Vous n'avez pas le droit de modifier les examens.", DOCUMENTS_EXAMS_ERROR.FORBIDDEN);
   }
@@ -162,7 +162,7 @@ function assertExamsWrite(principal) {
 
 function assertExamsValidate(principal) {
   if (isSuperAdminPrincipal(principal)) return;
-  const allowed = ["Valider examens", "ALL_PRIVILEGES"];
+  const allowed = ["Valider examens", "Examens:UPDATE", "ALL_PRIVILEGES"];
   if (!principalHasAnyPermission(principal, allowed)) {
     throw createDocumentsExamsError(403, "Vous n'avez pas le droit de valider les examens.", DOCUMENTS_EXAMS_ERROR.FORBIDDEN);
   }
