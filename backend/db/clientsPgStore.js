@@ -12,6 +12,14 @@ const {
   mapAnnouncementRow,
 } = require("../lib/clientsManagement");
 
+const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
+
+function userSchoolReturningSql(schoolIdSql) {
+  return `(SELECT school_code FROM schools WHERE id = ${schoolIdSql}) AS school_code,
+          (SELECT login_code FROM schools WHERE id = ${schoolIdSql}) AS school_login_code,
+          (SELECT name FROM schools WHERE id = ${schoolIdSql}) AS school_name`;
+}
+
 function createClientsPgStore(repo) {
   function bind(client) {
     const one = (sql, params) => (client.one ? client.one(sql, params) : repo.one(sql, params));
@@ -33,7 +41,7 @@ function createClientsPgStore(repo) {
       },
       async getUserById(id) {
         return one(
-          `SELECT u.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
+          `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
            FROM users u
            LEFT JOIN schools s ON s.id = u.school_id
            LEFT JOIN countries c ON c.id = s.country_id
@@ -47,7 +55,7 @@ function createClientsPgStore(repo) {
              school_id, user_code, first_name, last_name, email, phone, gender, birth_date,
              password_hash, pin_hash, must_change_password, role, status, profile_payload, created_at, updated_at
            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,TRUE,$10,$11,$12::jsonb,NOW(),NOW())
-           RETURNING *, (SELECT school_code FROM schools WHERE id = $1) AS school_code,
+           RETURNING *, ${userSchoolReturningSql("$1")},
              (SELECT c.iso_code FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $1) AS country_code,
              (SELECT c.name FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = $1) AS country_name`,
           [
@@ -74,7 +82,7 @@ function createClientsPgStore(repo) {
            SET first_name = $2, last_name = $3, email = $4, phone = $5, gender = $6, birth_date = $7,
                role = $8, status = $9, profile_payload = $10::jsonb, updated_at = NOW()
            WHERE id = $1
-           RETURNING *, (SELECT school_code FROM schools WHERE id = users.school_id) AS school_code,
+           RETURNING *, ${userSchoolReturningSql("users.school_id")},
              (SELECT c.iso_code FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = users.school_id) AS country_code,
              (SELECT c.name FROM schools s JOIN countries c ON c.id = s.country_id WHERE s.id = users.school_id) AS country_name`,
           [
@@ -518,7 +526,7 @@ function createClientsPgStore(repo) {
     },
     async listProjection() {
       const users = await repo.all(
-        `SELECT u.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
+        `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
          FROM users u
          LEFT JOIN schools s ON s.id = u.school_id
          LEFT JOIN countries c ON c.id = s.country_id

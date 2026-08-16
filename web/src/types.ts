@@ -258,7 +258,11 @@ export interface UserAccount {
   secondaryRoles?: string[];
   scopeLevel?: string;
   countryScope?: string;
+  /** Alias tenant historique = schools.school_code. Ne pas afficher comme code public. */
   schoolCode?: string;
+  /** Code public canonique = schools.login_code. */
+  schoolPublicCode?: string;
+  schoolName?: string;
   accessChannel?: string;
   identifier?: string;
   status?: string;

@@ -13,6 +13,7 @@ const {
   mapRelationRow,
   mapMessageRow,
   mapAnnouncementRow,
+  schoolPublicProjectionFromSchool,
 } = require("../lib/clientsManagement");
 
 function clone(value) {
@@ -107,7 +108,7 @@ function createClientsMemoryStore(seed = {}) {
         const school = tables.schools.find((item) => item.id === row.school_id);
         return {
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+          ...schoolPublicProjectionFromSchool(school, "*"),
           country_code: school?.countryCode ?? "CD",
           country_name: school?.country ?? "RDC",
         };
@@ -546,7 +547,7 @@ function createClientsMemoryStore(seed = {}) {
         return userRoleLifecycleService.hydrateUser(
           {
             ...row,
-            school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+            ...schoolPublicProjectionFromSchool(school, "*"),
             country_code: school?.countryCode ?? "CD",
             country_name: school?.country ?? "RDC",
           },
@@ -594,13 +595,14 @@ function createClientsMemoryStore(seed = {}) {
         const teacher = tables.teachers.find((item) => item.user_id === row.id);
         const account = mapUserRowToAuthAccount({
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+          ...schoolPublicProjectionFromSchool(school, "*"),
           country_code: school?.countryCode ?? "CD",
           country_name: school?.country ?? "RDC",
         });
         const hydrated = userRoleLifecycleService.hydrateUser(
           {
             ...row,
+            ...schoolPublicProjectionFromSchool(school, "*"),
             school_code: account.schoolCode,
             country_code: account.countryCode,
             country_name: account.countryScope,
@@ -629,7 +631,7 @@ function createClientsMemoryStore(seed = {}) {
         const school = tables.schools.find((item) => item.id === row.school_id);
         const mapped = mapUserRowToAuthAccount({
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+          ...schoolPublicProjectionFromSchool(school, "*"),
           country_code: school?.countryCode ?? "CD",
           country_name: school?.country ?? "RDC",
         });
@@ -651,7 +653,7 @@ function createClientsMemoryStore(seed = {}) {
       const school = tables.schools.find((item) => item.id === tables.users[index].school_id);
       return mapUserRowToAuthAccount({
         ...tables.users[index],
-        school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+        ...schoolPublicProjectionFromSchool(school, "*"),
         country_code: school?.countryCode ?? "CD",
         country_name: school?.country ?? "RDC",
       });
@@ -666,7 +668,7 @@ function createClientsMemoryStore(seed = {}) {
         const school = tables.schools.find((item) => item.id === row.school_id);
         const mapped = mapUserRowToAuthAccount({
           ...row,
-          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+          ...schoolPublicProjectionFromSchool(school, "*"),
           country_code: school?.countryCode ?? "CD",
           country_name: school?.country ?? "RDC",
         });
@@ -688,7 +690,7 @@ function createClientsMemoryStore(seed = {}) {
       const school = tables.schools.find((item) => item.id === tables.users[index].school_id);
       return mapUserRowToAuthAccount({
         ...tables.users[index],
-        school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "*",
+        ...schoolPublicProjectionFromSchool(school, "*"),
         country_code: school?.countryCode ?? "CD",
         country_name: school?.country ?? "RDC",
       });

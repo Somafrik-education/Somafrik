@@ -12,11 +12,27 @@ const superAdminContext: PermissionContext = {
   rolePermissions: {},
 };
 
+const prefetContext: PermissionContext = {
+  user: {
+    role: "Préfet des études",
+    schoolCode: "CD-2026-0001",
+    permissions: ["Utilisateurs:READ", "Contacts:READ"],
+  },
+  rolePermissions: {},
+};
+
 describe("domainsForPath — comptes utilisateurs", () => {
-  it("charge schools avec users sur la route Superadmin pour résoudre le login_code canonique", () => {
+  it("charge schools avec users sur la route Superadmin pour le formulaire, pas pour le code public", () => {
     const domains = domainsForPath("/administration/utilisateurs", superAdminContext);
 
     expect(domains).toContain("users");
     expect(domains).toContain("schools");
+  });
+
+  it("ne charge pas le domaine schools pour un Préfet sur comptes utilisateurs", () => {
+    const domains = domainsForPath("/etablissement/comptes-utilisateurs", prefetContext);
+
+    expect(domains).toContain("users");
+    expect(domains).not.toContain("schools");
   });
 });

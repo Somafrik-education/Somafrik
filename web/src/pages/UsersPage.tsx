@@ -40,13 +40,13 @@ import { Modal } from "../components/ui/Modal";
 import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { usePrompt } from "../components/ui/PromptDialog";
-import type { School, UserAccount } from "../types";
+import type { UserAccount } from "../types";
 
-function toCsv(users: UserAccount[], schools: School[]): string {
+function toCsv(users: UserAccount[]): string {
   const headers = ["Prénom", "Nom", "Identifiant", "Rôle(s)", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
   const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = users.map((u) =>
-    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatUserRolesDisplay(u), u.email, u.phone, getUserEstablishmentLabel(u, schools), u.countryScope, u.status]
+    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatUserRolesDisplay(u), u.email, u.phone, getUserEstablishmentLabel(u), u.countryScope, u.status]
       .map(escape)
       .join(","),
   );
@@ -332,7 +332,7 @@ export function UsersPage() {
   }
 
   function exportCsv() {
-    const blob = new Blob(["\uFEFF" + toCsv(filtered, schoolsForLabels)], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\uFEFF" + toCsv(filtered)], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -595,7 +595,7 @@ export function UsersPage() {
               <Row label="Téléphone" value={detail.phone} />
               <Row label="Périmètre" value={detail.scopeLevel} />
               <Row label="Pays" value={detail.countryScope} />
-              <Row label="Établissement" value={getUserEstablishmentLabel(detail, schoolsForLabels)} />
+              <Row label="Établissement" value={getUserEstablishmentLabel(detail)} />
               <Row label="Canal" value={formatAccessChannelLabel(detail.accessChannel)} />
               <Row label="Statut" value={detail.status} />
               <Row label="Dernière connexion" value={detail.lastLoginAt ?? "—"} />
@@ -728,7 +728,7 @@ export function UsersPage() {
                     ]}
                   />
                 ) : (
-                  <Input value={getUserEstablishmentLabel(editing, schoolsForLabels)} readOnly />
+                  <Input value={getUserEstablishmentLabel(editing)} readOnly />
                 )}
               </Field>
             ) : null}
