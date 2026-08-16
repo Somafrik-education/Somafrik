@@ -143,6 +143,11 @@ test("backfill parse Module:ACTION et Gérer", () => {
   const added = parsePermissionStringsToModuleCrud(["Ajouter enseignants", "Modifier notes"]);
   assert.equal(added.teachers.canCreate, true);
   assert.equal(added.grades.canUpdate, true);
+  const aliases = parsePermissionStringsToModuleCrud(["Voir enfant", "Faire appel", "Gérer appels"]);
+  assert.equal(aliases.students.canRead, true);
+  assert.equal(aliases.attendance.canRead, true);
+  assert.equal(aliases.attendance.canUpdate, true);
+  assert.equal(aliases.attendance.canCreate, true);
 });
 
 test("409 expectedUpdatedAt et audit rollback mémoire si audit échoue", async () => {

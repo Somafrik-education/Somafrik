@@ -175,11 +175,18 @@ async function main() {
     assert.equal(nuru.modules.students.canDelete, false, "école A DELETE retiré");
     assert.equal(other.modules.students.canDelete, false, "sans règle école B, fail-closed sauf global");
 
+    const globalUpdatedAt = await store.maxUpdatedAtForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "global",
+      countryId: null,
+      schoolId: null,
+    });
     await patchConfiguredPermissions(
       repo,
       {
         roleKey: "PREFET_ETUDES",
         scopeType: "global",
+        ...(globalUpdatedAt ? { expectedUpdatedAt: globalUpdatedAt } : {}),
         grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: true }],
       },
       superAdmin,

@@ -183,6 +183,17 @@ function resolveEffectivePermissionSet(roleKeys, grants, scope = {}) {
   return { roleKeys: keys, modules: modulesCrud, permissions };
 }
 
+function moduleMatchesNormalized(module, normalized) {
+  const moduleNorm = module.moduleName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (normalized.includes(moduleNorm)) return true;
+  if (module.moduleKey === "students" && normalized.includes("enfant")) return true;
+  if (module.moduleKey === "attendance" && normalized.includes("appel")) return true;
+  return false;
+}
+
 function parsePermissionStringsToModuleCrud(permissions = []) {
   const modulesCrud = {};
   for (const module of listFunctionalModules()) modulesCrud[module.moduleKey] = emptyCrud();
@@ -205,19 +216,16 @@ function parsePermissionStringsToModuleCrud(permissions = []) {
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase();
     for (const module of listFunctionalModules()) {
-      const moduleNorm = module.moduleName
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
-      if (!normalized.includes(moduleNorm)) continue;
+      if (!moduleMatchesNormalized(module, normalized)) continue;
       if (normalized.startsWith("voir ") || normalized.startsWith("lire ")) {
         modulesCrud[module.moduleKey].canRead = true;
       }
       if (normalized.startsWith("ajouter ") || normalized.startsWith("creer ")) {
         modulesCrud[module.moduleKey].canCreate = true;
       }
-      if (normalized.startsWith("modifier ")) {
+      if (normalized.startsWith("modifier ") || normalized.startsWith("faire ")) {
         modulesCrud[module.moduleKey].canUpdate = true;
+        if (normalized.startsWith("faire ")) modulesCrud[module.moduleKey].canRead = true;
       }
       if (normalized.startsWith("gerer ") || normalized.includes("crud")) {
         modulesCrud[module.moduleKey] = {
