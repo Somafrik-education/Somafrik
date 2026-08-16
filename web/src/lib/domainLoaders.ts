@@ -79,7 +79,18 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
     dashboardChartConfig: async () => ({
       dashboardChartConfig: (await platformApi.getDashboardChartConfig()) as unknown as BackOfficeState["dashboardChartConfig"],
     }),
-    users: async () => ({ users: (await clientsApi.listUsers()) as BackOfficeState["users"] }),
+    users: async () => {
+      const users = (await clientsApi.listUsers()) as BackOfficeState["users"];
+      const resolvedSchools = await clientsApi.resolveUserSchools(
+        users as unknown as Array<Record<string, unknown>>,
+      );
+      return {
+        users,
+        ...(resolvedSchools.length
+          ? { schools: resolvedSchools as BackOfficeState["schools"] }
+          : {}),
+      };
+    },
     contacts: async () => ({ contacts: (await clientsApi.listContacts()) as BackOfficeState["contacts"] }),
     relations: async () => ({ relations: (await clientsApi.listRelations()) as BackOfficeState["relations"] }),
     messages: async () => ({ messages: (await clientsApi.listMessages()) as BackOfficeState["messages"] }),
