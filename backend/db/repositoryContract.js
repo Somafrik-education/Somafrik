@@ -16,6 +16,7 @@ const REPOSITORY_METHODS = Object.freeze([
   // Sessions & authentification
   "createSession",
   "findActiveSession",
+  "findActiveAccessSession",
   "revokeSession",
   // Audit
   "recordAudit",
@@ -138,6 +139,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "listClientsProjection",
   "createClientsUser",
   "updateClientsUser",
+  "reassignClientsUserSchool",
   "createClientsContact",
   "updateClientsContact",
   "provisionClientsContactAccount",

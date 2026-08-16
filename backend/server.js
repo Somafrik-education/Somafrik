@@ -2236,6 +2236,16 @@ app.patch("/api/backoffice/users/:userId", requireAuth, requirePermission("PATCH
   res.json(sanitizeUserForResponse(updated));
 }));
 
+app.post("/api/backoffice/users/:userId/reassign-school", requireAuth, requirePermission("POST /api/backoffice/users/:userId/reassign-school"), asyncHandler(async (req, res) => {
+  const updated = await repository.reassignClientsUserSchool(
+    req.params.userId,
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(sanitizeUserForResponse(updated));
+}));
+
 app.post("/api/backoffice/users/:userId/roles/grant", requireAuth, requirePermission("POST /api/backoffice/users/:userId/roles/grant"), asyncHandler(async (req, res) => {
   const updated = await repository.grantClientsUserRole(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
   res.json(sanitizeUserForResponse(updated));
@@ -5179,6 +5189,14 @@ function requireAuth(req, res, next) {
     }
 
     req.principal = await hydrateParentPrincipal(tokenService.verify(token, "access"));
+
+    const sessionId = String(req.principal?.sessionId ?? "").trim();
+    if (sessionId && typeof repository.findActiveAccessSession === "function") {
+      const activeSession = await repository.findActiveAccessSession(sessionId);
+      if (!activeSession) {
+        throw new BusinessError(401, "Session révoquée.");
+      }
+    }
 
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",

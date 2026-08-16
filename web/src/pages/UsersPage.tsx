@@ -4,7 +4,8 @@ import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useData } from "../context/DataContext";
 import { scopedCountries, scopedSchools, scopedUsers } from "../lib/scope";
 import { getCurrentSchool } from "../lib/establishment";
-import { isInternalSchoolRole, normalize, getInitials, resolveCountryScopeFromSchool } from "../lib/format";
+import { isInternalSchoolRole, normalize, getInitials, resolveCountryScopeFromSchool, getCountryCodeFromScope } from "../lib/format";
+import { formatCaughtApiError } from "../lib/apiErrors";
 import { canManageRolePermissions, canResetTargetUserPassword } from "../lib/permissions";
 import { USER_ACCOUNT_STATUS_OPTIONS, validatePasswordPolicy } from "../lib/userAccountRules";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
@@ -12,6 +13,7 @@ import {
   applyRoleChangeToUser,
   buildNewUserDraft,
   canManageUserAccount,
+  canReassignUserTenant,
   canSuperadminManageUser,
   formatAccessChannelLabel,
   getCountryScopeOptions,
@@ -22,6 +24,7 @@ import {
   isCountryAdminProvisionedUser,
   schoolsMatchingCountryScope,
   toCreateUserApiPayload,
+  toUpdateUserIdentityPayload,
   validateUserAccount,
   resetUserAccountPassword,
 } from "../lib/userAccounts";
@@ -88,6 +91,9 @@ export function UsersPage() {
   const [assignableRoles, setAssignableRoles] = useState<Array<{ roleKey: string; roleName: string }>>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [reassigning, setReassigning] = useState<UserAccount | null>(null);
+  const [reassignCountry, setReassignCountry] = useState("");
+  const [reassignSchool, setReassignSchool] = useState("");
 
   const creatableRoles = useMemo(
     () => getCreatableUserRoles(scopeUser, state, schoolCode),
@@ -114,7 +120,10 @@ export function UsersPage() {
     }));
   }, [editing?.countryScope, isSuperadminView, schoolsForLabels]);
 
-  const fieldPolicy = getUserFormFieldPolicy(scopeUser, editing?.role ?? "");
+  const isEditingExisting = Boolean(editing?.id && state.users.some((u) => u.id === editing.id));
+  const fieldPolicy = getUserFormFieldPolicy(scopeUser, editing?.role ?? "", {
+    mode: isEditingExisting ? "edit" : "create",
+  });
   const allowedSchoolCodes = useMemo(
     () => schoolOptions.map((option) => normalize(option.value)),
     [schoolOptions],
@@ -145,15 +154,19 @@ export function UsersPage() {
   async function persistUserPatch(user: UserAccount, patch: Partial<UserAccount>, message: string) {
     setBusy(true);
     try {
-      await clientsApi.updateUser(String(user.id), {
-        ...user,
-        ...patch,
-      } as unknown as Record<string, unknown>);
-      await refresh();
+      try {
+        await clientsApi.updateUser(String(user.id), toUpdateUserIdentityPayload({ ...user, ...patch }));
+      } catch (error) {
+        showToast(formatCaughtApiError(error, "Échec de la modification d'identité"), "error");
+        throw error;
+      }
+      try {
+        await refresh();
+      } catch (error) {
+        showToast(formatCaughtApiError(error, "Échec du rechargement après enregistrement"), "error");
+        throw error;
+      }
       showToast(message, "success");
-    } catch {
-      showToast("Échec de la synchronisation", "error");
-      throw new Error("sync failed");
     } finally {
       setBusy(false);
     }
@@ -165,25 +178,34 @@ export function UsersPage() {
       if (syncedUser) {
         const exists = Boolean(syncedUser.id) && state.users.some((u) => u.id === syncedUser.id);
         if (exists) {
-          await clientsApi.updateUser(String(syncedUser.id), identityFieldsFromUser(syncedUser));
-        } else {
-          const created = (await clientsApi.createUser(toCreateUserApiPayload(syncedUser))) as UserAccount;
-          if (created.temporaryPassword) {
-            showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
+          try {
+            await clientsApi.updateUser(String(syncedUser.id), toUpdateUserIdentityPayload(syncedUser));
+          } catch (error) {
+            showToast(formatCaughtApiError(error, "Échec de la modification d'identité"), "error");
+            throw error;
           }
-          if (syncedUser.role && created?.id) {
-            await clientsApi.grantUserRole(String(created.id), syncedUser.role);
+        } else {
+          try {
+            const created = (await clientsApi.createUser(toCreateUserApiPayload(syncedUser))) as UserAccount;
+            if (created.temporaryPassword) {
+              showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
+            }
+            if (syncedUser.role && created?.id) {
+              await clientsApi.grantUserRole(String(created.id), syncedUser.role);
+            }
+          } catch (error) {
+            showToast(formatCaughtApiError(error, "Échec de la création"), "error");
+            throw error;
           }
         }
-        await refresh();
-        showToast(message, "success");
-        return;
       }
-      await refresh();
+      try {
+        await refresh();
+      } catch (error) {
+        showToast(formatCaughtApiError(error, "Échec du rechargement après enregistrement"), "error");
+        throw error;
+      }
       showToast(message, "success");
-    } catch {
-      showToast("Échec de la synchronisation", "error");
-      throw new Error("sync failed");
     } finally {
       setBusy(false);
     }
@@ -325,8 +347,8 @@ export function UsersPage() {
       await refresh();
       showToast("Rôles mis à jour.", "success");
       setAssigning(null);
-    } catch {
-      showToast("Échec de l'attribution des rôles.", "error");
+    } catch (error) {
+      showToast(formatCaughtApiError(error, "Échec de l'attribution des rôles"), "error");
     } finally {
       setBusy(false);
     }
@@ -334,6 +356,54 @@ export function UsersPage() {
 
   function closeEditor() {
     setEditing(null);
+  }
+
+  function openReassignFlow(user: UserAccount) {
+    setEditing(null);
+    setReassigning(user);
+    setReassignCountry(user.countryScope ?? "");
+    setReassignSchool("");
+  }
+
+  function closeReassignFlow() {
+    setReassigning(null);
+    setReassignCountry("");
+    setReassignSchool("");
+  }
+
+  async function submitReassign() {
+    if (!reassigning?.id) return;
+    const schoolCode = String(reassignSchool ?? "").trim();
+    const countryCode = getCountryCodeFromScope(reassignCountry);
+    if (!schoolCode) {
+      showToast("Sélectionnez le nouvel établissement.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      try {
+        await clientsApi.reassignUserSchool(String(reassigning.id), {
+          schoolCode,
+          ...(countryCode ? { countryCode } : {}),
+        });
+      } catch (error) {
+        showToast(formatCaughtApiError(error, "Échec de la réaffectation d'établissement"), "error");
+        throw error;
+      }
+      try {
+        await refresh();
+      } catch (error) {
+        showToast(formatCaughtApiError(error, "Échec du rechargement après réaffectation"), "error");
+        throw error;
+      }
+      showToast("Établissement réaffecté. Les sessions existantes ont été révoquées.", "success");
+      closeReassignFlow();
+      setEditing(null);
+    } catch {
+      /* toast déjà affiché */
+    } finally {
+      setBusy(false);
+    }
   }
 
   function exportCsv() {
@@ -412,7 +482,20 @@ export function UsersPage() {
       : []),
   ];
 
-  const isEditingExisting = Boolean(editing?.id && state.users.some((u) => u.id === editing.id));
+  const reassignSchoolOptions = useMemo(() => {
+    const source = isSuperadminView
+      ? schoolsMatchingCountryScope(schoolsForLabels, reassignCountry)
+      : schoolsForLabels;
+    return source.map((item) => ({
+      value: item.code,
+      label: `${item.name} (${item.code})`,
+    }));
+  }, [isSuperadminView, reassignCountry, schoolsForLabels]);
+  const canShowReassign =
+    Boolean(editing) &&
+    isEditingExisting &&
+    canUpdate &&
+    canReassignUserTenant(scopeUser, editing);
 
   return (
     <>
@@ -684,7 +767,15 @@ export function UsersPage() {
                 />
               </Field>
             ) : null}
-            <Field label="Pays" hint="Périmètre géographique du compte" required={editing.role === SCHOOL_ADMIN_ROLE || editing.role === COUNTRY_ADMIN_ROLE}>
+            <Field
+              label="Pays"
+              hint={
+                isEditingExisting
+                  ? "Lecture seule. La réaffectation d'établissement est une action distincte."
+                  : "Périmètre géographique du compte"
+              }
+              required={!isEditingExisting && (editing.role === SCHOOL_ADMIN_ROLE || editing.role === COUNTRY_ADMIN_ROLE)}
+            >
               {fieldPolicy.countryScope === "select" ? (
                 <Select
                   value={editing.countryScope ?? ""}
@@ -732,9 +823,11 @@ export function UsersPage() {
               <Field
                 label="Établissement"
                 hint={
-                  isSuperadminView || isCountryAdminView
-                    ? "Admin école rattaché à un établissement précis"
-                    : "Périmètre autorisé du compte"
+                  isEditingExisting
+                    ? "Lecture seule. Utilisez « Réaffecter l'établissement » pour changer le tenant PostgreSQL."
+                    : isSuperadminView || isCountryAdminView
+                      ? "Admin école rattaché à un établissement précis"
+                      : "Périmètre autorisé du compte"
                 }
               >
                 {fieldPolicy.schoolCode === "select" ? (
@@ -766,6 +859,24 @@ export function UsersPage() {
                   <Input value={getUserEstablishmentLabel(editing)} readOnly />
                 )}
               </Field>
+            ) : null}
+            {canShowReassign ? (
+              <div className="sm:col-span-2 rounded-xl border border-amber/30 bg-amber/10 p-4">
+                <p className="text-sm font-semibold text-ink">Réaffectation d'établissement</p>
+                <p className="mt-1 text-sm text-muted">
+                  Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour
+                  PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mt-3"
+                  disabled={busy}
+                  onClick={() => editing && openReassignFlow(editing)}
+                >
+                  Réaffecter l'établissement
+                </Button>
+              </div>
             ) : null}
             {fieldPolicy.accessChannel !== "hidden" ? (
               <Field label="Canal d'accès">
@@ -860,23 +971,72 @@ export function UsersPage() {
           )}
         </div>
       </Modal>
+
+      <Modal
+        open={Boolean(reassigning)}
+        onClose={closeReassignFlow}
+        title="Réaffecter l'établissement"
+        description={
+          reassigning
+            ? `${reassigning.firstName ?? ""} ${reassigning.lastName ?? ""}`.trim()
+            : ""
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeReassignFlow}>
+              Annuler
+            </Button>
+            <Button variant="danger" disabled={busy || !reassignSchool} onClick={() => void submitReassign()}>
+              Confirmer la réaffectation
+            </Button>
+          </>
+        }
+      >
+        {reassigning ? (
+          <div className="grid gap-4">
+            <p className="text-sm text-muted">
+              Cette action rattache le compte à un autre établissement PostgreSQL, aligne les rôles actifs
+              sur le même school_id, et révoque immédiatement les sessions JWT existantes. L'accès à l'ancien
+              tenant sera refusé.
+            </p>
+            <Field label="Pays" required={isSuperadminView}>
+              {isSuperadminView ? (
+                <Select
+                  value={reassignCountry}
+                  onChange={(event) => {
+                    setReassignCountry(event.target.value);
+                    setReassignSchool("");
+                  }}
+                  options={[
+                    { value: "", label: "Choisir un pays..." },
+                    ...countryOptions,
+                  ]}
+                />
+              ) : (
+                <Input value={reassignCountry} readOnly />
+              )}
+            </Field>
+            <Field label="Nouvel établissement" required>
+              <Select
+                value={reassignSchool}
+                disabled={isSuperadminView && !String(reassignCountry).trim()}
+                onChange={(event) => setReassignSchool(event.target.value)}
+                options={[
+                  {
+                    value: "",
+                    label:
+                      isSuperadminView && !String(reassignCountry).trim()
+                        ? "Choisir un pays d'abord"
+                        : "Sélectionner un établissement",
+                  },
+                  ...reassignSchoolOptions,
+                ]}
+              />
+            </Field>
+          </div>
+        ) : null}
+      </Modal>
     </>
-  );
-}
-
-const IDENTITY_UPDATE_OMIT = new Set([
-  "role",
-  "roles",
-  "roleKeys",
-  "secondaryRoles",
-  "id",
-  "publicId",
-  "permissions",
-]);
-
-function identityFieldsFromUser(user: UserAccount): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(user).filter(([key]) => !IDENTITY_UPDATE_OMIT.has(key)),
   );
 }
 

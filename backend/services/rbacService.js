@@ -118,6 +118,7 @@ const routePermissions = {
   "GET /api/backoffice/users": ["Utilisateurs:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/users": ["Utilisateurs:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/users/:userId": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/users/:userId/reassign-school": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/users/:userId/roles/grant": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/users/:userId/roles/revoke": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/users/assignable-roles": ["Utilisateurs:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

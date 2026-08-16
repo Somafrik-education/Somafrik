@@ -282,6 +282,92 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   });
 }
 
+async function reassignUserSchool(store, userId, rawPayload, principal, auditMeta) {
+  if (!isSuperAdminPrincipal(principal) && !isCountryAdminPrincipal(principal)) {
+    throw createClientsError(
+      403,
+      "Réaffectation d'établissement réservée au Superadmin ou à l'Admin Pays.",
+      CLIENTS_ERROR.USER_TENANT_REASSIGN_FORBIDDEN,
+    );
+  }
+
+  const schoolCode = asTrimmed(rawPayload.schoolCode || rawPayload.schoolId).toUpperCase();
+  if (!schoolCode || schoolCode === "*") {
+    throw createClientsError(400, "Établissement obligatoire pour la réaffectation.", CLIENTS_ERROR.INVALID_TENANT_SCOPE);
+  }
+  const requestedCountry = requestedCountryCodeFromPayload(rawPayload);
+  assertSchoolScope(principal, schoolCode);
+  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+
+  return store.withTransaction(async (tx) => {
+    if (typeof tx.lockUserById === "function") {
+      await tx.lockUserById(userId);
+    }
+    const locked = await tx.getUserById(userId);
+    if (!locked) {
+      throw createClientsError(404, "Utilisateur introuvable.", CLIENTS_ERROR.USER_NOT_FOUND);
+    }
+
+    const roleKeys =
+      typeof tx.listActiveUserRoleKeys === "function" ? await tx.listActiveUserRoleKeys(locked.id) : [];
+    if (roleKeys.includes("SUPER_ADMIN") || roleKeys.includes("COUNTRY_ADMIN")) {
+      throw createClientsError(
+        409,
+        "Ce compte plateforme ne peut pas être réaffecté à un établissement.",
+        CLIENTS_ERROR.ROLE_SCOPE_CONFLICT,
+      );
+    }
+    if (!locked.school_id) {
+      throw createClientsError(
+        409,
+        "Ce compte n'est pas rattaché à un établissement.",
+        CLIENTS_ERROR.ROLE_SCOPE_CONFLICT,
+      );
+    }
+
+    const school = await tx.getSchoolByCode(schoolCode);
+    if (!school) {
+      throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
+    }
+    assertRequestedCountryMatchesSchool(school, requestedCountry);
+
+    if (String(locked.school_id ?? "") === String(school.id)) {
+      throw createClientsError(
+        409,
+        "L'utilisateur est déjà rattaché à cet établissement.",
+        CLIENTS_ERROR.CONFLICT,
+      );
+    }
+
+    if (typeof tx.updateUserSchoolId !== "function" || typeof tx.reassignActiveUserRolesSchool !== "function") {
+      throw createClientsError(500, "Réaffectation tenant indisponible dans la transaction.");
+    }
+
+    await tx.updateUserSchoolId(locked.id, school.id);
+    await tx.reassignActiveUserRolesSchool(locked.id, locked.school_id ?? null, school.id);
+
+    let sessionsRevoked = 0;
+    if (typeof tx.revokeUserSessions === "function") {
+      sessionsRevoked = await tx.revokeUserSessions(locked.id, "tenant_reassign");
+    }
+
+    const saved = await tx.getUserById(locked.id);
+    const afterKeys =
+      typeof tx.listActiveUserRoleKeys === "function" ? await tx.listActiveUserRoleKeys(locked.id) : roleKeys;
+
+    await writeClientsAudit(tx, principal, auditMeta, {
+      schoolCode,
+      action: "reassign_user_school",
+      entityType: "user",
+      entityId: locked.id,
+      oldValue: { ...hydrateUser(locked, roleKeys), sessionsRevoked: 0 },
+      newValue: { ...hydrateUser(saved, afterKeys), sessionsRevoked },
+    });
+
+    return hydrateUser(saved, afterKeys);
+  });
+}
+
 async function createContact(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
   const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
@@ -848,6 +934,7 @@ async function archiveAnnouncement(store, announcementId, principal, auditMeta) 
 module.exports = {
   createUser,
   updateUser,
+  reassignUserSchool,
   createContact,
   updateContact,
   provisionContactAccount,

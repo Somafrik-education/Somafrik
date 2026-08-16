@@ -145,51 +145,95 @@ export interface UserFormFieldPolicy {
   accessChannel: "hidden" | "readonly" | "select";
 }
 
-/** Champs modifiables selon le créateur et le rôle cible. */
+/** Champs modifiables selon le créateur, le rôle cible, et le mode create vs edit. */
 export function getUserFormFieldPolicy(
   creator: SessionUser | null | undefined,
   targetRole: string,
+  options: { mode?: "create" | "edit" } = {},
 ): UserFormFieldPolicy {
+  let policy: UserFormFieldPolicy;
   if (isSuperAdminRole(creator?.role)) {
     if (targetRole === COUNTRY_ADMIN_ROLE) {
-      return {
+      policy = {
         countryScope: "select",
         scopeLevel: "readonly",
         schoolCode: "readonly",
         accessChannel: "readonly",
       };
-    }
-    if (targetRole === SCHOOL_ADMIN_ROLE) {
-      return {
+    } else if (targetRole === SCHOOL_ADMIN_ROLE) {
+      policy = {
+        countryScope: "select",
+        scopeLevel: "readonly",
+        schoolCode: "select",
+        accessChannel: "readonly",
+      };
+    } else {
+      policy = {
         countryScope: "select",
         scopeLevel: "readonly",
         schoolCode: "select",
         accessChannel: "readonly",
       };
     }
-    return {
-      countryScope: "select",
-      scopeLevel: "readonly",
-      schoolCode: "select",
-      accessChannel: "readonly",
-    };
-  }
-
-  if (creator?.role === COUNTRY_ADMIN_ROLE) {
-    return {
+  } else if (creator?.role === COUNTRY_ADMIN_ROLE) {
+    policy = {
       countryScope: "readonly",
       scopeLevel: "readonly",
       schoolCode: "select",
       accessChannel: "readonly",
     };
+  } else {
+    policy = {
+      countryScope: "readonly",
+      scopeLevel: "readonly",
+      schoolCode: "readonly",
+      accessChannel: "select",
+    };
   }
 
-  return {
-    countryScope: "readonly",
-    scopeLevel: "readonly",
-    schoolCode: "readonly",
-    accessChannel: "select",
-  };
+  if (options.mode === "edit") {
+    return {
+      ...policy,
+      countryScope: "readonly",
+      schoolCode: "readonly",
+    };
+  }
+  return policy;
+}
+
+const IDENTITY_UPDATE_ALLOWLIST = [
+  "firstName",
+  "lastName",
+  "email",
+  "phone",
+  "gender",
+  "status",
+  "birthDate",
+  "validationStatus",
+  "validationRequestedBy",
+  "validationRequestedAt",
+  "validatedBy",
+  "validatedAt",
+] as const;
+
+/** PATCH identité : allowlist stricte. Jamais userCode / schoolCode / countryCode / role. */
+export function toUpdateUserIdentityPayload(user: Partial<UserAccount>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const key of IDENTITY_UPDATE_ALLOWLIST) {
+    if (user[key] !== undefined) payload[key] = user[key];
+  }
+  return payload;
+}
+
+export function canReassignUserTenant(
+  actor: SessionUser | null | undefined,
+  target: UserAccount | null | undefined,
+): boolean {
+  if (!actor || !target?.id) return false;
+  if (isSuperAdminRole(target.role) || target.role === COUNTRY_ADMIN_ROLE) return false;
+  const keys = target.roleKeys ?? [];
+  if (keys.includes("SUPER_ADMIN") || keys.includes("COUNTRY_ADMIN")) return false;
+  return isSuperAdminRole(actor.role) || actor.role === COUNTRY_ADMIN_ROLE;
 }
 
 const PARENT_STUDENT_ROLE_LABELS = new Set(["Parent", "Élève / Étudiant"]);
