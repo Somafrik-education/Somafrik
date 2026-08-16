@@ -26,27 +26,31 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
     ],
     protectedRoleKeys: ["SUPER_ADMIN"],
   };
-  const getConfiguredMock = vi.fn(async (_query: RbacConfiguredQuery): Promise<RbacConfiguredMatrix> => ({
-    roleKey: "PREFET_ETUDES",
-    roleName: "Préfet des études",
-    scopeType: "school",
-    updatedAt: "2026-08-16T10:00:00.000Z",
-    modules: [
-      {
-        moduleKey: "students",
-        moduleName: "Élèves",
-        appliesWeb: true,
-        appliesMobile: true,
-        canCreate: false,
-        canRead: true,
-        canUpdate: true,
-        canDelete: true,
-      },
-    ],
-  }));
-  const patchMock = vi.fn(async (_payload: RbacPatchPermissionsPayload) => ({
-    updatedAt: "2026-08-16T11:00:00.000Z",
-  }));
+  const getConfiguredMock = vi.fn(async (query: RbacConfiguredQuery): Promise<RbacConfiguredMatrix> => {
+    void query;
+    return {
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school",
+      updatedAt: "2026-08-16T10:00:00.000Z",
+      modules: [
+        {
+          moduleKey: "students",
+          moduleName: "Élèves",
+          appliesWeb: true,
+          appliesMobile: true,
+          canCreate: false,
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+        },
+      ],
+    };
+  });
+  const patchMock = vi.fn(async (payload: RbacPatchPermissionsPayload) => {
+    void payload;
+    return { updatedAt: "2026-08-16T11:00:00.000Z" };
+  });
   return { catalog, patchMock, getConfiguredMock };
 });
 
