@@ -91,7 +91,6 @@ async function main() {
     const repo = createRepo(pool);
     const store = createClientsPgStore(repo);
     const superAdmin = {
-      sub: "super",
       role: "Super Administrateur Somafrik",
       schoolCode: "*",
       identifier: "superadmin",
