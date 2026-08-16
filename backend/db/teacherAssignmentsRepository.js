@@ -99,7 +99,14 @@ function createTeacherAssignmentsRepository(db) {
     ]);
     if (!teacher) throw assignmentError(404, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
     if (!schoolClass) throw assignmentError(404, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
-    if (!subject) throw assignmentError(404, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+    if (!subject) {
+      console.error(JSON.stringify({
+        kind: "assignment_reference_resolution_failure",
+        entity: "subject",
+        schoolId: school.id,
+      }));
+      throw assignmentError(404, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+    }
     return { teacher, schoolClass, subject };
   }
 

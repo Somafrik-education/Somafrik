@@ -410,9 +410,9 @@ const sanitizedSchoolPermissions = pedagogyGovernance.sanitizeSchoolAdminRolePer
 rolePermissions["Admin School"] = sanitizedSchoolPermissions["Admin School"];
 
 /**
- * Carte utilisée par le backfill CRUD live : les rôles plateforme gardent la
- * projection sanitizée ; les rôles établissement restent sur les listes métier
- * (la matrice dashboard ne doit pas rendre Secrétaire un sur-ensemble de Comptable).
+ * Carte utilisée par le backfill CRUD live uniquement (seed/bootstrap).
+ * Après bootstrap, l'autorité est role_module_permissions PostgreSQL.
+ * Ne pas servir cette carte comme source runtime des écrans métier.
  */
 function rolePermissionsForLiveRbac() {
   const map = {};

@@ -20,7 +20,9 @@ function createMemoryAdapter() {
     { id: "class-2", school_id: "school-2", class_code: "CLS-B", name: "6ème B", academic_year_id: "year-1" },
   ];
   const subjects = [
-    { id: "subject-1", school_id: "school-1", subject_code: "SUB-MATH", name: "Mathématiques" },
+    { id: "subject-1", school_id: "school-1", subject_code: "SUB-MATH", name: "Mathématiques", status: "active" },
+    { id: "subject-archived", school_id: "school-1", subject_code: "SUB-OLD", name: "Ancienne", status: "archived" },
+    { id: "subject-b", school_id: "school-2", subject_code: "SUB-BIO", name: "Biologie", status: "active" },
   ];
   const assignments = [];
 
@@ -77,7 +79,8 @@ function createMemoryAdapter() {
         return subjects.find(
           (row) =>
             row.school_id === params[0] &&
-            [row.subject_code, row.name].includes(String(params[1])),
+            [row.subject_code, row.name].includes(String(params[1])) &&
+            String(row.status ?? "active") === "active",
         ) ?? null;
       }
       if (text.startsWith("SELECT TA.ID, T.TEACHER_CODE")) {
@@ -216,6 +219,22 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
     () =>
       repo.create(
         { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-UNKNOWN" },
+        "CD-2026-0001",
+      ),
+    (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
+  );
+  await assert.rejects(
+    () =>
+      repo.create(
+        { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-OLD" },
+        "CD-2026-0001",
+      ),
+    (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",
+  );
+  await assert.rejects(
+    () =>
+      repo.create(
+        { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-BIO" },
         "CD-2026-0001",
       ),
     (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_SUBJECT_NOT_FOUND",

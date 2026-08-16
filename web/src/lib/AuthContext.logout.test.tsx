@@ -12,6 +12,7 @@ vi.mock("../api/client", async (importOriginal) => {
     api: {
       ...original.api,
       post: vi.fn(),
+      get: vi.fn(),
     },
   };
 });
@@ -39,6 +40,8 @@ describe("AuthProvider logout", () => {
   beforeEach(() => {
     sessionStorage.clear();
     vi.mocked(api.post).mockReset();
+    vi.mocked(api.get).mockReset();
+    vi.mocked(api.get).mockResolvedValue({ permissions: ["Affectations:CREATE"] });
   });
 
   it("révoque la session serveur avant d'effacer la session locale", async () => {

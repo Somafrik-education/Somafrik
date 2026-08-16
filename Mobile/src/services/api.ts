@@ -268,6 +268,18 @@ export function getAssignments() {
   return request<TeacherAssignment[]>("/assignments");
 }
 
+export type SchoolSubject = {
+  id?: string;
+  code?: string;
+  subjectCode?: string;
+  name: string;
+  status?: string;
+};
+
+export function getSubjects() {
+  return request<SchoolSubject[] | { items: SchoolSubject[] }>("/v2/subjects");
+}
+
 export function createTeacherAssignment(payload: Partial<TeacherAssignment>) {
   const { schoolCode: _schoolCode, schoolId: _schoolId, academicYearId: _year, id: _id, ...canonical } =
     payload as Partial<TeacherAssignment> & Record<string, unknown>;

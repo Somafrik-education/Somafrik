@@ -33,7 +33,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
 import { useAuth } from "./AuthContext";
 
 export type AdminEntity =
@@ -250,7 +250,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           ? activeSchoolCode
           : session?.user?.schoolCode ?? session?.school?.code;
       const config = (targetCode && configs[targetCode]) || Object.values(configs)[0];
-      if (config) setAcademicConfigData(config);
+      if (config) setAcademicConfigData({ ...config, subjects: [] });
     }
   };
 
@@ -271,6 +271,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         academicConfigPayload,
         assignmentPayload,
         courseSchedulePayload,
+        subjectPayload,
       ] = await Promise.all([
         getStudents(),
         getClasses(),
@@ -280,6 +281,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         getAcademicConfig(),
         getAssignments(),
         getCourseSchedules().catch(() => [] as unknown[]),
+        getSubjects(),
       ]);
 
       applyArray(studentPayload, setStudentsData);
@@ -289,7 +291,18 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       applyArray(presencePayload, setPresencesData);
       applyArray(assignmentPayload, setAssignmentsData);
       applyArray(courseSchedulePayload, setCourseSchedulesData);
-      setAcademicConfigData(academicConfigPayload as AcademicManagementConfig);
+      const subjectRows = Array.isArray(subjectPayload)
+        ? subjectPayload
+        : subjectPayload && typeof subjectPayload === "object" && Array.isArray((subjectPayload as { items?: unknown[] }).items)
+          ? (subjectPayload as { items: unknown[] }).items
+          : [];
+      const subjectNames = subjectRows
+        .map((row) => String((row as { name?: string }).name ?? "").trim())
+        .filter(Boolean);
+      setAcademicConfigData({
+        ...(academicConfigPayload as AcademicManagementConfig),
+        subjects: subjectNames,
+      });
       setSyncStatus("synced");
     } catch {
       setSyncStatus("offline");

@@ -2547,13 +2547,41 @@ app.get("/api/audit", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/v2/subjects", requireAuth, requirePermission("GET /api/v2/subjects"), asyncHandler(async (req, res) => {
-  const rows = await cacheService.remember("v2:subjects", () => repository.getSubjectsV2());
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "code", "level", "status"]);
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  const isPlatform =
+    req.principal?.role === "Super Administrateur Somafrik" ||
+    req.principal?.role === "Super Administrateur OKAFRIK" ||
+    req.principal?.role === "Admin Pays";
+  if (!isPlatform && (!schoolCode || schoolCode === "*")) {
+    console.error(JSON.stringify({
+      kind: "subjects_catalog_load_failure",
+      reason: "missing_school_scope",
+      role: req.principal?.role ?? null,
+    }));
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  const query = isPlatform && (!schoolCode || schoolCode === "*") ? {} : { schoolCode };
+  const cacheKey = query.schoolCode ? `v2:subjects:${String(query.schoolCode).toUpperCase()}` : "v2:subjects";
+  try {
+    const rows = await cacheService.remember(cacheKey, () => repository.getSubjectsV2(query));
+    sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["name", "code", "level", "status"]);
+  } catch (error) {
+    console.error(JSON.stringify({
+      kind: "subjects_catalog_load_failure",
+      schoolCode: query.schoolCode || null,
+      message: error instanceof Error ? error.message : "unknown",
+    }));
+    throw error;
+  }
 }));
 
 app.post("/api/v2/subjects", requireAuth, requirePermission("POST /api/v2/subjects"), asyncHandler(async (req, res) => {
-  tenantScopeService.assertSchoolAccess(req.principal, req.body.schoolCode ?? req.principal.schoolCode);
-  const created = await repository.createSubject({ ...req.body, schoolCode: req.body.schoolCode ?? req.principal.schoolCode });
+  const schoolCode = req.principal.schoolCode;
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const created = await repository.createSubject({ ...req.body, schoolCode });
   cacheService.invalidate("v2:");
   await auditService.record(req, "create_subject", "subject", req.body.code, req.body);
   res.status(201).json(created);

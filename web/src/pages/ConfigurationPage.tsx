@@ -16,6 +16,7 @@ import {
 } from "../design-system";
 import { SchoolEducationActivationPanel } from "../components/SchoolEducationActivationPanel";
 import { EvaluationTypesPanel } from "../components/EvaluationTypesPanel";
+import { SchoolSubjectsPanel } from "../components/SchoolSubjectsPanel";
 import { getSchoolAcademicLists } from "../lib/academicConfig";
 import { ApiError } from "../api/client";
 import { schoolSettingsApi } from "../lib/schoolSettingsApi";
@@ -97,6 +98,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const [rolesLoading, setRolesLoading] = useState(false);
 
   const settingsPermissions = useFeaturePermissions("Paramètres Établissement");
+  const subjectPermissions = useFeaturePermissions("Matières");
   const canConfigure = canManageEstablishmentSettings(ctx);
   const canReadSettings = settingsPermissions.canRead || canConfigure;
   const canDesignBulletins = isSuperAdminRole(user?.role);
@@ -109,10 +111,6 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const classNamesForSubjects = useMemo(() => {
     if (isBulkConfiguration) return [];
     return getSchoolAcademicLists(state, configTarget).classNames;
-  }, [isBulkConfiguration, state.academicConfigs, configTarget]);
-  const subjectsForSchool = useMemo(() => {
-    if (isBulkConfiguration) return [];
-    return getSchoolAcademicLists(state, configTarget).subjects;
   }, [isBulkConfiguration, state.academicConfigs, configTarget]);
   useEffect(() => {
     setAcademicFormKey((current) => current + 1);
@@ -583,23 +581,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
           </Card>
 
           <Card key={`subjects-${academicFormKey}`} className="p-6">
-            <SectionHeader
-              title="Matières"
-              description="Projection PostgreSQL des matières actives (référentiel /api/v2/subjects). Plus de saisie JSON par classe."
-            />
-            {subjectsForSchool.length ? (
-              <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-ink">
-                {subjectsForSchool.map((subject) => (
-                  <li key={subject}>{subject}</li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState
-                className="mt-4"
-                title="Aucune matière canonique"
-                description="Créez les matières dans le référentiel pédagogique. Elles apparaîtront ici par projection PostgreSQL."
-              />
-            )}
+            <SchoolSubjectsPanel canCreate={canConfigure || subjectPermissions.canCreate} />
           </Card>
         </>
       ) : null}

@@ -362,6 +362,32 @@ test("PUT planning-exams accepte Examens:UPDATE après overlay live", () => {
   );
 });
 
+test("GET /api/v2/subjects accepte Matières:READ ou Affectations:CREATE", () => {
+  const { RbacService } = require("../services/rbacService");
+  const rbac = new RbacService({ rolePermissions: {} });
+  assert.equal(
+    rbac.canAccess(
+      { role: "Admin School", permissions: ["Affectations:CREATE"] },
+      "GET /api/v2/subjects",
+    ),
+    true,
+  );
+  assert.equal(
+    rbac.canAccess(
+      { role: "Admin School", permissions: ["Matières:READ"] },
+      "GET /api/v2/subjects",
+    ),
+    true,
+  );
+  assert.equal(
+    rbac.canAccess(
+      { role: "Admin School", permissions: ["Enseignants:UPDATE"] },
+      "GET /api/v2/subjects",
+    ),
+    false,
+  );
+});
+
 test("POST /api/assignments exige Affectations:CREATE, pas Matières:CREATE", () => {
   const { RbacService } = require("../services/rbacService");
   const rbac = new RbacService({ rolePermissions: {} });

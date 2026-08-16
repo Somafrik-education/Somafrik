@@ -14,7 +14,6 @@ import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
 import { assertNoStrippedCanonicalWrites } from "../lib/canonicalStateWriteGuard";
 import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
 import { logDomainSync } from "../lib/domainSyncTelemetry";
-import { resolveEffectivePermissions } from "../lib/permissions";
 import { applyClientScopeToState } from "../lib/scope";
 import { stripClientFinanceFromPutPayload } from "../lib/stripClientFinance";
 import { stripClientSchoolsFromPutPayload } from "../lib/stripClientSchools";
@@ -114,16 +113,10 @@ function stateFromSession(session: Session): BackOfficeState {
   return applyClientScopeToState(base, session.user);
 }
 
-function samePermissionSet(left: string[], right: string[]) {
-  if (left.length !== right.length) return false;
-  const values = new Set(left);
-  return right.every((item) => values.has(item));
-}
-
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { session, setSession } = useAuth();
+  const { session } = useAuth();
   const [state, setState] = useState<BackOfficeState>(() =>
     session ? stateFromSession(session) : EMPTY_STATE,
   );
@@ -298,23 +291,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken]);
-
-  useEffect(() => {
-    if (!session?.user?.role || !session.accessToken) return;
-    const merged = resolveEffectivePermissions(
-      session.user.role,
-      session.user.permissions,
-      state.rolePermissions,
-    );
-    const current = session.permissions ?? session.user.permissions ?? [];
-    if (samePermissionSet(current, merged)) return;
-    setSession({
-      ...session,
-      permissions: merged,
-      user: { ...session.user, permissions: merged },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.rolePermissions, session?.accessToken, session?.user?.role, setSession]);
 
   const update = useCallback(
     async (patch: Partial<BackOfficeState>, options: UpdateOptions = {}) => {
