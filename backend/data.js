@@ -120,7 +120,7 @@ const rolePermissions = {
   ],
   Directeur: ["Voir élèves", "Modifier notes", "Gérer paiements", "Gérer utilisateurs", "Voir rapports"],
   Secrétaire: ["Voir élèves", "Gérer élèves", "Gérer paiements", "Gérer appels"],
-  Enseignant: ["Voir élèves", "Modifier notes", "Faire appel", "Messages parents"],
+  Enseignant: ["Voir élèves", "Modifier notes", "Faire appel", "Messages parents", "Voir examens", "Voir bulletins", "Voir documents"],
   Parent: ["Voir enfant", "Voir paiements", "Messages école"],
   "Élève / Étudiant": ["Voir notes", "Voir présences", "Voir paiements"],
   Comptable: ["Gérer paiements", "Voir rapports financiers"],
@@ -370,6 +370,18 @@ function permissionsFromSecurityMatrix(role) {
   });
 }
 
+/** Listes métier déclarées, avant union avec la matrice dashboard (UI). */
+const rolePermissionsDeclared = Object.fromEntries(
+  Object.entries(rolePermissions).map(([role, permissions]) => [role, [...permissions]]),
+);
+
+const PLATFORM_LIVE_RBAC_ROLES = new Set([
+  "Super Administrateur Somafrik",
+  "Super Administrateur OKAFRIK",
+  "Admin Pays",
+  "Admin School",
+]);
+
 for (const role of Object.keys(rolePermissions)) {
   rolePermissions[role] = [...new Set([...(rolePermissions[role] ?? []), ...permissionsFromSecurityMatrix(role)])];
 }
@@ -382,6 +394,21 @@ const { PedagogyGovernanceService } = require("./services/pedagogyGovernanceServ
 const pedagogyGovernance = new PedagogyGovernanceService();
 const sanitizedSchoolPermissions = pedagogyGovernance.sanitizeSchoolAdminRolePermissions(rolePermissions);
 rolePermissions["Admin School"] = sanitizedSchoolPermissions["Admin School"];
+
+/**
+ * Carte utilisée par le backfill CRUD live : les rôles plateforme gardent la
+ * projection sanitizée ; les rôles établissement restent sur les listes métier
+ * (la matrice dashboard ne doit pas rendre Secrétaire un sur-ensemble de Comptable).
+ */
+function rolePermissionsForLiveRbac() {
+  const map = {};
+  for (const [role, permissions] of Object.entries(rolePermissions)) {
+    map[role] = PLATFORM_LIVE_RBAC_ROLES.has(role)
+      ? [...permissions]
+      : [...(rolePermissionsDeclared[role] ?? permissions)];
+  }
+  return map;
+}
 
 const countries = [
   {
@@ -1416,6 +1443,8 @@ module.exports = {
   documents,
   teacherAssignments,
   rolePermissions,
+  rolePermissionsDeclared,
+  rolePermissionsForLiveRbac,
   userAccounts,
   countries,
   subscriptions,

@@ -1,0 +1,232 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const { spawn } = require("node:child_process");
+
+const ROOT = require("node:path").resolve(__dirname, "../..");
+const PORT = 19745;
+const BASE = `http://127.0.0.1:${PORT}/api`;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function request(pathname, { method = "GET", token, body } = {}) {
+  const response = await fetch(`${BASE}${pathname}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  return { status: response.status, data };
+}
+
+async function waitForHealth(child) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`Backend exited early with code ${child.exitCode}`);
+    try {
+      const response = await fetch(`${BASE}/health`);
+      if (response.ok) return;
+    } catch {
+      /* retry */
+    }
+    await wait(250);
+  }
+  throw new Error("Backend health timeout");
+}
+
+async function login(identifier, password, schoolCode) {
+  const result = await request("/backoffice/login", {
+    method: "POST",
+    body: { identifier, password, ...(schoolCode ? { schoolCode } : {}) },
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  return result.data.accessToken || result.data.token;
+}
+
+async function main() {
+  const child = spawn("node", ["backend/scripts/dev-memory.js"], {
+    cwd: ROOT,
+    env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", SOMAFRIK_DB_REQUIRED: "false" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    await waitForHealth(child);
+    const superToken = await login("superadmin", "1234");
+    const countryToken = await login("admin-rdc", "1234");
+    const schoolToken = await login("admin", "1234", "CD-2026-0001");
+    const prefetLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: "prefet", password: "1234", schoolCode: "CD-2026-0001" },
+    });
+    assert.equal(prefetLogin.status, 200, JSON.stringify(prefetLogin.data));
+    let prefetToken = prefetLogin.data.accessToken || prefetLogin.data.token;
+    const changed = await request("/auth/change-password", {
+      method: "POST",
+      token: prefetToken,
+      body: { newPassword: "Prefet#2026Aa" },
+    });
+    assert.ok([200, 201].includes(changed.status), JSON.stringify(changed.data));
+    prefetToken = changed.data?.accessToken || (await login("prefet", "Prefet#2026Aa", "CD-2026-0001"));
+
+    const catalog = await request("/backoffice/rbac/catalog", { token: superToken });
+    assert.equal(catalog.status, 200, JSON.stringify(catalog.data));
+    assert.ok(Array.isArray(catalog.data.roles));
+    assert.ok(catalog.data.roles.some((row) => row.roleCode === "PREFET_ETUDES" || row.roleName === "Préfet des études"));
+    assert.ok(catalog.data.modules.some((row) => row.moduleKey === "students"));
+
+    const countryWrite = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: countryToken,
+      body: {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
+      },
+    });
+    assert.equal(countryWrite.status, 403, JSON.stringify(countryWrite.data));
+
+    const schoolWrite = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: schoolToken,
+      body: {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
+      },
+    });
+    assert.equal(schoolWrite.status, 403, JSON.stringify(schoolWrite.data));
+
+    const prefetWrite = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: prefetToken,
+      body: {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
+      },
+    });
+    assert.equal(prefetWrite.status, 403, JSON.stringify(prefetWrite.data));
+
+    const legacyPut = await request("/backoffice/role-permissions", {
+      method: "PUT",
+      token: superToken,
+      body: { "Préfet des études": ["Élèves:DELETE"] },
+    });
+    assert.equal(legacyPut.status, 403, JSON.stringify(legacyPut.data));
+    assert.equal(legacyPut.data?.code, "LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN");
+
+    const saved = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: superToken,
+      body: {
+        roleKey: "PREFET_ETUDES",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
+      },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+
+    const denied = await request("/students/ELE-0001", { method: "DELETE", token: prefetToken });
+    const effective = await request("/auth/effective-permissions", { token: prefetToken });
+    assert.equal(effective.status, 200, JSON.stringify(effective.data));
+    assert.equal(
+      Array.isArray(effective.data.permissions) && effective.data.permissions.includes("Élèves:DELETE"),
+      false,
+      JSON.stringify(effective.data.permissions),
+    );
+    assert.equal(denied.status, 403, JSON.stringify({ denied: denied.data, effective: effective.data }));
+
+    const configured = await request(
+      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      { token: superToken },
+    );
+    assert.equal(configured.status, 200, JSON.stringify(configured.data));
+    const restored = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: superToken,
+      body: {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: configured.data.updatedAt,
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: true }],
+      },
+    });
+    assert.equal(restored.status, 200, JSON.stringify(restored.data));
+
+    const afterRestore = await request("/auth/effective-permissions", { token: prefetToken });
+    const configuredAfter = await request(
+      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      { token: superToken },
+    );
+    const allowed = await request("/students/ELE-0001", { method: "DELETE", token: prefetToken });
+    assert.ok(
+      [200, 204, 404].includes(allowed.status),
+      JSON.stringify({
+        allowed: allowed.data,
+        restored: restored.data,
+        afterRestore: afterRestore.data,
+        configuredAfter: configuredAfter.data,
+      }),
+    );
+    assert.notEqual(allowed.status, 403);
+
+    const stale = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: superToken,
+      body: {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: configured.data.updatedAt,
+        grants: [{ moduleKey: "students", canCreate: false, canRead: true, canUpdate: true, canDelete: false }],
+      },
+    });
+    assert.equal(stale.status, 409, JSON.stringify(stale.data));
+
+    const createdRole = await request("/backoffice/rbac/roles", {
+      method: "POST",
+      token: superToken,
+      body: { roleName: "Auditeur RBAC", roleCode: "RBAC_AUDITOR", permissions: ["Documents:READ"] },
+    });
+    assert.equal(createdRole.status, 201, JSON.stringify(createdRole.data));
+    const archived = await request(`/backoffice/rbac/roles/${encodeURIComponent(createdRole.data.id)}/archive`, {
+      method: "POST",
+      token: superToken,
+    });
+    assert.equal(archived.status, 200, JSON.stringify(archived.data));
+    const grantArchived = await request("/backoffice/users/USER-SECRETARY-0001/roles/grant", {
+      method: "POST",
+      token: superToken,
+      body: { role: "Auditeur RBAC" },
+    });
+    assert.ok([409, 404].includes(grantArchived.status), JSON.stringify(grantArchived.data));
+
+    const superProtect = catalog.data.roles.find((row) => row.roleCode === "SUPER_ADMIN");
+    if (superProtect) {
+      const archiveSuper = await request(`/backoffice/rbac/roles/${encodeURIComponent(superProtect.id)}/archive`, {
+        method: "POST",
+        token: superToken,
+      });
+      assert.equal(archiveSuper.status, 403, JSON.stringify(archiveSuper.data));
+    }
+
+    console.log("verify-functional-rbac.js OK");
+  } finally {
+    child.kill("SIGTERM");
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

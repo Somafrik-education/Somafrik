@@ -17,7 +17,6 @@ export const platformApi = {
     api.patch(`/backoffice/notifications/${encodeURIComponent(notificationId)}`, payload),
 
   getRolePermissions: () => api.get<Record<string, string[]>>("/backoffice/role-permissions"),
-  replaceRolePermissions: (payload: Record<string, string[]>) => api.put("/backoffice/role-permissions", payload),
 
   getDashboardChartConfig: () => api.get<Record<string, unknown>>("/backoffice/dashboard-chart-config"),
   saveDashboardChartConfig: (payload: Record<string, unknown>) => api.put("/backoffice/dashboard-chart-config", payload),

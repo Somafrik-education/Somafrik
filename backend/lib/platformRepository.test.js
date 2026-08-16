@@ -73,9 +73,10 @@ async function main() {
   );
   assert.equal(notification.title, "Test");
 
-  await store.replaceRolePermissions({ "Admin School": ["Voir tableau de bord"] }, superAdmin, auditMeta);
-  const roleMap = await store.getRolePermissionsMap();
-  assert.ok(roleMap["Admin School"]);
+  await assert.rejects(
+    () => store.replaceRolePermissions({ "Admin School": ["Voir tableau de bord"] }, superAdmin, auditMeta),
+    (error) => error.code === "LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN" && error.statusCode === 403,
+  );
 
   const projection = await store.listProjection();
   assert.ok(projection.countries.some((row) => row.code === "BI"));

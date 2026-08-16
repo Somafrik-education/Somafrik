@@ -1,0 +1,153 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type {
+  RbacCatalog,
+  RbacConfiguredMatrix,
+  RbacConfiguredQuery,
+  RbacCrudGrant,
+  RbacPatchPermissionsPayload,
+} from "../lib/rbacApi";
+
+const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
+  const catalog: RbacCatalog = {
+    modules: [{ moduleKey: "students", moduleName: "Élèves", appliesWeb: true, appliesMobile: true }],
+    roles: [
+      {
+        id: "role-prefet",
+        roleCode: "PREFET_ETUDES",
+        roleName: "Préfet des études",
+        scope: "school",
+        displayOrder: 1,
+        status: "active",
+        schoolAssignable: true,
+        activeUserCount: 2,
+        updatedAt: "2026-08-16T10:00:00.000Z",
+      },
+    ],
+    protectedRoleKeys: ["SUPER_ADMIN"],
+  };
+  const getConfiguredMock = vi.fn(async (query: RbacConfiguredQuery): Promise<RbacConfiguredMatrix> => {
+    void query;
+    return {
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school",
+      updatedAt: "2026-08-16T10:00:00.000Z",
+      modules: [
+        {
+          moduleKey: "students",
+          moduleName: "Élèves",
+          appliesWeb: true,
+          appliesMobile: true,
+          canCreate: false,
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+        },
+      ],
+    };
+  });
+  const patchMock = vi.fn(async (payload: RbacPatchPermissionsPayload) => {
+    void payload;
+    return { updatedAt: "2026-08-16T11:00:00.000Z" };
+  });
+  return { catalog, patchMock, getConfiguredMock };
+});
+
+vi.mock("../lib/rbacApi", () => ({
+  rbacApi: {
+    getCatalog: vi.fn(async (): Promise<RbacCatalog> => catalog),
+    getConfigured: (query: RbacConfiguredQuery) => getConfiguredMock(query),
+    patchPermissions: (payload: RbacPatchPermissionsPayload) => patchMock(payload),
+    createRole: vi.fn(),
+    updateRole: vi.fn(),
+    archiveRole: vi.fn(),
+  },
+}));
+
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    session: {
+      user: { id: "u1", role: "Super Administrateur Somafrik", schoolCode: "*" },
+    },
+  }),
+}));
+
+vi.mock("../context/DataContext", () => ({
+  useData: () => ({
+    state: {
+      countries: [{ code: "CD", name: "RDC" }],
+      schools: [{ code: "CD-2026-0001", name: "INSTITUT NURU", country: "RDC", countryCode: "CD" }],
+    },
+  }),
+}));
+
+vi.mock("../lib/usePermissionContext", () => ({
+  usePermissionContext: () => ({
+    user: { role: "Super Administrateur Somafrik" },
+    rolePermissions: {},
+  }),
+}));
+
+vi.mock("../lib/permissions", () => ({
+  canManageRolePermissions: () => true,
+}));
+
+const showToast = vi.hoisted(() => vi.fn());
+
+vi.mock("../components/ui/Toast", () => ({
+  useToast: () => ({ showToast }),
+}));
+
+import { PermissionsPage } from "./PermissionsPage";
+
+const expectedGrant: RbacCrudGrant = {
+  moduleKey: "students",
+  canCreate: false,
+  canRead: true,
+  canUpdate: true,
+  canDelete: false,
+};
+
+describe("PermissionsPage — matrice CRUD Superadmin", () => {
+  beforeEach(() => {
+    patchMock.mockClear();
+    getConfiguredMock.mockClear();
+  });
+
+  it("enregistre uniquement le delta CRUD du module sélectionné", async () => {
+    render(<PermissionsPage />);
+    await screen.findByText("Rôles & permissions");
+    fireEvent.change(document.getElementById("rbac-country") as HTMLSelectElement, { target: { value: "CD" } });
+    await waitFor(() => {
+      const schoolSelect = document.getElementById("rbac-school") as HTMLSelectElement;
+      expect(schoolSelect.disabled).toBe(false);
+      expect([...schoolSelect.options].some((option) => option.value === "CD-2026-0001")).toBe(true);
+    });
+    fireEvent.change(document.getElementById("rbac-school") as HTMLSelectElement, {
+      target: { value: "CD-2026-0001" },
+    });
+    await waitFor(() => {
+      expect((document.getElementById("rbac-role") as HTMLSelectElement).disabled).toBe(false);
+    });
+    fireEvent.change(document.getElementById("rbac-role") as HTMLSelectElement, {
+      target: { value: "PREFET_ETUDES" },
+    });
+    await waitFor(() => expect(getConfiguredMock).toHaveBeenCalled());
+    fireEvent.change(document.getElementById("rbac-module") as HTMLSelectElement, {
+      target: { value: "students" },
+    });
+    const deleteBox = await screen.findByLabelText("Élèves DELETE");
+    fireEvent.click(deleteBox);
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(patchMock).toHaveBeenCalled());
+    expect(patchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roleKey: "PREFET_ETUDES",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        grants: [expectedGrant],
+      }),
+    );
+  });
+});

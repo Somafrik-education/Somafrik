@@ -143,7 +143,16 @@ async function main() {
     );
     assert.equal(subscription.schoolCode, "CD-2026-0001");
 
-    await store.replaceRolePermissions({ "Admin School": ["Voir tableau de bord"] }, superAdmin, auditMeta);
+    await assert.rejects(
+      () => store.replaceRolePermissions({ "Admin School": ["Voir tableau de bord"] }, superAdmin, auditMeta),
+      (error) => error.code === "LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN" && error.statusCode === 403,
+    );
+    await pool.query(
+      `INSERT INTO role_permissions (role_name, permissions, updated_at)
+       VALUES ('Admin School', $1::jsonb, NOW())
+       ON CONFLICT (role_name) DO UPDATE SET permissions = EXCLUDED.permissions, updated_at = NOW()`,
+      [JSON.stringify(["Voir tableau de bord"])],
+    );
     const roleMap = await store.getRolePermissionsMap();
     assert.ok(roleMap["Admin School"]);
 

@@ -36,6 +36,7 @@ export function StudentsListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +80,19 @@ export function StudentsListPage() {
     );
   }, [rows, search]);
 
+  async function onDelete(row: SchoolStudent) {
+    if (!permissions.canDelete || deleting) return;
+    setDeleting(row.studentCode);
+    try {
+      await studentsApi.remove(row.studentCode);
+      setRows((current) => current.filter((item) => item.studentCode !== row.studentCode));
+    } catch (err) {
+      setError(mapApiError(err, "Suppression impossible."));
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   const columns = useMemo(
     () => [
       {
@@ -106,16 +120,29 @@ export function StudentsListPage() {
         header: "Actions",
         sortable: false,
         render: (row: SchoolStudent) => (
-          <Link
-            className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
-            to={`/etablissement/eleves/${encodeURIComponent(row.studentCode)}`}
-          >
-            Dossier
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
+              to={`/etablissement/eleves/${encodeURIComponent(row.studentCode)}`}
+            >
+              Dossier
+            </Link>
+            {permissions.canDelete ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={deleting === row.studentCode}
+                onClick={() => void onDelete(row)}
+              >
+                Supprimer
+              </Button>
+            ) : null}
+          </div>
         ),
       },
     ],
-    [],
+    [deleting, permissions.canDelete],
   );
 
   if (!permissions.canRead) {

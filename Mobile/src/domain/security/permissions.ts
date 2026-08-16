@@ -163,15 +163,17 @@ export function resolveEffectivePermissions(
   userPermissions: string[] | undefined,
   rolePermissions: Record<string, string[]> = {},
 ): string[] {
-  const fromUser = userPermissions ?? [];
+  if (Array.isArray(userPermissions)) {
+    const merged = [...userPermissions];
+    if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
+      merged.push("ALL_PRIVILEGES");
+    }
+    return merged;
+  }
   const fromRole = role && Array.isArray(rolePermissions[role]) ? rolePermissions[role] : [];
-  const hasCanonicalSource =
-    fromUser.length > 0 ||
-    fromRole.length > 0 ||
-    Object.keys(rolePermissions).length > 0 ||
-    (Array.isArray(userPermissions) && userPermissions.length > 0);
+  const hasCanonicalSource = fromRole.length > 0 || Object.keys(rolePermissions).length > 0;
   const fromDefaults = hasCanonicalSource ? [] : getInternalRoleDefaults(role);
-  const merged = [...new Set([...fromUser, ...fromRole, ...fromDefaults])];
+  const merged = [...new Set([...fromRole, ...fromDefaults])];
   if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
     merged.push("ALL_PRIVILEGES");
   }

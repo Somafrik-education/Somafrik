@@ -88,6 +88,10 @@ class FallbackRepository {
     if (this.ready) return;
     const { attachMemoryLoginLockoutStore } = require("../lib/loginLockout");
     attachMemoryLoginLockoutStore();
+    const { ensureEstablishmentRolesBootstrap } = require("../lib/establishmentRolesService");
+    await ensureEstablishmentRolesBootstrap(this);
+    const { ensureFunctionalRbacBootstrap } = require("../lib/functionalRbacService");
+    await ensureFunctionalRbacBootstrap(this);
     this.ready = true;
   }
 
@@ -2548,9 +2552,79 @@ class FallbackRepository {
   }
 
   async getRolePermissionsMap() {
+    const { mergeRolePermissionMaps } = require("../lib/functionalRbacService");
+    const seedMap = require("../data").rolePermissions ?? {};
     const platformMap = (await this.getPlatformStore().getRolePermissionsMap()) ?? {};
     const establishmentMap = await this.getEstablishmentRolesStore().getPermissionsMap();
-    return { ...platformMap, ...establishmentMap };
+    return mergeRolePermissionMaps(seedMap, platformMap, establishmentMap);
+  }
+
+  getFunctionalRbacStore() {
+    if (!this._functionalRbacStore) {
+      const { createFunctionalRbacMemoryStore } = require("./functionalRbacMemoryStore");
+      const self = this;
+      this._functionalRbacStore = createFunctionalRbacMemoryStore({
+        async resolveCountryAndSchool({ countryCode, schoolCode, countryId, schoolId }) {
+          const dataset = await self.getDataset();
+          const school = (dataset.platformSchools ?? []).find((row) => {
+            const code = String(row.code ?? row.schoolCode ?? row.school_code ?? "").toUpperCase();
+            return (
+              (schoolCode && code === String(schoolCode).toUpperCase()) ||
+              (schoolId && String(row.id) === String(schoolId))
+            );
+          });
+          const country = (dataset.countries ?? []).find((row) => {
+            const code = String(row.code ?? row.iso_code ?? "").toUpperCase();
+            return (
+              (countryCode && (code === String(countryCode).toUpperCase() || String(row.name).toUpperCase() === String(countryCode).toUpperCase())) ||
+              (countryId && String(row.id) === String(countryId)) ||
+              (school && (code === String(school.countryCode ?? school.country_code ?? "").toUpperCase() || String(row.name) === school.country))
+            );
+          });
+          return {
+            country: country
+              ? { id: country.id ?? country.code, code: country.code }
+              : countryCode
+                ? { id: `country-${countryCode}`, code: countryCode }
+                : null,
+            school: school
+              ? {
+                  id: school.id ?? school.code ?? school.schoolCode,
+                  school_code: school.school_code ?? school.code ?? school.schoolCode,
+                  country_id: country?.id ?? country?.code ?? school.country_id,
+                  country_code: country?.code ?? school.countryCode ?? school.country_code,
+                }
+              : null,
+          };
+        },
+      });
+    }
+    return this._functionalRbacStore;
+  }
+
+  resolveEffectivePermissions(principal) {
+    const { resolveEffectivePermissionsForPrincipal } = require("../lib/functionalRbacService");
+    return resolveEffectivePermissionsForPrincipal(this, principal);
+  }
+
+  listRbacCatalog(principal) {
+    const { listRbacCatalog } = require("../lib/functionalRbacService");
+    return listRbacCatalog(this, principal);
+  }
+
+  getConfiguredRolePermissions(query, principal) {
+    const { getConfiguredPermissions } = require("../lib/functionalRbacService");
+    return getConfiguredPermissions(this, query, principal);
+  }
+
+  getEffectiveRolePermissions(query, principal) {
+    const { getEffectivePermissionsConfigured } = require("../lib/functionalRbacService");
+    return getEffectivePermissionsConfigured(this, query, principal);
+  }
+
+  patchConfiguredRolePermissions(payload, principal, auditMeta) {
+    const { patchConfiguredPermissions } = require("../lib/functionalRbacService");
+    return patchConfiguredPermissions(this, payload, principal, auditMeta);
   }
 
   createPlatformCountry(payload, principal, auditMeta) {
