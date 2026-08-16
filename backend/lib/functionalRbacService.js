@@ -17,7 +17,7 @@ const {
   parsePermissionStringsToModuleCrud,
   emptyCrud,
 } = require("./functionalRbacResolution");
-const { assertSuperAdmin, asTrimmed } = require("./establishmentRolesManagement");
+const { assertSuperAdmin, asTrimmed, normalizeRoleCode } = require("./establishmentRolesManagement");
 const { toRoleKey, toRoleLabel } = require("./userRoleLifecycle");
 const { createFunctionalRbacPgStore } = require("../db/functionalRbacPgStore");
 const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
@@ -127,7 +127,13 @@ function mergeRolePermissionMaps(...maps) {
 async function loadLegacyRolePermissionMaps(repo) {
   let seedMap = {};
   try {
-    seedMap = require("../data").rolePermissions ?? {};
+    const seedData = require("../data");
+    seedMap =
+      (typeof seedData.rolePermissionsForLiveRbac === "function"
+        ? seedData.rolePermissionsForLiveRbac()
+        : seedData.rolePermissionsDeclared) ??
+      seedData.rolePermissions ??
+      {};
   } catch {
     seedMap = {};
   }
@@ -145,7 +151,51 @@ async function loadLegacyRolePermissionMaps(repo) {
   } catch {
     establishmentMap = {};
   }
-  return mergeRolePermissionMaps(seedMap, platformMap, establishmentMap);
+  return mergeLiveRbacMaps(seedMap, platformMap, establishmentMap);
+}
+
+/**
+ * Fusion live : les rôles plateforme gardent « liste vide n'écrase pas ».
+ * Un rôle établissement présent au catalogue avec [] est un DENY explicite.
+ */
+function mergeLiveRbacMaps(seedMap, platformMap, establishmentMap) {
+  const merged = mergeRolePermissionMaps(seedMap, platformMap);
+  for (const [roleName, permissions] of Object.entries(establishmentMap || {})) {
+    const roleKey = toRoleKey(roleName);
+    const list = permissionList(permissions);
+    if (PROTECTED_SYSTEM_ROLE_KEYS.has(roleKey)) {
+      if (!list.length) continue;
+      const existing = merged[roleName] || [];
+      merged[roleName] = [...new Set([...existing, ...list])];
+      continue;
+    }
+    merged[roleName] = [...list];
+  }
+  return merged;
+}
+
+function catalogPermissionList(establishmentMap, roleKey) {
+  if (!establishmentMap || typeof establishmentMap !== "object") return undefined;
+  const key = String(roleKey || "").toUpperCase();
+  const label = toRoleLabel(key);
+  const code = normalizeRoleCode(label || key);
+  const candidates = [label, roleKey, key, code].filter(Boolean);
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(establishmentMap, candidate)) {
+      return establishmentMap[candidate];
+    }
+  }
+  return undefined;
+}
+
+function applyEstablishmentCatalogFailClosed(roleKeys, establishmentMap) {
+  return (roleKeys || []).filter((roleKey) => {
+    const normalized = String(roleKey || "").toUpperCase();
+    if (PROTECTED_SYSTEM_ROLE_KEYS.has(normalized)) return true;
+    const catalog = catalogPermissionList(establishmentMap, normalized);
+    if (catalog === undefined) return true;
+    return permissionList(catalog).length > 0;
+  });
 }
 
 async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
@@ -525,7 +575,14 @@ function syntheticGrantsFromLegacyMap(roleKeys, legacyMap, grantedRoleKeys) {
 }
 
 async function resolveEffectivePermissionsForPrincipal(repo, principal) {
-  const roleKeys = await collectPrincipalRoleKeys(repo, principal);
+  let roleKeys = await collectPrincipalRoleKeys(repo, principal);
+  let establishmentMap = {};
+  try {
+    establishmentMap = (await repo.getEstablishmentRolesStore?.().getPermissionsMap?.()) ?? {};
+  } catch {
+    establishmentMap = {};
+  }
+  roleKeys = applyEstablishmentCatalogFailClosed(roleKeys, establishmentMap);
 
   const store = rbacStore(repo);
   let schoolId = null;

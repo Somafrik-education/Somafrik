@@ -50,7 +50,8 @@ async function writeEstablishmentRolesAudit(tx, principal, auditMeta, entry) {
 
 function buildSeedRolesFromData() {
   const entries = [];
-  for (const [roleName, permissions] of Object.entries(seedData.rolePermissions ?? {})) {
+  const source = seedData.rolePermissionsDeclared ?? seedData.rolePermissions ?? {};
+  for (const [roleName, permissions] of Object.entries(source)) {
     if (PLATFORM_ROLE_NAMES.has(roleName)) continue;
     entries.push({
       roleName,

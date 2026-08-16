@@ -341,3 +341,80 @@ test("POST /api/classes accepte Classes:CREATE après overlay live", () => {
     false,
   );
 });
+
+test("live CRUD : révoquer Comptable retire Rapports:READ hors liste métier Secrétaire", async () => {
+  const rbac = createFunctionalRbacMemoryStore();
+  const repo = {
+    getFunctionalRbacStore: () => rbac,
+    getPlatformRolePermissionsMap: async () => require("../data").rolePermissionsForLiveRbac(),
+    getEstablishmentRolesStore: () => ({
+      getPermissionsMap: async () => ({}),
+      getRoleByNameOrCode: async () => ({ id: "existing" }),
+      insertRole: async () => {},
+      markSystemProtected: async () => true,
+    }),
+  };
+  await ensureFunctionalRbacBootstrap(repo);
+  const bothGrants = await rbac.listGrantsForRoles(["SECRETARY", "ACCOUNTANT"]);
+  const secretaryGrants = await rbac.listGrantsForRoles(["SECRETARY"]);
+  const both = resolveEffectivePermissionSet(["SECRETARY", "ACCOUNTANT"], bothGrants);
+  const secretary = resolveEffectivePermissionSet(["SECRETARY"], secretaryGrants);
+  assert.ok(both.permissions.includes("Rapports:READ"), JSON.stringify(both.permissions));
+  assert.equal(secretary.permissions.includes("Rapports:READ"), false, JSON.stringify(secretary.permissions));
+  assert.notDeepEqual(both.permissions, secretary.permissions);
+});
+
+test("catalogue établissement vide : fail-closed même si grants backfill existent", async () => {
+  const rbac = createFunctionalRbacMemoryStore();
+  await rbac.upsertGrant({
+    roleKey: "SECRETARY",
+    scopeType: "global",
+    moduleKey: "students",
+    canRead: true,
+    canCreate: true,
+    canUpdate: true,
+    canDelete: true,
+    updatedBy: "bootstrap",
+  });
+  const repo = {
+    getFunctionalRbacStore: () => rbac,
+    getEstablishmentRolesStore: () => ({
+      getPermissionsMap: async () => ({
+        Secrétaire: [],
+        secretaire: [],
+      }),
+    }),
+  };
+  const live = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Secrétaire",
+    roleKeys: ["SECRETARY"],
+    schoolCode: "CD-2026-0001",
+  });
+  assert.deepEqual(live.permissions, []);
+});
+
+test("catalogue plateforme vide n'efface pas SCHOOL_ADMIN", async () => {
+  const rbac = createFunctionalRbacMemoryStore();
+  await rbac.upsertGrant({
+    roleKey: "SCHOOL_ADMIN",
+    scopeType: "global",
+    moduleKey: "students",
+    canRead: true,
+    updatedBy: "bootstrap",
+  });
+  const repo = {
+    getFunctionalRbacStore: () => rbac,
+    getEstablishmentRolesStore: () => ({
+      getPermissionsMap: async () => ({
+        "Admin School": [],
+        SCHOOL_ADMIN: [],
+      }),
+    }),
+  };
+  const live = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "CD-2026-0001",
+  });
+  assert.ok(live.permissions.includes("Élèves:READ"));
+});
