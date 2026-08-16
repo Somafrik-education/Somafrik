@@ -83,6 +83,23 @@ async function main() {
     assert.ok(Array.isArray(catalog.data.roles));
     assert.ok(catalog.data.roles.some((row) => row.roleCode === "PREFET_ETUDES" || row.roleName === "Préfet des études"));
     assert.ok(catalog.data.modules.some((row) => row.moduleKey === "students"));
+    assert.ok(catalog.data.modules.some((row) => row.moduleKey === "assignments"));
+
+    const schoolEffective = await request("/auth/effective-permissions", { token: schoolToken });
+    assert.equal(schoolEffective.status, 200, JSON.stringify(schoolEffective.data));
+    assert.ok(
+      Array.isArray(schoolEffective.data.permissions) &&
+        schoolEffective.data.permissions.includes("Affectations:CREATE"),
+      JSON.stringify(schoolEffective.data.permissions),
+    );
+
+    const secretaryToken = await login("secretaire", "1234", "CD-2026-0001");
+    const secretaryDenied = await request("/assignments", {
+      method: "POST",
+      token: secretaryToken,
+      body: { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+    });
+    assert.equal(secretaryDenied.status, 403, JSON.stringify(secretaryDenied.data));
 
     const countryWrite = await request("/backoffice/rbac/permissions", {
       method: "PATCH",
