@@ -24,9 +24,11 @@ import {
   isCountryAdminProvisionedUser,
   schoolsMatchingCountryScope,
   toCreateUserApiPayload,
+  toProvisionUserApiPayload,
   toUpdateUserIdentityPayload,
   validateUserAccount,
   resetUserAccountPassword,
+  isSuperadminDirectUserRole,
 } from "../lib/userAccounts";
 import { clientsApi } from "../lib/clientsApi";
 import {
@@ -186,11 +188,17 @@ export function UsersPage() {
           }
         } else {
           try {
-            const created = (await clientsApi.createUser(toCreateUserApiPayload(syncedUser))) as UserAccount;
+            const shouldProvision =
+              isSuperAdminRole(session?.user?.role) && isSuperadminDirectUserRole(syncedUser.role);
+            const created = (
+              shouldProvision
+                ? await clientsApi.provisionUser(toProvisionUserApiPayload(syncedUser))
+                : await clientsApi.createUser(toCreateUserApiPayload(syncedUser))
+            ) as UserAccount;
             if (created.temporaryPassword) {
               showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
             }
-            if (syncedUser.role && created?.id) {
+            if (!shouldProvision && syncedUser.role && created?.id) {
               await clientsApi.grantUserRole(String(created.id), syncedUser.role);
             }
           } catch (error) {
@@ -717,8 +725,9 @@ export function UsersPage() {
               </Field>
             ) : (
               <p className="sm:col-span-2 text-sm text-muted">
-                L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création.
-                Utilisez ensuite <strong>Attribuer</strong>.
+                {isSuperadminView
+                  ? "Admin Pays et Admin School sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité."
+                  : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
               </p>
             )}
             <Field label="Prénom" required>
@@ -753,7 +762,15 @@ export function UsersPage() {
               <Input type="email" value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
             </Field>
             {!isEditingExisting ? (
-              <Field label="Rôle" hint="L'identité est créée d'abord, puis le rôle est attribué">
+              <Field
+                label="Rôle"
+                hint={
+                  isSuperadminView
+                    ? "Le rôle est créé immédiatement à l'enregistrement"
+                    : "L'identité est créée d'abord, puis le rôle est attribué"
+                }
+                required={isSuperadminView}
+              >
                 <Select
                   value={editing.role ?? ""}
                   onChange={(e) => {
@@ -825,9 +842,11 @@ export function UsersPage() {
                 hint={
                   isEditingExisting
                     ? "Lecture seule. Utilisez « Réaffecter l'établissement » pour changer le tenant PostgreSQL."
-                    : isSuperadminView || isCountryAdminView
-                      ? "Admin école rattaché à un établissement précis"
-                      : "Périmètre autorisé du compte"
+                    : isSuperadminView && editing.role === COUNTRY_ADMIN_ROLE
+                      ? "Aucun établissement — périmètre national uniquement"
+                      : isSuperadminView || isCountryAdminView
+                        ? "Admin école rattaché à un établissement précis"
+                        : "Périmètre autorisé du compte"
                 }
               >
                 {fieldPolicy.schoolCode === "select" ? (

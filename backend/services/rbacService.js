@@ -117,6 +117,7 @@ const routePermissions = {
   "POST /api/backoffice/finance/unpaid/reminders": ["Impayés:CREATE", "Paiements:UPDATE", "Gérer paiements", "ALL_PRIVILEGES"],
   "GET /api/backoffice/users": ["Utilisateurs:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/users": ["Utilisateurs:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/users/provision": ["Utilisateurs:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/users/:userId": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/users/:userId/reassign-school": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/users/:userId/roles/grant": ["Utilisateurs:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

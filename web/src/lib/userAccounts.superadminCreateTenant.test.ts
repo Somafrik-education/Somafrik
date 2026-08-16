@@ -6,6 +6,7 @@ import {
   getDefaultSchoolCode,
   getUserFormFieldPolicy,
   toCreateUserApiPayload,
+  toProvisionUserApiPayload,
   validateUserAccount,
 } from "./userAccounts";
 
@@ -113,5 +114,41 @@ describe("Superadmin create-user tenant defaults", () => {
         },
       ),
     ).toBe("L'établissement n'appartient pas au pays sélectionné.");
+  });
+
+  it("construit un payload provision Admin School sans héritage session", () => {
+    expect(
+      toProvisionUserApiPayload({
+        firstName: "Grace",
+        lastName: "Kanyosha",
+        schoolCode: "BI-2026-0001",
+        countryScope: "BI",
+        role: "Admin School",
+        temporaryPassword: "Tmp-1",
+      } as UserAccount),
+    ).toMatchObject({
+      firstName: "Grace",
+      lastName: "Kanyosha",
+      schoolCode: "BI-2026-0001",
+      countryCode: "BI",
+      roleKey: "SCHOOL_ADMIN",
+    });
+  });
+
+  it("construit un payload provision Admin Pays sans schoolCode", () => {
+    const payload = toProvisionUserApiPayload({
+      firstName: "Amina",
+      lastName: "Nshimirimana",
+      schoolCode: "*",
+      countryScope: "BI",
+      role: "Admin Pays",
+    } as UserAccount);
+    expect(payload).toMatchObject({
+      firstName: "Amina",
+      lastName: "Nshimirimana",
+      countryCode: "BI",
+      roleKey: "COUNTRY_ADMIN",
+    });
+    expect(payload).not.toHaveProperty("schoolCode");
   });
 });

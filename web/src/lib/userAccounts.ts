@@ -490,6 +490,30 @@ export function toCreateUserApiPayload(user: UserAccount): Record<string, unknow
   };
 }
 
+/** Superadmin : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
+export function toProvisionUserApiPayload(user: UserAccount): Record<string, unknown> {
+  const countryCode = getCountryCodeFromScope(user.countryScope);
+  const roleKey =
+    user.role === COUNTRY_ADMIN_ROLE ? "COUNTRY_ADMIN" : user.role === SCHOOL_ADMIN_ROLE ? "SCHOOL_ADMIN" : "";
+  const payload: Record<string, unknown> = {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone,
+    gender: user.gender,
+    status: user.status,
+    temporaryPassword: user.temporaryPassword,
+    roleKey,
+    ...(countryCode ? { countryCode } : {}),
+    ...(user.countryScope ? { countryScope: user.countryScope } : {}),
+  };
+  if (roleKey === "SCHOOL_ADMIN") {
+    const schoolCode = String(user.schoolCode ?? "").trim();
+    payload.schoolCode = schoolCode && schoolCode !== "*" ? schoolCode : "";
+  }
+  return payload;
+}
+
 export interface ValidateUserAccountOptions {
   creator?: SessionUser | null;
   allowedSchoolCodes?: string[];

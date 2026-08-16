@@ -4,6 +4,7 @@
  * E2E PostgreSQL — création des comptes administratifs et utilisateurs.
  *
  * Chaîne couverte :
+ * 0. Superadmin -> POST /users/provision Admin Pays BI + Admin School BI (atomique).
  * 1. Superadmin -> identité -> GRANT Admin Pays -> login.
  * 2. Admin Pays -> identité -> GRANT Admin School -> validation en attente.
  * 3. Superadmin -> identité -> GRANT Admin School actif -> login.
@@ -228,7 +229,92 @@ async function main() {
     await waitForHealth(child);
     const superadmin = await login("super-admin-e2e@test.local", "1234");
 
-    // 1) Création Admin Pays par Superadmin.
+    // P0 provisioning Superadmin : création directe Admin Pays BI + Admin School BI.
+    const provisionPaysEmail = `country-admin-provision-bi-${stamp}@test.local`;
+    const provisionPaysPassword = "CountryProvisionBI!2026";
+    const provisionPays = await request("/backoffice/users/provision", {
+      method: "POST",
+      token: superadmin.token,
+      body: {
+        firstName: "Amina",
+        lastName: `PaysBI${stamp}`,
+        email: provisionPaysEmail,
+        temporaryPassword: provisionPaysPassword,
+        roleKey: "COUNTRY_ADMIN",
+        countryCode: "BI",
+      },
+    });
+    assert.equal(provisionPays.status, 201, JSON.stringify(provisionPays.data));
+    assert.ok((provisionPays.data.roleKeys || []).includes("COUNTRY_ADMIN"));
+    const provisionPaysPg = await assertPgRole(pool, provisionPays.data.id, "COUNTRY_ADMIN");
+    assert.equal(provisionPaysPg.school_id, null);
+    assert.equal(provisionPaysPg.role_school_id, null);
+    assert.equal(provisionPaysPg.role_status, "active");
+    assert.equal(provisionPaysPg.profile_payload?.countryCode, "BI");
+    const provisionPaysLogin = await login(provisionPaysEmail, provisionPaysPassword);
+    assert.ok((provisionPaysLogin.user.roleKeys || []).includes("COUNTRY_ADMIN"), "login Admin Pays BI sans COUNTRY_ADMIN");
+    assert.equal(provisionPaysLogin.user.countryCode, "BI");
+
+    const provisionSchoolEmail = `school-admin-provision-bi-${stamp}@test.local`;
+    const provisionSchoolPassword = "SchoolProvisionBI!2026";
+    const provisionSchool = await request("/backoffice/users/provision", {
+      method: "POST",
+      token: superadmin.token,
+      body: {
+        firstName: "Grace",
+        lastName: `Kanyosha${stamp}`,
+        email: provisionSchoolEmail,
+        temporaryPassword: provisionSchoolPassword,
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "BI",
+        schoolCode: SCHOOL_BI,
+      },
+    });
+    assert.equal(provisionSchool.status, 201, JSON.stringify(provisionSchool.data));
+    assert.ok((provisionSchool.data.roleKeys || []).includes("SCHOOL_ADMIN"));
+    const provisionSchoolPg = await assertPgRole(pool, provisionSchool.data.id, "SCHOOL_ADMIN");
+    assert.equal(provisionSchoolPg.school_code, SCHOOL_BI);
+    assert.equal(provisionSchoolPg.country_code, "BI");
+    assert.equal(String(provisionSchoolPg.school_id), String(provisionSchoolPg.role_school_id));
+    const provisionSchoolLogin = await login(provisionSchoolEmail, provisionSchoolPassword, SCHOOL_BI);
+    assert.ok((provisionSchoolLogin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "login Admin School BI sans SCHOOL_ADMIN");
+    assert.equal(provisionSchoolLogin.user.countryCode, "BI");
+    assert.equal(provisionSchoolLogin.user.schoolCode, SCHOOL_BI);
+
+    const orphanEmail = `orphan-provision-${stamp}@test.local`;
+    const orphanDenied = await request("/backoffice/users/provision", {
+      method: "POST",
+      token: superadmin.token,
+      body: {
+        firstName: "Orphan",
+        lastName: `Denied${stamp}`,
+        email: orphanEmail,
+        temporaryPassword: "OrphanDenied!2026",
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "BI",
+        schoolCode: SCHOOL_CD,
+      },
+    });
+    assert.equal(orphanDenied.status, 409, JSON.stringify(orphanDenied.data));
+    assert.equal(orphanDenied.data.code, "INVALID_TENANT_SCOPE");
+    const orphanRows = await pool.query(`SELECT id FROM users WHERE email = $1`, [orphanEmail]);
+    assert.equal(orphanRows.rowCount, 0, "aucune identité orpheline après échec provision");
+
+    const countryActorDenied = await request("/backoffice/users/provision", {
+      method: "POST",
+      token: provisionPaysLogin.token,
+      body: {
+        firstName: "Blocked",
+        lastName: `Actor${stamp}`,
+        email: `blocked-actor-${stamp}@test.local`,
+        temporaryPassword: "BlockedActor!2026",
+        roleKey: "COUNTRY_ADMIN",
+        countryCode: "BI",
+      },
+    });
+    assert.equal(countryActorDenied.status, 403, JSON.stringify(countryActorDenied.data));
+
+    // 1) Création Admin Pays par Superadmin (GRANT secondaire sur identité existante).
     const countryEmail = `country-admin-${stamp}@test.local`;
     const countryPassword = "CountryAdmin!2026";
     const countryIdentity = await createIdentity(superadmin.token, {
