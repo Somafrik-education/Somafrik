@@ -1,0 +1,84 @@
+{
+  "capturedAt": "2026-08-16T14:47:51Z",
+  "auditHead": "c7ffc56e163ea60f941d3579c228d1ede353679e",
+  "pr218MergedAt": "2026-08-16T14:31:54Z",
+  "web": {
+    "origin": "https://preprod.somafrik.app",
+    "sameEtagAs": "https://somafrik-web-preprod.onrender.com",
+    "headers": {
+      "server": "cloudflare",
+      "x-render-origin": "rndr-id present",
+      "x-vercel": false,
+      "last-modified": "Sun, 16 Aug 2026 14:32:36 UTC",
+      "cache-control": "public, max-age=0, s-maxage=300",
+      "cf-cache-status-html": "HIT",
+      "html-etag": "W/\"3242ea8047113ec8754541682062761a\"",
+      "bundle": "/assets/index-CiZzAUyd.js",
+      "bundle-etag": "W/\"090d03d9deb1df0752f3eafba4f67bf0\"",
+      "bundle-last-modified": "Sun, 16 Aug 2026 14:32:36 UTC",
+      "service-worker": "absent (404 /sw.js and /service-worker.js)"
+    },
+    "bundleContains218": {
+      "resolveUserSchools": true,
+      "schoolsLookupPath": "/schools/${encodeURIComponent(s)}",
+      "getUserEstablishmentLabelFallback": "if (!school) return user.schoolCode"
+    }
+  },
+  "api": {
+    "health": {
+      "url": "https://somafrik-api-preprod.onrender.com/api/health",
+      "json": {
+        "status": "ok",
+        "database": "postgresql",
+        "version": "1.0.0"
+      }
+    },
+    "GET /api/schools/CD-2026-0001": {
+      "status": 200,
+      "json": {
+        "code": "CD-IN-26-001",
+        "loginCode": "CD-IN-26-001",
+        "name": "INSTITUT NURU",
+        "city": "Uvira"
+      }
+    },
+    "GET /api/schools/CD-IN-26-001": {
+      "status": 200,
+      "json": {
+        "code": "CD-IN-26-001",
+        "loginCode": "CD-IN-26-001",
+        "name": "INSTITUT NURU",
+        "city": "Uvira"
+      }
+    },
+    "GET /api/backoffice/users": {
+      "status": 401,
+      "json": { "message": "Authentification JWT requise" },
+      "note": "Pas de DATABASE_URL ni de session Préfet dans cet environnement d'audit. JSON métier reconstruit depuis mapUserRow + listProjection (voir rapport)."
+    }
+  },
+  "runtimeChainReproduction": {
+    "internalMappedSchool": {
+      "code": "CD-2026-0001",
+      "publicId": "CD-IN-26-001",
+      "loginCode": "CD-IN-26-001",
+      "name": "INSTITUT NURU"
+    },
+    "afterToPublicSchool": {
+      "code": "CD-IN-26-001",
+      "loginCode": "CD-IN-26-001",
+      "name": "INSTITUT NURU",
+      "city": "Uvira",
+      "publicId": null,
+      "schoolCode": null
+    },
+    "detail": {
+      "schoolCode": "CD-2026-0001",
+      "role": "Préfet des études",
+      "publicId": "CD-IN-JPK-26-00004"
+    },
+    "schoolsForLabels.length": 0,
+    "find": null,
+    "getUserEstablishmentLabel": "CD-2026-0001"
+  }
+}

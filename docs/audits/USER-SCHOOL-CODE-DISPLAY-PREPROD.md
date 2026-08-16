@@ -2,6 +2,9 @@
 
 ## Statut
 
+- **Rapport Cursor livré :** `docs/audits/RAPPORT-CTO-USER-SCHOOL-CODE-DISPLAY-PREPROD.md`
+- **Preuves runtime :** `docs/audits/evidence/user-school-code-display-preprod-runtime.json`
+- **Verdict :** GO pour une **nouvelle** PR corrective. Cette PR #219 reste Draft.
 - **Mode : audit uniquement**
 - **Branche de base :** `develop@c7ffc56e163ea60f941d3579c228d1ede353679e`
 - **Route préprod reproduite :** `/etablissement/comptes-utilisateurs`
