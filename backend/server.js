@@ -522,6 +522,12 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
     { user: safeUser },
     rolePermissionsMap,
   );
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(principal);
+    if (Array.isArray(live?.permissions)) {
+      principal.permissions = live.permissions;
+    }
+  }
   const accessToken = tokenService.createAccessToken({
     ...principal,
     authSource: req.principal.authSource ?? "mobile",
