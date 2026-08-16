@@ -41,12 +41,17 @@ class PedagogyGovernanceService {
       "Enseignants:DELETE",
       "Enseignants:SUSPEND",
       "Gérer enseignants",
+      "Affectations:DELETE",
+      "Affectations:SUSPEND",
     ].forEach((token) => schoolPerms.delete(token));
     schoolPerms.add("Enseignants:READ");
     schoolPerms.add("Enseignants:CREATE");
     schoolPerms.add("Enseignants:UPDATE");
     schoolPerms.add("Ajouter enseignants");
     schoolPerms.add("Voir enseignants");
+    schoolPerms.add("Affectations:READ");
+    schoolPerms.add("Affectations:CREATE");
+    schoolPerms.add("Affectations:UPDATE");
     next[SCHOOL_ADMIN_ROLE] = [...schoolPerms].sort((a, b) => String(a).localeCompare(String(b), "fr"));
     return next;
   }

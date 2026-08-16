@@ -362,6 +362,33 @@ test("PUT planning-exams accepte Examens:UPDATE après overlay live", () => {
   );
 });
 
+test("POST /api/assignments exige Affectations:CREATE, pas Matières:CREATE", () => {
+  const { RbacService } = require("../services/rbacService");
+  const rbac = new RbacService({ rolePermissions: {} });
+  assert.equal(
+    rbac.canAccess(
+      { role: "Admin School", permissions: ["Affectations:CREATE", "Enseignants:UPDATE"] },
+      "POST /api/assignments",
+    ),
+    true,
+  );
+  assert.equal(
+    rbac.canAccess(
+      { role: "Admin School", permissions: ["Enseignants:UPDATE", "Matières:CREATE", "Gérer cours"] },
+      "POST /api/assignments",
+    ),
+    false,
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Secrétaire", permissions: ["Affectations:READ"] }, "POST /api/assignments"),
+    false,
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Enseignant", permissions: ["Affectations:READ"] }, "POST /api/assignments"),
+    false,
+  );
+});
+
 test("live CRUD : révoquer Comptable retire Rapports:READ hors liste métier Secrétaire", async () => {
   const rbac = createFunctionalRbacMemoryStore();
   const repo = {
@@ -437,4 +464,66 @@ test("catalogue plateforme vide n'efface pas SCHOOL_ADMIN", async () => {
     schoolCode: "CD-2026-0001",
   });
   assert.ok(live.permissions.includes("Élèves:READ"));
+});
+
+test("seed live SCHOOL_ADMIN inclut Affectations:CREATE", () => {
+  const live = require("../data").rolePermissionsForLiveRbac();
+  const parsed = parsePermissionStringsToModuleCrud(live["Admin School"]);
+  assert.equal(parsed.teachers.canUpdate, true);
+  assert.equal(parsed.assignments.canRead, true);
+  assert.equal(parsed.assignments.canCreate, true);
+  assert.equal(parsed.assignments.canUpdate, true);
+  assert.equal(parsed.assignments.canDelete, false);
+});
+
+test("backfill modules manquants : SCHOOL_ADMIN Affectations:CREATE sans écraser un DENY", async () => {
+  const rbac = createFunctionalRbacMemoryStore();
+  await rbac.upsertGrant({
+    roleKey: "SCHOOL_ADMIN",
+    scopeType: "global",
+    moduleKey: "teachers",
+    canRead: true,
+    canCreate: true,
+    canUpdate: true,
+    canDelete: false,
+    updatedBy: "bootstrap",
+  });
+  const repo = {
+    getFunctionalRbacStore: () => rbac,
+    getPlatformRolePermissionsMap: async () => require("../data").rolePermissionsForLiveRbac(),
+    getEstablishmentRolesStore: () => ({
+      getPermissionsMap: async () => ({
+        "Admin School": [],
+        SCHOOL_ADMIN: [],
+      }),
+      getRoleByNameOrCode: async () => ({ id: "existing" }),
+      insertRole: async () => {},
+      markSystemProtected: async () => true,
+    }),
+  };
+  await ensureFunctionalRbacBootstrap(repo);
+  const grants = await rbac.listGrantsForRoles(["SCHOOL_ADMIN"]);
+  const teachers = grants.find((row) => row.moduleKey === "teachers");
+  assert.equal(teachers.canUpdate, true);
+  assert.equal(teachers.canDelete, false);
+  const assignments = grants.find((row) => row.moduleKey === "assignments");
+  assert.ok(assignments, "grant assignments SCHOOL_ADMIN attendu après backfill modules manquants");
+  assert.equal(assignments.canCreate, true);
+  assert.equal(assignments.canRead, true);
+  assert.equal(assignments.canUpdate, true);
+  assert.equal(assignments.canDelete, false);
+
+  await rbac.upsertGrant({
+    roleKey: "SCHOOL_ADMIN",
+    scopeType: "global",
+    moduleKey: "assignments",
+    canCreate: false,
+    canRead: false,
+    canUpdate: false,
+    canDelete: false,
+    updatedBy: "superadmin",
+  });
+  await ensureFunctionalRbacBootstrap(repo);
+  const denied = (await rbac.listGrantsForRoles(["SCHOOL_ADMIN"])).find((row) => row.moduleKey === "assignments");
+  assert.equal(denied.canCreate, false);
 });

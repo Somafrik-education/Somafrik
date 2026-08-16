@@ -97,9 +97,9 @@ function createTeacherAssignmentsRepository(db) {
         [school.id, subjectRef],
       ),
     ]);
-    if (!teacher) throw assignmentError(400, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
-    if (!schoolClass) throw assignmentError(400, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
-    if (!subject) throw assignmentError(400, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+    if (!teacher) throw assignmentError(404, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
+    if (!schoolClass) throw assignmentError(404, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
+    if (!subject) throw assignmentError(404, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
     return { teacher, schoolClass, subject };
   }
 
@@ -115,10 +115,14 @@ function createTeacherAssignmentsRepository(db) {
       [schoolId, refs.schoolClass.id, refs.subject.id, refs.schoolClass.academic_year_id, excludeId],
     );
     if (conflict) {
+      const sameTeacher =
+        String(conflict.teacher_code ?? "") === String(refs.teacher.teacher_code ?? "");
       throw assignmentError(
         409,
-        "Ce cours est déjà affecté à un enseignant pour cette classe.",
-        "ASSIGNMENT_COURSE_CONFLICT",
+        sameTeacher
+          ? "Cette affectation existe déjà pour cet enseignant."
+          : "Ce cours est déjà affecté à un enseignant pour cette classe.",
+        sameTeacher ? "TEACHER_ASSIGNMENT_ALREADY_EXISTS" : "ASSIGNMENT_COURSE_CONFLICT",
       );
     }
   }
@@ -166,7 +170,7 @@ function createTeacherAssignmentsRepository(db) {
             throw assignmentError(
               409,
               "Cette affectation existe déjà pour cet enseignant.",
-              "ASSIGNMENT_ACTIVE_DUPLICATE",
+              "TEACHER_ASSIGNMENT_ALREADY_EXISTS",
             );
           }
           throw error;
@@ -225,7 +229,7 @@ function createTeacherAssignmentsRepository(db) {
             throw assignmentError(
               409,
               "Cette affectation existe déjà pour cet enseignant.",
-              "ASSIGNMENT_ACTIVE_DUPLICATE",
+              "TEACHER_ASSIGNMENT_ALREADY_EXISTS",
             );
           }
           throw error;

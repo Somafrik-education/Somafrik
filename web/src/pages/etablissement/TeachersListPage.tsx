@@ -17,6 +17,7 @@ import { teacherAssignmentsApi } from "../../lib/teacherAssignmentsApi";
 import { classesApi, type SchoolClass } from "../../lib/classesApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
+import { formatCaughtApiError } from "../../lib/apiErrors";
 
 type TeacherFormState = {
   firstName: string;
@@ -87,6 +88,20 @@ function teacherFormFromRow(row: SchoolTeacher): TeacherFormState {
     speciality: row.speciality || row.mainSubject || "",
     temporaryPassword: "",
   };
+}
+
+function formatAssignmentCell(row: SchoolTeacher): string {
+  const items = (row.assignments ?? []).filter((item) => item.className || item.course);
+  if (items.length === 1) {
+    return [items[0].className, items[0].course].filter(Boolean).join(" · ") || "—";
+  }
+  if (items.length > 1) {
+    return `${items.length} affectations`;
+  }
+  const classesLabel = (row.assignedClasses ?? []).filter(Boolean).join(", ");
+  const coursesLabel = (row.courses ?? []).filter(Boolean).join(", ");
+  if (!classesLabel && !coursesLabel) return "—";
+  return [classesLabel, coursesLabel].filter(Boolean).join(" · ");
 }
 
 function asSubjectOptions(payload: unknown): SubjectOption[] {
@@ -209,7 +224,7 @@ export function TeachersListPage() {
         ),
       );
     } catch (err) {
-      setAssignError(mapApiError(err, "Impossible de charger les classes ou matières."));
+      setAssignError(formatCaughtApiError(err, "Impossible de charger les classes ou matières."));
     }
   }
 
@@ -262,7 +277,7 @@ export function TeachersListPage() {
       showToast("Affectation enregistrée.", "success");
       await load();
     } catch (err) {
-      const message = mapApiError(err, "Affectation impossible.");
+      const message = formatCaughtApiError(err, "Affectation impossible.");
       setAssignError(message);
       showToast(message, "error");
     } finally {
@@ -319,12 +334,7 @@ export function TeachersListPage() {
         key: "assignments",
         header: "Affectations",
         sortable: false,
-        render: (row: SchoolTeacher) => {
-          const classesLabel = (row.assignedClasses ?? []).filter(Boolean).join(", ");
-          const coursesLabel = (row.courses ?? []).filter(Boolean).join(", ");
-          if (!classesLabel && !coursesLabel) return "—";
-          return [classesLabel, coursesLabel].filter(Boolean).join(" · ");
-        },
+        render: (row: SchoolTeacher) => formatAssignmentCell(row),
       },
       {
         key: "actions",
@@ -519,11 +529,31 @@ export function TeachersListPage() {
             </InlineAlert>
           )}
           {assigning ? (
+            <Field label="Enseignant" htmlFor="teacher-assign-name">
+              <Input
+                id="teacher-assign-name"
+                value={assigning.name || `${assigning.firstName} ${assigning.lastName}`.trim()}
+                readOnly
+              />
+            </Field>
+          ) : null}
+          {assigning ? (
             <p className="text-sm text-muted">
               Affectations actuelles :{" "}
-              {(assigning.assignedClasses ?? []).join(", ") || "aucune classe"} ·{" "}
-              {(assigning.courses ?? []).join(", ") || "aucune matière"}
+              {formatAssignmentCell(assigning) === "—"
+                ? "aucune"
+                : formatAssignmentCell(assigning)}
             </p>
+          ) : null}
+          {classes.length === 0 ? (
+            <InlineAlert tone="warning" title="Aucune classe">
+              Aucune classe active n&apos;est disponible pour cet établissement.
+            </InlineAlert>
+          ) : null}
+          {subjects.length === 0 ? (
+            <InlineAlert tone="warning" title="Aucune matière">
+              Aucune matière canonique n&apos;est disponible pour cet établissement.
+            </InlineAlert>
           ) : null}
           <Field label="Classe" htmlFor="teacher-assign-class" required>
             <Select
@@ -563,7 +593,7 @@ export function TeachersListPage() {
             <Button type="button" variant="secondary" onClick={() => setAssigning(null)}>
               Annuler
             </Button>
-            <Button type="submit" disabled={assignSaving || !assignForm.classCode || !assignForm.subjectCode}>
+            <Button type="submit" disabled={assignSaving || !assignForm.classCode || !assignForm.subjectCode || classes.length === 0 || subjects.length === 0}>
               {assignSaving ? "Enregistrement…" : "Enregistrer l'affectation"}
             </Button>
           </div>

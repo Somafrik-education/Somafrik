@@ -10,6 +10,13 @@ const permissions = vi.hoisted(() => ({
   canDelete: true,
 }));
 
+const assignmentPermissions = vi.hoisted(() => ({
+  canRead: true,
+  canCreate: true,
+  canUpdate: true,
+  canDelete: false,
+}));
+
 const teachersApiMock = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
@@ -63,7 +70,16 @@ vi.mock("../../lib/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/permissions")>();
   return {
     ...actual,
-    getEntityFeaturePermissions: () => ({ ...permissions }),
+    getEntityFeaturePermissions: (
+      _ctx: unknown,
+      moduleKey: string,
+      feature: string,
+    ) => {
+      if (moduleKey === "assignments" || feature === "Affectations") {
+        return { ...assignmentPermissions };
+      }
+      return { ...permissions };
+    },
   };
 });
 
@@ -86,9 +102,11 @@ vi.mock("../../lib/classesApi", () => ({
 vi.mock("../../api/client", () => ({
   ApiError: class ApiError extends Error {
     status: number;
-    constructor(message: string, status: number) {
+    code?: string;
+    constructor(message: string, status: number, code?: string) {
       super(message);
       this.status = status;
+      this.code = code;
     }
   },
   api: {
@@ -116,6 +134,10 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     permissions.canCreate = true;
     permissions.canUpdate = true;
     permissions.canDelete = true;
+    assignmentPermissions.canRead = true;
+    assignmentPermissions.canCreate = true;
+    assignmentPermissions.canUpdate = true;
+    assignmentPermissions.canDelete = false;
     teachersApiMock.list.mockReset();
     teachersApiMock.create.mockReset();
     teachersApiMock.update.mockReset();
@@ -145,6 +167,9 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
         gender: "Féminin",
         birthDate: "1985-01-01",
         entryDate: "2010-09-01",
+        assignedClasses: [],
+        courses: [],
+        assignments: [],
       },
       {
         id: "CD-2026-0001-ENS-0002",
@@ -163,6 +188,9 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
         gender: "Masculin",
         birthDate: "1982-03-12",
         entryDate: "2011-09-01",
+        assignedClasses: ["6ème A"],
+        courses: ["Mathématiques"],
+        assignments: [{ className: "6ème A", course: "Mathématiques" }],
       },
     ]);
   });
@@ -230,6 +258,16 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     const list = screen.getByLabelText("Liste");
     expect(within(list).queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
     expect(within(list).queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
+    expect(within(list).getAllByRole("button", { name: "Affecter" }).length).toBeGreaterThan(0);
+  });
+
+  it("masque Affecter sans Affectations:CREATE même si Enseignants:UPDATE", async () => {
+    assignmentPermissions.canCreate = false;
+    renderPage();
+    await screen.findByText("Ndiaye");
+    const list = screen.getByLabelText("Liste");
+    expect(within(list).getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
+    expect(within(list).queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
   });
 
   it("modifie un enseignant via PATCH puis recharge", async () => {
@@ -405,7 +443,11 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
   it("affiche les erreurs 409 d'affectation", async () => {
     const user = userEvent.setup();
     teacherAssignmentsApiMock.create.mockRejectedValue(
-      new ApiError("Ce cours est déjà affecté à un enseignant pour cette classe.", 409),
+      new ApiError(
+        "Cette affectation existe déjà pour cet enseignant.",
+        409,
+        "TEACHER_ASSIGNMENT_ALREADY_EXISTS",
+      ),
     );
     renderPage();
     await screen.findByText("Ndiaye");
@@ -414,8 +456,83 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     expect(
-      await screen.findByText("Ce cours est déjà affecté à un enseignant pour cette classe."),
+      await screen.findByText("TEACHER_ASSIGNMENT_ALREADY_EXISTS · Cette affectation existe déjà pour cet enseignant."),
     ).toBeInTheDocument();
+  });
+
+  it("affiche un état vide si aucune classe n'est disponible", async () => {
+    const user = userEvent.setup();
+    classesApiMock.list.mockResolvedValue([]);
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    expect(await screen.findByText(/Aucune classe active/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
+  });
+
+  it("affiche la colonne Affectations depuis PostgreSQL", async () => {
+    renderPage();
+    await screen.findByText("Ba");
+    expect(screen.getByText("6ème A · Mathématiques")).toBeInTheDocument();
+    const dashes = screen.getAllByText("—");
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+
+  it("rafraîchit la colonne Affectations après un POST réussi", async () => {
+    const user = userEvent.setup();
+    teacherAssignmentsApiMock.create.mockResolvedValue({ id: "asg-1" });
+    teachersApiMock.list.mockResolvedValueOnce([
+      {
+        id: "CD-2026-0001-ENS-0001",
+        teacherCode: "CD-2026-0001-ENS-0001",
+        publicId: "CD-2026-0001-ENS-0001",
+        identifier: "ENS-0001",
+        firstName: "Aïssatou",
+        lastName: "Ndiaye",
+        name: "Aïssatou Ndiaye",
+        phone: "+243 800",
+        email: "",
+        speciality: "Mathématiques",
+        mainSubject: "Mathématiques",
+        schoolCode: "CD-2026-0001",
+        status: "Actif",
+        gender: "Féminin",
+        birthDate: "1985-01-01",
+        entryDate: "2010-09-01",
+        assignments: [],
+        assignedClasses: [],
+        courses: [],
+      },
+    ]).mockResolvedValueOnce([
+      {
+        id: "CD-2026-0001-ENS-0001",
+        teacherCode: "CD-2026-0001-ENS-0001",
+        publicId: "CD-2026-0001-ENS-0001",
+        identifier: "ENS-0001",
+        firstName: "Aïssatou",
+        lastName: "Ndiaye",
+        name: "Aïssatou Ndiaye",
+        phone: "+243 800",
+        email: "",
+        speciality: "Mathématiques",
+        mainSubject: "Mathématiques",
+        schoolCode: "CD-2026-0001",
+        status: "Actif",
+        gender: "Féminin",
+        birthDate: "1985-01-01",
+        entryDate: "2010-09-01",
+        assignments: [{ className: "6ème A", course: "Mathématiques" }],
+        assignedClasses: ["6ème A"],
+        courses: ["Mathématiques"],
+      },
+    ]);
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
+    await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
+    await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
+    expect(await screen.findByText("6ème A · Mathématiques")).toBeInTheDocument();
   });
 
   it("affiche les erreurs 409 de suppression", async () => {

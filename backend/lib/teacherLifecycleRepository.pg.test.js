@@ -644,7 +644,7 @@ async function main() {
           { teacherCode: created.teacherCode, classCode: "CLS-6A", subjectCode: "SUB-MATH" },
           "CD-2026-0001",
         ),
-      (error) => error.statusCode === 400 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
+      (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
     );
 
     const blocked = await teachers.create(
