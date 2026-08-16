@@ -22,19 +22,15 @@ export const SCHOOL_STATUSES = [
   "Supprimé",
 ] as const;
 
-/** Génère un code unique au format CodePays-AAAA-0001 (ETB-F02). */
-export function generateSchoolCode(countryCode: string, schools: School[]): string {
-  const code = String(countryCode ?? "").trim().toUpperCase();
-  if (!code) return "";
-  const year = new Date().getFullYear();
-  const prefix = `${code}-${year}-`;
-  const maxNum = schools.reduce((max, school) => {
-    const value = String(school.code ?? "").trim().toUpperCase();
-    if (!value.startsWith(prefix)) return max;
-    const match = value.match(/-(\d{4})$/);
-    return match ? Math.max(max, Number.parseInt(match[1], 10)) : max;
-  }, 0);
-  return `${prefix}${String(maxNum + 1).padStart(4, "0")}`;
+/**
+ * Compatibilité d'appel uniquement.
+ * Le navigateur ne génère plus de code établissement : PostgreSQL est l'unique
+ * propriétaire de `login_code` via `somafrik_prepare_school_login_code()`.
+ */
+export function generateSchoolCode(_countryCode: string, _schools: School[]): string {
+  void _countryCode;
+  void _schools;
+  return "";
 }
 
 export function isSchoolDeleted(school: School): boolean {
@@ -66,13 +62,15 @@ export function validateSchoolForm(
   if (!String(school.principalName ?? "").trim()) return "Le responsable principal est obligatoire.";
 
   const code = String(school.code ?? "").trim().toUpperCase();
-  if (!code) return "Le code établissement est obligatoire.";
-  const duplicateCode = options.isNew
-    ? schools.some((item) => normalize(item.code) === normalize(code))
-    : schools.some(
-        (item) => normalize(item.code) === normalize(code) && item.code !== school.code,
-      );
-  if (duplicateCode) return "Ce code établissement existe déjà.";
+  if (!options.isNew && !code) return "Le code établissement est obligatoire.";
+  if (code) {
+    const duplicateCode = options.isNew
+      ? schools.some((item) => normalize(item.code) === normalize(code))
+      : schools.some(
+          (item) => normalize(item.code) === normalize(code) && item.code !== school.code,
+        );
+    if (duplicateCode) return "Ce code établissement existe déjà.";
+  }
 
   return null;
 }
