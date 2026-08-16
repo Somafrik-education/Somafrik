@@ -1735,7 +1735,7 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
   }
 
   // Comptes utilisateurs = PostgreSQL canonique. Aucun lookup via backoffice_state.
-  const canonicalUsers = await repository.listClientsProjection();
+  const { users: canonicalUsers = [] } = await repository.listClientsProjection();
   const scopedUsers = tenantScopeService.filterRows(canonicalUsers, req.principal);
   const requested = String(req.params.id);
   const target = scopedUsers.find((user) =>
