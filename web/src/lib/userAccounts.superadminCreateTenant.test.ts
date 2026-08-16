@@ -33,7 +33,7 @@ const superadminSession = {
 
 describe("Superadmin create-user tenant defaults", () => {
   it("ne choisit jamais schools[0] / CD pour un Superadmin", () => {
-    expect(getDefaultSchoolCode(superadminSession, state)).toBe("");
+    expect(getDefaultSchoolCode(superadminSession)).toBe("");
     const draft = buildNewUserDraft("", superadminSession, state);
     expect(draft.schoolCode).toBe("");
     expect(draft.countryScope).toBe("");

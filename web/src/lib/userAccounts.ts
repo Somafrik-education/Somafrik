@@ -282,11 +282,11 @@ export function generateTemporaryPassword(): string {
 }
 
 function findSchoolInScope(state: BackOfficeState, session: Session, schoolCode?: string) {
-  const code = schoolCode ?? getDefaultSchoolCode(session, state);
+  const code = schoolCode ?? getDefaultSchoolCode(session);
   return state.schools.find((item) => normalize(item.code) === normalize(code));
 }
 
-export function getDefaultSchoolCode(session: Session | null, state: BackOfficeState): string {
+export function getDefaultSchoolCode(session: Session | null): string {
   const fromUser = session?.user?.schoolCode;
   if (fromUser && fromUser !== "*") return fromUser;
   return "";
@@ -316,7 +316,7 @@ function resolveCountryScopeForRole(
   return session.user.countryScope ?? currentCountryScope;
 }
 
-function resolveSchoolCodeForRole(role: string, session: Session, _state: BackOfficeState, current?: string) {
+function resolveSchoolCodeForRole(role: string, session: Session, current?: string) {
   if (role === SUPER_ADMIN_ROLE || role === COUNTRY_ADMIN_ROLE) {
     return "*";
   }
@@ -333,7 +333,7 @@ export function buildNewUserDraft(
   session: Session,
   state: BackOfficeState,
 ): UserAccount {
-  const schoolCode = getDefaultSchoolCode(session, state);
+  const schoolCode = getDefaultSchoolCode(session);
   const defaults = getRoleDefaults("", schoolCode);
   const school = schoolCode ? findSchoolInScope(state, session, schoolCode) : undefined;
   const temporaryPassword = generateTemporaryPassword();
@@ -369,7 +369,7 @@ export function applyRoleChangeToUser(
   session: Session,
   state: BackOfficeState,
 ): UserAccount {
-  const schoolCode = resolveSchoolCodeForRole(role, session, state, user.schoolCode);
+  const schoolCode = resolveSchoolCodeForRole(role, session, user.schoolCode);
   const defaults = getRoleDefaults(role, schoolCode);
   const school = schoolCode && schoolCode !== "*" ? findSchoolInScope(state, session, schoolCode) : undefined;
   const isNew = !user.id;
