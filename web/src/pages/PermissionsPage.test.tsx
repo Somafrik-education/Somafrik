@@ -1,47 +1,60 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type {
+  RbacCatalog,
+  RbacConfiguredMatrix,
+  RbacConfiguredQuery,
+  RbacCrudGrant,
+  RbacPatchPermissionsPayload,
+} from "../lib/rbacApi";
 
-const catalog = {
-  modules: [{ moduleKey: "students", moduleName: "Élèves", appliesWeb: true, appliesMobile: true }],
-  roles: [
-    {
-      id: "role-prefet",
-      roleCode: "PREFET_ETUDES",
-      roleName: "Préfet des études",
-      scope: "school",
-      displayOrder: 1,
-      status: "active",
-      schoolAssignable: true,
-      activeUserCount: 2,
-      updatedAt: "2026-08-16T10:00:00.000Z",
-    },
-  ],
-  protectedRoleKeys: ["SUPER_ADMIN"],
-};
-
-const patchMock = vi.fn(async () => ({ updatedAt: "2026-08-16T11:00:00.000Z" }));
-const getConfiguredMock = vi.fn(async () => ({
-  roleKey: "PREFET_ETUDES",
-  roleName: "Préfet des études",
-  scopeType: "school",
-  updatedAt: "2026-08-16T10:00:00.000Z",
-  modules: [
-    {
-      moduleKey: "students",
-      moduleName: "Élèves",
-      canCreate: false,
-      canRead: true,
-      canUpdate: true,
-      canDelete: true,
-    },
-  ],
-}));
+const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
+  const catalog: RbacCatalog = {
+    modules: [{ moduleKey: "students", moduleName: "Élèves", appliesWeb: true, appliesMobile: true }],
+    roles: [
+      {
+        id: "role-prefet",
+        roleCode: "PREFET_ETUDES",
+        roleName: "Préfet des études",
+        scope: "school",
+        displayOrder: 1,
+        status: "active",
+        schoolAssignable: true,
+        activeUserCount: 2,
+        updatedAt: "2026-08-16T10:00:00.000Z",
+      },
+    ],
+    protectedRoleKeys: ["SUPER_ADMIN"],
+  };
+  const getConfiguredMock = vi.fn(async (_query: RbacConfiguredQuery): Promise<RbacConfiguredMatrix> => ({
+    roleKey: "PREFET_ETUDES",
+    roleName: "Préfet des études",
+    scopeType: "school",
+    updatedAt: "2026-08-16T10:00:00.000Z",
+    modules: [
+      {
+        moduleKey: "students",
+        moduleName: "Élèves",
+        appliesWeb: true,
+        appliesMobile: true,
+        canCreate: false,
+        canRead: true,
+        canUpdate: true,
+        canDelete: true,
+      },
+    ],
+  }));
+  const patchMock = vi.fn(async (_payload: RbacPatchPermissionsPayload) => ({
+    updatedAt: "2026-08-16T11:00:00.000Z",
+  }));
+  return { catalog, patchMock, getConfiguredMock };
+});
 
 vi.mock("../lib/rbacApi", () => ({
   rbacApi: {
-    getCatalog: vi.fn(async () => catalog),
-    getConfigured: (...args: unknown[]) => getConfiguredMock(...args),
-    patchPermissions: (...args: unknown[]) => patchMock(...args),
+    getCatalog: vi.fn(async (): Promise<RbacCatalog> => catalog),
+    getConfigured: (query: RbacConfiguredQuery) => getConfiguredMock(query),
+    patchPermissions: (payload: RbacPatchPermissionsPayload) => patchMock(payload),
     createRole: vi.fn(),
     updateRole: vi.fn(),
     archiveRole: vi.fn(),
@@ -84,6 +97,14 @@ vi.mock("../components/ui/Toast", () => ({
 
 import { PermissionsPage } from "./PermissionsPage";
 
+const expectedGrant: RbacCrudGrant = {
+  moduleKey: "students",
+  canCreate: false,
+  canRead: true,
+  canUpdate: true,
+  canDelete: false,
+};
+
 describe("PermissionsPage — matrice CRUD Superadmin", () => {
   beforeEach(() => {
     patchMock.mockClear();
@@ -116,14 +137,13 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
     fireEvent.click(deleteBox);
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
     await waitFor(() => expect(patchMock).toHaveBeenCalled());
-    expect(patchMock.mock.calls[0][0].grants).toEqual([
-      {
-        moduleKey: "students",
-        canCreate: false,
-        canRead: true,
-        canUpdate: true,
-        canDelete: false,
-      },
-    ]);
+    expect(patchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roleKey: "PREFET_ETUDES",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        grants: [expectedGrant],
+      }),
+    );
   });
 });

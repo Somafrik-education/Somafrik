@@ -1020,9 +1020,11 @@ class PostgresRepository {
   }
 
   async getRolePermissionsMap() {
+    const { mergeRolePermissionMaps } = require("../lib/functionalRbacService");
+    const seedMap = require("../data").rolePermissions ?? {};
     const platformMap = (await this.getPlatformStore().getRolePermissionsMap()) ?? {};
     const establishmentMap = await this.getEstablishmentRolesStore().getPermissionsMap();
-    return { ...platformMap, ...establishmentMap };
+    return mergeRolePermissionMaps(seedMap, platformMap, establishmentMap);
   }
 
   createPlatformCountry(payload, principal, auditMeta) {

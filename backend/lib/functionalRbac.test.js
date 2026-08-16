@@ -12,7 +12,12 @@ const {
   assertSuperAdminInvariantPatch,
   assertNotProtectedArchive,
 } = require("./functionalRbacManagement");
-const { patchConfiguredPermissions } = require("./functionalRbacService");
+const {
+  patchConfiguredPermissions,
+  ensureFunctionalRbacBootstrap,
+  resolveEffectivePermissionsForPrincipal,
+  mergeRolePermissionMaps,
+} = require("./functionalRbacService");
 const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
 
 test("cascade établissement > pays > global > DENY", () => {
@@ -98,6 +103,13 @@ test("multi-rôle union et rôle révoqué ignoré", () => {
   const revoked = resolveEffectivePermissionSet(["PREFET_ETUDES"], grants, {});
   assert.equal(revoked.modules.students.canDelete, false);
   assert.equal(revoked.modules.students.canCreate, false);
+});
+
+test("COUNTRY_ADMIN conserve COUNTRY_PRIVILEGES", () => {
+  const resolved = resolveEffectivePermissionSet(["COUNTRY_ADMIN"], [], {});
+  assert.ok(resolved.permissions.includes("COUNTRY_PRIVILEGES"));
+  assert.ok(!resolved.permissions.includes("Pays:CREATE"));
+  assert.ok(!resolved.permissions.includes("Pays:DELETE"));
 });
 
 test("invariants SUPER_ADMIN et archive protégée", () => {
@@ -234,4 +246,82 @@ test("PATCH schoolCode n'est pas traité comme un UUID", async () => {
   assert.equal(saved.schoolCode, "CD-2026-0001");
   assert.equal(calls[0].schoolCode, "CD-2026-0001");
   assert.equal(calls[0].schoolId, undefined);
+});
+
+test("fusion des cartes : liste vide n'écrase pas Admin School", () => {
+  const merged = mergeRolePermissionMaps(
+    { "Admin School": ["Gérer élèves"] },
+    { "Admin School": [], SCHOOL_ADMIN: [] },
+  );
+  assert.ok(merged["Admin School"].includes("Gérer élèves"));
+  assert.deepEqual(merged.SCHOOL_ADMIN, []);
+});
+
+test("backfill conserve Élèves:READ pour SCHOOL_ADMIN malgré catalogue plateforme vide", async () => {
+  const rbac = createFunctionalRbacMemoryStore();
+  const repo = {
+    getFunctionalRbacStore: () => rbac,
+    getPlatformRolePermissionsMap: async () => require("../data").rolePermissions,
+    getEstablishmentRolesStore: () => ({
+      getPermissionsMap: async () => ({
+        "Admin School": [],
+        SCHOOL_ADMIN: [],
+        "Super Administrateur Somafrik": [],
+        SUPER_ADMIN: [],
+      }),
+      getRoleByNameOrCode: async () => ({ id: "existing" }),
+      insertRole: async () => {},
+      markSystemProtected: async () => true,
+    }),
+  };
+  await ensureFunctionalRbacBootstrap(repo);
+  const grants = await rbac.listGrantsForRoles(["SCHOOL_ADMIN"]);
+  const students = grants.find((row) => row.moduleKey === "students");
+  assert.ok(students, "grant students SCHOOL_ADMIN attendu");
+  assert.equal(students.canRead, true);
+  assert.equal(students.canCreate, true);
+});
+
+test("live-resolve Admin School : Élèves:READ si grants métier absents mais carte seed présente", async () => {
+  const rbac = createFunctionalRbacMemoryStore();
+  await rbac.upsertGrant({
+    roleKey: "PREFET_ETUDES",
+    scopeType: "global",
+    moduleKey: "students",
+    canRead: true,
+    updatedBy: "bootstrap",
+  });
+  const repo = {
+    getFunctionalRbacStore: () => rbac,
+    getRolePermissionsMap: async () => ({
+      "Admin School": [],
+      SCHOOL_ADMIN: [],
+    }),
+  };
+  const live = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "CD-2026-0001",
+  });
+  assert.equal(live.modules.students.canRead, true);
+  assert.ok(live.permissions.includes("Élèves:READ"));
+});
+
+test("live-resolve SUPER_ADMIN sans roleKeys conserve ALL_PRIVILEGES si d'autres grants existent", async () => {
+  const rbac = createFunctionalRbacMemoryStore();
+  await rbac.upsertGrant({
+    roleKey: "PREFET_ETUDES",
+    scopeType: "global",
+    moduleKey: "students",
+    canRead: true,
+    updatedBy: "bootstrap",
+  });
+  const repo = { getFunctionalRbacStore: () => rbac };
+  const live = await resolveEffectivePermissionsForPrincipal(repo, {
+    role: "Super Administrateur Somafrik",
+    roleKeys: [],
+    schoolCode: "*",
+  });
+  assert.ok(live.permissions.includes("ALL_PRIVILEGES"));
+  assert.equal(live.modules.users.canCreate, true);
 });

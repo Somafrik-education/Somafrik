@@ -14,6 +14,17 @@ export type RbacRole = {
   updatedAt?: string;
 };
 
+export type RbacCrudFlags = {
+  canCreate: boolean;
+  canRead: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+};
+
+export type RbacCrudGrant = RbacCrudFlags & {
+  moduleKey: string;
+};
+
 export type RbacModule = {
   moduleKey: string;
   moduleName: string;
@@ -43,28 +54,31 @@ export type RbacConfiguredMatrix = {
   modules: RbacModule[];
 };
 
+export type RbacPatchPermissionsPayload = {
+  roleKey: string;
+  countryCode?: string;
+  schoolCode?: string;
+  expectedUpdatedAt?: string | null;
+  grants: RbacCrudGrant[];
+};
+
+export type RbacConfiguredQuery = {
+  roleKey: string;
+  countryCode?: string;
+  schoolCode?: string;
+};
+
 export const rbacApi = {
   getCatalog: () => api.get<RbacCatalog>("/backoffice/rbac/catalog"),
-  getConfigured: (query: { roleKey: string; countryCode?: string; schoolCode?: string }) => {
+  getConfigured: (query: RbacConfiguredQuery) => {
     const params = new URLSearchParams();
     params.set("roleKey", query.roleKey);
     if (query.countryCode) params.set("countryCode", query.countryCode);
     if (query.schoolCode) params.set("schoolCode", query.schoolCode);
     return api.get<RbacConfiguredMatrix>(`/backoffice/rbac/permissions?${params.toString()}`);
   },
-  patchPermissions: (payload: {
-    roleKey: string;
-    countryCode?: string;
-    schoolCode?: string;
-    expectedUpdatedAt?: string | null;
-    grants: Array<{
-      moduleKey: string;
-      canCreate: boolean;
-      canRead: boolean;
-      canUpdate: boolean;
-      canDelete: boolean;
-    }>;
-  }) => api.patch<RbacConfiguredMatrix>("/backoffice/rbac/permissions", payload),
+  patchPermissions: (payload: RbacPatchPermissionsPayload) =>
+    api.patch<RbacConfiguredMatrix>("/backoffice/rbac/permissions", payload),
   createRole: (payload: Record<string, unknown>) => api.post<RbacRole>("/backoffice/rbac/roles", payload),
   updateRole: (roleId: string, payload: Record<string, unknown>) =>
     api.patch<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}`, payload),

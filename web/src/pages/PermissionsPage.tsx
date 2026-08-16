@@ -15,7 +15,8 @@ import {
   rbacApi,
   type RbacCatalog,
   type RbacConfiguredMatrix,
-  type RbacModule,
+  type RbacCrudFlags,
+  type RbacCrudGrant,
   type RbacRole,
 } from "../lib/rbacApi";
 
@@ -28,8 +29,24 @@ const CRUD_ACTIONS = [
 
 type TabKey = "permissions" | "roles";
 
-function emptyCrud(): Pick<RbacModule, "canCreate" | "canRead" | "canUpdate" | "canDelete"> {
+function emptyCrud(): RbacCrudFlags {
   return { canCreate: false, canRead: false, canUpdate: false, canDelete: false };
+}
+
+function toCrudFlags(source?: Partial<RbacCrudFlags> | null): RbacCrudFlags {
+  return {
+    canCreate: source?.canCreate === true,
+    canRead: source?.canRead === true,
+    canUpdate: source?.canUpdate === true,
+    canDelete: source?.canDelete === true,
+  };
+}
+
+function toCrudGrant(moduleKey: string, source?: Partial<RbacCrudFlags> | null): RbacCrudGrant {
+  return {
+    moduleKey,
+    ...toCrudFlags(source),
+  };
 }
 
 function formatDate(value?: string | null) {
@@ -173,15 +190,10 @@ export function PermissionsPage() {
       setDraft(emptyCrud());
       return;
     }
-    setDraft({
-      canCreate: Boolean(selectedModule.canCreate),
-      canRead: Boolean(selectedModule.canRead),
-      canUpdate: Boolean(selectedModule.canUpdate),
-      canDelete: Boolean(selectedModule.canDelete),
-    });
+    setDraft(toCrudFlags(selectedModule));
   }, [selectedModule]);
 
-  function toggle(field: keyof ReturnType<typeof emptyCrud>) {
+  function toggle(field: keyof RbacCrudFlags) {
     if (!canManage) return;
     setDraft((current) => ({ ...current, [field]: !current[field] }));
   }
@@ -195,12 +207,7 @@ export function PermissionsPage() {
         countryCode,
         schoolCode,
         expectedUpdatedAt: matrix?.updatedAt ?? null,
-        grants: [
-          {
-            moduleKey: selectedModuleKey,
-            ...draft,
-          },
-        ],
+        grants: [toCrudGrant(selectedModuleKey, draft)],
       });
       const next = await rbacApi.getConfigured({ roleKey: selectedRoleKey, countryCode, schoolCode });
       setMatrix({ ...next, updatedAt: saved.updatedAt ?? next.updatedAt });

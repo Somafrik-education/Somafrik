@@ -97,9 +97,40 @@ async function ensurePlatformRolesInCatalog(repo) {
   }
 }
 
-async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
-  const count = await store.countActiveGrants();
-  if (count > 0) return false;
+function permissionList(value) {
+  return Array.isArray(value) ? value.map((item) => String(item ?? "").trim()).filter(Boolean) : [];
+}
+
+/**
+ * Fusion fail-closed des cartes métier : une liste vide n'écrase jamais une liste
+ * déjà peuplée (le catalogue plateforme SUPER_ADMIN/SCHOOL_ADMIN est inséré sans
+ * jetons, ce qui ne doit pas effacer data.js / role_permissions JSONB).
+ */
+function mergeRolePermissionMaps(...maps) {
+  const merged = {};
+  for (const map of maps) {
+    if (!map || typeof map !== "object") continue;
+    for (const [roleName, permissions] of Object.entries(map)) {
+      const list = permissionList(permissions);
+      const existing = merged[roleName];
+      if (!existing) {
+        merged[roleName] = [...list];
+        continue;
+      }
+      if (!list.length) continue;
+      merged[roleName] = [...new Set([...existing, ...list])];
+    }
+  }
+  return merged;
+}
+
+async function loadLegacyRolePermissionMaps(repo) {
+  let seedMap = {};
+  try {
+    seedMap = require("../data").rolePermissions ?? {};
+  } catch {
+    seedMap = {};
+  }
   const platformMap =
     (typeof repo.getPlatformRolePermissionsMap === "function"
       ? await repo.getPlatformRolePermissionsMap()
@@ -114,7 +145,13 @@ async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
   } catch {
     establishmentMap = {};
   }
-  const merged = { ...platformMap, ...establishmentMap };
+  return mergeRolePermissionMaps(seedMap, platformMap, establishmentMap);
+}
+
+async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
+  const count = await store.countActiveGrants();
+  if (count > 0) return false;
+  const merged = await loadLegacyRolePermissionMaps(repo);
   for (const [roleName, permissions] of Object.entries(merged)) {
     const roleKey = toRoleKey(roleName);
     if (!roleKey) continue;
@@ -420,18 +457,75 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
   });
 }
 
-async function resolveEffectivePermissionsForPrincipal(repo, principal) {
-  const { toRoleKey: toKey, principalHasRole } = require("./userRoleLifecycle");
+function addRoleKey(roleKeys, seen, value) {
+  const { toRoleKey: toKey } = require("./userRoleLifecycle");
+  const key = toKey(value);
+  if (!key || key === "SANS_AFFECTATION") return;
+  if (seen.has(key)) return;
+  seen.add(key);
+  roleKeys.push(key);
+}
+
+async function collectPrincipalRoleKeys(repo, principal) {
+  const { principalHasRole } = require("./userRoleLifecycle");
   const roleKeys = [];
-  if (Array.isArray(principal?.roleKeys) && principal.roleKeys.length) {
-    roleKeys.push(...principal.roleKeys.map(toKey).filter(Boolean));
-  } else if (principal?.role) {
-    const key = toKey(principal.role);
-    if (key) roleKeys.push(key);
+  const seen = new Set();
+
+  const userId = asTrimmed(principal?.sub || principal?.id);
+  let liveKeys = null;
+  if (userId && typeof repo.listActiveUserRoleKeys === "function") {
+    try {
+      const loaded = await repo.listActiveUserRoleKeys(userId);
+      if (Array.isArray(loaded)) liveKeys = loaded;
+    } catch {
+      liveKeys = null;
+    }
   }
-  if (principalHasRole(principal, "Super Administrateur Somafrik") && !roleKeys.includes("SUPER_ADMIN")) {
-    roleKeys.unshift("SUPER_ADMIN");
+
+  const usedLiveRoles = Array.isArray(liveKeys) && liveKeys.length > 0;
+  if (usedLiveRoles) {
+    for (const value of liveKeys) addRoleKey(roleKeys, seen, value);
+  } else {
+    if (Array.isArray(principal?.roleKeys)) {
+      for (const value of principal.roleKeys) addRoleKey(roleKeys, seen, value);
+    }
+    if (Array.isArray(principal?.roles)) {
+      for (const value of principal.roles) addRoleKey(roleKeys, seen, value);
+    }
+    addRoleKey(roleKeys, seen, principal?.role);
+    if (principalHasRole(principal, "Super Administrateur Somafrik")) {
+      addRoleKey(roleKeys, seen, "SUPER_ADMIN");
+    }
   }
+  return roleKeys;
+}
+
+function syntheticGrantsFromLegacyMap(roleKeys, legacyMap, grantedRoleKeys) {
+  const { toRoleLabel } = require("./userRoleLifecycle");
+  const synthetic = [];
+  for (const roleKey of roleKeys) {
+    if (grantedRoleKeys.has(roleKey)) continue;
+    const label = toRoleLabel(roleKey);
+    const permissions = permissionList(legacyMap[label]).length
+      ? legacyMap[label]
+      : permissionList(legacyMap[roleKey]);
+    const modulesCrud = parsePermissionStringsToModuleCrud(permissions);
+    for (const module of listFunctionalModules()) {
+      const crud = modulesCrud[module.moduleKey] || emptyCrud();
+      if (!crud.canCreate && !crud.canRead && !crud.canUpdate && !crud.canDelete) continue;
+      synthetic.push({
+        roleKey,
+        scopeType: "global",
+        moduleKey: module.moduleKey,
+        ...crud,
+      });
+    }
+  }
+  return synthetic;
+}
+
+async function resolveEffectivePermissionsForPrincipal(repo, principal) {
+  const roleKeys = await collectPrincipalRoleKeys(repo, principal);
 
   const store = rbacStore(repo);
   let schoolId = null;
@@ -448,22 +542,32 @@ async function resolveEffectivePermissionsForPrincipal(repo, principal) {
 
   const grantCount = await store.countActiveGrants();
   if (grantCount === 0) {
-    const map = (await repo.getRolePermissionsMap?.()) ?? {};
+    const legacyMap = await loadLegacyRolePermissionMaps(repo);
     const { mergePermissionsForRoles } = require("./userRoleLifecycle");
+    const permissions = mergePermissionsForRoles(roleKeys, legacyMap);
     return {
       roleKeys,
-      permissions: mergePermissionsForRoles(roleKeys, map),
-      modules: parsePermissionStringsToModuleCrud(mergePermissionsForRoles(roleKeys, map)),
+      permissions,
+      modules: parsePermissionStringsToModuleCrud(permissions),
       source: "legacy-map-fallback",
       resolvedAt: new Date().toISOString(),
     };
   }
 
   const grants = await store.listGrantsForRoles(roleKeys);
-  const resolved = resolveEffectivePermissionSet(roleKeys, grants, { schoolId, countryId });
+  const grantedRoleKeys = new Set(
+    grants.map((grant) => String(grant.roleKey || grant.role_key || "").toUpperCase()).filter(Boolean),
+  );
+  const missingRoleKeys = roleKeys.filter((roleKey) => !grantedRoleKeys.has(roleKey));
+  let synthetic = [];
+  if (missingRoleKeys.length) {
+    const legacyMap = await loadLegacyRolePermissionMaps(repo);
+    synthetic = syntheticGrantsFromLegacyMap(missingRoleKeys, legacyMap, new Set());
+  }
+  const resolved = resolveEffectivePermissionSet(roleKeys, [...grants, ...synthetic], { schoolId, countryId });
   return {
     ...resolved,
-    source: "role_module_permissions",
+    source: synthetic.length ? "role_module_permissions+legacy-role-fallback" : "role_module_permissions",
     resolvedAt: new Date().toISOString(),
   };
 }
@@ -499,4 +603,5 @@ module.exports = {
   archiveRbacRole,
   throwLegacyRolePermissionsWrite,
   getModuleOrThrow,
+  mergeRolePermissionMaps,
 };

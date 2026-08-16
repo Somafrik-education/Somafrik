@@ -172,6 +172,7 @@ function resolveEffectivePermissionSet(roleKeys, grants, scope = {}) {
     if (!permissions.includes("ALL_PRIVILEGES")) permissions.push("ALL_PRIVILEGES");
   }
   if (keys.includes("COUNTRY_ADMIN")) {
+    if (!permissions.includes("COUNTRY_PRIVILEGES")) permissions.push("COUNTRY_PRIVILEGES");
     const filtered = permissions.filter((token) => token !== "Pays:CREATE" && token !== "Pays:DELETE");
     return {
       roleKeys: keys,
