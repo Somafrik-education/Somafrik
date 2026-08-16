@@ -202,7 +202,7 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
         roleKey: "COUNTRY_ADMIN",
       }),
     );
-    expect(clientsApi.provisionUser.mock.calls[0][0]).not.toHaveProperty("schoolCode");
+    expect(vi.mocked(clientsApi.provisionUser).mock.calls[0][0]).not.toHaveProperty("schoolCode");
     expect(clientsApi.createUser).not.toHaveBeenCalled();
     expect(clientsApi.grantUserRole).not.toHaveBeenCalled();
   });
