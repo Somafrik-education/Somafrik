@@ -151,6 +151,27 @@ async function main() {
     const adminBi = await login("admin", "BI-2026-0002");
     const teacherSeed = await login("ENS-0001", "CD-2026-0001");
     const parent = await login("+243 820 000 001", "CD-2026-0001");
+    const prefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
+
+    const adminEffective = await request("/auth/effective-permissions", { token: admin.token });
+    assert.equal(adminEffective.status, 200, JSON.stringify(adminEffective.data));
+    assert.ok(
+      Array.isArray(adminEffective.data.permissions) &&
+        adminEffective.data.permissions.includes("Affectations:CREATE"),
+      JSON.stringify(adminEffective.data.permissions),
+    );
+    assert.equal(
+      adminEffective.data.permissions.includes("Affectations:DELETE"),
+      false,
+      "SCHOOL_ADMIN ne doit pas avoir Affectations:DELETE par défaut",
+    );
+    const prefetEffective = await request("/auth/effective-permissions", { token: prefet.token });
+    assert.equal(prefetEffective.status, 200, JSON.stringify(prefetEffective.data));
+    assert.ok(
+      Array.isArray(prefetEffective.data.permissions) &&
+        prefetEffective.data.permissions.includes("Affectations:DELETE"),
+      JSON.stringify(prefetEffective.data.permissions),
+    );
 
     const listedBefore = await request("/teachers", { token: admin.token });
     assert.equal(listedBefore.status, 200, JSON.stringify(listedBefore.data));
@@ -395,9 +416,14 @@ async function main() {
           (row.subject || row.course) === seedSubject,
       );
       if (!collision) break;
-      const retired = await request(
+      const adminDenied = await request(
         `/assignments/${encodeURIComponent(collision.id)}`,
         { method: "DELETE", token: admin.token },
+      );
+      assert.equal(adminDenied.status, 403, JSON.stringify(adminDenied.data));
+      const retired = await request(
+        `/assignments/${encodeURIComponent(collision.id)}`,
+        { method: "DELETE", token: prefet.token },
       );
       assert.equal(retired.status, 200, JSON.stringify(retired.data));
     }
@@ -484,7 +510,7 @@ async function main() {
 
     const assignmentDeleted = await request(
       `/assignments/${encodeURIComponent(assignmentCreated.data.id)}`,
-      { method: "DELETE", token: admin.token },
+      { method: "DELETE", token: prefet.token },
     );
     assert.equal(assignmentDeleted.status, 200, JSON.stringify(assignmentDeleted.data));
     const assignmentsAfterDelete = await request("/assignments", { token: admin.token });
@@ -508,8 +534,6 @@ async function main() {
     });
     assert.equal(assignmentRecreated.status, 201, JSON.stringify(assignmentRecreated.data));
     assert.notEqual(String(assignmentRecreated.data.id), String(assignmentCreated.data.id));
-
-    const prefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
 
     const patched = await request(`/teachers/${encodeURIComponent(created.data.teacherCode)}`, {
       method: "PATCH",
@@ -610,7 +634,8 @@ async function main() {
         subject: seedSubject,
       },
     });
-    assert.equal(assignArchived.status, 400, JSON.stringify(assignArchived.data));
+    assert.equal(assignArchived.status, 404, JSON.stringify(assignArchived.data));
+    assert.equal(assignArchived.data.code, "ASSIGNMENT_TEACHER_NOT_FOUND");
 
     console.log("verify-teacher-account-creation.js: OK");
   } catch (error) {

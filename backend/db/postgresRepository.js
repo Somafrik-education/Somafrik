@@ -1676,6 +1676,12 @@ class PostgresRepository {
     tx = null,
   ) {
     await this.init();
+    if (!String(action ?? "").trim()) {
+      const error = new Error("audit_logs.action is required");
+      error.code = "AUDIT_ACTION_REQUIRED";
+      error.statusCode = 500;
+      throw error;
+    }
     const executor = tx && typeof tx.query === "function" ? tx : this;
     const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
     const dbUserId = await this.resolveDbUserId(userId);

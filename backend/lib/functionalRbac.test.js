@@ -468,12 +468,15 @@ test("catalogue plateforme vide n'efface pas SCHOOL_ADMIN", async () => {
 
 test("seed live SCHOOL_ADMIN inclut Affectations:CREATE", () => {
   const live = require("../data").rolePermissionsForLiveRbac();
-  const parsed = parsePermissionStringsToModuleCrud(live["Admin School"]);
-  assert.equal(parsed.teachers.canUpdate, true);
-  assert.equal(parsed.assignments.canRead, true);
-  assert.equal(parsed.assignments.canCreate, true);
-  assert.equal(parsed.assignments.canUpdate, true);
-  assert.equal(parsed.assignments.canDelete, false);
+  const parsedAdmin = parsePermissionStringsToModuleCrud(live["Admin School"]);
+  assert.equal(parsedAdmin.teachers.canUpdate, true);
+  assert.equal(parsedAdmin.assignments.canRead, true);
+  assert.equal(parsedAdmin.assignments.canCreate, true);
+  assert.equal(parsedAdmin.assignments.canUpdate, true);
+  assert.equal(parsedAdmin.assignments.canDelete, false);
+  const parsedPrefet = parsePermissionStringsToModuleCrud(live["Préfet des études"]);
+  assert.equal(parsedPrefet.assignments.canCreate, true);
+  assert.equal(parsedPrefet.assignments.canDelete, true);
 });
 
 test("backfill modules manquants : SCHOOL_ADMIN Affectations:CREATE sans écraser un DENY", async () => {
