@@ -28,6 +28,8 @@ export const SCHOOL_STATUSES = [
  * propriétaire de `login_code` via `somafrik_prepare_school_login_code()`.
  */
 export function generateSchoolCode(_countryCode: string, _schools: School[]): string {
+  void _countryCode;
+  void _schools;
   return "";
 }
 
