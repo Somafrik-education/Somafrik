@@ -1,6 +1,7 @@
 import { api } from "../api/client";
 import { readStoredSchoolCode } from "./activeSchool";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
+import type { School } from "../types";
 
 export function buildCreateUserPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const explicitSchoolCode = String(payload.schoolCode ?? "").trim();
@@ -34,8 +35,25 @@ function withPlatformAssignableRoles(roles: AssignableRole[]): AssignableRole[] 
   });
 }
 
+export async function resolveUserSchools(users: Array<Record<string, unknown>>): Promise<School[]> {
+  const schoolCodes = [...new Set(
+    users
+      .map((user) => String(user.schoolCode ?? "").trim().toUpperCase())
+      .filter((code) => code && code !== "*"),
+  )];
+
+  const results = await Promise.allSettled(
+    schoolCodes.map((code) => api.get<School>(`/schools/${encodeURIComponent(code)}`)),
+  );
+
+  return results.flatMap((result) =>
+    result.status === "fulfilled" && result.value ? [result.value] : [],
+  );
+}
+
 export const clientsApi = {
   listUsers: () => api.get<unknown[]>("/backoffice/users"),
+  resolveUserSchools,
   createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", buildCreateUserPayload(payload)),
   updateUser: (userId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/users/${encodeURIComponent(userId)}`, payload),
