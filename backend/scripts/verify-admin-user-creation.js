@@ -564,21 +564,23 @@ async function main() {
     assert.ok((finalLogin.user.roleKeys || []).includes("SCHOOL_ADMIN"), "relogin final après reset échoué");
 
     // 4) Admin School -> utilisateur standard -> GRANT Secrétaire.
+    // schoolAdmin.token a été émis avant le reset : la session est révoquée (fail-closed).
+    const schoolAdminLiveToken = finalLogin.token;
     const userEmail = `user-created-${stamp}@test.local`;
-    const standardUser = await createIdentity(schoolAdmin.token, {
+    const standardUser = await createIdentity(schoolAdminLiveToken, {
       firstName: "Nadia",
       lastName: `User${stamp}`,
       email: userEmail,
       password: "StandardUser!2026",
     });
-    const userGranted = await grantRole(schoolAdmin.token, standardUser.id, "Secrétaire", "SECRETARY");
+    const userGranted = await grantRole(schoolAdminLiveToken, standardUser.id, "Secrétaire", "SECRETARY");
     assert.equal(userGranted.role, "Secrétaire");
     const userPg = await assertPgRole(pool, standardUser.id, "SECRETARY");
     assert.equal(userPg.school_code, SCHOOL_CD);
     assert.equal(userPg.status, "active");
 
-    const firstGet = extractList((await request("/backoffice/users", { token: schoolAdmin.token })).data);
-    const secondGet = extractList((await request("/backoffice/users", { token: schoolAdmin.token })).data);
+    const firstGet = extractList((await request("/backoffice/users", { token: schoolAdminLiveToken })).data);
+    const secondGet = extractList((await request("/backoffice/users", { token: schoolAdminLiveToken })).data);
     const first = firstGet.find((row) => String(row.id) === String(standardUser.id));
     const second = secondGet.find((row) => String(row.id) === String(standardUser.id));
     assert.ok(first, "GET utilisateurs ne contient pas l'utilisateur créé");
