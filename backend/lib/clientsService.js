@@ -11,6 +11,8 @@ const {
   isCountryAdminPrincipal,
   assertSchoolScope,
   assertSchoolInPrincipalCountry,
+  requestedCountryCodeFromPayload,
+  assertRequestedCountryMatchesSchool,
   generateTemporaryPassword,
   generateUserCode,
   resolveUserIdentifier,
@@ -96,6 +98,19 @@ function resolveWritableSchoolCode(principal, rawPayload) {
   return schoolCode.toUpperCase();
 }
 
+function resolveCreateUserSchoolCode(principal, rawPayload) {
+  if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
+    return asTrimmed(rawPayload.schoolCode || rawPayload.schoolId).toUpperCase();
+  }
+  return asTrimmed(principal?.schoolCode).toUpperCase();
+}
+
+function requireConcreteSchoolCode(principal, schoolCode) {
+  if (schoolCode && schoolCode !== "*") return;
+  if (isSuperAdminPrincipal(principal)) return;
+  throw createClientsError(400, "Établissement obligatoire.", CLIENTS_ERROR.INVALID_TENANT_SCOPE);
+}
+
 function rethrowLoginIdentityConflict(error) {
   if (
     error?.code === "USER_LOGIN_IDENTITY_DUPLICATE" ||
@@ -113,9 +128,13 @@ function rethrowLoginIdentityConflict(error) {
 async function createUser(store, rawPayload, principal, auditMeta) {
   assertNoClientPrivilegeKeys(rawPayload, FORBIDDEN_CREATE_KEYS, USER_ROLE_ERROR.ROLE_NOT_ALLOWED_ON_CREATE);
   const payload = ignoreClientScope(rawPayload);
-  const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
+  const schoolCode = resolveCreateUserSchoolCode(principal, rawPayload);
+  const requestedCountry = requestedCountryCodeFromPayload(rawPayload);
   assertSchoolScope(principal, schoolCode);
-  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+  requireConcreteSchoolCode(principal, schoolCode);
+  if (schoolCode && schoolCode !== "*") {
+    await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+  }
 
   const firstName = asTrimmed(payload.firstName);
   const lastName = asTrimmed(payload.lastName);
@@ -124,10 +143,12 @@ async function createUser(store, rawPayload, principal, auditMeta) {
   }
 
   return store.withTransaction(async (tx) => {
-    const school = await tx.getSchoolByCode(schoolCode);
-    if (!school) {
+    const hasSchool = Boolean(schoolCode) && schoolCode !== "*";
+    const school = hasSchool ? await tx.getSchoolByCode(schoolCode) : null;
+    if (hasSchool && !school) {
       throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
     }
+    assertRequestedCountryMatchesSchool(school, requestedCountry);
 
     const temporaryPassword = asTrimmed(payload.temporaryPassword) || generateTemporaryPassword();
     const userCode = await allocateUserCode(tx);
@@ -141,7 +162,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
     const email = asTrimmed(payload.email);
     const phone = asTrimmed(payload.phone);
     await assertUniqueUserLoginIdentity(tx, {
-      schoolId: school.id,
+      schoolId: school?.id ?? null,
       email,
       phone,
     }).catch(rethrowLoginIdentityConflict);
@@ -151,6 +172,8 @@ async function createUser(store, rawPayload, principal, auditMeta) {
       identifier,
       accessChannel: payload.accessChannel ?? "Application",
       createdBy: principal?.identifier || principal?.email || "system",
+      ...(requestedCountry ? { countryCode: requestedCountry } : {}),
+      ...(asTrimmed(rawPayload.countryScope) ? { countryScope: asTrimmed(rawPayload.countryScope) } : {}),
       ...(payload.validationStatus ? { validationStatus: payload.validationStatus } : {}),
       ...(payload.validationRequestedBy ? { validationRequestedBy: payload.validationRequestedBy } : {}),
       ...(payload.validatedBy ? { validatedBy: payload.validatedBy } : {}),
@@ -163,7 +186,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
     let saved;
     try {
       saved = await tx.insertUser({
-        schoolId: school.id,
+        schoolId: school?.id ?? null,
         userCode,
         firstName,
         lastName,
@@ -183,7 +206,7 @@ async function createUser(store, rawPayload, principal, auditMeta) {
 
     const hydrated = hydrateUser(saved, []);
     await writeClientsAudit(tx, principal, auditMeta, {
-      schoolCode,
+      schoolCode: hasSchool ? schoolCode : "*",
       action: "create_user",
       entityType: "user",
       entityId: saved.id,

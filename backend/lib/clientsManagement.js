@@ -5,6 +5,7 @@ const { randomBytes } = require("node:crypto");
 
 const CLIENTS_ERROR = Object.freeze({
   TENANT_MISMATCH: "TENANT_MISMATCH",
+  INVALID_TENANT_SCOPE: "INVALID_TENANT_SCOPE",
   SCHOOL_NOT_FOUND: "SCHOOL_NOT_FOUND",
   CONTACT_NOT_FOUND: "CONTACT_NOT_FOUND",
   USER_NOT_FOUND: "USER_NOT_FOUND",
@@ -166,6 +167,35 @@ async function assertSchoolInPrincipalCountry(store, principal, schoolCode) {
   const principalCountry = resolvePrincipalCountryCode(principal);
   if (!school || asTrimmed(school.country_code).toUpperCase() !== principalCountry) {
     throw createClientsError(403, "Accès refusé : établissement hors pays.", CLIENTS_ERROR.TENANT_MISMATCH);
+  }
+}
+
+function requestedCountryCodeFromPayload(rawPayload = {}) {
+  return asTrimmed(
+    getCountryCodeFromScope(rawPayload.countryCode || rawPayload.countryScope || rawPayload.country),
+  ).toUpperCase();
+}
+
+function schoolCountryCode(school) {
+  return asTrimmed(school?.country_code || school?.countryCode).toUpperCase();
+}
+
+function assertRequestedCountryMatchesSchool(school, requestedCountryCode) {
+  const requested = asTrimmed(requestedCountryCode).toUpperCase();
+  if (!requested) return;
+  if (!school) return;
+  const actual = schoolCountryCode(school);
+  if (actual !== requested) {
+    throw createClientsError(
+      409,
+      "Le pays demandé ne correspond pas à l'établissement.",
+      CLIENTS_ERROR.INVALID_TENANT_SCOPE,
+      {
+        countryCode: requested,
+        schoolCountry: actual,
+        schoolCode: asTrimmed(school.school_code || school.code || school.schoolCode).toUpperCase(),
+      },
+    );
   }
 }
 
@@ -374,6 +404,9 @@ module.exports = {
   clientsAuditMetaFromRequest,
   assertSchoolScope,
   assertSchoolInPrincipalCountry,
+  requestedCountryCodeFromPayload,
+  schoolCountryCode,
+  assertRequestedCountryMatchesSchool,
   generateTemporaryPassword,
   generateUserCode,
   resolveUserIdentifier,
