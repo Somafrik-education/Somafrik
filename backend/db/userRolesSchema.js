@@ -16,18 +16,21 @@ const KNOWN_ROLE_KEYS_SQL = `
   'PREFET_ETUDES', 'TEACHER', 'SECRETARY', 'ACCOUNTANT', 'PARENT', 'STUDENT', 'SUPERVISOR'
 `;
 
+const KNOWN_ROLE_LABELS_SQL = `
+  'SUPER ADMINISTRATEUR SOMAFRIK', 'SUPER ADMINISTRATEUR OKAFRIK',
+  'ADMIN PAYS', 'ADMIN SCHOOL', 'PROVISEUR', 'DIRECTEUR',
+  'PRÉFET DES ÉTUDES', 'PREFET DES ETUDES',
+  'ENSEIGNANT', 'SECRÉTAIRE', 'SECRETAIRE', 'COMPTABLE',
+  'PARENT', 'ÉLÈVE / ÉTUDIANT', 'ELEVE / ETUDIANT', 'SURVEILLANT'
+`;
+
 const INVENTORY_UNKNOWN_USERS_ROLE_SQL = `
 SELECT u.id::text AS user_id, u.user_code, u.role
 FROM users u
 WHERE u.role IS NOT NULL
   AND btrim(u.role) <> ''
   AND upper(btrim(u.role)) NOT IN (${KNOWN_ROLE_KEYS_SQL})
-  AND u.role NOT IN (
-    'Super Administrateur Somafrik', 'Super Administrateur OKAFRIK',
-    'Admin Pays', 'Admin School', 'Proviseur', 'Directeur',
-    'Préfet des études', 'Enseignant', 'Secrétaire', 'Comptable',
-    'Parent', 'Élève / Étudiant', 'Surveillant'
-  )
+  AND upper(btrim(u.role)) NOT IN (${KNOWN_ROLE_LABELS_SQL})
 ORDER BY u.user_code
 LIMIT 50
 `;
@@ -44,12 +47,7 @@ CROSS JOIN LATERAL jsonb_array_elements_text(
 ) AS elem
 WHERE btrim(elem) <> ''
   AND upper(btrim(elem)) NOT IN (${KNOWN_ROLE_KEYS_SQL})
-  AND elem NOT IN (
-    'Super Administrateur Somafrik', 'Super Administrateur OKAFRIK',
-    'Admin Pays', 'Admin School', 'Proviseur', 'Directeur',
-    'Préfet des études', 'Enseignant', 'Secrétaire', 'Comptable',
-    'Parent', 'Élève / Étudiant', 'Surveillant'
-  )
+  AND upper(btrim(elem)) NOT IN (${KNOWN_ROLE_LABELS_SQL})
 ORDER BY u.user_code
 LIMIT 50
 `;
