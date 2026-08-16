@@ -213,6 +213,12 @@ function parsePermissionStringsToModuleCrud(permissions = []) {
       if (normalized.startsWith("voir ") || normalized.startsWith("lire ")) {
         modulesCrud[module.moduleKey].canRead = true;
       }
+      if (normalized.startsWith("ajouter ") || normalized.startsWith("creer ")) {
+        modulesCrud[module.moduleKey].canCreate = true;
+      }
+      if (normalized.startsWith("modifier ")) {
+        modulesCrud[module.moduleKey].canUpdate = true;
+      }
       if (normalized.startsWith("gerer ") || normalized.includes("crud")) {
         modulesCrud[module.moduleKey] = {
           canCreate: true,

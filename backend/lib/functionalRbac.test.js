@@ -140,6 +140,9 @@ test("backfill parse Module:ACTION et Gérer", () => {
   assert.equal(parsed.students.canDelete, false);
   assert.equal(parsed.classes.canCreate, true);
   assert.equal(parsed.classes.canDelete, true);
+  const added = parsePermissionStringsToModuleCrud(["Ajouter enseignants", "Modifier notes"]);
+  assert.equal(added.teachers.canCreate, true);
+  assert.equal(added.grades.canUpdate, true);
 });
 
 test("409 expectedUpdatedAt et audit rollback mémoire si audit échoue", async () => {
@@ -324,4 +327,17 @@ test("live-resolve SUPER_ADMIN sans roleKeys conserve ALL_PRIVILEGES si d'autres
   });
   assert.ok(live.permissions.includes("ALL_PRIVILEGES"));
   assert.equal(live.modules.users.canCreate, true);
+});
+
+test("POST /api/classes accepte Classes:CREATE après overlay live", () => {
+  const { RbacService } = require("../services/rbacService");
+  const rbac = new RbacService({ rolePermissions: {} });
+  assert.equal(
+    rbac.canAccess({ role: "Admin School", permissions: ["Classes:CREATE"] }, "POST /api/classes"),
+    true,
+  );
+  assert.equal(
+    rbac.canAccess({ role: "Admin School", permissions: ["Classes:READ"] }, "POST /api/classes"),
+    false,
+  );
 });
