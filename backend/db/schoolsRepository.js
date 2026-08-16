@@ -5,6 +5,7 @@
  * Ne lit ni n'écrit backoffice_state JSON.
  */
 
+const { randomUUID } = require("node:crypto");
 const {
   COUNTRY_NOT_FOUND_CODE,
   COUNTRY_NOT_FOUND_MESSAGE,
@@ -20,6 +21,10 @@ function createHttpError(statusCode, message, code) {
   error.statusCode = statusCode;
   if (code) error.code = code;
   return error;
+}
+
+function generateInternalSchoolAlias() {
+  return `SCH-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`;
 }
 
 /**
@@ -91,20 +96,25 @@ function createSchoolsRepository(db) {
 
     /**
      * Upsert canonique — source de vérité PostgreSQL.
+     * `school_code` reste un alias interne de compatibilité. Pour une création,
+     * le client n'a plus à le fournir : `login_code` est généré par le trigger PG.
      * @param {object} record
      */
     async persist(record) {
-      const code = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.legacySchoolCode ?? record?.publicId);
-      if (!code || code === "*") {
-        throw createHttpError(400, "Code établissement requis.", "SCHOOL_CODE_REQUIRED");
+      const requestedCode = normalizeSchoolCode(
+        record?.code ?? record?.schoolCode ?? record?.legacySchoolCode,
+      );
+      if (requestedCode === "*") {
+        throw createHttpError(400, "Code établissement invalide.", "SCHOOL_CODE_INVALID");
       }
+      const code = requestedCode || generateInternalSchoolAlias();
       const name = String(record?.name ?? "").trim();
       if (!name) {
         throw createHttpError(400, "Nom d'établissement requis.", "SCHOOL_NAME_REQUIRED");
       }
 
       const country = await requireCountry(record ?? {});
-      const profile = extractProfilePayload({ ...record, code, name });
+      const profile = extractProfilePayload({ ...record, name });
       const dbStatus = toSchoolDbStatus(record?.status);
       const deletedAt =
         record?.deletedAt || record?.status === "Supprimé" ? record?.deletedAt || new Date().toISOString() : null;
