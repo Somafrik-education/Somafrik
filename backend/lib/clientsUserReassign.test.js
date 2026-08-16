@@ -82,6 +82,17 @@ async function main() {
     expires_at: new Date(Date.now() + 86_400_000),
   });
 
+  // Régression #222 : PATCH identité d'un utilisateur existant, sans changer le tenant → 200.
+  const identityOnly = await store.updateUser(
+    target.id,
+    { firstName: "Aline-Edit" },
+    superAdmin,
+    auditMeta,
+  );
+  assert.equal(identityOnly.firstName, "Aline-Edit");
+  assert.equal(identityOnly.schoolCode, "CD-2026-0001");
+  assert.equal((await store.getUserById(target.id)).school_id, "school-cd");
+
   // A. PATCH identité n'écrit jamais users.school_id, même si schoolCode/countryCode sont envoyés.
   const patched = await store.updateUser(
     target.id,

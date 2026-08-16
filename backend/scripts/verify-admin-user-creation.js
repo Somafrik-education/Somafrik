@@ -405,6 +405,17 @@ async function main() {
     assert.equal(forbiddenIdentityPatch.status, 400, JSON.stringify(forbiddenIdentityPatch.data));
     assert.equal(forbiddenIdentityPatch.data.code, "CLIENT_IDENTITY_FIELD_FORBIDDEN");
 
+    // Régression #222 : utilisateur PG existant, PATCH identité sans changer le tenant → 200.
+    // Contrat UI post-#223 : allowlist (pas de userCode / schoolCode / countryCode / role).
+    const identityOnly = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}`, {
+      method: "PATCH",
+      token: superadmin.token,
+      body: { firstName: "Irène-Edit" },
+    });
+    assert.equal(identityOnly.status, 200, JSON.stringify(identityOnly.data));
+    assert.equal(identityOnly.data.firstName, "Irène-Edit");
+    assert.equal(identityOnly.data.schoolCode, SCHOOL_CD);
+
     const identityKept = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}`, {
       method: "PATCH",
       token: superadmin.token,

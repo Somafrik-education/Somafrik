@@ -142,20 +142,33 @@ describe("UsersPage — Modifier utilisateur / tenant readonly", () => {
     expect(screen.getByRole("button", { name: "Réaffecter l'établissement" })).toBeInTheDocument();
   });
 
-  it("n'envoie que l'identité, sans userCode ni schoolCode", async () => {
+  it("régression #222 : utilisateur PG existant → Modifier → Enregistrer sans changer le tenant → PATCH identité 200", async () => {
+    vi.mocked(clientsApi.updateUser).mockResolvedValue({
+      id: existingUser.id,
+      firstName: "Aline",
+      schoolCode: "BI-2026-0001",
+    });
     openEdit();
+    expect(screen.getByRole("heading", { name: "Modifier l'utilisateur" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Pays/i)).toHaveAttribute("readonly");
+    expect(screen.getByLabelText(/^Établissement/i)).toHaveAttribute("readonly");
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
-    await waitFor(() => expect(clientsApi.updateUser).toHaveBeenCalled());
-    const [, payload] = vi.mocked(clientsApi.updateUser).mock.calls[0];
-    expect(payload).toMatchObject({
+    await waitFor(() => expect(clientsApi.updateUser).toHaveBeenCalledTimes(1));
+    expect(clientsApi.updateUser).toHaveBeenCalledWith("usr-kanyosha", {
       firstName: "Aline",
       lastName: "Ndayishimiye",
       email: "aline.kanyosha@test.local",
+      status: "Actif",
     });
+    const [, payload] = vi.mocked(clientsApi.updateUser).mock.calls[0];
     expect(payload).not.toHaveProperty("userCode");
     expect(payload).not.toHaveProperty("schoolCode");
     expect(payload).not.toHaveProperty("countryCode");
     expect(payload).not.toHaveProperty("role");
+    expect(clientsApi.reassignUserSchool).not.toHaveBeenCalled();
+    expect(clientsApi.createUser).not.toHaveBeenCalled();
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(showToast).toHaveBeenCalledWith("Utilisateur modifié", "success");
     expect(showToast).not.toHaveBeenCalledWith("Échec de la synchronisation", "error");
   });
 
