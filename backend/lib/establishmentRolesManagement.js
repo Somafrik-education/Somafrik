@@ -148,6 +148,7 @@ function mapRoleRow(row) {
     displayOrder: Number(row.display_order ?? 0),
     status: row.status === "archived" ? "archived" : "active",
     schoolAssignable: Boolean(row.school_assignable),
+    systemProtected: Boolean(row.system_protected),
     permissions: Array.isArray(row.permissions) ? row.permissions : [],
     delegationPermissions: Array.isArray(row.delegation_permissions) ? row.delegation_permissions : [],
     createdAt: row.created_at,

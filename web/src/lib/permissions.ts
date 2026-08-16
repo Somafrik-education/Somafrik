@@ -121,12 +121,20 @@ export function resolveEffectivePermissions(
   userPermissions: string[] | undefined,
   rolePermissions: Record<string, string[]>,
 ): string[] {
-  const fromUser = userPermissions ?? [];
+  if (Array.isArray(userPermissions)) {
+    const merged = [...userPermissions];
+    if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
+      merged.push("ALL_PRIVILEGES");
+    }
+    if (role === COUNTRY_ADMIN_ROLE) {
+      return merged.filter((permission) => permission !== "Pays:CREATE" && permission !== "Pays:DELETE");
+    }
+    return merged;
+  }
   const fromRole = role && Array.isArray(rolePermissions[role]) ? rolePermissions[role] : [];
-  const hasCanonicalSource =
-    fromUser.length > 0 || fromRole.length > 0 || Object.keys(rolePermissions).length > 0;
+  const hasCanonicalSource = fromRole.length > 0 || Object.keys(rolePermissions).length > 0;
   const fromDefaults = hasCanonicalSource ? [] : getInternalRoleDefaults(role);
-  const merged = [...new Set([...fromUser, ...fromRole, ...fromDefaults])];
+  const merged = [...new Set([...fromRole, ...fromDefaults])];
   if (isSuperAdminRole(role) && !merged.includes("ALL_PRIVILEGES")) {
     merged.push("ALL_PRIVILEGES");
   }
@@ -251,8 +259,7 @@ export function canDesignBulletins(ctx: PermissionContext): boolean {
 }
 
 export function canManageRolePermissions(ctx: PermissionContext): boolean {
-  if (isSuperAdminRole(ctx.user?.role)) return true;
-  return getCurrentRolePermissions(ctx).includes("ALL_PRIVILEGES");
+  return isSuperAdminRole(ctx.user?.role);
 }
 
 function superAdminAllowsFeature(features: string | (string | null)[] | null, action: string): boolean {

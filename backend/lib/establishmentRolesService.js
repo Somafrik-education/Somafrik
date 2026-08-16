@@ -95,7 +95,7 @@ async function createRole(repo, rawPayload, principal, auditMeta) {
         delegationPermissions,
       });
       await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
-        action: "create_establishment_role",
+        action: "ROLE_CREATED",
         entityType: "establishment_role",
         entityId: saved.id,
         newValue: saved,
@@ -135,7 +135,7 @@ async function updateRole(repo, roleId, rawPatch, principal, auditMeta) {
       throw createEstablishmentRolesError(404, "Rôle introuvable ou archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
     }
     await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
-      action: "update_establishment_role",
+      action: "ROLE_UPDATED",
       entityType: "establishment_role",
       entityId: roleId,
       oldValue: existing,
@@ -152,6 +152,8 @@ async function archiveRole(repo, roleId, principal, auditMeta) {
   if (!existing) {
     throw createEstablishmentRolesError(404, "Rôle introuvable.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
   }
+  const { assertNotProtectedArchive } = require("./functionalRbacManagement");
+  assertNotProtectedArchive(existing.roleCode || existing.roleName);
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = rolesStore(scope);
@@ -160,7 +162,7 @@ async function archiveRole(repo, roleId, principal, auditMeta) {
       throw createEstablishmentRolesError(404, "Rôle introuvable ou déjà archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
     }
     await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
-      action: "archive_establishment_role",
+      action: "ROLE_ARCHIVED",
       entityType: "establishment_role",
       entityId: roleId,
       oldValue: existing,

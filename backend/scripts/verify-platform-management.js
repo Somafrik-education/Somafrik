@@ -147,14 +147,15 @@ const subscription = await request("/backoffice/subscriptions", {
     const created = await createUniqueCountry(superToken);
     assert.equal(created.status, 201, JSON.stringify(created.data));
 
-    await request("/backoffice/role-permissions", {
+    const legacyPut = await request("/backoffice/role-permissions", {
       method: "PUT",
       token: superToken,
       body: { "Admin School": ["Voir tableau de bord"] },
     });
+    assert.equal(legacyPut.status, 403, JSON.stringify(legacyPut.data));
+    assert.equal(legacyPut.data?.code, "LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN");
     const roleMap = await request("/backoffice/role-permissions", { token: superToken });
     assert.equal(roleMap.status, 200);
-    assert.ok(Array.isArray(roleMap.data["Admin School"]));
 
     const access = await request("/backoffice/subscription-access?schoolCode=CD-2026-0001", {
       token: countryAdminToken,

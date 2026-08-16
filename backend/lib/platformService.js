@@ -304,23 +304,9 @@ async function updateNotification(store, id, rawPatch, principal, auditMeta) {
   });
 }
 
-async function replaceRolePermissions(store, rawMap, principal, auditMeta) {
-  assertSuperAdmin(principal);
-  if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) {
-    throw createPlatformError(400, "rolePermissions doit être un objet.");
-  }
-  return store.withTransaction(async (tx) => {
-    const before = await tx.listRolePermissions();
-    const saved = await tx.replaceRolePermissions(rawMap);
-    await writePlatformAudit(tx, principal, auditMeta, {
-      action: "replace_role_permissions",
-      entityType: "role_permissions",
-      entityId: "map",
-      oldValue: before,
-      newValue: saved,
-    });
-    return saved;
-  });
+async function replaceRolePermissions() {
+  const { throwLegacyRolePermissionsWrite } = require("./functionalRbacService");
+  throwLegacyRolePermissionsWrite();
 }
 
 async function saveDashboardChartConfig(store, rawConfig, principal, auditMeta) {

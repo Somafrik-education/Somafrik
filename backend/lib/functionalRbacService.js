@@ -1,0 +1,502 @@
+"use strict";
+
+const { listFunctionalModules, getModuleByKey, isKnownModuleKey } = require("./functionalModulesCatalog");
+const {
+  FUNCTIONAL_RBAC_ERROR,
+  createFunctionalRbacError,
+  throwLegacyRolePermissionsWrite,
+  normalizeScope,
+  assertNotProtectedArchive,
+  assertSuperAdminInvariantPatch,
+  timestampsEqual,
+  looksLikeUuid,
+  PROTECTED_SYSTEM_ROLE_KEYS,
+} = require("./functionalRbacManagement");
+const {
+  resolveEffectivePermissionSet,
+  parsePermissionStringsToModuleCrud,
+  emptyCrud,
+} = require("./functionalRbacResolution");
+const { assertSuperAdmin, asTrimmed } = require("./establishmentRolesManagement");
+const { toRoleKey, toRoleLabel } = require("./userRoleLifecycle");
+const { createFunctionalRbacPgStore } = require("../db/functionalRbacPgStore");
+const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
+
+function rbacStore(repo) {
+  if (typeof repo.getFunctionalRbacStore === "function") {
+    return repo.getFunctionalRbacStore();
+  }
+  if (typeof repo.query === "function") {
+    return createFunctionalRbacPgStore(repo);
+  }
+  return createFunctionalRbacMemoryStore();
+}
+
+async function writeRbacAudit(tx, principal, auditMeta, entry) {
+  if (typeof tx.recordAudit !== "function") {
+    throw createFunctionalRbacError(500, "Audit indisponible dans la transaction.", FUNCTIONAL_RBAC_ERROR.FORBIDDEN);
+  }
+  await tx.recordAudit(
+    {
+      schoolCode: entry.schoolCode || principal?.schoolCode,
+      userId: principal?.sub || principal?.id,
+      action: entry.action,
+      entityType: entry.entityType,
+      entityId: String(entry.entityId ?? ""),
+      oldValue: entry.oldValue,
+      newValue: entry.newValue,
+      ipAddress: auditMeta?.ipAddress,
+      userAgent: auditMeta?.userAgent,
+    },
+    tx,
+  );
+}
+
+function actorId(principal) {
+  return asTrimmed(principal?.identifier || principal?.sub || principal?.id) || null;
+}
+
+function functionalRbacAuditMetaFromRequest(req) {
+  return {
+    ipAddress: req?.ip ?? req?.headers?.["x-forwarded-for"] ?? "",
+    userAgent: req?.headers?.["user-agent"] ?? "",
+  };
+}
+
+async function ensureFunctionalRbacBootstrap(repo) {
+  const store = rbacStore(repo);
+  await store.seedFunctionalModules();
+  await ensurePlatformRolesInCatalog(repo);
+  if (typeof store.markSystemProtected === "function") {
+    await store.markSystemProtected([...PROTECTED_SYSTEM_ROLE_KEYS]);
+  }
+  await backfillGlobalGrantsFromLegacyMaps(repo, store);
+}
+
+async function ensurePlatformRolesInCatalog(repo) {
+  if (typeof repo.getEstablishmentRolesStore !== "function") return;
+  const rolesStore = repo.getEstablishmentRolesStore();
+  const platform = [
+    { roleCode: "SUPER_ADMIN", roleName: "Super Administrateur Somafrik", scope: "platform", schoolAssignable: false },
+    { roleCode: "COUNTRY_ADMIN", roleName: "Admin Pays", scope: "country", schoolAssignable: false },
+    { roleCode: "SCHOOL_ADMIN", roleName: "Admin School", scope: "school", schoolAssignable: false },
+  ];
+  for (const role of platform) {
+    const existing = await rolesStore.getRoleByNameOrCode(role.roleCode);
+    if (existing) continue;
+    try {
+      await rolesStore.insertRole({
+        ...role,
+        displayOrder: -10,
+        permissions: [],
+        delegationPermissions: [],
+      });
+    } catch (error) {
+      if (error?.code !== "23505") throw error;
+    }
+  }
+}
+
+async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
+  const count = await store.countActiveGrants();
+  if (count > 0) return false;
+  const platformMap =
+    (typeof repo.getPlatformRolePermissionsMap === "function"
+      ? await repo.getPlatformRolePermissionsMap()
+      : null) ??
+    (typeof repo.getPlatformStore === "function"
+      ? await repo.getPlatformStore().getRolePermissionsMap?.()
+      : null) ??
+    {};
+  let establishmentMap = {};
+  try {
+    establishmentMap = (await repo.getEstablishmentRolesStore?.().getPermissionsMap?.()) ?? {};
+  } catch {
+    establishmentMap = {};
+  }
+  const merged = { ...platformMap, ...establishmentMap };
+  for (const [roleName, permissions] of Object.entries(merged)) {
+    const roleKey = toRoleKey(roleName);
+    if (!roleKey) continue;
+    const modulesCrud = parsePermissionStringsToModuleCrud(permissions);
+    for (const module of listFunctionalModules()) {
+      const crud = modulesCrud[module.moduleKey] || emptyCrud();
+      if (!crud.canCreate && !crud.canRead && !crud.canUpdate && !crud.canDelete) continue;
+      await store.upsertGrant({
+        roleKey,
+        scopeType: "global",
+        countryId: null,
+        schoolId: null,
+        moduleKey: module.moduleKey,
+        ...crud,
+        updatedBy: "bootstrap",
+      });
+    }
+  }
+  return true;
+}
+
+async function resolveScopeIds(store, payload) {
+  const requested = normalizeScope(payload);
+  if (requested.scopeType === "global") {
+    return { ...requested, country: null, school: null, countryCode: null, schoolCode: null };
+  }
+  const resolved = await store.resolveCountryAndSchool({
+    countryCode: payload.countryCode || (!looksLikeUuid(payload.countryId) ? payload.countryId : undefined),
+    schoolCode: payload.schoolCode || (!looksLikeUuid(payload.schoolId) ? payload.schoolCode || requested.schoolId : payload.schoolCode),
+    countryId: looksLikeUuid(payload.countryId)
+      ? payload.countryId
+      : looksLikeUuid(requested.countryId)
+        ? requested.countryId
+        : undefined,
+    schoolId: looksLikeUuid(payload.schoolId)
+      ? payload.schoolId
+      : looksLikeUuid(requested.schoolId)
+        ? requested.schoolId
+        : undefined,
+  });
+  if (requested.scopeType === "school") {
+    if (!resolved.school) {
+      throw createFunctionalRbacError(400, "Établissement introuvable.", FUNCTIONAL_RBAC_ERROR.INVALID_SCOPE);
+    }
+    return {
+      scopeType: "school",
+      countryId: resolved.school.country_id || resolved.country?.id || null,
+      schoolId: resolved.school.id,
+      country: resolved.country,
+      school: resolved.school,
+      countryCode: resolved.country?.code || resolved.school.country_code || null,
+      schoolCode: resolved.school.school_code,
+    };
+  }
+  if (!resolved.country) {
+    throw createFunctionalRbacError(400, "Pays introuvable.", FUNCTIONAL_RBAC_ERROR.INVALID_SCOPE);
+  }
+  return {
+    scopeType: "country",
+    countryId: resolved.country.id,
+    schoolId: null,
+    country: resolved.country,
+    school: null,
+    countryCode: resolved.country.code,
+    schoolCode: null,
+  };
+}
+
+async function listRbacCatalog(repo, principal) {
+  assertSuperAdmin(principal);
+  const store = rbacStore(repo);
+  const [modules, usageRoles] = await Promise.all([
+    store.listModules(),
+    store.listRolesWithUsage({ includeArchived: true }).catch(() => []),
+  ]);
+  let roles = Array.isArray(usageRoles) ? usageRoles : [];
+  if (!roles.length && typeof repo.listEstablishmentRoles === "function") {
+    const listed = await repo.listEstablishmentRoles({ includeArchived: true });
+    roles = listed || [];
+  }
+  roles = roles.map((row) => ({
+    ...row,
+    activeUserCount: Number(row.activeUserCount ?? 0),
+    systemProtected:
+      Boolean(row.systemProtected) ||
+      PROTECTED_SYSTEM_ROLE_KEYS.has(String(row.roleCode || "").toUpperCase()),
+  }));
+  return {
+    modules,
+    roles,
+    protectedRoleKeys: [...PROTECTED_SYSTEM_ROLE_KEYS],
+    invariants: {
+      SUPER_ADMIN: Object.keys(require("./functionalRbacManagement").SUPER_ADMIN_INVARIANT_MODULES),
+    },
+  };
+}
+
+async function getConfiguredPermissions(repo, query, principal) {
+  assertSuperAdmin(principal);
+  const store = rbacStore(repo);
+  const roleKey = toRoleKey(query.roleKey || query.role);
+  if (!roleKey) {
+    throw createFunctionalRbacError(400, "role_key obligatoire.", FUNCTIONAL_RBAC_ERROR.INVALID_ROLE);
+  }
+  const scope = await resolveScopeIds(store, query);
+  const grants = await store.listGrantsForScope({
+    roleKey,
+    scopeType: scope.scopeType,
+    countryId: scope.countryId,
+    schoolId: scope.schoolId,
+  });
+  const updatedAt = await store.maxUpdatedAtForScope({
+    roleKey,
+    scopeType: scope.scopeType,
+    countryId: scope.countryId,
+    schoolId: scope.schoolId,
+  });
+  const byModule = Object.fromEntries(grants.map((grant) => [grant.moduleKey, grant]));
+  const modules = listFunctionalModules().map((module) => {
+    const grant = byModule[module.moduleKey];
+    return {
+      moduleKey: module.moduleKey,
+      moduleName: module.moduleName,
+      appliesWeb: module.appliesWeb,
+      appliesMobile: module.appliesMobile,
+      canCreate: Boolean(grant?.canCreate),
+      canRead: Boolean(grant?.canRead),
+      canUpdate: Boolean(grant?.canUpdate),
+      canDelete: Boolean(grant?.canDelete),
+      configured: Boolean(grant),
+    };
+  });
+  return {
+    roleKey,
+    roleName: toRoleLabel(roleKey),
+    scopeType: scope.scopeType,
+    countryId: scope.countryId,
+    schoolId: scope.schoolId,
+    countryCode: scope.countryCode,
+    schoolCode: scope.schoolCode,
+    updatedAt,
+    modules,
+  };
+}
+
+async function getEffectivePermissionsConfigured(repo, query, principal) {
+  assertSuperAdmin(principal);
+  const store = rbacStore(repo);
+  const roleKey = toRoleKey(query.roleKey || query.role);
+  if (!roleKey) {
+    throw createFunctionalRbacError(400, "role_key obligatoire.", FUNCTIONAL_RBAC_ERROR.INVALID_ROLE);
+  }
+  const scope = await resolveScopeIds(store, query);
+  const grants = await store.listGrantsForRoles([roleKey]);
+  const resolved = resolveEffectivePermissionSet([roleKey], grants, {
+    schoolId: scope.schoolId,
+    countryId: scope.countryId,
+  });
+  return {
+    roleKey,
+    roleName: toRoleLabel(roleKey),
+    scopeType: scope.scopeType,
+    countryCode: scope.countryCode,
+    schoolCode: scope.schoolCode,
+    modules: listFunctionalModules().map((module) => ({
+      moduleKey: module.moduleKey,
+      moduleName: module.moduleName,
+      ...(resolved.modules[module.moduleKey] || emptyCrud()),
+    })),
+    permissions: resolved.permissions,
+  };
+}
+
+function sanitizeGrantPatch(rawGrant) {
+  const moduleKey = asTrimmed(rawGrant.moduleKey || rawGrant.module_key);
+  if (!isKnownModuleKey(moduleKey)) {
+    throw createFunctionalRbacError(400, `module_key inconnu: ${moduleKey}`, FUNCTIONAL_RBAC_ERROR.INVALID_MODULE);
+  }
+  return {
+    moduleKey,
+    canCreate: Boolean(rawGrant.canCreate ?? rawGrant.can_create),
+    canRead: Boolean(rawGrant.canRead ?? rawGrant.can_read),
+    canUpdate: Boolean(rawGrant.canUpdate ?? rawGrant.can_update),
+    canDelete: Boolean(rawGrant.canDelete ?? rawGrant.can_delete),
+  };
+}
+
+function diffGrant(before, after) {
+  const events = [];
+  for (const action of ["canCreate", "canRead", "canUpdate", "canDelete"]) {
+    const was = Boolean(before?.[action]);
+    const next = Boolean(after[action]);
+    if (was === next) continue;
+    events.push({
+      action: next ? "ROLE_PERMISSION_GRANTED" : "ROLE_PERMISSION_REVOKED",
+      field: action,
+      moduleKey: after.moduleKey,
+    });
+  }
+  return events;
+}
+
+async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta) {
+  assertSuperAdmin(principal);
+  const payload = rawPayload ?? {};
+  const roleKey = toRoleKey(payload.roleKey || payload.role);
+  if (!roleKey) {
+    throw createFunctionalRbacError(400, "role_key obligatoire.", FUNCTIONAL_RBAC_ERROR.INVALID_ROLE);
+  }
+  const grants = Array.isArray(payload.grants) ? payload.grants.map(sanitizeGrantPatch) : [];
+  if (!grants.length) {
+    throw createFunctionalRbacError(400, "grants (delta) obligatoire.", FUNCTIONAL_RBAC_ERROR.INVALID_MODULE);
+  }
+  assertSuperAdminInvariantPatch(roleKey, grants);
+  const store = rbacStore(repo);
+
+  return repo.withTransaction(async (tx) => {
+    const scopeRepo = repo.createTxScope(tx);
+    const scopedStore = rbacStore(scopeRepo);
+    const scope = await resolveScopeIds(scopedStore, payload);
+    const currentUpdatedAt = await scopedStore.maxUpdatedAtForScope({
+      roleKey,
+      scopeType: scope.scopeType,
+      countryId: scope.countryId,
+      schoolId: scope.schoolId,
+    });
+    const expected = payload.expectedUpdatedAt;
+    if (currentUpdatedAt && expected && !timestampsEqual(currentUpdatedAt, expected)) {
+      throw createFunctionalRbacError(
+        409,
+        "Conflit de concurrence : la matrice a été modifiée. Rechargez avant d'enregistrer.",
+        FUNCTIONAL_RBAC_ERROR.CONFLICT,
+        { expectedUpdatedAt: expected, actualUpdatedAt: currentUpdatedAt },
+      );
+    }
+    if (currentUpdatedAt && !expected) {
+      throw createFunctionalRbacError(
+        409,
+        "expectedUpdatedAt obligatoire pour éviter un last-write-wins.",
+        FUNCTIONAL_RBAC_ERROR.CONFLICT,
+        { actualUpdatedAt: currentUpdatedAt },
+      );
+    }
+
+    const beforeRows = await scopedStore.listGrantsForScope({
+      roleKey,
+      scopeType: scope.scopeType,
+      countryId: scope.countryId,
+      schoolId: scope.schoolId,
+    });
+    const beforeByModule = Object.fromEntries(beforeRows.map((row) => [row.moduleKey, row]));
+    const saved = [];
+    const auditEvents = [];
+    for (const grant of grants) {
+      const before = beforeByModule[grant.moduleKey] || emptyCrud();
+      const after = await scopedStore.upsertGrant({
+        roleKey,
+        scopeType: scope.scopeType,
+        countryId: scope.countryId,
+        schoolId: scope.schoolId,
+        ...grant,
+        updatedBy: actorId(principal),
+      });
+      saved.push(after);
+      for (const event of diffGrant(before, grant)) {
+        auditEvents.push(event);
+      }
+    }
+
+    await writeRbacAudit(scopeRepo, principal, auditMeta, {
+      action: "ROLE_PERMISSION_MATRIX_UPDATED",
+      entityType: "role_module_permissions",
+      entityId: `${roleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
+      schoolCode: scope.schoolCode,
+      oldValue: { grants: beforeRows, scope },
+      newValue: { grants: saved, scope },
+    });
+    for (const event of auditEvents) {
+      await writeRbacAudit(scopeRepo, principal, auditMeta, {
+        action: event.action,
+        entityType: "role_module_permissions",
+        entityId: `${roleKey}:${event.moduleKey}`,
+        schoolCode: scope.schoolCode,
+        oldValue: { moduleKey: event.moduleKey, field: event.field },
+        newValue: { moduleKey: event.moduleKey, field: event.field, after: grants.find((g) => g.moduleKey === event.moduleKey) },
+      });
+    }
+
+    const updatedAt = await scopedStore.maxUpdatedAtForScope({
+      roleKey,
+      scopeType: scope.scopeType,
+      countryId: scope.countryId,
+      schoolId: scope.schoolId,
+    });
+    return {
+      roleKey,
+      scopeType: scope.scopeType,
+      countryCode: scope.countryCode,
+      schoolCode: scope.schoolCode,
+      updatedAt,
+      grants: saved,
+    };
+  });
+}
+
+async function resolveEffectivePermissionsForPrincipal(repo, principal) {
+  const { toRoleKey: toKey, principalHasRole } = require("./userRoleLifecycle");
+  const roleKeys = [];
+  if (Array.isArray(principal?.roleKeys) && principal.roleKeys.length) {
+    roleKeys.push(...principal.roleKeys.map(toKey).filter(Boolean));
+  } else if (principal?.role) {
+    const key = toKey(principal.role);
+    if (key) roleKeys.push(key);
+  }
+  if (principalHasRole(principal, "Super Administrateur Somafrik") && !roleKeys.includes("SUPER_ADMIN")) {
+    roleKeys.unshift("SUPER_ADMIN");
+  }
+
+  const store = rbacStore(repo);
+  let schoolId = null;
+  let countryId = null;
+  const schoolCode = asTrimmed(principal?.schoolCode);
+  if (schoolCode && schoolCode !== "*") {
+    const resolved = await store.resolveCountryAndSchool({ schoolCode });
+    schoolId = resolved.school?.id || null;
+    countryId = resolved.school?.country_id || resolved.country?.id || null;
+  } else if (asTrimmed(principal?.countryCode)) {
+    const resolved = await store.resolveCountryAndSchool({ countryCode: principal.countryCode });
+    countryId = resolved.country?.id || null;
+  }
+
+  const grantCount = await store.countActiveGrants();
+  if (grantCount === 0) {
+    const map = (await repo.getRolePermissionsMap?.()) ?? {};
+    const { mergePermissionsForRoles } = require("./userRoleLifecycle");
+    return {
+      roleKeys,
+      permissions: mergePermissionsForRoles(roleKeys, map),
+      modules: parsePermissionStringsToModuleCrud(mergePermissionsForRoles(roleKeys, map)),
+      source: "legacy-map-fallback",
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  const grants = await store.listGrantsForRoles(roleKeys);
+  const resolved = resolveEffectivePermissionSet(roleKeys, grants, { schoolId, countryId });
+  return {
+    ...resolved,
+    source: "role_module_permissions",
+    resolvedAt: new Date().toISOString(),
+  };
+}
+
+async function archiveRbacRole(repo, roleId, principal, auditMeta) {
+  assertSuperAdmin(principal);
+  const existing = await repo.getEstablishmentRolesStore().getRoleById(roleId);
+  if (!existing) {
+    throw createFunctionalRbacError(404, "Rôle introuvable.", FUNCTIONAL_RBAC_ERROR.NOT_FOUND);
+  }
+  assertNotProtectedArchive(existing.roleCode || existing.roleName);
+  const { archiveRole } = require("./establishmentRolesService");
+  return archiveRole(repo, roleId, principal, auditMeta);
+}
+
+function getModuleOrThrow(moduleKey) {
+  const module = getModuleByKey(moduleKey);
+  if (!module) {
+    throw createFunctionalRbacError(400, `module_key inconnu: ${moduleKey}`, FUNCTIONAL_RBAC_ERROR.INVALID_MODULE);
+  }
+  return module;
+}
+
+module.exports = {
+  rbacStore,
+  functionalRbacAuditMetaFromRequest,
+  ensureFunctionalRbacBootstrap,
+  listRbacCatalog,
+  getConfiguredPermissions,
+  getEffectivePermissionsConfigured,
+  patchConfiguredPermissions,
+  resolveEffectivePermissionsForPrincipal,
+  archiveRbacRole,
+  throwLegacyRolePermissionsWrite,
+  getModuleOrThrow,
+};

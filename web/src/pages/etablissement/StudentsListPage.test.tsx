@@ -85,6 +85,7 @@ vi.mock("../../lib/studentsApi", () => ({
     list: listMock,
     get: vi.fn(),
     update: vi.fn(),
+    remove: vi.fn(),
   },
 }));
 
@@ -103,6 +104,7 @@ describe("StudentsListPage — annuaire PostgreSQL lecture seule", () => {
     permissions.canRead = true;
     permissions.canCreate = true;
     permissions.canUpdate = true;
+    permissions.canDelete = true;
     listMock.mockClear();
   });
 
@@ -146,9 +148,16 @@ describe("StudentsListPage — annuaire PostgreSQL lecture seule", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Accès non autorisé");
   });
 
-  it("affiche EmptyState si liste vide", async () => {
-    listMock.mockResolvedValueOnce([]);
+  it("masque le bouton Supprimer si canDelete est faux", async () => {
+    permissions.canDelete = false;
     renderPage();
-    expect(await screen.findByText("Liste vide")).toBeInTheDocument();
+    await screen.findByText("Diop");
+    expect(screen.queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
+  });
+
+  it("affiche le bouton Supprimer si canDelete est vrai", async () => {
+    renderPage();
+    await screen.findByText("Diop");
+    expect(screen.getAllByRole("button", { name: "Supprimer" }).length).toBe(2);
   });
 });

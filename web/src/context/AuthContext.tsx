@@ -63,7 +63,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = sessionRef.current?.accessToken;
     if (!token) return;
     let cancelled = false;
-    void api.get("/auth/effective-permissions").catch((err) => {
+    void api
+      .get<{ permissions?: string[] }>("/auth/effective-permissions")
+      .then((payload) => {
+        if (cancelled || !Array.isArray(payload?.permissions)) return;
+        const current = sessionRef.current;
+        if (!current?.user) return;
+        setSession({
+          ...current,
+          permissions: payload.permissions,
+          user: { ...current.user, permissions: payload.permissions },
+        });
+      })
+      .catch((err) => {
       if (cancelled) return;
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         setSession(null);

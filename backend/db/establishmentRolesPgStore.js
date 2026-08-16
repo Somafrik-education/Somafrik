@@ -133,24 +133,6 @@ function createEstablishmentRolesPgStore(repo) {
   }
 
   async function archiveRole(roleId) {
-    const activeUsers = await one(
-      `SELECT COUNT(*)::int AS count
-       FROM users u
-       JOIN establishment_roles er ON er.id = $1::uuid
-       WHERE u.status = 'active'
-         AND (
-           upper(u.role) = upper(er.role_code)
-           OR lower(u.role) = lower(er.role_name)
-         )`,
-      [roleId],
-    );
-    if (Number(activeUsers?.count ?? 0) > 0) {
-      throw createEstablishmentRolesError(
-        409,
-        "Impossible d'archiver ce rôle : des utilisateurs actifs l'utilisent encore.",
-        ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_ASSIGNABLE,
-      );
-    }
     const row = await one(
       `UPDATE establishment_roles
        SET status = 'archived', updated_at = NOW()

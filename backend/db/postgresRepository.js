@@ -107,6 +107,9 @@ class PostgresRepository {
     await this.ensureEstablishmentRolesCanonicalSchema();
     await this.stripLegacyUserRolesPayloads();
     await this.ensureEstablishmentRolesBootstrap();
+    await this.ensureFunctionalRbacPreflight();
+    await this.ensureFunctionalRbacCanonicalSchema();
+    await this.ensureFunctionalRbacBootstrap();
     await this.ensureEvaluationTypesPreflight();
     await this.ensureEvaluationTypesConstraints();
     await this.ensureEvaluationTypesCanonicalSchema();
@@ -667,6 +670,51 @@ class PostgresRepository {
   async ensureEstablishmentRolesBootstrap() {
     const { ensureEstablishmentRolesBootstrap } = require("../lib/establishmentRolesService");
     await ensureEstablishmentRolesBootstrap(this);
+  }
+
+  async ensureFunctionalRbacPreflight() {
+    const { assertFunctionalRbacSchemaPreflight } = require("./functionalRbacSchema");
+    await assertFunctionalRbacSchemaPreflight(this);
+  }
+
+  async ensureFunctionalRbacCanonicalSchema() {
+    const { FUNCTIONAL_RBAC_SCHEMA_SQL } = require("./functionalRbacSchema");
+    await this.query(FUNCTIONAL_RBAC_SCHEMA_SQL);
+  }
+
+  async ensureFunctionalRbacBootstrap() {
+    const { ensureFunctionalRbacBootstrap } = require("../lib/functionalRbacService");
+    await ensureFunctionalRbacBootstrap(this);
+  }
+
+  getFunctionalRbacStore() {
+    const { createFunctionalRbacPgStore } = require("./functionalRbacPgStore");
+    return createFunctionalRbacPgStore(this);
+  }
+
+  resolveEffectivePermissions(principal) {
+    const { resolveEffectivePermissionsForPrincipal } = require("../lib/functionalRbacService");
+    return resolveEffectivePermissionsForPrincipal(this, principal);
+  }
+
+  listRbacCatalog(principal) {
+    const { listRbacCatalog } = require("../lib/functionalRbacService");
+    return listRbacCatalog(this, principal);
+  }
+
+  getConfiguredRolePermissions(query, principal) {
+    const { getConfiguredPermissions } = require("../lib/functionalRbacService");
+    return getConfiguredPermissions(this, query, principal);
+  }
+
+  getEffectiveRolePermissions(query, principal) {
+    const { getEffectivePermissionsConfigured } = require("../lib/functionalRbacService");
+    return getEffectivePermissionsConfigured(this, query, principal);
+  }
+
+  patchConfiguredRolePermissions(payload, principal, auditMeta) {
+    const { patchConfiguredPermissions } = require("../lib/functionalRbacService");
+    return patchConfiguredPermissions(this, payload, principal, auditMeta);
   }
 
   getEstablishmentRolesStore() {

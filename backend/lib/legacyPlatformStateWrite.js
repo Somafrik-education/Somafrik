@@ -8,7 +8,7 @@
 
 const LEGACY_PLATFORM_STATE_WRITE_CODE = "LEGACY_PLATFORM_STATE_WRITE_FORBIDDEN";
 const LEGACY_PLATFORM_STATE_WRITE_MESSAGE =
-  "Les données Plateforme ne sont plus modifiables via /api/backoffice/state. Utilisez les APIs /api/backoffice/countries, /subscriptions, /notifications, /role-permissions et /dashboard-chart-config.";
+  "Les données Plateforme ne sont plus modifiables via /api/backoffice/state. Utilisez les APIs /api/backoffice/countries, /subscriptions, /notifications, /rbac et /dashboard-chart-config.";
 
 const PLATFORM_STATE_KEYS = Object.freeze([
   "countries",

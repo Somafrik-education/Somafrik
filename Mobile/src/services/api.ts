@@ -400,11 +400,17 @@ export function updatePlatformNotification(notificationId: string, payload: Reco
   });
 }
 
-export function replacePlatformRolePermissions(payload: Record<string, string[]>) {
-  return request("/backoffice/role-permissions", {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
+export function replacePlatformRolePermissions(_payload: Record<string, string[]>) {
+  return Promise.reject(
+    Object.assign(new Error("LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN"), {
+      code: "LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN",
+      status: 403,
+    }),
+  );
+}
+
+export function getEffectivePermissions() {
+  return request<{ permissions?: string[] }>("/auth/effective-permissions", { method: "GET" });
 }
 
 export function createCourse(payload: Record<string, unknown>) {

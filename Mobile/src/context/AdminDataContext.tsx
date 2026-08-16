@@ -18,7 +18,6 @@ import {
   TeacherAssignment,
   UserAccount,
 } from "../data/catalog";
-import { enrichSessionPermissions } from "../domain/security/permissions";
 import {
   ALL_SCHOOLS_CODE,
   pickInitialSchoolCode,
@@ -34,7 +33,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, createPlatformNotification, updatePlatformNotification, replacePlatformRolePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
 import { useAuth } from "./AuthContext";
 
 export type AdminEntity =
@@ -328,16 +327,26 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const enriched = enrichSessionPermissions(session, rolePermissionsData);
-    if (!enriched) return;
-
-    const currentPermissions = session.permissions ?? session.user.permissions ?? [];
-    if (sameStringSet(currentPermissions, enriched.permissions ?? [])) {
-      return;
-    }
-
-    setSession(enriched);
-  }, [rolePermissionsData, session, session?.role]);
+    let cancelled = false;
+    void getEffectivePermissions()
+      .then((payload) => {
+        if (cancelled || !Array.isArray(payload?.permissions)) return;
+        const currentPermissions = session.permissions ?? session.user?.permissions ?? [];
+        if (sameStringSet(currentPermissions, payload.permissions)) return;
+        setSession({
+          ...session,
+          permissions: payload.permissions,
+          user: {
+            ...session.user,
+            permissions: payload.permissions,
+          },
+        });
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.accessToken, setSession]);
 
   const persistSyncedState = (_nextState: BackOfficeStatePayload) => {
     throw Object.assign(
@@ -409,8 +418,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         );
 
         setUsersData(nextUsers as UserAccount[]);
-        void replacePlatformRolePermissions(nextPermissions).catch(() => setSyncStatus("offline"));
-
         return nextPermissions;
       });
     };

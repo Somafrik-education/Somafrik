@@ -398,7 +398,17 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
       /* fail-closed: keep session.role */
     }
   }
-  const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
+  let permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions({
+      sub: session.user_id,
+      role: session.role,
+      roleKeys,
+      schoolCode: session.school_code ?? payload.schoolCode,
+      countryCode: session.country_code ?? payload.countryCode,
+    });
+    if (Array.isArray(live?.permissions)) permissions = live.permissions;
+  }
   const mustChangePassword = await principalMustChangePassword({
     sub: session.user_id,
     identifier: payload.identifier,
@@ -446,6 +456,16 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/auth/effective-permissions", requireAuth, asyncHandler(async (req, res) => {
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(req.principal);
+    return res.json({
+      permissions: live.permissions,
+      modules: live.modules,
+      roleKeys: live.roleKeys,
+      source: live.source,
+      resolvedAt: live.resolvedAt,
+    });
+  }
   const rolePermissionsMap = await getRolePermissionsMap();
   const permissions = mergeRolePermissions(req.principal.role, [], rolePermissionsMap);
   res.json({ permissions });
@@ -1437,6 +1457,37 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
   res.json(sanitizeUserForResponse(updated));
 }));
 
+app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/students/:id"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  if (typeof repository.getSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Suppression élève PostgreSQL indisponible.");
+  }
+  const existing = await repository.getSchoolStudentByCode(req.params.id, schoolCode);
+  tenantScopeService.assertSchoolAccess(req.principal, existing.schoolCode);
+  const { authorizeStudentReadForPrincipal } = require("./lib/classStudentsAuthz");
+  const authorized = authorizeStudentReadForPrincipal(
+    existing,
+    req.principal,
+    req.params.id,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorized) {
+    return res.status(404).json({ message: "Eleve introuvable" });
+  }
+  if (typeof repository.archiveSchoolStudentByCode === "function") {
+    const archived = await repository.archiveSchoolStudentByCode(req.params.id, schoolCode, req.principal);
+    await auditService.record(req, "archive_student", "student", archived.studentCode || req.params.id, {
+      studentCode: archived.studentCode || req.params.id,
+    });
+    return res.json(sanitizeUserForResponse(archived));
+  }
+  res.status(204).end();
+}));
+
 app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
@@ -2048,10 +2099,66 @@ app.get("/api/backoffice/role-permissions", requireAuth, requirePermission("GET 
   res.json(map);
 }));
 
-app.put("/api/backoffice/role-permissions", requireAuth, requirePermission("PUT /api/backoffice/role-permissions"), asyncHandler(async (req, res) => {
-  const { platformAuditMetaFromRequest } = require("./lib/platformManagement");
-  const saved = await repository.replacePlatformRolePermissions(req.body ?? {}, req.principal, platformAuditMetaFromRequest(req));
+app.put("/api/backoffice/role-permissions", requireAuth, requirePermission("PUT /api/backoffice/role-permissions"), asyncHandler(async () => {
+  const { throwLegacyRolePermissionsWrite } = require("./lib/functionalRbacService");
+  throwLegacyRolePermissionsWrite();
+}));
+
+app.get("/api/backoffice/rbac/catalog", requireAuth, requirePermission("GET /api/backoffice/rbac/catalog"), asyncHandler(async (req, res) => {
+  const catalog = await repository.listRbacCatalog(req.principal);
+  res.json(catalog);
+}));
+
+app.get("/api/backoffice/rbac/permissions", requireAuth, requirePermission("GET /api/backoffice/rbac/permissions"), asyncHandler(async (req, res) => {
+  const configured = await repository.getConfiguredRolePermissions(req.query ?? {}, req.principal);
+  res.json(configured);
+}));
+
+app.get("/api/backoffice/rbac/permissions/effective", requireAuth, requirePermission("GET /api/backoffice/rbac/permissions/effective"), asyncHandler(async (req, res) => {
+  const effective = await repository.getEffectiveRolePermissions(req.query ?? {}, req.principal);
+  res.json(effective);
+}));
+
+app.patch("/api/backoffice/rbac/permissions", requireAuth, requirePermission("PATCH /api/backoffice/rbac/permissions"), asyncHandler(async (req, res) => {
+  const { functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
+  const saved = await repository.patchConfiguredRolePermissions(
+    req.body ?? {},
+    req.principal,
+    functionalRbacAuditMetaFromRequest(req),
+  );
   res.json(saved);
+}));
+
+app.post("/api/backoffice/rbac/roles", requireAuth, requirePermission("POST /api/backoffice/rbac/roles"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const created = await repository.createEstablishmentRole(
+    req.body ?? {},
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/rbac/roles/:roleId", requireAuth, requirePermission("PATCH /api/backoffice/rbac/roles/:roleId"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const updated = await repository.updateEstablishmentRole(
+    req.params.roleId,
+    req.body ?? {},
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/rbac/roles/:roleId/archive", requireAuth, requirePermission("POST /api/backoffice/rbac/roles/:roleId/archive"), asyncHandler(async (req, res) => {
+  const { archiveRbacRole, functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
+  const archived = await archiveRbacRole(
+    repository,
+    req.params.roleId,
+    req.principal,
+    functionalRbacAuditMetaFromRequest(req),
+  );
+  res.json(archived);
 }));
 
 app.get("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("GET /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
@@ -4720,6 +4827,12 @@ async function sendAuthenticatedResponse(req, res, response, action) {
     }
   }
   const principal = buildPrincipal(response, rolePermissionsMap);
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(principal);
+    if (Array.isArray(live?.permissions)) {
+      principal.permissions = live.permissions;
+    }
+  }
   if (principal.role === "Parent" && (!principal.studentIds?.length) && Array.isArray(response.user?.children)) {
     principal.studentIds = response.user.children
       .flatMap((child) => [child.id, child.publicId, child.matricule])
@@ -5108,12 +5221,21 @@ async function principalMustChangePassword(principal = {}) {
 }
 
 function requirePermission(routeKey) {
-  return (req, _res, next) => {
-    if (!rbacService.canAccess(req.principal, routeKey)) {
-      return next(new BusinessError(403, "Permission insuffisante pour cette fonctionnalité."));
+  return async (req, _res, next) => {
+    try {
+      if (typeof repository.resolveEffectivePermissions === "function" && req.principal) {
+        const live = await repository.resolveEffectivePermissions(req.principal);
+        if (Array.isArray(live?.permissions)) {
+          req.principal = { ...req.principal, permissions: live.permissions };
+        }
+      }
+      if (!rbacService.canAccess(req.principal, routeKey)) {
+        return next(new BusinessError(403, "Permission insuffisante pour cette fonctionnalité."));
+      }
+      next();
+    } catch (error) {
+      next(error);
     }
-
-    next();
   };
 }
 

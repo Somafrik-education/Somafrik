@@ -103,4 +103,6 @@ export const studentsApi = {
 
   update: (studentCode: string, payload: UpdateSchoolStudentPayload) =>
     api.patch<SchoolStudent>(`/students/${encodeURIComponent(studentCode)}`, payload),
+
+  remove: (studentCode: string) => api.delete(`/students/${encodeURIComponent(studentCode)}`),
 };
