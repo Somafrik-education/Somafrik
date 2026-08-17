@@ -85,16 +85,19 @@ vi.mock("../lib/usePermissionContext", () => ({
   useFeaturePermissions: () => ({ ...permissions }),
 }));
 
+const evaluationsForPage = vi.hoisted(() => ({ current: [] as Record<string, unknown>[] }));
+
 vi.mock("../lib/evaluations", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/evaluations")>();
   return {
     ...actual,
     buildEvaluationsFromExams: () => [],
-    ensureEvaluationsSynced: () => [],
-    scopedEvaluations: () => [],
+    ensureEvaluationsSynced: () => evaluationsForPage.current,
+    scopedEvaluations: () => evaluationsForPage.current,
     scopedGrades: () => [],
     allGrades: () => [],
     resolveGradesPeriod: () => "T1",
+    canEditEvaluation: () => true,
   };
 });
 
@@ -142,6 +145,7 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     permissions.canCreate = true;
     permissions.canUpdate = true;
     dataLoading.current = false;
+    evaluationsForPage.current = [];
   });
 
   it("structure la page Notes avec ToolLayout (Header / Context / Content)", () => {
@@ -183,5 +187,53 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     );
     expect(screen.queryByRole("heading", { name: "Notes & évaluations" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Contexte opérationnel")).not.toBeInTheDocument();
+  });
+
+  it("affiche Nouvelle évaluation si Notes:CREATE", () => {
+    permissions.canCreate = true;
+    renderPage();
+    expect(screen.getAllByRole("button", { name: "Nouvelle évaluation" }).length).toBeGreaterThan(0);
+  });
+
+  it("masque Nouvelle évaluation après revoke applicatif CREATE (sans re-login)", () => {
+    permissions.canCreate = false;
+    permissions.canUpdate = true;
+    renderPage();
+    expect(screen.queryByRole("button", { name: "Nouvelle évaluation" })).not.toBeInTheDocument();
+  });
+
+  it("masque Modifier si UPDATE absent", () => {
+    permissions.canCreate = true;
+    permissions.canUpdate = false;
+    evaluationsForPage.current = [
+      {
+        id: "ev1",
+        title: "Interro 1",
+        subject: "Maths",
+        className: "6e A",
+        period: "T1",
+        status: "Saisie",
+        schoolCode: "SCH-001",
+      },
+    ];
+    renderPage();
+    expect(screen.queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
+  });
+
+  it("affiche Modifier si UPDATE présent", () => {
+    permissions.canUpdate = true;
+    evaluationsForPage.current = [
+      {
+        id: "ev1",
+        title: "Interro 1",
+        subject: "Maths",
+        className: "6e A",
+        period: "T1",
+        status: "Saisie",
+        schoolCode: "SCH-001",
+      },
+    ];
+    renderPage();
+    expect(screen.getByRole("button", { name: "Modifier" })).toBeInTheDocument();
   });
 });

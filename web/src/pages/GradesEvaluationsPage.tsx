@@ -12,6 +12,7 @@ import { Field, Input, Select } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
+import { ApiError } from "../api/client";
 import {
   EmptyState,
   ForbiddenState,
@@ -77,6 +78,7 @@ export function GradesEvaluationsPage() {
   const { confirm } = useConfirm();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Notes");
+  const canEnterGrades = canCreate || canUpdate;
 
   const students = scopedStudents(scopeUser, state) as Record<string, unknown>[];
   const classes = scopedClasses(scopeUser, state, students) as Record<string, unknown>[];
@@ -178,7 +180,8 @@ export function GradesEvaluationsPage() {
       return { ok: true as const };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur de synchronisation";
-      showToast(message, "error");
+      const code = err instanceof ApiError ? err.code : undefined;
+      showToast(code ? `${message} (${code})` : message, "error");
       return { ok: false as const, message };
     } finally {
       setBusy(false);
@@ -558,7 +561,7 @@ export function GradesEvaluationsPage() {
                     students={students}
                     grades={allGrades(state)}
                     canEdit={
-                      canUpdate &&
+                      canEnterGrades &&
                       teacherCanAccessEvaluation(scopeUser, selectedEvaluation, state) &&
                       canEditEvaluation(selectedEvaluation, state)
                     }

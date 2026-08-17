@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canManagePresences, getFeaturePermissions, resolveEffectivePermissions } from "./permissions";
+import { canManageNotes, canManagePresences, getFeaturePermissions, resolveEffectivePermissions } from "./permissions";
 
 describe("resolveEffectivePermissions — autorité serveur", () => {
   it("n'enrichit pas une liste serveur avec la carte locale", () => {
@@ -88,6 +88,34 @@ describe("Présences — saisie d'appel (canManagePresences)", () => {
   it("accepte encore l'alias legacy contenant « appel » (Appels:CREATE)", () => {
     expect(canManagePresences(prefet(["Appels:CREATE"]))).toBe(true);
     expect(canManagePresences(prefet(["Faire appel"]))).toBe(true);
+  });
+});
+
+describe("Notes — saisie upsert (canManageNotes)", () => {
+  const prefet = (permissions: string[]) =>
+    ({
+      user: {
+        id: "prefet-1",
+        role: "Préfet des études",
+        permissions,
+      },
+      rolePermissions: {},
+    }) as never;
+
+  it("autorise la saisie si Notes:CREATE seul (UPDATE absent)", () => {
+    expect(canManageNotes(prefet(["Notes:READ", "Notes:CREATE"]))).toBe(true);
+  });
+
+  it("autorise la saisie si Notes:UPDATE seul (CREATE absent)", () => {
+    expect(canManageNotes(prefet(["Notes:READ", "Notes:UPDATE"]))).toBe(true);
+  });
+
+  it("refuse la saisie si READ seul", () => {
+    expect(canManageNotes(prefet(["Notes:READ"]))).toBe(false);
+  });
+
+  it("n'utilise pas Evaluations comme module distinct", () => {
+    expect(canManageNotes(prefet(["Evaluations:CREATE"]))).toBe(false);
   });
 });
 

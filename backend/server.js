@@ -721,14 +721,13 @@ app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("
   res.json(deleted);
 }));
 
-app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
+app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/evaluations"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
     routeKey: "POST /api/evaluations",
     principal: req.principal,
     handler: async () => {
-      assertCanManageNotes(req.principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const saved = await repository.createSchoolEvaluation(
         ignoreClientScope(req.body ?? {}),
@@ -740,9 +739,8 @@ app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("writ
   });
 }));
 
-app.patch("/api/evaluations/:evaluationId", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
+app.patch("/api/evaluations/:evaluationId", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("PATCH /api/evaluations/:evaluationId"), asyncHandler(async (req, res) => {
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
-  assertCanManageNotes(req.principal);
   const saved = await repository.updateSchoolEvaluation(
     req.params.evaluationId,
     req.body ?? {},
@@ -1477,7 +1475,8 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
   res.status(204).end();
 }));
 
-app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) => {
+/** Lecture notes : Notes:READ live (Parent/Élève : seed « Voir notes » + matrice Notes:R). */
+app.get("/api/students/:id/notes", requireAuth, requirePermission("GET /api/students/:id/notes"), asyncHandler(async (req, res) => {
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
@@ -1488,7 +1487,7 @@ app.get("/api/students/:id/notes", requireAuth, asyncHandler(async (req, res) =>
   res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
-app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHandler(async (req, res) => {
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
   let scopedStudents = tenantScopeService.filterRows(students, req.principal);
   if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
@@ -1521,14 +1520,13 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
   );
 }));
 
-app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), asyncHandler(async (req, res) => {
+app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
     routeKey: "POST /api/notes",
     principal: req.principal,
     handler: async () => {
-      assertCanManageNotes(req.principal);
       const state = await loadCanonicalPedagogyForPrincipal(req.principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
@@ -3052,24 +3050,6 @@ async function getScopedMvpBusinessService(principal) {
     tenantScopeService,
   );
   return new MvpBusinessService(scoped);
-}
-
-function assertCanManageNotes(principal) {
-  const permissions = new Set(principal?.permissions ?? []);
-  if (
-    permissions.has("ALL_PRIVILEGES") ||
-    permissions.has("COUNTRY_PRIVILEGES") ||
-    permissions.has("Modifier notes") ||
-    permissions.has("Modifier notes") ||
-    permissions.has("Notes:CREATE") ||
-    permissions.has("Notes:UPDATE") ||
-    permissions.has("Notes:CRUD") ||
-    permissions.has("Evaluations:CRUD")
-  ) {
-    return;
-  }
-
-  throw new BusinessError(403, "Permission insuffisante pour modifier les notes.");
 }
 
 function denyPermission(message = "Permission insuffisante pour cette fonctionnalité.") {

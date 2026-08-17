@@ -298,6 +298,14 @@ export function canManagePresences(ctx: PermissionContext): boolean {
   );
 }
 
+/** Saisie notes = upsert POST /api/notes (CREATE ou UPDATE). */
+export function canManageNotes(ctx: PermissionContext): boolean {
+  return (
+    hasBackOfficePermission(ctx, "Notes", "UPDATE") ||
+    hasBackOfficePermission(ctx, "Notes", "CREATE")
+  );
+}
+
 /** Admin établissement et rôles habilités peuvent réinitialiser un mot de passe utilisateur. */
 export function canResetUserPassword(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;

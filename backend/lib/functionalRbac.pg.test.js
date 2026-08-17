@@ -428,6 +428,70 @@ async function main() {
     );
     assert.equal(stillDenied.modules.attendance.canCreate, false, "aucune écriture si MANDATORY_PERMISSION");
 
+    const gradesSchoolAt = await store.maxUpdatedAtForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    });
+    await patchConfiguredPermissions(
+      repo,
+      {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: gradesSchoolAt,
+        grants: [{ moduleKey: "grades", canCreate: true, canRead: true, canUpdate: false, canDelete: false }],
+      },
+      superAdmin,
+      {},
+    );
+    await store.upsertGrant({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolB.rows[0].id,
+      moduleKey: "grades",
+      canCreate: false,
+      canRead: true,
+      canUpdate: false,
+      canDelete: false,
+      updatedBy: "superadmin",
+    });
+    await store.upsertGrant({
+      roleKey: "TEACHER",
+      scopeType: "global",
+      countryId: null,
+      schoolId: null,
+      moduleKey: "grades",
+      canCreate: true,
+      canRead: true,
+      canUpdate: true,
+      canDelete: false,
+      updatedBy: "bootstrap",
+    });
+    const gradeRows = await store.listGrantsForRoles(["PREFET_ETUDES", "TEACHER"]);
+    const gradesA = resolveEffectivePermissionSet(["PREFET_ETUDES"], gradeRows, {
+      schoolId: schoolA.rows[0].id,
+      countryId: country.rows[0].id,
+    });
+    const gradesB = resolveEffectivePermissionSet(["PREFET_ETUDES"], gradeRows, {
+      schoolId: schoolB.rows[0].id,
+      countryId: country.rows[0].id,
+    });
+    assert.equal(gradesA.modules.grades.canCreate, true, "école A Notes:CREATE");
+    assert.equal(gradesA.permissions.includes("Notes:CREATE"), true);
+    assert.equal(gradesB.modules.grades.canCreate, false, "DENY école B masque CREATE");
+    const unionGrades = resolveEffectivePermissionSet(["PREFET_ETUDES", "TEACHER"], gradeRows, {
+      schoolId: schoolB.rows[0].id,
+      countryId: country.rows[0].id,
+    });
+    assert.equal(unionGrades.modules.grades.canCreate, true, "multi-rôle TEACHER CREATE union OR");
+    const revokedTeacher = resolveEffectivePermissionSet(["PREFET_ETUDES"], gradeRows, {
+      schoolId: schoolB.rows[0].id,
+      countryId: country.rows[0].id,
+    });
+    assert.equal(revokedTeacher.modules.grades.canCreate, false, "rôle TEACHER révoqué ignoré");
+
     console.log("functionalRbac.pg.test.js OK");
   } finally {
     await pool.end();
