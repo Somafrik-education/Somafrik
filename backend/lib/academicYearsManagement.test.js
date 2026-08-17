@@ -139,6 +139,7 @@ function createInjectableAcademicYearsRepository() {
     if (upper.includes("FROM ACADEMIC_YEARS") && upper.includes("FOR UPDATE")) {
       return tables.academic_years.filter((row) => eq(row.school_id, params[0])).map((row) => ({ id: row.id }));
     }
+    if (upper.includes("FROM ACADEMIC_YEARS") && upper.includes("LOWER(BTRIM(NAME))")) {
       return tables.academic_years.filter(
         (row) =>
           eq(row.school_id, params[0]) &&
