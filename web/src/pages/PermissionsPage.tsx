@@ -19,13 +19,31 @@ import {
   type RbacCrudGrant,
   type RbacRole,
 } from "../lib/rbacApi";
+import {
+  applyMandatoryOverlay,
+  describeActionLock,
+  lockTooltip,
+  mandatoryFlagsForModule,
+  toggleCrudFlag,
+  type RbacAction,
+} from "../lib/rbacLocks";
 
 const CRUD_ACTIONS = [
-  { key: "canCreate" as const, label: "CREATE" },
-  { key: "canRead" as const, label: "READ" },
-  { key: "canUpdate" as const, label: "UPDATE" },
-  { key: "canDelete" as const, label: "DELETE" },
+  { key: "canCreate" as const, action: "create" as RbacAction, label: "CREATE" },
+  { key: "canRead" as const, action: "read" as RbacAction, label: "READ" },
+  { key: "canUpdate" as const, action: "update" as RbacAction, label: "UPDATE" },
+  { key: "canDelete" as const, action: "delete" as RbacAction, label: "DELETE" },
 ];
+
+function LockIcon({ label }: { label: string }) {
+  return (
+    <span className="inline-flex text-slate-500" title={label} aria-hidden="true">
+      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor">
+        <path d="M10 2a4 4 0 00-4 4v2H5a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V9a1 1 0 00-1-1h-1V6a4 4 0 00-4-4zm-2 6V6a2 2 0 114 0v2H8z" />
+      </svg>
+    </span>
+  );
+}
 
 type TabKey = "permissions" | "roles";
 
@@ -190,12 +208,22 @@ export function PermissionsPage() {
       setDraft(emptyCrud());
       return;
     }
-    setDraft(toCrudFlags(selectedModule));
-  }, [selectedModule]);
+    const mandatory = mandatoryFlagsForModule(
+      catalog?.mandatoryByRole,
+      selectedRoleKey,
+      selectedModule.moduleKey,
+    );
+    setDraft(applyMandatoryOverlay(toCrudFlags(selectedModule), mandatory));
+  }, [selectedModule, catalog?.mandatoryByRole, selectedRoleKey]);
+
+  const selectedMandatory = useMemo(
+    () => mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey),
+    [catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey],
+  );
 
   function toggle(field: keyof RbacCrudFlags) {
     if (!canManage) return;
-    setDraft((current) => ({ ...current, [field]: !current[field] }));
+    setDraft((current) => toggleCrudFlag(current, field, selectedMandatory));
   }
 
   async function save() {
@@ -207,17 +235,21 @@ export function PermissionsPage() {
         countryCode,
         schoolCode,
         expectedUpdatedAt: matrix?.updatedAt ?? null,
-        grants: [toCrudGrant(selectedModuleKey, draft)],
+        grants: [toCrudGrant(selectedModuleKey, applyMandatoryOverlay(draft, selectedMandatory))],
       });
       const next = await rbacApi.getConfigured({ roleKey: selectedRoleKey, countryCode, schoolCode });
       setMatrix({ ...next, updatedAt: saved.updatedAt ?? next.updatedAt });
       showToast("Permissions enregistrées", "success");
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 0;
+      const code = error instanceof ApiError ? error.code : undefined;
+      const message = error instanceof ApiError ? error.message : "";
       showToast(
-        status === 409
-          ? "Conflit : la matrice a été modifiée. Rechargez avant d'enregistrer."
-          : "Échec de l'enregistrement",
+        code === "MANDATORY_PERMISSION"
+          ? message || "Permission obligatoire : modification refusée."
+          : status === 409
+            ? "Conflit : la matrice a été modifiée. Rechargez avant d'enregistrer."
+            : message || "Échec de l'enregistrement",
         "error",
       );
     } finally {
@@ -438,6 +470,11 @@ export function PermissionsPage() {
                 Module « {selectedModule?.moduleName} » — CREATE / READ / UPDATE / DELETE pour{" "}
                 {selectedRole?.roleName}.
               </p>
+              <p className="mt-2 text-xs text-muted">
+                Case verrouillée (cadenas) : invariant de rôle ou prérequis READ tant qu’une action
+                CREATE / UPDATE / DELETE est active. Impossible à décocher ici ; le backend refuse
+                aussi tout PATCH contraire (`MANDATORY_PERMISSION`).
+              </p>
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
                   <thead>
@@ -453,18 +490,33 @@ export function PermissionsPage() {
                   <tbody>
                     <tr className="border-b border-line/70">
                       <td className="px-3 py-2.5 font-medium text-ink">{selectedModule?.moduleName}</td>
-                      {CRUD_ACTIONS.map((action) => (
-                        <td key={action.key} className="px-3 py-2.5 text-center">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 cursor-pointer accent-brand disabled:cursor-not-allowed"
-                            checked={Boolean(draft[action.key])}
-                            disabled={!canManage || busy}
-                            onChange={() => toggle(action.key)}
-                            aria-label={`${selectedModule?.moduleName} ${action.label}`}
-                          />
-                        </td>
-                      ))}
+                      {CRUD_ACTIONS.map((action) => {
+                        const lock = describeActionLock({
+                          action: action.action,
+                          flags: draft,
+                          mandatory: selectedMandatory,
+                        });
+                        const tooltip = lock.locked ? lockTooltip(lock.reason) : undefined;
+                        return (
+                          <td key={action.key} className="px-3 py-2.5 text-center">
+                            <label
+                              className="inline-flex items-center justify-center gap-1"
+                              title={tooltip}
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 accent-brand disabled:cursor-not-allowed disabled:opacity-80"
+                                checked={Boolean(draft[action.key])}
+                                disabled={!canManage || busy || lock.locked}
+                                onChange={() => toggle(action.key)}
+                                aria-label={`${selectedModule?.moduleName} ${action.label}`}
+                                aria-disabled={lock.locked || undefined}
+                              />
+                              {lock.locked ? <LockIcon label={tooltip || ""} /> : null}
+                            </label>
+                          </td>
+                        );
+                      })}
                     </tr>
                   </tbody>
                 </table>

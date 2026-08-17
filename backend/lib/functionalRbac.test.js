@@ -122,7 +122,7 @@ test("invariants SUPER_ADMIN et archive protégée", () => {
       assertSuperAdminInvariantPatch("SUPER_ADMIN", [
         { moduleKey: "role_permissions", canCreate: false, canRead: false, canUpdate: false, canDelete: false },
       ]),
-    (error) => error.code === FUNCTIONAL_RBAC_ERROR.SUPER_ADMIN_INVARIANT,
+    (error) => error.code === FUNCTIONAL_RBAC_ERROR.MANDATORY_PERMISSION && error.statusCode === 409,
   );
   assert.throws(
     () => assertNotProtectedArchive("SUPER_ADMIN"),

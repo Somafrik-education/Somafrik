@@ -390,6 +390,44 @@ async function main() {
     );
     assert.equal(deniedAttendance.modules.attendance.canCreate, false, "DENY école A masque un CREATE global éventuel");
 
+    await assert.rejects(
+      () =>
+        patchConfiguredPermissions(
+          repo,
+          {
+            roleKey: "SUPER_ADMIN",
+            schoolCode: "CD-2026-0001",
+            grants: [{ moduleKey: "users", canCreate: true, canRead: false, canUpdate: true, canDelete: true }],
+          },
+          superAdmin,
+          {},
+        ),
+      (error) => error.statusCode === 409 && error.code === FUNCTIONAL_RBAC_ERROR.MANDATORY_PERMISSION,
+    );
+    await assert.rejects(
+      () =>
+        patchConfiguredPermissions(
+          repo,
+          {
+            roleKey: "PREFET_ETUDES",
+            schoolCode: "CD-2026-0001",
+            expectedUpdatedAt: attendanceSchoolAt2,
+            grants: [
+              { moduleKey: "attendance", canCreate: true, canRead: false, canUpdate: false, canDelete: false },
+            ],
+          },
+          superAdmin,
+          {},
+        ),
+      (error) => error.statusCode === 409 && error.code === FUNCTIONAL_RBAC_ERROR.MANDATORY_PERMISSION,
+    );
+    const stillDenied = resolveEffectivePermissionSet(
+      ["PREFET_ETUDES"],
+      await store.listGrantsForRoles(["PREFET_ETUDES"]),
+      { schoolId: schoolA.rows[0].id, countryId: country.rows[0].id },
+    );
+    assert.equal(stillDenied.modules.attendance.canCreate, false, "aucune écriture si MANDATORY_PERMISSION");
+
     console.log("functionalRbac.pg.test.js OK");
   } finally {
     await pool.end();

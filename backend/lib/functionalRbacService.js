@@ -7,7 +7,6 @@ const {
   throwLegacyRolePermissionsWrite,
   normalizeScope,
   assertNotProtectedArchive,
-  assertSuperAdminInvariantPatch,
   timestampsEqual,
   looksLikeUuid,
   PROTECTED_SYSTEM_ROLE_KEYS,
@@ -19,6 +18,13 @@ const {
 } = require("./functionalRbacResolution");
 const { assertSuperAdmin, asTrimmed, normalizeRoleCode } = require("./establishmentRolesManagement");
 const { toRoleKey, toRoleLabel } = require("./userRoleLifecycle");
+const {
+  enrichCatalogModules,
+  mandatoryByRoleDto,
+  moduleContractDto,
+  overlayMandatoryFlags,
+  assertMandatoryPermissionPatch,
+} = require("./rbacMandatoryPermissions");
 const { createFunctionalRbacPgStore } = require("../db/functionalRbacPgStore");
 const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
 
@@ -329,9 +335,10 @@ async function listRbacCatalog(repo, principal) {
       PROTECTED_SYSTEM_ROLE_KEYS.has(String(row.roleCode || "").toUpperCase()),
   }));
   return {
-    modules,
+    modules: enrichCatalogModules(modules),
     roles,
     protectedRoleKeys: [...PROTECTED_SYSTEM_ROLE_KEYS],
+    mandatoryByRole: mandatoryByRoleDto(),
     invariants: {
       SUPER_ADMIN: Object.keys(require("./functionalRbacManagement").SUPER_ADMIN_INVARIANT_MODULES),
     },
@@ -361,16 +368,20 @@ async function getConfiguredPermissions(repo, query, principal) {
   const byModule = Object.fromEntries(grants.map((grant) => [grant.moduleKey, grant]));
   const modules = listFunctionalModules().map((module) => {
     const grant = byModule[module.moduleKey];
+    const flags = overlayMandatoryFlags(roleKey, module.moduleKey, {
+      canCreate: Boolean(grant?.canCreate),
+      canRead: Boolean(grant?.canRead),
+      canUpdate: Boolean(grant?.canUpdate),
+      canDelete: Boolean(grant?.canDelete),
+    });
     return {
       moduleKey: module.moduleKey,
       moduleName: module.moduleName,
       appliesWeb: module.appliesWeb,
       appliesMobile: module.appliesMobile,
-      canCreate: Boolean(grant?.canCreate),
-      canRead: Boolean(grant?.canRead),
-      canUpdate: Boolean(grant?.canUpdate),
-      canDelete: Boolean(grant?.canDelete),
+      ...flags,
       configured: Boolean(grant),
+      ...moduleContractDto(roleKey, module.moduleKey, flags),
     };
   });
   return {
@@ -454,7 +465,7 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
   if (!grants.length) {
     throw createFunctionalRbacError(400, "grants (delta) obligatoire.", FUNCTIONAL_RBAC_ERROR.INVALID_MODULE);
   }
-  assertSuperAdminInvariantPatch(roleKey, grants);
+  assertMandatoryPermissionPatch(roleKey, grants);
   const store = rbacStore(repo);
 
   return repo.withTransaction(async (tx) => {

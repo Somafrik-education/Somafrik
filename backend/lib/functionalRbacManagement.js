@@ -12,6 +12,7 @@ const FUNCTIONAL_RBAC_ERROR = Object.freeze({
   ROLE_ARCHIVED: "ROLE_ARCHIVED",
   ROLE_PROTECTED: "ROLE_PROTECTED",
   SUPER_ADMIN_INVARIANT: "SUPER_ADMIN_INVARIANT",
+  MANDATORY_PERMISSION: "MANDATORY_PERMISSION",
   CONFLICT: "CONFLICT",
   LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN: "LEGACY_ROLE_PERMISSIONS_WRITE_FORBIDDEN",
 });
@@ -75,24 +76,8 @@ function assertNotProtectedArchive(roleKey) {
 }
 
 function assertSuperAdminInvariantPatch(roleKey, grants = []) {
-  const key = String(toRoleKey(roleKey) || "").toUpperCase();
-  if (key !== "SUPER_ADMIN") return;
-  for (const grant of grants) {
-    const invariant = SUPER_ADMIN_INVARIANT_MODULES[grant.moduleKey];
-    if (!invariant) continue;
-    if (
-      (invariant.canRead && grant.canRead === false) ||
-      (invariant.canUpdate && grant.canUpdate === false) ||
-      (invariant.canCreate && grant.canCreate === false)
-    ) {
-      throw createFunctionalRbacError(
-        403,
-        "Impossible de retirer un droit invariant SUPER_ADMIN (Administration, utilisateurs, référentiels).",
-        FUNCTIONAL_RBAC_ERROR.SUPER_ADMIN_INVARIANT,
-        { moduleKey: grant.moduleKey },
-      );
-    }
-  }
+  const { assertMandatoryPermissionPatch } = require("./rbacMandatoryPermissions");
+  assertMandatoryPermissionPatch(roleKey, grants);
 }
 
 function timestampsEqual(left, right) {

@@ -84,6 +84,11 @@ async function main() {
     assert.ok(catalog.data.roles.some((row) => row.roleCode === "PREFET_ETUDES" || row.roleName === "Préfet des études"));
     assert.ok(catalog.data.modules.some((row) => row.moduleKey === "students"));
     assert.ok(catalog.data.modules.some((row) => row.moduleKey === "assignments"));
+    const attendanceModule = catalog.data.modules.find((row) => row.moduleKey === "attendance");
+    assert.ok(attendanceModule, "module Présences dans le catalogue");
+    assert.deepEqual(attendanceModule.dependencies?.create, ["read"]);
+    assert.equal(catalog.data.mandatoryByRole?.SUPER_ADMIN?.users?.read, true);
+    assert.deepEqual(catalog.data.mandatoryByRole?.SCHOOL_ADMIN || {}, {});
 
     const schoolEffective = await request("/auth/effective-permissions", { token: schoolToken });
     assert.equal(schoolEffective.status, 200, JSON.stringify(schoolEffective.data));
@@ -358,6 +363,37 @@ async function main() {
       });
       assert.equal(archiveSuper.status, 403, JSON.stringify(archiveSuper.data));
     }
+
+    const mandatoryUsers = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: superToken,
+      body: {
+        roleKey: "SUPER_ADMIN",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        grants: [{ moduleKey: "users", canCreate: true, canRead: false, canUpdate: true, canDelete: true }],
+      },
+    });
+    assert.equal(mandatoryUsers.status, 409, JSON.stringify(mandatoryUsers.data));
+    assert.equal(mandatoryUsers.data?.code, "MANDATORY_PERMISSION");
+
+    const currentAttendance = await request(
+      `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      { token: superToken },
+    );
+    const dependencyDenied = await request("/backoffice/rbac/permissions", {
+      method: "PATCH",
+      token: superToken,
+      body: {
+        roleKey: "PREFET_ETUDES",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: currentAttendance.data?.updatedAt,
+        grants: [{ moduleKey: "attendance", canCreate: true, canRead: false, canUpdate: false, canDelete: false }],
+      },
+    });
+    assert.equal(dependencyDenied.status, 409, JSON.stringify(dependencyDenied.data));
+    assert.equal(dependencyDenied.data?.code, "MANDATORY_PERMISSION");
 
     console.log("verify-functional-rbac.js OK");
   } finally {
