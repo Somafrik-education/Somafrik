@@ -277,32 +277,27 @@ function createClassStudentsRepository(db) {
   }
 
   /**
-   * Compte de connexion élève = matricule. Absent sur les schémas de test isolés (42P01).
+   * Compte de connexion élève = matricule. La table users est obligatoire sur le chemin PostgreSQL.
    * @param {ReturnType<typeof createClassStudentsDb>} tx
    * @param {{ id: string }} school
    * @param {{ student_code: string }} student
    * @param {{ firstName: string, lastName: string, parentEmail?: string, parentPhone?: string }} input
    */
   async function ensureStudentLoginUser(tx, school, student, input) {
-    try {
-      await tx.query(
-        `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
-         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', 'active')
-         ON CONFLICT (user_code) DO NOTHING`,
-        [
-          school.id,
-          student.student_code,
-          input.firstName,
-          input.lastName,
-          input.parentEmail ?? "",
-          input.parentPhone ?? "",
-          hashSecret("1234"),
-        ],
-      );
-    } catch (error) {
-      if (String(error.code) === "42P01") return;
-      throw error;
-    }
+    await tx.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', 'active')
+       ON CONFLICT (user_code) DO NOTHING`,
+      [
+        school.id,
+        student.student_code,
+        input.firstName,
+        input.lastName,
+        input.parentEmail ?? "",
+        input.parentPhone ?? "",
+        hashSecret("1234"),
+      ],
+    );
   }
 
   /**

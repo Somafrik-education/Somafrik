@@ -10,7 +10,7 @@ describe("identifiant canonique élève", () => {
   it("matricule = identifiant de connexion", () => {
     expect(isStudentCanonicalCode("CD-IN-EL-26-001")).toBe(true);
     expect(getStudentLoginIdentifier("CD-IN-EL-26-001")).toBe("CD-IN-EL-26-001");
-    expect(resolveStudentMatricule({ matricule: "CD-IN-EL-26-001" }, "CD-2026-0001")).toEqual({
+    expect(resolveStudentMatricule({ matricule: "CD-IN-EL-26-001" })).toEqual({
       matricule: "CD-IN-EL-26-001",
       publicId: "CD-IN-EL-26-001",
       loginIdentifier: "CD-IN-EL-26-001",
@@ -19,6 +19,6 @@ describe("identifiant canonique élève", () => {
 
   it("ne génère plus de matricule côté Web", () => {
     expect(isStudentCanonicalCode("ELE-0001")).toBe(false);
-    expect(() => generateStudentMatricule("CD-2026-0001", [])).toThrow(/PostgreSQL/);
+    expect(() => generateStudentMatricule()).toThrow(/PostgreSQL/);
   });
 });

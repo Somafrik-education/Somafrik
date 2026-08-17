@@ -931,7 +931,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       }
     }
 
-    let preparedItem = { ...linkedItem };
+    const preparedItem = { ...linkedItem };
 
     // Annonce/message créé par le Super Admin : diffusion système (aucun périmètre).
     if (isSuperadminSystemComm) {

@@ -46,10 +46,7 @@ export function isLegacyStudentMatricule(value: string): boolean {
 }
 
 /** Matricule élève = identifiant de connexion. Généré uniquement par PostgreSQL. */
-export function generateStudentMatricule(
-  _schoolCode: string,
-  _students: Record<string, unknown>[] = [],
-): string {
+export function generateStudentMatricule(): string {
   throw new Error(
     "Le matricule élève est attribué par PostgreSQL (CD-IN-EL-26-001). Pas de générateur Web.",
   );
@@ -63,8 +60,6 @@ export function getStudentLoginIdentifier(matriculeOrIdentifier: string): string
 
 export function resolveStudentMatricule(
   item: Record<string, unknown>,
-  _schoolCode: string,
-  _students: Record<string, unknown>[] = [],
 ): { matricule: string; publicId: string; loginIdentifier: string } {
   const existing = String(
     item.loginCode ?? item.identityCode ?? item.matricule ?? item.studentCode ?? item.publicId ?? "",
@@ -84,7 +79,6 @@ export function resolveStudentMatricule(
 /** Plus de réparation côté client : PostgreSQL est l'autorité. */
 export function repairStudentMatricules(
   students: Record<string, unknown>[],
-  _schoolCode?: string,
 ): Record<string, unknown>[] {
   return students;
 }

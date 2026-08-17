@@ -417,7 +417,7 @@ export function linkContactToOperationalRecord(
     const idx = findFicheIndex(students, contact, contactId, schoolCode);
     if (idx >= 0) {
       const existing = students[idx];
-      const matriculeInfo = resolveStudentMatricule(existing, schoolCode, students);
+      const matriculeInfo = resolveStudentMatricule(existing);
       students[idx] = {
         ...existing,
         name: existing.name || lastName,
