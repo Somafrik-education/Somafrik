@@ -11,6 +11,36 @@
 -- last_value est relevé au MAX(seq) observé par pays/année pour les allocations futures.
 --
 -- Idempotent : ré-exécuté au boot via USER_ROLES_SCHEMA_SQL après 20260822.
+-- Réaffirme somafrik_school_short_code : mots-outils ignorés (ISC, pas ISDC).
+
+CREATE OR REPLACE FUNCTION somafrik_school_short_code(name_value TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  token TEXT;
+  result TEXT := '';
+  normalized TEXT;
+BEGIN
+  normalized := trim(regexp_replace(somafrik_ascii_upper(name_value), '[^A-Z0-9]+', ' ', 'g'));
+  FOR token IN SELECT part FROM regexp_split_to_table(normalized, '\s+') AS part WHERE part <> '' LOOP
+    IF token IN ('DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'D', 'ET') THEN
+      CONTINUE;
+    END IF;
+    result := result || left(token, 1);
+    EXIT WHEN length(result) >= 5;
+  END LOOP;
+
+  IF length(result) < 2 THEN
+    result := left(regexp_replace(normalized, '\s+', '', 'g'), 5);
+  END IF;
+  IF result = '' THEN
+    RAISE EXCEPTION 'SCHOOL_SHORT_CODE_REQUIRED: nom établissement insuffisant';
+  END IF;
+  RETURN left(result, 5);
+END
+$$;
 
 DO $$
 BEGIN

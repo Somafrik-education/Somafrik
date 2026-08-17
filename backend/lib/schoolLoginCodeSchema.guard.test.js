@@ -4,6 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
+const rolesCanonical = fs.readFileSync(
+  path.join(__dirname, "../db/migrations/20260820_user_roles_canonical.sql"),
+  "utf8",
+);
 const countryYear = fs.readFileSync(
   path.join(__dirname, "../db/migrations/20260825_school_login_code_country_year.sql"),
   "utf8",
@@ -22,6 +26,9 @@ const mobileAdmin = fs.readFileSync(
   "utf8",
 );
 
+const STOP_WORDS = /token IN \('DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'D', 'ET'\)/;
+assert.match(rolesCanonical, STOP_WORDS);
+assert.match(countryYear, STOP_WORDS);
 assert.match(countryYear, /ON CONFLICT \(country_id, creation_year\)/);
 assert.match(countryYear, /somafrik_prepare_school_login_code/);
 assert.doesNotMatch(

@@ -15,6 +15,17 @@ assert.equal(identityInitials("Marie-Claire", "Mukendi"), "MCM");
 assert.equal(identityInitials("Éric", "N'Dala"), "END");
 assert.equal(schoolShortCodeFromName("Institut Kibwija"), "IK");
 assert.equal(schoolShortCodeFromName("Collège Saint Michel"), "CSM");
+assert.equal(schoolShortCodeFromName("Institut Nuru"), "IN");
+assert.equal(schoolShortCodeFromName("Institut Supérieur de Commerce"), "ISC");
+assert.equal(schoolShortCodeFromName("Institut Superieur de Commerce"), "ISC");
+assert.notEqual(schoolShortCodeFromName("Institut Supérieur de Commerce"), "ISDC");
+assert.equal(schoolShortCodeFromName("École Kanyosha"), "EK");
+assert.equal(schoolShortCodeFromName("Lycée Lumumba"), "LL");
+assert.equal(schoolShortCodeFromName("Institut Supérieur des Techniques Médicales"), "ISTM");
+assert.notEqual(schoolShortCodeFromName("Institut Supérieur des Techniques Médicales"), "ISDTC");
+assert.notEqual(schoolShortCodeFromName("Institut Supérieur des Techniques Médicales"), "ISDTM");
+assert.equal(schoolShortCodeFromName("Université de Kinshasa"), "UK");
+assert.equal(schoolShortCodeFromName("École Nationale d'Administration"), "ENA");
 assert.equal(normalizeSchoolShortCode(" i-k "), "IK");
 assert.equal(formatLoginCode({ initials: "GK", year: 2026, sequence: 1 }), "GK-26-00001");
 assert.equal(

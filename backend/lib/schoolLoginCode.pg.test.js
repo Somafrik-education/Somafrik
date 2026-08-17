@@ -86,6 +86,33 @@ async function loginCodes(pool) {
   return result.rows;
 }
 
+async function testSignificantInitials(pool) {
+  await resetWith(pool, USER_ROLES_SCHEMA_SQL);
+  const cases = [
+    ["Institut Nuru", "IN"],
+    ["Institut Supérieur de Commerce", "ISC"],
+    ["Institut Superieur de Commerce", "ISC"],
+    ["École Kanyosha", "EK"],
+    ["Ecole Kanyosha", "EK"],
+    ["Lycée Lumumba", "LL"],
+    ["Institut Supérieur des Techniques Médicales", "ISTM"],
+    ["Université de Kinshasa", "UK"],
+    ["École Nationale d'Administration", "ENA"],
+  ];
+  for (const [name, expected] of cases) {
+    const row = await pool.query(`SELECT somafrik_school_short_code($1) AS initials`, [name]);
+    assert.equal(row.rows[0].initials, expected, `${name} → ${expected}`);
+  }
+  const forbidden = await pool.query(`
+    SELECT
+      somafrik_school_short_code('Institut Supérieur de Commerce') AS isc,
+      somafrik_school_short_code('Institut Supérieur des Techniques Médicales') AS istm
+  `);
+  assert.notEqual(forbidden.rows[0].isc, "ISDC");
+  assert.notEqual(forbidden.rows[0].istm, "ISDTC");
+  assert.notEqual(forbidden.rows[0].istm, "ISDTM");
+}
+
 async function testCanonicalSequence(pool) {
   await resetWith(pool, USER_ROLES_SCHEMA_SQL);
   const cd = await insertCountry(pool, "RDC", "CD", "+243", "CDF");
@@ -102,11 +129,13 @@ async function testCanonicalSequence(pool) {
   const isdc = await insertSchool(pool, {
     countryId: cd,
     schoolCode: "CD-2026-0002",
-    name: "Institut Superieur de Commerce",
+    name: "Institut Supérieur de Commerce",
     createdAt: "2026-03-01T00:00:00Z",
   });
-  assert.equal(isdc.login_code, "CD-ISDC-26-002", "B. deuxième RDC, initiales différentes");
+  assert.equal(isdc.login_code, "CD-ISC-26-002", "B. deuxième RDC, initiales ISC (de ignoré)");
   assert.notEqual(isdc.login_code, "CD-ISDC-26-001", "négatif : ISDC-001 ne doit pas être produit");
+  assert.notEqual(isdc.login_code, "CD-ISDC-26-002", "négatif : ISDC-002 ne doit pas être produit");
+  assert.equal(isdc.short_code, "ISC");
   assert.equal(isdc.school_code, "CD-2026-0002", "school_code interne inchangé");
 
   const third = await insertSchool(pool, {
@@ -166,7 +195,7 @@ async function testCanonicalSequence(pool) {
   const stable = await loginCodes(pool);
   assert.deepEqual(
     stable.map((row) => row.login_code),
-    ["CD-IN-26-001", "BI-EK-26-001", "CD-ISDC-26-002", "CD-ABC-26-003", "BI-LB-26-002", "CD-XYZ-27-001"],
+    ["CD-IN-26-001", "BI-EK-26-001", "CD-ISC-26-002", "CD-ABC-26-003", "BI-LB-26-002", "CD-XYZ-27-001"],
     "rerun boot ne réécrit aucun login_code",
   );
 }
@@ -188,7 +217,8 @@ async function testLegacyCollisionThenContinue(pool) {
     createdAt: "2026-03-01T00:00:00Z",
   });
   assert.equal(nuru.login_code, "CD-IN-26-001");
-  assert.equal(isdc.login_code, "CD-ISDC-26-001", "ancien générateur : collision logique 001/001");
+  assert.equal(isdc.login_code, "CD-ISC-26-001", "ancien compteur par initiales : collision logique 001/001");
+  assert.notEqual(isdc.login_code, "CD-ISDC-26-001");
 
   await pool.query(readMigration("20260823_student_canonical_identifier.sql"));
   await pool.query(readMigration("20260825_school_login_code_country_year.sql"));
@@ -196,7 +226,7 @@ async function testLegacyCollisionThenContinue(pool) {
   const after = await loginCodes(pool);
   assert.deepEqual(
     after.map((row) => row.login_code),
-    ["CD-IN-26-001", "CD-ISDC-26-001"],
+    ["CD-IN-26-001", "CD-ISC-26-001"],
     "20260825 ne réécrit pas les codes déjà émis",
   );
 
@@ -283,6 +313,7 @@ async function main() {
   const url = await ensureDatabase(DATABASE_URL, IT_DB);
   const pool = new Pool({ connectionString: url });
   try {
+    await testSignificantInitials(pool);
     await testCanonicalSequence(pool);
     await testLegacyCollisionThenContinue(pool);
     await testConcurrency(pool);
@@ -290,8 +321,9 @@ async function main() {
     console.log(
       [
         "OK schoolLoginCode PostgreSQL:",
-        "SEQ pays+année",
-        "/ négatif ISDC-001",
+        "initiales ISC pas ISDC",
+        "/ SEQ pays+année",
+        "/ négatif ISDC",
         "/ Burundi + année suivante",
         "/ concurrence 10",
         "/ pas de rewrite boot",

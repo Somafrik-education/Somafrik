@@ -90,6 +90,9 @@ BEGIN
 END
 $$;
 
+-- Initiales établissement : première lettre de chaque mot significatif.
+-- Mots-outils ignorés : de, du, des, la, le, les, d', et.
+-- Ex. Institut Supérieur de Commerce → ISC (pas ISDC).
 CREATE OR REPLACE FUNCTION somafrik_school_short_code(name_value TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -102,6 +105,9 @@ DECLARE
 BEGIN
   normalized := trim(regexp_replace(somafrik_ascii_upper(name_value), '[^A-Z0-9]+', ' ', 'g'));
   FOR token IN SELECT part FROM regexp_split_to_table(normalized, '\s+') AS part WHERE part <> '' LOOP
+    IF token IN ('DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'D', 'ET') THEN
+      CONTINUE;
+    END IF;
     result := result || left(token, 1);
     EXIT WHEN length(result) >= 5;
   END LOOP;
