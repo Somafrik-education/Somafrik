@@ -1115,20 +1115,6 @@ class FallbackRepository {
       );
     }
 
-    const nameDuplicate = this._managedClasses.find(
-      (row) =>
-        row.schoolCode === input.schoolCode &&
-        row.academicYearName === academicYear.name &&
-        String(row.name).trim().toLowerCase() === displayName.toLowerCase(),
-    );
-    if (nameDuplicate) {
-      throw createHttpError(
-        409,
-        `La classe « ${displayName} » existe déjà pour cette année scolaire dans l'établissement.`,
-        CLASS_WRITE_ERROR.STRUCTURAL_DUPLICATE,
-      );
-    }
-
     const classCode = generateClassCode(input.schoolCode);
     const row = {
       id: classCode,

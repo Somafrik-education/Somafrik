@@ -97,7 +97,7 @@ async function main() {
     assert.match(createdCd.data.classCode, /^CLS-/);
     assert.equal(createdCd.data.status, "active");
     assert.equal(createdCd.data.schoolCode, "CD-2026-0001");
-    assert.equal(createdCd.data.name, "6ème A");
+    assert.equal(createdCd.data.name, "6ème");
 
     const createdBi = await postCanonicalClass(request, bi.schoolToken, {
       academicYearId: bi.academicYear.id,
@@ -154,6 +154,7 @@ async function main() {
     });
     assert.equal(createdCdB.status, 201, JSON.stringify(createdCdB.data));
     assert.equal(createdCdB.data.groupCode, "B");
+    assert.equal(createdCdB.data.name, createdCd.data.name);
 
     const freeGroupCode = await request("/classes", {
       method: "POST",
