@@ -74,7 +74,13 @@ async function login(identifier, password, schoolCode) {
 async function main() {
   const child = spawn("node", ["backend/scripts/dev-memory.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", SOMAFRIK_DB_REQUIRED: "false" },
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      NODE_ENV: "development",
+      SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   try {
@@ -82,10 +88,17 @@ async function main() {
     const adminToken = await login("admin", "1234", "CD-2026-0001");
     const stamp = Date.now();
 
-    const createdClass = await request("/classes", {
-      method: "POST",
-      token: adminToken,
-      body: { name: `FIN-${stamp}`, academicYearName: "2025-2026", status: "active" },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      groupCode: "FN",
+    });
+    const createdClass = await postCanonicalClass(request, adminToken, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupId: offering.group.id,
+      status: "active",
     });
     assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
     const enrolled = await request(`/classes/${encodeURIComponent(createdClass.data.classCode)}/students`, {

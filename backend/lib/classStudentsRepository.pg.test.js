@@ -15,6 +15,8 @@ const { createTxAdapter } = require("../db/txAdapter");
 const { hashSecret, verifySecret } = require("../services/credentialService");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
+  CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+  DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
   NORMALIZE_CLASSES_STATUS_SQL,
 } = require("./classesUniqueness");
@@ -217,13 +219,63 @@ async function setupFixture(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (student_id, academic_year_id)
     );
+
+    CREATE TABLE IF NOT EXISTS education_levels (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      country_id UUID NOT NULL REFERENCES countries(id),
+      level_code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS education_streams (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      country_id UUID NOT NULL REFERENCES countries(id),
+      level_id UUID REFERENCES education_levels(id),
+      stream_code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS school_levels (
+      school_id UUID NOT NULL REFERENCES schools(id),
+      level_id UUID NOT NULL REFERENCES education_levels(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      PRIMARY KEY (school_id, level_id)
+    );
+    CREATE TABLE IF NOT EXISTS school_streams (
+      school_id UUID NOT NULL REFERENCES schools(id),
+      stream_id UUID NOT NULL REFERENCES education_streams(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      PRIMARY KEY (school_id, stream_id)
+    );
+    CREATE TABLE IF NOT EXISTS education_class_groups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      country_id UUID NOT NULL REFERENCES countries(id),
+      group_code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS school_class_groups (
+      school_id UUID NOT NULL REFERENCES schools(id),
+      group_id UUID NOT NULL REFERENCES education_class_groups(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      PRIMARY KEY (school_id, group_id)
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID REFERENCES education_levels(id);
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES education_streams(id);
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES education_class_groups(id);
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_code TEXT;
   `);
 
   await pool.query(
-    "TRUNCATE enrollments, users, students, classes, academic_years, schools, countries CASCADE",
+    "TRUNCATE enrollments, users, students, classes, school_class_groups, school_streams, school_levels, education_class_groups, education_streams, education_levels, academic_years, schools, countries CASCADE",
   );
   await pool.query(NORMALIZE_CLASSES_STATUS_SQL);
   await pool.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
+  await pool.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+  await pool.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
   await pool.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
 
   await pool.query(
@@ -254,6 +306,95 @@ async function setupFixture(pool) {
     `INSERT INTO academic_years (school_id, name, is_current, status)
      SELECT id, '2024-2025', FALSE, 'closed' FROM schools WHERE school_code = 'CD-2026-0001'`,
   );
+
+  const levelCd6 = await pool.query(
+    `INSERT INTO education_levels (country_id, level_code, name, status)
+     VALUES ($1, '6eme', '6ème', 'active') RETURNING id`,
+    [cdId],
+  );
+  const levelCd5 = await pool.query(
+    `INSERT INTO education_levels (country_id, level_code, name, status)
+     VALUES ($1, '5eme', '5ème', 'active') RETURNING id`,
+    [cdId],
+  );
+  const levelBi6 = await pool.query(
+    `INSERT INTO education_levels (country_id, level_code, name, status)
+     VALUES ($1, '6eme', '6ème', 'active') RETURNING id`,
+    [biId],
+  );
+  await pool.query(
+    `INSERT INTO school_levels (school_id, level_id, status)
+     SELECT id, $1, 'active' FROM schools WHERE school_code IN ('CD-2026-0001', 'CD-2026-0002')`,
+    [levelCd6.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO school_levels (school_id, level_id, status)
+     SELECT id, $1, 'active' FROM schools WHERE school_code = 'CD-2026-0002'`,
+    [levelCd5.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO school_levels (school_id, level_id, status)
+     SELECT id, $1, 'active' FROM schools WHERE school_code = 'CD-2026-0001'`,
+    [levelCd5.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO school_levels (school_id, level_id, status)
+     SELECT id, $1, 'active' FROM schools WHERE school_code = 'BI-2026-0001'`,
+    [levelBi6.rows[0].id],
+  );
+
+  const groupCdA = await pool.query(
+    `INSERT INTO education_class_groups (country_id, group_code, name, status)
+     VALUES ($1, 'A', 'A', 'active') RETURNING id`,
+    [cdId],
+  );
+  const groupCdB = await pool.query(
+    `INSERT INTO education_class_groups (country_id, group_code, name, status)
+     VALUES ($1, 'B', 'B', 'active') RETURNING id`,
+    [cdId],
+  );
+  const groupCdI = await pool.query(
+    `INSERT INTO education_class_groups (country_id, group_code, name, status)
+     VALUES ($1, 'I', 'I', 'active') RETURNING id`,
+    [cdId],
+  );
+  const groupBiA = await pool.query(
+    `INSERT INTO education_class_groups (country_id, group_code, name, status)
+     VALUES ($1, 'A', 'A', 'active') RETURNING id`,
+    [biId],
+  );
+  await pool.query(
+    `INSERT INTO school_class_groups (school_id, group_id, status)
+     SELECT id, unnest($1::uuid[]), 'active' FROM schools WHERE school_code IN ('CD-2026-0001', 'CD-2026-0002')`,
+    [[groupCdA.rows[0].id, groupCdB.rows[0].id, groupCdI.rows[0].id]],
+  );
+  await pool.query(
+    `INSERT INTO school_class_groups (school_id, group_id, status)
+     SELECT id, $1, 'active' FROM schools WHERE school_code = 'BI-2026-0001'`,
+    [groupBiA.rows[0].id],
+  );
+
+  const year = async (schoolCode, name = "2025-2026") =>
+    (
+      await pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id
+         WHERE s.school_code = $1 AND ay.name = $2`,
+        [schoolCode, name],
+      )
+    ).rows[0].id;
+
+  return {
+    yearCd1: await year("CD-2026-0001"),
+    yearCd2: await year("CD-2026-0002"),
+    yearBi: await year("BI-2026-0001"),
+    levelCd6: levelCd6.rows[0].id,
+    levelCd5: levelCd5.rows[0].id,
+    levelBi6: levelBi6.rows[0].id,
+    groupCdA: groupCdA.rows[0].id,
+    groupCdB: groupCdB.rows[0].id,
+    groupCdI: groupCdI.rows[0].id,
+    groupBiA: groupBiA.rows[0].id,
+  };
 }
 
 function createDbAdapter(pool) {
@@ -271,7 +412,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code, name FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, country_id, name FROM schools WHERE school_code = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -477,31 +618,34 @@ async function main() {
   const isolatedUrl = await ensureIsolatedDatabase(DATABASE_URL, ENROLLMENT_IT_DATABASE);
   const pool = new Pool({ connectionString: isolatedUrl });
   try {
-    await setupFixture(pool);
+    const ids = await setupFixture(pool);
     const db = createDbAdapter(pool);
     const classesRepo = createClassesRepository(db);
     const studentsRepo = createClassStudentsRepository(db);
 
     const activeClass = await classesRepo.create(
       {
-        name: "6ème A",
-        academicYearName: "2025-2026",
+        academicYearId: ids.yearCd1,
+        levelId: ids.levelCd6,
+        groupId: ids.groupCdA,
         status: "active",
       },
       "CD-2026-0001",
     );
     const activeClassOtherSchool = await classesRepo.create(
       {
-        name: "5ème B",
-        academicYearName: "2025-2026",
+        academicYearId: ids.yearCd2,
+        levelId: ids.levelCd5,
+        groupId: ids.groupCdB,
         status: "active",
       },
       "CD-2026-0002",
     );
     const inactiveClass = await classesRepo.create(
       {
-        name: "6ème Inactive",
-        academicYearName: "2025-2026",
+        academicYearId: ids.yearCd1,
+        levelId: ids.levelCd6,
+        groupId: ids.groupCdI,
         status: "inactive",
       },
       "CD-2026-0001",
@@ -662,8 +806,9 @@ async function main() {
 
     const activeClassBiSameNumber = await classesRepo.create(
       {
-        name: "6ème A BI",
-        academicYearName: "2025-2026",
+        academicYearId: ids.yearBi,
+        levelId: ids.levelBi6,
+        groupId: ids.groupBiA,
         status: "active",
       },
       "BI-2026-0001",

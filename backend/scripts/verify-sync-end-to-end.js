@@ -9,6 +9,7 @@
 
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
@@ -39,10 +40,11 @@ async function ensureIsolatedDatabase(databaseUrl, databaseName) {
   return withDatabaseName(databaseUrl, databaseName);
 }
 
-async function prepareDatabase(databaseUrl) {
+async function prepareDatabase(databaseUrl, fixtureSecret) {
   const isolatedUrl = await ensureIsolatedDatabase(databaseUrl, PG_DATABASE);
   const pool = new Pool({ connectionString: isolatedUrl });
-  const passwordHash = hashSecret("1234");
+  const passwordHash = hashSecret(fixtureSecret);
+  console.log("[sync-e2e] préparation base isolée", { database: PG_DATABASE });
   try {
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
@@ -75,6 +77,11 @@ async function prepareDatabase(databaseUrl) {
        VALUES (NULL, 'SUPER-SYNC-E2E', 'Super', 'Sync', 'super-sync-e2e@test.cd', $1, $1, 'SUPER_ADMIN', 'active')`,
       [passwordHash],
     );
+    console.log("[sync-e2e] bootstrap Superadmin fixture", {
+      identifier: "super-sync-e2e@test.cd",
+      userCode: "SUPER-SYNC-E2E",
+      role: "SUPER_ADMIN",
+    });
     const year = await pool.query(
       `INSERT INTO academic_years (school_id, name, status) VALUES ($1, '2025-2026', 'open') RETURNING id`,
       [schoolId],
@@ -216,16 +223,22 @@ async function assertReloadStable(label, fetchList, pickId) {
 }
 
 async function runSyncEndToEnd(databaseUrl) {
-  const isolatedUrl = await prepareDatabase(databaseUrl);
+  const fixtureSecret = `SyncE2e!${crypto.randomBytes(16).toString("hex")}`;
+  console.log("[sync-e2e] identifier attendu: super-sync-e2e@test.cd (pas superadmin)");
+  console.log("[sync-e2e] password attendu: secret de fixture généré pour cette exécution (hash scrypt, pas 1234)");
+  const isolatedUrl = await prepareDatabase(databaseUrl, fixtureSecret);
   const pool = new Pool({ connectionString: isolatedUrl });
   const child = spawnBackend(isolatedUrl);
   const stamp = Date.now();
 
   try {
     await waitForHealth(child);
-    const adminToken = await login("admin-sync-e2e@test.cd", "1234", "CD-2026-0001");
-    const prefetToken = await login("prefet-sync-e2e@test.cd", "1234", "CD-2026-0001");
-    const superToken = await login("super-sync-e2e@test.cd", "1234");
+    console.log("[sync-e2e] login HTTP réel", { identifier: "admin-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
+    const adminToken = await login("admin-sync-e2e@test.cd", fixtureSecret, "CD-2026-0001");
+    console.log("[sync-e2e] login HTTP réel", { identifier: "prefet-sync-e2e@test.cd", schoolCode: "CD-2026-0001" });
+    const prefetToken = await login("prefet-sync-e2e@test.cd", fixtureSecret, "CD-2026-0001");
+    console.log("[sync-e2e] login HTTP réel", { identifier: "super-sync-e2e@test.cd" });
+    const superToken = await login("super-sync-e2e@test.cd", fixtureSecret);
 
     // --- Users : identité d'abord, rôle ensuite ---
     const userEmail = `sec-sync-${stamp}@test.cd`;
@@ -323,10 +336,19 @@ async function runSyncEndToEnd(databaseUrl) {
     );
 
     // --- Classes ---
-    const createdClass = await request("/classes", {
-      method: "POST",
-      token: adminToken,
-      body: { name: `CLS-SYNC-${stamp}`, academicYearName: "2025-2026", status: "active" },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      superToken,
+      schoolToken: adminToken,
+      groupCode: "SY",
+    });
+    const createdClass = await postCanonicalClass(request, adminToken, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupId: offering.group.id,
+      status: "active",
     });
     assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
     const classCode = String(createdClass.data.classCode ?? "");

@@ -566,8 +566,13 @@ app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), as
     throw new BusinessError(400, "schoolCode établissement requis.");
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const created = await repository.createSchoolClass(req.body ?? {}, schoolCode);
-  await auditService.record(req, "create_class", "class", created.classCode, created);
+  const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+  const created = await repository.createSchoolClass(
+    req.body ?? {},
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
   res.status(201).json(created);
 }));
 
@@ -577,8 +582,14 @@ app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/
     throw new BusinessError(400, "schoolCode établissement requis.");
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const updated = await repository.updateSchoolClass(req.params.classCode, schoolCode, req.body ?? {});
-  await auditService.record(req, "update_class", "class", updated.classCode, updated);
+  const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+  const updated = await repository.updateSchoolClass(
+    req.params.classCode,
+    schoolCode,
+    req.body ?? {},
+    req.principal,
+    auditMetaFromRequest(req),
+  );
   res.json(updated);
 }));
 
@@ -1263,6 +1274,37 @@ app.patch("/api/backoffice/education-streams/:streamId", requireAuth, requirePer
 app.post("/api/backoffice/education-streams/:streamId/archive", requireAuth, requirePermission("POST /api/backoffice/education-streams/:streamId/archive"), asyncHandler(async (req, res) => {
   const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
   const archived = await repository.archiveEducationStream(req.params.streamId, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(archived);
+}));
+
+app.get("/api/backoffice/education-class-groups", requireAuth, requirePermission("GET /api/backoffice/education-class-groups"), asyncHandler(async (req, res) => {
+  const { assertEducationReferenceCountryRead } = require("./lib/educationReferenceManagement");
+  const countryCode = String(req.query.countryCode ?? "").trim().toUpperCase();
+  if (!countryCode) {
+    return res.status(400).json({ message: "countryCode obligatoire." });
+  }
+  assertEducationReferenceCountryRead(req.principal, countryCode);
+  const groups = await repository.listEducationClassGroupsByCountry(countryCode, {
+    includeArchived: String(req.query.includeArchived ?? "") === "true",
+  });
+  res.json({ groups });
+}));
+
+app.post("/api/backoffice/education-class-groups", requireAuth, requirePermission("POST /api/backoffice/education-class-groups"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const created = await repository.createEducationClassGroup(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/backoffice/education-class-groups/:groupId", requireAuth, requirePermission("PATCH /api/backoffice/education-class-groups/:groupId"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const updated = await repository.updateEducationClassGroup(req.params.groupId, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/education-class-groups/:groupId/archive", requireAuth, requirePermission("POST /api/backoffice/education-class-groups/:groupId/archive"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const archived = await repository.archiveEducationClassGroup(req.params.groupId, req.principal, educationReferenceAuditMetaFromRequest(req));
   res.json(archived);
 }));
 

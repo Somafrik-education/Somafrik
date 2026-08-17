@@ -347,7 +347,7 @@ async function run() {
     school_code: "SCH-001",
     name: "Lycée Test",
   });
-  // Aucune classe / matière initiale — l'année doit déjà exister (plus d'auto-create).
+  // Année + classe préexistantes — ensureClassForSchool est lookup-only (P0-B/C).
   const existingYear = {
     id: "00000000-0000-4000-8000-0000000000aa",
     school_id: schoolId,
@@ -359,7 +359,18 @@ async function run() {
     created_at: new Date().toISOString(),
   };
   repo.tables.academic_years.push(existingYear);
-  assert.strictEqual(repo.tables.classes.length, 0);
+  repo.tables.classes.push({
+    id: "00000000-0000-4000-8000-0000000000c1",
+    school_id: schoolId,
+    academic_year_id: existingYear.id,
+    class_code: "CLS-SCH-001-6EA",
+    name: "6e A",
+    level: "6e",
+    section: "A",
+    status: "active",
+    created_at: new Date().toISOString(),
+  });
+  assert.strictEqual(repo.tables.classes.length, 1);
   assert.strictEqual(repo.tables.subjects.length, 0);
 
   const evaluation = {

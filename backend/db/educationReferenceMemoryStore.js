@@ -8,15 +8,29 @@ const {
   createEducationReferenceError,
   mapLevelRow,
   mapStreamRow,
+  mapGroupRow,
   pedagogicalLabelsFromCountryRow,
   DEFAULT_PEDAGOGICAL_LABELS,
 } = require("../lib/educationReferenceManagement");
 
+function resolveSeedSchoolCountryCode(school, countries) {
+  const explicit = asTrimmed(school?.countryCode ?? school?.country_code).toUpperCase();
+  if (explicit && explicit !== "*") return explicit;
+  const schoolCode = asTrimmed(school?.code ?? school?.schoolCode).toUpperCase();
+  const matched = [...countries.keys()]
+    .filter((iso) => iso && schoolCode.startsWith(iso))
+    .sort((a, b) => b.length - a.length)[0];
+  if (matched) return matched;
+  return schoolCode.slice(0, 2);
+}
+
 function createEducationReferenceMemoryStore(seed = {}) {
   const levels = [];
   const streams = [];
+  const groups = [];
   const schoolLevels = new Map();
   const schoolStreams = new Map();
+  const schoolGroups = new Map();
 
   const countries = new Map(
     (seed.countries ?? []).map((country) => [
@@ -33,7 +47,7 @@ function createEducationReferenceMemoryStore(seed = {}) {
   const schools = new Map(
     (seed.schools ?? []).map((school) => {
       const code = asTrimmed(school.code ?? school.schoolCode).toUpperCase();
-      const countryCode = asTrimmed(school.countryCode ?? school.country_code ?? "CD").toUpperCase();
+      const countryCode = resolveSeedSchoolCountryCode(school, countries);
       const country = countries.get(countryCode) ?? {
         id: randomUUID(),
         iso_code: countryCode,
@@ -56,7 +70,7 @@ function createEducationReferenceMemoryStore(seed = {}) {
 
   if (seed.school && !schools.has(asTrimmed(seed.school.code).toUpperCase())) {
     const code = asTrimmed(seed.school.code).toUpperCase();
-    const countryCode = asTrimmed(seed.school.countryCode ?? "CD").toUpperCase();
+    const countryCode = resolveSeedSchoolCountryCode(seed.school, countries);
     const country = countries.get(countryCode) ?? {
       id: randomUUID(),
       iso_code: countryCode,
@@ -81,6 +95,10 @@ function createEducationReferenceMemoryStore(seed = {}) {
 
   function rowStream(stream) {
     return mapStreamRow(stream, stream.country_code);
+  }
+
+  function rowGroup(group) {
+    return mapGroupRow(group, group.country_code);
   }
 
   return {
@@ -122,6 +140,18 @@ function createEducationReferenceMemoryStore(seed = {}) {
     async getStreamById(streamId) {
       const row = streams.find((item) => item.id === streamId);
       return row ? rowStream(row) : null;
+    },
+    async listGroupsByCountry(countryCode, { includeArchived = false } = {}) {
+      const country = countries.get(asTrimmed(countryCode).toUpperCase());
+      if (!country) return [];
+      return groups
+        .filter((row) => row.country_id === country.id && (includeArchived || row.status === "active"))
+        .sort((a, b) => a.display_order - b.display_order || a.group_code.localeCompare(b.group_code))
+        .map(rowGroup);
+    },
+    async getGroupById(groupId) {
+      const row = groups.find((item) => item.id === groupId);
+      return row ? rowGroup(row) : null;
     },
     async insertLevel(input) {
       const row = {
@@ -220,6 +250,49 @@ function createEducationReferenceMemoryStore(seed = {}) {
       streams[index] = { ...streams[index], status: "archived", updated_at: new Date().toISOString() };
       return rowStream(streams[index]);
     },
+    async insertGroup(input) {
+      const row = {
+        id: randomUUID(),
+        country_id: input.countryId,
+        country_code: [...countries.values()].find((c) => c.id === input.countryId)?.iso_code ?? "",
+        group_code: input.code,
+        name: input.name,
+        display_order: input.displayOrder ?? 0,
+        status: "active",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      if (groups.some((item) => item.country_id === row.country_id && item.group_code === row.group_code)) {
+        const error = new Error("duplicate");
+        error.code = "23505";
+        throw error;
+      }
+      groups.push(row);
+      return rowGroup(row);
+    },
+    async updateGroup(groupId, patch) {
+      const index = groups.findIndex((item) => item.id === groupId && item.status === "active");
+      if (index < 0) return null;
+      groups[index] = {
+        ...groups[index],
+        name: patch.name ?? groups[index].name,
+        display_order: patch.displayOrder ?? groups[index].display_order,
+        updated_at: new Date().toISOString(),
+      };
+      return rowGroup(groups[index]);
+    },
+    async archiveGroup(groupId) {
+      const activeSchools = [...schoolGroups.entries()].filter(
+        ([, value]) => value.group_id === groupId && value.status === "active",
+      ).length;
+      if (activeSchools > 0) {
+        throw createEducationReferenceError(409, "Groupe utilisé", EDUCATION_REFERENCE_ERROR.GROUP_IN_USE);
+      }
+      const index = groups.findIndex((item) => item.id === groupId && item.status === "active");
+      if (index < 0) return null;
+      groups[index] = { ...groups[index], status: "archived", updated_at: new Date().toISOString() };
+      return rowGroup(groups[index]);
+    },
     async getSchoolCatalog(schoolCode) {
       const school = schools.get(asTrimmed(schoolCode).toUpperCase());
       if (!school) {
@@ -235,6 +308,11 @@ function createEducationReferenceMemoryStore(seed = {}) {
           .filter((row) => row.school_id === school.id && row.status === "active")
           .map((row) => row.stream_id),
       );
+      const activeGroupIds = new Set(
+        [...schoolGroups.values()]
+          .filter((row) => row.school_id === school.id && row.status === "active")
+          .map((row) => row.group_id),
+      );
       return {
         schoolCode: school.school_code,
         countryCode: school.country_code,
@@ -245,6 +323,9 @@ function createEducationReferenceMemoryStore(seed = {}) {
         streams: streams
           .filter((row) => row.country_id === school.country_id && row.status === "active")
           .map((row) => ({ ...rowStream(row), schoolActive: activeStreamIds.has(row.id) })),
+        groups: groups
+          .filter((row) => row.country_id === school.country_id && row.status === "active")
+          .map((row) => ({ ...rowGroup(row), schoolActive: activeGroupIds.has(row.id) })),
       };
     },
     async replaceSchoolActivation(schoolCode, activation) {
@@ -254,6 +335,7 @@ function createEducationReferenceMemoryStore(seed = {}) {
       }
       const levelIds = Array.isArray(activation.levelIds) ? activation.levelIds.map(asTrimmed).filter(Boolean) : [];
       const streamIds = Array.isArray(activation.streamIds) ? activation.streamIds.map(asTrimmed).filter(Boolean) : [];
+      const groupIds = Array.isArray(activation.groupIds) ? activation.groupIds.map(asTrimmed).filter(Boolean) : [];
       for (const levelId of levelIds) {
         const level = levels.find((item) => item.id === levelId);
         if (!level || level.country_id !== school.country_id || level.status !== "active") {
@@ -266,17 +348,29 @@ function createEducationReferenceMemoryStore(seed = {}) {
           throw createEducationReferenceError(403, "Filière invalide pour cet établissement.", EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH);
         }
       }
+      for (const groupId of groupIds) {
+        const group = groups.find((item) => item.id === groupId);
+        if (!group || group.country_id !== school.country_id || group.status !== "active") {
+          throw createEducationReferenceError(403, "Groupe invalide pour cet établissement.", EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH);
+        }
+      }
       for (const key of [...schoolLevels.keys()]) {
         if (schoolLevels.get(key).school_id === school.id) schoolLevels.delete(key);
       }
       for (const key of [...schoolStreams.keys()]) {
         if (schoolStreams.get(key).school_id === school.id) schoolStreams.delete(key);
       }
+      for (const key of [...schoolGroups.keys()]) {
+        if (schoolGroups.get(key).school_id === school.id) schoolGroups.delete(key);
+      }
       for (const levelId of levelIds) {
         schoolLevels.set(`${school.id}:${levelId}`, { school_id: school.id, level_id: levelId, status: "active" });
       }
       for (const streamId of streamIds) {
         schoolStreams.set(`${school.id}:${streamId}`, { school_id: school.id, stream_id: streamId, status: "active" });
+      }
+      for (const groupId of groupIds) {
+        schoolGroups.set(`${school.id}:${groupId}`, { school_id: school.id, group_id: groupId, status: "active" });
       }
       return this.getSchoolCatalog(schoolCode);
     },

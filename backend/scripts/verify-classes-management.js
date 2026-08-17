@@ -53,17 +53,6 @@ async function waitForHealth(child) {
   throw new Error("Backend health timeout");
 }
 
-async function loginSchoolAdmin(schoolCode) {
-  const login = await request("/backoffice/login", {
-    method: "POST",
-    body: { identifier: "admin", password: "1234", schoolCode },
-  });
-  assert.equal(login.status, 200, `login ${schoolCode} failed: ${JSON.stringify(login.data)}`);
-  const token = login.data.accessToken || login.data.token;
-  assert.ok(token, `missing access token for ${schoolCode}`);
-  return token;
-}
-
 async function main() {
   const child = spawn("node", ["backend/scripts/dev-memory.js"], {
     cwd: ROOT,
@@ -72,6 +61,7 @@ async function main() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -84,83 +74,148 @@ async function main() {
   try {
     await waitForHealth(child);
 
-    const tokenCd = await loginSchoolAdmin("CD-2026-0001");
-    const tokenBi = await loginSchoolAdmin("BI-2026-0002");
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
 
-    const createdCd = await request("/classes", {
-      method: "POST",
-      token: tokenCd,
-      body: {
-        name: `Classe API CD ${Date.now()}`,
-        academicYearName: "2025-2026",
-        level: "6ème",
-        section: "A",
-        status: "active",
-      },
+    const cd = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      levelName: "6ème",
+    });
+    const bi = await prepareCanonicalClassContext(request, {
+      schoolCode: "BI-2026-0002",
+      countryCode: "BI",
+      levelName: "5ème",
+    });
+
+    const createdCd = await postCanonicalClass(request, cd.schoolToken, {
+      academicYearId: cd.academicYear.id,
+      levelId: cd.level.id,
+      groupId: cd.group.id,
+      status: "active",
     });
     assert.equal(createdCd.status, 201, JSON.stringify(createdCd.data));
     assert.match(createdCd.data.classCode, /^CLS-/);
     assert.equal(createdCd.data.status, "active");
     assert.equal(createdCd.data.schoolCode, "CD-2026-0001");
+    assert.equal(createdCd.data.name, "6ème A");
 
-    const createdBi = await request("/classes", {
-      method: "POST",
-      token: tokenBi,
-      body: {
-        name: `Classe API BI ${Date.now()}`,
-        academicYearName: "2025-2026",
-        level: "5ème",
-        section: "B",
-        status: "active",
-      },
+    const createdBi = await postCanonicalClass(request, bi.schoolToken, {
+      academicYearId: bi.academicYear.id,
+      levelId: bi.level.id,
+      groupId: bi.group.id,
+      status: "active",
     });
     assert.equal(createdBi.status, 201, JSON.stringify(createdBi.data));
     assert.equal(createdBi.data.schoolCode, "BI-2026-0002");
 
-    const listedCd = await request("/classes", { token: tokenCd });
+    const listedCd = await request("/classes", { token: cd.schoolToken });
     assert.equal(listedCd.status, 200);
     assert.ok(listedCd.data.some((row) => row.classCode === createdCd.data.classCode));
     assert.ok(!listedCd.data.some((row) => row.classCode === createdBi.data.classCode));
 
-    const listedBi = await request("/classes", { token: tokenBi });
+    const listedBi = await request("/classes", { token: bi.schoolToken });
     assert.equal(listedBi.status, 200);
     assert.ok(listedBi.data.some((row) => row.classCode === createdBi.data.classCode));
     assert.ok(!listedBi.data.some((row) => row.classCode === createdCd.data.classCode));
 
     const patched = await request(`/classes/${encodeURIComponent(createdCd.data.classCode)}`, {
       method: "PATCH",
-      token: tokenCd,
-      body: { name: `${createdCd.data.name} Mod`, status: "inactive" },
+      token: cd.schoolToken,
+      body: { status: "inactive" },
     });
     assert.equal(patched.status, 200, JSON.stringify(patched.data));
     assert.equal(patched.data.status, "inactive");
 
     const crossPatch = await request(`/classes/${encodeURIComponent(createdCd.data.classCode)}`, {
       method: "PATCH",
-      token: tokenBi,
-      body: { name: "Tentative fuite" },
+      token: bi.schoolToken,
+      body: { status: "active" },
     });
     assert.equal(crossPatch.status, 404, JSON.stringify(crossPatch.data));
 
-    const duplicate = await request("/classes", {
-      method: "POST",
-      token: tokenCd,
-      body: {
-        name: patched.data.name,
-        academicYearName: "2025-2026",
-        status: "active",
-      },
+    const duplicate = await postCanonicalClass(request, cd.schoolToken, {
+      academicYearId: cd.academicYear.id,
+      levelId: cd.level.id,
+      groupId: cd.group.id,
+      status: "active",
     });
     assert.equal(duplicate.status, 409, JSON.stringify(duplicate.data));
 
-    const forbiddenStatus = await request("/classes", {
+    const groupB = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      groupCode: "B",
+    });
+    const createdCdB = await postCanonicalClass(request, cd.schoolToken, {
+      academicYearId: groupB.academicYear.id,
+      levelId: groupB.level.id,
+      groupId: groupB.group.id,
+      status: "active",
+    });
+    assert.equal(createdCdB.status, 201, JSON.stringify(createdCdB.data));
+    assert.equal(createdCdB.data.groupCode, "B");
+
+    const freeGroupCode = await request("/classes", {
       method: "POST",
-      token: tokenCd,
+      token: cd.schoolToken,
       body: {
-        name: "Bad Status",
-        academicYearName: "2025-2026",
-        status: "Active",
+        academicYearId: cd.academicYear.id,
+        levelId: cd.level.id,
+        groupCode: "XYZ",
+        status: "active",
       },
+    });
+    assert.equal(freeGroupCode.status, 400, JSON.stringify(freeGroupCode.data));
+    assert.equal(freeGroupCode.data?.code, "CLASS_FREE_TEXT_FORBIDDEN");
+
+    const unknownGroup = await request("/classes", {
+      method: "POST",
+      token: cd.schoolToken,
+      body: {
+        academicYearId: cd.academicYear.id,
+        levelId: cd.level.id,
+        groupId: "00000000-0000-4000-8000-000000000xyz".replace("xyz", "001"),
+        status: "active",
+      },
+    });
+    assert.ok([400, 403].includes(unknownGroup.status), JSON.stringify(unknownGroup.data));
+
+    const crossCountryGroup = await request("/classes", {
+      method: "POST",
+      token: bi.schoolToken,
+      body: {
+        academicYearId: bi.academicYear.id,
+        levelId: bi.level.id,
+        groupId: cd.group.id,
+        status: "active",
+      },
+    });
+    assert.ok([400, 403].includes(crossCountryGroup.status), JSON.stringify(crossCountryGroup.data));
+
+    const adminCreateGroup = await request("/backoffice/education-class-groups", {
+      method: "POST",
+      token: cd.schoolToken,
+      body: { countryCode: "CD", code: "Z", name: "Z" },
+    });
+    assert.equal(adminCreateGroup.status, 403, JSON.stringify(adminCreateGroup.data));
+
+    const freeText = await request("/classes", {
+      method: "POST",
+      token: cd.schoolToken,
+      body: {
+        name: "Toto classe",
+        academicYearName: "2025-2026",
+        level: "NIVEAU INVENTÉ",
+        section: "XYZ",
+      },
+    });
+    assert.equal(freeText.status, 400);
+
+    const forbiddenStatus = await postCanonicalClass(request, cd.schoolToken, {
+      academicYearId: cd.academicYear.id,
+      levelId: cd.level.id,
+      groupId: cd.group.id,
+      status: "Active",
     });
     assert.equal(forbiddenStatus.status, 400);
 

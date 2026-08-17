@@ -7,6 +7,7 @@ const {
   createEducationReferenceError,
   mapLevelRow,
   mapStreamRow,
+  mapGroupRow,
   pedagogicalLabelsFromCountryRow,
 } = require("../lib/educationReferenceManagement");
 
@@ -94,6 +95,32 @@ function createEducationReferencePgStore(repo) {
       [streamId],
     );
     return row ? mapStreamRow(row, row.country_code) : null;
+  }
+
+  async function listGroupsByCountry(countryCode, { includeArchived = false } = {}) {
+    const country = await getCountryByCode(countryCode);
+    if (!country) return [];
+    const rows = await all(
+      `SELECT eg.*, c.iso_code AS country_code
+       FROM education_class_groups eg
+       JOIN countries c ON c.id = eg.country_id
+       WHERE eg.country_id = $1
+         AND ($2::boolean OR eg.status = 'active')
+       ORDER BY eg.display_order, eg.group_code`,
+      [country.id, includeArchived],
+    );
+    return rows.map((row) => mapGroupRow(row, row.country_code));
+  }
+
+  async function getGroupById(groupId) {
+    const row = await one(
+      `SELECT eg.*, c.iso_code AS country_code
+       FROM education_class_groups eg
+       JOIN countries c ON c.id = eg.country_id
+       WHERE eg.id = $1::uuid`,
+      [groupId],
+    );
+    return row ? mapGroupRow(row, row.country_code) : null;
   }
 
   async function insertLevel(input) {
@@ -236,6 +263,59 @@ function createEducationReferencePgStore(repo) {
     return mapStreamRow({ ...row, country_code: country?.iso_code }, country?.iso_code);
   }
 
+  async function insertGroup(input) {
+    const row = await one(
+      `INSERT INTO education_class_groups (country_id, group_code, name, display_order, status)
+       VALUES ($1, $2, $3, $4, 'active')
+       RETURNING *`,
+      [input.countryId, input.code, input.name, input.displayOrder ?? 0],
+    );
+    const country = await one(`SELECT iso_code FROM countries WHERE id = $1`, [input.countryId]);
+    return mapGroupRow({ ...row, country_code: country?.iso_code }, country?.iso_code);
+  }
+
+  async function updateGroup(groupId, patch) {
+    const row = await one(
+      `UPDATE education_class_groups
+       SET name = COALESCE($2, name),
+           display_order = COALESCE($3, display_order),
+           updated_at = NOW()
+       WHERE id = $1::uuid AND status = 'active'
+       RETURNING *`,
+      [groupId, patch.name ?? null, patch.displayOrder ?? null],
+    );
+    if (!row) return null;
+    const country = await one(`SELECT iso_code FROM countries WHERE id = $1`, [row.country_id]);
+    return mapGroupRow({ ...row, country_code: country?.iso_code }, country?.iso_code);
+  }
+
+  async function archiveGroup(groupId) {
+    const activeSchools = await one(
+      `SELECT COUNT(*)::int AS count
+       FROM school_class_groups sg
+       WHERE sg.group_id = $1::uuid AND sg.status = 'active'`,
+      [groupId],
+    );
+    if (Number(activeSchools?.count ?? 0) > 0) {
+      throw createEducationReferenceError(
+        409,
+        "Impossible d'archiver ce groupe : il est activé par au moins un établissement.",
+        EDUCATION_REFERENCE_ERROR.GROUP_IN_USE,
+        { activeSchools: activeSchools.count },
+      );
+    }
+    const row = await one(
+      `UPDATE education_class_groups
+       SET status = 'archived', updated_at = NOW()
+       WHERE id = $1::uuid AND status = 'active'
+       RETURNING *`,
+      [groupId],
+    );
+    if (!row) return null;
+    const country = await one(`SELECT iso_code FROM countries WHERE id = $1`, [row.country_id]);
+    return mapGroupRow({ ...row, country_code: country?.iso_code }, country?.iso_code);
+  }
+
   async function getSchoolCatalog(schoolCode) {
     const school = await getSchoolByCode(schoolCode);
     if (!school) {
@@ -261,6 +341,16 @@ function createEducationReferencePgStore(repo) {
        ORDER BY es.stream_type, es.display_order, es.name`,
       [school.id, school.country_id],
     );
+    const groups = await all(
+      `SELECT eg.*, c.iso_code AS country_code,
+              CASE WHEN sg.status = 'active' THEN true ELSE false END AS school_active
+       FROM education_class_groups eg
+       JOIN countries c ON c.id = eg.country_id
+       LEFT JOIN school_class_groups sg ON sg.group_id = eg.id AND sg.school_id = $1
+       WHERE eg.country_id = $2 AND eg.status = 'active'
+       ORDER BY eg.display_order, eg.group_code`,
+      [school.id, school.country_id],
+    );
     const country = await one(
       `SELECT pedagogical_level_label, pedagogical_track_label, pedagogical_group_label
        FROM countries WHERE id = $1`,
@@ -278,6 +368,10 @@ function createEducationReferencePgStore(repo) {
         ...mapStreamRow(row, row.country_code),
         schoolActive: Boolean(row.school_active),
       })),
+      groups: groups.map((row) => ({
+        ...mapGroupRow(row, row.country_code),
+        schoolActive: Boolean(row.school_active),
+      })),
     };
   }
 
@@ -289,6 +383,7 @@ function createEducationReferencePgStore(repo) {
 
     const levelIds = Array.isArray(activation.levelIds) ? activation.levelIds.map(asTrimmed).filter(Boolean) : [];
     const streamIds = Array.isArray(activation.streamIds) ? activation.streamIds.map(asTrimmed).filter(Boolean) : [];
+    const groupIds = Array.isArray(activation.groupIds) ? activation.groupIds.map(asTrimmed).filter(Boolean) : [];
 
     for (const levelId of levelIds) {
       const level = await one(
@@ -330,8 +425,29 @@ function createEducationReferencePgStore(repo) {
       }
     }
 
+    for (const groupId of groupIds) {
+      const group = await one(
+        `SELECT id, country_id, status FROM education_class_groups WHERE id = $1::uuid`,
+        [groupId],
+      );
+      if (!group) {
+        throw createEducationReferenceError(404, `Groupe introuvable: ${groupId}`, EDUCATION_REFERENCE_ERROR.GROUP_NOT_FOUND);
+      }
+      if (group.country_id !== school.country_id) {
+        throw createEducationReferenceError(
+          403,
+          "Impossible d'activer un groupe d'un autre pays.",
+          EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH,
+        );
+      }
+      if (group.status !== "active") {
+        throw createEducationReferenceError(409, "Ce groupe est archivé.", EDUCATION_REFERENCE_ERROR.GROUP_NOT_FOUND);
+      }
+    }
+
     await query(`DELETE FROM school_levels WHERE school_id = $1`, [school.id]);
     await query(`DELETE FROM school_streams WHERE school_id = $1`, [school.id]);
+    await query(`DELETE FROM school_class_groups WHERE school_id = $1`, [school.id]);
 
     for (const levelId of levelIds) {
       await query(
@@ -347,6 +463,14 @@ function createEducationReferencePgStore(repo) {
          VALUES ($1, $2::uuid, 'active')
          ON CONFLICT (school_id, stream_id) DO UPDATE SET status = 'active', updated_at = NOW()`,
         [school.id, streamId],
+      );
+    }
+    for (const groupId of groupIds) {
+      await query(
+        `INSERT INTO school_class_groups (school_id, group_id, status)
+         VALUES ($1, $2::uuid, 'active')
+         ON CONFLICT (school_id, group_id) DO UPDATE SET status = 'active', updated_at = NOW()`,
+        [school.id, groupId],
       );
     }
 
@@ -435,12 +559,17 @@ function createEducationReferencePgStore(repo) {
     listStreamsByCountry,
     getLevelById,
     getStreamById,
+    listGroupsByCountry,
+    getGroupById,
     insertLevel,
     updateLevel,
     archiveLevel,
     insertStream,
     updateStream,
     archiveStream,
+    insertGroup,
+    updateGroup,
+    archiveGroup,
     getSchoolCatalog,
     replaceSchoolActivation,
     getSchoolActiveLists,

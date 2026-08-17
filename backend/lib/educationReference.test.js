@@ -79,3 +79,29 @@ test("Superadmin n'a pas de pays par défaut CD", () => {
     "",
   );
 });
+
+test("requireGroupCatalogCode normalise et refuse le texte libre", () => {
+  const { requireGroupCatalogCode } = require("./educationReferenceManagement");
+  assert.equal(requireGroupCatalogCode("a"), "A");
+  assert.throws(() => requireGroupCatalogCode("XYZ!"), (error) => error.statusCode === 400);
+  assert.throws(() => requireGroupCatalogCode(""), (error) => error.statusCode === 400);
+});
+
+test("magasin mémoire infère le pays depuis le code établissement, sans défaut CD", async () => {
+  const { createEducationReferenceMemoryStore } = require("../db/educationReferenceMemoryStore");
+  const store = createEducationReferenceMemoryStore({
+    countries: [
+      { id: "c-cd", code: "CD" },
+      { id: "c-bi", code: "BI" },
+    ],
+    schools: [
+      { id: "s-cd", code: "CD-2026-0001" },
+      { id: "s-bi", code: "BI-2026-0002" },
+    ],
+  });
+  const cd = await store.getSchoolByCode("CD-2026-0001");
+  const bi = await store.getSchoolByCode("BI-2026-0002");
+  assert.equal(cd.country_code, "CD");
+  assert.equal(bi.country_code, "BI");
+  assert.notEqual(cd.country_id, bi.country_id);
+});

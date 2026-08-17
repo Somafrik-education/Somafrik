@@ -133,6 +133,7 @@ async function runHttpGuards() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -175,17 +176,18 @@ async function runHttpGuards() {
     });
     assertBackOfficeStateWriteRemoved(forbidden);
 
-    const stamp = Date.now();
-    const created = await request("/classes", {
-      method: "POST",
-      token,
-      body: {
-        name: `Classe Cloture ${stamp}`,
-        academicYearName: "2025-2026",
-        level: "6ème",
-        section: "Z",
-        status: "active",
-      },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      levelName: "6ème",
+      groupCode: "Z",
+    });
+    const created = await postCanonicalClass(request, token, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupId: offering.group.id,
+      status: "active",
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.ok(created.data.classCode);
@@ -195,8 +197,7 @@ async function runHttpGuards() {
     assert.ok(
       (stateAfter.data ?? []).some(
         (row) =>
-          String(row.name ?? "") === `Classe Cloture ${stamp}` ||
-          String(row.id ?? row.publicId ?? "") === String(created.data.classCode),
+          String(row.classCode ?? row.id ?? row.publicId ?? "") === String(created.data.classCode),
       ),
       "classe API visible via GET /classes",
     );

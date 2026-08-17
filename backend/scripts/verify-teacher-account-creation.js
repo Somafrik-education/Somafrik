@@ -378,14 +378,17 @@ async function main() {
     assert.equal(parentCreate.status, 403);
 
     // Non-régression Classes + inscription élèves
-    const classCreated = await request("/classes", {
-      method: "POST",
-      token: admin.token,
-      body: {
-        name: `Classe teacher-pr ${Date.now()}`,
-        academicYearName: "2025-2026",
-        status: "active",
-      },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      groupCode: "PR",
+    });
+    const classCreated = await postCanonicalClass(request, admin.token, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupId: offering.group.id,
+      status: "active",
     });
     assert.equal(classCreated.status, 201, JSON.stringify(classCreated.data));
 

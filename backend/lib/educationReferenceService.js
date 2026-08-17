@@ -12,6 +12,7 @@ const {
   requirePedagogicalLabel,
   assertSchoolActivationWrite,
   ignoreClientScope,
+  requireGroupCatalogCode,
 } = require("./educationReferenceManagement");
 const { createEducationReferencePgStore } = require("../db/educationReferencePgStore");
 
@@ -273,6 +274,97 @@ async function archiveStream(repo, streamId, principal, auditMeta) {
   });
 }
 
+async function createGroup(repo, rawPayload, principal, auditMeta) {
+  const countryCode = resolveCatalogWriteCountryCode(rawPayload, principal);
+  assertEducationReferenceCatalogWrite(principal, countryCode, "create");
+  const payload = ignoreClientScope(rawPayload);
+  const code = requireGroupCatalogCode(payload.code);
+  const name = asTrimmed(payload.name) || code;
+  if (!countryCode) {
+    throw createEducationReferenceError(400, "Pays et code groupe obligatoires.");
+  }
+  const store = eduStore(repo);
+  const country = await resolveCountry(store, countryCode);
+  return repo.withTransaction(async (tx) => {
+    const scope = repo.createTxScope(tx);
+    const scopedStore = eduStore(scope);
+    try {
+      const saved = await scopedStore.insertGroup({
+        countryId: country.id,
+        code,
+        name,
+        displayOrder: Number(payload.displayOrder ?? 0),
+      });
+      await writeEducationAudit(scope, principal, auditMeta, {
+        action: "create_education_class_group",
+        entityType: "education_class_group",
+        entityId: saved.id,
+        newValue: saved,
+      });
+      return saved;
+    } catch (error) {
+      if (error?.code === "23505") {
+        throw createEducationReferenceError(409, "Code groupe déjà utilisé pour ce pays.", EDUCATION_REFERENCE_ERROR.DUPLICATE);
+      }
+      throw error;
+    }
+  });
+}
+
+async function updateGroup(repo, groupId, rawPatch, principal, auditMeta) {
+  const patch = ignoreClientScope(rawPatch);
+  const store = eduStore(repo);
+  const existing = await store.getGroupById(groupId);
+  if (!existing) {
+    throw createEducationReferenceError(404, "Groupe introuvable.", EDUCATION_REFERENCE_ERROR.GROUP_NOT_FOUND);
+  }
+  assertEducationReferenceCatalogWrite(principal, existing.countryCode, "update");
+  return repo.withTransaction(async (tx) => {
+    const scope = repo.createTxScope(tx);
+    const scopedStore = eduStore(scope);
+    const saved = await scopedStore.updateGroup(groupId, {
+      name: patch.name ? asTrimmed(patch.name) : undefined,
+      displayOrder: patch.displayOrder != null ? Number(patch.displayOrder) : undefined,
+    });
+    if (!saved) {
+      throw createEducationReferenceError(404, "Groupe introuvable ou archivé.", EDUCATION_REFERENCE_ERROR.GROUP_NOT_FOUND);
+    }
+    await writeEducationAudit(scope, principal, auditMeta, {
+      action: "update_education_class_group",
+      entityType: "education_class_group",
+      entityId: groupId,
+      oldValue: existing,
+      newValue: saved,
+    });
+    return saved;
+  });
+}
+
+async function archiveGroup(repo, groupId, principal, auditMeta) {
+  const store = eduStore(repo);
+  const existing = await store.getGroupById(groupId);
+  if (!existing) {
+    throw createEducationReferenceError(404, "Groupe introuvable.", EDUCATION_REFERENCE_ERROR.GROUP_NOT_FOUND);
+  }
+  assertEducationReferenceCatalogWrite(principal, existing.countryCode, "update");
+  return repo.withTransaction(async (tx) => {
+    const scope = repo.createTxScope(tx);
+    const scopedStore = eduStore(scope);
+    const saved = await scopedStore.archiveGroup(groupId);
+    if (!saved) {
+      throw createEducationReferenceError(404, "Groupe introuvable ou déjà archivé.", EDUCATION_REFERENCE_ERROR.GROUP_NOT_FOUND);
+    }
+    await writeEducationAudit(scope, principal, auditMeta, {
+      action: "archive_education_class_group",
+      entityType: "education_class_group",
+      entityId: groupId,
+      oldValue: existing,
+      newValue: saved,
+    });
+    return saved;
+  });
+}
+
 async function saveSchoolActivation(repo, schoolCode, activation, principal, auditMeta) {
   assertSchoolActivationWrite(principal);
   const normalizedSchool = asTrimmed(schoolCode).toUpperCase();
@@ -360,6 +452,9 @@ module.exports = {
   createStream,
   updateStream,
   archiveStream,
+  createGroup,
+  updateGroup,
+  archiveGroup,
   saveSchoolActivation,
   updateCountryPedagogicalLabels,
   ensureEducationReferenceConstraints,

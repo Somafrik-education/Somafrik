@@ -22,6 +22,16 @@ export type EducationStream = {
   schoolActive?: boolean;
 };
 
+export type EducationClassGroup = {
+  id: string;
+  countryCode: string;
+  code: string;
+  name: string;
+  displayOrder: number;
+  status: "active" | "archived";
+  schoolActive?: boolean;
+};
+
 export type EducationPedagogicalLabels = {
   levelLabel: string;
   trackLabel: string;
@@ -34,6 +44,7 @@ export type EducationSchoolCatalog = {
   labels?: EducationPedagogicalLabels;
   levels: EducationLevel[];
   streams: EducationStream[];
+  groups: EducationClassGroup[];
 };
 
 export const educationReferenceApi = {
@@ -57,6 +68,17 @@ export const educationReferenceApi = {
   archiveStream: (streamId: string) =>
     api.post<EducationStream>(`/backoffice/education-streams/${encodeURIComponent(streamId)}/archive`, {}),
 
+  listGroups: (countryCode: string, includeArchived = false) =>
+    api.get<{ groups: EducationClassGroup[] }>(
+      `/backoffice/education-class-groups?countryCode=${encodeURIComponent(countryCode)}&includeArchived=${includeArchived}`,
+    ),
+  createGroup: (payload: Record<string, unknown>) =>
+    api.post<EducationClassGroup>("/backoffice/education-class-groups", payload),
+  updateGroup: (groupId: string, payload: Record<string, unknown>) =>
+    api.patch<EducationClassGroup>(`/backoffice/education-class-groups/${encodeURIComponent(groupId)}`, payload),
+  archiveGroup: (groupId: string) =>
+    api.post<EducationClassGroup>(`/backoffice/education-class-groups/${encodeURIComponent(groupId)}/archive`, {}),
+
   getSchoolCatalog: (schoolCode?: string) =>
     schoolCode
       ? api.get<EducationSchoolCatalog>(
@@ -64,7 +86,7 @@ export const educationReferenceApi = {
         )
       : api.get<EducationSchoolCatalog>("/education-reference/catalog"),
 
-  saveSchoolActivation: (payload: { levelIds: string[]; streamIds: string[] }, schoolCode?: string) =>
+  saveSchoolActivation: (payload: { levelIds: string[]; streamIds: string[]; groupIds: string[] }, schoolCode?: string) =>
     schoolCode
       ? api.put<EducationSchoolCatalog>(
           `/backoffice/establishments/${encodeURIComponent(schoolCode)}/education-reference/school-activation`,

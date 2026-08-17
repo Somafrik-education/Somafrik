@@ -157,6 +157,7 @@ async function runHttpGuards() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -171,14 +172,17 @@ async function runHttpGuards() {
     const token = await loginAdmin();
     const stamp = Date.now();
 
-    const createdClass = await request("/classes", {
-      method: "POST",
-      token,
-      body: {
-        name: `LOT2-${stamp}`,
-        academicYearName: "2025-2026",
-        status: "active",
-      },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      groupCode: "L2",
+    });
+    const createdClass = await postCanonicalClass(request, token, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupId: offering.group.id,
+      status: "active",
     });
     assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
     const classCode = createdClass.data.classCode;

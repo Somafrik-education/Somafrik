@@ -176,6 +176,10 @@ const routePermissions = {
   "POST /api/backoffice/education-streams": ["Référentiels pédagogiques:CREATE", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/education-streams/:streamId": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
   "POST /api/backoffice/education-streams/:streamId/archive": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/education-class-groups": ["Référentiels pédagogiques:READ", "Contrôler tous les pays", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "POST /api/backoffice/education-class-groups": ["Référentiels pédagogiques:CREATE", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/education-class-groups/:groupId": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/education-class-groups/:groupId/archive": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/education-reference/labels": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
   "GET /api/education-reference/catalog": [
     "Paramètres Établissement:READ",

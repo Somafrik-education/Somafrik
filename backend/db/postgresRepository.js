@@ -101,6 +101,7 @@ class PostgresRepository {
     await this.ensureEducationReferencePreflight();
     await this.ensureEducationReferenceConstraints();
     await this.ensureEducationReferenceCanonicalSchema();
+    await this.ensureClassesStructuralOffering();
     await this.stripLegacyAcademicReferencePayloads();
     await this.ensureEstablishmentRolesPreflight();
     await this.ensureEstablishmentRolesConstraints();
@@ -485,6 +486,21 @@ class PostgresRepository {
   }
 
   /**
+   * Colonnes structurelles classes (level_id / stream_id / group_code) + unicité d'offre.
+   * Doit s'exécuter après education_levels / education_streams.
+   */
+  async ensureClassesStructuralOffering() {
+    const {
+      ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
+      DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+      CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+    } = require("../lib/classesUniqueness");
+    await this.query(ADD_CLASSES_STRUCTURAL_COLUMNS_SQL);
+    await this.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+    await this.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+  }
+
+  /**
    * Teachers — unicité atomique (school_id, user_id) pour fiche canonique liée.
    * Ordre : inventaire doublons read-only (fail-safe) → index unique partiel → re-vérification.
    * Interdit : suppression / fusion / choix automatique de canon.
@@ -608,6 +624,10 @@ class PostgresRepository {
     return this.getEducationReferenceStore().listStreamsByCountry(countryCode, options);
   }
 
+  listEducationClassGroupsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listGroupsByCountry(countryCode, options);
+  }
+
   getEducationSchoolCatalog(schoolCode) {
     return this.getEducationReferenceStore().getSchoolCatalog(schoolCode);
   }
@@ -640,6 +660,21 @@ class PostgresRepository {
   archiveEducationStream(streamId, principal, auditMeta) {
     const { archiveStream } = require("../lib/educationReferenceService");
     return archiveStream(this, streamId, principal, auditMeta);
+  }
+
+  createEducationClassGroup(payload, principal, auditMeta) {
+    const { createGroup } = require("../lib/educationReferenceService");
+    return createGroup(this, payload, principal, auditMeta);
+  }
+
+  updateEducationClassGroup(groupId, patch, principal, auditMeta) {
+    const { updateGroup } = require("../lib/educationReferenceService");
+    return updateGroup(this, groupId, patch, principal, auditMeta);
+  }
+
+  archiveEducationClassGroup(groupId, principal, auditMeta) {
+    const { archiveGroup } = require("../lib/educationReferenceService");
+    return archiveGroup(this, groupId, principal, auditMeta);
   }
 
   saveSchoolEducationActivation(schoolCode, activation, principal, auditMeta) {
@@ -2888,44 +2923,12 @@ class PostgresRepository {
     return this.findOpenAcademicYear(schoolId);
   }
 
-  async ensureClassForSchool(schoolId, className, context = {}) {
+  async ensureClassForSchool(schoolId, className, _context = {}) {
     const normalizedClassName = String(className ?? "").trim();
     if (!normalizedClassName) return null;
 
     const existing = await this.findClassByNormalizedName(schoolId, normalizedClassName);
-    if (existing?.id) return existing.id;
-
-    const state = (await this.getBackOfficeState()) ?? {};
-    const contextClasses = Array.isArray(context.classes) ? context.classes : [];
-    const stateClasses = Array.isArray(state.classes) ? state.classes : [];
-    const backOfficeClass = [...contextClasses, ...stateClasses].find(
-      (row) => this.normalizeComparableText(row.name) === this.normalizeComparableText(normalizedClassName),
-    );
-    const academicYear = await this.getCurrentAcademicYear(schoolId);
-    if (!academicYear) return null;
-
-    const classCode = String(
-      backOfficeClass?.publicId ??
-        backOfficeClass?.id ??
-        `${String((await this.one("SELECT school_code FROM schools WHERE id = $1", [schoolId]))?.school_code ?? schoolId)
-          .trim()
-          .toUpperCase()}-${normalizedClassName.replace(/\s+/g, "-").toUpperCase()}`,
-    ).trim();
-    const inserted = await this.one(
-      `INSERT INTO classes (school_id, academic_year_id, class_code, name, level, section, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active')
-       ON CONFLICT (class_code) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id`,
-      [
-        schoolId,
-        academicYear.id,
-        classCode,
-        normalizedClassName,
-        backOfficeClass?.level ?? "",
-        backOfficeClass?.track ?? backOfficeClass?.section ?? "",
-      ],
-    );
-    return inserted?.id ?? null;
+    return existing?.id ?? null;
   }
 
   async ensureActiveEnrollment(schoolId, studentDbId, classId) {
@@ -5697,6 +5700,9 @@ class PostgresRepository {
         all: (sql, params) => this.all(sql, params),
         query: (sql, params) => this.query(sql, params),
         getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
       });
     }
     return this._classesRepository;
@@ -5706,14 +5712,14 @@ class PostgresRepository {
     return this.getClassesRepository().listBySchoolCode(schoolCode);
   }
 
-  async createSchoolClass(body, schoolCode) {
-    const created = await this.getClassesRepository().create(body, schoolCode);
+  async createSchoolClass(body, schoolCode, principal, auditMeta) {
+    const created = await this.getClassesRepository().create(body, schoolCode, principal, auditMeta);
     this.cachedDataset = null;
     return created;
   }
 
-  async updateSchoolClass(classCode, schoolCode, body) {
-    const updated = await this.getClassesRepository().update(classCode, schoolCode, body);
+  async updateSchoolClass(classCode, schoolCode, body, principal, auditMeta) {
+    const updated = await this.getClassesRepository().update(classCode, schoolCode, body, principal, auditMeta);
     this.cachedDataset = null;
     return updated;
   }

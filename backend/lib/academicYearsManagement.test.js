@@ -309,3 +309,26 @@ test("postgresRepository n'insère plus de dates 01/09–31/08 par défaut", () 
   assert.match(block, /FOR UPDATE/);
   assert.match(block, /is_current = FALSE/);
 });
+
+test("createSchoolClass résout l'année démo GET (pas AY-DEMO distinct)", async () => {
+  const repository = new FallbackRepository();
+  const years = await repository.getAcademicYearsV2();
+  const demo = years[0];
+  assert.ok(demo?.id);
+  assert.notEqual(demo.id, "AY-DEMO");
+  await assert.rejects(
+    () =>
+      repository.createSchoolClass(
+        {
+          academicYearId: demo.id,
+          levelId: "missing-level",
+          groupId: "missing-group",
+          status: "active",
+        },
+        demo.schoolCode,
+      ),
+    (error) =>
+      error.statusCode === 400 &&
+      error.message !== "Année scolaire introuvable pour cet établissement.",
+  );
+});

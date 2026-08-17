@@ -10,6 +10,8 @@ const EDUCATION_REFERENCE_ERROR = Object.freeze({
   SCHOOL_NOT_FOUND: "SCHOOL_NOT_FOUND",
   LEVEL_NOT_FOUND: "LEVEL_NOT_FOUND",
   STREAM_NOT_FOUND: "STREAM_NOT_FOUND",
+  GROUP_NOT_FOUND: "GROUP_NOT_FOUND",
+  GROUP_IN_USE: "GROUP_IN_USE",
   COUNTRY_MISMATCH: "COUNTRY_MISMATCH",
   LEVEL_IN_USE: "LEVEL_IN_USE",
   LEVEL_HAS_ACTIVE_STREAMS: "LEVEL_HAS_ACTIVE_STREAMS",
@@ -32,6 +34,8 @@ const DEFAULT_PEDAGOGICAL_LABELS = Object.freeze({
 const CATALOG_WRITE_CREATE_TOKENS = Object.freeze(["Référentiels pédagogiques:CREATE", "ALL_PRIVILEGES"]);
 const CATALOG_WRITE_UPDATE_TOKENS = Object.freeze(["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"]);
 const MAX_PEDAGOGICAL_LABEL_LENGTH = 60;
+const MAX_GROUP_CATALOG_CODE_LENGTH = 8;
+const GROUP_CATALOG_CODE_PATTERN = /^[A-Z0-9]+$/;
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -246,6 +250,34 @@ function mapStreamRow(row, countryCode) {
   };
 }
 
+function mapGroupRow(row, countryCode) {
+  return {
+    id: row.id,
+    countryId: row.country_id,
+    countryCode: countryCode ?? row.country_code ?? "",
+    code: row.group_code,
+    name: row.name,
+    displayOrder: Number(row.display_order ?? 0),
+    status: row.status === "archived" ? "archived" : "active",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function requireGroupCatalogCode(value) {
+  const code = asTrimmed(value).toUpperCase();
+  if (!code) {
+    throw createEducationReferenceError(400, "Code groupe obligatoire.");
+  }
+  if (code.length > MAX_GROUP_CATALOG_CODE_LENGTH) {
+    throw createEducationReferenceError(400, `Code groupe trop long (max ${MAX_GROUP_CATALOG_CODE_LENGTH}).`);
+  }
+  if (!GROUP_CATALOG_CODE_PATTERN.test(code)) {
+    throw createEducationReferenceError(400, "Code groupe invalide (lettres ou chiffres uniquement, ex. A, B).");
+  }
+  return code;
+}
+
 function hasLegacyAcademicLevelsKey(payload) {
   return payload && typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, "levels");
 }
@@ -302,6 +334,8 @@ module.exports = {
   assertSchoolActivationWrite,
   mapLevelRow,
   mapStreamRow,
+  mapGroupRow,
+  requireGroupCatalogCode,
   hasLegacyAcademicLevelsKey,
   hasLegacyAcademicStreamsKey,
   assertNoLegacyAcademicLevelsTracksWrite,

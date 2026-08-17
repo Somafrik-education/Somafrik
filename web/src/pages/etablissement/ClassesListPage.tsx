@@ -10,32 +10,34 @@ import {
   InlineAlert,
   Modal,
 } from "@/design-system";
-import { Field, Input, Select } from "../../components/ui/Field";
+import { Field, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { ApiError } from "../../api/client";
 import { classesApi, type ClassStatus, type SchoolClass } from "../../lib/classesApi";
 import { academicYearsApi } from "../../lib/academicYearsApi";
+import { educationReferenceApi, type EducationSchoolCatalog } from "../../lib/educationReferenceApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
 
 type ClassFormState = {
-  name: string;
-  academicYearName: string;
-  level: string;
-  section: string;
+  academicYearId: string;
+  levelId: string;
+  streamId: string;
+  groupId: string;
   status: ClassStatus;
 };
 
 const EMPTY_FORM: ClassFormState = {
-  name: "",
-  academicYearName: "",
-  level: "",
-  section: "",
+  academicYearId: "",
+  levelId: "",
+  streamId: "",
+  groupId: "",
   status: "active",
 };
 
 type AcademicYearOption = {
+  id: string;
   name: string;
   schoolCode?: string;
   isCurrent?: boolean;
@@ -53,6 +55,7 @@ export function ClassesListPage() {
 
   const [rows, setRows] = useState<SchoolClass[]>([]);
   const [years, setYears] = useState<AcademicYearOption[]>([]);
+  const [catalog, setCatalog] = useState<EducationSchoolCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -65,9 +68,10 @@ export function ClassesListPage() {
     setLoading(true);
     setError(null);
     try {
-      const [classes, academicYears] = await Promise.all([
+      const [classes, academicYears, schoolCatalog] = await Promise.all([
         classesApi.list(),
         academicYearsApi.list().catch(() => []),
+        educationReferenceApi.getSchoolCatalog().catch(() => null),
       ]);
       setRows(Array.isArray(classes) ? classes : []);
       const scopedYears = (Array.isArray(academicYears) ? academicYears : []).filter((year) => {
@@ -75,6 +79,7 @@ export function ClassesListPage() {
         return !year.schoolCode || year.schoolCode === activeSchoolCode;
       });
       setYears(scopedYears);
+      setCatalog(schoolCatalog);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Impossible de charger les classes.";
       setError(message);
@@ -96,28 +101,45 @@ export function ClassesListPage() {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((row) =>
-      [row.name, row.level, row.section, row.status, row.academicYearName, row.classCode]
+      [row.name, row.level, row.track, row.groupCode, row.status, row.academicYearName, row.classCode]
         .join(" ")
         .toLowerCase()
         .includes(q),
     );
   }, [rows, search]);
 
+  const activeLevels = (catalog?.levels ?? []).filter((row) => row.schoolActive);
+  const activeStreams = (catalog?.streams ?? []).filter((row) => {
+    if (!row.schoolActive) return false;
+    if (!form.levelId || !row.levelId) return true;
+    return row.levelId === form.levelId;
+  });
+  const activeGroups = (catalog?.groups ?? []).filter((row) => row.schoolActive);
+  const selectedLevel = activeLevels.find((row) => row.id === form.levelId);
+  const selectedStream = activeStreams.find((row) => row.id === form.streamId);
+  const selectedGroup = activeGroups.find((row) => row.id === form.groupId);
+  const previewName = [selectedLevel?.name, selectedStream?.name, selectedGroup?.code].filter(Boolean).join(" ");
+  const labels = catalog?.labels ?? { levelLabel: "Niveau", trackLabel: "Filière", groupLabel: "Groupe" };
+
   function openCreate() {
     const current = years.find((year) => year.isCurrent);
-    const defaultYear = current?.name ?? years[0]?.name ?? "";
     setEditing(null);
-    setForm({ ...EMPTY_FORM, academicYearName: defaultYear });
+    setForm({
+      ...EMPTY_FORM,
+      academicYearId: current?.id ?? years[0]?.id ?? "",
+      levelId: activeLevels[0]?.id ?? "",
+      groupId: activeGroups[0]?.id ?? "",
+    });
     setModalOpen(true);
   }
 
   function openEdit(row: SchoolClass) {
     setEditing(row);
     setForm({
-      name: row.name,
-      academicYearName: row.academicYearName,
-      level: row.level ?? "",
-      section: row.section ?? row.track ?? "",
+      academicYearId: row.academicYearId,
+      levelId: row.levelId ?? "",
+      streamId: row.streamId ?? "",
+      groupId: row.groupId ?? "",
       status: row.status === "inactive" ? "inactive" : "active",
     });
     setModalOpen(true);
@@ -130,10 +152,10 @@ export function ClassesListPage() {
     try {
       if (editing) {
         const updated = await classesApi.update(editing.classCode, {
-          name: form.name,
-          level: form.level,
-          section: form.section,
           status: form.status,
+          ...(form.levelId
+            ? { levelId: form.levelId, streamId: form.streamId || null, groupId: form.groupId }
+            : {}),
         });
         setRows((current) =>
           current.map((row) => (row.classCode === updated.classCode ? updated : row)),
@@ -141,10 +163,10 @@ export function ClassesListPage() {
         showToast("Classe mise à jour.", "success");
       } else {
         const created = await classesApi.create({
-          name: form.name,
-          academicYearName: form.academicYearName,
-          level: form.level || undefined,
-          section: form.section || undefined,
+          academicYearId: form.academicYearId,
+          levelId: form.levelId,
+          streamId: form.streamId || null,
+          groupId: form.groupId,
           status: form.status,
         });
         setRows((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name, "fr")));
@@ -176,7 +198,8 @@ export function ClassesListPage() {
     () => [
       { key: "name", header: "Nom" },
       { key: "level", header: "Niveau", render: (row: SchoolClass) => row.level || "—" },
-      { key: "section", header: "Section", render: (row: SchoolClass) => row.section || "—" },
+      { key: "track", header: "Filière", render: (row: SchoolClass) => row.track || "—" },
+      { key: "groupCode", header: "Groupe", render: (row: SchoolClass) => row.groupCode || "—" },
       {
         key: "academicYearName",
         header: "Année",
@@ -276,31 +299,18 @@ export function ClassesListPage() {
         title={editing ? "Modifier la classe" : "Ajouter une classe"}
       >
         <form className="space-y-3" onSubmit={(event) => void onSubmit(event)}>
-          <Field label="Nom de classe" htmlFor="class-name">
-            <Input
-              id="class-name"
-              value={form.name}
-              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              required
-            />
-          </Field>
           <Field label="Année scolaire" htmlFor="class-year">
             <Select
               id="class-year"
-              value={form.academicYearName}
+              value={form.academicYearId}
               disabled={Boolean(editing) || years.length === 0}
               onChange={(event) =>
-                setForm((current) => ({ ...current, academicYearName: event.target.value }))
+                setForm((current) => ({ ...current, academicYearId: event.target.value }))
               }
               required
               options={[
                 { value: "", label: "Choisir une année" },
-                ...years.map((year) => ({ value: year.name, label: year.name })),
-                ...(editing &&
-                form.academicYearName &&
-                !years.some((year) => year.name === form.academicYearName)
-                  ? [{ value: form.academicYearName, label: form.academicYearName }]
-                  : []),
+                ...years.map((year) => ({ value: year.id, label: year.name })),
               ]}
             />
           </Field>
@@ -318,22 +328,75 @@ export function ClassesListPage() {
               </p>
             </div>
           ) : null}
-          <Field label="Niveau" htmlFor="class-level">
-            <Input
+          {!editing && years.length > 0 && activeLevels.length === 0 ? (
+            <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-950">
+                Aucun {labels.levelLabel.toLowerCase()} n'est activé pour cet établissement.
+              </p>
+              <p className="text-sm text-amber-900">
+                Activez l'offre pédagogique dans{" "}
+                <Link className="underline" to="/configuration">
+                  Paramètres / Référentiel
+                </Link>{" "}
+                avant de créer une classe.
+              </p>
+            </div>
+          ) : null}
+          {!editing && years.length > 0 && activeLevels.length > 0 && activeGroups.length === 0 ? (
+            <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-950">
+                Aucun {labels.groupLabel.toLowerCase()} n'est configuré pour cet établissement.
+              </p>
+              <p className="text-sm text-amber-900">
+                Configurez le catalogue pays puis activez les groupes dans{" "}
+                <Link className="underline" to="/configuration">
+                  Paramètres / Référentiel
+                </Link>
+                . Aucun groupe A–E n'est proposé par défaut.
+              </p>
+            </div>
+          ) : null}
+          <Field label={labels.levelLabel} htmlFor="class-level">
+            <Select
               id="class-level"
-              value={form.level}
-              onChange={(event) => setForm((current) => ({ ...current, level: event.target.value }))}
-            />
-          </Field>
-          <Field label="Section" htmlFor="class-section">
-            <Input
-              id="class-section"
-              value={form.section}
+              value={form.levelId}
+              disabled={Boolean(editing) && !form.levelId}
               onChange={(event) =>
-                setForm((current) => ({ ...current, section: event.target.value }))
+                setForm((current) => ({ ...current, levelId: event.target.value, streamId: "" }))
               }
+              required={!editing}
+              options={[
+                { value: "", label: `Choisir un ${labels.levelLabel.toLowerCase()}` },
+                ...activeLevels.map((level) => ({ value: level.id, label: level.name })),
+              ]}
             />
           </Field>
+          <Field label={`${labels.trackLabel} (optionnel)`} htmlFor="class-track">
+            <Select
+              id="class-track"
+              value={form.streamId}
+              onChange={(event) => setForm((current) => ({ ...current, streamId: event.target.value }))}
+              options={[
+                { value: "", label: `Sans ${labels.trackLabel.toLowerCase()}` },
+                ...activeStreams.map((stream) => ({ value: stream.id, label: stream.name })),
+              ]}
+            />
+          </Field>
+          <Field label={labels.groupLabel} htmlFor="class-group">
+            <Select
+              id="class-group"
+              value={form.groupId}
+              onChange={(event) => setForm((current) => ({ ...current, groupId: event.target.value }))}
+              required
+              options={[
+                { value: "", label: `Choisir un ${labels.groupLabel.toLowerCase()}` },
+                ...activeGroups.map((group) => ({ value: group.id, label: group.name || group.code })),
+              ]}
+            />
+          </Field>
+          {previewName ? (
+            <p className="text-sm text-muted">Nom généré : {previewName}</p>
+          ) : null}
           <Field label="Statut" htmlFor="class-status">
             <Select
               id="class-status"
@@ -354,7 +417,10 @@ export function ClassesListPage() {
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               Annuler
             </Button>
-            <Button type="submit" disabled={saving || (!editing && years.length === 0)}>
+            <Button
+              type="submit"
+              disabled={saving || (!editing && (years.length === 0 || activeLevels.length === 0 || activeGroups.length === 0))}
+            >
               {saving ? "Enregistrement…" : "Enregistrer"}
             </Button>
           </div>
