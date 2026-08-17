@@ -103,7 +103,7 @@ export function ClassStudentsPage() {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((row) =>
-      [row.name, row.firstName, row.lastName, row.studentCode, row.matricule, row.gender]
+      [row.name, row.firstName, row.lastName, row.studentCode, row.matricule, row.loginCode, row.identifier, row.gender]
         .join(" ")
         .toLowerCase()
         .includes(q),

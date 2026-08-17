@@ -1,13 +1,17 @@
 "use strict";
 
-const { generateNextStudentCode } = require("./studentCodeGeneration");
+/**
+ * Allocation du matricule élève canonique (même valeur que l'identifiant de connexion).
+ * Format : CD-IN-EL-26-001. Unicité PostgreSQL : students.student_code UNIQUE.
+ */
+
+const {
+  generateNextStudentCanonicalCode,
+  resolveSchoolIdentityContext,
+} = require("./studentCanonicalIdentifier");
 
 const STUDENT_CODE_UNIQUE_CONSTRAINT = "students_student_code_key";
 
-/**
- * @param {unknown} error
- * @returns {boolean}
- */
 function isStudentCodeUniquenessViolation(error) {
   if (!error || String(error.code) !== "23505") {
     return false;
@@ -20,26 +24,30 @@ function isStudentCodeUniquenessViolation(error) {
   return detail.includes("(student_code)=") || detail.toLowerCase().includes("student_code");
 }
 
+function currentIdentityYear() {
+  return new Date().getFullYear();
+}
+
 /**
- * Verrou transactionnel + lecture des matricules existants pour l'établissement.
+ * Verrou transactionnel + lecture des matricules existants (namespace pays/initiales/année).
  * @param {{
  *   query: (sql: string, params?: unknown[]) => Promise<unknown>,
  *   all: (sql: string, params?: unknown[]) => Promise<any[]>,
  * }} db
- * @param {string} schoolId
- * @param {string} schoolCode
+ * @param {{ id: string, school_code?: string, login_code?: string, loginCode?: string, name?: string, short_code?: string, country_code?: string }} school
  * @returns {Promise<string>}
  */
-async function allocateStudentCodeLocked(db, schoolId, schoolCode) {
-  await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`student-code:${schoolId}`]);
-  const rows = await db.all(
-    `SELECT student_code FROM students WHERE school_id = $1`,
-    [schoolId],
-  );
-  return generateNextStudentCode(
-    schoolCode,
-    rows.map((row) => row.student_code),
-  );
+async function allocateStudentCodeLocked(db, school) {
+  const context = resolveSchoolIdentityContext(school);
+  const year = currentIdentityYear();
+  const lockKey = `student-canonical:${context.countryCode}:${context.schoolInitials}:${year}`;
+  await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [lockKey]);
+  const rows = await db.all(`SELECT student_code FROM students`);
+  return generateNextStudentCanonicalCode({
+    ...context,
+    year,
+    existingCodes: rows.map((row) => row.student_code),
+  });
 }
 
 module.exports = {

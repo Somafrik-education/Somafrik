@@ -89,7 +89,7 @@ export function GlobalSearch() {
     if (canStudents) {
       (scopedStudents(user, state) as Record<string, unknown>[])
         .filter((s) =>
-          [s.name, s.firstName, s.matricule, s.publicId].some((v) =>
+          [s.name, s.firstName, s.matricule, s.publicId, s.studentCode, s.loginCode, s.identifier].some((v) =>
             normalize(String(v ?? "")).includes(q),
           ),
         )

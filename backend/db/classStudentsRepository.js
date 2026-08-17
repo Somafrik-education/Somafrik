@@ -7,6 +7,7 @@ const {
   assertClassEligibleForEnrollment,
 } = require("../lib/classStudentsManagement");
 const { allocateStudentCodeLocked } = require("../lib/studentCodeAllocation");
+const { hashSecret } = require("../services/credentialService");
 
 const STUDENT_SELECT_COLUMNS = `
   st.id AS student_uuid,
@@ -132,12 +133,15 @@ function createClassStudentsRepository(db) {
    * @param {any} row
    */
   function mapStudentRow(row) {
-    const studentCode = row.student_code;
+    const studentCode = row.login_code || row.identity_code || row.student_code;
     return {
       id: studentCode,
       publicId: studentCode,
       studentCode,
       matricule: studentCode,
+      loginCode: studentCode,
+      identityCode: studentCode,
+      identifier: studentCode,
       firstName: row.first_name,
       lastName: row.last_name,
       name: `${row.first_name} ${row.last_name}`.trim(),
@@ -270,6 +274,35 @@ function createClassStudentsRepository(db) {
   }
 
   /**
+   * Compte de connexion élève = matricule. Absent sur les schémas de test isolés (42P01).
+   * @param {ReturnType<typeof createClassStudentsDb>} tx
+   * @param {{ id: string }} school
+   * @param {{ student_code: string }} student
+   * @param {{ firstName: string, lastName: string, parentEmail?: string, parentPhone?: string }} input
+   */
+  async function ensureStudentLoginUser(tx, school, student, input) {
+    try {
+      await tx.query(
+        `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', 'active')
+         ON CONFLICT (user_code) DO NOTHING`,
+        [
+          school.id,
+          student.student_code,
+          input.firstName,
+          input.lastName,
+          input.parentEmail ?? "",
+          input.parentPhone ?? "",
+          hashSecret("1234"),
+        ],
+      );
+    } catch (error) {
+      if (String(error.code) === "42P01") return;
+      throw error;
+    }
+  }
+
+  /**
    * @param {ReturnType<typeof createClassStudentsDb>} tx
    * @param {{ id: string, school_code?: string }} school
    * @param {string} schoolCode
@@ -278,11 +311,14 @@ function createClassStudentsRepository(db) {
    */
   async function insertStudentWithEnrollment(tx, school, schoolCode, classRow, input) {
     const birthDate = normalizeBirthDateForStorage(input.birthDate);
-    const studentCode = await allocateStudentCodeLocked(
-      tx,
-      school.id,
-      school.school_code ?? schoolCode,
-    );
+    const studentCode = await allocateStudentCodeLocked(tx, {
+      id: school.id,
+      school_code: school.school_code ?? schoolCode,
+      login_code: school.login_code,
+      short_code: school.short_code,
+      name: school.name,
+      country_code: school.country_code ?? school.iso_code,
+    });
 
     const student = await tx.one(
       `INSERT INTO students (
@@ -305,6 +341,8 @@ function createClassStudentsRepository(db) {
     if (!student) {
       throw createHttpError(500, "Impossible de créer l'élève.");
     }
+
+    await ensureStudentLoginUser(tx, school, student, input);
 
     const enrollment = await tx.one(
       `INSERT INTO enrollments (

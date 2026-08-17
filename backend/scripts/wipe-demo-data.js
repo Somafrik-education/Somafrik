@@ -99,6 +99,7 @@ const PURGE_TABLES = [
   "identity_counters",
   "user_code_counters",
   "school_login_code_counters",
+  "student_login_code_counters",
   "school_login_counters",
   "school_code_counters",
   "school_counters",

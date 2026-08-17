@@ -7,6 +7,7 @@ const USER_ROLES_SCHEMA_SQL = [
   fs.readFileSync(path.join(__dirname, "migrations/20260820_user_roles_canonical.sql"), "utf8"),
   fs.readFileSync(path.join(__dirname, "migrations/20260821_permanent_student_identifiers.sql"), "utf8"),
   fs.readFileSync(path.join(__dirname, "migrations/20260822_school_login_code.sql"), "utf8"),
+  fs.readFileSync(path.join(__dirname, "migrations/20260823_student_canonical_identifier.sql"), "utf8"),
 ].join("\n");
 
 const USER_ROLES_MIGRATION_AMBIGUOUS = "USER_ROLES_MIGRATION_AMBIGUOUS";

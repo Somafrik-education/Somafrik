@@ -80,7 +80,7 @@ function buildSchoolUsers(schoolCode) {
     {
       ...base,
       id: "USER-ELE-0001",
-      identifier: "ELE-0001",
+      identifier: "CD-IN-EL-26-001",
       role: "Élève / Étudiant",
       firstName: "Esther",
       lastName: "OKITO",
@@ -92,7 +92,7 @@ function buildSchoolUsers(schoolCode) {
     {
       ...base,
       id: "USER-ELE-0002",
-      identifier: "ELE-0002",
+      identifier: "CD-IN-EL-26-002",
       role: "Élève / Étudiant",
       firstName: "Hope Sabrina",
       lastName: "OKITO",

@@ -1433,7 +1433,8 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
       return null;
     }
     if (!form.name || !form.className) return null;
-    const publicId = form.matricule || generateLearnerPublicId(schoolCode, context?.studentsData ?? []);
+    const publicId = String(form.matricule ?? "").trim();
+    if (!publicId) return null;
     return {
       id: nextId,
       publicId,
@@ -2027,18 +2028,6 @@ function generateTeacherPublicId(schoolCode: string, teachersData: any[]) {
   );
   const identifier = `ENS-${String(next).padStart(4, "0")}`;
   return `${normalizedSchool}-${identifier}`;
-}
-
-function generateLearnerPublicId(
-  schoolCode: string,
-  studentsData: any[],
-  profile: "ELE" | "ETU" = "ELE"
-) {
-  const next = getNextSequence(
-    studentsData,
-    new RegExp(`^(?:${escapeRegExp(schoolCode)}-)?${profile}-(\\d+)$`, "i")
-  );
-  return `${profile}-${String(next).padStart(4, "0")}`;
 }
 
 function generateSchoolCode(country: string, year: string, schoolsData: any[]) {

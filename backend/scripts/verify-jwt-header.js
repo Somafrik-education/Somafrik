@@ -496,7 +496,7 @@ async function runHttpTests(base) {
     200,
     `liste élèves établissement doit répondre 200 (reçu ${studentsProbe.status})`,
   );
-  await assertPositivePdf(base, schoolToken, "ELE-0001");
+  await assertPositivePdf(base, schoolToken, "CD-IN-EL-26-001");
 }
 
 function stopChildProcessTree(child) {

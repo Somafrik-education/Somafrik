@@ -8,9 +8,9 @@ const { createClassStudentsRepository } = require("../db/classStudentsRepository
 
 function createMemoryDb() {
   const schools = [
-    { id: "school-a", school_code: "CD-2026-0001" },
-    { id: "school-b", school_code: "CD-2026-0002" },
-    { id: "school-bi", school_code: "BI-2026-0001" },
+    { id: "school-a", school_code: "CD-2026-0001", name: "Institut Nuru", login_code: "CD-IN-26-001" },
+    { id: "school-b", school_code: "CD-2026-0002", name: "Lycée Lumumba", login_code: "CD-LL-26-001" },
+    { id: "school-bi", school_code: "BI-2026-0001", name: "Lycée Bujumbura", login_code: "BI-LB-26-001" },
   ];
   const years = [
     { id: "ay-a", school_id: "school-a", name: "2025-2026", status: "open" },
@@ -68,9 +68,10 @@ function createMemoryDb() {
       }
 
       if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
-        return students
-          .filter((row) => row.school_id === params[0])
-          .map((row) => ({ student_code: row.student_code }));
+        const rows = !params.length
+          ? students
+          : students.filter((row) => row.school_id === params[0]);
+        return rows.map((row) => ({ student_code: row.student_code }));
       }
 
       if (text.startsWith("INSERT INTO STUDENTS")) {
@@ -78,6 +79,8 @@ function createMemoryDb() {
           id: `stu-${studentSeq++}`,
           school_id: params[0],
           student_code: params[1],
+          login_code: params[1],
+          identity_code: params[1],
           first_name: params[2],
           last_name: params[3],
           gender: params[4],
@@ -146,9 +149,10 @@ function createMemoryDb() {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
 
       if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
-        return students
-          .filter((row) => row.school_id === params[0])
-          .map((row) => ({ student_code: row.student_code }));
+        const rows = !params.length
+          ? students
+          : students.filter((row) => row.school_id === params[0]);
+        return rows.map((row) => ({ student_code: row.student_code }));
       }
 
       if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.CLASS_ID")) {
@@ -212,6 +216,9 @@ function createMemoryDb() {
       if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
         return { rows: [] };
       }
+      if (text.startsWith("INSERT INTO USERS")) {
+        return { rows: [] };
+      }
       throw new Error(`Unhandled query(): ${text}`);
     },
     seedClass(schoolCode, overrides = {}) {
@@ -254,7 +261,9 @@ async function main() {
     lastName: "Diop",
     gender: "Féminin",
   });
-  assert.match(enrolled.studentCode, /^ELE-CD-0001-0001-/);
+  assert.match(enrolled.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
+  assert.equal(enrolled.matricule, enrolled.studentCode);
+  assert.equal(enrolled.loginCode, enrolled.studentCode);
   assert.equal(enrolled.classCode, activeClass.class_code);
   assert.equal(enrolled.className, "6ème A");
 
@@ -315,7 +324,7 @@ async function main() {
     firstName: "Grace",
     lastName: "Nkurunziza",
   });
-  assert.match(enrolledBi.studentCode, /^ELE-BI-0001-0001-/);
+  assert.match(enrolledBi.studentCode, /^BI-LB-EL-\d{2}-\d{3}$/);
   assert.notEqual(enrolled.studentCode, enrolledBi.studentCode);
 
   await assert.rejects(

@@ -201,7 +201,9 @@ async function main() {
       },
     );
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
-    assert.match(enrolled.data.studentCode, /^ELE-CD-0001-0001-/);
+    assert.match(enrolled.data.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
+    assert.equal(enrolled.data.matricule, enrolled.data.studentCode);
+    assert.equal(enrolled.data.loginCode, enrolled.data.studentCode);
 
     const listed = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
@@ -225,7 +227,7 @@ async function main() {
       },
     );
     assert.equal(enrolledOther.status, 201, JSON.stringify(enrolledOther.data));
-    assert.match(enrolledOther.data.studentCode, /^ELE-BI-0002-0001-/);
+    assert.match(enrolledOther.data.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
     assert.notEqual(enrolled.data.studentCode, enrolledOther.data.studentCode);
 
     // Enseignant hors classe affectée (seed sans classCode sur cette classe) : refus.

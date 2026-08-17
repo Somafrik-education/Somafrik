@@ -269,7 +269,7 @@ async function runMemoryHttpGuards() {
       token: teacherToken,
       body: {
         evaluationId: "EVAL-TEST",
-        studentId: "ELE-0001",
+        studentId: "CD-IN-EL-26-001",
         value: 10,
         scale: 20,
       },

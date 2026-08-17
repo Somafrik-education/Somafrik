@@ -144,9 +144,9 @@ async function setupFixture(pool) {
   await pool.query(
     `INSERT INTO schools (country_id, school_code, name)
      VALUES
-       ($1, 'CD-2026-0001', 'École CD'),
-       ($1, 'CD-2026-0002', 'École CD2'),
-       ($2, 'BI-2026-0001', 'École BI même n°')`,
+       ($1, 'CD-2026-0001', 'Institut Nuru'),
+       ($1, 'CD-2026-0002', 'Lycée Lumumba'),
+       ($2, 'BI-2026-0001', 'Lycée Bujumbura')`,
     [cdId, biId],
   );
 
@@ -177,7 +177,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, name FROM schools WHERE school_code = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -336,7 +336,9 @@ async function main() {
       gender: "Féminin",
       birthDate: "2012-04-12",
     });
-    assert.match(enrolled.studentCode, /^ELE-CD-0001-0001-/);
+    assert.match(enrolled.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
+    assert.equal(enrolled.matricule, enrolled.studentCode);
+    assert.equal(enrolled.loginCode, enrolled.studentCode);
 
     const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
     assert.equal(listed.length, 1);
@@ -350,7 +352,7 @@ async function main() {
       "CD-2026-0002",
       { firstName: "Ibra", lastName: "Fall" },
     );
-    assert.match(enrolledOtherSchool.studentCode, /^ELE-CD-0002-0001-/);
+    assert.match(enrolledOtherSchool.studentCode, /^CD-LL-EL-\d{2}-\d{3}$/);
     assert.notEqual(enrolled.studentCode, enrolledOtherSchool.studentCode);
 
     const activeClassBiSameNumber = await classesRepo.create(
@@ -366,7 +368,7 @@ async function main() {
       "BI-2026-0001",
       { firstName: "Grace", lastName: "Nkurunziza" },
     );
-    assert.match(enrolledBiSameEstablishment.studentCode, /^ELE-BI-0001-0001-/);
+    assert.match(enrolledBiSameEstablishment.studentCode, /^BI-LB-EL-\d{2}-\d{3}$/);
     assert.notEqual(
       enrolled.studentCode,
       enrolledBiSameEstablishment.studentCode,

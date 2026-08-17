@@ -108,7 +108,7 @@ async function main() {
     { label: "Préfet", schoolCode: "CD-2026-0001", identifier: "prefet", password: "1234" },
     { label: "Enseignant", schoolCode: "CD-2026-0001", identifier: "ENS-0001", password: "1234" },
     { label: "Parent", schoolCode: "CD-2026-0001", identifier: "+243 820 000 001", password: "1234" },
-    { label: "Élève", schoolCode: "CD-2026-0001", identifier: "ELE-0001", password: "1234" },
+    { label: "Élève", schoolCode: "CD-2026-0001", identifier: "CD-IN-EL-26-001", password: "1234" },
   ];
 
   const loginChecks = [];

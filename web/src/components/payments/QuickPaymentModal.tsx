@@ -289,7 +289,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
                 setSelectedStudent(null);
               }
             }}
-            placeholder="Ex. Mukendi, ELE-0001, +243..."
+            placeholder="Ex. Mukendi, CD-IN-EL-26-001, +243..."
             autoFocus
           />
         </Field>

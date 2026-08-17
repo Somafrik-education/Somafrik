@@ -1092,10 +1092,16 @@ class FallbackRepository {
       const memoryAdapter = {
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
-          if (normalized === String(seedData.school.code).toUpperCase()) {
-            return { id: seedData.school.id, school_code: seedData.school.code };
-          }
-          return { id: `school-${normalized}`, school_code: normalized };
+          const match = (seedData.platformSchools ?? [seedData.school]).find(
+            (row) => String(row.code ?? "").toUpperCase() === normalized,
+          );
+          const isPrimary = normalized === String(seedData.school.code).toUpperCase();
+          return {
+            id: isPrimary ? seedData.school.id : `school-${normalized}`,
+            school_code: match?.code ?? normalized,
+            name: match?.name ?? normalized,
+            login_code: match?.loginCode ?? match?.login_code,
+          };
         },
         async one(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
@@ -1128,6 +1134,8 @@ class FallbackRepository {
               id: `stu-${params[1]}`,
               school_id: params[0],
               student_code: params[1],
+              login_code: params[1],
+              identity_code: params[1],
               first_name: params[2],
               last_name: params[3],
               gender: params[4],
@@ -1301,7 +1309,11 @@ class FallbackRepository {
             return [];
           }
           if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
-            return (self._managedStudents ?? [])
+            const rows = self._managedStudents ?? [];
+            if (!params.length) {
+              return rows.map((row) => ({ student_code: row.student_code }));
+            }
+            return rows
               .filter((row) => row.school_id === params[0])
               .map((row) => ({ student_code: row.student_code }));
           }

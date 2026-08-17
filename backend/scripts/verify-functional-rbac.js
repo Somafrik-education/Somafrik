@@ -171,7 +171,7 @@ async function main() {
     });
     assert.equal(saved.status, 200, JSON.stringify(saved.data));
 
-    const denied = await request("/students/ELE-0001", { method: "DELETE", token: prefetToken });
+    const denied = await request("/students/CD-IN-EL-26-001", { method: "DELETE", token: prefetToken });
     const effective = await request("/auth/effective-permissions", { token: prefetToken });
     assert.equal(effective.status, 200, JSON.stringify(effective.data));
     assert.equal(
@@ -203,7 +203,7 @@ async function main() {
       `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
       { token: superToken },
     );
-    const allowed = await request("/students/ELE-0001", { method: "DELETE", token: prefetToken });
+    const allowed = await request("/students/CD-IN-EL-26-001", { method: "DELETE", token: prefetToken });
     assert.ok(
       [200, 204, 404].includes(allowed.status),
       JSON.stringify({
@@ -247,7 +247,7 @@ async function main() {
       hour: "08:00",
       items: [
         {
-          studentId: "ELE-0001",
+          studentId: "CD-IN-EL-26-001",
           className: "6ème A",
           date: "17/08/2026",
           present: true,
@@ -311,7 +311,7 @@ async function main() {
     if (parentList.status === 403) {
       assert.equal(parentList.data?.code, "PERMISSION_DENIED");
     }
-    const parentChild = await request("/students/ELE-0001/presences", { token: parentToken });
+    const parentChild = await request("/students/CD-IN-EL-26-001/presences", { token: parentToken });
     assert.ok(
       [200, 403].includes(parentChild.status),
       `GET fiche présences parent: ${parentChild.status} ${JSON.stringify(parentChild.data)}`,
@@ -360,7 +360,7 @@ async function main() {
 
     const notePayload = {
       evaluationId: "EVAL-TEST",
-      studentId: "ELE-0001",
+      studentId: "CD-IN-EL-26-001",
       value: 12,
       scale: 20,
     };

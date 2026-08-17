@@ -154,7 +154,7 @@ async function runResidualGuards(superToken) {
   const adminBi = await login("admin", "1234", "BI-2026-0002");
   const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");
   const parentToken = await login("+243 820 000 001", "1234", "CD-2026-0001");
-  const studentToken = await login("ELE-0001", "1234", "CD-2026-0001");
+  const studentToken = await login("CD-IN-EL-26-001", "1234", "CD-2026-0001");
 
   const forbiddenTokens = [
     ["Enseignant", teacherToken],

@@ -5,6 +5,7 @@ const school = {
   id: "550e8400-e29b-41d4-a716-446655440001",
   publicId: "CD-2026-0001",
   code: "CD-2026-0001",
+  loginCode: "CD-IN-26-001",
   name: "Universite de Kinshasa",
   type: "Universite",
   city: "Kinshasa",
@@ -911,7 +912,9 @@ const userAccounts = [
   },
   {
     id: "USER-STUDENT-0001",
-    publicId: "USR-2026-000006",
+    publicId: "CD-IN-EL-26-001",
+    identityCode: "CD-IN-EL-26-001",
+    loginCode: "CD-IN-EL-26-001",
     lastName: "Dupont",
     firstName: "Jean",
     gender: "Masculin",
@@ -923,7 +926,7 @@ const userAccounts = [
     countryScope: "RDC",
     schoolCode: "CD-2026-0001",
     accessChannel: "Application",
-    identifier: "ELE-0001",
+    identifier: "CD-IN-EL-26-001",
     password: "1234",
     status: "Actif",
     permissions: rolePermissions["Élève / Étudiant"],
@@ -1035,10 +1038,10 @@ const courses = [
 ];
 
 const students = [
-  { id: "1", publicId: "ELE-0001", name: "Jean Dupont", firstName: "Jean", matricule: "ELE-0001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
-  { id: "2", publicId: "ELE-0002", name: "Marie Martin", firstName: "Marie", matricule: "ELE-0002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
-  { id: "3", publicId: "ELE-0003", name: "Paul Bernard", firstName: "Paul", matricule: "ELE-0003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
-  { id: "4", publicId: "ELE-0004", name: "Sarah Mbala", firstName: "Sarah", matricule: "ELE-0004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
+  { id: "1", publicId: "CD-IN-EL-26-001", name: "Jean Dupont", firstName: "Jean", matricule: "CD-IN-EL-26-001", loginCode: "CD-IN-EL-26-001", identifier: "CD-IN-EL-26-001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
+  { id: "2", publicId: "CD-IN-EL-26-002", name: "Marie Martin", firstName: "Marie", matricule: "CD-IN-EL-26-002", loginCode: "CD-IN-EL-26-002", identifier: "CD-IN-EL-26-002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
+  { id: "3", publicId: "CD-IN-EL-26-003", name: "Paul Bernard", firstName: "Paul", matricule: "CD-IN-EL-26-003", loginCode: "CD-IN-EL-26-003", identifier: "CD-IN-EL-26-003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
+  { id: "4", publicId: "CD-IN-EL-26-004", name: "Sarah Mbala", firstName: "Sarah", matricule: "CD-IN-EL-26-004", loginCode: "CD-IN-EL-26-004", identifier: "CD-IN-EL-26-004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", pin: "1234", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
 ];
 
 const presences = [
@@ -1150,6 +1153,7 @@ const burundiSchool = {
   id: "SCHOOL-BI-2026-0002",
   publicId: "BI-2026-0002",
   code: "BI-2026-0002",
+  loginCode: "BI-ESB-26-001",
   name: "Établissement Somafrik Burundi",
   type: "Université",
   city: "Bujumbura",
@@ -1279,10 +1283,10 @@ while (students.length < 50) {
   const classItem = classes[index % classes.length];
   students.push({
     id: String(index),
-    publicId: `ELE-${String(index).padStart(4, "0")}`,
+    publicId: `CD-IN-EL-26-${String(index).padStart(3, "0")}`,
     name: `${firstName} ${lastName}`,
     firstName,
-    matricule: `ELE-${String(index).padStart(4, "0")}`,
+    matricule: `CD-IN-EL-26-${String(index).padStart(3, "0")}`,
     gender: index % 2 === 0 ? "Féminin" : "Masculin",
     birthDate: `${String((index % 27) + 1).padStart(2, "0")}-${String((index % 12) + 1).padStart(2, "0")}-2012`,
     className: classItem.name,

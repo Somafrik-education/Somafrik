@@ -310,6 +310,12 @@ function nextSequence(values: string[], pattern: RegExp): number {
 }
 
 export function generateUserIdentifier(users: UserAccount[], role?: string): string {
+  const key = normalize(role);
+  if (key.includes("eleve") || key.includes("etudiant") || key === "student") {
+    throw new Error(
+      "L'identifiant élève est le matricule PostgreSQL (CD-IN-EL-26-001). Pas de générateur Web.",
+    );
+  }
   const prefix = getUserIdentifierPrefix(role);
   const identifiers = users.map((user) => String(user.identifier ?? user.publicId ?? ""));
   const next = nextSequence(identifiers, new RegExp(`^${prefix}-(\\d+)$`, "i"));

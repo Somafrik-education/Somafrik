@@ -70,6 +70,8 @@ export function StudentsListPage() {
         row.lastName,
         row.studentCode,
         row.matricule,
+        row.loginCode,
+        row.identifier,
         row.className,
         row.classCode,
         row.parentPhone,

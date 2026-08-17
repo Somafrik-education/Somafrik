@@ -5,6 +5,8 @@ export interface ClassStudent {
   publicId: string;
   studentCode: string;
   matricule: string;
+  loginCode?: string;
+  identifier?: string;
   firstName: string;
   lastName: string;
   name: string;

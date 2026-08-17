@@ -5,6 +5,10 @@
 const { rolePermissions } = require("../data");
 const { buildSchoolBulletinBundle } = require("./bulletinSeedData");
 const { buildSchoolPlanningSlots, buildAcademicConfigsFromState } = require("./planningSeedData");
+const {
+  generateNextStudentCanonicalCode,
+  resolveSchoolIdentityContext,
+} = require("./studentCanonicalIdentifier");
 
 const SCHOOLS_PER_COUNTRY = 1;
 const USERS_PER_ROLE = 10;
@@ -248,6 +252,7 @@ function buildSchoolRecord(country, schoolIndex) {
     maxStudents: 1200,
     maxTeachers: 120,
     createdAt: "01-09-2025",
+    loginCode: country.code === "CD" && schoolIndex === 1 ? "CD-IN-26-001" : undefined,
   };
 }
 
@@ -473,8 +478,15 @@ function buildSchoolAcademicBundle(school, country) {
     for (let seat = 0; seat < STUDENTS_PER_CLASS; seat += 1) {
       const studentIndex = classIndex * STUDENTS_PER_CLASS + seat + 1;
       const studentId = `STU-${code}-${pad(studentIndex, 3)}`;
-      const matricule =
-        code === "CD-2026-0001" && studentIndex === 1 ? "ELE-0001" : `${code}-ELE-${pad(studentIndex, 4)}`;
+      const identity = resolveSchoolIdentityContext({
+        school_code: code,
+        name: school.name,
+        login_code: school.loginCode,
+      });
+      const matricule = generateNextStudentCanonicalCode({
+        ...identity,
+        existingCodes: students.map((row) => row.matricule),
+      });
       const studentFirstName = DEMO_FIRST_NAMES[(studentIndex + 4) % DEMO_FIRST_NAMES.length];
       const studentLastName = DEMO_LAST_NAMES[(studentIndex + 1) % DEMO_LAST_NAMES.length];
 

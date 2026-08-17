@@ -37,7 +37,7 @@ const accounts = {
   },
   studentWeb: {
     loginPath: "/backoffice/login",
-    payload: { schoolCode: "CD-2026-0001", identifier: "ELE-0001", password: "1234" },
+    payload: { schoolCode: "CD-2026-0001", identifier: "CD-IN-EL-26-001", password: "1234" },
   },
   teacher: {
     loginPath: "/login",
@@ -49,7 +49,7 @@ const accounts = {
   },
   student: {
     loginPath: "/login",
-    payload: { role: "student", schoolCode: "CD-2026-0001", identifier: "ELE-0001", pin: "1234" },
+    payload: { role: "student", schoolCode: "CD-2026-0001", identifier: "CD-IN-EL-26-001", pin: "1234" },
   },
 };
 

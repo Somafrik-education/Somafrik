@@ -24,6 +24,16 @@ const FORBIDDEN_BODY_KEYS = Object.freeze([
   "academic_year_name",
   "enrollmentId",
   "enrollment_id",
+  "matricule",
+  "studentCode",
+  "student_code",
+  "loginCode",
+  "login_code",
+  "identityCode",
+  "identity_code",
+  "publicId",
+  "public_id",
+  "identifier",
 ]);
 
 /**
