@@ -1,13 +1,18 @@
 "use strict";
 
-const { generateNextStudentCode } = require("./studentCodeGeneration");
+/**
+ * Stand-in mémoire du trigger PostgreSQL `somafrik_assign_permanent_student_identity`.
+ * Ne pas appeler sur le chemin d'inscription PostgreSQL : le trigger alloue.
+ */
+
+const {
+  generateNextStudentCanonicalCode,
+  isStudentCanonicalCode,
+  resolveSchoolIdentityContext,
+} = require("./studentCanonicalIdentifier");
 
 const STUDENT_CODE_UNIQUE_CONSTRAINT = "students_student_code_key";
 
-/**
- * @param {unknown} error
- * @returns {boolean}
- */
 function isStudentCodeUniquenessViolation(error) {
   if (!error || String(error.code) !== "23505") {
     return false;
@@ -21,29 +26,22 @@ function isStudentCodeUniquenessViolation(error) {
 }
 
 /**
- * Verrou transactionnel + lecture des matricules existants pour l'établissement.
- * @param {{
- *   query: (sql: string, params?: unknown[]) => Promise<unknown>,
- *   all: (sql: string, params?: unknown[]) => Promise<any[]>,
- * }} db
- * @param {string} schoolId
- * @param {string} schoolCode
- * @returns {Promise<string>}
+ * @param {{ login_code?: string, loginCode?: string, name?: string, short_code?: string, school_code?: string, country_code?: string }} school
+ * @param {string[]} existingCodes
+ * @param {string} [requested]
+ * @returns {string}
  */
-async function allocateStudentCodeLocked(db, schoolId, schoolCode) {
-  await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`student-code:${schoolId}`]);
-  const rows = await db.all(
-    `SELECT student_code FROM students WHERE school_id = $1`,
-    [schoolId],
-  );
-  return generateNextStudentCode(
-    schoolCode,
-    rows.map((row) => row.student_code),
-  );
+function assignCanonicalStudentCode(school, existingCodes = [], requested = "") {
+  const value = String(requested ?? "").trim().toUpperCase();
+  if (isStudentCanonicalCode(value)) return value;
+  return generateNextStudentCanonicalCode({
+    ...resolveSchoolIdentityContext(school),
+    existingCodes,
+  });
 }
 
 module.exports = {
   STUDENT_CODE_UNIQUE_CONSTRAINT,
   isStudentCodeUniquenessViolation,
-  allocateStudentCodeLocked,
+  assignCanonicalStudentCode,
 };

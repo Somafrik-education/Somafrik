@@ -216,6 +216,7 @@ function generateUserCode() {
 
 function resolveUserIdentifier({ role, phone, email, userCode }) {
   const dbRole = ROLE_TO_DB[role] ?? role;
+  if (dbRole === "STUDENT" && userCode) return asTrimmed(userCode);
   if (dbRole === "PARENT" && phone) return asTrimmed(phone);
   if (email) return asTrimmed(email).toLowerCase();
   return asTrimmed(userCode);

@@ -7,37 +7,42 @@ const {
   studentCodePrefix,
 } = require("./studentCodeGeneration");
 
+const { assignCanonicalStudentCode } = require("./studentCodeAllocation");
+const nuru = { name: "Institut Nuru", login_code: "CD-IN-26-001" };
+
+assert.equal(assignCanonicalStudentCode(nuru, [], "PENDING"), "CD-IN-EL-26-001");
+assert.equal(assignCanonicalStudentCode(nuru, [], "CD-IN-EL-26-007"), "CD-IN-EL-26-007");
+const nuruBi = { name: "Institut Nuru", login_code: "BI-IN-26-001" };
+const lumumba = { name: "Lycée Lumumba", login_code: "CD-LL-26-001" };
+
+assert.equal(generateNextStudentCode("CD-2026-0001", [], nuru), "CD-IN-EL-26-001");
 assert.equal(
-  generateNextStudentCode("CD-2026-0001", ["ELE-CD-0001-0001-000003"]),
-  "ELE-CD-0001-0001-000004",
+  generateNextStudentCode("CD-2026-0001", ["CD-IN-EL-26-003"], nuru),
+  "CD-IN-EL-26-004",
 );
-assert.equal(generateNextStudentCode("CD-2026-0001", []), "ELE-CD-0001-0001-000001");
-assert.equal(generateNextStudentCode("CD-2026-0002", []), "ELE-CD-0002-0001-000001");
+assert.equal(formatStudentCode("CD-2026-0001", 1, nuru), "CD-IN-EL-26-001");
+assert.equal(formatStudentCode("CD-2026-0002", 1, lumumba), "CD-LL-EL-26-001");
 assert.notEqual(
-  formatStudentCode("CD-2026-0001", 1),
-  formatStudentCode("CD-2026-0002", 1),
+  formatStudentCode("CD-2026-0001", 1, nuru),
+  formatStudentCode("CD-2026-0002", 1, lumumba),
 );
 
-// Collision critique : même n° d'établissement, pays différents.
-assert.equal(formatStudentCode("CD-2026-0001", 1), "ELE-CD-0001-0001-000001");
-assert.equal(formatStudentCode("BI-2026-0001", 1), "ELE-BI-0001-0001-000001");
+assert.equal(formatStudentCode("CD-2026-0001", 1, nuru), "CD-IN-EL-26-001");
+assert.equal(formatStudentCode("BI-2026-0001", 1, nuruBi), "BI-IN-EL-26-001");
 assert.notEqual(
-  formatStudentCode("CD-2026-0001", 1),
-  formatStudentCode("BI-2026-0001", 1),
+  formatStudentCode("CD-2026-0001", 1, nuru),
+  formatStudentCode("BI-2026-0001", 1, nuruBi),
 );
+assert.notEqual(studentCodePrefix("CD-2026-0001", nuru), studentCodePrefix("BI-2026-0001", nuruBi));
 assert.notEqual(
-  studentCodePrefix("CD-2026-0001"),
-  studentCodePrefix("BI-2026-0001"),
-);
-assert.notEqual(
-  generateNextStudentCode("CD-2026-0001", []),
-  generateNextStudentCode("BI-2026-0001", []),
+  generateNextStudentCode("CD-2026-0001", [], nuru),
+  generateNextStudentCode("BI-2026-0001", [], nuruBi),
 );
 
-// Poursuite de séquence depuis un matricule legacy sans pays.
-assert.equal(
-  generateNextStudentCode("CD-2026-0001", ["ELE-0001-0001-000007"]),
-  "ELE-CD-0001-0001-000008",
-);
+assert.equal(isCanonical("CD-IN-EL-26-001"), true);
+
+function isCanonical(value) {
+  return /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-[0-9]{2}-[0-9]{3}$/.test(value);
+}
 
 console.log("studentCodeGeneration.test.js: OK");

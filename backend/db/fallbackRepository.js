@@ -1092,10 +1092,16 @@ class FallbackRepository {
       const memoryAdapter = {
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
-          if (normalized === String(seedData.school.code).toUpperCase()) {
-            return { id: seedData.school.id, school_code: seedData.school.code };
-          }
-          return { id: `school-${normalized}`, school_code: normalized };
+          const match = (seedData.platformSchools ?? [seedData.school]).find(
+            (row) => String(row.code ?? "").toUpperCase() === normalized,
+          );
+          const isPrimary = normalized === String(seedData.school.code).toUpperCase();
+          return {
+            id: isPrimary ? seedData.school.id : `school-${normalized}`,
+            school_code: match?.code ?? normalized,
+            name: match?.name ?? normalized,
+            login_code: match?.loginCode ?? match?.login_code,
+          };
         },
         async one(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
@@ -1124,10 +1130,30 @@ class FallbackRepository {
             };
           }
           if (text.startsWith("INSERT INTO STUDENTS")) {
+            const { assignCanonicalStudentCode } = require("../lib/studentCodeAllocation");
+            const schoolId = params[0];
+            const isPrimary = String(schoolId) === String(seedData.school.id);
+            const code = isPrimary
+              ? seedData.school.code
+              : String(schoolId).replace(/^school-/i, "");
+            const match = (seedData.platformSchools ?? [seedData.school]).find(
+              (row) => String(row.code ?? "").toUpperCase() === String(code).toUpperCase(),
+            );
+            const studentCode = assignCanonicalStudentCode(
+              {
+                school_code: match?.code ?? code,
+                name: match?.name ?? seedData.school.name,
+                login_code: match?.loginCode ?? match?.login_code ?? seedData.school.loginCode,
+              },
+              (self._managedStudents ?? []).map((row) => row.student_code),
+              params[1],
+            );
             const row = {
-              id: `stu-${params[1]}`,
-              school_id: params[0],
-              student_code: params[1],
+              id: `stu-${studentCode}`,
+              school_id: schoolId,
+              student_code: studentCode,
+              login_code: studentCode,
+              identity_code: studentCode,
               first_name: params[2],
               last_name: params[3],
               gender: params[4],
@@ -1301,7 +1327,11 @@ class FallbackRepository {
             return [];
           }
           if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
-            return (self._managedStudents ?? [])
+            const rows = self._managedStudents ?? [];
+            if (!params.length) {
+              return rows.map((row) => ({ student_code: row.student_code }));
+            }
+            return rows
               .filter((row) => row.school_id === params[0])
               .map((row) => ({ student_code: row.student_code }));
           }
@@ -1310,6 +1340,31 @@ class FallbackRepository {
         async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
           if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+            return { rows: [] };
+          }
+          if (text.startsWith("INSERT INTO USERS")) {
+            if (!self._managedStudentUsers) self._managedStudentUsers = [];
+            const userCode = params[1];
+            if (self._managedStudentUsers.some((row) => row.user_code === userCode)) {
+              const error = new Error(
+                'duplicate key value violates unique constraint "users_user_code_key"',
+              );
+              error.code = "23505";
+              throw error;
+            }
+            self._managedStudentUsers.push({
+              id: userCode,
+              user_code: userCode,
+              school_id: params[0],
+              first_name: params[2],
+              last_name: params[3],
+              email: params[4],
+              phone: params[5],
+              password_hash: params[6],
+              pin_hash: params[6],
+              must_change_password: true,
+              role: "STUDENT",
+            });
             return { rows: [] };
           }
           return { rows: [] };
@@ -1336,8 +1391,71 @@ class FallbackRepository {
     return this.getClassStudentsRepository().listBySchoolCode(schoolCode);
   }
 
-  enrollStudentInClass(classCode, schoolCode, body) {
-    return this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+  async enrollStudentInClass(classCode, schoolCode, body) {
+    const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+    this.registerEnrolledStudentLoginAccount(created.student, schoolCode);
+    return created;
+  }
+
+  /**
+   * Enregistre le compte de connexion élève (hash seul) pour le premier login mémoire.
+   * Jamais de secret clair : le plaintext n'existe que dans la réponse CREATE.
+   */
+  registerEnrolledStudentLoginAccount(student, schoolCode) {
+    const studentCode = String(student?.studentCode ?? "").trim();
+    if (!studentCode) return;
+    const managedUser = (this._managedStudentUsers ?? []).find(
+      (row) => row.user_code === studentCode,
+    );
+    if (!managedUser) return;
+
+    const account = {
+      id: managedUser.id ?? studentCode,
+      publicId: studentCode,
+      userCode: studentCode,
+      identityCode: studentCode,
+      lastName: student.lastName ?? managedUser.last_name ?? "",
+      firstName: student.firstName ?? managedUser.first_name ?? "",
+      gender: student.gender ?? "",
+      birthDate: student.birthDate ?? "",
+      phone: student.parentPhone ?? managedUser.phone ?? "",
+      email: student.parentEmail ?? managedUser.email ?? "",
+      role: "Élève / Étudiant",
+      secondaryRoles: [],
+      scopeLevel: "Établissement",
+      countryScope: seedData.school.countryScope ?? "RDC",
+      countryCode: seedData.school.countryCode ?? "CD",
+      schoolCode,
+      accessChannel: "Application",
+      identifier: studentCode,
+      passwordHash: managedUser.password_hash,
+      pinHash: managedUser.pin_hash,
+      status: "Actif",
+      permissions: seedData.rolePermissions?.["Élève / Étudiant"] ?? ["Voir tableau de bord"],
+      temporaryPassword: "",
+      mustChangePassword: true,
+      photoUrl: "",
+      createdAt: new Date().toISOString().slice(0, 10),
+      lastLoginAt: "",
+      createdBy: "API class students",
+      history: ["Compte élève créé via inscription de classe"],
+    };
+
+    const existingIdx = seedData.userAccounts.findIndex(
+      (user) =>
+        String(user.publicId ?? "").trim() === studentCode ||
+        String(user.identifier ?? "").trim() === studentCode ||
+        String(user.userCode ?? "").trim() === studentCode,
+    );
+    if (existingIdx >= 0) {
+      seedData.userAccounts[existingIdx] = {
+        ...seedData.userAccounts[existingIdx],
+        ...account,
+        temporaryPassword: "",
+      };
+    } else {
+      seedData.userAccounts.push(account);
+    }
   }
 
   getSchoolStudentByCode(studentCode, schoolCode) {

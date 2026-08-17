@@ -94,6 +94,7 @@ async function main() {
       body: { firstName: "Lina", lastName: `Finance${stamp}`, gender: "Féminin", birthDate: "2011-09-01" },
     });
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
+    const studentCode = enrolled.data.student?.studentCode ?? enrolled.data.studentCode;
 
     const grid = await request("/finance/fee-grids", {
       method: "POST",
@@ -190,7 +191,7 @@ async function main() {
       method: "POST",
       token: accountantToken,
       body: {
-        studentId: enrolled.data.studentCode,
+        studentId: studentCode,
         feeType: "Inscription",
         amount: 10_000,
         method: "Espèces",
@@ -210,7 +211,7 @@ async function main() {
     const fees = await request("/finance/student-fees", { token: adminToken });
     assert.equal(fees.status, 200);
     const obligation = (Array.isArray(fees.data) ? fees.data : fees.data?.items ?? []).find(
-      (row) => row.studentId === enrolled.data.studentCode || row.studentId === enrolled.data.id,
+      (row) => row.studentId === studentCode || row.studentId === enrolled.data.student?.id || row.studentId === enrolled.data.id,
     );
     assert.ok(obligation, "obligation projetée");
 
@@ -221,20 +222,20 @@ async function main() {
     });
     assert.equal(secretaryAdjust.status, 403, "Secrétaire n'ajuste pas les obligations");
 
-    const reminder = await request(`/backoffice/finance/unpaid/${encodeURIComponent(enrolled.data.studentCode)}/reminders`, {
+    const reminder = await request(`/backoffice/finance/unpaid/${encodeURIComponent(studentCode)}/reminders`, {
       method: "POST",
       token: accountantToken,
       body: { channel: "notification", recipient: "Parent" },
     });
     assert.equal(reminder.status, 201, JSON.stringify(reminder.data));
-    const cooldown = await request(`/backoffice/finance/unpaid/${encodeURIComponent(enrolled.data.studentCode)}/reminders`, {
+    const cooldown = await request(`/backoffice/finance/unpaid/${encodeURIComponent(studentCode)}/reminders`, {
       method: "POST",
       token: accountantToken,
       body: { channel: "notification", recipient: "Parent" },
     });
     assert.equal(cooldown.status, 409, JSON.stringify(cooldown.data));
     assert.equal(cooldown.data?.code, "REMINDER_COOLDOWN");
-    const forced = await request(`/backoffice/finance/unpaid/${encodeURIComponent(enrolled.data.studentCode)}/reminders`, {
+    const forced = await request(`/backoffice/finance/unpaid/${encodeURIComponent(studentCode)}/reminders`, {
       method: "POST",
       token: accountantToken,
       body: { channel: "notification", recipient: "Parent", force: true },
@@ -259,7 +260,7 @@ async function main() {
       method: "POST",
       token: directorToken,
       body: {
-        studentId: enrolled.data.studentCode,
+        studentId: studentCode,
         feeType: "Inscription",
         amount: 1,
         method: "Espèces",
@@ -269,7 +270,7 @@ async function main() {
     assert.equal(directorPay.status, 201, JSON.stringify(directorPay.data));
 
     const paymentBody = {
-      studentId: enrolled.data.studentCode,
+      studentId: studentCode,
       feeType: "Inscription",
       amount: 1,
       method: "Espèces",
@@ -300,7 +301,7 @@ async function main() {
       method: "POST",
       token: secretaryToken,
       body: {
-        studentId: enrolled.data.studentCode,
+        studentId: studentCode,
         feeType: "Inscription",
         amount: 1,
         method: "Espèces",

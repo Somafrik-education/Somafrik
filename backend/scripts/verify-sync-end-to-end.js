@@ -346,7 +346,9 @@ async function runSyncEndToEnd(databaseUrl) {
       body: studentEnrollPayload(),
     });
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
-    const studentCode = String(enrolled.data.studentCode ?? enrolled.data.id ?? "");
+    const studentCode = String(
+      enrolled.data.student?.studentCode ?? enrolled.data.studentCode ?? enrolled.data.id ?? "",
+    );
     const pgStudent = await pool.query(`SELECT count(*)::int AS c FROM students WHERE student_code = $1`, [studentCode]);
     assert.equal(pgStudent.rows[0].c, 1, "students: PostgreSQL");
     let studentsGet = await assertReloadStable(

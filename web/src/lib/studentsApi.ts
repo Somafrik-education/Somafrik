@@ -52,6 +52,9 @@ export interface SchoolStudent {
   publicId: string;
   studentCode: string;
   matricule: string;
+  loginCode?: string;
+  identityCode?: string;
+  identifier?: string;
   firstName: string;
   lastName: string;
   name: string;

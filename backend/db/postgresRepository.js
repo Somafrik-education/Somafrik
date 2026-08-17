@@ -4395,7 +4395,7 @@ class PostgresRepository {
         `INSERT INTO students (school_id, student_code, first_name, last_name, gender, birth_date, birth_place, photo_url, parent_phone, parent_email, status)
          VALUES ($1, $2, $3, $4, $5, $6, '', '', $7, $8, $9)
          ON CONFLICT (student_code) DO UPDATE SET first_name = EXCLUDED.first_name
-         RETURNING id`,
+         RETURNING id, student_code`,
         [
           schoolId,
           student.matricule,
@@ -4410,6 +4410,7 @@ class PostgresRepository {
       );
       studentIds.set(student.id, row.id);
       studentIds.set(student.matricule, row.id);
+      studentIds.set(row.student_code, row.id);
 
       await client.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
@@ -4417,7 +4418,7 @@ class PostgresRepository {
          ON CONFLICT (user_code) DO UPDATE SET pin_hash = EXCLUDED.pin_hash`,
         [
           schoolId,
-          student.matricule,
+          row.student_code,
           student.firstName ?? firstName,
           lastNameParts.join(" ") || student.name,
           student.parentEmail,
@@ -4605,7 +4606,7 @@ class PostgresRepository {
     const demoPasswordHash = hashSecret("1234");
     const schoolRows = await this.all("SELECT school_code, id FROM schools");
     const schoolIds = new Map(schoolRows.map((school) => [school.school_code, school.id]));
-    const demoRoles = new Set(["Enseignant", "Parent", "Élève / Étudiant"]);
+    const demoRoles = new Set(["Enseignant", "Parent"]);
 
     for (const user of seedData.userAccounts.filter((item) => demoRoles.has(item.role))) {
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
@@ -5317,13 +5318,17 @@ class PostgresRepository {
     }
 
     if (["Élève / Étudiant", "Élève", "Étudiant"].includes(role)) {
-      const match = String(user.user_code ?? "").match(/(ELE-\d+)$/i);
-      if (match) {
-        return match[1].toUpperCase();
+      const canonical = String(user.login_code || user.identity_code || user.user_code || "")
+        .trim()
+        .toUpperCase();
+      if (/^[A-Z]{2}-[A-Z0-9]{2,5}-EL-[0-9]{2}-[0-9]{3}$/.test(canonical)) {
+        return canonical;
       }
-      if (/^ELE-\d+$/i.test(String(user.user_code))) {
-        return String(user.user_code).toUpperCase();
+      const legacy = String(user.user_code ?? "").match(/(ELE-\d+)$/i);
+      if (legacy) {
+        return legacy[1].toUpperCase();
       }
+      if (canonical) return canonical;
     }
 
     return user.user_code || user.phone || user.email;
@@ -5361,13 +5366,17 @@ class PostgresRepository {
   }
 
   mapStudent(student) {
+    const canonical = student.login_code || student.identity_code || student.student_code;
     return {
-      id: student.student_code,
+      id: canonical,
       schoolId: student.school_id,
-      publicId: student.student_code,
+      publicId: canonical,
+      identifier: canonical,
+      loginCode: canonical,
+      identityCode: canonical,
       name: `${student.first_name} ${student.last_name}`.trim(),
       firstName: student.first_name,
-      matricule: student.student_code,
+      matricule: canonical,
       gender: student.gender,
       birthDate: this.formatDate(student.birth_date),
       className: student.class_name,

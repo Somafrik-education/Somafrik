@@ -9,7 +9,7 @@ import {
 } from "./userAccounts";
 import { resolveCountryScopeFromSchool } from "./format";
 import { resolveEffectivePermissions } from "./permissions";
-import { generateStudentMatricule, generateTeacherIdentifiers, resolveStudentMatricule } from "./entityIdentifiers";
+import { generateTeacherIdentifiers, resolveStudentMatricule } from "./entityIdentifiers";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
 
 type Row = Record<string, unknown>;
@@ -201,6 +201,9 @@ export function promoteContactToUser(
 
   const role = String(contact.role ?? "").trim();
   const secondaryRole = String(contact.secondaryRole ?? "").trim();
+  if (/élève|eleve|étudiant|etudiant/i.test(role)) {
+    throw new Error("Le compte élève est créé à l'inscription (Classes). Matricule = identifiant de connexion.");
+  }
 
   const users = [...state.users];
   const existingIndex = users.findIndex(
@@ -414,7 +417,7 @@ export function linkContactToOperationalRecord(
     const idx = findFicheIndex(students, contact, contactId, schoolCode);
     if (idx >= 0) {
       const existing = students[idx];
-      const matriculeInfo = resolveStudentMatricule(existing, schoolCode, students);
+      const matriculeInfo = resolveStudentMatricule(existing);
       students[idx] = {
         ...existing,
         name: existing.name || lastName,
@@ -424,8 +427,8 @@ export function linkContactToOperationalRecord(
         birthDate: existing.birthDate ?? contact.birthDate,
         phone: existing.phone ?? contact.phone,
         email: existing.email ?? contact.email,
-        matricule: matriculeInfo.matricule,
-        publicId: matriculeInfo.publicId,
+        matricule: matriculeInfo.matricule || existing.matricule,
+        publicId: matriculeInfo.publicId || existing.publicId,
         contactId,
       };
       return {
@@ -436,30 +439,8 @@ export function linkContactToOperationalRecord(
         created: false,
       };
     }
-    const id = newRecordId("STUDENTS");
-    const matricule = generateStudentMatricule(schoolCode, students);
-    const record: Row = {
-      id,
-      name: lastName,
-      firstName,
-      className: "",
-      schoolCode,
-      gender: contact.gender ?? "Non renseigné",
-      birthDate: contact.birthDate ?? "",
-      phone: contact.phone ?? "",
-      email: contact.email ?? "",
-      matricule,
-      publicId: matricule,
-      archived: false,
-      contactId,
-    };
-    return {
-      contact: { ...contact, studentId: id },
-      students: [record, ...students],
-      linkedType: "student",
-      linkedRecordId: id,
-      created: true,
-    };
+    // Pas de création locale : matricule = login, attribué par PostgreSQL à l'inscription.
+    return { contact };
   }
 
   if (TEACHER_CONTACT_TYPES.has(contactType)) {

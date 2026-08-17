@@ -198,7 +198,7 @@ async function runHttpGuards() {
       },
     );
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
-    const studentCode = enrolled.data.studentCode;
+    const studentCode = enrolled.data.student?.studentCode ?? enrolled.data.studentCode;
     assert.ok(studentCode);
 
     const detail = await request(`/students/${encodeURIComponent(studentCode)}`, { token });

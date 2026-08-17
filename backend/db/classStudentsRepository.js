@@ -6,7 +6,11 @@ const {
   validateUpdateStudentInput,
   assertClassEligibleForEnrollment,
 } = require("../lib/classStudentsManagement");
-const { allocateStudentCodeLocked } = require("../lib/studentCodeAllocation");
+const { generateTemporarySecret, hashSecret } = require("../services/credentialService");
+const {
+  STUDENT_CODE_PLACEHOLDER,
+  isStudentCanonicalCode,
+} = require("../lib/studentCanonicalIdentifier");
 
 const STUDENT_SELECT_COLUMNS = `
   st.id AS student_uuid,
@@ -132,12 +136,15 @@ function createClassStudentsRepository(db) {
    * @param {any} row
    */
   function mapStudentRow(row) {
-    const studentCode = row.student_code;
+    const studentCode = row.login_code || row.identity_code || row.student_code;
     return {
       id: studentCode,
       publicId: studentCode,
       studentCode,
       matricule: studentCode,
+      loginCode: studentCode,
+      identityCode: studentCode,
+      identifier: studentCode,
       firstName: row.first_name,
       lastName: row.last_name,
       name: `${row.first_name} ${row.last_name}`.trim(),
@@ -270,6 +277,37 @@ function createClassStudentsRepository(db) {
   }
 
   /**
+   * Compte de connexion élève = matricule. INSERT users fail-closed (pas de DO NOTHING).
+   * Secret temporaire CSPRNG, hash seul, must_change_password. Jamais 1234 ni le matricule.
+   * Le clair est renvoyé une seule fois à l'appelant (CREATE) — jamais persisté.
+   * @param {ReturnType<typeof createClassStudentsDb>} tx
+   * @param {{ id: string }} school
+   * @param {{ student_code: string }} student
+   * @param {{ firstName: string, lastName: string, parentEmail?: string, parentPhone?: string }} input
+   * @returns {Promise<string>} secret temporaire en clair (one-shot)
+   */
+  async function ensureStudentLoginUser(tx, school, student, input) {
+    const temporarySecret = generateTemporarySecret();
+    const secretHash = hashSecret(temporarySecret);
+    await tx.query(
+      `INSERT INTO users (
+         school_id, user_code, first_name, last_name, email, phone,
+         password_hash, pin_hash, must_change_password, role, status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, TRUE, 'STUDENT', 'active')`,
+      [
+        school.id,
+        student.student_code,
+        input.firstName,
+        input.lastName,
+        input.parentEmail ?? "",
+        input.parentPhone ?? "",
+        secretHash,
+      ],
+    );
+    return temporarySecret;
+  }
+
+  /**
    * @param {ReturnType<typeof createClassStudentsDb>} tx
    * @param {{ id: string, school_code?: string }} school
    * @param {string} schoolCode
@@ -278,12 +316,7 @@ function createClassStudentsRepository(db) {
    */
   async function insertStudentWithEnrollment(tx, school, schoolCode, classRow, input) {
     const birthDate = normalizeBirthDateForStorage(input.birthDate);
-    const studentCode = await allocateStudentCodeLocked(
-      tx,
-      school.id,
-      school.school_code ?? schoolCode,
-    );
-
+    // PostgreSQL alloue (trigger). Placeholder PENDING, jamais un code JS.
     const student = await tx.one(
       `INSERT INTO students (
          school_id, student_code, first_name, last_name, gender,
@@ -293,7 +326,7 @@ function createClassStudentsRepository(db) {
                  birth_place, photo_url, parent_phone, parent_email, status, created_at, updated_at`,
       [
         school.id,
-        studentCode,
+        STUDENT_CODE_PLACEHOLDER,
         input.firstName,
         input.lastName,
         input.gender,
@@ -305,6 +338,11 @@ function createClassStudentsRepository(db) {
     if (!student) {
       throw createHttpError(500, "Impossible de créer l'élève.");
     }
+    if (!isStudentCanonicalCode(student.student_code)) {
+      throw createHttpError(500, "L'identifiant élève n'a pas été attribué par PostgreSQL.");
+    }
+
+    const temporarySecret = await ensureStudentLoginUser(tx, school, student, input);
 
     const enrollment = await tx.one(
       `INSERT INTO enrollments (
@@ -317,7 +355,7 @@ function createClassStudentsRepository(db) {
       throw createHttpError(500, "Impossible de créer l'inscription.");
     }
 
-    return mapStudentRow({
+    const mapped = mapStudentRow({
       ...student,
       school_code: school.school_code ?? schoolCode,
       class_code: classRow.class_code,
@@ -326,6 +364,13 @@ function createClassStudentsRepository(db) {
       enrollment_id: enrollment.id,
       enrollment_date: enrollment.enrollment_date,
     });
+    return {
+      student: mapped,
+      credentials: {
+        login: mapped.studentCode,
+        temporarySecret,
+      },
+    };
   }
 
   /**
@@ -561,9 +606,7 @@ function createClassStudentsRepository(db) {
 
     /**
      * Crée élève + inscription dans une transaction unique.
-     * @param {string} classCodeParam
-     * @param {string} schoolCode
-     * @param {unknown} body
+     * @returns {{ student: object, credentials: { login: string, temporarySecret: string } }}
      */
     async enroll(classCodeParam, schoolCode, body) {
       const input = validateEnrollStudentInput(body, schoolCode, classCodeParam);

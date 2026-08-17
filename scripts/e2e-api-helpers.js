@@ -316,8 +316,10 @@ async function enrollStudentViaApi(token, classCode, draft = {}) {
     body,
   });
   assert.strictEqual(res.status, 201, `POST /classes/:code/students: ${JSON.stringify(res.data)}`);
+  const student = res.data.student ?? res.data;
+  const studentCode = student.studentCode ?? res.data.studentCode;
   const state = await getState(token);
-  return { student: res.data, studentCode: res.data.studentCode, state };
+  return { student, studentCode, state, credentials: res.data.credentials };
 }
 
 async function createFeeGridViaApi(token, payload) {

@@ -97,6 +97,7 @@ function runUnitTests() {
     role: "Admin School",
     password: "plain",
     temporaryPassword: "tmp-1234",
+    temporarySecret: "Tmp-should-strip",
     passwordHash: "scrypt$salt$hash",
     pin: "1234",
     pinHash: "scrypt$salt$pin",

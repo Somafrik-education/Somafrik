@@ -257,7 +257,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     label: "Élèves",
     feature: "Élèves",
     group: "utilisateurs",
-    description: "Effectifs, classes et dossiers élèves. Matricule généré automatiquement (ex. ELE-CD-0001-0001-000001).",
+    description: "Effectifs, classes et dossiers élèves. Matricule = identifiant de connexion (ex. CD-IN-EL-26-001).",
     fields: [
       { key: "name", label: "Nom complet", placeholder: "Nom de l'élève" },
       { key: "firstName", label: "Prénom", placeholder: "Prénom" },
@@ -265,7 +265,7 @@ export const SCHOOL_ENTITY_MODULES = ([
         key: "matricule",
         label: "Matricule",
         readOnly: true,
-        hint: "Identifiant scolaire généré automatiquement.",
+        hint: "Matricule = identifiant de connexion, attribué par PostgreSQL (ex. CD-IN-EL-26-001).",
       },
       {
         key: "className",

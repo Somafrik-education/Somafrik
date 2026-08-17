@@ -597,7 +597,7 @@ async function main() {
     console.log("  Préfet démo : prefet (CD-2026-0001)");
     console.log("  Secrétaire démo : secretaire (CD-2026-0001)");
     console.log("  Enseignant démo : ENS-0001 (CD-2026-0001)");
-    console.log("  Élève démo : ELE-0001 (CD-2026-0001)");
+    console.log("  Élève démo : CD-IN-EL-26-001 (CD-2026-0001)");
   } finally {
     await pool.end();
   }

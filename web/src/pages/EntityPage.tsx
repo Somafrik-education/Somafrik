@@ -144,7 +144,6 @@ import { teacherAssignmentsApi } from "../lib/teacherAssignmentsApi";
 import {
   generateTeacherIdentifiers,
   getTeacherLoginIdentifier,
-  resolveStudentMatricule,
 } from "../lib/entityIdentifiers";
 
 function normalizeTeacherFormProps(row: Record<string, unknown>): Record<string, unknown> {
@@ -932,7 +931,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       }
     }
 
-    let preparedItem = { ...linkedItem };
+    const preparedItem = { ...linkedItem };
 
     // Annonce/message créé par le Super Admin : diffusion système (aucun périmètre).
     if (isSuperadminSystemComm) {
@@ -1066,21 +1065,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
 
     if (module.key === "students") {
-      const code = String(effectiveSchoolCode ?? preparedItem.schoolCode ?? "").trim();
-      if (!code || code === "*") {
-        showToast("Code établissement requis pour générer le matricule élève", "error");
+      if (!exists) {
+        showToast("La création d'élèves passe par Classes → Inscrire.", "error");
         return;
       }
-      const matriculeInfo = resolveStudentMatricule(
-        preparedItem,
-        code,
-        (state.students ?? []) as Record<string, unknown>[],
-      );
-      preparedItem = {
-        ...preparedItem,
-        matricule: matriculeInfo.matricule,
-        publicId: matriculeInfo.publicId,
-      };
     }
 
     const withId = prepareEntityRowForSave(

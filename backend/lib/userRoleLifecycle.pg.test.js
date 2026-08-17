@@ -121,26 +121,26 @@ async function main() {
 
     const student = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name, status)
-       VALUES ($1, 'ELE-CD-0001-0001-000001', 'Grâce', 'Kabeya', 'active')
+       VALUES ($1, 'PENDING', 'Grâce', 'Kabeya', 'active')
        RETURNING id, student_code, identity_code, login_code, identity_initials, identity_year`,
       [schoolRow.rows[0].id],
     );
-    assert.equal(student.rows[0].student_code, "ELE-CD-0001-0001-000001", "student_code legacy conservé");
-    assert.equal(student.rows[0].identity_code, "CD-IK-GK-26-00002", "élève utilise le compteur partagé");
-    assert.equal(student.rows[0].login_code, "GK-26-00002");
-    assert.equal(student.rows[0].identity_initials, "GK");
+    assert.match(student.rows[0].student_code, /^CD-IK-EL-\d{2}-\d{3}$/);
+    assert.equal(student.rows[0].student_code, student.rows[0].identity_code);
+    assert.equal(student.rows[0].student_code, student.rows[0].login_code, "matricule = identifiant de connexion");
+    assert.equal(student.rows[0].identity_initials, "EL");
     assert.equal(Number(student.rows[0].identity_year), 2026);
     await pool.query(`UPDATE students SET last_name = 'Mukendi' WHERE id = $1`, [student.rows[0].id]);
     const stableStudent = await pool.query(
-      `SELECT last_name, identity_code, login_code FROM students WHERE id = $1`,
+      `SELECT last_name, identity_code, login_code, student_code FROM students WHERE id = $1`,
       [student.rows[0].id],
     );
     assert.equal(stableStudent.rows[0].last_name, "Mukendi");
-    assert.equal(stableStudent.rows[0].identity_code, "CD-IK-GK-26-00002", "nom élève ne renumérote pas le parcours");
-    assert.equal(stableStudent.rows[0].login_code, "GK-26-00002");
+    assert.equal(stableStudent.rows[0].identity_code, student.rows[0].identity_code, "nom élève ne renumérote pas");
+    assert.equal(stableStudent.rows[0].login_code, student.rows[0].student_code);
     await assert.rejects(
-      () => pool.query(`UPDATE students SET identity_code = 'CD-IK-GK-26-99999' WHERE id = $1`, [student.rows[0].id]),
-      /PERMANENT_STUDENT_IDENTITY_IMMUTABLE/,
+      () => pool.query(`UPDATE students SET identity_code = 'CD-IK-EL-26-999' WHERE id = $1`, [student.rows[0].id]),
+      /STUDENT_CANONICAL_IDENTIFIER_IMMUTABLE/,
     );
 
     await store.grantUserRole(created.id, { role: "Secrétaire" }, principal, auditMeta);

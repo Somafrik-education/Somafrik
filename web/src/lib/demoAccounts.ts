@@ -118,7 +118,7 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
       {
         label: "Élève",
         role: "Élève / Étudiant",
-        identifier: "ELE-0001",
+        identifier: "CD-IN-EL-26-001",
         password: DEMO_PASSWORD,
         profile: "school",
         schoolCode: DEMO_SCHOOL_CODE,

@@ -92,24 +92,30 @@ vi.mock("../../lib/classStudentsApi", () => ({
   classStudentsApi: {
     list: vi.fn(async () => apiState.students),
     enroll: vi.fn(async (_classCode: string, payload: Record<string, string>) => ({
-      id: "ELE-SCH-A-000002",
-      publicId: "ELE-SCH-A-000002",
-      studentCode: "ELE-SCH-A-000002",
-      matricule: "ELE-SCH-A-000002",
-      firstName: payload.firstName,
-      lastName: payload.lastName,
-      name: `${payload.firstName} ${payload.lastName}`,
-      gender: payload.gender ?? "",
-      className: apiState.className,
-      classCode: apiState.classCode,
-      schoolCode: "SCH-001",
-      status: "active",
-      enrollmentId: "enr-2",
-      enrollmentDate: "12-08-2026",
-      academicYearName: "2025-2026",
-      birthDate: "",
-      parentPhone: "",
-      parentEmail: "",
+      student: {
+        id: "CD-IN-EL-26-002",
+        publicId: "CD-IN-EL-26-002",
+        studentCode: "CD-IN-EL-26-002",
+        matricule: "CD-IN-EL-26-002",
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        name: `${payload.firstName} ${payload.lastName}`,
+        gender: payload.gender ?? "",
+        className: apiState.className,
+        classCode: apiState.classCode,
+        schoolCode: "SCH-001",
+        status: "active",
+        enrollmentId: "enr-2",
+        enrollmentDate: "12-08-2026",
+        academicYearName: "2025-2026",
+        birthDate: "",
+        parentPhone: "",
+        parentEmail: "",
+      },
+      credentials: {
+        login: "CD-IN-EL-26-002",
+        temporarySecret: "Tmp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
     })),
   },
 }));
@@ -193,6 +199,11 @@ describe("ClassStudentsPage — inscription depuis une classe", () => {
         parentEmail: undefined,
       });
     });
+
+    expect(await screen.findByRole("heading", { name: "Identifiants de connexion" })).toBeInTheDocument();
+    expect(screen.getAllByText("CD-IN-EL-26-002").length).toBeGreaterThan(0);
+    expect(screen.getByText("Tmp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBeInTheDocument();
+    expect(screen.getByText("Fall")).toBeInTheDocument();
   });
 
   it("redirige vers la liste Classes si classCode vide", () => {

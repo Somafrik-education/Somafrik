@@ -20,6 +20,12 @@ function testForbiddenKeysAlwaysRejected() {
     "school_id",
     "academicYearId",
     "academic_year_id",
+    "matricule",
+    "studentCode",
+    "loginCode",
+    "identityCode",
+    "identifier",
+    "publicId",
   ]) {
     assert.throws(
       () => assertEnrollmentScopeImmutable({ [key]: "" }),

@@ -4,13 +4,16 @@
  * Repository mémoire — inscription élève + fiche/annuaire PostgreSQL.
  */
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
+const { generateTemporarySecret, hashSecret, verifySecret } = require("../services/credentialService");
 
 function createMemoryDb() {
   const schools = [
-    { id: "school-a", school_code: "CD-2026-0001" },
-    { id: "school-b", school_code: "CD-2026-0002" },
-    { id: "school-bi", school_code: "BI-2026-0001" },
+    { id: "school-a", school_code: "CD-2026-0001", name: "Institut Nuru", login_code: "CD-IN-26-001" },
+    { id: "school-b", school_code: "CD-2026-0002", name: "Lycée Lumumba", login_code: "CD-LL-26-001" },
+    { id: "school-bi", school_code: "BI-2026-0001", name: "Lycée Bujumbura", login_code: "BI-LB-26-001" },
   ];
   const years = [
     { id: "ay-a", school_id: "school-a", name: "2025-2026", status: "open" },
@@ -25,6 +28,8 @@ function createMemoryDb() {
   const enrollments = [];
   /** @type {any[]} */
   const documents = [];
+  /** @type {any[]} */
+  const users = [];
   let classSeq = 1;
   let studentSeq = 1;
 
@@ -68,16 +73,26 @@ function createMemoryDb() {
       }
 
       if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
-        return students
-          .filter((row) => row.school_id === params[0])
-          .map((row) => ({ student_code: row.student_code }));
+        const rows = !params.length
+          ? students
+          : students.filter((row) => row.school_id === params[0]);
+        return rows.map((row) => ({ student_code: row.student_code }));
       }
 
       if (text.startsWith("INSERT INTO STUDENTS")) {
+        const school = schools.find((row) => row.id === params[0]);
+        const { assignCanonicalStudentCode } = require("./studentCodeAllocation");
+        const studentCode = assignCanonicalStudentCode(
+          school,
+          students.map((row) => row.student_code),
+          params[1],
+        );
         const row = {
           id: `stu-${studentSeq++}`,
           school_id: params[0],
-          student_code: params[1],
+          student_code: studentCode,
+          login_code: studentCode,
+          identity_code: studentCode,
           first_name: params[2],
           last_name: params[3],
           gender: params[4],
@@ -146,9 +161,10 @@ function createMemoryDb() {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
 
       if (text.startsWith("SELECT STUDENT_CODE FROM STUDENTS")) {
-        return students
-          .filter((row) => row.school_id === params[0])
-          .map((row) => ({ student_code: row.student_code }));
+        const rows = !params.length
+          ? students
+          : students.filter((row) => row.school_id === params[0]);
+        return rows.map((row) => ({ student_code: row.student_code }));
       }
 
       if (text.includes("FROM ENROLLMENTS E") && text.includes("WHERE E.CLASS_ID")) {
@@ -212,6 +228,26 @@ function createMemoryDb() {
       if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
         return { rows: [] };
       }
+      if (text.startsWith("INSERT INTO USERS")) {
+        const userCode = params[1];
+        if (users.some((row) => row.user_code === userCode)) {
+          const error = new Error(
+            'duplicate key value violates unique constraint "users_user_code_key"',
+          );
+          error.code = "23505";
+          throw error;
+        }
+        const row = {
+          user_code: userCode,
+          school_id: params[0],
+          password_hash: params[6],
+          pin_hash: params[6],
+          must_change_password: true,
+          role: "STUDENT",
+        };
+        users.push(row);
+        return { rows: [] };
+      }
       throw new Error(`Unhandled query(): ${text}`);
     },
     seedClass(schoolCode, overrides = {}) {
@@ -230,7 +266,10 @@ function createMemoryDb() {
       return row;
     },
     counts() {
-      return { students: students.length, enrollments: enrollments.length };
+      return { students: students.length, enrollments: enrollments.length, users: users.length };
+    },
+    users() {
+      return users.slice();
     },
   };
   memory.withTransaction = async (fn) =>
@@ -242,6 +281,32 @@ function createMemoryDb() {
   return memory;
 }
 
+function assertStudentProjectionHasNoSecret(row) {
+  const serialized = JSON.stringify(row);
+  assert.equal(row.pin, undefined);
+  assert.equal(row.password, undefined);
+  assert.equal(row.temporaryPassword, undefined);
+  assert.equal(row.temporarySecret, undefined);
+  assert.equal(row.credentials, undefined);
+  assert.equal(row.pinHash, undefined);
+  assert.equal(row.passwordHash, undefined);
+  assert.doesNotMatch(serialized, /"1234"/);
+  assert.doesNotMatch(serialized, /Tmp-/i);
+  assert.doesNotMatch(serialized, /temporarySecret/i);
+}
+
+function assertCreateEnvelope(result) {
+  assert.ok(result.student && typeof result.student === "object");
+  assert.ok(result.credentials && typeof result.credentials === "object");
+  assert.match(result.student.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
+  assert.equal(result.credentials.login, result.student.studentCode);
+  assert.match(result.credentials.temporarySecret, /^Tmp-[0-9a-f]{32}$/);
+  assert.notEqual(result.credentials.temporarySecret, "1234");
+  assert.notEqual(result.credentials.temporarySecret, result.student.studentCode);
+  assertStudentProjectionHasNoSecret(result.student);
+  return result;
+}
+
 async function main() {
   const db = createMemoryDb();
   const repo = createClassStudentsRepository(db);
@@ -249,24 +314,30 @@ async function main() {
   const inactiveClass = db.seedClass("CD-2026-0001", { name: "6ème B", status: "inactive" });
   db.seedClass("CD-2026-0002", { name: "5ème A", class_code: "CLS-SCH-B-1" });
 
-  const enrolled = await repo.enroll(activeClass.class_code, "CD-2026-0001", {
-    firstName: "Awa",
-    lastName: "Diop",
-    gender: "Féminin",
-  });
-  assert.match(enrolled.studentCode, /^ELE-CD-0001-0001-/);
-  assert.equal(enrolled.classCode, activeClass.class_code);
-  assert.equal(enrolled.className, "6ème A");
+  const enrolled = assertCreateEnvelope(
+    await repo.enroll(activeClass.class_code, "CD-2026-0001", {
+      firstName: "Awa",
+      lastName: "Diop",
+      gender: "Féminin",
+    }),
+  );
+  assert.match(enrolled.student.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
+  assert.equal(enrolled.student.matricule, enrolled.student.studentCode);
+  assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
+  assert.equal(enrolled.student.classCode, activeClass.class_code);
+  assert.equal(enrolled.student.className, "6ème A");
 
   const listed = await repo.listByClassCode(activeClass.class_code, "CD-2026-0001");
   assert.equal(listed.length, 1);
-  assert.equal(listed[0].studentCode, enrolled.studentCode);
+  assert.equal(listed[0].studentCode, enrolled.student.studentCode);
+  listed.forEach(assertStudentProjectionHasNoSecret);
 
   const schoolList = await repo.listBySchoolCode("CD-2026-0001");
   assert.equal(schoolList.length, 1);
-  assert.equal(schoolList[0].studentCode, enrolled.studentCode);
+  assert.equal(schoolList[0].studentCode, enrolled.student.studentCode);
+  schoolList.forEach(assertStudentProjectionHasNoSecret);
 
-  const fetched = await repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001");
+  const fetched = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
   assert.equal(fetched.firstName, "Awa");
   assert.ok(Array.isArray(fetched.enrollments));
   assert.equal(fetched.enrollments.length, 1);
@@ -275,8 +346,9 @@ async function main() {
   assert.ok(fetched.medical);
   assert.ok(Array.isArray(fetched.documents));
   assert.ok(fetched.access?.notesPath);
+  assertStudentProjectionHasNoSecret(fetched);
 
-  const updated = await repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+  const updated = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
     parentPhone: "+243800000001",
     expectedUpdatedAt: fetched.updatedAt,
   });
@@ -285,7 +357,7 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
         parentPhone: "+243800000002",
         expectedUpdatedAt: fetched.updatedAt,
       }),
@@ -294,7 +366,7 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
         classCode: "HACK",
         expectedUpdatedAt: updated.updatedAt,
       }),
@@ -303,7 +375,7 @@ async function main() {
 
   await assert.rejects(
     () =>
-      repo.updateByStudentCode(enrolled.studentCode, "CD-2026-0001", {
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
         schoolCode: "CD-2026-0002",
         expectedUpdatedAt: updated.updatedAt,
       }),
@@ -311,15 +383,22 @@ async function main() {
   );
 
   const biClass = db.seedClass("BI-2026-0001", { name: "6ème A", class_code: "CLS-BI-1" });
-  const enrolledBi = await repo.enroll(biClass.class_code, "BI-2026-0001", {
-    firstName: "Grace",
-    lastName: "Nkurunziza",
-  });
-  assert.match(enrolledBi.studentCode, /^ELE-BI-0001-0001-/);
-  assert.notEqual(enrolled.studentCode, enrolledBi.studentCode);
+  const enrolledBi = assertCreateEnvelope(
+    await repo.enroll(biClass.class_code, "BI-2026-0001", {
+      firstName: "Grace",
+      lastName: "Nkurunziza",
+    }),
+  );
+  assert.match(enrolledBi.student.studentCode, /^BI-LB-EL-\d{2}-\d{3}$/);
+  assert.notEqual(enrolled.student.studentCode, enrolledBi.student.studentCode);
+  assert.notEqual(
+    enrolled.credentials.temporarySecret,
+    enrolledBi.credentials.temporarySecret,
+    "deux inscriptions doivent produire des secrets distincts",
+  );
 
   await assert.rejects(
-    () => repo.getByStudentCode(enrolled.studentCode, "CD-2026-0002"),
+    () => repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0002"),
     (error) => error.statusCode === 404,
   );
 
@@ -335,7 +414,7 @@ async function main() {
     return previousAll(sql, params);
   };
   await assert.rejects(
-    () => repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001"),
+    () => repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001"),
     (error) => error.code === "42501",
   );
   db.all = previousAll;
@@ -350,7 +429,7 @@ async function main() {
     }
     return previousAll(sql, params);
   };
-  const dossierWithoutDocsTable = await repo.getByStudentCode(enrolled.studentCode, "CD-2026-0001");
+  const dossierWithoutDocsTable = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
   assert.deepEqual(dossierWithoutDocsTable.documents, []);
   db.all = previousAll;
 
@@ -380,6 +459,40 @@ async function main() {
 
   assert.equal(db.counts().students, 2);
   assert.equal(db.counts().enrollments, 2);
+  assert.equal(db.counts().users, 2);
+
+  const loginUsers = db.users();
+  assert.notEqual(loginUsers[0].password_hash, loginUsers[1].password_hash);
+  for (const user of loginUsers) {
+    assert.equal(user.pin_hash, user.password_hash);
+    assert.equal(user.must_change_password, true);
+    assert.match(user.password_hash, /^scrypt\$/);
+    assert.equal(verifySecret("1234", user.password_hash), false);
+    assert.equal(verifySecret(user.user_code, user.password_hash), false);
+  }
+  const storedAwa = loginUsers.find((row) => row.user_code === enrolled.student.studentCode);
+  const storedGrace = loginUsers.find((row) => row.user_code === enrolledBi.student.studentCode);
+  assert.equal(verifySecret(enrolled.credentials.temporarySecret, storedAwa.password_hash), true);
+  assert.equal(verifySecret(enrolledBi.credentials.temporarySecret, storedGrace.password_hash), true);
+  assert.equal(verifySecret(enrolled.student.studentCode, storedAwa.password_hash), false);
+  assert.equal(verifySecret("1234", storedAwa.password_hash), false);
+  assertStudentProjectionHasNoSecret(enrolled.student);
+  assertStudentProjectionHasNoSecret(enrolledBi.student);
+
+  const generated = new Set(Array.from({ length: 32 }, () => generateTemporarySecret()));
+  assert.equal(generated.size, 32);
+  for (const secret of generated) {
+    assert.match(secret, /^Tmp-[0-9a-f]{32}$/);
+    assert.notEqual(secret, "1234");
+  }
+  assert.equal(verifySecret("1234", hashSecret(generateTemporarySecret())), false);
+
+  const productionSrc = fs.readFileSync(
+    path.join(__dirname, "../db/classStudentsRepository.js"),
+    "utf8",
+  );
+  assert.doesNotMatch(productionSrc, /ON CONFLICT \(user_code\) DO NOTHING/);
+  assert.doesNotMatch(productionSrc, /hashSecret\(["']1234["']\)/);
 
   console.log("classStudentsRepository.test.js: OK");
 }

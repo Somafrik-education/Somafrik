@@ -14,9 +14,11 @@ const listMock = vi.hoisted(() =>
   vi.fn(async () => [
     {
       id: "ELE-SCH-001-000001",
-      publicId: "ELE-SCH-001-000001",
-      studentCode: "ELE-SCH-001-000001",
-      matricule: "ELE-SCH-001-000001",
+      publicId: "CD-IN-EL-26-001",
+      studentCode: "CD-IN-EL-26-001",
+      matricule: "CD-IN-EL-26-001",
+      loginCode: "CD-IN-EL-26-001",
+      identifier: "CD-IN-EL-26-001",
       firstName: "Awa",
       lastName: "Diop",
       name: "Awa Diop",
@@ -34,9 +36,11 @@ const listMock = vi.hoisted(() =>
     },
     {
       id: "ELE-SCH-001-000002",
-      publicId: "ELE-SCH-001-000002",
-      studentCode: "ELE-SCH-001-000002",
-      matricule: "ELE-SCH-001-000002",
+      publicId: "CD-IN-EL-26-002",
+      studentCode: "CD-IN-EL-26-002",
+      matricule: "CD-IN-EL-26-002",
+      loginCode: "CD-IN-EL-26-002",
+      identifier: "CD-IN-EL-26-002",
       firstName: "Ibrahima",
       lastName: "Fall",
       name: "Ibrahima Fall",
@@ -129,7 +133,7 @@ describe("StudentsListPage — annuaire PostgreSQL lecture seule", () => {
     renderPage();
     await screen.findByText("Diop");
     const link = screen.getAllByRole("link", { name: "Dossier" })[0];
-    expect(link).toHaveAttribute("href", "/etablissement/eleves/ELE-SCH-001-000001");
+    expect(link).toHaveAttribute("href", "/etablissement/eleves/CD-IN-EL-26-001");
   });
 
   it("filtre la liste en local", async () => {

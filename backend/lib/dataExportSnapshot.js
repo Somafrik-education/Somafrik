@@ -47,11 +47,15 @@ function toIsoDate(value) {
 }
 
 function mapStudent(row) {
-  const studentCode = row.student_code;
+  const studentCode = row.login_code || row.identity_code || row.student_code;
   return {
     id: studentCode,
     publicId: studentCode,
     studentCode,
+    matricule: studentCode,
+    loginCode: studentCode,
+    identityCode: studentCode,
+    identifier: studentCode,
     firstName: row.first_name,
     lastName: row.last_name,
     name: `${row.first_name} ${row.last_name}`.trim(),
