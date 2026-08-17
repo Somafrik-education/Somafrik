@@ -2,11 +2,9 @@
 
 const STUDENT_GENERAL_IDENTITY_SQL = String.raw`
 CREATE TABLE IF NOT EXISTS student_general_code_counters (
-  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
-  creation_year INTEGER NOT NULL,
+  school_id UUID PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
   last_value INTEGER NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (school_id, creation_year),
   CHECK (last_value >= 0 AND last_value <= 99999)
 );
 
@@ -76,9 +74,11 @@ BEGIN
   creation_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
   year_short := lpad((creation_year % 100)::text, 2, '0');
 
-  INSERT INTO student_general_code_counters (school_id, creation_year, last_value)
-  VALUES (NEW.school_id, creation_year, 1)
-  ON CONFLICT (school_id, creation_year)
+  -- Séquence globale et continue PAR ÉTABLISSEMENT. Elle ne repart jamais à 1
+  -- lors d'un changement d'année ni lorsque les initiales de l'élève changent.
+  INSERT INTO student_general_code_counters (school_id, last_value)
+  VALUES (NEW.school_id, 1)
+  ON CONFLICT (school_id)
   DO UPDATE SET last_value = student_general_code_counters.last_value + 1, updated_at = NOW()
   RETURNING last_value INTO sequence_value;
 
