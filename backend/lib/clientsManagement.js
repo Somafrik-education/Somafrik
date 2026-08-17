@@ -6,6 +6,9 @@ const { randomBytes } = require("node:crypto");
 const CLIENTS_ERROR = Object.freeze({
   TENANT_MISMATCH: "TENANT_MISMATCH",
   INVALID_TENANT_SCOPE: "INVALID_TENANT_SCOPE",
+  COUNTRY_REQUIRED: "COUNTRY_REQUIRED",
+  SCHOOL_REQUIRED: "SCHOOL_REQUIRED",
+  SCHOOL_COUNTRY_MISMATCH: "SCHOOL_COUNTRY_MISMATCH",
   USER_TENANT_REASSIGN_FORBIDDEN: "USER_TENANT_REASSIGN_FORBIDDEN",
   ROLE_SCOPE_CONFLICT: "ROLE_SCOPE_CONFLICT",
   CONFLICT: "CONFLICT",
@@ -196,7 +199,7 @@ function assertRequestedCountryMatchesSchool(school, requestedCountryCode) {
     throw createClientsError(
       409,
       "Le pays demandé ne correspond pas à l'établissement.",
-      CLIENTS_ERROR.INVALID_TENANT_SCOPE,
+      CLIENTS_ERROR.SCHOOL_COUNTRY_MISMATCH,
       {
         countryCode: requested,
         schoolCountry: actual,

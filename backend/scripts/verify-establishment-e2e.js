@@ -228,6 +228,70 @@ async function main() {
     );
   });
 
+  await check("MÉTIER. Un contact générique cross-country n'est pas un doublon fort", () => {
+    const withBurundi = {
+      ...state,
+      countries: [
+        ...(state.countries ?? []),
+        { name: "Burundi", code: "BI", status: "Actif" },
+      ],
+      schools: [
+        ...(state.schools ?? []),
+        {
+          code: "BI-2026-0001",
+          publicId: "BI-EK-26-001",
+          name: "Ecole Kanyosha",
+          country: "Burundi",
+          countryCode: "BI",
+          city: "Muha",
+          type: "École primaire",
+          phone: "9090909",
+          email: "contact@somafrik.app",
+          principalName: "Directeur Kanyosha",
+          status: "Actif",
+        },
+      ],
+    };
+    const result = service.create(
+      {
+        name: "Institut Baraka",
+        country: "RDC",
+        countryCode: "CD",
+        city: "Bukavu",
+        type: "Institut",
+        phone: "9090909",
+        email: "contact@somafrik.app",
+        principalName: "Apotre Baraka",
+      },
+      withBurundi,
+      superAdmin,
+    );
+    assert.ok(result.school);
+    assert.equal(result.school.countryCode, "CD");
+  });
+
+  await check("MÉTIER. Même nom et ville dans le même pays est un doublon fort (409)", async () => {
+    await expectBusinessError(
+      () =>
+        service.create(
+          {
+            name: created.name,
+            country: "RDC",
+            countryCode: "CD",
+            city: created.city,
+            type: "Lycée",
+            phone: "+243 990 111 999",
+            email: "autre-fort@ecole.cd",
+            principalName: "Clone Fort",
+          },
+          state,
+          superAdmin,
+          { force: true },
+        ),
+      { statusCode: 409, messageIncludes: "même nom et ville" },
+    );
+  });
+
   // ---------------------------------------------------------------------------
   // Vérification métier — Visibilité restreinte aux utilisateurs autorisés.
   // ---------------------------------------------------------------------------

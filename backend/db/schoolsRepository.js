@@ -68,6 +68,21 @@ function createSchoolsRepository(db) {
     return mapEstablishmentRow(row);
   }
 
+  async function getByCode(schoolCode) {
+    const code = normalizeSchoolCode(schoolCode);
+    if (!code) return null;
+    const row = await db.one(
+      `SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE upper(s.school_code) = $1
+          OR upper(coalesce(s.login_code, '')) = $1
+       LIMIT 1`,
+      [code],
+    );
+    return mapEstablishmentRow(row);
+  }
+
   return {
     async listAll() {
       const rows = await db.all(
@@ -79,20 +94,7 @@ function createSchoolsRepository(db) {
       return rows.map((row) => mapEstablishmentRow(row));
     },
 
-    async getByCode(schoolCode) {
-      const code = normalizeSchoolCode(schoolCode);
-      if (!code) return null;
-      const row = await db.one(
-        `SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency
-         FROM schools s
-         JOIN countries c ON c.id = s.country_id
-         WHERE upper(s.school_code) = $1
-            OR upper(coalesce(s.login_code, '')) = $1
-         LIMIT 1`,
-        [code],
-      );
-      return mapEstablishmentRow(row);
-    },
+    getByCode,
 
     /**
      * Upsert canonique — source de vérité PostgreSQL.
@@ -114,6 +116,27 @@ function createSchoolsRepository(db) {
       }
 
       const country = await requireCountry(record ?? {});
+      const existing = requestedCode ? await getByCode(requestedCode) : null;
+      if (!existing) {
+        const { classifySchoolDuplicates, DUPLICATE_STRONG } = require("../lib/schoolModule");
+        const sameCountryRows = await db.all(
+          `SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency
+           FROM schools s
+           JOIN countries c ON c.id = s.country_id
+           WHERE s.country_id = $1
+             AND s.deleted_at IS NULL`,
+          [country.id],
+        );
+        const mapped = (sameCountryRows || []).map((row) => mapEstablishmentRow(row)).filter(Boolean);
+        const strong = classifySchoolDuplicates(record, mapped).filter((match) => match.level === DUPLICATE_STRONG);
+        if (strong.length) {
+          throw createHttpError(
+            409,
+            "Établissement déjà existant dans ce pays (même nom et ville).",
+            "SCHOOL_DUPLICATE_STRONG",
+          );
+        }
+      }
       const profile = extractProfilePayload({ ...record, name });
       const dbStatus = toSchoolDbStatus(record?.status);
       const deletedAt =

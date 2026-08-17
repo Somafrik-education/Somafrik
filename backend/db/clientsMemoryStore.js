@@ -45,7 +45,14 @@ function createClientsMemoryStore(seed = {}) {
 
   function resolveSchool(code) {
     const normalized = asTrimmed(code).toUpperCase();
-    return tables.schools.find((row) => asTrimmed(row.code ?? row.schoolCode).toUpperCase() === normalized) ?? null;
+    if (!normalized) return null;
+    return (
+      tables.schools.find((row) => {
+        const schoolCode = asTrimmed(row.code ?? row.schoolCode ?? row.school_code).toUpperCase();
+        const loginCode = asTrimmed(row.loginCode ?? row.login_code ?? row.publicId).toUpperCase();
+        return schoolCode === normalized || (loginCode && loginCode === normalized);
+      }) ?? null
+    );
   }
 
   function resolveSchoolCountryCode(school) {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { School } from "../types";
 
@@ -121,5 +121,17 @@ describe("SchoolsPage (LOT 1 — API establishments)", () => {
 
     expect(screen.getByText("CD-IK-26-001")).toBeInTheDocument();
     expect(screen.queryByText("CD-2026-0001")).not.toBeInTheDocument();
+  });
+
+  it("n'impose pas countries[0] / RDC à l'ouverture du formulaire Superadmin", () => {
+    render(
+      <MemoryRouter>
+        <SchoolsPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Nouvel établissement" }));
+    const country = screen.getByLabelText(/^Pays/i) as HTMLSelectElement;
+    expect(country.value).toBe("");
+    expect(screen.getByText("Choisir un pays…")).toBeInTheDocument();
   });
 });

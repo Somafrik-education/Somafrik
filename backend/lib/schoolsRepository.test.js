@@ -99,10 +99,13 @@ function createMemoryDb() {
       }
       return null;
     },
-    async all(sql) {
+    async all(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
       if (text.includes("FROM SCHOOLS S")) {
-        return schools.map((school) => {
+        const rows = text.includes("WHERE S.COUNTRY_ID")
+          ? schools.filter((school) => school.country_id === params[0])
+          : schools;
+        return rows.map((school) => {
           const country = countries.find((row) => row.id === school.country_id);
           return {
             ...school,

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { scopedCountries, scopedSchools } from "../lib/scope";
-import { normalize } from "../lib/format";
+import { countryScopeMatches, normalize, resolveCountryScopeFromSchool } from "../lib/format";
 import { canManageRolePermissions } from "../lib/permissions";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import {
@@ -25,10 +25,13 @@ import {
   SCHOOL_STATUSES,
   SCHOOL_TYPES,
   validateSchoolForm,
+  DUPLICATE_STRONG,
+  type SchoolDuplicateMatch,
 } from "../lib/schoolModule";
 import { appendAuditLog, auditActor, makeAuditEntry } from "../lib/audit";
 import { buildNewUserDraft } from "../lib/userAccounts";
 import { establishmentsApi } from "../lib/establishmentsApi";
+import { ApiError } from "../api/client";
 import { ensureSubscriptionOffers } from "../lib/subscriptionModule";
 import { resolveSchoolSubscription } from "../lib/subscriptions";
 import { Card, SectionHeader } from "../components/ui/Card";
@@ -85,7 +88,7 @@ export function SchoolsPage() {
   const [detail, setDetail] = useState<School | null>(null);
   const [editing, setEditing] = useState<School | null>(null);
   const [busy, setBusy] = useState(false);
-  const [duplicateCandidates, setDuplicateCandidates] = useState<School[] | null>(null);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<SchoolDuplicateMatch[] | null>(null);
   const [pendingPayload, setPendingPayload] = useState<School | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -252,7 +255,7 @@ export function SchoolsPage() {
     try {
       const draft = buildNewUserDraft(SCHOOL_ADMIN_ROLE, session, state);
       draft.schoolCode = school.code;
-      draft.countryScope = school.country ?? school.countryCode ?? "";
+      draft.countryScope = resolveCountryScopeFromSchool(school);
       draft.email = school.principalEmail ?? school.email ?? draft.email;
       draft.phone = school.principalPhone ?? school.phone ?? draft.phone;
       const parts = String(school.principalName ?? "").trim().split(/\s+/);
@@ -276,20 +279,23 @@ export function SchoolsPage() {
 
   function openCreateFlow() {
     const pending = isCountryAdminView;
-    const defaultCountry = platformCountries[0];
+    const scopedCountry = isCountryAdminView
+      ? platformCountries.find(
+          (item) =>
+            countryScopeMatches(item.code, session?.user?.countryScope) ||
+            countryScopeMatches(item.name, session?.user?.countryScope),
+        )
+      : undefined;
     const draft: School = {
       ...EMPTY_SCHOOL,
-      country: defaultCountry?.name ?? session?.user?.countryScope ?? "",
-      countryCode: defaultCountry?.code ?? "",
+      country: scopedCountry?.name ?? "",
+      countryCode: scopedCountry?.code ?? "",
       status: pending ? "En attente" : "Actif",
       validationStatus: pending ? PENDING_VALIDATION_STATUS : VALIDATED_STATUS,
       validationRequestedBy: pending
         ? session?.user?.identifier ?? session?.user?.firstName ?? "Admin Pays"
         : undefined,
     };
-    if (defaultCountry?.code) {
-      draft.code = generateSchoolCode(defaultCountry.code, state.schools);
-    }
     setEditing(draft);
   }
 
@@ -315,8 +321,20 @@ export function SchoolsPage() {
       setPendingPayload(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Échec de la synchronisation";
-      if (!exists && !force && message.toLowerCase().includes("doublon")) {
-        const duplicates = findPotentialDuplicates(payload, state.schools);
+      const code = error instanceof ApiError ? String(error.code ?? "") : "";
+      const details = error instanceof ApiError ? error.details : undefined;
+      const apiDuplicates = Array.isArray((details as { duplicates?: SchoolDuplicateMatch[] } | undefined)?.duplicates)
+        ? ((details as { duplicates: SchoolDuplicateMatch[] }).duplicates)
+        : null;
+      if (code === "SCHOOL_DUPLICATE_STRONG") {
+        const duplicates = apiDuplicates?.length ? apiDuplicates : findPotentialDuplicates(payload, state.schools);
+        setDuplicateCandidates(duplicates.filter((match) => match.level === DUPLICATE_STRONG));
+        setPendingPayload(payload);
+        showToast(message, "error");
+        return;
+      }
+      if (!exists && !force && (code === "SCHOOL_DUPLICATE_CONTACT" || message.toLowerCase().includes("doublon"))) {
+        const duplicates = apiDuplicates?.length ? apiDuplicates : findPotentialDuplicates(payload, state.schools);
         if (duplicates.length) {
           setDuplicateCandidates(duplicates);
           setPendingPayload(payload);
@@ -772,7 +790,11 @@ export function SchoolsPage() {
           setDuplicateCandidates(null);
           setPendingPayload(null);
         }}
-        title="Doublon potentiel détecté"
+        title={
+          duplicateCandidates?.some((match) => match.level === DUPLICATE_STRONG)
+            ? "Établissement déjà existant"
+            : "Doublon potentiel détecté"
+        }
         footer={
           <>
             <Button
@@ -784,22 +806,28 @@ export function SchoolsPage() {
             >
               Corriger
             </Button>
-            <Button
-              disabled={busy}
-              onClick={() => pendingPayload && void saveSchool(pendingPayload, false, true)}
-            >
-              Confirmer quand même
-            </Button>
+            {duplicateCandidates?.some((match) => match.level === DUPLICATE_STRONG) ? null : (
+              <Button
+                disabled={busy}
+                onClick={() => pendingPayload && void saveSchool(pendingPayload, false, true)}
+              >
+                Confirmer quand même
+              </Button>
+            )}
           </>
         }
       >
         <p className="text-sm text-muted">
-          Un ou plusieurs établissements similaires existent déjà (même nom/ville, email ou téléphone).
+          {duplicateCandidates?.some((match) => match.level === DUPLICATE_STRONG)
+            ? "Un établissement avec le même nom et la même ville existe déjà dans ce pays."
+            : "Un ou plusieurs établissements similaires existent déjà dans ce pays."}
         </p>
         <ul className="mt-3 space-y-2 text-sm">
-          {duplicateCandidates?.map((school) => (
-            <li key={school.code} className="rounded-lg border border-line px-3 py-2">
-              <span className="font-semibold">{school.name}</span> — {schoolPublicCode(school)} · {school.city}
+          {duplicateCandidates?.map((match) => (
+            <li key={match.school.code} className="rounded-lg border border-line px-3 py-2">
+              <span className="font-semibold">{match.school.name}</span> — {schoolPublicCode(match.school)} ·{" "}
+              {match.school.city}
+              <p className="mt-1 text-xs text-muted">{match.reasons.join(" · ")}</p>
             </li>
           ))}
         </ul>

@@ -18,8 +18,14 @@ const COUNTRY_CODES = {
 };
 
 function getCountryCodeFromScope(countryScope) {
-  const normalized = String(countryScope ?? "").trim().toUpperCase();
-  return COUNTRY_CODES[normalized] ?? (/^[A-Z]{2}$/.test(normalized) ? normalized : "");
+  const normalized = String(countryScope ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+  if (!normalized) return "";
+  if (COUNTRY_CODES[normalized]) return COUNTRY_CODES[normalized];
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : "";
 }
 
 function countryScopeMatches(left, right) {
