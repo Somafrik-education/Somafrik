@@ -1353,8 +1353,13 @@ class FallbackRepository {
               throw error;
             }
             self._managedStudentUsers.push({
+              id: userCode,
               user_code: userCode,
               school_id: params[0],
+              first_name: params[2],
+              last_name: params[3],
+              email: params[4],
+              phone: params[5],
               password_hash: params[6],
               pin_hash: params[6],
               must_change_password: true,
@@ -1386,8 +1391,71 @@ class FallbackRepository {
     return this.getClassStudentsRepository().listBySchoolCode(schoolCode);
   }
 
-  enrollStudentInClass(classCode, schoolCode, body) {
-    return this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+  async enrollStudentInClass(classCode, schoolCode, body) {
+    const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
+    this.registerEnrolledStudentLoginAccount(created.student, schoolCode);
+    return created;
+  }
+
+  /**
+   * Enregistre le compte de connexion élève (hash seul) pour le premier login mémoire.
+   * Jamais de secret clair : le plaintext n'existe que dans la réponse CREATE.
+   */
+  registerEnrolledStudentLoginAccount(student, schoolCode) {
+    const studentCode = String(student?.studentCode ?? "").trim();
+    if (!studentCode) return;
+    const managedUser = (this._managedStudentUsers ?? []).find(
+      (row) => row.user_code === studentCode,
+    );
+    if (!managedUser) return;
+
+    const account = {
+      id: managedUser.id ?? studentCode,
+      publicId: studentCode,
+      userCode: studentCode,
+      identityCode: studentCode,
+      lastName: student.lastName ?? managedUser.last_name ?? "",
+      firstName: student.firstName ?? managedUser.first_name ?? "",
+      gender: student.gender ?? "",
+      birthDate: student.birthDate ?? "",
+      phone: student.parentPhone ?? managedUser.phone ?? "",
+      email: student.parentEmail ?? managedUser.email ?? "",
+      role: "Élève / Étudiant",
+      secondaryRoles: [],
+      scopeLevel: "Établissement",
+      countryScope: seedData.school.countryScope ?? "RDC",
+      countryCode: seedData.school.countryCode ?? "CD",
+      schoolCode,
+      accessChannel: "Application",
+      identifier: studentCode,
+      passwordHash: managedUser.password_hash,
+      pinHash: managedUser.pin_hash,
+      status: "Actif",
+      permissions: seedData.rolePermissions?.["Élève / Étudiant"] ?? ["Voir tableau de bord"],
+      temporaryPassword: "",
+      mustChangePassword: true,
+      photoUrl: "",
+      createdAt: new Date().toISOString().slice(0, 10),
+      lastLoginAt: "",
+      createdBy: "API class students",
+      history: ["Compte élève créé via inscription de classe"],
+    };
+
+    const existingIdx = seedData.userAccounts.findIndex(
+      (user) =>
+        String(user.publicId ?? "").trim() === studentCode ||
+        String(user.identifier ?? "").trim() === studentCode ||
+        String(user.userCode ?? "").trim() === studentCode,
+    );
+    if (existingIdx >= 0) {
+      seedData.userAccounts[existingIdx] = {
+        ...seedData.userAccounts[existingIdx],
+        ...account,
+        temporaryPassword: "",
+      };
+    } else {
+      seedData.userAccounts.push(account);
+    }
   }
 
   getSchoolStudentByCode(studentCode, schoolCode) {

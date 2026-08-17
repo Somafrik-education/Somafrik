@@ -71,6 +71,7 @@ test("aucun secret exporté (hash, jwt, credentials)", () => {
         name: "Amina",
         password_hash: "scrypt$x",
         pinHash: "scrypt$y",
+        temporarySecret: "Tmp-should-not-export",
         refresh_token_hash: "abc",
         nested: { jwt_secret: "nope", DATABASE_URL: "postgres://x" },
       },
@@ -80,6 +81,7 @@ test("aucun secret exporté (hash, jwt, credentials)", () => {
   assert.equal(clean.students[0].name, "Amina");
   assert.equal("password_hash" in clean.students[0], false);
   assert.equal("pinHash" in clean.students[0], false);
+  assert.equal("temporarySecret" in clean.students[0], false);
   assert.equal("refresh_token_hash" in clean.students[0], false);
   assert.equal("jwt_secret" in clean.students[0].nested, false);
   assert.equal("DATABASE_URL" in clean.students[0].nested, false);

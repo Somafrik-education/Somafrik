@@ -57,6 +57,10 @@ export function ClassStudentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [issuedCredentials, setIssuedCredentials] = useState<{
+    login: string;
+    temporarySecret: string;
+  } | null>(null);
   const [form, setForm] = useState<EnrollFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -129,11 +133,21 @@ export function ClassStudentsPage() {
         parentEmail: form.parentEmail.trim() || undefined,
       };
       const created = await classStudentsApi.enroll(decodedClassCode, payload);
+      const student = created.student;
       setRows((current) =>
-        [...current, created].sort((a, b) => a.lastName.localeCompare(b.lastName, "fr")),
+        [...current, student].sort((a, b) => a.lastName.localeCompare(b.lastName, "fr")),
       );
       setModalOpen(false);
-      showToast("Élève inscrit dans la classe.", "success");
+      setForm(EMPTY_FORM);
+      const login = String(created.credentials?.login ?? student.studentCode ?? "").trim();
+      const temporarySecret = String(created.credentials?.temporarySecret ?? "").trim();
+      if (login && temporarySecret) {
+        setIssuedCredentials({ login, temporarySecret });
+      }
+      showToast(
+        "Élève inscrit. Remettez les identifiants maintenant — ils ne seront plus relisibles.",
+        "success",
+      );
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Inscription impossible.";
       showToast(message, "error");
@@ -308,6 +322,35 @@ export function ClassStudentsPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(issuedCredentials)}
+        onClose={() => setIssuedCredentials(null)}
+        title="Identifiants de connexion"
+      >
+        {issuedCredentials ? (
+          <div className="space-y-3">
+            <InlineAlert tone="warning" title="Remise unique">
+              Notez ces identifiants maintenant. Le secret temporaire ne pourra plus être relu.
+            </InlineAlert>
+            <p className="text-sm text-muted">
+              Identifiant (matricule) :{" "}
+              <span className="font-mono font-semibold text-ink">{issuedCredentials.login}</span>
+            </p>
+            <p className="text-sm text-muted">
+              Secret temporaire :{" "}
+              <span className="font-mono font-semibold text-ink">
+                {issuedCredentials.temporarySecret}
+              </span>
+            </p>
+            <div className="flex justify-end pt-2">
+              <Button type="button" onClick={() => setIssuedCredentials(null)}>
+                J&apos;ai noté les identifiants
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </>
   );

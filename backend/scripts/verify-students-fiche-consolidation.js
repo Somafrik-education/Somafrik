@@ -190,7 +190,7 @@ async function main() {
       },
     );
     assert.equal(enrolledOk.status, 201, JSON.stringify(enrolledOk.data));
-    const studentCode = enrolledOk.data.studentCode;
+    const studentCode = enrolledOk.data.student?.studentCode ?? enrolledOk.data.studentCode;
     assert.ok(studentCode);
 
     const list = await request("/students", { token: tokenCd });

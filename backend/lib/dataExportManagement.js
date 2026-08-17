@@ -18,7 +18,7 @@ const DATA_EXPORT_ERROR = Object.freeze({
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const EXPORT_SENSITIVE_KEY_PATTERN =
-  /^(password|password_hash|passwordhash|pin|pin_hash|pinhash|temporarypassword|refresh_token|refresh_token_hash|refreshtoken|refreshtokenhash|jwt_secret|jwtsecret|access_token|accesstoken|database_url|db_password|postgres_password|connectionstring|secret)$/i;
+  /^(password|password_hash|passwordhash|pin|pin_hash|pinhash|temporarypassword|temporarysecret|refresh_token|refresh_token_hash|refreshtoken|refreshtokenhash|jwt_secret|jwtsecret|access_token|accesstoken|database_url|db_password|postgres_password|connectionstring|secret)$/i;
 
 const DATA_EXPORT_READ_PERMISSIONS = Object.freeze([
   "Paramètres Établissement:READ",

@@ -256,6 +256,7 @@ async function runHttpGuards() {
       body: { firstName: "Awa", lastName: `LotQuatre${stamp}`, gender: "Féminin", birthDate: "2012-04-12" },
     });
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
+    const studentCode = enrolled.data.student?.studentCode ?? enrolled.data.studentCode;
 
     const grid = await request("/finance/fee-grids", {
       method: "POST",
@@ -286,7 +287,7 @@ async function runHttpGuards() {
       token,
       headers: { "Idempotency-Key": `lot4-pay-${stamp}` },
       body: {
-        studentId: enrolled.data.studentCode,
+        studentId: studentCode,
         feeType: "Inscription",
         amount: 25_000,
         method: "Espèces",
@@ -303,7 +304,7 @@ async function runHttpGuards() {
       token,
       headers: { "Idempotency-Key": `lot4-pay-${stamp}` },
       body: {
-        studentId: enrolled.data.studentCode,
+        studentId: studentCode,
         feeType: "Inscription",
         amount: 25_000,
         method: "Espèces",

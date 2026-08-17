@@ -97,6 +97,32 @@ async function refreshAccessToken(refreshToken) {
   return refreshed.data.accessToken;
 }
 
+function assertNoSecretLeak(payload, label) {
+  const serialized = JSON.stringify(payload ?? null);
+  assert.equal(payload?.temporarySecret, undefined, `${label}: temporarySecret`);
+  assert.equal(payload?.credentials, undefined, `${label}: credentials`);
+  assert.doesNotMatch(serialized, /temporarySecret/i, `${label}: clé temporarySecret`);
+  assert.doesNotMatch(serialized, /Tmp-[0-9a-f]{32}/i, `${label}: secret Tmp-`);
+}
+
+function requireCreateEnvelope(data) {
+  assert.ok(data && typeof data === "object", "réponse CREATE absente");
+  assert.ok(data.student && typeof data.student === "object", "CREATE.student manquant");
+  assert.ok(data.credentials && typeof data.credentials === "object", "CREATE.credentials manquant");
+  const studentCode = String(data.student.studentCode ?? "").trim();
+  const login = String(data.credentials.login ?? "").trim();
+  const temporarySecret = String(data.credentials.temporarySecret ?? "").trim();
+  assert.match(studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
+  assert.equal(data.student.matricule, studentCode);
+  assert.equal(data.student.loginCode, studentCode);
+  assert.equal(login, studentCode);
+  assert.match(temporarySecret, /^Tmp-[0-9a-f]{32}$/);
+  assert.notEqual(temporarySecret, "1234");
+  assert.notEqual(temporarySecret, studentCode);
+  assertNoSecretLeak(data.student, "CREATE.student");
+  return { student: data.student, studentCode, login, temporarySecret };
+}
+
 async function replaceTeacherAssignmentsViaApi(assignmentToken, teacherIdentifier, assignments) {
   const teacherResponse = await request("/teachers", { token: assignmentToken });
   assert.equal(teacherResponse.status, 200, JSON.stringify(teacherResponse.data));
@@ -201,22 +227,100 @@ async function main() {
       },
     );
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
-    assert.match(enrolled.data.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
-    assert.equal(enrolled.data.matricule, enrolled.data.studentCode);
-    assert.equal(enrolled.data.loginCode, enrolled.data.studentCode);
+    const { studentCode, temporarySecret } = requireCreateEnvelope(enrolled.data);
 
     const listed = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
       { token: tokenCd },
     );
     assert.equal(listed.status, 200);
-    assert.ok(listed.data.some((row) => row.studentCode === enrolled.data.studentCode));
+    assert.ok(listed.data.some((row) => row.studentCode === studentCode));
+    listed.data.forEach((row) => assertNoSecretLeak(row, "GET class students"));
 
-    const fetched = await request(`/students/${encodeURIComponent(enrolled.data.studentCode)}`, {
+    const directory = await request("/students", { token: tokenCd });
+    assert.equal(directory.status, 200, JSON.stringify(directory.data));
+    const directoryRows = Array.isArray(directory.data) ? directory.data : [];
+    assert.ok(directoryRows.some((row) => row.studentCode === studentCode));
+    directoryRows.forEach((row) => assertNoSecretLeak(row, "GET /students"));
+
+    const fetched = await request(`/students/${encodeURIComponent(studentCode)}`, {
       token: tokenCd,
     });
     assert.equal(fetched.status, 200, JSON.stringify(fetched.data));
     assert.equal(fetched.data.classCode, activeClass.classCode);
+    assertNoSecretLeak(fetched.data, "GET /students/:id");
+
+    const exported = await request("/data-export", { token: tokenCd });
+    if (exported.status === 200) {
+      assertNoSecretLeak(exported.data, "GET /data-export");
+      const serializedExport = JSON.stringify(exported.data ?? null);
+      assert.doesNotMatch(serializedExport, new RegExp(temporarySecret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+
+    const studentLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: {
+        identifier: studentCode,
+        password: temporarySecret,
+        schoolCode: "CD-2026-0001",
+      },
+    });
+    assert.equal(studentLogin.status, 200, JSON.stringify(studentLogin.data));
+    assert.equal(studentLogin.data.user.mustChangePassword, true);
+    assertNoSecretLeak(studentLogin.data.user, "login.user");
+    const studentToken = studentLogin.data.accessToken || studentLogin.data.token;
+    assert.ok(studentToken);
+
+    const changed = await request("/auth/change-password", {
+      method: "POST",
+      token: studentToken,
+      body: { currentPassword: temporarySecret, newPassword: "StudentPass12" },
+    });
+    assert.ok(changed.status >= 200 && changed.status < 300, JSON.stringify(changed.data));
+    assert.equal(changed.data.user?.mustChangePassword, false);
+
+    const oldSecretLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: {
+        identifier: studentCode,
+        password: temporarySecret,
+        schoolCode: "CD-2026-0001",
+      },
+    });
+    assert.equal(oldSecretLogin.status, 401, JSON.stringify(oldSecretLogin.data));
+
+    const rotatedLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: {
+        identifier: studentCode,
+        password: "StudentPass12",
+        schoolCode: "CD-2026-0001",
+      },
+    });
+    assert.equal(rotatedLogin.status, 200, JSON.stringify(rotatedLogin.data));
+    assert.equal(rotatedLogin.data.user.mustChangePassword, false);
+
+    const superLogin = await request("/backoffice/login", {
+      method: "POST",
+      body: { identifier: "superadmin", password: "1234" },
+    });
+    assert.equal(superLogin.status, 200, JSON.stringify(superLogin.data));
+    const superToken = superLogin.data.accessToken || superLogin.data.token;
+    const audit = await request(
+      `/audit?action=enroll_student&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+      { token: superToken },
+    );
+    assert.equal(audit.status, 200, JSON.stringify(audit.data));
+    const auditRows = Array.isArray(audit.data) ? audit.data : [];
+    const enrollAudit = auditRows.find((row) => String(row.entityId ?? "") === studentCode);
+    assert.ok(enrollAudit, "audit enroll_student introuvable");
+    assertNoSecretLeak(enrollAudit, "audit enroll_student");
+    assertNoSecretLeak(enrollAudit.newValue, "audit.newValue");
+    const serializedAudit = JSON.stringify(enrollAudit);
+    assert.doesNotMatch(
+      serializedAudit,
+      new RegExp(temporarySecret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
 
     const enrolledOther = await request(
       `/classes/${encodeURIComponent(classOtherSchool.classCode)}/students`,
@@ -227,8 +331,9 @@ async function main() {
       },
     );
     assert.equal(enrolledOther.status, 201, JSON.stringify(enrolledOther.data));
-    assert.match(enrolledOther.data.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
-    assert.notEqual(enrolled.data.studentCode, enrolledOther.data.studentCode);
+    const otherCreated = requireCreateEnvelope(enrolledOther.data);
+    assert.notEqual(studentCode, otherCreated.studentCode);
+    assert.notEqual(temporarySecret, otherCreated.temporarySecret);
 
     // Enseignant hors classe affectée (seed sans classCode sur cette classe) : refus.
     const teacherListDenied = await request(
@@ -238,7 +343,7 @@ async function main() {
     assert.equal(teacherListDenied.status, 403, JSON.stringify(teacherListDenied.data));
 
     const teacherStudentDenied = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: tokenTeacher },
     );
     assert.equal(teacherStudentDenied.status, 404, JSON.stringify(teacherStudentDenied.data));
@@ -266,7 +371,7 @@ async function main() {
     ]);
     const activeTeacherSession = await loginSession("ENS-0001", "CD-2026-0001");
     const teacherReadBeforeRefresh = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: activeTeacherSession.token },
     );
     assert.equal(
@@ -286,7 +391,7 @@ async function main() {
 
     const tokenAfterRefresh = await refreshAccessToken(activeTeacherSession.refreshToken);
     const teacherReadAfterRefresh = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: tokenAfterRefresh },
     );
     assert.equal(
@@ -306,7 +411,7 @@ async function main() {
     ]);
     const tokenAfterInactiveRefresh = await refreshAccessToken(activeTeacherSession.refreshToken);
     const teacherReadAfterInactive = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: tokenAfterInactiveRefresh },
     );
     assert.equal(
@@ -318,7 +423,7 @@ async function main() {
     // Connexion réelle avec affectation inactive → refus.
     const inactiveLogin = await loginSession("ENS-0001", "CD-2026-0001");
     const teacherInactiveLoginDenied = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: inactiveLogin.token },
     );
     assert.equal(
@@ -337,7 +442,7 @@ async function main() {
     ]);
     const missingStatusLogin = await loginSession("ENS-0001", "CD-2026-0001");
     const teacherMissingStatusDenied = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: missingStatusLogin.token },
     );
     assert.equal(
@@ -347,7 +452,7 @@ async function main() {
     );
     const tokenMissingStatusRefresh = await refreshAccessToken(missingStatusLogin.refreshToken);
     const teacherMissingStatusAfterRefresh = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: tokenMissingStatusRefresh },
     );
     assert.equal(
@@ -389,6 +494,7 @@ async function main() {
       },
     );
     assert.equal(enrolledHomonym.status, 201, JSON.stringify(enrolledHomonym.data));
+    const homonymCreated = requireCreateEnvelope(enrolledHomonym.data);
 
     await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
       {
@@ -400,7 +506,7 @@ async function main() {
     ]);
     const nameOnlyLogin = await loginSession("ENS-0001", "CD-2026-0001");
     const teacherNameOnlyStudentDenied = await request(
-      `/students/${encodeURIComponent(enrolledHomonym.data.studentCode)}`,
+      `/students/${encodeURIComponent(homonymCreated.studentCode)}`,
       { token: nameOnlyLogin.token },
     );
     assert.equal(
@@ -421,7 +527,7 @@ async function main() {
     // Parent : pas de dossier d'un autre élève du même établissement.
     const tokenParent = await login("+243 820 000 001", "CD-2026-0001");
     const parentOtherStudentDenied = await request(
-      `/students/${encodeURIComponent(enrolled.data.studentCode)}`,
+      `/students/${encodeURIComponent(studentCode)}`,
       { token: tokenParent },
     );
     assert.equal(parentOtherStudentDenied.status, 404, JSON.stringify(parentOtherStudentDenied.data));
@@ -547,9 +653,12 @@ async function main() {
     );
     for (const result of concurrent) {
       assert.equal(result.status, 201, JSON.stringify(result.data));
+      requireCreateEnvelope(result.data);
     }
-    const concurrentCodes = new Set(concurrent.map((item) => item.data.studentCode));
+    const concurrentCodes = new Set(concurrent.map((item) => item.data.student.studentCode));
+    const concurrentSecrets = new Set(concurrent.map((item) => item.data.credentials.temporarySecret));
     assert.equal(concurrentCodes.size, 3);
+    assert.equal(concurrentSecrets.size, 3);
 
     console.log("verify-class-student-enrollment: SUCCESS");
   } finally {

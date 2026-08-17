@@ -609,7 +609,7 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
     rows,
     resolveAuthorizedStudentForPrincipal,
   );
-  res.json(scoped);
+  res.json(sanitizeUsersForResponse(scoped));
 }));
 
 app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
@@ -619,8 +619,16 @@ app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POS
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const created = await repository.enrollStudentInClass(req.params.classCode, schoolCode, req.body ?? {});
-  await auditService.record(req, "enroll_student", "student", created.studentCode, created);
-  res.status(201).json(created);
+  const student = sanitizeUserForResponse(created.student);
+  const credentials = {
+    login: String(created.credentials?.login ?? student?.studentCode ?? "").trim(),
+    temporarySecret: String(created.credentials?.temporarySecret ?? "").trim(),
+  };
+  if (!student?.studentCode || !credentials.temporarySecret) {
+    throw new BusinessError(500, "Le secret temporaire d'inscription n'a pas pu être remis.");
+  }
+  await auditService.record(req, "enroll_student", "student", student.studentCode, student);
+  res.status(201).json({ student, credentials });
 }));
 
 app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {

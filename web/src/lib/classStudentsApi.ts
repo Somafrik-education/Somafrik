@@ -32,12 +32,22 @@ export interface EnrollClassStudentPayload {
   parentEmail?: string;
 }
 
+export interface StudentEnrollmentCredentials {
+  login: string;
+  temporarySecret: string;
+}
+
+export interface EnrollClassStudentResult {
+  student: ClassStudent;
+  credentials: StudentEnrollmentCredentials;
+}
+
 export const classStudentsApi = {
   list: (classCode: string) =>
     api.get<ClassStudent[]>(`/classes/${encodeURIComponent(classCode)}/students`),
 
   enroll: (classCode: string, payload: EnrollClassStudentPayload) =>
-    api.post<ClassStudent>(`/classes/${encodeURIComponent(classCode)}/students`, payload),
+    api.post<EnrollClassStudentResult>(`/classes/${encodeURIComponent(classCode)}/students`, payload),
 
   get: (studentCode: string) =>
     api.get<ClassStudent>(`/students/${encodeURIComponent(studentCode)}`),

@@ -4,7 +4,7 @@ const HASH_PREFIX = "scrypt";
 
 /**
  * Secret temporaire élève — contrat Somafrik (Tmp- + octets CSPRNG).
- * Jamais dérivé du matricule. Ne pas logger ni renvoyer dans les projections.
+ * Jamais dérivé du matricule. Hash seul en base. Clair uniquement dans la réponse CREATE.
  */
 function generateTemporarySecret() {
   return `Tmp-${crypto.randomBytes(16).toString("hex")}`;

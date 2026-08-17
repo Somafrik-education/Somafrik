@@ -411,10 +411,25 @@ function assertEnrollmentProjectionHasNoSecret(row) {
   assert.equal(row.pin, undefined);
   assert.equal(row.password, undefined);
   assert.equal(row.temporaryPassword, undefined);
+  assert.equal(row.temporarySecret, undefined);
+  assert.equal(row.credentials, undefined);
   assert.equal(row.pinHash, undefined);
   assert.equal(row.passwordHash, undefined);
   assert.doesNotMatch(serialized, /"1234"/);
   assert.doesNotMatch(serialized, /Tmp-/i);
+  assert.doesNotMatch(serialized, /temporarySecret/i);
+}
+
+function assertCreateEnvelope(result) {
+  assert.ok(result.student && typeof result.student === "object");
+  assert.ok(result.credentials && typeof result.credentials === "object");
+  assert.match(result.student.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
+  assert.equal(result.credentials.login, result.student.studentCode);
+  assert.match(result.credentials.temporarySecret, /^Tmp-[0-9a-f]{32}$/);
+  assert.notEqual(result.credentials.temporarySecret, "1234");
+  assert.notEqual(result.credentials.temporarySecret, result.student.studentCode);
+  assertEnrollmentProjectionHasNoSecret(result.student);
+  return result;
 }
 
 async function peekNextStudentCanonicalCode(pool, schoolCode) {
@@ -570,40 +585,51 @@ async function main() {
       "aucune inscription si le compte users échoue",
     );
 
-    const enrolled = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
-      firstName: "Awa",
-      lastName: "Diop",
-      gender: "Féminin",
-      birthDate: "2012-04-12",
-    });
-    assert.match(enrolled.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
-    assert.equal(enrolled.matricule, enrolled.studentCode);
-    assert.equal(enrolled.loginCode, enrolled.studentCode);
-    await assertCanonicalStudentLogin(pool, enrolled.studentCode, "CD-2026-0001");
-    assertEnrollmentProjectionHasNoSecret(enrolled);
+    const enrolled = assertCreateEnvelope(
+      await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+        firstName: "Awa",
+        lastName: "Diop",
+        gender: "Féminin",
+        birthDate: "2012-04-12",
+      }),
+    );
+    assert.match(enrolled.student.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
+    assert.equal(enrolled.student.matricule, enrolled.student.studentCode);
+    assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
+    await assertCanonicalStudentLogin(pool, enrolled.student.studentCode, "CD-2026-0001");
+    assertEnrollmentProjectionHasNoSecret(enrolled.student);
 
     const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
     assert.equal(listed.length, 1);
-    assert.equal(listed[0].studentCode, enrolled.studentCode);
+    assert.equal(listed[0].studentCode, enrolled.student.studentCode);
+    listed.forEach(assertEnrollmentProjectionHasNoSecret);
 
-    const reread = await studentsRepo.getByStudentCode(enrolled.studentCode, "CD-2026-0001");
+    const reread = await studentsRepo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
     assert.equal(reread.classCode, activeClass.classCode);
+    assertEnrollmentProjectionHasNoSecret(reread);
 
-    const enrolledOtherSchool = await studentsRepo.enroll(
-      activeClassOtherSchool.classCode,
-      "CD-2026-0002",
-      { firstName: "Ibra", lastName: "Fall" },
+    const enrolledOtherSchool = assertCreateEnvelope(
+      await studentsRepo.enroll(
+        activeClassOtherSchool.classCode,
+        "CD-2026-0002",
+        { firstName: "Ibra", lastName: "Fall" },
+      ),
     );
-    assert.match(enrolledOtherSchool.studentCode, /^CD-LL-EL-\d{2}-\d{3}$/);
-    assert.notEqual(enrolled.studentCode, enrolledOtherSchool.studentCode);
-    await assertCanonicalStudentLogin(pool, enrolledOtherSchool.studentCode, "CD-2026-0002");
-    assertEnrollmentProjectionHasNoSecret(enrolledOtherSchool);
+    assert.match(enrolledOtherSchool.student.studentCode, /^CD-LL-EL-\d{2}-\d{3}$/);
+    assert.notEqual(enrolled.student.studentCode, enrolledOtherSchool.student.studentCode);
+    await assertCanonicalStudentLogin(pool, enrolledOtherSchool.student.studentCode, "CD-2026-0002");
+    assertEnrollmentProjectionHasNoSecret(enrolledOtherSchool.student);
+    assert.notEqual(
+      enrolled.credentials.temporarySecret,
+      enrolledOtherSchool.credentials.temporarySecret,
+      "deux inscriptions doivent produire des secrets distincts",
+    );
 
     const secretRows = await pool.query(
       `SELECT user_code, password_hash, pin_hash
        FROM users WHERE user_code IN ($1, $2)
        ORDER BY user_code`,
-      [enrolled.studentCode, enrolledOtherSchool.studentCode],
+      [enrolled.student.studentCode, enrolledOtherSchool.student.studentCode],
     );
     assert.equal(secretRows.rowCount, 2);
     assert.notEqual(
@@ -611,6 +637,25 @@ async function main() {
       secretRows.rows[1].password_hash,
       "deux élèves ne partagent pas le même hash de secret",
     );
+    const hashByCode = Object.fromEntries(
+      secretRows.rows.map((row) => [row.user_code, row.password_hash]),
+    );
+    assert.equal(
+      verifySecret(enrolled.credentials.temporarySecret, hashByCode[enrolled.student.studentCode]),
+      true,
+    );
+    assert.equal(
+      verifySecret(
+        enrolledOtherSchool.credentials.temporarySecret,
+        hashByCode[enrolledOtherSchool.student.studentCode],
+      ),
+      true,
+    );
+    assert.equal(
+      verifySecret(enrolled.student.studentCode, hashByCode[enrolled.student.studentCode]),
+      false,
+    );
+    assert.equal(verifySecret("1234", hashByCode[enrolled.student.studentCode]), false);
 
     const activeClassBiSameNumber = await classesRepo.create(
       {
@@ -620,18 +665,24 @@ async function main() {
       },
       "BI-2026-0001",
     );
-    const enrolledBiSameEstablishment = await studentsRepo.enroll(
-      activeClassBiSameNumber.classCode,
-      "BI-2026-0001",
-      { firstName: "Grace", lastName: "Nkurunziza" },
+    const enrolledBiSameEstablishment = assertCreateEnvelope(
+      await studentsRepo.enroll(
+        activeClassBiSameNumber.classCode,
+        "BI-2026-0001",
+        { firstName: "Grace", lastName: "Nkurunziza" },
+      ),
     );
-    assert.match(enrolledBiSameEstablishment.studentCode, /^BI-LB-EL-\d{2}-\d{3}$/);
+    assert.match(enrolledBiSameEstablishment.student.studentCode, /^BI-LB-EL-\d{2}-\d{3}$/);
     assert.notEqual(
-      enrolled.studentCode,
-      enrolledBiSameEstablishment.studentCode,
+      enrolled.student.studentCode,
+      enrolledBiSameEstablishment.student.studentCode,
       "CD-2026-0001 et BI-2026-0001 ne doivent pas partager le même matricule",
     );
-    await assertCanonicalStudentLogin(pool, enrolledBiSameEstablishment.studentCode, "BI-2026-0001");
+    await assertCanonicalStudentLogin(
+      pool,
+      enrolledBiSameEstablishment.student.studentCode,
+      "BI-2026-0001",
+    );
 
     await assert.rejects(
       () => studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0002"),
@@ -646,11 +697,16 @@ async function main() {
         }),
       ),
     );
-    const codes = new Set(concurrent.map((row) => row.studentCode));
+    const codes = new Set(concurrent.map((row) => row.student.studentCode));
     assert.equal(codes.size, 4);
+    const concurrentSecrets = concurrent.map((row) => {
+      assertCreateEnvelope(row);
+      return row.credentials.temporarySecret;
+    });
+    assert.equal(new Set(concurrentSecrets).size, 4);
     for (const row of concurrent) {
-      assert.match(row.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
-      await assertCanonicalStudentLogin(pool, row.studentCode, "CD-2026-0001");
+      assert.match(row.student.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
+      await assertCanonicalStudentLogin(pool, row.student.studentCode, "CD-2026-0001");
     }
 
     await assert.rejects(

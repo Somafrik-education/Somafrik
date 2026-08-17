@@ -8,7 +8,10 @@ test("invalide le cache dataset après inscription élève", async () => {
   const repository = Object.create(PostgresRepository.prototype);
   repository.cachedDataset = { students: [] };
   repository.getClassStudentsRepository = () => ({
-    enroll: async () => ({ studentCode: "ELE-CD-0001-0001-000001" }),
+    enroll: async () => ({
+      student: { studentCode: "ELE-CD-0001-0001-000001" },
+      credentials: { login: "ELE-CD-0001-0001-000001", temporarySecret: "Tmp-ab" },
+    }),
   });
 
   const created = await repository.enrollStudentInClass("CLS-1", "CD-2026-0001", {
@@ -16,7 +19,7 @@ test("invalide le cache dataset après inscription élève", async () => {
     lastName: "Test",
   });
 
-  assert.equal(created.studentCode, "ELE-CD-0001-0001-000001");
+  assert.equal(created.student.studentCode, "ELE-CD-0001-0001-000001");
   assert.equal(repository.cachedDataset, null);
 });
 
