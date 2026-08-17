@@ -2871,45 +2871,16 @@ class PostgresRepository {
   }
 
   async getCurrentAcademicYear(schoolId) {
-    const current = await this.one(
-      `SELECT *
-       FROM academic_years
-       WHERE school_id = $1 AND status IN ('active', 'open')
-       ORDER BY is_current DESC, created_at DESC
-       LIMIT 1`,
-      [schoolId],
-    );
-    if (current) return current;
-
-    // HOTFIX-SYNC-02 : lecture miss ⇒ création idempotente (ensure).
-    return this.ensureCurrentAcademicYearForSchool(schoolId);
+    return this.findOpenAcademicYear(schoolId);
   }
 
   /**
-   * HOTFIX-SYNC-02 — Crée une année scolaire active si absente (idempotent).
-   * Séparé de la lecture pour rendre l'ensure explicite dans les tests/revue.
+   * Lookup-only : année ouverte/active existante, ou null.
+   * N'invente jamais de millésime ni de dates 01/09–31/08.
+   * Une école sans année configurée reste explicitement non configurée.
    */
   async ensureCurrentAcademicYearForSchool(schoolId) {
-    const existing = await this.one(
-      `SELECT *
-       FROM academic_years
-       WHERE school_id = $1 AND status IN ('active', 'open')
-       ORDER BY is_current DESC, created_at DESC
-       LIMIT 1`,
-      [schoolId],
-    );
-    if (existing) return existing;
-
-    const year = new Date().getFullYear();
-    return this.one(
-      `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
-       VALUES ($1, $2, $3, $4, TRUE, 'open')
-       ON CONFLICT (school_id, name) DO UPDATE SET
-         is_current = TRUE,
-         status = 'open'
-       RETURNING *`,
-      [schoolId, `${year}-${year + 1}`, `${year}-09-01`, `${year + 1}-08-31`],
-    );
+    return this.findOpenAcademicYear(schoolId);
   }
 
   async ensureClassForSchool(schoolId, className, context = {}) {
@@ -4927,21 +4898,7 @@ class PostgresRepository {
       GROUP BY ay.id, s.school_code, c.iso_code
       ORDER BY ay.start_date DESC NULLS LAST, ay.created_at DESC
     `);
-    return rows.map((row) => ({
-      id: row.id,
-      schoolId: row.school_id,
-      schoolCode: row.school_code,
-      countryCode: row.country_code,
-      name: row.name,
-      startDate: this.formatIsoDate(row.start_date),
-      endDate: this.formatIsoDate(row.end_date),
-      status: this.fromYearStatus(row.status),
-      isCurrent: row.is_current,
-      enrollmentCount: Number(row.enrollment_count),
-      gradeCount: Number(row.grade_count),
-      promotionDecisionCount: Number(row.decision_count),
-      notesLocked: row.status === "closed" || row.status === "archived",
-    }));
+    return rows.map((row) => this.mapAcademicYearV2(row));
   }
 
   async createAcademicYearV2(input = {}) {
@@ -4984,11 +4941,128 @@ class PostgresRepository {
        VALUES ($1, $2, $3, $4, $5, 'open') RETURNING *`,
       [school.id, name, startDate, endDate, isCurrent],
     );
+    return this.mapAcademicYearV2({ ...row, school_code: schoolCode });
+  }
+
+  async getAcademicYearV2ById(id) {
+    await this.init();
+    const yearId = String(id ?? "").trim();
+    if (!yearId) return null;
+    const row = await this.one(
+      `SELECT ay.*, s.school_code, c.iso_code AS country_code
+       FROM academic_years ay
+       JOIN schools s ON s.id = ay.school_id
+       JOIN countries c ON c.id = s.country_id
+       WHERE ay.id::text = $1
+       LIMIT 1`,
+      [yearId],
+    );
+    return row ? this.mapAcademicYearV2(row) : null;
+  }
+
+  async updateAcademicYearV2(id, input = {}) {
+    await this.init();
+    const yearId = String(id ?? "").trim();
+    if (!yearId) {
+      const error = new Error("Identifiant d'année scolaire requis.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "status")) {
+      const error = new Error("La clôture et l'archivage d'une année scolaire ne sont pas encore disponibles.");
+      error.statusCode = 400;
+      throw error;
+    }
+    return this.withTransaction(async (tx) => {
+      const db = this.createTxScope(tx);
+      const existing = await db.one(
+        `SELECT ay.*, s.school_code
+         FROM academic_years ay
+         JOIN schools s ON s.id = ay.school_id
+         WHERE ay.id::text = $1
+         LIMIT 1`,
+        [yearId],
+      );
+      if (!existing) {
+        const error = new Error("Année scolaire introuvable.");
+        error.statusCode = 404;
+        throw error;
+      }
+      await db.query(
+        `SELECT id FROM academic_years WHERE school_id = $1 ORDER BY id FOR UPDATE`,
+        [existing.school_id],
+      );
+      const locked = await db.one(
+        `SELECT ay.*, s.school_code
+         FROM academic_years ay
+         JOIN schools s ON s.id = ay.school_id
+         WHERE ay.id::text = $1
+         LIMIT 1`,
+        [yearId],
+      );
+      if (!locked) {
+        const error = new Error("Année scolaire introuvable.");
+        error.statusCode = 404;
+        throw error;
+      }
+      const name = input.name !== undefined ? String(input.name ?? "").trim() : String(locked.name ?? "").trim();
+      const startDate = input.startDate !== undefined
+        ? String(input.startDate ?? "").trim()
+        : this.formatIsoDate(locked.start_date);
+      const endDate = input.endDate !== undefined
+        ? String(input.endDate ?? "").trim()
+        : this.formatIsoDate(locked.end_date);
+      const isCurrent = input.isCurrent !== undefined ? Boolean(input.isCurrent) : Boolean(locked.is_current);
+      if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+        const error = new Error("Nom, date de début et date de fin sont requis.");
+        error.statusCode = 400;
+        throw error;
+      }
+      if (startDate >= endDate) {
+        const error = new Error("La date de fin doit être postérieure à la date de début.");
+        error.statusCode = 400;
+        throw error;
+      }
+      const duplicate = await db.one(
+        "SELECT id FROM academic_years WHERE school_id = $1 AND lower(btrim(name)) = lower(btrim($2)) AND id::text <> $3",
+        [locked.school_id, name, yearId],
+      );
+      if (duplicate) {
+        const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
+        error.statusCode = 409;
+        throw error;
+      }
+      if (isCurrent) {
+        await db.query("UPDATE academic_years SET is_current = FALSE, updated_at = NOW() WHERE school_id = $1", [
+          locked.school_id,
+        ]);
+      }
+      const row = await db.one(
+        `UPDATE academic_years
+         SET name = $2, start_date = $3, end_date = $4, is_current = $5, updated_at = NOW()
+         WHERE id::text = $1
+         RETURNING *`,
+        [yearId, name, startDate, endDate, isCurrent],
+      );
+      return this.mapAcademicYearV2({ ...row, school_code: locked.school_code });
+    });
+  }
+
+  mapAcademicYearV2(row, extras = {}) {
     return {
-      id: row.id, schoolId: row.school_id, schoolCode, name: row.name,
-      startDate: this.formatIsoDate(row.start_date), endDate: this.formatIsoDate(row.end_date),
-      status: this.fromYearStatus(row.status), isCurrent: row.is_current,
-      enrollmentCount: 0, gradeCount: 0, promotionDecisionCount: 0, notesLocked: false,
+      id: row.id,
+      schoolId: row.school_id,
+      schoolCode: row.school_code,
+      countryCode: row.country_code ?? extras.countryCode ?? null,
+      name: row.name,
+      startDate: this.formatIsoDate(row.start_date),
+      endDate: this.formatIsoDate(row.end_date),
+      status: this.fromYearStatus(row.status),
+      isCurrent: row.is_current,
+      enrollmentCount: Number(extras.enrollmentCount ?? row.enrollment_count ?? 0),
+      gradeCount: Number(extras.gradeCount ?? row.grade_count ?? 0),
+      promotionDecisionCount: Number(extras.promotionDecisionCount ?? extras.decisionCount ?? row.decision_count ?? 0),
+      notesLocked: row.status === "closed" || row.status === "archived",
     };
   }
 

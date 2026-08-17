@@ -65,22 +65,13 @@ function createRepo(pool) {
         [code],
       ),
     async ensureCurrentAcademicYearForSchool(schoolId) {
-      const existing = await repo.one(
+      return repo.one(
         `SELECT *
          FROM academic_years
          WHERE school_id = $1 AND status IN ('active', 'open')
          ORDER BY is_current DESC, created_at DESC
          LIMIT 1`,
         [schoolId],
-      );
-      if (existing) return existing;
-      const year = new Date().getFullYear();
-      return repo.one(
-        `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
-         VALUES ($1, $2, $3, $4, TRUE, 'open')
-         ON CONFLICT (school_id, name) DO UPDATE SET is_current = TRUE, status = 'open'
-         RETURNING *`,
-        [schoolId, `${year}-${year + 1}`, `${year}-09-01`, `${year + 1}-08-31`],
       );
     },
     getSchoolSettingsStore() {
@@ -340,6 +331,14 @@ async function main() {
 
     await ensureSchoolSettingsConstraints(repo, console);
     await ensureSchoolSettingsBootstrap(repo, []);
+
+    const yearsAfterBoot = await pool.query(`SELECT COUNT(*)::int AS count FROM academic_years`);
+    assert.equal(yearsAfterBoot.rows[0].count, 0, "boot n'invente pas d'année scolaire");
+    await pool.query(
+      `INSERT INTO academic_years (school_id, name, start_date, end_date, is_current, status)
+       VALUES ($1, '2025-2026', '2025-09-01', '2026-08-31', TRUE, 'open')`,
+      [fixture.schoolAId],
+    );
 
     const created = await repo.getSchoolSettings(adminA, "CD-2026-0001");
     assert.equal(created.schoolCode, "CD-2026-0001");
