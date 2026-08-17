@@ -1,5 +1,6 @@
 -- Backfill opt-in : anciens matricules élèves -> {ISO}-{ETAB}-{INITIALES_ELEVE}-{YY}-{SEQ5}
 -- Exemple : CD-IN-EL-26-001 -> CD-IN-OHS-26-00001 pour OKITO Hope Sabrina.
+-- La séquence SEQ5 est globale et continue par établissement, toutes années et initiales confondues.
 -- Précondition : studentGeneralIdentityPg a installé les fonctions/counters canoniques.
 -- Une seule transaction ; aucun DELETE.
 
@@ -33,22 +34,19 @@ WITH source AS (
 ), existing_max AS (
   SELECT
     st.school_id,
-    extract(year FROM coalesce(st.created_at, NOW()))::integer AS creation_year,
     max(right(st.student_code, 5)::integer) AS max_seq
   FROM students st
   WHERE st.student_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-[0-9]{2}-[0-9]{5}$'
-  GROUP BY 1, 2
+  GROUP BY st.school_id
 ), ranked AS (
   SELECT
     src.*,
     coalesce(mx.max_seq, 0) + row_number() OVER (
-      PARTITION BY src.school_id, src.creation_year
+      PARTITION BY src.school_id
       ORDER BY src.created_at NULLS LAST, src.old_code, src.id
     ) AS seq
   FROM source src
-  LEFT JOIN existing_max mx
-    ON mx.school_id = src.school_id
-   AND mx.creation_year = src.creation_year
+  LEFT JOIN existing_max mx ON mx.school_id = src.school_id
 )
 INSERT INTO student_general_identity_remap (id, old_code, new_code)
 SELECT
@@ -108,15 +106,14 @@ WHERE u.school_id = st.school_id
     OR coalesce(u.profile_payload->>'identifier', '') = m.old_code
   );
 
-INSERT INTO student_general_code_counters (school_id, creation_year, last_value)
+INSERT INTO student_general_code_counters (school_id, last_value)
 SELECT
   st.school_id,
-  extract(year FROM coalesce(st.created_at, NOW()))::integer,
   max(right(st.student_code, 5)::integer)
 FROM students st
 WHERE st.student_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-[0-9]{2}-[0-9]{5}$'
-GROUP BY 1, 2
-ON CONFLICT (school_id, creation_year)
+GROUP BY st.school_id
+ON CONFLICT (school_id)
 DO UPDATE SET
   last_value = GREATEST(student_general_code_counters.last_value, EXCLUDED.last_value),
   updated_at = NOW();
