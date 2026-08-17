@@ -16,6 +16,7 @@ export const CRUD_PERMISSION_MODULES = [
   "Contacts",
   "Relations",
   "Utilisateurs",
+  "Référentiels pédagogiques",
   "Classes",
   "Élèves",
   "Enseignants",
@@ -43,6 +44,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   establishment: null,
   configuration: "Paramètres Établissement",
   countries: "Pays",
+  educationReference: "Référentiels pédagogiques",
   schools: "Établissements",
   subscriptions: "Abonnements",
   mySubscription: "Mon abonnement",
@@ -108,7 +110,7 @@ export const NAV_ITEMS: NavItem[] = [
 
   // Paramétrage plateforme (Super Admin / Admin Pays)
   { view: "countries", path: "/pays", label: "Pays", group: "plateforme" },
-  { view: "countries", path: "/referentiels-pedagogiques", label: "Référentiels pédagogiques", group: "plateforme" },
+  { view: "educationReference", path: "/referentiels-pedagogiques", label: "Référentiels pédagogiques", group: "plateforme" },
   { view: "schools", path: "/etablissements", label: "Établissements", group: "plateforme" },
   { view: "subscriptions", path: "/abonnements", label: "Abonnements", group: "plateforme" },
 

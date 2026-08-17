@@ -7,6 +7,7 @@ const {
   createEducationReferenceError,
   mapLevelRow,
   mapStreamRow,
+  pedagogicalLabelsFromCountryRow,
 } = require("../lib/educationReferenceManagement");
 
 function createEducationReferencePgStore(repo) {
@@ -16,7 +17,8 @@ function createEducationReferencePgStore(repo) {
 
   async function getCountryByCode(countryCode) {
     return one(
-      `SELECT id, iso_code FROM countries WHERE upper(iso_code) = upper($1)`,
+      `SELECT id, iso_code, pedagogical_level_label, pedagogical_track_label, pedagogical_group_label
+       FROM countries WHERE upper(iso_code) = upper($1)`,
       [asTrimmed(countryCode).toUpperCase()],
     );
   }
@@ -259,9 +261,15 @@ function createEducationReferencePgStore(repo) {
        ORDER BY es.stream_type, es.display_order, es.name`,
       [school.id, school.country_id],
     );
+    const country = await one(
+      `SELECT pedagogical_level_label, pedagogical_track_label, pedagogical_group_label
+       FROM countries WHERE id = $1`,
+      [school.country_id],
+    );
     return {
       schoolCode: school.school_code,
       countryCode: school.country_code,
+      labels: pedagogicalLabelsFromCountryRow(country),
       levels: levels.map((row) => ({
         ...mapLevelRow(row, row.country_code),
         schoolActive: Boolean(row.school_active),
@@ -372,6 +380,23 @@ function createEducationReferencePgStore(repo) {
     };
   }
 
+  async function updateCountryPedagogicalLabels(countryCode, labels) {
+    const row = await one(
+      `UPDATE countries
+       SET pedagogical_level_label = $2,
+           pedagogical_track_label = $3,
+           pedagogical_group_label = $4,
+           updated_at = NOW()
+       WHERE upper(iso_code) = upper($1)
+       RETURNING id, iso_code, pedagogical_level_label, pedagogical_track_label, pedagogical_group_label`,
+      [asTrimmed(countryCode).toUpperCase(), labels.levelLabel, labels.trackLabel, labels.groupLabel],
+    );
+    if (!row) {
+      throw createEducationReferenceError(404, "Pays introuvable.", EDUCATION_REFERENCE_ERROR.COUNTRY_NOT_FOUND);
+    }
+    return row;
+  }
+
   async function inventoryLegacyAcademicReferencePayloads() {
     const rows = await all(
       `SELECT s.school_code, sac.config_payload
@@ -419,6 +444,7 @@ function createEducationReferencePgStore(repo) {
     getSchoolCatalog,
     replaceSchoolActivation,
     getSchoolActiveLists,
+    updateCountryPedagogicalLabels,
     inventoryLegacyAcademicReferencePayloads,
     normalizeCode,
   };

@@ -153,7 +153,7 @@ export function getCurrentRolePermissions(ctx: PermissionContext): string[] {
   return resolveEffectivePermissions(ctx.user?.role, ctx.user?.permissions, ctx.rolePermissions);
 }
 
-const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports"]);
+const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports", "referentiels pedagogiques"]);
 
 function countryPrivilegeAllowsRead(normalizedFeature: string): boolean {
   return COUNTRY_PRIVILEGE_FEATURES.has(normalizedFeature);

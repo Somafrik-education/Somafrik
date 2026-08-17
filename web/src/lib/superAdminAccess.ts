@@ -6,6 +6,7 @@ import { COUNTRY_ADMIN_ROLE } from "./orgHierarchy";
 export const SUPER_ADMIN_PLATFORM_VIEWS = [
   "overview",
   "countries",
+  "educationReference",
   "schools",
   "subscriptions",
   "contacts",
@@ -36,6 +37,7 @@ export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
   "Contacts",
   "Relations",
   "Utilisateurs",
+  "Référentiels pédagogiques",
   "Notifications",
   "Messages",
   "Paramètres Établissement",

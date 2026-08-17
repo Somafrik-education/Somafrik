@@ -135,6 +135,17 @@ const routePermissions = {
   "POST /api/backoffice/announcements": ["Notifications:CREATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/announcements/:announcementId": ["Notifications:UPDATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/announcements/:announcementId/archive": ["Notifications:UPDATE", "Gérer notifications", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/academic-config": [
+    "Paramètres Établissement:READ",
+    "Paramètres Établissement:UPDATE",
+    "Référentiels pédagogiques:READ",
+    "Classes:READ",
+    "Voir classes",
+    "Gérer classes",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
   "PUT /api/academic-config": [
     "Gérer planning académique",
     "Gérer classes",
@@ -165,6 +176,7 @@ const routePermissions = {
   "POST /api/backoffice/education-streams": ["Référentiels pédagogiques:CREATE", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/education-streams/:streamId": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
   "POST /api/backoffice/education-streams/:streamId/archive": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/education-reference/labels": ["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"],
   "GET /api/education-reference/catalog": [
     "Paramètres Établissement:READ",
     "Paramètres Établissement:UPDATE",

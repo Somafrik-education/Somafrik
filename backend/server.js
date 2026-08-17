@@ -827,7 +827,7 @@ app.delete("/api/assignments/:assignmentId", requireAuth, requirePermission("DEL
   res.json(result);
 }));
 
-app.get("/api/academic-config", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/academic-config", requireAuth, requirePermission("GET /api/academic-config"), asyncHandler(async (req, res) => {
   const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
   const schoolCode = resolvePrincipalSchoolCode(req.principal);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
@@ -1264,6 +1264,12 @@ app.post("/api/backoffice/education-streams/:streamId/archive", requireAuth, req
   const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
   const archived = await repository.archiveEducationStream(req.params.streamId, req.principal, educationReferenceAuditMetaFromRequest(req));
   res.json(archived);
+}));
+
+app.patch("/api/backoffice/education-reference/labels", requireAuth, requirePermission("PATCH /api/backoffice/education-reference/labels"), asyncHandler(async (req, res) => {
+  const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  const saved = await repository.updateCountryPedagogicalLabels(req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
+  res.json(saved);
 }));
 
 app.get("/api/education-reference/catalog", requireAuth, requirePermission("GET /api/education-reference/catalog"), asyncHandler(async (req, res) => {

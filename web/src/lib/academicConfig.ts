@@ -1,8 +1,5 @@
 import type { BackOfficeState } from "../types";
 
-export const DEFAULT_LEVELS = ["1ère", "2ème", "3ème", "4ème", "5ème", "6ème"];
-export const DEFAULT_TRACKS = ["Générale", "Sciences", "Lettres", "Technique", "Commerciale"];
-export const DEFAULT_CLASS_NAMES = DEFAULT_LEVELS.flatMap((level) => [`${level} A`, `${level} B`]);
 export const DEFAULT_SUBJECTS = [
   "Mathématiques",
   "Français",
@@ -103,14 +100,8 @@ export function getSchoolAcademicLists(
   schoolCode?: string,
 ) {
   const config = (state.academicConfigs?.[schoolCode ?? ""] ?? {}) as Record<string, unknown>;
-  const levels =
-    Array.isArray(config.levels) && config.levels.length
-      ? (config.levels as string[])
-      : DEFAULT_LEVELS;
-  const tracks =
-    Array.isArray(config.tracks) && config.tracks.length
-      ? (config.tracks as string[])
-      : DEFAULT_TRACKS;
+  const levels = Array.isArray(config.levels) ? (config.levels as string[]) : [];
+  const tracks = Array.isArray(config.tracks) ? (config.tracks as string[]) : [];
   const classNames = Array.isArray(config.classNames) ? (config.classNames as string[]) : [];
   const subjectsByClass = resolveSubjectsByClass(config, classNames);
   const subjects =

@@ -7,9 +7,16 @@ CREATE TABLE IF NOT EXISTS countries (
   phone_code VARCHAR(16) NOT NULL,
   currency VARCHAR(16) NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  pedagogical_level_label TEXT NOT NULL DEFAULT 'Niveau',
+  pedagogical_track_label TEXT NOT NULL DEFAULT 'Filière',
+  pedagogical_group_label TEXT NOT NULL DEFAULT 'Groupe',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_level_label TEXT NOT NULL DEFAULT 'Niveau';
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_track_label TEXT NOT NULL DEFAULT 'Filière';
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_group_label TEXT NOT NULL DEFAULT 'Groupe';
 
 CREATE TABLE IF NOT EXISTS schools (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

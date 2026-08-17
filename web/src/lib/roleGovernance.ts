@@ -22,7 +22,7 @@ export const ROLE_GOVERNANCE_NOTES = {
 } as const;
 
 /** Modules pilotés au niveau pays (droits Admin Pays). */
-export const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs"]);
+export const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs", "Référentiels pédagogiques"]);
 
 export function resolveSuperadminPermissionRole(module: string): typeof COUNTRY_ADMIN_ROLE | typeof SCHOOL_ADMIN_ROLE {
   return COUNTRY_SCOPE_MODULES.has(module) ? COUNTRY_ADMIN_ROLE : SCHOOL_ADMIN_ROLE;

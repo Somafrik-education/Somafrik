@@ -8,6 +8,8 @@ const {
   createEducationReferenceError,
   mapLevelRow,
   mapStreamRow,
+  pedagogicalLabelsFromCountryRow,
+  DEFAULT_PEDAGOGICAL_LABELS,
 } = require("../lib/educationReferenceManagement");
 
 function createEducationReferenceMemoryStore(seed = {}) {
@@ -19,14 +21,26 @@ function createEducationReferenceMemoryStore(seed = {}) {
   const countries = new Map(
     (seed.countries ?? []).map((country) => [
       asTrimmed(country.code ?? country.iso_code).toUpperCase(),
-      { id: country.id ?? randomUUID(), iso_code: asTrimmed(country.code ?? country.iso_code).toUpperCase() },
+      {
+        id: country.id ?? randomUUID(),
+        iso_code: asTrimmed(country.code ?? country.iso_code).toUpperCase(),
+        pedagogical_level_label: country.pedagogical_level_label ?? DEFAULT_PEDAGOGICAL_LABELS.levelLabel,
+        pedagogical_track_label: country.pedagogical_track_label ?? DEFAULT_PEDAGOGICAL_LABELS.trackLabel,
+        pedagogical_group_label: country.pedagogical_group_label ?? DEFAULT_PEDAGOGICAL_LABELS.groupLabel,
+      },
     ]),
   );
   const schools = new Map(
     (seed.schools ?? []).map((school) => {
       const code = asTrimmed(school.code ?? school.schoolCode).toUpperCase();
       const countryCode = asTrimmed(school.countryCode ?? school.country_code ?? "CD").toUpperCase();
-      const country = countries.get(countryCode) ?? { id: randomUUID(), iso_code: countryCode };
+      const country = countries.get(countryCode) ?? {
+        id: randomUUID(),
+        iso_code: countryCode,
+        pedagogical_level_label: DEFAULT_PEDAGOGICAL_LABELS.levelLabel,
+        pedagogical_track_label: DEFAULT_PEDAGOGICAL_LABELS.trackLabel,
+        pedagogical_group_label: DEFAULT_PEDAGOGICAL_LABELS.groupLabel,
+      };
       if (!countries.has(countryCode)) countries.set(countryCode, country);
       return [
         code,
@@ -43,7 +57,13 @@ function createEducationReferenceMemoryStore(seed = {}) {
   if (seed.school && !schools.has(asTrimmed(seed.school.code).toUpperCase())) {
     const code = asTrimmed(seed.school.code).toUpperCase();
     const countryCode = asTrimmed(seed.school.countryCode ?? "CD").toUpperCase();
-    const country = countries.get(countryCode) ?? { id: randomUUID(), iso_code: countryCode };
+    const country = countries.get(countryCode) ?? {
+      id: randomUUID(),
+      iso_code: countryCode,
+      pedagogical_level_label: DEFAULT_PEDAGOGICAL_LABELS.levelLabel,
+      pedagogical_track_label: DEFAULT_PEDAGOGICAL_LABELS.trackLabel,
+      pedagogical_group_label: DEFAULT_PEDAGOGICAL_LABELS.groupLabel,
+    };
     countries.set(countryCode, country);
     schools.set(code, {
       id: seed.school.id ?? randomUUID(),
@@ -218,6 +238,7 @@ function createEducationReferenceMemoryStore(seed = {}) {
       return {
         schoolCode: school.school_code,
         countryCode: school.country_code,
+        labels: pedagogicalLabelsFromCountryRow(countries.get(school.country_code)),
         levels: levels
           .filter((row) => row.country_id === school.country_id && row.status === "active")
           .map((row) => ({ ...rowLevel(row), schoolActive: activeLevelIds.has(row.id) })),
@@ -265,6 +286,21 @@ function createEducationReferenceMemoryStore(seed = {}) {
         levels: catalog.levels.filter((row) => row.schoolActive).map((row) => row.name),
         tracks: catalog.streams.filter((row) => row.schoolActive).map((row) => row.name),
       };
+    },
+    async updateCountryPedagogicalLabels(countryCode, labels) {
+      const code = asTrimmed(countryCode).toUpperCase();
+      const country = countries.get(code);
+      if (!country) {
+        throw createEducationReferenceError(404, "Pays introuvable.", EDUCATION_REFERENCE_ERROR.COUNTRY_NOT_FOUND);
+      }
+      const next = {
+        ...country,
+        pedagogical_level_label: labels.levelLabel,
+        pedagogical_track_label: labels.trackLabel,
+        pedagogical_group_label: labels.groupLabel,
+      };
+      countries.set(code, next);
+      return next;
     },
     async inventoryLegacyAcademicReferencePayloads() {
       const ambiguous = [];

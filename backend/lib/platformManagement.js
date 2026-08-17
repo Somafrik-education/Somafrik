@@ -110,6 +110,7 @@ function mapCountryRow(row) {
     administratorId: profile.administratorId || "",
     subscriptionPolicy: profile.subscriptionPolicy,
     createdAt: formatDate(row.created_at),
+    ...require("./educationReferenceManagement").pedagogicalLabelsFromCountryRow(row),
   };
 }
 

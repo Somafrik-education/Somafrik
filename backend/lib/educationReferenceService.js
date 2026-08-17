@@ -6,7 +6,10 @@ const {
   asTrimmed,
   normalizeCode,
   createEducationReferenceError,
-  assertSuperAdmin,
+  assertEducationReferenceCatalogWrite,
+  resolveCatalogWriteCountryCode,
+  pedagogicalLabelsFromCountryRow,
+  requirePedagogicalLabel,
   assertSchoolActivationWrite,
   ignoreClientScope,
 } = require("./educationReferenceManagement");
@@ -48,8 +51,8 @@ async function resolveCountry(store, countryCode) {
 }
 
 async function createLevel(repo, rawPayload, principal, auditMeta) {
-  assertSuperAdmin(principal);
-  const countryCode = asTrimmed(rawPayload?.countryCode).toUpperCase();
+  const countryCode = resolveCatalogWriteCountryCode(rawPayload, principal);
+  assertEducationReferenceCatalogWrite(principal, countryCode, "create");
   const payload = ignoreClientScope(rawPayload);
   const name = asTrimmed(payload.name);
   const code = normalizeCode(payload.code || name);
@@ -85,13 +88,13 @@ async function createLevel(repo, rawPayload, principal, auditMeta) {
 }
 
 async function updateLevel(repo, levelId, rawPatch, principal, auditMeta) {
-  assertSuperAdmin(principal);
   const patch = ignoreClientScope(rawPatch);
   const store = eduStore(repo);
   const existing = await store.getLevelById(levelId);
   if (!existing) {
     throw createEducationReferenceError(404, "Niveau introuvable.", EDUCATION_REFERENCE_ERROR.LEVEL_NOT_FOUND);
   }
+  assertEducationReferenceCatalogWrite(principal, existing.countryCode, "update");
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = eduStore(scope);
@@ -114,12 +117,12 @@ async function updateLevel(repo, levelId, rawPatch, principal, auditMeta) {
 }
 
 async function archiveLevel(repo, levelId, principal, auditMeta) {
-  assertSuperAdmin(principal);
   const store = eduStore(repo);
   const existing = await store.getLevelById(levelId);
   if (!existing) {
     throw createEducationReferenceError(404, "Niveau introuvable.", EDUCATION_REFERENCE_ERROR.LEVEL_NOT_FOUND);
   }
+  assertEducationReferenceCatalogWrite(principal, existing.countryCode, "update");
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = eduStore(scope);
@@ -139,8 +142,8 @@ async function archiveLevel(repo, levelId, principal, auditMeta) {
 }
 
 async function createStream(repo, rawPayload, principal, auditMeta) {
-  assertSuperAdmin(principal);
-  const countryCode = asTrimmed(rawPayload?.countryCode).toUpperCase();
+  const countryCode = resolveCatalogWriteCountryCode(rawPayload, principal);
+  assertEducationReferenceCatalogWrite(principal, countryCode, "create");
   const payload = ignoreClientScope(rawPayload);
   const name = asTrimmed(payload.name);
   const streamType = asTrimmed(payload.streamType || "filiere").toLowerCase();
@@ -195,13 +198,13 @@ async function createStream(repo, rawPayload, principal, auditMeta) {
 }
 
 async function updateStream(repo, streamId, rawPatch, principal, auditMeta) {
-  assertSuperAdmin(principal);
   const patch = ignoreClientScope(rawPatch);
   const store = eduStore(repo);
   const existing = await store.getStreamById(streamId);
   if (!existing) {
     throw createEducationReferenceError(404, "Filière introuvable.", EDUCATION_REFERENCE_ERROR.STREAM_NOT_FOUND);
   }
+  assertEducationReferenceCatalogWrite(principal, existing.countryCode, "update");
   if (patch.levelId !== undefined && patch.levelId) {
     const level = await store.getLevelById(patch.levelId);
     if (!level || level.countryCode !== existing.countryCode) {
@@ -246,12 +249,12 @@ async function updateStream(repo, streamId, rawPatch, principal, auditMeta) {
 }
 
 async function archiveStream(repo, streamId, principal, auditMeta) {
-  assertSuperAdmin(principal);
   const store = eduStore(repo);
   const existing = await store.getStreamById(streamId);
   if (!existing) {
     throw createEducationReferenceError(404, "Filière introuvable.", EDUCATION_REFERENCE_ERROR.STREAM_NOT_FOUND);
   }
+  assertEducationReferenceCatalogWrite(principal, existing.countryCode, "update");
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = eduStore(scope);
@@ -283,6 +286,37 @@ async function saveSchoolActivation(repo, schoolCode, activation, principal, aud
       action: "save_school_education_activation",
       entityType: "school_education_reference",
       entityId: normalizedSchool,
+      oldValue: before,
+      newValue: saved,
+    });
+    return saved;
+  });
+}
+
+async function updateCountryPedagogicalLabels(repo, rawPayload, principal, auditMeta) {
+  const countryCode = resolveCatalogWriteCountryCode(rawPayload, principal);
+  assertEducationReferenceCatalogWrite(principal, countryCode, "update");
+  const payload = ignoreClientScope(rawPayload);
+  const labels = {
+    levelLabel: requirePedagogicalLabel(payload.levelLabel, "levelLabel"),
+    trackLabel: requirePedagogicalLabel(payload.trackLabel, "trackLabel"),
+    groupLabel: requirePedagogicalLabel(payload.groupLabel, "groupLabel"),
+  };
+  const store = eduStore(repo);
+  const country = await resolveCountry(store, countryCode);
+  return repo.withTransaction(async (tx) => {
+    const scope = repo.createTxScope(tx);
+    const scopedStore = eduStore(scope);
+    const before = pedagogicalLabelsFromCountryRow(country);
+    const savedCountry = await scopedStore.updateCountryPedagogicalLabels(countryCode, labels);
+    const saved = {
+      countryCode,
+      ...pedagogicalLabelsFromCountryRow(savedCountry),
+    };
+    await writeEducationAudit(scope, principal, auditMeta, {
+      action: "update_country_pedagogical_labels",
+      entityType: "country_pedagogical_labels",
+      entityId: countryCode,
       oldValue: before,
       newValue: saved,
     });
@@ -327,6 +361,7 @@ module.exports = {
   updateStream,
   archiveStream,
   saveSchoolActivation,
+  updateCountryPedagogicalLabels,
   ensureEducationReferenceConstraints,
   stripLegacyAcademicReferencePayloads,
 };

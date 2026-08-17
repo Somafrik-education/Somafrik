@@ -95,7 +95,7 @@ export const routeFeatureMap: Record<string, string> = {
   Permissions: "Droits par rôle",
 };
 
-const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports"]);
+const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports", "referentiels pedagogiques"]);
 
 function countryPrivilegeAllows(normalizedFeature: string, action: SecurityAction) {
   if (!COUNTRY_PRIVILEGE_FEATURES.has(normalizedFeature)) return false;

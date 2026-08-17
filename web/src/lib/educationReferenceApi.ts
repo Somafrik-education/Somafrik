@@ -22,9 +22,16 @@ export type EducationStream = {
   schoolActive?: boolean;
 };
 
+export type EducationPedagogicalLabels = {
+  levelLabel: string;
+  trackLabel: string;
+  groupLabel: string;
+};
+
 export type EducationSchoolCatalog = {
   schoolCode: string;
   countryCode: string;
+  labels?: EducationPedagogicalLabels;
   levels: EducationLevel[];
   streams: EducationStream[];
 };
@@ -64,4 +71,7 @@ export const educationReferenceApi = {
           payload,
         )
       : api.put<EducationSchoolCatalog>("/education-reference/school-activation", payload),
+
+  updateCountryLabels: (payload: EducationPedagogicalLabels & { countryCode: string }) =>
+    api.patch<EducationPedagogicalLabels & { countryCode: string }>("/backoffice/education-reference/labels", payload),
 };

@@ -3050,6 +3050,11 @@ class FallbackRepository {
     return saveSchoolActivation(this, schoolCode, activation, principal, auditMeta);
   }
 
+  updateCountryPedagogicalLabels(payload, principal, auditMeta) {
+    const { updateCountryPedagogicalLabels } = require("../lib/educationReferenceService");
+    return updateCountryPedagogicalLabels(this, payload, principal, auditMeta);
+  }
+
   async ensureEducationReferenceConstraints() {
     const { ensureEducationReferenceConstraints } = require("../lib/educationReferenceService");
     return ensureEducationReferenceConstraints(this, console);

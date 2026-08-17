@@ -130,9 +130,10 @@ export type AcademicManagementConfig = {
   subjects?: string[];
 };
 
-export const DEFAULT_LEVELS = ["1ère", "2ème", "3ème", "4ème", "5ème", "6ème"];
-export const DEFAULT_TRACKS = ["Générale", "Sciences", "Lettres", "Technique", "Commerciale"];
-export const DEFAULT_CLASS_NAMES = DEFAULT_LEVELS.flatMap((level) => [`${level} A`, `${level} B`]);
+/** Plus aucun catalogue pédagogique local. Liste vide = vide (fail-closed multi-pays). */
+export const DEFAULT_LEVELS: string[] = [];
+export const DEFAULT_TRACKS: string[] = [];
+export const DEFAULT_CLASS_NAMES: string[] = [];
 export const DEFAULT_SUBJECTS = [
   "Mathématiques",
   "Français",
@@ -553,9 +554,9 @@ export const defaultAcademicConfig: AcademicManagementConfig = {
   evaluationTypes: [],
   defaultScale: 20,
   reportCardMode: "period",
-  levels: DEFAULT_LEVELS,
-  tracks: DEFAULT_TRACKS,
-  classNames: DEFAULT_CLASS_NAMES,
+  levels: [],
+  tracks: [],
+  classNames: [],
   subjects: DEFAULT_SUBJECTS,
 };
 
