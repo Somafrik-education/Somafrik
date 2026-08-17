@@ -1342,6 +1342,26 @@ class FallbackRepository {
           if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
             return { rows: [] };
           }
+          if (text.startsWith("INSERT INTO USERS")) {
+            if (!self._managedStudentUsers) self._managedStudentUsers = [];
+            const userCode = params[1];
+            if (self._managedStudentUsers.some((row) => row.user_code === userCode)) {
+              const error = new Error(
+                'duplicate key value violates unique constraint "users_user_code_key"',
+              );
+              error.code = "23505";
+              throw error;
+            }
+            self._managedStudentUsers.push({
+              user_code: userCode,
+              school_id: params[0],
+              password_hash: params[6],
+              pin_hash: params[6],
+              must_change_password: true,
+              role: "STUDENT",
+            });
+            return { rows: [] };
+          }
           return { rows: [] };
         },
         async withTransaction(fn) {

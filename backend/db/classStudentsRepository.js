@@ -6,7 +6,7 @@ const {
   validateUpdateStudentInput,
   assertClassEligibleForEnrollment,
 } = require("../lib/classStudentsManagement");
-const { hashSecret } = require("../services/credentialService");
+const { generateTemporarySecret, hashSecret } = require("../services/credentialService");
 const {
   STUDENT_CODE_PLACEHOLDER,
   isStudentCanonicalCode,
@@ -277,17 +277,20 @@ function createClassStudentsRepository(db) {
   }
 
   /**
-   * Compte de connexion élève = matricule. La table users est obligatoire sur le chemin PostgreSQL.
+   * Compte de connexion élève = matricule. INSERT users fail-closed (pas de DO NOTHING).
+   * Secret temporaire CSPRNG, hash seul, must_change_password. Jamais 1234 ni le matricule.
    * @param {ReturnType<typeof createClassStudentsDb>} tx
    * @param {{ id: string }} school
    * @param {{ student_code: string }} student
    * @param {{ firstName: string, lastName: string, parentEmail?: string, parentPhone?: string }} input
    */
   async function ensureStudentLoginUser(tx, school, student, input) {
+    const secretHash = hashSecret(generateTemporarySecret());
     await tx.query(
-      `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
-       VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', 'active')
-       ON CONFLICT (user_code) DO NOTHING`,
+      `INSERT INTO users (
+         school_id, user_code, first_name, last_name, email, phone,
+         password_hash, pin_hash, must_change_password, role, status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, TRUE, 'STUDENT', 'active')`,
       [
         school.id,
         student.student_code,
@@ -295,7 +298,7 @@ function createClassStudentsRepository(db) {
         input.lastName,
         input.parentEmail ?? "",
         input.parentPhone ?? "",
-        hashSecret("1234"),
+        secretHash,
       ],
     );
   }

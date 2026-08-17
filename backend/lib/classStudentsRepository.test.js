@@ -4,7 +4,10 @@
  * Repository mémoire — inscription élève + fiche/annuaire PostgreSQL.
  */
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
+const { generateTemporarySecret, hashSecret, verifySecret } = require("../services/credentialService");
 
 function createMemoryDb() {
   const schools = [
@@ -25,6 +28,8 @@ function createMemoryDb() {
   const enrollments = [];
   /** @type {any[]} */
   const documents = [];
+  /** @type {any[]} */
+  const users = [];
   let classSeq = 1;
   let studentSeq = 1;
 
@@ -224,6 +229,23 @@ function createMemoryDb() {
         return { rows: [] };
       }
       if (text.startsWith("INSERT INTO USERS")) {
+        const userCode = params[1];
+        if (users.some((row) => row.user_code === userCode)) {
+          const error = new Error(
+            'duplicate key value violates unique constraint "users_user_code_key"',
+          );
+          error.code = "23505";
+          throw error;
+        }
+        const row = {
+          user_code: userCode,
+          school_id: params[0],
+          password_hash: params[6],
+          pin_hash: params[6],
+          must_change_password: true,
+          role: "STUDENT",
+        };
+        users.push(row);
         return { rows: [] };
       }
       throw new Error(`Unhandled query(): ${text}`);
@@ -244,7 +266,10 @@ function createMemoryDb() {
       return row;
     },
     counts() {
-      return { students: students.length, enrollments: enrollments.length };
+      return { students: students.length, enrollments: enrollments.length, users: users.length };
+    },
+    users() {
+      return users.slice();
     },
   };
   memory.withTransaction = async (fn) =>
@@ -254,6 +279,15 @@ function createMemoryDb() {
       query: (sql, params) => memory.query(sql, params),
     });
   return memory;
+}
+
+function assertEnrollmentHasNoSecret(row) {
+  const serialized = JSON.stringify(row);
+  assert.equal(row.pin, undefined);
+  assert.equal(row.password, undefined);
+  assert.equal(row.temporaryPassword, undefined);
+  assert.doesNotMatch(serialized, /"1234"/);
+  assert.doesNotMatch(serialized, /Tmp-/i);
 }
 
 async function main() {
@@ -396,6 +430,34 @@ async function main() {
 
   assert.equal(db.counts().students, 2);
   assert.equal(db.counts().enrollments, 2);
+  assert.equal(db.counts().users, 2);
+
+  const loginUsers = db.users();
+  assert.notEqual(loginUsers[0].password_hash, loginUsers[1].password_hash);
+  for (const user of loginUsers) {
+    assert.equal(user.pin_hash, user.password_hash);
+    assert.equal(user.must_change_password, true);
+    assert.match(user.password_hash, /^scrypt\$/);
+    assert.equal(verifySecret("1234", user.password_hash), false);
+    assert.equal(verifySecret(user.user_code, user.password_hash), false);
+  }
+  assertEnrollmentHasNoSecret(enrolled);
+  assertEnrollmentHasNoSecret(enrolledBi);
+
+  const generated = new Set(Array.from({ length: 32 }, () => generateTemporarySecret()));
+  assert.equal(generated.size, 32);
+  for (const secret of generated) {
+    assert.match(secret, /^Tmp-[0-9a-f]{32}$/);
+    assert.notEqual(secret, "1234");
+  }
+  assert.equal(verifySecret("1234", hashSecret(generateTemporarySecret())), false);
+
+  const productionSrc = fs.readFileSync(
+    path.join(__dirname, "../db/classStudentsRepository.js"),
+    "utf8",
+  );
+  assert.doesNotMatch(productionSrc, /ON CONFLICT \(user_code\) DO NOTHING/);
+  assert.doesNotMatch(productionSrc, /hashSecret\(["']1234["']\)/);
 
   console.log("classStudentsRepository.test.js: OK");
 }

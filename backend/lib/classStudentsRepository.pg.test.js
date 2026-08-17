@@ -12,6 +12,7 @@ const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
 const { createTxAdapter } = require("../db/txAdapter");
+const { hashSecret, verifySecret } = require("../services/credentialService");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
@@ -123,6 +124,7 @@ async function setupFixture(pool) {
       phone TEXT,
       password_hash TEXT,
       pin_hash TEXT,
+      must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
       role TEXT,
       status TEXT NOT NULL DEFAULT 'active',
       last_login_at TIMESTAMPTZ,
@@ -143,6 +145,7 @@ async function setupFixture(pool) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_initials TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_year SMALLINT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE TABLE IF NOT EXISTS identity_counters (
       school_id UUID NOT NULL REFERENCES schools(id),
       creation_year SMALLINT NOT NULL,
@@ -376,7 +379,10 @@ async function assertCanonicalStudentLogin(pool, studentCode, schoolCode) {
        u.login_code AS user_login,
        u.identity_code AS user_identity,
        u.role,
-       u.school_id AS user_school_id
+       u.school_id AS user_school_id,
+       u.password_hash,
+       u.pin_hash,
+       u.must_change_password
      FROM students st
      JOIN users u ON u.user_code = st.student_code AND u.school_id = st.school_id
      JOIN schools s ON s.id = st.school_id
@@ -392,6 +398,56 @@ async function assertCanonicalStudentLogin(pool, studentCode, schoolCode) {
   assert.equal(row.user_identity, row.student_code);
   assert.equal(row.role, "STUDENT");
   assert.equal(row.user_school_id, row.student_school_id);
+  assert.equal(row.must_change_password, true);
+  assert.match(String(row.password_hash), /^scrypt\$/);
+  assert.equal(row.pin_hash, row.password_hash);
+  assert.equal(verifySecret("1234", row.password_hash), false);
+  assert.equal(verifySecret(row.student_code, row.password_hash), false);
+  assert.doesNotMatch(String(row.password_hash), /1234/);
+}
+
+function assertEnrollmentProjectionHasNoSecret(row) {
+  const serialized = JSON.stringify(row);
+  assert.equal(row.pin, undefined);
+  assert.equal(row.password, undefined);
+  assert.equal(row.temporaryPassword, undefined);
+  assert.equal(row.pinHash, undefined);
+  assert.equal(row.passwordHash, undefined);
+  assert.doesNotMatch(serialized, /"1234"/);
+  assert.doesNotMatch(serialized, /Tmp-/i);
+}
+
+async function peekNextStudentCanonicalCode(pool, schoolCode) {
+  const result = await pool.query(
+    `SELECT
+       s.id AS school_id,
+       somafrik_student_canonical_code(
+         upper(btrim(c.iso_code)),
+         CASE
+           WHEN coalesce(s.login_code, '') ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$'
+             THEN split_part(s.login_code, '-', 2)
+           WHEN nullif(btrim(s.short_code), '') IS NOT NULL THEN upper(btrim(s.short_code))
+           ELSE somafrik_school_short_code(s.name)
+         END,
+         extract(year FROM NOW())::integer,
+         coalesce(ctr.last_value, 0)::integer + 1
+       ) AS next_code
+     FROM schools s
+     JOIN countries c ON c.id = s.country_id
+     LEFT JOIN student_login_code_counters ctr
+       ON ctr.country_id = s.country_id
+      AND ctr.school_initials = CASE
+        WHEN coalesce(s.login_code, '') ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$'
+          THEN split_part(s.login_code, '-', 2)
+        WHEN nullif(btrim(s.short_code), '') IS NOT NULL THEN upper(btrim(s.short_code))
+        ELSE somafrik_school_short_code(s.name)
+      END
+      AND ctr.creation_year = extract(year FROM NOW())::integer
+     WHERE s.school_code = $1`,
+    [schoolCode],
+  );
+  assert.equal(result.rowCount, 1);
+  return result.rows[0];
 }
 
 async function main() {
@@ -524,6 +580,7 @@ async function main() {
     assert.equal(enrolled.matricule, enrolled.studentCode);
     assert.equal(enrolled.loginCode, enrolled.studentCode);
     await assertCanonicalStudentLogin(pool, enrolled.studentCode, "CD-2026-0001");
+    assertEnrollmentProjectionHasNoSecret(enrolled);
 
     const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
     assert.equal(listed.length, 1);
@@ -540,6 +597,20 @@ async function main() {
     assert.match(enrolledOtherSchool.studentCode, /^CD-LL-EL-\d{2}-\d{3}$/);
     assert.notEqual(enrolled.studentCode, enrolledOtherSchool.studentCode);
     await assertCanonicalStudentLogin(pool, enrolledOtherSchool.studentCode, "CD-2026-0002");
+    assertEnrollmentProjectionHasNoSecret(enrolledOtherSchool);
+
+    const secretRows = await pool.query(
+      `SELECT user_code, password_hash, pin_hash
+       FROM users WHERE user_code IN ($1, $2)
+       ORDER BY user_code`,
+      [enrolled.studentCode, enrolledOtherSchool.studentCode],
+    );
+    assert.equal(secretRows.rowCount, 2);
+    assert.notEqual(
+      secretRows.rows[0].password_hash,
+      secretRows.rows[1].password_hash,
+      "deux élèves ne partagent pas le même hash de secret",
+    );
 
     const activeClassBiSameNumber = await classesRepo.create(
       {
@@ -591,6 +662,56 @@ async function main() {
         }),
       (error) => error.statusCode === 400,
     );
+
+    const colliding = await peekNextStudentCanonicalCode(pool, "CD-2026-0001");
+    const reservedHash = hashSecret("reserved-occupant-not-student");
+    await pool.query("ALTER TABLE users DISABLE TRIGGER USER");
+    await pool.query(
+      `INSERT INTO users (
+         school_id, user_code, first_name, last_name, email, phone,
+         password_hash, pin_hash, must_change_password, role, status
+       ) VALUES ($1, $2, 'Occupant', 'Existant', 'occupant@test.local', '', $3, $3, FALSE, 'SECRETARY', 'active')`,
+      [colliding.school_id, colliding.next_code, reservedHash],
+    );
+    await pool.query("ALTER TABLE users ENABLE TRIGGER USER");
+    const reservedBefore = await pool.query(
+      `SELECT id, user_code, first_name, last_name, email, role, password_hash, pin_hash,
+              must_change_password, school_id, updated_at
+       FROM users WHERE user_code = $1`,
+      [colliding.next_code],
+    );
+    assert.equal(reservedBefore.rowCount, 1);
+    assert.equal(reservedBefore.rows[0].role, "SECRETARY");
+
+    const beforeCollision = {
+      students: await countStudents(pool, "CD-2026-0001"),
+      enrollments: await countEnrollments(pool, "CD-2026-0001"),
+      users: await countUsers(pool, "CD-2026-0001"),
+    };
+    await assert.rejects(
+      () =>
+        studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+          firstName: "Collision",
+          lastName: "Eleve",
+        }),
+      (error) => String(error.code) === "23505",
+    );
+    assert.equal(await countStudents(pool, "CD-2026-0001"), beforeCollision.students);
+    assert.equal(await countEnrollments(pool, "CD-2026-0001"), beforeCollision.enrollments);
+    assert.equal(await countUsers(pool, "CD-2026-0001"), beforeCollision.users);
+
+    const reservedAfter = await pool.query(
+      `SELECT id, user_code, first_name, last_name, email, role, password_hash, pin_hash,
+              must_change_password, school_id, updated_at
+       FROM users WHERE user_code = $1`,
+      [colliding.next_code],
+    );
+    assert.deepEqual(reservedAfter.rows[0], reservedBefore.rows[0], "user préexistant inchangé");
+    const linkedStudent = await pool.query(
+      `SELECT id FROM students WHERE student_code = $1`,
+      [colliding.next_code],
+    );
+    assert.equal(linkedStudent.rowCount, 0, "aucun élève lié implicitement au compte préexistant");
 
     console.log("classStudentsRepository.pg.test.js: OK");
   } finally {
