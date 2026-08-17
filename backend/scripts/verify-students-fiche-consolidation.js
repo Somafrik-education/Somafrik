@@ -64,12 +64,12 @@ async function login(identifier, schoolCode) {
   return token;
 }
 
-async function createActiveClass(token, _label, groupCode = "A") {
+async function createActiveClass(token, _label, groupCode = "A", levelName = "6ème") {
   const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
   const ctx = await prepareCanonicalClassContext(request, {
     schoolCode: "CD-2026-0001",
     countryCode: "CD",
-    levelName: "6ème",
+    levelName,
     groupCode,
   });
   const created = await postCanonicalClass(request, token, {
@@ -146,8 +146,10 @@ async function main() {
       `unexpected POST /students status ${bareCreate.status}`,
     );
 
-    const activeClass = await createActiveClass(tokenCd, "Fiche active", "F1");
-    const inactiveClass = await createActiveClass(tokenCd, "Fiche inactive", "F2");
+    // Deux classes distinctes pour tester les états sans dépendre d'une ancienne
+    // unicité de nom. Le contrat métier reste l'unicité structurelle de l'offre.
+    const activeClass = await createActiveClass(tokenCd, "Fiche active", "F1", "6ème");
+    const inactiveClass = await createActiveClass(tokenCd, "Fiche inactive", "F2", "5ème");
     const patched = await request(`/classes/${encodeURIComponent(inactiveClass.classCode)}`, {
       method: "PATCH",
       token: tokenCd,
