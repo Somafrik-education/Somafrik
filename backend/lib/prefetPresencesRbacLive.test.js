@@ -118,10 +118,10 @@ test("contrat source : requirePermission overlaye le live et pose PERMISSION_DEN
   assert.match(serverSrc, /error\.code = PERMISSION_DENIED/);
 });
 
-test("contrat source : POST notes reste sur JWT (bug frère, hors correctif)", () => {
+test("contrat source : POST notes passe par requirePermission (overlay live)", () => {
   const notesBlock = sliceFrom(serverSrc, 'app.post("/api/notes"', 'app.post("/api/presences"');
-  assert.match(notesBlock, /assertCanManageNotes\(req\.principal\)/);
-  assert.equal(notesBlock.includes("requirePermission"), false);
+  assert.match(notesBlock, /requirePermission\("POST \/api\/notes"\)/);
+  assert.equal(notesBlock.includes("assertCanManageNotes"), false);
 });
 
 test("routePermissions Présences : CREATE OR UPDATE, sans alias legacy", () => {

@@ -379,6 +379,11 @@ const routePermissions = {
   "GET /api/presences": ["Présences:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/students/:id/presences": ["Présences:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/presences": ["Présences:CREATE", "Présences:UPDATE", "ALL_PRIVILEGES"],
+  "GET /api/notes": ["Notes:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:id/notes": ["Notes:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/notes": ["Notes:CREATE", "Notes:UPDATE", "ALL_PRIVILEGES"],
+  "POST /api/evaluations": ["Notes:CREATE", "Notes:UPDATE", "ALL_PRIVILEGES"],
+  "PATCH /api/evaluations/:evaluationId": ["Notes:UPDATE", "ALL_PRIVILEGES"],
 };
 
 const PERMISSION_DENIED = "PERMISSION_DENIED";

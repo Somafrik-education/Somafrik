@@ -322,8 +322,92 @@ async function main() {
       assert.equal(parentChild.status, 200, JSON.stringify(parentChild.data));
     }
 
+    const parentNotes = await request("/notes", { token: parentToken });
+    assert.ok(
+      [200, 403].includes(parentNotes.status),
+      `GET /notes parent: ${parentNotes.status} ${JSON.stringify(parentNotes.data)}`,
+    );
+    if (parentEffective.data?.permissions?.includes("Notes:READ")) {
+      assert.equal(parentNotes.status, 200, JSON.stringify({ parentNotes: parentNotes.data, parentEffective: parentEffective.data }));
+    }
+    if (parentNotes.status === 403) {
+      assert.equal(parentNotes.data?.code, "PERMISSION_DENIED");
+    }
+
     const prefetGet = await request("/presences", { token: prefetToken });
     assert.equal(prefetGet.status, 200, JSON.stringify(prefetGet.data));
+
+    async function patchGrades(flags) {
+      const current = await request(
+        `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+        { token: superToken },
+      );
+      assert.equal(current.status, 200, JSON.stringify(current.data));
+      const result = await request("/backoffice/rbac/permissions", {
+        method: "PATCH",
+        token: superToken,
+        body: {
+          roleKey: "PREFET_ETUDES",
+          countryCode: "CD",
+          schoolCode: "CD-2026-0001",
+          expectedUpdatedAt: current.data.updatedAt,
+          grants: [{ moduleKey: "grades", ...flags }],
+        },
+      });
+      assert.equal(result.status, 200, JSON.stringify(result.data));
+      return result.data.updatedAt;
+    }
+
+    const notePayload = {
+      evaluationId: "EVAL-TEST",
+      studentId: "ELE-0001",
+      value: 12,
+      scale: 20,
+    };
+
+    await patchGrades({ canCreate: false, canRead: true, canUpdate: false, canDelete: false });
+    const notesDenied = await request("/notes", { method: "POST", token: prefetToken, body: notePayload });
+    assert.equal(notesDenied.status, 403, JSON.stringify(notesDenied.data));
+    assert.equal(notesDenied.data?.code, "PERMISSION_DENIED");
+    const evalDenied = await request("/evaluations", {
+      method: "POST",
+      token: prefetToken,
+      body: { title: "Interro RBAC", subject: "Mathématiques", className: "6ème A" },
+    });
+    assert.equal(evalDenied.status, 403, JSON.stringify(evalDenied.data));
+    assert.equal(evalDenied.data?.code, "PERMISSION_DENIED");
+
+    await patchGrades({ canCreate: true, canRead: true, canUpdate: false, canDelete: false });
+    const notesGranted = await request("/notes", { method: "POST", token: prefetToken, body: notePayload });
+    assert.notEqual(notesGranted.status, 403, JSON.stringify(notesGranted.data));
+    assert.ok(
+      [200, 201, 400, 404, 409].includes(notesGranted.status),
+      `POST notes après grant: ${notesGranted.status} ${JSON.stringify(notesGranted.data)}`,
+    );
+    const evalGranted = await request("/evaluations", {
+      method: "POST",
+      token: prefetToken,
+      body: { title: "Interro RBAC", subject: "Mathématiques", className: "6ème A" },
+    });
+    assert.notEqual(evalGranted.status, 403, JSON.stringify(evalGranted.data));
+
+    await patchGrades({ canCreate: false, canRead: true, canUpdate: true, canDelete: false });
+    const notesUpdateOnly = await request("/notes", { method: "POST", token: prefetToken, body: notePayload });
+    assert.notEqual(notesUpdateOnly.status, 403, JSON.stringify(notesUpdateOnly.data));
+    const evalPatchDeniedCreate = await request("/evaluations/EVAL-TEST", {
+      method: "PATCH",
+      token: prefetToken,
+      body: { title: "Interro MAJ" },
+    });
+    assert.notEqual(evalPatchDeniedCreate.status, 403, JSON.stringify(evalPatchDeniedCreate.data));
+
+    await patchGrades({ canCreate: false, canRead: true, canUpdate: false, canDelete: false });
+    const notesRevoked = await request("/notes", { method: "POST", token: prefetToken, body: notePayload });
+    assert.equal(notesRevoked.status, 403, JSON.stringify(notesRevoked.data));
+    assert.equal(notesRevoked.data?.code, "PERMISSION_DENIED");
+
+    const prefetNotesGet = await request("/notes", { token: prefetToken });
+    assert.equal(prefetNotesGet.status, 200, JSON.stringify(prefetNotesGet.data));
 
     const stale = await request("/backoffice/rbac/permissions", {
       method: "PATCH",

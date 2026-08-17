@@ -1,11 +1,11 @@
-# Audit frère — POST /api/notes JWT stale (hors correctif Présences)
+# Audit frère — POST /api/notes JWT stale (historique)
 
-**PR Présences live :** `cursor/prefet-presences-rbac-live-92b2`  
-**Statut :** AUDIT UNIQUEMENT. Le correctif Présences n’élargit pas Notes.
+**Statut :** CORRIGÉ dans `cursor/notes-evaluations-rbac-live-92b2`.  
+Livrable : `docs/audits/NOTES-EVALUATIONS-RBAC-LIVE-P0.md`.
 
-## Constat
+## Diagnostic d’origine (avant overlay live)
 
-`POST /api/notes` (`backend/server.js`) :
+`POST /api/notes` :
 
 ```
 requireAuth
@@ -13,29 +13,15 @@ requireAuth
 → assertCanManageNotes(req.principal)
 ```
 
-Pas de `requirePermission`. `assertCanManageNotes` lit `principal.permissions` (claims JWT).
+`assertCanManageNotes` lisait le JWT (`Modifier notes`, `Notes:CREATE/UPDATE`, `Notes:CRUD`, `Evaluations:CRUD`, privilèges plateforme).  
+403 sans `code`. `GET /api/notes` était auth-only.
 
-`requirePermission` overlaye `repository.resolveEffectivePermissions` ; `requireAuth` ne le fait pas.
+`requirePermission` overlaye PG ; `requireAuth` ne le fait pas — même trou que POST présences avant #228.
 
-C’est le **même trou** que POST présences avant ce correctif.
+## Correctif (cette PR P0)
 
-## Gate actuel
-
-Accepte : `ALL_PRIVILEGES`, `COUNTRY_PRIVILEGES`, `Modifier notes`, `Notes:CREATE`, `Notes:UPDATE`, `Notes:CRUD`, `Evaluations:CRUD`.
-
-403 : `{ message: "Permission insuffisante pour modifier les notes." }` — pas de `code`.
-
-`GET /api/notes` : `requireAuth` seulement (Parent/Élève lisent via filtre lié).
-
-## Pourquoi pas dans le correctif Présences
-
-Le mapping canonique Notes n’est pas audité ici (CREATE vs UPDATE vs « Modifier notes », parcours Parent/Élève GET). Overlay générique dans `requireAuth` corrigerait Notes **et** toutes les routes hors `requirePermission`, mais changerait le comportement global.
-
-Correctif Notes recommandé (PR dédiée) :
-
-- `POST /api/notes` → `Notes:CREATE` **ou** `Notes:UPDATE` + `requirePermission`
-- GET : vérifier Parent/Élève `Notes:READ` avant durcissement
-- `PERMISSION_DENIED`
-- tests grant/revoke live même JWT
-
-**Verdict Notes :** NO-GO dans cette PR. Incident frère confirmé, à traiter après revalidation Présences.
+- POST `/api/notes` / POST `/api/evaluations` → `Notes:CREATE` OR `Notes:UPDATE` via `requirePermission`
+- PATCH `/api/evaluations/:id` → `Notes:UPDATE`
+- GET notes (liste + fiche) → `Notes:READ` après audit Parent/Élève
+- `assertCanManageNotes` supprimée
+- 403 RBAC : `PERMISSION_DENIED`
