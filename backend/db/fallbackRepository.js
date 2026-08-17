@@ -21,24 +21,17 @@ function managedSchoolIdForClientsTeacher(teacher, tables) {
   return teacher.school_id;
 }
 
-function normalizeClassNameKey(value) {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
 function upsertSeedClassProjection(row) {
+  const classCode = String(row.classCode ?? row.id ?? "");
   const seedIndex = seedData.classes.findIndex(
     (item) =>
       String(item.schoolCode ?? "").toUpperCase() === String(row.schoolCode).toUpperCase() &&
-      (normalizeClassNameKey(item.name) === normalizeClassNameKey(row.name) ||
-        String(item.id ?? item.publicId ?? "") === String(row.classCode ?? row.id ?? "")),
+      [item.id, item.publicId, item.classCode].some((value) => String(value ?? "") === classCode),
   );
   const projection = {
     id: row.classCode ?? row.id,
     publicId: row.classCode ?? row.publicId ?? row.id,
+    classCode: row.classCode ?? row.id,
     schoolCode: row.schoolCode,
     name: row.name,
     level: row.level ?? "",
