@@ -331,7 +331,7 @@ async function main() {
       },
       "SCH-A",
     );
-    assert.equal(created.name, "6ème A");
+    assert.equal(created.name, "6ème");
     assert.equal(created.status, "active");
     assert.equal(created.groupCode, "A");
     assert.match(created.classCode, /^CLS-/);
@@ -344,10 +344,10 @@ async function main() {
       status: "inactive",
     });
     assert.equal(updated.status, "inactive");
-    assert.equal(updated.name, "6ème A");
+    assert.equal(updated.name, "6ème");
 
     const reread = await repo.listBySchoolCode("SCH-A");
-    assert.equal(reread[0].name, "6ème A");
+    assert.equal(reread[0].name, "6ème");
     assert.equal(reread[0].status, "inactive");
 
     await assert.rejects(
@@ -390,7 +390,7 @@ async function main() {
       "SCH-B",
     );
     assert.equal(inOtherSchool.schoolCode, "SCH-B");
-    assert.equal(inOtherSchool.name, "5ème A");
+    assert.equal(inOtherSchool.name, "5ème");
 
     const listB = await repo.listBySchoolCode("SCH-B");
     assert.equal(listB.length, 1);
