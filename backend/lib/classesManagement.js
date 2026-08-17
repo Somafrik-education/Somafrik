@@ -137,15 +137,15 @@ function requireGroupId(value) {
 }
 
 /**
- * Nom d'affichage déterministe : `{niveau} {filière?} {groupe}`.
- * @param {{ levelName: string, streamName?: string | null, groupCode: string }} parts
+ * Nom d'affichage déterministe : `{niveau} {filière?}`.
+ * Le code technique du groupe reste exposé séparément et ne fait jamais partie du nom.
+ * @param {{ levelName: string, streamName?: string | null, groupCode?: string | null }} parts
  * @returns {string}
  */
 function composeClassDisplayName(parts) {
   const levelName = asTrimmedString(parts?.levelName);
   const streamName = asTrimmedString(parts?.streamName);
-  const groupCode = asTrimmedString(parts?.groupCode);
-  const composed = [levelName, streamName, groupCode].filter(Boolean).join(" ");
+  const composed = [levelName, streamName].filter(Boolean).join(" ");
   if (!composed) {
     throw createHttpError(500, "Impossible de composer le nom de classe.");
   }
