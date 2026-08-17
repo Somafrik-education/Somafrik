@@ -647,6 +647,11 @@ class PostgresRepository {
     return saveSchoolActivation(this, schoolCode, activation, principal, auditMeta);
   }
 
+  updateCountryPedagogicalLabels(payload, principal, auditMeta) {
+    const { updateCountryPedagogicalLabels } = require("../lib/educationReferenceService");
+    return updateCountryPedagogicalLabels(this, payload, principal, auditMeta);
+  }
+
   async ensureEstablishmentRolesPreflight() {
     const { assertEstablishmentRolesSchemaPreflight } = require("./establishmentRolesSchema");
     await assertEstablishmentRolesSchemaPreflight(this);
@@ -5219,6 +5224,7 @@ class PostgresRepository {
       status: country.is_active ? "Actif" : "Suspendu",
       administratorId: "",
       createdAt: this.formatDate(country.created_at),
+      ...require("../lib/educationReferenceManagement").pedagogicalLabelsFromCountryRow(country),
     };
   }
 

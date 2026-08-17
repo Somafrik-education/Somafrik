@@ -71,6 +71,10 @@ export interface Country {
   createdAt?: string;
   /** Barème d'abonnement propre au pays (repli sur le barème global Somafrik). */
   subscriptionPolicy?: CountrySubscriptionPolicy;
+  /** Libellés UI du référentiel pédagogique (configurables, jamais un défaut RDC). */
+  levelLabel?: string;
+  trackLabel?: string;
+  groupLabel?: string;
 }
 
 export type SubscriptionPlanName = "Essentiel" | "Standard" | "Premium" | "Essai gratuit";

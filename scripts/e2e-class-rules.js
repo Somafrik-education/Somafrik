@@ -4,9 +4,7 @@
  */
 const { normalize, newId } = require("./e2e-api-helpers");
 
-const DEFAULT_LEVELS = ["1ère", "2ème", "3ème", "4ème", "5ème", "6ème"];
-const DEFAULT_TRACKS = ["Générale", "Sciences", "Lettres", "Technique", "Commerciale"];
-const DEFAULT_CLASS_NAMES = DEFAULT_LEVELS.flatMap((level) => [`${level} A`, `${level} B`]);
+const DEFAULT_CLASS_NAMES = [];
 
 function normalizeClassName(value) {
   return normalize(String(value ?? ""));
@@ -32,14 +30,9 @@ function resolveSubjectsByClass(config, classNames) {
 
 function getSchoolAcademicLists(state, schoolCode) {
   const config = (state.academicConfigs?.[schoolCode ?? ""] ?? {});
-  const levels =
-    Array.isArray(config.levels) && config.levels.length ? config.levels : DEFAULT_LEVELS;
-  const tracks =
-    Array.isArray(config.tracks) && config.tracks.length ? config.tracks : DEFAULT_TRACKS;
-  const classNames =
-    Array.isArray(config.classNames) && config.classNames.length
-      ? config.classNames
-      : DEFAULT_CLASS_NAMES;
+  const levels = Array.isArray(config.levels) ? config.levels : [];
+  const tracks = Array.isArray(config.tracks) ? config.tracks : [];
+  const classNames = Array.isArray(config.classNames) ? config.classNames : [];
   const subjectsByClass = resolveSubjectsByClass(config, classNames);
   return { levels, tracks, classNames, subjectsByClass };
 }

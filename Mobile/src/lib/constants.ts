@@ -9,6 +9,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   users: "Utilisateurs",
   reports: "Rapports",
   permissions: "Droits par rôle",
+  educationReference: "Référentiels pédagogiques",
   students: "Élèves",
   teachers: "Enseignants",
   classes: "Classes",
@@ -45,7 +46,7 @@ export const CRUD_PERMISSION_MODULES = [
   "Pays", "Établissements", "Abonnements", "Utilisateurs", "Classes", "Élèves",
   "Enseignants", "Affectations", "Présences", "Notes", "Bulletins", "Paiements",
   "Notifications", "Messages", "Documents", "Rapports", "Paramètres Établissement",
-  "Années Académiques", "Matières", "Examens",
+  "Années Académiques", "Matières", "Examens", "Référentiels pédagogiques",
 ] as const;
 
 export const ENTITY_VIEW_MAP: Record<string, string> = {

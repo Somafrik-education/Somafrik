@@ -59,4 +59,17 @@ assert.ok(
   "Enseignant avec Présences:READ lit /api/presences",
 );
 
-console.log("residualRoutesRbac.test.js: OK");
+assert.ok(routePermissions["GET /api/academic-config"]?.includes("Paramètres Établissement:READ"));
+assert.ok(routePermissions["GET /api/academic-config"]?.includes("Référentiels pédagogiques:READ"));
+assert.ok(routePermissions["GET /api/academic-config"]?.includes("Classes:READ"));
+assert.equal(
+  rbac.canAccess(teacherPrincipal, "GET /api/academic-config"),
+  false,
+  "Enseignant sans Classes:READ ne lit pas academic-config",
+);
+assert.ok(
+  rbac.canAccess({ ...teacherPrincipal, permissions: ["Classes:READ"] }, "GET /api/academic-config"),
+  "Enseignant avec Classes:READ lit academic-config",
+);
+assert.equal(routePermissions["POST /api/backoffice/education-levels"]?.includes("COUNTRY_PRIVILEGES"), false);
+assert.ok(routePermissions["PATCH /api/backoffice/education-reference/labels"]?.includes("Référentiels pédagogiques:UPDATE"));

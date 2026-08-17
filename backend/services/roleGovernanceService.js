@@ -10,7 +10,7 @@ const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Admin
 const SUPERADMIN_MANAGED_ROLES = [COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE];
 
 /** Modules pilotés au niveau pays (Admin Pays). */
-const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs"]);
+const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs", "Référentiels pédagogiques"]);
 
 const CRUD_ACTIONS = ["READ", "CREATE", "UPDATE", "DELETE", "SUSPEND"];
 
@@ -41,6 +41,7 @@ class RoleGovernanceService {
       "Établissements",
       "Abonnements",
       "Utilisateurs",
+      "Référentiels pédagogiques",
       "Classes",
       "Élèves",
       "Enseignants",

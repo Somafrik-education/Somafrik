@@ -22,6 +22,17 @@ const EDUCATION_REFERENCE_ERROR = Object.freeze({
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const STREAM_TYPES = new Set(["filiere", "serie", "option"]);
 
+/** Libellés UI génériques — jamais un vocabulaire RDC/Burundi comme défaut mondial. */
+const DEFAULT_PEDAGOGICAL_LABELS = Object.freeze({
+  levelLabel: "Niveau",
+  trackLabel: "Filière",
+  groupLabel: "Groupe",
+});
+
+const CATALOG_WRITE_CREATE_TOKENS = Object.freeze(["Référentiels pédagogiques:CREATE", "ALL_PRIVILEGES"]);
+const CATALOG_WRITE_UPDATE_TOKENS = Object.freeze(["Référentiels pédagogiques:UPDATE", "ALL_PRIVILEGES"]);
+const MAX_PEDAGOGICAL_LABEL_LENGTH = 60;
+
 function asTrimmed(value) {
   return String(value ?? "").trim();
 }
@@ -76,6 +87,77 @@ function assertSuperAdmin(principal) {
       EDUCATION_REFERENCE_ERROR.FORBIDDEN,
     );
   }
+}
+
+function principalHasAnyPermission(principal, tokens) {
+  const permissions = Array.isArray(principal?.permissions) ? principal.permissions : [];
+  return tokens.some((token) => permissions.includes(token));
+}
+
+function pedagogicalLabelsFromCountryRow(row) {
+  return {
+    levelLabel: asTrimmed(row?.pedagogical_level_label) || DEFAULT_PEDAGOGICAL_LABELS.levelLabel,
+    trackLabel: asTrimmed(row?.pedagogical_track_label) || DEFAULT_PEDAGOGICAL_LABELS.trackLabel,
+    groupLabel: asTrimmed(row?.pedagogical_group_label) || DEFAULT_PEDAGOGICAL_LABELS.groupLabel,
+  };
+}
+
+function requirePedagogicalLabel(value, field) {
+  const label = asTrimmed(value);
+  if (!label) {
+    throw createEducationReferenceError(400, `${field} obligatoire.`);
+  }
+  if (label.length > MAX_PEDAGOGICAL_LABEL_LENGTH) {
+    throw createEducationReferenceError(400, `${field} trop long (max ${MAX_PEDAGOGICAL_LABEL_LENGTH}).`);
+  }
+  return label;
+}
+
+/**
+ * Décision CTO P0-A : COUNTRY_ADMIN peut écrire le catalogue de SON pays
+ * uniquement si Superadmin lui a accordé Référentiels pédagogiques:CREATE/UPDATE.
+ * COUNTRY_PRIVILEGES n'est pas une autorité d'écriture. Aucun défaut pays CD.
+ */
+function assertEducationReferenceCatalogWrite(principal, countryCode, action) {
+  const code = asTrimmed(countryCode).toUpperCase();
+  if (!code) {
+    throw createEducationReferenceError(400, "Pays obligatoire.", EDUCATION_REFERENCE_ERROR.COUNTRY_NOT_FOUND);
+  }
+  if (isSuperAdminPrincipal(principal)) return;
+
+  if (!isCountryAdminPrincipal(principal)) {
+    throw createEducationReferenceError(
+      403,
+      "Seul le Super Administrateur ou l'Admin Pays habilité peut gérer le référentiel pédagogique.",
+      EDUCATION_REFERENCE_ERROR.FORBIDDEN,
+    );
+  }
+
+  const principalCountry = resolvePrincipalCountryCode(principal).toUpperCase();
+  if (!principalCountry || principalCountry !== code) {
+    throw createEducationReferenceError(
+      403,
+      "Accès refusé : pays hors périmètre.",
+      EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH,
+    );
+  }
+
+  const needed = action === "create" ? CATALOG_WRITE_CREATE_TOKENS : CATALOG_WRITE_UPDATE_TOKENS;
+  if (!principalHasAnyPermission(principal, needed)) {
+    throw createEducationReferenceError(
+      403,
+      "Droits insuffisants sur le référentiel pédagogique de ce pays.",
+      EDUCATION_REFERENCE_ERROR.FORBIDDEN,
+    );
+  }
+}
+
+function resolveCatalogWriteCountryCode(rawPayload, principal) {
+  let countryCode = asTrimmed(rawPayload?.countryCode).toUpperCase();
+  if (!countryCode && isCountryAdminPrincipal(principal)) {
+    countryCode = resolvePrincipalCountryCode(principal).toUpperCase();
+  }
+  return countryCode;
 }
 
 function resolvePrincipalCountryCode(principal) {
@@ -201,6 +283,7 @@ function stripLegacyAcademicLevelsTracks(payload) {
 module.exports = {
   EDUCATION_REFERENCE_ERROR,
   STREAM_TYPES,
+  DEFAULT_PEDAGOGICAL_LABELS,
   asTrimmed,
   normalizeCode,
   createEducationReferenceError,
@@ -209,6 +292,10 @@ module.exports = {
   ignoreClientScope,
   educationReferenceAuditMetaFromRequest,
   assertSuperAdmin,
+  assertEducationReferenceCatalogWrite,
+  resolveCatalogWriteCountryCode,
+  pedagogicalLabelsFromCountryRow,
+  requirePedagogicalLabel,
   assertEducationReferenceCountryRead,
   resolvePrincipalCountryCode,
   assertSchoolCatalogRead,

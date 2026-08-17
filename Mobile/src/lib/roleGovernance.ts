@@ -1,7 +1,7 @@
 import { CRUD_PERMISSION_MODULES } from "./constants";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
 
-export const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs"]);
+export const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonnements", "Utilisateurs", "Référentiels pédagogiques"]);
 
 export function getSuperadminMatrixModules(role: string): string[] {
   return CRUD_PERMISSION_MODULES.filter((module) => {

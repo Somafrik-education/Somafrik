@@ -84,12 +84,12 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <p className="text-sm text-muted">
-        Pays de l'établissement : <strong>{catalog.countryCode}</strong>. Sélectionnez les niveaux et filières proposés
-        par le Superadmin pour votre établissement. Les libellés canoniques ne sont pas modifiables ici.
+        Pays de l&apos;établissement : <strong>{catalog.countryCode}</strong>. Sélectionnez le sous-ensemble proposé
+        pour votre établissement. Les libellés nationaux ne sont pas modifiables ici.
       </p>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold">Niveaux disponibles</h3>
+        <h3 className="mb-2 text-sm font-semibold">{catalog.labels?.levelLabel ?? "Niveau"}s disponibles</h3>
         {catalog.levels.length ? (
           <div className="grid gap-2 md:grid-cols-2">
             {catalog.levels.map((level) => (
@@ -105,7 +105,7 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted">Aucun niveau défini pour ce pays. Contactez le Superadmin.</p>
+          <p className="text-sm text-muted">Aucun niveau défini pour ce pays. Contactez le Superadmin ou l&apos;Admin Pays.</p>
         )}
       </div>
 

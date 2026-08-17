@@ -16,7 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
-import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_TRACKS } from "../data/catalog";
+import { messageThemes, rolePermissions } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
 import {
@@ -2232,11 +2232,11 @@ function getSelectOptions(
   editingId?: string
 ) {
   if (key === "level") {
-    return academicConfigData?.levels?.length ? academicConfigData.levels : DEFAULT_LEVELS;
+    return Array.isArray(academicConfigData?.levels) ? academicConfigData.levels : [];
   }
 
   if (key === "track") {
-    return academicConfigData?.tracks?.length ? academicConfigData.tracks : DEFAULT_TRACKS;
+    return Array.isArray(academicConfigData?.tracks) ? academicConfigData.tracks : [];
   }
 
   if (key === "mainSubject" || (key === "name" && entity === "courses") || (key === "course" && entity === "assignments")) {
@@ -2344,7 +2344,7 @@ function getSelectOptions(
   }
 
   if (key === "name" && entity === "classes") {
-    const configured = academicConfigData?.classNames?.length ? academicConfigData.classNames : DEFAULT_CLASS_NAMES;
+    const configured = Array.isArray(academicConfigData?.classNames) ? academicConfigData.classNames : [];
     const taken = new Set(
       classesData
         .filter((schoolClass) => String(schoolClass.id ?? "") !== String(editingId ?? ""))
@@ -2368,7 +2368,7 @@ function getSelectOptions(
   }
 
   if (key === "className") {
-    const configured = academicConfigData?.classNames?.length ? academicConfigData.classNames : DEFAULT_CLASS_NAMES;
+    const configured = Array.isArray(academicConfigData?.classNames) ? academicConfigData.classNames : [];
     const fromClasses = classesData.map((schoolClass) => schoolClass.name).filter(Boolean);
     return [...new Set([...configured, ...fromClasses])].sort((a, b) => a.localeCompare(b, "fr"));
   }

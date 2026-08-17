@@ -30,3 +30,52 @@ test("stripLegacyAcademicLevelsTracks retire les clés interdites", () => {
 test("normalizeCode produit un code stable", () => {
   assert.equal(normalizeCode("1ère Année"), "1ere_annee");
 });
+
+const {
+  assertEducationReferenceCatalogWrite,
+  resolveCatalogWriteCountryCode,
+} = require("./educationReferenceManagement");
+
+test("COUNTRY_ADMIN sans CREATE ne peut pas écrire le catalogue", () => {
+  assert.throws(
+    () =>
+      assertEducationReferenceCatalogWrite(
+        { role: "Admin Pays", countryCode: "CD", permissions: ["COUNTRY_PRIVILEGES"] },
+        "CD",
+        "create",
+      ),
+    (error) => error.statusCode === 403 && error.code === EDUCATION_REFERENCE_ERROR.FORBIDDEN,
+  );
+});
+
+test("COUNTRY_ADMIN avec CREATE écrit son pays uniquement", () => {
+  const principal = {
+    role: "Admin Pays",
+    countryCode: "BI",
+    permissions: ["Référentiels pédagogiques:CREATE"],
+  };
+  assertEducationReferenceCatalogWrite(principal, "BI", "create");
+  assert.throws(
+    () => assertEducationReferenceCatalogWrite(principal, "CD", "create"),
+    (error) => error.statusCode === 403 && error.code === EDUCATION_REFERENCE_ERROR.COUNTRY_MISMATCH,
+  );
+});
+
+test("Admin School ne peut pas écrire le catalogue national", () => {
+  assert.throws(
+    () =>
+      assertEducationReferenceCatalogWrite(
+        { role: "Admin School", permissions: ["Référentiels pédagogiques:CREATE", "Classes:CREATE"] },
+        "CD",
+        "create",
+      ),
+    (error) => error.statusCode === 403 && error.code === EDUCATION_REFERENCE_ERROR.FORBIDDEN,
+  );
+});
+
+test("Superadmin n'a pas de pays par défaut CD", () => {
+  assert.equal(
+    resolveCatalogWriteCountryCode({}, { role: "Super Administrateur Somafrik" }),
+    "",
+  );
+});

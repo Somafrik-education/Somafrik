@@ -311,7 +311,7 @@ export default function App() {
         <Route
           path="/referentiels-pedagogiques"
           element={
-            <PermissionRoute view="countries">
+            <PermissionRoute view="educationReference">
               <EducationReferencePage />
             </PermissionRoute>
           }

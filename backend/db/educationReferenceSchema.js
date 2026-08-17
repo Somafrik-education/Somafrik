@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS school_streams (
   PRIMARY KEY (school_id, stream_id),
   CONSTRAINT school_streams_status_check CHECK (status IN ('active', 'archived'))
 );
+
+-- Libellés UI par pays (concept canonique LEVEL/TRACK/GROUP, affichage configurable).
+-- Défauts génériques — pas un vocabulaire national injecté dans tous les pays.
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_level_label TEXT NOT NULL DEFAULT 'Niveau';
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_track_label TEXT NOT NULL DEFAULT 'Filière';
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS pedagogical_group_label TEXT NOT NULL DEFAULT 'Groupe';
 `;
 
 const STRIP_LEGACY_ACADEMIC_REFERENCE_SQL = `
