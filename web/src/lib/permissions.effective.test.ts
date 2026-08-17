@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getFeaturePermissions, resolveEffectivePermissions } from "./permissions";
+import { canManagePresences, getFeaturePermissions, resolveEffectivePermissions } from "./permissions";
 
 describe("resolveEffectivePermissions — autorité serveur", () => {
   it("n'enrichit pas une liste serveur avec la carte locale", () => {
@@ -55,6 +55,39 @@ describe("Affectations:CREATE — bouton Affecter", () => {
       "Affectations",
     );
     expect(denied.canCreate).toBe(false);
+  });
+});
+
+describe("Présences — saisie d'appel (canManagePresences)", () => {
+  const prefet = (permissions: string[]) =>
+    ({
+      user: {
+        id: "prefet-1",
+        role: "Préfet des études",
+        permissions,
+      },
+      rolePermissions: {},
+    }) as never;
+
+  it("autorise l'enregistrement si Présences:CREATE seul (UPDATE absent)", () => {
+    expect(canManagePresences(prefet(["Présences:READ", "Présences:CREATE"]))).toBe(true);
+  });
+
+  it("autorise l'enregistrement si Présences:UPDATE seul (CREATE absent)", () => {
+    expect(canManagePresences(prefet(["Présences:READ", "Présences:UPDATE"]))).toBe(true);
+  });
+
+  it("refuse l'enregistrement si READ seul — toast UI avant l'API", () => {
+    expect(canManagePresences(prefet(["Présences:READ"]))).toBe(false);
+  });
+
+  it("n'utilise pas Attendances comme module distinct", () => {
+    expect(canManagePresences(prefet(["Attendances:CREATE"]))).toBe(false);
+  });
+
+  it("accepte encore l'alias legacy contenant « appel » (Appels:CREATE)", () => {
+    expect(canManagePresences(prefet(["Appels:CREATE"]))).toBe(true);
+    expect(canManagePresences(prefet(["Faire appel"]))).toBe(true);
   });
 });
 
