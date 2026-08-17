@@ -16,6 +16,7 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
   const [saving, setSaving] = useState(false);
   const [selectedLevelIds, setSelectedLevelIds] = useState<string[]>([]);
   const [selectedStreamIds, setSelectedStreamIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
 
   const loadCatalog = useCallback(async () => {
     if (!schoolCode) return;
@@ -25,6 +26,7 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
       setCatalog(response);
       setSelectedLevelIds(response.levels.filter((row) => row.schoolActive).map((row) => row.id));
       setSelectedStreamIds(response.streams.filter((row) => row.schoolActive).map((row) => row.id));
+      setSelectedGroupIds((response.groups ?? []).filter((row) => row.schoolActive).map((row) => row.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Impossible de charger le référentiel pédagogique.";
       showToast(message, "error");
@@ -59,7 +61,7 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
     setSaving(true);
     try {
       await educationReferenceApi.saveSchoolActivation(
-        { levelIds: selectedLevelIds, streamIds: selectedStreamIds },
+        { levelIds: selectedLevelIds, streamIds: selectedStreamIds, groupIds: selectedGroupIds },
         schoolCode,
       );
       await refresh();
@@ -135,6 +137,27 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
           )}
         </div>
       ))}
+
+      <div>
+        <h3 className="mb-2 text-sm font-semibold">{catalog.labels?.groupLabel ?? "Groupe"}s disponibles</h3>
+        {(catalog.groups ?? []).length ? (
+          <div className="grid gap-2 md:grid-cols-2">
+            {(catalog.groups ?? []).map((group) => (
+              <label key={group.id} className="flex items-center gap-2 rounded border border-border px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  disabled={!canConfigure}
+                  checked={selectedGroupIds.includes(group.id)}
+                  onChange={(event) => setSelectedGroupIds((current) => toggleId(current, group.id, event.target.checked))}
+                />
+                <span>{group.name || group.code}</span>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted">Aucun groupe défini pour ce pays. Contactez le Superadmin ou l&apos;Admin Pays.</p>
+        )}
+      </div>
 
       <button
         type="submit"

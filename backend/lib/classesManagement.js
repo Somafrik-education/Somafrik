@@ -6,15 +6,21 @@ const CLASS_STATUSES = Object.freeze(["active", "inactive"]);
 const CLASS_STATUS_SET = new Set(CLASS_STATUSES);
 const MAX_CLASS_CODE_LENGTH = 64;
 const MAX_NAME_LENGTH = 200;
-const MAX_GROUP_CODE_LENGTH = 8;
-const GROUP_CODE_PATTERN = /^[A-Za-z0-9]+$/;
-const FORBIDDEN_FREE_TEXT_FIELDS = Object.freeze(["name", "level", "section", "track", "academicYearName"]);
+const FORBIDDEN_FREE_TEXT_FIELDS = Object.freeze([
+  "name",
+  "level",
+  "section",
+  "track",
+  "academicYearName",
+  "groupCode",
+]);
 
 const CLASS_WRITE_ERROR = Object.freeze({
   FREE_TEXT_FORBIDDEN: "CLASS_FREE_TEXT_FORBIDDEN",
   OFFERING_REQUIRED: "CLASS_OFFERING_REQUIRED",
   LEVEL_NOT_ACTIVATED: "CLASS_LEVEL_NOT_ACTIVATED",
   STREAM_NOT_ACTIVATED: "CLASS_STREAM_NOT_ACTIVATED",
+  GROUP_NOT_ACTIVATED: "CLASS_GROUP_NOT_ACTIVATED",
   STREAM_LEVEL_MISMATCH: "CLASS_STREAM_LEVEL_MISMATCH",
   STRUCTURAL_DUPLICATE: "CLASS_STRUCTURAL_DUPLICATE",
 });
@@ -84,8 +90,9 @@ function assertNoFreeTextClassFields(body) {
   if (!present.length) return;
   throw createHttpError(
     400,
-    "name, level, section, track et academicYearName ne sont plus acceptés. " +
-      "Utilisez academicYearId, levelId, streamId (optionnel) et groupCode. Le nom est généré côté serveur.",
+    "name, level, section, track, academicYearName et groupCode ne sont plus acceptés. " +
+      "Utilisez academicYearId, levelId, streamId (optionnel) et groupId. " +
+      "Le nom et le code groupe sont dérivés du référentiel.",
     CLASS_WRITE_ERROR.FREE_TEXT_FORBIDDEN,
   );
 }
@@ -125,21 +132,8 @@ function optionalStreamId(value) {
  * @param {unknown} value
  * @returns {string}
  */
-function requireGroupCode(value) {
-  if (typeof value !== "string") {
-    throw createHttpError(400, "Champ obligatoire: groupCode.");
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw createHttpError(400, "Champ obligatoire: groupCode.");
-  }
-  if (trimmed.length > MAX_GROUP_CODE_LENGTH) {
-    throw createHttpError(400, `groupCode trop long (max ${MAX_GROUP_CODE_LENGTH}).`);
-  }
-  if (!GROUP_CODE_PATTERN.test(trimmed)) {
-    throw createHttpError(400, "groupCode invalide (lettres ou chiffres uniquement, ex. A, B, C).");
-  }
-  return trimmed.toUpperCase();
+function requireGroupId(value) {
+  return requireId(value, "groupId");
 }
 
 /**
@@ -169,7 +163,7 @@ function composeClassDisplayName(parts) {
  *   academicYearId: string,
  *   levelId: string,
  *   streamId: string | null,
- *   groupCode: string,
+ *   groupId: string,
  *   status: "active" | "inactive",
  * }}
  */
@@ -204,7 +198,7 @@ function validateCreateClassInput(body, schoolCode) {
     academicYearId: requireId(body.academicYearId, "academicYearId"),
     levelId: requireId(body.levelId, "levelId"),
     streamId: optionalStreamId(body.streamId),
-    groupCode: requireGroupCode(body.groupCode),
+    groupId: requireGroupId(body.groupId),
     status,
   };
 }
@@ -214,7 +208,7 @@ function validateCreateClassInput(body, schoolCode) {
  * @returns {{
  *   levelId?: string,
  *   streamId?: string | null,
- *   groupCode?: string,
+ *   groupId?: string,
  *   status?: "active" | "inactive",
  * }}
  */
@@ -232,7 +226,7 @@ function validateUpdateClassInput(body) {
   }
   assertNoFreeTextClassFields(body);
 
-  /** @type {{ levelId?: string, streamId?: string | null, groupCode?: string, status?: "active" | "inactive" }} */
+  /** @type {{ levelId?: string, streamId?: string | null, groupId?: string, status?: "active" | "inactive" }} */
   const patch = {};
   let touched = false;
 
@@ -244,8 +238,8 @@ function validateUpdateClassInput(body) {
     patch.streamId = optionalStreamId(body.streamId);
     touched = true;
   }
-  if (Object.hasOwn(body, "groupCode")) {
-    patch.groupCode = requireGroupCode(body.groupCode);
+  if (Object.hasOwn(body, "groupId")) {
+    patch.groupId = requireGroupId(body.groupId);
     touched = true;
   }
   if (Object.hasOwn(body, "status")) {
@@ -254,7 +248,7 @@ function validateUpdateClassInput(body) {
   }
 
   if (!touched) {
-    throw createHttpError(400, "Aucun champ modifiable fourni (levelId, streamId, groupCode, status).");
+    throw createHttpError(400, "Aucun champ modifiable fourni (levelId, streamId, groupId, status).");
   }
 
   return patch;

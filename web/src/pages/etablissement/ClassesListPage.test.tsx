@@ -147,6 +147,9 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
       countryCode: "CD",
       levels: [{ id: "level-4", name: "4ème", schoolActive: true, code: "4eme", displayOrder: 1, status: "active" }],
       streams: [],
+      groups: [
+        { id: "group-c", name: "C", code: "C", schoolActive: true, displayOrder: 1, status: "active", countryCode: "CD" },
+      ],
     });
     academicYearsApiMock.create.mockReset();
     academicYearsApiMock.update.mockReset();
@@ -199,6 +202,7 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
       section: "C",
       track: "",
       groupCode: "C",
+      groupId: "group-c",
       status: "active",
       schoolCode: "SCH-001",
       academicYearId: "ay-1",
@@ -212,7 +216,7 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     await user.click(screen.getByRole("button", { name: "Ajouter" }));
     await user.selectOptions(screen.getByLabelText(/Année scolaire/i), "ay-1");
     await user.selectOptions(screen.getByLabelText(/^Niveau/i), "level-4");
-    await user.selectOptions(screen.getByLabelText(/^Groupe/i), "C");
+    await user.selectOptions(screen.getByLabelText(/^Groupe/i), "group-c");
     await user.click(screen.getByRole("button", { name: "Enregistrer" }));
 
     await waitFor(() => {
@@ -220,7 +224,7 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
         expect.objectContaining({
           academicYearId: "ay-1",
           levelId: "level-4",
-          groupCode: "C",
+          groupId: "group-c",
           status: "active",
         }),
       );

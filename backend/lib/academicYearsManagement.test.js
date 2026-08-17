@@ -322,7 +322,7 @@ test("createSchoolClass résout l'année démo GET (pas AY-DEMO distinct)", asyn
         {
           academicYearId: demo.id,
           levelId: "missing-level",
-          groupCode: "A",
+          groupId: "missing-group",
           status: "active",
         },
         demo.schoolCode,

@@ -1084,10 +1084,19 @@ class FallbackRepository {
       streamName = stream.name;
     }
 
+    const group = (catalog.groups ?? []).find((row) => row.id === input.groupId && row.schoolActive);
+    if (!group) {
+      throw createHttpError(
+        400,
+        "Ce groupe n'est pas activé pour l'établissement.",
+        CLASS_WRITE_ERROR.GROUP_NOT_ACTIVATED,
+      );
+    }
+
     const displayName = composeClassDisplayName({
       levelName: level.name,
       streamName,
-      groupCode: input.groupCode,
+      groupCode: group.code,
     });
 
     const structuralDuplicate = this._managedClasses.find(
@@ -1096,7 +1105,7 @@ class FallbackRepository {
         row.academicYearId === academicYear.id &&
         row.levelId === input.levelId &&
         (row.streamId || null) === (input.streamId || null) &&
-        String(row.groupCode ?? "").toUpperCase() === input.groupCode,
+        String(row.groupId ?? "") === String(input.groupId),
     );
     if (structuralDuplicate) {
       throw createHttpError(
@@ -1127,9 +1136,10 @@ class FallbackRepository {
       classCode,
       name: displayName,
       level: level.name,
-      section: input.groupCode,
+      section: group.code,
       track: streamName ?? "",
-      groupCode: input.groupCode,
+      groupCode: group.code,
+      groupId: group.id,
       levelId: input.levelId,
       streamId: input.streamId,
       status: input.status,
@@ -1179,17 +1189,15 @@ class FallbackRepository {
     }
 
     const structuralTouched =
-      Object.hasOwn(patch, "levelId") || Object.hasOwn(patch, "streamId") || Object.hasOwn(patch, "groupCode");
+      Object.hasOwn(patch, "levelId") || Object.hasOwn(patch, "streamId") || Object.hasOwn(patch, "groupId");
     if (structuralTouched) {
       const nextLevelId = Object.hasOwn(patch, "levelId") ? patch.levelId : current.levelId;
       const nextStreamId = Object.hasOwn(patch, "streamId") ? patch.streamId : current.streamId;
-      const nextGroupCode = Object.hasOwn(patch, "groupCode")
-        ? patch.groupCode
-        : String(current.groupCode ?? "").toUpperCase();
-      if (!nextLevelId || !nextGroupCode) {
+      const nextGroupId = Object.hasOwn(patch, "groupId") ? patch.groupId : current.groupId;
+      if (!nextLevelId || !nextGroupId) {
         throw createHttpError(
           400,
-          "Les classes existantes sans rattachement catalogue se gèrent au lot E. Fournissez levelId et groupCode.",
+          "Les classes existantes sans rattachement catalogue se gèrent au lot E. Fournissez levelId et groupId.",
           CLASS_WRITE_ERROR.OFFERING_REQUIRED,
         );
       }
@@ -1214,16 +1222,25 @@ class FallbackRepository {
         }
         streamName = stream.name;
       }
+      const group = (catalog.groups ?? []).find((row) => row.id === nextGroupId && row.schoolActive);
+      if (!group) {
+        throw createHttpError(
+          400,
+          "Ce groupe n'est pas activé pour l'établissement.",
+          CLASS_WRITE_ERROR.GROUP_NOT_ACTIVATED,
+        );
+      }
       current.levelId = nextLevelId;
       current.streamId = nextStreamId || null;
-      current.groupCode = nextGroupCode;
+      current.groupId = nextGroupId;
+      current.groupCode = group.code;
       current.level = level.name;
       current.track = streamName ?? "";
-      current.section = nextGroupCode;
+      current.section = group.code;
       current.name = composeClassDisplayName({
         levelName: level.name,
         streamName,
-        groupCode: nextGroupCode,
+        groupCode: group.code,
       });
     }
     if (patch.status) current.status = patch.status;
@@ -3120,6 +3137,10 @@ class FallbackRepository {
     return this.getEducationReferenceStore().listStreamsByCountry(countryCode, options);
   }
 
+  listEducationClassGroupsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listGroupsByCountry(countryCode, options);
+  }
+
   getEducationSchoolCatalog(schoolCode) {
     return this.getEducationReferenceStore().getSchoolCatalog(schoolCode);
   }
@@ -3152,6 +3173,21 @@ class FallbackRepository {
   archiveEducationStream(streamId, principal, auditMeta) {
     const { archiveStream } = require("../lib/educationReferenceService");
     return archiveStream(this, streamId, principal, auditMeta);
+  }
+
+  createEducationClassGroup(payload, principal, auditMeta) {
+    const { createGroup } = require("../lib/educationReferenceService");
+    return createGroup(this, payload, principal, auditMeta);
+  }
+
+  updateEducationClassGroup(groupId, patch, principal, auditMeta) {
+    const { updateGroup } = require("../lib/educationReferenceService");
+    return updateGroup(this, groupId, patch, principal, auditMeta);
+  }
+
+  archiveEducationClassGroup(groupId, principal, auditMeta) {
+    const { archiveGroup } = require("../lib/educationReferenceService");
+    return archiveGroup(this, groupId, principal, auditMeta);
   }
 
   saveSchoolEducationActivation(schoolCode, activation, principal, auditMeta) {

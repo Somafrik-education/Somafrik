@@ -64,17 +64,18 @@ async function login(identifier, schoolCode) {
   return token;
 }
 
-async function createActiveClass(token, label) {
+async function createActiveClass(token, _label, groupCode = "A") {
   const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
   const ctx = await prepareCanonicalClassContext(request, {
     schoolCode: "CD-2026-0001",
     countryCode: "CD",
     levelName: "6ème",
+    groupCode,
   });
   const created = await postCanonicalClass(request, token, {
     academicYearId: ctx.academicYear.id,
     levelId: ctx.level.id,
-    groupCode: `G${String(Date.now()).slice(-4)}`,
+    groupId: ctx.group.id,
     status: "active",
   });
   assert.equal(created.status, 201, JSON.stringify(created.data));
@@ -145,8 +146,8 @@ async function main() {
       `unexpected POST /students status ${bareCreate.status}`,
     );
 
-    const activeClass = await createActiveClass(tokenCd, "Fiche active");
-    const inactiveClass = await createActiveClass(tokenCd, "Fiche inactive");
+    const activeClass = await createActiveClass(tokenCd, "Fiche active", "F1");
+    const inactiveClass = await createActiveClass(tokenCd, "Fiche inactive", "F2");
     const patched = await request(`/classes/${encodeURIComponent(inactiveClass.classCode)}`, {
       method: "PATCH",
       token: tokenCd,

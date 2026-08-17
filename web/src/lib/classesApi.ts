@@ -11,6 +11,7 @@ export interface SchoolClass {
   section: string;
   track: string;
   groupCode: string;
+  groupId?: string | null;
   levelId?: string | null;
   streamId?: string | null;
   status: ClassStatus;
@@ -29,14 +30,14 @@ export interface CreateClassPayload {
   academicYearId: string;
   levelId: string;
   streamId?: string | null;
-  groupCode: string;
+  groupId: string;
   status?: ClassStatus;
 }
 
 export interface UpdateClassPayload {
   levelId?: string;
   streamId?: string | null;
-  groupCode?: string;
+  groupId?: string;
   status?: ClassStatus;
 }
 

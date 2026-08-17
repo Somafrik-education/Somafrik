@@ -79,6 +79,13 @@ async function main() {
     });
     assert.equal(createdStream.status, 201, JSON.stringify(createdStream.data));
 
+    const createdGroup = await request("/backoffice/education-class-groups", {
+      method: "POST",
+      token: superToken,
+      body: { countryCode: "CD", code: "A", name: "A" },
+    });
+    assert.equal(createdGroup.status, 201, JSON.stringify(createdGroup.data));
+
     const adminCreateLevel = await request("/backoffice/education-levels", {
       method: "POST",
       token: adminToken,
@@ -86,10 +93,17 @@ async function main() {
     });
     assert.equal(adminCreateLevel.status, 403, JSON.stringify(adminCreateLevel.data));
 
+    const adminCreateGroup = await request("/backoffice/education-class-groups", {
+      method: "POST",
+      token: adminToken,
+      body: { countryCode: "CD", code: "Z", name: "Z" },
+    });
+    assert.equal(adminCreateGroup.status, 403, JSON.stringify(adminCreateGroup.data));
+
     const activation = await request("/education-reference/school-activation", {
       method: "PUT",
       token: adminToken,
-      body: { levelIds: [createdLevel.data.id], streamIds: [createdStream.data.id] },
+      body: { levelIds: [createdLevel.data.id], streamIds: [createdStream.data.id], groupIds: [createdGroup.data.id] },
     });
     assert.equal(activation.status, 200, JSON.stringify(activation.data));
 

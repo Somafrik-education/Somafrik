@@ -51,6 +51,7 @@ function createClassesRepository(db) {
       section: groupCode || (row.section ?? ""),
       levelId: row.level_id ?? null,
       streamId: row.stream_id ?? null,
+      groupId: row.group_id ?? null,
       status: row.status,
       schoolCode: row.school_code,
       academicYearId: row.academic_year_id,
@@ -106,7 +107,7 @@ function createClassesRepository(db) {
     return year;
   }
 
-  async function resolveActivatedOffering(executor, school, levelId, streamId) {
+  async function resolveActivatedOffering(executor, school, levelId, streamId, groupId) {
     const level = await executor.one(
       `SELECT el.id, el.name, el.country_id, el.status AS level_status, sl.status AS school_status
        FROM education_levels el
@@ -129,39 +130,70 @@ function createClassesRepository(db) {
       );
     }
 
-    if (!streamId) {
-      return { levelName: level.name, streamName: null, stream: null };
+    let streamName = null;
+    let resolvedStream = null;
+    if (streamId) {
+      const stream = await executor.one(
+        `SELECT es.id, es.name, es.country_id, es.level_id, es.status AS stream_status, ss.status AS school_status
+         FROM education_streams es
+         LEFT JOIN school_streams ss ON ss.stream_id = es.id AND ss.school_id = $1
+         WHERE es.id::text = $2
+         LIMIT 1`,
+        [school.id, streamId],
+      );
+      if (!stream) {
+        throw createHttpError(400, "Filière introuvable.", CLASS_WRITE_ERROR.OFFERING_REQUIRED);
+      }
+      if (school.country_id && String(stream.country_id) !== String(school.country_id)) {
+        throw createHttpError(403, "Filière hors pays de l'établissement.", CLASS_WRITE_ERROR.OFFERING_REQUIRED);
+      }
+      if (stream.stream_status !== "active" || stream.school_status !== "active") {
+        throw createHttpError(
+          400,
+          "Cette filière n'est pas activée pour l'établissement.",
+          CLASS_WRITE_ERROR.STREAM_NOT_ACTIVATED,
+        );
+      }
+      if (stream.level_id && String(stream.level_id) !== String(level.id)) {
+        throw createHttpError(
+          400,
+          "Cette filière n'est pas rattachée au niveau choisi.",
+          CLASS_WRITE_ERROR.STREAM_LEVEL_MISMATCH,
+        );
+      }
+      streamName = stream.name;
+      resolvedStream = stream;
     }
 
-    const stream = await executor.one(
-      `SELECT es.id, es.name, es.country_id, es.level_id, es.status AS stream_status, ss.status AS school_status
-       FROM education_streams es
-       LEFT JOIN school_streams ss ON ss.stream_id = es.id AND ss.school_id = $1
-       WHERE es.id::text = $2
+    const group = await executor.one(
+      `SELECT eg.id, eg.group_code, eg.name, eg.country_id, eg.status AS group_status, sg.status AS school_status
+       FROM education_class_groups eg
+       LEFT JOIN school_class_groups sg ON sg.group_id = eg.id AND sg.school_id = $1
+       WHERE eg.id::text = $2
        LIMIT 1`,
-      [school.id, streamId],
+      [school.id, groupId],
     );
-    if (!stream) {
-      throw createHttpError(400, "Filière introuvable.", CLASS_WRITE_ERROR.OFFERING_REQUIRED);
+    if (!group) {
+      throw createHttpError(400, "Groupe introuvable.", CLASS_WRITE_ERROR.GROUP_NOT_ACTIVATED);
     }
-    if (school.country_id && String(stream.country_id) !== String(school.country_id)) {
-      throw createHttpError(403, "Filière hors pays de l'établissement.", CLASS_WRITE_ERROR.OFFERING_REQUIRED);
+    if (school.country_id && String(group.country_id) !== String(school.country_id)) {
+      throw createHttpError(403, "Groupe hors pays de l'établissement.", CLASS_WRITE_ERROR.GROUP_NOT_ACTIVATED);
     }
-    if (stream.stream_status !== "active" || stream.school_status !== "active") {
+    if (group.group_status !== "active" || group.school_status !== "active") {
       throw createHttpError(
         400,
-        "Cette filière n'est pas activée pour l'établissement.",
-        CLASS_WRITE_ERROR.STREAM_NOT_ACTIVATED,
+        "Ce groupe n'est pas activé pour l'établissement.",
+        CLASS_WRITE_ERROR.GROUP_NOT_ACTIVATED,
       );
     }
-    if (stream.level_id && String(stream.level_id) !== String(level.id)) {
-      throw createHttpError(
-        400,
-        "Cette filière n'est pas rattachée au niveau choisi.",
-        CLASS_WRITE_ERROR.STREAM_LEVEL_MISMATCH,
-      );
-    }
-    return { levelName: level.name, streamName: stream.name, stream };
+
+    return {
+      levelName: level.name,
+      streamName,
+      stream: resolvedStream,
+      groupCode: group.group_code,
+      groupId: group.id,
+    };
   }
 
   const CLASS_SELECT = `SELECT cl.id,
@@ -173,6 +205,7 @@ function createClassesRepository(db) {
                 cl.academic_year_id,
                 cl.level_id,
                 cl.stream_id,
+                cl.group_id,
                 cl.group_code,
                 cl.created_at,
                 cl.updated_at,
@@ -192,7 +225,7 @@ function createClassesRepository(db) {
     const displayName = composeClassDisplayName({
       levelName: offering.levelName,
       streamName: offering.streamName,
-      groupCode: input.groupCode,
+      groupCode: offering.groupCode,
     });
     let classCode = generateClassCode(input.schoolCode);
     let inserted = null;
@@ -201,10 +234,10 @@ function createClassesRepository(db) {
         inserted = await executor.one(
           `INSERT INTO classes (
              school_id, academic_year_id, class_code, name, level, section, status,
-             level_id, stream_id, group_code
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             level_id, stream_id, group_id, group_code
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING id, class_code, name, level, section, status,
-                     academic_year_id, level_id, stream_id, group_code, created_at, updated_at`,
+                     academic_year_id, level_id, stream_id, group_id, group_code, created_at, updated_at`,
           [
             school.id,
             academicYear.id,
@@ -215,7 +248,8 @@ function createClassesRepository(db) {
             input.status,
             input.levelId,
             input.streamId,
-            input.groupCode,
+            offering.groupId,
+            offering.groupCode,
           ],
         );
         break;
@@ -283,7 +317,7 @@ function createClassesRepository(db) {
 
       const run = async (executor, tx = executor) => {
         const academicYear = await resolveAcademicYearById(executor, school.id, input.academicYearId);
-        const offering = await resolveActivatedOffering(executor, school, input.levelId, input.streamId);
+        const offering = await resolveActivatedOffering(executor, school, input.levelId, input.streamId, input.groupId);
         const inserted = await insertClass(executor, school, academicYear, offering, input);
         if (wantsAudit) {
           const mapped = mapClassRow(inserted);
@@ -341,7 +375,7 @@ function createClassesRepository(db) {
         }
 
         const structuralTouched =
-          Object.hasOwn(patch, "levelId") || Object.hasOwn(patch, "streamId") || Object.hasOwn(patch, "groupCode");
+          Object.hasOwn(patch, "levelId") || Object.hasOwn(patch, "streamId") || Object.hasOwn(patch, "groupId");
         const nextStatus = patch.status ?? current.status;
 
         let displayName = current.name;
@@ -349,28 +383,28 @@ function createClassesRepository(db) {
         let streamName = current.stream_name ?? null;
         let nextLevelId = current.level_id;
         let nextStreamId = current.stream_id;
+        let nextGroupId = current.group_id;
         let nextGroupCode = current.group_code;
 
         if (structuralTouched) {
           nextLevelId = Object.hasOwn(patch, "levelId") ? patch.levelId : current.level_id;
           nextStreamId = Object.hasOwn(patch, "streamId") ? patch.streamId : current.stream_id;
-          nextGroupCode = Object.hasOwn(patch, "groupCode")
-            ? patch.groupCode
-            : String(current.group_code ?? "").trim().toUpperCase();
-          if (!nextLevelId || !nextGroupCode) {
+          nextGroupId = Object.hasOwn(patch, "groupId") ? patch.groupId : current.group_id;
+          if (!nextLevelId || !nextGroupId) {
             throw createHttpError(
               400,
-              "Les classes existantes sans rattachement catalogue se gèrent au lot E. Fournissez levelId et groupCode.",
+              "Les classes existantes sans rattachement catalogue se gèrent au lot E. Fournissez levelId et groupId.",
               CLASS_WRITE_ERROR.OFFERING_REQUIRED,
             );
           }
-          const offering = await resolveActivatedOffering(executor, school, nextLevelId, nextStreamId || null);
+          const offering = await resolveActivatedOffering(executor, school, nextLevelId, nextStreamId || null, nextGroupId);
           levelName = offering.levelName;
           streamName = offering.streamName;
+          nextGroupCode = offering.groupCode;
           displayName = composeClassDisplayName({
             levelName: offering.levelName,
             streamName: offering.streamName,
-            groupCode: nextGroupCode,
+            groupCode: offering.groupCode,
           });
         }
 
@@ -384,11 +418,12 @@ function createClassesRepository(db) {
                  status = $4,
                  level_id = $5,
                  stream_id = $6,
-                 group_code = $7,
+                 group_id = $7,
+                 group_code = $8,
                  updated_at = NOW()
-             WHERE class_code = $8 AND school_id = $9
+             WHERE class_code = $9 AND school_id = $10
              RETURNING id, class_code, name, level, section, status,
-                       academic_year_id, level_id, stream_id, group_code, created_at, updated_at`,
+                       academic_year_id, level_id, stream_id, group_id, group_code, created_at, updated_at`,
             [
               displayName,
               levelName,
@@ -396,6 +431,7 @@ function createClassesRepository(db) {
               nextStatus,
               nextLevelId,
               nextStreamId || null,
+              nextGroupId,
               nextGroupCode,
               classCode,
               school.id,

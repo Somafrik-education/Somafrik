@@ -382,11 +382,12 @@ async function main() {
     const offering = await prepareCanonicalClassContext(request, {
       schoolCode: "CD-2026-0001",
       countryCode: "CD",
+      groupCode: "PR",
     });
     const classCreated = await postCanonicalClass(request, admin.token, {
       academicYearId: offering.academicYear.id,
       levelId: offering.level.id,
-      groupCode: "PR",
+      groupId: offering.group.id,
       status: "active",
     });
     assert.equal(classCreated.status, 201, JSON.stringify(classCreated.data));

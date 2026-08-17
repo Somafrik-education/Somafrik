@@ -39,7 +39,7 @@ test("validateCreateClassInput accepte le contrat structurel", () => {
       academicYearId: "ay-1",
       levelId: "level-1",
       streamId: "stream-1",
-      groupCode: "a",
+      groupId: "group-1",
       status: "active",
     },
     "SCH-001",
@@ -49,25 +49,25 @@ test("validateCreateClassInput accepte le contrat structurel", () => {
     academicYearId: "ay-1",
     levelId: "level-1",
     streamId: "stream-1",
-    groupCode: "A",
+    groupId: "group-1",
     status: "active",
   });
 });
 
 test("validateCreateClassInput permet une filière absente", () => {
   const input = validateCreateClassInput(
-    { academicYearId: "ay-1", levelId: "level-1", groupCode: "B" },
+    { academicYearId: "ay-1", levelId: "level-1", groupId: "group-b" },
     "SCH-001",
   );
   assert.equal(input.streamId, null);
-  assert.equal(input.groupCode, "B");
+  assert.equal(input.groupId, "group-b");
 });
 
-test("validateCreateClassInput rejects client-provided classCode and bad status", () => {
+test("validateCreateClassInput rejects client-provided classCode, groupCode and bad status", () => {
   assert.throws(
     () =>
       validateCreateClassInput(
-        { academicYearId: "ay-1", levelId: "l1", groupCode: "A", classCode: "X" },
+        { academicYearId: "ay-1", levelId: "l1", groupId: "g1", classCode: "X" },
         "SCH-001",
       ),
     (error) => error.statusCode === 400,
@@ -75,7 +75,15 @@ test("validateCreateClassInput rejects client-provided classCode and bad status"
   assert.throws(
     () =>
       validateCreateClassInput(
-        { academicYearId: "ay-1", levelId: "l1", groupCode: "A", status: "Active" },
+        { academicYearId: "ay-1", levelId: "l1", groupCode: "XYZ" },
+        "SCH-001",
+      ),
+    (error) => error.statusCode === 400 && error.code === CLASS_WRITE_ERROR.FREE_TEXT_FORBIDDEN,
+  );
+  assert.throws(
+    () =>
+      validateCreateClassInput(
+        { academicYearId: "ay-1", levelId: "l1", groupId: "g1", status: "Active" },
         "SCH-001",
       ),
     (error) => error.statusCode === 400,
@@ -90,7 +98,7 @@ test("validateCreateClassInput rejects cross-school body schoolCode", () => {
   assert.throws(
     () =>
       validateCreateClassInput(
-        { academicYearId: "ay-1", levelId: "l1", groupCode: "A", schoolCode: "OTHER" },
+        { academicYearId: "ay-1", levelId: "l1", groupId: "g1", schoolCode: "OTHER" },
         "SCH-001",
       ),
     (error) => error.statusCode === 403,

@@ -16,6 +16,8 @@ const {
   updateStream,
   saveSchoolActivation,
   archiveLevel,
+  createGroup,
+  archiveGroup,
   ensureEducationReferenceConstraints,
   stripLegacyAcademicReferencePayloads,
 } = require("./educationReferenceService");
@@ -106,6 +108,8 @@ function createRepo(pool) {
     createEducationLevel: (payload, principal, auditMeta) => createLevel(repo, payload, principal, auditMeta),
     createEducationStream: (payload, principal, auditMeta) => createStream(repo, payload, principal, auditMeta),
     updateEducationStream: (streamId, patch, principal, auditMeta) => updateStream(repo, streamId, patch, principal, auditMeta),
+    createEducationClassGroup: (payload, principal, auditMeta) => createGroup(repo, payload, principal, auditMeta),
+    archiveEducationClassGroup: (groupId, principal, auditMeta) => archiveGroup(repo, groupId, principal, auditMeta),
     saveSchoolEducationActivation: (schoolCode, activation, principal, auditMeta) =>
       saveSchoolActivation(repo, schoolCode, activation, principal, auditMeta),
     archiveEducationLevel: (levelId, principal, auditMeta) => archiveLevel(repo, levelId, principal, auditMeta),
@@ -242,6 +246,47 @@ async function main() {
     );
     assert.ok(stream.id);
 
+    const groupA = await repo.createEducationClassGroup(
+      { countryCode: "CD", code: "A", name: "A" },
+      superPrincipal,
+      auditMeta,
+    );
+    const groupB = await repo.createEducationClassGroup(
+      { countryCode: "CD", code: "B", name: "B" },
+      superPrincipal,
+      auditMeta,
+    );
+    assert.ok(groupA.id);
+    assert.ok(groupB.id);
+    await assert.rejects(
+      () => repo.createEducationClassGroup({ countryCode: "CD", code: "A", name: "A" }, superPrincipal, auditMeta),
+      (error) => error.statusCode === 409,
+    );
+    await assert.rejects(
+      () => repo.createEducationClassGroup({ countryCode: "CD", code: "Z", name: "Z" }, schoolPrincipal, auditMeta),
+      (error) => error.statusCode === 403 && error.code === EDUCATION_REFERENCE_ERROR.FORBIDDEN,
+    );
+
+    await pool.query(
+      `INSERT INTO countries (name, iso_code, phone_code, currency)
+       VALUES ('Burundi', 'BI', '+257', 'BIF')
+       ON CONFLICT (iso_code) DO NOTHING`,
+    );
+    const biCountry = await pool.query(`SELECT id FROM countries WHERE iso_code = 'BI'`);
+    await pool.query(
+      `INSERT INTO schools (country_id, school_code, name, status)
+       VALUES ($1, 'BI-2026-0002', 'Lycée BI', 'active')
+       ON CONFLICT (school_code) DO NOTHING`,
+      [biCountry.rows[0].id],
+    );
+    const groupBi = await repo.createEducationClassGroup(
+      { countryCode: "BI", code: "A", name: "A" },
+      superPrincipal,
+      auditMeta,
+    );
+    assert.ok(groupBi.id);
+    assert.notEqual(groupBi.id, groupA.id);
+
     const frLevel = await repo.createEducationLevel(
       { countryCode: "FR", name: "Seconde", code: "seconde" },
       superPrincipal,
@@ -288,11 +333,24 @@ async function main() {
 
     const activation = await repo.saveSchoolEducationActivation(
       "CD-2026-0001",
-      { levelIds: [levelA.id], streamIds: [stream.id] },
+      { levelIds: [levelA.id], streamIds: [stream.id], groupIds: [groupA.id, groupB.id] },
       schoolPrincipal,
       auditMeta,
     );
     assert.equal(activation.levels.find((row) => row.id === levelA.id)?.schoolActive, true);
+    assert.equal(activation.groups.find((row) => row.id === groupA.id)?.schoolActive, true);
+    assert.equal(activation.groups.find((row) => row.id === groupB.id)?.schoolActive, true);
+
+    await assert.rejects(
+      () =>
+        repo.saveSchoolEducationActivation(
+          "CD-2026-0001",
+          { levelIds: [levelA.id], streamIds: [], groupIds: [groupBi.id] },
+          schoolPrincipal,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 403 && error.code === "COUNTRY_MISMATCH",
+    );
 
     const lists = await repo.getSchoolEducationActiveLists("CD-2026-0001");
     assert.deepEqual(lists.levels, ["1ère"]);
@@ -306,7 +364,7 @@ async function main() {
 
     await repo.saveSchoolEducationActivation(
       "CD-2026-0001",
-      { levelIds: [levelA.id], streamIds: [stream.id] },
+      { levelIds: [levelA.id], streamIds: [stream.id], groupIds: [groupA.id] },
       schoolPrincipal,
       auditMeta,
     );
@@ -314,10 +372,14 @@ async function main() {
       () => repo.archiveEducationLevel(levelA.id, superPrincipal, auditMeta),
       (error) => error.statusCode === 409,
     );
+    await assert.rejects(
+      () => repo.archiveEducationClassGroup(groupA.id, superPrincipal, auditMeta),
+      (error) => error.statusCode === 409 && error.code === EDUCATION_REFERENCE_ERROR.GROUP_IN_USE,
+    );
 
     await repo.saveSchoolEducationActivation(
       "CD-2026-0001",
-      { levelIds: [levelDup.id], streamIds: [stream.id] },
+      { levelIds: [levelDup.id], streamIds: [stream.id], groupIds: [] },
       schoolPrincipal,
       auditMeta,
     );

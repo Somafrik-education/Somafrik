@@ -80,6 +80,13 @@ test("Superadmin n'a pas de pays par défaut CD", () => {
   );
 });
 
+test("requireGroupCatalogCode normalise et refuse le texte libre", () => {
+  const { requireGroupCatalogCode } = require("./educationReferenceManagement");
+  assert.equal(requireGroupCatalogCode("a"), "A");
+  assert.throws(() => requireGroupCatalogCode("XYZ!"), (error) => error.statusCode === 400);
+  assert.throws(() => requireGroupCatalogCode(""), (error) => error.statusCode === 400);
+});
+
 test("magasin mémoire infère le pays depuis le code établissement, sans défaut CD", async () => {
   const { createEducationReferenceMemoryStore } = require("../db/educationReferenceMemoryStore");
   const store = createEducationReferenceMemoryStore({

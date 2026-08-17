@@ -28,6 +28,14 @@ function createMemoryDb() {
     { id: "stream-a", country_id: "country-a", name: "Générale", level_id: null, status: "active" },
   ];
   const schoolStreams = [{ school_id: "school-a", stream_id: "stream-a", status: "active" }];
+  const groups = [
+    { id: "group-a", country_id: "country-a", group_code: "A", name: "A", status: "active" },
+    { id: "group-b", country_id: "country-b", group_code: "A", name: "A", status: "active" },
+  ];
+  const schoolGroups = [
+    { school_id: "school-a", group_id: "group-a", status: "active" },
+    { school_id: "school-b", group_id: "group-b", status: "active" },
+  ];
   /** @type {any[]} */
   const classes = [];
   /** @type {any[]} */
@@ -64,6 +72,16 @@ function createMemoryDb() {
           school_status: activation?.status ?? null,
         };
       }
+      if (text.includes("FROM EDUCATION_CLASS_GROUPS EG")) {
+        const group = groups.find((row) => row.id === params[1]);
+        if (!group) return null;
+        const activation = schoolGroups.find((row) => row.school_id === params[0] && row.group_id === group.id);
+        return {
+          ...group,
+          group_status: group.status,
+          school_status: activation?.status ?? null,
+        };
+      }
       if (text.startsWith("INSERT INTO CLASSES")) {
         const row = {
           id: nextId(),
@@ -76,7 +94,8 @@ function createMemoryDb() {
           status: params[6],
           level_id: params[7],
           stream_id: params[8],
-          group_code: params[9],
+          group_id: params[9],
+          group_code: params[10],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
@@ -87,7 +106,7 @@ function createMemoryDb() {
               item.academic_year_id === row.academic_year_id &&
               item.level_id === row.level_id &&
               (item.stream_id || null) === (row.stream_id || null) &&
-              String(item.group_code) === String(row.group_code),
+              String(item.group_id) === String(row.group_id),
           )
         ) {
           const error = new Error(
@@ -140,7 +159,7 @@ function createMemoryDb() {
         };
       }
       if (text.startsWith("UPDATE CLASSES")) {
-        const row = classes.find((item) => item.class_code === params[7] && item.school_id === params[8]);
+        const row = classes.find((item) => item.class_code === params[8] && item.school_id === params[9]);
         if (!row) return null;
         row.name = params[0];
         row.level = params[1];
@@ -148,7 +167,8 @@ function createMemoryDb() {
         row.status = params[3];
         row.level_id = params[4];
         row.stream_id = params[5];
-        row.group_code = params[6];
+        row.group_id = params[6];
+        row.group_code = params[7];
         row.updated_at = new Date().toISOString();
         return { ...row };
       }
@@ -200,7 +220,7 @@ async function main() {
       academicYearId: "ay-a",
       levelId: "level-a",
       streamId: "stream-a",
-      groupCode: "A",
+      groupId: "group-a",
       status: "active",
     },
     "SCH-A",
@@ -226,7 +246,7 @@ async function main() {
           academicYearId: "ay-a",
           levelId: "level-a",
           streamId: "stream-a",
-          groupCode: "A",
+          groupId: "group-a",
           status: "active",
         },
         "SCH-A",

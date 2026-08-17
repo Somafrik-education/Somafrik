@@ -492,9 +492,11 @@ class PostgresRepository {
   async ensureClassesStructuralOffering() {
     const {
       ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
+      DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
       CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
     } = require("../lib/classesUniqueness");
     await this.query(ADD_CLASSES_STRUCTURAL_COLUMNS_SQL);
+    await this.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
     await this.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
   }
 
@@ -622,6 +624,10 @@ class PostgresRepository {
     return this.getEducationReferenceStore().listStreamsByCountry(countryCode, options);
   }
 
+  listEducationClassGroupsByCountry(countryCode, options) {
+    return this.getEducationReferenceStore().listGroupsByCountry(countryCode, options);
+  }
+
   getEducationSchoolCatalog(schoolCode) {
     return this.getEducationReferenceStore().getSchoolCatalog(schoolCode);
   }
@@ -654,6 +660,21 @@ class PostgresRepository {
   archiveEducationStream(streamId, principal, auditMeta) {
     const { archiveStream } = require("../lib/educationReferenceService");
     return archiveStream(this, streamId, principal, auditMeta);
+  }
+
+  createEducationClassGroup(payload, principal, auditMeta) {
+    const { createGroup } = require("../lib/educationReferenceService");
+    return createGroup(this, payload, principal, auditMeta);
+  }
+
+  updateEducationClassGroup(groupId, patch, principal, auditMeta) {
+    const { updateGroup } = require("../lib/educationReferenceService");
+    return updateGroup(this, groupId, patch, principal, auditMeta);
+  }
+
+  archiveEducationClassGroup(groupId, principal, auditMeta) {
+    const { archiveGroup } = require("../lib/educationReferenceService");
+    return archiveGroup(this, groupId, principal, auditMeta);
   }
 
   saveSchoolEducationActivation(schoolCode, activation, principal, auditMeta) {

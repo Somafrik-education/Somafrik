@@ -153,8 +153,9 @@ CREATE TABLE IF NOT EXISTS classes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- level_id / stream_id / group_code : ajoutés APRÈS education_levels (boot
--- ensureClassesStructuralOffering + migration 20260817_classes_structural_offering).
+-- level_id / stream_id / group_id / group_code : ajoutés APRÈS education_levels
+-- (boot ensureClassesStructuralOffering + migrations 20260817 / 20260826).
+-- group_id nullable jusqu'au lot E. Aucun backfill silencieux.
 
 -- Unicité métier (école + année + nom normalisé) : index créé APRÈS contrôle
 -- fail-safe dans postgresRepository.ensureClassesDomainConstraints() /

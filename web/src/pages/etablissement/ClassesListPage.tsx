@@ -24,7 +24,7 @@ type ClassFormState = {
   academicYearId: string;
   levelId: string;
   streamId: string;
-  groupCode: string;
+  groupId: string;
   status: ClassStatus;
 };
 
@@ -32,11 +32,9 @@ const EMPTY_FORM: ClassFormState = {
   academicYearId: "",
   levelId: "",
   streamId: "",
-  groupCode: "A",
+  groupId: "",
   status: "active",
 };
-
-const GROUP_CODES = ["A", "B", "C", "D", "E"];
 
 type AcademicYearOption = {
   id: string;
@@ -116,9 +114,11 @@ export function ClassesListPage() {
     if (!form.levelId || !row.levelId) return true;
     return row.levelId === form.levelId;
   });
+  const activeGroups = (catalog?.groups ?? []).filter((row) => row.schoolActive);
   const selectedLevel = activeLevels.find((row) => row.id === form.levelId);
   const selectedStream = activeStreams.find((row) => row.id === form.streamId);
-  const previewName = [selectedLevel?.name, selectedStream?.name, form.groupCode].filter(Boolean).join(" ");
+  const selectedGroup = activeGroups.find((row) => row.id === form.groupId);
+  const previewName = [selectedLevel?.name, selectedStream?.name, selectedGroup?.code].filter(Boolean).join(" ");
   const labels = catalog?.labels ?? { levelLabel: "Niveau", trackLabel: "Filière", groupLabel: "Groupe" };
 
   function openCreate() {
@@ -128,6 +128,7 @@ export function ClassesListPage() {
       ...EMPTY_FORM,
       academicYearId: current?.id ?? years[0]?.id ?? "",
       levelId: activeLevels[0]?.id ?? "",
+      groupId: activeGroups[0]?.id ?? "",
     });
     setModalOpen(true);
   }
@@ -138,7 +139,7 @@ export function ClassesListPage() {
       academicYearId: row.academicYearId,
       levelId: row.levelId ?? "",
       streamId: row.streamId ?? "",
-      groupCode: row.groupCode || "A",
+      groupId: row.groupId ?? "",
       status: row.status === "inactive" ? "inactive" : "active",
     });
     setModalOpen(true);
@@ -153,7 +154,7 @@ export function ClassesListPage() {
         const updated = await classesApi.update(editing.classCode, {
           status: form.status,
           ...(form.levelId
-            ? { levelId: form.levelId, streamId: form.streamId || null, groupCode: form.groupCode }
+            ? { levelId: form.levelId, streamId: form.streamId || null, groupId: form.groupId }
             : {}),
         });
         setRows((current) =>
@@ -165,7 +166,7 @@ export function ClassesListPage() {
           academicYearId: form.academicYearId,
           levelId: form.levelId,
           streamId: form.streamId || null,
-          groupCode: form.groupCode,
+          groupId: form.groupId,
           status: form.status,
         });
         setRows((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name, "fr")));
@@ -335,9 +336,23 @@ export function ClassesListPage() {
               <p className="text-sm text-amber-900">
                 Activez l'offre pédagogique dans{" "}
                 <Link className="underline" to="/configuration">
-                  Paramètres
+                  Paramètres / Référentiel
                 </Link>{" "}
                 avant de créer une classe.
+              </p>
+            </div>
+          ) : null}
+          {!editing && years.length > 0 && activeLevels.length > 0 && activeGroups.length === 0 ? (
+            <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-950">
+                Aucun {labels.groupLabel.toLowerCase()} n'est configuré pour cet établissement.
+              </p>
+              <p className="text-sm text-amber-900">
+                Configurez le catalogue pays puis activez les groupes dans{" "}
+                <Link className="underline" to="/configuration">
+                  Paramètres / Référentiel
+                </Link>
+                . Aucun groupe A–E n'est proposé par défaut.
               </p>
             </div>
           ) : null}
@@ -370,10 +385,13 @@ export function ClassesListPage() {
           <Field label={labels.groupLabel} htmlFor="class-group">
             <Select
               id="class-group"
-              value={form.groupCode}
-              onChange={(event) => setForm((current) => ({ ...current, groupCode: event.target.value }))}
+              value={form.groupId}
+              onChange={(event) => setForm((current) => ({ ...current, groupId: event.target.value }))}
               required
-              options={GROUP_CODES.map((code) => ({ value: code, label: code }))}
+              options={[
+                { value: "", label: `Choisir un ${labels.groupLabel.toLowerCase()}` },
+                ...activeGroups.map((group) => ({ value: group.id, label: group.name || group.code })),
+              ]}
             />
           </Field>
           {previewName ? (
@@ -401,7 +419,7 @@ export function ClassesListPage() {
             </Button>
             <Button
               type="submit"
-              disabled={saving || (!editing && (years.length === 0 || activeLevels.length === 0))}
+              disabled={saving || (!editing && (years.length === 0 || activeLevels.length === 0 || activeGroups.length === 0))}
             >
               {saving ? "Enregistrement…" : "Enregistrer"}
             </Button>

@@ -72,4 +72,5 @@ assert.ok(
   "Enseignant avec Classes:READ lit academic-config",
 );
 assert.equal(routePermissions["POST /api/backoffice/education-levels"]?.includes("COUNTRY_PRIVILEGES"), false);
+assert.equal(routePermissions["POST /api/backoffice/education-class-groups"]?.includes("COUNTRY_PRIVILEGES"), false);
 assert.ok(routePermissions["PATCH /api/backoffice/education-reference/labels"]?.includes("Référentiels pédagogiques:UPDATE"));

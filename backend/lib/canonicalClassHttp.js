@@ -2,7 +2,7 @@
 
 /**
  * Client HTTP de tests : prépare l'offre établissement puis POST /classes canonique.
- * Aucun nom / niveau / filière texte libre.
+ * Aucun nom / niveau / filière / groupe texte libre.
  */
 
 async function login(request, identifier, password, schoolCode) {
@@ -21,6 +21,7 @@ function extractList(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.rows)) return payload.rows;
   if (Array.isArray(payload?.levels)) return payload.levels;
+  if (Array.isArray(payload?.groups)) return payload.groups;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
 }
@@ -39,6 +40,25 @@ async function ensureCountryLevel(request, superToken, countryCode, name) {
   });
   if (created.status !== 201) {
     throw new Error(`create level ${countryCode}/${name}: ${JSON.stringify(created.data)}`);
+  }
+  return created.data;
+}
+
+async function ensureCountryGroup(request, superToken, countryCode, code) {
+  const groupCode = String(code ?? "").trim().toUpperCase();
+  const listed = await request(
+    `/backoffice/education-class-groups?countryCode=${encodeURIComponent(countryCode)}&includeArchived=true`,
+    { token: superToken },
+  );
+  const existing = extractList(listed.data).find((row) => String(row.code).toUpperCase() === groupCode);
+  if (existing) return existing;
+  const created = await request("/backoffice/education-class-groups", {
+    method: "POST",
+    token: superToken,
+    body: { countryCode, code: groupCode, name: groupCode },
+  });
+  if (created.status !== 201) {
+    throw new Error(`create group ${countryCode}/${groupCode}: ${JSON.stringify(created.data)}`);
   }
   return created.data;
 }
@@ -70,11 +90,31 @@ async function ensureSchoolYear(request, schoolToken, name = "2025-2026", school
   return created.data;
 }
 
-async function activateOffering(request, schoolToken, levelIds, streamIds = []) {
+async function activateOffering(request, schoolToken, levelIds, streamIds = [], groupIds = []) {
+  const catalog = await request("/education-reference/catalog", { token: schoolToken });
+  const current = catalog.status === 200 ? catalog.data : { levels: [], streams: [], groups: [] };
+  const mergedLevelIds = [
+    ...new Set([
+      ...(current.levels ?? []).filter((row) => row.schoolActive).map((row) => row.id),
+      ...levelIds,
+    ]),
+  ];
+  const mergedStreamIds = [
+    ...new Set([
+      ...(current.streams ?? []).filter((row) => row.schoolActive).map((row) => row.id),
+      ...streamIds,
+    ]),
+  ];
+  const mergedGroupIds = [
+    ...new Set([
+      ...(current.groups ?? []).filter((row) => row.schoolActive).map((row) => row.id),
+      ...groupIds,
+    ]),
+  ];
   const saved = await request("/education-reference/school-activation", {
     method: "PUT",
     token: schoolToken,
-    body: { levelIds, streamIds },
+    body: { levelIds: mergedLevelIds, streamIds: mergedStreamIds, groupIds: mergedGroupIds },
   });
   if (saved.status !== 200) {
     throw new Error(`activate offering: ${JSON.stringify(saved.data)}`);
@@ -85,16 +125,29 @@ async function activateOffering(request, schoolToken, levelIds, streamIds = []) 
 /**
  * @param {(path: string, opts?: object) => Promise<{status: number, data: any}>} request
  */
-async function prepareCanonicalClassContext(request, { schoolCode, countryCode, levelName = "6ème" }) {
-  const superToken = await login(request, "superadmin", "1234");
-  const schoolToken = await login(request, "admin", "1234", schoolCode);
+async function prepareCanonicalClassContext(request, options) {
+  const {
+    schoolCode,
+    countryCode,
+    levelName = "6ème",
+    groupCode = "A",
+    superToken: providedSuperToken,
+    schoolToken: providedSchoolToken,
+    superIdentifier = "superadmin",
+    superPassword = "1234",
+    schoolIdentifier = "admin",
+    schoolPassword = "1234",
+  } = options;
+  const superToken = providedSuperToken || (await login(request, superIdentifier, superPassword));
+  const schoolToken = providedSchoolToken || (await login(request, schoolIdentifier, schoolPassword, schoolCode));
   const level = await ensureCountryLevel(request, superToken, countryCode, levelName);
-  await activateOffering(request, schoolToken, [level.id], []);
+  const group = await ensureCountryGroup(request, superToken, countryCode, groupCode);
+  await activateOffering(request, schoolToken, [level.id], [], [group.id]);
   const academicYear = await ensureSchoolYear(request, schoolToken, "2025-2026", schoolCode);
-  return { superToken, schoolToken, level, academicYear };
+  return { superToken, schoolToken, level, group, academicYear };
 }
 
-async function postCanonicalClass(request, schoolToken, { academicYearId, levelId, streamId = null, groupCode, status = "active" }) {
+async function postCanonicalClass(request, schoolToken, { academicYearId, levelId, streamId = null, groupId, status = "active" }) {
   return request("/classes", {
     method: "POST",
     token: schoolToken,
@@ -102,7 +155,7 @@ async function postCanonicalClass(request, schoolToken, { academicYearId, levelI
       academicYearId,
       levelId,
       ...(streamId ? { streamId } : {}),
-      groupCode,
+      groupId,
       status,
     },
   });
@@ -111,6 +164,7 @@ async function postCanonicalClass(request, schoolToken, { academicYearId, levelI
 module.exports = {
   login,
   ensureCountryLevel,
+  ensureCountryGroup,
   ensureSchoolYear,
   activateOffering,
   prepareCanonicalClassContext,

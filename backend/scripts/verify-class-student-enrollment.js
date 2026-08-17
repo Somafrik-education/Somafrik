@@ -173,16 +173,17 @@ async function createActiveClass(token, _label, scope = {}) {
   const countryCode = scope.countryCode ?? "CD";
   const levelName = scope.levelName ?? "6ème";
   const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+  const groupCode = scope.groupCode ?? "A";
   const ctx = await prepareCanonicalClassContext(request, {
     schoolCode,
     countryCode,
     levelName,
+    groupCode,
   });
-  const groupCode = `G${String(Date.now()).slice(-4)}`;
   const created = await postCanonicalClass(request, token, {
     academicYearId: ctx.academicYear.id,
     levelId: ctx.level.id,
-    groupCode,
+    groupId: ctx.group.id,
     status: "active",
   });
   assert.equal(created.status, 201, JSON.stringify(created.data));
@@ -215,8 +216,8 @@ async function main() {
     const tokenTeacher = await login("ENS-0001", "CD-2026-0001");
     const tokenPrefet = await loginWithoutPasswordGate("prefet", "CD-2026-0001");
 
-    const activeClass = await createActiveClass(tokenCd, "Classe active");
-    const inactiveClass = await createActiveClass(tokenCd, "Classe à désactiver");
+    const activeClass = await createActiveClass(tokenCd, "Classe active", { groupCode: "E1" });
+    const inactiveClass = await createActiveClass(tokenCd, "Classe à désactiver", { groupCode: "E2" });
     const patched = await request(`/classes/${encodeURIComponent(inactiveClass.classCode)}`, {
       method: "PATCH",
       token: tokenCd,
@@ -367,7 +368,7 @@ async function main() {
       body: {
         academicYearId: "missing-year-id",
         levelId: "missing-level-id",
-        groupCode: "U1",
+        groupId: "missing-group-id",
         status: "active",
       },
     });
@@ -479,6 +480,7 @@ async function main() {
     const offering = await prepareCanonicalClassContext(request, {
       schoolCode: "CD-2026-0001",
       countryCode: "CD",
+      groupCode: "H1",
     });
     const priorYearRow = await ensureSchoolYear(request, tokenCd, "2024-2025", "CD-2026-0001", {
       isCurrent: false,
@@ -486,14 +488,14 @@ async function main() {
     const priorYear = await postCanonicalClass(request, tokenCd, {
       academicYearId: priorYearRow.id,
       levelId: offering.level.id,
-      groupCode: "H1",
+      groupId: offering.group.id,
       status: "active",
     });
     assert.equal(priorYear.status, 201, JSON.stringify(priorYear.data));
     const currentHomonym = await postCanonicalClass(request, tokenCd, {
       academicYearId: offering.academicYear.id,
       levelId: offering.level.id,
-      groupCode: "H1",
+      groupId: offering.group.id,
       status: "active",
     });
     assert.equal(currentHomonym.status, 201, JSON.stringify(currentHomonym.data));

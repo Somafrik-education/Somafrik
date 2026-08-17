@@ -13,6 +13,7 @@ const { createClassesRepository } = require("../db/classesRepository");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+  DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
   NORMALIZE_CLASSES_STATUS_SQL,
   isClassNameUniquenessViolation,
@@ -148,6 +149,22 @@ async function setupFixture(pool) {
       PRIMARY KEY (school_id, stream_id)
     );
 
+    CREATE TABLE IF NOT EXISTS education_class_groups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      country_id UUID NOT NULL REFERENCES countries(id),
+      group_code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      display_order INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+
+    CREATE TABLE IF NOT EXISTS school_class_groups (
+      school_id UUID NOT NULL REFERENCES schools(id),
+      group_id UUID NOT NULL REFERENCES education_class_groups(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      PRIMARY KEY (school_id, group_id)
+    );
+
     CREATE TABLE IF NOT EXISTS enrollments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       class_id UUID REFERENCES classes(id),
@@ -158,12 +175,14 @@ async function setupFixture(pool) {
   await pool.query(`
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID REFERENCES education_levels(id);
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES education_streams(id);
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES education_class_groups(id);
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_code TEXT;
   `);
 
-  await pool.query("TRUNCATE enrollments, classes, school_streams, school_levels, education_streams, education_levels, academic_years, schools, countries CASCADE");
+  await pool.query("TRUNCATE enrollments, classes, school_class_groups, school_streams, school_levels, education_class_groups, education_streams, education_levels, academic_years, schools, countries CASCADE");
   await pool.query(NORMALIZE_CLASSES_STATUS_SQL);
   await pool.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
+  await pool.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
   await pool.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
   await pool.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
 
@@ -206,6 +225,27 @@ async function setupFixture(pool) {
     [levelB.rows[0].id],
   );
 
+  const groupA = await pool.query(
+    `INSERT INTO education_class_groups (country_id, group_code, name, status)
+     VALUES ($1, 'A', 'A', 'active') RETURNING id`,
+    [countryId],
+  );
+  const groupC = await pool.query(
+    `INSERT INTO education_class_groups (country_id, group_code, name, status)
+     VALUES ($1, 'C', 'C', 'active') RETURNING id`,
+    [countryId],
+  );
+  await pool.query(
+    `INSERT INTO school_class_groups (school_id, group_id, status)
+     SELECT s.id, $1, 'active' FROM schools s WHERE s.school_code IN ('SCH-A', 'SCH-B')`,
+    [groupA.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO school_class_groups (school_id, group_id, status)
+     SELECT s.id, $1, 'active' FROM schools s WHERE s.school_code = 'SCH-A'`,
+    [groupC.rows[0].id],
+  );
+
   return {
     yearA: (
       await pool.query(
@@ -219,6 +259,8 @@ async function setupFixture(pool) {
     ).rows[0].id,
     levelA: levelA.rows[0].id,
     levelB: levelB.rows[0].id,
+    groupA: groupA.rows[0].id,
+    groupC: groupC.rows[0].id,
   };
 }
 
@@ -284,7 +326,7 @@ async function main() {
       {
         academicYearId: ids.yearA,
         levelId: ids.levelA,
-        groupCode: "A",
+        groupId: ids.groupA,
         status: "active",
       },
       "SCH-A",
@@ -314,7 +356,7 @@ async function main() {
           {
             academicYearId: ids.yearA,
             levelId: ids.levelA,
-            groupCode: "A",
+            groupId: ids.groupA,
             status: "active",
           },
           "SCH-A",
@@ -324,11 +366,11 @@ async function main() {
 
     const results = await Promise.allSettled([
       repo.create(
-        { academicYearId: ids.yearA, levelId: ids.levelA, groupCode: "C", status: "active" },
+        { academicYearId: ids.yearA, levelId: ids.levelA, groupId: ids.groupC, status: "active" },
         "SCH-A",
       ),
       repo.create(
-        { academicYearId: ids.yearA, levelId: ids.levelA, groupCode: "C", status: "active" },
+        { academicYearId: ids.yearA, levelId: ids.levelA, groupId: ids.groupC, status: "active" },
         "SCH-A",
       ),
     ]);
@@ -342,7 +384,7 @@ async function main() {
       {
         academicYearId: ids.yearB,
         levelId: ids.levelB,
-        groupCode: "A",
+        groupId: ids.groupA,
         status: "active",
       },
       "SCH-B",

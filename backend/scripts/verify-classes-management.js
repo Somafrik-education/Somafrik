@@ -90,7 +90,7 @@ async function main() {
     const createdCd = await postCanonicalClass(request, cd.schoolToken, {
       academicYearId: cd.academicYear.id,
       levelId: cd.level.id,
-      groupCode: "A",
+      groupId: cd.group.id,
       status: "active",
     });
     assert.equal(createdCd.status, 201, JSON.stringify(createdCd.data));
@@ -102,7 +102,7 @@ async function main() {
     const createdBi = await postCanonicalClass(request, bi.schoolToken, {
       academicYearId: bi.academicYear.id,
       levelId: bi.level.id,
-      groupCode: "B",
+      groupId: bi.group.id,
       status: "active",
     });
     assert.equal(createdBi.status, 201, JSON.stringify(createdBi.data));
@@ -136,10 +136,68 @@ async function main() {
     const duplicate = await postCanonicalClass(request, cd.schoolToken, {
       academicYearId: cd.academicYear.id,
       levelId: cd.level.id,
-      groupCode: "A",
+      groupId: cd.group.id,
       status: "active",
     });
     assert.equal(duplicate.status, 409, JSON.stringify(duplicate.data));
+
+    const groupB = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+      groupCode: "B",
+    });
+    const createdCdB = await postCanonicalClass(request, cd.schoolToken, {
+      academicYearId: groupB.academicYear.id,
+      levelId: groupB.level.id,
+      groupId: groupB.group.id,
+      status: "active",
+    });
+    assert.equal(createdCdB.status, 201, JSON.stringify(createdCdB.data));
+    assert.equal(createdCdB.data.groupCode, "B");
+
+    const freeGroupCode = await request("/classes", {
+      method: "POST",
+      token: cd.schoolToken,
+      body: {
+        academicYearId: cd.academicYear.id,
+        levelId: cd.level.id,
+        groupCode: "XYZ",
+        status: "active",
+      },
+    });
+    assert.equal(freeGroupCode.status, 400, JSON.stringify(freeGroupCode.data));
+    assert.equal(freeGroupCode.data?.code, "CLASS_FREE_TEXT_FORBIDDEN");
+
+    const unknownGroup = await request("/classes", {
+      method: "POST",
+      token: cd.schoolToken,
+      body: {
+        academicYearId: cd.academicYear.id,
+        levelId: cd.level.id,
+        groupId: "00000000-0000-4000-8000-000000000xyz".replace("xyz", "001"),
+        status: "active",
+      },
+    });
+    assert.ok([400, 403].includes(unknownGroup.status), JSON.stringify(unknownGroup.data));
+
+    const crossCountryGroup = await request("/classes", {
+      method: "POST",
+      token: bi.schoolToken,
+      body: {
+        academicYearId: bi.academicYear.id,
+        levelId: bi.level.id,
+        groupId: cd.group.id,
+        status: "active",
+      },
+    });
+    assert.ok([400, 403].includes(crossCountryGroup.status), JSON.stringify(crossCountryGroup.data));
+
+    const adminCreateGroup = await request("/backoffice/education-class-groups", {
+      method: "POST",
+      token: cd.schoolToken,
+      body: { countryCode: "CD", code: "Z", name: "Z" },
+    });
+    assert.equal(adminCreateGroup.status, 403, JSON.stringify(adminCreateGroup.data));
 
     const freeText = await request("/classes", {
       method: "POST",
@@ -156,7 +214,7 @@ async function main() {
     const forbiddenStatus = await postCanonicalClass(request, cd.schoolToken, {
       academicYearId: cd.academicYear.id,
       levelId: cd.level.id,
-      groupCode: "Z",
+      groupId: cd.group.id,
       status: "Active",
     });
     assert.equal(forbiddenStatus.status, 400);

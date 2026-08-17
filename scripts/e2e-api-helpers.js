@@ -235,12 +235,13 @@ async function createClassViaApi(token, draft = {}) {
     schoolCode,
     countryCode,
     levelName: String(draft.level || "6ème"),
+    groupCode,
   });
   const res = await postCanonicalClass(request, token, {
     academicYearId: draft.academicYearId || ctx.academicYear.id,
     levelId: draft.levelId || ctx.level.id,
     streamId: draft.streamId || null,
-    groupCode,
+    groupId: draft.groupId || ctx.group.id,
     status,
   });
   if (res.status === 409) {

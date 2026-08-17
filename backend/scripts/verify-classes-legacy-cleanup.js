@@ -181,11 +181,12 @@ async function runHttpGuards() {
       schoolCode: "CD-2026-0001",
       countryCode: "CD",
       levelName: "6ème",
+      groupCode: "Z",
     });
     const created = await postCanonicalClass(request, token, {
       academicYearId: offering.academicYear.id,
       levelId: offering.level.id,
-      groupCode: "Z",
+      groupId: offering.group.id,
       status: "active",
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));

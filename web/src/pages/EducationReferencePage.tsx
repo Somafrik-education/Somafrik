@@ -8,6 +8,7 @@ import {
   type EducationLevel,
   type EducationPedagogicalLabels,
   type EducationStream,
+  type EducationClassGroup,
 } from "../lib/educationReferenceApi";
 import { initialCatalogCountryCode } from "../lib/educationReferenceCountry";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole, scopedCountries } from "../lib/orgHierarchy";
@@ -32,12 +33,15 @@ export function EducationReferencePage() {
   const [countryCode, setCountryCode] = useState("");
   const [levels, setLevels] = useState<EducationLevel[]>([]);
   const [streams, setStreams] = useState<EducationStream[]>([]);
+  const [groups, setGroups] = useState<EducationClassGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [levelName, setLevelName] = useState("");
   const [levelCode, setLevelCode] = useState("");
   const [streamName, setStreamName] = useState("");
   const [streamCode, setStreamCode] = useState("");
   const [streamType, setStreamType] = useState<"filiere" | "serie" | "option">("filiere");
+  const [groupName, setGroupName] = useState("");
+  const [groupCode, setGroupCode] = useState("");
   const [labelDraft, setLabelDraft] = useState<EducationPedagogicalLabels>(GENERIC_LABELS);
 
   const canCreate = isSuperAdmin || catalogPermissions.canCreate;
@@ -66,16 +70,19 @@ export function EducationReferencePage() {
     if (!countryCode) {
       setLevels([]);
       setStreams([]);
+      setGroups([]);
       return;
     }
     setLoading(true);
     try {
-      const [levelsResponse, streamsResponse] = await Promise.all([
+      const [levelsResponse, streamsResponse, groupsResponse] = await Promise.all([
         educationReferenceApi.listLevels(countryCode, true),
         educationReferenceApi.listStreams(countryCode),
+        educationReferenceApi.listGroups(countryCode, true),
       ]);
       setLevels(levelsResponse.levels ?? []);
       setStreams(streamsResponse.streams ?? []);
+      setGroups(groupsResponse.groups ?? []);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Chargement impossible", "error");
     } finally {
@@ -115,6 +122,20 @@ export function EducationReferencePage() {
     }
   }
 
+  async function handleCreateGroup(event: FormEvent) {
+    event.preventDefault();
+    if (!countryCode) return;
+    try {
+      await educationReferenceApi.createGroup({ countryCode, code: groupCode, name: groupName || groupCode });
+      setGroupName("");
+      setGroupCode("");
+      await load();
+      showToast(`${labels.groupLabel} créé.`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Création impossible", "error");
+    }
+  }
+
   async function handleArchiveLevel(level: EducationLevel) {
     const accepted = await confirm({
       title: `Archiver le ${labels.levelLabel.toLowerCase()}`,
@@ -142,6 +163,23 @@ export function EducationReferencePage() {
     if (!accepted) return;
     try {
       await educationReferenceApi.archiveStream(stream.id);
+      await load();
+      showToast("Élément archivé.", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Archivage impossible", "error");
+    }
+  }
+
+  async function handleArchiveGroup(group: EducationClassGroup) {
+    const accepted = await confirm({
+      title: `Archiver le ${labels.groupLabel.toLowerCase()}`,
+      description: `Archiver « ${group.name} » ? Cette action est irréversible côté catalogue.`,
+      confirmLabel: "Archiver",
+      tone: "danger",
+    });
+    if (!accepted) return;
+    try {
+      await educationReferenceApi.archiveGroup(group.id);
       await load();
       showToast("Élément archivé.", "success");
     } catch (error) {
@@ -288,6 +326,36 @@ export function EducationReferencePage() {
                 </li>
               ))}
             </ul>
+          </Card>
+
+          <Card className="p-6 space-y-4">
+            <h2 className="text-lg font-semibold">{labels.groupLabel}s</h2>
+            {canCreate ? (
+              <form onSubmit={handleCreateGroup} className="grid gap-3 md:grid-cols-3">
+                <input className="rounded border px-3 py-2" placeholder="Code (ex. A)" value={groupCode} onChange={(e) => setGroupCode(e.target.value)} required />
+                <input className="rounded border px-3 py-2" placeholder="Nom" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
+                <button type="submit" className="rounded bg-primary px-4 py-2 text-white">
+                  Créer
+                </button>
+              </form>
+            ) : null}
+            <ul className="space-y-2">
+              {groups.map((group) => (
+                <li key={group.id} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+                  <span>
+                    {group.name} <span className="text-muted">({group.code})</span> — {group.status}
+                  </span>
+                  {canUpdate && group.status === "active" ? (
+                    <button type="button" className="text-danger" onClick={() => void handleArchiveGroup(group)}>
+                      Archiver
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {!loading && !groups.length ? (
+              <p className="text-sm text-muted">Aucun {labels.groupLabel.toLowerCase()} défini pour ce pays.</p>
+            ) : null}
           </Card>
         </>
       )}
