@@ -19,9 +19,14 @@ interface LoginInput {
   profile: LoginProfile;
 }
 
+export type PermissionsBootstrap = "idle" | "loading" | "ready" | "error";
+
 interface AuthContextValue {
   session: Session | null;
   isAuthenticated: boolean;
+  permissionsReady: boolean;
+  permissionsBootstrap: PermissionsBootstrap;
+  permissionsBootstrapError: string | null;
   login: (input: LoginInput) => Promise<Session>;
   logout: () => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
@@ -40,8 +45,24 @@ function loadStoredSession(): Session | null {
   }
 }
 
+function logPermissionsBootstrapFailure(err: unknown) {
+  const status = err instanceof ApiError ? err.status : undefined;
+  const message = err instanceof Error ? err.message : "unknown";
+  console.error(
+    JSON.stringify({
+      kind: "effective_permissions_bootstrap_failure",
+      status: status ?? null,
+      message,
+    }),
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<Session | null>(loadStoredSession);
+  const [permissionsBootstrap, setPermissionsBootstrap] = useState<PermissionsBootstrap>(
+    session?.accessToken ? "loading" : "idle",
+  );
+  const [permissionsBootstrapError, setPermissionsBootstrapError] = useState<string | null>(null);
   const sessionRef = useRef<Session | null>(session);
 
   const setSession = useCallback((next: Session | null) => {
@@ -59,33 +80,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
   }, []);
 
-  useEffect(() => {
-    const token = sessionRef.current?.accessToken;
-    if (!token) return;
-    let cancelled = false;
-    void api
-      .get<{ permissions?: string[] }>("/auth/effective-permissions")
-      .then((payload) => {
-        if (cancelled || !Array.isArray(payload?.permissions)) return;
-        const current = sessionRef.current;
-        if (!current?.user) return;
-        setSession({
-          ...current,
-          permissions: payload.permissions,
-          user: { ...current.user, permissions: payload.permissions },
-        });
-      })
-      .catch((err) => {
-      if (cancelled) return;
+  const hydrateEffectivePermissions = useCallback(async () => {
+    const current = sessionRef.current;
+    if (!current?.accessToken) {
+      setPermissionsBootstrap("idle");
+      setPermissionsBootstrapError(null);
+      return current;
+    }
+    setPermissionsBootstrap("loading");
+    setPermissionsBootstrapError(null);
+    try {
+      const payload = await api.get<{ permissions?: string[] }>("/auth/effective-permissions");
+      if (!Array.isArray(payload?.permissions)) {
+        throw new Error("effective-permissions: payload invalide");
+      }
+      const latest = sessionRef.current;
+      if (!latest?.user) {
+        setPermissionsBootstrap("error");
+        setPermissionsBootstrapError("Session utilisateur absente après login.");
+        return latest;
+      }
+      const next: Session = {
+        ...latest,
+        permissions: payload.permissions,
+        user: { ...latest.user, permissions: payload.permissions },
+      };
+      setSession(next);
+      setPermissionsBootstrap("ready");
+      return next;
+    } catch (err) {
+      logPermissionsBootstrapFailure(err);
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         setSession(null);
+        setPermissionsBootstrap("idle");
+        setPermissionsBootstrapError(null);
+        return null;
       }
+      setPermissionsBootstrap("error");
+      setPermissionsBootstrapError(
+        err instanceof Error ? err.message : "Impossible de charger les permissions effectives.",
+      );
+      return sessionRef.current;
+    }
+  }, [setSession]);
+
+  useEffect(() => {
+    if (!session?.accessToken) {
+      setPermissionsBootstrap("idle");
+      setPermissionsBootstrapError(null);
+      return;
+    }
+    let cancelled = false;
+    void hydrateEffectivePermissions().then(() => {
+      if (cancelled) return;
     });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [session?.accessToken, hydrateEffectivePermissions]);
 
   const login = useCallback(
     async ({ identifier, password, schoolCode, profile }: LoginInput) => {
@@ -105,19 +157,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : response.user,
       };
       setSession(normalized);
-      return normalized;
+      const live = await hydrateEffectivePermissions();
+      return live ?? normalized;
     },
-    [setSession],
+    [setSession, hydrateEffectivePermissions],
   );
 
   const changePassword = useCallback(
     async (newPassword: string) => {
-      const response = await api.post<{ user: Session["user"]; accessToken?: string }>(
-        "/auth/change-password",
-        {
-          newPassword: newPassword.trim(),
-        },
-      );
+      const response = await api.post<{ user: Session["user"]; accessToken?: string }>("/auth/change-password", {
+        newPassword: newPassword.trim(),
+      });
       const current = sessionRef.current;
       if (current) {
         setSession({
@@ -125,9 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           accessToken: response.accessToken ?? current.accessToken,
           user: { ...current.user, ...response.user, mustChangePassword: false },
         });
+        await hydrateEffectivePermissions();
       }
     },
-    [setSession],
+    [setSession, hydrateEffectivePermissions],
   );
 
   const logout = useCallback(async () => {
@@ -139,6 +190,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // La session locale doit toujours être fermée, même si l'API est indisponible.
     } finally {
       setSession(null);
+      setPermissionsBootstrap("idle");
+      setPermissionsBootstrapError(null);
     }
   }, [setSession]);
 
@@ -146,12 +199,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       session,
       isAuthenticated: Boolean(session?.accessToken),
+      permissionsReady: permissionsBootstrap === "ready",
+      permissionsBootstrap,
+      permissionsBootstrapError,
       login,
       logout,
       changePassword,
       setSession,
     }),
-    [session, login, logout, changePassword, setSession],
+    [
+      session,
+      permissionsBootstrap,
+      permissionsBootstrapError,
+      login,
+      logout,
+      changePassword,
+      setSession,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

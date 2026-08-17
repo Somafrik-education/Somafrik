@@ -4798,9 +4798,11 @@ class PostgresRepository {
     );
   }
 
-  async getSubjectsV2() {
+  async getSubjectsV2(query = {}) {
     await this.init();
-    const rows = await this.all(`
+    const schoolCode = String(query.schoolCode ?? "").trim().toUpperCase();
+    const params = [];
+    let sql = `
       SELECT sub.*, s.school_code, c.iso_code AS country_code,
              COUNT(DISTINCT sca.class_id) AS class_count,
              COUNT(DISTINCT ta.teacher_id) AS teacher_count,
@@ -4816,9 +4818,16 @@ class PostgresRepository {
       LEFT JOIN teachers t ON t.id = ta.teacher_id
       LEFT JOIN users u ON u.id = t.user_id
       LEFT JOIN grades g ON g.subject_id = sub.id
+    `;
+    if (schoolCode && schoolCode !== "*") {
+      params.push(schoolCode);
+      sql += ` WHERE upper(s.school_code) = $1`;
+    }
+    sql += `
       GROUP BY sub.id, s.school_code, c.iso_code
       ORDER BY sub.created_at, sub.subject_code
-    `);
+    `;
+    const rows = await this.all(sql, params);
     return rows.map((row) => ({
       id: row.id,
       schoolId: row.school_id,

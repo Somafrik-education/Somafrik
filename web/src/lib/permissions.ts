@@ -105,6 +105,9 @@ export function canAccessSchoolBackOffice(role?: string): boolean {
 export interface PermissionContext {
   user: SessionUser | null;
   rolePermissions: Record<string, string[]>;
+  permissionsReady?: boolean;
+  permissionsBootstrap?: "idle" | "loading" | "ready" | "error";
+  permissionsBootstrapError?: string | null;
 }
 
 export interface FeaturePermissions {

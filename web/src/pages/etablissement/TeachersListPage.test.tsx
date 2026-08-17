@@ -37,6 +37,13 @@ const classesApiMock = vi.hoisted(() => ({
 
 const showToast = vi.hoisted(() => vi.fn());
 
+const permissionContext = vi.hoisted(() => ({
+  user: { role: "Admin School", schoolCode: "CD-2026-0001" },
+  permissionsReady: true as boolean,
+  permissionsBootstrap: "ready" as "idle" | "loading" | "ready" | "error",
+  permissionsBootstrapError: null as string | null,
+}));
+
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
     session: {
@@ -63,7 +70,7 @@ vi.mock("../../context/ActiveSchoolContext", () => ({
 }));
 
 vi.mock("../../lib/usePermissionContext", () => ({
-  usePermissionContext: () => ({ user: { role: "Admin School", schoolCode: "CD-2026-0001" } }),
+  usePermissionContext: () => permissionContext,
 }));
 
 vi.mock("../../lib/permissions", async (importOriginal) => {
@@ -138,6 +145,9 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     assignmentPermissions.canCreate = true;
     assignmentPermissions.canUpdate = true;
     assignmentPermissions.canDelete = false;
+    permissionContext.permissionsReady = true;
+    permissionContext.permissionsBootstrap = "ready";
+    permissionContext.permissionsBootstrapError = null;
     teachersApiMock.list.mockReset();
     teachersApiMock.create.mockReset();
     teachersApiMock.update.mockReset();
@@ -330,13 +340,34 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     expect(teachersApiMock.list.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it("masque l'écran métier tant que les permissions live ne sont pas prêtes", () => {
+    permissionContext.permissionsReady = false;
+    permissionContext.permissionsBootstrap = "loading";
+    renderPage();
+    expect(screen.getByText(/Chargement des droits/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
+  });
+
+  it("affiche une erreur explicite si le bootstrap permissions échoue", () => {
+    permissionContext.permissionsReady = false;
+    permissionContext.permissionsBootstrap = "error";
+    permissionContext.permissionsBootstrapError = "Impossible de charger les permissions effectives.";
+    renderPage();
+    expect(screen.getByText(/Permissions indisponibles/i)).toBeInTheDocument();
+    expect(screen.getByText(/Impossible de charger les permissions effectives/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Accès non autorisé/i)).not.toBeInTheDocument();
+  });
+
   it("affecte un enseignant via teacherAssignmentsApi puis recharge", async () => {
     const user = userEvent.setup();
     teacherAssignmentsApiMock.create.mockResolvedValue({ id: "asg-1" });
     renderPage();
     await screen.findByText("Ndiaye");
+    expect(screen.getAllByRole("button", { name: "Affecter" }).length).toBeGreaterThan(0);
     await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
     expect(await screen.findByLabelText(/Classe/i)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Mathématiques" })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText(/Classe/i), "CLS-6A");
     await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
@@ -458,6 +489,31 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     expect(
       await screen.findByText("TEACHER_ASSIGNMENT_ALREADY_EXISTS · Cette affectation existe déjà pour cet enseignant."),
     ).toBeInTheDocument();
+  });
+
+  it("affiche une erreur catalogue si GET /v2/subjects = 500, pas « Aucune matière »", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockRejectedValue(new ApiError("Erreur interne catalogue", 500));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    expect(await screen.findByText(/Catalogue matières indisponible/i)).toBeInTheDocument();
+    expect(screen.getByText(/Erreur interne catalogue/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Aucune matière canonique/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
+  });
+
+  it("affiche « Aucune matière » si GET /v2/subjects = 200 [] sans fallback locale", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue([]);
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    expect(await screen.findByText(/Aucune matière canonique/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Catalogue matières indisponible/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Mathématiques" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Français" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
   });
 
   it("affiche un état vide si aucune classe n'est disponible", async () => {

@@ -16,7 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
-import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_SUBJECTS, DEFAULT_TRACKS } from "../data/catalog";
+import { messageThemes, rolePermissions, DEFAULT_CLASS_NAMES, DEFAULT_LEVELS, DEFAULT_TRACKS } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { canMutateEntity, canReadEntity, hasSecurityPermission, isSuperAdminRole, SecurityAction } from "../domain/security/permissions";
 import {
@@ -2232,7 +2232,7 @@ function getSelectOptions(
   studentsData: any[],
   teachersData: any[],
   classesData: any[],
-  coursesData: any[],
+  _coursesData: any[],
   paymentStatusesData: any[],
   schoolsData: any[],
   usersData: any[],
@@ -2250,16 +2250,7 @@ function getSelectOptions(
   }
 
   if (key === "mainSubject" || (key === "name" && entity === "courses") || (key === "course" && entity === "assignments")) {
-    const configured = academicConfigData?.subjects?.length ? academicConfigData.subjects : DEFAULT_SUBJECTS;
-    if (entity === "assignments" && key === "course") {
-      const selectedClass = normalize(form.className);
-      const fromCourses = coursesData
-        .filter((course) => !selectedClass || normalize(course.className) === selectedClass)
-        .map((course) => course.name)
-        .filter(Boolean);
-      return [...new Set([...configured, ...fromCourses])].sort((a, b) => a.localeCompare(b, "fr"));
-    }
-    return configured;
+    return Array.isArray(academicConfigData?.subjects) ? academicConfigData.subjects : [];
   }
 
   if (key === "gender") {

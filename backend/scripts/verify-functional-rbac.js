@@ -92,6 +92,18 @@ async function main() {
         schoolEffective.data.permissions.includes("Affectations:CREATE"),
       JSON.stringify(schoolEffective.data.permissions),
     );
+    assert.equal(
+      schoolEffective.data.permissions.includes("Affectations:DELETE"),
+      false,
+      "SCHOOL_ADMIN ne doit pas avoir Affectations:DELETE par défaut",
+    );
+
+    const subjectsCatalog = await request("/v2/subjects", { token: schoolToken });
+    assert.notEqual(subjectsCatalog.status, 403, JSON.stringify(subjectsCatalog.data));
+    assert.ok(
+      subjectsCatalog.status === 200,
+      `GET /v2/subjects attendu 200, reçu ${subjectsCatalog.status} ${JSON.stringify(subjectsCatalog.data)}`,
+    );
 
     const secretaryToken = await login("secretaire", "1234", "CD-2026-0001");
     const secretaryDenied = await request("/assignments", {

@@ -781,12 +781,17 @@ class FallbackRepository {
     );
   }
 
-  async getSubjectsV2() {
-    return clone(this.subjects);
+  async getSubjectsV2(query = {}) {
+    const schoolCode = String(query.schoolCode ?? "").trim().toUpperCase();
+    const rows = clone(this.subjects);
+    if (schoolCode && schoolCode !== "*") {
+      return rows.filter((row) => String(row.schoolCode ?? "").toUpperCase() === schoolCode);
+    }
+    return rows;
   }
 
   async createSubject(payload) {
-    for (const field of ["name", "code", "coefficient", "level", "description", "status"]) {
+    for (const field of ["name", "code"]) {
       if (!payload[field]) throw new Error(`Champ obligatoire: ${field}`);
     }
 
@@ -798,10 +803,10 @@ class FallbackRepository {
       countryCode: "CD",
       code,
       name: String(payload.name).trim(),
-      coefficient: Number(payload.coefficient),
-      level: String(payload.level).trim(),
-      description: String(payload.description).trim(),
-      status: String(payload.status).trim(),
+      coefficient: Number(payload.coefficient ?? 1),
+      level: String(payload.level ?? "Tous niveaux").trim(),
+      description: String(payload.description ?? "").trim(),
+      status: String(payload.status ?? "active").trim(),
       classCount: 0,
       teacherCount: 0,
       gradeCount: 0,

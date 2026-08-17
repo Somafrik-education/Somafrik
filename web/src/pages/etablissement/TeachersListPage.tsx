@@ -11,10 +11,11 @@ import {
 } from "@/design-system";
 import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
-import { ApiError, api } from "../../api/client";
+import { ApiError } from "../../api/client";
 import { teachersApi, type SchoolTeacher } from "../../lib/teachersApi";
 import { teacherAssignmentsApi } from "../../lib/teacherAssignmentsApi";
 import { classesApi, type SchoolClass } from "../../lib/classesApi";
+import { isArchivedSubjectStatus, subjectsApi, type SchoolSubject } from "../../lib/subjectsApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
 import { formatCaughtApiError } from "../../lib/apiErrors";
@@ -36,11 +37,7 @@ type AssignFormState = {
   subjectCode: string;
 };
 
-type SubjectOption = {
-  code: string;
-  name: string;
-  status: string;
-};
+type SubjectOption = SchoolSubject;
 
 const EMPTY_FORM: TeacherFormState = {
   firstName: "",
@@ -104,20 +101,15 @@ function formatAssignmentCell(row: SchoolTeacher): string {
   return [classesLabel, coursesLabel].filter(Boolean).join(" · ");
 }
 
-function asSubjectOptions(payload: unknown): SubjectOption[] {
-  const rows = Array.isArray(payload)
-    ? payload
-    : payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown[] }).items)
-      ? (payload as { items: unknown[] }).items
-      : [];
-  return rows
-    .map((row) => {
-      const item = row as Record<string, unknown>;
-      const code = String(item.code ?? item.subjectCode ?? item.publicId ?? "").trim();
-      const name = String(item.name ?? item.subject ?? "").trim();
-      return { code, name, status: String(item.status ?? "active") };
-    })
-    .filter((row) => row.code && row.name);
+function logSubjectsCatalogFailure(err: unknown) {
+  const status = err instanceof ApiError ? err.status : undefined;
+  console.error(
+    JSON.stringify({
+      kind: "subjects_catalog_load_failure",
+      status: status ?? null,
+      message: err instanceof Error ? err.message : "unknown",
+    }),
+  );
 }
 
 /**
@@ -127,6 +119,7 @@ function asSubjectOptions(payload: unknown): SubjectOption[] {
 export function TeachersListPage() {
   const { showToast } = useToast();
   const permissionCtx = usePermissionContext();
+  const permissionsReady = permissionCtx.permissionsReady !== false;
   const permissions = getEntityFeaturePermissions(permissionCtx, "teachers", "Enseignants");
   const assignmentPermissions = getEntityFeaturePermissions(
     permissionCtx,
@@ -149,6 +142,7 @@ export function TeachersListPage() {
   const [assignSaving, setAssignSaving] = useState(false);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [subjects, setSubjects] = useState<SubjectOption[]>([]);
+  const [subjectsCatalogError, setSubjectsCatalogError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<SchoolTeacher | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
@@ -208,23 +202,20 @@ export function TeachersListPage() {
     setAssigning(row);
     setAssignForm({ classCode: "", subjectCode: "" });
     setAssignError(null);
+    setSubjectsCatalogError(null);
+    setSubjects([]);
     try {
-      const [classRows, subjectPayload] = await Promise.all([
-        classesApi.list(),
-        api.get<unknown>("/v2/subjects"),
-      ]);
+      const [classRows, subjectRows] = await Promise.all([classesApi.list(), subjectsApi.list()]);
       setClasses(
         Array.isArray(classRows)
           ? classRows.filter((item) => String(item.status ?? "active") === "active")
           : [],
       );
-      setSubjects(
-        asSubjectOptions(subjectPayload).filter(
-          (item) => String(item.status ?? "active").toLowerCase() !== "archived",
-        ),
-      );
+      setSubjects(subjectRows.filter((item) => !isArchivedSubjectStatus(item.status)));
     } catch (err) {
-      setAssignError(formatCaughtApiError(err, "Impossible de charger les classes ou matières."));
+      logSubjectsCatalogFailure(err);
+      const message = formatCaughtApiError(err, "Impossible de charger les classes ou matières.");
+      setSubjectsCatalogError(message);
     }
   }
 
@@ -347,7 +338,7 @@ export function TeachersListPage() {
                 Modifier
               </Button>
             ) : null}
-            {assignmentPermissions.canCreate ? (
+            {permissionsReady && assignmentPermissions.canCreate ? (
               <Button type="button" variant="secondary" size="sm" onClick={() => void openAssign(row)}>
                 Affecter
               </Button>
@@ -361,8 +352,31 @@ export function TeachersListPage() {
         ),
       },
     ],
-    [assignmentPermissions.canCreate, permissions.canDelete, permissions.canUpdate],
+    [assignmentPermissions.canCreate, permissions.canDelete, permissions.canUpdate, permissionsReady],
   );
+
+  if (permissionCtx.permissionsBootstrap === "loading" || permissionCtx.permissionsBootstrap === "idle") {
+    return (
+      <EntityListShell title="Enseignants" description="Chargement des permissions effectives…">
+        <p className="text-sm text-muted">Chargement des droits…</p>
+      </EntityListShell>
+    );
+  }
+  if (permissionCtx.permissionsBootstrap === "error") {
+    return (
+      <EntityListShell
+        title="Enseignants"
+        alerts={
+          <InlineAlert tone="danger" title="Permissions indisponibles">
+            {permissionCtx.permissionsBootstrapError ||
+              "Les permissions effectives n'ont pas pu être chargées."}
+          </InlineAlert>
+        }
+      >
+        <p className="text-sm text-muted">Les écrans métier restent masqués tant que les droits live ne sont pas chargés.</p>
+      </EntityListShell>
+    );
+  }
 
   if (!permissions.canRead) {
     return <EntityListForbidden moduleLabel="enseignants" />;
@@ -550,9 +564,14 @@ export function TeachersListPage() {
               Aucune classe active n&apos;est disponible pour cet établissement.
             </InlineAlert>
           ) : null}
-          {subjects.length === 0 ? (
+          {subjectsCatalogError ? (
+            <InlineAlert tone="danger" title="Catalogue matières indisponible">
+              {subjectsCatalogError}
+            </InlineAlert>
+          ) : subjects.length === 0 ? (
             <InlineAlert tone="warning" title="Aucune matière">
-              Aucune matière canonique n&apos;est disponible pour cet établissement.
+              Aucune matière canonique n&apos;est disponible pour cet établissement. Créez-les dans
+              Paramètres → Configuration (référentiel PostgreSQL).
             </InlineAlert>
           ) : null}
           <Field label="Classe" htmlFor="teacher-assign-class" required>
