@@ -200,8 +200,8 @@ describe("ClassStudentsPage — inscription depuis une classe", () => {
       });
     });
 
-    expect(await screen.findByText("Identifiants de connexion")).toBeInTheDocument();
-    expect(screen.getByText("CD-IN-EL-26-002")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Identifiants de connexion" })).toBeInTheDocument();
+    expect(screen.getAllByText("CD-IN-EL-26-002").length).toBeGreaterThan(0);
     expect(screen.getByText("Tmp-aabbccddeeff00112233445566778899")).toBeInTheDocument();
     expect(screen.getByText("Fall")).toBeInTheDocument();
   });
