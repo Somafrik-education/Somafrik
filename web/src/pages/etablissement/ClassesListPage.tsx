@@ -44,6 +44,21 @@ type AcademicYearOption = {
 };
 
 /**
+ * Compatibilité d'affichage pour les classes historiques dont class_name contient
+ * encore le code technique de groupe en suffixe (ex. "1ère A CD02").
+ * Les nouvelles écritures backend n'incluent plus ce code dans le nom.
+ */
+export function getClassDisplayName(row: Pick<SchoolClass, "name" | "groupCode">): string {
+  const name = String(row.name ?? "").trim();
+  const groupCode = String(row.groupCode ?? "").trim();
+  if (!name || !groupCode) return name;
+  const suffix = ` ${groupCode}`;
+  return name.toLocaleLowerCase("fr").endsWith(suffix.toLocaleLowerCase("fr"))
+    ? name.slice(0, -suffix.length).trim()
+    : name;
+}
+
+/**
  * Gestion métier des classes — CRUD via /api/classes (PostgreSQL).
  * Conserve le chrome D2.7 (EntityListShell) sans passer par backoffice/state.
  */
@@ -59,6 +74,7 @@ export function ClassesListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | ClassStatus>("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<SchoolClass | null>(null);
   const [form, setForm] = useState<ClassFormState>(EMPTY_FORM);
@@ -99,14 +115,23 @@ export function ClassesListPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) =>
-      [row.name, row.level, row.track, row.groupCode, row.status, row.academicYearName, row.classCode]
+    return rows.filter((row) => {
+      if (statusFilter && row.status !== statusFilter) return false;
+      if (!q) return true;
+      return [
+        getClassDisplayName(row),
+        row.level,
+        row.track,
+        row.groupCode,
+        row.status,
+        row.academicYearName,
+        row.classCode,
+      ]
         .join(" ")
         .toLowerCase()
-        .includes(q),
-    );
-  }, [rows, search]);
+        .includes(q);
+    });
+  }, [rows, search, statusFilter]);
 
   const activeLevels = (catalog?.levels ?? []).filter((row) => row.schoolActive);
   const activeStreams = (catalog?.streams ?? []).filter((row) => {
@@ -117,8 +142,7 @@ export function ClassesListPage() {
   const activeGroups = (catalog?.groups ?? []).filter((row) => row.schoolActive);
   const selectedLevel = activeLevels.find((row) => row.id === form.levelId);
   const selectedStream = activeStreams.find((row) => row.id === form.streamId);
-  const selectedGroup = activeGroups.find((row) => row.id === form.groupId);
-  const previewName = [selectedLevel?.name, selectedStream?.name, selectedGroup?.code].filter(Boolean).join(" ");
+  const previewName = [selectedLevel?.name, selectedStream?.name].filter(Boolean).join(" ");
   const labels = catalog?.labels ?? { levelLabel: "Niveau", trackLabel: "Filière", groupLabel: "Groupe" };
 
   function openCreate() {
@@ -196,15 +220,16 @@ export function ClassesListPage() {
 
   const columns = useMemo(
     () => [
-      { key: "name", header: "Nom" },
-      { key: "level", header: "Niveau", render: (row: SchoolClass) => row.level || "—" },
-      { key: "track", header: "Filière", render: (row: SchoolClass) => row.track || "—" },
-      { key: "groupCode", header: "Groupe", render: (row: SchoolClass) => row.groupCode || "—" },
+      { key: "name", header: "Nom", render: (row: SchoolClass) => getClassDisplayName(row) },
+      { key: "level", header: labels.levelLabel, render: (row: SchoolClass) => row.level || "—" },
+      { key: "track", header: labels.trackLabel, render: (row: SchoolClass) => row.track || "—" },
+      { key: "groupCode", header: labels.groupLabel, render: (row: SchoolClass) => row.groupCode || "—" },
       {
         key: "academicYearName",
         header: "Année",
         render: (row: SchoolClass) => row.academicYearName || "—",
       },
+      { key: "students", header: "Effectif", render: (row: SchoolClass) => Number(row.students ?? 0) },
       { key: "status", header: "Statut" },
       {
         key: "actions",
@@ -237,7 +262,7 @@ export function ClassesListPage() {
         ),
       },
     ],
-    [permissions.canUpdate, deactivate],
+    [permissions.canUpdate, deactivate, labels.groupLabel, labels.levelLabel, labels.trackLabel],
   );
 
   if (!permissions.canRead) {
@@ -257,12 +282,26 @@ export function ClassesListPage() {
           ) : null
         }
         filters={
-          <EntityListSearch
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Rechercher dans classes"
-            aria-label="Rechercher dans classes"
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <EntityListSearch
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Rechercher dans classes"
+              aria-label="Rechercher dans classes"
+            />
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(event.target.value === "active" || event.target.value === "inactive" ? event.target.value : "")
+              }
+              aria-label="Filtrer les classes par statut"
+              className="h-10 rounded-lg border border-border bg-surface px-3 text-sm text-foreground"
+            >
+              <option value="">Tous les statuts</option>
+              <option value="active">Actives</option>
+              <option value="inactive">Inactives</option>
+            </select>
+          </div>
         }
         primaryActions={
           permissions.canCreate ? (
