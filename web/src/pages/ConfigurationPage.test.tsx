@@ -163,4 +163,23 @@ describe("ConfigurationPage année scolaire (socle academic_years)", () => {
     });
     expect(await screen.findByText("2026-2027")).toBeInTheDocument();
   });
+
+  it("n'expose pas le référentiel academic_years sans Années Académiques:READ", async () => {
+    yearPermissions.canRead = false;
+    yearPermissions.canCreate = false;
+    yearPermissions.canUpdate = false;
+
+    render(
+      <MemoryRouter>
+        <ConfigurationPage section="annee-scolaire" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Périodes et barème" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Année scolaire / académique" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Aucune année configurée/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(academicYearsApiMock.list).not.toHaveBeenCalled();
+    });
+  });
 });

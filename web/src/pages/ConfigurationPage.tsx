@@ -111,7 +111,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const subjectPermissions = useFeaturePermissions("Matières");
   const canConfigure = canManageEstablishmentSettings(ctx);
   const canReadSettings = settingsPermissions.canRead || canConfigure;
-  const canReadYears = yearPermissions.canRead || canReadSettings;
+  const canReadYears = yearPermissions.canRead;
   const canCreateYears = yearPermissions.canCreate;
   const canUpdateYears = yearPermissions.canUpdate;
   const canDesignBulletins = isSuperAdminRole(user?.role);
@@ -238,6 +238,10 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   }
 
   async function reloadAcademicYears() {
+    if (!canReadYears) {
+      setAcademicYears([]);
+      return [];
+    }
     const rows = await academicYearsApi.list();
     const scoped = (Array.isArray(rows) ? rows : []).filter((year) => {
       if (!configTarget) return true;
@@ -320,7 +324,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
       showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
       return;
     }
-    if (!academicYears.length) {
+    if (canReadYears && !academicYears.length) {
       showToast("Créez une année scolaire avant d'enregistrer les périodes.", "error");
       return;
     }
@@ -517,14 +521,15 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
       {showAcademicConfig && inSection("annee-scolaire") ? (
         <>
+          {canReadYears || canCreateYears ? (
           <Card className="p-6">
             <SectionHeader
               title="Année scolaire / académique"
               description="Modèle unique academic_years. « Année scolaire » et « Année académique » sont des libellés d'écran, pas deux référentiels. La création se fait uniquement ici."
             />
-            {yearsLoading ? (
+            {canReadYears && yearsLoading ? (
               <p className="mt-4 text-sm text-muted">Chargement des années…</p>
-            ) : academicYears.length ? (
+            ) : canReadYears && academicYears.length ? (
               <ul className="mt-4 space-y-3">
                 {academicYears.map((year) => (
                   <li
@@ -554,13 +559,13 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                   </li>
                 ))}
               </ul>
-            ) : (
+            ) : canReadYears ? (
               <EmptyState
                 className="mt-4"
                 title="Aucune année configurée"
                 description="L'établissement n'a pas d'année scolaire. Créez-la ici avant les classes, les périodes, les notes et les bulletins. Aucune année n'est inventée automatiquement."
               />
-            )}
+            ) : null}
             {canCreateYears && !isBulkConfiguration && !isAllSchoolsSelection(configTarget) ? (
               <form onSubmit={(event) => void handleCreateAcademicYear(event)} className="mt-6 space-y-4">
                 <p className="text-sm font-bold text-ink">Créer une année</p>
@@ -607,6 +612,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
               </form>
             ) : null}
           </Card>
+          ) : null}
 
           <Card key={`periods-${academicFormKey}`} className="p-6">
             <SectionHeader
@@ -721,12 +727,12 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                 </div>
               </div>
 
-              {!academicYears.length ? (
+              {canReadYears && !academicYears.length ? (
                 <p className="text-sm text-amber-900">
                   Impossible d'enregistrer les périodes tant qu'aucune année scolaire n'est configurée.
                 </p>
               ) : null}
-              <Button type="submit" disabled={savingSection === "periods" || !academicYears.length}>
+              <Button type="submit" disabled={savingSection === "periods" || (canReadYears && !academicYears.length)}>
                 Enregistrer
               </Button>
             </form>

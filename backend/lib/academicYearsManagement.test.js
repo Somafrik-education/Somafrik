@@ -136,7 +136,9 @@ function createInjectableAcademicYearsRepository() {
       tables.schools.push(row);
       return [row];
     }
-    if (upper.includes("FROM ACADEMIC_YEARS") && upper.includes("LOWER(BTRIM(NAME))")) {
+    if (upper.includes("FROM ACADEMIC_YEARS") && upper.includes("FOR UPDATE")) {
+      return tables.academic_years.filter((row) => eq(row.school_id, params[0])).map((row) => ({ id: row.id }));
+    }
       return tables.academic_years.filter(
         (row) =>
           eq(row.school_id, params[0]) &&
@@ -299,4 +301,10 @@ test("postgresRepository n'insère plus de dates 01/09–31/08 par défaut", () 
   assert.equal(src.includes("${year}-09-01"), false);
   assert.equal(src.includes("${year + 1}-08-31"), false);
   assert.match(src, /N'invente jamais de millésime/);
+  const start = src.indexOf("async updateAcademicYearV2");
+  const end = src.indexOf("mapAcademicYearV2", start);
+  const block = src.slice(start, end);
+  assert.match(block, /withTransaction/);
+  assert.match(block, /FOR UPDATE/);
+  assert.match(block, /is_current = FALSE/);
 });
