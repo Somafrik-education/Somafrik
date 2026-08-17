@@ -171,14 +171,16 @@ async function runHttpGuards() {
     const token = await loginAdmin();
     const stamp = Date.now();
 
-    const createdClass = await request("/classes", {
-      method: "POST",
-      token,
-      body: {
-        name: `LOT2-${stamp}`,
-        academicYearName: "2025-2026",
-        status: "active",
-      },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+    });
+    const createdClass = await postCanonicalClass(request, token, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupCode: "L2",
+      status: "active",
     });
     assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
     const classCode = createdClass.data.classCode;

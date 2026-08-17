@@ -9,8 +9,10 @@
  */
 
 const CLASSES_NAME_UNIQUE_INDEX = "uq_classes_school_year_normalized_name";
+const CLASSES_STRUCTURAL_UNIQUE_INDEX = "uq_classes_structural_offering";
 const CLASSES_STATUS_CHECK = "classes_status_check";
 const CLASSES_CLASS_CODE_UNIQUE = "classes_class_code_key";
+const STRUCTURAL_NULL_STREAM_SENTINEL = "00000000-0000-0000-0000-000000000000";
 
 /** Compte les groupes (school_id, academic_year_id, nom normalisé) en doublon. */
 const COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL = `
@@ -43,6 +45,24 @@ const LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL = `
 const CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS ${CLASSES_NAME_UNIQUE_INDEX}
   ON classes (school_id, academic_year_id, (lower(btrim(name))))
+`;
+
+const ADD_CLASSES_STRUCTURAL_COLUMNS_SQL = `
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID REFERENCES education_levels(id);
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES education_streams(id);
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_code TEXT;
+`;
+
+const CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL = `
+CREATE UNIQUE INDEX IF NOT EXISTS ${CLASSES_STRUCTURAL_UNIQUE_INDEX}
+  ON classes (
+    school_id,
+    academic_year_id,
+    level_id,
+    COALESCE(stream_id, '${STRUCTURAL_NULL_STREAM_SENTINEL}'::uuid),
+    upper(btrim(group_code))
+  )
+  WHERE level_id IS NOT NULL
 `;
 
 const ENSURE_CLASSES_STATUS_CHECK_SQL = `
@@ -98,6 +118,20 @@ function formatClassesNameDuplicateDiagnostic(groups = [], duplicateGroups = 0) 
  * @param {unknown} error
  * @returns {boolean}
  */
+function isClassStructuralUniquenessViolation(error) {
+  if (!error || String(error.code) !== "23505") {
+    return false;
+  }
+  const constraint = String(error.constraint ?? "");
+  const detail = String(error.detail ?? "");
+  const message = String(error.message ?? "");
+  return (
+    constraint === CLASSES_STRUCTURAL_UNIQUE_INDEX ||
+    detail.includes(CLASSES_STRUCTURAL_UNIQUE_INDEX) ||
+    message.includes(CLASSES_STRUCTURAL_UNIQUE_INDEX)
+  );
+}
+
 function isClassNameUniquenessViolation(error) {
   if (!error || String(error.code) !== "23505") {
     return false;
@@ -109,8 +143,7 @@ function isClassNameUniquenessViolation(error) {
     constraint === CLASSES_NAME_UNIQUE_INDEX ||
     detail.includes(CLASSES_NAME_UNIQUE_INDEX) ||
     message.includes(CLASSES_NAME_UNIQUE_INDEX) ||
-    /lower\(btrim\(name\)\)/i.test(detail) ||
-    /Key \(school_id, academic_year_id,/i.test(detail)
+    /lower\(btrim\(name\)\)/i.test(detail)
   );
 }
 
@@ -133,14 +166,19 @@ function isClassCodeUniquenessViolation(error) {
 
 module.exports = {
   CLASSES_NAME_UNIQUE_INDEX,
+  CLASSES_STRUCTURAL_UNIQUE_INDEX,
   CLASSES_STATUS_CHECK,
   CLASSES_CLASS_CODE_UNIQUE,
+  STRUCTURAL_NULL_STREAM_SENTINEL,
   COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
   LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL,
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
+  ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
+  CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
   NORMALIZE_CLASSES_STATUS_SQL,
   formatClassesNameDuplicateDiagnostic,
   isClassNameUniquenessViolation,
+  isClassStructuralUniquenessViolation,
   isClassCodeUniquenessViolation,
 };

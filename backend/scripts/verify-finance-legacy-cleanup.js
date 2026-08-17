@@ -244,10 +244,16 @@ async function runHttpGuards() {
       "aucune mutation partielle users",
     );
 
-    const createdClass = await request("/classes", {
-      method: "POST",
-      token,
-      body: { name: `LOT4-${stamp}`, academicYearName: "2025-2026", status: "active" },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+    });
+    const createdClass = await postCanonicalClass(request, token, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupCode: "L4",
+      status: "active",
     });
     assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
     const enrolled = await request(`/classes/${encodeURIComponent(createdClass.data.classCode)}/students`, {

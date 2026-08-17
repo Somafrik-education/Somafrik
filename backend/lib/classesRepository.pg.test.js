@@ -12,6 +12,7 @@ const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
+  CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
   NORMALIZE_CLASSES_STATUS_SQL,
   isClassNameUniquenessViolation,
@@ -113,6 +114,40 @@ async function setupFixture(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS education_levels (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      country_id UUID NOT NULL REFERENCES countries(id),
+      level_code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      display_order INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+
+    CREATE TABLE IF NOT EXISTS education_streams (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      country_id UUID NOT NULL REFERENCES countries(id),
+      level_id UUID REFERENCES education_levels(id),
+      stream_code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      stream_type TEXT NOT NULL DEFAULT 'filiere',
+      display_order INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+
+    CREATE TABLE IF NOT EXISTS school_levels (
+      school_id UUID NOT NULL REFERENCES schools(id),
+      level_id UUID NOT NULL REFERENCES education_levels(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      PRIMARY KEY (school_id, level_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS school_streams (
+      school_id UUID NOT NULL REFERENCES schools(id),
+      stream_id UUID NOT NULL REFERENCES education_streams(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      PRIMARY KEY (school_id, stream_id)
+    );
+
     CREATE TABLE IF NOT EXISTS enrollments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       class_id UUID REFERENCES classes(id),
@@ -120,9 +155,16 @@ async function setupFixture(pool) {
     );
   `);
 
-  await pool.query("TRUNCATE enrollments, classes, academic_years, schools, countries CASCADE");
+  await pool.query(`
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID REFERENCES education_levels(id);
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS stream_id UUID REFERENCES education_streams(id);
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_code TEXT;
+  `);
+
+  await pool.query("TRUNCATE enrollments, classes, school_streams, school_levels, education_streams, education_levels, academic_years, schools, countries CASCADE");
   await pool.query(NORMALIZE_CLASSES_STATUS_SQL);
   await pool.query(CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL);
+  await pool.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
   await pool.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
 
   const country = await pool.query(
@@ -142,6 +184,42 @@ async function setupFixture(pool) {
     `INSERT INTO academic_years (school_id, name, is_current, status)
      SELECT id, '2025-2026', TRUE, 'open' FROM schools WHERE school_code IN ('SCH-A', 'SCH-B')`,
   );
+
+  const levelA = await pool.query(
+    `INSERT INTO education_levels (country_id, level_code, name, status)
+     VALUES ($1, '6eme', '6ème', 'active') RETURNING id`,
+    [countryId],
+  );
+  const levelB = await pool.query(
+    `INSERT INTO education_levels (country_id, level_code, name, status)
+     VALUES ($1, '5eme', '5ème', 'active') RETURNING id`,
+    [countryId],
+  );
+  await pool.query(
+    `INSERT INTO school_levels (school_id, level_id, status)
+     SELECT s.id, $1, 'active' FROM schools s WHERE s.school_code = 'SCH-A'`,
+    [levelA.rows[0].id],
+  );
+  await pool.query(
+    `INSERT INTO school_levels (school_id, level_id, status)
+     SELECT s.id, $1, 'active' FROM schools s WHERE s.school_code = 'SCH-B'`,
+    [levelB.rows[0].id],
+  );
+
+  return {
+    yearA: (
+      await pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-A'`,
+      )
+    ).rows[0].id,
+    yearB: (
+      await pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'SCH-B'`,
+      )
+    ).rows[0].id,
+    levelA: levelA.rows[0].id,
+    levelB: levelB.rows[0].id,
+  };
 }
 
 function createDbAdapter(pool) {
@@ -159,7 +237,7 @@ function createDbAdapter(pool) {
     },
     async getSchoolByCode(code) {
       const result = await pool.query(
-        `SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1`,
+        `SELECT id, school_code, country_id FROM schools WHERE school_code = $1 LIMIT 1`,
         [String(code ?? "").trim().toUpperCase()],
       );
       return result.rows[0] ?? null;
@@ -199,21 +277,21 @@ async function main() {
   const isolatedUrl = await ensureIsolatedDatabase(DATABASE_URL, CLASSES_IT_DATABASE);
   const pool = new Pool({ connectionString: isolatedUrl });
   try {
-    await setupFixture(pool);
+    const ids = await setupFixture(pool);
     const repo = createClassesRepository(createDbAdapter(pool));
 
     const created = await repo.create(
       {
-        name: "6ème A",
-        academicYearName: "2025-2026",
-        level: "6ème",
-        section: "A",
+        academicYearId: ids.yearA,
+        levelId: ids.levelA,
+        groupCode: "A",
         status: "active",
       },
       "SCH-A",
     );
     assert.equal(created.name, "6ème A");
     assert.equal(created.status, "active");
+    assert.equal(created.groupCode, "A");
     assert.match(created.classCode, /^CLS-/);
 
     const listed = await repo.listBySchoolCode("SCH-A");
@@ -221,22 +299,22 @@ async function main() {
     assert.equal(listed[0].classCode, created.classCode);
 
     const updated = await repo.update(created.classCode, "SCH-A", {
-      name: "6ème A Persistée",
       status: "inactive",
     });
-    assert.equal(updated.name, "6ème A Persistée");
     assert.equal(updated.status, "inactive");
+    assert.equal(updated.name, "6ème A");
 
     const reread = await repo.listBySchoolCode("SCH-A");
-    assert.equal(reread[0].name, "6ème A Persistée");
+    assert.equal(reread[0].name, "6ème A");
     assert.equal(reread[0].status, "inactive");
 
     await assert.rejects(
       () =>
         repo.create(
           {
-            name: " 6ème a persistée ",
-            academicYearName: "2025-2026",
+            academicYearId: ids.yearA,
+            levelId: ids.levelA,
+            groupCode: "A",
             status: "active",
           },
           "SCH-A",
@@ -244,14 +322,13 @@ async function main() {
       (error) => error.statusCode === 409,
     );
 
-    const concurrentName = `Concurrent ${Date.now()}`;
     const results = await Promise.allSettled([
       repo.create(
-        { name: concurrentName, academicYearName: "2025-2026", status: "active" },
+        { academicYearId: ids.yearA, levelId: ids.levelA, groupCode: "C", status: "active" },
         "SCH-A",
       ),
       repo.create(
-        { name: concurrentName, academicYearName: "2025-2026", status: "active" },
+        { academicYearId: ids.yearA, levelId: ids.levelA, groupCode: "C", status: "active" },
         "SCH-A",
       ),
     ]);
@@ -263,13 +340,15 @@ async function main() {
 
     const inOtherSchool = await repo.create(
       {
-        name: "6ème A Persistée",
-        academicYearName: "2025-2026",
+        academicYearId: ids.yearB,
+        levelId: ids.levelB,
+        groupCode: "A",
         status: "active",
       },
       "SCH-B",
     );
     assert.equal(inOtherSchool.schoolCode, "SCH-B");
+    assert.equal(inOtherSchool.name, "5ème A");
 
     const listB = await repo.listBySchoolCode("SCH-B");
     assert.equal(listB.length, 1);
@@ -277,8 +356,17 @@ async function main() {
     assert.ok(!listB.some((row) => row.classCode === created.classCode));
 
     await assert.rejects(
-      () => repo.update(created.classCode, "SCH-B", { name: "Leak" }),
+      () => repo.update(created.classCode, "SCH-B", { status: "active" }),
       (error) => error.statusCode === 404,
+    );
+
+    await assert.rejects(
+      () =>
+        repo.create(
+          { name: "Inventé", academicYearName: "2025-2026", level: "X" },
+          "SCH-A",
+        ),
+      (error) => error.statusCode === 400,
     );
 
     await assert.rejects(

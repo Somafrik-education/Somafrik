@@ -153,6 +153,9 @@ CREATE TABLE IF NOT EXISTS classes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- level_id / stream_id / group_code : ajoutés APRÈS education_levels (boot
+-- ensureClassesStructuralOffering + migration 20260817_classes_structural_offering).
+
 -- Unicité métier (école + année + nom normalisé) : index créé APRÈS contrôle
 -- fail-safe dans postgresRepository.ensureClassesDomainConstraints() /
 -- migration 20260811_classes_name_uniqueness.sql (bases legacy avec doublons).

@@ -1018,9 +1018,14 @@ class FallbackRepository {
     return rows.filter((row) => String(row.schoolCode).toUpperCase() === code);
   }
 
-  async createSchoolClass(body, schoolCode) {
-    const { generateClassCode, validateCreateClassInput, createHttpError } =
-      require("../lib/classesManagement");
+  async createSchoolClass(body, schoolCode, principal, auditMeta) {
+    const {
+      generateClassCode,
+      validateCreateClassInput,
+      composeClassDisplayName,
+      createHttpError,
+      CLASS_WRITE_ERROR,
+    } = require("../lib/classesManagement");
     if (!this._managedClasses) this._managedClasses = [];
     if (!this._managedAcademicYears) {
       this._managedAcademicYears = [
@@ -1030,7 +1035,6 @@ class FallbackRepository {
           school_code: seedData.school.code,
           name: "2025-2026",
         },
-        // Fixture explicite pour tests d'homonymes inter-années (pas de fabrication à la volée).
         {
           id: "AY-DEMO-PREV",
           school_id: seedData.school.id,
@@ -1041,32 +1045,75 @@ class FallbackRepository {
     }
 
     const input = validateCreateClassInput(body, schoolCode);
-    let academicYear = this._managedAcademicYears.find(
-      (item) => item.name === input.academicYearName && item.school_code === input.schoolCode,
+    const academicYear = this._managedAcademicYears.find(
+      (item) => String(item.id) === input.academicYearId && item.school_code === input.schoolCode,
     );
-    if (!academicYear && input.academicYearName === "2025-2026") {
-      academicYear = {
-        id: `AY-${input.schoolCode}-2025-2026`,
-        school_id: `school-${input.schoolCode}`,
-        school_code: input.schoolCode,
-        name: "2025-2026",
-      };
-      this._managedAcademicYears.push(academicYear);
-    }
     if (!academicYear) {
       throw createHttpError(400, "Année scolaire introuvable pour cet établissement.");
     }
 
-    const duplicate = this._managedClasses.find(
+    const catalog = await this.getEducationSchoolCatalog(input.schoolCode);
+    const level = (catalog.levels ?? []).find((row) => row.id === input.levelId && row.schoolActive);
+    if (!level) {
+      throw createHttpError(
+        400,
+        "Ce niveau n'est pas activé pour l'établissement.",
+        CLASS_WRITE_ERROR.LEVEL_NOT_ACTIVATED,
+      );
+    }
+    let streamName = null;
+    if (input.streamId) {
+      const stream = (catalog.streams ?? []).find((row) => row.id === input.streamId && row.schoolActive);
+      if (!stream) {
+        throw createHttpError(
+          400,
+          "Cette filière n'est pas activée pour l'établissement.",
+          CLASS_WRITE_ERROR.STREAM_NOT_ACTIVATED,
+        );
+      }
+      if (stream.levelId && stream.levelId !== level.id) {
+        throw createHttpError(
+          400,
+          "Cette filière n'est pas rattachée au niveau choisi.",
+          CLASS_WRITE_ERROR.STREAM_LEVEL_MISMATCH,
+        );
+      }
+      streamName = stream.name;
+    }
+
+    const displayName = composeClassDisplayName({
+      levelName: level.name,
+      streamName,
+      groupCode: input.groupCode,
+    });
+
+    const structuralDuplicate = this._managedClasses.find(
+      (row) =>
+        row.schoolCode === input.schoolCode &&
+        row.academicYearId === academicYear.id &&
+        row.levelId === input.levelId &&
+        (row.streamId || null) === (input.streamId || null) &&
+        String(row.groupCode ?? "").toUpperCase() === input.groupCode,
+    );
+    if (structuralDuplicate) {
+      throw createHttpError(
+        409,
+        "Une classe existe déjà pour ce niveau, cette filière et ce groupe sur cette année scolaire.",
+        CLASS_WRITE_ERROR.STRUCTURAL_DUPLICATE,
+      );
+    }
+
+    const nameDuplicate = this._managedClasses.find(
       (row) =>
         row.schoolCode === input.schoolCode &&
         row.academicYearName === academicYear.name &&
-        String(row.name).trim().toLowerCase() === input.name.toLowerCase(),
+        String(row.name).trim().toLowerCase() === displayName.toLowerCase(),
     );
-    if (duplicate) {
+    if (nameDuplicate) {
       throw createHttpError(
         409,
-        `La classe « ${input.name} » existe déjà pour cette année scolaire dans l'établissement.`,
+        `La classe « ${displayName} » existe déjà pour cette année scolaire dans l'établissement.`,
+        CLASS_WRITE_ERROR.STRUCTURAL_DUPLICATE,
       );
     }
 
@@ -1075,10 +1122,13 @@ class FallbackRepository {
       id: classCode,
       publicId: classCode,
       classCode,
-      name: input.name,
-      level: input.level ?? "",
-      section: input.section ?? "",
-      track: input.section ?? "",
+      name: displayName,
+      level: level.name,
+      section: input.groupCode,
+      track: streamName ?? "",
+      groupCode: input.groupCode,
+      levelId: input.levelId,
+      streamId: input.streamId,
       status: input.status,
       schoolCode: input.schoolCode,
       academicYearId: academicYear.id,
@@ -1091,14 +1141,30 @@ class FallbackRepository {
       updatedAt: new Date().toISOString(),
     };
     this._managedClasses.push(row);
-    // Projection lecture state.classes (modules planning / notes / etc.)
     upsertSeedClassProjection(row);
+    if (principal || auditMeta) {
+      await this.recordAudit({
+        schoolCode: input.schoolCode,
+        userId: principal?.sub || principal?.id,
+        action: "create_class",
+        entityType: "class",
+        entityId: classCode,
+        newValue: row,
+        ipAddress: auditMeta?.ipAddress,
+        userAgent: auditMeta?.userAgent,
+      });
+    }
     return clone(row);
   }
 
-  async updateSchoolClass(classCode, schoolCode, body) {
-    const { validateUpdateClassInput, requireClassCodeParam, createHttpError } =
-      require("../lib/classesManagement");
+  async updateSchoolClass(classCode, schoolCode, body, principal, auditMeta) {
+    const {
+      validateUpdateClassInput,
+      requireClassCodeParam,
+      composeClassDisplayName,
+      createHttpError,
+      CLASS_WRITE_ERROR,
+    } = require("../lib/classesManagement");
     if (!this._managedClasses) this._managedClasses = [];
     const code = requireClassCodeParam(classCode);
     const patch = validateUpdateClassInput(body);
@@ -1108,30 +1174,70 @@ class FallbackRepository {
     if (!current) {
       throw createHttpError(404, "Classe introuvable.");
     }
-    if (patch.name) {
-      const duplicate = this._managedClasses.find(
-        (row) =>
-          row.classCode !== code &&
-          row.schoolCode === current.schoolCode &&
-          row.academicYearName === current.academicYearName &&
-          String(row.name).trim().toLowerCase() === patch.name.toLowerCase(),
-      );
-      if (duplicate) {
+
+    const structuralTouched =
+      Object.hasOwn(patch, "levelId") || Object.hasOwn(patch, "streamId") || Object.hasOwn(patch, "groupCode");
+    if (structuralTouched) {
+      const nextLevelId = Object.hasOwn(patch, "levelId") ? patch.levelId : current.levelId;
+      const nextStreamId = Object.hasOwn(patch, "streamId") ? patch.streamId : current.streamId;
+      const nextGroupCode = Object.hasOwn(patch, "groupCode")
+        ? patch.groupCode
+        : String(current.groupCode ?? "").toUpperCase();
+      if (!nextLevelId || !nextGroupCode) {
         throw createHttpError(
-          409,
-          `La classe « ${patch.name} » existe déjà pour cette année scolaire dans l'établissement.`,
+          400,
+          "Les classes existantes sans rattachement catalogue se gèrent au lot E. Fournissez levelId et groupCode.",
+          CLASS_WRITE_ERROR.OFFERING_REQUIRED,
         );
       }
-      current.name = patch.name;
-    }
-    if (Object.hasOwn(patch, "level")) current.level = patch.level ?? "";
-    if (Object.hasOwn(patch, "section")) {
-      current.section = patch.section ?? "";
-      current.track = current.section;
+      const catalog = await this.getEducationSchoolCatalog(schoolCode);
+      const level = (catalog.levels ?? []).find((row) => row.id === nextLevelId && row.schoolActive);
+      if (!level) {
+        throw createHttpError(
+          400,
+          "Ce niveau n'est pas activé pour l'établissement.",
+          CLASS_WRITE_ERROR.LEVEL_NOT_ACTIVATED,
+        );
+      }
+      let streamName = null;
+      if (nextStreamId) {
+        const stream = (catalog.streams ?? []).find((row) => row.id === nextStreamId && row.schoolActive);
+        if (!stream) {
+          throw createHttpError(
+            400,
+            "Cette filière n'est pas activée pour l'établissement.",
+            CLASS_WRITE_ERROR.STREAM_NOT_ACTIVATED,
+          );
+        }
+        streamName = stream.name;
+      }
+      current.levelId = nextLevelId;
+      current.streamId = nextStreamId || null;
+      current.groupCode = nextGroupCode;
+      current.level = level.name;
+      current.track = streamName ?? "";
+      current.section = nextGroupCode;
+      current.name = composeClassDisplayName({
+        levelName: level.name,
+        streamName,
+        groupCode: nextGroupCode,
+      });
     }
     if (patch.status) current.status = patch.status;
     current.updatedAt = new Date().toISOString();
     upsertSeedClassProjection(current);
+    if (principal || auditMeta) {
+      await this.recordAudit({
+        schoolCode,
+        userId: principal?.sub || principal?.id,
+        action: "update_class",
+        entityType: "class",
+        entityId: code,
+        newValue: current,
+        ipAddress: auditMeta?.ipAddress,
+        userAgent: auditMeta?.userAgent,
+      });
+    }
     return clone(current);
   }
 

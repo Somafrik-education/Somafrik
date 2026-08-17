@@ -2,20 +2,32 @@
 
 /**
  * Preuve repository Classes métier (mémoire JS) :
- * create → list → update → isolation inter-établissements (404).
+ * create structurel → list → update status → isolation inter-établissements.
  */
 const assert = require("node:assert/strict");
 const { createClassesRepository } = require("../db/classesRepository");
 
 function createMemoryDb() {
   const schools = [
-    { id: "school-a", school_code: "SCH-A" },
-    { id: "school-b", school_code: "SCH-B" },
+    { id: "school-a", school_code: "SCH-A", country_id: "country-a" },
+    { id: "school-b", school_code: "SCH-B", country_id: "country-b" },
   ];
   const years = [
     { id: "ay-a", school_id: "school-a", name: "2025-2026" },
     { id: "ay-b", school_id: "school-b", name: "2025-2026" },
   ];
+  const levels = [
+    { id: "level-a", country_id: "country-a", name: "6ème", status: "active" },
+    { id: "level-b", country_id: "country-b", name: "5ème", status: "active" },
+  ];
+  const schoolLevels = [
+    { school_id: "school-a", level_id: "level-a", status: "active" },
+    { school_id: "school-b", level_id: "level-b", status: "active" },
+  ];
+  const streams = [
+    { id: "stream-a", country_id: "country-a", name: "Générale", level_id: null, status: "active" },
+  ];
+  const schoolStreams = [{ school_id: "school-a", stream_id: "stream-a", status: "active" }];
   /** @type {any[]} */
   const classes = [];
   /** @type {any[]} */
@@ -30,9 +42,27 @@ function createMemoryDb() {
     async one(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
       if (text.startsWith("SELECT ID, NAME FROM ACADEMIC_YEARS")) {
-        return (
-          years.find((row) => row.school_id === params[0] && row.name === params[1]) ?? null
-        );
+        return years.find((row) => row.school_id === params[0] && String(row.id) === String(params[1])) ?? null;
+      }
+      if (text.includes("FROM EDUCATION_LEVELS EL")) {
+        const level = levels.find((row) => row.id === params[1]);
+        if (!level) return null;
+        const activation = schoolLevels.find((row) => row.school_id === params[0] && row.level_id === level.id);
+        return {
+          ...level,
+          level_status: level.status,
+          school_status: activation?.status ?? null,
+        };
+      }
+      if (text.includes("FROM EDUCATION_STREAMS ES")) {
+        const stream = streams.find((row) => row.id === params[1]);
+        if (!stream) return null;
+        const activation = schoolStreams.find((row) => row.school_id === params[0] && row.stream_id === stream.id);
+        return {
+          ...stream,
+          stream_status: stream.status,
+          school_status: activation?.status ?? null,
+        };
       }
       if (text.startsWith("INSERT INTO CLASSES")) {
         const row = {
@@ -44,9 +74,29 @@ function createMemoryDb() {
           level: params[4],
           section: params[5],
           status: params[6],
+          level_id: params[7],
+          stream_id: params[8],
+          group_code: params[9],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
+        if (
+          classes.some(
+            (item) =>
+              item.school_id === row.school_id &&
+              item.academic_year_id === row.academic_year_id &&
+              item.level_id === row.level_id &&
+              (item.stream_id || null) === (row.stream_id || null) &&
+              String(item.group_code) === String(row.group_code),
+          )
+        ) {
+          const error = new Error(
+            'duplicate key value violates unique constraint "uq_classes_structural_offering"',
+          );
+          error.code = "23505";
+          error.constraint = "uq_classes_structural_offering";
+          throw error;
+        }
         if (
           classes.some(
             (item) =>
@@ -60,8 +110,6 @@ function createMemoryDb() {
           );
           error.code = "23505";
           error.constraint = "uq_classes_school_year_normalized_name";
-          error.detail =
-            "Key (school_id, academic_year_id, lower(btrim(name)))=(...) already exists.";
           throw error;
         }
         if (classes.some((item) => item.class_code === row.class_code)) {
@@ -76,48 +124,31 @@ function createMemoryDb() {
         classes.push(row);
         return row;
       }
-      if (
-        text.includes("FROM CLASSES CL") &&
-        text.includes("WHERE CL.CLASS_CODE") &&
-        text.includes("CL.SCHOOL_ID")
-      ) {
-        const row = classes.find(
-          (item) => item.class_code === params[0] && item.school_id === params[1],
-        );
+      if (text.includes("FROM CLASSES CL") && text.includes("WHERE CL.CLASS_CODE")) {
+        const row = classes.find((item) => item.class_code === params[0] && item.school_id === params[1]);
         if (!row) return null;
         const school = schools.find((item) => item.id === row.school_id);
         const year = years.find((item) => item.id === row.academic_year_id);
+        const level = levels.find((item) => item.id === row.level_id);
+        const stream = streams.find((item) => item.id === row.stream_id);
         return {
           ...row,
           school_code: school?.school_code,
           academic_year_name: year?.name,
+          level_name: level?.name,
+          stream_name: stream?.name ?? null,
         };
       }
       if (text.startsWith("UPDATE CLASSES")) {
-        const row = classes.find(
-          (item) => item.class_code === params[4] && item.school_id === params[5],
-        );
+        const row = classes.find((item) => item.class_code === params[7] && item.school_id === params[8]);
         if (!row) return null;
-        if (
-          classes.some(
-            (item) =>
-              item.class_code !== row.class_code &&
-              item.school_id === row.school_id &&
-              item.academic_year_id === row.academic_year_id &&
-              String(item.name).trim().toLowerCase() === String(params[0]).trim().toLowerCase(),
-          )
-        ) {
-          const error = new Error(
-            'duplicate key value violates unique constraint "uq_classes_school_year_normalized_name"',
-          );
-          error.code = "23505";
-          error.constraint = "uq_classes_school_year_normalized_name";
-          throw error;
-        }
         row.name = params[0];
         row.level = params[1];
         row.section = params[2];
         row.status = params[3];
+        row.level_id = params[4];
+        row.stream_id = params[5];
+        row.group_code = params[6];
         row.updated_at = new Date().toISOString();
         return { ...row };
       }
@@ -138,10 +169,14 @@ function createMemoryDb() {
           .map((row) => {
             const school = schools.find((item) => item.id === row.school_id);
             const year = years.find((item) => item.id === row.academic_year_id);
+            const level = levels.find((item) => item.id === row.level_id);
+            const stream = streams.find((item) => item.id === row.stream_id);
             return {
               ...row,
               school_code: school?.school_code,
               academic_year_name: year?.name,
+              level_name: level?.name,
+              stream_name: stream?.name ?? null,
               enrollment_count: enrollments.filter(
                 (item) => item.class_id === row.id && item.status === "active",
               ).length,
@@ -162,16 +197,18 @@ async function main() {
 
   const created = await repo.create(
     {
-      name: "6ème A",
-      academicYearName: "2025-2026",
-      level: "6ème",
-      section: "A",
+      academicYearId: "ay-a",
+      levelId: "level-a",
+      streamId: "stream-a",
+      groupCode: "A",
       status: "active",
     },
     "SCH-A",
   );
   assert.equal(created.schoolCode, "SCH-A");
-  assert.equal(created.name, "6ème A");
+  assert.equal(created.name, "6ème Générale A");
+  assert.equal(created.groupCode, "A");
+  assert.equal(created.track, "Générale");
   assert.match(created.classCode, /^CLS-/);
   assert.equal(created.status, "active");
 
@@ -186,8 +223,10 @@ async function main() {
     () =>
       repo.create(
         {
-          name: "6ème A",
-          academicYearName: "2025-2026",
+          academicYearId: "ay-a",
+          levelId: "level-a",
+          streamId: "stream-a",
+          groupCode: "A",
           status: "active",
         },
         "SCH-A",
@@ -195,16 +234,26 @@ async function main() {
     (error) => error.statusCode === 409,
   );
 
-  const updated = await repo.update(created.classCode, "SCH-A", {
-    name: "6ème A Bis",
-    status: "inactive",
-  });
-  assert.equal(updated.name, "6ème A Bis");
+  const updated = await repo.update(created.classCode, "SCH-A", { status: "inactive" });
   assert.equal(updated.status, "inactive");
+  assert.equal(updated.name, "6ème Générale A");
 
   await assert.rejects(
-    () => repo.update(created.classCode, "SCH-B", { name: "Hack" }),
+    () => repo.update(created.classCode, "SCH-B", { status: "active" }),
     (error) => error.statusCode === 404,
+  );
+
+  await assert.rejects(
+    () =>
+      repo.create(
+        {
+          name: "Inventé",
+          academicYearName: "2025-2026",
+          level: "X",
+        },
+        "SCH-A",
+      ),
+    (error) => error.statusCode === 400,
   );
 
   console.log("classesRepository.test.js: OK");

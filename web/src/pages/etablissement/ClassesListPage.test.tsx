@@ -66,6 +66,14 @@ vi.mock("../../lib/classesApi", () => ({
 
 vi.mock("../../lib/academicYearsApi", () => ({ academicYearsApi: academicYearsApiMock }));
 
+const educationReferenceApiMock = vi.hoisted(() => ({
+  getSchoolCatalog: vi.fn(),
+}));
+
+vi.mock("../../lib/educationReferenceApi", () => ({
+  educationReferenceApi: educationReferenceApiMock,
+}));
+
 vi.mock("../../api/client", () => ({
   ApiError: class ApiError extends Error {
     status: number;
@@ -105,7 +113,8 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
         name: "6ème A",
         level: "6ème",
         section: "A",
-        track: "A",
+        track: "",
+        groupCode: "A",
         status: "active",
         schoolCode: "SCH-001",
         academicYearId: "ay-1",
@@ -120,7 +129,8 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
         name: "5ème B",
         level: "5ème",
         section: "B",
-        track: "B",
+        track: "",
+        groupCode: "B",
         status: "active",
         schoolCode: "SCH-001",
         academicYearId: "ay-1",
@@ -132,6 +142,12 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     classesApiMock.create.mockReset();
     classesApiMock.update.mockReset();
     academicYearsApiMock.list.mockResolvedValue([{ id: "ay-1", name: "2025-2026", schoolCode: "SCH-001", isCurrent: true }]);
+    educationReferenceApiMock.getSchoolCatalog.mockResolvedValue({
+      schoolCode: "SCH-001",
+      countryCode: "CD",
+      levels: [{ id: "level-4", name: "4ème", schoolActive: true, code: "4eme", displayOrder: 1, status: "active" }],
+      streams: [],
+    });
     academicYearsApiMock.create.mockReset();
     academicYearsApiMock.update.mockReset();
   });
@@ -181,7 +197,8 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
       name: "4ème C",
       level: "4ème",
       section: "C",
-      track: "C",
+      track: "",
+      groupCode: "C",
       status: "active",
       schoolCode: "SCH-001",
       academicYearId: "ay-1",
@@ -193,15 +210,17 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     renderPage();
     await screen.findByText("6ème A");
     await user.click(screen.getByRole("button", { name: "Ajouter" }));
-    await user.type(screen.getByLabelText(/Nom de classe/i), "4ème C");
-    await user.selectOptions(screen.getByLabelText(/Année scolaire/i), "2025-2026");
+    await user.selectOptions(screen.getByLabelText(/Année scolaire/i), "ay-1");
+    await user.selectOptions(screen.getByLabelText(/^Niveau/i), "level-4");
+    await user.selectOptions(screen.getByLabelText(/^Groupe/i), "C");
     await user.click(screen.getByRole("button", { name: "Enregistrer" }));
 
     await waitFor(() => {
       expect(classesApiMock.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: "4ème C",
-          academicYearName: "2025-2026",
+          academicYearId: "ay-1",
+          levelId: "level-4",
+          groupCode: "C",
           status: "active",
         }),
       );

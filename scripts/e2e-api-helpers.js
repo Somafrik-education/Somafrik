@@ -211,34 +211,46 @@ async function getState(token) {
 }
 
 /**
- * Crée une classe via /api/classes (plus d'écriture legacy state.classes).
+ * Crée une classe via /api/classes (contrat structurel P0-B/C).
  * @returns {{ classRecord: object, state: object }}
  */
 async function createClassViaApi(token, draft = {}) {
-  const name = String(draft.name ?? "").trim();
-  assert.ok(name, "createClassViaApi: name requis");
+  const { prepareCanonicalClassContext, postCanonicalClass } = require("../backend/lib/canonicalClassHttp");
   const statusRaw = String(draft.status ?? "active").trim().toLowerCase();
   const status =
     statusRaw === "inactive" || statusRaw === "archivée" || statusRaw === "archivee"
       ? "inactive"
       : "active";
-  const body = {
-    name,
-    academicYearName: String(draft.academicYearName ?? draft.schoolYear ?? "2025-2026").trim(),
+  const stateBefore = await getState(token);
+  const schoolCode = String(draft.schoolCode || stateBefore.school?.code || "").trim();
+  assert.ok(schoolCode, "createClassViaApi: schoolCode requis");
+  const countryCode = String(
+    draft.countryCode || stateBefore.school?.countryCode || schoolCode.slice(0, 2),
+  ).trim();
+  const groupCode = String(draft.groupCode || draft.section || "A")
+    .trim()
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 8) || "A";
+  const ctx = await prepareCanonicalClassContext(request, {
+    schoolCode,
+    countryCode,
+    levelName: String(draft.level || "6ème"),
+  });
+  const res = await postCanonicalClass(request, token, {
+    academicYearId: draft.academicYearId || ctx.academicYear.id,
+    levelId: draft.levelId || ctx.level.id,
+    streamId: draft.streamId || null,
+    groupCode,
     status,
-  };
-  const level = String(draft.level ?? "").trim();
-  const section = String(draft.section ?? draft.track ?? "").trim();
-  if (level) body.level = level;
-  if (section) body.section = section;
-
-  const res = await request("/classes", { method: "POST", token, body });
+  });
   if (res.status === 409) {
     const state = await getState(token);
     const existing = (state.classes ?? []).find(
-      (row) => normalize(row.name) === normalize(name),
+      (row) =>
+        String(row.groupCode ?? row.section ?? "").toUpperCase() === groupCode.toUpperCase() &&
+        String(row.level ?? "") === String(draft.level || ctx.level.name),
     );
-    assert.ok(existing, `classe 409 sans projection: ${name}`);
+    assert.ok(existing, `classe 409 sans projection: ${groupCode}`);
     return { classRecord: existing, state, created: false };
   }
   assert.strictEqual(res.status, 201, `POST /classes: ${JSON.stringify(res.data)}`);
@@ -247,14 +259,15 @@ async function createClassViaApi(token, draft = {}) {
     (state.classes ?? []).find(
       (row) =>
         String(row.id ?? row.publicId ?? "") === String(res.data.classCode) ||
-        normalize(row.name) === normalize(name),
+        String(row.classCode ?? "") === String(res.data.classCode),
     ) ?? {
       id: res.data.classCode,
       publicId: res.data.classCode,
       name: res.data.name,
       schoolCode: res.data.schoolCode,
       level: res.data.level,
-      track: res.data.section,
+      track: res.data.track,
+      groupCode: res.data.groupCode,
       status: res.data.status === "inactive" ? "Archivée" : "Active",
       schoolYear: res.data.academicYearName,
     };

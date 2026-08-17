@@ -566,8 +566,13 @@ app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), as
     throw new BusinessError(400, "schoolCode établissement requis.");
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const created = await repository.createSchoolClass(req.body ?? {}, schoolCode);
-  await auditService.record(req, "create_class", "class", created.classCode, created);
+  const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+  const created = await repository.createSchoolClass(
+    req.body ?? {},
+    schoolCode,
+    req.principal,
+    auditMetaFromRequest(req),
+  );
   res.status(201).json(created);
 }));
 
@@ -577,8 +582,14 @@ app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/
     throw new BusinessError(400, "schoolCode établissement requis.");
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
-  const updated = await repository.updateSchoolClass(req.params.classCode, schoolCode, req.body ?? {});
-  await auditService.record(req, "update_class", "class", updated.classCode, updated);
+  const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+  const updated = await repository.updateSchoolClass(
+    req.params.classCode,
+    schoolCode,
+    req.body ?? {},
+    req.principal,
+    auditMetaFromRequest(req),
+  );
   res.json(updated);
 }));
 

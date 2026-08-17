@@ -70,6 +70,7 @@ function auditMetaFromRequest(req) {
 }
 
 module.exports = {
+  resolveTransactionalScope,
   teacherAuditScope,
   assignmentAuditScope,
   writeTransactionalAudit,

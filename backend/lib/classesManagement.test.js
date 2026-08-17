@@ -7,7 +7,8 @@ const {
   generateClassCode,
   validateCreateClassInput,
   validateUpdateClassInput,
-  requireClassCodeParam,
+  composeClassDisplayName,
+  CLASS_WRITE_ERROR,
 } = require("./classesManagement");
 
 test("generateClassCode produces immutable CLS-* codes", () => {
@@ -16,42 +17,71 @@ test("generateClassCode produces immutable CLS-* codes", () => {
   assert.ok(code.length <= 64);
 });
 
-test("validateCreateClassInput accepts a valid payload", () => {
+test("composeClassDisplayName joint niveau, filière optionnelle et groupe", () => {
+  assert.equal(composeClassDisplayName({ levelName: "4ème", streamName: "Scientifique", groupCode: "A" }), "4ème Scientifique A");
+  assert.equal(composeClassDisplayName({ levelName: "6ème", streamName: null, groupCode: "A" }), "6ème A");
+});
+
+test("validateCreateClassInput n'accepte plus le texte libre", () => {
+  assert.throws(
+    () =>
+      validateCreateClassInput(
+        { name: "Toto", academicYearName: "2025-2026", level: "NIVEAU INVENTÉ", section: "XYZ" },
+        "SCH-001",
+      ),
+    (error) => error.statusCode === 400 && error.code === CLASS_WRITE_ERROR.FREE_TEXT_FORBIDDEN,
+  );
+});
+
+test("validateCreateClassInput accepte le contrat structurel", () => {
   const input = validateCreateClassInput(
     {
-      name: "6ème A",
-      academicYearName: "2025-2026",
-      level: "6ème",
-      section: "A",
+      academicYearId: "ay-1",
+      levelId: "level-1",
+      streamId: "stream-1",
+      groupCode: "a",
       status: "active",
     },
     "SCH-001",
   );
   assert.deepEqual(input, {
     schoolCode: "SCH-001",
-    name: "6ème A",
-    academicYearName: "2025-2026",
-    level: "6ème",
-    section: "A",
+    academicYearId: "ay-1",
+    levelId: "level-1",
+    streamId: "stream-1",
+    groupCode: "A",
     status: "active",
   });
 });
 
-test("validateCreateClassInput rejects client-provided classCode and bad status", () => {
-  assert.throws(
-    () => validateCreateClassInput({ name: "A", academicYearName: "2025-2026", classCode: "X" }, "SCH-001"),
-    (error) => error.statusCode === 400,
+test("validateCreateClassInput permet une filière absente", () => {
+  const input = validateCreateClassInput(
+    { academicYearId: "ay-1", levelId: "level-1", groupCode: "B" },
+    "SCH-001",
   );
+  assert.equal(input.streamId, null);
+  assert.equal(input.groupCode, "B");
+});
+
+test("validateCreateClassInput rejects client-provided classCode and bad status", () => {
   assert.throws(
     () =>
       validateCreateClassInput(
-        { name: "A", academicYearName: "2025-2026", status: "Active" },
+        { academicYearId: "ay-1", levelId: "l1", groupCode: "A", classCode: "X" },
         "SCH-001",
       ),
     (error) => error.statusCode === 400,
   );
   assert.throws(
-    () => validateCreateClassInput({ academicYearName: "2025-2026" }, "SCH-001"),
+    () =>
+      validateCreateClassInput(
+        { academicYearId: "ay-1", levelId: "l1", groupCode: "A", status: "Active" },
+        "SCH-001",
+      ),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () => validateCreateClassInput({ academicYearId: "ay-1" }, "SCH-001"),
     (error) => error.statusCode === 400,
   );
 });
@@ -60,31 +90,22 @@ test("validateCreateClassInput rejects cross-school body schoolCode", () => {
   assert.throws(
     () =>
       validateCreateClassInput(
-        { name: "A", academicYearName: "2025-2026", schoolCode: "OTHER" },
+        { academicYearId: "ay-1", levelId: "l1", groupCode: "A", schoolCode: "OTHER" },
         "SCH-001",
       ),
     (error) => error.statusCode === 403,
   );
 });
 
-test("validateUpdateClassInput allows name/level/section/status only", () => {
-  const patch = validateUpdateClassInput({ name: "5ème B", status: "inactive" });
-  assert.deepEqual(patch, { name: "5ème B", status: "inactive" });
+test("validateUpdateClassInput permet status et IDs, refuse le nom", () => {
+  const patch = validateUpdateClassInput({ status: "inactive" });
+  assert.deepEqual(patch, { status: "inactive" });
   assert.throws(
-    () => validateUpdateClassInput({ classCode: "CLS-1" }),
-    (error) => error.statusCode === 400,
+    () => validateUpdateClassInput({ name: "5ème B" }),
+    (error) => error.statusCode === 400 && error.code === CLASS_WRITE_ERROR.FREE_TEXT_FORBIDDEN,
   );
   assert.throws(
-    () => validateUpdateClassInput({ academicYearName: "2026-2027" }),
+    () => validateUpdateClassInput({ academicYearId: "ay-2" }),
     (error) => error.statusCode === 400,
   );
-  assert.throws(
-    () => validateUpdateClassInput({}),
-    (error) => error.statusCode === 400,
-  );
-});
-
-test("requireClassCodeParam rejects empty values", () => {
-  assert.equal(requireClassCodeParam("CLS-1"), "CLS-1");
-  assert.throws(() => requireClassCodeParam(""), (error) => error.statusCode === 400);
 });

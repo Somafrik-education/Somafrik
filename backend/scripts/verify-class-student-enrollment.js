@@ -169,14 +169,18 @@ async function replaceTeacherAssignmentsViaApi(assignmentToken, teacherIdentifie
 }
 
 async function createActiveClass(token, label) {
-  const created = await request("/classes", {
-    method: "POST",
-    token,
-    body: {
-      name: `${label} ${Date.now()}`,
-      academicYearName: "2025-2026",
-      status: "active",
-    },
+  const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+  const ctx = await prepareCanonicalClassContext(request, {
+    schoolCode: "CD-2026-0001",
+    countryCode: "CD",
+    levelName: "6ème",
+  });
+  const groupCode = `G${String(Date.now()).slice(-4)}`;
+  const created = await postCanonicalClass(request, token, {
+    academicYearId: ctx.academicYear.id,
+    levelId: ctx.level.id,
+    groupCode,
+    status: "active",
   });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   return created.data;
@@ -353,8 +357,9 @@ async function main() {
       method: "POST",
       token: tokenCd,
       body: {
-        name: `Classe année inconnue ${Date.now()}`,
-        academicYearName: "2099-2100",
+        academicYearId: "missing-year-id",
+        levelId: "missing-level-id",
+        groupCode: "U1",
         status: "active",
       },
     });
@@ -462,25 +467,24 @@ async function main() {
     );
 
     // Homonymes inter-années (fixture 2024-2025 explicite) + principal classNames seuls.
-    const priorYearName = "6ème A Homonyme";
-    const priorYear = await request("/classes", {
-      method: "POST",
-      token: tokenCd,
-      body: {
-        name: priorYearName,
-        academicYearName: "2024-2025",
-        status: "active",
-      },
+    const { prepareCanonicalClassContext, postCanonicalClass, ensureSchoolYear } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+    });
+    const priorYearRow = await ensureSchoolYear(request, tokenCd, "2024-2025", "CD-2026-0001");
+    const priorYear = await postCanonicalClass(request, tokenCd, {
+      academicYearId: priorYearRow.id,
+      levelId: offering.level.id,
+      groupCode: "H1",
+      status: "active",
     });
     assert.equal(priorYear.status, 201, JSON.stringify(priorYear.data));
-    const currentHomonym = await request("/classes", {
-      method: "POST",
-      token: tokenCd,
-      body: {
-        name: priorYearName,
-        academicYearName: "2025-2026",
-        status: "active",
-      },
+    const currentHomonym = await postCanonicalClass(request, tokenCd, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupCode: "H1",
+      status: "active",
     });
     assert.equal(currentHomonym.status, 201, JSON.stringify(currentHomonym.data));
     assert.notEqual(priorYear.data.classCode, currentHomonym.data.classCode);

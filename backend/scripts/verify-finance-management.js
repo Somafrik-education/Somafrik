@@ -82,10 +82,16 @@ async function main() {
     const adminToken = await login("admin", "1234", "CD-2026-0001");
     const stamp = Date.now();
 
-    const createdClass = await request("/classes", {
-      method: "POST",
-      token: adminToken,
-      body: { name: `FIN-${stamp}`, academicYearName: "2025-2026", status: "active" },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+    });
+    const createdClass = await postCanonicalClass(request, adminToken, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupCode: "FN",
+      status: "active",
     });
     assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
     const enrolled = await request(`/classes/${encodeURIComponent(createdClass.data.classCode)}/students`, {

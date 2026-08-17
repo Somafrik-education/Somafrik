@@ -323,10 +323,16 @@ async function runSyncEndToEnd(databaseUrl) {
     );
 
     // --- Classes ---
-    const createdClass = await request("/classes", {
-      method: "POST",
-      token: adminToken,
-      body: { name: `CLS-SYNC-${stamp}`, academicYearName: "2025-2026", status: "active" },
+    const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
+    const offering = await prepareCanonicalClassContext(request, {
+      schoolCode: "CD-2026-0001",
+      countryCode: "CD",
+    });
+    const createdClass = await postCanonicalClass(request, adminToken, {
+      academicYearId: offering.academicYear.id,
+      levelId: offering.level.id,
+      groupCode: "SY",
+      status: "active",
     });
     assert.equal(createdClass.status, 201, JSON.stringify(createdClass.data));
     const classCode = String(createdClass.data.classCode ?? "");

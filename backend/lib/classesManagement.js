@@ -6,8 +6,18 @@ const CLASS_STATUSES = Object.freeze(["active", "inactive"]);
 const CLASS_STATUS_SET = new Set(CLASS_STATUSES);
 const MAX_CLASS_CODE_LENGTH = 64;
 const MAX_NAME_LENGTH = 200;
-const MAX_LEVEL_LENGTH = 120;
-const MAX_SECTION_LENGTH = 120;
+const MAX_GROUP_CODE_LENGTH = 8;
+const GROUP_CODE_PATTERN = /^[A-Za-z0-9]+$/;
+const FORBIDDEN_FREE_TEXT_FIELDS = Object.freeze(["name", "level", "section", "track", "academicYearName"]);
+
+const CLASS_WRITE_ERROR = Object.freeze({
+  FREE_TEXT_FORBIDDEN: "CLASS_FREE_TEXT_FORBIDDEN",
+  OFFERING_REQUIRED: "CLASS_OFFERING_REQUIRED",
+  LEVEL_NOT_ACTIVATED: "CLASS_LEVEL_NOT_ACTIVATED",
+  STREAM_NOT_ACTIVATED: "CLASS_STREAM_NOT_ACTIVATED",
+  STREAM_LEVEL_MISMATCH: "CLASS_STREAM_LEVEL_MISMATCH",
+  STRUCTURAL_DUPLICATE: "CLASS_STRUCTURAL_DUPLICATE",
+});
 
 /**
  * @param {unknown} value
@@ -31,11 +41,13 @@ function isPlainObject(value) {
 /**
  * @param {number} statusCode
  * @param {string} message
- * @returns {Error & { statusCode: number }}
+ * @param {string} [code]
+ * @returns {Error & { statusCode: number, code?: string }}
  */
-function createHttpError(statusCode, message) {
+function createHttpError(statusCode, message, code) {
   const error = new Error(message);
   error.statusCode = statusCode;
+  if (code) error.code = code;
   return error;
 }
 
@@ -65,54 +77,88 @@ function requireClassStatus(value) {
 }
 
 /**
- * @param {unknown} value
- * @param {string} field
- * @param {number} maxLength
- * @returns {string}
+ * @param {unknown} body
  */
-function requireNonEmptyString(value, field, maxLength) {
-  if (typeof value !== "string") {
-    throw createHttpError(400, `Champ obligatoire: ${field}.`);
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw createHttpError(400, `Champ obligatoire: ${field}.`);
-  }
-  if (trimmed.length > maxLength) {
-    throw createHttpError(400, `${field} trop long (max ${maxLength}).`);
-  }
-  if (trimmed !== value) {
-    // Leading/trailing whitespace rejected — no silent trim coercion for identity fields.
-    // Name/level/section still trim for storage after validation of non-empty content:
-    // we accept trim for storage of display fields below via asTrimmedString after this check
-    // only when the raw value has content; reject pure whitespace.
-  }
-  return trimmed;
+function assertNoFreeTextClassFields(body) {
+  const present = FORBIDDEN_FREE_TEXT_FIELDS.filter((field) => Object.hasOwn(body, field));
+  if (!present.length) return;
+  throw createHttpError(
+    400,
+    "name, level, section, track et academicYearName ne sont plus acceptés. " +
+      "Utilisez academicYearId, levelId, streamId (optionnel) et groupCode. Le nom est généré côté serveur.",
+    CLASS_WRITE_ERROR.FREE_TEXT_FORBIDDEN,
+  );
 }
 
 /**
- * Optional string field: omit/undefined → null; empty string after trim → null;
- * non-string → 400 (no coercion).
  * @param {unknown} value
  * @param {string} field
- * @param {number} maxLength
+ * @returns {string}
+ */
+function requireId(value, field) {
+  const id = asTrimmedString(value);
+  if (typeof value !== "string" || !id) {
+    throw createHttpError(400, `Champ obligatoire: ${field}.`);
+  }
+  if (id.length > 64) {
+    throw createHttpError(400, `${field} trop long.`);
+  }
+  return id;
+}
+
+/**
+ * @param {unknown} value
  * @returns {string | null}
  */
-function optionalStringField(value, field, maxLength) {
+function optionalStreamId(value) {
   if (value === undefined || value === null) {
     return null;
   }
   if (typeof value !== "string") {
-    throw createHttpError(400, `${field} doit être une chaîne.`);
+    throw createHttpError(400, "streamId doit être une chaîne.");
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function requireGroupCode(value) {
+  if (typeof value !== "string") {
+    throw createHttpError(400, "Champ obligatoire: groupCode.");
   }
   const trimmed = value.trim();
   if (!trimmed) {
-    return null;
+    throw createHttpError(400, "Champ obligatoire: groupCode.");
   }
-  if (trimmed.length > maxLength) {
-    throw createHttpError(400, `${field} trop long (max ${maxLength}).`);
+  if (trimmed.length > MAX_GROUP_CODE_LENGTH) {
+    throw createHttpError(400, `groupCode trop long (max ${MAX_GROUP_CODE_LENGTH}).`);
   }
-  return trimmed;
+  if (!GROUP_CODE_PATTERN.test(trimmed)) {
+    throw createHttpError(400, "groupCode invalide (lettres ou chiffres uniquement, ex. A, B, C).");
+  }
+  return trimmed.toUpperCase();
+}
+
+/**
+ * Nom d'affichage déterministe : `{niveau} {filière?} {groupe}`.
+ * @param {{ levelName: string, streamName?: string | null, groupCode: string }} parts
+ * @returns {string}
+ */
+function composeClassDisplayName(parts) {
+  const levelName = asTrimmedString(parts?.levelName);
+  const streamName = asTrimmedString(parts?.streamName);
+  const groupCode = asTrimmedString(parts?.groupCode);
+  const composed = [levelName, streamName, groupCode].filter(Boolean).join(" ");
+  if (!composed) {
+    throw createHttpError(500, "Impossible de composer le nom de classe.");
+  }
+  if (composed.length > MAX_NAME_LENGTH) {
+    throw createHttpError(400, `Nom de classe trop long (max ${MAX_NAME_LENGTH}).`);
+  }
+  return composed;
 }
 
 /**
@@ -120,10 +166,10 @@ function optionalStringField(value, field, maxLength) {
  * @param {string} schoolCode
  * @returns {{
  *   schoolCode: string,
- *   name: string,
- *   academicYearName: string,
- *   level: string | null,
- *   section: string | null,
+ *   academicYearId: string,
+ *   levelId: string,
+ *   streamId: string | null,
+ *   groupCode: string,
  *   status: "active" | "inactive",
  * }}
  */
@@ -134,6 +180,7 @@ function validateCreateClassInput(body, schoolCode) {
   if (Object.hasOwn(body, "classCode") || Object.hasOwn(body, "id") || Object.hasOwn(body, "publicId")) {
     throw createHttpError(400, "classCode est généré côté serveur et ne peut pas être fourni.");
   }
+  assertNoFreeTextClassFields(body);
 
   const resolvedSchoolCode = asTrimmedString(schoolCode);
   if (!resolvedSchoolCode || resolvedSchoolCode === "*") {
@@ -147,18 +194,6 @@ function validateCreateClassInput(body, schoolCode) {
     }
   }
 
-  const name = requireNonEmptyString(body.name, "name", MAX_NAME_LENGTH);
-  const academicYearName = requireNonEmptyString(
-    body.academicYearName,
-    "academicYearName",
-    MAX_NAME_LENGTH,
-  );
-  const level = optionalStringField(body.level, "level", MAX_LEVEL_LENGTH);
-  const section = optionalStringField(
-    body.section !== undefined ? body.section : body.track,
-    "section",
-    MAX_SECTION_LENGTH,
-  );
   const status =
     body.status === undefined || body.status === null
       ? "active"
@@ -166,10 +201,10 @@ function validateCreateClassInput(body, schoolCode) {
 
   return {
     schoolCode: resolvedSchoolCode,
-    name,
-    academicYearName,
-    level,
-    section,
+    academicYearId: requireId(body.academicYearId, "academicYearId"),
+    levelId: requireId(body.levelId, "levelId"),
+    streamId: optionalStreamId(body.streamId),
+    groupCode: requireGroupCode(body.groupCode),
     status,
   };
 }
@@ -177,9 +212,9 @@ function validateCreateClassInput(body, schoolCode) {
 /**
  * @param {unknown} body
  * @returns {{
- *   name?: string,
- *   level?: string | null,
- *   section?: string | null,
+ *   levelId?: string,
+ *   streamId?: string | null,
+ *   groupCode?: string,
  *   status?: "active" | "inactive",
  * }}
  */
@@ -193,27 +228,24 @@ function validateUpdateClassInput(body) {
     Object.hasOwn(body, "academicYearName") ||
     Object.hasOwn(body, "academicYearId")
   ) {
-    throw createHttpError(400, "classCode, schoolCode et année scolaire sont immuables dans cette PR.");
+    throw createHttpError(400, "classCode, schoolCode et année scolaire sont immuables.");
   }
+  assertNoFreeTextClassFields(body);
 
-  /** @type {{ name?: string, level?: string | null, section?: string | null, status?: "active" | "inactive" }} */
+  /** @type {{ levelId?: string, streamId?: string | null, groupCode?: string, status?: "active" | "inactive" }} */
   const patch = {};
   let touched = false;
 
-  if (Object.hasOwn(body, "name")) {
-    patch.name = requireNonEmptyString(body.name, "name", MAX_NAME_LENGTH);
+  if (Object.hasOwn(body, "levelId")) {
+    patch.levelId = requireId(body.levelId, "levelId");
     touched = true;
   }
-  if (Object.hasOwn(body, "level")) {
-    patch.level = optionalStringField(body.level, "level", MAX_LEVEL_LENGTH);
+  if (Object.hasOwn(body, "streamId")) {
+    patch.streamId = optionalStreamId(body.streamId);
     touched = true;
   }
-  if (Object.hasOwn(body, "section") || Object.hasOwn(body, "track")) {
-    patch.section = optionalStringField(
-      Object.hasOwn(body, "section") ? body.section : body.track,
-      "section",
-      MAX_SECTION_LENGTH,
-    );
+  if (Object.hasOwn(body, "groupCode")) {
+    patch.groupCode = requireGroupCode(body.groupCode);
     touched = true;
   }
   if (Object.hasOwn(body, "status")) {
@@ -222,7 +254,7 @@ function validateUpdateClassInput(body) {
   }
 
   if (!touched) {
-    throw createHttpError(400, "Aucun champ modifiable fourni (name, level, section, status).");
+    throw createHttpError(400, "Aucun champ modifiable fourni (levelId, streamId, groupCode, status).");
   }
 
   return patch;
@@ -242,10 +274,13 @@ function requireClassCodeParam(classCode) {
 
 module.exports = {
   CLASS_STATUSES,
+  CLASS_WRITE_ERROR,
+  FORBIDDEN_FREE_TEXT_FIELDS,
   generateClassCode,
   validateCreateClassInput,
   validateUpdateClassInput,
   requireClassCodeParam,
+  composeClassDisplayName,
   createHttpError,
   asTrimmedString,
 };
