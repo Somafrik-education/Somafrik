@@ -2,6 +2,13 @@
 
 function attachStudentLifecyclePg(repository) {
   if (!repository || repository.engine === "memory") return repository;
+  if (repository.__studentLifecyclePgAttached) return repository;
+  Object.defineProperty(repository, "__studentLifecyclePgAttached", {
+    value: true,
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  });
 
   const originalListSchoolStudents = repository.listSchoolStudents.bind(repository);
   repository.listSchoolStudents = async (schoolCode) => {
