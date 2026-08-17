@@ -893,7 +893,7 @@ class FallbackRepository {
     }
     const isCurrent = input.isCurrent !== false;
     if (isCurrent) this._managedAcademicYears.forEach((row) => { if (row.school_code === schoolCode) row.is_current = false; });
-    const row = { id: `AY-${Date.now()}`, school_id: `school-${schoolCode}`, school_code: schoolCode, name, start_date: startDate, end_date: endDate, status: "open", is_current: isCurrent };
+    const row = { id: `AY-${Date.now()}-${this._managedAcademicYears.length}`, school_id: `school-${schoolCode}`, school_code: schoolCode, name, start_date: startDate, end_date: endDate, status: "open", is_current: isCurrent };
     this._managedAcademicYears.push(row);
     return (await this.getAcademicYearsV2()).find((item) => item.id === row.id);
   }
