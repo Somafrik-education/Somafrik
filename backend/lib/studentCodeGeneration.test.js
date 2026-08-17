@@ -7,7 +7,11 @@ const {
   studentCodePrefix,
 } = require("./studentCodeGeneration");
 
+const { assignCanonicalStudentCode } = require("./studentCodeAllocation");
 const nuru = { name: "Institut Nuru", login_code: "CD-IN-26-001" };
+
+assert.equal(assignCanonicalStudentCode(nuru, [], "PENDING"), "CD-IN-EL-26-001");
+assert.equal(assignCanonicalStudentCode(nuru, [], "CD-IN-EL-26-007"), "CD-IN-EL-26-007");
 const nuruBi = { name: "Institut Nuru", login_code: "BI-IN-26-001" };
 const lumumba = { name: "Lycée Lumumba", login_code: "CD-LL-26-001" };
 

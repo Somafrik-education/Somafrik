@@ -1130,12 +1130,30 @@ class FallbackRepository {
             };
           }
           if (text.startsWith("INSERT INTO STUDENTS")) {
+            const { assignCanonicalStudentCode } = require("../lib/studentCodeAllocation");
+            const schoolId = params[0];
+            const isPrimary = String(schoolId) === String(seedData.school.id);
+            const code = isPrimary
+              ? seedData.school.code
+              : String(schoolId).replace(/^school-/i, "");
+            const match = (seedData.platformSchools ?? [seedData.school]).find(
+              (row) => String(row.code ?? "").toUpperCase() === String(code).toUpperCase(),
+            );
+            const studentCode = assignCanonicalStudentCode(
+              {
+                school_code: match?.code ?? code,
+                name: match?.name ?? seedData.school.name,
+                login_code: match?.loginCode ?? match?.login_code ?? seedData.school.loginCode,
+              },
+              (self._managedStudents ?? []).map((row) => row.student_code),
+              params[1],
+            );
             const row = {
-              id: `stu-${params[1]}`,
-              school_id: params[0],
-              student_code: params[1],
-              login_code: params[1],
-              identity_code: params[1],
+              id: `stu-${studentCode}`,
+              school_id: schoolId,
+              student_code: studentCode,
+              login_code: studentCode,
+              identity_code: studentCode,
               first_name: params[2],
               last_name: params[3],
               gender: params[4],

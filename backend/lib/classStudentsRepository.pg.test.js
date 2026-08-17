@@ -6,6 +6,8 @@
  * année fermée, rollback transactionnel, concurrence matricules.
  */
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
@@ -110,7 +112,51 @@ async function setupFixture(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
 
+  await pool.query(`
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS short_code TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS identity_code TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS login_code TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS identity_initials TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS identity_year SMALLINT;
+  `);
+
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION somafrik_ascii_upper(value TEXT)
+    RETURNS TEXT LANGUAGE sql IMMUTABLE AS $$
+      SELECT upper(translate(coalesce(value, ''),
+        'ÀÁÂÃÄÅàáâãäåÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝŸýÿŒœÆæ',
+        'AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOOooooooUUUUuuuuYYyyOoAa'))
+    $$;
+    CREATE OR REPLACE FUNCTION somafrik_school_short_code(name_value TEXT)
+    RETURNS TEXT LANGUAGE plpgsql IMMUTABLE AS $$
+    DECLARE token TEXT; result TEXT := ''; normalized TEXT;
+    BEGIN
+      normalized := trim(regexp_replace(somafrik_ascii_upper(name_value), '[^A-Z0-9]+', ' ', 'g'));
+      FOR token IN SELECT part FROM regexp_split_to_table(normalized, '\\s+') AS part WHERE part <> '' LOOP
+        result := result || left(token, 1);
+        EXIT WHEN length(result) >= 5;
+      END LOOP;
+      IF length(result) < 2 THEN
+        result := left(regexp_replace(normalized, '\\s+', '', 'g'), 5);
+      END IF;
+      IF result = '' THEN
+        RAISE EXCEPTION 'SCHOOL_SHORT_CODE_REQUIRED';
+      END IF;
+      RETURN left(result, 5);
+    END
+    $$;
+  `);
+
+  const canonicalSql = fs.readFileSync(
+    path.join(__dirname, "../db/migrations/20260823_student_canonical_identifier.sql"),
+    "utf8",
+  );
+  await pool.query(canonicalSql);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS enrollments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       school_id UUID NOT NULL REFERENCES schools(id),

@@ -75,12 +75,19 @@ function createMemoryDb() {
       }
 
       if (text.startsWith("INSERT INTO STUDENTS")) {
+        const school = schools.find((row) => row.id === params[0]);
+        const { assignCanonicalStudentCode } = require("./studentCodeAllocation");
+        const studentCode = assignCanonicalStudentCode(
+          school,
+          students.map((row) => row.student_code),
+          params[1],
+        );
         const row = {
           id: `stu-${studentSeq++}`,
           school_id: params[0],
-          student_code: params[1],
-          login_code: params[1],
-          identity_code: params[1],
+          student_code: studentCode,
+          login_code: studentCode,
+          identity_code: studentCode,
           first_name: params[2],
           last_name: params[3],
           gender: params[4],

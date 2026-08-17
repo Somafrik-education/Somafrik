@@ -6,8 +6,11 @@ const {
   validateUpdateStudentInput,
   assertClassEligibleForEnrollment,
 } = require("../lib/classStudentsManagement");
-const { allocateStudentCodeLocked } = require("../lib/studentCodeAllocation");
 const { hashSecret } = require("../services/credentialService");
+const {
+  STUDENT_CODE_PLACEHOLDER,
+  isStudentCanonicalCode,
+} = require("../lib/studentCanonicalIdentifier");
 
 const STUDENT_SELECT_COLUMNS = `
   st.id AS student_uuid,
@@ -311,15 +314,7 @@ function createClassStudentsRepository(db) {
    */
   async function insertStudentWithEnrollment(tx, school, schoolCode, classRow, input) {
     const birthDate = normalizeBirthDateForStorage(input.birthDate);
-    const studentCode = await allocateStudentCodeLocked(tx, {
-      id: school.id,
-      school_code: school.school_code ?? schoolCode,
-      login_code: school.login_code,
-      short_code: school.short_code,
-      name: school.name,
-      country_code: school.country_code ?? school.iso_code,
-    });
-
+    // PostgreSQL alloue (trigger). Placeholder PENDING, jamais un code JS.
     const student = await tx.one(
       `INSERT INTO students (
          school_id, student_code, first_name, last_name, gender,
@@ -329,7 +324,7 @@ function createClassStudentsRepository(db) {
                  birth_place, photo_url, parent_phone, parent_email, status, created_at, updated_at`,
       [
         school.id,
-        studentCode,
+        STUDENT_CODE_PLACEHOLDER,
         input.firstName,
         input.lastName,
         input.gender,
@@ -340,6 +335,9 @@ function createClassStudentsRepository(db) {
     );
     if (!student) {
       throw createHttpError(500, "Impossible de créer l'élève.");
+    }
+    if (!isStudentCanonicalCode(student.student_code)) {
+      throw createHttpError(500, "L'identifiant élève n'a pas été attribué par PostgreSQL.");
     }
 
     await ensureStudentLoginUser(tx, school, student, input);

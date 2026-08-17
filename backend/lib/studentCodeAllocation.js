@@ -1,12 +1,13 @@
 "use strict";
 
 /**
- * Allocation du matricule élève canonique (même valeur que l'identifiant de connexion).
- * Format : CD-IN-EL-26-001. Unicité PostgreSQL : students.student_code UNIQUE.
+ * Stand-in mémoire du trigger PostgreSQL `somafrik_assign_permanent_student_identity`.
+ * Ne pas appeler sur le chemin d'inscription PostgreSQL : le trigger alloue.
  */
 
 const {
   generateNextStudentCanonicalCode,
+  isStudentCanonicalCode,
   resolveSchoolIdentityContext,
 } = require("./studentCanonicalIdentifier");
 
@@ -24,34 +25,23 @@ function isStudentCodeUniquenessViolation(error) {
   return detail.includes("(student_code)=") || detail.toLowerCase().includes("student_code");
 }
 
-function currentIdentityYear() {
-  return new Date().getFullYear();
-}
-
 /**
- * Verrou transactionnel + lecture des matricules existants (namespace pays/initiales/année).
- * @param {{
- *   query: (sql: string, params?: unknown[]) => Promise<unknown>,
- *   all: (sql: string, params?: unknown[]) => Promise<any[]>,
- * }} db
- * @param {{ id: string, school_code?: string, login_code?: string, loginCode?: string, name?: string, short_code?: string, country_code?: string }} school
- * @returns {Promise<string>}
+ * @param {{ login_code?: string, loginCode?: string, name?: string, short_code?: string, school_code?: string, country_code?: string }} school
+ * @param {string[]} existingCodes
+ * @param {string} [requested]
+ * @returns {string}
  */
-async function allocateStudentCodeLocked(db, school) {
-  const context = resolveSchoolIdentityContext(school);
-  const year = currentIdentityYear();
-  const lockKey = `student-canonical:${context.countryCode}:${context.schoolInitials}:${year}`;
-  await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [lockKey]);
-  const rows = await db.all(`SELECT student_code FROM students`);
+function assignCanonicalStudentCode(school, existingCodes = [], requested = "") {
+  const value = String(requested ?? "").trim().toUpperCase();
+  if (isStudentCanonicalCode(value)) return value;
   return generateNextStudentCanonicalCode({
-    ...context,
-    year,
-    existingCodes: rows.map((row) => row.student_code),
+    ...resolveSchoolIdentityContext(school),
+    existingCodes,
   });
 }
 
 module.exports = {
   STUDENT_CODE_UNIQUE_CONSTRAINT,
   isStudentCodeUniquenessViolation,
-  allocateStudentCodeLocked,
+  assignCanonicalStudentCode,
 };

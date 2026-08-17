@@ -18,6 +18,7 @@ assert.equal(
   "CD-IN-EL-26-012",
 );
 assert.equal(isStudentCanonicalCode("CD-IN-EL-26-001"), true);
+assert.equal(isStudentCanonicalCode("PENDING"), false);
 assert.equal(isStudentCanonicalCode("ELE-CD-0001-0001-000001"), false);
 assert.equal(isStudentCanonicalCode("ELE-0001"), false);
 assert.equal(isStudentCanonicalCode("CD-IN-JPK-26-00004"), false);

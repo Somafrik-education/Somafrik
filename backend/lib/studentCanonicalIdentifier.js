@@ -5,8 +5,8 @@
  * Format : {ISO_PAYS}-{INITIALES_ETAB}-EL-{YY}-{SEQ3}
  * Exemple : CD-IN-EL-26-001
  *
- * PostgreSQL est l'autorité (compteur + UNIQUE). Ce module est le miroir JS
- * pour les chemins mémoire / allocation transactionnelle alignée.
+ * PostgreSQL est l'unique allocateur en production (trigger + compteur).
+ * Ce module est le miroir JS pour les chemins mémoire (stand-in du trigger).
  */
 
 const {
@@ -16,6 +16,7 @@ const {
 } = require("./permanentIdentifier");
 
 const STUDENT_PROFILE = "EL";
+const STUDENT_CODE_PLACEHOLDER = "PENDING";
 const STUDENT_SEQUENCE_MAX = 999;
 const STUDENT_CANONICAL_RE = /^([A-Z]{2})-([A-Z0-9]{2,5})-EL-([0-9]{2})-([0-9]{3})$/;
 const SCHOOL_LOGIN_RE = /^([A-Z]{2})-([A-Z0-9]{2,5})-([0-9]{2})-([0-9]{3})$/;
@@ -131,6 +132,7 @@ function generateNextStudentCanonicalCode({
 
 module.exports = {
   STUDENT_PROFILE,
+  STUDENT_CODE_PLACEHOLDER,
   STUDENT_SEQUENCE_MAX,
   STUDENT_CANONICAL_RE,
   isStudentCanonicalCode,

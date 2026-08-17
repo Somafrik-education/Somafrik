@@ -28,6 +28,28 @@ Ce code est utilisé pour :
 Unicité : `students.student_code UNIQUE` + CHECK format + égalité login/identity.  
 Compteur : `student_login_code_counters` (pays, initiales, année) — distinct de `identity_counters` staff.
 
+**Un seul allocateur en production : le trigger PostgreSQL.**  
+L'inscription INSERT `PENDING` ; le trigger écrit `CD-IN-EL-26-001`.  
+Le JS n'alloue que comme stand-in mémoire (pas de trigger).
+
+## Backfill legacy (opt-in)
+
+Le rewrite `ELE-0001` → canonique **n'est pas exécuté au boot**.
+
+- Schéma / triggers : `20260823_student_canonical_identifier.sql` (CHECK `NOT VALID`)
+- Données : `20260824_student_canonical_identifier_backfill.sql`
+
+```bash
+# inventaire, aucune écriture
+node backend/scripts/backfill-student-canonical-identifier.js
+
+# application explicite
+node backend/scripts/backfill-student-canonical-identifier.js --apply
+# ou SOMAFRIK_STUDENT_CANONICAL_BACKFILL=1
+```
+
+Fail-safe : refuse si un namespace dépasse 999 ; refuse de valider le CHECK s'il reste des lignes non canoniques.
+
 ## Interdit
 
 - `studentCode` ≠ `loginCode`
