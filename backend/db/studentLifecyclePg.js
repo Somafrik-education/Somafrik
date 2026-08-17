@@ -2,6 +2,13 @@
 
 function attachStudentLifecyclePg(repository) {
   if (!repository || repository.engine === "memory") return repository;
+  if (
+    typeof repository.listSchoolStudents !== "function" ||
+    typeof repository.getSchoolByCode !== "function" ||
+    typeof repository.withTransaction !== "function"
+  ) {
+    return repository;
+  }
   if (repository.__studentLifecyclePgAttached) return repository;
   Object.defineProperty(repository, "__studentLifecyclePgAttached", {
     value: true,
@@ -92,7 +99,7 @@ function attachStudentLifecyclePg(repository) {
 }
 
 async function ensureStudentLifecyclePgSchema(repository) {
-  if (!repository || repository.engine === "memory") return;
+  if (!repository || repository.engine === "memory" || typeof repository.query !== "function") return;
   await repository.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
 }
 
