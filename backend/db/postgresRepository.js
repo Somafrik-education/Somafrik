@@ -5573,15 +5573,7 @@ class PostgresRepository {
   }
 
   getSchoolByCode(code) {
-    const normalized = String(code ?? "").trim().toUpperCase();
-    if (!normalized) return null;
-    return this.one(
-      `SELECT * FROM schools
-       WHERE school_code = $1
-          OR UPPER(COALESCE(login_code, '')) = $1
-       LIMIT 1`,
-      [normalized],
-    );
+    return this.one("SELECT * FROM schools WHERE school_code = $1", [String(code ?? "").trim().toUpperCase()]);
   }
 
   getSchoolsRepository() {
