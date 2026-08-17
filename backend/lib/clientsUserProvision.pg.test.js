@@ -87,6 +87,8 @@ async function main() {
               ($2, 'BI-2026-0001', 'Ecole Kanyosha', 'active', 'BI-EK-26-001')`,
       [cd.rows[0].id, bi.rows[0].id],
     );
+    const cdLogin = await pool.query(`SELECT login_code FROM schools WHERE school_code = 'CD-2026-0001'`);
+    const cdLoginCode = String(cdLogin.rows[0]?.login_code ?? "").trim().toUpperCase();
 
     const repo = createRepo(pool);
     const store = createClientsPgStore(repo);
@@ -167,6 +169,7 @@ async function main() {
     assert.equal(schoolAdminCd.schoolCode, "CD-2026-0001");
     assert.equal(schoolAdminCd.countryCode, "CD");
 
+    assert.ok(cdLoginCode, "login_code PostgreSQL manquant pour CD-2026-0001");
     const schoolAdminCdLogin = await store.provisionUser(
       {
         firstName: "Login",
@@ -175,13 +178,13 @@ async function main() {
         temporaryPassword: "SchoolAdminCD!2026",
         roleKey: "SCHOOL_ADMIN",
         countryCode: "CD",
-        schoolCode: "CD-IB-26-002",
+        schoolCode: cdLoginCode,
       },
       superAdmin,
       auditMeta,
     );
     assert.equal(schoolAdminCdLogin.schoolCode, "CD-2026-0001");
-    assert.notEqual(schoolAdminCdLogin.schoolCode, "CD-IB-26-002");
+    assert.notEqual(schoolAdminCdLogin.schoolCode, cdLoginCode);
 
     const schoolAdminCdAccent = await store.provisionUser(
       {
