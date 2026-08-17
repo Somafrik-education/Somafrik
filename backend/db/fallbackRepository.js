@@ -849,30 +849,44 @@ class FallbackRepository {
     return { message: "Matière supprimée" };
   }
 
-  async getAcademicYearsV2() {
-    if (this._managedAcademicYears) {
-      return this._managedAcademicYears.map((row) => ({
-        id: row.id, schoolId: row.school_id, schoolCode: row.school_code, name: row.name,
-        startDate: row.start_date ?? "", endDate: row.end_date ?? "",
-        status: row.status === "open" ? "Ouverte" : row.status, isCurrent: Boolean(row.is_current),
-        enrollmentCount: 0, gradeCount: 0, promotionDecisionCount: 0, notesLocked: false,
-      }));
-    }
-    return [{
-      id: "AY-DEMO-2026",
-      schoolId: seedData.school.id,
-      schoolCode: seedData.school.code,
-      countryCode: "CD",
-      name: seedData.school.schoolYear ?? "2025-2026",
-      startDate: "2025-09-01",
-      endDate: "2026-08-31",
-      status: "Ouverte",
-      isCurrent: true,
-      enrollmentCount: seedData.students.length,
-      gradeCount: seedData.notes.length,
+  demoAcademicYears() {
+    return [
+      {
+        id: "AY-DEMO-2026",
+        school_id: seedData.school.id,
+        school_code: seedData.school.code,
+        name: seedData.school.schoolYear ?? "2025-2026",
+        start_date: "2025-09-01",
+        end_date: "2026-08-31",
+        status: "open",
+        is_current: true,
+      },
+    ];
+  }
+
+  mapAcademicYearV2(row) {
+    return {
+      id: row.id,
+      schoolId: row.school_id,
+      schoolCode: row.school_code,
+      countryCode: String(row.school_code ?? "").slice(0, 2).toUpperCase(),
+      name: row.name,
+      startDate: row.start_date ?? "",
+      endDate: row.end_date ?? "",
+      status: row.status === "open" ? "Ouverte" : row.status,
+      isCurrent: Boolean(row.is_current),
+      enrollmentCount: row.school_code === seedData.school.code ? seedData.students.length : 0,
+      gradeCount: row.school_code === seedData.school.code ? seedData.notes.length : 0,
       promotionDecisionCount: 0,
       notesLocked: false,
-    }];
+    };
+  }
+
+  async getAcademicYearsV2() {
+    if (!this._managedAcademicYears) {
+      this._managedAcademicYears = this.demoAcademicYears();
+    }
+    return this._managedAcademicYears.map((row) => this.mapAcademicYearV2(row));
   }
 
   async createAcademicYearV2(input = {}) {
@@ -885,7 +899,7 @@ class FallbackRepository {
       error.statusCode = 400;
       throw error;
     }
-    if (!this._managedAcademicYears) this._managedAcademicYears = [];
+    await this.getAcademicYearsV2();
     if (this._managedAcademicYears.some((row) => row.school_code === schoolCode && row.name.toLowerCase() === name.toLowerCase())) {
       const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
       error.statusCode = 409;
@@ -905,7 +919,7 @@ class FallbackRepository {
 
   async updateAcademicYearV2(id, input = {}) {
     const yearId = String(id ?? "").trim();
-    if (!this._managedAcademicYears) this._managedAcademicYears = [];
+    await this.getAcademicYearsV2();
     const row = this._managedAcademicYears.find((item) => String(item.id) === yearId);
     if (!row) {
       const error = new Error("Année scolaire introuvable.");
@@ -1027,26 +1041,15 @@ class FallbackRepository {
       CLASS_WRITE_ERROR,
     } = require("../lib/classesManagement");
     if (!this._managedClasses) this._managedClasses = [];
-    if (!this._managedAcademicYears) {
-      this._managedAcademicYears = [
-        {
-          id: "AY-DEMO",
-          school_id: seedData.school.id,
-          school_code: seedData.school.code,
-          name: "2025-2026",
-        },
-        {
-          id: "AY-DEMO-PREV",
-          school_id: seedData.school.id,
-          school_code: seedData.school.code,
-          name: "2024-2025",
-        },
-      ];
-    }
 
     const input = validateCreateClassInput(body, schoolCode);
-    const academicYear = this._managedAcademicYears.find(
-      (item) => String(item.id) === input.academicYearId && item.school_code === input.schoolCode,
+    // Même source que GET /v2/academic-years (démo AY-DEMO-2026 ou années créées).
+    // Ne pas réinitialiser _managedAcademicYears avec des ids AY-DEMO distincts.
+    const listedYears = await this.getAcademicYearsV2();
+    const academicYear = listedYears.find(
+      (item) =>
+        String(item.id) === input.academicYearId &&
+        String(item.schoolCode ?? "").toUpperCase() === String(input.schoolCode).toUpperCase(),
     );
     if (!academicYear) {
       throw createHttpError(400, "Année scolaire introuvable pour cet établissement.");

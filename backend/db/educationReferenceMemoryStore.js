@@ -12,6 +12,17 @@ const {
   DEFAULT_PEDAGOGICAL_LABELS,
 } = require("../lib/educationReferenceManagement");
 
+function resolveSeedSchoolCountryCode(school, countries) {
+  const explicit = asTrimmed(school?.countryCode ?? school?.country_code).toUpperCase();
+  if (explicit && explicit !== "*") return explicit;
+  const schoolCode = asTrimmed(school?.code ?? school?.schoolCode).toUpperCase();
+  const matched = [...countries.keys()]
+    .filter((iso) => iso && schoolCode.startsWith(iso))
+    .sort((a, b) => b.length - a.length)[0];
+  if (matched) return matched;
+  return schoolCode.slice(0, 2);
+}
+
 function createEducationReferenceMemoryStore(seed = {}) {
   const levels = [];
   const streams = [];
@@ -33,7 +44,7 @@ function createEducationReferenceMemoryStore(seed = {}) {
   const schools = new Map(
     (seed.schools ?? []).map((school) => {
       const code = asTrimmed(school.code ?? school.schoolCode).toUpperCase();
-      const countryCode = asTrimmed(school.countryCode ?? school.country_code ?? "CD").toUpperCase();
+      const countryCode = resolveSeedSchoolCountryCode(school, countries);
       const country = countries.get(countryCode) ?? {
         id: randomUUID(),
         iso_code: countryCode,
@@ -56,7 +67,7 @@ function createEducationReferenceMemoryStore(seed = {}) {
 
   if (seed.school && !schools.has(asTrimmed(seed.school.code).toUpperCase())) {
     const code = asTrimmed(seed.school.code).toUpperCase();
-    const countryCode = asTrimmed(seed.school.countryCode ?? "CD").toUpperCase();
+    const countryCode = resolveSeedSchoolCountryCode(seed.school, countries);
     const country = countries.get(countryCode) ?? {
       id: randomUUID(),
       iso_code: countryCode,

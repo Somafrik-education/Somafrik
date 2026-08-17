@@ -16,12 +16,21 @@ async function login(request, identifier, password, schoolCode) {
   return result.data.accessToken || result.data.token;
 }
 
+function extractList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.levels)) return payload.levels;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 async function ensureCountryLevel(request, superToken, countryCode, name) {
   const listed = await request(
     `/backoffice/education-levels?countryCode=${encodeURIComponent(countryCode)}&includeArchived=true`,
     { token: superToken },
   );
-  const existing = (listed.data?.levels ?? []).find((row) => String(row.name) === name);
+  const existing = extractList(listed.data).find((row) => String(row.name) === name);
   if (existing) return existing;
   const created = await request("/backoffice/education-levels", {
     method: "POST",
@@ -34,23 +43,25 @@ async function ensureCountryLevel(request, superToken, countryCode, name) {
   return created.data;
 }
 
-async function ensureSchoolYear(request, schoolToken, name = "2025-2026", schoolCode) {
+async function ensureSchoolYear(request, schoolToken, name = "2025-2026", schoolCode, { isCurrent = true } = {}) {
   const listed = await request("/v2/academic-years", { token: schoolToken });
-  const rows = Array.isArray(listed.data) ? listed.data : [];
-  const existing =
-    rows.find((row) => row.name === name && (!schoolCode || !row.schoolCode || row.schoolCode === schoolCode)) ||
-    rows.find((row) => row.isCurrent && (!schoolCode || !row.schoolCode || row.schoolCode === schoolCode)) ||
-    rows.find((row) => !schoolCode || !row.schoolCode || row.schoolCode === schoolCode);
+  const rows = extractList(listed.data);
+  const existing = rows.find(
+    (row) => row.name === name && (!schoolCode || !row.schoolCode || row.schoolCode === schoolCode),
+  );
   if (existing) return existing;
+  const yearMatch = String(name).match(/^(\d{4})-(\d{4})$/);
+  const startDate = yearMatch ? `${yearMatch[1]}-09-01` : isCurrent ? "2025-09-01" : "2024-09-01";
+  const endDate = yearMatch ? `${yearMatch[2]}-08-31` : isCurrent ? "2026-08-31" : "2025-08-31";
   const created = await request("/v2/academic-years", {
     method: "POST",
     token: schoolToken,
     body: {
       schoolCode,
       name,
-      startDate: "2025-09-01",
-      endDate: "2026-08-31",
-      isCurrent: true,
+      startDate,
+      endDate,
+      isCurrent,
     },
   });
   if (created.status !== 201 && created.status !== 200) {

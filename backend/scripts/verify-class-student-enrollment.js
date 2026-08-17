@@ -168,12 +168,15 @@ async function replaceTeacherAssignmentsViaApi(assignmentToken, teacherIdentifie
   }
 }
 
-async function createActiveClass(token, label) {
+async function createActiveClass(token, _label, scope = {}) {
+  const schoolCode = scope.schoolCode ?? "CD-2026-0001";
+  const countryCode = scope.countryCode ?? "CD";
+  const levelName = scope.levelName ?? "6ème";
   const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");
   const ctx = await prepareCanonicalClassContext(request, {
-    schoolCode: "CD-2026-0001",
-    countryCode: "CD",
-    levelName: "6ème",
+    schoolCode,
+    countryCode,
+    levelName,
   });
   const groupCode = `G${String(Date.now()).slice(-4)}`;
   const created = await postCanonicalClass(request, token, {
@@ -194,6 +197,7 @@ async function main() {
       PORT: String(PORT),
       NODE_ENV: "development",
       SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -220,7 +224,11 @@ async function main() {
     });
     assert.equal(patched.status, 200, JSON.stringify(patched.data));
 
-    const classOtherSchool = await createActiveClass(tokenBi, "Classe autre école");
+    const classOtherSchool = await createActiveClass(tokenBi, "Classe autre école", {
+      schoolCode: "BI-2026-0002",
+      countryCode: "BI",
+      levelName: "5ème",
+    });
 
     const enrolled = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
@@ -472,7 +480,9 @@ async function main() {
       schoolCode: "CD-2026-0001",
       countryCode: "CD",
     });
-    const priorYearRow = await ensureSchoolYear(request, tokenCd, "2024-2025", "CD-2026-0001");
+    const priorYearRow = await ensureSchoolYear(request, tokenCd, "2024-2025", "CD-2026-0001", {
+      isCurrent: false,
+    });
     const priorYear = await postCanonicalClass(request, tokenCd, {
       academicYearId: priorYearRow.id,
       levelId: offering.level.id,
@@ -503,7 +513,7 @@ async function main() {
     await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
       {
         classCode: priorYear.data.classCode,
-        className: priorYearName,
+        className: priorYear.data.name,
         course: "Mathématiques",
         status: "inactive",
       },
