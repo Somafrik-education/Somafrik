@@ -31,6 +31,7 @@ function normalize(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+/** Alias interne school_code (CD-YYYY-NNNN). Ce n'est PAS le SEQ3 de login_code. */
 function generateSchoolCode(countryCode, schools = []) {
   const code = String(countryCode ?? "").trim().toUpperCase();
   if (!code) return "";

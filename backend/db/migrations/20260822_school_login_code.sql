@@ -6,8 +6,9 @@
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
 
 -- #187 garde short_code unique par pays pour les identités déjà émises.
--- Deux établissements portant les mêmes initiales reçoivent donc IK, IK2, IK3 en interne,
--- mais leur code public est séquencé sur les initiales naturelles : CD-IK-26-001, ...002, etc.
+-- Deux établissements portant les mêmes initiales reçoivent donc IK, IK2, IK3 en interne.
+-- Le compteur public (country, initials, year) ci-dessous est LEGACY : 20260825 le
+-- remplace par (country_id, year). Les initiales restent un segment lisible, pas un namespace.
 CREATE OR REPLACE FUNCTION somafrik_prepare_school_short_code()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -123,21 +124,35 @@ BEGIN
   END IF;
 END $$;
 
-INSERT INTO school_login_code_counters (country_id, school_initials, creation_year, last_value)
-SELECT
-  s.country_id,
-  somafrik_school_short_code(s.name),
-  extract(year FROM coalesce(s.created_at, NOW()))::integer,
-  max(right(s.login_code, 3)::integer)
-FROM schools s
-GROUP BY
-  s.country_id,
-  somafrik_school_short_code(s.name),
-  extract(year FROM coalesce(s.created_at, NOW()))::integer
-ON CONFLICT (country_id, school_initials, creation_year)
-DO UPDATE SET
-  last_value = greatest(school_login_code_counters.last_value, EXCLUDED.last_value),
-  updated_at = NOW();
+-- Idempotent après 20260825 : la table n'a plus school_initials. Ne pas échouer au boot.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'school_login_code_counters'
+      AND column_name = 'school_initials'
+  ) THEN
+    EXECUTE $legacy$
+      INSERT INTO school_login_code_counters (country_id, school_initials, creation_year, last_value)
+      SELECT
+        s.country_id,
+        somafrik_school_short_code(s.name),
+        extract(year FROM coalesce(s.created_at, NOW()))::integer,
+        max(right(s.login_code, 3)::integer)
+      FROM schools s
+      GROUP BY
+        s.country_id,
+        somafrik_school_short_code(s.name),
+        extract(year FROM coalesce(s.created_at, NOW()))::integer
+      ON CONFLICT (country_id, school_initials, creation_year)
+      DO UPDATE SET
+        last_value = greatest(school_login_code_counters.last_value, EXCLUDED.last_value),
+        updated_at = NOW()
+    $legacy$;
+  END IF;
+END $$;
 
 ALTER TABLE schools ALTER COLUMN login_code SET NOT NULL;
 
@@ -163,6 +178,8 @@ CREATE OR REPLACE FUNCTION somafrik_prepare_school_login_code()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+-- LEGACY body : compteur (country, initials, year).
+-- 20260825_school_login_code_country_year.sql remplace cette fonction au boot.
 DECLARE
   iso TEXT;
   base_initials TEXT;

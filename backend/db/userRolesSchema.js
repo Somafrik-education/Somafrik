@@ -10,6 +10,9 @@ const USER_ROLES_SCHEMA_SQL = [
   // Schéma + triggers uniquement. Le backfill legacy est opt-in :
   // migrations/20260824_student_canonical_identifier_backfill.sql
   fs.readFileSync(path.join(__dirname, "migrations/20260823_student_canonical_identifier.sql"), "utf8"),
+  // Compteur login_code établissement : (country_id, year) global.
+  // Backfill rewrite opt-in : 20260825_school_login_code_seq_backfill.sql (jamais au boot).
+  fs.readFileSync(path.join(__dirname, "migrations/20260825_school_login_code_country_year.sql"), "utf8"),
 ].join("\n");
 
 const USER_ROLES_MIGRATION_AMBIGUOUS = "USER_ROLES_MIGRATION_AMBIGUOUS";
