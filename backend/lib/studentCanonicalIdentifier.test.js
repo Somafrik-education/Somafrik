@@ -50,6 +50,37 @@ assert.equal(
   "CD-IN-KJP-26-00004",
 );
 
+// La séquence est celle de l'établissement, pas celle de l'année :
+// le premier élève créé en 2027 après 00004 reste 00005.
+assert.equal(
+  generateNextStudentCanonicalCode({
+    countryCode: "CD",
+    schoolInitials: "IN",
+    firstName: "Marie",
+    lastName: "MBUYI",
+    year: 2027,
+    existingCodes: [
+      "CD-IN-OHS-26-00001",
+      "CD-IN-AD-26-00002",
+      "CD-IN-KJP-26-00004",
+    ],
+  }),
+  "CD-IN-MM-27-00005",
+);
+
+// Un autre établissement possède son propre compteur.
+assert.equal(
+  generateNextStudentCanonicalCode({
+    countryCode: "CD",
+    schoolInitials: "LL",
+    firstName: "Marie",
+    lastName: "MBUYI",
+    year: 2027,
+    existingCodes: ["CD-IN-KJP-26-00004"],
+  }),
+  "CD-LL-MM-27-00001",
+);
+
 assert.deepEqual(resolveSchoolIdentityContext({ loginCode: "CD-IN-26-001" }), {
   countryCode: "CD",
   schoolInitials: "IN",
