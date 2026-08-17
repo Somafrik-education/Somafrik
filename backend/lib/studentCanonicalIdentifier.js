@@ -5,6 +5,8 @@
  * Format : {ISO_PAYS}-{INITIALES_ETAB}-{INITIALES_ELEVE}-{YY}-{SEQ5}
  * Exemple : CD-IN-OHS-26-00001 pour OKITO Hope Sabrina.
  *
+ * La séquence SEQ5 est globale et continue par établissement : elle ne repart
+ * pas à 1 lors d'un changement d'année et ne dépend pas des initiales élève.
  * PostgreSQL est l'unique allocateur en production (trigger + compteur).
  * Ce module est le miroir JS pour les chemins mémoire/tests.
  */
@@ -15,7 +17,6 @@ const {
   schoolShortCodeFromName,
 } = require("./permanentIdentifier");
 
-// Conservé uniquement pour compatibilité d'import ; le segment EL n'existe plus dans le code canonique.
 const STUDENT_PROFILE = "";
 const STUDENT_CODE_PLACEHOLDER = "PENDING";
 const STUDENT_SEQUENCE_MAX = 99_999;
@@ -143,7 +144,6 @@ function generateNextStudentCanonicalCode({
   year = new Date().getFullYear(),
   existingCodes = [],
 } = {}) {
-  const yy = yearShort(year);
   const country = asciiUpper(countryCode).replace(/[^A-Z]/g, "");
   const school = normalizeSchoolShortCode(schoolInitials);
   const person = normalizeStudentInitials(
@@ -153,10 +153,7 @@ function generateNextStudentCanonicalCode({
   for (const code of existingCodes) {
     const parsed = parseStudentCanonicalCode(code);
     if (!parsed) continue;
-    // Le compteur est partagé par établissement + année ; les initiales ne créent pas un namespace séparé.
-    if (parsed.countryCode !== country || parsed.schoolInitials !== school || parsed.yearShort !== yy) {
-      continue;
-    }
+    if (parsed.countryCode !== country || parsed.schoolInitials !== school) continue;
     max = Math.max(max, parsed.sequence);
   }
   return formatStudentCanonicalCode({
