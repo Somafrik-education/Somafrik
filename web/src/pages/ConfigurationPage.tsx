@@ -19,6 +19,7 @@ import { EvaluationTypesPanel } from "../components/EvaluationTypesPanel";
 import { SchoolSubjectsPanel } from "../components/SchoolSubjectsPanel";
 import { getSchoolAcademicLists } from "../lib/academicConfig";
 import { ApiError } from "../api/client";
+import { academicYearsApi, type AcademicYear } from "../lib/academicYearsApi";
 import { schoolSettingsApi } from "../lib/schoolSettingsApi";
 import {
   applySystemActivePeriod,
@@ -39,7 +40,7 @@ import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { displayRoleName, normalize } from "../lib/format";
 import { establishmentRolesApi, type EstablishmentRole } from "../lib/establishmentRolesApi";
 
-type SavingSection = "periods" | "evaluations" | "levels" | "tracks" | null;
+type SavingSection = "year" | "periods" | "evaluations" | "levels" | "tracks" | null;
 
 /** Domaine de configuration affiché (hub Paramètres). Non défini = tout afficher. */
 export type ConfigurationSection = "annee-scolaire" | "structure" | "roles-droits";
@@ -96,11 +97,23 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
   const [assignableRoles, setAssignableRoles] = useState<EstablishmentRole[]>([]);
   const [selectedCatalogueRoleId, setSelectedCatalogueRoleId] = useState("");
   const [rolesLoading, setRolesLoading] = useState(false);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [yearsLoading, setYearsLoading] = useState(false);
+  const [yearDraft, setYearDraft] = useState({
+    name: "",
+    startDate: "",
+    endDate: "",
+    isCurrent: true,
+  });
 
   const settingsPermissions = useFeaturePermissions("Paramètres Établissement");
+  const yearPermissions = useFeaturePermissions("Années Académiques");
   const subjectPermissions = useFeaturePermissions("Matières");
   const canConfigure = canManageEstablishmentSettings(ctx);
   const canReadSettings = settingsPermissions.canRead || canConfigure;
+  const canReadYears = yearPermissions.canRead || canReadSettings;
+  const canCreateYears = yearPermissions.canCreate;
+  const canUpdateYears = yearPermissions.canUpdate;
   const canDesignBulletins = isSuperAdminRole(user?.role);
   const selectedCatalogueRole = useMemo(
     () => assignableRoles.find((role) => role.id === selectedCatalogueRoleId) ?? assignableRoles[0] ?? null,
@@ -157,6 +170,36 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     }
   }, [assignableRoles, selectedCatalogueRoleId]);
 
+  useEffect(() => {
+    if (section && section !== "annee-scolaire") return;
+    if (!canReadYears) return;
+    if (isAllSchoolsSelection(configTarget)) {
+      setAcademicYears([]);
+      return;
+    }
+    let cancelled = false;
+    setYearsLoading(true);
+    void academicYearsApi
+      .list()
+      .then((rows) => {
+        if (cancelled) return;
+        const scoped = (Array.isArray(rows) ? rows : []).filter((year) => {
+          if (!configTarget) return true;
+          return !year.schoolCode || year.schoolCode === configTarget;
+        });
+        setAcademicYears(scoped);
+      })
+      .catch(() => {
+        if (!cancelled) setAcademicYears([]);
+      })
+      .finally(() => {
+        if (!cancelled) setYearsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [section, configTarget, canReadYears, academicFormKey]);
+
   if (!canAccessSchoolBackOffice(user?.role)) {
     return (
       <Card className="p-6">
@@ -194,6 +237,71 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     return isSuperAdminRole(user?.role) ? configTarget : undefined;
   }
 
+  async function reloadAcademicYears() {
+    const rows = await academicYearsApi.list();
+    const scoped = (Array.isArray(rows) ? rows : []).filter((year) => {
+      if (!configTarget) return true;
+      return !year.schoolCode || year.schoolCode === configTarget;
+    });
+    setAcademicYears(scoped);
+    return scoped;
+  }
+
+  async function handleCreateAcademicYear(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
+      showToast("Sélectionnez un établissement précis avant de créer une année.", "error");
+      return;
+    }
+    if (!canCreateYears) {
+      showToast("Vous n'avez pas le droit de créer une année scolaire.", "error");
+      return;
+    }
+    const name = yearDraft.name.trim();
+    const startDate = yearDraft.startDate.trim();
+    const endDate = yearDraft.endDate.trim();
+    if (!name || !startDate || !endDate) {
+      showToast("Nom, date de début et date de fin sont requis.", "error");
+      return;
+    }
+    setSavingSection("year");
+    try {
+      await academicYearsApi.create({
+        schoolCode: scopedSettingsSchoolCode(),
+        name,
+        startDate,
+        endDate,
+        isCurrent: yearDraft.isCurrent,
+      });
+      await reloadAcademicYears();
+      setYearDraft({ name: "", startDate: "", endDate: "", isCurrent: true });
+      setAcademicFormKey((current) => current + 1);
+      showToast("Année scolaire créée.", "success");
+    } catch (error) {
+      showToast(formatSettingsHttpError(error), "error");
+    } finally {
+      setSavingSection(null);
+    }
+  }
+
+  async function handleSetCurrentAcademicYear(yearId: string) {
+    if (!canUpdateYears) {
+      showToast("Vous n'avez pas le droit de modifier l'année courante.", "error");
+      return;
+    }
+    setSavingSection("year");
+    try {
+      await academicYearsApi.update(yearId, { isCurrent: true });
+      await reloadAcademicYears();
+      setAcademicFormKey((current) => current + 1);
+      showToast("Année courante mise à jour.", "success");
+    } catch (error) {
+      showToast(formatSettingsHttpError(error), "error");
+    } finally {
+      setSavingSection(null);
+    }
+  }
+
   async function handlePeriodsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isBulkConfiguration || isAllSchoolsSelection(configTarget)) {
@@ -210,6 +318,10 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
     }
     if (!canConfigure) {
       showToast("Vous n'avez pas les droits pour modifier cette configuration.", "error");
+      return;
+    }
+    if (!academicYears.length) {
+      showToast("Créez une année scolaire avant d'enregistrer les périodes.", "error");
       return;
     }
     const form = new FormData(event.currentTarget);
@@ -405,6 +517,97 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
 
       {showAcademicConfig && inSection("annee-scolaire") ? (
         <>
+          <Card className="p-6">
+            <SectionHeader
+              title="Année scolaire / académique"
+              description="Modèle unique academic_years. « Année scolaire » et « Année académique » sont des libellés d'écran, pas deux référentiels. La création se fait uniquement ici."
+            />
+            {yearsLoading ? (
+              <p className="mt-4 text-sm text-muted">Chargement des années…</p>
+            ) : academicYears.length ? (
+              <ul className="mt-4 space-y-3">
+                {academicYears.map((year) => (
+                  <li
+                    key={year.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-slate-50/60 p-4"
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-ink">{year.name}</p>
+                      <p className="text-xs text-muted">
+                        {year.startDate} → {year.endDate}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {year.isCurrent ? <Badge tone="info">Année courante</Badge> : <Badge tone="neutral">{year.status}</Badge>}
+                      {canUpdateYears && !year.isCurrent ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={savingSection === "year"}
+                          onClick={() => void handleSetCurrentAcademicYear(year.id)}
+                        >
+                          Définir comme courante
+                        </Button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState
+                className="mt-4"
+                title="Aucune année configurée"
+                description="L'établissement n'a pas d'année scolaire. Créez-la ici avant les classes, les périodes, les notes et les bulletins. Aucune année n'est inventée automatiquement."
+              />
+            )}
+            {canCreateYears && !isBulkConfiguration && !isAllSchoolsSelection(configTarget) ? (
+              <form onSubmit={(event) => void handleCreateAcademicYear(event)} className="mt-6 space-y-4">
+                <p className="text-sm font-bold text-ink">Créer une année</p>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <FormField label="Nom de l'année" htmlFor="academic-year-name">
+                    <Input
+                      id="academic-year-name"
+                      value={yearDraft.name}
+                      onChange={(e) => setYearDraft((current) => ({ ...current, name: e.target.value }))}
+                      placeholder="2026-2027"
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Début de l'année" htmlFor="academic-year-start">
+                    <Input
+                      id="academic-year-start"
+                      type="date"
+                      value={yearDraft.startDate}
+                      onChange={(e) => setYearDraft((current) => ({ ...current, startDate: e.target.value }))}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Fin de l'année" htmlFor="academic-year-end">
+                    <Input
+                      id="academic-year-end"
+                      type="date"
+                      value={yearDraft.endDate}
+                      onChange={(e) => setYearDraft((current) => ({ ...current, endDate: e.target.value }))}
+                      required
+                    />
+                  </FormField>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={yearDraft.isCurrent}
+                    onChange={(e) => setYearDraft((current) => ({ ...current, isCurrent: e.target.checked }))}
+                  />
+                  Définir comme année courante
+                </label>
+                <Button type="submit" disabled={savingSection === "year"}>
+                  {savingSection === "year" ? "Enregistrement…" : "Créer l'année"}
+                </Button>
+              </form>
+            ) : null}
+          </Card>
+
           <Card key={`periods-${academicFormKey}`} className="p-6">
             <SectionHeader
               title="Périodes et barème"
@@ -518,7 +721,12 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                 </div>
               </div>
 
-              <Button type="submit" disabled={savingSection === "periods"}>
+              {!academicYears.length ? (
+                <p className="text-sm text-amber-900">
+                  Impossible d'enregistrer les périodes tant qu'aucune année scolaire n'est configurée.
+                </p>
+              ) : null}
+              <Button type="submit" disabled={savingSection === "periods" || !academicYears.length}>
                 Enregistrer
               </Button>
             </form>

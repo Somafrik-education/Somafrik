@@ -347,8 +347,18 @@ async function run() {
     school_code: "SCH-001",
     name: "Lycée Test",
   });
-  // Aucune année / classe / matière initiale — l'ensure doit tout créer.
-  assert.strictEqual(repo.tables.academic_years.length, 0);
+  // Aucune classe / matière initiale — l'année doit déjà exister (plus d'auto-create).
+  const existingYear = {
+    id: "00000000-0000-4000-8000-0000000000aa",
+    school_id: schoolId,
+    name: "2025-2026",
+    start_date: "2025-09-01",
+    end_date: "2026-08-31",
+    is_current: true,
+    status: "open",
+    created_at: new Date().toISOString(),
+  };
+  repo.tables.academic_years.push(existingYear);
   assert.strictEqual(repo.tables.classes.length, 0);
   assert.strictEqual(repo.tables.subjects.length, 0);
 
@@ -400,10 +410,11 @@ async function run() {
   assert.strictEqual(repo.tables.evaluations[0].legacy_json_id, "EVAL-REPO-1");
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison");
 
-  // Année créée par ensureCurrentAcademicYearForSchool
-  assert.ok(repo.tables.academic_years.length >= 1, "année scolaire créée");
+  // Année préexistante — ensure ne doit plus inventer de millésime.
+  assert.strictEqual(repo.tables.academic_years.length, 1);
   assert.strictEqual(repo.tables.academic_years[0].school_id, schoolId);
   assert.strictEqual(repo.tables.academic_years[0].status, "open");
+  assert.strictEqual(repo.tables.academic_years[0].id, existingYear.id);
 
   // Lecture SQL evaluations (refresh autre session)
   const pgRow = await repo.one(
@@ -446,16 +457,15 @@ async function run() {
   );
   assert.strictEqual(repo.tables.evaluations[0].title, "Devoir maison (maj)");
 
-  // Preuve explicite ensure année seule
+  // Preuve explicite : ensure ne crée plus d'année 01/09–31/08
   const yearRepo = createInjectablePostgresRepository();
   yearRepo.tables.schools.push({ id: schoolId, school_code: "SCH-001", name: "Lycée Test" });
   assert.strictEqual(yearRepo.tables.academic_years.length, 0);
   const createdYear = await yearRepo.ensureCurrentAcademicYearForSchool(schoolId);
-  assert.ok(createdYear?.id);
-  assert.strictEqual(yearRepo.tables.academic_years.length, 1);
-  const sameYear = await yearRepo.ensureCurrentAcademicYearForSchool(schoolId);
-  assert.strictEqual(sameYear.id, createdYear.id);
-  assert.strictEqual(yearRepo.tables.academic_years.length, 1);
+  assert.equal(createdYear, null);
+  assert.strictEqual(yearRepo.tables.academic_years.length, 0);
+  const stillMissing = await yearRepo.getCurrentAcademicYear(schoolId);
+  assert.equal(stillMissing, null);
 
   console.log("evaluationSyncRepository.test.js : OK");
 }

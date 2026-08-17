@@ -159,10 +159,7 @@ function createSchoolSettingsPgStore(repo) {
   }
 
   async function seedDefaultTermsIfEmpty(schoolId) {
-    let year = await findCurrentAcademicYear(schoolId);
-    if (!year && typeof repo.ensureCurrentAcademicYearForSchool === "function") {
-      year = await repo.ensureCurrentAcademicYearForSchool(schoolId);
-    }
+    const year = await findCurrentAcademicYear(schoolId);
     if (!year) return [];
     const existing = await all(`SELECT * FROM terms WHERE academic_year_id = $1`, [year.id]);
     if (existing.length) return existing;

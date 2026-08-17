@@ -2,6 +2,8 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { FallbackRepository } = require("../db/fallbackRepository");
 const { PostgresRepository } = require("../db/postgresRepository");
 
@@ -138,14 +140,36 @@ function createInjectableAcademicYearsRepository() {
       return tables.academic_years.filter(
         (row) =>
           eq(row.school_id, params[0]) &&
-          String(row.name ?? "").trim().toLowerCase() === String(params[1] ?? "").trim().toLowerCase(),
+          String(row.name ?? "").trim().toLowerCase() === String(params[1] ?? "").trim().toLowerCase() &&
+          (params[2] == null || !eq(row.id, params[2])),
       );
+    }
+    if (upper.includes("FROM ACADEMIC_YEARS") && upper.includes("STATUS IN")) {
+      return tables.academic_years
+        .filter((row) => eq(row.school_id, params[0]) && ["active", "open"].includes(row.status))
+        .sort((a, b) => Number(b.is_current) - Number(a.is_current));
+    }
+    if (upper.includes("FROM ACADEMIC_YEARS AY") && upper.includes("WHERE AY.ID")) {
+      const year = tables.academic_years.find((row) => eq(row.id, params[0]));
+      if (!year) return [];
+      const school = tables.schools.find((row) => eq(row.id, year.school_id));
+      const country = tables.countries.find((row) => eq(row.id, school?.country_id));
+      return [{ ...year, school_code: school?.school_code, country_code: country?.iso_code }];
     }
     if (upper.startsWith("UPDATE ACADEMIC_YEARS SET IS_CURRENT")) {
       for (const row of tables.academic_years) {
         if (eq(row.school_id, params[0])) row.is_current = false;
       }
       return [];
+    }
+    if (upper.startsWith("UPDATE ACADEMIC_YEARS") && upper.includes("SET NAME")) {
+      const row = tables.academic_years.find((item) => eq(item.id, params[0]));
+      if (!row) return [];
+      row.name = params[1];
+      row.start_date = params[2];
+      row.end_date = params[3];
+      row.is_current = params[4];
+      return [row];
     }
     if (upper.startsWith("INSERT INTO ACADEMIC_YEARS")) {
       const row = {
@@ -211,4 +235,68 @@ test("PostgreSQL: matérialise un établissement BackOffice-only puis crée la 1
   assert.equal(repo.tables.countries.length, 1, "aucun pays créé pendant la matérialisation");
   assert.equal(repo.tables.countries[0].id, countryIdBefore);
   assert.equal(repo.tables.countries[0].iso_code, "CD");
+});
+
+test("ensureCurrentAcademicYearForSchool ne crée plus d'année 01/09–31/08", async () => {
+  const repo = createInjectableAcademicYearsRepository();
+  repo.tables.schools.push({
+    id: "00000000-0000-4000-8000-000000000001",
+    school_code: "SCH-001",
+    country_id: CANONICAL_CD_COUNTRY.id,
+  });
+  assert.equal(repo.tables.academic_years.length, 0);
+  const missing = await repo.ensureCurrentAcademicYearForSchool(repo.tables.schools[0].id);
+  assert.equal(missing, null);
+  assert.equal(repo.tables.academic_years.length, 0);
+  const stillMissing = await repo.getCurrentAcademicYear(repo.tables.schools[0].id);
+  assert.equal(stillMissing, null);
+
+  repo.tables.academic_years.push({
+    id: "00000000-0000-4000-8000-0000000000aa",
+    school_id: repo.tables.schools[0].id,
+    name: "2025-2026",
+    start_date: "2025-09-01",
+    end_date: "2026-08-31",
+    is_current: true,
+    status: "open",
+    created_at: new Date().toISOString(),
+  });
+  const found = await repo.ensureCurrentAcademicYearForSchool(repo.tables.schools[0].id);
+  assert.equal(found.name, "2025-2026");
+  assert.equal(repo.tables.academic_years.length, 1);
+});
+
+test("PATCH bascule l'année courante sans clôturer", async () => {
+  const repository = new FallbackRepository();
+  repository._managedAcademicYears = [];
+  const first = await repository.createAcademicYearV2({
+    schoolCode: "SCH-001",
+    name: "2025-2026",
+    startDate: "2025-09-01",
+    endDate: "2026-08-31",
+    isCurrent: true,
+  });
+  const second = await repository.createAcademicYearV2({
+    schoolCode: "SCH-001",
+    name: "2026-2027",
+    startDate: "2026-09-01",
+    endDate: "2027-08-31",
+    isCurrent: false,
+  });
+  await assert.rejects(
+    () => repository.updateAcademicYearV2(second.id, { status: "closed" }),
+    (error) => error.statusCode === 400,
+  );
+  const updated = await repository.updateAcademicYearV2(second.id, { isCurrent: true });
+  assert.equal(updated.isCurrent, true);
+  const years = await repository.getAcademicYearsV2();
+  assert.equal(years.filter((year) => year.isCurrent).length, 1);
+  assert.equal(years.find((year) => year.id === first.id).isCurrent, false);
+});
+
+test("postgresRepository n'insère plus de dates 01/09–31/08 par défaut", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  assert.equal(src.includes("${year}-09-01"), false);
+  assert.equal(src.includes("${year + 1}-08-31"), false);
+  assert.match(src, /N'invente jamais de millésime/);
 });

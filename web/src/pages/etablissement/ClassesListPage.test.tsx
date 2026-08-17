@@ -17,7 +17,7 @@ const classesApiMock = vi.hoisted(() => ({
 }));
 
 const apiGetMock = vi.hoisted(() => vi.fn());
-const academicYearsApiMock = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn() }));
+const academicYearsApiMock = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), update: vi.fn() }));
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
@@ -131,8 +131,9 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     ]);
     classesApiMock.create.mockReset();
     classesApiMock.update.mockReset();
-    academicYearsApiMock.list.mockResolvedValue([{ id: "ay-1", name: "2025-2026", schoolCode: "SCH-001" }]);
+    academicYearsApiMock.list.mockResolvedValue([{ id: "ay-1", name: "2025-2026", schoolCode: "SCH-001", isCurrent: true }]);
     academicYearsApiMock.create.mockReset();
+    academicYearsApiMock.update.mockReset();
   });
 
   it("rend le chrome D2.7 et les classes chargées depuis l'API", async () => {
@@ -208,19 +209,19 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     expect(await screen.findByText("4ème C")).toBeInTheDocument();
   });
 
-  it("permet de créer la première année scolaire après une remise à zéro", async () => {
+  it("oriente vers Paramètres quand aucune année n'est configurée", async () => {
     const user = userEvent.setup();
     academicYearsApiMock.list.mockResolvedValueOnce([]);
-    academicYearsApiMock.create.mockResolvedValue({
-      id: "ay-new", schoolCode: "SCH-001", name: "2026-2027",
-      startDate: "2026-09-01", endDate: "2027-08-31", status: "Ouverte", isCurrent: true,
-    });
     renderPage();
     await screen.findByText("6ème A");
     await user.click(screen.getByRole("button", { name: "Ajouter" }));
     expect(screen.getByText(/Aucune année scolaire n'est configurée/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Créer cette année scolaire" }));
-    await waitFor(() => expect(academicYearsApiMock.create).toHaveBeenCalledWith(expect.objectContaining({ schoolCode: "SCH-001", isCurrent: true })));
-    expect(screen.getByLabelText(/Année scolaire/i)).toHaveValue("2026-2027");
+    expect(screen.queryByRole("button", { name: "Créer cette année scolaire" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Paramètres → Année scolaire/ })).toHaveAttribute(
+      "href",
+      "/parametres/annee-scolaire",
+    );
+    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+    expect(academicYearsApiMock.create).not.toHaveBeenCalled();
   });
 });

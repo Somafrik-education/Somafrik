@@ -52,7 +52,7 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/annee-scolaire",
     title: "Année scolaire",
-    description: "Périodes (trimestres / semestres), dates, barème et année active.",
+    description: "Création de l'année scolaire/académique, périodes, dates, barème et année active.",
     icon: CalendarRange,
     status: "available",
     view: "configuration",

@@ -210,7 +210,6 @@ Exceptions documentées (volontaires ou dette) :
 
 - POST présences / paiements / exams / documents : CREATE **OR** UPDATE (upsert).
 - PATCH/DELETE cours & EDT : mappés sur la clé POST (si elle existait).
-- POST `/api/v2/academic-years` : jetons legacy (`Valider années académiques`, …), **pas** `Années Académiques:CREATE`.
 - GET `/api/backoffice/countries` : pas `Pays:READ`.
 
 Inventaire complet des 148 clés : `backend/services/rbacService.js` `routePermissions`.

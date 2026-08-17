@@ -898,6 +898,58 @@ class FallbackRepository {
     return (await this.getAcademicYearsV2()).find((item) => item.id === row.id);
   }
 
+  async getAcademicYearV2ById(id) {
+    const years = await this.getAcademicYearsV2();
+    return years.find((item) => String(item.id) === String(id ?? "").trim()) ?? null;
+  }
+
+  async updateAcademicYearV2(id, input = {}) {
+    const yearId = String(id ?? "").trim();
+    if (!this._managedAcademicYears) this._managedAcademicYears = [];
+    const row = this._managedAcademicYears.find((item) => String(item.id) === yearId);
+    if (!row) {
+      const error = new Error("Année scolaire introuvable.");
+      error.statusCode = 404;
+      throw error;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "status")) {
+      const error = new Error("La clôture et l'archivage d'une année scolaire ne sont pas encore disponibles.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const name = input.name !== undefined ? String(input.name ?? "").trim() : String(row.name ?? "").trim();
+    const startDate = input.startDate !== undefined ? String(input.startDate ?? "").trim() : String(row.start_date ?? "").trim();
+    const endDate = input.endDate !== undefined ? String(input.endDate ?? "").trim() : String(row.end_date ?? "").trim();
+    const isCurrent = input.isCurrent !== undefined ? Boolean(input.isCurrent) : Boolean(row.is_current);
+    if (!name || !startDate || !endDate || startDate >= endDate) {
+      const error = new Error("Nom et dates valides sont requis.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (
+      this._managedAcademicYears.some(
+        (item) =>
+          item.school_code === row.school_code &&
+          item.id !== row.id &&
+          String(item.name).toLowerCase() === name.toLowerCase(),
+      )
+    ) {
+      const error = new Error(`L'année scolaire « ${name} » existe déjà pour cet établissement.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    if (isCurrent) {
+      this._managedAcademicYears.forEach((item) => {
+        if (item.school_code === row.school_code) item.is_current = false;
+      });
+    }
+    row.name = name;
+    row.start_date = startDate;
+    row.end_date = endDate;
+    row.is_current = isCurrent;
+    return (await this.getAcademicYearsV2()).find((item) => item.id === row.id);
+  }
+
   async getExamsV2() {
     return seedData.notes.slice(0, 12).map((note, index) => ({
       id: `EXAM-DEMO-${String(index + 1).padStart(3, "0")}`,

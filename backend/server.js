@@ -2619,6 +2619,22 @@ app.post("/api/v2/academic-years", requireAuth, requirePermission("POST /api/v2/
   res.status(201).json(created);
 }));
 
+app.patch("/api/v2/academic-years/:id", requireAuth, requirePermission("PATCH /api/v2/academic-years/:id"), asyncHandler(async (req, res) => {
+  const current = await repository.getAcademicYearV2ById(req.params.id);
+  if (!current) {
+    throw new BusinessError(404, "Année scolaire introuvable.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, current.schoolCode);
+  const updated = await repository.updateAcademicYearV2(req.params.id, req.body ?? {});
+  cacheService.invalidate("v2:academic-years");
+  await auditService.record(req, "academic_year_update", "academic_year", updated.id, {
+    schoolCode: updated.schoolCode,
+    name: updated.name,
+    isCurrent: updated.isCurrent,
+  });
+  res.json(updated);
+}));
+
 app.get("/api/v2/exams", requireAuth, requirePermission("GET /api/v2/exams"), asyncHandler(async (req, res) => {
   const rows = await cacheService.remember("v2:exams", () => repository.getExamsV2());
   const scope = deriveSchoolScope(req.principal, await getAuthoritativeBackOfficeState());
