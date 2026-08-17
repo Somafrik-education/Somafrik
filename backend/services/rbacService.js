@@ -376,7 +376,12 @@ const routePermissions = {
     "COUNTRY_PRIVILEGES",
     "ALL_PRIVILEGES",
   ],
+  "GET /api/presences": ["Présences:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:id/presences": ["Présences:READ", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/presences": ["Présences:CREATE", "Présences:UPDATE", "ALL_PRIVILEGES"],
 };
+
+const PERMISSION_DENIED = "PERMISSION_DENIED";
 
 class RbacService {
   constructor(rolePermissions = seedData.rolePermissions) {
@@ -407,4 +412,4 @@ class RbacService {
   }
 }
 
-module.exports = { RbacService, routePermissions };
+module.exports = { RbacService, routePermissions, PERMISSION_DENIED };

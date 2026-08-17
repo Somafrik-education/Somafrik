@@ -1,13 +1,14 @@
 "use strict";
 
 /**
- * Audit P0 — Préfet / Présences : preuves de cause, sans correctif produit.
+ * Audit P0 — Préfet / Présences (PR #227) + régression après correctif live (#228).
  *
- * Contrat démontré :
- * - GET /auth/effective-permissions et requirePermission overlayent le live PG.
- * - POST /api/presences n'utilise PAS requirePermission : il lit req.principal.permissions (JWT).
- * - Un grant Superadmin live (Présences:CREATE) est donc visible au GET live
- *   et refusé au POST tant que le JWT n'est pas réémis.
+ * Gardes conservées :
+ * - JWT sans overlay ≠ live (preuve de cause, miroir de l'ancien gate)
+ * - module_key attendance → Présences:*
+ * - DENY établissement, schoolCode non résolu, multi-rôle UNION
+ *
+ * Régression source (#228) : POST/GET présences passent par requirePermission.
  */
 
 const { test } = require("node:test");
@@ -91,7 +92,7 @@ function buildPrefetRepo(grants = []) {
   } };
 }
 
-test("contrat source : POST /api/presences n'overlaye pas le live RBAC", () => {
+test("régression #228 : POST /api/presences overlaye le live via requirePermission", () => {
   const postBlock = sliceFrom(
     serverSrc,
     'app.post("/api/presences"',
@@ -99,20 +100,18 @@ test("contrat source : POST /api/presences n'overlaye pas le live RBAC", () => {
   );
   assert.match(postBlock, /requireAuth/);
   assert.match(postBlock, /requireSchoolSubscriptionFeature\("write_presence"\)/);
-  assert.match(postBlock, /assertCanManagePresences\(req\.principal\)/);
-  assert.equal(postBlock.includes("requirePermission"), false);
-  assert.equal(postBlock.includes("resolveEffectivePermissions"), false);
+  assert.match(postBlock, /requirePermission\("POST \/api\/presences"\)/);
+  assert.equal(postBlock.includes("assertCanManagePresences"), false);
 });
 
-test("contrat source : GET /api/presences n'exige pas Présences:READ", () => {
+test("régression #228 : GET /api/presences exige Présences:READ via requirePermission", () => {
   const getBlock = sliceFrom(
     serverSrc,
     'app.get("/api/presences"',
     'app.post("/api/notes"',
   );
   assert.match(getBlock, /requireAuth/);
-  assert.equal(getBlock.includes("requirePermission"), false);
-  assert.equal(getBlock.includes("Présences:READ"), false);
+  assert.match(getBlock, /requirePermission\("GET \/api\/presences"\)/);
 });
 
 test("contrat source : requirePermission overlaye resolveEffectivePermissions", () => {
@@ -134,10 +133,12 @@ test("contrat source : requireAuth n'overlaye pas les permissions live", () => {
   assert.equal(fnBlock.includes("resolveEffectivePermissions"), false);
 });
 
-test("routePermissions n'a aucune clé GET/POST /api/presences", () => {
-  assert.equal(routePermissions["GET /api/presences"], undefined);
-  assert.equal(routePermissions["POST /api/presences"], undefined);
-  assert.equal(routePermissions["GET /api/students/:id/presences"], undefined);
+test("régression #228 : routePermissions GET/POST /api/presences sont canoniques", () => {
+  assert.ok(routePermissions["GET /api/presences"]?.includes("Présences:READ"));
+  assert.ok(routePermissions["POST /api/presences"]?.includes("Présences:CREATE"));
+  assert.ok(routePermissions["POST /api/presences"]?.includes("Présences:UPDATE"));
+  assert.ok(routePermissions["GET /api/students/:id/presences"]?.includes("Présences:READ"));
+  assert.equal(routePermissions["POST /api/presences"].includes("Faire appel"), false);
 });
 
 test("module_key canonique attendance → jeton Présences:CREATE (pas attendances/presences)", () => {

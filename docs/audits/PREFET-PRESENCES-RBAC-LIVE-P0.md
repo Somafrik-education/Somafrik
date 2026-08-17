@@ -1,8 +1,9 @@
 # Audit P0 — Préfet des études : droit Présences accordé, action refusée
 
-**Statut :** AUDIT UNIQUEMENT. Aucun correctif produit. STOP CTO.  
-**Branche :** `cursor/prefet-presences-rbac-audit-92b2`  
-**Base SHA (`origin/develop`) :** `53f9a4ee5490eb3673c487853a629189e0542d8a`  
+**Suivi :** correctif live implémenté dans PR #228 (`requirePermission` + overlay `role_module_permissions`). Ce rapport reste la preuve de cause (#227).  
+**Statut historique :** AUDIT UNIQUEMENT au moment de #227.  
+**Branche audit :** `cursor/prefet-presences-rbac-audit-92b2`  
+**Base SHA (`origin/develop` au départ de l’audit) :** `53f9a4ee5490eb3673c487853a629189e0542d8a`  
 **Gouvernance :** PR draft uniquement. Aucun Ready. Aucun merge.
 
 Cet environnement Cloud n’a **pas** accès PostgreSQL préprod. Les lignes `user_roles` / `role_module_permissions` d’un Préfet réel et le JSON HTTP préprod ne peuvent pas être capturés ici. La cause racine **code** est démontrée par lecture de `develop` + fixtures (`backend/lib/prefetPresencesRbacAudit.test.js`). Les requêtes SQL de capture préprod sont en annexe.

@@ -25,7 +25,7 @@ const {
   DbConfigError,
 } = require("./db/connectionConfig");
 const { TokenService } = require("./services/tokenService");
-const { RbacService } = require("./services/rbacService");
+const { RbacService, PERMISSION_DENIED } = require("./services/rbacService");
 const { mergeRolePermissions, normalizeBusinessPermission } = require("./lib/rolePermissionsResolution");
 const { PaginationService } = require("./services/paginationService");
 const { CacheService } = require("./services/cacheService");
@@ -1500,7 +1500,8 @@ app.get("/api/notes", requireAuth, asyncHandler(async (req, res) => {
   res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
-app.get("/api/presences", requireAuth, asyncHandler(async (req, res) => {
+/** Lecture présences : Présences:READ live (Parent/Élève : seed « Voir présences »). */
+app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), asyncHandler(async (req, res) => {
   const { presences, students } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const { className, date } = req.query;
   let scopedStudents = tenantScopeService.filterRows(students, req.principal)
@@ -1550,14 +1551,13 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
   });
 }));
 
-app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_presence"), asyncHandler(async (req, res) => {
+app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_presence"), requirePermission("POST /api/presences"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
     routeKey: "POST /api/presences",
     principal: req.principal,
     handler: async () => {
-      assertCanManagePresences(req.principal);
       const state = await loadCanonicalPedagogyForPrincipal(req.principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const rawBody = req.body ?? {};
@@ -1620,7 +1620,8 @@ app.get("/api/students/:id/report.pdf", requireAuth, asyncHandler(async (req, re
   res.send(pdf);
 }));
 
-app.get("/api/students/:id/presences", requireAuth, asyncHandler(async (req, res) => {
+/** Fiche élève : même jeton Présences:READ (parcours Parent E2E /students/:id/presences). */
+app.get("/api/students/:id/presences", requireAuth, requirePermission("GET /api/students/:id/presences"), asyncHandler(async (req, res) => {
   const { presences, students } = await loadCanonicalPedagogyForPrincipal(req.principal);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
@@ -3071,20 +3072,10 @@ function assertCanManageNotes(principal) {
   throw new BusinessError(403, "Permission insuffisante pour modifier les notes.");
 }
 
-function assertCanManagePresences(principal) {
-  const permissions = new Set(principal?.permissions ?? []);
-  if (
-    permissions.has("ALL_PRIVILEGES") ||
-    permissions.has("COUNTRY_PRIVILEGES") ||
-    permissions.has("Faire appel") ||
-    permissions.has("Gérer appels") ||
-    permissions.has("Présences:CREATE") ||
-    permissions.has("Présences:UPDATE")
-  ) {
-    return;
-  }
-
-  throw new BusinessError(403, "Permission insuffisante pour enregistrer l'appel.");
+function denyPermission(message = "Permission insuffisante pour cette fonctionnalité.") {
+  const error = new BusinessError(403, message);
+  error.code = PERMISSION_DENIED;
+  return error;
 }
 
 async function saveEstablishmentState() {
@@ -5270,7 +5261,7 @@ function requirePermission(routeKey) {
         }
       }
       if (!rbacService.canAccess(req.principal, routeKey)) {
-        return next(new BusinessError(403, "Permission insuffisante pour cette fonctionnalité."));
+        return next(denyPermission());
       }
       next();
     } catch (error) {
