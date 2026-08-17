@@ -45,4 +45,18 @@ assert.ok(routePermissions["GET /api/backoffice/establishment-documents"]?.inclu
 assert.ok(rbac.canAccess(teacherPrincipal, "GET /api/exams"), "Enseignant avec Examens:READ peut lire /api/exams");
 assert.equal(rbac.canAccess(teacherPrincipal, "POST /api/exams"), false, "Enseignant read-only ne peut pas POST /api/exams");
 
+assert.ok(routePermissions["GET /api/presences"]?.includes("Présences:READ"));
+assert.ok(routePermissions["POST /api/presences"]?.includes("Présences:CREATE"));
+assert.ok(routePermissions["POST /api/presences"]?.includes("Présences:UPDATE"));
+assert.ok(routePermissions["GET /api/students/:id/presences"]?.includes("Présences:READ"));
+assert.equal(
+  rbac.canAccess(teacherPrincipal, "GET /api/presences"),
+  false,
+  "Enseignant sans Présences:READ ne lit pas /api/presences",
+);
+assert.ok(
+  rbac.canAccess({ ...teacherPrincipal, permissions: ["Présences:READ"] }, "GET /api/presences"),
+  "Enseignant avec Présences:READ lit /api/presences",
+);
+
 console.log("residualRoutesRbac.test.js: OK");

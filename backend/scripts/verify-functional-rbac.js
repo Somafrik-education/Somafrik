@@ -210,6 +210,116 @@ async function main() {
     );
     assert.notEqual(allowed.status, 403);
 
+    async function latestSchoolMatrixUpdatedAt() {
+      const current = await request(
+        `/backoffice/rbac/permissions?roleKey=PREFET_ETUDES&countryCode=CD&schoolCode=${encodeURIComponent("CD-2026-0001")}`,
+        { token: superToken },
+      );
+      assert.equal(current.status, 200, JSON.stringify(current.data));
+      return current.data.updatedAt;
+    }
+
+    async function patchAttendance(flags) {
+      const payload = {
+        roleKey: "PREFET_ETUDES",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: await latestSchoolMatrixUpdatedAt(),
+        grants: [{ moduleKey: "attendance", ...flags }],
+      };
+      const result = await request("/backoffice/rbac/permissions", {
+        method: "PATCH",
+        token: superToken,
+        body: payload,
+      });
+      assert.equal(result.status, 200, JSON.stringify(result.data));
+      return result.data.updatedAt;
+    }
+
+    const presencePayload = {
+      className: "6ème A",
+      date: "17/08/2026",
+      hour: "08:00",
+      items: [
+        {
+          studentId: "ELE-0001",
+          className: "6ème A",
+          date: "17/08/2026",
+          present: true,
+          status: "Présent",
+        },
+      ],
+    };
+
+    await patchAttendance({ canCreate: false, canRead: true, canUpdate: false, canDelete: false });
+    const deniedWrite = await request("/presences", {
+      method: "POST",
+      token: prefetToken,
+      body: presencePayload,
+    });
+    assert.equal(deniedWrite.status, 403, JSON.stringify(deniedWrite.data));
+    assert.equal(deniedWrite.data?.code, "PERMISSION_DENIED");
+
+    const liveBefore = await request("/auth/effective-permissions", { token: prefetToken });
+    assert.equal(liveBefore.data?.permissions?.includes("Présences:CREATE"), false);
+
+    await patchAttendance({ canCreate: true, canRead: true, canUpdate: false, canDelete: false });
+    const liveGranted = await request("/auth/effective-permissions", { token: prefetToken });
+    assert.ok(
+      liveGranted.data?.permissions?.includes("Présences:CREATE"),
+      JSON.stringify(liveGranted.data?.permissions),
+    );
+    const allowedWrite = await request("/presences", {
+      method: "POST",
+      token: prefetToken,
+      body: presencePayload,
+    });
+    assert.notEqual(allowedWrite.status, 403, JSON.stringify(allowedWrite.data));
+    assert.ok(
+      [200, 201, 400, 404, 409].includes(allowedWrite.status),
+      `POST après grant: ${allowedWrite.status} ${JSON.stringify(allowedWrite.data)}`,
+    );
+
+    await patchAttendance({ canCreate: false, canRead: true, canUpdate: true, canDelete: false });
+    const updateOnly = await request("/presences", {
+      method: "POST",
+      token: prefetToken,
+      body: presencePayload,
+    });
+    assert.notEqual(updateOnly.status, 403, JSON.stringify(updateOnly.data));
+
+    await patchAttendance({ canCreate: false, canRead: true, canUpdate: false, canDelete: false });
+    const revokedWrite = await request("/presences", {
+      method: "POST",
+      token: prefetToken,
+      body: presencePayload,
+    });
+    assert.equal(revokedWrite.status, 403, JSON.stringify(revokedWrite.data));
+    assert.equal(revokedWrite.data?.code, "PERMISSION_DENIED");
+
+    const parentToken = await login("+243 820 000 001", "1234", "CD-2026-0001");
+    const parentList = await request("/presences", { token: parentToken });
+    assert.ok(
+      [200, 403].includes(parentList.status),
+      `GET /presences parent: ${parentList.status} ${JSON.stringify(parentList.data)}`,
+    );
+    if (parentList.status === 403) {
+      assert.equal(parentList.data?.code, "PERMISSION_DENIED");
+    }
+    const parentChild = await request("/students/ELE-0001/presences", { token: parentToken });
+    assert.ok(
+      [200, 403].includes(parentChild.status),
+      `GET fiche présences parent: ${parentChild.status} ${JSON.stringify(parentChild.data)}`,
+    );
+    const parentEffective = await request("/auth/effective-permissions", { token: parentToken });
+    if (parentEffective.data?.permissions?.includes("Présences:READ")) {
+      assert.equal(parentList.status, 200, JSON.stringify({ parentList: parentList.data, parentEffective: parentEffective.data }));
+      assert.equal(parentChild.status, 200, JSON.stringify(parentChild.data));
+    }
+
+    const prefetGet = await request("/presences", { token: prefetToken });
+    assert.equal(prefetGet.status, 200, JSON.stringify(prefetGet.data));
+
     const stale = await request("/backoffice/rbac/permissions", {
       method: "PATCH",
       token: superToken,

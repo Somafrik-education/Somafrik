@@ -332,6 +332,64 @@ async function main() {
     assert.equal(deniedAssignments.canRead, false);
     assert.equal(await store.countActiveGrants(), countBeforeIdempotent, "bootstrap idempotent");
 
+    const attendanceSchoolAt = await store.maxUpdatedAtForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    });
+    await patchConfiguredPermissions(
+      repo,
+      {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: attendanceSchoolAt,
+        grants: [
+          { moduleKey: "attendance", canCreate: true, canRead: true, canUpdate: false, canDelete: false },
+        ],
+      },
+      superAdmin,
+      {},
+    );
+    const attendanceGrants = await store.listGrantsForRoles(["PREFET_ETUDES"]);
+    const attendanceA = resolveEffectivePermissionSet(["PREFET_ETUDES"], attendanceGrants, {
+      schoolId: schoolA.rows[0].id,
+      countryId: country.rows[0].id,
+    });
+    const attendanceB = resolveEffectivePermissionSet(["PREFET_ETUDES"], attendanceGrants, {
+      schoolId: schoolB.rows[0].id,
+      countryId: country.rows[0].id,
+    });
+    assert.equal(attendanceA.modules.attendance.canCreate, true, "école A CREATE présence");
+    assert.equal(attendanceA.permissions.includes("Présences:CREATE"), true);
+    assert.equal(attendanceB.modules.attendance.canCreate, false, "école B sans grant école → pas de CREATE local");
+
+    const attendanceSchoolAt2 = await store.maxUpdatedAtForScope({
+      roleKey: "PREFET_ETUDES",
+      scopeType: "school",
+      countryId: country.rows[0].id,
+      schoolId: schoolA.rows[0].id,
+    });
+    await patchConfiguredPermissions(
+      repo,
+      {
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        expectedUpdatedAt: attendanceSchoolAt2,
+        grants: [
+          { moduleKey: "attendance", canCreate: false, canRead: true, canUpdate: false, canDelete: false },
+        ],
+      },
+      superAdmin,
+      {},
+    );
+    const deniedAttendance = resolveEffectivePermissionSet(
+      ["PREFET_ETUDES"],
+      await store.listGrantsForRoles(["PREFET_ETUDES"]),
+      { schoolId: schoolA.rows[0].id, countryId: country.rows[0].id },
+    );
+    assert.equal(deniedAttendance.modules.attendance.canCreate, false, "DENY école A masque un CREATE global éventuel");
+
     console.log("functionalRbac.pg.test.js OK");
   } finally {
     await pool.end();
