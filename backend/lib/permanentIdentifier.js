@@ -38,13 +38,17 @@ function normalizeSchoolShortCode(value) {
   return normalized;
 }
 
+const SCHOOL_SHORT_CODE_STOP_WORDS = new Set(["DE", "DU", "DES", "LA", "LE", "LES", "D", "ET"]);
+
+/** Miroir JS de somafrik_school_short_code. Ne pas utiliser pour allouer login_code. */
 function schoolShortCodeFromName(name) {
   const tokens = asciiUpper(name)
     .replace(/[^A-Z0-9]+/g, " ")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  let shortCode = tokens.map((token) => token[0]).join("").slice(0, 5);
+  const significant = tokens.filter((token) => !SCHOOL_SHORT_CODE_STOP_WORDS.has(token));
+  let shortCode = significant.map((token) => token[0]).join("").slice(0, 5);
   if (shortCode.length < 2) {
     shortCode = tokens.join("").slice(0, 5);
   }

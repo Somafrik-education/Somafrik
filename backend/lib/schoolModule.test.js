@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   classifySchoolDuplicates,
   findPotentialDuplicates,
+  generateSchoolCode,
   DUPLICATE_STRONG,
   DUPLICATE_CONTACT,
   CROSS_COUNTRY_CONTACT_MATCH,
@@ -60,5 +61,11 @@ const sameCountryContact = findPotentialDuplicates(
   [{ ...bukavu, email: "unique@school.cd", phone: "+243990000111" }],
 );
 assert.equal(sameCountryContact[0]?.level, DUPLICATE_CONTACT);
+
+assert.equal(
+  generateSchoolCode("CD", [{ code: "CD-2026-0001" }]),
+  "CD-2026-0002",
+  "generateSchoolCode backend reste l'alias interne school_code, pas le SEQ3 login_code",
+);
 
 console.log("schoolModule.test.js OK");

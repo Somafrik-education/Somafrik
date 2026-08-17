@@ -2030,6 +2030,7 @@ function generateTeacherPublicId(schoolCode: string, teachersData: any[]) {
   return `${normalizedSchool}-${identifier}`;
 }
 
+/** Alias interne school_code (CD-YYYY-NNNN). Ce n'est PAS le SEQ3 public login_code. */
 function generateSchoolCode(country: string, year: string, schoolsData: any[]) {
   const countryCode = getCountryCode(country);
   const next = getNextSequence(

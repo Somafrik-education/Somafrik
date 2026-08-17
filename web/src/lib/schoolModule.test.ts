@@ -6,6 +6,7 @@ import {
   DUPLICATE_CONTACT,
   DUPLICATE_STRONG,
   findPotentialDuplicates,
+  generateSchoolCode,
 } from "./schoolModule";
 
 const kanyosha = {
@@ -63,5 +64,11 @@ describe("findPotentialDuplicates — scope pays", () => {
       CROSS_COUNTRY_CONTACT_MATCH,
     );
     expect(findPotentialDuplicates(draft, [{ ...kanyosha, email: "unique@school.cd" }])).toEqual([]);
+  });
+});
+
+describe("generateSchoolCode — aucun SEQ3 côté Web", () => {
+  it("ne calcule plus le code établissement public", () => {
+    expect(generateSchoolCode("CD", [kanyosha])).toBe("");
   });
 });

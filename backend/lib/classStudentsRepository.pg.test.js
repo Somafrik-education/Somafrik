@@ -169,6 +169,9 @@ async function setupFixture(pool) {
     BEGIN
       normalized := trim(regexp_replace(somafrik_ascii_upper(name_value), '[^A-Z0-9]+', ' ', 'g'));
       FOR token IN SELECT part FROM regexp_split_to_table(normalized, '\\s+') AS part WHERE part <> '' LOOP
+        IF token IN ('DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'D', 'ET') THEN
+          CONTINUE;
+        END IF;
         result := result || left(token, 1);
         EXIT WHEN length(result) >= 5;
       END LOOP;
