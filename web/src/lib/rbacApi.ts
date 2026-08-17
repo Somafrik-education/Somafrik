@@ -25,6 +25,20 @@ export type RbacCrudGrant = RbacCrudFlags & {
   moduleKey: string;
 };
 
+export type RbacAction = "create" | "read" | "update" | "delete";
+
+export type RbacActionFlags = {
+  create: boolean;
+  read: boolean;
+  update: boolean;
+  delete: boolean;
+};
+
+export type RbacActionLock = {
+  locked: boolean;
+  reason: "role_invariant" | "dependency" | null;
+};
+
 export type RbacModule = {
   moduleKey: string;
   moduleName: string;
@@ -36,12 +50,18 @@ export type RbacModule = {
   canUpdate?: boolean;
   canDelete?: boolean;
   configured?: boolean;
+  actions?: RbacAction[];
+  dependencies?: Record<string, RbacAction[]>;
+  mandatory?: Partial<RbacActionFlags>;
+  locks?: Record<RbacAction, RbacActionLock>;
 };
 
 export type RbacCatalog = {
   modules: RbacModule[];
   roles: RbacRole[];
   protectedRoleKeys: string[];
+  mandatoryByRole?: Record<string, Record<string, Partial<RbacActionFlags>>>;
+  invariants?: Record<string, string[]>;
 };
 
 export type RbacConfiguredMatrix = {

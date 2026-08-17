@@ -10,7 +10,24 @@ import type {
 
 const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
   const catalog: RbacCatalog = {
-    modules: [{ moduleKey: "students", moduleName: "Élèves", appliesWeb: true, appliesMobile: true }],
+    modules: [
+      {
+        moduleKey: "students",
+        moduleName: "Élèves",
+        appliesWeb: true,
+        appliesMobile: true,
+        actions: ["create", "read", "update", "delete"],
+        dependencies: { create: ["read"], update: ["read"], delete: ["read"] },
+      },
+      {
+        moduleKey: "users",
+        moduleName: "Utilisateurs",
+        appliesWeb: true,
+        appliesMobile: true,
+        actions: ["create", "read", "update", "delete"],
+        dependencies: { create: ["read"], update: ["read"], delete: ["read"] },
+      },
+    ],
     roles: [
       {
         id: "role-prefet",
@@ -23,11 +40,48 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
         activeUserCount: 2,
         updatedAt: "2026-08-16T10:00:00.000Z",
       },
+      {
+        id: "role-super",
+        roleCode: "SUPER_ADMIN",
+        roleName: "Super Administrateur Somafrik",
+        scope: "platform",
+        displayOrder: 0,
+        status: "active",
+        schoolAssignable: false,
+        activeUserCount: 1,
+        updatedAt: "2026-08-16T10:00:00.000Z",
+      },
     ],
     protectedRoleKeys: ["SUPER_ADMIN"],
+    mandatoryByRole: {
+      SUPER_ADMIN: {
+        users: { create: true, read: true, update: true, delete: true },
+      },
+      SCHOOL_ADMIN: {},
+      COUNTRY_ADMIN: {},
+    },
   };
   const getConfiguredMock = vi.fn(async (query: RbacConfiguredQuery): Promise<RbacConfiguredMatrix> => {
-    void query;
+    if (query.roleKey === "SUPER_ADMIN") {
+      return {
+        roleKey: "SUPER_ADMIN",
+        roleName: "Super Administrateur Somafrik",
+        scopeType: "school",
+        updatedAt: "2026-08-16T10:00:00.000Z",
+        modules: [
+          {
+            moduleKey: "users",
+            moduleName: "Utilisateurs",
+            appliesWeb: true,
+            appliesMobile: true,
+            canCreate: true,
+            canRead: true,
+            canUpdate: true,
+            canDelete: true,
+          },
+        ],
+      };
+    }
     return {
       roleKey: "PREFET_ETUDES",
       roleName: "Préfet des études",
@@ -109,6 +163,30 @@ const expectedGrant: RbacCrudGrant = {
   canDelete: false,
 };
 
+async function selectPath(roleKey: string, moduleKey: string) {
+  render(<PermissionsPage />);
+  await screen.findByText("Rôles & permissions");
+  fireEvent.change(document.getElementById("rbac-country") as HTMLSelectElement, { target: { value: "CD" } });
+  await waitFor(() => {
+    const schoolSelect = document.getElementById("rbac-school") as HTMLSelectElement;
+    expect(schoolSelect.disabled).toBe(false);
+    expect([...schoolSelect.options].some((option) => option.value === "CD-2026-0001")).toBe(true);
+  });
+  fireEvent.change(document.getElementById("rbac-school") as HTMLSelectElement, {
+    target: { value: "CD-2026-0001" },
+  });
+  await waitFor(() => {
+    expect((document.getElementById("rbac-role") as HTMLSelectElement).disabled).toBe(false);
+  });
+  fireEvent.change(document.getElementById("rbac-role") as HTMLSelectElement, {
+    target: { value: roleKey },
+  });
+  await waitFor(() => expect(getConfiguredMock).toHaveBeenCalled());
+  fireEvent.change(document.getElementById("rbac-module") as HTMLSelectElement, {
+    target: { value: moduleKey },
+  });
+}
+
 describe("PermissionsPage — matrice CRUD Superadmin", () => {
   beforeEach(() => {
     patchMock.mockClear();
@@ -116,27 +194,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("enregistre uniquement le delta CRUD du module sélectionné", async () => {
-    render(<PermissionsPage />);
-    await screen.findByText("Rôles & permissions");
-    fireEvent.change(document.getElementById("rbac-country") as HTMLSelectElement, { target: { value: "CD" } });
-    await waitFor(() => {
-      const schoolSelect = document.getElementById("rbac-school") as HTMLSelectElement;
-      expect(schoolSelect.disabled).toBe(false);
-      expect([...schoolSelect.options].some((option) => option.value === "CD-2026-0001")).toBe(true);
-    });
-    fireEvent.change(document.getElementById("rbac-school") as HTMLSelectElement, {
-      target: { value: "CD-2026-0001" },
-    });
-    await waitFor(() => {
-      expect((document.getElementById("rbac-role") as HTMLSelectElement).disabled).toBe(false);
-    });
-    fireEvent.change(document.getElementById("rbac-role") as HTMLSelectElement, {
-      target: { value: "PREFET_ETUDES" },
-    });
-    await waitFor(() => expect(getConfiguredMock).toHaveBeenCalled());
-    fireEvent.change(document.getElementById("rbac-module") as HTMLSelectElement, {
-      target: { value: "students" },
-    });
+    await selectPath("PREFET_ETUDES", "students");
     const deleteBox = await screen.findByLabelText("Élèves DELETE");
     fireEvent.click(deleteBox);
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
@@ -149,5 +207,34 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
         grants: [expectedGrant],
       }),
     );
+  });
+
+  it("verrouille READ tant que UPDATE/DELETE sont actifs (dépendance)", async () => {
+    await selectPath("PREFET_ETUDES", "students");
+    const readBox = await screen.findByLabelText("Élèves READ");
+    expect(readBox).toBeChecked();
+    expect(readBox).toBeDisabled();
+    fireEvent.click(readBox);
+    expect(readBox).toBeChecked();
+  });
+
+  it("cocher CREATE force et verrouille READ", async () => {
+    await selectPath("PREFET_ETUDES", "students");
+    const createBox = await screen.findByLabelText("Élèves CREATE");
+    const readBox = await screen.findByLabelText("Élèves READ");
+    expect(createBox).not.toBeDisabled();
+    fireEvent.click(createBox);
+    expect(createBox).toBeChecked();
+    expect(readBox).toBeChecked();
+    expect(readBox).toBeDisabled();
+  });
+
+  it("SUPER_ADMIN Utilisateurs : cases obligatoires checked + disabled", async () => {
+    await selectPath("SUPER_ADMIN", "users");
+    for (const action of ["CREATE", "READ", "UPDATE", "DELETE"]) {
+      const box = await screen.findByLabelText(`Utilisateurs ${action}`);
+      expect(box).toBeChecked();
+      expect(box).toBeDisabled();
+    }
   });
 });
