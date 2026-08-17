@@ -1,11 +1,12 @@
 "use strict";
 
 /**
- * Unicité atomique Classes (établissement + année + nom normalisé).
- * Index expressionnel + classification des violations PostgreSQL 23505.
+ * Unicité Classes V2.
  *
- * Politique legacy fail-safe : jamais de suppression silencieuse des doublons.
- * En présence de collisions, le boot/migration échoue avec un diagnostic précis.
+ * Le nom est une projection d'affichage (niveau + filière) et n'est PAS une clé
+ * métier : plusieurs groupes distincts peuvent donc porter le même nom affiché.
+ * L'unicité canonique est structurelle : établissement + année + niveau +
+ * filière + groupe.
  */
 
 const CLASSES_NAME_UNIQUE_INDEX = "uq_classes_school_year_normalized_name";
@@ -14,37 +15,31 @@ const CLASSES_STATUS_CHECK = "classes_status_check";
 const CLASSES_CLASS_CODE_UNIQUE = "classes_class_code_key";
 const STRUCTURAL_NULL_STREAM_SENTINEL = "00000000-0000-0000-0000-000000000000";
 
-/** Compte les groupes (school_id, academic_year_id, nom normalisé) en doublon. */
+/**
+ * Compatibilité avec ensureClassesDomainConstraints() historique : depuis que
+ * le code groupe n'est plus dans le nom, les doublons de nom sont légitimes.
+ * Le préflight ne doit donc plus bloquer le boot sur cette projection.
+ */
 const COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL = `
-  SELECT COUNT(*)::int AS duplicate_groups
-  FROM (
-    SELECT school_id, academic_year_id, lower(btrim(name)) AS normalized_name
-    FROM classes
-    GROUP BY school_id, academic_year_id, lower(btrim(name))
-    HAVING COUNT(*) > 1
-  ) d
+  SELECT 0::int AS duplicate_groups
 `;
 
-/** Échantillon diagnostic des groupes en doublon (résolution explicite requise). */
 const LIST_CLASSES_NAME_DUPLICATE_GROUPS_SQL = `
-  SELECT
-    s.school_code,
-    ay.name AS academic_year_name,
-    lower(btrim(cl.name)) AS normalized_name,
-    COUNT(*)::int AS duplicate_count,
-    array_agg(cl.class_code ORDER BY cl.updated_at DESC NULLS LAST, cl.created_at DESC NULLS LAST, cl.id DESC) AS class_codes
-  FROM classes cl
-  JOIN schools s ON s.id = cl.school_id
-  JOIN academic_years ay ON ay.id = cl.academic_year_id
-  GROUP BY s.school_code, ay.name, lower(btrim(cl.name))
-  HAVING COUNT(*) > 1
-  ORDER BY s.school_code, ay.name, normalized_name
-  LIMIT 20
+  SELECT NULL::text AS school_code,
+         NULL::text AS academic_year_name,
+         NULL::text AS normalized_name,
+         0::int AS duplicate_count,
+         ARRAY[]::text[] AS class_codes
+  WHERE FALSE
 `;
 
+/**
+ * Migration idempotente : retire l'ancien index qui imposait à tort
+ * l'unicité du nom d'affichage. La contrainte structurelle est créée ensuite
+ * par ensureClassesStructuralOffering().
+ */
 const CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL = `
-CREATE UNIQUE INDEX IF NOT EXISTS ${CLASSES_NAME_UNIQUE_INDEX}
-  ON classes (school_id, academic_year_id, (lower(btrim(name))))
+DROP INDEX IF EXISTS ${CLASSES_NAME_UNIQUE_INDEX}
 `;
 
 const ADD_CLASSES_STRUCTURAL_COLUMNS_SQL = `
@@ -90,15 +85,9 @@ WHERE status IS NULL
 `;
 
 /**
- * @param {Array<{
- *   school_code?: string,
- *   academic_year_name?: string,
- *   normalized_name?: string,
- *   duplicate_count?: number,
- *   class_codes?: string[] | string,
- * }>} groups
- * @param {number} duplicateGroups
- * @returns {string}
+ * Conservé pour compatibilité des anciens diagnostics/tests. Un doublon de nom
+ * n'est plus une anomalie métier en V2 ; ce message ne doit plus être appelé au
+ * boot puisque COUNT_CLASSES_NAME_DUPLICATE_GROUPS_SQL retourne zéro.
  */
 function formatClassesNameDuplicateDiagnostic(groups = [], duplicateGroups = 0) {
   const samples = (Array.isArray(groups) ? groups : [])
@@ -111,22 +100,15 @@ function formatClassesNameDuplicateDiagnostic(groups = [], duplicateGroups = 0) 
     })
     .join("; ");
   return (
-    `Classes : ${duplicateGroups} groupe(s) en doublon de nom normalisé ` +
-    `(école + année + lower(btrim(name))). ` +
-    `Résolution explicite requise avant création de l'index ${CLASSES_NAME_UNIQUE_INDEX}. ` +
-    `Aucune suppression automatique n'est effectuée. ` +
-    (samples ? `Exemples: ${samples}` : "Aucun détail disponible.")
+    `Classes : ${duplicateGroups} groupe(s) partageant le même nom d'affichage. ` +
+    `Le nom n'est plus une clé d'unicité ; la clé canonique est structurelle ` +
+    `(établissement + année + niveau + filière + groupe). ` +
+    (samples ? `Exemples: ${samples}` : "")
   );
 }
 
-/**
- * @param {unknown} error
- * @returns {boolean}
- */
 function isClassStructuralUniquenessViolation(error) {
-  if (!error || String(error.code) !== "23505") {
-    return false;
-  }
+  if (!error || String(error.code) !== "23505") return false;
   const constraint = String(error.constraint ?? "");
   const detail = String(error.detail ?? "");
   const message = String(error.message ?? "");
@@ -137,10 +119,13 @@ function isClassStructuralUniquenessViolation(error) {
   );
 }
 
+/**
+ * Classification legacy uniquement : utile pour reconnaître une base qui n'a
+ * pas encore exécuté le DROP. Aucune nouvelle écriture ne doit dépendre de cet
+ * index.
+ */
 function isClassNameUniquenessViolation(error) {
-  if (!error || String(error.code) !== "23505") {
-    return false;
-  }
+  if (!error || String(error.code) !== "23505") return false;
   const constraint = String(error.constraint ?? "");
   const detail = String(error.detail ?? "");
   const message = String(error.message ?? "");
@@ -152,14 +137,8 @@ function isClassNameUniquenessViolation(error) {
   );
 }
 
-/**
- * @param {unknown} error
- * @returns {boolean}
- */
 function isClassCodeUniquenessViolation(error) {
-  if (!error || String(error.code) !== "23505") {
-    return false;
-  }
+  if (!error || String(error.code) !== "23505") return false;
   const constraint = String(error.constraint ?? "");
   const detail = String(error.detail ?? "");
   return (

@@ -89,7 +89,7 @@ vi.mock("../../api/client", () => ({
   },
 }));
 
-import { ClassesListPage } from "./ClassesListPage";
+import { ClassesListPage, getClassDisplayName } from "./ClassesListPage";
 
 function renderPage() {
   return render(
@@ -155,25 +155,34 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     academicYearsApiMock.update.mockReset();
   });
 
+  it("retire le suffixe groupe des noms historiques", () => {
+    expect(getClassDisplayName({ name: "6ème A", groupCode: "A" })).toBe("6ème");
+    expect(getClassDisplayName({ name: "5ème B", groupCode: "B" })).toBe("5ème");
+    expect(getClassDisplayName({ name: "6ème", groupCode: "A" })).toBe("6ème");
+  });
+
   it("rend le chrome D2.7 et les classes chargées depuis l'API", async () => {
     renderPage();
     expect(await screen.findByRole("heading", { level: 2, name: "Classes" })).toBeInTheDocument();
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByLabelText("Filtres et recherche")).toBeInTheDocument();
     expect(screen.getByLabelText("Liste")).toBeInTheDocument();
-    expect(await screen.findByText("6ème A")).toBeInTheDocument();
-    expect(screen.getByText("5ème B")).toBeInTheDocument();
+    expect(await screen.findAllByText("6ème")).not.toHaveLength(0);
+    expect(screen.getAllByText("5ème").length).toBeGreaterThan(0);
+    expect(screen.getByText("A")).toBeInTheDocument();
+    expect(screen.getByText("B")).toBeInTheDocument();
+    expect(screen.queryByText("6ème A")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ajouter" })).toBeInTheDocument();
   });
 
   it("filtre la liste via EntityListSearch", async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText("6ème A");
+    await screen.findAllByText("6ème");
     const search = screen.getByRole("searchbox", { name: /Rechercher dans classes/i });
     await user.type(search, "6ème");
-    expect(screen.getByText("6ème A")).toBeInTheDocument();
-    expect(screen.queryByText("5ème B")).not.toBeInTheDocument();
+    expect(screen.getAllByText("6ème").length).toBeGreaterThan(0);
+    expect(screen.queryByText("5ème")).not.toBeInTheDocument();
   });
 
   it("affiche EmptyState lorsque l'API renvoie une liste vide", async () => {
@@ -212,7 +221,7 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     });
 
     renderPage();
-    await screen.findByText("6ème A");
+    await screen.findAllByText("6ème");
     await user.click(screen.getByRole("button", { name: "Ajouter" }));
     await user.selectOptions(screen.getByLabelText(/Année scolaire/i), "ay-1");
     await user.selectOptions(screen.getByLabelText(/^Niveau/i), "level-4");
@@ -229,14 +238,15 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
         }),
       );
     });
-    expect(await screen.findByText("4ème C")).toBeInTheDocument();
+    expect(await screen.findAllByText("4ème")).not.toHaveLength(0);
+    expect(screen.getByText("C")).toBeInTheDocument();
   });
 
   it("oriente vers Paramètres quand aucune année n'est configurée", async () => {
     const user = userEvent.setup();
     academicYearsApiMock.list.mockResolvedValueOnce([]);
     renderPage();
-    await screen.findByText("6ème A");
+    await screen.findAllByText("6ème");
     await user.click(screen.getByRole("button", { name: "Ajouter" }));
     expect(screen.getByText(/Aucune année scolaire n'est configurée/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Créer cette année scolaire" })).not.toBeInTheDocument();

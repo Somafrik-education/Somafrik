@@ -17,9 +17,9 @@ test("generateClassCode produces immutable CLS-* codes", () => {
   assert.ok(code.length <= 64);
 });
 
-test("composeClassDisplayName joint niveau, filière optionnelle et groupe", () => {
-  assert.equal(composeClassDisplayName({ levelName: "4ème", streamName: "Scientifique", groupCode: "A" }), "4ème Scientifique A");
-  assert.equal(composeClassDisplayName({ levelName: "6ème", streamName: null, groupCode: "A" }), "6ème A");
+test("composeClassDisplayName joint niveau et filière, sans code groupe", () => {
+  assert.equal(composeClassDisplayName({ levelName: "4ème", streamName: "Scientifique", groupCode: "A" }), "4ème Scientifique");
+  assert.equal(composeClassDisplayName({ levelName: "6ème", streamName: null, groupCode: "A" }), "6ème");
 });
 
 test("validateCreateClassInput n'accepte plus le texte libre", () => {

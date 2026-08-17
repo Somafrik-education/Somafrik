@@ -30,10 +30,12 @@ function createMemoryDb() {
   const schoolStreams = [{ school_id: "school-a", stream_id: "stream-a", status: "active" }];
   const groups = [
     { id: "group-a", country_id: "country-a", group_code: "A", name: "A", status: "active" },
+    { id: "group-a2", country_id: "country-a", group_code: "B", name: "B", status: "active" },
     { id: "group-b", country_id: "country-b", group_code: "A", name: "A", status: "active" },
   ];
   const schoolGroups = [
     { school_id: "school-a", group_id: "group-a", status: "active" },
+    { school_id: "school-a", group_id: "group-a2", status: "active" },
     { school_id: "school-b", group_id: "group-b", status: "active" },
   ];
   /** @type {any[]} */
@@ -114,21 +116,6 @@ function createMemoryDb() {
           );
           error.code = "23505";
           error.constraint = "uq_classes_structural_offering";
-          throw error;
-        }
-        if (
-          classes.some(
-            (item) =>
-              item.school_id === row.school_id &&
-              item.academic_year_id === row.academic_year_id &&
-              String(item.name).trim().toLowerCase() === String(row.name).trim().toLowerCase(),
-          )
-        ) {
-          const error = new Error(
-            'duplicate key value violates unique constraint "uq_classes_school_year_normalized_name"',
-          );
-          error.code = "23505";
-          error.constraint = "uq_classes_school_year_normalized_name";
           throw error;
         }
         if (classes.some((item) => item.class_code === row.class_code)) {
@@ -226,15 +213,30 @@ async function main() {
     "SCH-A",
   );
   assert.equal(created.schoolCode, "SCH-A");
-  assert.equal(created.name, "6ème Générale A");
+  assert.equal(created.name, "6ème Générale");
   assert.equal(created.groupCode, "A");
   assert.equal(created.track, "Générale");
   assert.match(created.classCode, /^CLS-/);
   assert.equal(created.status, "active");
 
+  const sameNameOtherGroup = await repo.create(
+    {
+      academicYearId: "ay-a",
+      levelId: "level-a",
+      streamId: "stream-a",
+      groupId: "group-a2",
+      status: "active",
+    },
+    "SCH-A",
+  );
+  assert.equal(sameNameOtherGroup.name, created.name);
+  assert.equal(sameNameOtherGroup.groupCode, "B");
+  assert.notEqual(sameNameOtherGroup.classCode, created.classCode);
+
   const listed = await repo.listBySchoolCode("SCH-A");
-  assert.equal(listed.length, 1);
-  assert.equal(listed[0].classCode, created.classCode);
+  assert.equal(listed.length, 2);
+  assert.ok(listed.some((row) => row.classCode === created.classCode));
+  assert.ok(listed.some((row) => row.classCode === sameNameOtherGroup.classCode));
 
   const otherSchoolList = await repo.listBySchoolCode("SCH-B");
   assert.equal(otherSchoolList.length, 0);
@@ -256,7 +258,7 @@ async function main() {
 
   const updated = await repo.update(created.classCode, "SCH-A", { status: "inactive" });
   assert.equal(updated.status, "inactive");
-  assert.equal(updated.name, "6ème Générale A");
+  assert.equal(updated.name, "6ème Générale");
 
   await assert.rejects(
     () => repo.update(created.classCode, "SCH-B", { status: "active" }),
