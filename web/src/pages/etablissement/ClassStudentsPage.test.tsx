@@ -114,7 +114,7 @@ vi.mock("../../lib/classStudentsApi", () => ({
       },
       credentials: {
         login: "CD-IN-EL-26-002",
-        temporarySecret: "Tmp-aabbccddeeff00112233445566778899",
+        temporarySecret: "Tmp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       },
     })),
   },
@@ -202,7 +202,7 @@ describe("ClassStudentsPage — inscription depuis une classe", () => {
 
     expect(await screen.findByRole("heading", { name: "Identifiants de connexion" })).toBeInTheDocument();
     expect(screen.getAllByText("CD-IN-EL-26-002").length).toBeGreaterThan(0);
-    expect(screen.getByText("Tmp-aabbccddeeff00112233445566778899")).toBeInTheDocument();
+    expect(screen.getByText("Tmp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBeInTheDocument();
     expect(screen.getByText("Fall")).toBeInTheDocument();
   });
 
