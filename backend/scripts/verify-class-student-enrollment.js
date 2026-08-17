@@ -112,7 +112,7 @@ function requireCreateEnvelope(data) {
   const studentCode = String(data.student.studentCode ?? "").trim();
   const login = String(data.credentials.login ?? "").trim();
   const temporarySecret = String(data.credentials.temporarySecret ?? "").trim();
-  assert.match(studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
+  assert.match(studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
   assert.equal(data.student.matricule, studentCode);
   assert.equal(data.student.loginCode, studentCode);
   assert.equal(login, studentCode);
