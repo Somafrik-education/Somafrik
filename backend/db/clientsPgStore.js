@@ -31,12 +31,16 @@ function createClientsPgStore(repo) {
       all,
       query,
       async getSchoolByCode(code) {
+        const normalized = asTrimmed(code).toUpperCase();
+        if (!normalized) return null;
         return one(
           `SELECT s.*, c.iso_code AS country_code, c.name AS country_name
            FROM schools s
            JOIN countries c ON c.id = s.country_id
-           WHERE s.school_code = $1`,
-          [asTrimmed(code).toUpperCase()],
+           WHERE s.school_code = $1
+              OR UPPER(COALESCE(s.login_code, '')) = $1
+           LIMIT 1`,
+          [normalized],
         );
       },
       async getCountryByCode(code) {

@@ -75,7 +75,7 @@ async function main() {
       superAdmin,
       auditMeta,
     ),
-    { status: 409, code: CLIENTS_ERROR.INVALID_TENANT_SCOPE },
+    { status: 409, code: CLIENTS_ERROR.SCHOOL_COUNTRY_MISMATCH },
   );
 
   const unscoped = await store.createUser(

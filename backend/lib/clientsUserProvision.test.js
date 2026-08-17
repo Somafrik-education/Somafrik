@@ -9,8 +9,8 @@ const clientsService = require("./clientsService");
 function buildStore(seed = {}) {
   return createClientsMemoryStore({
     platformSchools: [
-      { id: "school-cd", code: "CD-2026-0001", name: "Institut CD", countryId: "country-cd", countryCode: "CD", country: "RDC" },
-      { id: "school-bi", code: "BI-2026-0001", name: "Ecole Kanyosha", countryId: "country-bi", countryCode: "BI", country: "Burundi" },
+      { id: "school-cd", code: "CD-2026-0001", name: "Institut Bukavu", countryId: "country-cd", countryCode: "CD", country: "RDC", login_code: "CD-IB-26-002" },
+      { id: "school-bi", code: "BI-2026-0001", name: "Ecole Kanyosha", countryId: "country-bi", countryCode: "BI", country: "Burundi", login_code: "BI-EK-26-001" },
     ],
     countries: [
       { id: "country-cd", iso_code: "CD", name: "RDC" },
@@ -102,6 +102,57 @@ async function main() {
   assert.equal(schoolRole?.school_id, "school-bi");
   assert.equal(String(schoolRow.school_id), String(schoolRole.school_id));
 
+  const schoolAdminCd = await store.provisionUser(
+    {
+      firstName: "Awa",
+      lastName: "Bukavu",
+      email: "awa.school.cd@test.local",
+      temporaryPassword: "SchoolAdminCD!2026",
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+    },
+    superAdmin,
+    auditMeta,
+  );
+  assert.ok((schoolAdminCd.roleKeys || []).includes("SCHOOL_ADMIN"));
+  assert.equal(schoolAdminCd.schoolCode, "CD-2026-0001");
+  assert.equal(schoolAdminCd.countryCode, "CD");
+  assert.notEqual(schoolAdminCd.schoolCode, "BI-2026-0001");
+
+  const schoolAdminCdAccent = await store.provisionUser(
+    {
+      firstName: "Grace",
+      lastName: "Accent",
+      email: "grace.accent.cd@test.local",
+      temporaryPassword: "SchoolAdminCD!2026",
+      roleKey: "SCHOOL_ADMIN",
+      countryScope: "République Démocratique du Congo",
+      schoolCode: "CD-2026-0001",
+    },
+    superAdmin,
+    auditMeta,
+  );
+  assert.equal(schoolAdminCdAccent.countryCode, "CD");
+  assert.equal(schoolAdminCdAccent.schoolCode, "CD-2026-0001");
+
+  const schoolAdminByLoginCode = await store.provisionUser(
+    {
+      firstName: "Login",
+      lastName: "Code",
+      email: "login.code.cd@test.local",
+      temporaryPassword: "SchoolAdminCD!2026",
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-IB-26-002",
+    },
+    superAdmin,
+    auditMeta,
+  );
+  assert.equal(schoolAdminByLoginCode.schoolCode, "CD-2026-0001");
+  assert.notEqual(schoolAdminByLoginCode.schoolCode, "CD-IB-26-002");
+  assert.equal(schoolAdminByLoginCode.countryCode, "CD");
+
   await expectRejection(
     store.provisionUser(
       {
@@ -115,7 +166,7 @@ async function main() {
       superAdmin,
       auditMeta,
     ),
-    { status: 409, code: CLIENTS_ERROR.INVALID_TENANT_SCOPE },
+    { status: 409, code: CLIENTS_ERROR.SCHOOL_COUNTRY_MISMATCH },
   );
 
   await expectRejection(
@@ -124,7 +175,7 @@ async function main() {
       superAdmin,
       auditMeta,
     ),
-    { status: 400, code: CLIENTS_ERROR.INVALID_TENANT_SCOPE },
+    { status: 400, code: CLIENTS_ERROR.COUNTRY_REQUIRED },
   );
 
   await expectRejection(
@@ -133,7 +184,7 @@ async function main() {
       superAdmin,
       auditMeta,
     ),
-    { status: 400, code: CLIENTS_ERROR.INVALID_TENANT_SCOPE },
+    { status: 400, code: CLIENTS_ERROR.SCHOOL_REQUIRED },
   );
 
   await expectRejection(
@@ -142,7 +193,7 @@ async function main() {
       superAdmin,
       auditMeta,
     ),
-    { status: 400, code: CLIENTS_ERROR.INVALID_TENANT_SCOPE },
+    { status: 400, code: CLIENTS_ERROR.COUNTRY_REQUIRED },
   );
 
   await expectRejection(
@@ -333,7 +384,7 @@ async function main() {
   );
   assert.equal(
     store._tables.userRoles.filter((row) => row.role_key === "SCHOOL_ADMIN" && row.status === "active").length,
-    1,
+    4,
     "rollback audit : aucun user_roles orphelin",
   );
 

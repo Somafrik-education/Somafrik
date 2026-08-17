@@ -273,7 +273,7 @@ async function provisionUser(store, rawPayload, principal, auditMeta) {
       roleKey === COUNTRY_ADMIN_KEY
         ? "Pays obligatoire pour un Admin Pays."
         : "Pays obligatoire pour un Admin School.",
-      CLIENTS_ERROR.INVALID_TENANT_SCOPE,
+      CLIENTS_ERROR.COUNTRY_REQUIRED,
     );
   }
 
@@ -281,7 +281,7 @@ async function provisionUser(store, rawPayload, principal, auditMeta) {
     throw createClientsError(
       400,
       "Établissement obligatoire pour le rôle Admin School.",
-      CLIENTS_ERROR.INVALID_TENANT_SCOPE,
+      CLIENTS_ERROR.SCHOOL_REQUIRED,
     );
   }
 

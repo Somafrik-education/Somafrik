@@ -296,7 +296,7 @@ async function main() {
       },
     });
     assert.equal(orphanDenied.status, 409, JSON.stringify(orphanDenied.data));
-    assert.equal(orphanDenied.data.code, "INVALID_TENANT_SCOPE");
+    assert.equal(orphanDenied.data.code, "SCHOOL_COUNTRY_MISMATCH");
     const orphanRows = await pool.query(`SELECT id FROM users WHERE email = $1`, [orphanEmail]);
     assert.equal(orphanRows.rowCount, 0, "aucune identité orpheline après échec provision");
 
@@ -410,7 +410,7 @@ async function main() {
       },
     });
     assert.equal(mismatch.status, 409, JSON.stringify(mismatch.data));
-    assert.equal(mismatch.data.code, "INVALID_TENANT_SCOPE");
+    assert.equal(mismatch.data.code, "SCHOOL_COUNTRY_MISMATCH");
 
     const missingSchoolGrantIdentity = await createIdentity(superadmin.token, {
       firstName: "NoSchool",
@@ -539,7 +539,7 @@ async function main() {
       body: { schoolCode: SCHOOL_BI, countryCode: "CD" },
     });
     assert.equal(mismatchReassign.status, 409, JSON.stringify(mismatchReassign.data));
-    assert.equal(mismatchReassign.data.code, "INVALID_TENANT_SCOPE");
+    assert.equal(mismatchReassign.data.code, "SCHOOL_COUNTRY_MISMATCH");
 
     const countryDenied = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}/reassign-school`, {
       method: "POST",

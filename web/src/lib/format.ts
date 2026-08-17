@@ -44,8 +44,14 @@ const COUNTRY_CODES: Record<string, string> = {
 };
 
 export function getCountryCodeFromScope(countryScope?: string): string {
-  const normalized = String(countryScope ?? "").trim().toUpperCase();
-  return COUNTRY_CODES[normalized] ?? (/^[A-Z]{2}$/.test(normalized) ? normalized : "");
+  const normalized = String(countryScope ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+  if (!normalized) return "";
+  if (COUNTRY_CODES[normalized]) return COUNTRY_CODES[normalized];
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : "";
 }
 
 /** Valeur canonique de countryScope pour un compte utilisateur (ex. RDC, BI, CG). */
@@ -68,11 +74,11 @@ export function resolveCountryScopeFromSchool(
   school: { country?: string; countryCode?: string },
   fallback = "",
 ): string {
-  const country = String(school.country ?? "").trim();
-  if (country) return country;
-  const code = getCountryCodeFromScope(school.countryCode);
+  const code =
+    getCountryCodeFromScope(school.countryCode) || getCountryCodeFromScope(school.country);
   if (code === "CD") return "RDC";
-  return String(school.countryCode ?? fallback).trim() || fallback;
+  if (code) return code;
+  return fallback;
 }
 
 export function schoolMatchesCountryScope(

@@ -130,7 +130,7 @@ async function main() {
 
   await expectRejection(
     store.reassignUserSchool(target.id, { schoolCode: "BI-2026-0001", countryCode: "CD" }, superAdmin, auditMeta),
-    { status: 409, code: CLIENTS_ERROR.INVALID_TENANT_SCOPE },
+    { status: 409, code: CLIENTS_ERROR.SCHOOL_COUNTRY_MISMATCH },
   );
   assert.equal((await store.getUserById(target.id)).school_id, "school-cd");
 

@@ -135,6 +135,22 @@ describe("Superadmin create-user tenant defaults", () => {
     });
   });
 
+  it("conserve countryCode=CD même si countryScope est le nom accentué RDC", () => {
+    expect(
+      toProvisionUserApiPayload({
+        firstName: "Awa",
+        lastName: "Bukavu",
+        schoolCode: "CD-2026-0002",
+        countryScope: "République Démocratique du Congo",
+        role: "Admin School",
+      } as UserAccount),
+    ).toMatchObject({
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0002",
+    });
+  });
+
   it("construit un payload provision Admin Pays sans schoolCode", () => {
     const payload = toProvisionUserApiPayload({
       firstName: "Amina",

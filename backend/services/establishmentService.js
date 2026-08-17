@@ -10,7 +10,10 @@ const {
   filterActiveSchools,
   validateSchoolPayload,
   findPotentialDuplicates,
+  classifySchoolDuplicates,
   isSchoolDeleted,
+  DUPLICATE_STRONG,
+  DUPLICATE_CONTACT,
 } = require("../lib/schoolModule");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
@@ -208,8 +211,30 @@ class EstablishmentService {
 
     if (!force) {
       const duplicates = findPotentialDuplicates(school, state.schools ?? []);
-      if (duplicates.length) {
-        throw new BusinessError(409, "Doublon potentiel détecté", { duplicates });
+      const strong = duplicates.filter((match) => match.level === DUPLICATE_STRONG);
+      const contact = duplicates.filter((match) => match.level === DUPLICATE_CONTACT);
+      if (strong.length) {
+        const error = new BusinessError(409, "Établissement déjà existant dans ce pays (même nom et ville).", {
+          duplicates: strong,
+        });
+        error.code = "SCHOOL_DUPLICATE_STRONG";
+        throw error;
+      }
+      if (contact.length) {
+        const error = new BusinessError(409, "Doublon potentiel détecté", { duplicates: contact });
+        error.code = "SCHOOL_DUPLICATE_CONTACT";
+        throw error;
+      }
+    } else {
+      const strong = classifySchoolDuplicates(school, state.schools ?? []).filter(
+        (match) => match.level === DUPLICATE_STRONG,
+      );
+      if (strong.length) {
+        const error = new BusinessError(409, "Établissement déjà existant dans ce pays (même nom et ville).", {
+          duplicates: strong,
+        });
+        error.code = "SCHOOL_DUPLICATE_STRONG";
+        throw error;
       }
     }
 

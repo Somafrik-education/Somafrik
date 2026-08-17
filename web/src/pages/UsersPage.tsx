@@ -4,7 +4,7 @@ import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useData } from "../context/DataContext";
 import { scopedCountries, scopedSchools, scopedUsers } from "../lib/scope";
 import { getCurrentSchool } from "../lib/establishment";
-import { isInternalSchoolRole, normalize, getInitials, resolveCountryScopeFromSchool, getCountryCodeFromScope } from "../lib/format";
+import { isInternalSchoolRole, normalize, getInitials, getCountryCodeFromScope } from "../lib/format";
 import { formatCaughtApiError } from "../lib/apiErrors";
 import { canManageRolePermissions, canResetTargetUserPassword } from "../lib/permissions";
 import { USER_ACCOUNT_STATUS_OPTIONS, validatePasswordPolicy } from "../lib/userAccountRules";
@@ -855,13 +855,9 @@ export function UsersPage() {
                     disabled={schoolSelectDisabled}
                     onChange={(e) => {
                       const schoolCode = e.target.value;
-                      const selected = schoolsForLabels.find((item) => item.code === schoolCode);
                       setEditing({
                         ...editing,
                         schoolCode,
-                        countryScope: selected
-                          ? resolveCountryScopeFromSchool(selected, editing.countryScope ?? "")
-                          : editing.countryScope,
                       });
                     }}
                     options={[

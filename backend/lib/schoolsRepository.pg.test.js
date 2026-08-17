@@ -488,6 +488,52 @@ async function main() {
       "aucun établissement FR persisté",
     );
 
+    const kanyosha = await repo.persist({
+      code: "BI-2026-KANY",
+      name: "Ecole Kanyosha",
+      type: "École primaire",
+      country: "Burundi",
+      countryCode: "BI",
+      city: "Muha",
+      phone: "9090909",
+      email: "contact@somafrik.app",
+      principalName: "Directeur Kanyosha",
+      status: "Actif",
+    });
+    assert.equal(kanyosha.countryCode, "BI");
+
+    const baraka = await repo.persist({
+      code: "CD-2026-BARA",
+      name: "Institut Baraka",
+      type: "Institut",
+      country: "République Démocratique du Congo",
+      countryCode: "CD",
+      city: "Bukavu",
+      phone: "9090909",
+      email: "contact@somafrik.app",
+      principalName: "Apotre Baraka",
+      status: "Actif",
+    });
+    assert.equal(baraka.countryCode, "CD");
+    assert.equal(baraka.city, "Bukavu");
+
+    await assert.rejects(
+      () =>
+        repo.persist({
+          code: "CD-2026-BAR2",
+          name: "Institut Baraka",
+          type: "Institut",
+          country: "RDC",
+          countryCode: "CD",
+          city: "Bukavu",
+          phone: "+243 990 222 333",
+          email: "autre@baraka.cd",
+          principalName: "Autre",
+          status: "Actif",
+        }),
+      (error) => error.code === "SCHOOL_DUPLICATE_STRONG" && error.statusCode === 409,
+    );
+
     /*
      * 15. Le référentiel pays est resté intact.
      */
@@ -513,6 +559,7 @@ async function main() {
         "/ login_code canonique",
         "/ unicité login_code",
         "/ pays inconnu refusé",
+        "/ doublon fort pays-aware",
       ].join(" "),
     );
   } finally {

@@ -43,6 +43,7 @@ vi.mock("../context/DataContext", () => ({
       users: [],
       schools: [
         { code: "CD-2026-0001", name: "Unikin", country: "RDC", countryCode: "CD" },
+        { code: "CD-2026-0002", name: "INSTITUT Bukavu", country: "République Démocratique du Congo", countryCode: "CD" },
         { code: "BI-2026-0001", name: "Lycée du Burundi", country: "Burundi", countryCode: "BI" },
       ],
       countries: [
@@ -205,5 +206,46 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     expect(vi.mocked(clientsApi.provisionUser).mock.calls[0][0]).not.toHaveProperty("schoolCode");
     expect(clientsApi.createUser).not.toHaveBeenCalled();
     expect(clientsApi.grantUserRole).not.toHaveBeenCalled();
+  });
+
+  it("soumet CD + INSTITUT Bukavu + Admin School avec countryCode=CD après sélection école", async () => {
+    vi.mocked(clientsApi.provisionUser).mockResolvedValue({
+      id: "user-cd-1",
+      schoolCode: "CD-2026-0002",
+      countryCode: "CD",
+      roleKeys: ["SCHOOL_ADMIN"],
+    });
+    openCreateForm();
+    fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Awa" } });
+    fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Bukavu" } });
+    fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "Admin School" } });
+    fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "RDC" } });
+    fireEvent.change(screen.getByLabelText(/Établissement/i), { target: { value: "CD-2026-0002" } });
+    expect((screen.getByLabelText(/Pays/i) as HTMLSelectElement).value).toBe("RDC");
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(clientsApi.provisionUser).toHaveBeenCalledTimes(1));
+    expect(clientsApi.provisionUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        firstName: "Awa",
+        lastName: "Bukavu",
+        schoolCode: "CD-2026-0002",
+        countryCode: "CD",
+        roleKey: "SCHOOL_ADMIN",
+      }),
+    );
+    const payload = vi.mocked(clientsApi.provisionUser).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.countryCode).toBe("CD");
+    expect(payload.countryCode).not.toBe("");
+    expect(payload.countryCode).not.toBeUndefined();
+  });
+
+  it("reset schoolCode dès que le pays passe de CD à BI", () => {
+    openCreateForm();
+    fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "RDC" } });
+    fireEvent.change(screen.getByLabelText(/Établissement/i), { target: { value: "CD-2026-0002" } });
+    expect((screen.getByLabelText(/Établissement/i) as HTMLSelectElement).value).toBe("CD-2026-0002");
+    fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
+    expect((screen.getByLabelText(/Établissement/i) as HTMLSelectElement).value).toBe("");
+    expect(within(screen.getByLabelText(/Établissement/i)).queryByRole("option", { name: /INSTITUT Bukavu/ })).not.toBeInTheDocument();
   });
 });
