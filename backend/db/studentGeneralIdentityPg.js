@@ -16,14 +16,26 @@ AS $$
 DECLARE
   source TEXT;
   token TEXT;
+  compact TEXT;
   result TEXT := '';
 BEGIN
-  source := upper(regexp_replace(coalesce(p_last_name, '') || ' ' || coalesce(p_first_name, ''), '[^A-Za-z0-9]+', ' ', 'g'));
-  FOR token IN SELECT unnest(regexp_split_to_array(btrim(source), '\\s+')) LOOP
+  -- Même translittération que somafrik_ascii_upper / studentIdentityInitials JS.
+  -- last_name + first_name : Grâce Kabeya → KG, pas KGC.
+  source := upper(translate(
+    coalesce(p_last_name, '') || ' ' || coalesce(p_first_name, ''),
+    'ÀÁÂÃÄÅàáâãäåÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝŸýÿŒœÆæ',
+    'AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOOooooooUUUUuuuuYYyyOoAa'
+  ));
+  source := trim(regexp_replace(source, '[^A-Z0-9]+', ' ', 'g'));
+  FOR token IN SELECT unnest(regexp_split_to_array(source, '\\s+')) LOOP
     IF token <> '' THEN result := result || substr(token, 1, 1); END IF;
     EXIT WHEN length(result) >= 5;
   END LOOP;
   IF result = '' THEN RAISE EXCEPTION 'STUDENT_INITIALS_REQUIRED'; END IF;
+  IF length(result) < 2 THEN
+    compact := regexp_replace(source, '\\s+', '', 'g');
+    result := substr(result || substr(compact, 2), 1, 5);
+  END IF;
   RETURN substr(result, 1, 5);
 END
 $$;

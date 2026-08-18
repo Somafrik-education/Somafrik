@@ -13,6 +13,7 @@ const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
 const { createTxAdapter } = require("../db/txAdapter");
 const { hashSecret, verifySecret } = require("../services/credentialService");
+const { studentIdentityInitials } = require("./studentCanonicalIdentifier");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
@@ -566,6 +567,16 @@ function assertEnrollmentProjectionHasNoSecret(row) {
   assert.doesNotMatch(serialized, /temporarySecret/i);
 }
 
+function expectedStudentCode(countryCode, schoolInitials, lastName, firstName, sequence) {
+  const yy = String(new Date().getFullYear() % 100).padStart(2, "0");
+  return `${countryCode}-${schoolInitials}-${studentIdentityInitials(lastName, firstName)}-${yy}-${String(sequence).padStart(5, "0")}`;
+}
+
+function expectedStudentCodePattern(countryCode, schoolInitials, lastName, firstName) {
+  const initials = studentIdentityInitials(lastName, firstName);
+  return new RegExp(`^${countryCode}-${schoolInitials}-${initials}-\\d{2}-\\d{5}$`);
+}
+
 function assertCreateEnvelope(result) {
   assert.ok(result.student && typeof result.student === "object");
   assert.ok(result.credentials && typeof result.credentials === "object");
@@ -728,7 +739,7 @@ async function main() {
         birthDate: "2012-04-12",
       }),
     );
-    assert.match(enrolled.student.studentCode, /^CD-IN-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
+    assert.equal(enrolled.student.studentCode, expectedStudentCode("CD", "IN", "Diop", "Awa", 1));
     assert.equal(enrolled.student.matricule, enrolled.student.studentCode);
     assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
     await assertCanonicalStudentLogin(pool, enrolled.student.studentCode, "CD-2026-0001");
@@ -750,7 +761,7 @@ async function main() {
         { firstName: "Ibra", lastName: "Fall" },
       ),
     );
-    assert.match(enrolledOtherSchool.student.studentCode, /^CD-LL-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
+    assert.equal(enrolledOtherSchool.student.studentCode, expectedStudentCode("CD", "LL", "Fall", "Ibra", 1));
     assert.notEqual(enrolled.student.studentCode, enrolledOtherSchool.student.studentCode);
     await assertCanonicalStudentLogin(pool, enrolledOtherSchool.student.studentCode, "CD-2026-0002");
     assertEnrollmentProjectionHasNoSecret(enrolledOtherSchool.student);
@@ -808,7 +819,10 @@ async function main() {
         { firstName: "Grace", lastName: "Nkurunziza" },
       ),
     );
-    assert.match(enrolledBiSameEstablishment.student.studentCode, /^BI-LB-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
+    assert.equal(
+      enrolledBiSameEstablishment.student.studentCode,
+      expectedStudentCode("BI", "LB", "Nkurunziza", "Grace", 1),
+    );
     assert.notEqual(
       enrolled.student.studentCode,
       enrolledBiSameEstablishment.student.studentCode,
@@ -841,7 +855,10 @@ async function main() {
     });
     assert.equal(new Set(concurrentSecrets).size, 4);
     for (const row of concurrent) {
-      assert.match(row.student.studentCode, /^CD-IN-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
+      assert.match(
+        row.student.studentCode,
+        expectedStudentCodePattern("CD", "IN", "Concurrent", row.student.firstName),
+      );
       await assertCanonicalStudentLogin(pool, row.student.studentCode, "CD-2026-0001");
     }
 

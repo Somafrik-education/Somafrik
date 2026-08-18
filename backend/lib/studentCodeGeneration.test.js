@@ -13,6 +13,14 @@ assert.equal(
   assignCanonicalStudentCode(nuru, [], "CD-IN-OHS-26-00007", hope),
   "CD-IN-OHS-26-00007",
 );
+assert.throws(
+  () => assignCanonicalStudentCode(nuru, [], "PENDING", {}),
+  (error) => error.code === "STUDENT_INITIALS_REQUIRED",
+);
+assert.throws(
+  () => assignCanonicalStudentCode(nuru, [], "PENDING"),
+  (error) => error.code === "STUDENT_INITIALS_REQUIRED",
+);
 
 assert.equal(generateNextStudentCode("CD-2026-0001", [], nuru, hope), "CD-IN-OHS-26-00001");
 assert.equal(

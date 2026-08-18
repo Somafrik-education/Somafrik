@@ -106,6 +106,19 @@ WHERE u.school_id = st.school_id
     OR coalesce(u.profile_payload->>'identifier', '') = m.old_code
   );
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM students
+    WHERE student_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-[0-9]{2}-[0-9]{5}$'
+    GROUP BY school_id, right(student_code, 5)
+    HAVING COUNT(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'STUDENT_GENERAL_IDENTITY_SEQ_COLLISION';
+  END IF;
+END $$;
+
 INSERT INTO student_general_code_counters (school_id, last_value)
 SELECT
   st.school_id,

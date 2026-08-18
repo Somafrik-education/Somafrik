@@ -17,6 +17,8 @@ const generalBackfill = fs.readFileSync(
   "utf8",
 );
 const repositoryFactory = fs.readFileSync(path.join(__dirname, "../db/repositoryFactory.js"), "utf8");
+const allocation = fs.readFileSync(path.join(__dirname, "./studentCodeAllocation.js"), "utf8");
+const fallbackRepository = fs.readFileSync(path.join(__dirname, "../db/fallbackRepository.js"), "utf8");
 
 // Historique conservé, jamais réécrit : la nouvelle règle vient après.
 assert.match(legacySchema, /somafrik_assign_permanent_student_identity/);
@@ -31,8 +33,15 @@ assert.match(generalBackfill, /VALIDATE CONSTRAINT students_canonical_identifier
 assert.match(generalBackfill, /UPDATE students/);
 assert.match(generalBackfill, /UPDATE users/);
 assert.doesNotMatch(generalBackfill, /DELETE FROM students/i);
+assert.match(generalBackfill, /STUDENT_GENERAL_IDENTITY_SEQ_COLLISION/);
 
 assert.match(repositoryFactory, /ensureStudentGeneralIdentityPg/);
 assert.match(repositoryFactory, /ensureStudentLifecyclePgSchema/);
+
+assert.doesNotMatch(allocation, /MEMORY_STUDENT_INITIALS/);
+assert.doesNotMatch(allocation, /fallbackInitials/);
+assert.doesNotMatch(allocation, /["']EL["']/);
+assert.match(fallbackRepository, /firstName:\s*params\[2\]/);
+assert.match(fallbackRepository, /lastName:\s*params\[3\]/);
 
 console.log("studentCanonicalSchema.guard.test.js: OK");

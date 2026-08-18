@@ -10,6 +10,8 @@ const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const { USER_ROLE_ERROR } = require("./userRoleLifecycle");
 const userRoleLifecycleService = require("./userRoleLifecycleService");
+const { STUDENT_GENERAL_IDENTITY_SQL } = require("../db/studentGeneralIdentityPg");
+const { studentIdentityInitials } = require("./studentCanonicalIdentifier");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DB = String(process.env.SOMAFRIK_USER_ROLES_IT_DATABASE ?? "somafrik_user_roles_it")
@@ -74,6 +76,7 @@ async function main() {
     await pool.query(USER_ROLES_SCHEMA_SQL);
     // Le SQL est rejoué au boot : il doit être strictement idempotent.
     await pool.query(USER_ROLES_SCHEMA_SQL);
+    await pool.query(STUDENT_GENERAL_IDENTITY_SQL);
 
     const country = await pool.query(
       `INSERT INTO countries (name, iso_code, phone_code, currency)
@@ -119,17 +122,51 @@ async function main() {
     assert.equal(row.rows[0].profile_payload.identifier, "GK-26-00001");
     assert.equal(row.rows[0].profile_payload.identityCode, "CD-IK-GK-26-00001");
 
+    const studentInitials = studentIdentityInitials("Kabeya", "Grâce");
+    const pgInitials = await pool.query(
+      `SELECT somafrik_student_person_initials($1, $2) AS initials`,
+      ["Kabeya", "Grâce"],
+    );
+    assert.equal(pgInitials.rows[0].initials, studentInitials, "PG et helper JS dérivent les mêmes initiales");
+    const yearShort = String(new Date().getFullYear() % 100).padStart(2, "0");
+    const expectedStudentCode = `CD-IK-${studentInitials}-${yearShort}-00001`;
+
     const student = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name, status)
        VALUES ($1, 'PENDING', 'Grâce', 'Kabeya', 'active')
        RETURNING id, student_code, identity_code, login_code, identity_initials, identity_year`,
       [schoolRow.rows[0].id],
     );
-    assert.match(student.rows[0].student_code, /^CD-IK-EL-\d{2}-\d{3}$/);
+    assert.equal(student.rows[0].student_code, expectedStudentCode);
+    assert.match(student.rows[0].student_code, /^CD-IK-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
     assert.equal(student.rows[0].student_code, student.rows[0].identity_code);
     assert.equal(student.rows[0].student_code, student.rows[0].login_code, "matricule = identifiant de connexion");
-    assert.equal(student.rows[0].identity_initials, "EL");
-    assert.equal(Number(student.rows[0].identity_year), 2026);
+    assert.equal(student.rows[0].identity_initials, studentInitials);
+    assert.equal(Number(student.rows[0].identity_year), new Date().getFullYear());
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+           VALUES ($1, 'PENDING', ' ', '', 'active')`,
+          [schoolRow.rows[0].id],
+        ),
+      /STUDENT_INITIALS_REQUIRED/,
+    );
+    const secondStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'PENDING', 'Jean Pierre', 'KABILA', 'active')
+       RETURNING student_code, identity_code, login_code, identity_initials`,
+      [schoolRow.rows[0].id],
+    );
+    const secondInitials = studentIdentityInitials("KABILA", "Jean Pierre");
+    assert.equal(
+      secondStudent.rows[0].student_code,
+      `CD-IK-${secondInitials}-${yearShort}-00002`,
+      "séquence continue par établissement, toutes initiales confondues",
+    );
+    assert.equal(secondStudent.rows[0].student_code, secondStudent.rows[0].identity_code);
+    assert.equal(secondStudent.rows[0].student_code, secondStudent.rows[0].login_code);
+    assert.equal(secondStudent.rows[0].identity_initials, secondInitials);
     await pool.query(`UPDATE students SET last_name = 'Mukendi' WHERE id = $1`, [student.rows[0].id]);
     const stableStudent = await pool.query(
       `SELECT last_name, identity_code, login_code, student_code FROM students WHERE id = $1`,
@@ -139,8 +176,8 @@ async function main() {
     assert.equal(stableStudent.rows[0].identity_code, student.rows[0].identity_code, "nom élève ne renumérote pas");
     assert.equal(stableStudent.rows[0].login_code, student.rows[0].student_code);
     await assert.rejects(
-      () => pool.query(`UPDATE students SET identity_code = 'CD-IK-EL-26-999' WHERE id = $1`, [student.rows[0].id]),
-      /STUDENT_CANONICAL_IDENTIFIER_IMMUTABLE/,
+      () => pool.query(`UPDATE students SET identity_code = 'CD-IK-HACK-26-99999' WHERE id = $1`, [student.rows[0].id]),
+      /STUDENT_PERMANENT_IDENTIFIER_IMMUTABLE/,
     );
 
     await store.grantUserRole(created.id, { role: "Secrétaire" }, principal, auditMeta);
@@ -192,6 +229,13 @@ async function main() {
     assert.equal(leftoverAfterLast.rows[0].count, 0);
     const stableAfterRevokes = await pool.query(`SELECT identity_code, login_code FROM users WHERE id = $1`, [created.id]);
     assert.equal(stableAfterRevokes.rows[0].identity_code, "CD-IK-GK-26-00001", "REVOKE ne renumérote pas l'identité");
+    const studentAfterRoles = await pool.query(
+      `SELECT student_code, identity_code, login_code FROM students WHERE id = $1`,
+      [student.rows[0].id],
+    );
+    assert.equal(studentAfterRoles.rows[0].student_code, expectedStudentCode, "GRANT/REVOKE ne renumérote pas l'élève");
+    assert.equal(studentAfterRoles.rows[0].identity_code, expectedStudentCode);
+    assert.equal(studentAfterRoles.rows[0].login_code, expectedStudentCode);
 
     await store.updateUser(created.id, { lastName: "Mukendi" }, principal, auditMeta);
     const stableAfterRename = await pool.query(

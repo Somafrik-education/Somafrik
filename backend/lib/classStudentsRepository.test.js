@@ -8,6 +8,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
 const { generateTemporarySecret, hashSecret, verifySecret } = require("../services/credentialService");
+const { studentIdentityInitials } = require("./studentCanonicalIdentifier");
+
+function expectedMemoryStudentCode(countryCode, schoolInitials, lastName, firstName, sequence = 1) {
+  const yy = String(new Date().getFullYear() % 100).padStart(2, "0");
+  return `${countryCode}-${schoolInitials}-${studentIdentityInitials(lastName, firstName)}-${yy}-${String(sequence).padStart(5, "0")}`;
+}
 
 function createMemoryDb() {
   const schools = [
@@ -86,6 +92,10 @@ function createMemoryDb() {
           school,
           students.map((row) => row.student_code),
           params[1],
+          {
+            firstName: params[2],
+            lastName: params[3],
+          },
         );
         const row = {
           id: `stu-${studentSeq++}`,
@@ -298,7 +308,7 @@ function assertStudentProjectionHasNoSecret(row) {
 function assertCreateEnvelope(result) {
   assert.ok(result.student && typeof result.student === "object");
   assert.ok(result.credentials && typeof result.credentials === "object");
-  assert.match(result.student.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{5}$/);
+  assert.match(result.student.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
   assert.equal(result.credentials.login, result.student.studentCode);
   assert.match(result.credentials.temporarySecret, /^Tmp-[0-9a-f]{32}$/);
   assert.notEqual(result.credentials.temporarySecret, "1234");
@@ -321,7 +331,7 @@ async function main() {
       gender: "Féminin",
     }),
   );
-  assert.match(enrolled.student.studentCode, /^CD-IN-EL-\d{2}-\d{5}$/);
+  assert.equal(enrolled.student.studentCode, expectedMemoryStudentCode("CD", "IN", "Diop", "Awa"));
   assert.equal(enrolled.student.matricule, enrolled.student.studentCode);
   assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
   assert.equal(enrolled.student.classCode, activeClass.class_code);
@@ -389,7 +399,10 @@ async function main() {
       lastName: "Nkurunziza",
     }),
   );
-  assert.match(enrolledBi.student.studentCode, /^BI-LB-EL-\d{2}-\d{5}$/);
+  assert.equal(
+    enrolledBi.student.studentCode,
+    expectedMemoryStudentCode("BI", "LB", "Nkurunziza", "Grace"),
+  );
   assert.notEqual(enrolled.student.studentCode, enrolledBi.student.studentCode);
   assert.notEqual(
     enrolled.credentials.temporarySecret,

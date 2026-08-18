@@ -9,6 +9,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
+const { studentIdentityInitials } = require("../lib/studentCanonicalIdentifier");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19562;
@@ -199,6 +200,10 @@ async function main() {
     assert.equal(enrolledOk.status, 201, JSON.stringify(enrolledOk.data));
     const studentCode = enrolledOk.data.student?.studentCode ?? enrolledOk.data.studentCode;
     assert.ok(studentCode);
+    assert.match(
+      studentCode,
+      new RegExp(`^CD-IN-${studentIdentityInitials("Diop", "Awa")}-\\d{2}-\\d{5}$`),
+    );
 
     const list = await request("/students", { token: tokenCd });
     assert.equal(list.status, 200, JSON.stringify(list.data));

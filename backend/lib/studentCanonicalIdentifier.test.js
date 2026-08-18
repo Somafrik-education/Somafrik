@@ -11,6 +11,14 @@ const {
 } = require("./studentCanonicalIdentifier");
 
 assert.equal(studentIdentityInitials("OKITO", "Hope Sabrina"), "OHS");
+assert.equal(studentIdentityInitials("Diop", "Awa"), "DA");
+assert.equal(studentIdentityInitials("Nkurunziza", "Grace"), "NG");
+assert.equal(studentIdentityInitials("Kabeya", "Grâce"), "KG");
+assert.equal(studentIdentityInitials("Fall", "Ibra"), "FI");
+assert.throws(
+  () => studentIdentityInitials("", ""),
+  (error) => error.code === "STUDENT_INITIALS_REQUIRED",
+);
 assert.equal(
   formatStudentCanonicalCode({ countryCode: "cd", schoolInitials: "in", studentInitials: "ohs", year: 2026, sequence: 1 }),
   "CD-IN-OHS-26-00001",
