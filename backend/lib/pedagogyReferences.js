@@ -38,6 +38,28 @@ async function assertOpenAcademicYearForClass(tx, klass) {
   return year;
 }
 
+async function assertAcademicYearForWeeklySlot(tx, { schoolId, academicYearId, classAcademicYearId, requireOpen }) {
+  const year = await tx.getAcademicYearById(academicYearId);
+  if (!year || String(year.school_id) !== String(schoolId)) {
+    throw createPedagogyError(
+      404,
+      "Année académique introuvable pour cet établissement.",
+      PEDAGOGY_ERROR.ACADEMIC_YEAR_MISMATCH,
+    );
+  }
+  if (classAcademicYearId && String(year.id) !== String(classAcademicYearId)) {
+    throw createPedagogyError(
+      409,
+      "Année académique incohérente avec la classe du cours.",
+      PEDAGOGY_ERROR.ACADEMIC_YEAR_MISMATCH,
+    );
+  }
+  if (requireOpen && isClosedAcademicYearStatus(year.status)) {
+    throw createPedagogyError(409, "Année scolaire fermée.", PEDAGOGY_ERROR.ACADEMIC_YEAR_CLOSED);
+  }
+  return year;
+}
+
 async function resolveCanonicalPeriod(tx, academicYearId, periodName) {
   const name = asTrimmed(periodName);
   if (!name) return null;
@@ -84,6 +106,34 @@ async function resolveTeacherWithActiveAssignment(
   return { teacher, teacherId: teacher.id };
 }
 
+async function requireTeacherWithActiveAssignment(tx, args) {
+  const key = asTrimmed(args.teacherKey);
+  if (!key) {
+    throw createPedagogyError(
+      400,
+      "Enseignant obligatoire pour un créneau de cours.",
+      PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+    );
+  }
+  const resolved = await resolveTeacherWithActiveAssignment(tx, args);
+  if (!resolved.teacherId || !resolved.teacher) {
+    throw createPedagogyError(
+      400,
+      "Enseignant obligatoire pour un créneau de cours.",
+      PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+    );
+  }
+  const status = String(resolved.teacher.status ?? "active").toLowerCase();
+  if (status !== "active") {
+    throw createPedagogyError(
+      409,
+      "L'enseignant n'est pas actif.",
+      PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+    );
+  }
+  return resolved;
+}
+
 function mapPedagogyPersistenceError(error) {
   if (error?.code && Object.values(PEDAGOGY_ERROR).includes(error.code)) {
     return error;
@@ -109,6 +159,9 @@ function mapPedagogyPersistenceError(error) {
   if (/période|period|term/i.test(message) && statusCode === 404) {
     return createPedagogyError(statusCode, message, PEDAGOGY_ERROR.PERIOD_NOT_FOUND);
   }
+  if (error?.code === "23P01" || /exclusion constraint|no_class_overlap|no_teacher_overlap/i.test(message)) {
+    return createPedagogyError(409, "Conflit d'emploi du temps.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT);
+  }
   if (/année scolaire fermée|academic year/i.test(message)) {
     return createPedagogyError(statusCode, message, PEDAGOGY_ERROR.ACADEMIC_YEAR_CLOSED);
   }
@@ -126,5 +179,7 @@ module.exports = {
   assertOpenAcademicYearForClass,
   resolveCanonicalPeriod,
   resolveTeacherWithActiveAssignment,
+  requireTeacherWithActiveAssignment,
+  assertAcademicYearForWeeklySlot,
   mapPedagogyPersistenceError,
 };

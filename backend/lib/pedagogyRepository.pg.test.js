@@ -162,6 +162,7 @@ async function seedFixture(pool) {
     openYear: openYear.rows[0].id,
     term: term.rows[0].id,
     math: math.rows[0].id,
+    physics: physics.rows[0].id,
     teacher: teacher.rows[0].id,
     teacherNoAssign: teacherNoAssign.rows[0].id,
     student: student.rows[0].id,
@@ -309,30 +310,36 @@ async function main() {
 
     const slotA = await store.createCourseSchedule(
       {
-        id: "SCH-LOT5-1",
-        className: "6ème A",
-        subject: "Mathématiques",
-        start: "2026-09-01T08:00:00.000Z",
-        end: "2026-09-01T09:00:00.000Z",
+        schoolCourseId: course.schoolCourseId,
+        academicYearId: fixture.openYear,
+        dayOfWeek: 1,
+        startTime: "08:00",
+        endTime: "09:00",
       },
       admin,
       auditMeta,
     );
     assert.equal(slotA.className, "6ème A");
-    const slotRow = await pool.query(`SELECT class_id FROM course_schedule_slots WHERE legacy_json_id = $1`, [
-      "SCH-LOT5-1",
-    ]);
-    assert.ok(slotRow.rows[0].class_id, "créneau lié à une classe canonique");
+    assert.equal(slotA.schoolCourseId, course.schoolCourseId);
+    assert.equal(slotA.dayOfWeek, 1);
+    assert.equal(slotA.startTime, "08:00");
+    const slotRow = await pool.query(
+      `SELECT class_id, school_course_id, academic_year_id FROM course_schedule_weekly_slots WHERE id = $1`,
+      [slotA.id],
+    );
+    assert.equal(slotRow.rows[0].class_id, fixture.klass);
+    assert.equal(slotRow.rows[0].school_course_id, course.schoolCourseId);
+    assert.equal(slotRow.rows[0].academic_year_id, fixture.openYear);
 
     await assert.rejects(
       () =>
         store.createCourseSchedule(
           {
-            id: "SCH-UNKNOWN-CLASS",
             className: "Classe Inconnue",
             subject: "Mathématiques",
-            start: "2026-09-02T08:00:00.000Z",
-            end: "2026-09-02T09:00:00.000Z",
+            dayOfWeek: 2,
+            startTime: "08:00",
+            endTime: "09:00",
           },
           admin,
           auditMeta,
@@ -344,11 +351,11 @@ async function main() {
       () =>
         store.createCourseSchedule(
           {
-            id: "SCH-UNKNOWN-SUBJECT",
-            className: "6ème A",
-            subject: "Latin",
-            start: "2026-09-02T08:00:00.000Z",
-            end: "2026-09-02T09:00:00.000Z",
+            schoolCourseId: "00000000-0000-0000-0000-000000000099",
+            academicYearId: fixture.openYear,
+            dayOfWeek: 2,
+            startTime: "08:00",
+            endTime: "09:00",
           },
           admin,
           auditMeta,
@@ -360,34 +367,75 @@ async function main() {
       () =>
         store.createCourseSchedule(
           {
-            id: "SCH-BAD-PERIOD",
-            className: "6ème A",
-            subject: "Mathématiques",
-            periodName: "Trimestre 9",
-            start: "2026-09-03T08:00:00.000Z",
-            end: "2026-09-03T09:00:00.000Z",
+            schoolCourseId: course.schoolCourseId,
+            academicYearId: fixture.openYear,
+            dayOfWeek: 0,
+            startTime: "08:00",
+            endTime: "09:00",
           },
           admin,
           auditMeta,
         ),
-      (error) => error.code === PEDAGOGY_ERROR.PERIOD_NOT_FOUND,
+      (error) => error.code === PEDAGOGY_ERROR.INVALID_DAY_OF_WEEK,
     );
 
     await assert.rejects(
       () =>
         store.createCourseSchedule(
           {
-            id: "SCH-LOT5-CONFLICT",
-            className: "6ème A",
-            subject: "Mathématiques",
-            start: "2026-09-01T08:30:00.000Z",
-            end: "2026-09-01T09:30:00.000Z",
+            schoolCourseId: course.schoolCourseId,
+            academicYearId: fixture.openYear,
+            dayOfWeek: 1,
+            startTime: "09:00",
+            endTime: "08:00",
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.INVALID_TIME_RANGE,
+    );
+
+    await assert.rejects(
+      () =>
+        store.createCourseSchedule(
+          {
+            schoolCourseId: course.schoolCourseId,
+            academicYearId: fixture.openYear,
+            dayOfWeek: 1,
+            startTime: "08:30",
+            endTime: "09:30",
           },
           admin,
           auditMeta,
         ),
       (error) => error.code === PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT,
     );
+
+    const adjacent = await store.createCourseSchedule(
+      {
+        schoolCourseId: course.schoolCourseId,
+        academicYearId: fixture.openYear,
+        dayOfWeek: 1,
+        startTime: "09:00",
+        endTime: "10:00",
+      },
+      admin,
+      auditMeta,
+    );
+    assert.equal(adjacent.startTime, "09:00");
+
+    const tuesday = await store.createCourseSchedule(
+      {
+        schoolCourseId: course.schoolCourseId,
+        academicYearId: fixture.openYear,
+        dayOfWeek: 2,
+        startTime: "08:00",
+        endTime: "09:00",
+      },
+      admin,
+      auditMeta,
+    );
+    assert.equal(tuesday.dayOfWeek, 2);
 
     const klassB = await pool.query(
       `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
@@ -400,25 +448,44 @@ async function main() {
       [fixture.schoolA, fixture.teacher, klassB.rows[0].id, fixture.math, fixture.openYear],
     );
 
+    const courseB = await store.createSchoolCourse(
+      {
+        className: "6ème B",
+        name: "Mathématiques",
+        teacherId: "ENS-PG-001",
+      },
+      admin,
+      auditMeta,
+    );
+
+    const physicsId = (
+      await pool.query(`SELECT id FROM subjects WHERE subject_code = 'SUB-PHY' LIMIT 1`)
+    ).rows[0].id;
+    const physicsCourse = await pool.query(
+      `INSERT INTO school_courses (school_id, class_id, subject_id, teacher_id, course_code, coefficient, status)
+       VALUES ($1, $2, $3, $4, 'CD-2026-0001-CRS-PHY', 1, 'active') RETURNING id`,
+      [fixture.schoolA, klassB.rows[0].id, physicsId, fixture.teacher],
+    );
+
     const scheduleWithTeacher = await store.createCourseSchedule(
       {
-        id: "SCH-PATCH-TEACHER",
-        className: "6ème A",
-        subject: "Mathématiques",
-        teacherId: "ENS-PG-001",
-        start: "2026-10-01T08:00:00.000Z",
-        end: "2026-10-01T09:00:00.000Z",
+        schoolCourseId: course.schoolCourseId,
+        academicYearId: fixture.openYear,
+        dayOfWeek: 4,
+        startTime: "08:00",
+        endTime: "09:00",
       },
       admin,
       auditMeta,
     );
     assert.equal(scheduleWithTeacher.className, "6ème A");
+    assert.equal(scheduleWithTeacher.dayOfWeek, 4);
 
     await assert.rejects(
       () =>
         store.updateCourseSchedule(
-          "SCH-PATCH-TEACHER",
-          { subject: "Physique" },
+          scheduleWithTeacher.id,
+          { schoolCourseId: physicsCourse.rows[0].id },
           admin,
           auditMeta,
         ),
@@ -426,18 +493,18 @@ async function main() {
     );
 
     const patchedSchedule = await store.updateCourseSchedule(
-      "SCH-PATCH-TEACHER",
-      { className: "6ème B" },
+      scheduleWithTeacher.id,
+      { schoolCourseId: courseB.schoolCourseId },
       admin,
       auditMeta,
     );
     assert.equal(patchedSchedule.className, "6ème B");
     const patchedRow = await pool.query(
-      `SELECT class_id, class_name FROM course_schedule_slots WHERE legacy_json_id = $1`,
-      ["SCH-PATCH-TEACHER"],
+      `SELECT class_id, school_course_id FROM course_schedule_weekly_slots WHERE id = $1`,
+      [scheduleWithTeacher.id],
     );
-    assert.equal(patchedRow.rows[0].class_name, "6ème B");
     assert.equal(patchedRow.rows[0].class_id, klassB.rows[0].id, "class_id mis à jour au PATCH");
+    assert.equal(patchedRow.rows[0].school_course_id, courseB.schoolCourseId);
 
     const evaluation = await store.createEvaluation(
       {
@@ -823,8 +890,8 @@ async function main() {
     );
     restoreAudit();
     const coursesAfterFailedAudit = await pool.query(
-      `SELECT count(*)::int AS count FROM school_courses WHERE subject_id = $1`,
-      [fixture.physics],
+      `SELECT count(*)::int AS count FROM school_courses WHERE subject_id = $1 AND class_id = $2`,
+      [fixture.physics, fixture.klass],
     );
     assert.equal(coursesAfterFailedAudit.rows[0].count, 0, "rollback audit : cours non persisté");
 
@@ -832,7 +899,7 @@ async function main() {
     const schoolCourses = projection.courses.filter((row) => row.schoolCode === "CD-2026-0001");
     const schoolSlots = projection.courseSchedules.filter((row) => row.schoolCode === "CD-2026-0001");
     assert.ok(schoolCourses.some((row) => row.name === "Mathématiques"));
-    assert.ok(schoolSlots.some((row) => row.id === "SCH-LOT5-1"));
+    assert.ok(schoolSlots.some((row) => row.schoolCourseId === course.schoolCourseId && row.dayOfWeek === 1));
     assert.ok(projection.notes.some((row) => Number(row.value ?? row.score) === 14 || Number(row.value) >= 14));
 
     const boState = await pool.query(`SELECT state_payload FROM backoffice_state WHERE state_key = 'default'`);

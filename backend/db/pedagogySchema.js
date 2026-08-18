@@ -3,7 +3,18 @@
 /**
  * LOT 5 — schéma PostgreSQL canonique pour la pédagogie (cours, emplois du temps).
  * Idempotent ; aucun backfill ni lecture de backoffice_state.
+ *
+ * Planning V2 : course_schedule_weekly_slots est l'autorité hebdomadaire.
+ * course_schedule_slots reste pour les événements datés (examens / historique).
  */
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+const WEEKLY_SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "migrations/20260828_course_schedule_weekly_canonical.sql"),
+  "utf8",
+);
 
 const PEDAGOGY_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS school_courses (
@@ -71,6 +82,8 @@ BEGIN
     ALTER TABLE course_schedule_slots ALTER COLUMN class_id SET NOT NULL;
   END IF;
 END $$;
+
+${WEEKLY_SCHEMA_SQL}
 `;
 
-module.exports = { PEDAGOGY_SCHEMA_SQL };
+module.exports = { PEDAGOGY_SCHEMA_SQL, WEEKLY_SCHEMA_SQL };

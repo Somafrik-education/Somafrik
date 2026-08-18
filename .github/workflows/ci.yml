@@ -86,6 +86,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:pedagogy-management
+      - name: verify:planning-v2-weekly
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:planning-v2-weekly
       - name: verify:pedagogy-legacy-cleanup (mémoire)
         run: npm run verify:pedagogy-legacy-cleanup
 

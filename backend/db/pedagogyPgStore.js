@@ -7,6 +7,24 @@ const {
   createPedagogyError,
 } = require("../lib/pedagogyManagement");
 const pedagogyService = require("../lib/pedagogyService");
+const { mapWeeklyScheduleDto } = require("../lib/planningWeekly");
+
+const WEEKLY_SLOT_SELECT = `
+          SELECT w.id, w.school_id, w.academic_year_id, w.school_course_id, w.class_id, w.teacher_id,
+                 w.day_of_week, w.start_time, w.end_time, w.status, w.room, w.created_at, w.updated_at,
+                 s.school_code, c.name AS class_name, sc.subject_id, sc.status AS school_course_status,
+                 sub.name AS subject_name, t.teacher_code,
+                 NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
+                 ay.name AS academic_year_name, ay.status AS academic_year_status
+          FROM course_schedule_weekly_slots w
+          JOIN schools s ON s.id = w.school_id
+          JOIN classes c ON c.id = w.class_id
+          JOIN school_courses sc ON sc.id = w.school_course_id
+          JOIN subjects sub ON sub.id = sc.subject_id
+          JOIN teachers t ON t.id = w.teacher_id
+          LEFT JOIN users u ON u.id = t.user_id
+          LEFT JOIN academic_years ay ON ay.id = w.academic_year_id
+`;
 
 function parsePayload(value) {
   if (!value) return {};
@@ -31,7 +49,8 @@ function createPedagogyPgStore(repo) {
       async getSchoolByCode(code) {
         const row = await one("SELECT * FROM schools WHERE school_code = $1", [asTrimmed(code).toUpperCase()]);
         if (!row) return null;
-        return { ...row, code: row.school_code };
+        const profile = parsePayload(row.profile_payload);
+        return { ...row, code: row.school_code, timezone: profile.timezone };
       },
       async resolveActorUserId(principal) {
         const normalized = asTrimmed(principal?.sub || principal?.id);
@@ -168,6 +187,145 @@ function createPedagogyPgStore(repo) {
         }
         sql += " LIMIT 1";
         return one(sql, params);
+      },
+      async getSchoolCourseContext(courseKey, schoolId) {
+        const key = asTrimmed(courseKey);
+        if (!key) return null;
+        return one(
+          `SELECT sc.*, s.school_code, c.academic_year_id AS class_academic_year_id,
+                  t.teacher_code, t.status AS teacher_row_status
+           FROM school_courses sc
+           JOIN schools s ON s.id = sc.school_id
+           JOIN classes c ON c.id = sc.class_id
+           LEFT JOIN teachers t ON t.id = sc.teacher_id
+           WHERE sc.school_id = $2
+             AND (sc.id::text = $1 OR sc.course_code = $1 OR sc.legacy_json_id = $1)
+           LIMIT 1`,
+          [key, schoolId],
+        );
+      },
+      async resolveTeacherIdForPrincipal(principal, schoolId) {
+        const keys = [
+          principal?.sub,
+          principal?.id,
+          principal?.identifier,
+          principal?.teacherId,
+          principal?.teacherCode,
+        ]
+          .map((value) => asTrimmed(value))
+          .filter(Boolean);
+        if (!keys.length || !schoolId) return null;
+        const row = await one(
+          `SELECT t.id
+           FROM teachers t
+           LEFT JOIN users u ON u.id = t.user_id
+           WHERE t.school_id = $1
+             AND (
+               t.id::text = ANY($2::text[])
+               OR t.teacher_code = ANY($2::text[])
+               OR u.id::text = ANY($2::text[])
+               OR u.user_code = ANY($2::text[])
+             )
+           LIMIT 1`,
+          [schoolId, keys],
+        );
+        return row?.id ?? null;
+      },
+      async insertWeeklyScheduleSlot(payload) {
+        const row = await one(
+          `INSERT INTO course_schedule_weekly_slots
+             (school_id, academic_year_id, school_course_id, class_id, teacher_id,
+              day_of_week, start_time, end_time, status, room)
+           VALUES ($1,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10)
+           RETURNING id`,
+          [
+            payload.schoolId,
+            payload.academicYearId,
+            payload.schoolCourseId,
+            payload.classId,
+            payload.teacherId,
+            payload.dayOfWeek,
+            payload.startTime,
+            payload.endTime,
+            payload.status ?? "active",
+            payload.room ?? "",
+          ],
+        );
+        return this.getWeeklyScheduleById(row.id, { schoolCode: "*" });
+      },
+      async updateWeeklyScheduleSlot(id, patch) {
+        await one(
+          `UPDATE course_schedule_weekly_slots
+           SET school_id = $2,
+               academic_year_id = $3,
+               school_course_id = $4,
+               class_id = $5,
+               teacher_id = $6,
+               day_of_week = $7,
+               start_time = $8::time,
+               end_time = $9::time,
+               room = COALESCE($10, room),
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING id`,
+          [
+            id,
+            patch.schoolId,
+            patch.academicYearId,
+            patch.schoolCourseId,
+            patch.classId,
+            patch.teacherId,
+            patch.dayOfWeek,
+            patch.startTime,
+            patch.endTime,
+            patch.room ?? null,
+          ],
+        );
+        return this.getWeeklyScheduleById(id, { schoolCode: "*" });
+      },
+      async cancelWeeklyScheduleSlot(id) {
+        await query(
+          `UPDATE course_schedule_weekly_slots
+           SET status = 'cancelled', updated_at = NOW()
+           WHERE id = $1 AND status = 'active'`,
+          [id],
+        );
+        return this.getWeeklyScheduleById(id, { schoolCode: "*" });
+      },
+      async getWeeklyScheduleById(id, principal) {
+        const params = [asTrimmed(id)];
+        let sql = `${WEEKLY_SLOT_SELECT} WHERE w.id::text = $1`;
+        const schoolCode = asTrimmed(principal?.schoolCode);
+        if (schoolCode && schoolCode !== "*") {
+          sql += " AND s.school_code = $2";
+          params.push(schoolCode.toUpperCase());
+        }
+        sql += " LIMIT 1";
+        const row = await one(sql, params);
+        return mapWeeklyScheduleDto(row);
+      },
+      async listWeeklyScheduleSlots(filters = {}) {
+        const params = [];
+        const where = [];
+        const push = (sql, value) => {
+          params.push(value);
+          where.push(sql.replace("?", `$${params.length}`));
+        };
+        if (filters.schoolId) push("w.school_id = ?", filters.schoolId);
+        if (filters.schoolCode && filters.schoolCode !== "*") {
+          push("s.school_code = ?", asTrimmed(filters.schoolCode).toUpperCase());
+        }
+        if (filters.academicYearId) push("w.academic_year_id::text = ?", filters.academicYearId);
+        if (filters.classId) push("w.class_id::text = ?", filters.classId);
+        if (filters.teacherId) push("w.teacher_id::text = ?", filters.teacherId);
+        if (filters.schoolCourseId) push("w.school_course_id::text = ?", filters.schoolCourseId);
+        if (filters.dayOfWeek != null) push("w.day_of_week = ?", filters.dayOfWeek);
+        if (filters.status && filters.status !== "all") push("w.status = ?", filters.status);
+        const sql = `${WEEKLY_SLOT_SELECT}
+          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+          ORDER BY w.day_of_week, w.start_time, w.id`;
+        const rows = await all(sql, params);
+        return rows.map(mapWeeklyScheduleDto);
       },
       async insertCourse(payload) {
         const row = await one(
@@ -436,10 +594,9 @@ function createPedagogyPgStore(repo) {
           ORDER BY sc.created_at
         `),
         repo.all(`
-          SELECT css.*, s.school_code
-          FROM course_schedule_slots css
-          JOIN schools s ON s.id = css.school_id
-          ORDER BY css.starts_at
+          ${WEEKLY_SLOT_SELECT}
+          WHERE w.status = 'active'
+          ORDER BY w.day_of_week, w.start_time, w.id
         `),
       ]);
 
@@ -449,12 +606,18 @@ function createPedagogyPgStore(repo) {
 
       return {
         courses,
-        courseSchedules: scheduleRows.map(mapScheduleRow),
+        courseSchedules: scheduleRows.map(mapWeeklyScheduleDto),
         evaluations: evaluationRows.map((row) => repo.mapEvaluation(row)),
         notes: gradeRows.map((row) => repo.mapGrade(row)),
         presences: attendanceRows.map((row) => repo.mapAttendance(row)),
       };
     },
+    getSchoolByCode: (code) => bind(repo).getSchoolByCode(code),
+    resolveTeacherIdForPrincipal: (principal, schoolId) =>
+      bind(repo).resolveTeacherIdForPrincipal(principal, schoolId),
+    listWeeklyScheduleSlots: (filters) => bind(repo).listWeeklyScheduleSlots(filters),
+    getWeeklyScheduleById: (id, principal) => bind(repo).getWeeklyScheduleById(id, principal),
+    listCourseSchedules: (principal, query) => pedagogyService.listCourseSchedules(api, principal, query),
     createSchoolCourse: (payload, principal, auditMeta) =>
       pedagogyService.createCourse(api, payload, principal, auditMeta),
     updateSchoolCourse: (id, patch, principal, auditMeta) =>
@@ -468,7 +631,7 @@ function createPedagogyPgStore(repo) {
       pedagogyService.updateCourseSchedule(api, id, patch, principal, auditMeta),
     deleteCourseSchedule: (id, principal, auditMeta) =>
       pedagogyService.deleteCourseSchedule(api, id, principal, auditMeta),
-    getCourseSchedule: (id, principal) => bind(repo).getScheduleById(id, principal),
+    getCourseSchedule: (id, principal) => bind(repo).getWeeklyScheduleById(id, principal),
     createEvaluation: (payload, principal, auditMeta) =>
       pedagogyService.createEvaluation(api, payload, principal, auditMeta),
     updateEvaluation: (id, patch, principal, auditMeta) =>
@@ -487,6 +650,7 @@ function mapCourseRow(row) {
   const id = row.legacy_json_id || row.course_code || row.id;
   return {
     id,
+    schoolCourseId: row.id,
     publicId: id,
     dbId: row.id,
     schoolId: row.school_id,

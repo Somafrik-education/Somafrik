@@ -33,15 +33,22 @@ export interface CourseScheduleSlot {
   kind?: PlanningScheduleKind;
   /** Intitulé affiché pour un examen planifié. */
   examName?: string;
-  /** Type d'évaluation (Contrôle, Devoir, …). */
   examType?: string;
-  /** Identifiant lié dans `state.exams` pour les examens planifiés. */
   examId?: string;
-  /** Période académique (ex. Trimestre 1). */
   periodName?: string;
-  /** Dates inclusives au format JJ-MM-AAAA. */
   periodStart?: string;
   periodEnd?: string;
+  /** DTO canonique Planning V2 — projection, jamais autorité locale. */
+  schoolCourseId?: string;
+  academicYearId?: string;
+  classId?: string;
+  subjectId?: string;
+  /** 1 = lundi … 7 = dimanche. */
+  dayOfWeek?: number;
+  startTime?: string;
+  endTime?: string;
+  status?: string;
+  courseName?: string;
 }
 
 export interface PlanningCalendarEvent {
@@ -472,52 +479,51 @@ export function expandScheduleOccurrences(
     return [{ id: slot.id, start: slot.start, end: slot.end }];
   }
 
-  if (!hasSchedulePeriod(slot)) {
-    return [{ id: slot.id, start: slot.start, end: slot.end }];
-  }
-
-  const periodStart = parsePeriodDate(slot.periodStart);
-  const periodEnd = parsePeriodDate(slot.periodEnd);
-  const templateStart = new Date(slot.start);
-  const templateEnd = new Date(slot.end);
-  if (!periodStart || !periodEnd || Number.isNaN(templateStart.getTime()) || Number.isNaN(templateEnd.getTime())) {
-    return [{ id: slot.id, start: slot.start, end: slot.end }];
-  }
-
-  const durationMs = Math.max(templateEnd.getTime() - templateStart.getTime(), 30 * 60 * 1000);
-  const targetDay = templateStart.getDay();
-  let cursor = startOfDay(periodStart);
-  cursor = addDays(cursor, (targetDay - cursor.getDay() + 7) % 7);
-  cursor.setHours(templateStart.getHours(), templateStart.getMinutes(), templateStart.getSeconds(), 0);
-
-  const lastDay = endOfDay(periodEnd);
-  const occurrences: Array<{ id: string; start: string; end: string }> = [];
-  const maxWeeks = Math.min(
-    54,
-    Math.max(1, Math.ceil((lastDay.getTime() - periodStart.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 2),
-  );
-  let guard = 0;
-
-  while (cursor <= lastDay && guard < maxWeeks) {
-    guard += 1;
-    const occStart = new Date(cursor);
-    const occEnd = new Date(occStart.getTime() + durationMs);
-    const overlapsView =
-      !bounds?.viewStart ||
-      !bounds?.viewEnd ||
-      (occEnd >= bounds.viewStart && occStart <= bounds.viewEnd);
-
-    if (overlapsView) {
-      occurrences.push({
-        id: `${slot.id}${OCCURRENCE_ID_SUFFIX}${occStart.toISOString().slice(0, 10)}`,
-        start: occStart.toISOString(),
-        end: occEnd.toISOString(),
-      });
+  const dayOfWeek = Number(slot.dayOfWeek);
+  const startTime = String(slot.startTime ?? "").trim();
+  const endTime = String(slot.endTime ?? "").trim();
+  if (dayOfWeek >= 1 && dayOfWeek <= 7 && startTime && endTime) {
+    const periodStart = parsePeriodDate(slot.periodStart) ?? bounds?.viewStart ?? null;
+    const periodEnd = parsePeriodDate(slot.periodEnd) ?? bounds?.viewEnd ?? null;
+    if (!periodStart || !periodEnd) {
+      return slot.start && slot.end ? [{ id: slot.id, start: slot.start, end: slot.end }] : [];
     }
-    cursor = addDays(cursor, 7);
+    const [startHour, startMinute] = startTime.split(":").map((part) => Number(part));
+    const [endHour, endMinute] = endTime.split(":").map((part) => Number(part));
+    const isoWeekdayOf = (date: Date) => {
+      const js = date.getDay();
+      return js === 0 ? 7 : js;
+    };
+    const occurrences: Array<{ id: string; start: string; end: string }> = [];
+    let cursor = startOfDay(periodStart);
+    const lastDay = endOfDay(periodEnd);
+    while (cursor <= lastDay) {
+      if (isoWeekdayOf(cursor) === dayOfWeek) {
+        const occStart = new Date(cursor);
+        occStart.setHours(startHour || 0, startMinute || 0, 0, 0);
+        const occEnd = new Date(cursor);
+        occEnd.setHours(endHour || 0, endMinute || 0, 0, 0);
+        const overlapsView =
+          !bounds?.viewStart ||
+          !bounds?.viewEnd ||
+          (occEnd >= bounds.viewStart && occStart <= bounds.viewEnd);
+        if (overlapsView) {
+          occurrences.push({
+            id: `${slot.id}${OCCURRENCE_ID_SUFFIX}${occStart.toISOString().slice(0, 10)}`,
+            start: occStart.toISOString(),
+            end: occEnd.toISOString(),
+          });
+        }
+      }
+      cursor = addDays(cursor, 1);
+    }
+    return occurrences;
   }
 
-  return occurrences.length ? occurrences : [{ id: slot.id, start: slot.start, end: slot.end }];
+  if (slot.start && slot.end) {
+    return [{ id: slot.id, start: slot.start, end: slot.end }];
+  }
+  return [];
 }
 
 export function formatPeriodLabel(slot: Pick<CourseScheduleSlot, "periodName" | "periodStart" | "periodEnd">): string {
@@ -540,11 +546,12 @@ export const PLANNING_WEEKDAYS = [
   { value: 4, label: "Jeudi" },
   { value: 5, label: "Vendredi" },
   { value: 6, label: "Samedi" },
-  { value: 0, label: "Dimanche" },
+  { value: 7, label: "Dimanche" },
 ] as const;
 
 export function weekdayLabelFromDate(date: Date): string {
-  const weekday = PLANNING_WEEKDAYS.find((row) => row.value === date.getDay());
+  const iso = date.getUTCDay() === 0 ? 7 : date.getUTCDay();
+  const weekday = PLANNING_WEEKDAYS.find((row) => row.value === iso);
   return weekday?.label ?? "";
 }
 
@@ -557,19 +564,23 @@ export function extractTimeFromIso(iso: string): string {
 
 export function weekdayFromIso(iso: string): number {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? 1 : date.getDay();
+  if (Number.isNaN(date.getTime())) return 1;
+  const js = date.getUTCDay();
+  return js === 0 ? 7 : js;
 }
 
-/** Construit le modèle horaire (jour + heures) ancré sur le début de période. */
+/** Construit un ancrage visuel. Le jour métier est 1–7 (7 = dimanche), pas Date.getDay(). */
 export function buildSlotTemplateTimes(
   weekday: number,
   startTime: string,
   endTime: string,
   periodStart?: string,
 ): { start: string; end: string } {
+  const isoWeekday = weekday === 0 ? 7 : weekday;
+  const jsWeekday = isoWeekday === 7 ? 0 : isoWeekday;
   const anchor = parsePeriodDate(periodStart) ?? new Date();
   let cursor = startOfDay(anchor);
-  cursor = addDays(cursor, (weekday - cursor.getDay() + 7) % 7);
+  cursor = addDays(cursor, (jsWeekday - cursor.getDay() + 7) % 7);
 
   const [startHour, startMinute] = startTime.split(":").map((part) => Number(part));
   const [endHour, endMinute] = endTime.split(":").map((part) => Number(part));
@@ -1531,6 +1542,37 @@ export function detectScheduleConflicts(
   candidate: CourseScheduleSlot,
   ignoreId?: string,
 ): string[] {
+  const candidateDay = Number(candidate.dayOfWeek);
+  const candidateStart = String(candidate.startTime ?? "").trim();
+  const candidateEnd = String(candidate.endTime ?? "").trim();
+  if (candidateDay >= 1 && candidateDay <= 7 && candidateStart && candidateEnd) {
+    if (candidateEnd <= candidateStart) {
+      return ["L'heure de fin doit être postérieure à l'heure de début."];
+    }
+    const ignoreMaster = ignoreId ? getMasterScheduleId(ignoreId) : "";
+    const issues: string[] = [];
+    for (const slot of slots) {
+      if (ignoreMaster && getMasterScheduleId(slot.id) === ignoreMaster) continue;
+      if (normalize(slot.schoolCode) !== normalize(candidate.schoolCode)) continue;
+      const slotDay = Number(slot.dayOfWeek);
+      const slotStart = String(slot.startTime ?? "").trim();
+      const slotEnd = String(slot.endTime ?? "").trim();
+      if (!(slotDay >= 1 && slotDay <= 7 && slotStart && slotEnd)) continue;
+      if (slotDay !== candidateDay) continue;
+      const overlaps = candidateStart < slotEnd && candidateEnd > slotStart;
+      if (!overlaps) continue;
+      if (candidate.teacherId && slot.teacherId && candidate.teacherId === slot.teacherId) {
+        const teacherLabel = slot.teacherName ? ` ${slot.teacherName}` : "";
+        issues.push(
+          `Conflit enseignant${teacherLabel} : déjà « ${slot.subject} » (${slot.className}) ${slotStart}–${slotEnd}.`,
+        );
+      }
+      if (planningLabelsMatch(candidate.className, slot.className)) {
+        issues.push(`Conflit sur ${slot.className} : « ${slot.subject} » ${slotStart}–${slotEnd}.`);
+      }
+    }
+    return [...new Set(issues)];
+  }
   const start = new Date(candidate.start).getTime();
   const end = new Date(candidate.end).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {

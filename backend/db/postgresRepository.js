@@ -515,6 +515,31 @@ class PostgresRepository {
   async ensurePedagogyCanonicalSchema() {
     const { PEDAGOGY_SCHEMA_SQL } = require("./pedagogySchema");
     await this.query(PEDAGOGY_SCHEMA_SQL);
+    await this.ensurePlanningWeeklyPreflight();
+  }
+
+  /**
+   * Inventaire des lignes datées course_schedule_slots.
+   * Aucun backfill vers course_schedule_weekly_slots.
+   * STOP si SOMAFRIK_PLANNING_WEEKLY_BACKFILL est activé.
+   */
+  async ensurePlanningWeeklyPreflight() {
+    const {
+      inventoryPlanningWeeklyLegacy,
+      assertPlanningWeeklyNoAutomaticBackfill,
+      formatPlanningWeeklyPreflightLog,
+    } = require("../lib/planningWeeklyMigrationPreflight");
+    const report = await inventoryPlanningWeeklyLegacy(this);
+    this.planningWeeklyPreflight = {
+      skipped: report.skipped === true,
+      legacyCount: report.legacyCount,
+      summary: report.summary,
+    };
+    if (report.legacyCount > 0 || report.skipped) {
+      console.info(formatPlanningWeeklyPreflightLog(report));
+    }
+    assertPlanningWeeklyNoAutomaticBackfill(report);
+    return report;
   }
 
   async ensurePlatformCanonicalSchema() {
@@ -1318,6 +1343,10 @@ class PostgresRepository {
 
   getCourseSchedule(id, principal) {
     return this.getPedagogyStore().getCourseSchedule(id, principal);
+  }
+
+  listCourseSchedules(principal, query) {
+    return this.getPedagogyStore().listCourseSchedules(principal, query);
   }
 
   createSchoolEvaluation(payload, principal, auditMeta) {
