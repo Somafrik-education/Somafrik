@@ -101,6 +101,21 @@ async function preparePedagogyHttpDatabase(databaseUrl) {
        RETURNING id`,
       [schoolA.rows[0].id, passwordHash],
     );
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
+       VALUES ($1, 'PREFET-CD-2026-0001-01', 'Samuel', 'Prefet', 'prefet-http@test.cd', $2, $2, 'PREFET_ETUDES', 'active')`,
+      [schoolA.rows[0].id, passwordHash],
+    );
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
+       VALUES ($1, 'SECRETAIRE-CD-2026-0001-01', 'Amina', 'Secretaire', 'secretaire-http@test.cd', $2, $2, 'SECRETARY', 'active')`,
+      [schoolA.rows[0].id, passwordHash],
+    );
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+       VALUES ($1, 'PARENT-CD-2026-0001-01', 'Parent', 'HTTP', 'parent-http@test.cd', '+243 820 000 001', $2, $2, 'PARENT', 'active')`,
+      [schoolA.rows[0].id, passwordHash],
+    );
     const teacherUser = await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
        VALUES ($1, 'ENS-0001', 'Paul', 'Prof', 'ens-http@test.cd', $2, $2, 'TEACHER', 'active')
@@ -198,6 +213,61 @@ async function login(port, identifier, password, schoolCode) {
   return result.data.accessToken || result.data.token;
 }
 
+async function loginReady(port, identifier, password, schoolCode) {
+  let token = await login(port, identifier, password, schoolCode);
+  const changed = await request(port, "/auth/change-password", {
+    method: "POST",
+    token,
+    body: { newPassword: "Planning#2026Aa" },
+  });
+  if ([200, 201].includes(changed.status)) {
+    token = changed.data?.accessToken || (await login(port, identifier, "Planning#2026Aa", schoolCode));
+  }
+  return token;
+}
+
+function schedulePayload(stamp, extra = {}) {
+  return {
+    className: "6ème A",
+    subject: "Mathématiques",
+    teacherId: "ENS-0001",
+    start: "2026-10-02T08:00:00.000Z",
+    end: "2026-10-02T09:00:00.000Z",
+    ...extra,
+    id: extra.id ?? `SCH-RBAC-${stamp}`,
+  };
+}
+
+function assertPermissionDenied(result, label) {
+  assert.equal(result.status, 403, `${label}: ${JSON.stringify(result.data)}`);
+  assert.equal(result.data?.code, "PERMISSION_DENIED", `${label} code ${result.data?.code}`);
+}
+
+async function assertCourseScheduleWriteDenied(port, token, scheduleId, label) {
+  assertPermissionDenied(
+    await request(port, "/course-schedules", {
+      method: "POST",
+      token,
+      body: schedulePayload(Date.now(), { id: `SCH-DENY-${label}` }),
+    }),
+    `${label} POST`,
+  );
+  if (scheduleId) {
+    assertPermissionDenied(
+      await request(port, `/course-schedules/${scheduleId}`, {
+        method: "PATCH",
+        token,
+        body: { start: "2026-10-02T10:00:00.000Z", end: "2026-10-02T11:00:00.000Z" },
+      }),
+      `${label} PATCH`,
+    );
+    assertPermissionDenied(
+      await request(port, `/course-schedules/${scheduleId}`, { method: "DELETE", token }),
+      `${label} DELETE`,
+    );
+  }
+}
+
 function spawnBackend({ port, databaseUrl }) {
   const usePg = Boolean(String(databaseUrl ?? "").trim());
   const child = spawn(
@@ -238,6 +308,8 @@ async function runMemoryHttpGuards() {
     const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
     const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
     const parentToken = await login(MEMORY_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
+    const prefetToken = await loginReady(MEMORY_PORT, "prefet", "1234", "CD-2026-0001");
+    const secretaryToken = await loginReady(MEMORY_PORT, "secretaire", "1234", "CD-2026-0001");
 
     const unauth = await request(MEMORY_PORT, "/courses", { method: "POST", body: {} });
     assert.equal(unauth.status, 401, "POST /courses sans token");
@@ -249,6 +321,25 @@ async function runMemoryHttpGuards() {
     const schedulesRead = await request(MEMORY_PORT, "/course-schedules", { token: adminToken });
     assert.equal(schedulesRead.status, 200);
     assert.ok(Array.isArray(schedulesRead.data));
+
+    const teacherSchedules = await request(MEMORY_PORT, "/course-schedules", { token: teacherToken });
+    assert.equal(teacherSchedules.status, 200, JSON.stringify(teacherSchedules.data));
+    assert.ok(Array.isArray(teacherSchedules.data));
+
+    assertPermissionDenied(
+      await request(MEMORY_PORT, "/course-schedules", { token: parentToken }),
+      "parent GET memory",
+    );
+    assertPermissionDenied(
+      await request(MEMORY_PORT, "/course-schedules", { token: secretaryToken }),
+      "secretaire GET memory",
+    );
+    await assertCourseScheduleWriteDenied(MEMORY_PORT, teacherToken, "sch-memory-deny", "enseignant memory");
+    await assertCourseScheduleWriteDenied(MEMORY_PORT, parentToken, "sch-memory-deny", "parent memory");
+    await assertCourseScheduleWriteDenied(MEMORY_PORT, secretaryToken, "sch-memory-deny", "secretaire memory");
+
+    const prefetRead = await request(MEMORY_PORT, "/course-schedules", { token: prefetToken });
+    assert.equal(prefetRead.status, 200, JSON.stringify(prefetRead.data));
 
     const notesRead = await request(MEMORY_PORT, "/notes", { token: adminToken });
     assert.equal(notesRead.status, 200);
@@ -298,6 +389,9 @@ async function runPostgresHttpGuards(databaseUrl) {
     await waitForHealth(child, PG_PORT);
     const adminToken = await login(PG_PORT, "admin", "1234", "CD-2026-0001");
     const teacherToken = await login(PG_PORT, "ENS-0001", "1234", "CD-2026-0001");
+    const prefetToken = await login(PG_PORT, "prefet", "1234", "CD-2026-0001");
+    const secretaryToken = await login(PG_PORT, "secretaire", "1234", "CD-2026-0001");
+    const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
     const stamp = Date.now();
     const schoolBId = (
       await pool.query(`SELECT id FROM schools WHERE school_code = 'BI-2026-0002'`)
@@ -378,6 +472,42 @@ async function runPostgresHttpGuards(databaseUrl) {
       },
     });
     assert.equal(validSchedule.status, 201, JSON.stringify(validSchedule.data));
+
+    const prefetSchedule = await request(PG_PORT, "/course-schedules", {
+      method: "POST",
+      token: prefetToken,
+      body: {
+        id: `SCH-HTTP-PREFET-${stamp}`,
+        className: "6ème A",
+        subject: "Mathématiques",
+        teacherId: "ENS-0001",
+        start: "2026-10-03T08:00:00.000Z",
+        end: "2026-10-03T09:00:00.000Z",
+      },
+    });
+    assert.equal(prefetSchedule.status, 201, JSON.stringify(prefetSchedule.data));
+
+    const teacherGet = await request(PG_PORT, "/course-schedules", { token: teacherToken });
+    assert.equal(teacherGet.status, 200, JSON.stringify(teacherGet.data));
+    assert.ok(Array.isArray(teacherGet.data), "GET enseignant = liste (scope métier inchangé dans ce lot)");
+
+    assertPermissionDenied(
+      await request(PG_PORT, "/course-schedules", { token: parentToken }),
+      "parent GET",
+    );
+    assertPermissionDenied(
+      await request(PG_PORT, "/course-schedules", { token: secretaryToken }),
+      "secretaire GET",
+    );
+    await assertCourseScheduleWriteDenied(PG_PORT, teacherToken, validSchedule.data.id, "enseignant");
+    await assertCourseScheduleWriteDenied(PG_PORT, parentToken, validSchedule.data.id, "parent");
+    await assertCourseScheduleWriteDenied(PG_PORT, secretaryToken, validSchedule.data.id, "secretaire");
+
+    const slotStillPresent = await pool.query(
+      `SELECT count(*)::int AS count FROM course_schedule_slots WHERE legacy_json_id = $1`,
+      [`SCH-HTTP-${stamp}`],
+    );
+    assert.equal(slotStillPresent.rows[0].count, 1, "DELETE enseignant/parent refusé : créneau conservé");
 
     const coursesList = await request(PG_PORT, "/courses", { token: adminToken });
     assert.equal(coursesList.status, 200, JSON.stringify(coursesList.data));
