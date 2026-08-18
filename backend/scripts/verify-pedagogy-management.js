@@ -213,6 +213,19 @@ async function login(port, identifier, password, schoolCode) {
   return result.data.accessToken || result.data.token;
 }
 
+async function loginReady(port, identifier, password, schoolCode) {
+  let token = await login(port, identifier, password, schoolCode);
+  const changed = await request(port, "/auth/change-password", {
+    method: "POST",
+    token,
+    body: { newPassword: "Planning#2026Aa" },
+  });
+  if ([200, 201].includes(changed.status)) {
+    token = changed.data?.accessToken || (await login(port, identifier, "Planning#2026Aa", schoolCode));
+  }
+  return token;
+}
+
 function schedulePayload(stamp, extra = {}) {
   return {
     className: "6ème A",
@@ -295,8 +308,8 @@ async function runMemoryHttpGuards() {
     const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
     const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
     const parentToken = await login(MEMORY_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
-    const prefetToken = await login(MEMORY_PORT, "prefet", "1234", "CD-2026-0001");
-    const secretaryToken = await login(MEMORY_PORT, "secretaire", "1234", "CD-2026-0001");
+    const prefetToken = await loginReady(MEMORY_PORT, "prefet", "1234", "CD-2026-0001");
+    const secretaryToken = await loginReady(MEMORY_PORT, "secretaire", "1234", "CD-2026-0001");
 
     const unauth = await request(MEMORY_PORT, "/courses", { method: "POST", body: {} });
     assert.equal(unauth.status, 401, "POST /courses sans token");
