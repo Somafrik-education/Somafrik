@@ -80,8 +80,18 @@ function assertNotesWebUsesSessionAssignments() {
   const gradeGrid = fs.readFileSync(path.join(ROOT, "web/src/components/grades/GradeEntryGrid.tsx"), "utf8");
   assert.match(gradeGrid, /type GradeDraft/);
   assert.match(gradeGrid, /dirty:\s*boolean/);
-  assert.match(gradeGrid, /function saveAll\(/);
-  assert.match(gradeGrid, /onChange\(changed\)/);
+  assert.match(gradeGrid, /async function saveAll\(/);
+  assert.match(gradeGrid, /await onSave\(/);
+  assert.match(gradeGrid, /saving/);
+  assert.match(gradeGrid, /Enregistrement…/);
+  assert.match(gradeGrid, /onSave:\s*\(grades: StudentGrade\[\]\)\s*=>\s*Promise<void>/);
+  assert.doesNotMatch(gradeGrid, /onChange\(changed\)/);
+  const saveAllBlock = gradeGrid.match(/async function saveAll\(\) \{[\s\S]*?\n  \}/);
+  assert.ok(saveAllBlock, "saveAll introuvable");
+  const awaitIdx = saveAllBlock[0].indexOf("await onSave(");
+  const clearIdx = saveAllBlock[0].search(/delete next\[studentId\]/);
+  assert.ok(awaitIdx >= 0, "await onSave manquant dans saveAll");
+  assert.ok(clearIdx > awaitIdx, "les drafts ne doivent être effacés qu'après await onSave");
   assert.doesNotMatch(
     gradeGrid,
     /onBlur=\{/,
@@ -92,7 +102,13 @@ function assertNotesWebUsesSessionAssignments() {
     />\s*Enregistrer\s*</,
     "aucun bouton Enregistrer par élève ne doit subsister",
   );
-  assert.match(gradeGrid, />\s*Enregistrer tout\s*</);
+  assert.match(gradeGrid, /Enregistrer tout/);
+
+  const gradesPageSave = fs.readFileSync(path.join(ROOT, "web/src/pages/GradesEvaluationsPage.tsx"), "utf8");
+  assert.match(gradesPageSave, /async function handleSaveGrades/);
+  assert.match(gradesPageSave, /onSave=\{handleSaveGrades\}/);
+  assert.match(gradesPageSave, /refresh\(\["notes"\]\)/);
+  assert.match(gradesPageSave, /Des notes non enregistrées seront perdues/);
 
   const evaluationsLib = fs.readFileSync(path.join(ROOT, "web/src/lib/evaluations.ts"), "utf8");
   assert.match(evaluationsLib, /export function canEnterGradesForEvaluation/);

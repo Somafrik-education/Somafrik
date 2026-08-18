@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -122,6 +122,10 @@ export function GradesEvaluationsPage() {
   const [correctionValue, setCorrectionValue] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [gradeEntryDirty, setGradeEntryDirty] = useState(false);
+  const handleGradeEntryDirtyChange = useCallback((dirty: boolean) => {
+    setGradeEntryDirty(dirty);
+  }, []);
 
   useEffect(() => {
     if (!code) return;
@@ -164,6 +168,26 @@ export function GradesEvaluationsPage() {
 
   const selectedEvaluation =
     evaluations.find((evaluation) => evaluation.id === selectedEvaluationId) ?? null;
+
+  async function confirmDiscardUnsavedGrades() {
+    if (!gradeEntryDirty) return true;
+    return confirm({
+      title: "Notes non enregistrées",
+      description: "Des notes non enregistrées seront perdues. Continuer ?",
+      confirmLabel: "Continuer",
+    });
+  }
+
+  function requestContextChange(apply: () => void) {
+    if (!gradeEntryDirty) {
+      apply();
+      return;
+    }
+    void (async () => {
+      if (!(await confirmDiscardUnsavedGrades())) return;
+      apply();
+    })();
+  }
 
   async function persistState(patch: {
     evaluations?: Evaluation[];
@@ -303,8 +327,20 @@ export function GradesEvaluationsPage() {
     showToast("Évaluation publiée — bulletins mis à jour");
   }
 
-  async function handleGradesChange(nextGrades: StudentGrade[]) {
-    await persistState({ notes: gradesToLegacyNotes(nextGrades) });
+  async function handleSaveGrades(changedGrades: StudentGrade[]) {
+    for (const grade of changedGrades) {
+      const [note] = gradesToLegacyNotes([grade]);
+      try {
+        await pedagogyApi.upsertNote(note as Record<string, unknown>);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erreur de synchronisation";
+        const code = err instanceof ApiError ? err.code : undefined;
+        const studentLabel = String(grade.studentName ?? grade.studentId ?? "Élève").trim() || "Élève";
+        throw new Error(code ? `${studentLabel} : ${message} (${code})` : `${studentLabel} : ${message}`);
+      }
+    }
+    await refresh(["notes"]);
+    showToast("Notes enregistrées");
   }
 
   async function handleCorrection() {
@@ -487,7 +523,10 @@ export function GradesEvaluationsPage() {
               <Button
                 key={item.key}
                 variant={tab === item.key ? "primary" : "secondary"}
-                onClick={() => setTab(item.key)}
+                onClick={() => {
+                  if (item.key === tab) return;
+                  requestContextChange(() => setTab(item.key));
+                }}
                 aria-selected={tab === item.key}
               >
                 {item.label}
@@ -499,7 +538,11 @@ export function GradesEvaluationsPage() {
               <Select
                 aria-label="Période"
                 value={period}
-                onChange={(e) => setPeriod(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next === period) return;
+                  requestContextChange(() => setPeriod(next));
+                }}
                 options={periodOptions}
               />
             </Field>
@@ -517,7 +560,11 @@ export function GradesEvaluationsPage() {
               <Field label="Classe">
                 <Select
                   value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === selectedClass) return;
+                    requestContextChange(() => setSelectedClass(next));
+                  }}
                   options={classNames.map((name) => ({ value: name, label: name }))}
                 />
               </Field>
@@ -575,7 +622,11 @@ export function GradesEvaluationsPage() {
                 <Select
                   aria-label="Évaluation"
                   value={selectedEvaluationId}
-                  onChange={(e) => setSelectedEvaluationId(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === selectedEvaluationId) return;
+                    requestContextChange(() => setSelectedEvaluationId(next));
+                  }}
                   options={[
                     { value: "", label: "Choisir une évaluation…" },
                     ...gradeEntryEvaluations.map((evaluation) => ({
@@ -593,8 +644,9 @@ export function GradesEvaluationsPage() {
                     grades={allGrades(state)}
                     canEdit={canEnterGrades && canEnterGradesForEvaluation(scopeUser, selectedEvaluation, state)}
                     user={scopeUser}
-                    onChange={(next) => void handleGradesChange(next)}
+                    onSave={handleSaveGrades}
                     onError={(message) => showToast(message, "error")}
+                    onDirtyChange={handleGradeEntryDirtyChange}
                   />
                   {canCorrectValidatedGrades(scopeUser) ? (
                     <div className="mt-4">

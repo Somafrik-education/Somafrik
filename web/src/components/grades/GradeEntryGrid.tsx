@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Evaluation, GradeStatus, SessionUser, StudentGrade } from "../../types";
 import { Button } from "../ui/Button";
 import { Input, Select } from "../ui/Field";
@@ -26,8 +26,9 @@ interface GradeEntryGridProps {
   grades: StudentGrade[];
   canEdit: boolean;
   user: SessionUser | null;
-  onChange: (grades: StudentGrade[]) => void;
+  onSave: (grades: StudentGrade[]) => Promise<void>;
   onError: (message: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function GradeEntryGrid({
@@ -36,8 +37,9 @@ export function GradeEntryGrid({
   grades,
   canEdit,
   user,
-  onChange,
+  onSave,
   onError,
+  onDirtyChange,
 }: GradeEntryGridProps) {
   const classStudents = useMemo(
     () =>
@@ -49,6 +51,14 @@ export function GradeEntryGrid({
 
   const evaluationGrades = gradesForEvaluation(grades, evaluation.id);
   const [drafts, setDrafts] = useState<Record<string, GradeDraft>>({});
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+
+  useEffect(() => {
+    setDrafts({});
+    savingRef.current = false;
+    setSaving(false);
+  }, [evaluation.id]);
 
   function currentGrade(studentId: string): StudentGrade | undefined {
     return evaluationGrades.find((grade) => grade.studentId === studentId);
@@ -68,6 +78,12 @@ export function GradeEntryGrid({
     };
   }
 
+  const hasDirtyRows = Object.values(drafts).some((draft) => draft.dirty);
+
+  useEffect(() => {
+    onDirtyChange?.(hasDirtyRows);
+  }, [hasDirtyRows, onDirtyChange]);
+
   function updateDraft(studentId: string, patch: Partial<GradeDraft>) {
     setDrafts((current) => {
       const existingDraft = current[studentId] ?? draftFor(studentId);
@@ -82,7 +98,8 @@ export function GradeEntryGrid({
     });
   }
 
-  function saveAll() {
+  async function saveAll() {
+    if (savingRef.current) return;
     const dirtyStudentIds = Object.entries(drafts)
       .filter(([, draft]) => draft.dirty)
       .map(([studentId]) => studentId);
@@ -118,15 +135,24 @@ export function GradeEntryGrid({
     }
 
     if (!changed.length) return;
-    onChange(changed);
-    setDrafts((current) => {
-      const next = { ...current };
-      for (const studentId of dirtyStudentIds) delete next[studentId];
-      return next;
-    });
-  }
 
-  const hasDirtyRows = Object.values(drafts).some((draft) => draft.dirty);
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onSave(changed);
+      setDrafts((current) => {
+        const next = { ...current };
+        for (const studentId of dirtyStudentIds) delete next[studentId];
+        return next;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erreur d'enregistrement des notes.";
+      onError(message);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
 
   const columns: Column<StudentRow>[] = [
     {
@@ -151,7 +177,7 @@ export function GradeEntryGrid({
             max={evaluation.scale}
             step={0.25}
             value={draft.value}
-            disabled={locked || ABSENCE_GRADE_STATUSES.includes(draft.gradeStatus)}
+            disabled={locked || ABSENCE_GRADE_STATUSES.includes(draft.gradeStatus) || saving}
             aria-label={`Note /${evaluation.scale}`}
             className="max-w-[120px]"
             onChange={(e) => updateDraft(studentId, { value: e.target.value })}
@@ -171,7 +197,7 @@ export function GradeEntryGrid({
         return (
           <Select
             value={draft.gradeStatus}
-            disabled={locked}
+            disabled={locked || saving}
             aria-label="Statut de la note"
             className="max-w-[180px]"
             onChange={(e) => {
@@ -208,8 +234,12 @@ export function GradeEntryGrid({
           {evaluation.coefficient}
         </p>
         {canEdit ? (
-          <Button variant="secondary" disabled={!hasDirtyRows} onClick={saveAll}>
-            Enregistrer tout
+          <Button
+            variant="secondary"
+            disabled={!hasDirtyRows || saving}
+            onClick={() => void saveAll()}
+          >
+            {saving ? "Enregistrement…" : "Enregistrer tout"}
           </Button>
         ) : null}
       </div>
