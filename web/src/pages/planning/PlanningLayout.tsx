@@ -17,8 +17,8 @@ export function PlanningLayout() {
         <p className="text-xs font-black uppercase tracking-wide text-brand">Pédagogie</p>
         <h1 className="mt-1 text-2xl font-black text-ink">Planning</h1>
         <p className="mt-1 text-sm text-muted">
-          Emploi du temps, salles, remplacements et conflits d'un même endroit. La relation
-          enseignant ↔ classe ↔ cours se gère dans Mon établissement → Enseignants.
+          Emploi du temps hebdomadaire, salles (à venir) et remplacements (à venir).
+          Un créneau est une règle PostgreSQL rattachée à un cours canonique.
         </p>
       </div>
       <TabNav tabs={PLANNING_TABS} />

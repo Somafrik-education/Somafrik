@@ -39,11 +39,11 @@ export const CRUD_PERMISSION_MODULES = [
 ] as const;
 
 /**
- * Gel du menu / de la route Web `/planning`.
- * Les grants API `Planning de cours:*` ne doivent pas réexposer l'UI tant que
- * la reconstruction hebdomadaire V2 n'a pas été revalidée CTO (menu toujours fermé).
+ * Réexposition contrôlée du menu / de la route Web `/planning`.
+ * Le garde `canReadView("planning")` reste branché : false masque encore le module.
+ * RBAC `Planning de cours:READ` + schoolOnly restent exigés. Salles / remplacements / Mobile hors lot.
  */
-export const PLANNING_WEB_UI_ENABLED = false;
+export const PLANNING_WEB_UI_ENABLED = true;
 
 // view -> fonctionnalité requise (null = toujours accessible)
 export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {

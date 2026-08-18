@@ -555,6 +555,12 @@ export function weekdayLabelFromDate(date: Date): string {
   return weekday?.label ?? "";
 }
 
+/** Jour métier 1–7 depuis une date locale de calendrier. Dimanche = 7, jamais 0. */
+export function isoWeekdayFromLocalDate(date: Date): number {
+  const js = date.getDay();
+  return js === 0 ? 7 : js;
+}
+
 export function extractTimeFromIso(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "08:00";
@@ -567,6 +573,22 @@ export function weekdayFromIso(iso: string): number {
   if (Number.isNaN(date.getTime())) return 1;
   const js = date.getUTCDay();
   return js === 0 ? 7 : js;
+}
+
+export function slotIsoWeekday(slot: CourseScheduleSlot): number {
+  const day = Number(slot.dayOfWeek);
+  if (day >= 1 && day <= 7) return day;
+  return weekdayFromIso(slot.start);
+}
+
+export function slotStartHm(slot: CourseScheduleSlot): string {
+  const time = String(slot.startTime ?? "").trim();
+  return time ? time.slice(0, 5) : extractTimeFromIso(slot.start);
+}
+
+export function slotEndHm(slot: CourseScheduleSlot): string {
+  const time = String(slot.endTime ?? "").trim();
+  return time ? time.slice(0, 5) : extractTimeFromIso(slot.end);
 }
 
 /** Construit un ancrage visuel. Le jour métier est 1–7 (7 = dimanche), pas Date.getDay(). */
@@ -600,12 +622,12 @@ export function buildSlotTemplateTimes(
 export function formatScheduleRecurrenceSummary(slot: CourseScheduleSlot): string {
   if (isExamSchedule(slot)) return formatExamScheduleSummary(slot);
 
-  const weekday = weekdayLabelFromDate(new Date(slot.start));
-  const startTime = extractTimeFromIso(slot.start);
-  const endTime = extractTimeFromIso(slot.end);
-  const period = formatPeriodLabel(slot);
-  const parts = [`${slot.subject}`, weekday ? `chaque ${weekday.toLowerCase()}` : "", `${startTime}–${endTime}`];
-  if (period) parts.push(`du ${slot.periodStart} au ${slot.periodEnd}`);
+  const weekdayValue = slotIsoWeekday(slot);
+  const weekday = PLANNING_WEEKDAYS.find((row) => row.value === weekdayValue)?.label ?? "";
+  const startTime = slotStartHm(slot);
+  const endTime = slotEndHm(slot);
+  const course = String(slot.courseName ?? slot.subject ?? "").trim();
+  const parts = [course, weekday ? `chaque ${weekday.toLowerCase()}` : "", `${startTime}–${endTime}`];
   return parts.filter(Boolean).join(" · ");
 }
 
@@ -1393,20 +1415,25 @@ export function auditSchoolPlanningConsistency(
     }
 
     if (isCourseSchedule(slot) && !hasSchedulePeriod(slot)) {
-      const displaySubject = resolveCanonicalLabel(slot.subject, collectPlanningSubjectCandidates(
-        state,
-        user,
-        resolveCanonicalLabel(slot.className, classCandidates),
-        schoolCode,
-      ));
-      const displayClass = resolveCanonicalLabel(slot.className, classCandidates);
-      const key = `${normalize(displayClass)}|${normalize(displaySubject)}`;
-      const message = `Cours « ${displaySubject} » (${displayClass}) sans période — une seule occurrence affichée.`;
-      const existing = noPeriodCounts.get(key);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        noPeriodCounts.set(key, { slotId: slot.id, count: 1, message });
+      const weeklyDay = Number(slot.dayOfWeek);
+      const weeklyStart = String(slot.startTime ?? "").trim();
+      const isWeeklyRule = weeklyDay >= 1 && weeklyDay <= 7 && Boolean(weeklyStart);
+      if (!isWeeklyRule) {
+        const displaySubject = resolveCanonicalLabel(slot.subject, collectPlanningSubjectCandidates(
+          state,
+          user,
+          resolveCanonicalLabel(slot.className, classCandidates),
+          schoolCode,
+        ));
+        const displayClass = resolveCanonicalLabel(slot.className, classCandidates);
+        const key = `${normalize(displayClass)}|${normalize(displaySubject)}`;
+        const message = `Cours « ${displaySubject} » (${displayClass}) sans période — une seule occurrence affichée.`;
+        const existing = noPeriodCounts.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          noPeriodCounts.set(key, { slotId: slot.id, count: 1, message });
+        }
       }
     }
 
@@ -1512,8 +1539,14 @@ export function validatePlanningSlotBusinessRules(
   const duplicate = detectDuplicateCoursePlanning(slots, normalized, options.ignoreId);
   if (duplicate) issues.push(duplicate);
 
-  if (isCourseSchedule(normalized) && !hasSchedulePeriod(normalized)) {
-    issues.push("Un cours récurrent doit avoir une période (dates de début et de fin).");
+  if (isCourseSchedule(normalized)) {
+    const weeklyDay = Number(normalized.dayOfWeek);
+    const weeklyStart = String(normalized.startTime ?? "").trim();
+    const weeklyEnd = String(normalized.endTime ?? "").trim();
+    const isWeeklyRule = weeklyDay >= 1 && weeklyDay <= 7 && Boolean(weeklyStart) && Boolean(weeklyEnd);
+    if (!isWeeklyRule && !hasSchedulePeriod(normalized)) {
+      issues.push("Un cours récurrent doit avoir un jour 1–7 et des heures, ou une période.");
+    }
   }
 
   if (options.allowedSubjects?.length) {

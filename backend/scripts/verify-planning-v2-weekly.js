@@ -222,11 +222,14 @@ async function prepareDatabase(databaseUrl) {
   return isolatedUrl;
 }
 
-function assertUiFrozen() {
+function assertPlanningWebUiEnabled() {
   const constants = fs.readFileSync(path.join(ROOT, "web/src/lib/constants.ts"), "utf8");
-  assert.match(constants, /export const PLANNING_WEB_UI_ENABLED = false/);
+  assert.match(constants, /export const PLANNING_WEB_UI_ENABLED = true/);
   const permissions = fs.readFileSync(path.join(ROOT, "web/src/lib/permissions.ts"), "utf8");
   assert.match(permissions, /viewName === "planning" && !PLANNING_WEB_UI_ENABLED/);
+  const sync = fs.readFileSync(path.join(ROOT, "web/src/lib/pedagogyPlanningSync.ts"), "utf8");
+  assert.match(sync, /toWeeklyScheduleWritePayload/);
+  assert.doesNotMatch(sync, /className: slot\.className/);
 }
 
 async function runMemoryRbac() {
@@ -421,7 +424,7 @@ async function runPostgresHttp(databaseUrl) {
 }
 
 async function main() {
-  assertUiFrozen();
+  assertPlanningWebUiEnabled();
   await runMemoryRbac();
   const databaseUrl = String(process.env.DATABASE_URL ?? "").trim();
   if (databaseUrl) {

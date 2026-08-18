@@ -5,6 +5,7 @@ import {
   PLANNING_WEEKDAYS,
   detectScheduleConflicts,
   expandScheduleOccurrences,
+  isoWeekdayFromLocalDate,
   type CourseScheduleSlot,
 } from "./coursePlanning";
 
@@ -47,17 +48,24 @@ const weekly: CourseScheduleSlot = {
 };
 
 describe("Planning V2 — mapping Web canonique", () => {
-  it("PLANNING_WEB_UI_ENABLED reste false", () => {
-    expect(PLANNING_WEB_UI_ENABLED).toBe(false);
+  it("PLANNING_WEB_UI_ENABLED est true (réexposition contrôlée)", () => {
+    expect(PLANNING_WEB_UI_ENABLED).toBe(true);
   });
 
-  it("canReadView(planning) refuse même avec Planning de cours:READ", () => {
-    expect(canReadView(adminWithPlanning, "planning")).toBe(false);
+  it("canReadView(planning) autorise Admin avec Planning de cours:READ", () => {
+    expect(canReadView(adminWithPlanning, "planning")).toBe(true);
   });
 
   it("dimanche métier = 7, jamais Date.getDay()=0", () => {
     const weekdayValues: number[] = PLANNING_WEEKDAYS.map((row) => row.value);
     expect(weekdayValues).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("isoWeekdayFromLocalDate : dimanche local = 7, jamais 0", () => {
+    const sunday = new Date(2026, 8, 6, 10, 0, 0);
+    expect(isoWeekdayFromLocalDate(sunday)).toBe(7);
+    const monday = new Date(2026, 8, 7, 10, 0, 0);
+    expect(isoWeekdayFromLocalDate(monday)).toBe(1);
   });
 
   it("expandScheduleOccurrences projette dayOfWeek sans inventer depuis un timestamp", () => {
