@@ -84,6 +84,10 @@ function assertSourceGuards() {
   const roster = fs.readFileSync(path.join(ROOT, "web/src/lib/presenceRoster.ts"), "utf8");
   assert.match(roster, /classId/);
   assert.match(roster, /NEVER by className|jamais className/i);
+  assert.match(roster, /currentUser\?\.assignments|currentUser\.assignments/);
+  assert.match(roster, /assignedClassIds/);
+  assert.match(roster, /isExplicitlyActiveAssignmentStatus/);
+  assert.doesNotMatch(roster, /if \(!normalized\) return true/);
 
   const upsert = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
   assert.match(upsert, /resolveAttendanceTargetClass/);

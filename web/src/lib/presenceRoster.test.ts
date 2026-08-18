@@ -67,3 +67,144 @@ describe("presenceRoster — identité classId/classCode", () => {
     expect(toPresenceClassCard({ name: "2ème A", students: 3 })).toBeNull();
   });
 });
+
+const CLASS_A = { id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "2ème A", students: 3 };
+const CLASS_B = { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "2ème B", students: 2 };
+const CLASS_B_HOMONYM = { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "2ème A", students: 2 };
+
+describe("presenceRoster — scope JWT session enseignant", () => {
+  it("A — currentUser.assignments canoniques, state.assignments vide, teacherRecord null → 2 cartes", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B],
+      assignments: [],
+      teacherRecord: null,
+      currentUser: {
+        id: "ens-seke",
+        role: "Enseignant",
+        assignments: [
+          { classId: "uuid-a", classCode: "CLS-A", status: "active" },
+          { classId: "uuid-b", classCode: "CLS-B", status: "active" },
+        ],
+      },
+    });
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.classId).sort()).toEqual(["uuid-a", "uuid-b"]);
+  });
+
+  it("B — assignedClassIds JWT, state.assignments indisponible → classe A visible", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B],
+      currentUser: {
+        id: "ens-seke",
+        role: "Enseignant",
+        assignedClassIds: ["uuid-a"],
+        assignedClassCodes: ["CLS-A"],
+      },
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0].classId).toBe("uuid-a");
+  });
+
+  it("C — assignment className-only → aucune autorisation", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B],
+      assignments: [],
+      teacherRecord: null,
+      currentUser: {
+        id: "ens-seke",
+        role: "Enseignant",
+        assignments: [{ className: "2ème A", course: "Mathématiques", status: "active" }],
+      },
+    });
+    expect(cards).toHaveLength(0);
+  });
+
+  it("D — assignment inactive → classe absente", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B],
+      assignments: [],
+      currentUser: {
+        id: "ens-seke",
+        role: "Enseignant",
+        assignments: [{ classId: "uuid-a", classCode: "CLS-A", status: "inactive" }],
+      },
+    });
+    expect(cards).toHaveLength(0);
+  });
+
+  it("E — classe non affectée dans state.classes → non visible", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B],
+      assignments: [],
+      currentUser: {
+        id: "ens-seke",
+        role: "Enseignant",
+        assignments: [{ classId: "uuid-a", classCode: "CLS-A", status: "active" }],
+      },
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0].classId).toBe("uuid-a");
+  });
+
+  it("F — même classe + deux matières → une seule carte", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B],
+      assignments: [],
+      currentUser: {
+        id: "ens-seke",
+        role: "Enseignant",
+        assignments: [
+          { id: "asg-math", classId: "uuid-a", classCode: "CLS-A", course: "Mathématiques", status: "active" },
+          { id: "asg-phys", classId: "uuid-a", classCode: "CLS-A", course: "Physique", status: "active" },
+        ],
+      },
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0].classId).toBe("uuid-a");
+  });
+
+  it("G — deux classes homonymes UUID distincts → deux cartes", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B_HOMONYM],
+      assignments: [],
+      currentUser: {
+        id: "ens-seke",
+        role: "Enseignant",
+        assignments: [
+          { classId: "uuid-a", classCode: "CLS-A", status: "active" },
+          { classId: "uuid-b", classCode: "CLS-B", status: "active" },
+        ],
+      },
+    });
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.classId).sort()).toEqual(["uuid-a", "uuid-b"]);
+    expect(cards.every((card) => card.className === "2ème A")).toBe(true);
+  });
+
+  it("H — Seke-like : login JWT 2 assignments, GET /api/classes 2, state.assignments []", () => {
+    const cards = buildPresenceClassCards({
+      role: "Enseignant",
+      classes: [CLASS_A, CLASS_B],
+      assignments: [],
+      teacherRecord: { id: "ENS-0099", assignments: [{ className: "2ème A", course: "Mathématiques" }] },
+      currentUser: {
+        id: "user-seke",
+        role: "Enseignant",
+        assignments: [
+          { classId: "uuid-a", classCode: "CLS-A", status: "active" },
+          { classId: "uuid-b", classCode: "CLS-B", status: "active" },
+        ],
+        assignedClassIds: ["uuid-a", "uuid-b"],
+        assignedClassCodes: ["CLS-A", "CLS-B"],
+      },
+    });
+    expect(cards).toHaveLength(2);
+  });
+});

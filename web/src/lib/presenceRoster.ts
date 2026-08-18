@@ -17,12 +17,13 @@ function isTeacherRole(role?: string) {
   return String(role ?? "").trim() === "Enseignant";
 }
 
-function isActiveAssignmentStatus(status: unknown) {
+/** Fail-closed : seul un statut explicitement actif autorise. Absent → false. */
+function isExplicitlyActiveAssignmentStatus(status: unknown) {
   const normalized = asRef(status)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
-  if (!normalized) return true;
+  if (!normalized) return false;
   return ["active", "actif", "open", "ouverte"].includes(normalized);
 }
 
@@ -57,6 +58,45 @@ function teacherIdentityKeys(user: Row | null | undefined, teacher: Row | null |
   return keys;
 }
 
+function addCanonicalAssignment(
+  assignment: Row,
+  classIds: Set<string>,
+  classCodes: Set<string>,
+  extras: PresenceClassCard[],
+) {
+  if (
+    !isExplicitlyActiveAssignmentStatus(
+      assignment.status ?? assignment.assignmentStatus ?? assignment.assignment_status,
+    )
+  ) {
+    return;
+  }
+  const classId = asRef(assignment.classId ?? assignment.class_id);
+  const classCode = asRef(assignment.classCode ?? assignment.class_code);
+  if (!classId && !classCode) return;
+  if (classId) classIds.add(classId);
+  if (classCode) classCodes.add(classCode);
+  extras.push({
+    classId: classId || classCode,
+    classCode: classCode || classId,
+    className: asRef(assignment.className ?? assignment.class_name) || classCode || classId,
+    studentCount: 0,
+  });
+}
+
+function addMintedClassRefs(values: unknown, into: Set<string>) {
+  if (!Array.isArray(values)) return;
+  for (const value of values) {
+    const ref = asRef(value);
+    if (ref) into.add(ref);
+  }
+}
+
+/**
+ * Scope enseignant Web : JWT/session d'abord, puis state.assignments, puis
+ * teacherRecord en compat affichage. Jamais className / teacherName / course.
+ * GET /api/classes reste l'autorité backend ; ceci n'est qu'une garde de cohérence.
+ */
 function collectAssignedClassRefs(input: {
   assignments?: Row[];
   teacherRecord?: Row | null;
@@ -65,36 +105,28 @@ function collectAssignedClassRefs(input: {
   const classIds = new Set<string>();
   const classCodes = new Set<string>();
   const extras: PresenceClassCard[] = [];
-  const teacherKeys = teacherIdentityKeys(input.currentUser, input.teacherRecord);
-  const add = (assignment: Row) => {
-    if (!isActiveAssignmentStatus(assignment.status ?? assignment.assignmentStatus)) {
-      return;
-    }
-    const classId = asRef(assignment.classId ?? assignment.class_id);
-    const classCode = asRef(assignment.classCode ?? assignment.class_code);
-    if (classId) classIds.add(classId);
-    if (classCode) classCodes.add(classCode);
-    if (classId || classCode) {
-      extras.push({
-        classId: classId || classCode,
-        classCode: classCode || classId,
-        className: asRef(assignment.className ?? assignment.class_name) || classCode || classId,
-        studentCount: 0,
-      });
-    }
-  };
+  const currentUser = input.currentUser ?? null;
 
+  for (const assignment of Array.isArray(currentUser?.assignments) ? (currentUser.assignments as Row[]) : []) {
+    addCanonicalAssignment(assignment, classIds, classCodes, extras);
+  }
+  addMintedClassRefs(currentUser?.assignedClassIds ?? currentUser?.classIds, classIds);
+  addMintedClassRefs(currentUser?.assignedClassCodes ?? currentUser?.classCodes, classCodes);
+
+  const teacherKeys = teacherIdentityKeys(currentUser, input.teacherRecord);
   for (const assignment of input.assignments ?? []) {
     const teacherId = asRef(assignment.teacherId ?? assignment.teacherCode ?? assignment.teacher_id);
     if (teacherKeys.size && teacherId && !teacherKeys.has(teacherId)) {
       continue;
     }
-    add(assignment);
+    addCanonicalAssignment(assignment, classIds, classCodes, extras);
   }
 
   const embedded = input.teacherRecord?.assignments;
   if (Array.isArray(embedded)) {
-    embedded.forEach((item) => add(item as Row));
+    for (const item of embedded) {
+      addCanonicalAssignment(item as Row, classIds, classCodes, extras);
+    }
   }
 
   return { classIds, classCodes, extras };
@@ -106,7 +138,7 @@ function cardKey(card: PresenceClassCard) {
 
 /**
  * Construit les cartes Présences. Deux classes homonymes restent deux cartes.
- * L'enseignant n'est scopé que par teacher_assignments.class_id / classCode.
+ * L'enseignant n'est scopé que par classId / classCode actifs (JWT puis complémentaire).
  */
 export function buildPresenceClassCards(input: {
   role?: string;
