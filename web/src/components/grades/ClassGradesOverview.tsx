@@ -31,8 +31,9 @@ export function ClassGradesOverview({
     const students = scopedStudents(user, state);
     return students.filter((student) => normalize(String(student.className ?? "")) === normalize(className)).length;
   }, [user, state, className]);
+  const periodLabel = period || "Toutes les périodes";
   const gradedCount = useMemo(() => {
-    if (!className || !period) return 0;
+    if (!className) return 0;
     const classStudentIds = new Set(
       scopedStudents(user, state)
         .filter((student) => normalize(String(student.className ?? "")) === normalize(className))
@@ -41,7 +42,8 @@ export function ClassGradesOverview({
     );
     return scopedGrades(user, state).filter(
       (grade) =>
-        normalize(grade.period) === normalize(period) && classStudentIds.has(grade.studentId),
+        (!period || normalize(grade.period) === normalize(period)) &&
+        classStudentIds.has(grade.studentId),
     ).length;
   }, [user, state, className, period]);
 
@@ -64,7 +66,7 @@ export function ClassGradesOverview({
       <Card className="border-amber-200 bg-amber-50 p-4">
         <p className="text-sm font-semibold text-ink">Aucune note pour cette période</p>
         <p className="mt-1 text-sm text-muted">
-          La période « {period} » ne contient pas encore de notes pour {className}. Choisissez une autre
+          La période « {periodLabel} » ne contient pas encore de notes pour {className}. Choisissez une autre
           période ou saisissez des notes dans l&apos;onglet « Saisie des notes ».
         </p>
       </Card>
@@ -107,7 +109,7 @@ export function ClassGradesOverview({
       ) : null}
 
       <Card className="p-4">
-        <SectionHeader title={`Classement — ${className}`} description={period} />
+        <SectionHeader title={`Classement — ${className}`} description={periodLabel} />
         <div className="mt-4">
           <Table columns={columns} rows={ranking} rowKey={(row) => String(row.student.id ?? "")} />
         </div>
