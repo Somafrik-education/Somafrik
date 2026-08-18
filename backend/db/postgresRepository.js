@@ -2040,8 +2040,22 @@ class PostgresRepository {
       throw error;
     }
 
-    const evaluation = await this.resolveEvaluationRow(evaluationKey, payload.schoolCode);
+    const evaluationLookupSchool =
+      String(payload.schoolCode ?? "").trim() || String(principal?.schoolCode ?? "").trim();
+    const evaluation = await this.resolveEvaluationRow(evaluationKey, evaluationLookupSchool);
     if (!evaluation) {
+      const scopedSchool =
+        evaluationLookupSchool && evaluationLookupSchool !== "*"
+          ? await this.getSchoolByCode(evaluationLookupSchool)
+          : null;
+      if (scopedSchool) {
+        const foreign = await this.findForeignEvaluationRow(evaluationKey, scopedSchool.id);
+        if (foreign) {
+          const denied = new Error("Accès refusé: établissement hors périmètre.");
+          denied.statusCode = 403;
+          throw denied;
+        }
+      }
       const error = new Error("Evaluation introuvable");
       error.statusCode = 404;
       throw error;

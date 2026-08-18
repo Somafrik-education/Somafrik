@@ -44,6 +44,7 @@ function validateWritePayload(state = {}, payload = {}, touchedKeys = []) {
 function httpStatusForIntegrityMessage(message) {
   if (!message) return 400;
   if (/non validée|non validee|publiée|annulée|inactive/i.test(message)) return 409;
+  if (/même établissement|hors périmètre/i.test(message)) return 403;
   if (/introuvable/i.test(message)) return 404;
   return 400;
 }

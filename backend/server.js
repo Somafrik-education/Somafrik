@@ -1598,8 +1598,18 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
       const body = ignoreClientScope(req.body ?? {});
+      const principalSchool = String(req.principal?.schoolCode ?? "").trim().toUpperCase();
+      const scopedState =
+        principalSchool && principalSchool !== "*"
+          ? {
+              ...state,
+              evaluations: (state.evaluations ?? []).filter(
+                (row) => String(row.schoolCode ?? "").trim().toUpperCase() === principalSchool,
+              ),
+            }
+          : state;
       // Unicité portée par PG upsert (school+evaluation+student) — comme D3.5b présences.
-      assertNoteWrite(state, body, {
+      assertNoteWrite(scopedState, body, {
         skipDuplicateCheck: true,
       });
       let saved;

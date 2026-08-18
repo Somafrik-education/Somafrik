@@ -251,6 +251,11 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
   if (evaluationId) {
     const evaluation = findEvaluation(state, evaluationId);
     if (!evaluation) return "Évaluation introuvable : note orpheline refusée.";
+    const evalSchool = normalizeSchoolCode(evaluation.schoolCode);
+    const studentSchool = normalizeSchoolCode(student.schoolCode);
+    if (evalSchool && studentSchool && evalSchool !== studentSchool) {
+      return "L'élève et l'évaluation doivent appartenir au même établissement.";
+    }
     if (evaluation.active === false) return "Évaluation inactive : saisie refusée.";
     if (options.requireValidatedEvaluation !== false) {
       const canonical = toEvaluationStatus(evaluation.status, "");
@@ -263,11 +268,6 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
     }
     scale = Number(evaluation.scale ?? evaluation.max_score ?? scale);
     coefficient = Number(evaluation.coefficient ?? coefficient);
-    const evalSchool = normalizeSchoolCode(evaluation.schoolCode);
-    const studentSchool = normalizeSchoolCode(student.schoolCode);
-    if (evalSchool && studentSchool && evalSchool !== studentSchool) {
-      return "L'élève et l'évaluation doivent appartenir au même établissement.";
-    }
     if (note.className && evaluation.className && !classNamesMatch(note.className, evaluation.className)) {
       return "La note ne correspond pas à la classe de l'évaluation.";
     }

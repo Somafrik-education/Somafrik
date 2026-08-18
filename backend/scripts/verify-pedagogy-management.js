@@ -669,12 +669,13 @@ async function runPostgresHttpGuards(databaseUrl) {
       [yearRow.rows[0].id],
     );
     const classBStudent = await pool.query(
-      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+      `INSERT INTO students (school_id, first_name, last_name, status)
        VALUES (
          (SELECT id FROM schools WHERE school_code = 'CD-2026-0001'),
-         'CD-2026-0001-STU-HTTP-B', 'Hors', 'Classe', 'active'
-       ) RETURNING id`,
+         'Hors', 'Classe', 'active'
+       ) RETURNING id, student_code`,
     );
+    const classBStudentCode = String(classBStudent.rows[0].student_code);
     await pool.query(
       `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
        VALUES (
@@ -773,7 +774,7 @@ async function runPostgresHttpGuards(databaseUrl) {
       token: teacherToken,
       body: {
         evaluationId: otherClassEval.data.id,
-        studentId: "CD-2026-0001-STU-HTTP-B",
+        studentId: classBStudentCode,
         value: 12,
         scale: 20,
       },
@@ -797,7 +798,7 @@ async function runPostgresHttpGuards(databaseUrl) {
       token: teacherToken,
       body: {
         evaluationId: adverbs.data.id,
-        studentId: "CD-2026-0001-STU-HTTP-B",
+        studentId: classBStudentCode,
         value: 12,
         scale: 20,
       },
