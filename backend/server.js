@@ -5005,6 +5005,7 @@ async function sendAuthenticatedResponse(req, res, response, action) {
 
 function buildPrincipal(response, rolePermissionsMap = null) {
   const { displayRoles, mergePermissionsForRoles, toRoleKey } = require("./lib/userRoleLifecycle");
+  const { resolvePrincipalSub } = require("./lib/principalIdentity");
   const user = response.user ?? {};
   const school = response.schoolContext ?? response.school ?? {};
   const rawRole = user.role ?? roleLabelFromMobileRole(response.role);
@@ -5042,7 +5043,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
   );
 
   return {
-    sub: user.id ?? user.publicId ?? user.matricule ?? "anonymous",
+    sub: resolvePrincipalSub(user),
     identifier: user.identifier,
     publicId: user.publicId,
     contactId: user.contactId,

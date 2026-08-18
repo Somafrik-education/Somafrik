@@ -96,6 +96,7 @@ class PostgresRepository {
     await this.ensurePlatformCanonicalSchema();
     await this.ensurePlatformRolePermissionsBootstrap();
     await this.ensureClientsCanonicalSchema();
+    // Inventaire fail-safe AVANT les index uniques parent-linking (jamais dans CLIENTS_SCHEMA_SQL).
     await this.ensureParentLinkingConstraints();
     await this.ensureUserRolesCanonicalSchema();
     await this.ensureResidualCanonicalSchema();

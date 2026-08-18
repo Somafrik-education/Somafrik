@@ -33,6 +33,7 @@ const {
 } = require("./userRoleLifecycle");
 const { findActiveUserByLoginIdentity, PARENT_IDENTITY_AMBIGUOUS } = require("./usersLoginIdentity");
 const { isContactRelationsActiveUniquenessViolation } = require("./parentLinkingConstraints");
+const { grantedByUserId } = require("./principalIdentity");
 
 const PARENT_ROLE_LABEL = "Parent";
 const PARENT_ROLE_KEY = "PARENT";
@@ -44,10 +45,6 @@ const ACCEPTED_RELATION_TYPES = new Set([
   "parent-enfant",
   "parent_child",
 ]);
-
-function actorUserId(principal) {
-  return asTrimmed(principal?.sub || principal?.id || principal?.userId);
-}
 
 function identityKey(value) {
   return asTrimmed(value).toLowerCase();
@@ -74,7 +71,7 @@ async function writeClientsAudit(tx, principal, auditMeta, entry) {
   }
   await tx.recordClientsAudit({
     schoolCode: entry.schoolCode || principal?.schoolCode,
-    userId: principal?.sub || principal?.id,
+    userId: grantedByUserId(principal),
     action: entry.action,
     entityType: entry.entityType,
     entityId: String(entry.entityId ?? ""),
@@ -120,7 +117,7 @@ async function ensureParentRole(tx, { userId, schoolId, principal }) {
       userId,
       schoolId,
       roleKey: PARENT_ROLE_KEY,
-      grantedBy: actorUserId(principal) || null,
+      grantedBy: grantedByUserId(principal),
     });
   } catch (error) {
     if (!isUserRolesUniqueViolation(error)) throw error;

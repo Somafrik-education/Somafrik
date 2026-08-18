@@ -1,13 +1,27 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   CONTACTS_SCHOOL_USER_DUPLICATES_CODE,
   CONTACT_RELATIONS_ACTIVE_DUPLICATES_CODE,
+  CONTACTS_SCHOOL_USER_UNIQUE_INDEX,
+  CONTACT_RELATIONS_ACTIVE_UNIQUE_INDEX,
   formatContactsSchoolUserDuplicateDiagnostic,
   formatContactRelationsActiveDuplicateDiagnostic,
   ensureParentLinkingConstraints,
 } = require("./parentLinkingConstraints");
+const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
+
+const postgresRepositorySource = fs.readFileSync(
+  path.join(__dirname, "../db/postgresRepository.js"),
+  "utf8",
+);
+const parentLinkingMigration = fs.readFileSync(
+  path.join(__dirname, "../db/migrations/20260818_parent_linking_canonical.sql"),
+  "utf8",
+);
 
 async function main() {
   const contactDiag = formatContactsSchoolUserDuplicateDiagnostic(
@@ -36,6 +50,29 @@ async function main() {
     () => ensureParentLinkingConstraints(failingDb, { info() {}, error() {} }),
     (error) => error.code === CONTACTS_SCHOOL_USER_DUPLICATES_CODE,
   );
+
+  assert.doesNotMatch(CLIENTS_SCHEMA_SQL, /uq_contacts_school_user_active/);
+  assert.doesNotMatch(CLIENTS_SCHEMA_SQL, /uq_contact_relations_active/);
+  assert.match(CLIENTS_SCHEMA_SQL, /ensureParentLinkingConstraints/);
+  assert.equal(CONTACTS_SCHOOL_USER_UNIQUE_INDEX, "uq_contacts_school_user_active");
+  assert.equal(CONTACT_RELATIONS_ACTIVE_UNIQUE_INDEX, "uq_contact_relations_active");
+
+  const clientsIdx = postgresRepositorySource.indexOf("ensureClientsCanonicalSchema()");
+  const linkingIdx = postgresRepositorySource.indexOf("ensureParentLinkingConstraints()");
+  assert.ok(clientsIdx > 0, "init() must apply Clients schema");
+  assert.ok(
+    linkingIdx > clientsIdx,
+    "inventory must run after Clients schema, before unique indexes",
+  );
+  const between = postgresRepositorySource.slice(clientsIdx, linkingIdx);
+  assert.doesNotMatch(between, /uq_contacts_school_user_active/);
+  assert.doesNotMatch(between, /uq_contact_relations_active/);
+
+  assert.match(
+    parentLinkingMigration,
+    /DROP CONSTRAINT IF EXISTS contact_relations_school_id_contact_id_student_id_key/,
+  );
+  assert.doesNotMatch(parentLinkingMigration, /CREATE UNIQUE INDEX/i);
 
   console.log("parentLinkingConstraints.test.js OK");
 }

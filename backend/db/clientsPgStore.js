@@ -11,6 +11,7 @@ const {
   mapMessageRow,
   mapAnnouncementRow,
 } = require("../lib/clientsManagement");
+const { uuidOrNull } = require("../lib/principalIdentity");
 
 const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
 
@@ -195,7 +196,7 @@ function createClientsPgStore(repo) {
           `INSERT INTO user_roles (user_id, school_id, role_key, granted_by, granted_at, status)
            VALUES ($1, $2, $3, $4, NOW(), 'active')
            RETURNING *`,
-          [row.userId, row.schoolId || null, row.roleKey, row.grantedBy || null],
+          [row.userId, row.schoolId || null, row.roleKey, uuidOrNull(row.grantedBy)],
         );
       },
       async revokeUserRole(row) {
@@ -211,7 +212,7 @@ function createClientsPgStore(repo) {
                OR school_id IS NOT DISTINCT FROM $3::uuid
              )
            RETURNING *`,
-          [row.userId, row.roleKey, row.schoolId || null, row.revokedBy || null],
+          [row.userId, row.roleKey, row.schoolId || null, uuidOrNull(row.revokedBy)],
         );
       },
       async syncUserPrimaryRole(userId, roleKey) {
@@ -628,7 +629,7 @@ function createClientsPgStore(repo) {
            VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,NOW())`,
           [
             school?.id ?? null,
-            entry.userId || null,
+            uuidOrNull(entry.userId),
             entry.action,
             entry.entityType,
             entry.entityId,

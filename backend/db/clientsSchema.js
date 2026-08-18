@@ -54,13 +54,9 @@ CREATE TABLE IF NOT EXISTS contact_relations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_contacts_school_user_active
-  ON contacts (school_id, user_id)
-  WHERE user_id IS NOT NULL AND status = 'active';
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_contact_relations_active
-  ON contact_relations (school_id, contact_id, student_id)
-  WHERE status = 'active';
+-- Index uniques parent-linking : créés UNIQUEMENT par
+-- ensureParentLinkingConstraints() APRÈS inventaire fail-safe.
+-- Ne pas les recréer ici : un 23505 brut masquerait le diagnostic.
 
 CREATE TABLE IF NOT EXISTS school_conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
