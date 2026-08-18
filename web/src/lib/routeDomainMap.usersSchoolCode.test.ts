@@ -31,9 +31,10 @@ const teacherNotesContext: PermissionContext = {
 };
 
 describe("domainsForPath — /notes n'hydrate pas les domaines globaux d'affectation", () => {
-  it("ne charge ni assignments ni courses", () => {
+  it("charge notes + evaluations, sans assignments ni courses", () => {
     const domains = domainsForPath("/notes", teacherNotesContext);
     expect(domains).toContain("notes");
+    expect(domains).toContain("evaluations");
     expect(domains).not.toContain("assignments");
     expect(domains).not.toContain("courses");
   });

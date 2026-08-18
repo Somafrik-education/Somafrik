@@ -341,15 +341,19 @@ function createPedagogyPgStore(repo) {
           ...options,
         });
         const mappedRow = await one(
-          `SELECT e.*, s.school_code, c.name AS class_name, sub.name AS subject_name,
-                  t.teacher_code, tm.name AS term_name,
+          `SELECT e.*, s.school_code, c.name AS class_name, c.class_code, sub.name AS subject_name,
+                  t.teacher_code, tm.name AS term_name, tm.academic_year_id,
+                  ay.name AS academic_year_name,
+                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                   et.name AS evaluation_type_name, et.code AS evaluation_type_code
            FROM evaluations e
            JOIN schools s ON s.id = e.school_id
            JOIN classes c ON c.id = e.class_id
            JOIN subjects sub ON sub.id = e.subject_id
            LEFT JOIN teachers t ON t.id = e.teacher_id
+           LEFT JOIN users u ON u.id = t.user_id
            JOIN terms tm ON tm.id = e.term_id
+           LEFT JOIN academic_years ay ON ay.id = tm.academic_year_id
            LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
            WHERE e.id = $1`,
           [row.id],
@@ -378,15 +382,19 @@ function createPedagogyPgStore(repo) {
     async listProjection() {
       const [evaluationRows, gradeRows, attendanceRows, courseRows, scheduleRows] = await Promise.all([
         repo.all(`
-          SELECT e.*, s.school_code, c.name AS class_name, sub.name AS subject_name,
-                 t.teacher_code, tm.name AS term_name,
+          SELECT e.*, s.school_code, c.name AS class_name, c.class_code, sub.name AS subject_name,
+                 t.teacher_code, tm.name AS term_name, tm.academic_year_id,
+                 ay.name AS academic_year_name,
+                 NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                  et.name AS evaluation_type_name, et.code AS evaluation_type_code
           FROM evaluations e
           JOIN schools s ON s.id = e.school_id
           JOIN classes c ON c.id = e.class_id
           JOIN subjects sub ON sub.id = e.subject_id
           LEFT JOIN teachers t ON t.id = e.teacher_id
+          LEFT JOIN users u ON u.id = t.user_id
           JOIN terms tm ON tm.id = e.term_id
+          LEFT JOIN academic_years ay ON ay.id = tm.academic_year_id
           LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
           ORDER BY e.created_at DESC
         `),

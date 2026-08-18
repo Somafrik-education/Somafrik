@@ -253,6 +253,10 @@ async function runMemoryHttpGuards() {
     const notesRead = await request(MEMORY_PORT, "/notes", { token: adminToken });
     assert.equal(notesRead.status, 200);
 
+    const evaluationsRead = await request(MEMORY_PORT, "/evaluations", { token: adminToken });
+    assert.equal(evaluationsRead.status, 200, JSON.stringify(evaluationsRead.data));
+    assert.ok(Array.isArray(evaluationsRead.data));
+
     const presencesRead = await request(MEMORY_PORT, "/presences", { token: adminToken });
     assert.equal(presencesRead.status, 200);
 
@@ -492,6 +496,156 @@ async function runPostgresHttpGuards(databaseUrl) {
       biEvaluation.rows[0].id,
     ]);
     assert.equal(biEvalUnchanged.rows[0].title, "Éval BI HTTP");
+
+    const sekeCreate = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Interrogation 1",
+        teacherId: "ENS-0001",
+        evaluationType: "Devoir",
+        scale: 20,
+        coefficient: 1,
+      },
+    });
+    assert.equal(sekeCreate.status, 201, JSON.stringify(sekeCreate.data));
+    assert.equal(sekeCreate.data?.title, "Interrogation 1");
+    assert.equal(sekeCreate.data?.period, "Trimestre 1", "period = term_name, pas term_id");
+    assert.notEqual(String(sekeCreate.data?.period ?? ""), String(sekeCreate.data?.termId ?? ""));
+
+    const pgCreated = await pool.query(
+      `SELECT e.title, e.status, e.active, tm.name AS term_name, e.term_id::text AS term_id,
+              s.school_code, sub.name AS subject_name, c.name AS class_name
+       FROM evaluations e
+       JOIN schools s ON s.id = e.school_id
+       JOIN terms tm ON tm.id = e.term_id
+       JOIN subjects sub ON sub.id = e.subject_id
+       JOIN classes c ON c.id = e.class_id
+       WHERE e.title = 'Interrogation 1' AND s.school_code = 'CD-2026-0001'`,
+    );
+    assert.equal(pgCreated.rowCount, 1, "évaluation persistée PostgreSQL");
+    assert.equal(pgCreated.rows[0].term_name, "Trimestre 1");
+    assert.equal(pgCreated.rows[0].subject_name, "Mathématiques");
+    assert.equal(pgCreated.rows[0].class_name, "6ème A");
+
+    const teacherRefresh = await request(PG_PORT, "/evaluations", { token: teacherToken });
+    assert.equal(teacherRefresh.status, 200, JSON.stringify(teacherRefresh.data));
+    const sekeRow = (teacherRefresh.data ?? []).find((row) => row.title === "Interrogation 1");
+    assert.ok(sekeRow, `GET /evaluations enseignant: ${JSON.stringify(teacherRefresh.data)}`);
+    assert.equal(sekeRow.period, "Trimestre 1");
+    assert.equal(sekeRow.subject, "Mathématiques");
+    assert.equal(sekeRow.course, "Mathématiques");
+    assert.ok(sekeRow.classId, "classId canonique");
+    assert.ok(sekeRow.subjectId, "subjectId technique V2");
+    assert.notEqual(String(sekeRow.period), String(sekeRow.termId ?? ""));
+    assert.equal(sekeRow.status, "Brouillon");
+
+    const historyEval = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        className: "6ème A",
+        subject: "Histoire",
+        period: "Trimestre 1",
+        title: "Devoir Histoire hors scope",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+    });
+    assert.equal(historyEval.status, 201, JSON.stringify(historyEval.data));
+
+    const yearRow = await pool.query(
+      `SELECT ay.id
+       FROM academic_years ay
+       JOIN schools s ON s.id = ay.school_id
+       WHERE s.school_code = 'CD-2026-0001' AND ay.name = '2025-2026'`,
+    );
+    await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES (
+         (SELECT id FROM schools WHERE school_code = 'CD-2026-0001'),
+         $1, 'CLS-6B', '6ème B', 'active'
+       )`,
+      [yearRow.rows[0].id],
+    );
+    const otherClassEval = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        className: "6ème B",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "Interro 6ème B",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+    });
+    assert.equal(otherClassEval.status, 201, JSON.stringify(otherClassEval.data));
+
+    const teacherScoped = await request(PG_PORT, "/evaluations", { token: teacherToken });
+    const teacherTitles = (teacherScoped.data ?? []).map((row) => row.title);
+    assert.equal(teacherTitles.includes("Interrogation 1"), true);
+    assert.equal(teacherTitles.includes("Devoir Histoire hors scope"), false, "cours non affecté invisible");
+    assert.equal(teacherTitles.includes("Interro 6ème B"), false, "autre classe invisible");
+    assert.equal(teacherTitles.includes("Éval BI HTTP"), false, "autre établissement invisible");
+
+    const adminScoped = await request(PG_PORT, "/evaluations", { token: adminToken });
+    const adminTitles = (adminScoped.data ?? []).map((row) => row.title);
+    assert.equal(adminTitles.includes("Interrogation 1"), true);
+    assert.equal(adminTitles.includes("Devoir Histoire hors scope"), true);
+    assert.equal(adminTitles.includes("Éval BI HTTP"), false, "admin CD ne lit pas BI");
+
+    const otherPasswordHash = hashSecret("1234");
+    const otherUser = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
+       VALUES (
+         (SELECT id FROM schools WHERE school_code = 'CD-2026-0001'),
+         'ENS-0002', 'Autre', 'Prof', 'ens2-http@test.cd', $1, $1, 'TEACHER', 'active'
+       ) RETURNING id`,
+      [otherPasswordHash],
+    );
+    await pool.query(
+      `INSERT INTO teachers (school_id, user_id, teacher_code, status)
+       VALUES ((SELECT id FROM schools WHERE school_code = 'CD-2026-0001'), $1, 'ENS-0002', 'active')`,
+      [otherUser.rows[0].id],
+    );
+    const otherTeacherToken = await login(PG_PORT, "ENS-0002", "1234", "CD-2026-0001");
+    const otherTeacherList = await request(PG_PORT, "/evaluations", { token: otherTeacherToken });
+    assert.equal(otherTeacherList.status, 200, JSON.stringify(otherTeacherList.data));
+    assert.equal((otherTeacherList.data ?? []).length, 0, "enseignant non affecté : liste vide");
+
+    const patched = await request(PG_PORT, `/evaluations/${encodeURIComponent(sekeCreate.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { title: "Interrogation 1 bis" },
+    });
+    assert.equal(patched.status, 200, JSON.stringify(patched.data));
+    const afterPatch = await request(PG_PORT, "/evaluations", { token: teacherToken });
+    assert.equal(
+      (afterPatch.data ?? []).some((row) => row.title === "Interrogation 1 bis"),
+      true,
+      "PATCH relue via GET",
+    );
+
+    const deactivated = await request(PG_PORT, `/evaluations/${encodeURIComponent(sekeCreate.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { active: false },
+    });
+    assert.equal(deactivated.status, 200, JSON.stringify(deactivated.data));
+    const afterDeactivate = await request(PG_PORT, "/evaluations", { token: adminToken });
+    const deactivatedRow = (afterDeactivate.data ?? []).find((row) => row.id === sekeCreate.data.id);
+    assert.ok(deactivatedRow, "désactivation relue");
+    assert.equal(deactivatedRow.active, false);
+
+    const pgAfterDeactivate = await pool.query(
+      `SELECT active FROM evaluations WHERE legacy_json_id = $1 OR id::text = $1`,
+      [sekeCreate.data.id],
+    );
+    assert.equal(pgAfterDeactivate.rows[0].active, false);
 
     const forgedNote = await request(PG_PORT, "/notes", {
       method: "POST",

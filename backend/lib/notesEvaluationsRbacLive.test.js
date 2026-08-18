@@ -107,6 +107,15 @@ test("contrat source : POST/PATCH evaluations overlayent le live", () => {
   assert.equal(patchEval.includes("assertCanManageNotes"), false);
 });
 
+test("contrat source : GET /api/evaluations overlaye le live via requirePermission", () => {
+  const getEval = sliceFrom(serverSrc, 'app.get("/api/evaluations"', 'app.post("/api/evaluations"');
+  assert.match(getEval, /requireAuth/);
+  assert.match(getEval, /requirePermission\("GET \/api\/evaluations"\)/);
+  assert.match(getEval, /listSchoolEvaluations/);
+  assert.equal(getEval.includes("getBackOfficeState"), false);
+  assert.equal(getEval.includes("state.notes"), false);
+});
+
 test("contrat source : GET notes staff et fiche élève passent par requirePermission", () => {
   const getStudent = sliceFrom(serverSrc, 'app.get("/api/students/:id/notes"', 'app.get("/api/notes"');
   assert.match(getStudent, /requirePermission\("GET \/api\/students\/:id\/notes"\)/);
@@ -133,6 +142,11 @@ test("routePermissions Notes : CREATE OR UPDATE, sans alias legacy", () => {
   assert.deepEqual(routePermissions["POST /api/notes"], [
     "Notes:CREATE",
     "Notes:UPDATE",
+    "ALL_PRIVILEGES",
+  ]);
+  assert.deepEqual(routePermissions["GET /api/evaluations"], [
+    "Notes:READ",
+    "COUNTRY_PRIVILEGES",
     "ALL_PRIVILEGES",
   ]);
   assert.deepEqual(routePermissions["POST /api/evaluations"], [
@@ -167,9 +181,9 @@ test("GET Notes:READ — SCHOOL_ADMIN, PREFET, TEACHER, PARENT, STUDENT", () => 
       `${role} GET liste`,
     );
     assert.equal(
-      rbac.canAccess({ role, permissions: ["Notes:READ"] }, "GET /api/students/:id/notes"),
+      rbac.canAccess({ role, permissions: ["Notes:READ"] }, "GET /api/evaluations"),
       true,
-      `${role} GET fiche`,
+      `${role} GET evaluations`,
     );
   }
   assert.equal(rbac.canAccess({ role: "Parent", permissions: ["Élèves:READ"] }, "GET /api/notes"), false);

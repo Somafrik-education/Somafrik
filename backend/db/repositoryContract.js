@@ -83,6 +83,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "updateCourseSchedule",
   "deleteCourseSchedule",
   "getCourseSchedule",
+  "listSchoolEvaluations",
   "createSchoolEvaluation",
   "updateSchoolEvaluation",
   "upsertSchoolGrade",

@@ -44,8 +44,18 @@ function assertNotesWebUsesSessionAssignments() {
   const notesRule = routeMap.match(/prefix:\s*"\/notes"[^}]+}/);
   assert.ok(notesRule, "/notes manquant dans routeDomainMap");
   assert.match(notesRule[0], /"notes"/);
+  assert.match(notesRule[0], /"evaluations"/);
   assert.doesNotMatch(notesRule[0], /"assignments"/);
   assert.doesNotMatch(notesRule[0], /"courses"/);
+
+  const loaders = fs.readFileSync(path.join(ROOT, "web/src/lib/domainLoaders.ts"), "utf8");
+  assert.match(loaders, /"evaluations"/);
+  assert.match(loaders, /listEvaluations/);
+  const pedagogyApi = fs.readFileSync(path.join(ROOT, "web/src/lib/pedagogyApi.ts"), "utf8");
+  assert.match(pedagogyApi, /listEvaluations:\s*\(\)\s*=>\s*api\.get<unknown\[]>\("\/evaluations"\)/);
+  const serverSrc = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
+  assert.match(serverSrc, /app\.get\("\/api\/evaluations"/);
+  assert.match(serverSrc, /listSchoolEvaluations/);
 
   assert.match(notesRepo, /Accès refusé: cours non affecté/);
   assert.match(notesRepo, /error\.statusCode = 403/);
@@ -71,6 +81,7 @@ const web = spawnSync(
     "src/lib/evaluations.test.ts",
     "src/components/grades/EvaluationFormModal.test.tsx",
     "src/lib/routeDomainMap.usersSchoolCode.test.ts",
+    "src/lib/domainLoaders.evaluations.test.ts",
   ],
   {
     cwd: ROOT,

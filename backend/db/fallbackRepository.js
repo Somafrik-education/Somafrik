@@ -2743,6 +2743,40 @@ class FallbackRepository {
     return Promise.resolve(null);
   }
 
+  async listSchoolEvaluations(schoolCode, principal = {}) {
+    const state = (await this.getBackOfficeState()) ?? {};
+    const code = String(schoolCode ?? "").trim().toUpperCase();
+    let rows = (state.evaluations ?? []).filter(
+      (row) => String(row.schoolCode ?? "").trim().toUpperCase() === code,
+    );
+    const role = String(principal?.role ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    if (role === "enseignant" || role === "teacher" || role.includes("prof")) {
+      const assignments = Array.isArray(principal.assignments) ? principal.assignments : [];
+      const allowed = new Set();
+      for (const assignment of assignments) {
+        const status = String(assignment.status ?? assignment.assignmentStatus ?? "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .trim()
+          .toLowerCase();
+        if (!["active", "actif", "open", "ouverte"].includes(status)) continue;
+        const classId = String(assignment.classId ?? assignment.class_id ?? "").trim();
+        const subjectId = String(assignment.subjectId ?? assignment.subject_id ?? "").trim();
+        if (!classId || !subjectId) continue;
+        allowed.add(`${classId}|${subjectId}`);
+      }
+      if (!allowed.size) return [];
+      rows = rows.filter((row) =>
+        allowed.has(`${String(row.classId ?? "").trim()}|${String(row.subjectId ?? "").trim()}`),
+      );
+    }
+    return rows;
+  }
+
   async createSchoolEvaluation(payload, principal, auditMeta) {
     this.getEvaluationTypesStore();
     if (this._evaluationTypesBootstrap) await this._evaluationTypesBootstrap;

@@ -559,11 +559,18 @@ export interface GradeAuditEntry {
 export interface Evaluation {
   id: string;
   schoolCode: string;
+  schoolId?: string;
   academicYear?: string;
+  academicYearId?: string;
+  classId?: string;
+  classCode?: string;
   className: string;
+  subjectId?: string;
   subject: string;
+  course?: string;
   teacherId?: string;
   teacherName?: string;
+  termId?: string;
   period: string;
   evaluationType: string;
   evaluationTypeId?: string;
