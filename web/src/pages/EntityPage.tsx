@@ -780,7 +780,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       const teacher = findTeacherByName(teachers, teacherName);
       if (teacherName && !teacher && !String(workingItem.teacherId ?? "").trim()) {
         showToast(
-          "Enseignant introuvable dans les fiches : créez d'abord la fiche enseignant pour relier la matière à sa classe.",
+          "Enseignant introuvable dans les fiches : créez d'abord la fiche enseignant pour relier le cours à sa classe.",
           "error",
         );
         return;
@@ -1919,7 +1919,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             {(module.key === "assignments" || module.key === "courses") &&
             !String(editing.className ?? "") ? (
               <p className="text-xs text-muted">
-                Sélectionnez d'abord une classe pour voir les matières disponibles.
+                Sélectionnez d'abord une classe pour voir les cours disponibles.
               </p>
             ) : null}
           </form>
@@ -1938,7 +1938,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
               ? `Affectations — ${getTeacherDisplayName(teacherAssignmentContext)}`
               : "Affectations"
           }
-          description="Associez cet enseignant à une ou plusieurs classes et matières."
+          description="Associez cet enseignant à une ou plusieurs classes et cours."
           footer={
             <>
               <Button
@@ -2088,7 +2088,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
                     ))}
                   {!String(editingAssignment?.className ?? "") ? (
                     <p className="text-xs text-muted">
-                      Sélectionnez d'abord une classe pour voir les matières disponibles.
+                      Sélectionnez d'abord une classe pour voir les cours disponibles.
                     </p>
                   ) : null}
                   {editingAssignment?.id && assignmentPermissions.canCreate ? (

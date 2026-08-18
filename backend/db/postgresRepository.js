@@ -2102,7 +2102,7 @@ class PostgresRepository {
         this.lastNotesAuthzTrace = denied;
         persistTrace(denied);
         this._activeNotesAuthzTrace = null;
-        const error = new Error("Accès refusé: matière non affectée.");
+        const error = new Error("Accès refusé: cours non affecté.");
         error.statusCode = 403;
         throw error;
       }
@@ -3500,7 +3500,7 @@ class PostgresRepository {
 
     const subject = await this.ensureSubjectForSchool(school.id, validation.subjectName, context);
     if (!subject?.id) {
-      const error = new Error(`Matière introuvable pour l'affectation (${validation.subjectName})`);
+      const error = new Error(`Cours introuvable pour l'affectation (${validation.subjectName})`);
       error.statusCode = 400;
       error.code = "ASSIGNMENT_SYNC_SUBJECT_MISSING";
       throw error;
@@ -5043,16 +5043,16 @@ class PostgresRepository {
       entityId: String(payload.code).trim().toUpperCase(),
       newValue: payload,
     });
-    return { id: row.id, message: "Matière enregistrée" };
+    return { id: row.id, message: "Cours enregistré" };
   }
 
   async deleteSubject(subjectCode) {
     await this.init();
     const subject = await this.one("SELECT id, subject_code FROM subjects WHERE subject_code = $1", [String(subjectCode).trim().toUpperCase()]);
-    if (!subject) throw new Error("Matière introuvable");
+    if (!subject) throw new Error("Cours introuvable");
     const usage = await this.one("SELECT COUNT(*)::int AS count FROM grades WHERE subject_id = $1", [subject.id]);
     if (usage.count > 0) {
-      const error = new Error("Suppression refusée: la matière possède déjà des notes");
+      const error = new Error("Suppression refusée: le cours possède déjà des notes");
       error.statusCode = 409;
       throw error;
     }
@@ -5063,7 +5063,7 @@ class PostgresRepository {
       entityType: "subject",
       entityId: subject.subject_code,
     });
-    return { message: "Matière supprimée" };
+    return { message: "Cours supprimé" };
   }
 
   async getAcademicYearsV2() {
@@ -5276,7 +5276,7 @@ class PostgresRepository {
       name: row.name,
       type: row.exam_type,
       className: row.class_name,
-      subject: row.subject_name ?? "Toutes matières",
+      subject: row.subject_name ?? "Tous les cours",
       date: this.formatIsoDate(row.exam_date),
       status: this.fromExamStatus(row.status),
       resultCount: Number(row.result_count),

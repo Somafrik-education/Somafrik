@@ -853,7 +853,7 @@ export function detectDuplicateCoursePlanning(
 
     if (samePeriodName || overlappingDates) {
       const periodLabel = candidate.periodName || `${candidate.periodStart} → ${candidate.periodEnd}`;
-      return `La matière « ${candidate.subject} » est déjà planifiée pour ${candidate.className} (${periodLabel}). Modifiez le créneau existant.`;
+      return `Le cours « ${candidate.subject} » est déjà planifié pour ${candidate.className} (${periodLabel}). Modifiez le créneau existant.`;
     }
   }
 
@@ -1378,7 +1378,7 @@ export function auditSchoolPlanningConsistency(
 
   for (const slot of scoped) {
     if (!slot.subject?.trim()) {
-      issues.push({ slotId: slot.id, message: "Créneau sans matière." });
+      issues.push({ slotId: slot.id, message: "Créneau sans cours." });
     }
 
     if (isCourseSchedule(slot) && !hasSchedulePeriod(slot)) {
@@ -1434,7 +1434,7 @@ export function auditSchoolPlanningConsistency(
     for (const link of collectPedagogyLinksForSchool(state, user, schoolCode)) {
       if (hasPlanningSlotForSubject(scoped, link.className, link.subject)) continue;
       const key = courseRecordKey(link.className, link.subject);
-      const message = `Matière « ${link.subject} » (${link.className}) sans créneau planning — absente du calendrier.`;
+      const message = `Cours « ${link.subject} » (${link.className}) sans créneau planning — absent du calendrier.`;
       const existing = unplannedCounts.get(key);
       if (existing) {
         existing.count += 1;
@@ -1511,7 +1511,7 @@ export function validatePlanningSlotBusinessRules(
     );
     if (!allowed) {
       issues.push(
-        `La matière « ${normalized.subject} » n'est pas configurée pour la classe ${normalized.className}.`,
+        `Le cours « ${normalized.subject} » n'est pas configuré pour la classe ${normalized.className}.`,
       );
     }
   }

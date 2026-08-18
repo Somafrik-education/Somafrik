@@ -26,7 +26,7 @@ const DATASETS: DatasetConfig[] = [
   { key: "students", label: "Élèves" },
   { key: "teachers", label: "Enseignants" },
   { key: "classes", label: "Classes" },
-  { key: "courses", label: "Matières" },
+  { key: "courses", label: "Cours" },
   { key: "assignments", label: "Affectations" },
   { key: "payments", label: "Paiements" },
   { key: "notes", label: "Notes" },

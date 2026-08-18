@@ -32,7 +32,7 @@ const ERRORS = {
   SUBJECT_MISSING: (subjectName) =>
     attachmentError(
       "EVAL_ATTACHMENT_SUBJECT",
-      `Matiere introuvable pour l'évaluation${subjectName ? ` (« ${subjectName} »)` : ""}`,
+      `Cours introuvable pour l'évaluation${subjectName ? ` (« ${subjectName} »)` : ""}`,
     ),
   YEAR_MISSING: () =>
     attachmentError(
@@ -47,7 +47,7 @@ const ERRORS = {
   CLASS_NAME_REQUIRED: () =>
     attachmentError("EVAL_ATTACHMENT_CLASS", "Classe obligatoire pour l'évaluation"),
   SUBJECT_NAME_REQUIRED: () =>
-    attachmentError("EVAL_ATTACHMENT_SUBJECT", "Matiere obligatoire pour l'évaluation"),
+    attachmentError("EVAL_ATTACHMENT_SUBJECT", "Cours obligatoire pour l'évaluation"),
   TEACHER_REQUIRED: () =>
     attachmentError(
       "EVAL_TEACHER_REQUIRED",

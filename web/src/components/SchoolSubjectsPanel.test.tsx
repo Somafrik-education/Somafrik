@@ -31,13 +31,14 @@ describe("SchoolSubjectsPanel", () => {
     vi.mocked(api.get).mockResolvedValue([{ code: "SUB-MATH", name: "Mathématiques", status: "Active" }]);
     render(<SchoolSubjectsPanel canCreate={false} />);
     expect(await screen.findByText(/Mathématiques \(SUB-MATH\)/)).toBeInTheDocument();
+    expect(screen.getByText("Cours")).toBeInTheDocument();
     expect(screen.queryByText("Français")).not.toBeInTheDocument();
   });
 
-  it("affiche Aucune matière sur 200 [] sans injecter de liste locale", async () => {
+  it("affiche Aucun cours sur 200 [] sans injecter de liste locale", async () => {
     vi.mocked(api.get).mockResolvedValue([]);
     render(<SchoolSubjectsPanel canCreate={false} />);
-    expect(await screen.findByText("Aucune matière")).toBeInTheDocument();
+    expect(await screen.findByText("Aucun cours")).toBeInTheDocument();
     expect(screen.queryByText("Mathématiques")).not.toBeInTheDocument();
     expect(screen.queryByText("Français")).not.toBeInTheDocument();
   });
@@ -45,8 +46,8 @@ describe("SchoolSubjectsPanel", () => {
   it("affiche l'erreur réelle si GET /v2/subjects = 500", async () => {
     vi.mocked(api.get).mockRejectedValue(new ApiError("Erreur interne catalogue", 500));
     render(<SchoolSubjectsPanel canCreate={false} />);
-    expect(await screen.findByText(/Catalogue matières indisponible/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Catalogue de cours indisponible/i)).toBeInTheDocument();
     expect(screen.getByText(/Erreur interne catalogue/i)).toBeInTheDocument();
-    expect(screen.queryByText("Aucune matière")).not.toBeInTheDocument();
+    expect(screen.queryByText("Aucun cours")).not.toBeInTheDocument();
   });
 });

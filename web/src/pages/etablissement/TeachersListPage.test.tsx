@@ -256,7 +256,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await screen.findByText("Ndiaye");
     const list = screen.getByLabelText("Liste");
     expect(within(list).getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
-    expect(within(list).getAllByRole("button", { name: "Affecter" }).length).toBeGreaterThan(0);
+    expect(within(list).getAllByRole("button", { name: "Affecter un cours" }).length).toBeGreaterThan(0);
     expect(within(list).getAllByRole("button", { name: "Supprimer" }).length).toBeGreaterThan(0);
   });
 
@@ -268,7 +268,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     const list = screen.getByLabelText("Liste");
     expect(within(list).queryByRole("button", { name: "Modifier" })).not.toBeInTheDocument();
     expect(within(list).queryByRole("button", { name: "Supprimer" })).not.toBeInTheDocument();
-    expect(within(list).getAllByRole("button", { name: "Affecter" }).length).toBeGreaterThan(0);
+    expect(within(list).getAllByRole("button", { name: "Affecter un cours" }).length).toBeGreaterThan(0);
   });
 
   it("masque Affecter sans Affectations:CREATE même si Enseignants:UPDATE", async () => {
@@ -277,7 +277,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await screen.findByText("Ndiaye");
     const list = screen.getByLabelText("Liste");
     expect(within(list).getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
-    expect(within(list).queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
+    expect(within(list).queryByRole("button", { name: "Affecter un cours" })).not.toBeInTheDocument();
   });
 
   it("modifie un enseignant via PATCH puis recharge", async () => {
@@ -345,7 +345,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     permissionContext.permissionsBootstrap = "loading";
     renderPage();
     expect(screen.getByText(/Chargement des droits/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Affecter un cours" })).not.toBeInTheDocument();
   });
 
   it("affiche une erreur explicite si le bootstrap permissions échoue", () => {
@@ -355,7 +355,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     renderPage();
     expect(screen.getByText(/Permissions indisponibles/i)).toBeInTheDocument();
     expect(screen.getByText(/Impossible de charger les permissions effectives/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Affecter" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Affecter un cours" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Accès non autorisé/i)).not.toBeInTheDocument();
   });
 
@@ -364,12 +364,12 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     teacherAssignmentsApiMock.create.mockResolvedValue({ id: "asg-1" });
     renderPage();
     await screen.findByText("Ndiaye");
-    expect(screen.getAllByRole("button", { name: "Affecter" }).length).toBeGreaterThan(0);
-    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    expect(screen.getAllByRole("button", { name: "Affecter un cours" }).length).toBeGreaterThan(0);
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     expect(await screen.findByLabelText(/Classe/i)).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Mathématiques" })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText(/Classe/i), "CLS-6A");
-    await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
+    await user.selectOptions(screen.getByLabelText(/Cours/i), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     await waitFor(() => {
       expect(teacherAssignmentsApiMock.create).toHaveBeenCalledWith({
@@ -482,35 +482,35 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     );
     renderPage();
     await screen.findByText("Ndiaye");
-    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
-    await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
+    await user.selectOptions(screen.getByLabelText(/Cours/i), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     expect(
       await screen.findByText("TEACHER_ASSIGNMENT_ALREADY_EXISTS · Cette affectation existe déjà pour cet enseignant."),
     ).toBeInTheDocument();
   });
 
-  it("affiche une erreur catalogue si GET /v2/subjects = 500, pas « Aucune matière »", async () => {
+  it("affiche une erreur catalogue si GET /v2/subjects = 500, pas « Aucun cours »", async () => {
     const user = userEvent.setup();
     vi.mocked(api.get).mockRejectedValue(new ApiError("Erreur interne catalogue", 500));
     renderPage();
     await screen.findByText("Ndiaye");
-    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
-    expect(await screen.findByText(/Catalogue matières indisponible/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
+    expect(await screen.findByText(/Catalogue de cours indisponible/i)).toBeInTheDocument();
     expect(screen.getByText(/Erreur interne catalogue/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Aucune matière canonique/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Aucun cours canonique/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
   });
 
-  it("affiche « Aucune matière » si GET /v2/subjects = 200 [] sans fallback locale", async () => {
+  it("affiche « Aucun cours » si GET /v2/subjects = 200 [] sans fallback locale", async () => {
     const user = userEvent.setup();
     vi.mocked(api.get).mockResolvedValue([]);
     renderPage();
     await screen.findByText("Ndiaye");
-    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
-    expect(await screen.findByText(/Aucune matière canonique/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Catalogue matières indisponible/i)).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
+    expect(await screen.findByText(/Aucun cours canonique/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Catalogue de cours indisponible/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Mathématiques" })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Français" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
@@ -521,7 +521,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     classesApiMock.list.mockResolvedValue([]);
     renderPage();
     await screen.findByText("Ndiaye");
-    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     expect(await screen.findByText(/Aucune classe active/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
   });
@@ -584,9 +584,9 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     ]);
     renderPage();
     await screen.findByText("Ndiaye");
-    await user.click(screen.getAllByRole("button", { name: "Affecter" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
-    await user.selectOptions(screen.getByLabelText(/Matière/i), "SUB-MATH");
+    await user.selectOptions(screen.getByLabelText(/Cours/i), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     expect(await screen.findByText("6ème A · Mathématiques")).toBeInTheDocument();
   });

@@ -163,13 +163,13 @@ export function EvaluationFormModal({
             options={classNames.map((name) => ({ value: name, label: name }))}
           />
         </Field>
-        <Field label="Matière" htmlFor="eval-subject" required>
+        <Field label="Cours" htmlFor="eval-subject" required>
           <Select
             id="eval-subject"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             options={[
-              { value: "", label: "Choisir…" },
+              { value: "", label: "Choisir un cours" },
               ...subjects.map((name) => ({ value: name, label: name })),
             ]}
           />

@@ -313,7 +313,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     feature: "Enseignants",
     group: "utilisateurs",
     description:
-      "Équipe pédagogique et affectations classe ↔ matière. Fiche créée automatiquement depuis Comptes utilisateurs.",
+      "Équipe pédagogique et affectations classe ↔ cours. Fiche créée automatiquement depuis Comptes utilisateurs.",
     fields: [
       { key: "name", label: "Nom", placeholder: "Nom de famille", required: true },
       { key: "firstName", label: "Prénom", placeholder: "Prénom", required: true },
@@ -403,11 +403,11 @@ export const SCHOOL_ENTITY_MODULES = ([
     key: "courses",
     view: "courses",
     path: "/parametres/configuration",
-    label: "Matières",
+    label: "Cours",
     feature: "Matières",
     group: "pedagogie",
     description:
-      "Catalogue des matières par classe (paramètres établissement). Les affectations enseignant se gèrent dans Mon établissement → Enseignants.",
+      "Catalogue des cours par classe (paramètres établissement). Les affectations enseignant se gèrent dans Mon établissement → Enseignants.",
     fields: [
       {
         key: "className",
@@ -418,8 +418,8 @@ export const SCHOOL_ENTITY_MODULES = ([
       },
       {
         key: "name",
-        label: "Matière",
-        placeholder: "Choisir une matière",
+        label: "Cours",
+        placeholder: "Choisir un cours",
         inputType: "select",
         optionsKey: "subjects",
         required: true,
@@ -443,7 +443,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     feature: "Affectations",
     group: "pedagogie",
     description:
-      "Affectation enseignant ↔ classe ↔ matière (gérée depuis Enseignants). Le catalogue des matières se configure dans Paramètres ; l'horaire se définit dans Emploi du temps.",
+      "Affectation enseignant ↔ classe ↔ cours (gérée depuis Enseignants). Le catalogue des cours se configure dans Paramètres ; l'horaire se définit dans Emploi du temps.",
     fields: [
       {
         key: "className",
@@ -455,8 +455,8 @@ export const SCHOOL_ENTITY_MODULES = ([
       },
       {
         key: "subject",
-        label: "Matière",
-        placeholder: "Choisir une matière",
+        label: "Cours",
+        placeholder: "Choisir un cours",
         inputType: "select",
         optionsKey: "assignmentSubjects",
         required: true,
@@ -512,7 +512,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     description: "Évaluations et résultats scolaires.",
     fields: [
       { key: "studentName", label: "Élève", placeholder: "Nom élève" },
-      { key: "subject", label: "Matière", placeholder: "Mathématiques" },
+      { key: "subject", label: "Cours", placeholder: "Mathématiques" },
       { key: "value", label: "Note", placeholder: "15" },
       { key: "period", label: "Période", placeholder: "Trimestre 1" },
     ],
@@ -531,7 +531,7 @@ export const SCHOOL_ENTITY_MODULES = ([
     fields: [
       { key: "name", label: "Intitulé", placeholder: "Contrôle T1 — Mathématiques", readOnly: true },
       { key: "className", label: "Classe", placeholder: "6ème A", readOnly: true },
-      { key: "subject", label: "Matière", placeholder: "Mathématiques", readOnly: true },
+      { key: "subject", label: "Cours", placeholder: "Mathématiques", readOnly: true },
       { key: "examType", label: "Type", placeholder: "Contrôle / Devoir / Examen", readOnly: true },
       { key: "date", label: "Date", inputType: "date", readOnly: true },
       { key: "period", label: "Période", placeholder: "Trimestre 1", readOnly: true },

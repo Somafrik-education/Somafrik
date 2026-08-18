@@ -36,7 +36,7 @@ const columns: ColumnDef<CourseScheduleSlot>[] = [
     cell: ({ row }) =>
       `${extractTimeFromIso(row.original.start)} – ${extractTimeFromIso(row.original.end)}`,
   },
-  { accessorKey: "subject", header: "Matière" },
+  { accessorKey: "subject", header: "Cours" },
   { id: "teacher", header: "Enseignant", accessorFn: (row) => row.teacherName || "—" },
   { id: "room", header: "Salle", accessorFn: (row) => row.room || "—" },
   {

@@ -266,11 +266,11 @@ export function CoursePlanningPage() {
       report.periodsAdded ? `${report.periodsAdded} période(s) ajoutée(s)` : "",
       report.duplicatesRemoved ? `${report.duplicatesRemoved} doublon(s) horaire(s) supprimé(s)` : "",
       report.subjectPeriodDuplicatesRemoved
-        ? `${report.subjectPeriodDuplicatesRemoved} doublon(s) matière/période supprimé(s)`
+        ? `${report.subjectPeriodDuplicatesRemoved} doublon(s) cours/période supprimé(s)`
         : "",
       report.conflictsResolved ? `${report.conflictsResolved} conflit(s) horaire(s) résolu(s)` : "",
       report.migratedFromPedagogy
-        ? `${report.migratedFromPedagogy} matière(s) importée(s) au planning`
+        ? `${report.migratedFromPedagogy} cours importé(s) au planning`
         : "",
       report.examsLinked ? `${report.examsLinked} examen(s) relié(s) au calendrier` : "",
       report.teachersSynced ? `${report.teachersSynced} enseignant(s) complété(s)` : "",
@@ -293,7 +293,7 @@ export function CoursePlanningPage() {
     const confirmed = await confirm({
       title: "Réinitialiser le planning ?",
       description:
-        "Tous les créneaux cours et examens seront supprimés. Les affectations legacy et les examens planifiés seront retirés. Les matières, classes et périodes académiques (Configuration) sont conservées.",
+        "Tous les créneaux cours et examens seront supprimés. Les affectations legacy et les examens planifiés seront retirés. Les cours, classes et périodes académiques (Configuration) sont conservés.",
       confirmLabel: "Réinitialiser",
       tone: "danger",
     });
@@ -433,7 +433,7 @@ export function CoursePlanningPage() {
     const slot = buildSlotFromForm();
     if (!slot) return;
     if (!slot.className || !slot.subject || !form.startTime || !form.endTime) {
-      showToast("Classe, matière et horaires sont obligatoires.", "error");
+      showToast("Classe, cours et horaires sont obligatoires.", "error");
       return;
     }
 
@@ -591,7 +591,7 @@ export function CoursePlanningPage() {
         <p className="text-sm font-semibold text-white/75">Pédagogie</p>
         <h2 className="mt-2 text-2xl font-black">Planning de cours</h2>
         <p className="mt-2 max-w-3xl text-sm text-white/85">
-          Point unique pour planifier cours et examens : créneaux récurrents, enseignant par matière,
+          Point unique pour planifier cours et examens : créneaux récurrents, enseignant par cours,
           calendrier et horaires. Les anciennes affectations sont migrées ici ; le module Examens sert
           uniquement au suivi des statuts.
         </p>
@@ -796,7 +796,7 @@ export function CoursePlanningPage() {
             <Field label="Classe">
               <Input value={selectedClassName} readOnly />
             </Field>
-            <Field label="Matière">
+            <Field label="Cours">
               <Select
                 value={form.subject}
                 onChange={(event) => applySubjectDefaults(event.target.value)}
@@ -812,11 +812,11 @@ export function CoursePlanningPage() {
                     options={EXAM_TYPE_OPTIONS.map((value) => ({ value, label: value }))}
                   />
                 </Field>
-                <Field label="Intitulé" hint="Optionnel — par défaut : type + matière.">
+                <Field label="Intitulé" hint="Optionnel — par défaut : type + cours.">
                   <Input
                     value={form.examName}
                     onChange={(event) => setForm({ ...form, examName: event.target.value })}
-                    placeholder={`${form.examType} — ${form.subject || "Matière"}`}
+                    placeholder={`${form.examType} — ${form.subject || "Cours"}`}
                   />
                 </Field>
                 <Field label="Date de l'examen">

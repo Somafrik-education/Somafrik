@@ -268,7 +268,7 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
       return "La note ne correspond pas à la classe de l'évaluation.";
     }
     if (note.subject && evaluation.subject && normalize(note.subject) !== normalize(evaluation.subject)) {
-      return "La note ne correspond pas à la matière de l'évaluation.";
+      return "La note ne correspond pas au cours de l'évaluation.";
     }
   }
 
@@ -427,7 +427,7 @@ function validateAssignmentWrite(state = {}, assignment = {}) {
 
   if (!String(assignment.className ?? "").trim()) return "La classe est obligatoire pour une affectation.";
   if (!String(assignment.subject ?? assignment.course ?? "").trim()) {
-    return "La matière est obligatoire pour une affectation.";
+    return "Le cours est obligatoire pour une affectation.";
   }
 
   return null;

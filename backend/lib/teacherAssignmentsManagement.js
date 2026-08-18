@@ -54,7 +54,7 @@ function validateAssignmentInput(body = {}, { partial = false } = {}) {
 
   for (const field of ["teacherCode", "classRef", "subjectRef"]) {
     if ((!partial || present[field]) && !value[field]) {
-      throw assignmentError(400, "Enseignant, classe et matière sont requis.", "ASSIGNMENT_FIELDS_REQUIRED");
+      throw assignmentError(400, "Enseignant, classe et cours sont requis.", "ASSIGNMENT_FIELDS_REQUIRED");
     }
   }
   if (value.assignmentRole && !/^[a-z0-9_-]{1,32}$/i.test(value.assignmentRole)) {

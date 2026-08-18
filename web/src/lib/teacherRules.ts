@@ -113,7 +113,7 @@ export function analyzeTeacherDeletion(
     blockers.push({
       kind: "assignment",
       label: "Affectation",
-      detail: `${String(row.subject ?? row.course ?? "Matière")} — ${String(row.className ?? "—")}`,
+      detail: `${String(row.subject ?? row.course ?? "Cours")} — ${String(row.className ?? "—")}`,
     });
   }
   if (assignments.length > 4) {
@@ -130,15 +130,15 @@ export function analyzeTeacherDeletion(
   for (const row of courses.slice(0, 3)) {
     blockers.push({
       kind: "course",
-      label: "Matière",
-      detail: `${String(row.name ?? row.subject ?? "Matière")} — ${String(row.className ?? "—")}`,
+      label: "Cours",
+      detail: `${String(row.name ?? row.subject ?? "Cours")} — ${String(row.className ?? "—")}`,
     });
   }
   if (courses.length > 3) {
     blockers.push({
       kind: "course",
-      label: "Matière",
-      detail: `${courses.length - 3} autre(s) matière(s)`,
+      label: "Cours",
+      detail: `${courses.length - 3} autre(s) cours`,
     });
   }
 

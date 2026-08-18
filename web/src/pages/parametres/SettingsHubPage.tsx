@@ -60,7 +60,7 @@ const SETTING_CARDS: SettingCard[] = [
   {
     to: "/parametres/structure",
     title: "Structure pédagogique",
-    description: "Niveaux, filières, classes et matières de référence.",
+    description: "Niveaux, filières, classes et cours de référence.",
     icon: Network,
     status: "available",
     view: "configuration",

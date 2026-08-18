@@ -823,23 +823,23 @@ class FallbackRepository {
       entityId: code,
       newValue: payload,
     });
-    return { id: code, message: "Matière enregistrée" };
+    return { id: code, message: "Cours enregistré" };
   }
 
   async deleteSubject(subjectCode) {
     const code = String(subjectCode).trim().toUpperCase();
     const subject = this.subjects.find((item) => item.code === code);
 
-    if (!subject) throw new Error("Matière introuvable");
+    if (!subject) throw new Error("Cours introuvable");
     if (subject.gradeCount > 0) {
-      const error = new Error("Suppression refusée: la matière possède déjà des notes");
+      const error = new Error("Suppression refusée: le cours possède déjà des notes");
       error.statusCode = 409;
       throw error;
     }
 
     this.subjects = this.subjects.filter((item) => item.code !== code);
     await this.recordAudit({ action: "subject_delete", entityType: "subject", entityId: code });
-    return { message: "Matière supprimée" };
+    return { message: "Cours supprimé" };
   }
 
   demoAcademicYears() {
@@ -2439,7 +2439,7 @@ class FallbackRepository {
     ) ?? matchingSubjects[0];
     if (!teacher) throw assignmentError(404, "Enseignant introuvable.", "ASSIGNMENT_TEACHER_NOT_FOUND");
     if (!schoolClass) throw assignmentError(404, "Classe introuvable.", "ASSIGNMENT_CLASS_NOT_FOUND");
-    if (!subject) throw assignmentError(404, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+    if (!subject) throw assignmentError(404, "Cours introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
     if (
       existing.some(
         (row) =>

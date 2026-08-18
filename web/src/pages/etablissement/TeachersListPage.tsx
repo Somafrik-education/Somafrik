@@ -214,7 +214,7 @@ export function TeachersListPage() {
       setSubjects(subjectRows.filter((item) => !isArchivedSubjectStatus(item.status)));
     } catch (err) {
       logSubjectsCatalogFailure(err);
-      const message = formatCaughtApiError(err, "Impossible de charger les classes ou matières.");
+      const message = formatCaughtApiError(err, "Impossible de charger les classes ou cours.");
       setSubjectsCatalogError(message);
     }
   }
@@ -340,7 +340,7 @@ export function TeachersListPage() {
             ) : null}
             {permissionsReady && assignmentPermissions.canCreate ? (
               <Button type="button" variant="secondary" size="sm" onClick={() => void openAssign(row)}>
-                Affecter
+                Affecter un cours
               </Button>
             ) : null}
             {permissions.canDelete ? (
@@ -529,7 +529,7 @@ export function TeachersListPage() {
       <Modal
         open={Boolean(assigning)}
         onClose={() => setAssigning(null)}
-        title={assigning ? `Affecter ${assigning.name || assigning.lastName}` : "Affecter"}
+        title={assigning ? `Affecter un cours — ${assigning.name || assigning.lastName}` : "Affecter un cours"}
       >
         <form className="space-y-3" onSubmit={(event) => void onAssign(event)}>
           {assignError ? (
@@ -538,7 +538,7 @@ export function TeachersListPage() {
             </InlineAlert>
           ) : (
             <InlineAlert tone="info" title="Références canoniques">
-              Classe et matière de l&apos;établissement. L&apos;année académique active est imposée
+              Classe et cours de l&apos;établissement. L&apos;année académique active est imposée
               côté serveur. Aucun schoolCode n&apos;est envoyé.
             </InlineAlert>
           )}
@@ -565,12 +565,12 @@ export function TeachersListPage() {
             </InlineAlert>
           ) : null}
           {subjectsCatalogError ? (
-            <InlineAlert tone="danger" title="Catalogue matières indisponible">
+            <InlineAlert tone="danger" title="Catalogue de cours indisponible">
               {subjectsCatalogError}
             </InlineAlert>
           ) : subjects.length === 0 ? (
-            <InlineAlert tone="warning" title="Aucune matière">
-              Aucune matière canonique n&apos;est disponible pour cet établissement. Créez-les dans
+            <InlineAlert tone="warning" title="Aucun cours">
+              Aucun cours canonique n&apos;est disponible pour cet établissement. Créez-les dans
               Paramètres → Configuration (référentiel PostgreSQL).
             </InlineAlert>
           ) : null}
@@ -591,7 +591,7 @@ export function TeachersListPage() {
               ]}
             />
           </Field>
-          <Field label="Matière" htmlFor="teacher-assign-subject" required>
+          <Field label="Cours" htmlFor="teacher-assign-subject" required>
             <Select
               id="teacher-assign-subject"
               value={assignForm.subjectCode}
@@ -600,7 +600,7 @@ export function TeachersListPage() {
               }
               required
               options={[
-                { value: "", label: "Sélectionner une matière" },
+                { value: "", label: "Sélectionner un cours" },
                 ...subjects.map((row) => ({
                   value: row.code,
                   label: row.name,

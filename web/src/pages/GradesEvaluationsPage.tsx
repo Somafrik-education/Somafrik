@@ -311,7 +311,7 @@ export function GradesEvaluationsPage() {
   function exportGrades() {
     const columns = [
       { key: "eleve", header: "Élève" },
-      { key: "matiere", header: "Matière" },
+      { key: "cours", header: "Cours" },
       { key: "periode", header: "Période" },
       { key: "note", header: "Note" },
       { key: "bareme", header: "Barème" },
@@ -322,7 +322,7 @@ export function GradesEvaluationsPage() {
       .filter((grade) => !period || grade.period === period)
       .map((grade) => ({
         eleve: grade.studentName,
-        matiere: grade.subject,
+        cours: grade.subject,
         periode: grade.period,
         note: grade.value ?? "",
         bareme: grade.scale,
@@ -337,7 +337,7 @@ export function GradesEvaluationsPage() {
   const evaluationColumns: Column<Evaluation>[] = [
     { key: "title", header: "Titre", render: (row) => row.title },
     { key: "className", header: "Classe", render: (row) => row.className },
-    { key: "subject", header: "Matière", render: (row) => row.subject },
+    { key: "subject", header: "Cours", render: (row) => row.subject },
     { key: "type", header: "Type", render: (row) => row.evaluationType },
     { key: "period", header: "Période", render: (row) => row.period },
     { key: "scale", header: "Barème", render: (row) => `/${row.scale}` },
