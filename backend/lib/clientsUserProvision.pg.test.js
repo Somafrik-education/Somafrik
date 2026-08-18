@@ -4,12 +4,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
-const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { USER_ROLES_SCHEMA_SQL } = require("../db/userRolesSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const { CLIENTS_ERROR } = require("./clientsManagement");
 const clientsService = require("./clientsService");
+const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DB = String(process.env.SOMAFRIK_USER_PROVISION_IT_DATABASE ?? "somafrik_user_provision_it")
@@ -70,7 +70,7 @@ async function main() {
     await pool.query("CREATE SCHEMA public");
     const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
     await pool.query(schema);
-    await pool.query(CLIENTS_SCHEMA_SQL);
+    await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
     await pool.query(USER_ROLES_SCHEMA_SQL);
 
     const cd = await pool.query(

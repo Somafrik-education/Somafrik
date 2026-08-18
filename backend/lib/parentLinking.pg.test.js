@@ -12,10 +12,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
-const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const { ensureSchoolLoginCodeColumn } = require("../db/ensureSchoolLoginCodeColumn");
+const {
+  applyClientsTablesSchema,
+  ensureClientsCanonicalBootstrap,
+} = require("../db/clientsCanonicalBootstrap");
 const {
   ensureParentLinkingConstraints,
   CONTACTS_SCHOOL_USER_DUPLICATES_CODE,
@@ -75,7 +78,7 @@ async function applyClientsSchemaWithoutParentIndexes(pool) {
   await pool.query("CREATE SCHEMA public");
   const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
   await pool.query(schema);
-  await pool.query(CLIENTS_SCHEMA_SQL);
+  await applyClientsTablesSchema(pool);
   await ensureSchoolLoginCodeColumn((sql) => pool.query(sql));
   const indexes = await pool.query(
     `SELECT indexname FROM pg_indexes
@@ -117,7 +120,7 @@ async function assertInventoryRunsBeforeUniqueIndex(pool) {
     [school.rows[0].id, country.rows[0].id, user.rows[0].id],
   );
 
-  await pool.query(CLIENTS_SCHEMA_SQL);
+  await applyClientsTablesSchema(pool);
 
   const repo = createRepo(pool);
   await assert.rejects(
@@ -145,7 +148,7 @@ async function main() {
 
     await applyClientsSchemaWithoutParentIndexes(pool);
     const repo = createRepo(pool);
-    await ensureParentLinkingConstraints(repo);
+    await ensureClientsCanonicalBootstrap(repo, { info() {}, error() {} });
 
     const country = await pool.query(
       `INSERT INTO countries (name, iso_code, phone_code, currency)

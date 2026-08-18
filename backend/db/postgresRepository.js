@@ -95,9 +95,9 @@ class PostgresRepository {
     await this.ensurePedagogyCanonicalSchema();
     await this.ensurePlatformCanonicalSchema();
     await this.ensurePlatformRolePermissionsBootstrap();
+    // Tables Clients PUIS inventaire fail-safe PUIS index parent-linking
+    // (helper partagé avec les tests PG — jamais d'index dans CLIENTS_SCHEMA_SQL).
     await this.ensureClientsCanonicalSchema();
-    // Inventaire fail-safe AVANT les index uniques parent-linking (jamais dans CLIENTS_SCHEMA_SQL).
-    await this.ensureParentLinkingConstraints();
     await this.ensureUserRolesCanonicalSchema();
     await this.ensureResidualCanonicalSchema();
     await this.ensureEducationReferencePreflight();
@@ -543,8 +543,15 @@ class PostgresRepository {
   }
 
   async ensureClientsCanonicalSchema() {
-    const { CLIENTS_SCHEMA_SQL } = require("./clientsSchema");
-    await this.query(CLIENTS_SCHEMA_SQL);
+    const { ensureClientsCanonicalBootstrap } = require("./clientsCanonicalBootstrap");
+    await ensureClientsCanonicalBootstrap(
+      {
+        query: (sql, params) => this.query(sql, params),
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+      },
+      console,
+    );
   }
 
   async ensureUserRolesCanonicalSchema() {

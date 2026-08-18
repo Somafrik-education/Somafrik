@@ -57,16 +57,15 @@ async function main() {
   assert.equal(CONTACTS_SCHOOL_USER_UNIQUE_INDEX, "uq_contacts_school_user_active");
   assert.equal(CONTACT_RELATIONS_ACTIVE_UNIQUE_INDEX, "uq_contact_relations_active");
 
+  assert.match(postgresRepositorySource, /ensureClientsCanonicalBootstrap/);
   const clientsIdx = postgresRepositorySource.indexOf("ensureClientsCanonicalSchema()");
-  const linkingIdx = postgresRepositorySource.indexOf("ensureParentLinkingConstraints()");
-  assert.ok(clientsIdx > 0, "init() must apply Clients schema");
-  assert.ok(
-    linkingIdx > clientsIdx,
-    "inventory must run after Clients schema, before unique indexes",
-  );
-  const between = postgresRepositorySource.slice(clientsIdx, linkingIdx);
-  assert.doesNotMatch(between, /uq_contacts_school_user_active/);
-  assert.doesNotMatch(between, /uq_contact_relations_active/);
+  assert.ok(clientsIdx > 0, "init() must apply Clients canonical bootstrap");
+  const schemaFn = postgresRepositorySource.indexOf("async ensureClientsCanonicalSchema()");
+  const schemaFnEnd = postgresRepositorySource.indexOf("async ensureUserRolesCanonicalSchema()", schemaFn);
+  const schemaFnBody = postgresRepositorySource.slice(schemaFn, schemaFnEnd);
+  assert.match(schemaFnBody, /ensureClientsCanonicalBootstrap/);
+  assert.doesNotMatch(schemaFnBody, /uq_contacts_school_user_active/);
+  assert.doesNotMatch(schemaFnBody, /uq_contact_relations_active/);
 
   assert.match(
     parentLinkingMigration,

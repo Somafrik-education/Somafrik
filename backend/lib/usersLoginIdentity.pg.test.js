@@ -8,10 +8,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
-const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const { ensureSchoolLoginCodeColumn } = require("../db/ensureSchoolLoginCodeColumn");
+const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 const {
   USERS_LOGIN_IDENTITY_DUPLICATES_CODE,
   ensureUsersLoginIdentityConstraints,
@@ -87,7 +87,7 @@ async function resetSchema(pool) {
   await pool.query("CREATE SCHEMA public");
   const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
   await pool.query(schema);
-  await pool.query(CLIENTS_SCHEMA_SQL);
+  await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
   await ensureSchoolLoginCodeColumn((sql) => pool.query(sql));
 }
 
