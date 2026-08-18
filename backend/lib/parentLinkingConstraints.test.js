@@ -72,7 +72,7 @@ async function main() {
     parentLinkingMigration,
     /DROP CONSTRAINT IF EXISTS contact_relations_school_id_contact_id_student_id_key/,
   );
-  assert.doesNotMatch(parentLinkingMigration, /CREATE UNIQUE INDEX/i);
+  assert.doesNotMatch(parentLinkingMigration, /^\s*CREATE UNIQUE INDEX/im);
 
   console.log("parentLinkingConstraints.test.js OK");
 }

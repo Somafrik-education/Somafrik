@@ -129,6 +129,7 @@ async function assertInventoryRunsBeforeUniqueIndex(pool) {
       return true;
     },
   );
+  console.log("parentLinking.pg.test.js inventory-before-index OK (CONTACTS_SCHOOL_USER_DUPLICATES, not 23505)");
 }
 
 async function main() {
@@ -227,6 +228,7 @@ async function main() {
       [first.relation.id],
     );
     assert.equal(audit.rows[0].user_id, actorId);
+    console.log("parentLinking.pg.test.js granted_by UUID OK", { actorId, grantedBy: grant.rows[0].granted_by });
 
     const counts = async () => {
       const users = await pool.query(`SELECT COUNT(*)::int AS n FROM users WHERE id = $1`, [userId]);
@@ -474,6 +476,7 @@ async function main() {
       [slugLink.relation.id],
     );
     assert.equal(slugAudit.rows[0].user_id, null);
+    console.log("parentLinking.pg.test.js non-UUID principal.sub coerced (granted_by NULL, no 22P02)");
 
     console.log("parentLinking.pg.test.js OK");
   } finally {
