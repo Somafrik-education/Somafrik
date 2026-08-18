@@ -29,7 +29,7 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   { prefix: "/etablissement/classes", domains: ["classes", "students", "teachers"] },
   { prefix: "/planning", domains: ["academicConfigs", "courseSchedules", "exams", "classes", "teachers", "courses"] },
   { prefix: "/finances", domains: ["schools", "feeGrids", "studentFees", "payments", "paymentStatuses", "students"] },
-  { prefix: "/notes", domains: ["notes", "students", "classes"] },
+  { prefix: "/notes", domains: ["notes", "evaluations", "students", "classes"] },
   { prefix: "/presences", domains: ["presences", "classes", "assignments", "teachers"] },
   { prefix: "/examens", domains: ["exams", "notes", "students", "classes"] },
   { prefix: "/bulletins", domains: ["bulletins", "notes", "students", "classes"] },

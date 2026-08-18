@@ -8,9 +8,7 @@ vi.mock("../api/client", () => ({
       this.status = status;
     }
   },
-  api: {
-    get: vi.fn(),
-  },
+  api: { get: vi.fn() },
 }));
 
 vi.mock("./clientsApi", () => ({
@@ -22,11 +20,7 @@ vi.mock("./clientsApi", () => ({
     listAnnouncements: vi.fn(),
   },
 }));
-
-vi.mock("./establishmentsApi", () => ({
-  establishmentsApi: { list: vi.fn() },
-}));
-
+vi.mock("./establishmentsApi", () => ({ establishmentsApi: { list: vi.fn() } }));
 vi.mock("./platformApi", () => ({
   platformApi: {
     listCountries: vi.fn(),
@@ -36,7 +30,6 @@ vi.mock("./platformApi", () => ({
     getDashboardChartConfig: vi.fn(),
   },
 }));
-
 vi.mock("./classesApi", () => ({ classesApi: { list: vi.fn() } }));
 vi.mock("./financeApi", () => ({
   financeApi: {
@@ -46,39 +39,43 @@ vi.mock("./financeApi", () => ({
     listStudentFees: vi.fn(),
   },
 }));
-vi.mock("./pedagogyApi", () => ({
-  pedagogyApi: { listCourses: vi.fn(), listCourseSchedules: vi.fn(), listEvaluations: vi.fn() },
-}));
 vi.mock("./studentsApi", () => ({ studentsApi: { list: vi.fn() } }));
 vi.mock("./teachersApi", () => ({ teachersApi: { list: vi.fn() } }));
 
-import { api } from "../api/client";
-import { clientsApi } from "./clientsApi";
-import { loadDomains } from "./domainLoaders";
+vi.mock("./pedagogyApi", () => ({
+  pedagogyApi: {
+    listCourses: vi.fn(),
+    listCourseSchedules: vi.fn(),
+    listEvaluations: vi.fn(),
+  },
+}));
 
-const listUsers = vi.mocked(clientsApi.listUsers);
-const getMock = vi.mocked(api.get);
+import { pedagogyApi } from "./pedagogyApi";
+import { DOMAIN_KEYS, loadDomains } from "./domainLoaders";
 
-describe("loadDomains — users", () => {
+describe("loadDomains — evaluations", () => {
   beforeEach(() => {
-    listUsers.mockReset();
-    getMock.mockReset();
+    vi.mocked(pedagogyApi.listEvaluations).mockReset();
   });
 
-  it("charge uniquement la projection users, sans lookup /schools/:code", async () => {
-    listUsers.mockResolvedValue([
+  it("possède le domaine evaluations et lit GET /evaluations, pas GET /notes", async () => {
+    expect(DOMAIN_KEYS).toContain("evaluations");
+    vi.mocked(pedagogyApi.listEvaluations).mockResolvedValue([
       {
-        schoolCode: "CD-2026-0001",
-        schoolPublicCode: "CD-IN-26-001",
-        schoolName: "INSTITUT NURU",
+        id: "EVAL-1",
+        title: "Interrogation 1",
+        period: "Trimestre 1",
+        subject: "Mathématiques",
+        className: "2ème A",
       },
     ]);
 
-    const result = await loadDomains(["users"]);
+    const result = await loadDomains(["evaluations"]);
 
-    expect(listUsers).toHaveBeenCalledTimes(1);
-    expect(getMock).not.toHaveBeenCalled();
-    expect(result.data.users).toHaveLength(1);
-    expect(result.data.schools).toBeUndefined();
+    expect(pedagogyApi.listEvaluations).toHaveBeenCalledTimes(1);
+    expect(result.loaded).toEqual(["evaluations"]);
+    expect(result.data.evaluations).toEqual([
+      expect.objectContaining({ title: "Interrogation 1", period: "Trimestre 1" }),
+    ]);
   });
 });

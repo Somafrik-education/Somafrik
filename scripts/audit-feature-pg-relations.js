@@ -46,6 +46,7 @@ const manifest = [
   ["feeGrids", ["/finance/fee-grids"], ["fee_grids", "school_fee_items"]],
   ["studentFees", ["/finance/student-fees"], ["student_fee_obligations", "students"]],
   ["notes", ["/notes"], ["grades", "evaluations", "students"]],
+  ["evaluations", ["/evaluations"], ["evaluations", "classes", "subjects", "terms", "teacher_assignments"]],
   ["presences", ["/presences"], ["attendance", "students"]],
   ["academicConfigs", ["/academic-config", "/backoffice/establishments/:schoolCode/academic-config"], ["school_academic_configs", "schools"]],
   ["exams", ["/exams"], ["exams", "classes", "subjects"]],

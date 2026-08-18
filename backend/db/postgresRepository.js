@@ -1328,6 +1328,73 @@ class PostgresRepository {
     return this.getPedagogyStore().updateEvaluation(id, patch, principal, auditMeta);
   }
 
+  async listSchoolEvaluations(schoolCode, principal = {}) {
+    const code = String(schoolCode ?? "").trim().toUpperCase();
+    if (!code || code === "*") return [];
+    const school = await this.getSchoolByCode(code);
+    if (!school?.id) return [];
+
+    const role = String(principal?.role ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    const isTeacher = role === "enseignant" || role === "teacher" || role.includes("prof");
+    const isParentOrStudent =
+      role.includes("parent") || role.includes("eleve") || role.includes("etudiant");
+
+    const sql = [
+      `SELECT e.*, s.school_code,
+              c.name AS class_name, c.class_code,
+              sub.name AS subject_name,
+              t.teacher_code,
+              NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
+              tm.name AS term_name, tm.academic_year_id,
+              ay.name AS academic_year_name,
+              et.name AS evaluation_type_name, et.code AS evaluation_type_code
+       FROM evaluations e
+       JOIN schools s ON s.id = e.school_id
+       JOIN classes c ON c.id = e.class_id
+       JOIN subjects sub ON sub.id = e.subject_id
+       JOIN terms tm ON tm.id = e.term_id
+       LEFT JOIN academic_years ay ON ay.id = tm.academic_year_id
+       LEFT JOIN teachers t ON t.id = e.teacher_id
+       LEFT JOIN users u ON u.id = t.user_id
+       LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
+       WHERE e.school_id = $1`,
+    ];
+    const params = [school.id];
+
+    if (isTeacher) {
+      const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, school.id);
+      if (!lookupKeys.length) return [];
+      params.push(lookupKeys);
+      sql.push(`AND EXISTS (
+        SELECT 1
+        FROM teacher_assignments ta
+        JOIN teachers te ON te.id = ta.teacher_id
+        LEFT JOIN users tu ON tu.id = te.user_id
+        WHERE ta.school_id = e.school_id
+          AND ta.class_id = e.class_id
+          AND ta.subject_id = e.subject_id
+          AND ta.status = 'active'
+          AND (
+            te.teacher_code = ANY($${params.length}::text[])
+            OR te.id::text = ANY($${params.length}::text[])
+            OR te.user_id::text = ANY($${params.length}::text[])
+            OR tu.id::text = ANY($${params.length}::text[])
+            OR tu.user_code = ANY($${params.length}::text[])
+          )
+      )`);
+    } else if (isParentOrStudent) {
+      sql.push(`AND e.active = TRUE AND e.status = 'published'`);
+    }
+
+    sql.push("ORDER BY e.created_at DESC");
+    const rows = await this.all(sql.join("\n"), params);
+    return rows.map((row) => this.mapEvaluation(row));
+  }
+
   upsertSchoolGrade(payload, principal, auditMeta) {
     return this.getPedagogyStore().upsertSchoolGrade(payload, principal, auditMeta);
   }
@@ -1553,15 +1620,19 @@ class PostgresRepository {
         ORDER BY st.created_at, st.student_code
       `),
       this.all(`
-        SELECT ev.*, s.school_code, cl.name AS class_name, sub.name AS subject_name,
-               t.teacher_code, term.name AS term_name,
+        SELECT ev.*, s.school_code, cl.name AS class_name, cl.class_code, sub.name AS subject_name,
+               t.teacher_code, term.name AS term_name, term.academic_year_id,
+               ay.name AS academic_year_name,
+               NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                et.name AS evaluation_type_name, et.code AS evaluation_type_code
         FROM evaluations ev
         JOIN schools s ON s.id = ev.school_id
         JOIN classes cl ON cl.id = ev.class_id
         JOIN subjects sub ON sub.id = ev.subject_id
         JOIN terms term ON term.id = ev.term_id
+        LEFT JOIN academic_years ay ON ay.id = term.academic_year_id
         LEFT JOIN teachers t ON t.id = ev.teacher_id
+        LEFT JOIN users u ON u.id = t.user_id
         LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
         ORDER BY ev.created_at
       `),
@@ -5651,6 +5722,8 @@ class PostgresRepository {
 
   mapEvaluation(evaluation) {
     const { fromEvaluationStatus } = require("../lib/gradesCanonical");
+    const subjectName = evaluation.subject_name;
+    const periodName = evaluation.term_name;
     return {
       id: evaluation.legacy_json_id || evaluation.id,
       publicId: evaluation.legacy_json_id || evaluation.id,
@@ -5658,10 +5731,18 @@ class PostgresRepository {
       dbId: evaluation.id,
       schoolId: evaluation.school_id,
       schoolCode: evaluation.school_code,
+      classId: evaluation.class_id,
+      classCode: evaluation.class_code,
       className: evaluation.class_name,
-      subject: evaluation.subject_name,
+      subjectId: evaluation.subject_id,
+      subject: subjectName,
+      course: subjectName,
       teacherId: evaluation.teacher_code,
-      period: evaluation.term_name,
+      teacherName: evaluation.teacher_name || undefined,
+      academicYearId: evaluation.academic_year_id,
+      academicYear: evaluation.academic_year_name,
+      termId: evaluation.term_id,
+      period: periodName,
       title: evaluation.title,
       evaluationType: evaluation.evaluation_type_name || this.fromEvaluationType(evaluation.evaluation_type),
       evaluationTypeId: evaluation.evaluation_type_id || undefined,

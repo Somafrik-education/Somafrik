@@ -740,6 +740,17 @@ app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("
   res.json(deleted);
 }));
 
+app.get("/api/evaluations", requireAuth, requirePermission("GET /api/evaluations"), asyncHandler(async (req, res) => {
+  const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*") {
+    sendList(res, [], req.query, ["title", "className", "subject", "period", "course"]);
+    return;
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const rows = await repository.listSchoolEvaluations(schoolCode, req.principal);
+  sendList(res, rows, req.query, ["title", "className", "subject", "period", "course"]);
+}));
+
 app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/evaluations"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,

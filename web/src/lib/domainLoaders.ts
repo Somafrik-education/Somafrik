@@ -33,6 +33,7 @@ export const DOMAIN_KEYS = [
   "feeGrids",
   "studentFees",
   "notes",
+  "evaluations",
   "presences",
   "academicConfigs",
   "exams",
@@ -105,6 +106,9 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
       studentFees: (await financeApi.listStudentFees()) as BackOfficeState["studentFees"],
     }),
     notes: async () => ({ notes: (await api.get<unknown[]>("/notes")) as BackOfficeState["notes"] }),
+    evaluations: async () => ({
+      evaluations: (await pedagogyApi.listEvaluations()) as BackOfficeState["evaluations"],
+    }),
     presences: async () => ({ presences: (await api.get<unknown[]>("/presences")) as BackOfficeState["presences"] }),
     academicConfigs: async () => {
       const config = await api.get<Record<string, unknown>>(academicConfigPath(options.schoolCode));

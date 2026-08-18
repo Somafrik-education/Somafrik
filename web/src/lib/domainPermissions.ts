@@ -28,6 +28,7 @@ const DOMAIN_VIEW_MAP: Partial<Record<DomainKey, string>> = {
   feeGrids: "fees",
   studentFees: "fees",
   notes: "notes",
+  evaluations: "notes",
   presences: "presences",
   academicConfigs: "configuration",
   exams: "exams",
