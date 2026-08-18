@@ -38,6 +38,13 @@ export const CRUD_PERMISSION_MODULES = [
   "Planning de cours",
 ] as const;
 
+/**
+ * Gel du menu / de la route Web `/planning`.
+ * Les grants API `Planning de cours:*` ne doivent pas réexposer l'UI tant que
+ * l'emploi du temps hebdomadaire V2 n'est pas reconstruit (audit #259).
+ */
+export const PLANNING_WEB_UI_ENABLED = false;
+
 // view -> fonctionnalité requise (null = toujours accessible)
 export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   overview: null,

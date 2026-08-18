@@ -1,7 +1,7 @@
 import type { SessionUser, UserAccount } from "../types";
 import { canManageUserAccount } from "./userAccounts";
 import { isPendingValidationStatus } from "./orgHierarchy";
-import { VIEW_PERMISSION_FEATURES } from "./constants";
+import { PLANNING_WEB_UI_ENABLED, VIEW_PERMISSION_FEATURES } from "./constants";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
 import { isInternalSchoolRole, normalize, isSchoolAdminRole } from "./format";
 import { canSchoolAdminMutateTeachers } from "./pedagogyGovernance";
@@ -427,6 +427,9 @@ export function hasBackOfficePermission(
 }
 
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
+  if (viewName === "planning" && !PLANNING_WEB_UI_ENABLED) {
+    return false;
+  }
   // Accès au hub Paramètres : Super Admin, Admin School (établissement) et Admin Pays.
   // Le détail des cartes/pages reste filtré par les vues dédiées (configuration, subscriptions…).
   if (viewName === "settings") {

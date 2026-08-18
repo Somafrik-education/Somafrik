@@ -405,6 +405,10 @@ const routePermissions = {
   "POST /api/notes": ["Notes:CREATE", "Notes:UPDATE", "ALL_PRIVILEGES"],
   "POST /api/evaluations": ["Notes:CREATE", "Notes:UPDATE", "ALL_PRIVILEGES"],
   "PATCH /api/evaluations/:evaluationId": ["Notes:UPDATE", "ALL_PRIVILEGES"],
+  "GET /api/course-schedules": ["Planning de cours:READ", "ALL_PRIVILEGES"],
+  "POST /api/course-schedules": ["Planning de cours:CREATE", "ALL_PRIVILEGES"],
+  "PATCH /api/course-schedules/:scheduleId": ["Planning de cours:UPDATE", "ALL_PRIVILEGES"],
+  "DELETE /api/course-schedules/:scheduleId": ["Planning de cours:DELETE", "ALL_PRIVILEGES"],
 };
 
 const PERMISSION_DENIED = "PERMISSION_DENIED";

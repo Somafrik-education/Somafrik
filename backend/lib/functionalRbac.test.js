@@ -503,6 +503,16 @@ test("seed live SCHOOL_ADMIN inclut Affectations:CREATE", () => {
   const parsedPrefet = parsePermissionStringsToModuleCrud(live["Préfet des études"]);
   assert.equal(parsedPrefet.assignments.canCreate, true);
   assert.equal(parsedPrefet.assignments.canDelete, true);
+  assert.equal(parsedAdmin.planning.canRead, true);
+  assert.equal(parsedAdmin.planning.canCreate, true);
+  assert.equal(parsedAdmin.planning.canDelete, true);
+  assert.equal(parsedPrefet.planning.canCreate, true);
+  assert.equal(parsedPrefet.planning.canDelete, true);
+  const parsedTeacher = parsePermissionStringsToModuleCrud(live.Enseignant);
+  assert.equal(parsedTeacher.planning.canRead, true);
+  assert.equal(parsedTeacher.planning.canCreate, false);
+  const parsedParent = parsePermissionStringsToModuleCrud(live.Parent);
+  assert.equal(parsedParent.planning.canRead, false);
 });
 
 test("backfill modules manquants : SCHOOL_ADMIN Affectations:CREATE sans écraser un DENY", async () => {

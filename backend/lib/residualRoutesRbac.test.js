@@ -74,3 +74,22 @@ assert.ok(
 assert.equal(routePermissions["POST /api/backoffice/education-levels"]?.includes("COUNTRY_PRIVILEGES"), false);
 assert.equal(routePermissions["POST /api/backoffice/education-class-groups"]?.includes("COUNTRY_PRIVILEGES"), false);
 assert.ok(routePermissions["PATCH /api/backoffice/education-reference/labels"]?.includes("Référentiels pédagogiques:UPDATE"));
+
+assert.deepEqual(routePermissions["GET /api/course-schedules"], ["Planning de cours:READ", "ALL_PRIVILEGES"]);
+assert.deepEqual(routePermissions["POST /api/course-schedules"], ["Planning de cours:CREATE", "ALL_PRIVILEGES"]);
+assert.deepEqual(routePermissions["PATCH /api/course-schedules/:scheduleId"], ["Planning de cours:UPDATE", "ALL_PRIVILEGES"]);
+assert.deepEqual(routePermissions["DELETE /api/course-schedules/:scheduleId"], ["Planning de cours:DELETE", "ALL_PRIVILEGES"]);
+assert.equal(
+  rbac.canAccess(teacherPrincipal, "GET /api/course-schedules"),
+  false,
+  "Enseignant sans Planning de cours:READ ne lit pas /api/course-schedules",
+);
+assert.ok(
+  rbac.canAccess({ ...teacherPrincipal, permissions: ["Planning de cours:READ"] }, "GET /api/course-schedules"),
+  "Enseignant avec Planning de cours:READ lit /api/course-schedules",
+);
+assert.equal(
+  rbac.canAccess({ ...teacherPrincipal, permissions: ["Planning de cours:READ"] }, "POST /api/course-schedules"),
+  false,
+  "Enseignant READ-only ne crée pas de créneau",
+);

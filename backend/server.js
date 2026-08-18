@@ -648,7 +648,7 @@ app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
   res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
 }));
 
-app.get("/api/course-schedules", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/course-schedules", requireAuth, requirePermission("GET /api/course-schedules"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
   let rows = tenantScopeService.filterRows(state.courseSchedules ?? [], req.principal, scope);
@@ -719,7 +719,7 @@ app.post("/api/course-schedules", requireAuth, requirePermission("POST /api/cour
   res.status(201).json(created);
 }));
 
-app.patch("/api/course-schedules/:scheduleId", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
+app.patch("/api/course-schedules/:scheduleId", requireAuth, requirePermission("PATCH /api/course-schedules/:scheduleId"), asyncHandler(async (req, res) => {
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
   const updated = await repository.updateCourseSchedule(
     req.params.scheduleId,
@@ -730,7 +730,7 @@ app.patch("/api/course-schedules/:scheduleId", requireAuth, requirePermission("P
   res.json(updated);
 }));
 
-app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
+app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("DELETE /api/course-schedules/:scheduleId"), asyncHandler(async (req, res) => {
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
   const deleted = await repository.deleteCourseSchedule(
     req.params.scheduleId,
