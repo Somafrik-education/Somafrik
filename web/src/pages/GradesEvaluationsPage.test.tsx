@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const permissions = vi.hoisted(() => ({
@@ -10,6 +10,17 @@ const permissions = vi.hoisted(() => ({
 }));
 
 const dataLoading = vi.hoisted(() => ({ current: false }));
+
+const sessionUser = vi.hoisted(() => ({
+  current: {
+    id: "u1",
+    role: "Admin School",
+    schoolCode: "SCH-001",
+    name: "Admin",
+  },
+}));
+
+const gradesPeriod = vi.hoisted(() => ({ current: "Trimestre 3" }));
 
 const dataState = vi.hoisted(() => ({
   current: {
@@ -32,8 +43,10 @@ const dataState = vi.hoisted(() => ({
     exams: [],
     evaluations: [],
     grades: [],
-    academicConfigBySchool: {
-      "SCH-001": { periods: [{ id: "p1", label: "T1" }], activePeriodId: "p1" },
+    academicConfigs: {
+      "SCH-001": {
+        periods: [{ name: "Trimestre 1" }, { name: "Trimestre 2" }, { name: "Trimestre 3" }],
+      },
     },
     rolePermissions: {},
     auditLog: [],
@@ -43,12 +56,7 @@ const dataState = vi.hoisted(() => ({
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     session: {
-      user: {
-        id: "u1",
-        role: "Admin School",
-        schoolCode: "SCH-001",
-        name: "Admin",
-      },
+      user: sessionUser.current,
     },
   }),
 }));
@@ -67,25 +75,23 @@ vi.mock("../context/DataContext", () => ({
 
 vi.mock("../context/ActiveSchoolContext", () => ({
   useActiveSchool: () => ({
-    activeSchoolCode: "SCH-001",
-    scopedUser: {
-      id: "u1",
-      role: "Admin School",
-      schoolCode: "SCH-001",
-      name: "Admin",
-    },
+    activeSchoolCode: sessionUser.current.schoolCode,
+    scopedUser: sessionUser.current,
   }),
 }));
 
 vi.mock("../lib/usePermissionContext", () => ({
   usePermissionContext: () => ({
-    user: { role: "Admin School", schoolCode: "SCH-001" },
+    user: sessionUser.current,
     rolePermissions: {},
   }),
   useFeaturePermissions: () => ({ ...permissions }),
 }));
 
 const evaluationsForPage = vi.hoisted(() => ({ current: [] as Record<string, unknown>[] }));
+const updateEvaluationApi = vi.hoisted(() =>
+  vi.fn<(id: string, payload: Record<string, unknown>) => Promise<Record<string, unknown>>>(async () => ({})),
+);
 
 vi.mock("../lib/evaluations", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/evaluations")>();
@@ -93,13 +99,27 @@ vi.mock("../lib/evaluations", async (importOriginal) => {
     ...actual,
     buildEvaluationsFromExams: () => [],
     ensureEvaluationsSynced: () => evaluationsForPage.current,
-    scopedEvaluations: () => evaluationsForPage.current,
+    scopedEvaluations: (_user: unknown, state: { evaluations?: Record<string, unknown>[] }) => {
+      const school = String(sessionUser.current.schoolCode ?? "");
+      return (evaluationsForPage.current.length ? evaluationsForPage.current : state.evaluations ?? []).filter(
+        (row) => !school || String(row.schoolCode ?? school) === school,
+      );
+    },
     scopedGrades: () => [],
     allGrades: () => [],
-    resolveGradesPeriod: () => "T1",
+    resolveGradesPeriod: () => gradesPeriod.current,
     canEditEvaluation: () => true,
   };
 });
+
+vi.mock("../lib/pedagogyApi", () => ({
+  pedagogyApi: {
+    createEvaluation: vi.fn(),
+    updateEvaluation: (id: string, payload: Record<string, unknown>) => updateEvaluationApi(id, payload),
+    listEvaluations: vi.fn(),
+    upsertNote: vi.fn(),
+  },
+}));
 
 vi.mock("../components/ui/Toast", () => ({
   useToast: () => ({ showToast: vi.fn() }),
@@ -131,6 +151,20 @@ vi.mock("../components/grades/StudentGradesPanel", () => ({
 
 import { GradesEvaluationsPage } from "./GradesEvaluationsPage";
 
+const interrogation1 = {
+  id: "EVAL-1",
+  title: "Interrogation 1",
+  subject: "Mathématiques",
+  className: "2ème A",
+  period: "Trimestre 1",
+  status: "Brouillon",
+  schoolCode: "SCH-001",
+  scale: 20,
+  coefficient: 1,
+  evaluationType: "Interrogation",
+  active: true,
+};
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -146,6 +180,15 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     permissions.canUpdate = true;
     dataLoading.current = false;
     evaluationsForPage.current = [];
+    dataState.current = { ...dataState.current, evaluations: [] };
+    sessionUser.current = {
+      id: "u1",
+      role: "Admin School",
+      schoolCode: "SCH-001",
+      name: "Admin",
+    };
+    gradesPeriod.current = "Trimestre 3";
+    updateEvaluationApi.mockClear();
   });
 
   it("structure la page Notes avec ToolLayout (Header / Context / Content)", () => {
@@ -165,7 +208,19 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
 
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("Aucune évaluation");
-    expect(status).toHaveTextContent("Aucune évaluation pour la période");
+    expect(status).toHaveTextContent("Aucune évaluation à valider.");
+  });
+
+  it("remplace le champ Période texte par un Select canonique", () => {
+    renderPage();
+    const period = screen.getByLabelText("Période") as HTMLSelectElement;
+    expect(period.tagName).toBe("SELECT");
+    expect([...period.options].map((option) => option.text)).toEqual([
+      "Toutes les périodes",
+      "Trimestre 1",
+      "Trimestre 2",
+      "Trimestre 3",
+    ]);
   });
 
   it("affiche LoadingState pendant le chargement des données", () => {
@@ -235,5 +290,105 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     ];
     renderPage();
     expect(screen.getByRole("button", { name: "Modifier" })).toBeInTheDocument();
+  });
+});
+
+describe("GradesEvaluationsPage — file Préfet À valider", () => {
+  beforeEach(() => {
+    permissions.canRead = true;
+    permissions.canCreate = true;
+    permissions.canUpdate = true;
+    dataLoading.current = false;
+    gradesPeriod.current = "Trimestre 3";
+    sessionUser.current = {
+      id: "prefet-jp",
+      role: "Préfet des études",
+      schoolCode: "SCH-001",
+      name: "Jean Pierre",
+    };
+    evaluationsForPage.current = [interrogation1];
+    dataState.current = { ...dataState.current, evaluations: [interrogation1] };
+    updateEvaluationApi.mockClear();
+  });
+
+  it("Préfet + période active Trimestre 3 : Interrogation 1 visible dans À valider, bouton Valider", () => {
+    renderPage();
+
+    expect(screen.getByLabelText("Statut")).toHaveValue("a-valider");
+    expect(screen.getByLabelText("Période")).toHaveValue("");
+    expect(screen.getByText("Interrogation 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Valider" })).toBeInTheDocument();
+  });
+
+  it("filtre Trimestre 1 visible, Trimestre 3 absente, Toutes les périodes visible", () => {
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText("Période"), { target: { value: "Trimestre 1" } });
+    expect(screen.getByText("Interrogation 1")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Période"), { target: { value: "Trimestre 3" } });
+    expect(screen.queryByText("Interrogation 1")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Aucune évaluation pour la période « Trimestre 3 ».");
+
+    fireEvent.change(screen.getByLabelText("Période"), { target: { value: "" } });
+    expect(screen.getByText("Interrogation 1")).toBeInTheDocument();
+  });
+
+  it("Validée disparaît de À valider", () => {
+    evaluationsForPage.current = [{ ...interrogation1, status: "Validée" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    renderPage();
+    expect(screen.queryByText("Interrogation 1")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Aucune évaluation à valider.");
+  });
+
+  it("autre établissement invisible (scope schoolCode amont)", () => {
+    sessionUser.current = { ...sessionUser.current, schoolCode: "SCH-001" };
+    evaluationsForPage.current = [{ ...interrogation1, schoolCode: "BI-2026-0002" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    renderPage();
+    expect(screen.queryByText("Interrogation 1")).not.toBeInTheDocument();
+  });
+
+  it("Valider → PATCH /evaluations/:id avec statut Validée", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Valider" }));
+    await waitFor(() => {
+      expect(updateEvaluationApi).toHaveBeenCalledWith(
+        "EVAL-1",
+        expect.objectContaining({ status: "Validée" }),
+      );
+    });
+  });
+});
+
+describe("GradesEvaluationsPage — enseignant conserve la période active", () => {
+  beforeEach(() => {
+    permissions.canRead = true;
+    permissions.canCreate = true;
+    permissions.canUpdate = true;
+    dataLoading.current = false;
+    gradesPeriod.current = "Trimestre 3";
+    sessionUser.current = {
+      id: "ens-seke",
+      role: "Enseignant",
+      schoolCode: "SCH-001",
+      name: "Seke",
+    };
+    evaluationsForPage.current = [interrogation1];
+    dataState.current = { ...dataState.current, evaluations: [interrogation1] };
+  });
+
+  it("n'affiche pas le filtre Statut et masque Trimestre 1 tant que Trimestre 3 est le défaut", async () => {
+    renderPage();
+    expect(screen.queryByLabelText("Statut")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Période")).toHaveValue("Trimestre 3");
+    });
+    expect(screen.queryByText("Interrogation 1")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Période"), { target: { value: "Trimestre 1" } });
+    expect(screen.getByText("Interrogation 1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Valider" })).not.toBeInTheDocument();
   });
 });

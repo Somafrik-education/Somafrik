@@ -59,6 +59,16 @@ function assertNotesWebUsesSessionAssignments() {
 
   assert.match(notesRepo, /Accès refusé: cours non affecté/);
   assert.match(notesRepo, /error\.statusCode = 403/);
+
+  const gradesPage = fs.readFileSync(path.join(ROOT, "web/src/pages/GradesEvaluationsPage.tsx"), "utf8");
+  assert.match(gradesPage, /periodFilterOptions/);
+  assert.match(gradesPage, /filterEvaluationsForQueue/);
+  assert.match(gradesPage, /resolveEvaluationsQueueDefaults/);
+  assert.doesNotMatch(
+    gradesPage,
+    /<Input value=\{period\}/,
+    "Période Notes ne doit plus être un Input texte libre",
+  );
 }
 
 assertPresenceWebUsesSessionAssignments();
@@ -82,6 +92,8 @@ const web = spawnSync(
     "src/components/grades/EvaluationFormModal.test.tsx",
     "src/lib/routeDomainMap.usersSchoolCode.test.ts",
     "src/lib/domainLoaders.evaluations.test.ts",
+    "src/lib/evaluationQueue.test.ts",
+    "src/pages/GradesEvaluationsPage.test.tsx",
   ],
   {
     cwd: ROOT,
