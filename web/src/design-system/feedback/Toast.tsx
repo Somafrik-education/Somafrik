@@ -67,6 +67,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         )}
       >
         <div
+          data-testid="app-toast"
           className={cn(
             "rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-card",
             TONE_CLASS[toast.tone],

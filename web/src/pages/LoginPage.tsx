@@ -185,6 +185,7 @@ export function LoginPage() {
               <button
                 key={option.id}
                 type="button"
+                data-testid={`login-profile-${option.id}`}
                 onClick={() => form.setValue("profile", option.id, { shouldValidate: true })}
                 className={cn(
                   "rounded-xl border px-2 py-3 text-center text-xs font-bold transition",
@@ -211,7 +212,12 @@ export function LoginPage() {
                         <span className="text-danger"> *</span>
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="ex. CD-2026-0001" {...field} value={field.value ?? ""} />
+                        <Input
+                          placeholder="ex. CD-2026-0001"
+                          data-testid="login-school-code"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -229,7 +235,12 @@ export function LoginPage() {
                       <span className="text-danger"> *</span>
                     </FormLabel>
                     <FormControl>
-                      <Input placeholder="ex. superadmin" autoComplete="username" {...field} />
+                      <Input
+                        placeholder="ex. superadmin"
+                        autoComplete="username"
+                        data-testid="login-identifier"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -250,6 +261,7 @@ export function LoginPage() {
                         type="password"
                         placeholder="••••"
                         autoComplete="current-password"
+                        data-testid="login-password"
                         {...field}
                       />
                     </FormControl>
@@ -264,7 +276,7 @@ export function LoginPage() {
                 </p>
               ) : null}
 
-              <Button type="submit" className="w-full" disabled={submitting}>
+              <Button type="submit" className="w-full" disabled={submitting} data-testid="login-submit">
                 {submitting ? "Connexion…" : "Se connecter"}
               </Button>
             </form>

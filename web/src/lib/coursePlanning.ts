@@ -555,6 +555,12 @@ export function weekdayLabelFromDate(date: Date): string {
   return weekday?.label ?? "";
 }
 
+/** Jour métier 1–7 depuis une date locale de calendrier. Dimanche = 7, jamais 0. */
+export function isoWeekdayFromLocalDate(date: Date): number {
+  const js = date.getDay();
+  return js === 0 ? 7 : js;
+}
+
 export function extractTimeFromIso(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "08:00";
@@ -567,6 +573,22 @@ export function weekdayFromIso(iso: string): number {
   if (Number.isNaN(date.getTime())) return 1;
   const js = date.getUTCDay();
   return js === 0 ? 7 : js;
+}
+
+export function slotIsoWeekday(slot: CourseScheduleSlot): number {
+  const day = Number(slot.dayOfWeek);
+  if (day >= 1 && day <= 7) return day;
+  return weekdayFromIso(slot.start);
+}
+
+export function slotStartHm(slot: CourseScheduleSlot): string {
+  const time = String(slot.startTime ?? "").trim();
+  return time ? time.slice(0, 5) : extractTimeFromIso(slot.start);
+}
+
+export function slotEndHm(slot: CourseScheduleSlot): string {
+  const time = String(slot.endTime ?? "").trim();
+  return time ? time.slice(0, 5) : extractTimeFromIso(slot.end);
 }
 
 /** Construit un ancrage visuel. Le jour métier est 1–7 (7 = dimanche), pas Date.getDay(). */
@@ -600,12 +622,12 @@ export function buildSlotTemplateTimes(
 export function formatScheduleRecurrenceSummary(slot: CourseScheduleSlot): string {
   if (isExamSchedule(slot)) return formatExamScheduleSummary(slot);
 
-  const weekday = weekdayLabelFromDate(new Date(slot.start));
-  const startTime = extractTimeFromIso(slot.start);
-  const endTime = extractTimeFromIso(slot.end);
-  const period = formatPeriodLabel(slot);
-  const parts = [`${slot.subject}`, weekday ? `chaque ${weekday.toLowerCase()}` : "", `${startTime}–${endTime}`];
-  if (period) parts.push(`du ${slot.periodStart} au ${slot.periodEnd}`);
+  const weekdayValue = slotIsoWeekday(slot);
+  const weekday = PLANNING_WEEKDAYS.find((row) => row.value === weekdayValue)?.label ?? "";
+  const startTime = slotStartHm(slot);
+  const endTime = slotEndHm(slot);
+  const course = String(slot.courseName ?? slot.subject ?? "").trim();
+  const parts = [course, weekday ? `chaque ${weekday.toLowerCase()}` : "", `${startTime}–${endTime}`];
   return parts.filter(Boolean).join(" · ");
 }
 
@@ -774,6 +796,71 @@ export function slotsToClassCalendarEvents(
       });
     });
   });
+
+  return events;
+}
+
+function asOccurrenceRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * Mappe la projection serveur GET /course-schedules?from=&to= vers le calendrier.
+ * Aucune expansion de récurrence : start/end ISO viennent du serveur.
+ */
+export function mapServerOccurrencesToCalendarEvents(
+  items: unknown,
+  className?: string,
+): PlanningCalendarEvent[] {
+  const rows = Array.isArray(items) ? items : [];
+  const events: PlanningCalendarEvent[] = [];
+
+  for (const row of rows) {
+    const item = asOccurrenceRecord(row);
+    if (!item) continue;
+    const status = String(item.status ?? "active").trim().toLowerCase();
+    if (status === "cancelled") continue;
+    const start = String(item.start ?? "").trim();
+    const end = String(item.end ?? "").trim();
+    if (!start || !end) continue;
+
+    const subject = String(item.courseName ?? item.subject ?? "").trim();
+    const slot: CourseScheduleSlot = {
+      id: String(item.scheduleId ?? getMasterScheduleId(String(item.id ?? ""))),
+      schoolCode: String(item.schoolCode ?? ""),
+      className: String(item.className ?? ""),
+      subject,
+      courseName: String(item.courseName ?? subject),
+      teacherId: item.teacherId != null ? String(item.teacherId) : undefined,
+      teacherName: item.teacherName != null ? String(item.teacherName) : undefined,
+      start,
+      end,
+      room: item.room != null ? String(item.room) : undefined,
+      kind: "course",
+      schoolCourseId: item.schoolCourseId != null ? String(item.schoolCourseId) : undefined,
+      academicYearId: item.academicYearId != null ? String(item.academicYearId) : undefined,
+      classId: item.classId != null ? String(item.classId) : undefined,
+      subjectId: item.subjectId != null ? String(item.subjectId) : undefined,
+      dayOfWeek: item.dayOfWeek != null ? Number(item.dayOfWeek) : undefined,
+      startTime: item.startTime != null ? String(item.startTime).slice(0, 5) : undefined,
+      endTime: item.endTime != null ? String(item.endTime).slice(0, 5) : undefined,
+      status: String(item.status ?? "active"),
+    };
+
+    if (isExamSchedule(slot)) continue;
+    if (className && !planningLabelsMatch(slot.className, className)) continue;
+
+    const color = getScheduleColor(slot);
+    events.push({
+      id: String(item.id ?? `${slot.id}${OCCURRENCE_ID_SUFFIX}${String(item.occurrenceDate ?? "")}`),
+      title: formatPlanningEventLabel(slot),
+      start,
+      end,
+      extendedProps: { ...slot, subject },
+      backgroundColor: color,
+      borderColor: color,
+    });
+  }
 
   return events;
 }
@@ -1393,20 +1480,25 @@ export function auditSchoolPlanningConsistency(
     }
 
     if (isCourseSchedule(slot) && !hasSchedulePeriod(slot)) {
-      const displaySubject = resolveCanonicalLabel(slot.subject, collectPlanningSubjectCandidates(
-        state,
-        user,
-        resolveCanonicalLabel(slot.className, classCandidates),
-        schoolCode,
-      ));
-      const displayClass = resolveCanonicalLabel(slot.className, classCandidates);
-      const key = `${normalize(displayClass)}|${normalize(displaySubject)}`;
-      const message = `Cours « ${displaySubject} » (${displayClass}) sans période — une seule occurrence affichée.`;
-      const existing = noPeriodCounts.get(key);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        noPeriodCounts.set(key, { slotId: slot.id, count: 1, message });
+      const weeklyDay = Number(slot.dayOfWeek);
+      const weeklyStart = String(slot.startTime ?? "").trim();
+      const isWeeklyRule = weeklyDay >= 1 && weeklyDay <= 7 && Boolean(weeklyStart);
+      if (!isWeeklyRule) {
+        const displaySubject = resolveCanonicalLabel(slot.subject, collectPlanningSubjectCandidates(
+          state,
+          user,
+          resolveCanonicalLabel(slot.className, classCandidates),
+          schoolCode,
+        ));
+        const displayClass = resolveCanonicalLabel(slot.className, classCandidates);
+        const key = `${normalize(displayClass)}|${normalize(displaySubject)}`;
+        const message = `Cours « ${displaySubject} » (${displayClass}) sans période — une seule occurrence affichée.`;
+        const existing = noPeriodCounts.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          noPeriodCounts.set(key, { slotId: slot.id, count: 1, message });
+        }
       }
     }
 
@@ -1512,8 +1604,14 @@ export function validatePlanningSlotBusinessRules(
   const duplicate = detectDuplicateCoursePlanning(slots, normalized, options.ignoreId);
   if (duplicate) issues.push(duplicate);
 
-  if (isCourseSchedule(normalized) && !hasSchedulePeriod(normalized)) {
-    issues.push("Un cours récurrent doit avoir une période (dates de début et de fin).");
+  if (isCourseSchedule(normalized)) {
+    const weeklyDay = Number(normalized.dayOfWeek);
+    const weeklyStart = String(normalized.startTime ?? "").trim();
+    const weeklyEnd = String(normalized.endTime ?? "").trim();
+    const isWeeklyRule = weeklyDay >= 1 && weeklyDay <= 7 && Boolean(weeklyStart) && Boolean(weeklyEnd);
+    if (!isWeeklyRule && !hasSchedulePeriod(normalized)) {
+      issues.push("Un cours récurrent doit avoir un jour 1–7 et des heures, ou une période.");
+    }
   }
 
   if (options.allowedSubjects?.length) {

@@ -1,27 +1,20 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { Card, SectionHeader } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
 import { PrintButton } from "../../components/ui/PrintButton";
 import { DataTable } from "../../components/ui/DataTable";
-import { useToast } from "../../components/ui/Toast";
-import { useFeaturePermissions } from "../../lib/usePermissionContext";
-import { normalize } from "../../lib/format";
 import {
   auditSchoolPlanningConsistency,
-  canRepairSchoolPlanning,
-  extractTimeFromIso,
   PLANNING_WEEKDAYS,
-  repairSchoolCourseSchedules,
   scopedCourseSchedules,
-  weekdayFromIso,
+  slotEndHm,
+  slotIsoWeekday,
+  slotStartHm,
 } from "../../lib/coursePlanning";
-import { syncSchoolCourseSchedules } from "../../lib/pedagogyPlanningSync";
-import { syncPlanningLinkedExamsCanonical } from "../../lib/planningExamsSync";
 
 function weekdayLabel(value: number): string {
   return PLANNING_WEEKDAYS.find((row) => row.value === value)?.label ?? "—";
@@ -54,13 +47,10 @@ const columns: ColumnDef<ConflictRow>[] = [
 
 export function PlanningConflictsPage() {
   const { session } = useAuth();
-  const { state, refresh } = useData();
+  const { state } = useData();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
-  const { showToast } = useToast();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const schoolCode = activeSchoolCode || scopeUser?.schoolCode || "";
-  const { canUpdate } = useFeaturePermissions("Planning de cours");
-  const [saving, setSaving] = useState(false);
 
   const slots = useMemo(() => scopedCourseSchedules(scopeUser, state), [scopeUser, state]);
 
@@ -76,38 +66,12 @@ export function PlanningConflictsPage() {
       return {
         slotId: issue.slotId,
         className: slot?.className || "—",
-        subject: slot?.subject || "—",
-        when: slot
-          ? `${weekdayLabel(weekdayFromIso(slot.start))} ${extractTimeFromIso(slot.start)}–${extractTimeFromIso(slot.end)}`
-          : "—",
+        subject: slot?.subject || slot?.courseName || "—",
+        when: slot ? `${weekdayLabel(slotIsoWeekday(slot))} ${slotStartHm(slot)}–${slotEndHm(slot)}` : "—",
         message: issue.message,
       };
     });
   }, [issues, slots]);
-
-  const repairAvailable = useMemo(
-    () => Boolean(schoolCode && canRepairSchoolPlanning(state, scopeUser, schoolCode)),
-    [state, scopeUser, schoolCode],
-  );
-
-  async function handleRepair() {
-    if (!schoolCode || !canUpdate) return;
-    const previousSchoolSlots = scopedCourseSchedules(scopeUser, state).filter(
-      (row) => normalize(row.schoolCode) === normalize(schoolCode),
-    );
-    const report = repairSchoolCourseSchedules(state, scopeUser, schoolCode);
-    setSaving(true);
-    try {
-      await syncSchoolCourseSchedules(previousSchoolSlots, report.slots);
-      await syncPlanningLinkedExamsCanonical(previousSchoolSlots, report.slots);
-      await refresh();
-      showToast("Données du planning corrigées.", "success");
-    } catch {
-      showToast("Échec de la correction du planning.", "error");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <Card className="p-6">
@@ -115,24 +79,11 @@ export function PlanningConflictsPage() {
         title="Conflits & cohérence du planning"
         description={
           issues.length
-            ? `${issues.length} anomalie(s) détectée(s) sur les créneaux de l'établissement`
+            ? `${issues.length} anomalie(s) détectée(s) — lecture seule, sans backfill automatique`
             : "Aucune anomalie détectée"
         }
         actions={
-          <>
-            {issues.length ? <PrintButton documentTitle="Conflits du planning — Somafrik" /> : null}
-            {repairAvailable && canUpdate ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={saving}
-                onClick={() => void handleRepair()}
-              >
-                {saving ? "Correction…" : "Corriger automatiquement"}
-              </Button>
-            ) : null}
-          </>
+          issues.length ? <PrintButton documentTitle="Conflits du planning — Somafrik" /> : null
         }
       />
 
@@ -149,7 +100,7 @@ export function PlanningConflictsPage() {
             <CheckCircle2 className="mb-3 h-10 w-10 text-emerald-600" />
             <h3 className="text-lg font-black text-ink">Planning cohérent</h3>
             <p className="mt-1 max-w-md text-sm text-muted">
-              Aucun conflit d'horaire ni incohérence détecté sur les créneaux de cet établissement.
+              Aucun conflit d&apos;horaire ni incohérence détecté sur les créneaux de cet établissement.
             </p>
           </div>
         )}

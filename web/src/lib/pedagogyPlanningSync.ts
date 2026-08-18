@@ -1,31 +1,12 @@
 import type { CourseScheduleSlot } from "./coursePlanning";
 import { pedagogyApi } from "./pedagogyApi";
-
-function toApiPayload(slot: CourseScheduleSlot): Record<string, unknown> {
-  return {
-    id: slot.id,
-    className: slot.className,
-    subject: slot.subject,
-    teacherId: slot.teacherId,
-    teacherName: slot.teacherName,
-    start: slot.start,
-    end: slot.end,
-    room: slot.room,
-    kind: slot.kind,
-    examName: slot.examName,
-    examType: slot.examType,
-    examId: slot.examId,
-    periodName: slot.periodName,
-    periodStart: slot.periodStart,
-    periodEnd: slot.periodEnd,
-  };
-}
+import { toWeeklyScheduleWritePayload } from "./planningWeeklyWrite";
 
 function scheduleSignature(slot: CourseScheduleSlot): string {
-  return JSON.stringify(toApiPayload(slot));
+  return JSON.stringify(toWeeklyScheduleWritePayload(slot));
 }
 
-/** Synchronise les créneaux d'un établissement via les APIs PostgreSQL dédiées. */
+/** Synchronise les créneaux hebdomadaires via POST/PATCH/DELETE canoniques. Aucun className+subject. */
 export async function syncSchoolCourseSchedules(
   previousSchoolSlots: CourseScheduleSlot[],
   nextSchoolSlots: CourseScheduleSlot[],
@@ -40,7 +21,7 @@ export async function syncSchoolCourseSchedules(
   }
 
   for (const [id, slot] of nextById) {
-    const payload = toApiPayload(slot);
+    const payload = toWeeklyScheduleWritePayload(slot);
     if (!prevById.has(id)) {
       await pedagogyApi.createCourseSchedule(payload);
       continue;

@@ -141,18 +141,36 @@ function testExamSingleOccurrence() {
   assert(occurrences.length === 1, "Examen = une seule occurrence");
 }
 
-function testValidationRequiresPeriodForCourse() {
-  const noPeriod: CourseScheduleSlot = {
+function testValidationRequiresWeeklyOrPeriod() {
+  const weeklyOk: CourseScheduleSlot = {
     ...baseCourse,
     periodStart: undefined,
     periodEnd: undefined,
   };
-  const issues = validatePlanningSlotBusinessRules([], noPeriod, {
+  const weeklyIssues = validatePlanningSlotBusinessRules([], weeklyOk, {
     allowedSubjects: ["Mathématiques"],
   });
   assert(
-    issues.some((row) => row.includes("période")),
-    "Cours sans période doit être refusé",
+    !weeklyIssues.some((row) => row.includes("période") || row.includes("jour 1–7")),
+    "Un créneau weekly dayOfWeek+TIME ne doit pas exiger une période",
+  );
+
+  const neither: CourseScheduleSlot = {
+    ...baseCourse,
+    periodStart: undefined,
+    periodEnd: undefined,
+    dayOfWeek: undefined,
+    startTime: undefined,
+    endTime: undefined,
+    start: "",
+    end: "",
+  };
+  const issues = validatePlanningSlotBusinessRules([], neither, {
+    allowedSubjects: ["Mathématiques"],
+  });
+  assert(
+    issues.some((row) => row.includes("jour 1–7") || row.includes("période")),
+    "Cours sans règle weekly ni période doit être refusé",
   );
 }
 
@@ -360,7 +378,7 @@ const checks = [
   ["Conflit horaire même classe", testClassTimeConflict],
   ["Chevauchement enseignant (double réservation)", testTeacherTimeConflict],
   ["Examen ponctuel", testExamSingleOccurrence],
-  ["Cours sans période refusé", testValidationRequiresPeriodForCourse],
+  ["Cours sans règle weekly ni période refusé", testValidationRequiresWeeklyOrPeriod],
   ["Réparation encodage UTF-8", testEncodingRepair],
   ["Réparation legacy (période + dédoublonnage)", testRepairLegacySlots],
   ["Import affectations → planning", testImportPedagogyLinks],

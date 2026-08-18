@@ -96,6 +96,7 @@ function PlanningEventBlock({
   return (
     <button
       type="button"
+      data-testid="planning-event"
       className={`planning-event ${editable ? "is-editable" : ""} ${isDragging ? "is-dragging" : ""} ${isCompact ? "is-compact" : ""} ${isExam ? "is-exam" : ""}`}
       style={{ top, height, backgroundColor: event.color, borderColor: event.color }}
       title={isCompact ? `${formatEventTimeRange(event.start, event.end)} · ${compactLabel}${room ? ` · ${room}` : ""}` : undefined}

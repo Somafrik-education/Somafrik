@@ -154,9 +154,9 @@ Audit CREATE / UPDATE / CANCEL dans la même transaction : actor, school_id, sch
 
 La définition PG est l’autorité. Le backend matérialise les occurrences pour une plage. Le Web peut afficher `dayOfWeek` + `startTime` ; il ne doit plus inventer le jour via `Date.getDay()` d’un ancrage.
 
-## Limites restantes (hors cette PR)
+## Limites restantes (hors moteur weekly)
 
-- `PLANNING_WEB_UI_ENABLED = false` — menu `/planning` gelé jusqu’à revalidation CTO
+- réexposition Web : **cette PR suivante** (`PLANNING_WEB_UI_ENABLED`)
 - pas de salles V2, remplacements, Mobile Planning, lien présences↔schedule_id, cahier, examens V2
 - pas de fail-closed global `canAccess()`
 - pas de `term_id` / `valid_from` (changement d’EDT intra-année)
