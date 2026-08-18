@@ -5,13 +5,17 @@ import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { api } from "../api/client";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
-import { Select } from "../components/ui/Field";
 import { PrintButton } from "../components/ui/PrintButton";
 import { useToast } from "../components/ui/Toast";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import { canManagePresences } from "../lib/permissions";
-import { scopedClasses, scopedStudents, listTeacherScopedClassLabels, teacherScopedClassNames } from "../lib/establishment";
-import { normalize } from "../lib/format";
+import { resolveTeacherRecordForUser } from "../lib/establishment";
+import { classStudentsApi, type ClassStudent } from "../lib/classStudentsApi";
+import {
+  buildPresenceClassCards,
+  findPresenceClassCard,
+  type PresenceClassCard,
+} from "../lib/presenceRoster";
 import {
   type AttendanceStatus,
   findTodayPresenceForStudent,
@@ -19,16 +23,12 @@ import {
   formatAttendanceHour,
   getPresenceStats,
   presenceIsAttended,
-  presenceMatchesStudent,
   resolveStudentApiId,
   rollCallInitialStatus,
   sameAttendanceDay,
 } from "../lib/presenceMetrics";
 
 const STATUS_OPTIONS: AttendanceStatus[] = ["Présent", "Absent", "Retard", "Justifié"];
-
-/** Groupe virtuel pour les élèves de l'établissement non rattachés à une classe. */
-const UNASSIGNED_CLASS = "Sans classe";
 
 const STATUS_STYLES: Record<AttendanceStatus, { active: string; idle: string }> = {
   Présent: {
@@ -52,11 +52,6 @@ const STATUS_STYLES: Record<AttendanceStatus, { active: string; idle: string }> 
 type StudentRow = Record<string, unknown>;
 type PresenceRow = Record<string, unknown>;
 
-function uniqueClassNames(classes: StudentRow[], fallback: string[]) {
-  const fromStudents = [...new Set(classes.map((student) => String(student.className ?? "").trim()).filter(Boolean))];
-  return fromStudents.length ? fromStudents.sort() : [...new Set(fallback.filter(Boolean))].sort();
-}
-
 function buildInitialAttendance(
   students: StudentRow[],
   presences: PresenceRow[],
@@ -73,7 +68,7 @@ function buildInitialAttendance(
 
 export function PresencesPage() {
   const { session } = useAuth();
-  const { state, refresh, update } = useData();
+  const { state, refresh } = useData();
   const { scopedUser } = useActiveSchool();
   const { showToast } = useToast();
   const scopeUser = scopedUser ?? session?.user ?? null;
@@ -81,61 +76,73 @@ export function PresencesPage() {
   const { canRead } = useFeaturePermissions("Présences");
   const canUpdate = canManagePresences(permissionCtx);
 
-  const students = scopedStudents(scopeUser, state) as StudentRow[];
-  const classes = scopedClasses(scopeUser, state, students) as StudentRow[];
   const presences = (state.presences ?? []) as PresenceRow[];
-
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
 
-  const teacherClasses = teacherScopedClassNames(scopeUser, state);
-  const isTeacherRestricted = Boolean(teacherClasses?.size);
-
-  const classNames = useMemo(() => {
-    const teacherLabels = listTeacherScopedClassLabels(scopeUser, state, students, classes);
-    if (teacherLabels?.length) return teacherLabels;
-    return uniqueClassNames(students, classes.map((row) => String(row.name ?? "")));
-  }, [scopeUser, state, students, classes, teacherClasses]);
-
-  // Élèves de l'établissement non couverts par une carte de classe (classe vide/inconnue).
-  // Non exposé aux enseignants (portée restreinte à leurs classes affectées).
-  const unassignedStudents = useMemo(() => {
-    if (isTeacherRestricted) return [];
-    const cardKeys = new Set(classNames.map((name) => normalize(name)));
-    return students.filter((student) => !cardKeys.has(normalize(student.className)));
-  }, [classNames, students, isTeacherRestricted]);
-
-  // Classes réelles proposables pour affecter un élève « Sans classe ».
-  const assignableClassNames = useMemo(() => {
-    const set = new Set<string>();
-    classes.forEach((row) => {
-      const name = String(row.name ?? "").trim();
-      if (name) set.add(name);
+  const classCards = useMemo(() => {
+    const teacher = resolveTeacherRecordForUser(scopeUser, state) as Record<string, unknown> | null;
+    return buildPresenceClassCards({
+      role: scopeUser?.role,
+      classes: (state.classes ?? []) as Record<string, unknown>[],
+      assignments: (state.assignments ?? []) as Record<string, unknown>[],
+      teacherRecord: teacher,
+      currentUser: (scopeUser ?? null) as Record<string, unknown> | null,
     });
-    classNames.forEach((name) => set.add(name));
-    return [...set].sort((left, right) => left.localeCompare(right, "fr"));
-  }, [classes, classNames]);
+  }, [scopeUser, state]);
 
-  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [selectedClassCode, setSelectedClassCode] = useState<string | null>(null);
+  const [roster, setRoster] = useState<ClassStudent[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterError, setRosterError] = useState<string | null>(null);
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [attendanceDirty, setAttendanceDirty] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const classStudents = useMemo(() => {
-    if (!selectedClass) return [];
-    if (selectedClass === UNASSIGNED_CLASS) return unassignedStudents;
-    return students.filter((student) => normalize(student.className) === normalize(selectedClass));
-  }, [selectedClass, students, unassignedStudents]);
+  const selectedCard = useMemo(
+    () => findPresenceClassCard(classCards, { classId: selectedClassId, classCode: selectedClassCode }),
+    [classCards, selectedClassId, selectedClassCode],
+  );
 
   useEffect(() => {
-    if (!selectedClass) return;
+    if (!selectedCard) {
+      setRoster([]);
+      setRosterError(null);
+      setRosterLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRosterLoading(true);
+    setRosterError(null);
     setAttendanceDirty(false);
-  }, [selectedClass]);
+    void classStudentsApi
+      .list(selectedCard.classCode)
+      .then((rows) => {
+        if (cancelled) return;
+        setRoster(Array.isArray(rows) ? rows : []);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRoster([]);
+        setRosterError(error instanceof Error ? error.message : "Impossible de charger le roster.");
+      })
+      .finally(() => {
+        if (!cancelled) setRosterLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCard?.classId, selectedCard?.classCode]);
+
+  const classStudents = roster as unknown as StudentRow[];
 
   useEffect(() => {
-    if (!selectedClass || attendanceDirty) return;
+    if (!selectedCard || attendanceDirty || rosterLoading) return;
     setAttendance(buildInitialAttendance(classStudents, presences, todayLabel));
-  }, [selectedClass, todayLabel, classStudents, presences, attendanceDirty]);
+  }, [selectedCard, todayLabel, classStudents, presences, attendanceDirty, rosterLoading]);
 
   const liveStats = useMemo(() => {
     const rows = classStudents.map((student) => ({
@@ -154,6 +161,18 @@ export function PresencesPage() {
     [classStudents, presences, todayLabel],
   );
 
+  function selectClass(card: PresenceClassCard) {
+    setSelectedClassId(card.classId);
+    setSelectedClassCode(card.classCode);
+  }
+
+  function clearSelectedClass() {
+    setSelectedClassId(null);
+    setSelectedClassCode(null);
+    setRoster([]);
+    setRosterError(null);
+  }
+
   function setStudentStatus(studentId: string, status: AttendanceStatus) {
     if (!canUpdate) {
       showToast("Action refusée — vous n'êtes pas autorisé à modifier les présences.", "error");
@@ -163,35 +182,12 @@ export function PresencesPage() {
     setAttendance((current) => ({ ...current, [studentId]: status }));
   }
 
-  async function assignStudentToClass(studentId: string, className: string) {
-    if (!canUpdate) {
-      showToast("Action refusée — vous n'êtes pas autorisé à modifier les élèves.", "error");
-      return;
-    }
-    const target = className.trim();
-    if (!studentId || !target) return;
-    const nextStudents = state.students.map((student) =>
-      student.id === studentId
-        ? { ...student, className: target }
-        : student,
-    );
-    setBusy(true);
-    try {
-      await update({ students: nextStudents }, { partial: true });
-      showToast(`Élève affecté à la classe ${target}.`, "success");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Échec de l'affectation.", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function markAllPresent() {
     if (!canUpdate) {
       showToast("Action refusée — vous n'êtes pas autorisé à modifier les présences.", "error");
       return;
     }
-    if (!selectedClass) return;
+    if (!selectedCard) return;
     setAttendanceDirty(true);
     setAttendance((current) => ({
       ...current,
@@ -204,14 +200,11 @@ export function PresencesPage() {
       showToast("Action refusée — vous n'êtes pas autorisé à enregistrer l'appel.", "error");
       return;
     }
-    if (!selectedClass) return;
+    if (!selectedCard) return;
     if (!classStudents.length) {
       showToast("Aucun élève dans cette classe.", "error");
       return;
     }
-
-    const isUnassignedGroup = selectedClass === UNASSIGNED_CLASS;
-    const batchClassName = isUnassignedGroup ? "" : selectedClass;
 
     const items = classStudents.map((student) => {
       const studentId = String(student.id ?? "");
@@ -220,11 +213,9 @@ export function PresencesPage() {
       return {
         id: `PRE-${todayLabel}-${studentApiId}`,
         publicId: `PRE-${todayLabel}-${studentApiId}`,
-        schoolCode: String(student.schoolCode ?? scopeUser?.schoolCode ?? session?.user?.schoolCode ?? "")
-          .trim()
-          .toUpperCase(),
         studentId: studentApiId,
-        className: String(student.className ?? "").trim() || batchClassName,
+        classId: selectedCard.classId,
+        classCode: selectedCard.classCode,
         date: todayLabel,
         present: presenceIsAttended(status),
         status,
@@ -235,7 +226,8 @@ export function PresencesPage() {
     setBusy(true);
     try {
       const saved = await api.post<PresenceRow[]>("/presences", {
-        className: batchClassName,
+        classId: selectedCard.classId,
+        classCode: selectedCard.classCode,
         date: todayLabel,
         hour: currentHour,
         items,
@@ -243,7 +235,7 @@ export function PresencesPage() {
       if (!saved?.length) {
         throw new Error("Aucune présence enregistrée.");
       }
-      await refresh();
+      await refresh(["presences"]);
       setAttendanceDirty(false);
       setAttendance(buildInitialAttendance(classStudents, saved ?? presences, todayLabel));
       const absentCount = items.filter((item) => item.status === "Absent").length;
@@ -268,53 +260,37 @@ export function PresencesPage() {
     );
   }
 
-  if (!selectedClass) {
+  if (!selectedCard) {
     return (
       <div className="space-y-6">
         <SectionHeader
           title="Présences"
           description={`Sélectionnez une classe pour faire l'appel — ${todayLabel} à ${currentHour}`}
         />
-        <div className="grid gap-3 md:grid-cols-2">{classNames.map((className) => {
-            const rows = students.filter((student) => normalize(student.className) === normalize(className));
+        <div className="grid gap-3 md:grid-cols-2">
+          {classCards.map((card) => {
             const savedToday = presences.filter(
               (presence) =>
-                sameAttendanceDay(String(presence.date ?? ""), todayLabel) &&
-                rows.some((student) => presenceMatchesStudent(presence, student)),
+                sameAttendanceDay(String(presence.date ?? ""), todayLabel) && asClassMatch(presence, card),
             ).length;
 
             return (
               <button
-                key={className}
+                key={card.classId}
                 type="button"
-                onClick={() => setSelectedClass(className)}
+                onClick={() => selectClass(card)}
                 className="rounded-2xl border border-line bg-white p-5 text-left transition hover:border-brand/40 hover:shadow-sm"
               >
-                <p className="text-lg font-black text-ink">{className}</p>
-                <p className="mt-1 text-sm font-semibold text-muted">{rows.length} élève(s)</p>
+                <p className="text-lg font-black text-ink">{card.className}</p>
+                <p className="mt-1 text-sm font-semibold text-muted">{card.studentCount} élève(s)</p>
                 <p className="mt-1 text-xs text-muted">{savedToday} enregistrement(s) aujourd&apos;hui</p>
               </button>
             );
           })}
-          {unassignedStudents.length ? (
-            <button
-              type="button"
-              onClick={() => setSelectedClass(UNASSIGNED_CLASS)}
-              className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-left transition hover:border-amber-400 hover:shadow-sm"
-            >
-              <p className="text-lg font-black text-amber-800">{UNASSIGNED_CLASS}</p>
-              <p className="mt-1 text-sm font-semibold text-amber-700">
-                {unassignedStudents.length} élève(s) sans classe
-              </p>
-              <p className="mt-1 text-xs text-amber-700">
-                Élèves de l&apos;établissement non rattachés à une classe.
-              </p>
-            </button>
-          ) : null}
         </div>
-        {!classNames.length && !unassignedStudents.length ? (
+        {!classCards.length ? (
           <Card className="p-6">
-            <p className="text-sm text-muted">Aucune classe avec des élèves dans votre périmètre.</p>
+            <p className="text-sm text-muted">Aucune classe dans votre périmètre.</p>
           </Card>
         ) : null}
       </div>
@@ -326,13 +302,13 @@ export function PresencesPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <SectionHeader
-            title={`Appel — ${selectedClass}`}
+            title={`Appel — ${selectedCard.className}`}
             description={`${todayLabel} · Appel du jour (journée entière) · Présent, Absent, Retard ou Justifié (absence justifiée).`}
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <PrintButton documentTitle={`Feuille d'appel — ${selectedClass} — ${todayLabel}`} />
-          <Button variant="secondary" onClick={() => setSelectedClass(null)}>
+          <PrintButton documentTitle={`Feuille d'appel — ${selectedCard.className} — ${todayLabel}`} />
+          <Button variant="secondary" onClick={clearSelectedClass}>
             Changer de classe
           </Button>
         </div>
@@ -340,10 +316,10 @@ export function PresencesPage() {
 
       {canUpdate ? (
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={markAllPresent}>
+          <Button variant="secondary" onClick={markAllPresent} disabled={rosterLoading || !classStudents.length}>
             Tous présents
           </Button>
-          <Button disabled={busy} onClick={() => void saveCall()}>
+          <Button disabled={busy || rosterLoading} onClick={() => void saveCall()}>
             {busy ? "Enregistrement…" : "Enregistrer l'appel"}
           </Button>
         </div>
@@ -372,7 +348,19 @@ export function PresencesPage() {
         </Card>
       </div>
 
-      {savedTodayCount > 0 ? (
+      {rosterError ? (
+        <Card className="border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-bold text-red-800">{rosterError}</p>
+        </Card>
+      ) : null}
+
+      {rosterLoading ? (
+        <Card className="p-4">
+          <p className="text-sm font-semibold text-muted">Chargement du roster…</p>
+        </Card>
+      ) : null}
+
+      {savedTodayCount > 0 && !rosterLoading ? (
         <Card className="border-emerald-200 bg-emerald-50 p-4">
           <p className="text-sm font-bold text-emerald-800">
             {savedTodayCount === classStudents.length
@@ -396,26 +384,6 @@ export function PresencesPage() {
                   <p className="font-black text-ink">{name || "Élève"}</p>
                   <p className="text-sm font-semibold text-muted">{String(student.matricule ?? student.publicId ?? "—")}</p>
                 </div>
-                {selectedClass === UNASSIGNED_CLASS && canUpdate ? (
-                  <Select
-                    value=""
-                    disabled={busy || !assignableClassNames.length}
-                    onChange={(event) => void assignStudentToClass(studentId, event.target.value)}
-                    className="sm:w-56"
-                    options={[
-                      {
-                        value: "",
-                        label: assignableClassNames.length
-                          ? "Affecter à une classe…"
-                          : "Aucune classe disponible",
-                      },
-                      ...assignableClassNames.map((className) => ({
-                        value: className,
-                        label: className,
-                      })),
-                    ]}
-                  />
-                ) : null}
                 {canUpdate ? (
                   <div className="flex flex-wrap gap-2">
                     {STATUS_OPTIONS.map((status) => (
@@ -454,4 +422,12 @@ export function PresencesPage() {
       </Card>
     </div>
   );
+}
+
+function asClassMatch(presence: PresenceRow, card: PresenceClassCard) {
+  const presenceClassId = String(presence.classId ?? presence.class_id ?? "").trim();
+  const presenceClassCode = String(presence.classCode ?? presence.class_code ?? "").trim();
+  if (presenceClassId && presenceClassId === card.classId) return true;
+  if (presenceClassCode && presenceClassCode === card.classCode) return true;
+  return false;
 }

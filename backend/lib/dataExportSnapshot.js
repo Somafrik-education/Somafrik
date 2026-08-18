@@ -61,6 +61,7 @@ function mapStudent(row) {
     name: `${row.first_name} ${row.last_name}`.trim(),
     className: row.class_name ?? "",
     classCode: row.class_code ?? "",
+    classId: row.class_id ?? row.classId ?? null,
     schoolCode: row.school_code,
     status: row.status ?? "active",
     academicYearName: row.academic_year_name ?? "",
@@ -69,11 +70,14 @@ function mapStudent(row) {
 
 function mapClass(row) {
   const classCode = row.class_code;
+  const classId = row.id ?? row.class_id ?? null;
   return {
-    id: classCode,
+    id: classId,
+    classId,
     publicId: classCode,
     classCode,
     name: row.name,
+    className: row.name,
     status: row.status,
     schoolCode: row.school_code,
     academicYearName: row.academic_year_name,
@@ -154,6 +158,7 @@ async function loadStudentsDomain(executor, school) {
             st.last_name,
             st.status,
             s.school_code,
+            cl.id AS class_id,
             cl.class_code,
             cl.name AS class_name,
             ay.name AS academic_year_name
@@ -171,7 +176,8 @@ async function loadStudentsDomain(executor, school) {
 
 async function loadClassesDomain(executor, school) {
   const rows = await executor.all(
-    `SELECT cl.class_code,
+    `SELECT cl.id,
+            cl.class_code,
             cl.name,
             cl.status,
             s.school_code,

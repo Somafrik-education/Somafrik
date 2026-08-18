@@ -49,6 +49,7 @@ function createMemoryDb() {
       ...student,
       student_uuid: student.id,
       school_code: schools.find((item) => item.id === student.school_id)?.school_code,
+      class_id: cls?.id ?? null,
       class_code: cls?.class_code,
       class_name: cls?.name,
       academic_year_name: year?.name,
@@ -217,6 +218,7 @@ function createMemoryDb() {
               enrollment_date: enrollment.enrollment_date,
               enrollment_created_at: enrollment.created_at,
               enrollment_updated_at: enrollment.updated_at,
+              class_id: cls?.id ?? null,
               class_code: cls?.class_code,
               class_name: cls?.name,
               academic_year_name: year?.name,
@@ -335,6 +337,7 @@ async function main() {
   assert.equal(enrolled.student.matricule, enrolled.student.studentCode);
   assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
   assert.equal(enrolled.student.classCode, activeClass.class_code);
+  assert.equal(enrolled.student.classId, activeClass.id);
   assert.equal(enrolled.student.className, "6ème A");
 
   const listed = await repo.listByClassCode(activeClass.class_code, "CD-2026-0001");

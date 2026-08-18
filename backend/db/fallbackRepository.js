@@ -1022,7 +1022,19 @@ class FallbackRepository {
   async listSchoolClasses(schoolCode) {
     const code = String(schoolCode ?? "").trim().toUpperCase();
     const rows = this._managedClasses ?? [];
-    return rows.filter((row) => String(row.schoolCode).toUpperCase() === code);
+    const enrollments = this._managedEnrollments ?? [];
+    return rows
+      .filter((row) => String(row.schoolCode).toUpperCase() === code)
+      .map((row) => ({
+        ...clone(row),
+        classId: row.classId ?? row.id,
+        className: row.className ?? row.name,
+        students: enrollments.filter(
+          (enrollment) =>
+            enrollment.status === "active" &&
+            (enrollment.class_id === row.id || enrollment.class_id === row.classCode),
+        ).length,
+      }));
   }
 
   async createSchoolClass(body, schoolCode, principal, auditMeta) {
@@ -1108,12 +1120,16 @@ class FallbackRepository {
       );
     }
 
+    const { randomUUID } = require("node:crypto");
     const classCode = generateClassCode(input.schoolCode);
+    const classId = randomUUID();
     const row = {
-      id: classCode,
+      id: classId,
+      classId,
       publicId: classCode,
       classCode,
       name: displayName,
+      className: displayName,
       level: level.name,
       section: group.code,
       track: streamName ?? "",
@@ -1223,6 +1239,8 @@ class FallbackRepository {
       });
     }
     if (patch.status) current.status = patch.status;
+    current.className = current.name;
+    current.classId = current.classId ?? current.id;
     current.updatedAt = new Date().toISOString();
     upsertSeedClassProjection(current);
     if (principal || auditMeta) {
@@ -1386,6 +1404,7 @@ class FallbackRepository {
               ...student,
               student_uuid: student.id,
               school_code: schoolCode,
+              class_id: cls?.id ?? cls?.classId ?? null,
               class_code: cls?.classCode ?? "",
               class_name: cls?.name ?? "",
               academic_year_name: year?.name ?? cls?.academicYearName ?? "",
@@ -1426,6 +1445,7 @@ class FallbackRepository {
                       ...student,
                       student_uuid: student.id,
                       school_code: resolveSchoolCode(schoolId),
+                      class_id: cls?.id ?? cls?.classId ?? classId,
                       class_code: cls?.classCode ?? "",
                       class_name: cls?.name ?? "",
                       academic_year_name: cls?.academicYearName ?? "",
@@ -1451,6 +1471,7 @@ class FallbackRepository {
                   ...student,
                   student_uuid: student.id,
                   school_code: resolveSchoolCode(schoolId),
+                  class_id: cls?.id ?? cls?.classId ?? null,
                   class_code: cls?.classCode ?? "",
                   class_name: cls?.name ?? "",
                   academic_year_name: cls?.academicYearName ?? "",
@@ -1477,6 +1498,7 @@ class FallbackRepository {
                   enrollment_date: enrollment.enrollment_date,
                   enrollment_created_at: enrollment.created_at,
                   enrollment_updated_at: enrollment.updated_at,
+                  class_id: cls?.id ?? cls?.classId ?? null,
                   class_code: cls?.classCode ?? "",
                   class_name: cls?.name ?? "",
                   academic_year_name: year?.name ?? cls?.academicYearName ?? "",
@@ -2271,6 +2293,7 @@ class FallbackRepository {
             String(assignment.teacherName ?? "") === String(teacher.name ?? ""),
         )
         .map((assignment) => ({
+          classId: assignment.classId ?? assignment.class_id ?? null,
           className: assignment.className,
           classCode: assignment.classCode ?? "",
           course: assignment.subject ?? assignment.course ?? "",
@@ -2280,6 +2303,8 @@ class FallbackRepository {
         ...teacher,
         assignments: teacherAssignments,
         assignedClasses: [...new Set(teacherAssignments.map((item) => item.className).filter(Boolean))],
+        assignedClassCodes: [...new Set(teacherAssignments.map((item) => item.classCode).filter(Boolean))],
+        assignedClassIds: [...new Set(teacherAssignments.map((item) => item.classId).filter(Boolean))],
         courses: [...new Set(teacherAssignments.map((item) => item.course).filter(Boolean))],
       };
     });
@@ -2444,6 +2469,7 @@ class FallbackRepository {
       teacherCode: teacher.teacherCode ?? teacher.publicId ?? teacher.id,
       teacherName: teacher.name,
       className: schoolClass.name,
+      classId: schoolClass.classId ?? schoolClass.id ?? null,
       classCode: schoolClass.classCode ?? schoolClass.publicId ?? "",
       subject: subject.name,
       course: subject.name,

@@ -110,7 +110,7 @@ function toDomainEnrollments(dossier: SchoolStudent): StudentEnrollment[] {
     studentId: dossier.studentCode,
     schoolCode: dossier.schoolCode,
     academicYear: row.academicYearName,
-    classId: row.classCode,
+    classId: row.classId || row.classCode,
     className: row.className,
     status: mapEnrollmentStatus(row.status),
     source: "postgresql",

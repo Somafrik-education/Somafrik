@@ -4,6 +4,7 @@ export interface SchoolStudentEnrollment {
   id: string;
   status: string;
   enrollmentDate: string;
+  classId?: string | null;
   classCode: string;
   className: string;
   academicYearName: string;
@@ -62,6 +63,7 @@ export interface SchoolStudent {
   birthDate: string;
   birthPlace?: string;
   photoUrl?: string;
+  classId?: string | null;
   className: string;
   classCode: string;
   schoolCode: string;

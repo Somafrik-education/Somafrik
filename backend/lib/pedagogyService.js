@@ -438,8 +438,15 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
   const tenantCode = tenantSchoolCodeFromPrincipal(principal);
   try {
     return await store.withTransaction(async (tx) => {
+      const batchClassCode = asTrimmed(payload.classCode ?? payload.class_code);
+      const batchClassId = asTrimmed(payload.classId ?? payload.class_id);
       const items = Array.isArray(payload.items)
-        ? payload.items.map((item) => ({ ...ignoreClientScope(item), schoolCode: tenantCode }))
+        ? payload.items.map((item) => ({
+            ...ignoreClientScope(item),
+            schoolCode: tenantCode,
+            classCode: asTrimmed(item.classCode ?? item.class_code) || batchClassCode,
+            classId: asTrimmed(item.classId ?? item.class_id) || batchClassId,
+          }))
         : [];
       const saved = [];
       for (const item of items) {

@@ -1585,7 +1585,7 @@ class PostgresRepository {
         ORDER BY g.created_at
       `),
       this.all(`
-        SELECT a.*, st.student_code, s.school_code, cl.name AS class_name
+        SELECT a.*, st.student_code, s.school_code, cl.name AS class_name, cl.class_code
         FROM attendance a
         JOIN schools s ON s.id = a.school_id
         JOIN students st ON st.id = a.student_id
@@ -2936,7 +2936,7 @@ class PostgresRepository {
     for (const key of lookupKeys) {
       const params = [key];
       let sql = `
-        SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
+        SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, cl.class_code
         FROM students st
         JOIN schools s ON s.id = st.school_id
         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
@@ -4124,6 +4124,94 @@ class PostgresRepository {
     return [...keys];
   }
 
+  /**
+   * Résout la classe d'appel par classId / classCode uniquement — jamais par className.
+   */
+  async resolveAttendanceTargetClass(payload, principal, student) {
+    const {
+      requestedClassIdentity,
+      classRowMatchesRequestedIdentity,
+    } = require("../lib/presencesAttendanceAuthz");
+    const requested = requestedClassIdentity(payload);
+    const schoolCode = String(principal.schoolCode ?? payload.schoolCode ?? "").trim().toUpperCase();
+
+    if (requested.classId || requested.classCode) {
+      const params = [];
+      let sql = `SELECT cl.id, cl.class_code, cl.name, cl.school_id
+         FROM classes cl
+         JOIN schools s ON s.id = cl.school_id
+         WHERE 1=1`;
+      if (schoolCode && schoolCode !== "*") {
+        sql += ` AND s.school_code = $${params.length + 1}`;
+        params.push(schoolCode);
+      }
+      if (requested.classId && requested.classCode) {
+        sql += ` AND cl.id::text = $${params.length + 1} AND cl.class_code = $${params.length + 2}`;
+        params.push(requested.classId, requested.classCode);
+      } else if (requested.classId) {
+        sql += ` AND cl.id::text = $${params.length + 1}`;
+        params.push(requested.classId);
+      } else {
+        sql += ` AND cl.class_code = $${params.length + 1}`;
+        params.push(requested.classCode);
+      }
+      sql += ` LIMIT 1`;
+      const row = await this.one(sql, params);
+      if (!classRowMatchesRequestedIdentity(row, requested)) {
+        return null;
+      }
+      return row;
+    }
+
+    if (student?.class_id) {
+      return this.one(
+        `SELECT cl.id, cl.class_code, cl.name, cl.school_id
+         FROM classes cl WHERE cl.id = $1 LIMIT 1`,
+        [student.class_id],
+      );
+    }
+    return null;
+  }
+
+  async teacherHasActiveAssignmentForClassId(principal, classId, schoolId) {
+    if (principal.role !== "Enseignant") {
+      return true;
+    }
+    const targetClassId = String(classId ?? "").trim();
+    if (!targetClassId) {
+      return false;
+    }
+    const lookupKeys = await this.collectTeacherLookupKeysForPrincipal(principal, schoolId);
+    for (const lookupValue of lookupKeys) {
+      const teacher = await this.one(
+        `SELECT t.id
+         FROM teachers t
+         LEFT JOIN users u ON u.id = t.user_id
+         WHERE t.school_id = $1
+           AND (
+             t.teacher_code = $2
+             OR u.user_code = $2
+             OR u.id::text = $2
+             OR t.id::text = $2
+           )
+         LIMIT 1`,
+        [schoolId, lookupValue],
+      );
+      if (!teacher?.id) continue;
+      const assignment = await this.one(
+        `SELECT 1 AS ok
+         FROM teacher_assignments ta
+         WHERE ta.teacher_id = $1
+           AND ta.class_id::text = $2
+           AND ta.status = 'active'
+         LIMIT 1`,
+        [teacher.id, targetClassId],
+      );
+      if (assignment) return true;
+    }
+    return false;
+  }
+
   async upsertAttendanceBatch(payload = {}, principal = {}) {
     await this.init();
     const items = Array.isArray(payload.items) ? payload.items : [];
@@ -4131,9 +4219,18 @@ class PostgresRepository {
       return [];
     }
 
+    const { mergeAttendanceClassIdentity } = require("../lib/presencesAttendanceAuthz");
     const saved = [];
     for (const item of items) {
-      saved.push(await this.upsertAttendance(item, principal));
+      saved.push(
+        await this.upsertAttendance(
+          {
+            ...item,
+            ...mergeAttendanceClassIdentity(item, payload),
+          },
+          principal,
+        ),
+      );
     }
 
     this.cachedDataset = null;
@@ -4149,7 +4246,7 @@ class PostgresRepository {
     }
 
     const student = await this.resolveStudentForAttendance(payload, principal, { pedagogyStrict: true });
-    if (!student || !student.class_id) {
+    if (!student) {
       const error = new Error("Élève ou classe introuvable pour l'appel");
       error.statusCode = 404;
       throw error;
@@ -4157,7 +4254,32 @@ class PostgresRepository {
 
     await this.assertPrincipalStudentTenant(principal, student);
 
-    if (!(await this.teacherCanAccessStudentClass(principal, student))) {
+    const targetClass = await this.resolveAttendanceTargetClass(payload, principal, student);
+    if (!targetClass?.id) {
+      const error = new Error("Classe introuvable pour l'appel");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const { activeEnrollmentMatchesRequestedClass } = require("../lib/presencesAttendanceAuthz");
+    const enrolledHere = activeEnrollmentMatchesRequestedClass(
+      {
+        classId: student.class_id,
+        classCode: student.class_code,
+        status: "active",
+      },
+      {
+        classId: targetClass.id,
+        classCode: targetClass.class_code,
+      },
+    );
+    if (!enrolledHere) {
+      const error = new Error("Accès refusé: élève non inscrit dans cette classe.");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    if (!(await this.teacherHasActiveAssignmentForClassId(principal, targetClass.id, student.school_id))) {
       const error = new Error("Accès refusé: élève hors classe affectée.");
       error.statusCode = 403;
       throw error;
@@ -4176,7 +4298,7 @@ class PostgresRepository {
     const teacher = await this.findTeacherForAttendance(
       student.school_id,
       teacherKey,
-      student.class_id,
+      targetClass.id,
       principal.role,
     );
     // Enseignant : parcours inchangé (teacher_id nullable si pas de match fiche).
@@ -4205,7 +4327,7 @@ class PostgresRepository {
       [
         student.school_id,
         student.id,
-        student.class_id,
+        targetClass.id,
         teacher?.id ?? null,
         attendanceDate,
         status,
@@ -4218,7 +4340,7 @@ class PostgresRepository {
 
   async getAttendanceById(id) {
     const attendance = await this.one(
-      `SELECT a.*, st.student_code, s.school_code, cl.name AS class_name
+      `SELECT a.*, st.student_code, s.school_code, cl.name AS class_name, cl.class_code, a.class_id
        FROM attendance a
        JOIN schools s ON s.id = a.school_id
        JOIN students st ON st.id = a.student_id
@@ -5602,6 +5724,8 @@ class PostgresRepository {
       schoolCode: attendance.school_code,
       publicId: attendance.id,
       studentId: attendance.student_code,
+      classId: attendance.class_id ?? null,
+      classCode: attendance.class_code ?? "",
       className: attendance.class_name,
       date: this.formatIsoDate(attendance.attendance_date),
       savedAt: this.formatIsoDateTime(attendance.updated_at ?? attendance.created_at),

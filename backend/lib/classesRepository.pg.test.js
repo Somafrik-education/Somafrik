@@ -335,6 +335,9 @@ async function main() {
     assert.equal(created.status, "active");
     assert.equal(created.groupCode, "A");
     assert.match(created.classCode, /^CLS-/);
+    assert.equal(created.id, created.classId);
+    assert.notEqual(created.id, created.classCode);
+    assert.match(String(created.id), /^[0-9a-f-]{36}$/i);
 
     const listed = await repo.listBySchoolCode("SCH-A");
     assert.equal(listed.length, 1);

@@ -2,6 +2,7 @@ import { api } from "../api/client";
 
 export interface TeacherAssignmentSummary {
   id?: string | null;
+  classId?: string | null;
   className: string;
   classCode?: string;
   course: string;

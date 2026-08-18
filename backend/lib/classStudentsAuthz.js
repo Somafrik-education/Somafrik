@@ -259,6 +259,38 @@ function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStude
 }
 
 /**
+ * Filtre GET /api/classes : enseignant = uniquement les classes d'affectations actives
+ * (classId / classCode). Jamais par className.
+ *
+ * @param {{ role?: string, assignments?: object[] }} principal
+ * @param {object[]} rows
+ * @returns {object[]}
+ */
+function scopeSchoolClassesForPrincipal(principal, rows) {
+  if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
+    return rows;
+  }
+
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
+    return rows;
+  }
+
+  if (principalHasRole(principal, "Enseignant")) {
+    const { classCodes, classIds } = collectTeacherAssignmentRefs(principal);
+    if (!classCodes.size && !classIds.size) {
+      return [];
+    }
+    return (rows ?? []).filter((row) => {
+      const code = asRef(row?.classCode ?? row?.class_code ?? row?.publicId);
+      const id = asRef(row?.classId ?? row?.class_id ?? row?.id);
+      return (code && classCodes.has(code)) || (id && (classIds.has(id) || classCodes.has(id)));
+    });
+  }
+
+  return rows;
+}
+
+/**
  * Autorise la lecture d'un dossier élève (chemin PG inclus).
  * Enseignant : affectation active + classCode/classId uniquement.
  *
@@ -302,5 +334,6 @@ module.exports = {
   principalHasClassAccess,
   scopeClassStudentsForPrincipal,
   scopeSchoolStudentsForPrincipal,
+  scopeSchoolClassesForPrincipal,
   authorizeStudentReadForPrincipal,
 };

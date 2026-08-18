@@ -218,6 +218,9 @@ async function main() {
   assert.equal(created.track, "Générale");
   assert.match(created.classCode, /^CLS-/);
   assert.equal(created.status, "active");
+  assert.equal(created.id, created.classId);
+  assert.notEqual(created.id, created.classCode);
+  assert.equal(created.className, created.name);
 
   const sameNameOtherGroup = await repo.create(
     {
