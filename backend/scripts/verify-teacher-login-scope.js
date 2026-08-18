@@ -29,17 +29,55 @@ function assertPresenceWebUsesSessionAssignments() {
   assert.doesNotMatch(roster, /if \(!normalized\) return true/);
 }
 
+function assertNotesWebUsesSessionAssignments() {
+  const helper = fs.readFileSync(path.join(ROOT, "web/src/lib/evaluationCourseOptions.ts"), "utf8");
+  const modal = fs.readFileSync(path.join(ROOT, "web/src/components/grades/EvaluationFormModal.tsx"), "utf8");
+  const routeMap = fs.readFileSync(path.join(ROOT, "web/src/lib/routeDomainMap.ts"), "utf8");
+  const notesRepo = fs.readFileSync(path.join(ROOT, "backend/db/postgresRepository.js"), "utf8");
+
+  assert.match(helper, /user\?\.assignments/);
+  assert.match(helper, /isExplicitlyActiveAssignmentStatus/);
+  assert.match(helper, /isTeacherUserRole/);
+  assert.match(modal, /courseOptionsForClass\(/);
+  assert.match(modal, /user,/);
+
+  const notesRule = routeMap.match(/prefix:\s*"\/notes"[^}]+}/);
+  assert.ok(notesRule, "/notes manquant dans routeDomainMap");
+  assert.match(notesRule[0], /"notes"/);
+  assert.doesNotMatch(notesRule[0], /"assignments"/);
+  assert.doesNotMatch(notesRule[0], /"courses"/);
+
+  assert.match(notesRepo, /Accès refusé: cours non affecté/);
+  assert.match(notesRepo, /error\.statusCode = 403/);
+}
+
 assertPresenceWebUsesSessionAssignments();
+assertNotesWebUsesSessionAssignments();
 run("backend/lib/teacherLoginScope.diagnostic.test.js");
 run("backend/lib/teacherSessionAssignments.test.js");
 run("backend/lib/classStudentsAuthz.test.js");
 run("backend/lib/teacherLoginScope.pg.test.js");
+run("backend/lib/teacherNotesWriteAccess.test.js");
 
-const web = spawnSync("npm", ["--prefix", "web", "run", "test", "--", "src/lib/presenceRoster.test.ts"], {
-  cwd: ROOT,
-  stdio: "inherit",
-  env: process.env,
-});
+const web = spawnSync(
+  "npm",
+  [
+    "--prefix",
+    "web",
+    "run",
+    "test",
+    "--",
+    "src/lib/presenceRoster.test.ts",
+    "src/lib/evaluations.test.ts",
+    "src/components/grades/EvaluationFormModal.test.tsx",
+    "src/lib/routeDomainMap.usersSchoolCode.test.ts",
+  ],
+  {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: process.env,
+  },
+);
 if (web.status !== 0) {
   process.exit(web.status || 1);
 }
