@@ -7,7 +7,7 @@ const seke: SessionUser = {
   id: "ens-seke",
   role: "Enseignant",
   schoolCode: "CD-2026-0001",
-  name: "Seke",
+  firstName: "Seke",
 };
 
 const evaluationBase: Evaluation = {

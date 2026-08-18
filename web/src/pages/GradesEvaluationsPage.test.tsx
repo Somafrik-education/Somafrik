@@ -17,6 +17,12 @@ const sessionUser = vi.hoisted(() => ({
     role: "Admin School",
     schoolCode: "SCH-001",
     name: "Admin",
+  } as {
+    id: string;
+    role: string;
+    schoolCode: string;
+    name?: string;
+    assignments?: Record<string, unknown>[];
   },
 }));
 
