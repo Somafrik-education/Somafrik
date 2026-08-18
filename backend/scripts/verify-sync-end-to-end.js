@@ -400,6 +400,14 @@ async function runSyncEndToEnd(databaseUrl) {
     assert.equal(evaluation.status, 201, JSON.stringify(evaluation.data));
     const evaluationId = String(evaluation.data.id ?? "");
 
+    const validated = await request(`/evaluations/${encodeURIComponent(evaluationId)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(validated.status, 200, JSON.stringify(validated.data));
+    assert.equal(validated.data?.status, "Validée");
+
     const notePost = await request("/notes", {
       method: "POST",
       token: adminToken,
