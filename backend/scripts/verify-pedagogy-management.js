@@ -543,6 +543,103 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.notEqual(String(sekeRow.period), String(sekeRow.termId ?? ""));
     assert.equal(sekeRow.status, "Brouillon");
 
+    const adverbs = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "LES ADVERBES",
+        teacherId: "ENS-0001",
+        evaluationType: "Devoir",
+        scale: 20,
+        coefficient: 1,
+      },
+    });
+    assert.equal(adverbs.status, 201, JSON.stringify(adverbs.data));
+    assert.equal(adverbs.data?.status, "Brouillon");
+
+    const teacherSelfValidate = await request(PG_PORT, `/evaluations/${encodeURIComponent(adverbs.data.id)}`, {
+      method: "PATCH",
+      token: teacherToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(teacherSelfValidate.status, 403, JSON.stringify(teacherSelfValidate.data));
+    assert.equal(teacherSelfValidate.data?.code, PEDAGOGY_ERROR.EVALUATION_VALIDATION_FORBIDDEN);
+
+    const noteBeforeValidation = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: adverbs.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        value: 14,
+        scale: 20,
+      },
+    });
+    assert.equal(noteBeforeValidation.status, 409, JSON.stringify(noteBeforeValidation.data));
+    assert.equal(noteBeforeValidation.data?.code, PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED);
+
+    const gradesBefore = await pool.query(
+      `SELECT count(*)::int AS count
+       FROM grades g
+       JOIN evaluations e ON e.id = g.evaluation_id
+       WHERE e.title = 'LES ADVERBES'`,
+    );
+    assert.equal(gradesBefore.rows[0].count, 0, "aucune note PostgreSQL avant validation");
+
+    const prefetValidate = await request(PG_PORT, `/evaluations/${encodeURIComponent(adverbs.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(prefetValidate.status, 200, JSON.stringify(prefetValidate.data));
+    assert.equal(prefetValidate.data?.status, "Validée");
+
+    const pgValidated = await pool.query(
+      `SELECT e.status, e.active
+       FROM evaluations e
+       JOIN schools s ON s.id = e.school_id
+       WHERE e.title = 'LES ADVERBES' AND s.school_code = 'CD-2026-0001'`,
+    );
+    assert.equal(pgValidated.rows[0].status, "locked", "Validée UI = locked PG");
+
+    const teacherAfterValidate = await request(PG_PORT, "/evaluations", { token: teacherToken });
+    const adverbsRow = (teacherAfterValidate.data ?? []).find((row) => row.title === "LES ADVERBES");
+    assert.ok(adverbsRow, "enseignant relit LES ADVERBES après validation");
+    assert.equal(adverbsRow.status, "Validée");
+
+    const noteAfterValidation = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: adverbs.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        value: 14,
+        scale: 20,
+      },
+    });
+    assert.ok([200, 201].includes(noteAfterValidation.status), JSON.stringify(noteAfterValidation.data));
+    assert.equal(Number(noteAfterValidation.data?.value ?? noteAfterValidation.data?.score), 14);
+
+    const pgGrade = await pool.query(
+      `SELECT g.score
+       FROM grades g
+       JOIN evaluations e ON e.id = g.evaluation_id
+       JOIN students st ON st.id = g.student_id
+       WHERE e.title = 'LES ADVERBES' AND st.student_code = 'CD-2026-0001-STU-HTTP-01'`,
+    );
+    assert.equal(pgGrade.rowCount, 1, "note persistée PostgreSQL");
+    assert.equal(Number(pgGrade.rows[0].score), 14);
+
+    const notesRefresh = await request(PG_PORT, "/notes", { token: teacherToken });
+    assert.equal(notesRefresh.status, 200);
+    const persistedNote = (notesRefresh.data ?? []).find(
+      (row) => String(row.evaluationId ?? "") === String(adverbs.data.id) || Number(row.value ?? row.score) === 14,
+    );
+    assert.ok(persistedNote, `GET /notes relit 14/20: ${JSON.stringify(notesRefresh.data)}`);
+
     const historyEval = await request(PG_PORT, "/evaluations", {
       method: "POST",
       token: adminToken,
@@ -570,6 +667,24 @@ async function runPostgresHttpGuards(databaseUrl) {
          $1, 'CLS-6B', '6ème B', 'active'
        )`,
       [yearRow.rows[0].id],
+    );
+    const classBStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES (
+         (SELECT id FROM schools WHERE school_code = 'CD-2026-0001'),
+         'CD-2026-0001-STU-HTTP-B', 'Hors', 'Classe', 'active'
+       ) RETURNING id`,
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES (
+         (SELECT id FROM schools WHERE school_code = 'CD-2026-0001'),
+         $1,
+         (SELECT id FROM classes WHERE class_code = 'CLS-6B' AND school_id = (SELECT id FROM schools WHERE school_code = 'CD-2026-0001')),
+         $2,
+         'active'
+       )`,
+      [classBStudent.rows[0].id, yearRow.rows[0].id],
     );
     const otherClassEval = await request(PG_PORT, "/evaluations", {
       method: "POST",
@@ -617,6 +732,160 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.equal(otherTeacherList.status, 200, JSON.stringify(otherTeacherList.data));
     assert.equal((otherTeacherList.data ?? []).length, 0, "enseignant non affecté : liste vide");
 
+    const otherTeacherNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: otherTeacherToken,
+      body: {
+        evaluationId: adverbs.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        value: 11,
+        scale: 20,
+      },
+    });
+    assert.equal(otherTeacherNote.status, 403, JSON.stringify(otherTeacherNote.data));
+
+    const historyValidated = await request(PG_PORT, `/evaluations/${encodeURIComponent(historyEval.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(historyValidated.status, 200, JSON.stringify(historyValidated.data));
+    const otherCourseNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: historyEval.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        value: 12,
+        scale: 20,
+      },
+    });
+    assert.equal(otherCourseNote.status, 403, JSON.stringify(otherCourseNote.data));
+
+    const otherClassValidated = await request(PG_PORT, `/evaluations/${encodeURIComponent(otherClassEval.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(otherClassValidated.status, 200, JSON.stringify(otherClassValidated.data));
+    const otherClassNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: otherClassEval.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-B",
+        value: 12,
+        scale: 20,
+      },
+    });
+    assert.equal(otherClassNote.status, 403, JSON.stringify(otherClassNote.data));
+
+    const otherSchoolNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: biEvaluation.rows[0].legacy_json_id,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        value: 12,
+        scale: 20,
+      },
+    });
+    assert.ok([403, 404].includes(otherSchoolNote.status), JSON.stringify(otherSchoolNote.data));
+
+    const unenrolledNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: adverbs.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-B",
+        value: 12,
+        scale: 20,
+      },
+    });
+    assert.ok([403, 409].includes(unenrolledNote.status), JSON.stringify(unenrolledNote.data));
+    assert.ok(
+      unenrolledNote.data?.code === PEDAGOGY_ERROR.STUDENT_NOT_ENROLLED || unenrolledNote.status === 403,
+      JSON.stringify(unenrolledNote.data),
+    );
+
+    const cancelledEval = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "EVAL ANNULEE SAISIE",
+        teacherId: "ENS-0001",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+    });
+    assert.equal(cancelledEval.status, 201, JSON.stringify(cancelledEval.data));
+    const cancelledValidated = await request(PG_PORT, `/evaluations/${encodeURIComponent(cancelledEval.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(cancelledValidated.status, 200, JSON.stringify(cancelledValidated.data));
+    const cancelledArchived = await request(PG_PORT, `/evaluations/${encodeURIComponent(cancelledEval.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Annulée" },
+    });
+    assert.equal(cancelledArchived.status, 200, JSON.stringify(cancelledArchived.data));
+    const cancelledNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: cancelledEval.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        value: 12,
+        scale: 20,
+      },
+    });
+    assert.equal(cancelledNote.status, 409, JSON.stringify(cancelledNote.data));
+    assert.equal(cancelledNote.data?.code, PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED);
+
+    const publishedEval = await request(PG_PORT, "/evaluations", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        className: "6ème A",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        title: "EVAL PUBLIEE SAISIE",
+        teacherId: "ENS-0001",
+        evaluationType: "Devoir",
+        scale: 20,
+      },
+    });
+    assert.equal(publishedEval.status, 201, JSON.stringify(publishedEval.data));
+    const publishedValidated = await request(PG_PORT, `/evaluations/${encodeURIComponent(publishedEval.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(publishedValidated.status, 200, JSON.stringify(publishedValidated.data));
+    const published = await request(PG_PORT, `/evaluations/${encodeURIComponent(publishedEval.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Publiée" },
+    });
+    assert.equal(published.status, 200, JSON.stringify(published.data));
+    const publishedNote = await request(PG_PORT, "/notes", {
+      method: "POST",
+      token: teacherToken,
+      body: {
+        evaluationId: publishedEval.data.id,
+        studentId: "CD-2026-0001-STU-HTTP-01",
+        value: 12,
+        scale: 20,
+      },
+    });
+    assert.equal(publishedNote.status, 409, JSON.stringify(publishedNote.data));
+    assert.equal(publishedNote.data?.code, PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED);
+
     const patched = await request(PG_PORT, `/evaluations/${encodeURIComponent(sekeCreate.data.id)}`, {
       method: "PATCH",
       token: adminToken,
@@ -646,6 +915,13 @@ async function runPostgresHttpGuards(databaseUrl) {
       [sekeCreate.data.id],
     );
     assert.equal(pgAfterDeactivate.rows[0].active, false);
+
+    const forgeValidate = await request(PG_PORT, `/evaluations/${encodeURIComponent(forgedEvaluation.data.id)}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "Validée" },
+    });
+    assert.equal(forgeValidate.status, 200, JSON.stringify(forgeValidate.data));
 
     const forgedNote = await request(PG_PORT, "/notes", {
       method: "POST",

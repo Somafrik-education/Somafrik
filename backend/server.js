@@ -1600,7 +1600,6 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       const body = ignoreClientScope(req.body ?? {});
       // Unicité portée par PG upsert (school+evaluation+student) — comme D3.5b présences.
       assertNoteWrite(state, body, {
-        enforceLockedEvaluation: false,
         skipDuplicateCheck: true,
       });
       let saved;

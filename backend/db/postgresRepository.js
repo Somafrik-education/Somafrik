@@ -417,7 +417,7 @@ class PostgresRepository {
             evaluationCoefficient: note.evaluationCoefficient ?? evaluation.coefficient,
           },
           { role: "Admin School", sub: note.authorId },
-          { allowMissingTeacher: true, skipCacheClear: true },
+          { allowMissingTeacher: true, skipCacheClear: true, allowUnvalidatedEvaluation: true },
         );
       } catch (error) {
         anomalyCount += 1;
@@ -2047,6 +2047,11 @@ class PostgresRepository {
       throw error;
     }
 
+    const { assertEvaluationAllowsGradeEntry, assertStudentEnrolledInEvaluationClass } = require("../lib/evaluationGradeEntry");
+    if (!options.allowUnvalidatedEvaluation) {
+      assertEvaluationAllowsGradeEntry(evaluation);
+    }
+
     const gradeStatus = toGradeStatus(
       payload.gradeStatus ?? payload.status,
       payload.value != null && payload.value !== "",
@@ -2091,6 +2096,7 @@ class PostgresRepository {
       error.statusCode = 400;
       throw error;
     }
+    assertStudentEnrolledInEvaluationClass(student, evaluation);
 
     // HOTFIX-PRE-E1-02 : gardes enseignant — établissement + classe + matière/affectation.
     // Ne pas affaiblir le RBAC.
@@ -2791,6 +2797,14 @@ class PostgresRepository {
       subjectId = subject.id;
       termId = term.id;
       teacherId = teacher?.id ?? null;
+    }
+
+    if (existing && patchTouches(["status"])) {
+      const previousStatus = toEvaluationStatus(existing.status, "draft");
+      if (previousStatus !== status) {
+        const { assertTeacherCannotValidateEvaluation } = require("../lib/evaluationGradeEntry");
+        assertTeacherCannotValidateEvaluation(principal, status);
+      }
     }
 
     if (principal && !existing && !evaluationTypeId) {

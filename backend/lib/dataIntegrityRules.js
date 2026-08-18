@@ -3,19 +3,13 @@
  * Utilisé par l'API, les audits et les tests E2E d'intégrité.
  */
 
-const LOCKED_EVALUATION_STATUSES = new Set([
-  "Validée",
-  "Publiée",
-  "Annulée",
-  "locked",
-  "published",
-  "archived",
-]);
 const ARCHIVED_STUDENT_STATUSES = new Set(["archivé", "archive", "inactif", "suspendu"]);
 const {
   validateGradeContract,
   toGradeStatus,
-  isLockedEvaluationStatus,
+  toEvaluationStatus,
+  isValidatedEvaluationStatus,
+  isPublishedEvaluationStatus,
 } = require("./gradesCanonical");
 
 function normalize(value) {
@@ -140,7 +134,14 @@ function findStudent(state, studentId) {
 function findEvaluation(state, evaluationId) {
   const key = String(evaluationId ?? "").trim();
   if (!key) return null;
-  return (state.evaluations ?? []).find((item) => String(item.id ?? "") === key) ?? null;
+  return (
+    (state.evaluations ?? []).find(
+      (item) =>
+        String(item.id ?? "") === key ||
+        String(item.publicId ?? "") === key ||
+        String(item.pgId ?? "") === key,
+    ) ?? null
+  );
 }
 
 function findSchool(state, schoolCode) {
@@ -251,11 +252,14 @@ function validateNoteWrite(state = {}, note = {}, options = {}) {
     const evaluation = findEvaluation(state, evaluationId);
     if (!evaluation) return "Évaluation introuvable : note orpheline refusée.";
     if (evaluation.active === false) return "Évaluation inactive : saisie refusée.";
-    const locked =
-      LOCKED_EVALUATION_STATUSES.has(evaluation.status) ||
-      isLockedEvaluationStatus(evaluation.status);
-    if (locked && options.enforceLockedEvaluation !== false) {
-      return `Évaluation ${evaluation.status} : modification de note refusée.`;
+    if (options.requireValidatedEvaluation !== false) {
+      const canonical = toEvaluationStatus(evaluation.status, "");
+      if (isPublishedEvaluationStatus(evaluation.status) || canonical === "archived") {
+        return `Évaluation ${evaluation.status} : modification de note refusée.`;
+      }
+      if (!isValidatedEvaluationStatus(evaluation.status)) {
+        return "Évaluation non validée : saisie des notes refusée.";
+      }
     }
     scale = Number(evaluation.scale ?? evaluation.max_score ?? scale);
     coefficient = Number(evaluation.coefficient ?? coefficient);
