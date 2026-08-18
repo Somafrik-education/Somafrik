@@ -6,6 +6,7 @@ import {
   detectScheduleConflicts,
   expandScheduleOccurrences,
   isoWeekdayFromLocalDate,
+  mapServerOccurrencesToCalendarEvents,
   type CourseScheduleSlot,
 } from "./coursePlanning";
 
@@ -100,5 +101,52 @@ describe("Planning V2 — mapping Web canonique", () => {
       endTime: "10:00",
     };
     expect(detectScheduleConflicts([adjacent], weekly)).toEqual([]);
+  });
+
+  it("mapServerOccurrencesToCalendarEvents recopie start/end serveur sans ré-expandre", () => {
+    const events = mapServerOccurrencesToCalendarEvents(
+      [
+        {
+          id: "slot-1__2026-09-07",
+          scheduleId: "slot-1",
+          occurrenceDate: "2026-09-07",
+          start: "2026-09-07T07:00:00.000Z",
+          end: "2026-09-07T08:00:00.000Z",
+          className: "2ème A",
+          subject: "Mathématiques",
+          courseName: "Mathématiques",
+          teacherName: "Seke Kilombo",
+          dayOfWeek: 1,
+          startTime: "08:00",
+          endTime: "09:00",
+          status: "active",
+          schoolCode: "CD-2026-0001",
+        },
+        {
+          id: "slot-1__2026-09-08",
+          scheduleId: "slot-1",
+          start: "2026-09-08T07:00:00.000Z",
+          end: "2026-09-08T08:00:00.000Z",
+          className: "2ème B",
+          subject: "Mathématiques",
+          status: "active",
+        },
+        {
+          id: "slot-2__2026-09-07",
+          scheduleId: "slot-2",
+          start: "2026-09-07T09:00:00.000Z",
+          end: "2026-09-07T10:00:00.000Z",
+          className: "2ème A",
+          subject: "Mathématiques",
+          status: "cancelled",
+        },
+      ],
+      "2ème A",
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]?.id).toBe("slot-1__2026-09-07");
+    expect(events[0]?.start).toBe("2026-09-07T07:00:00.000Z");
+    expect(events[0]?.end).toBe("2026-09-07T08:00:00.000Z");
+    expect(events[0]?.extendedProps.id).toBe("slot-1");
   });
 });

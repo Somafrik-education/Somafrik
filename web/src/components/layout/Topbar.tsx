@@ -140,6 +140,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           size="sm"
           onClick={logout}
           aria-label="Déconnexion"
+          data-testid="logout-button"
           className="px-2.5 sm:px-3"
         >
           <LogOut className="h-4 w-4 sm:hidden" />

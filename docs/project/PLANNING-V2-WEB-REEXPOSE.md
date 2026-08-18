@@ -57,10 +57,18 @@ Payload POST/PATCH :
 
 ## Calendrier
 
-La projection d’occurrences utilise `dayOfWeek` + `TIME` et la plage de vue (période affichée). Elle n’invente plus le jour métier via `Date.getDay()` d’un timestamp d’ancrage.
+La source de vérité du calendrier daté est la projection serveur :
+
+```http
+GET /api/course-schedules?from=YYYY-MM-DD&to=YYYY-MM-DD
+```
+
+`CoursePlanningPage` envoie la plage civile visible du calendrier et mappe `items[]` (ISO `start`/`end` calculés côté serveur). **Aucune expansion de récurrence métier n’est faite dans `/planning`.** `expandScheduleOccurrences()` / `slotsToClassCalendarEvents()` ne sont plus appelés par la page.
+
+Après CREATE / PATCH / CANCEL, le Web fait un **refresh ciblé** `refresh(["courseSchedules"])` (définitions weekly), puis revalide la projection `from/to`. Pas de `refresh()` global DataContext.
 
 ## Tests / CI
 
-- `npm run verify:planning-v2-web`
+- `npm run verify:planning-v2-web` — contrôles statiques, Vitest, **E2E navigateur Playwright** (`verify-planning-v2-web-e2e.js`)
 - `npm run verify:planning-v2-weekly` (flag désormais `true`, garde conservé)
-- Intégré dans `.github/workflows/ci.yml` et `security.yml`
+- Intégré dans `.github/workflows/ci.yml` et `security.yml` (E2E avec `DATABASE_URL`)

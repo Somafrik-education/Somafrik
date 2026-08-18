@@ -2,7 +2,7 @@
 
 /**
  * Planning V2 — réexposition Web contrôlée.
- * Flag true, garde RBAC conservé, payload weekly, salles/remplacements/Mobile hors lot.
+ * Flag true, garde RBAC conservé, payload weekly, projection serveur, refresh ciblé.
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -30,9 +30,20 @@ function main() {
   const page = read("web/src/pages/CoursePlanningPage.tsx");
   assert.match(page, /schoolCourseId/);
   assert.match(page, /listSchoolCoursesForClass/);
+  assert.match(page, /listCourseScheduleOccurrences/);
+  assert.match(page, /mapServerOccurrencesToCalendarEvents/);
+  assert.match(page, /refresh\(\["courseSchedules"\]\)/);
+  assert.doesNotMatch(page, /slotsToClassCalendarEvents/);
+  assert.doesNotMatch(page, /expandScheduleOccurrences/);
+  assert.doesNotMatch(page, /await refresh\(\)/);
   assert.doesNotMatch(page, /Planifier un examen/);
   assert.doesNotMatch(page, /handleRepairPlanningData/);
   assert.match(page, /Annuler le créneau/);
+
+  const api = read("web/src/lib/pedagogyApi.ts");
+  assert.match(api, /listCourseScheduleOccurrences/);
+  assert.match(api, /from: query\.from/);
+  assert.match(api, /to: query\.to/);
 
   const placeholders = read("web/src/pages/planning/PlanningPlaceholders.tsx");
   assert.match(placeholders, /ComingSoonState/);
@@ -46,7 +57,12 @@ function main() {
   assert.match(routeMap, /prefix: "\/planning"/);
   assert.match(routeMap, /assignments/);
 
-  console.log("OK verify-planning-v2-web: flag, payload weekly, UI contrôlée, salles/Mobile hors lot");
+  const e2e = path.join(ROOT, "backend/scripts/verify-planning-v2-web-e2e.js");
+  assert.ok(fs.existsSync(e2e), "E2E navigateur Planning manquant");
+
+  console.log(
+    "OK verify-planning-v2-web: flag, payload weekly, projection serveur, refresh ciblé, UI contrôlée",
+  );
 }
 
 main();

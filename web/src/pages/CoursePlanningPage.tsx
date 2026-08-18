@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
+import { ApiError } from "../api/client";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { PrintButton } from "../components/ui/PrintButton";
@@ -23,21 +24,21 @@ import {
   getSchoolAcademicPeriods,
   isoWeekdayFromLocalDate,
   isExamSchedule,
+  mapServerOccurrencesToCalendarEvents,
   normalizePlanningSlotForSave,
   pickPlanningPeriodWithSlots,
   PLANNING_WEEKDAYS,
   resolveCourseTeacher,
   scopedCourseSchedules,
-  slotsToClassCalendarEvents,
-  validatePlanningSlotBusinessRules,
   type CourseScheduleSlot,
+  type PlanningCalendarEvent,
 } from "../lib/coursePlanning";
+import { pedagogyApi } from "../lib/pedagogyApi";
 import { syncSchoolCourseSchedules } from "../lib/pedagogyPlanningSync";
 import {
   listSchoolCoursesForClass,
   resolveClassAcademicYearId,
 } from "../lib/planningWeeklyWrite";
-import { parsePeriodDate } from "../lib/academicPeriods";
 import type { BackOfficeState, SessionUser } from "../types";
 
 function classNamesKeyFromState(data: BackOfficeState, user: SessionUser | null): string {
@@ -75,6 +76,14 @@ const EMPTY_FORM = (className: string, academicYearId = ""): FormState => ({
   room: "",
 });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function planningWriteErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.message) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
 function formFromSlot(
   slot: CourseScheduleSlot,
   academicYearId: string,
@@ -110,6 +119,8 @@ export function CoursePlanningPage() {
   const [selectedPeriodName, setSelectedPeriodName] = useState("");
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [visibleRange, setVisibleRange] = useState<{ from: string; to: string } | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<PlanningCalendarEvent[]>([]);
 
   const schoolPeriods = useMemo(
     () => getSchoolAcademicPeriods(state, schoolCode),
@@ -180,6 +191,14 @@ export function CoursePlanningPage() {
     [scopeUser, state, selectedClassName],
   );
 
+  const selectedClassId = useMemo(() => {
+    const row = scopedClasses(scopeUser, state).find(
+      (item) => normalize(String(item.name ?? "")) === normalize(selectedClassName),
+    );
+    const id = String((row as { id?: string } | undefined)?.id ?? "").trim();
+    return UUID_RE.test(id) ? id : "";
+  }, [scopeUser, state.classes, selectedClassName]);
+
   const weeklySlots = useMemo(
     () => schoolSlots.filter((slot) => !isExamSchedule(slot) && String(slot.status ?? "active") !== "cancelled"),
     [schoolSlots],
@@ -195,16 +214,38 @@ export function CoursePlanningPage() {
     [periodScopedSlots, selectedClassName],
   );
 
-  const projectionBounds = useMemo(() => {
-    const start = parsePeriodDate(activePeriod?.startDate ?? defaultPeriod.periodStart);
-    const end = parsePeriodDate(activePeriod?.endDate ?? defaultPeriod.periodEnd);
-    return start && end ? { viewStart: start, viewEnd: end } : undefined;
-  }, [activePeriod, defaultPeriod.periodEnd, defaultPeriod.periodStart]);
-
-  const events = useMemo(
-    () => slotsToClassCalendarEvents(periodScopedSlots, selectedClassName, projectionBounds),
-    [periodScopedSlots, selectedClassName, projectionBounds],
-  );
+  useEffect(() => {
+    if (!canRead || !selectedClassName || !visibleRange?.from || !visibleRange?.to) {
+      setCalendarEvents([]);
+      return;
+    }
+    let cancelled = false;
+    void pedagogyApi
+      .listCourseScheduleOccurrences({
+        from: visibleRange.from,
+        to: visibleRange.to,
+        academicYearId: classAcademicYearId || undefined,
+        classId: selectedClassId || undefined,
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setCalendarEvents(mapServerOccurrencesToCalendarEvents(payload?.items, selectedClassName));
+      })
+      .catch(() => {
+        if (!cancelled) setCalendarEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canRead,
+    selectedClassName,
+    selectedClassId,
+    classAcademicYearId,
+    visibleRange?.from,
+    visibleRange?.to,
+    state.courseSchedules,
+  ]);
 
   async function handleResetPlanning() {
     if (!schoolCode || !canDelete) return;
@@ -223,7 +264,7 @@ export function CoursePlanningPage() {
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, []);
-      await refresh();
+      await refresh(["courseSchedules"]);
       setForm(null);
       showToast("Créneaux hebdomadaires annulés.", "success");
     } catch {
@@ -292,13 +333,13 @@ export function CoursePlanningPage() {
     setSaving(true);
     try {
       await syncSchoolCourseSchedules(previousSchoolSlots, nextSchoolSlots);
-      await refresh();
+      await refresh(["courseSchedules"]);
       showToast(message, "success");
       if (!options.keepForm) {
         setForm(null);
       }
-    } catch {
-      showToast("Échec de l'enregistrement du planning.", "error");
+    } catch (err) {
+      showToast(planningWriteErrorMessage(err, "Échec de l'enregistrement du planning."), "error");
     } finally {
       setSaving(false);
     }
@@ -337,13 +378,8 @@ export function CoursePlanningPage() {
       showToast("Cours canonique, année académique et horaires sont obligatoires.", "error");
       return;
     }
-
-    const conflicts = validatePlanningSlotBusinessRules(weeklySlots, slot, {
-      ignoreId: form.id,
-      allowedSubjects: classCourses.map((row) => row.name),
-    });
-    if (conflicts.length) {
-      showToast(conflicts[0], "error");
+    if (form.endTime <= form.startTime) {
+      showToast("L'heure de fin doit être postérieure à l'heure de début.", "error");
       return;
     }
 
@@ -373,15 +409,6 @@ export function CoursePlanningPage() {
       start: "",
       end: "",
     });
-
-    const conflicts = validatePlanningSlotBusinessRules(weeklySlots, patch, {
-      ignoreId: masterId,
-      allowedSubjects: classCourses.map((row) => row.name),
-    });
-    if (conflicts.length) {
-      showToast(conflicts[0], "error");
-      return;
-    }
 
     const next = weeklySlots.map((row) => (row.id === masterId ? patch : row));
     await persistSlots(next, message, { keepForm: true });
@@ -448,14 +475,14 @@ export function CoursePlanningPage() {
 
   if (!canRead) {
     return (
-      <Card className="p-6">
+      <Card className="p-6" data-testid="planning-access-denied">
         <p className="text-sm font-semibold text-muted">Accès refusé au planning de cours.</p>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="planning-page">
       <Card className="bg-gradient-to-br from-slate-800 to-brand p-6 text-white">
         <p className="text-sm font-semibold text-white/75">Pédagogie</p>
         <h2 className="mt-2 text-2xl font-black">Planning de cours</h2>
@@ -487,6 +514,7 @@ export function CoursePlanningPage() {
         <div className="no-print mt-4 flex flex-wrap gap-3">
           <Field label="Classe">
             <Select
+              data-testid="planning-class-select"
               value={selectedClassName}
               onChange={(event) => {
                 const value = event.target.value;
@@ -526,7 +554,7 @@ export function CoursePlanningPage() {
           </Field>
           {canCreate && selectedClassName ? (
             <div className="flex flex-wrap items-end gap-2">
-              <Button onClick={() => openCreate()}>Planifier un cours</Button>
+              <Button data-testid="planning-create-button" onClick={() => openCreate()}>Planifier un cours</Button>
               {canDelete ? (
                 <Button
                   type="button"
@@ -545,13 +573,14 @@ export function CoursePlanningPage() {
           <CoursePlanningCalendar
             key={`${selectedClassName}__${selectedPeriodName}`}
             className={selectedClassName || "—"}
-            events={selectedClassName ? events : []}
+            events={selectedClassName ? calendarEvents : []}
             legendSubjects={selectedClassName ? classCourses.map((row) => row.name) : []}
             editable={editable && Boolean(selectedClassName)}
             onSelectSlot={handleSelectSlot}
             onEventClick={handleEventClick}
             onEventMove={handleEventMoveStable}
             onEventResize={handleEventResizeStable}
+            onVisibleRangeChange={setVisibleRange}
           />
           {!selectedClassName ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-white/85">
@@ -582,6 +611,7 @@ export function CoursePlanningPage() {
             </Field>
             <Field label="Jour de la semaine">
               <Select
+                data-testid="planning-weekday"
                 value={String(form.weekday)}
                 onChange={(event) =>
                   setForm({ ...form, weekday: Number(event.target.value) })
@@ -595,6 +625,7 @@ export function CoursePlanningPage() {
             <Field label="Heure de début">
               <Input
                 type="time"
+                data-testid="planning-start-time"
                 value={form.startTime}
                 onChange={(event) => setForm({ ...form, startTime: event.target.value })}
               />
@@ -602,6 +633,7 @@ export function CoursePlanningPage() {
             <Field label="Heure de fin">
               <Input
                 type="time"
+                data-testid="planning-end-time"
                 value={form.endTime}
                 onChange={(event) => setForm({ ...form, endTime: event.target.value })}
               />
@@ -622,11 +654,20 @@ export function CoursePlanningPage() {
             </p>
           ) : null}
           <div className="mt-4 flex flex-wrap gap-3">
-            <Button disabled={saving || !(form.id ? canUpdate : canCreate)} onClick={() => void saveForm()}>
+            <Button
+              data-testid="planning-save-button"
+              disabled={saving || !(form.id ? canUpdate : canCreate)}
+              onClick={() => void saveForm()}
+            >
               {saving ? "Enregistrement…" : "Enregistrer"}
             </Button>
             {form.id && canDelete ? (
-              <Button variant="secondary" disabled={saving} onClick={() => void deleteForm()}>
+              <Button
+                variant="secondary"
+                data-testid="planning-cancel-slot-button"
+                disabled={saving}
+                onClick={() => void deleteForm()}
+              >
                 Annuler le créneau
               </Button>
             ) : null}

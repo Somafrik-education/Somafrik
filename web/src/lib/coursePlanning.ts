@@ -800,6 +800,71 @@ export function slotsToClassCalendarEvents(
   return events;
 }
 
+function asOccurrenceRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * Mappe la projection serveur GET /course-schedules?from=&to= vers le calendrier.
+ * Aucune expansion de récurrence : start/end ISO viennent du serveur.
+ */
+export function mapServerOccurrencesToCalendarEvents(
+  items: unknown,
+  className?: string,
+): PlanningCalendarEvent[] {
+  const rows = Array.isArray(items) ? items : [];
+  const events: PlanningCalendarEvent[] = [];
+
+  for (const row of rows) {
+    const item = asOccurrenceRecord(row);
+    if (!item) continue;
+    const status = String(item.status ?? "active").trim().toLowerCase();
+    if (status === "cancelled") continue;
+    const start = String(item.start ?? "").trim();
+    const end = String(item.end ?? "").trim();
+    if (!start || !end) continue;
+
+    const subject = String(item.courseName ?? item.subject ?? "").trim();
+    const slot: CourseScheduleSlot = {
+      id: String(item.scheduleId ?? getMasterScheduleId(String(item.id ?? ""))),
+      schoolCode: String(item.schoolCode ?? ""),
+      className: String(item.className ?? ""),
+      subject,
+      courseName: String(item.courseName ?? subject),
+      teacherId: item.teacherId != null ? String(item.teacherId) : undefined,
+      teacherName: item.teacherName != null ? String(item.teacherName) : undefined,
+      start,
+      end,
+      room: item.room != null ? String(item.room) : undefined,
+      kind: "course",
+      schoolCourseId: item.schoolCourseId != null ? String(item.schoolCourseId) : undefined,
+      academicYearId: item.academicYearId != null ? String(item.academicYearId) : undefined,
+      classId: item.classId != null ? String(item.classId) : undefined,
+      subjectId: item.subjectId != null ? String(item.subjectId) : undefined,
+      dayOfWeek: item.dayOfWeek != null ? Number(item.dayOfWeek) : undefined,
+      startTime: item.startTime != null ? String(item.startTime).slice(0, 5) : undefined,
+      endTime: item.endTime != null ? String(item.endTime).slice(0, 5) : undefined,
+      status: String(item.status ?? "active"),
+    };
+
+    if (isExamSchedule(slot)) continue;
+    if (className && !planningLabelsMatch(slot.className, className)) continue;
+
+    const color = getScheduleColor(slot);
+    events.push({
+      id: String(item.id ?? `${slot.id}${OCCURRENCE_ID_SUFFIX}${String(item.occurrenceDate ?? "")}`),
+      title: formatPlanningEventLabel(slot),
+      start,
+      end,
+      extendedProps: { ...slot, subject },
+      backgroundColor: color,
+      borderColor: color,
+    });
+  }
+
+  return events;
+}
+
 /** Nom court enseignant (nom de famille) pour les cartes compactes. */
 export function formatPlanningTeacherShortName(teacherName?: string): string {
   const name = String(teacherName ?? "").trim();
