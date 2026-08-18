@@ -74,6 +74,7 @@
     "verify:pre-e1-v2-identity-fix-adapted-v1": "node scripts/verify-pre-e1-v2-identity-fix-adapted-v1.js",
     "verify:pre-e1-v2-identity-post-merge": "node scripts/verify-pre-e1-v2-identity-post-merge-develop.js",
     "verify:pre-e1-v2-student-code": "node scripts/verify-pre-e1-v2-student-code-scope.js",
+    "guard:teacher-record-lot1-mobile": "node scripts/guard-teacher-record-lot1-mobile-generation.js",
     "guard:v2-course-vocabulary": "node scripts/guard-v2-course-vocabulary.js",
     "verify:teacher-record-lot1-mobile": "node scripts/guard-teacher-record-lot1-mobile-generation.js && npx --yes tsx Mobile/src/lib/userTeacherSync.test.ts && node scripts/verify-teacher-record-lot1-mobile-identity.js",
     "guard:teacher-record-lot2-notes-attendance": "node scripts/guard-teacher-record-lot2-notes-attendance.js",
