@@ -37,10 +37,9 @@ function renderGrid(overrides: {
   status?: Evaluation["status"];
   canEdit?: boolean;
   grades?: StudentGrade[];
-  onChange?: ReturnType<typeof vi.fn>;
 }) {
   const evaluation = { ...evaluationBase, status: overrides.status ?? "Brouillon" };
-  const onChange = overrides.onChange ?? vi.fn();
+  const onChange = vi.fn<(grades: StudentGrade[]) => void>();
   const view = render(
     <GradeEntryGrid
       evaluation={evaluation}
