@@ -1,12 +1,126 @@
 "use strict";
 
-const STUDENT_GENERAL_IDENTITY_SQL = String.raw`
+const STUDENT_GENERAL_COUNTERS_MIGRATE_SQL = String.raw`
+-- V1 historique : PRIMARY KEY (school_id, creation_year)
+-- V2 canonique : PRIMARY KEY (school_id)
+-- CREATE TABLE IF NOT EXISTS ne convertit pas une table existante.
+-- Cette conversion DOIT précéder tout ON CONFLICT (school_id) (sinon 42P10).
 CREATE TABLE IF NOT EXISTS student_general_code_counters (
   school_id UUID PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
   last_value INTEGER NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK (last_value >= 0 AND last_value <= 99999)
 );
+
+DO $migrate$
+DECLARE
+  has_creation_year BOOLEAN := FALSE;
+  rec RECORD;
+BEGIN
+  IF to_regclass('public.student_general_code_counters') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_attribute
+    WHERE attrelid = 'public.student_general_code_counters'::regclass
+      AND attname = 'creation_year'
+      AND attnum > 0
+      AND NOT attisdropped
+  ) INTO has_creation_year;
+
+  IF has_creation_year THEN
+    LOCK TABLE student_general_code_counters IN ACCESS EXCLUSIVE MODE;
+
+    -- Une valeur par établissement : MAX(last_value) parmi toutes les années.
+    -- Ex. school A / 2025 / 18 + 2026 / 27 → school A / 27 (jamais 0, 1 ou 45).
+    DROP TABLE IF EXISTS student_general_code_counters_upgrade;
+    CREATE TEMP TABLE student_general_code_counters_upgrade AS
+    SELECT school_id, MAX(last_value)::integer AS last_value
+    FROM student_general_code_counters
+    GROUP BY school_id;
+
+    DELETE FROM student_general_code_counters;
+
+    FOR rec IN
+      SELECT c.conname
+      FROM pg_constraint c
+      WHERE c.conrelid = 'public.student_general_code_counters'::regclass
+        AND c.contype IN ('p', 'u', 'c')
+        AND EXISTS (
+          SELECT 1
+          FROM pg_attribute a
+          WHERE a.attrelid = c.conrelid
+            AND a.attnum = ANY (c.conkey)
+            AND a.attname = 'creation_year'
+            AND NOT a.attisdropped
+        )
+    LOOP
+      EXECUTE format('ALTER TABLE student_general_code_counters DROP CONSTRAINT %I', rec.conname);
+    END LOOP;
+
+    FOR rec IN
+      SELECT DISTINCT idx.relname AS idxname
+      FROM pg_index i
+      JOIN pg_class idx ON idx.oid = i.indexrelid
+      JOIN LATERAL unnest(i.indkey) AS k(attnum) ON TRUE
+      JOIN pg_attribute a
+        ON a.attrelid = i.indrelid
+       AND a.attnum = k.attnum
+      WHERE i.indrelid = 'public.student_general_code_counters'::regclass
+        AND i.indisunique
+        AND NOT i.indisprimary
+        AND a.attname = 'creation_year'
+        AND NOT a.attisdropped
+    LOOP
+      EXECUTE format('DROP INDEX IF EXISTS %I', rec.idxname);
+    END LOOP;
+
+    ALTER TABLE student_general_code_counters DROP COLUMN creation_year;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    WHERE c.conrelid = 'public.student_general_code_counters'::regclass
+      AND c.contype IN ('p', 'u')
+      AND array_length(c.conkey, 1) = 1
+      AND EXISTS (
+        SELECT 1
+        FROM pg_attribute a
+        WHERE a.attrelid = c.conrelid
+          AND a.attnum = c.conkey[1]
+          AND a.attname = 'school_id'
+          AND NOT a.attisdropped
+      )
+  ) THEN
+    FOR rec IN
+      SELECT c.conname
+      FROM pg_constraint c
+      WHERE c.conrelid = 'public.student_general_code_counters'::regclass
+        AND c.contype = 'p'
+    LOOP
+      EXECUTE format('ALTER TABLE student_general_code_counters DROP CONSTRAINT %I', rec.conname);
+    END LOOP;
+    ALTER TABLE student_general_code_counters ADD PRIMARY KEY (school_id);
+  END IF;
+
+  IF has_creation_year THEN
+    INSERT INTO student_general_code_counters (school_id, last_value)
+    SELECT school_id, last_value
+    FROM student_general_code_counters_upgrade;
+    DROP TABLE IF EXISTS student_general_code_counters_upgrade;
+  END IF;
+
+  ALTER TABLE student_general_code_counters
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+END
+$migrate$;
+`;
+
+const STUDENT_GENERAL_IDENTITY_SQL = String.raw`
+${STUDENT_GENERAL_COUNTERS_MIGRATE_SQL}
 
 CREATE OR REPLACE FUNCTION somafrik_student_person_initials(p_last_name TEXT, p_first_name TEXT)
 RETURNS TEXT
@@ -327,6 +441,7 @@ async function ensureStudentGeneralIdentityPg(repository) {
 }
 
 module.exports = {
+  STUDENT_GENERAL_COUNTERS_MIGRATE_SQL,
   STUDENT_GENERAL_IDENTITY_SQL,
   ensureStudentGeneralIdentityPg,
 };
