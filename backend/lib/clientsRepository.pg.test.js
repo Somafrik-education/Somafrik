@@ -7,11 +7,11 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
-const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
 const { createClientsPgStore } = require("../db/clientsPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
 const { hashSecret, verifySecret } = require("../services/credentialService");
 const { ensureSchoolLoginCodeColumn } = require("../db/ensureSchoolLoginCodeColumn");
+const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DB = String(process.env.SOMAFRIK_CLIENTS_IT_DATABASE ?? "somafrik_clients_it")
@@ -72,7 +72,7 @@ async function main() {
     await pool.query("CREATE SCHEMA public");
     const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
     await pool.query(schema);
-    await pool.query(CLIENTS_SCHEMA_SQL);
+    await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
     await ensureSchoolLoginCodeColumn((sql) => pool.query(sql));
 
     const country = await pool.query(

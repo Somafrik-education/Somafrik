@@ -95,6 +95,8 @@ class PostgresRepository {
     await this.ensurePedagogyCanonicalSchema();
     await this.ensurePlatformCanonicalSchema();
     await this.ensurePlatformRolePermissionsBootstrap();
+    // Tables Clients PUIS inventaire fail-safe PUIS index parent-linking
+    // (helper partagé avec les tests PG — jamais d'index dans CLIENTS_SCHEMA_SQL).
     await this.ensureClientsCanonicalSchema();
     await this.ensureUserRolesCanonicalSchema();
     await this.ensureResidualCanonicalSchema();
@@ -541,8 +543,15 @@ class PostgresRepository {
   }
 
   async ensureClientsCanonicalSchema() {
-    const { CLIENTS_SCHEMA_SQL } = require("./clientsSchema");
-    await this.query(CLIENTS_SCHEMA_SQL);
+    const { ensureClientsCanonicalBootstrap } = require("./clientsCanonicalBootstrap");
+    await ensureClientsCanonicalBootstrap(
+      {
+        query: (sql, params) => this.query(sql, params),
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+      },
+      console,
+    );
   }
 
   async ensureUserRolesCanonicalSchema() {
@@ -1233,6 +1242,20 @@ class PostgresRepository {
     return this.getClientsStore().createRelation(payload, principal, auditMeta);
   }
 
+  linkParent(payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().linkParent(payload, principal, auditMeta);
+  }
+
+  lookupParentIdentity(query, principal) {
+    return this.getClientsStore().lookupParentIdentity(query, principal);
+  }
+
+  archiveParentRelation(relationId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().archiveParentRelation(relationId, payload, principal, auditMeta);
+  }
+
   sendClientsMessage(payload, principal, auditMeta) {
     return this.getClientsStore().sendMessage(payload, principal, auditMeta);
   }
@@ -1384,6 +1407,18 @@ class PostgresRepository {
   async ensureUsersLoginIdentityConstraints() {
     const { ensureUsersLoginIdentityConstraints } = require("../lib/usersLoginIdentity");
     await ensureUsersLoginIdentityConstraints(
+      {
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+      },
+      console,
+    );
+  }
+
+  async ensureParentLinkingConstraints() {
+    const { ensureParentLinkingConstraints } = require("../lib/parentLinkingConstraints");
+    await ensureParentLinkingConstraints(
       {
         one: (sql, params) => this.one(sql, params),
         all: (sql, params) => this.all(sql, params),
@@ -1578,6 +1613,24 @@ class PostgresRepository {
       `),
     ]);
 
+    const rolesByUser = new Map();
+    if (userRows.length) {
+      try {
+        const roleRows = await this.all(
+          `SELECT user_id, role_key FROM user_roles
+           WHERE status = 'active' AND revoked_at IS NULL AND user_id = ANY($1::uuid[])`,
+          [userRows.map((row) => row.id)],
+        );
+        for (const row of roleRows) {
+          const list = rolesByUser.get(String(row.user_id)) ?? [];
+          list.push(row.role_key);
+          rolesByUser.set(String(row.user_id), list);
+        }
+      } catch {
+        /* user_roles peut être absent au tout premier boot */
+      }
+    }
+
     const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
     const students = studentRows.map((student) => this.mapStudent(student));
     const classes = this.uniqueBy(
@@ -1616,7 +1669,9 @@ class PostgresRepository {
       platformSchools: schoolRows.map((row) => this.mapSchool(row, subscriptionRows.find((sub) => sub.school_code === row.school_code))),
       countries: countryRows.map((country) => this.mapCountry(country)),
       subscriptions: subscriptionRows.map((subscription) => this.mapSubscription(subscription)),
-      userAccounts: userRows.map((user) => this.mapUser(user, schoolByCode, teacherLoginByUserId)),
+      userAccounts: userRows.map((user) =>
+        this.mapUser(user, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(user.id)) ?? []),
+      ),
       teachers,
       teacherAssignments: teacherAssignmentRows.map(mapAssignment),
       classes,

@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { createTxAdapter } = require("../db/txAdapter");
-const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
+const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 const { EDUCATION_REFERENCE_SCHEMA_SQL } = require("../db/educationReferenceSchema");
 const { ESTABLISHMENT_ROLES_SCHEMA_SQL } = require("../db/establishmentRolesSchema");
 const { DOCUMENTS_EXAMS_SCHEMA_SQL, assertDocumentsExamsSchemaPreflight } = require("../db/documentsExamsSchema");
@@ -132,7 +132,7 @@ async function resetBaseSchema(pool) {
   await pool.query("DROP SCHEMA public CASCADE");
   await pool.query("CREATE SCHEMA public");
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
-  await pool.query(CLIENTS_SCHEMA_SQL);
+  await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
   await pool.query(EDUCATION_REFERENCE_SCHEMA_SQL);
   await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
@@ -219,7 +219,7 @@ async function resetPreLot5Schema(pool) {
   await pool.query("DROP SCHEMA public CASCADE");
   await pool.query("CREATE SCHEMA public");
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
-  await pool.query(CLIENTS_SCHEMA_SQL);
+  await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
   await pool.query(EDUCATION_REFERENCE_SCHEMA_SQL);
   await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));

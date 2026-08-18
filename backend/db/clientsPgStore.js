@@ -11,6 +11,7 @@ const {
   mapMessageRow,
   mapAnnouncementRow,
 } = require("../lib/clientsManagement");
+const { uuidOrNull } = require("../lib/principalIdentity");
 
 const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
 
@@ -195,7 +196,7 @@ function createClientsPgStore(repo) {
           `INSERT INTO user_roles (user_id, school_id, role_key, granted_by, granted_at, status)
            VALUES ($1, $2, $3, $4, NOW(), 'active')
            RETURNING *`,
-          [row.userId, row.schoolId || null, row.roleKey, row.grantedBy || null],
+          [row.userId, row.schoolId || null, row.roleKey, uuidOrNull(row.grantedBy)],
         );
       },
       async revokeUserRole(row) {
@@ -211,7 +212,7 @@ function createClientsPgStore(repo) {
                OR school_id IS NOT DISTINCT FROM $3::uuid
              )
            RETURNING *`,
-          [row.userId, row.roleKey, row.schoolId || null, row.revokedBy || null],
+          [row.userId, row.roleKey, row.schoolId || null, uuidOrNull(row.revokedBy)],
         );
       },
       async syncUserPrimaryRole(userId, roleKey) {
@@ -376,12 +377,67 @@ function createClientsPgStore(repo) {
           [contactId, userId, JSON.stringify(profile ?? {})],
         );
       },
+      async getActiveContactByUserId(schoolId, userId) {
+        return one(
+          `SELECT c.*, s.school_code, s.name AS school_name
+           FROM contacts c
+           JOIN schools s ON s.id = c.school_id
+           WHERE c.school_id = $1 AND c.user_id = $2 AND c.status = 'active'
+           ORDER BY c.updated_at DESC
+           LIMIT 1`,
+          [schoolId, userId],
+        );
+      },
+      async findActiveContactByEmail(schoolId, email) {
+        const key = asTrimmed(email).toLowerCase();
+        if (!key) return null;
+        return one(
+          `SELECT c.*, s.school_code, s.name AS school_name
+           FROM contacts c
+           JOIN schools s ON s.id = c.school_id
+           WHERE c.school_id = $1 AND c.status = 'active'
+             AND c.email IS NOT NULL AND lower(trim(c.email)) = $2
+           ORDER BY c.updated_at DESC
+           LIMIT 1`,
+          [schoolId, key],
+        );
+      },
+      async findActiveContactByPhone(schoolId, phone) {
+        const key = asTrimmed(phone).toLowerCase();
+        if (!key) return null;
+        return one(
+          `SELECT c.*, s.school_code, s.name AS school_name
+           FROM contacts c
+           JOIN schools s ON s.id = c.school_id
+           WHERE c.school_id = $1 AND c.status = 'active'
+             AND c.phone IS NOT NULL AND lower(trim(c.phone)) = $2
+           ORDER BY c.updated_at DESC
+           LIMIT 1`,
+          [schoolId, key],
+        );
+      },
+      async advisoryXactLock(key) {
+        await query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [String(key)]);
+      },
       async getStudentById(id) {
         return one(
           `SELECT st.*, s.school_code
            FROM students st
            JOIN schools s ON s.id = st.school_id
            WHERE st.id::text = $1 OR st.student_code = $1`,
+          [id],
+        );
+      },
+      async getRelationById(id) {
+        return one(
+          `SELECT r.*, s.school_code,
+             trim(concat(c.first_name, ' ', c.last_name)) AS contact_name,
+             trim(concat(st.first_name, ' ', st.last_name)) AS student_name
+           FROM contact_relations r
+           JOIN schools s ON s.id = r.school_id
+           JOIN contacts c ON c.id = r.contact_id
+           JOIN students st ON st.id = r.student_id
+           WHERE r.id::text = $1`,
           [id],
         );
       },
@@ -394,16 +450,33 @@ function createClientsPgStore(repo) {
            JOIN schools s ON s.id = r.school_id
            JOIN contacts c ON c.id = r.contact_id
            JOIN students st ON st.id = r.student_id
-           WHERE r.contact_id = $1 AND r.student_id = $2`,
+           WHERE r.contact_id = $1 AND r.student_id = $2
+           ORDER BY CASE WHEN r.status = 'active' THEN 0 ELSE 1 END, r.updated_at DESC
+           LIMIT 1`,
+          [contactId, studentId],
+        );
+      },
+      async getActiveRelationByContactAndStudent(contactId, studentId) {
+        return one(
+          `SELECT r.*, s.school_code,
+             trim(concat(c.first_name, ' ', c.last_name)) AS contact_name,
+             trim(concat(st.first_name, ' ', st.last_name)) AS student_name
+           FROM contact_relations r
+           JOIN schools s ON s.id = r.school_id
+           JOIN contacts c ON c.id = r.contact_id
+           JOIN students st ON st.id = r.student_id
+           WHERE r.contact_id = $1 AND r.student_id = $2 AND r.status = 'active'
+           LIMIT 1`,
           [contactId, studentId],
         );
       },
       async insertRelation(row) {
-        return one(
+        const saved = await one(
           `INSERT INTO contact_relations (
              school_id, country_id, relation_type, contact_id, student_id, status, profile_payload, created_at, updated_at
            ) VALUES ($1,$2,'parent_student',$3,$4,'active',$5::jsonb,NOW(),NOW())
-           ON CONFLICT (school_id, contact_id, student_id) DO UPDATE SET updated_at = NOW()
+           ON CONFLICT (school_id, contact_id, student_id) WHERE status = 'active'
+           DO NOTHING
            RETURNING *`,
           [
             row.schoolId,
@@ -412,7 +485,18 @@ function createClientsPgStore(repo) {
             row.studentId,
             JSON.stringify(row.profile ?? {}),
           ],
-        ).then(async (saved) => this.getRelationByContactAndStudent(saved.contact_id, saved.student_id));
+        );
+        if (saved) return this.getRelationById(saved.id);
+        return this.getActiveRelationByContactAndStudent(row.contactId, row.studentId);
+      },
+      async archiveRelation(id) {
+        return one(
+          `UPDATE contact_relations
+           SET status = 'archived', updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [id],
+        ).then(async (saved) => (saved ? this.getRelationById(saved.id) : null));
       },
       async insertConversation(row) {
         return one(
@@ -545,7 +629,7 @@ function createClientsPgStore(repo) {
            VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,NOW())`,
           [
             school?.id ?? null,
-            entry.userId || null,
+            uuidOrNull(entry.userId),
             entry.action,
             entry.entityType,
             entry.entityId,
@@ -641,11 +725,26 @@ function createClientsPgStore(repo) {
     updateContact: (...args) => clientsService.updateContact(store, ...args),
     provisionContactAccount: (...args) => clientsService.provisionContactAccount(store, ...args),
     createRelation: (...args) => clientsService.createRelation(store, ...args),
+    linkParent: (...args) => {
+      const { linkParent } = require("../lib/parentLinking");
+      return linkParent(store, ...args);
+    },
+    lookupParentIdentity: (...args) => {
+      const { lookupParentIdentity } = require("../lib/parentLinking");
+      return lookupParentIdentity(store, ...args);
+    },
+    archiveParentRelation: (...args) => {
+      const { archiveParentRelation } = require("../lib/parentLinking");
+      return archiveParentRelation(store, ...args);
+    },
     sendMessage: (...args) => clientsService.sendMessage(store, ...args),
     markMessageRead: (...args) => clientsService.markMessageRead(store, ...args),
     createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
     updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
     archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),
+    ensureStudentRecord() {
+      return null;
+    },
     assertEstablishmentRoleAssignable: (role, principal) =>
       typeof repo.assertEstablishmentRoleAssignable === "function"
         ? repo.assertEstablishmentRoleAssignable(role, principal)

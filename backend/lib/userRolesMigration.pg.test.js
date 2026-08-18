@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { PostgresRepository } = require("../db/postgresRepository");
-const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
+const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 const { USER_ROLES_MIGRATION_AMBIGUOUS } = require("../db/userRolesSchema");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -183,7 +183,7 @@ async function main() {
       /user_roles_active_school_unique/,
     );
 
-    await pool.query(CLIENTS_SCHEMA_SQL);
+    await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
     await pool.query(
       `UPDATE users SET profile_payload = '{"secondaryRoles":["Enseignant"]}'::jsonb WHERE id = $1`,
       [unaffect.id],

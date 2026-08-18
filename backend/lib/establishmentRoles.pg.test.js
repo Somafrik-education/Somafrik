@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
-const { CLIENTS_SCHEMA_SQL } = require("../db/clientsSchema");
+const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 const { ESTABLISHMENT_ROLES_SCHEMA_SQL, assertEstablishmentRolesSchemaPreflight } = require("../db/establishmentRolesSchema");
 const { createEstablishmentRolesPgStore } = require("../db/establishmentRolesPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
@@ -115,7 +115,7 @@ async function resetBaseSchema(pool) {
   await pool.query("DROP SCHEMA public CASCADE");
   await pool.query("CREATE SCHEMA public");
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
-  await pool.query(CLIENTS_SCHEMA_SQL);
+  await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
 }
 

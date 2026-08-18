@@ -442,6 +442,40 @@ function createClientsMemoryStore(seed = {}) {
         };
         return this.getContactById(contactId);
       },
+      async getActiveContactByUserId(schoolId, userId) {
+        const row = tables.contacts.find(
+          (contact) =>
+            contact.school_id === schoolId &&
+            String(contact.user_id) === String(userId) &&
+            (contact.status ?? "active") === "active",
+        );
+        return row ? this.getContactById(row.id) : null;
+      },
+      async findActiveContactByEmail(schoolId, email) {
+        const key = asTrimmed(email).toLowerCase();
+        if (!key) return null;
+        const row = tables.contacts.find(
+          (contact) =>
+            contact.school_id === schoolId &&
+            (contact.status ?? "active") === "active" &&
+            asTrimmed(contact.email).toLowerCase() === key,
+        );
+        return row ? this.getContactById(row.id) : null;
+      },
+      async findActiveContactByPhone(schoolId, phone) {
+        const key = asTrimmed(phone).toLowerCase();
+        if (!key) return null;
+        const row = tables.contacts.find(
+          (contact) =>
+            contact.school_id === schoolId &&
+            (contact.status ?? "active") === "active" &&
+            asTrimmed(contact.phone).toLowerCase() === key,
+        );
+        return row ? this.getContactById(row.id) : null;
+      },
+      async advisoryXactLock() {
+        return undefined;
+      },
       async getStudentById(id) {
         return (
           tables.students.find(
@@ -449,19 +483,48 @@ function createClientsMemoryStore(seed = {}) {
           ) ?? null
         );
       },
-      async getRelationByContactAndStudent(contactId, studentId) {
-        const row = tables.relations.find(
-          (relation) => relation.contact_id === contactId && relation.student_id === studentId,
-        );
+      async getRelationById(id) {
+        const row = tables.relations.find((relation) => String(relation.id) === String(id));
         if (!row) return null;
         const school = tables.schools.find((item) => item.id === row.school_id);
-        return { ...row, school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "" };
+        const contact = tables.contacts.find((item) => item.id === row.contact_id);
+        const student = tables.students.find((item) => item.id === row.student_id);
+        return {
+          ...row,
+          school_code: school ? asTrimmed(school.code ?? school.schoolCode).toUpperCase() : "",
+          contact_name: contact ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() : "",
+          student_name: student
+            ? `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim()
+            : "",
+        };
+      },
+      async getRelationByContactAndStudent(contactId, studentId) {
+        const matches = tables.relations.filter(
+          (relation) => relation.contact_id === contactId && relation.student_id === studentId,
+        );
+        const row =
+          matches.find((item) => (item.status ?? "active") === "active") || matches[0] || null;
+        if (!row) return null;
+        return this.getRelationById(row.id);
+      },
+      async getActiveRelationByContactAndStudent(contactId, studentId) {
+        const row = tables.relations.find(
+          (relation) =>
+            relation.contact_id === contactId &&
+            relation.student_id === studentId &&
+            (relation.status ?? "active") === "active",
+        );
+        if (!row) return null;
+        return this.getRelationById(row.id);
       },
       async insertRelation(row) {
-        const existing = tables.relations.find(
-          (relation) => relation.contact_id === row.contactId && relation.student_id === row.studentId,
+        const existingActive = tables.relations.find(
+          (relation) =>
+            relation.contact_id === row.contactId &&
+            relation.student_id === row.studentId &&
+            (relation.status ?? "active") === "active",
         );
-        if (existing) return this.getRelationByContactAndStudent(row.contactId, row.studentId);
+        if (existingActive) return this.getRelationById(existingActive.id);
         const saved = {
           id: randomUUID(),
           school_id: row.schoolId,
@@ -475,7 +538,17 @@ function createClientsMemoryStore(seed = {}) {
           updated_at: new Date(),
         };
         tables.relations.push(saved);
-        return this.getRelationByContactAndStudent(row.contactId, row.studentId);
+        return this.getRelationById(saved.id);
+      },
+      async archiveRelation(id) {
+        const index = tables.relations.findIndex((relation) => String(relation.id) === String(id));
+        if (index < 0) return null;
+        tables.relations[index] = {
+          ...tables.relations[index],
+          status: "archived",
+          updated_at: new Date(),
+        };
+        return this.getRelationById(id);
       },
       async insertConversation(row) {
         const saved = {
@@ -791,11 +864,45 @@ function createClientsMemoryStore(seed = {}) {
     updateContact: (...args) => clientsService.updateContact(store, ...args),
     provisionContactAccount: (...args) => clientsService.provisionContactAccount(store, ...args),
     createRelation: (...args) => clientsService.createRelation(store, ...args),
+    linkParent: (...args) => {
+      const { linkParent } = require("../lib/parentLinking");
+      return linkParent(store, ...args);
+    },
+    lookupParentIdentity: (...args) => {
+      const { lookupParentIdentity } = require("../lib/parentLinking");
+      return lookupParentIdentity(store, ...args);
+    },
+    archiveParentRelation: (...args) => {
+      const { archiveParentRelation } = require("../lib/parentLinking");
+      return archiveParentRelation(store, ...args);
+    },
     sendMessage: (...args) => clientsService.sendMessage(store, ...args),
     markMessageRead: (...args) => clientsService.markMessageRead(store, ...args),
     createAnnouncement: (...args) => clientsService.createAnnouncement(store, ...args),
     updateAnnouncement: (...args) => clientsService.updateAnnouncement(store, ...args),
     archiveAnnouncement: (...args) => clientsService.archiveAnnouncement(store, ...args),
+    ensureStudentRecord(row = {}) {
+      const studentCode = asTrimmed(row.student_code || row.studentCode || row.matricule || row.id);
+      const id = asTrimmed(row.id || row.student_uuid || studentCode);
+      if (!id && !studentCode) return null;
+      const existing = tables.students.find(
+        (student) =>
+          String(student.id) === String(id) ||
+          String(student.student_code ?? student.studentCode ?? "") === studentCode,
+      );
+      if (existing) return existing;
+      const saved = {
+        id,
+        school_id: row.school_id || row.schoolId,
+        first_name: row.first_name || row.firstName || "",
+        last_name: row.last_name || row.lastName || "",
+        student_code: studentCode,
+        studentCode,
+        status: row.status || "active",
+      };
+      tables.students.push(saved);
+      return saved;
+    },
     touchUserLastLogin(lookupKeys = []) {
       const keys = new Set(
         (Array.isArray(lookupKeys) ? lookupKeys : [lookupKeys])

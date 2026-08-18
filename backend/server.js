@@ -330,7 +330,7 @@ app.get("/api/schools/:code", asyncHandler(async (req, res) => {
 app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { backOfficeAccessService } = await getRuntime();
   const response = await handleBusinessAction(() => backOfficeAccessService.login(req.body));
-  if (response?.user?.role === "Parent") {
+  if (response?.role === "parent_student" || response?.user?.role === "Parent") {
     const state = await getAuthoritativeBackOfficeState();
     const schoolCode =
       response.schoolContext?.code ??
@@ -342,7 +342,7 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
   }
   // HOTFIX-PRE-E1-02 : enrichir la session enseignant avec affectations BO (IDs stables),
   // sans élargir les droits — affectations explicitement actives uniquement (fail-closed).
-  if (response?.user?.role === "Enseignant") {
+  if (response?.role === "teacher" || response?.user?.role === "Enseignant") {
     const state = await getAuthoritativeBackOfficeState();
     const { enrichTeacherUserWithActiveAssignments } = require("./lib/teacherSessionAssignments");
     response.user = enrichTeacherUserWithActiveAssignments(response.user, state);
@@ -358,7 +358,7 @@ app.post("/api/identify", loginRateLimiter, asyncHandler(async (req, res) => {
 app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
   const response = await handleBusinessAction(() => authService.login(req.body));
-  if (response?.user?.role === "Parent") {
+  if (response?.role === "parent_student" || response?.user?.role === "Parent") {
     const state = await getAuthoritativeBackOfficeState();
     const schoolCode =
       response.school?.code ??
@@ -2328,8 +2328,36 @@ app.get("/api/backoffice/relations", requireAuth, requirePermission("GET /api/ba
 }));
 
 app.post("/api/backoffice/relations", requireAuth, requirePermission("POST /api/backoffice/relations"), asyncHandler(async (req, res) => {
-  const created = await repository.createClientsRelation(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.status(201).json(created);
+  const result = await repository.createClientsRelation(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  const created = Boolean(result?.created);
+  const body = result?.relation ?? result;
+  res.status(created ? 201 : 200).json(body);
+}));
+
+app.get("/api/parents/identity", requireAuth, requirePermission("GET /api/parents/identity"), asyncHandler(async (req, res) => {
+  const result = await repository.lookupParentIdentity(req.query ?? {}, req.principal);
+  res.json({
+    ...result,
+    user: result.user ? sanitizeUserForResponse(result.user) : null,
+  });
+}));
+
+app.post("/api/parents/link", requireAuth, requirePermission("POST /api/parents/link"), asyncHandler(async (req, res) => {
+  const result = await repository.linkParent(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
+  res.status(result.created ? 201 : 200).json({
+    ...result,
+    user: sanitizeUserForResponse(result.user),
+  });
+}));
+
+app.patch("/api/parents/relations/:relationId", requireAuth, requirePermission("PATCH /api/parents/relations/:relationId"), asyncHandler(async (req, res) => {
+  const result = await repository.archiveParentRelation(
+    req.params.relationId,
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(result);
 }));
 
 app.get("/api/backoffice/messages", requireAuth, requirePermission("GET /api/backoffice/messages"), asyncHandler(async (req, res) => {
@@ -4977,6 +5005,7 @@ async function sendAuthenticatedResponse(req, res, response, action) {
 
 function buildPrincipal(response, rolePermissionsMap = null) {
   const { displayRoles, mergePermissionsForRoles, toRoleKey } = require("./lib/userRoleLifecycle");
+  const { resolvePrincipalSub } = require("./lib/principalIdentity");
   const user = response.user ?? {};
   const school = response.schoolContext ?? response.school ?? {};
   const rawRole = user.role ?? roleLabelFromMobileRole(response.role);
@@ -4993,8 +5022,15 @@ function buildPrincipal(response, rolePermissionsMap = null) {
           ? [toRoleKey(rawRole)].filter(Boolean)
           : [];
   const display = displayRoles(roleKeys);
+  const requestedLabel = roleLabelFromMobileRole(response.role);
+  const requestedKey = toRoleKey(requestedLabel);
+  const sessionMatchesGrant = requestedKey && roleKeys.includes(requestedKey);
   const role =
-    display.role === "Super Administrateur OKAFRIK" ? "Super Administrateur Somafrik" : display.role;
+    sessionMatchesGrant
+      ? requestedLabel
+      : display.role === "Super Administrateur OKAFRIK"
+        ? "Super Administrateur Somafrik"
+        : display.role;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
   const countryCode = user.countryCode || countryCodeFromScope(user.countryScope) || school.countryCode || countryCodeFromSchoolOrCountry(schoolCode, school.country);
   const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
@@ -5007,7 +5043,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
   );
 
   return {
-    sub: user.id ?? user.publicId ?? user.matricule ?? "anonymous",
+    sub: resolvePrincipalSub(user),
     identifier: user.identifier,
     publicId: user.publicId,
     contactId: user.contactId,
@@ -5113,7 +5149,10 @@ function getPrincipalGuardianStudentIds(response) {
 
 function getPrincipalStudentIds(response) {
   const user = response.user ?? {};
-  const role = user.role ?? roleLabelFromMobileRole(response.role);
+  const sessionLabel = roleLabelFromMobileRole(response.role);
+  const role = sessionLabel === "Parent" || sessionLabel === "Élève / Étudiant"
+    ? sessionLabel
+    : user.role ?? sessionLabel;
 
   if (role === "Parent") {
     return (user.children ?? [])

@@ -306,6 +306,29 @@ export function canManageNotes(ctx: PermissionContext): boolean {
   );
 }
 
+/** Liaison parent : mêmes jetons que POST /api/parents/link — pas la whitelist CRM. */
+export function canLinkParent(ctx: PermissionContext): boolean {
+  if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role)) return true;
+  if (ctx.user.role === COUNTRY_ADMIN_ROLE) return true;
+  const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
+  return tokens.some(
+    (permission) =>
+      permission === normalize("ALL_PRIVILEGES") ||
+      permission === normalize("COUNTRY_PRIVILEGES") ||
+      permission === normalize("Gérer utilisateurs") ||
+      permission === normalize("Relations:CREATE"),
+  );
+}
+
+/** Archivage relation parent-enfant : mêmes jetons que PATCH /api/parents/relations/:id. */
+export function canArchiveParentRelation(ctx: PermissionContext): boolean {
+  if (canLinkParent(ctx)) return true;
+  if (!ctx.user) return false;
+  const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
+  return tokens.some((permission) => permission === normalize("Relations:UPDATE"));
+}
+
 /** Admin établissement et rôles habilités peuvent réinitialiser un mot de passe utilisateur. */
 export function canResetUserPassword(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;

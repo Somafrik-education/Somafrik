@@ -296,8 +296,21 @@ async function lookupActiveUserByPhone(tx, { schoolId, phone, excludeUserId }) {
   );
 }
 
+const PARENT_IDENTITY_AMBIGUOUS = "PARENT_IDENTITY_AMBIGUOUS";
+
+function createParentIdentityAmbiguousError(details) {
+  const error = new Error(
+    "Email et téléphone désignent deux comptes distincts. Impossible de choisir automatiquement.",
+  );
+  error.statusCode = 409;
+  error.code = PARENT_IDENTITY_AMBIGUOUS;
+  if (details) error.details = details;
+  return error;
+}
+
 /**
  * Compte actif portant le même email ou téléphone (même établissement, ou plateforme).
+ * Fail-closed : si email → A et téléphone → B distincts, jamais de choix arbitraire.
  */
 async function findActiveUserByLoginIdentity(tx, input) {
   const excludeUserId = String(input.excludeUserId ?? "").trim();
@@ -307,12 +320,18 @@ async function findActiveUserByLoginIdentity(tx, input) {
     email: input.email,
     excludeUserId,
   });
-  if (byEmail) return byEmail;
-  return lookupActiveUserByPhone(tx, {
+  const byPhone = await lookupActiveUserByPhone(tx, {
     schoolId,
     phone: input.phone,
     excludeUserId,
   });
+  if (byEmail && byPhone && String(byEmail.id) !== String(byPhone.id)) {
+    throw createParentIdentityAmbiguousError({
+      emailUserId: byEmail.id,
+      phoneUserId: byPhone.id,
+    });
+  }
+  return byEmail || byPhone || null;
 }
 
 /**
@@ -358,6 +377,7 @@ async function assertUniqueUserLoginIdentity(tx, input) {
 
 module.exports = {
   USERS_LOGIN_IDENTITY_DUPLICATES_CODE,
+  PARENT_IDENTITY_AMBIGUOUS,
   activeIdentityStatusSql,
   ACTIVE_USER_IDENTITY_STATUS_SQL,
   ensureUsersLoginIdentityConstraints,

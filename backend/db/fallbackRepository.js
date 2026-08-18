@@ -1555,6 +1555,17 @@ class FallbackRepository {
   async enrollStudentInClass(classCode, schoolCode, body) {
     const created = await this.getClassStudentsRepository().enroll(classCode, schoolCode, body);
     this.registerEnrolledStudentLoginAccount(created.student, schoolCode);
+    if (typeof this.getClientsStore().ensureStudentRecord === "function") {
+      const school = await this.getClientsStore().getSchoolByCode(schoolCode);
+      this.getClientsStore().ensureStudentRecord({
+        id: created.student.id,
+        school_id: school?.id ?? created.student.schoolId,
+        firstName: created.student.firstName,
+        lastName: created.student.lastName,
+        studentCode: created.student.studentCode,
+        status: "active",
+      });
+    }
     return created;
   }
 
@@ -3072,6 +3083,18 @@ class FallbackRepository {
 
   createClientsRelation(payload, principal, auditMeta) {
     return this.getClientsStore().createRelation(payload, principal, auditMeta);
+  }
+
+  linkParent(payload, principal, auditMeta) {
+    return this.getClientsStore().linkParent(payload, principal, auditMeta);
+  }
+
+  lookupParentIdentity(query, principal) {
+    return this.getClientsStore().lookupParentIdentity(query, principal);
+  }
+
+  archiveParentRelation(relationId, payload, principal, auditMeta) {
+    return this.getClientsStore().archiveParentRelation(relationId, payload, principal, auditMeta);
   }
 
   sendClientsMessage(payload, principal, auditMeta) {
