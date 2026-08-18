@@ -10,6 +10,10 @@ const classStudentsList = vi.hoisted(() => vi.fn());
 const apiPost = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn());
 
+const authSession = vi.hoisted(() => ({
+  user: { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" } as Record<string, unknown>,
+}));
+
 const dataState = vi.hoisted(() => ({
   classes: [
     {
@@ -34,15 +38,13 @@ const dataState = vi.hoisted(() => ({
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
-    session: {
-      user: { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" },
-    },
+    session: authSession,
   }),
 }));
 
 vi.mock("../context/ActiveSchoolContext", () => ({
   useActiveSchool: () => ({
-    scopedUser: { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" },
+    scopedUser: authSession.user,
   }),
 }));
 
@@ -90,6 +92,9 @@ describe("PresencesPage — roster canonique", () => {
     refresh.mockReset();
     apiPost.mockReset();
     classStudentsList.mockReset();
+    authSession.user = { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" };
+    dataState.assignments = [];
+    dataState.teachers = [];
     classStudentsList.mockResolvedValue([
       {
         id: "ELE-1",
@@ -134,5 +139,26 @@ describe("PresencesPage — roster canonique", () => {
     expect(source).not.toMatch(/student\.className\s*===\s*selectedClassName/);
     expect(source).not.toMatch(/dedupeClassesByName/);
     expect(source).not.toMatch(/UNASSIGNED_CLASS/);
+  });
+
+  it("H — enseignant Seke-like : JWT 2 assignments, state.assignments vide → 2 cartes", async () => {
+    authSession.user = {
+      id: "user-seke",
+      role: "Enseignant",
+      schoolCode: "SCH-001",
+      assignments: [
+        { classId: "uuid-a", classCode: "CLS-A", status: "active" },
+        { classId: "uuid-b", classCode: "CLS-B", status: "active" },
+      ],
+      assignedClassIds: ["uuid-a", "uuid-b"],
+      assignedClassCodes: ["CLS-A", "CLS-B"],
+    };
+    dataState.assignments = [];
+    dataState.teachers = [];
+    render(<PresencesPage />);
+    const cards = await screen.findAllByRole("button");
+    const classCards = cards.filter((node) => node.textContent?.includes("2ème A"));
+    expect(classCards).toHaveLength(2);
+    expect(screen.queryByText("Aucune classe dans votre périmètre.")).not.toBeInTheDocument();
   });
 });
