@@ -101,10 +101,60 @@ function readAssignmentStatus(assignment = {}) {
   return undefined;
 }
 
+function readAssignmentRowId(assignment = {}) {
+  return asAssignmentRef(assignment.id ?? assignment.assignmentId ?? assignment.assignment_id);
+}
+
+function readSubjectIdentity(assignment = {}) {
+  return (
+    asAssignmentRef(assignment.subjectId ?? assignment.subject_id) ||
+    asAssignmentRef(assignment.subjectCode ?? assignment.subject_code) ||
+    asAssignmentRef(assignment.course ?? assignment.subject)
+  );
+}
+
+function readAcademicYearIdentity(assignment = {}) {
+  return asAssignmentRef(
+    assignment.academicYearId ??
+      assignment.academic_year_id ??
+      assignment.academicYear ??
+      assignment.academic_year_name,
+  );
+}
+
+function readAssignmentRoleIdentity(assignment = {}) {
+  return asAssignmentRef(assignment.assignmentRole ?? assignment.assignment_role);
+}
+
+function readClassIdentityKey(assignment = {}) {
+  const classId = readAssignmentClassId(assignment);
+  if (classId) return `id:${classId}`;
+  const classCode = readAssignmentClassCode(assignment);
+  if (classCode) return `code:${classCode}`;
+  return "";
+}
+
+/**
+ * Clé d'affectation sans id : classe + matière + année + rôle
+ * (aligné sur uq_teacher_assignments_active_tuple). Jamais className seul.
+ */
+function assignmentCompositeKey(assignment = {}) {
+  const classKey = readClassIdentityKey(assignment);
+  if (!classKey) return "";
+  return [
+    `cls:${classKey}`,
+    `subj:${normalizeText(readSubjectIdentity(assignment))}`,
+    `year:${normalizeText(readAcademicYearIdentity(assignment))}`,
+    `role:${normalizeText(readAssignmentRoleIdentity(assignment))}`,
+  ].join("|");
+}
+
 function assignmentCanonicalRichness(assignment = {}) {
   let score = 0;
+  if (readAssignmentRowId(assignment)) score += 16;
   if (readAssignmentClassId(assignment)) score += 8;
   if (readAssignmentClassCode(assignment)) score += 4;
+  if (readSubjectIdentity(assignment)) score += 2;
   if (readAssignmentStatus(assignment) !== undefined) score += 2;
   return score;
 }
@@ -114,12 +164,16 @@ function mergeCanonicalAssignment(current, incoming) {
     assignmentCanonicalRichness(incoming) > assignmentCanonicalRichness(current);
   const winner = incomingRicher ? incoming : current;
   const other = incomingRicher ? current : incoming;
+  const rowId = readAssignmentRowId(winner) || readAssignmentRowId(other);
   const classId = readAssignmentClassId(winner) || readAssignmentClassId(other);
   const classCode = readAssignmentClassCode(winner) || readAssignmentClassCode(other);
   const className = asAssignmentRef(winner.className) || asAssignmentRef(other.className);
   const course =
     asAssignmentRef(winner.course ?? winner.subject) ||
     asAssignmentRef(other.course ?? other.subject);
+  const subjectCode =
+    asAssignmentRef(winner.subjectCode ?? winner.subject_code) ||
+    asAssignmentRef(other.subjectCode ?? other.subject_code);
   const status = readAssignmentStatus(winner);
   const merged = {
     ...other,
@@ -127,8 +181,10 @@ function mergeCanonicalAssignment(current, incoming) {
     className,
     course,
   };
+  if (rowId) merged.id = rowId;
   if (classId) merged.classId = classId;
   if (classCode) merged.classCode = classCode;
+  if (subjectCode) merged.subjectCode = subjectCode;
   if (status !== undefined) merged.status = status;
   return merged;
 }
@@ -140,42 +196,41 @@ function normalizeResolvedAssignment(assignment = {}) {
 }
 
 /**
- * Identité métier = classId, sinon classCode. Jamais className|course.
- * Sans classId ni classCode : conservé uniquement comme reliquat d'affichage
- * (notes / E2E mémoire) — ce n'est pas une autorité JWT.
- * À identité égale, on garde la projection la plus riche (classId, classCode, status).
+ * Déduplique des projections d'une même affectation (embed vs ligne PG).
+ * Deux matières actives dans la même classe restent deux assignments.
+ * Le scope classe (classIds/classCodes uniques) se dérive ensuite, pas ici.
  */
 function dedupeAssignments(assignments = []) {
-  const byClassId = new Map();
-  const byClassCode = new Map();
+  const byId = new Map();
+  const byComposite = new Map();
   const displayOnly = [];
 
   const forget = (row) => {
     if (!row) return;
-    const classId = readAssignmentClassId(row);
-    const classCode = readAssignmentClassCode(row);
-    if (classId && byClassId.get(classId) === row) byClassId.delete(classId);
-    if (classCode && byClassCode.get(classCode) === row) byClassCode.delete(classCode);
+    const rowId = readAssignmentRowId(row);
+    const composite = assignmentCompositeKey(row);
+    if (rowId && byId.get(rowId) === row) byId.delete(rowId);
+    if (composite && byComposite.get(composite) === row) byComposite.delete(composite);
   };
 
   const remember = (row) => {
-    const classId = readAssignmentClassId(row);
-    const classCode = readAssignmentClassCode(row);
-    if (classId) byClassId.set(classId, row);
-    if (classCode) byClassCode.set(classCode, row);
+    const rowId = readAssignmentRowId(row);
+    const composite = assignmentCompositeKey(row);
+    if (rowId) byId.set(rowId, row);
+    if (composite) byComposite.set(composite, row);
   };
 
   for (const assignment of assignments) {
     if (!assignment || typeof assignment !== "object") continue;
-    const classId = readAssignmentClassId(assignment);
-    const classCode = readAssignmentClassCode(assignment);
-    if (!classId && !classCode) {
+    const rowId = readAssignmentRowId(assignment);
+    const composite = assignmentCompositeKey(assignment);
+    if (!rowId && !composite) {
       displayOnly.push(normalizeResolvedAssignment(assignment));
       continue;
     }
 
     const existing =
-      (classId && byClassId.get(classId)) || (classCode && byClassCode.get(classCode)) || null;
+      (rowId && byId.get(rowId)) || (composite && byComposite.get(composite)) || null;
     if (!existing) {
       remember(normalizeResolvedAssignment(assignment));
       continue;
@@ -187,7 +242,7 @@ function dedupeAssignments(assignments = []) {
 
   const canonical = [];
   const seen = new Set();
-  for (const row of [...byClassId.values(), ...byClassCode.values()]) {
+  for (const row of [...byId.values(), ...byComposite.values()]) {
     if (seen.has(row)) continue;
     seen.add(row);
     canonical.push(row);

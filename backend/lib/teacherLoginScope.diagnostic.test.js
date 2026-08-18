@@ -293,6 +293,69 @@ function testDuplicateExactClassIdKeepsRicher() {
   assert.equal(canonical[0].status, "active");
 }
 
+function testSameClassTwoSubjectsStayTwoAssignments() {
+  const state = {
+    teachers: [
+      {
+        id: TEACHER_CODE,
+        userId: USER_ID,
+        identifier: "ENS-0099",
+        assignments: [
+          { className: "2ème A", course: "Mathématiques" },
+          { className: "2ème A", course: "Physique" },
+        ],
+      },
+    ],
+    assignments: [
+      {
+        id: "asg-math",
+        teacherId: TEACHER_CODE,
+        classId: CLASS_A_ID,
+        classCode: "CLS-2A",
+        className: "2ème A",
+        course: "Mathématiques",
+        subjectCode: "MATH",
+        status: "active",
+        schoolCode: "CD-2026-0001",
+      },
+      {
+        id: "asg-phys",
+        teacherId: TEACHER_CODE,
+        classId: CLASS_A_ID,
+        classCode: "CLS-2A",
+        className: "2ème A",
+        course: "Physique",
+        subjectCode: "PHYS",
+        status: "active",
+        schoolCode: "CD-2026-0001",
+      },
+    ],
+  };
+
+  const resolved = resolveTeacherAssignments(state.teachers[0], teacherUser(), state.assignments);
+  assert.equal(activeCanonical(resolved).length, 2);
+
+  const loginUser = enrichTeacherUserWithActiveAssignments(teacherUser(), state);
+  assert.equal(loginUser.assignments.length, 2);
+  assert.equal(loginUser.assignedClassIds.length, 1);
+  assert.equal(loginUser.assignedClassIds[0], CLASS_A_ID);
+  assert.equal(loginUser.assignedClassCodes.length, 1);
+  assert.equal(loginUser.courses.length, 2);
+  assert.deepEqual([...loginUser.courses].sort(), ["Mathématiques", "Physique"]);
+
+  const refresh = teacherPrincipalAssignmentFields(teacherUser(), state);
+  assert.equal(refresh.assignments.length, 2);
+  assert.equal(refresh.classIds.length, 1);
+  assert.equal(refresh.classCodes.length, 1);
+
+  const scoped = scopeSchoolClassesForPrincipal(
+    { role: "Enseignant", assignments: refresh.assignments },
+    schoolClassRows(),
+  );
+  assert.equal(scoped.length, 1);
+  assert.equal(scoped[0].classId, CLASS_A_ID);
+}
+
 function testNameOnlyIsNotClassAuthority() {
   const scoped = scopeSchoolClassesForPrincipal(
     {
@@ -314,6 +377,7 @@ function main() {
   testInactiveIsFailClosed();
   testClassCodeWithoutClassIdSurvives();
   testDuplicateExactClassIdKeepsRicher();
+  testSameClassTwoSubjectsStayTwoAssignments();
   testNameOnlyIsNotClassAuthority();
   console.log("teacherLoginScope.diagnostic.test.js: OK");
 }

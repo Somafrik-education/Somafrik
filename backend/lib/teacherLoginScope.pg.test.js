@@ -134,11 +134,15 @@ async function setupFixture(pool) {
      RETURNING id, class_code, name`,
     [school.rows[0].id, year.rows[0].id],
   );
-  const subject = await pool.query(
+  const subjects = await pool.query(
     `INSERT INTO subjects (school_id, subject_code, name, status)
-     VALUES ($1, 'SUB-MATH', 'Mathématiques', 'active') RETURNING id`,
+     VALUES ($1, 'SUB-MATH', 'Mathématiques', 'active'),
+            ($1, 'SUB-PHYS', 'Physique', 'active')
+     RETURNING id, subject_code`,
     [school.rows[0].id],
   );
+  const math = subjects.rows.find((row) => row.subject_code === "SUB-MATH");
+  const phys = subjects.rows.find((row) => row.subject_code === "SUB-PHYS");
   const user = await pool.query(
     `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
      VALUES ($1, 'USR-SEKE', 'Seke', 'Kilombo', 'TEACHER', 'active') RETURNING id`,
@@ -154,9 +158,16 @@ async function setupFixture(pool) {
       `INSERT INTO teacher_assignments
          (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
        VALUES ($1, $2, $3, $4, $5, 'active')`,
-      [school.rows[0].id, teacher.rows[0].id, schoolClass.id, subject.rows[0].id, year.rows[0].id],
+      [school.rows[0].id, teacher.rows[0].id, schoolClass.id, math.id, year.rows[0].id],
     );
   }
+  const classA = classes.rows.find((row) => row.class_code === "CLS-2A");
+  await pool.query(
+    `INSERT INTO teacher_assignments
+       (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'active')`,
+    [school.rows[0].id, teacher.rows[0].id, classA.id, phys.id, year.rows[0].id],
+  );
 
   return {
     schoolCode: school.rows[0].school_code,
@@ -179,7 +190,7 @@ async function main() {
     const pgRows = await pool.query(`${SELECT_ASSIGNMENT} WHERE t.teacher_code = $1 AND ta.status = 'active'`, [
       fixture.teacher.teacher_code,
     ]);
-    assert.equal(pgRows.rows.length, 2);
+    assert.equal(pgRows.rows.length, 3);
 
     const global = pgRows.rows.map(mapAssignment);
     assert.ok(global.every((row) => row.classId && row.classCode && row.status === "active"));
@@ -202,16 +213,22 @@ async function main() {
 
     const resolved = resolveTeacherAssignments(teacher, user, global);
     const canonical = resolved.filter((row) => row.classId && row.status === "active");
-    assert.equal(canonical.length, 2, "PG canonique doit survivre à l'embed mapTeacher");
+    assert.equal(canonical.length, 3, "PG canonique doit survivre à l'embed mapTeacher");
 
     const state = { teachers: [teacher], assignments: global };
     const loginUser = enrichTeacherUserWithActiveAssignments(user, state);
-    assert.equal(loginUser.assignments.length, 2);
+    assert.equal(loginUser.assignments.length, 3);
     assert.equal(loginUser.assignedClassIds.length, 2);
     assert.equal(loginUser.assignedClassCodes.length, 2);
+    assert.equal(loginUser.courses.length, 2);
+    assert.deepEqual([...loginUser.courses].sort(), ["Mathématiques", "Physique"]);
+
+    const classAId = fixture.classes.find((row) => row.class_code === "CLS-2A").id;
+    const classAAssignments = loginUser.assignments.filter((row) => row.classId === classAId);
+    assert.equal(classAAssignments.length, 2);
 
     const refresh = teacherPrincipalAssignmentFields(user, state);
-    assert.equal(refresh.assignments.length, 2);
+    assert.equal(refresh.assignments.length, 3);
     assert.equal(refresh.classIds.length, 2);
     assert.equal(refresh.classCodes.length, 2);
 
