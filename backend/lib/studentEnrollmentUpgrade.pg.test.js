@@ -161,11 +161,70 @@ async function counts(pool, schoolId) {
   };
 }
 
-async function main() {
-  if (!DATABASE_URL) {
-    console.log("SKIP studentEnrollmentUpgrade.pg.test.js: DATABASE_URL absent");
-    return;
+function requireDatabaseUrl() {
+  if (DATABASE_URL) return;
+  if (process.env.GITHUB_ACTIONS || process.env.CI) {
+    throw new Error("DATABASE_URL obligatoire dans CI/Security — pas de SKIP");
   }
+  console.log("SKIP studentEnrollmentUpgrade.pg.test.js: DATABASE_URL absent");
+  process.exit(0);
+}
+
+async function installLegacyCounterV1(pool, schoolId) {
+  await pool.query(`
+    CREATE TABLE student_general_code_counters (
+      school_id UUID NOT NULL,
+      creation_year INTEGER NOT NULL,
+      last_value INTEGER NOT NULL,
+      PRIMARY KEY (school_id, creation_year)
+    )
+  `);
+  await pool.query(
+    `INSERT INTO student_general_code_counters (school_id, creation_year, last_value)
+     VALUES ($1, 2025, 18), ($1, 2026, 27)`,
+    [schoolId],
+  );
+}
+
+function pgIdentArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    return value.replace(/^\{|\}$/g, "").split(",").filter(Boolean);
+  }
+  return [];
+}
+
+async function inspectCounterPk(pool) {
+  const pk = await pool.query(`
+    SELECT array_agg(a.attname ORDER BY k.n) AS cols
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, n) ON TRUE
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+    WHERE n.nspname = 'public'
+      AND t.relname = 'student_general_code_counters'
+      AND c.contype = 'p'
+    GROUP BY c.conname
+  `);
+  const yearCol = await pool.query(`
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_attribute
+      WHERE attrelid = 'public.student_general_code_counters'::regclass
+        AND attname = 'creation_year'
+        AND attnum > 0
+        AND NOT attisdropped
+    ) AS present
+  `);
+  return {
+    pk: pgIdentArray(pk.rows[0]?.cols),
+    hasCreationYear: yearCol.rows[0].present,
+  };
+}
+
+async function main() {
+  requireDatabaseUrl();
 
   process.env.SOMAFRIK_SKIP_DEMO_SEED = "true";
   const isolatedUrl = await ensureIsolatedDatabase(DATABASE_URL, UPGRADE_IT_DATABASE);
@@ -190,8 +249,23 @@ async function main() {
       ["CD-IN-EL-26-001", "CD-IN-EL-26-002"],
     );
 
+    await installLegacyCounterV1(pool, seeded.schoolId);
+    const beforeCounter = await inspectCounterPk(pool);
+    assert.equal(beforeCounter.hasCreationYear, true, "preuve ancienne colonne creation_year");
+    assert.deepEqual(beforeCounter.pk, ["school_id", "creation_year"], "preuve ancienne PK composite");
+
     await ensureStudentLifecyclePgSchema(repo);
     await ensureStudentGeneralIdentityPg(repo);
+    await ensureStudentGeneralIdentityPg(repo);
+
+    const afterCounter = await inspectCounterPk(pool);
+    assert.equal(afterCounter.hasCreationYear, false, "creation_year absent après migration");
+    assert.deepEqual(afterCounter.pk, ["school_id"], "PK canonique school_id");
+    const consolidated = await pool.query(
+      `SELECT school_id, last_value FROM student_general_code_counters ORDER BY school_id`,
+    );
+    assert.equal(consolidated.rowCount, 1, "aucune ligne dupliquée par school_id");
+    assert.ok(consolidated.rows[0].last_value >= 27, "MAX(last_value) historique conservé (18/27 → 27)");
 
     const afterGeneral = await pool.query(
       `SELECT pg_get_constraintdef(oid) AS def
@@ -230,7 +304,13 @@ async function main() {
     assert.equal(expectedInitials, "OE");
     assert.match(studentCode, new RegExp(`^CD-IN-OE-${yy}-\\d{5}$`));
     assert.notEqual(studentCode, seeded.staffIdentity);
+    assert.equal(Number(studentCode.slice(-5)), 28, "séquence continue après MAX historique 27");
     assert.equal(created.credentials.login, studentCode);
+    const afterEnroll = await pool.query(
+      `SELECT last_value FROM student_general_code_counters WHERE school_id = $1`,
+      [seeded.schoolId],
+    );
+    assert.equal(afterEnroll.rows[0].last_value, 28);
 
     const aligned = await pool.query(
       `SELECT
