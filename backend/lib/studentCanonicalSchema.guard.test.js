@@ -36,6 +36,9 @@ assert.match(generalBackfill, /UPDATE users/);
 assert.doesNotMatch(generalBackfill, /DELETE FROM students/i);
 assert.match(generalBackfill, /STUDENT_GENERAL_IDENTITY_SEQ_COLLISION/);
 
+assert.match(generalBoot, /somafrik_assign_permanent_user_identity/);
+assert.match(generalBoot, /st\.identity_initials/);
+assert.doesNotMatch(generalBoot, /NEW\.identity_initials := 'EL'/);
 assert.match(repositoryFactory, /ensureStudentGeneralIdentityPg/);
 assert.match(repositoryFactory, /ensureStudentLifecyclePgSchema/);
 

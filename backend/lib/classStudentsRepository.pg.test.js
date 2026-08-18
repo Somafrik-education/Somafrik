@@ -515,21 +515,35 @@ async function countUsers(pool, schoolCode) {
   return result.rows[0].count;
 }
 
-async function assertCanonicalStudentLogin(pool, studentCode, schoolCode) {
+async function assertCanonicalStudentLogin(pool, studentCode, schoolCode, expectedInitials) {
+  const trigger = await pool.query(
+    `SELECT tgenabled
+     FROM pg_trigger
+     WHERE tgname = 'users_permanent_identity_insert'
+       AND tgrelid = 'users'::regclass`,
+  );
+  assert.equal(trigger.rowCount, 1, "trigger users_permanent_identity_insert absent");
+  assert.notEqual(trigger.rows[0].tgenabled, "D", "trigger users_permanent_identity_insert désactivé");
+
   const result = await pool.query(
     `SELECT
        st.student_code,
        st.login_code AS student_login,
        st.identity_code AS student_identity,
+       st.identity_initials AS student_initials,
+       st.identity_year AS student_year,
        st.school_id AS student_school_id,
        u.user_code,
        u.login_code AS user_login,
        u.identity_code AS user_identity,
+       u.identity_initials AS user_initials,
+       u.identity_year AS user_year,
        u.role,
        u.school_id AS user_school_id,
        u.password_hash,
        u.pin_hash,
-       u.must_change_password
+       u.must_change_password,
+       u.profile_payload
      FROM students st
      JOIN users u ON u.user_code = st.student_code AND u.school_id = st.school_id
      JOIN schools s ON s.id = st.school_id
@@ -543,6 +557,15 @@ async function assertCanonicalStudentLogin(pool, studentCode, schoolCode) {
   assert.equal(row.user_code, row.student_code);
   assert.equal(row.user_login, row.student_code);
   assert.equal(row.user_identity, row.student_code);
+  assert.equal(row.user_initials, row.student_initials);
+  assert.notEqual(String(row.user_initials), "EL", "users.identity_initials ne doit plus forcer EL");
+  assert.equal(Number(row.user_year), Number(row.student_year));
+  if (expectedInitials) {
+    assert.equal(row.student_initials, expectedInitials);
+    assert.equal(row.user_initials, expectedInitials);
+  }
+  assert.equal(row.profile_payload?.identifier, row.student_code);
+  assert.equal(row.profile_payload?.identityCode, row.student_code);
   assert.equal(row.role, "STUDENT");
   assert.equal(row.user_school_id, row.student_school_id);
   assert.equal(row.must_change_password, true);
@@ -742,7 +765,20 @@ async function main() {
     assert.equal(enrolled.student.studentCode, expectedStudentCode("CD", "IN", "Diop", "Awa", 1));
     assert.equal(enrolled.student.matricule, enrolled.student.studentCode);
     assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
-    await assertCanonicalStudentLogin(pool, enrolled.student.studentCode, "CD-2026-0001");
+    await assertCanonicalStudentLogin(
+      pool,
+      enrolled.student.studentCode,
+      "CD-2026-0001",
+      studentIdentityInitials("Diop", "Awa"),
+    );
+    await assert.rejects(
+      () =>
+        pool.query(
+          `UPDATE users SET identity_initials = 'EL' WHERE user_code = $1`,
+          [enrolled.student.studentCode],
+        ),
+      /PERMANENT_IDENTITY_IMMUTABLE/,
+    );
     assertEnrollmentProjectionHasNoSecret(enrolled.student);
 
     const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
@@ -763,7 +799,12 @@ async function main() {
     );
     assert.equal(enrolledOtherSchool.student.studentCode, expectedStudentCode("CD", "LL", "Fall", "Ibra", 1));
     assert.notEqual(enrolled.student.studentCode, enrolledOtherSchool.student.studentCode);
-    await assertCanonicalStudentLogin(pool, enrolledOtherSchool.student.studentCode, "CD-2026-0002");
+    await assertCanonicalStudentLogin(
+      pool,
+      enrolledOtherSchool.student.studentCode,
+      "CD-2026-0002",
+      studentIdentityInitials("Fall", "Ibra"),
+    );
     assertEnrollmentProjectionHasNoSecret(enrolledOtherSchool.student);
     assert.notEqual(
       enrolled.credentials.temporarySecret,
@@ -832,6 +873,7 @@ async function main() {
       pool,
       enrolledBiSameEstablishment.student.studentCode,
       "BI-2026-0001",
+      studentIdentityInitials("Nkurunziza", "Grace"),
     );
 
     await assert.rejects(
@@ -859,7 +901,12 @@ async function main() {
         row.student.studentCode,
         expectedStudentCodePattern("CD", "IN", "Concurrent", row.student.firstName),
       );
-      await assertCanonicalStudentLogin(pool, row.student.studentCode, "CD-2026-0001");
+      await assertCanonicalStudentLogin(
+        pool,
+        row.student.studentCode,
+        "CD-2026-0001",
+        studentIdentityInitials("Concurrent", row.student.firstName),
+      );
     }
 
     await assert.rejects(

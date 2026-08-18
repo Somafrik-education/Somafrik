@@ -8,8 +8,8 @@ const archiveMock = vi.hoisted(() => vi.fn(async () => ({ status: "archived" }))
 const listMock = vi.hoisted(() =>
   vi.fn(async () => [
     {
-      id: "CD-IN-AD-26-00001", publicId: "CD-IN-AD-26-00001", studentCode: "CD-IN-AD-26-00001",
-      matricule: "CD-IN-AD-26-00001", loginCode: "CD-IN-AD-26-00001", identifier: "CD-IN-AD-26-00001",
+      id: "CD-IN-DA-26-00001", publicId: "CD-IN-DA-26-00001", studentCode: "CD-IN-DA-26-00001",
+      matricule: "CD-IN-DA-26-00001", loginCode: "CD-IN-DA-26-00001", identifier: "CD-IN-DA-26-00001",
       firstName: "Awa", lastName: "Diop", name: "Awa Diop", gender: "Féminin", birthDate: "12-04-2012",
       className: "6ème A", classCode: "CLS-1", schoolCode: "SCH-001", parentPhone: "", parentEmail: "",
       status: "active", enrollmentId: "enr-1", enrollmentDate: "01-09-2025", academicYearName: "2025-2026",
@@ -68,7 +68,7 @@ describe("StudentsListPage — annuaire PostgreSQL et archivage", () => {
   it("lie le dossier via le matricule général", async () => {
     renderPage(); await screen.findByText("Diop");
     expect(screen.getAllByRole("link", { name: "Dossier" })[0]).toHaveAttribute(
-      "href", "/etablissement/eleves/CD-IN-AD-26-00001",
+      "href", "/etablissement/eleves/CD-IN-DA-26-00001",
     );
   });
 
@@ -92,7 +92,7 @@ describe("StudentsListPage — annuaire PostgreSQL et archivage", () => {
   it("archive via le backend et retire la ligne de l'annuaire actif", async () => {
     const user = userEvent.setup(); renderPage(); await screen.findByText("Diop");
     await user.click(screen.getAllByRole("button", { name: "Archiver" })[0]);
-    expect(archiveMock).toHaveBeenCalledWith("CD-IN-AD-26-00001");
+    expect(archiveMock).toHaveBeenCalledWith("CD-IN-DA-26-00001");
     expect(screen.queryByText("Diop")).not.toBeInTheDocument();
   });
 });
