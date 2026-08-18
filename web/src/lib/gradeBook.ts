@@ -114,16 +114,33 @@ export class GradeBookService {
     };
   }
 
+  /**
+   * Moyenne scalaire sans rang. Ne doit jamais appeler getClassRanking /
+   * getStudentAverage — sinon récursion infinie (NOTES-UI-P0-001).
+   * Aligné sur backend/services/gradeBookService.js getStudentAverageValue.
+   */
+  getStudentAverageValue(studentId: string, period?: string): number {
+    const studentGrades = this.grades.filter(
+      (grade) =>
+        grade.studentId === studentId && (!period || normalize(grade.period) === normalize(period)),
+    );
+    const subjects = [...new Set(studentGrades.map((grade) => grade.subject).filter(Boolean))];
+    const subjectRows = subjects.map((subject) => this.getSubjectAverage(studentId, subject, period));
+    const totalPoints = subjectRows.reduce((sum, row) => sum + row.average * row.coefficient, 0);
+    const totalCoefficients = subjectRows.reduce((sum, row) => sum + row.coefficient, 0);
+    return totalCoefficients ? totalPoints / totalCoefficients : 0;
+  }
+
   getStudentAverage(studentId: string, period?: string): StudentAverageResult {
     const studentGrades = this.grades.filter(
       (grade) =>
         grade.studentId === studentId && (!period || normalize(grade.period) === normalize(period)),
     );
-    const subjects = [...new Set(studentGrades.map((grade) => grade.subject))];
+    const subjects = [...new Set(studentGrades.map((grade) => grade.subject).filter(Boolean))];
     const subjectRows = subjects.map((subject) => this.getSubjectAverage(studentId, subject, period));
     const totalPoints = subjectRows.reduce((sum, row) => sum + row.average * row.coefficient, 0);
     const totalCoefficients = subjectRows.reduce((sum, row) => sum + row.coefficient, 0);
-    const average = totalCoefficients ? totalPoints / totalCoefficients : 0;
+    const average = this.getStudentAverageValue(studentId, period);
     const ranking = this.getClassRankingForStudent(studentId, period);
 
     return {
@@ -136,10 +153,6 @@ export class GradeBookService {
       subjects: subjectRows,
       appreciation: GradeBookService.getAutomaticAppreciation(average),
     };
-  }
-
-  getStudentAverageValue(studentId: string, period?: string): number {
-    return this.getStudentAverage(studentId, period).average;
   }
 
   getClassRanking(className: string, period?: string): ClassRankingRow[] {
