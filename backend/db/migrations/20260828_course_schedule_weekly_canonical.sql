@@ -1,7 +1,8 @@
 -- Planning V2 — emploi du temps hebdomadaire canonique.
--- Les lignes datées course_schedule_slots (examens / historique) ne sont PAS
--- converties ici. Le preflight (planningWeeklyMigrationPreflight) classe
--- MIGRATABLE / AMBIGUOUS / ORPHAN / EXAM sans backfill silencieux.
+-- Cette migration CRÉE la table vide. Elle ne convertit AUCUNE ligne
+-- course_schedule_slots. L'inventaire MIGRATABLE/AMBIGUOUS/ORPHAN/EXAM
+-- est exécuté au boot (ensurePlanningWeeklyPreflight) et via
+-- backend/scripts/inventory-planning-weekly-preflight.js — sans INSERT.
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 

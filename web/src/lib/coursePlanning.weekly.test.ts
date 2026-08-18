@@ -56,8 +56,8 @@ describe("Planning V2 — mapping Web canonique", () => {
   });
 
   it("dimanche métier = 7, jamais Date.getDay()=0", () => {
-    expect(PLANNING_WEEKDAYS.some((row) => row.value === 7 && row.label === "Dimanche")).toBe(true);
-    expect(PLANNING_WEEKDAYS.some((row) => row.value === 0)).toBe(false);
+    const weekdayValues: number[] = PLANNING_WEEKDAYS.map((row) => row.value);
+    expect(weekdayValues).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
   it("expandScheduleOccurrences projette dayOfWeek sans inventer depuis un timestamp", () => {

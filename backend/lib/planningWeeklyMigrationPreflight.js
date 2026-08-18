@@ -176,7 +176,95 @@ function classifyLegacyScheduleRows(rows, catalogs) {
   return { summary, items };
 }
 
+const PLANNING_WEEKLY_BACKFILL_REFUSED = "PLANNING_WEEKLY_BACKFILL_REFUSED";
+
+function isPlanningWeeklyBackfillRequested(env = process.env) {
+  const raw = String(env.SOMAFRIK_PLANNING_WEEKLY_BACKFILL ?? "")
+    .trim()
+    .toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function formatPlanningWeeklyPreflightLog(report) {
+  const summary = report?.summary ?? { MIGRATABLE: 0, AMBIGUOUS: 0, ORPHAN: 0, EXAM: 0 };
+  return (
+    `[planning-weekly-preflight] inventaire uniquement — aucun backfill. ` +
+    `legacy=${Number(report?.legacyCount ?? 0)} ` +
+    `MIGRATABLE=${summary.MIGRATABLE} AMBIGUOUS=${summary.AMBIGUOUS} ` +
+    `ORPHAN=${summary.ORPHAN} EXAM=${summary.EXAM}`
+  );
+}
+
+/**
+ * Inventaire PostgreSQL des lignes datées. Aucun INSERT dans weekly.
+ */
+async function inventoryPlanningWeeklyLegacy(db, options = {}) {
+  const hasLegacy = await db.one(`SELECT to_regclass('public.course_schedule_slots') AS rel`);
+  const hasWeekly = await db.one(`SELECT to_regclass('public.course_schedule_weekly_slots') AS rel`);
+  if (!hasLegacy?.rel) {
+    return {
+      skipped: true,
+      reason: "course_schedule_slots absent",
+      weeklyTablePresent: Boolean(hasWeekly?.rel),
+      legacyCount: 0,
+      summary: { MIGRATABLE: 0, AMBIGUOUS: 0, ORPHAN: 0, EXAM: 0 },
+      items: [],
+    };
+  }
+
+  const [rows, classes, years, subjects, schoolCourses] = await Promise.all([
+    db.all(`SELECT * FROM course_schedule_slots`),
+    db.all(`SELECT id, school_id, academic_year_id, name FROM classes`),
+    db.all(`SELECT id, school_id, name, status FROM academic_years`),
+    db.all(`SELECT id, school_id, name FROM subjects`),
+    db.all(`SELECT id, school_id, class_id, subject_id, teacher_id, status FROM school_courses`),
+  ]);
+
+  const classById = Object.fromEntries((classes ?? []).map((row) => [String(row.id), row]));
+  const yearById = Object.fromEntries((years ?? []).map((row) => [String(row.id), row]));
+  const classified = classifyLegacyScheduleRows(rows, {
+    classById,
+    yearById,
+    subjects: subjects ?? [],
+    schoolCourses: schoolCourses ?? [],
+    timeZone: options.timeZone || "Africa/Kinshasa",
+  });
+
+  return {
+    skipped: false,
+    weeklyTablePresent: Boolean(hasWeekly?.rel),
+    legacyCount: (rows ?? []).length,
+    ...classified,
+  };
+}
+
+/**
+ * STOP si un backfill automatique est demandé.
+ * Cette version n'implémente aucun INSERT historique, même pour MIGRATABLE.
+ */
+function assertPlanningWeeklyNoAutomaticBackfill(report, env = process.env) {
+  if (!isPlanningWeeklyBackfillRequested(env)) {
+    return report;
+  }
+  const summary = report?.summary ?? {};
+  const error = new Error(
+    "PLANNING_WEEKLY_BACKFILL_REFUSED: SOMAFRIK_PLANNING_WEEKLY_BACKFILL est activé, " +
+      "mais aucun backfill automatique n'est autorisé. " +
+      `Inventaire: MIGRATABLE=${summary.MIGRATABLE ?? 0} AMBIGUOUS=${summary.AMBIGUOUS ?? 0} ` +
+      `ORPHAN=${summary.ORPHAN ?? 0} EXAM=${summary.EXAM ?? 0}. ` +
+      "Les lignes AMBIGUOUS / ORPHAN / EXAM ne doivent jamais être converties.",
+  );
+  error.code = PLANNING_WEEKLY_BACKFILL_REFUSED;
+  error.details = summary;
+  throw error;
+}
+
 module.exports = {
+  PLANNING_WEEKLY_BACKFILL_REFUSED,
   classifyLegacyScheduleRow,
   classifyLegacyScheduleRows,
+  isPlanningWeeklyBackfillRequested,
+  formatPlanningWeeklyPreflightLog,
+  inventoryPlanningWeeklyLegacy,
+  assertPlanningWeeklyNoAutomaticBackfill,
 };

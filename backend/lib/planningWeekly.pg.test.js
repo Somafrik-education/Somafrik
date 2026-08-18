@@ -11,7 +11,7 @@ const { createPostgresRepository } = require("../db/repositoryFactory");
 const { createPedagogyPgStore } = require("../db/pedagogyPgStore");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { PEDAGOGY_ERROR } = require("./pedagogyManagement");
-const { classifyLegacyScheduleRows } = require("./planningWeeklyMigrationPreflight");
+const { classifyLegacyScheduleRows, inventoryPlanningWeeklyLegacy } = require("./planningWeeklyMigrationPreflight");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_PLANNING_WEEKLY_IT_DATABASE ?? "somafrik_planning_weekly_it")
@@ -468,6 +468,23 @@ async function main() {
     assert.equal(
       classified.summary.MIGRATABLE + classified.summary.AMBIGUOUS + classified.summary.ORPHAN + classified.summary.EXAM,
       4,
+    );
+
+    const weeklyBefore = await pool.query(`SELECT count(*)::int AS count FROM course_schedule_weekly_slots`);
+    const inventoried = await inventoryPlanningWeeklyLegacy({
+      one: async (sql, params) => (await pool.query(sql, params)).rows[0] ?? null,
+      all: async (sql, params) => (await pool.query(sql, params)).rows,
+    });
+    assert.equal(inventoried.skipped, false);
+    assert.equal(inventoried.summary.MIGRATABLE, 1);
+    assert.equal(inventoried.summary.AMBIGUOUS, 1);
+    assert.equal(inventoried.summary.ORPHAN, 1);
+    assert.equal(inventoried.summary.EXAM, 1);
+    const weeklyAfter = await pool.query(`SELECT count(*)::int AS count FROM course_schedule_weekly_slots`);
+    assert.equal(
+      weeklyAfter.rows[0].count,
+      weeklyBefore.rows[0].count,
+      "preflight inventaire : aucune ligne weekly insérée",
     );
 
     console.log("planningWeekly.pg.test.js: OK");

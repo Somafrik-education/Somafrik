@@ -39,18 +39,28 @@ Pas de `term_id` / `valid_from` dans cette PR : un EDT appartient à `academic_y
 
 ## Stratégie migration
 
-Aucun backfill silencieux.
+**Cette PR ne convertit aucune ligne historique.**
 
-Preflight `backend/lib/planningWeeklyMigrationPreflight.js` :
+La migration SQL `20260828_course_schedule_weekly_canonical.sql` crée uniquement la table vide `course_schedule_weekly_slots`. Elle ne contient aucun `INSERT … SELECT` depuis `course_schedule_slots`.
+
+Le preflight n’est **pas** un backfill. C’est un **inventaire de classification** :
+
+| Chemin | Rôle |
+| --- | --- |
+| Boot PostgreSQL `ensurePlanningWeeklyPreflight` | après `PEDAGOGY_SCHEMA_SQL` : classe les lignes datées, journalise le résumé, **n’écrit pas** dans weekly |
+| `node backend/scripts/inventory-planning-weekly-preflight.js` | même inventaire, exécutable / CI |
+| `SOMAFRIK_PLANNING_WEEKLY_BACKFILL=1` | **STOP** (`PLANNING_WEEKLY_BACKFILL_REFUSED`) — y compris si toutes les lignes sont `MIGRATABLE`. Aucun INSERT n’est implémenté |
 
 | Classe | Règle |
 | --- | --- |
-| `EXAM` | `slot_kind = exam` — hors lot Planning cours |
+| `EXAM` | `slot_kind = exam` — hors planning cours hebdomadaire |
 | `ORPHAN` | `class_id`, matière ou `school_course` introuvable |
 | `AMBIGUOUS` | matière non unique, enseignant null/incohérent, horaire indéterminable |
 | `MIGRATABLE` | classe + matière unique + `school_course` actif unique + teacher cohérent + jour/heure déterminables |
 
-Ambiguïté = **STOP / log**, pas d’invention. Cette PR ne copie aucune ligne historique vers weekly.
+Un futur lot de backfill devra : (1) échouer si `AMBIGUOUS`/`ORPHAN` restent, (2) ne jamais convertir `EXAM`, (3) n’insérer que les `MIGRATABLE` après validation CTO. Ce n’est **pas** ce lot.
+
+Les examens restent dans `course_schedule_slots`. Les nouvelles écritures Planning V2 vont uniquement dans `course_schedule_weekly_slots`.
 
 ## Contraintes
 
@@ -150,7 +160,7 @@ La définition PG est l’autorité. Le backend matérialise les occurrences pou
 - pas de salles V2, remplacements, Mobile Planning, lien présences↔schedule_id, cahier, examens V2
 - pas de fail-closed global `canAccess()`
 - pas de `term_id` / `valid_from` (changement d’EDT intra-année)
-- pas de backfill automatique des lignes `AMBIGUOUS` / `ORPHAN` / `EXAM`
+- pas de backfill historique (inventaire + STOP si `SOMAFRIK_PLANNING_WEEKLY_BACKFILL=1` ; aucun INSERT `MIGRATABLE` dans ce lot)
 - `POST /api/courses` toujours hors `routePermissions` (P1 historique)
 
 ## Procédure rollback
