@@ -77,6 +77,23 @@ function assertNotesWebUsesSessionAssignments() {
     "Période Notes ne doit plus être un Input texte libre",
   );
 
+  const gradeGrid = fs.readFileSync(path.join(ROOT, "web/src/components/grades/GradeEntryGrid.tsx"), "utf8");
+  assert.match(gradeGrid, /type GradeDraft/);
+  assert.match(gradeGrid, /dirty:\s*boolean/);
+  assert.match(gradeGrid, /function saveAll\(/);
+  assert.match(gradeGrid, /onChange\(changed\)/);
+  assert.doesNotMatch(
+    gradeGrid,
+    /onBlur=\{/,
+    "la note ne doit plus être persistée au blur",
+  );
+  assert.doesNotMatch(
+    gradeGrid,
+    />\s*Enregistrer\s*</,
+    "aucun bouton Enregistrer par élève ne doit subsister",
+  );
+  assert.match(gradeGrid, />\s*Enregistrer tout\s*</);
+
   const evaluationsLib = fs.readFileSync(path.join(ROOT, "web/src/lib/evaluations.ts"), "utf8");
   assert.match(evaluationsLib, /export function canEnterGradesForEvaluation/);
   assert.match(evaluationsLib, /evaluation\.status !== "Validée"/);
