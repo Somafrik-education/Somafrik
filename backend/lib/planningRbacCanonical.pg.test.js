@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { Pool } = require("pg");
 const { ESTABLISHMENT_ROLES_SCHEMA_SQL } = require("../db/establishmentRolesSchema");
 const { FUNCTIONAL_RBAC_SCHEMA_SQL } = require("../db/functionalRbacSchema");
@@ -84,6 +86,7 @@ async function main() {
   try {
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
+    await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
     await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
     await pool.query(FUNCTIONAL_RBAC_SCHEMA_SQL);
 
