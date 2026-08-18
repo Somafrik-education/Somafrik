@@ -1,9 +1,9 @@
 "use strict";
 
 const { createHttpError, asTrimmedString, requireClassCodeParam } = require("./classesManagement");
+const { optionalParentPhone } = require("./parentPhone");
 
 const MAX_NAME_LENGTH = 120;
-const MAX_PHONE_LENGTH = 40;
 const MAX_EMAIL_LENGTH = 200;
 const VALID_GENDERS = new Set(["Masculin", "Féminin", "Autre", ""]);
 
@@ -228,10 +228,9 @@ function validateEnrollStudentInput(body, schoolCode, classCodeParam) {
     lastName,
     gender: optionalGender(body.gender),
     birthDate: parseAndValidateBirthDate(body.birthDate ?? body.birth_date),
-    parentPhone: optionalStringField(
+    parentPhone: optionalParentPhone(
       body.parentPhone ?? body.parent_phone ?? body.phone,
       "parentPhone",
-      MAX_PHONE_LENGTH,
     ),
     parentEmail: optionalStringField(
       body.parentEmail ?? body.parent_email ?? body.email,
@@ -353,10 +352,9 @@ function validateUpdateStudentInput(body) {
     );
   }
   if (Object.hasOwn(body, "parentPhone") || Object.hasOwn(body, "parent_phone")) {
-    patch.parentPhone = optionalStringField(
+    patch.parentPhone = optionalParentPhone(
       body.parentPhone ?? body.parent_phone,
       "parentPhone",
-      MAX_PHONE_LENGTH,
     );
   }
   if (Object.hasOwn(body, "parentEmail") || Object.hasOwn(body, "parent_email")) {

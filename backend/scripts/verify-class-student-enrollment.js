@@ -247,6 +247,70 @@ async function main() {
       new RegExp(`^CD-IN-${studentIdentityInitials("Diop", "Awa")}-\\d{2}-\\d{5}$`),
     );
 
+    const alphaPhone = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: { firstName: "Nia", lastName: "Kone", parentPhone: "Baudouin OKITO" },
+      },
+    );
+    assert.equal(alphaPhone.status, 400, JSON.stringify(alphaPhone.data));
+    assert.match(String(alphaPhone.data?.message ?? ""), /parentPhone invalide/i);
+
+    const plus243 = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: { firstName: "Lia", lastName: "Mbala", parentPhone: "+243 820 000 111" },
+      },
+    );
+    assert.equal(plus243.status, 201, JSON.stringify(plus243.data));
+    requireCreateEnvelope(plus243.data);
+
+    const plus33 = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: { firstName: "Léa", lastName: "Martin", parentPhone: "+33 6 12 34 56 78" },
+      },
+    );
+    assert.equal(plus33.status, 201, JSON.stringify(plus33.data));
+    requireCreateEnvelope(plus33.data);
+
+    const emptyPhone = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: { firstName: "Empty", lastName: "Phone" },
+      },
+    );
+    assert.equal(emptyPhone.status, 201, JSON.stringify(emptyPhone.data));
+    requireCreateEnvelope(emptyPhone.data);
+
+    const esther = await request(
+      `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
+      {
+        method: "POST",
+        token: tokenCd,
+        body: {
+          firstName: "ESTHER",
+          lastName: "OKITO",
+          gender: "Féminin",
+          birthDate: "2010-03-05",
+        },
+      },
+    );
+    assert.equal(esther.status, 201, JSON.stringify(esther.data));
+    const estherEnvelope = requireCreateEnvelope(esther.data);
+    assert.match(
+      estherEnvelope.studentCode,
+      new RegExp(`^CD-IN-${studentIdentityInitials("OKITO", "ESTHER")}-\\d{2}-\\d{5}$`),
+    );
+
     const listed = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
       { token: tokenCd },
