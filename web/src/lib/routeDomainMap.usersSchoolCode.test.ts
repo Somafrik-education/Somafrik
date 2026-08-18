@@ -21,6 +21,24 @@ const prefetContext: PermissionContext = {
   rolePermissions: {},
 };
 
+const teacherNotesContext: PermissionContext = {
+  user: {
+    role: "Enseignant",
+    schoolCode: "CD-2026-0001",
+    permissions: ["Notes:READ", "Notes:CREATE"],
+  },
+  rolePermissions: {},
+};
+
+describe("domainsForPath — /notes n'hydrate pas les domaines globaux d'affectation", () => {
+  it("ne charge ni assignments ni courses", () => {
+    const domains = domainsForPath("/notes", teacherNotesContext);
+    expect(domains).toContain("notes");
+    expect(domains).not.toContain("assignments");
+    expect(domains).not.toContain("courses");
+  });
+});
+
 describe("domainsForPath — comptes utilisateurs", () => {
   it("charge schools avec users sur la route Superadmin pour le formulaire, pas pour le code public", () => {
     const domains = domainsForPath("/administration/utilisateurs", superAdminContext);

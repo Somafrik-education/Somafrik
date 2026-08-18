@@ -20,6 +20,9 @@ import {
 import { formatStudentName, GradeBookService } from "./gradeBook";
 import { normalize } from "./format";
 import { isSuperAdminRole } from "./orgHierarchy";
+import { courseOptionsForClass, subjectOptionsForClass } from "./evaluationCourseOptions";
+
+export { courseOptionsForClass, subjectOptionsForClass };
 
 export const EVALUATION_STATUSES: EvaluationStatus[] = [
   "Brouillon",
@@ -701,28 +704,6 @@ export function appendGradeAuditLog(
       ...auditActor(user),
     }),
   );
-}
-
-export function subjectOptionsForClass(state: BackOfficeState, schoolCode: string, className: string): string[] {
-  const courses = (state.courses ?? []) as Record<string, unknown>[];
-  const fromCourses = courses
-    .filter(
-      (course) =>
-        normalize(String(course.schoolCode ?? schoolCode)) === normalize(schoolCode) &&
-        normalize(String(course.className ?? "")) === normalize(className),
-    )
-    .map((course) => String(course.name ?? "").trim())
-    .filter(Boolean);
-  if (fromCourses.length) return [...new Set(fromCourses)].sort();
-  const assignments = (state.assignments ?? []) as Record<string, unknown>[];
-  return [
-    ...new Set(
-      assignments
-        .filter((row) => normalize(String(row.className ?? "")) === normalize(className))
-        .map((row) => String(row.subject ?? row.course ?? "").trim())
-        .filter(Boolean),
-    ),
-  ].sort();
 }
 
 export function ensureEvaluationsSynced(state: BackOfficeState, schoolCode: string): Evaluation[] {

@@ -4,7 +4,7 @@ import { Modal } from "../ui/Modal";
 import { Field, Input, Select } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { ApiError } from "../../api/client";
-import { SCALE_OPTIONS, createEvaluation, resolveDefaultPeriod, subjectOptionsForClass } from "../../lib/evaluations";
+import { SCALE_OPTIONS, createEvaluation, resolveDefaultPeriod, courseOptionsForClass } from "../../lib/evaluations";
 import { evaluationTypesApi, type CanonicalEvaluationType } from "../../lib/evaluationTypesApi";
 import type { BackOfficeState } from "../../types";
 import { inputToPeriodDate, periodDateToInput } from "../../lib/dates";
@@ -93,8 +93,14 @@ export function EvaluationFormModal({
   }, [open, schoolCode, backoffice, initial?.evaluationTypeId, initial?.evaluationType]);
 
   const subjects = useMemo(
-    () => subjectOptionsForClass(state, schoolCode, className),
-    [state, schoolCode, className],
+    () =>
+      courseOptionsForClass({
+        state,
+        user,
+        schoolCode,
+        className,
+      }),
+    [state, user, schoolCode, className],
   );
 
   function handleSubmit(event: FormEvent) {
@@ -168,10 +174,14 @@ export function EvaluationFormModal({
             id="eval-subject"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            options={[
-              { value: "", label: "Choisir un cours" },
-              ...subjects.map((name) => ({ value: name, label: name })),
-            ]}
+            options={
+              subjects.length
+                ? [
+                    { value: "", label: "Choisir un cours" },
+                    ...subjects.map((name) => ({ value: name, label: name })),
+                  ]
+                : [{ value: "", label: "Aucun cours affecté" }]
+            }
           />
         </Field>
         <Field label="Enseignant" htmlFor="eval-teacher">

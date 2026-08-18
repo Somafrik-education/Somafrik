@@ -20,6 +20,7 @@ const ROOT = path.join(__dirname, "..");
 
 const FILES = [
   "web/src/components/grades/EvaluationFormModal.tsx",
+  "web/src/lib/evaluationCourseOptions.ts",
   "web/src/components/SchoolSubjectsPanel.tsx",
   "web/src/components/grades/StudentGradesPanel.tsx",
   "web/src/pages/GradesEvaluationsPage.tsx",

@@ -291,6 +291,11 @@ export interface UserAccount {
 
 export interface SessionUser extends UserAccount {
   mustChangePassword?: boolean;
+  /** Affectations pédagogiques projetées depuis le JWT (#248). */
+  assignments?: Record<string, unknown>[];
+  assignedClassIds?: string[];
+  assignedClassCodes?: string[];
+  teacherCode?: string;
 }
 
 export interface SessionScope {
