@@ -1,24 +1,10 @@
 "use strict";
 
 /**
- * Diagnostic P0 AUTH/SCOPE TEACHER — pas un contrat produit.
+ * Acceptation P0 AUTH/SCOPE TEACHER — JWT canonique (classId / classCode).
  *
- * Après #247, GET /api/classes est fail-closed pour un Enseignant : si le JWT
- * n'embarque aucun classId/classCode actif, la liste est []. Ce fichier prouve
- * que le login / refresh **reproduit ce vide** même quand PostgreSQL a des
- * teacher_assignments actives avec class_id — donc une reconnexion ne restaure
- * pas les classes.
- *
- * Chaîne auditée (formes de production, sans PII) :
- *   mapTeacher embed {className, course}
- *   + mapAssignment global {classId, classCode, status}
- *   → resolveTeacherAssignments / dedupeAssignments (clé className|course)
- *   → enrichTeacherUserWithActiveAssignments / filterActiveTeacherAssignments
- *   → scopeSchoolClassesForPrincipal
- *
- * Contraste : teachersRepository.mapActiveAssignments conserve classId.
- *
- * Quand le P0 sera corrigé, ces assertions « drop » devront être inversées.
+ * L'embed historique `{ className, course }` n'est plus une autorité de scope.
+ * GET /api/classes reste fail-closed #247 : jamais d'autorisation par className.
  */
 
 const assert = require("node:assert/strict");
@@ -66,14 +52,12 @@ function pgAssignmentRows() {
   ];
 }
 
-/** postgresRepository.mapTeacher : embed réduit à { className, course }. */
 function mapTeacherEmbed(assignmentRows, teacherCode) {
   return assignmentRows
     .filter((row) => row.teacher_code === teacherCode)
     .map((row) => ({ className: row.class_name, course: row.subject_name }));
 }
 
-/** teacherAssignmentsRepository.mapAssignment : identités canoniques conservées. */
 function mapAssignmentGlobal(row) {
   return {
     id: row.id,
@@ -91,8 +75,10 @@ function mapAssignmentGlobal(row) {
   };
 }
 
-function productionLoginState() {
+function productionLoginState(embedFirst = true) {
   const rows = pgAssignmentRows();
+  const embed = mapTeacherEmbed(rows, TEACHER_CODE);
+  const global = rows.map(mapAssignmentGlobal);
   return {
     teachers: [
       {
@@ -101,10 +87,12 @@ function productionLoginState() {
         userId: USER_ID,
         identifier: "ENS-0099",
         schoolCode: "CD-2026-0001",
-        assignments: mapTeacherEmbed(rows, TEACHER_CODE),
+        assignments: embedFirst ? embed : [],
       },
     ],
-    assignments: rows.map(mapAssignmentGlobal),
+    assignments: global,
+    embed,
+    global,
   };
 }
 
@@ -124,6 +112,22 @@ function schoolClassRows() {
   ];
 }
 
+function activeCanonical(assignments) {
+  return filterActiveTeacherAssignments(assignments).filter(
+    (row) => row.classId || row.classCode,
+  );
+}
+
+function assertSekeLikePrincipal(fields) {
+  assert.equal(fields.assignments.length, 2);
+  assert.equal(fields.classIds.length, 2);
+  assert.equal(fields.classCodes.length, 2);
+  assert.deepEqual([...fields.classIds].sort(), [CLASS_A_ID, CLASS_B_ID].sort());
+  assert.deepEqual([...fields.classCodes].sort(), ["CLS-2A", "CLS-2B"]);
+  assert.ok(fields.assignments.every((row) => row.status === "active"));
+  assert.ok(fields.assignments.every((row) => row.classId && row.classCode));
+}
+
 function testTeachersRepositoryKeepsCanonicalIds() {
   const mapped = mapActiveAssignments(pgAssignmentRows(), TEACHER_CODE);
   assert.equal(mapped.length, 2);
@@ -131,88 +135,187 @@ function testTeachersRepositoryKeepsCanonicalIds() {
     mapped.map((row) => row.classId).sort(),
     [CLASS_A_ID, CLASS_B_ID].sort(),
   );
-  assert.deepEqual(
-    mapped.map((row) => row.classCode).sort(),
-    ["CLS-2A", "CLS-2B"],
-  );
-  assert.ok(mapped.every((row) => row.status === "active"));
 }
 
-function testDedupeDropsCanonicalWhenEmbedWins() {
-  const state = productionLoginState();
-  const teacher = state.teachers[0];
-  const resolved = resolveTeacherAssignments(teacher, teacherUser(), state.assignments);
-
-  assert.equal(resolved.length, 2, "les 2 paires className|course survivent");
-  for (const row of resolved) {
-    assert.equal(row.classId, undefined, "l'embed gagne : classId perdu");
-    assert.equal(row.classCode, undefined, "l'embed gagne : classCode perdu");
-    assert.equal(row.status, undefined, "l'embed n'a pas de status");
-  }
-
-  const globalOnly = dedupeAssignments(state.assignments);
-  assert.equal(globalOnly.length, 2);
-  assert.ok(globalOnly.every((row) => row.classId && row.status === "active"));
-}
-
-function testDedupeRejectsCanonicalWithoutClassNameOrCourse() {
-  const kept = dedupeAssignments([
-    {
-      classId: CLASS_A_ID,
-      classCode: "CLS-2A",
-      status: "active",
-    },
-  ]);
-  assert.deepEqual(kept, []);
-}
-
-function testWebLoginEnrichmentYieldsEmptyAssignments() {
-  const enriched = enrichTeacherUserWithActiveAssignments(teacherUser(), productionLoginState());
-  assert.deepEqual(enriched.assignments, []);
-  assert.deepEqual(enriched.assignedClassIds, []);
-  assert.deepEqual(enriched.assignedClassCodes, []);
-}
-
-function testRefreshMintsEmptyPrincipalAssignments() {
-  const fields = teacherPrincipalAssignmentFields(teacherUser(), productionLoginState());
-  assert.deepEqual(fields.assignments, []);
-  assert.deepEqual(fields.classIds, []);
-  assert.deepEqual(fields.classCodes, []);
-}
-
-function testJwtFilterThenGetClassesReturnsZero() {
+function testResolveKeepsCanonicalWhenEmbedPresent() {
+  const state = productionLoginState(true);
   const resolved = resolveTeacherAssignments(
-    productionLoginState().teachers[0],
+    state.teachers[0],
     teacherUser(),
-    productionLoginState().assignments,
+    state.assignments,
   );
-  const jwtAssignments = filterActiveTeacherAssignments(resolved);
-  assert.deepEqual(jwtAssignments, []);
+  const canonical = activeCanonical(resolved);
+  assert.equal(canonical.length, 2);
+  assert.deepEqual(
+    canonical.map((row) => row.classId).sort(),
+    [CLASS_A_ID, CLASS_B_ID].sort(),
+  );
+  assert.ok(canonical.every((row) => row.status === "active"));
+}
+
+function testLoginAndRefreshMintTwoClasses() {
+  const state = productionLoginState(true);
+  const loginUser = enrichTeacherUserWithActiveAssignments(teacherUser(), state);
+  assert.equal(loginUser.assignments.length, 2);
+  assert.equal(loginUser.assignedClassIds.length, 2);
+  assert.equal(loginUser.assignedClassCodes.length, 2);
+
+  const refreshFields = teacherPrincipalAssignmentFields(teacherUser(), state);
+  assertSekeLikePrincipal(refreshFields);
+
+  const jwtAssignments = filterActiveTeacherAssignments(loginUser.assignments);
+  assertSekeLikePrincipal({
+    assignments: jwtAssignments,
+    classIds: [...new Set(jwtAssignments.map((row) => row.classId))],
+    classCodes: [...new Set(jwtAssignments.map((row) => row.classCode))],
+  });
 
   const scoped = scopeSchoolClassesForPrincipal(
     { role: "Enseignant", assignments: jwtAssignments },
     schoolClassRows(),
   );
-  assert.equal(scoped.length, 0);
+  assert.equal(scoped.length, 2);
 }
 
-function testEmptyEmbedWouldKeepCanonicalGlobal() {
-  const state = productionLoginState();
-  state.teachers[0].assignments = [];
-  const enriched = enrichTeacherUserWithActiveAssignments(teacherUser(), state);
-  assert.equal(enriched.assignments.length, 2);
-  assert.deepEqual(enriched.assignedClassIds.sort(), [CLASS_A_ID, CLASS_B_ID].sort());
+function testEmbedBeforeAndAfterGlobal() {
+  const embed = { className: "2ème A", course: "Mathématiques" };
+  const canonical = {
+    classId: CLASS_A_ID,
+    classCode: "CLS-2A",
+    className: "2ème A",
+    course: "Mathématiques",
+    status: "active",
+  };
+  const embedFirst = dedupeAssignments([embed, canonical]);
+  const globalFirst = dedupeAssignments([canonical, embed]);
+  for (const rows of [embedFirst, globalFirst]) {
+    const active = activeCanonical(rows);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].classId, CLASS_A_ID);
+    assert.equal(active[0].classCode, "CLS-2A");
+    assert.equal(active[0].status, "active");
+  }
+}
+
+function testSameClassNameDistinctUuids() {
+  const rows = dedupeAssignments([
+    { classId: CLASS_A_ID, classCode: "CLS-2A", className: "2ème A", status: "active" },
+    { classId: CLASS_B_ID, classCode: "CLS-2B", className: "2ème A", status: "active" },
+  ]);
+  assert.equal(activeCanonical(rows).length, 2);
+}
+
+function testEmptyClassNameAndCourseSurvive() {
+  const kept = dedupeAssignments([
+    { classId: CLASS_A_ID, classCode: "CLS-2A", className: "", course: "", status: "active" },
+  ]);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].classId, CLASS_A_ID);
+  assert.equal(kept[0].status, "active");
+
+  const enriched = enrichTeacherUserWithActiveAssignments(teacherUser(), {
+    teachers: [
+      {
+        id: TEACHER_CODE,
+        userId: USER_ID,
+        identifier: "ENS-0099",
+        assignments: [{ className: "2ème A", course: "Math" }],
+      },
+    ],
+    assignments: [
+      {
+        teacherId: TEACHER_CODE,
+        classId: CLASS_A_ID,
+        classCode: "CLS-2A",
+        className: "",
+        course: "",
+        status: "active",
+        schoolCode: "CD-2026-0001",
+      },
+    ],
+  });
+  assert.equal(enriched.assignments.length, 1);
+  assert.equal(enriched.assignments[0].classId, CLASS_A_ID);
+}
+
+function testInactiveIsFailClosed() {
+  const enriched = enrichTeacherUserWithActiveAssignments(teacherUser(), {
+    teachers: [{ id: TEACHER_CODE, userId: USER_ID, identifier: "ENS-0099", assignments: [] }],
+    assignments: [
+      {
+        teacherId: TEACHER_CODE,
+        classId: CLASS_A_ID,
+        classCode: "CLS-2A",
+        status: "inactive",
+        schoolCode: "CD-2026-0001",
+      },
+      {
+        teacherId: TEACHER_CODE,
+        classId: CLASS_B_ID,
+        classCode: "CLS-2B",
+        status: "active",
+        schoolCode: "CD-2026-0001",
+      },
+    ],
+  });
+  assert.equal(enriched.assignments.length, 1);
+  assert.equal(enriched.assignments[0].classId, CLASS_B_ID);
+}
+
+function testClassCodeWithoutClassIdSurvives() {
+  const kept = dedupeAssignments([
+    { classCode: "CLS-2A", className: "2ème A", course: "Math", status: "active" },
+  ]);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].classCode, "CLS-2A");
+  const scoped = scopeSchoolClassesForPrincipal(
+    { role: "Enseignant", assignments: kept },
+    schoolClassRows(),
+  );
+  assert.equal(scoped.length, 1);
+  assert.equal(scoped[0].classCode, "CLS-2A");
+}
+
+function testDuplicateExactClassIdKeepsRicher() {
+  const rows = dedupeAssignments([
+    { classId: CLASS_A_ID, className: "2ème A", course: "Math" },
+    {
+      classId: CLASS_A_ID,
+      classCode: "CLS-2A",
+      className: "2ème A",
+      course: "Math",
+      status: "active",
+    },
+  ]);
+  const canonical = activeCanonical(rows);
+  assert.equal(canonical.length, 1);
+  assert.equal(canonical[0].classCode, "CLS-2A");
+  assert.equal(canonical[0].status, "active");
+}
+
+function testNameOnlyIsNotClassAuthority() {
+  const scoped = scopeSchoolClassesForPrincipal(
+    {
+      role: "Enseignant",
+      assignments: [{ className: "2ème A", course: "Mathématiques", status: "active" }],
+    },
+    schoolClassRows(),
+  );
+  assert.equal(scoped.length, 0);
 }
 
 function main() {
   testTeachersRepositoryKeepsCanonicalIds();
-  testDedupeDropsCanonicalWhenEmbedWins();
-  testDedupeRejectsCanonicalWithoutClassNameOrCourse();
-  testWebLoginEnrichmentYieldsEmptyAssignments();
-  testRefreshMintsEmptyPrincipalAssignments();
-  testJwtFilterThenGetClassesReturnsZero();
-  testEmptyEmbedWouldKeepCanonicalGlobal();
-  console.log("teacherLoginScope.diagnostic.test.js: OK (P0 drop documented)");
+  testResolveKeepsCanonicalWhenEmbedPresent();
+  testLoginAndRefreshMintTwoClasses();
+  testEmbedBeforeAndAfterGlobal();
+  testSameClassNameDistinctUuids();
+  testEmptyClassNameAndCourseSurvive();
+  testInactiveIsFailClosed();
+  testClassCodeWithoutClassIdSurvives();
+  testDuplicateExactClassIdKeepsRicher();
+  testNameOnlyIsNotClassAuthority();
+  console.log("teacherLoginScope.diagnostic.test.js: OK");
 }
 
 main();

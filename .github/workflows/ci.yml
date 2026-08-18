@@ -70,6 +70,11 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:teachers-lifecycle
 
+      - name: verify:teacher-login-scope (JWT classId/classCode — mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:teacher-login-scope
+
       - name: verify:schools-legacy-cleanup (mémoire + PostgreSQL CI)
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik

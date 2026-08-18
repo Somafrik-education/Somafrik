@@ -82,22 +82,117 @@ function assignmentMatchesTeacher(assignment = {}, teacher = {}, user = {}) {
   return nameKeys.size > 0 && nameKeys.has(normalizeText(assignment.teacherName));
 }
 
+function asAssignmentRef(value) {
+  return String(value ?? "").trim();
+}
+
+function readAssignmentClassId(assignment = {}) {
+  return asAssignmentRef(assignment.classId ?? assignment.class_id);
+}
+
+function readAssignmentClassCode(assignment = {}) {
+  return asAssignmentRef(assignment.classCode ?? assignment.class_code);
+}
+
+function readAssignmentStatus(assignment = {}) {
+  if (Object.hasOwn(assignment, "status")) return assignment.status;
+  if (Object.hasOwn(assignment, "assignmentStatus")) return assignment.assignmentStatus;
+  if (Object.hasOwn(assignment, "assignment_status")) return assignment.assignment_status;
+  return undefined;
+}
+
+function assignmentCanonicalRichness(assignment = {}) {
+  let score = 0;
+  if (readAssignmentClassId(assignment)) score += 8;
+  if (readAssignmentClassCode(assignment)) score += 4;
+  if (readAssignmentStatus(assignment) !== undefined) score += 2;
+  return score;
+}
+
+function mergeCanonicalAssignment(current, incoming) {
+  const incomingRicher =
+    assignmentCanonicalRichness(incoming) > assignmentCanonicalRichness(current);
+  const winner = incomingRicher ? incoming : current;
+  const other = incomingRicher ? current : incoming;
+  const classId = readAssignmentClassId(winner) || readAssignmentClassId(other);
+  const classCode = readAssignmentClassCode(winner) || readAssignmentClassCode(other);
+  const className = asAssignmentRef(winner.className) || asAssignmentRef(other.className);
+  const course =
+    asAssignmentRef(winner.course ?? winner.subject) ||
+    asAssignmentRef(other.course ?? other.subject);
+  const status = readAssignmentStatus(winner);
+  const merged = {
+    ...other,
+    ...winner,
+    className,
+    course,
+  };
+  if (classId) merged.classId = classId;
+  if (classCode) merged.classCode = classCode;
+  if (status !== undefined) merged.status = status;
+  return merged;
+}
+
+function normalizeResolvedAssignment(assignment = {}) {
+  const className = asAssignmentRef(assignment.className);
+  const course = asAssignmentRef(assignment.course ?? assignment.subject);
+  return { className, course, ...assignment };
+}
+
+/**
+ * Identité métier = classId, sinon classCode. Jamais className|course.
+ * Sans classId ni classCode : conservé uniquement comme reliquat d'affichage
+ * (notes / E2E mémoire) — ce n'est pas une autorité JWT.
+ * À identité égale, on garde la projection la plus riche (classId, classCode, status).
+ */
 function dedupeAssignments(assignments = []) {
-  const seen = new Set();
-  const rows = [];
+  const byClassId = new Map();
+  const byClassCode = new Map();
+  const displayOnly = [];
+
+  const forget = (row) => {
+    if (!row) return;
+    const classId = readAssignmentClassId(row);
+    const classCode = readAssignmentClassCode(row);
+    if (classId && byClassId.get(classId) === row) byClassId.delete(classId);
+    if (classCode && byClassCode.get(classCode) === row) byClassCode.delete(classCode);
+  };
+
+  const remember = (row) => {
+    const classId = readAssignmentClassId(row);
+    const classCode = readAssignmentClassCode(row);
+    if (classId) byClassId.set(classId, row);
+    if (classCode) byClassCode.set(classCode, row);
+  };
 
   for (const assignment of assignments) {
-    const className = String(assignment.className ?? "").trim();
-    const course = String(assignment.course ?? assignment.subject ?? "").trim();
-    const key = `${normalizeText(className)}|${normalizeText(course)}`;
-    if (!className || !course || seen.has(key)) {
+    if (!assignment || typeof assignment !== "object") continue;
+    const classId = readAssignmentClassId(assignment);
+    const classCode = readAssignmentClassCode(assignment);
+    if (!classId && !classCode) {
+      displayOnly.push(normalizeResolvedAssignment(assignment));
       continue;
     }
-    seen.add(key);
-    rows.push({ className, course, ...assignment });
+
+    const existing =
+      (classId && byClassId.get(classId)) || (classCode && byClassCode.get(classCode)) || null;
+    if (!existing) {
+      remember(normalizeResolvedAssignment(assignment));
+      continue;
+    }
+    const merged = mergeCanonicalAssignment(existing, assignment);
+    forget(existing);
+    remember(merged);
   }
 
-  return rows;
+  const canonical = [];
+  const seen = new Set();
+  for (const row of [...byClassId.values(), ...byClassCode.values()]) {
+    if (seen.has(row)) continue;
+    seen.add(row);
+    canonical.push(row);
+  }
+  return [...canonical, ...displayOnly];
 }
 
 function resolveTeacherAssignments(teacher, user, globalAssignments = []) {
@@ -117,7 +212,8 @@ function resolveTeacherAssignments(teacher, user, globalAssignments = []) {
     return assignmentMatchesTeacher(assignment, teacher, user);
   });
 
-  return dedupeAssignments([...embedded, ...matchedGlobal]);
+  // Source JWT : affectations canoniques (PG / table globale) avant l'embed historique.
+  return dedupeAssignments([...matchedGlobal, ...embedded]);
 }
 
 function resolveTeacherAssignedClasses(teacher, user, globalAssignments = []) {
