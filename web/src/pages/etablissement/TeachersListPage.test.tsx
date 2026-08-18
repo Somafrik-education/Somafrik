@@ -369,7 +369,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     expect(await screen.findByLabelText(/Classe/i)).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Mathématiques" })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText(/Classe/i), "CLS-6A");
-    await user.selectOptions(screen.getByLabelText(/Cours/i), "SUB-MATH");
+    await user.selectOptions(screen.getByLabelText(/^Cours/), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     await waitFor(() => {
       expect(teacherAssignmentsApiMock.create).toHaveBeenCalledWith({
@@ -484,7 +484,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await screen.findByText("Ndiaye");
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
-    await user.selectOptions(screen.getByLabelText(/Cours/i), "SUB-MATH");
+    await user.selectOptions(screen.getByLabelText(/^Cours/), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     expect(
       await screen.findByText("TEACHER_ASSIGNMENT_ALREADY_EXISTS · Cette affectation existe déjà pour cet enseignant."),
@@ -586,7 +586,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await screen.findByText("Ndiaye");
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
-    await user.selectOptions(screen.getByLabelText(/Cours/i), "SUB-MATH");
+    await user.selectOptions(screen.getByLabelText(/^Cours/), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     expect(await screen.findByText("6ème A · Mathématiques")).toBeInTheDocument();
   });
