@@ -10,8 +10,11 @@
 | Commit | `Merge pull request #255 from Somafrik-education/cto/p0-grade-entry-batch-no-refresh` |
 | Date d’audit | 2026-08-18 |
 | Branche rapport | `audit/notes-evaluations-v2-complet` |
+| Verdict module | **NO-GO** (P0-002 = contournement du workflow de validation) |
 
 Les PRs **#251 à #255** sont traitées comme **du code à auditer**, pas comme des preuves suffisantes.
+
+Revalidation CTO GitHub indépendante du HEAD `dd350340` : les 3 P0 sont **confirmés**. Le verdict général « GO SOUS RÉSERVES » a été rejeté comme incohérent avec P0-002. Ce document aligne le verdict module sur **NO-GO**. Aucun correctif métier.
 
 ---
 
@@ -680,17 +683,20 @@ Ne pas enchaîner correction / publication / statistiques **produit** tant que A
 
 ## 22. Verdict CTO
 
+Un P0 **exploitable** sur le workflow central (ici **P0-002** : un enseignant peut forger `POST /evaluations` déjà `Validée` / `locked`) **interdit** un verdict module « GO sous réserves ». Les sous-domaines partiellement sains ne relèvent pas le module.
+
 | Domaine | Verdict | Motif court |
 | --- | --- | --- |
-| Évaluations | **GO sous réserves** | PG UUID + GET scopé + tenant write OK ; create sans assignment ; doublons titre ; période texte |
-| Saisie notes | **GO sous réserves** | #255 drafts + 1 refresh + E2E 14/20 OK ; batch partiel ; roster `className` |
-| Validation | **GO sous réserves** | PATCH enseignant bloqué et testé ; POST create non gardé (P0-002) ; pas de `validated_by` |
-| Corrections | **NO-GO** | P0-001 : Corrigée/Validée (note) ne survivent pas à PostgreSQL |
-| Publication | **GO sous réserves** | Transition testée ; saisie post-publish bloquée ; pas de snapshot bulletin |
+| Identité PG / GET évaluations | **GO sous réserves** | UUID + GET SQL scopé + tenant write OK ; create sans assignment ; doublons titre ; période texte |
+| Création / validation globale | **NO-GO** | **P0-002** : garde `assertTeacherCannotValidateEvaluation` absente à l’insert ; le PATCH ne suffit pas |
+| Validation PATCH | **GO sous réserves** | Enseignant bloqué et testé HTTP+PG ; pas de `validated_by` |
+| Saisie Web après validation réelle | **GO sous réserves** | #255 drafts + 1 refresh + E2E 14/20 OK **si** l’éval est déjà `locked` par un Préfet ; batch partiel ; roster `className` |
+| Corrections | **NO-GO** | **P0-001** : Corrigée/Validée (note) collapse en `graded` puis relues `Saisie` |
+| Publication | **GO sous réserves** | Transition PATCH testée ; saisie post-publish bloquée ; pas de snapshot bulletin |
 | Statistiques | **GO sous réserves** | Calcul client, notes non publiées, homonymes |
 | Vue classe | **GO sous réserves** | Matching nom, pas UUID |
 | Vue élève | **GO sous réserves** | `studentId` OK ; pas d’historique multi-années dédié |
-| Mobile | **NO-GO** | Pas d’API évaluations ; POST notes non canonique ; bulletins mock |
+| Mobile | **NO-GO** | **P0-003** : pas d’API `/evaluations` ; `EVAL-${Date.now()}` puis POST `/notes` |
 | Bulletins | **GO sous réserves** | Enveloppe `report_cards` sans lignes de notes ; génération au publish via noms |
 | Sécurité tenant (write) | **GO sous réserves** | JWT scellé, IDOR write testé |
 | Sécurité tenant (read notes) | **GO sous réserves** | Filtre JS après scan global ; fuite inter-cours enseignant |
@@ -699,18 +705,18 @@ Ne pas enchaîner correction / publication / statistiques **produit** tant que A
 
 ```text
 MODULE NOTES & ÉVALUATIONS V2
-= GO SOUS RÉSERVES
+= NO-GO
 ```
 
-Le **cœur enseignant Web** (créer une évaluation → refus de saisie → validation Préfet persistée `locked` → saisie 14 → PostgreSQL → GET = 14 → autre enseignant/cours/tenant refusés) est **réel, testé HTTP+PG, et n’est plus un état client canonique**.
+Le **chemin heureux Web** (créer en Brouillon/Ouverte → refus de saisie → validation Préfet **via PATCH** → `locked` → saisie 14 → PostgreSQL → GET = 14) est **réel et testé HTTP+PG**. Il ne rend pas le module GO : le même rôle enseignant peut **contourner** la validation par un `POST /evaluations` déjà `locked` (P0-002). Les corrections perdent leur statut après relecture PG (P0-001). Le Mobile n’implémente pas le cycle canonique (P0-003).
 
-Il n’est **pas** encore un système « sans legacy, sans perte, sans contournement, Web+Mobile au même niveau » :
+Comptage inchangé :
 
 - 3 P0 (statut note / forge validation create / Mobile) ;
 - 12 P1 (dont batch, className, Désactiver Validée, GET notes, période, stats, examens) ;
 - 12 P2.
 
-**Aucun Ready. Aucun merge de correctif dans cette PR.** La suite doit être tranchée par une revalidation CTO GitHub indépendante de ce rapport.
+**Aucun Ready. Aucun merge de correctif dans cette PR.** Nouvelle revalidation CTO GitHub indépendante obligatoire sur le HEAD de cette correction documentaire.
 
 ---
 
