@@ -47,6 +47,13 @@ import {
   canPublishGrades,
   canValidateGrades,
 } from "../lib/gradePermissions";
+import {
+  EVALUATION_STATUS_FILTER_OPTIONS,
+  evaluationsEmptyDescription,
+  filterEvaluationsForQueue,
+  periodFilterOptions,
+  resolveEvaluationsQueueDefaults,
+} from "../lib/evaluationQueue";
 import { downloadCsv, rowsToCsv } from "../lib/csv";
 import { EvaluationFormModal } from "../components/grades/EvaluationFormModal";
 import { GradeEntryGrid } from "../components/grades/GradeEntryGrid";
@@ -92,6 +99,7 @@ export function GradesEvaluationsPage() {
     () => resolveGradesPeriod(state, code, scopeUser),
     [state, code, scopeUser],
   );
+  const queueDefaults = useMemo(() => resolveEvaluationsQueueDefaults(scopeUser), [scopeUser]);
 
   const evaluations = useMemo(() => {
     const synced = ensureEvaluationsSynced(state, code);
@@ -101,7 +109,9 @@ export function GradesEvaluationsPage() {
   const grades = scopedGrades(scopeUser, state);
 
   const [tab, setTab] = useState<TabKey>("evaluations");
-  const [period, setPeriod] = useState("");
+  const [period, setPeriod] = useState(queueDefaults.periodFilter ?? "");
+  const [statusFilter, setStatusFilter] = useState(queueDefaults.statusFilter);
+  const [queueDefaultsKey, setQueueDefaultsKey] = useState("");
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? "");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [selectedEvaluationId, setSelectedEvaluationId] = useState("");
@@ -127,8 +137,12 @@ export function GradesEvaluationsPage() {
   }, [code, state.exams?.length]);
 
   useEffect(() => {
-    setPeriod(defaultPeriod);
-  }, [defaultPeriod]);
+    const key = `${scopeUser?.id ?? ""}:${scopeUser?.role ?? ""}:${code}`;
+    if (queueDefaultsKey === key) return;
+    setPeriod(queueDefaults.periodFilter ?? defaultPeriod);
+    setStatusFilter(queueDefaults.statusFilter);
+    setQueueDefaultsKey(key);
+  }, [code, defaultPeriod, queueDefaults, queueDefaultsKey, scopeUser?.id, scopeUser?.role]);
 
   useEffect(() => {
     if (!classNames.length) return;
@@ -137,9 +151,8 @@ export function GradesEvaluationsPage() {
     );
   }, [classNames]);
 
-  const filteredEvaluations = evaluations.filter(
-    (evaluation) => !period || evaluation.period === period,
-  );
+  const filteredEvaluations = filterEvaluationsForQueue(evaluations, period, statusFilter);
+  const periodOptions = periodFilterOptions(state, code, evaluations);
 
   const selectedEvaluation =
     evaluations.find((evaluation) => evaluation.id === selectedEvaluationId) ?? null;
@@ -382,7 +395,10 @@ export function GradesEvaluationsPage() {
               Modifier
             </Button>
           ) : null}
-          {canUpdate && row.status !== "Validée" && row.status !== "Publiée" ? (
+          {canUpdate &&
+          canValidateGrades(scopeUser) &&
+          row.status !== "Validée" &&
+          row.status !== "Publiée" ? (
             <Button variant="secondary" className="text-xs" onClick={() => void handleValidateEvaluation(row)}>
               Valider
             </Button>
@@ -472,8 +488,23 @@ export function GradesEvaluationsPage() {
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <Field label="Période">
-              <Input value={period} onChange={(e) => setPeriod(e.target.value)} />
+              <Select
+                aria-label="Période"
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+                options={periodOptions}
+              />
             </Field>
+            {queueDefaults.showStatusFilter ? (
+              <Field label="Statut">
+                <Select
+                  aria-label="Statut"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  options={[...EVALUATION_STATUS_FILTER_OPTIONS]}
+                />
+              </Field>
+            ) : null}
             {tab !== "eleve" ? (
               <Field label="Classe">
                 <Select
@@ -505,11 +536,7 @@ export function GradesEvaluationsPage() {
             filteredEvaluations.length === 0 ? (
               <EmptyState
                 title="Aucune évaluation"
-                description={
-                  period
-                    ? `Aucune évaluation pour la période « ${period} ».`
-                    : "Créez une évaluation pour commencer la saisie des notes."
-                }
+                description={evaluationsEmptyDescription(period, statusFilter)}
                 action={
                   canCreate ? (
                     <Button
