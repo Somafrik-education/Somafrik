@@ -26,14 +26,16 @@ BEGIN
     'ÀÁÂÃÄÅàáâãäåÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝŸýÿŒœÆæ',
     'AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOOooooooUUUUuuuuYYyyOoAa'
   ));
+  -- Après normalisation, les tokens sont séparés par des espaces simples.
+  -- string_to_array(..., ' ') : POSIX \\s n'est PAS un blanc.
   source := trim(regexp_replace(source, '[^A-Z0-9]+', ' ', 'g'));
-  FOR token IN SELECT unnest(regexp_split_to_array(source, '\\s+')) LOOP
+  FOR token IN SELECT unnest(string_to_array(source, ' ')) LOOP
     IF token <> '' THEN result := result || substr(token, 1, 1); END IF;
     EXIT WHEN length(result) >= 5;
   END LOOP;
   IF result = '' THEN RAISE EXCEPTION 'STUDENT_INITIALS_REQUIRED'; END IF;
   IF length(result) < 2 THEN
-    compact := regexp_replace(source, '\\s+', '', 'g');
+    compact := replace(source, ' ', '');
     result := substr(result || substr(compact, 2), 1, 5);
   END IF;
   RETURN substr(result, 1, 5);

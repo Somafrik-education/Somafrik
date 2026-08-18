@@ -24,6 +24,7 @@ const fallbackRepository = fs.readFileSync(path.join(__dirname, "../db/fallbackR
 assert.match(legacySchema, /somafrik_assign_permanent_student_identity/);
 assert.match(generalBoot, /student_general_code_counters/);
 assert.match(generalBoot, /somafrik_student_person_initials/);
+assert.match(generalBoot, /string_to_array/);
 assert.match(generalBoot, /99999/);
 assert.match(generalBoot, /\[A-Z0-9\]\{1,5\}.*\[0-9\]\{5\}/);
 assert.doesNotMatch(generalBoot, /DELETE FROM students/i);

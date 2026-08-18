@@ -122,6 +122,11 @@ async function main() {
     assert.equal(row.rows[0].profile_payload.identifier, "GK-26-00001");
     assert.equal(row.rows[0].profile_payload.identityCode, "CD-IK-GK-26-00001");
 
+    const documentedOhS = await pool.query(
+      `SELECT somafrik_student_person_initials($1, $2) AS initials`,
+      ["OKITO", "Hope Sabrina"],
+    );
+    assert.equal(documentedOhS.rows[0].initials, "OHS");
     const studentInitials = studentIdentityInitials("Kabeya", "Grâce");
     const pgInitials = await pool.query(
       `SELECT somafrik_student_person_initials($1, $2) AS initials`,
