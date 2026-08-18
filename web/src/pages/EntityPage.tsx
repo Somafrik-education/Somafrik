@@ -9,6 +9,7 @@ import { examsApi } from "../lib/examsApi";
 import { reportCardsApi } from "../lib/reportCardsApi";
 import { schoolDocumentsApi } from "../lib/schoolDocumentsApi";
 import { clientsApi } from "../lib/clientsApi";
+import { parentsApi } from "../lib/parentsApi";
 import { prepareContactForSave } from "../lib/contacts";
 import {
   Button,
@@ -34,7 +35,6 @@ import {
   ENTITY_OUT_OF_SCOPE_SAVE_MESSAGE,
   entityMutationSuccessMessage,
   mergeEntityIntoState,
-  newEntityId,
   persistEntityPatch,
   prepareEntityRowForSave,
 } from "./entity-page/entityCrudCore";
@@ -51,18 +51,17 @@ import {
   defaultNewContactDraft,
 } from "./entity-page/contactAccountWorkflow";
 import {
-  addParentChildStudentId,
-  applyParentContactChange,
-  buildParentChildBundleDeletePlan,
-  buildParentChildBundleSubmitPlan,
   buildRelationDeleteAuditEntry,
   buildRelationPreSubmitPlan,
   defaultNewRelationDraft,
-  filterAvailableParentStudentOptions,
-  removeParentChildStudentId,
-  resolveSelectedParentStudentIds,
-  resolveSelectedParentStudentLabels,
 } from "./entity-page/parentChildRelationWorkflow";
+import {
+  buildLinkParentPayload,
+  defaultLinkParentDraft,
+  parentLinkErrorMessage,
+  relationIdsFromParentChildRow,
+  validateLinkParentDraft,
+} from "./entity-page/linkParentWorkflow";
 import {
   buildPaymentReceiptPrintPlan,
   PAYMENT_CANCEL_REASON_REQUIRED_MESSAGE,
@@ -81,7 +80,7 @@ import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { usePrompt } from "../components/ui/PromptDialog";
 import { usePermissionContext } from "../lib/usePermissionContext";
-import { getEntityFeaturePermissions, canResetTargetUserPassword } from "../lib/permissions";
+import { getEntityFeaturePermissions, canResetTargetUserPassword, canLinkParent, canArchiveParentRelation } from "../lib/permissions";
 import {
   getEntityModule,
   getScopedEntityRows,
@@ -106,11 +105,9 @@ import {
 } from "../lib/userAccounts";
 import { validatePasswordPolicy } from "../lib/userAccountRules";
 import {
-  getRelationParentUserOptions,
   getRelationStudentOptions,
   groupParentChildRelations,
   isParentChildBundleRow,
-  parentChildBundleToForm,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
 import { markAllAnnouncementsRead } from "../lib/announcementsRead";
@@ -243,7 +240,13 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     null,
   );
   const [editingAssignment, setEditingAssignment] = useState<Record<string, unknown> | null>(null);
-  const [pendingParentStudentId, setPendingParentStudentId] = useState("");
+  const [parentIdentityLookup, setParentIdentityLookup] = useState<{
+    found: boolean;
+    reuse?: boolean;
+    message?: string;
+    user?: Record<string, unknown> | null;
+  } | null>(null);
+  const [parentIdentityError, setParentIdentityError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const ctx = usePermissionContext();
@@ -264,18 +267,23 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     [ctx],
   );
   const assignmentModule = useMemo(() => getEntityModule("assignments"), []);
-  const allowCreate =
-    canCreate &&
-    module?.key !== "students" &&
-    !disableCreate &&
-    !module?.planningManaged &&
-    module?.key !== "payments" &&
-    !entityCreateViaContactsOnly(module?.key ?? "");
-  const allowDelete =
-    canDelete &&
-    module?.key !== "students" &&
-    !module?.planningManaged &&
-    module?.key !== "payments";
+  const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
+  const canLinkParentAction = canLinkParent(ctx);
+  const canArchiveParentAction = canArchiveParentRelation(ctx);
+  const allowCreate = isParentChildMode
+    ? canLinkParentAction && !disableCreate
+    : canCreate &&
+      module?.key !== "students" &&
+      !disableCreate &&
+      !module?.planningManaged &&
+      module?.key !== "payments" &&
+      !entityCreateViaContactsOnly(module?.key ?? "");
+  const allowDelete = isParentChildMode
+    ? canArchiveParentAction
+    : canDelete &&
+      module?.key !== "students" &&
+      !module?.planningManaged &&
+      module?.key !== "payments";
 
   // ELEVE-001 / ENS-001 : créer une fiche à partir d'un contact existant.
   const linkableContactKind: "student" | "teacher" | null =
@@ -324,8 +332,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     [scopeUser, state],
   );
 
-  const isParentChildMode = mode === "parentChildRelations" && module?.key === "relations";
-
   const school = getCurrentSchool(scopeUser, state);
 
   const rows = useMemo(() => {
@@ -337,7 +343,9 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       );
     }
     if (isParentChildMode) {
-      scoped = groupParentChildRelations(scoped);
+      scoped = groupParentChildRelations(
+        scoped.filter((row) => normalize(String(row.status ?? "")) !== "archive"),
+      );
     }
     const q = search.trim().toLowerCase();
     if (!q) return scoped;
@@ -354,24 +362,56 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     () => (isParentChildMode ? getRelationStudentOptions(scopeUser, state) : []),
     [isParentChildMode, scopeUser, state],
   );
-  const selectedParentStudentIds = useMemo(
-    () => resolveSelectedParentStudentIds(editing),
-    [editing],
-  );
-  const availableParentStudentOptions = useMemo(
-    () => filterAvailableParentStudentOptions(parentStudentOptions, selectedParentStudentIds),
-    [parentStudentOptions, selectedParentStudentIds],
-  );
-  const selectedParentStudentLabels = useMemo(
-    () => resolveSelectedParentStudentLabels(selectedParentStudentIds, parentStudentOptions),
-    [selectedParentStudentIds, parentStudentOptions],
-  );
 
   useEffect(() => {
     if (!editing) {
-      setPendingParentStudentId("");
+      setParentIdentityLookup(null);
+      setParentIdentityError(null);
     }
   }, [editing]);
+
+  useEffect(() => {
+    if (!isParentChildMode || !editing) return;
+    const phone = String(editing.phone ?? "").trim();
+    const email = String(editing.email ?? "").trim();
+    if (!phone && !email) {
+      setParentIdentityLookup(null);
+      setParentIdentityError(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void parentsApi
+        .lookupIdentity({ phone, email })
+        .then((result) => {
+          if (cancelled) return;
+          setParentIdentityError(null);
+          setParentIdentityLookup(result);
+          if (result.found && result.user) {
+            setEditing((current) => {
+              if (!current) return current;
+              const next = { ...current };
+              if (!String(next.firstName ?? "").trim()) {
+                next.firstName = String(result.user?.firstName ?? "");
+              }
+              if (!String(next.lastName ?? "").trim()) {
+                next.lastName = String(result.user?.lastName ?? "");
+              }
+              return next;
+            });
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setParentIdentityLookup(null);
+          setParentIdentityError(parentLinkErrorMessage(error));
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isParentChildMode, editing?.phone, editing?.email]);
 
   useEffect(() => {
     if (module?.key === "announcements") {
@@ -665,20 +705,29 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     }
 
     if (module.key === "relations" && isParentChildMode) {
-      const plan = buildParentChildBundleSubmitPlan(
-        {
-          scopeUser,
-          state,
-          showToast,
-          createRelationId: () => newEntityId("RELATIONS"),
-        },
-        {
-          editing,
-          permissions: { canCreate, canUpdate },
-        },
-      );
-      if (!plan.ok) return;
-      await applyPlan(plan, () => setEditing(null));
+      const identityFound = Boolean(parentIdentityLookup?.found);
+      const validationError = validateLinkParentDraft(editing, identityFound);
+      if (validationError) {
+        showToast(validationError, "error");
+        return;
+      }
+      setBusy(true);
+      try {
+        const result = (await parentsApi.linkParent(buildLinkParentPayload(editing))) as {
+          created?: boolean;
+          message?: string;
+        };
+        await refresh(["relations", "users", "contacts"]);
+        showToast(
+          result?.created === false ? "Relation déjà existante" : "Parent lié à l'élève",
+          "success",
+        );
+        setEditing(null);
+      } catch (error) {
+        showToast(parentLinkErrorMessage(error), "error");
+      } finally {
+        setBusy(false);
+      }
       return;
     }
 
@@ -1143,6 +1192,38 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       showToast("La suppression legacy des enseignants est retirée.", "error");
       return;
     }
+
+    if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
+      if (!canArchiveParentAction) {
+        showToast("Archivage non autorisé pour votre rôle.", "error");
+        return;
+      }
+      const ids = relationIdsFromParentChildRow(row);
+      if (!ids.length) {
+        showToast("Relation introuvable.", "error");
+        return;
+      }
+      const archiveConfirmed = await confirm({
+        title: "Archiver la liaison parent-enfant ?",
+        description: "La relation sera archivée. Aucune suppression physique n'est effectuée.",
+        confirmLabel: "Archiver",
+      });
+      if (!archiveConfirmed) return;
+      setBusy(true);
+      try {
+        for (const relationId of ids) {
+          await parentsApi.archiveRelation(relationId);
+        }
+        await refresh(["relations", "users", "contacts"]);
+        showToast("Liaisons parent-enfant archivées", "success");
+      } catch (error) {
+        showToast(parentLinkErrorMessage(error), "error");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const confirmed = await confirm({
       title: `Supprimer cet élément ?`,
       description: `Retirer définitivement cet enregistrement de ${module.label.toLowerCase()} ?`,
@@ -1199,12 +1280,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       } catch {
         /* toast */
       }
-      return;
-    }
-
-    if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
-      const plan = buildParentChildBundleDeletePlan({ scopeUser, state }, { row });
-      await applyPlan(plan);
       return;
     }
 
@@ -1380,7 +1455,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     module,
     isParentChildMode,
     busy,
-    canUpdate: module.key === "students" ? false : canUpdate,
+    canUpdate: module.key === "students" ? false : isParentChildMode ? canLinkParentAction : canUpdate,
     allowDelete,
     studentsCanRead: studentsPermissions.canRead,
     assignmentCanCreateOrUpdate:
@@ -1394,7 +1469,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         module.key === "assignments"
           ? normalizeAssignmentForm({ ...row }, scopedTeachers(scopeUser, state))
           : module.key === "relations" && isParentChildMode
-            ? parentChildBundleToForm(row)
+            ? defaultLinkParentDraft()
             : module.key === "teachers"
               ? normalizeTeacherFormProps({ ...row })
               : { ...row };
@@ -1508,7 +1583,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
               return;
             }
             if (module.key === "relations") {
-              setEditing(defaultNewRelationDraft(isParentChildMode));
+              setEditing(isParentChildMode ? defaultLinkParentDraft() : defaultNewRelationDraft(false));
               return;
             }
             if (module.key === "assignments") {
@@ -1671,10 +1746,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         open={Boolean(editing)}
         onClose={() => setEditing(null)}
         title={
-          editing?.id
-            ? `Modifier — ${isParentChildMode ? "liaison parent-enfant" : module.label}`
-            : isParentChildMode
-              ? "Lier un parent à ses élèves"
+          isParentChildMode
+            ? "Lier un parent"
+            : editing?.id
+              ? `Modifier — ${module.label}`
               : `Nouveau — ${module.label}`
         }
         footer={
@@ -1694,7 +1769,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             <Button
               form={`entity-form-${entity}`}
               type="submit"
-              disabled={busy || (editing?.id ? !canUpdate : !allowCreate)}
+              disabled={busy || (isParentChildMode ? !allowCreate : editing?.id ? !canUpdate : !allowCreate)}
             >
               Enregistrer
             </Button>
@@ -1703,7 +1778,72 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       >
         {editing ? (
           <form id={`entity-form-${entity}`} onSubmit={handleSubmit} className="grid gap-4">
-            {displayFields.map((field) => {
+            {isParentChildMode ? (
+              <>
+                <Field label="Élève" htmlFor="studentId" required>
+                  <Select
+                    id="studentId"
+                    value={String(editing.studentId ?? "")}
+                    required
+                    onChange={(e) => setEditing({ ...editing, studentId: e.target.value })}
+                    options={[
+                      { value: "", label: "Choisir un élève…" },
+                      ...parentStudentOptions,
+                    ]}
+                  />
+                </Field>
+                <Field label="Téléphone" htmlFor="phone">
+                  <Input
+                    id="phone"
+                    value={String(editing.phone ?? "")}
+                    placeholder="+243…"
+                    onChange={(e) => setEditing({ ...editing, phone: e.target.value })}
+                  />
+                </Field>
+                <Field label="Email" htmlFor="email">
+                  <Input
+                    id="email"
+                    type="email"
+                    value={String(editing.email ?? "")}
+                    placeholder="parent@ecole.local"
+                    onChange={(e) => setEditing({ ...editing, email: e.target.value })}
+                  />
+                </Field>
+                <Field label="Nom" htmlFor="lastName" required={!parentIdentityLookup?.found}>
+                  <Input
+                    id="lastName"
+                    value={String(editing.lastName ?? "")}
+                    onChange={(e) => setEditing({ ...editing, lastName: e.target.value })}
+                  />
+                </Field>
+                <Field label="Prénom" htmlFor="firstName" required={!parentIdentityLookup?.found}>
+                  <Input
+                    id="firstName"
+                    value={String(editing.firstName ?? "")}
+                    onChange={(e) => setEditing({ ...editing, firstName: e.target.value })}
+                  />
+                </Field>
+                <Field label="Type de relation" htmlFor="relationType">
+                  <Select
+                    id="relationType"
+                    value={String(editing.relationType ?? "parent_student")}
+                    onChange={(e) => setEditing({ ...editing, relationType: e.target.value })}
+                    options={[{ value: "parent_student", label: "Parent → Élève" }]}
+                  />
+                </Field>
+                {parentIdentityError ? (
+                  <p className="text-sm text-danger">{parentIdentityError}</p>
+                ) : parentIdentityLookup?.found ? (
+                  <p className="text-sm text-brand">
+                    Identité existante : {String(parentIdentityLookup.user?.firstName ?? "")}{" "}
+                    {String(parentIdentityLookup.user?.lastName ?? "")}. Ce compte sera réutilisé.
+                  </p>
+                ) : parentIdentityLookup && !parentIdentityLookup.found ? (
+                  <p className="text-sm text-muted">Aucun compte trouvé. Un parent sera créé.</p>
+                ) : null}
+              </>
+            ) : (
+            displayFields.map((field) => {
               const fieldLabel =
                 isParentChildMode && field.key === "fromContactId"
                   ? "Parent"
@@ -1732,21 +1872,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
                           className: value,
                           ...(module.key === "assignments" ? { subject: "" } : { name: "" }),
                         });
-                        return;
-                      }
-                      if (
-                        isParentChildMode &&
-                        module.key === "relations" &&
-                        field.key === "fromContactId"
-                      ) {
-                        setEditing(
-                          applyParentContactChange(
-                            editing,
-                            value,
-                            (state.relations ?? []) as unknown as Record<string, unknown>[],
-                          ),
-                        );
-                        setPendingParentStudentId("");
                         return;
                       }
                       setEditing({ ...editing, [field.key]: value });
@@ -1789,88 +1914,8 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
                 )}
               </Field>
               );
-            })}
-            {isParentChildMode ? (
-              <Field
-                label="Élève(s)"
-                htmlFor="parent-child-student-picker"
-                hint="Choisissez un élève dans la liste, puis cliquez sur Ajouter. Répétez pour lier plusieurs enfants au même parent."
-                required
-              >
-                {!String(editing.fromContactId ?? "").trim() ? (
-                  <p className="text-sm text-muted">Sélectionnez d&apos;abord un parent.</p>
-                ) : parentStudentOptions.length === 0 ? (
-                  <p className="text-sm text-muted">Aucun élève disponible dans cet établissement.</p>
-                ) : (
-                  <div id="parent-child-students" className="space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Select
-                        id="parent-child-student-picker"
-                        className="min-w-0 flex-1"
-                        value={pendingParentStudentId}
-                        disabled={availableParentStudentOptions.length === 0}
-                        onChange={(event) => setPendingParentStudentId(event.target.value)}
-                        options={[
-                          {
-                            value: "",
-                            label:
-                              availableParentStudentOptions.length === 0
-                                ? "Tous les élèves sont déjà liés"
-                                : "Choisir un élève…",
-                          },
-                          ...availableParentStudentOptions,
-                        ]}
-                      />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={!pendingParentStudentId}
-                        onClick={() => {
-                          if (!pendingParentStudentId) return;
-                          setEditing(addParentChildStudentId(editing, pendingParentStudentId));
-                          setPendingParentStudentId("");
-                        }}
-                      >
-                        Ajouter
-                      </Button>
-                    </div>
-                    {selectedParentStudentLabels.length > 0 ? (
-                      <ul className="max-h-40 divide-y divide-line overflow-y-auto rounded-xl border border-line bg-slate-50/60">
-                        {selectedParentStudentLabels.map((student) => (
-                          <li
-                            key={student.id}
-                            className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-ink"
-                          >
-                            <span>{student.label}</span>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                setEditing(removeParentChildStudentId(editing, student.id));
-                              }}
-                            >
-                              Retirer
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-muted">Aucun élève lié pour le moment.</p>
-                    )}
-                  </div>
-                )}
-              </Field>
-            ) : null}
-            {isParentChildMode && getRelationParentUserOptions(scopeUser, state).length === 0 ? (
-              <p className="text-xs text-muted">
-                Aucun compte parent. Créez d&apos;abord un compte Parent dans{" "}
-                <Link to="/etablissement/comptes-utilisateurs" className="font-semibold text-brand underline">
-                  Mon établissement → Comptes utilisateurs
-                </Link>
-                .
-              </p>
-            ) : null}
+            })
+            )}
             {(module.key === "assignments" || module.key === "courses") &&
             !String(editing.className ?? "") ? (
               <p className="text-xs text-muted">

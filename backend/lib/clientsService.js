@@ -7,6 +7,7 @@ const {
   asTrimmed,
   createClientsError,
   ignoreClientScope,
+  relationEndpointsFromPayload,
   isSuperAdminPrincipal,
   isCountryAdminPrincipal,
   assertSchoolScope,
@@ -49,6 +50,7 @@ const {
   findActiveUserByLoginIdentity,
   assertUniqueUserLoginIdentity,
   isUsersLoginIdentityUniquenessViolation,
+  PARENT_IDENTITY_AMBIGUOUS,
 } = require("./usersLoginIdentity");
 
 const SCHOOL_ADMIN_ROLE = "Admin School";
@@ -584,32 +586,19 @@ async function createContact(store, rawPayload, principal, auditMeta) {
       throw createClientsError(404, "Établissement introuvable.", CLIENTS_ERROR.SCHOOL_NOT_FOUND);
     }
 
-    const profile = {
-      accountName: payload.accountName,
-      role: payload.role,
-      secondaryRole: payload.secondaryRole,
-      hasAccess: payload.hasAccess,
-      address: payload.address,
-    };
-
-    const saved = await tx.insertContact({
-      schoolId: school.id,
-      countryId: school.country_id,
+    const { ensureCanonicalContact } = require("./parentLinking");
+    const { contact: saved, created } = await ensureCanonicalContact(tx, {
+      school,
       firstName,
       lastName,
-      contactType,
       phone: asTrimmed(payload.phone),
       email: asTrimmed(payload.email),
-      gender: asTrimmed(payload.gender),
-      birthDate: toIsoDate(payload.birthDate),
-      address: asTrimmed(payload.address),
-      status: toDbStatus(payload.status || "Actif"),
-      profile,
+      contactType,
     });
 
     await writeClientsAudit(tx, principal, auditMeta, {
       schoolCode,
-      action: "create_contact",
+      action: created ? "create_contact" : "reuse_contact",
       entityType: "contact",
       entityId: saved.id,
       newValue: mapContactRow({ ...saved, school_code: schoolCode, school_name: school.name }),
@@ -680,7 +669,9 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       let relation = null;
       if (studentId) {
         const student = await assertStudentInContactSchool(tx, contact, studentId);
-        relation = await tx.getRelationByContactAndStudent(contact.id, student.id);
+        relation = await tx.getActiveRelationByContactAndStudent
+          ? await tx.getActiveRelationByContactAndStudent(contact.id, student.id)
+          : await tx.getRelationByContactAndStudent(contact.id, student.id);
         if (!relation) {
           relation = await tx.insertRelation({
             schoolId: contact.school_id,
@@ -709,11 +700,19 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       };
     }
 
-    const existingIdentity = await findActiveUserByLoginIdentity(tx, {
-      schoolId: contact.school_id,
-      email: contact.email,
-      phone: contact.phone,
-    });
+    let existingIdentity;
+    try {
+      existingIdentity = await findActiveUserByLoginIdentity(tx, {
+        schoolId: contact.school_id,
+        email: contact.email,
+        phone: contact.phone,
+      });
+    } catch (error) {
+      if (error?.code === PARENT_IDENTITY_AMBIGUOUS) {
+        throw createClientsError(409, error.message, CLIENTS_ERROR.PARENT_IDENTITY_AMBIGUOUS, error.details);
+      }
+      throw error;
+    }
     if (existingIdentity?.id) {
       const reused = await tx.getUserById(existingIdentity.id);
       if (!reused) {
@@ -745,7 +744,9 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
       let relation = null;
       if (studentId) {
         const student = await assertStudentInContactSchool(tx, contact, studentId);
-        relation = await tx.getRelationByContactAndStudent(contact.id, student.id);
+        relation = await tx.getActiveRelationByContactAndStudent
+          ? await tx.getActiveRelationByContactAndStudent(contact.id, student.id)
+          : await tx.getRelationByContactAndStudent(contact.id, student.id);
         if (!relation) {
           relation = await tx.insertRelation({
             schoolId: contact.school_id,
@@ -874,13 +875,14 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
 }
 
 async function createRelation(store, rawPayload, principal, auditMeta) {
-  const payload = ignoreClientScope(rawPayload);
+  const endpoints = relationEndpointsFromPayload(rawPayload);
+  ignoreClientScope(rawPayload);
   const schoolCode = resolveWritableSchoolCode(principal, rawPayload);
   assertSchoolScope(principal, schoolCode);
   await assertSchoolInPrincipalCountry(store, principal, schoolCode);
 
-  const contactId = asTrimmed(payload.fromContactId || payload.contactId);
-  const studentId = asTrimmed(payload.toStudentId || payload.studentId);
+  const contactId = endpoints.contactId;
+  const studentId = endpoints.studentId;
   if (!contactId || !studentId) {
     throw createClientsError(400, "Contact parent et élève obligatoires.");
   }
@@ -895,30 +897,27 @@ async function createRelation(store, rawPayload, principal, auditMeta) {
       throw createClientsError(404, "Élève introuvable.", CLIENTS_ERROR.STUDENT_NOT_FOUND);
     }
 
-    const existing = await tx.getRelationByContactAndStudent(contact.id, student.id);
-    if (existing) {
-      return mapRelationRow(existing);
+    const { ensureActiveParentRelation } = require("./parentLinking");
+    const school = {
+      id: contact.school_id,
+      country_id: contact.country_id,
+    };
+    const { relation, created } = await ensureActiveParentRelation(tx, {
+      school,
+      contact,
+      student,
+    });
+
+    if (created) {
+      await writeClientsAudit(tx, principal, auditMeta, {
+        schoolCode,
+        action: "create_relation",
+        entityType: "relation",
+        entityId: relation.id,
+        newValue: mapRelationRow(relation),
+      });
     }
-
-    const saved = await tx.insertRelation({
-      schoolId: contact.school_id,
-      countryId: contact.country_id,
-      contactId: contact.id,
-      studentId: student.id,
-      profile: {
-        fromContactName: `${contact.first_name} ${contact.last_name}`.trim(),
-        toStudentName: `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim(),
-      },
-    });
-
-    await writeClientsAudit(tx, principal, auditMeta, {
-      schoolCode,
-      action: "create_relation",
-      entityType: "relation",
-      entityId: saved.id,
-      newValue: mapRelationRow(saved),
-    });
-    return mapRelationRow(saved);
+    return { created, relation: mapRelationRow(relation) };
   });
 }
 

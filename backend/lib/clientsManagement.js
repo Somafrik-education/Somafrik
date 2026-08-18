@@ -26,6 +26,11 @@ const CLIENTS_ERROR = Object.freeze({
   ROLE_NOT_ALLOWED: "ROLE_NOT_ALLOWED",
   FORBIDDEN: "FORBIDDEN",
   PROVISION_CONFLICT: "PROVISION_CONFLICT",
+  PARENT_IDENTITY_AMBIGUOUS: "PARENT_IDENTITY_AMBIGUOUS",
+  PARENT_CONTACT_AMBIGUOUS: "PARENT_CONTACT_AMBIGUOUS",
+  PARENT_IDENTITY_REQUIRED: "PARENT_IDENTITY_REQUIRED",
+  PARENT_NAME_REQUIRED: "PARENT_NAME_REQUIRED",
+  PARENT_RELATION_TYPE_INVALID: "PARENT_RELATION_TYPE_INVALID",
 });
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
@@ -132,6 +137,13 @@ function toDbStatus(status) {
   if (["suspendu", "suspended"].includes(normalized)) return "suspended";
   if (normalized === "en attente de validation") return "pending_validation";
   return normalized || "active";
+}
+
+function relationEndpointsFromPayload(payload = {}) {
+  return {
+    contactId: asTrimmed(payload.fromContactId || payload.contactId),
+    studentId: asTrimmed(payload.toStudentId || payload.studentId),
+  };
 }
 
 function ignoreClientScope(payload = {}) {
@@ -411,6 +423,7 @@ module.exports = {
   toIsoDate,
   fromDbStatus,
   toDbStatus,
+  relationEndpointsFromPayload,
   ignoreClientScope,
   clientsAuditMetaFromRequest,
   assertSchoolScope,

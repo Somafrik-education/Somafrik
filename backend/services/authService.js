@@ -212,7 +212,7 @@ class AuthService {
 
     this.assertManagedUserCanUseMobile(managedUser);
 
-    const managedMobileRole = this.getManagedMobileRole(managedUser);
+    const managedMobileRole = this.getManagedMobileRole(managedUser, role);
     if (!managedMobileRole || managedMobileRole.role !== role) {
       await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
@@ -226,7 +226,7 @@ class AuthService {
     await clearFailedLoginAttempts(loginKey);
     return {
       role,
-      user: this.buildManagedMobileUser(managedUser),
+      user: this.buildManagedMobileUser(managedUser, role),
       school: schoolContext,
     };
   }
@@ -261,7 +261,7 @@ class AuthService {
 
     if (matches.length > 1 && preferredMobileRole) {
       const preferred = matches.find(
-        (user) => this.getManagedMobileRole(user)?.role === preferredMobileRole
+        (user) => this.getManagedMobileRole(user, preferredMobileRole)?.role === preferredMobileRole
       );
       if (preferred) {
         return preferred;
@@ -328,7 +328,8 @@ class AuthService {
     return resolveParentChildren(user, { students: this.students, relations: this.relations }, schoolCode);
   }
 
-  buildManagedMobileUser(user) {
+  buildManagedMobileUser(user, requestedMobileRole = null) {
+    const sessionRole = this.sessionRoleLabel(requestedMobileRole, user);
     const base = {
       id: user.id,
       publicId: user.publicId,
@@ -338,11 +339,13 @@ class AuthService {
       lastName: user.lastName,
       phone: user.phone,
       email: user.email,
-      role: user.role,
+      role: sessionRole,
+      roles: user.roles,
+      roleKeys: user.roleKeys,
       scopeLevel: user.scopeLevel,
       countryScope: user.countryScope,
       countryCode: user.countryCode,
-      schoolCode: user.role === "Admin Pays" ? "*" : user.schoolCode,
+      schoolCode: user.role === "Admin Pays" || sessionRole === "Admin Pays" ? "*" : user.schoolCode,
       permissions: user.permissions,
       mustChangePassword:
         user.mustChangePassword === false
@@ -352,7 +355,7 @@ class AuthService {
             : Boolean(user.temporaryPassword),
     };
 
-    if (isTeacherRole(user.role)) {
+    if (requestedMobileRole === "teacher" || isTeacherRole(sessionRole)) {
       const teacher = this.findLinkedTeacher(user);
       if (teacher) {
         const assignments = resolveTeacherAssignments(teacher, user, this.assignments);
@@ -362,6 +365,9 @@ class AuthService {
         return {
           ...base,
           ...safeTeacher,
+          role: sessionRole,
+          roles: user.roles,
+          roleKeys: user.roleKeys,
           assignments,
           assignedClasses,
           courses,
@@ -369,7 +375,7 @@ class AuthService {
       }
     }
 
-    if (user.role === "Parent") {
+    if (requestedMobileRole === "parent_student" || sessionRole === "Parent") {
       return {
         ...base,
         children: sanitizeUsersForResponse(this.findLinkedParentChildren(user, user.schoolCode)),
@@ -392,8 +398,36 @@ class AuthService {
     return base;
   }
 
-  getManagedMobileRole(user) {
-    return user ? managedMobileRoles[user.role] : null;
+  userGrantedMobileRoles(user) {
+    const { toRoleKey, toRoleLabel } = require("../lib/userRoleLifecycle");
+    const keys = [];
+    if (Array.isArray(user?.roleKeys)) {
+      keys.push(...user.roleKeys.map(toRoleKey));
+    }
+    if (Array.isArray(user?.roles)) {
+      keys.push(...user.roles.map(toRoleKey));
+    }
+    if (user?.role) {
+      keys.push(toRoleKey(user.role));
+    }
+    const unique = [...new Set(keys.filter(Boolean))];
+    return unique.map((key) => managedMobileRoles[toRoleLabel(key)]).filter(Boolean);
+  }
+
+  getManagedMobileRole(user, requestedRole = null) {
+    if (!user) return null;
+    const granted = this.userGrantedMobileRoles(user);
+    if (requestedRole) {
+      return granted.find((item) => item.role === requestedRole) || null;
+    }
+    if (managedMobileRoles[user.role]) return managedMobileRoles[user.role];
+    return granted[0] || null;
+  }
+
+  sessionRoleLabel(requestedMobileRole, user) {
+    if (!requestedMobileRole) return user.role;
+    const match = Object.entries(managedMobileRoles).find(([, value]) => value.role === requestedMobileRole);
+    return match?.[0] || user.role;
   }
 
   assertRequiredFields(fields, message) {

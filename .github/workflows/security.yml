@@ -217,6 +217,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:clients-management
+      - name: verify:parent-linking (mémoire + PostgreSQL CI)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:parent-linking
       - name: verify:user-role-lifecycle (mémoire + PostgreSQL CI)
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
