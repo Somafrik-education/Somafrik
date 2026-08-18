@@ -42,6 +42,29 @@ BEGIN
 END
 $$;
 
+CREATE OR REPLACE FUNCTION somafrik_student_identity_taken(p_canonical TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT
+    coalesce(p_canonical, '') <> ''
+    AND (
+      EXISTS (
+        SELECT 1 FROM students
+        WHERE student_code = p_canonical
+           OR login_code = p_canonical
+           OR identity_code = p_canonical
+      )
+      OR EXISTS (
+        SELECT 1 FROM users
+        WHERE identity_code = p_canonical
+           OR user_code = p_canonical
+           OR login_code = p_canonical
+      )
+    );
+$$;
+
 CREATE OR REPLACE FUNCTION somafrik_assign_permanent_student_identity()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -79,10 +102,15 @@ BEGIN
 
   country_code := upper(btrim(school_row.iso_code));
   school_initials := upper(nullif(btrim(school_row.short_code), ''));
-  IF school_initials IS NULL AND coalesce(school_row.login_code, '') ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$' THEN
-    school_initials := split_part(school_row.login_code, '-', 2);
+  IF school_initials IS NULL OR school_initials !~ '^[A-Z0-9]{2,5}$' THEN
+    school_initials := NULL;
+    IF coalesce(school_row.login_code, '') ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$' THEN
+      school_initials := split_part(school_row.login_code, '-', 2);
+    END IF;
   END IF;
-  IF school_initials IS NULL THEN RAISE EXCEPTION 'SCHOOL_SHORT_CODE_REQUIRED'; END IF;
+  IF school_initials IS NULL OR school_initials !~ '^[A-Z0-9]{2,5}$' THEN
+    RAISE EXCEPTION 'SCHOOL_SHORT_CODE_REQUIRED';
+  END IF;
 
   person_initials := somafrik_student_person_initials(NEW.last_name, NEW.first_name);
   creation_year := extract(year FROM coalesce(NEW.created_at, NOW()))::integer;
@@ -90,14 +118,21 @@ BEGIN
 
   -- Séquence globale et continue PAR ÉTABLISSEMENT. Elle ne repart jamais à 1
   -- lors d'un changement d'année ni lorsque les initiales de l'élève changent.
-  INSERT INTO student_general_code_counters (school_id, last_value)
-  VALUES (NEW.school_id, 1)
-  ON CONFLICT (school_id)
-  DO UPDATE SET last_value = student_general_code_counters.last_value + 1, updated_at = NOW()
-  RETURNING last_value INTO sequence_value;
+  -- #243 aligne le format élève sur l'identité staff ({ISO}-{ETAB}-{INITIALES}-{YY}-{SEQ5}).
+  -- Sur une base préprod, users.identity_code staff (ex. CD-IN-OE-26-00001) peut déjà
+  -- occuper la première SEQ5 : on saute les codes déjà pris (users/students), sans
+  -- désactiver de contrainte ni revenir à SEQ3.
+  LOOP
+    INSERT INTO student_general_code_counters (school_id, last_value)
+    VALUES (NEW.school_id, 1)
+    ON CONFLICT (school_id)
+    DO UPDATE SET last_value = student_general_code_counters.last_value + 1, updated_at = NOW()
+    RETURNING last_value INTO sequence_value;
 
-  IF sequence_value > 99999 THEN RAISE EXCEPTION 'STUDENT_SEQUENCE_EXHAUSTED'; END IF;
-  canonical := country_code || '-' || school_initials || '-' || person_initials || '-' || year_short || '-' || lpad(sequence_value::text, 5, '0');
+    IF sequence_value > 99999 THEN RAISE EXCEPTION 'STUDENT_SEQUENCE_EXHAUSTED'; END IF;
+    canonical := country_code || '-' || school_initials || '-' || person_initials || '-' || year_short || '-' || lpad(sequence_value::text, 5, '0');
+    EXIT WHEN NOT somafrik_student_identity_taken(canonical);
+  END LOOP;
 
   NEW.student_code := canonical;
   NEW.login_code := canonical;
@@ -272,6 +307,18 @@ BEGIN
       AND identity_code IS NOT DISTINCT FROM student_code
     ) NOT VALID;
 END $$;
+
+-- Compteur : reprendre au moins la SEQ5 déjà émise sur students (pas les EL-SEQ3).
+-- Les collisions staff (users.identity_code) sont gérées par le saut dans le trigger.
+INSERT INTO student_general_code_counters (school_id, last_value)
+SELECT st.school_id, max(right(st.student_code, 5)::integer)
+FROM students st
+WHERE st.student_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-[0-9]{2}-[0-9]{5}$'
+GROUP BY st.school_id
+ON CONFLICT (school_id)
+DO UPDATE SET
+  last_value = GREATEST(student_general_code_counters.last_value, EXCLUDED.last_value),
+  updated_at = NOW();
 `;
 
 async function ensureStudentGeneralIdentityPg(repository) {

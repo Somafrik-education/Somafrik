@@ -7,6 +7,7 @@ const {
   assertClassEligibleForEnrollment,
 } = require("../lib/classStudentsManagement");
 const { generateTemporarySecret, hashSecret } = require("../services/credentialService");
+const { rethrowEnrollmentError } = require("../lib/studentEnrollmentErrors");
 const {
   STUDENT_CODE_PLACEHOLDER,
   isStudentCanonicalCode,
@@ -612,21 +613,25 @@ function createClassStudentsRepository(db) {
       const input = validateEnrollStudentInput(body, schoolCode, classCodeParam);
       const school = await requireSchool(schoolCode);
 
-      if (typeof db.withTransaction === "function") {
-        return db.withTransaction(async (tx) =>
-          runEnrollmentTransaction(createClassStudentsDb(tx), classCodeParam, schoolCode, school, input),
-        );
-      }
+      try {
+        if (typeof db.withTransaction === "function") {
+          return await db.withTransaction(async (tx) =>
+            runEnrollmentTransaction(createClassStudentsDb(tx), classCodeParam, schoolCode, school, input),
+          );
+        }
 
-      const classRow = await getClassForEnrollment(classCodeParam, schoolCode);
-      assertClassEligibleForEnrollment(classRow);
-      return insertStudentWithEnrollment(
-        createClassStudentsDb(db),
-        school,
-        schoolCode,
-        classRow,
-        input,
-      );
+        const classRow = await getClassForEnrollment(classCodeParam, schoolCode);
+        assertClassEligibleForEnrollment(classRow);
+        return await insertStudentWithEnrollment(
+          createClassStudentsDb(db),
+          school,
+          schoolCode,
+          classRow,
+          input,
+        );
+      } catch (error) {
+        rethrowEnrollmentError(error);
+      }
     },
   };
 }

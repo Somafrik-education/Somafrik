@@ -206,6 +206,20 @@ describe("ClassStudentsPage — inscription depuis une classe", () => {
     expect(screen.getByText("Fall")).toBeInTheDocument();
   });
 
+  it("refuse un téléphone parent alphabétique sans appeler l'API", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("button", { name: "Inscrire un élève" });
+    await user.click(screen.getByRole("button", { name: "Inscrire un élève" }));
+    await user.type(document.getElementById("enroll-first-name")!, "ESTHER");
+    await user.type(document.getElementById("enroll-last-name")!, "OKITO");
+    await user.type(document.getElementById("enroll-parent-phone")!, "Baudouin OKITO");
+    await user.click(screen.getByRole("button", { name: "Inscrire" }));
+    await waitFor(() => {
+      expect(classStudentsApi.enroll).not.toHaveBeenCalled();
+    });
+  });
+
   it("redirige vers la liste Classes si classCode vide", () => {
     render(
       <MemoryRouter initialEntries={["/etablissement/classes/%20/eleves"]}>

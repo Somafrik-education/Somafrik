@@ -718,7 +718,7 @@ async function main() {
           firstName: "Rollback",
           lastName: "Test",
         }),
-      (error) => String(error.code) === "23505",
+      (error) => error.statusCode === 409,
     );
     assert.equal(
       await countStudents(pool, "CD-2026-0001"),
@@ -740,7 +740,7 @@ async function main() {
           firstName: "Sans",
           lastName: "Compte",
         }),
-      (error) => String(error.code) === "23505",
+      (error) => error.statusCode === 409,
     );
     assert.equal(
       await countStudents(pool, "CD-2026-0001"),
@@ -944,17 +944,27 @@ async function main() {
       enrollments: await countEnrollments(pool, "CD-2026-0001"),
       users: await countUsers(pool, "CD-2026-0001"),
     };
-    await assert.rejects(
-      () =>
-        studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
-          firstName: "Collision",
-          lastName: "Eleve",
-        }),
-      (error) => String(error.code) === "23505",
+    const skipped = assertCreateEnvelope(
+      await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+        firstName: "Collision",
+        lastName: "Eleve",
+      }),
     );
-    assert.equal(await countStudents(pool, "CD-2026-0001"), beforeCollision.students);
-    assert.equal(await countEnrollments(pool, "CD-2026-0001"), beforeCollision.enrollments);
-    assert.equal(await countUsers(pool, "CD-2026-0001"), beforeCollision.users);
+    assert.notEqual(
+      skipped.student.studentCode,
+      colliding.next_code,
+      "le matricule élève doit sauter un user_code déjà occupé",
+    );
+    assert.match(skipped.student.studentCode, expectedStudentCodePattern("CD", "IN", "Eleve", "Collision"));
+    await assertCanonicalStudentLogin(
+      pool,
+      skipped.student.studentCode,
+      "CD-2026-0001",
+      studentIdentityInitials("Eleve", "Collision"),
+    );
+    assert.equal(await countStudents(pool, "CD-2026-0001"), beforeCollision.students + 1);
+    assert.equal(await countEnrollments(pool, "CD-2026-0001"), beforeCollision.enrollments + 1);
+    assert.equal(await countUsers(pool, "CD-2026-0001"), beforeCollision.users + 1);
 
     const reservedAfter = await pool.query(
       `SELECT id, user_code, first_name, last_name, email, role, password_hash, pin_hash,

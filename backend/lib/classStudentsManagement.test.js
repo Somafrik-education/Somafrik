@@ -89,11 +89,41 @@ function testUpdateRejectsScopeAndRequiresConflictToken() {
     (error) => error.statusCode === 400,
   );
   const patch = validateUpdateStudentInput({
-    parentPhone: "+2431",
+    parentPhone: "+243 820 000 001",
     expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
   });
-  assert.equal(patch.parentPhone, "+2431");
+  assert.equal(patch.parentPhone, "+243 820 000 001");
   assert.equal(patch.expectedUpdatedAt, "2026-01-01T00:00:00.000Z");
+}
+
+function testParentPhoneValidation() {
+  const valid = validateEnrollStudentInput(
+    { firstName: "Esther", lastName: "Okito", parentPhone: "+243 820 000 001" },
+    "SCH-A",
+    "CLS-A",
+  );
+  assert.equal(valid.parentPhone, "+243 820 000 001");
+  const plus33 = validateEnrollStudentInput(
+    { firstName: "Esther", lastName: "Okito", parentPhone: "+33 6 12 34 56 78" },
+    "SCH-A",
+    "CLS-A",
+  );
+  assert.equal(plus33.parentPhone, "+33 6 12 34 56 78");
+  const empty = validateEnrollStudentInput(
+    { firstName: "Esther", lastName: "Okito", parentPhone: "" },
+    "SCH-A",
+    "CLS-A",
+  );
+  assert.equal(empty.parentPhone, null);
+  assert.throws(
+    () =>
+      validateEnrollStudentInput(
+        { firstName: "Esther", lastName: "Okito", parentPhone: "Baudouin OKITO" },
+        "SCH-A",
+        "CLS-A",
+      ),
+    (error) => error.statusCode === 400,
+  );
 }
 
 function main() {
@@ -101,6 +131,7 @@ function main() {
   testValidInput();
   testBirthDateValidation();
   testUpdateRejectsScopeAndRequiresConflictToken();
+  testParentPhoneValidation();
   assert.throws(
     () => validateEnrollStudentInput({ lastName: "Diop" }, "SCH-A", "CLS-A"),
     (error) => error.statusCode === 400,

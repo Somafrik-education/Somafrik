@@ -19,6 +19,7 @@ import {
   type ClassStudent,
   type EnrollClassStudentPayload,
 } from "../../lib/classStudentsApi";
+import { normalizeOptionalParentPhone } from "../../lib/parentPhone";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
 
@@ -124,12 +125,17 @@ export function ClassStudentsPage() {
     if (saving || !decodedClassCode) return;
     setSaving(true);
     try {
+      const phone = normalizeOptionalParentPhone(form.parentPhone);
+      if (!phone.ok) {
+        showToast(phone.message, "error");
+        return;
+      }
       const payload: EnrollClassStudentPayload = {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         gender: form.gender || undefined,
         birthDate: form.birthDate || undefined,
-        parentPhone: form.parentPhone.trim() || undefined,
+        parentPhone: phone.phone,
         parentEmail: form.parentEmail.trim() || undefined,
       };
       const created = await classStudentsApi.enroll(decodedClassCode, payload);
@@ -294,10 +300,16 @@ export function ClassStudentsPage() {
               onChange={(event) => setForm((current) => ({ ...current, birthDate: event.target.value }))}
             />
           </Field>
-          <Field label="Téléphone parent" htmlFor="enroll-parent-phone">
+          <Field
+            label="Téléphone parent"
+            htmlFor="enroll-parent-phone"
+            hint="Chiffres, espaces, +, - ou parenthèses"
+          >
             <Input
               id="enroll-parent-phone"
               value={form.parentPhone}
+              inputMode="tel"
+              autoComplete="tel"
               onChange={(event) =>
                 setForm((current) => ({ ...current, parentPhone: event.target.value }))
               }
