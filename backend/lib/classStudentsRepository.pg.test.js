@@ -13,6 +13,7 @@ const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
 const { createTxAdapter } = require("../db/txAdapter");
 const { hashSecret, verifySecret } = require("../services/credentialService");
+const { studentIdentityInitials } = require("./studentCanonicalIdentifier");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
@@ -193,6 +194,8 @@ async function setupFixture(pool) {
     "utf8",
   );
   await pool.query(canonicalSql);
+  const { STUDENT_GENERAL_IDENTITY_SQL } = require("../db/studentGeneralIdentityPg");
+  await pool.query(STUDENT_GENERAL_IDENTITY_SQL);
 
   await pool.query(`
     DROP TRIGGER IF EXISTS users_permanent_identity_insert ON users;
@@ -288,11 +291,11 @@ async function setupFixture(pool) {
   const biId = bi.rows[0].id;
 
   await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
+    `INSERT INTO schools (country_id, school_code, name, short_code)
      VALUES
-       ($1, 'CD-2026-0001', 'Institut Nuru'),
-       ($1, 'CD-2026-0002', 'Lycée Lumumba'),
-       ($2, 'BI-2026-0001', 'Lycée Bujumbura')`,
+       ($1, 'CD-2026-0001', 'Institut Nuru', 'IN'),
+       ($1, 'CD-2026-0002', 'Lycée Lumumba', 'LL'),
+       ($2, 'BI-2026-0001', 'Lycée Bujumbura', 'LB')`,
     [cdId, biId],
   );
 
@@ -512,21 +515,35 @@ async function countUsers(pool, schoolCode) {
   return result.rows[0].count;
 }
 
-async function assertCanonicalStudentLogin(pool, studentCode, schoolCode) {
+async function assertCanonicalStudentLogin(pool, studentCode, schoolCode, expectedInitials) {
+  const trigger = await pool.query(
+    `SELECT tgenabled
+     FROM pg_trigger
+     WHERE tgname = 'users_permanent_identity_insert'
+       AND tgrelid = 'users'::regclass`,
+  );
+  assert.equal(trigger.rowCount, 1, "trigger users_permanent_identity_insert absent");
+  assert.notEqual(trigger.rows[0].tgenabled, "D", "trigger users_permanent_identity_insert désactivé");
+
   const result = await pool.query(
     `SELECT
        st.student_code,
        st.login_code AS student_login,
        st.identity_code AS student_identity,
+       st.identity_initials AS student_initials,
+       st.identity_year AS student_year,
        st.school_id AS student_school_id,
        u.user_code,
        u.login_code AS user_login,
        u.identity_code AS user_identity,
+       u.identity_initials AS user_initials,
+       u.identity_year AS user_year,
        u.role,
        u.school_id AS user_school_id,
        u.password_hash,
        u.pin_hash,
-       u.must_change_password
+       u.must_change_password,
+       u.profile_payload
      FROM students st
      JOIN users u ON u.user_code = st.student_code AND u.school_id = st.school_id
      JOIN schools s ON s.id = st.school_id
@@ -540,6 +557,15 @@ async function assertCanonicalStudentLogin(pool, studentCode, schoolCode) {
   assert.equal(row.user_code, row.student_code);
   assert.equal(row.user_login, row.student_code);
   assert.equal(row.user_identity, row.student_code);
+  assert.equal(row.user_initials, row.student_initials);
+  assert.notEqual(String(row.user_initials), "EL", "users.identity_initials ne doit plus forcer EL");
+  assert.equal(Number(row.user_year), Number(row.student_year));
+  if (expectedInitials) {
+    assert.equal(row.student_initials, expectedInitials);
+    assert.equal(row.user_initials, expectedInitials);
+  }
+  assert.equal(row.profile_payload?.identifier, row.student_code);
+  assert.equal(row.profile_payload?.identityCode, row.student_code);
   assert.equal(row.role, "STUDENT");
   assert.equal(row.user_school_id, row.student_school_id);
   assert.equal(row.must_change_password, true);
@@ -564,10 +590,20 @@ function assertEnrollmentProjectionHasNoSecret(row) {
   assert.doesNotMatch(serialized, /temporarySecret/i);
 }
 
+function expectedStudentCode(countryCode, schoolInitials, lastName, firstName, sequence) {
+  const yy = String(new Date().getFullYear() % 100).padStart(2, "0");
+  return `${countryCode}-${schoolInitials}-${studentIdentityInitials(lastName, firstName)}-${yy}-${String(sequence).padStart(5, "0")}`;
+}
+
+function expectedStudentCodePattern(countryCode, schoolInitials, lastName, firstName) {
+  const initials = studentIdentityInitials(lastName, firstName);
+  return new RegExp(`^${countryCode}-${schoolInitials}-${initials}-\\d{2}-\\d{5}$`);
+}
+
 function assertCreateEnvelope(result) {
   assert.ok(result.student && typeof result.student === "object");
   assert.ok(result.credentials && typeof result.credentials === "object");
-  assert.match(result.student.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
+  assert.match(result.student.studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
   assert.equal(result.credentials.login, result.student.studentCode);
   assert.match(result.credentials.temporarySecret, /^Tmp-[0-9a-f]{32}$/);
   assert.notEqual(result.credentials.temporarySecret, "1234");
@@ -576,34 +612,20 @@ function assertCreateEnvelope(result) {
   return result;
 }
 
-async function peekNextStudentCanonicalCode(pool, schoolCode) {
+async function peekNextStudentCanonicalCode(pool, schoolCode, lastName, firstName) {
   const result = await pool.query(
     `SELECT
        s.id AS school_id,
-       somafrik_student_canonical_code(
-         upper(btrim(c.iso_code)),
-         CASE
-           WHEN coalesce(s.login_code, '') ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$'
-             THEN split_part(s.login_code, '-', 2)
-           WHEN nullif(btrim(s.short_code), '') IS NOT NULL THEN upper(btrim(s.short_code))
-           ELSE somafrik_school_short_code(s.name)
-         END,
-         extract(year FROM NOW())::integer,
-         coalesce(ctr.last_value, 0)::integer + 1
-       ) AS next_code
+       upper(btrim(c.iso_code))
+         || '-' || coalesce(nullif(upper(btrim(s.short_code)), ''), somafrik_school_short_code(s.name))
+         || '-' || somafrik_student_person_initials($2, $3)
+         || '-' || lpad((extract(year FROM NOW())::integer % 100)::text, 2, '0')
+         || '-' || lpad((coalesce(ctr.last_value, 0) + 1)::text, 5, '0') AS next_code
      FROM schools s
      JOIN countries c ON c.id = s.country_id
-     LEFT JOIN student_login_code_counters ctr
-       ON ctr.country_id = s.country_id
-      AND ctr.school_initials = CASE
-        WHEN coalesce(s.login_code, '') ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-[0-9]{2}-[0-9]{3}$'
-          THEN split_part(s.login_code, '-', 2)
-        WHEN nullif(btrim(s.short_code), '') IS NOT NULL THEN upper(btrim(s.short_code))
-        ELSE somafrik_school_short_code(s.name)
-      END
-      AND ctr.creation_year = extract(year FROM NOW())::integer
+     LEFT JOIN student_general_code_counters ctr ON ctr.school_id = s.id
      WHERE s.school_code = $1`,
-    [schoolCode],
+    [schoolCode, lastName, firstName],
   );
   assert.equal(result.rowCount, 1);
   return result.rows[0];
@@ -740,10 +762,23 @@ async function main() {
         birthDate: "2012-04-12",
       }),
     );
-    assert.match(enrolled.student.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
+    assert.equal(enrolled.student.studentCode, expectedStudentCode("CD", "IN", "Diop", "Awa", 1));
     assert.equal(enrolled.student.matricule, enrolled.student.studentCode);
     assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
-    await assertCanonicalStudentLogin(pool, enrolled.student.studentCode, "CD-2026-0001");
+    await assertCanonicalStudentLogin(
+      pool,
+      enrolled.student.studentCode,
+      "CD-2026-0001",
+      studentIdentityInitials("Diop", "Awa"),
+    );
+    await assert.rejects(
+      () =>
+        pool.query(
+          `UPDATE users SET identity_initials = 'EL' WHERE user_code = $1`,
+          [enrolled.student.studentCode],
+        ),
+      /PERMANENT_IDENTITY_IMMUTABLE/,
+    );
     assertEnrollmentProjectionHasNoSecret(enrolled.student);
 
     const listed = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
@@ -762,9 +797,14 @@ async function main() {
         { firstName: "Ibra", lastName: "Fall" },
       ),
     );
-    assert.match(enrolledOtherSchool.student.studentCode, /^CD-LL-EL-\d{2}-\d{3}$/);
+    assert.equal(enrolledOtherSchool.student.studentCode, expectedStudentCode("CD", "LL", "Fall", "Ibra", 1));
     assert.notEqual(enrolled.student.studentCode, enrolledOtherSchool.student.studentCode);
-    await assertCanonicalStudentLogin(pool, enrolledOtherSchool.student.studentCode, "CD-2026-0002");
+    await assertCanonicalStudentLogin(
+      pool,
+      enrolledOtherSchool.student.studentCode,
+      "CD-2026-0002",
+      studentIdentityInitials("Fall", "Ibra"),
+    );
     assertEnrollmentProjectionHasNoSecret(enrolledOtherSchool.student);
     assert.notEqual(
       enrolled.credentials.temporarySecret,
@@ -820,7 +860,10 @@ async function main() {
         { firstName: "Grace", lastName: "Nkurunziza" },
       ),
     );
-    assert.match(enrolledBiSameEstablishment.student.studentCode, /^BI-LB-EL-\d{2}-\d{3}$/);
+    assert.equal(
+      enrolledBiSameEstablishment.student.studentCode,
+      expectedStudentCode("BI", "LB", "Nkurunziza", "Grace", 1),
+    );
     assert.notEqual(
       enrolled.student.studentCode,
       enrolledBiSameEstablishment.student.studentCode,
@@ -830,6 +873,7 @@ async function main() {
       pool,
       enrolledBiSameEstablishment.student.studentCode,
       "BI-2026-0001",
+      studentIdentityInitials("Nkurunziza", "Grace"),
     );
 
     await assert.rejects(
@@ -853,8 +897,16 @@ async function main() {
     });
     assert.equal(new Set(concurrentSecrets).size, 4);
     for (const row of concurrent) {
-      assert.match(row.student.studentCode, /^CD-IN-EL-\d{2}-\d{3}$/);
-      await assertCanonicalStudentLogin(pool, row.student.studentCode, "CD-2026-0001");
+      assert.match(
+        row.student.studentCode,
+        expectedStudentCodePattern("CD", "IN", "Concurrent", row.student.firstName),
+      );
+      await assertCanonicalStudentLogin(
+        pool,
+        row.student.studentCode,
+        "CD-2026-0001",
+        studentIdentityInitials("Concurrent", row.student.firstName),
+      );
     }
 
     await assert.rejects(
@@ -867,7 +919,7 @@ async function main() {
       (error) => error.statusCode === 400,
     );
 
-    const colliding = await peekNextStudentCanonicalCode(pool, "CD-2026-0001");
+    const colliding = await peekNextStudentCanonicalCode(pool, "CD-2026-0001", "Eleve", "Collision");
     const reservedHash = hashSecret("reserved-occupant-not-student");
     await pool.query("ALTER TABLE users DISABLE TRIGGER USER");
     await pool.query(

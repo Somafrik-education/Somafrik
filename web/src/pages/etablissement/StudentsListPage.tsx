@@ -27,6 +27,7 @@ function mapApiError(err: unknown, fallback: string): string {
 /**
  * Annuaire Élèves — lecture PostgreSQL uniquement.
  * Création : Classes → Inscrire un élève. Aucun bouton de création ni flux contact.
+ * Retrait de l'annuaire : archivage PostgreSQL uniquement, jamais suppression physique.
  */
 export function StudentsListPage() {
   const permissionCtx = usePermissionContext();
@@ -36,7 +37,7 @@ export function StudentsListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,16 +83,17 @@ export function StudentsListPage() {
     );
   }, [rows, search]);
 
-  async function onDelete(row: SchoolStudent) {
-    if (!permissions.canDelete || deleting) return;
-    setDeleting(row.studentCode);
+  async function onArchive(row: SchoolStudent) {
+    if (!permissions.canDelete || archiving) return;
+    setArchiving(row.studentCode);
+    setError(null);
     try {
-      await studentsApi.remove(row.studentCode);
+      await studentsApi.archive(row.studentCode);
       setRows((current) => current.filter((item) => item.studentCode !== row.studentCode));
     } catch (err) {
-      setError(mapApiError(err, "Suppression impossible."));
+      setError(mapApiError(err, "Archivage impossible."));
     } finally {
-      setDeleting(null);
+      setArchiving(null);
     }
   }
 
@@ -134,17 +136,17 @@ export function StudentsListPage() {
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={deleting === row.studentCode}
-                onClick={() => void onDelete(row)}
+                disabled={archiving === row.studentCode}
+                onClick={() => void onArchive(row)}
               >
-                Supprimer
+                {archiving === row.studentCode ? "Archivage…" : "Archiver"}
               </Button>
             ) : null}
           </div>
         ),
       },
     ],
-    [deleting, permissions.canDelete],
+    [archiving, permissions.canDelete],
   );
 
   if (!permissions.canRead) {
@@ -182,7 +184,7 @@ export function StudentsListPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           title="Liste vide"
-          description="Aucun élève à afficher. Inscrivez un élève depuis une classe."
+          description="Aucun élève actif à afficher. Inscrivez un élève depuis une classe."
         />
       ) : (
         <EntityListTable

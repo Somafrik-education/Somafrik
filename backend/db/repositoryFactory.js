@@ -8,6 +8,11 @@
 const { PostgresRepository } = require("./postgresRepository");
 const { FallbackRepository } = require("./fallbackRepository");
 const {
+  attachStudentLifecyclePg,
+  ensureStudentLifecyclePgSchema,
+} = require("./studentLifecyclePg");
+const { ensureStudentGeneralIdentityPg } = require("./studentGeneralIdentityPg");
+const {
   resolveDatabaseConfig,
   isDatabaseRequired,
   isMemoryFallbackAllowed,
@@ -76,6 +81,7 @@ function createPostgresRepository(databaseConfig, env = process.env) {
   }
   const repository = new PostgresRepository(config);
   repository.engine = "postgresql";
+  attachStudentLifecyclePg(repository);
   return assertRepositoryContract(repository, "postgresql");
 }
 
@@ -144,9 +150,16 @@ async function initializeRepository({
   // Laisser createPostgresRepository gérer le mode mémoire (placeholder si besoin).
   const primary = repository ?? createPostgresRepository(databaseUrl, env);
   disableLegacyBackOfficeRuntimeMigrations(primary);
+  if ((primary.engine ?? "postgresql") === "postgresql") {
+    attachStudentLifecyclePg(primary);
+  }
 
   try {
     await primary.init();
+    if ((primary.engine ?? "postgresql") === "postgresql") {
+      await ensureStudentLifecyclePgSchema(primary);
+      await ensureStudentGeneralIdentityPg(primary);
+    }
     if (isProductionEnvironment(env) && (primary.engine ?? "postgresql") === "memory") {
       throw new DbConfigError("Base mémoire détectée en production.");
     }

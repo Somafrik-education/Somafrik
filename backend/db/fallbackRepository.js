@@ -1304,6 +1304,10 @@ class FallbackRepository {
               },
               (self._managedStudents ?? []).map((row) => row.student_code),
               params[1],
+              {
+                firstName: params[2],
+                lastName: params[3],
+              },
             );
             const row = {
               id: `stu-${studentCode}`,

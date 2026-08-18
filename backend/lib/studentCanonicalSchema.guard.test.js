@@ -4,27 +4,48 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const schema = fs.readFileSync(
+const legacySchema = fs.readFileSync(
   path.join(__dirname, "../db/migrations/20260823_student_canonical_identifier.sql"),
   "utf8",
 );
-const backfill = fs.readFileSync(
-  path.join(__dirname, "../db/migrations/20260824_student_canonical_identifier_backfill.sql"),
+const generalBoot = fs.readFileSync(
+  path.join(__dirname, "../db/studentGeneralIdentityPg.js"),
   "utf8",
 );
-const boot = fs.readFileSync(path.join(__dirname, "../db/userRolesSchema.js"), "utf8");
+const generalBackfill = fs.readFileSync(
+  path.join(__dirname, "../db/migrations/20260827_student_general_identity_backfill.sql"),
+  "utf8",
+);
+const repositoryFactory = fs.readFileSync(path.join(__dirname, "../db/repositoryFactory.js"), "utf8");
+const allocation = fs.readFileSync(path.join(__dirname, "./studentCodeAllocation.js"), "utf8");
+const fallbackRepository = fs.readFileSync(path.join(__dirname, "../db/fallbackRepository.js"), "utf8");
 
-assert.doesNotMatch(schema, /student_code_remap/);
-assert.doesNotMatch(schema, /VALIDATE CONSTRAINT/);
-assert.match(schema, /NOT VALID/);
-assert.match(schema, /somafrik_assign_permanent_student_identity/);
+// Historique conservé, jamais réécrit : la nouvelle règle vient après.
+assert.match(legacySchema, /somafrik_assign_permanent_student_identity/);
+assert.match(generalBoot, /student_general_code_counters/);
+assert.match(generalBoot, /somafrik_student_person_initials/);
+assert.match(generalBoot, /string_to_array/);
+assert.match(generalBoot, /99999/);
+assert.match(generalBoot, /\[A-Z0-9\]\{1,5\}.*\[0-9\]\{5\}/);
+assert.doesNotMatch(generalBoot, /DELETE FROM students/i);
 
-assert.match(backfill, /student_code_remap/);
-assert.match(backfill, /VALIDATE CONSTRAINT students_canonical_identifier_format_check/);
-assert.match(backfill, /STUDENT_CANONICAL_BACKFILL_INCOMPLETE/);
-assert.match(backfill, /STUDENT_SEQUENCE_EXHAUSTED/);
+assert.match(generalBackfill, /student_general_identity_remap/);
+assert.match(generalBackfill, /VALIDATE CONSTRAINT students_canonical_identifier_format_check/);
+assert.match(generalBackfill, /UPDATE students/);
+assert.match(generalBackfill, /UPDATE users/);
+assert.doesNotMatch(generalBackfill, /DELETE FROM students/i);
+assert.match(generalBackfill, /STUDENT_GENERAL_IDENTITY_SEQ_COLLISION/);
 
-assert.match(boot, /20260823_student_canonical_identifier\.sql/);
-assert.doesNotMatch(boot, /readFileSync\([^)]*20260824_student_canonical_identifier_backfill/);
+assert.match(generalBoot, /somafrik_assign_permanent_user_identity/);
+assert.match(generalBoot, /st\.identity_initials/);
+assert.doesNotMatch(generalBoot, /NEW\.identity_initials := 'EL'/);
+assert.match(repositoryFactory, /ensureStudentGeneralIdentityPg/);
+assert.match(repositoryFactory, /ensureStudentLifecyclePgSchema/);
+
+assert.doesNotMatch(allocation, /MEMORY_STUDENT_INITIALS/);
+assert.doesNotMatch(allocation, /fallbackInitials/);
+assert.doesNotMatch(allocation, /["']EL["']/);
+assert.match(fallbackRepository, /firstName:\s*params\[2\]/);
+assert.match(fallbackRepository, /lastName:\s*params\[3\]/);
 
 console.log("studentCanonicalSchema.guard.test.js: OK");

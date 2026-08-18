@@ -7,6 +7,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const { studentIdentityInitials } = require("../lib/studentCanonicalIdentifier");
 
 const ROOT = path.resolve(__dirname, "../..");
 const PORT = 19552;
@@ -112,7 +113,7 @@ function requireCreateEnvelope(data) {
   const studentCode = String(data.student.studentCode ?? "").trim();
   const login = String(data.credentials.login ?? "").trim();
   const temporarySecret = String(data.credentials.temporarySecret ?? "").trim();
-  assert.match(studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-EL-\d{2}-\d{3}$/);
+  assert.match(studentCode, /^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
   assert.equal(data.student.matricule, studentCode);
   assert.equal(data.student.loginCode, studentCode);
   assert.equal(login, studentCode);
@@ -241,6 +242,10 @@ async function main() {
     );
     assert.equal(enrolled.status, 201, JSON.stringify(enrolled.data));
     const { studentCode, temporarySecret } = requireCreateEnvelope(enrolled.data);
+    assert.match(
+      studentCode,
+      new RegExp(`^CD-IN-${studentIdentityInitials("Diop", "Awa")}-\\d{2}-\\d{5}$`),
+    );
 
     const listed = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
@@ -345,6 +350,10 @@ async function main() {
     );
     assert.equal(enrolledOther.status, 201, JSON.stringify(enrolledOther.data));
     const otherCreated = requireCreateEnvelope(enrolledOther.data);
+    assert.equal(
+      otherCreated.studentCode.split("-")[2],
+      studentIdentityInitials("Fall", "Ibra"),
+    );
     assert.notEqual(studentCode, otherCreated.studentCode);
     assert.notEqual(temporarySecret, otherCreated.temporarySecret);
 
@@ -511,6 +520,10 @@ async function main() {
     );
     assert.equal(enrolledHomonym.status, 201, JSON.stringify(enrolledHomonym.data));
     const homonymCreated = requireCreateEnvelope(enrolledHomonym.data);
+    assert.equal(
+      homonymCreated.studentCode.split("-")[2],
+      studentIdentityInitials("Nyme", "Homo"),
+    );
 
     await replaceTeacherAssignmentsViaApi(tokenPrefet, "ENS-0001", [
       {
@@ -670,6 +683,10 @@ async function main() {
     for (const result of concurrent) {
       assert.equal(result.status, 201, JSON.stringify(result.data));
       requireCreateEnvelope(result.data);
+      assert.equal(
+        result.data.student.studentCode.split("-")[2],
+        studentIdentityInitials("Parallel", result.data.student.firstName),
+      );
     }
     const concurrentCodes = new Set(concurrent.map((item) => item.data.student.studentCode));
     const concurrentSecrets = new Set(concurrent.map((item) => item.data.credentials.temporarySecret));

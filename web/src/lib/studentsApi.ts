@@ -107,5 +107,7 @@ export const studentsApi = {
   update: (studentCode: string, payload: UpdateSchoolStudentPayload) =>
     api.patch<SchoolStudent>(`/students/${encodeURIComponent(studentCode)}`, payload),
 
-  remove: (studentCode: string) => api.delete(`/students/${encodeURIComponent(studentCode)}`),
+  // Le backend conserve DELETE comme contrat HTTP historique, mais son implémentation
+  // est exclusivement un archivage PostgreSQL transactionnel (aucun DELETE SQL).
+  archive: (studentCode: string) => api.delete(`/students/${encodeURIComponent(studentCode)}`),
 };
