@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const permissions = vi.hoisted(() => ({
@@ -67,6 +67,19 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
+const refreshApi = vi.hoisted(() => vi.fn<(domains?: string[]) => Promise<void>>(async () => undefined));
+const upsertNoteApi = vi.hoisted(() =>
+  vi.fn<(note: Record<string, unknown>) => Promise<Record<string, unknown>>>(async () => ({})),
+);
+const showToastApi = vi.hoisted(() => vi.fn());
+const confirmApi = vi.hoisted(() => vi.fn(async () => true));
+const gradeEntryGridProps = vi.hoisted(() => ({
+  current: null as null | {
+    onSave: (grades: unknown[]) => Promise<void>;
+    onDirtyChange?: (dirty: boolean) => void;
+  },
+}));
+
 vi.mock("../context/DataContext", () => ({
   useData: () => ({
     state: dataState.current,
@@ -74,7 +87,7 @@ vi.mock("../context/DataContext", () => ({
     error: null,
     syncJournal: [],
     update: vi.fn(),
-    refresh: vi.fn(),
+    refresh: refreshApi,
     retryFailedSync: vi.fn(),
   }),
 }));
@@ -123,16 +136,16 @@ vi.mock("../lib/pedagogyApi", () => ({
     createEvaluation: vi.fn(),
     updateEvaluation: (id: string, payload: Record<string, unknown>) => updateEvaluationApi(id, payload),
     listEvaluations: vi.fn(),
-    upsertNote: vi.fn(),
+    upsertNote: (note: Record<string, unknown>) => upsertNoteApi(note),
   },
 }));
 
 vi.mock("../components/ui/Toast", () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast: showToastApi }),
 }));
 
 vi.mock("../components/ui/ConfirmDialog", () => ({
-  useConfirm: () => ({ confirm: vi.fn(async () => true) }),
+  useConfirm: () => ({ confirm: confirmApi }),
 }));
 
 vi.mock("../components/ui/PrintButton", () => ({
@@ -144,7 +157,13 @@ vi.mock("../components/grades/EvaluationFormModal", () => ({
 }));
 
 vi.mock("../components/grades/GradeEntryGrid", () => ({
-  GradeEntryGrid: () => <div>GradeEntryGrid mock</div>,
+  GradeEntryGrid: (props: {
+    onSave: (grades: unknown[]) => Promise<void>;
+    onDirtyChange?: (dirty: boolean) => void;
+  }) => {
+    gradeEntryGridProps.current = props;
+    return <div>GradeEntryGrid mock</div>;
+  },
 }));
 
 vi.mock("../components/grades/ClassGradesOverview", () => ({
@@ -195,6 +214,14 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     };
     gradesPeriod.current = "Trimestre 3";
     updateEvaluationApi.mockClear();
+    refreshApi.mockClear();
+    upsertNoteApi.mockClear();
+    showToastApi.mockClear();
+    confirmApi.mockClear();
+    confirmApi.mockResolvedValue(true);
+    upsertNoteApi.mockResolvedValue({});
+    refreshApi.mockResolvedValue(undefined);
+    gradeEntryGridProps.current = null;
   });
 
   it("structure la page Notes avec ToolLayout (Header / Context / Content)", () => {
@@ -439,6 +466,14 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
     };
     evaluationsForPage.current = [lesAdverbes];
     dataState.current = { ...dataState.current, evaluations: [lesAdverbes] };
+    refreshApi.mockClear();
+    upsertNoteApi.mockClear();
+    showToastApi.mockClear();
+    confirmApi.mockClear();
+    confirmApi.mockResolvedValue(true);
+    upsertNoteApi.mockResolvedValue({});
+    refreshApi.mockResolvedValue(undefined);
+    gradeEntryGridProps.current = null;
   });
 
   it("Brouillon absente du select Saisie des notes", () => {
@@ -463,5 +498,127 @@ describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () =>
     dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
     renderPage();
     expect(screen.queryByRole("button", { name: "Valider" })).not.toBeInTheDocument();
+  });
+
+  it("handleSaveGrades : N écritures /notes puis un seul refresh notes", async () => {
+    evaluationsForPage.current = [{ ...lesAdverbes, status: "Validée" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    fireEvent.change(screen.getByLabelText("Évaluation"), { target: { value: "EVAL-ADV" } });
+
+    await waitFor(() => expect(gradeEntryGridProps.current?.onSave).toEqual(expect.any(Function)));
+
+    const batch = [
+      {
+        id: "g1",
+        schoolCode: "SCH-001",
+        studentId: "s1",
+        studentName: "Diallo Awa",
+        evaluationId: "EVAL-ADV",
+        subject: "Mathématiques",
+        className: "6e A",
+        period: "Trimestre 1",
+        value: 14,
+        scale: 20,
+        gradeStatus: "Saisie",
+      },
+      {
+        id: "g2",
+        schoolCode: "SCH-001",
+        studentId: "s2",
+        studentName: "Jean Kouassi",
+        evaluationId: "EVAL-ADV",
+        subject: "Mathématiques",
+        className: "6e A",
+        period: "Trimestre 1",
+        value: 12,
+        scale: 20,
+        gradeStatus: "Saisie",
+      },
+      {
+        id: "g3",
+        schoolCode: "SCH-001",
+        studentId: "s3",
+        studentName: "Riziki Masumbuko",
+        evaluationId: "EVAL-ADV",
+        subject: "Mathématiques",
+        className: "6e A",
+        period: "Trimestre 1",
+        value: 9,
+        scale: 20,
+        gradeStatus: "Saisie",
+      },
+    ];
+
+    await gradeEntryGridProps.current!.onSave(batch);
+
+    expect(upsertNoteApi).toHaveBeenCalledTimes(3);
+    expect(upsertNoteApi.mock.calls.map((call) => call[0].studentId)).toEqual(["s1", "s2", "s3"]);
+    expect(refreshApi).toHaveBeenCalledTimes(1);
+    expect(refreshApi).toHaveBeenCalledWith(["notes"]);
+    expect(showToastApi).toHaveBeenCalledWith("Notes enregistrées");
+  });
+
+  it("handleSaveGrades : POST partiel en échec → aucun refresh", async () => {
+    evaluationsForPage.current = [{ ...lesAdverbes, status: "Validée" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    upsertNoteApi.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("échec réseau"));
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    fireEvent.change(screen.getByLabelText("Évaluation"), { target: { value: "EVAL-ADV" } });
+
+    await waitFor(() => expect(gradeEntryGridProps.current?.onSave).toEqual(expect.any(Function)));
+
+    await expect(
+      gradeEntryGridProps.current!.onSave([
+        {
+          id: "g1",
+          studentId: "s1",
+          studentName: "Diallo Awa",
+          evaluationId: "EVAL-ADV",
+          value: 14,
+          gradeStatus: "Saisie",
+        },
+        {
+          id: "g2",
+          studentId: "s2",
+          studentName: "Jean Kouassi",
+          evaluationId: "EVAL-ADV",
+          value: 12,
+          gradeStatus: "Saisie",
+        },
+      ]),
+    ).rejects.toThrow("Jean Kouassi : échec réseau");
+
+    expect(upsertNoteApi).toHaveBeenCalledTimes(2);
+    expect(refreshApi).not.toHaveBeenCalled();
+    expect(showToastApi).not.toHaveBeenCalledWith("Notes enregistrées");
+  });
+
+  it("garde les drafts dirty : confirmation avant changement de période", async () => {
+    evaluationsForPage.current = [{ ...lesAdverbes, status: "Validée" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    confirmApi.mockResolvedValue(false);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    fireEvent.change(screen.getByLabelText("Évaluation"), { target: { value: "EVAL-ADV" } });
+
+    await waitFor(() => expect(gradeEntryGridProps.current?.onDirtyChange).toEqual(expect.any(Function)));
+    act(() => {
+      gradeEntryGridProps.current!.onDirtyChange?.(true);
+    });
+
+    const period = screen.getByLabelText("Période") as HTMLSelectElement;
+    expect(period).toHaveValue("Trimestre 3");
+    fireEvent.change(period, { target: { value: "Trimestre 1" } });
+
+    await waitFor(() => expect(confirmApi).toHaveBeenCalled());
+    expect(confirmApi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "Des notes non enregistrées seront perdues. Continuer ?",
+      }),
+    );
+    expect(period).toHaveValue("Trimestre 3");
   });
 });

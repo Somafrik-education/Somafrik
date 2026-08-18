@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Evaluation, GradeStatus, SessionUser, StudentGrade } from "../../types";
 import { Button } from "../ui/Button";
 import { Input, Select } from "../ui/Field";
@@ -14,14 +14,21 @@ import { formatStudentName } from "../../lib/gradeBook";
 
 type StudentRow = Record<string, unknown>;
 
+type GradeDraft = {
+  value: string;
+  gradeStatus: GradeStatus;
+  dirty: boolean;
+};
+
 interface GradeEntryGridProps {
   evaluation: Evaluation;
   students: StudentRow[];
   grades: StudentGrade[];
   canEdit: boolean;
   user: SessionUser | null;
-  onChange: (grades: StudentGrade[]) => void;
+  onSave: (grades: StudentGrade[]) => Promise<void>;
   onError: (message: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function GradeEntryGrid({
@@ -30,8 +37,9 @@ export function GradeEntryGrid({
   grades,
   canEdit,
   user,
-  onChange,
+  onSave,
   onError,
+  onDirtyChange,
 }: GradeEntryGridProps) {
   const classStudents = useMemo(
     () =>
@@ -42,29 +50,108 @@ export function GradeEntryGrid({
   );
 
   const evaluationGrades = gradesForEvaluation(grades, evaluation.id);
-  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, GradeDraft>>({});
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+
+  useEffect(() => {
+    setDrafts({});
+    savingRef.current = false;
+    setSaving(false);
+  }, [evaluation.id]);
 
   function currentGrade(studentId: string): StudentGrade | undefined {
     return evaluationGrades.find((grade) => grade.studentId === studentId);
   }
 
-  function saveGrade(student: StudentRow, rawValue: string, gradeStatus: GradeStatus) {
-    const numeric = rawValue.trim() === "" ? undefined : Number(rawValue.replace(",", "."));
-    const result = upsertStudentGrade(grades, evaluation, student, {
-      value: numeric,
-      gradeStatus,
-      author: user,
+  function draftFor(studentId: string): GradeDraft {
+    const draft = drafts[studentId];
+    if (draft) return draft;
+    const existing = currentGrade(studentId);
+    return {
+      value:
+        existing?.value != null && !ABSENCE_GRADE_STATUSES.includes(existing.gradeStatus)
+          ? String(existing.value)
+          : "",
+      gradeStatus: existing?.gradeStatus ?? "Saisie",
+      dirty: false,
+    };
+  }
+
+  const hasDirtyRows = Object.values(drafts).some((draft) => draft.dirty);
+
+  useEffect(() => {
+    onDirtyChange?.(hasDirtyRows);
+  }, [hasDirtyRows, onDirtyChange]);
+
+  function updateDraft(studentId: string, patch: Partial<GradeDraft>) {
+    setDrafts((current) => {
+      const existingDraft = current[studentId] ?? draftFor(studentId);
+      return {
+        ...current,
+        [studentId]: {
+          ...existingDraft,
+          ...patch,
+          dirty: true,
+        },
+      };
     });
-    if (result.error) {
-      onError(result.error);
-      return;
+  }
+
+  async function saveAll() {
+    if (savingRef.current) return;
+    const dirtyStudentIds = Object.entries(drafts)
+      .filter(([, draft]) => draft.dirty)
+      .map(([studentId]) => studentId);
+    if (!dirtyStudentIds.length) return;
+
+    let working = grades;
+    const changed: StudentGrade[] = [];
+
+    for (const studentId of dirtyStudentIds) {
+      const student = classStudents.find((row) => String(row.id ?? "") === studentId);
+      const draft = drafts[studentId];
+      if (!student || !draft) continue;
+
+      const isAbsence = ABSENCE_GRADE_STATUSES.includes(draft.gradeStatus);
+      const rawValue = draft.value.trim();
+      const numeric = isAbsence || rawValue === "" ? undefined : Number(rawValue.replace(",", "."));
+
+      const result = upsertStudentGrade(working, evaluation, student, {
+        value: numeric,
+        gradeStatus: draft.gradeStatus,
+        author: user,
+      });
+      if (result.error) {
+        onError(`${formatStudentName(student)} : ${result.error}`);
+        return;
+      }
+
+      working = result.grades;
+      const persisted = result.grades.find(
+        (grade) => grade.evaluationId === evaluation.id && grade.studentId === studentId,
+      );
+      if (persisted) changed.push(persisted);
     }
-    onChange(result.grades);
-    setDraftValues((current) => {
-      const next = { ...current };
-      delete next[String(student.id ?? "")];
-      return next;
-    });
+
+    if (!changed.length) return;
+
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onSave(changed);
+      setDrafts((current) => {
+        const next = { ...current };
+        for (const studentId of dirtyStudentIds) delete next[studentId];
+        return next;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erreur d'enregistrement des notes.";
+      onError(message);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   const columns: Column<StudentRow>[] = [
@@ -79,13 +166,9 @@ export function GradeEntryGrid({
       render: (row) => {
         const studentId = String(row.id ?? "");
         const existing = currentGrade(studentId);
+        const draft = draftFor(studentId);
         const locked =
           existing?.gradeStatus === "Validée" || existing?.gradeStatus === "Corrigée" || !canEdit;
-        const displayValue =
-          draftValues[studentId] ??
-          (existing?.value != null && !ABSENCE_GRADE_STATUSES.includes(existing.gradeStatus)
-            ? String(existing.value)
-            : "");
 
         return (
           <Input
@@ -93,15 +176,11 @@ export function GradeEntryGrid({
             min={0}
             max={evaluation.scale}
             step={0.25}
-            value={displayValue}
-            disabled={locked}
+            value={draft.value}
+            disabled={locked || ABSENCE_GRADE_STATUSES.includes(draft.gradeStatus) || saving}
             aria-label={`Note /${evaluation.scale}`}
             className="max-w-[120px]"
-            onChange={(e) => setDraftValues((current) => ({ ...current, [studentId]: e.target.value }))}
-            onBlur={(e) => {
-              if (!e.target.value.trim()) return;
-              saveGrade(row, e.target.value, existing?.gradeStatus ?? "Saisie");
-            }}
+            onChange={(e) => updateDraft(studentId, { value: e.target.value })}
           />
         );
       },
@@ -112,44 +191,24 @@ export function GradeEntryGrid({
       render: (row) => {
         const studentId = String(row.id ?? "");
         const existing = currentGrade(studentId);
+        const draft = draftFor(studentId);
+        const locked =
+          existing?.gradeStatus === "Validée" || existing?.gradeStatus === "Corrigée" || !canEdit;
         return (
           <Select
-            value={existing?.gradeStatus ?? "Saisie"}
-            disabled={!canEdit}
+            value={draft.gradeStatus}
+            disabled={locked || saving}
             aria-label="Statut de la note"
             className="max-w-[180px]"
             onChange={(e) => {
-              const status = e.target.value as GradeStatus;
-              if (ABSENCE_GRADE_STATUSES.includes(status)) {
-                saveGrade(row, "", status);
-                return;
-              }
-              const raw = draftValues[studentId] ?? String(existing?.value ?? "");
-              saveGrade(row, raw, status);
+              const gradeStatus = e.target.value as GradeStatus;
+              updateDraft(studentId, {
+                gradeStatus,
+                value: ABSENCE_GRADE_STATUSES.includes(gradeStatus) ? "" : draft.value,
+              });
             }}
             options={GRADE_STATUSES.map((status) => ({ value: status, label: status }))}
           />
-        );
-      },
-    },
-    {
-      key: "actions",
-      header: "",
-      render: (row) => {
-        const studentId = String(row.id ?? "");
-        const existing = currentGrade(studentId);
-        if (!canEdit || existing?.gradeStatus === "Validée") return null;
-        return (
-          <Button
-            variant="secondary"
-            className="text-xs"
-            onClick={() => {
-              const raw = draftValues[studentId] ?? String(existing?.value ?? "");
-              saveGrade(row, raw, existing?.gradeStatus ?? "Saisie");
-            }}
-          >
-            Enregistrer
-          </Button>
         );
       },
     },
@@ -177,28 +236,10 @@ export function GradeEntryGrid({
         {canEdit ? (
           <Button
             variant="secondary"
-            onClick={() => {
-              let next = grades;
-              for (const student of classStudents) {
-                const studentId = String(student.id ?? "");
-                const raw = draftValues[studentId];
-                if (!raw?.trim()) continue;
-                const result = upsertStudentGrade(next, evaluation, student, {
-                  value: Number(raw.replace(",", ".")),
-                  gradeStatus: currentGrade(studentId)?.gradeStatus ?? "Saisie",
-                  author: user,
-                });
-                if (result.error) {
-                  onError(result.error);
-                  return;
-                }
-                next = result.grades;
-              }
-              onChange(next);
-              setDraftValues({});
-            }}
+            disabled={!hasDirtyRows || saving}
+            onClick={() => void saveAll()}
           >
-            Enregistrer tout
+            {saving ? "Enregistrement…" : "Enregistrer tout"}
           </Button>
         ) : null}
       </div>
