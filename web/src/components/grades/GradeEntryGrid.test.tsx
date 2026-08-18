@@ -91,7 +91,7 @@ describe("GradeEntryGrid — saisie après validation", () => {
     expect(screen.getByRole("button", { name: "Enregistrer tout" })).not.toBeDisabled();
   });
 
-  it("changement statut : reste local et conserve la note sans persistance immédiate", () => {
+  it("changement de statut d'absence : reste local, aucun onChange parent", () => {
     const { onChange } = renderGrid({ status: "Validée", canEdit: true });
     const note = screen.getByLabelText("Note /20") as HTMLInputElement;
     const status = screen.getByLabelText("Statut de la note") as HTMLSelectElement;
@@ -99,18 +99,17 @@ describe("GradeEntryGrid — saisie après validation", () => {
     fireEvent.change(note, { target: { value: "14" } });
     fireEvent.change(status, { target: { value: "Non justifiée" } });
 
-    expect(note).toHaveValue(14);
     expect(status).toHaveValue("Non justifiée");
+    expect(note).toHaveValue(null);
+    expect(note).toBeDisabled();
     expect(onChange).not.toHaveBeenCalled();
   });
 
   it("Enregistrer tout émet une seule fois uniquement les lignes modifiées", () => {
     const { onChange } = renderGrid({ status: "Validée", canEdit: true });
     const note = screen.getByLabelText("Note /20") as HTMLInputElement;
-    const status = screen.getByLabelText("Statut de la note") as HTMLSelectElement;
 
     fireEvent.change(note, { target: { value: "14" } });
-    fireEvent.change(status, { target: { value: "Non justifiée" } });
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer tout" }));
 
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -119,7 +118,7 @@ describe("GradeEntryGrid — saisie après validation", () => {
         studentId: "s1",
         evaluationId: "EVAL-ADV",
         value: 14,
-        gradeStatus: "Non justifiée",
+        gradeStatus: "Saisie",
       }),
     ]);
   });
