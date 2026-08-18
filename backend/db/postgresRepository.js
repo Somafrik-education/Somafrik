@@ -417,7 +417,7 @@ class PostgresRepository {
             evaluationCoefficient: note.evaluationCoefficient ?? evaluation.coefficient,
           },
           { role: "Admin School", sub: note.authorId },
-          { allowMissingTeacher: true, skipCacheClear: true },
+          { allowMissingTeacher: true, skipCacheClear: true, allowUnvalidatedEvaluation: true },
         );
       } catch (error) {
         anomalyCount += 1;
@@ -2040,11 +2040,30 @@ class PostgresRepository {
       throw error;
     }
 
-    const evaluation = await this.resolveEvaluationRow(evaluationKey, payload.schoolCode);
+    const evaluationLookupSchool =
+      String(payload.schoolCode ?? "").trim() || String(principal?.schoolCode ?? "").trim();
+    const evaluation = await this.resolveEvaluationRow(evaluationKey, evaluationLookupSchool);
     if (!evaluation) {
+      const scopedSchool =
+        evaluationLookupSchool && evaluationLookupSchool !== "*"
+          ? await this.getSchoolByCode(evaluationLookupSchool)
+          : null;
+      if (scopedSchool) {
+        const foreign = await this.findForeignEvaluationRow(evaluationKey, scopedSchool.id);
+        if (foreign) {
+          const denied = new Error("Accès refusé: établissement hors périmètre.");
+          denied.statusCode = 403;
+          throw denied;
+        }
+      }
       const error = new Error("Evaluation introuvable");
       error.statusCode = 404;
       throw error;
+    }
+
+    const { assertEvaluationAllowsGradeEntry, assertStudentEnrolledInEvaluationClass } = require("../lib/evaluationGradeEntry");
+    if (!options.allowUnvalidatedEvaluation) {
+      assertEvaluationAllowsGradeEntry(evaluation);
     }
 
     const gradeStatus = toGradeStatus(
@@ -2091,6 +2110,7 @@ class PostgresRepository {
       error.statusCode = 400;
       throw error;
     }
+    assertStudentEnrolledInEvaluationClass(student, evaluation);
 
     // HOTFIX-PRE-E1-02 : gardes enseignant — établissement + classe + matière/affectation.
     // Ne pas affaiblir le RBAC.
@@ -2791,6 +2811,14 @@ class PostgresRepository {
       subjectId = subject.id;
       termId = term.id;
       teacherId = teacher?.id ?? null;
+    }
+
+    if (existing && patchTouches(["status"])) {
+      const previousStatus = toEvaluationStatus(existing.status, "draft");
+      if (previousStatus !== status) {
+        const { assertTeacherCannotValidateEvaluation } = require("../lib/evaluationGradeEntry");
+        assertTeacherCannotValidateEvaluation(principal, status);
+      }
     }
 
     if (principal && !existing && !evaluationTypeId) {

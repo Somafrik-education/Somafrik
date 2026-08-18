@@ -575,6 +575,13 @@ class FallbackRepository {
   }
 
   async upsertGrade(payload, principal) {
+    const { assertEvaluationAllowsGradeEntry, findStateEvaluation } = require("../lib/evaluationGradeEntry");
+    const evaluationId = String(payload.evaluationId ?? "").trim();
+    if (evaluationId) {
+      const state = (await this.getBackOfficeState()) ?? {};
+      assertEvaluationAllowsGradeEntry(findStateEvaluation(state, evaluationId));
+    }
+
     const value = Number(payload.value);
     const scale = Number(payload.scale ?? 20);
     if (!payload.studentId || !payload.subject || Number.isNaN(value) || value < 0 || value > scale) {

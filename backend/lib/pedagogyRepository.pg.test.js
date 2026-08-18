@@ -456,6 +456,30 @@ async function main() {
     );
     assert.ok(evaluation.id);
 
+    await assert.rejects(
+      () =>
+        store.upsertSchoolGrade(
+          {
+            evaluationId: evaluation.id,
+            studentId: "CD-2026-0001-STU-PG-01",
+            teacherId: "ENS-PG-001",
+            value: 12,
+            scale: 20,
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.code === PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED || error.statusCode === 409,
+    );
+
+    const validated = await store.updateEvaluation(
+      evaluation.id,
+      { status: "Validée" },
+      admin,
+      auditMeta,
+    );
+    assert.equal(validated.status, "Validée");
+
     const schoolsBeforeEvalForge = await pool.query(`SELECT count(*)::int AS count FROM schools`);
     const schoolCountBefore = schoolsBeforeEvalForge.rows[0].count;
     const forgedEval = await store.createEvaluation(

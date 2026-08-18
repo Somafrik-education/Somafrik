@@ -17,6 +17,12 @@ const sessionUser = vi.hoisted(() => ({
     role: "Admin School",
     schoolCode: "SCH-001",
     name: "Admin",
+  } as {
+    id: string;
+    role: string;
+    schoolCode: string;
+    name?: string;
+    assignments?: Record<string, unknown>[];
   },
 }));
 
@@ -389,6 +395,73 @@ describe("GradesEvaluationsPage — enseignant conserve la période active", () 
 
     fireEvent.change(screen.getByLabelText("Période"), { target: { value: "Trimestre 1" } });
     expect(screen.getByText("Interrogation 1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Valider" })).not.toBeInTheDocument();
+  });
+});
+
+describe("GradesEvaluationsPage — Saisie des notes Validée uniquement", () => {
+  const lesAdverbes = {
+    id: "EVAL-ADV",
+    title: "LES ADVERBES",
+    subject: "Mathématiques",
+    className: "6e A",
+    classId: "c1",
+    period: "Trimestre 1",
+    status: "Brouillon",
+    schoolCode: "SCH-001",
+    scale: 20,
+    coefficient: 1,
+    evaluationType: "Devoir",
+    active: true,
+  };
+
+  const sekeAssignments = [
+    {
+      classId: "c1",
+      className: "6e A",
+      course: "Mathématiques",
+      status: "active",
+    },
+  ];
+
+  beforeEach(() => {
+    permissions.canRead = true;
+    permissions.canCreate = true;
+    permissions.canUpdate = true;
+    dataLoading.current = false;
+    gradesPeriod.current = "Trimestre 3";
+    sessionUser.current = {
+      id: "ens-seke",
+      role: "Enseignant",
+      schoolCode: "SCH-001",
+      name: "Seke",
+      assignments: sekeAssignments,
+    };
+    evaluationsForPage.current = [lesAdverbes];
+    dataState.current = { ...dataState.current, evaluations: [lesAdverbes] };
+  });
+
+  it("Brouillon absente du select Saisie des notes", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    const select = screen.getByLabelText("Évaluation") as HTMLSelectElement;
+    expect([...select.options].map((option) => option.text).join(" ")).not.toContain("LES ADVERBES");
+  });
+
+  it("Validée Trimestre 1 visible dans Saisie même si la période active est Trimestre 3", () => {
+    evaluationsForPage.current = [{ ...lesAdverbes, status: "Validée" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Saisie des notes" }));
+    expect(screen.getByLabelText("Période")).toHaveValue("Trimestre 3");
+    const select = screen.getByLabelText("Évaluation") as HTMLSelectElement;
+    expect([...select.options].map((option) => option.text).join(" ")).toContain("LES ADVERBES");
+  });
+
+  it("Enseignant : bouton Valider absent après refresh Validée", () => {
+    evaluationsForPage.current = [{ ...lesAdverbes, status: "Validée" }];
+    dataState.current = { ...dataState.current, evaluations: evaluationsForPage.current };
+    renderPage();
     expect(screen.queryByRole("button", { name: "Valider" })).not.toBeInTheDocument();
   });
 });

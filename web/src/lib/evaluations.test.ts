@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { BackOfficeState, SessionUser } from "../types";
-import { courseOptionsForClass, subjectOptionsForClass } from "./evaluations";
+import {
+  canEnterGradesForEvaluation,
+  courseOptionsForClass,
+  evaluationsEligibleForGradeEntry,
+  subjectOptionsForClass,
+  upsertStudentGrade,
+} from "./evaluations";
 
 const emptyState = {
   courses: [],
@@ -235,5 +241,90 @@ describe("courseOptionsForClass — JWT enseignant (P0 Notes)", () => {
     expect(
       subjectOptionsForClass(emptyState, "CD-2026-0001", "2ème A", sekeUser(sekeTwoCourses)),
     ).toEqual(["Mathématiques", "Physique"]);
+  });
+});
+
+describe("canEnterGradesForEvaluation — Validée uniquement", () => {
+  const state = { teachers: [], assignments: [], evaluations: [] } as unknown as BackOfficeState;
+  const evaluation = {
+    id: "EVAL-ADV",
+    schoolCode: "CD-2026-0001",
+    classId: CLASS_A,
+    className: "2ème A",
+    subject: "Mathématiques",
+    period: "Trimestre 1",
+    evaluationType: "Devoir",
+    title: "LES ADVERBES",
+    scale: 20,
+    coefficient: 1,
+    status: "Brouillon",
+    active: true,
+  } as unknown as import("../types").Evaluation;
+
+  it("refuse Brouillon / Ouverte / Publiée / Annulée même avec affectation JWT", () => {
+    const seke = sekeUser(sekeTwoCourses);
+    for (const status of ["Brouillon", "Ouverte", "Saisie terminée", "Publiée", "Annulée"] as const) {
+      expect(
+        canEnterGradesForEvaluation(seke, { ...evaluation, status }, state),
+      ).toBe(false);
+    }
+  });
+
+  it("autorise Validée pour l'enseignant affecté classe + cours", () => {
+    expect(
+      canEnterGradesForEvaluation(sekeUser(sekeTwoCourses), { ...evaluation, status: "Validée" }, state),
+    ).toBe(true);
+  });
+
+  it("refuse Validée d'un autre cours ou d'une autre classe", () => {
+    const validated = { ...evaluation, status: "Validée" as const };
+    expect(
+      canEnterGradesForEvaluation(sekeUser(sekeTwoCourses), { ...validated, subject: "Histoire" }, state),
+    ).toBe(false);
+    expect(
+      canEnterGradesForEvaluation(
+        sekeUser(sekeTwoCourses),
+        { ...validated, classId: CLASS_B, className: "2ème B" },
+        state,
+      ),
+    ).toBe(false);
+  });
+
+  it("Préfet voit Validée ; Enseignant ne valide pas via cette fonction", () => {
+    const prefet: SessionUser = { id: "prefet", role: "Préfet des études", schoolCode: "CD-2026-0001" };
+    expect(canEnterGradesForEvaluation(prefet, { ...evaluation, status: "Validée" }, state)).toBe(true);
+    expect(canEnterGradesForEvaluation(prefet, evaluation, state)).toBe(false);
+  });
+
+  it("Saisie des notes : seules les évaluations Validée du scope", () => {
+    const rows = evaluationsEligibleForGradeEntry(
+      sekeUser(sekeTwoCourses),
+      [
+        evaluation,
+        { ...evaluation, id: "EVAL-OK", status: "Validée", title: "LES ADVERBES" },
+        { ...evaluation, id: "EVAL-HIST", status: "Validée", subject: "Histoire", title: "Histoire" },
+      ] as import("../types").Evaluation[],
+      state,
+    );
+    expect(rows.map((row) => row.id)).toEqual(["EVAL-OK"]);
+  });
+
+  it("upsertStudentGrade refuse un brouillon et accepte Validée", () => {
+    const author = sekeUser(sekeTwoCourses);
+    const student = { id: "s1", firstName: "Riziki", lastName: "Masumbuko" };
+    const blocked = upsertStudentGrade([], evaluation, student, {
+      value: 14,
+      gradeStatus: "Saisie",
+      author,
+    });
+    expect(blocked.error).toMatch(/non validée/i);
+
+    const allowed = upsertStudentGrade([], { ...evaluation, status: "Validée" }, student, {
+      value: 14,
+      gradeStatus: "Saisie",
+      author,
+    });
+    expect(allowed.error).toBeUndefined();
+    expect(allowed.grades[0]?.value).toBe(14);
   });
 });

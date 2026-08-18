@@ -28,17 +28,18 @@ import {
   allGrades,
   canDeleteEvaluation,
   canEditEvaluation,
+  canEnterGradesForEvaluation,
   correctValidatedGrade,
   deactivateEvaluation,
   buildEvaluationsFromExams,
   ensureEvaluationsSynced,
+  evaluationsEligibleForGradeEntry,
   gradesToLegacyNotes,
   publishEvaluation,
   resolveGradesPeriod,
   scopedEvaluations,
   scopedGrades,
   syncBulletinsForClass,
-  teacherCanAccessEvaluation,
   updateEvaluation,
   validateEvaluationGrades,
 } from "../lib/evaluations";
@@ -152,6 +153,13 @@ export function GradesEvaluationsPage() {
   }, [classNames]);
 
   const filteredEvaluations = filterEvaluationsForQueue(evaluations, period, statusFilter);
+  const gradeEntryEvaluations = useMemo(
+    () =>
+      evaluationsEligibleForGradeEntry(scopeUser, evaluations, state).filter(
+        (evaluation) => !selectedClass || classNamesMatch(evaluation.className, selectedClass),
+      ),
+    [evaluations, scopeUser, selectedClass, state],
+  );
   const periodOptions = periodFilterOptions(state, code, evaluations);
 
   const selectedEvaluation =
@@ -565,19 +573,15 @@ export function GradesEvaluationsPage() {
             <Card className="p-6">
               <Field label="Évaluation">
                 <Select
+                  aria-label="Évaluation"
                   value={selectedEvaluationId}
                   onChange={(e) => setSelectedEvaluationId(e.target.value)}
                   options={[
                     { value: "", label: "Choisir une évaluation…" },
-                    ...filteredEvaluations
-                      .filter(
-                        (evaluation) =>
-                          !selectedClass || classNamesMatch(evaluation.className, selectedClass),
-                      )
-                      .map((evaluation) => ({
-                        value: evaluation.id,
-                        label: `${evaluation.title} — ${evaluation.subject}`,
-                      })),
+                    ...gradeEntryEvaluations.map((evaluation) => ({
+                      value: evaluation.id,
+                      label: `${evaluation.title} — ${evaluation.subject}`,
+                    })),
                   ]}
                 />
               </Field>
@@ -587,11 +591,7 @@ export function GradesEvaluationsPage() {
                     evaluation={selectedEvaluation}
                     students={students}
                     grades={allGrades(state)}
-                    canEdit={
-                      canEnterGrades &&
-                      teacherCanAccessEvaluation(scopeUser, selectedEvaluation, state) &&
-                      canEditEvaluation(selectedEvaluation, state)
-                    }
+                    canEdit={canEnterGrades && canEnterGradesForEvaluation(scopeUser, selectedEvaluation, state)}
                     user={scopeUser}
                     onChange={(next) => void handleGradesChange(next)}
                     onError={(message) => showToast(message, "error")}

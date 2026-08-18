@@ -21,6 +21,7 @@ import { formatStudentName, GradeBookService } from "./gradeBook";
 import { normalize } from "./format";
 import { isSuperAdminRole } from "./orgHierarchy";
 import { courseOptionsForClass, subjectOptionsForClass } from "./evaluationCourseOptions";
+import { classNamesMatch } from "./classRules";
 
 export { courseOptionsForClass, subjectOptionsForClass };
 
@@ -302,6 +303,9 @@ export function teacherCanAccessEvaluation(
     return true;
   }
   if (role.includes("enseignant") || role.includes("teacher")) {
+    const jwtCover = teacherJwtCoversEvaluation(user, evaluation);
+    if (jwtCover === true) return true;
+    if (jwtCover === false) return false;
     const teacher = resolveTeacherRecordForUser(user, state);
     if (!teacher) return false;
     const teacherName = `${String(teacher.firstName ?? "")} ${String(teacher.lastName ?? "")}`.trim();
@@ -310,12 +314,63 @@ export function teacherCanAccessEvaluation(
     const assignments = (state.assignments ?? []) as Record<string, unknown>[];
     return assignments.some(
       (assignment) =>
-        normalize(String(assignment.className ?? "")) === normalize(evaluation.className) &&
-        normalize(String(assignment.subject ?? assignment.course ?? "")) === normalize(evaluation.subject) &&
+        assignmentMatchesEvaluationClass(assignment, evaluation) &&
+        assignmentMatchesEvaluationSubject(assignment, evaluation) &&
         String(assignment.teacherId ?? "") === String(teacher.id),
     );
   }
   return false;
+}
+
+function isActiveAssignmentStatus(status: unknown): boolean {
+  const normalized = normalize(String(status ?? ""));
+  if (!normalized) return false;
+  return ["active", "actif", "open", "ouverte"].includes(normalized);
+}
+
+function assignmentMatchesEvaluationClass(assignment: Record<string, unknown>, evaluation: Evaluation): boolean {
+  const assignmentClassId = String(assignment.classId ?? assignment.class_id ?? "").trim();
+  const evaluationClassId = String(evaluation.classId ?? "").trim();
+  if (assignmentClassId && evaluationClassId) {
+    return assignmentClassId === evaluationClassId;
+  }
+  return classNamesMatch(assignment.className ?? assignment.class_name, evaluation.className);
+}
+
+function assignmentMatchesEvaluationSubject(assignment: Record<string, unknown>, evaluation: Evaluation): boolean {
+  const course = normalize(String(assignment.course ?? assignment.subject ?? assignment.name ?? ""));
+  if (!course) return false;
+  return course === normalize(evaluation.subject) || course === normalize(String(evaluation.course ?? ""));
+}
+
+/** JWT affectations actives : classe + cours. `null` = pas d'assignments JWT (repli state). */
+function teacherJwtCoversEvaluation(user: SessionUser, evaluation: Evaluation): boolean | null {
+  const assignments = Array.isArray(user.assignments) ? user.assignments : [];
+  if (!assignments.length) return null;
+  return assignments.some((raw) => {
+    const assignment = raw as Record<string, unknown>;
+    if (!isActiveAssignmentStatus(assignment.status ?? assignment.assignmentStatus)) return false;
+    return assignmentMatchesEvaluationClass(assignment, evaluation) && assignmentMatchesEvaluationSubject(assignment, evaluation);
+  });
+}
+
+export function canEnterGradesForEvaluation(
+  user: SessionUser | null,
+  evaluation: Evaluation | null | undefined,
+  state: BackOfficeState,
+): boolean {
+  if (!user || !evaluation) return false;
+  if (evaluation.active === false) return false;
+  if (evaluation.status !== "Validée") return false;
+  return teacherCanAccessEvaluation(user, evaluation, state);
+}
+
+export function evaluationsEligibleForGradeEntry(
+  user: SessionUser | null,
+  evaluations: Evaluation[],
+  state: BackOfficeState,
+): Evaluation[] {
+  return evaluations.filter((evaluation) => canEnterGradesForEvaluation(user, evaluation, state));
 }
 
 export function buildEvaluationsFromExams(state: BackOfficeState, schoolCode: string): Evaluation[] {
@@ -458,6 +513,12 @@ export function upsertStudentGrade(
     author: SessionUser | null;
   },
 ): { grades: StudentGrade[]; error?: string } {
+  if (evaluation.active === false) {
+    return { grades, error: "Évaluation inactive : saisie des notes refusée." };
+  }
+  if (evaluation.status !== "Validée") {
+    return { grades, error: "Évaluation non validée : saisie des notes refusée." };
+  }
   if (LOCKED_EVALUATION_STATUSES.has(evaluation.status) && input.gradeStatus !== "Corrigée") {
     const existing = grades.find(
       (grade) => grade.evaluationId === evaluation.id && grade.studentId === String(student.id ?? ""),

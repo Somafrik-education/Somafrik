@@ -95,6 +95,14 @@ function mapPedagogyPersistenceError(error) {
   if (/hors barème|score|note invalide|coefficient|max_score/i.test(message) && statusCode < 500) {
     return createPedagogyError(statusCode, message, PEDAGOGY_ERROR.GRADE_INVALID);
   }
+  if (
+    /non validée|non validee|évaluation publiée|evaluation publiee|évaluation inactive|pas de nouvelle saisie/i.test(
+      message,
+    ) &&
+    statusCode < 500
+  ) {
+    return createPedagogyError(statusCode === 400 ? 409 : statusCode, message, PEDAGOGY_ERROR.EVALUATION_NOT_VALIDATED);
+  }
   if (/élève introuvable|eleve introuvable|non inscrit|hors classe/i.test(message) && statusCode < 500) {
     return createPedagogyError(statusCode, message, PEDAGOGY_ERROR.STUDENT_NOT_ENROLLED);
   }

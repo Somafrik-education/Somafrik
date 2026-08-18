@@ -100,6 +100,11 @@ function isLockedEvaluationStatus(value) {
   return status === "locked" || status === "published" || status === "archived";
 }
 
+/** UI « Validée » = PostgreSQL `locked`. Seul statut qui ouvre la saisie des notes. */
+function isValidatedEvaluationStatus(value) {
+  return toEvaluationStatus(value, "") === "locked";
+}
+
 /**
  * Valide score / statut / barème / coefficient.
  * @returns {string|null} message d'erreur ou null
@@ -241,6 +246,7 @@ module.exports = {
   fromGradeStatus,
   isPublishedEvaluationStatus,
   isLockedEvaluationStatus,
+  isValidatedEvaluationStatus,
   validateGradeContract,
   validateEvaluationContract,
   normalizedScore,

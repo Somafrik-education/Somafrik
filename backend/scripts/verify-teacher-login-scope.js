@@ -64,11 +64,35 @@ function assertNotesWebUsesSessionAssignments() {
   assert.match(gradesPage, /periodFilterOptions/);
   assert.match(gradesPage, /filterEvaluationsForQueue/);
   assert.match(gradesPage, /resolveEvaluationsQueueDefaults/);
+  assert.match(gradesPage, /evaluationsEligibleForGradeEntry/);
+  assert.match(gradesPage, /canEnterGradesForEvaluation/);
+  assert.doesNotMatch(
+    gradesPage,
+    /canEditEvaluation\(selectedEvaluation/,
+    "saisie des notes ne doit pas réutiliser canEditEvaluation",
+  );
   assert.doesNotMatch(
     gradesPage,
     /<Input value=\{period\}/,
     "Période Notes ne doit plus être un Input texte libre",
   );
+
+  const evaluationsLib = fs.readFileSync(path.join(ROOT, "web/src/lib/evaluations.ts"), "utf8");
+  assert.match(evaluationsLib, /export function canEnterGradesForEvaluation/);
+  assert.match(evaluationsLib, /evaluation\.status !== "Validée"/);
+  assert.match(evaluationsLib, /evaluationsEligibleForGradeEntry/);
+
+  const gradeEntry = fs.readFileSync(path.join(ROOT, "backend/lib/evaluationGradeEntry.js"), "utf8");
+  assert.match(gradeEntry, /EVALUATION_NOT_VALIDATED/);
+  assert.match(gradeEntry, /isValidatedEvaluationStatus/);
+  assert.match(gradeEntry, /assertTeacherCannotValidateEvaluation/);
+
+  const notesRoute = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
+  assert.match(notesRoute, /assertNoteWrite/);
+  const upsertGrade = notesRepo.match(/async upsertGrade[\s\S]+?async resolveStudentForGrade/);
+  assert.ok(upsertGrade, "upsertGrade introuvable");
+  assert.match(upsertGrade[0], /assertEvaluationAllowsGradeEntry/);
+  assert.match(upsertGrade[0], /assertStudentEnrolledInEvaluationClass/);
 }
 
 assertPresenceWebUsesSessionAssignments();
@@ -94,6 +118,7 @@ const web = spawnSync(
     "src/lib/domainLoaders.evaluations.test.ts",
     "src/lib/evaluationQueue.test.ts",
     "src/pages/GradesEvaluationsPage.test.tsx",
+    "src/components/grades/GradeEntryGrid.test.tsx",
   ],
   {
     cwd: ROOT,
