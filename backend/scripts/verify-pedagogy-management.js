@@ -406,6 +406,12 @@ async function runPostgresHttpGuards(databaseUrl) {
     );
     const subjectCountBefore = subjectsBefore.rows[0].count;
 
+    const academicYearId = (
+      await pool.query(
+        `SELECT ay.id FROM academic_years ay JOIN schools s ON s.id = ay.school_id WHERE s.school_code = 'CD-2026-0001' LIMIT 1`,
+      )
+    ).rows[0].id;
+
     const unknownClass = await request(PG_PORT, "/courses", {
       method: "POST",
       token: adminToken,
@@ -452,37 +458,38 @@ async function runPostgresHttpGuards(databaseUrl) {
       body: {
         className: `Fantôme-${stamp}`,
         subject: "Mathématiques",
-        start: "2026-10-01T08:00:00.000Z",
-        end: "2026-10-01T09:00:00.000Z",
+        dayOfWeek: 1,
+        startTime: "08:00",
+        endTime: "09:00",
       },
     });
-    assert.equal(unknownScheduleClass.status, 404);
+    assert.equal(unknownScheduleClass.status, 400);
     assert.equal(unknownScheduleClass.data?.code, PEDAGOGY_ERROR.COURSE_NOT_FOUND);
 
     const validSchedule = await request(PG_PORT, "/course-schedules", {
       method: "POST",
       token: adminToken,
       body: {
-        id: `SCH-HTTP-${stamp}`,
-        className: "6ème A",
-        subject: "Mathématiques",
-        teacherId: "ENS-0001",
-        start: "2026-10-02T08:00:00.000Z",
-        end: "2026-10-02T09:00:00.000Z",
+        schoolCourseId: validCourse.data.schoolCourseId,
+        academicYearId,
+        dayOfWeek: 5,
+        startTime: "08:00",
+        endTime: "09:00",
       },
     });
     assert.equal(validSchedule.status, 201, JSON.stringify(validSchedule.data));
+    assert.equal(validSchedule.data.schoolCourseId, validCourse.data.schoolCourseId);
+    assert.equal(validSchedule.data.dayOfWeek, 5);
 
     const prefetSchedule = await request(PG_PORT, "/course-schedules", {
       method: "POST",
       token: prefetToken,
       body: {
-        id: `SCH-HTTP-PREFET-${stamp}`,
-        className: "6ème A",
-        subject: "Mathématiques",
-        teacherId: "ENS-0001",
-        start: "2026-10-03T08:00:00.000Z",
-        end: "2026-10-03T09:00:00.000Z",
+        schoolCourseId: validCourse.data.schoolCourseId,
+        academicYearId,
+        dayOfWeek: 6,
+        startTime: "08:00",
+        endTime: "09:00",
       },
     });
     assert.equal(prefetSchedule.status, 201, JSON.stringify(prefetSchedule.data));
@@ -504,8 +511,8 @@ async function runPostgresHttpGuards(databaseUrl) {
     await assertCourseScheduleWriteDenied(PG_PORT, secretaryToken, validSchedule.data.id, "secretaire");
 
     const slotStillPresent = await pool.query(
-      `SELECT count(*)::int AS count FROM course_schedule_slots WHERE legacy_json_id = $1`,
-      [`SCH-HTTP-${stamp}`],
+      `SELECT count(*)::int AS count FROM course_schedule_weekly_slots WHERE id = $1 AND status = 'active'`,
+      [validSchedule.data.id],
     );
     assert.equal(slotStillPresent.rows[0].count, 1, "DELETE enseignant/parent refusé : créneau conservé");
 
@@ -1139,23 +1146,20 @@ async function runPostgresHttpGuards(databaseUrl) {
     const schedulePatchForbidden = await request(PG_PORT, `/course-schedules/${validSchedule.data.id}`, {
       method: "PATCH",
       token: adminToken,
-      body: { subject: "Histoire" },
+      body: { dayOfWeek: 6, startTime: "08:30", endTime: "09:30" },
     });
-    assert.equal(schedulePatchForbidden.status, 403, JSON.stringify(schedulePatchForbidden.data));
+    assert.equal(schedulePatchForbidden.status, 409, JSON.stringify(schedulePatchForbidden.data));
     assert.equal(
       schedulePatchForbidden.data?.code,
-      PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
-      "PATCH créneau sans teacherId revalide l'affectation",
+      PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT,
+      "PATCH créneau créant une collision enseignant refusée",
     );
     const slotAfterFailedPatch = await pool.query(
-      `SELECT class_name, subject_name, class_id
-       FROM course_schedule_slots
-       WHERE legacy_json_id = $1`,
-      [`SCH-HTTP-${stamp}`],
+      `SELECT day_of_week, start_time::text AS start_time FROM course_schedule_weekly_slots WHERE id = $1`,
+      [validSchedule.data.id],
     );
-    assert.equal(slotAfterFailedPatch.rows[0].class_name, "6ème A");
-    assert.equal(slotAfterFailedPatch.rows[0].subject_name, "Mathématiques");
-    assert.ok(slotAfterFailedPatch.rows[0].class_id, "class_id canonique conservé");
+    assert.equal(Number(slotAfterFailedPatch.rows[0].day_of_week), 5);
+    assert.ok(String(slotAfterFailedPatch.rows[0].start_time).startsWith("08:00"));
 
     const subjectsAfter = await pool.query(
       `SELECT count(*)::int AS count FROM subjects s

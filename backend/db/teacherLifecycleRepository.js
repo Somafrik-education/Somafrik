@@ -209,7 +209,18 @@ function createTeacherLifecycleRepository(db) {
           WHERE css.teacher_id = $1 AND css.ends_at > NOW()) AS schedules`,
       [teacherId],
     );
-    if (Number(activeRefs?.courses ?? 0) > 0 || Number(activeRefs?.schedules ?? 0) > 0) {
+    let weekly = 0;
+    const weeklyTable = await scope.one(`SELECT to_regclass('public.course_schedule_weekly_slots') AS rel`);
+    if (weeklyTable?.rel) {
+      const weeklyRow = await scope.one(
+        `SELECT COUNT(*)::int AS count
+         FROM course_schedule_weekly_slots
+         WHERE teacher_id = $1 AND status = 'active'`,
+        [teacherId],
+      );
+      weekly = Number(weeklyRow?.count ?? 0);
+    }
+    if (Number(activeRefs?.courses ?? 0) > 0 || Number(activeRefs?.schedules ?? 0) > 0 || weekly > 0) {
       throw createTeacherHttpError(
         409,
         "Cet enseignant possède encore des cours ou créneaux actifs. Retirez-les avant suppression.",

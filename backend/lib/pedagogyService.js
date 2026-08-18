@@ -13,8 +13,21 @@ const {
   assertOpenAcademicYearForClass,
   resolveCanonicalPeriod,
   resolveTeacherWithActiveAssignment,
+  requireTeacherWithActiveAssignment,
+  assertAcademicYearForWeeklySlot,
   mapPedagogyPersistenceError,
 } = require("./pedagogyReferences");
+const {
+  parseDayOfWeek,
+  parseLocalTime,
+  assertTimeOrder,
+  isExclusionViolation,
+  mapExclusionViolation,
+} = require("./planningWeekly");
+const {
+  expandWeeklyOccurrences,
+  resolveSchoolTimeZone,
+} = require("./planningWeeklyOccurrences");
 
 function assertTenant(principal, schoolCode) {
   const scope = asTrimmed(principal?.schoolCode);
@@ -174,77 +187,105 @@ async function deleteCourse(store, courseId, principal, auditMeta) {
   });
 }
 
-function parseScheduleTimes(payload) {
-  const startsAt = payload.start ?? payload.startsAt;
-  const endsAt = payload.end ?? payload.endsAt;
-  if (!startsAt || !endsAt) {
-    throw createPedagogyError(400, "Horaires de début et fin obligatoires.");
+async function loadCanonicalSchoolCourse(tx, school, schoolCourseId) {
+  const key = asTrimmed(schoolCourseId);
+  if (!key) {
+    throw createPedagogyError(400, "schoolCourseId obligatoire.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
   }
-  const startDate = new Date(startsAt);
-  const endDate = new Date(endsAt);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
-    throw createPedagogyError(400, "Créneau horaire invalide.");
+  const course = await tx.getSchoolCourseContext(key, school.id);
+  if (!course) {
+    throw createPedagogyError(404, "Cours introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
   }
-  return { startsAt: startDate.toISOString(), endsAt: endDate.toISOString() };
+  if (String(course.school_id) !== String(school.id)) {
+    throw createPedagogyError(404, "Cours introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
+  }
+  if (asTrimmed(course.status).toLowerCase() !== "active") {
+    throw createPedagogyError(
+      409,
+      "Le cours n'est pas actif.",
+      PEDAGOGY_ERROR.SCHOOL_COURSE_INACTIVE,
+    );
+  }
+  if (!course.teacher_id) {
+    throw createPedagogyError(
+      400,
+      "Le cours n'a pas d'enseignant : un créneau hebdomadaire ne peut pas être créé sans enseignant.",
+      PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
+    );
+  }
+  return course;
+}
+
+async function assertWeeklySlotReferences(tx, school, payload, { requireOpenYear }) {
+  const schoolCourseId = payload.schoolCourseId ?? payload.school_course_id;
+  const academicYearId = payload.academicYearId ?? payload.academic_year_id;
+  if (!asTrimmed(academicYearId)) {
+    throw createPedagogyError(400, "academicYearId obligatoire.", PEDAGOGY_ERROR.ACADEMIC_YEAR_MISMATCH);
+  }
+  const course = await loadCanonicalSchoolCourse(tx, school, schoolCourseId);
+  const year = await assertAcademicYearForWeeklySlot(tx, {
+    schoolId: school.id,
+    academicYearId,
+    classAcademicYearId: course.class_academic_year_id,
+    requireOpen: requireOpenYear,
+  });
+  const teacherKey = course.teacher_code || course.teacher_id;
+  await requireTeacherWithActiveAssignment(tx, {
+    schoolId: school.id,
+    teacherKey,
+    classId: course.class_id,
+    subjectId: course.subject_id,
+    academicYearId: year.id,
+  });
+  return { course, year };
+}
+
+function parseWeeklyTimes(payload, fallback = {}) {
+  const dayOfWeek = parseDayOfWeek(payload.dayOfWeek ?? payload.day_of_week ?? fallback.dayOfWeek);
+  const startTime = parseLocalTime(payload.startTime ?? payload.start_time ?? fallback.startTime, "startTime");
+  const endTime = parseLocalTime(payload.endTime ?? payload.end_time ?? fallback.endTime, "endTime");
+  assertTimeOrder(startTime, endTime);
+  return { dayOfWeek, startTime, endTime };
+}
+
+async function persistWeeklySlot(tx, fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    if (isExclusionViolation(error)) {
+      throw mapExclusionViolation(error);
+    }
+    throw mapPedagogyPersistenceError(error);
+  }
 }
 
 async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
-  const className = asTrimmed(payload.className);
-  const subjectName = asTrimmed(payload.subject);
-  if (!className || !subjectName) {
-    throw createPedagogyError(400, "Classe et cours obligatoires.");
+  if (asTrimmed(payload.className) && !asTrimmed(payload.schoolCourseId ?? payload.school_course_id)) {
+    throw createPedagogyError(
+      400,
+      "schoolCourseId obligatoire : className + subject ne sont plus une autorité Planning V2.",
+      PEDAGOGY_ERROR.COURSE_NOT_FOUND,
+    );
   }
-  const times = parseScheduleTimes(payload);
   return store.withTransaction(async (tx) => {
     const school = await resolveSchoolContext(tx, principal);
-    const klass = await resolveCanonicalClass(tx, school.id, className);
-    const academicYear = await assertOpenAcademicYearForClass(tx, klass);
-    const subject = await resolveCanonicalSubject(tx, school.id, subjectName);
-    if (payload.periodName) {
-      await resolveCanonicalPeriod(tx, academicYear.id, payload.periodName);
-    }
-    const { teacherId } = await resolveTeacherWithActiveAssignment(tx, {
-      schoolId: school.id,
-      teacherKey: payload.teacherId,
-      classId: klass.id,
-      subjectId: subject.id,
-      academicYearId: academicYear.id,
-    });
-    const conflicts = await tx.listScheduleConflicts(school.id, {
-      startsAt: times.startsAt,
-      endsAt: times.endsAt,
-      className,
-      teacherId,
-    });
-    if (conflicts.length) {
-      throw createPedagogyError(409, "Conflit d'emploi du temps.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT, {
-        conflicts: conflicts.map((row) => row.id),
-      });
-    }
-    const saved = await tx.insertScheduleSlot({
-      schoolId: school.id,
-      classId: klass.id,
-      className,
-      subjectName: subject.name,
-      teacherId,
-      kind: payload.kind ?? "course",
-      startsAt: times.startsAt,
-      endsAt: times.endsAt,
-      room: payload.room,
-      examName: payload.examName,
-      examType: payload.examType,
-      examId: payload.examId,
-      periodName: payload.periodName,
-      periodStart: payload.periodStart,
-      periodEnd: payload.periodEnd,
-      legacyJsonId: asTrimmed(payload.id) || undefined,
-      profile: {
-        teacherId: payload.teacherId,
-        teacherName: payload.teacherName,
+    const { course, year } = await assertWeeklySlotReferences(tx, school, payload, { requireOpenYear: true });
+    const times = parseWeeklyTimes(payload);
+    const saved = await persistWeeklySlot(tx, () =>
+      tx.insertWeeklyScheduleSlot({
+        schoolId: school.id,
+        academicYearId: year.id,
+        schoolCourseId: course.id,
+        classId: course.class_id,
+        teacherId: course.teacher_id,
+        dayOfWeek: times.dayOfWeek,
+        startTime: times.startTime,
+        endTime: times.endTime,
+        status: "active",
         room: payload.room,
-      },
-    });
+      }),
+    );
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "create_course_schedule",
       entityType: "course_schedule",
@@ -256,88 +297,32 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
   });
 }
 
-async function updateCourseSchedule(store, scheduleId, patch, principal, auditMeta) {
-  const times = patch.start || patch.end ? parseScheduleTimes(patch) : null;
+async function updateCourseSchedule(store, scheduleId, patchRaw, principal, auditMeta) {
+  const patch = ignoreClientScope(patchRaw);
   return store.withTransaction(async (tx) => {
-    const existing = await tx.getScheduleById(scheduleId, principal);
-    if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT);
+    const existing = await tx.getWeeklyScheduleById(scheduleId, principal);
+    if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
     assertTenant(principal, existing.schoolCode);
     const school = await tx.getSchoolByCode(existing.schoolCode);
-    const nextClassName = asTrimmed(patch.className ?? existing.className);
-    const nextSubjectName = asTrimmed(patch.subject ?? existing.subject);
-    const klass = await resolveCanonicalClass(tx, school.id, nextClassName);
-    const academicYear = await assertOpenAcademicYearForClass(tx, klass);
-    const subject = await resolveCanonicalSubject(tx, school.id, nextSubjectName);
-    if (patch.periodName ?? existing.periodName) {
-      await resolveCanonicalPeriod(tx, academicYear.id, patch.periodName ?? existing.periodName);
-    }
-
-    const classOrSubjectChanged =
-      nextClassName !== asTrimmed(existing.className) ||
-      nextSubjectName !== asTrimmed(existing.subject);
-
-    let finalTeacherId = null;
-    let profilePatch = null;
-    if (patch.teacherId !== undefined) {
-      if (!patch.teacherId) {
-        finalTeacherId = null;
-        profilePatch = { teacherId: "", teacherName: "" };
-      } else {
-        const resolved = await resolveTeacherWithActiveAssignment(tx, {
-          schoolId: school.id,
-          teacherKey: patch.teacherId,
-          classId: klass.id,
-          subjectId: subject.id,
-          academicYearId: academicYear.id,
-        });
-        finalTeacherId = resolved.teacherId;
-        profilePatch = { teacherId: patch.teacherId };
-      }
-    } else if (existing.teacherDbId) {
-      finalTeacherId = existing.teacherDbId;
-      if (classOrSubjectChanged) {
-        const teacher =
-          (await tx.findTeacher(school.id, existing.teacherId)) ??
-          (await tx.findTeacher(school.id, existing.teacherDbId));
-        const teacherKey = asTrimmed(teacher?.teacher_code ?? existing.teacherId);
-        if (teacherKey) {
-          const resolved = await resolveTeacherWithActiveAssignment(tx, {
-            schoolId: school.id,
-            teacherKey,
-            classId: klass.id,
-            subjectId: subject.id,
-            academicYearId: academicYear.id,
-          });
-          finalTeacherId = resolved.teacherId;
-        }
-      }
-    }
-
-    const nextStart = times?.startsAt ?? existing.start;
-    const nextEnd = times?.endsAt ?? existing.end;
-    const conflicts = await tx.listScheduleConflicts(
-      school.id,
-      {
-        startsAt: nextStart,
-        endsAt: nextEnd,
-        className: nextClassName,
-        teacherId: finalTeacherId,
-      },
-      existing.dbId ?? existing.id,
+    const nextPayload = {
+      schoolCourseId: patch.schoolCourseId ?? patch.school_course_id ?? existing.schoolCourseId,
+      academicYearId: patch.academicYearId ?? patch.academic_year_id ?? existing.academicYearId,
+    };
+    const { course, year } = await assertWeeklySlotReferences(tx, school, nextPayload, { requireOpenYear: true });
+    const times = parseWeeklyTimes(patch, existing);
+    const saved = await persistWeeklySlot(tx, () =>
+      tx.updateWeeklyScheduleSlot(existing.id, {
+        schoolId: school.id,
+        academicYearId: year.id,
+        schoolCourseId: course.id,
+        classId: course.class_id,
+        teacherId: course.teacher_id,
+        dayOfWeek: times.dayOfWeek,
+        startTime: times.startTime,
+        endTime: times.endTime,
+        room: patch.room !== undefined ? patch.room : existing.room,
+      }),
     );
-    if (conflicts.length) {
-      throw createPedagogyError(409, "Conflit d'emploi du temps.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT);
-    }
-    const saved = await tx.updateScheduleSlot(existing.dbId ?? existing.id, {
-      classId: klass.id,
-      className: nextClassName,
-      subjectName: subject.name,
-      teacherId: finalTeacherId,
-      startsAt: nextStart,
-      endsAt: nextEnd,
-      room: patch.room !== undefined ? patch.room : existing.room,
-      profile: profilePatch,
-    });
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "update_course_schedule",
       entityType: "course_schedule",
@@ -352,19 +337,88 @@ async function updateCourseSchedule(store, scheduleId, patch, principal, auditMe
 
 async function deleteCourseSchedule(store, scheduleId, principal, auditMeta) {
   return store.withTransaction(async (tx) => {
-    const existing = await tx.getScheduleById(scheduleId, principal);
-    if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT);
+    const existing = await tx.getWeeklyScheduleById(scheduleId, principal);
+    if (!existing) throw createPedagogyError(404, "Créneau introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
     assertTenant(principal, existing.schoolCode);
-    await tx.deleteScheduleSlot(existing.dbId ?? existing.id);
+    const saved = await tx.cancelWeeklyScheduleSlot(existing.id);
     await writePedagogyAudit(tx, principal, auditMeta, {
-      action: "delete_course_schedule",
+      action: "cancel_course_schedule",
       entityType: "course_schedule",
       entityId: existing.id,
       schoolCode: existing.schoolCode,
       oldValue: existing,
+      newValue: saved,
     });
-    return { id: existing.id, deleted: true };
+    return {
+      id: existing.id,
+      status: saved.status,
+      deleted: false,
+      cancelled: true,
+    };
   });
+}
+
+function isTeacherRole(principal) {
+  const role = String(principal?.role ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  return role === "enseignant" || role === "teacher" || role.includes("prof");
+}
+
+async function listCourseSchedules(store, principal, query = {}) {
+  const schoolCode = asTrimmed(principal?.schoolCode);
+  let school = null;
+  if (schoolCode && schoolCode !== "*") {
+    school = await store.getSchoolByCode(schoolCode);
+    if (!school) {
+      throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
+    }
+  }
+  const filters = {
+    schoolId: school?.id ?? null,
+    schoolCode: school?.code ?? schoolCode,
+    academicYearId: asTrimmed(query.academicYearId || query.academic_year_id) || null,
+    classId: asTrimmed(query.classId || query.class_id) || null,
+    teacherId: asTrimmed(query.teacherId || query.teacher_id) || null,
+    schoolCourseId: asTrimmed(query.schoolCourseId || query.school_course_id) || null,
+    dayOfWeek: query.dayOfWeek != null && query.dayOfWeek !== "" ? parseDayOfWeek(query.dayOfWeek) : null,
+    status: asTrimmed(query.status) || "active",
+  };
+
+  if (isTeacherRole(principal)) {
+    if (!school?.id) return [];
+    const teacherId = await store.resolveTeacherIdForPrincipal(principal, school.id);
+    if (!teacherId) return [];
+    if (filters.teacherId && String(filters.teacherId) !== String(teacherId)) {
+      return [];
+    }
+    filters.teacherId = teacherId;
+  }
+
+  const rows = await store.listWeeklyScheduleSlots(filters);
+  const from = asTrimmed(query.from);
+  const to = asTrimmed(query.to);
+  if (!from || !to) {
+    return rows;
+  }
+
+  const timeZone = resolveSchoolTimeZone(school?.timezone || school?.profile_payload?.timezone);
+  const items = rows.flatMap((slot) =>
+    expandWeeklyOccurrences(slot, { from, to, timeZone }).map((occurrence) => ({
+      ...slot,
+      ...occurrence,
+      projection: "occurrence",
+    })),
+  );
+  return {
+    projection: "occurrences",
+    from,
+    to,
+    timeZone,
+    items,
+  };
 }
 
 async function createEvaluation(store, rawPayload, principal, auditMeta) {
@@ -473,6 +527,7 @@ module.exports = {
   createCourseSchedule,
   updateCourseSchedule,
   deleteCourseSchedule,
+  listCourseSchedules,
   createEvaluation,
   updateEvaluation,
   upsertGrade,

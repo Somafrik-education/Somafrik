@@ -31,13 +31,19 @@ const baseCourse: CourseScheduleSlot = {
   periodName: "Trimestre 1",
   periodStart: "10-09-2026",
   periodEnd: "23-12-2026",
+  dayOfWeek: 1,
+  startTime: "10:00",
+  endTime: "11:00",
 };
 
 function testWeeklyRecurrence() {
   const occurrences = expandScheduleOccurrences(baseCourse);
   assert(occurrences.length >= 10, `Récurrence hebdo : attendu ≥10 occurrences, reçu ${occurrences.length}`);
-  const mondays = occurrences.filter((row) => new Date(row.start).getDay() === 1);
-  assert(mondays.length === occurrences.length, "Toutes les occurrences doivent être un lundi");
+  const mondays = occurrences.filter((row) => {
+    const js = new Date(row.start).getDay();
+    return js === 1;
+  });
+  assert(mondays.length === occurrences.length, "Toutes les occurrences doivent être un lundi (dayOfWeek canonique)");
   const first = new Date(occurrences[0].start);
   assert(first >= new Date("2026-09-10"), "Première occurrence après le début de période");
   const last = new Date(occurrences[occurrences.length - 1].start);

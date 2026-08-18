@@ -1320,6 +1320,10 @@ class PostgresRepository {
     return this.getPedagogyStore().getCourseSchedule(id, principal);
   }
 
+  listCourseSchedules(principal, query) {
+    return this.getPedagogyStore().listCourseSchedules(principal, query);
+  }
+
   createSchoolEvaluation(payload, principal, auditMeta) {
     return this.getPedagogyStore().createEvaluation(payload, principal, auditMeta);
   }

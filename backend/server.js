@@ -649,40 +649,14 @@ app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/course-schedules", requireAuth, requirePermission("GET /api/course-schedules"), asyncHandler(async (req, res) => {
+  if (typeof repository.listCourseSchedules === "function") {
+    const result = await repository.listCourseSchedules(req.principal, req.query ?? {});
+    res.json(result);
+    return;
+  }
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
-  let rows = tenantScopeService.filterRows(state.courseSchedules ?? [], req.principal, scope);
-
-  const normalizeKey = (value) =>
-    String(value ?? "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-
-  // Un enseignant ne voit que ses propres créneaux (par identifiant ou par nom).
-  if (req.principal.role === "Enseignant") {
-    const userId = String(req.principal.sub ?? "").trim();
-    const nameKeys = new Set(
-      [
-        req.principal.name,
-        req.principal.identifier,
-        [req.principal.firstName, req.principal.lastName].filter(Boolean).join(" "),
-        [req.principal.lastName, req.principal.firstName].filter(Boolean).join(" "),
-      ]
-        .map(normalizeKey)
-        .filter(Boolean),
-    );
-    const classNames = new Set((req.principal.classNames ?? []).map(normalizeKey));
-    rows = rows.filter((slot) => {
-      if (userId && String(slot.teacherId ?? "") === userId) return true;
-      if (nameKeys.size && nameKeys.has(normalizeKey(slot.teacherName))) return true;
-      if (classNames.size && classNames.has(normalizeKey(slot.className))) return true;
-      return false;
-    });
-  }
-
+  const rows = tenantScopeService.filterRows(state.courseSchedules ?? [], req.principal, scope);
   res.json(rows);
 }));
 

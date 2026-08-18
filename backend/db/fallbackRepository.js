@@ -2750,6 +2750,39 @@ class FallbackRepository {
     return Promise.resolve(null);
   }
 
+  async listCourseSchedules(principal, query = {}) {
+    const state = (await this.getBackOfficeState()) ?? {};
+    const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+    let rows = Array.isArray(state.courseSchedules) ? [...state.courseSchedules] : [];
+    if (schoolCode && schoolCode !== "*") {
+      rows = rows.filter((row) => String(row.schoolCode ?? "").trim().toUpperCase() === schoolCode);
+    }
+    const role = String(principal?.role ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    if (role === "enseignant" || role === "teacher" || role.includes("prof")) {
+      const ids = new Set(
+        [principal?.sub, principal?.id, principal?.identifier, principal?.teacherId]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      rows = rows.filter((slot) => ids.has(String(slot.teacherId ?? "")));
+    }
+    const classId = String(query.classId ?? query.class_id ?? "").trim();
+    const teacherId = String(query.teacherId ?? query.teacher_id ?? "").trim();
+    const schoolCourseId = String(query.schoolCourseId ?? query.school_course_id ?? "").trim();
+    const academicYearId = String(query.academicYearId ?? query.academic_year_id ?? "").trim();
+    const dayOfWeek = String(query.dayOfWeek ?? "").trim();
+    if (classId) rows = rows.filter((row) => String(row.classId ?? "") === classId);
+    if (teacherId) rows = rows.filter((row) => String(row.teacherId ?? "") === teacherId);
+    if (schoolCourseId) rows = rows.filter((row) => String(row.schoolCourseId ?? "") === schoolCourseId);
+    if (academicYearId) rows = rows.filter((row) => String(row.academicYearId ?? "") === academicYearId);
+    if (dayOfWeek) rows = rows.filter((row) => String(row.dayOfWeek ?? "") === dayOfWeek);
+    return rows;
+  }
+
   async listSchoolEvaluations(schoolCode, principal = {}) {
     const state = (await this.getBackOfficeState()) ?? {};
     const code = String(schoolCode ?? "").trim().toUpperCase();
