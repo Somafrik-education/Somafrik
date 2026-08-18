@@ -69,7 +69,7 @@ async function createCourse(store, rawPayload, principal, auditMeta) {
   const className = asTrimmed(payload.className);
   const subjectName = asTrimmed(payload.name ?? payload.subject);
   if (!className || !subjectName) {
-    throw createPedagogyError(400, "Classe et matière obligatoires.");
+    throw createPedagogyError(400, "Classe et cours obligatoires.");
   }
   return store.withTransaction(async (tx) => {
     const school = await resolveSchoolContext(tx, principal);
@@ -193,7 +193,7 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
   const className = asTrimmed(payload.className);
   const subjectName = asTrimmed(payload.subject);
   if (!className || !subjectName) {
-    throw createPedagogyError(400, "Classe et matière obligatoires.");
+    throw createPedagogyError(400, "Classe et cours obligatoires.");
   }
   const times = parseScheduleTimes(payload);
   return store.withTransaction(async (tx) => {

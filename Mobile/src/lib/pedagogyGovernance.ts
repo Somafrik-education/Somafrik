@@ -22,7 +22,7 @@ export function validateCourseTeacherRule(
   const teacherId = String(item.teacherId ?? "").trim();
   const teacherName = String(item.teacherName ?? "").trim();
 
-  if (!className || !subject) return "Classe et matière sont obligatoires.";
+  if (!className || !subject) return "Classe et cours sont obligatoires.";
   if (!teacherId && !teacherName) {
     return "Sélectionnez l'enseignant responsable de ce cours pour cette classe.";
   }

@@ -91,7 +91,7 @@ function createDocumentsExamsMemoryStore(seed = {}) {
         throw createDocumentsExamsError(400, "Classe obligatoire.", DOCUMENTS_EXAMS_ERROR.CLASS_REQUIRED);
       }
       if (!asTrimmed(body.subjectId || body.subject)) {
-        throw createDocumentsExamsError(400, "Matière obligatoire.", DOCUMENTS_EXAMS_ERROR.SUBJECT_REQUIRED);
+        throw createDocumentsExamsError(400, "Cours obligatoire.", DOCUMENTS_EXAMS_ERROR.SUBJECT_REQUIRED);
       }
       if (!asTrimmed(body.termId || body.period)) {
         throw createDocumentsExamsError(400, "Période académique obligatoire.", DOCUMENTS_EXAMS_ERROR.TERM_REQUIRED);

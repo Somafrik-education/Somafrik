@@ -112,7 +112,7 @@ const configs: Record<
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
       { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
       { key: "email", label: "Email", placeholder: "enseignant@email.com" },
-      { key: "mainSubject", label: "Matière principale", placeholder: "Choisir une matière", type: "select" },
+      { key: "mainSubject", label: "Cours principal", placeholder: "Choisir un cours", type: "select" },
     ],
   },
   classes: {
@@ -143,7 +143,7 @@ const configs: Record<
     addLabel: "Ajouter un cours",
     fields: [
       { key: "className", label: "Classe", placeholder: "Choisir une classe", type: "select" },
-      { key: "name", label: "Nom du cours", placeholder: "Choisir une matière", type: "select" },
+      { key: "name", label: "Nom du cours", placeholder: "Choisir un cours", type: "select" },
       { key: "teacherId", label: "Enseignant", placeholder: "Choisir un enseignant", type: "select" },
       { key: "coefficient", label: "Coefficient", placeholder: "2", keyboardType: "numeric" },
     ],
@@ -604,7 +604,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
         setVisible(false);
       } catch (error) {
         Alert.alert(
-          "Matière impossible",
+          "Cours impossible",
           error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
         );
       }
@@ -1716,7 +1716,7 @@ function getSecondaryText(
       assignments: context?.assignmentsData ?? [],
       classes: context?.classesData ?? [],
     });
-    return `ID : ${item.publicId ?? item.id} • ${item.mainSubject ?? "Matière non renseignée"} • Classes : ${classes} • ${item.phone}`;
+    return `ID : ${item.publicId ?? item.id} • ${item.mainSubject ?? "Cours non renseigné"} • Classes : ${classes} • ${item.phone}`;
   }
   if (entity === "classes") return `${item.publicId ?? item.id} • ${item.level ?? "Niveau non renseigné"} • ${item.track ?? "Filière non renseignée"} • Responsable : ${item.teacherId || "Non assigné"}`;
   if (entity === "countries") return `${item.phonePrefix} • ${item.currency} • ${item.timezone} • ${item.status}`;

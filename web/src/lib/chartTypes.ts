@@ -97,7 +97,7 @@ export const PLATFORM_CHART_CATALOG: ChartCatalogEntry[] = [
 export const ESTABLISHMENT_CHART_CATALOG: ChartCatalogEntry[] = [
   { id: "academic-bar", title: "Pilotage pédagogique", defaultType: "bar", scope: "establishment" },
   { id: "scolarite", title: "Scolarité / effectifs", defaultType: "bar", scope: "establishment" },
-  { id: "notes-course", title: "Notes par matière", defaultType: "bar-horizontal", scope: "establishment" },
+  { id: "notes-course", title: "Notes par cours", defaultType: "bar-horizontal", scope: "establishment" },
   { id: "presence-rate", title: "Taux de présence (jauge)", defaultType: "gauge", scope: "establishment" },
   { id: "presence-donut", title: "Répartition des présences", defaultType: "donut", scope: "establishment" },
   { id: "payments-status", title: "Paiements par statut", defaultType: "donut", scope: "establishment" },

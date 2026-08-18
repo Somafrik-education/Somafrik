@@ -288,7 +288,7 @@ export function buildEstablishmentDashboardCharts(
       chart("scolarite", "Effectifs", "Élèves, enseignants et classes.", "bar", scolariteBar),
     );
     if (notesByCourse.length) {
-      charts.push(chart("notes-course", "Notes par matière", "Volume d'évaluations saisies.", "bar-horizontal", notesByCourse));
+      charts.push(chart("notes-course", "Notes par cours", "Volume d'évaluations saisies.", "bar-horizontal", notesByCourse));
     }
     if (presenceBreakdown.total > 0) {
       charts.push(

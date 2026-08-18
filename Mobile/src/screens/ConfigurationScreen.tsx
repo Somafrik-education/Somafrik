@@ -28,7 +28,7 @@ const sections: ConfigSection[] = [
     view: "configuration",
   },
   {
-    title: "Classes et matieres",
+    title: "Classes et cours",
     description: "Referentiels utilises dans les cours et notes.",
     entity: "classes",
     view: "classes",
@@ -95,7 +95,7 @@ export default function ConfigurationScreen() {
             : "Configuration établissement non chargée."}
         </Text>
         <Text style={styles.summaryMeta}>
-          Periodes : {academicConfigData.periods?.length ?? 0} • Matieres : {academicConfigData.subjects?.length ?? 0}
+          Periodes : {academicConfigData.periods?.length ?? 0} • Cours : {academicConfigData.subjects?.length ?? 0}
         </Text>
         {!canEditSettings && (
           <Text style={styles.readOnly}>Lecture seule — droits Parametres Etablissement requis pour modifier.</Text>

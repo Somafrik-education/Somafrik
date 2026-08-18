@@ -227,12 +227,12 @@ export function BulletinDesignPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-6">
           <SectionHeader
-            title="Matières incluses"
+            title="Cours inclus"
             description={`Notes calculées côté backend pour ${className || "—"}.`}
           />
           {!subjects.length ? (
             <p className="mt-4 text-sm font-semibold text-muted">
-              Aucune matière trouvée. Configurez les matières dans Paramètres établissement.
+              Aucun cours trouvé. Configurez les cours dans Paramètres établissement.
             </p>
           ) : (
             <ul className="mt-4 space-y-2">

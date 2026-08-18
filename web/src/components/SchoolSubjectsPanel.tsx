@@ -30,7 +30,7 @@ export function SchoolSubjectsPanel({ canCreate }: { canCreate: boolean }) {
         }),
       );
       setRows([]);
-      setError(formatCaughtApiError(err, "Impossible de charger les matières."));
+      setError(formatCaughtApiError(err, "Impossible de charger les cours."));
     } finally {
       setLoading(false);
     }
@@ -53,10 +53,10 @@ export function SchoolSubjectsPanel({ canCreate }: { canCreate: boolean }) {
       });
       setName("");
       setCode("");
-      showToast("Matière enregistrée.", "success");
+      showToast("Cours enregistré.", "success");
       await load();
     } catch (err) {
-      showToast(formatCaughtApiError(err, "Création de matière impossible."), "error");
+      showToast(formatCaughtApiError(err, "Création de cours impossible."), "error");
     } finally {
       setSaving(false);
     }
@@ -65,11 +65,11 @@ export function SchoolSubjectsPanel({ canCreate }: { canCreate: boolean }) {
   return (
     <div className="space-y-4">
       <SectionHeader
-        title="Matières"
+        title="Cours"
         description="Référentiel PostgreSQL (/api/v2/subjects). Aucune liste JSON locale."
       />
       {error ? (
-        <InlineAlert tone="danger" title="Catalogue matières indisponible">
+        <InlineAlert tone="danger" title="Catalogue de cours indisponible">
           {error}
         </InlineAlert>
       ) : loading ? (
@@ -84,8 +84,8 @@ export function SchoolSubjectsPanel({ canCreate }: { canCreate: boolean }) {
         </ul>
       ) : (
         <EmptyState
-          title="Aucune matière"
-          description="Aucune matière n'est configurée pour cet établissement. Créez-la ici ; elle sera lue par la modal Affecter."
+          title="Aucun cours"
+          description="Aucun cours n'est configuré pour cet établissement. Créez-le ici ; il sera lu par la modal Affecter."
         />
       )}
       {canCreate ? (
@@ -108,7 +108,7 @@ export function SchoolSubjectsPanel({ canCreate }: { canCreate: boolean }) {
           </Field>
           <div className="flex items-end">
             <Button type="submit" disabled={saving || !name.trim() || !code.trim()}>
-              {saving ? "Enregistrement…" : "Ajouter"}
+              {saving ? "Enregistrement…" : "Ajouter un cours"}
             </Button>
           </div>
         </form>

@@ -90,7 +90,7 @@ function deps(
 
 const fields = [
   { key: "className", label: "Classe", required: true },
-  { key: "subject", label: "Matière", required: true },
+  { key: "subject", label: "Cours", required: true },
 ];
 
 describe("teacherAssignmentWorkflow (D2.8d1)", () => {
@@ -235,7 +235,7 @@ describe("teacherAssignmentWorkflow (D2.8d1)", () => {
     expect(plan.patch.auditLog).toBeUndefined();
   });
 
-  it("delete confirm copy inclut classe et matière", () => {
+  it("delete confirm copy inclut classe et cours", () => {
     expect(
       buildTeacherAssignmentDeleteConfirmCopy({
         className: "6ème A",
@@ -244,7 +244,7 @@ describe("teacherAssignmentWorkflow (D2.8d1)", () => {
     ).toContain("Maths");
     expect(
       buildTeacherAssignmentDeleteConfirmCopy({ id: "x" }).description,
-    ).toContain("enseignant ↔ classe ↔ matière");
+    ).toContain("enseignant ↔ classe ↔ cours");
   });
 
   it("delete refuse hors périmètre", () => {

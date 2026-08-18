@@ -37,7 +37,7 @@ interface ConflictRow {
 
 const columns: ColumnDef<ConflictRow>[] = [
   { accessorKey: "className", header: "Classe" },
-  { accessorKey: "subject", header: "Matière" },
+  { accessorKey: "subject", header: "Cours" },
   { accessorKey: "when", header: "Créneau" },
   {
     accessorKey: "message",

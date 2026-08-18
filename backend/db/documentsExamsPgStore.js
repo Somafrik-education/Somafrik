@@ -93,18 +93,18 @@ function createDocumentsExamsPgStore(repo) {
       return requireOwnedRow(
         `SELECT * FROM subjects WHERE id = $1 AND school_id = $2`,
         [payload.subjectId, schoolId],
-        "Matière",
+        "Cours",
       );
     }
     const name = asTrimmed(payload.subject);
     if (!name) {
-      throw createDocumentsExamsError(400, "Matière obligatoire.", DOCUMENTS_EXAMS_ERROR.SUBJECT_REQUIRED);
+      throw createDocumentsExamsError(400, "Cours obligatoire.", DOCUMENTS_EXAMS_ERROR.SUBJECT_REQUIRED);
     }
     const row = await one(
       `SELECT * FROM subjects WHERE school_id = $1 AND lower(btrim(name)) = lower(btrim($2)) LIMIT 1`,
       [schoolId, name],
     );
-    if (!row) throw createDocumentsExamsError(404, "Matière introuvable.", DOCUMENTS_EXAMS_ERROR.NOT_FOUND);
+    if (!row) throw createDocumentsExamsError(404, "Cours introuvable.", DOCUMENTS_EXAMS_ERROR.NOT_FOUND);
     return row;
   }
 
@@ -229,7 +229,7 @@ function createDocumentsExamsPgStore(repo) {
     const klass = await resolveClass(schoolId, body);
     const subject = await resolveSubject(schoolId, body);
     if (!subject) {
-      throw createDocumentsExamsError(400, "Matière obligatoire.", DOCUMENTS_EXAMS_ERROR.SUBJECT_REQUIRED);
+      throw createDocumentsExamsError(400, "Cours obligatoire.", DOCUMENTS_EXAMS_ERROR.SUBJECT_REQUIRED);
     }
     const year = await resolveOpenYear(schoolId, body);
     const term = await resolveTerm(year, body);

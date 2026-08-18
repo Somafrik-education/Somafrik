@@ -25,7 +25,7 @@ export function validateCourseTeacherRule(
   const teacherName = String(item.teacherName ?? "").trim();
 
   if (!className || !subject) {
-    return "Classe et matière sont obligatoires.";
+    return "Classe et cours sont obligatoires.";
   }
 
   if (!teacherId && !teacherName) {

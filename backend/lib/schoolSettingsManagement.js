@@ -324,7 +324,7 @@ function assertNoLegacySchoolSettingsWrite(payload) {
   if (subjectKey) {
     throw createSchoolSettingsError(
       400,
-      "Les matières ne sont plus modifiables via academic-config. Utilisez le référentiel PostgreSQL /api/v2/subjects.",
+      "Les cours ne sont plus modifiables via academic-config. Utilisez le référentiel PostgreSQL /api/v2/subjects.",
       SCHOOL_SETTINGS_ERROR.LEGACY_SCHOOL_SUBJECTS_WRITE_FORBIDDEN,
       { key: subjectKey },
     );

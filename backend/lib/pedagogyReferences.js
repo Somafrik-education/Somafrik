@@ -22,7 +22,7 @@ async function resolveCanonicalClass(tx, schoolId, className) {
 async function resolveCanonicalSubject(tx, schoolId, subjectName) {
   const subject = await tx.findSubject(schoolId, subjectName);
   if (!subject) {
-    throw createPedagogyError(404, "Matière introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
+    throw createPedagogyError(404, "Cours introuvable.", PEDAGOGY_ERROR.COURSE_NOT_FOUND);
   }
   return subject;
 }
@@ -76,7 +76,7 @@ async function resolveTeacherWithActiveAssignment(
   if (!assignment) {
     throw createPedagogyError(
       403,
-      "Affectation enseignant active requise pour cette classe et matière.",
+      "Affectation enseignant active requise pour cette classe et ce cours.",
       PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED,
     );
   }
@@ -104,7 +104,7 @@ function mapPedagogyPersistenceError(error) {
   if (/année scolaire fermée|academic year/i.test(message)) {
     return createPedagogyError(statusCode, message, PEDAGOGY_ERROR.ACADEMIC_YEAR_CLOSED);
   }
-  if (/affectation|matière non affectée|hors classe affectée/i.test(message) && statusCode === 403) {
+  if (/affectation|non affecté|hors classe affectée/i.test(message) && statusCode === 403) {
     return createPedagogyError(statusCode, message, PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED);
   }
 

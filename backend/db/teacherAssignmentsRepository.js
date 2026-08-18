@@ -106,7 +106,7 @@ function createTeacherAssignmentsRepository(db) {
         entity: "subject",
         schoolId: school.id,
       }));
-      throw assignmentError(404, "Matière introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
+      throw assignmentError(404, "Cours introuvable.", "ASSIGNMENT_SUBJECT_NOT_FOUND");
     }
     return { teacher, schoolClass, subject };
   }
