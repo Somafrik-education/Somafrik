@@ -343,8 +343,9 @@ function testAdminSchoolSeesAll() {
 
 function testSchoolDirectoryScopesTeacherAndParent() {
   const {
-    scopeSchoolStudentsForPrincipal,
-  } = require("./classStudentsAuthz");
+  scopeSchoolStudentsForPrincipal,
+  scopeSchoolClassesForPrincipal,
+} = require("./classStudentsAuthz");
   const rows = [
     {
       id: "ELE-1",
@@ -397,7 +398,34 @@ function main() {
   testParentCannotReadOtherStudent();
   testAdminSchoolSeesAll();
   testSchoolDirectoryScopesTeacherAndParent();
+  testSchoolClassesScopeByClassIdNotName();
   console.log("classStudentsAuthz.test.js: OK");
+}
+
+function testSchoolClassesScopeByClassIdNotName() {
+  const { scopeSchoolClassesForPrincipal } = require("./classStudentsAuthz");
+  const rows = [
+    { id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "2ème A" },
+    { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "2ème A" },
+  ];
+  const scoped = scopeSchoolClassesForPrincipal(
+    {
+      role: "Enseignant",
+      assignments: [{ classId: "uuid-a", classCode: "CLS-A", status: "active" }],
+    },
+    rows,
+  );
+  assert.equal(scoped.length, 1);
+  assert.equal(scoped[0].classId, "uuid-a");
+
+  const absent = scopeSchoolClassesForPrincipal(
+    {
+      role: "Enseignant",
+      assignments: [{ className: "2ème A", status: "active" }],
+    },
+    rows,
+  );
+  assert.equal(absent.length, 0);
 }
 
 main();

@@ -557,7 +557,8 @@ app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyn
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const rows = await repository.listSchoolClasses(schoolCode);
-  res.json(rows);
+  const { scopeSchoolClassesForPrincipal } = require("./lib/classStudentsAuthz");
+  res.json(scopeSchoolClassesForPrincipal(req.principal, rows));
 }));
 
 app.post("/api/classes", requireAuth, requirePermission("POST /api/classes"), asyncHandler(async (req, res) => {
@@ -600,14 +601,12 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const rows = await repository.listClassStudents(req.params.classCode, schoolCode);
-  let className = rows[0]?.className ?? "";
-  if (!className) {
-    const classes = await repository.listSchoolClasses(schoolCode);
-    const match = (classes ?? []).find(
-      (item) => String(item.classCode ?? "").trim() === String(req.params.classCode ?? "").trim(),
-    );
-    className = String(match?.name ?? "").trim();
-  }
+  const classes = await repository.listSchoolClasses(schoolCode);
+  const match = (classes ?? []).find(
+    (item) => String(item.classCode ?? "").trim() === String(req.params.classCode ?? "").trim(),
+  );
+  const classId = String(match?.classId ?? match?.id ?? rows[0]?.classId ?? "").trim();
+  const className = String(match?.name ?? match?.className ?? rows[0]?.className ?? "").trim();
   const {
     scopeClassStudentsForPrincipal,
   } = require("./lib/classStudentsAuthz");
@@ -615,6 +614,7 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
     req.principal,
     {
       classCode: String(req.params.classCode ?? "").trim(),
+      classId,
       className,
     },
     rows,
@@ -1618,18 +1618,29 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
       const body = Array.isArray(rawBody.items)
         ? { ...rawBody, items: rawBody.items.map((item) => ignoreClientScope(item)) }
         : ignoreClientScope(rawBody);
-      const { assertPresenceWrite } = require("./services/dataIntegrityService");
+      const engine = String(repository.engine ?? "postgresql");
+      const { mergeAttendanceClassIdentity } = require("./lib/presencesAttendanceAuthz");
       const items = Array.isArray(body.items) ? body.items : [body];
-      for (const item of items) {
-        assertPresenceWrite(state, item);
+      const canonicalItems = items.map((item) => ({
+        ...item,
+        ...mergeAttendanceClassIdentity(item, body),
+      }));
+      if (engine !== "postgresql" || typeof repository.upsertSchoolAttendanceBatch !== "function") {
+        const { assertPresenceWrite } = require("./services/dataIntegrityService");
+        for (const item of canonicalItems) {
+          assertPresenceWrite(state, item);
+        }
       }
       let saved;
-      const engine = String(repository.engine ?? "postgresql");
       if (engine === "postgresql" && typeof repository.upsertSchoolAttendanceBatch === "function") {
-        saved = await repository.upsertSchoolAttendanceBatch(body, req.principal, pedagogyAuditMetaFromRequest(req));
+        saved = await repository.upsertSchoolAttendanceBatch(
+          { ...body, items: canonicalItems },
+          req.principal,
+          pedagogyAuditMetaFromRequest(req),
+        );
       } else {
-        saved = await repository.upsertAttendanceBatch(body, req.principal);
-        await auditService.record(req, "upsert_attendance", "attendance", req.body?.className ?? "batch", {
+        saved = await repository.upsertAttendanceBatch({ ...body, items: canonicalItems }, req.principal);
+        await auditService.record(req, "upsert_attendance", "attendance", body?.classCode ?? body?.className ?? "batch", {
           count: saved.length,
         });
       }

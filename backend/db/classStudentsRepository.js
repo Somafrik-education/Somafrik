@@ -153,6 +153,7 @@ function createClassStudentsRepository(db) {
       birthDate: row.birth_date ? formatDate(row.birth_date) : "",
       birthPlace: row.birth_place ?? "",
       photoUrl: row.photo_url ?? "",
+      classId: row.class_id ?? row.classId ?? null,
       className: row.class_name ?? "",
       classCode: row.class_code ?? "",
       schoolCode: row.school_code,
@@ -175,6 +176,7 @@ function createClassStudentsRepository(db) {
       id: row.enrollment_id,
       status: row.enrollment_status ?? "active",
       enrollmentDate: row.enrollment_date ? formatDate(row.enrollment_date) : "",
+      classId: row.class_id ?? row.classId ?? null,
       classCode: row.class_code ?? "",
       className: row.class_name ?? "",
       academicYearName: row.academic_year_name ?? "",
@@ -359,6 +361,7 @@ function createClassStudentsRepository(db) {
     const mapped = mapStudentRow({
       ...student,
       school_code: school.school_code ?? schoolCode,
+      class_id: classRow.id,
       class_code: classRow.class_code,
       class_name: classRow.name,
       academic_year_name: classRow.academic_year_name,
@@ -396,6 +399,7 @@ function createClassStudentsRepository(db) {
       const school = await requireSchool(schoolCode);
       const rows = await db.all(
         `SELECT ${STUDENT_SELECT_COLUMNS},
+                cl.id AS class_id,
                 cl.class_code,
                 cl.name AS class_name,
                 ay.name AS academic_year_name,
@@ -422,6 +426,7 @@ function createClassStudentsRepository(db) {
       const school = await requireSchool(schoolCode);
       const rows = await db.all(
         `SELECT ${STUDENT_SELECT_COLUMNS},
+                cl.id AS class_id,
                 cl.class_code,
                 cl.name AS class_name,
                 ay.name AS academic_year_name,
@@ -454,6 +459,7 @@ function createClassStudentsRepository(db) {
       const school = await requireSchool(schoolCode);
       const row = await db.one(
         `SELECT ${STUDENT_SELECT_COLUMNS},
+                cl.id AS class_id,
                 cl.class_code,
                 cl.name AS class_name,
                 ay.name AS academic_year_name,
@@ -478,6 +484,7 @@ function createClassStudentsRepository(db) {
                 e.enrollment_date,
                 e.created_at AS enrollment_created_at,
                 e.updated_at AS enrollment_updated_at,
+                cl.id AS class_id,
                 cl.class_code,
                 cl.name AS class_name,
                 ay.name AS academic_year_name,

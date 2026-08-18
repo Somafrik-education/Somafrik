@@ -14,6 +14,7 @@ function mapAssignment(row) {
     teacherId: row.teacher_code,
     teacherCode: row.teacher_code,
     teacherName: [row.first_name, row.last_name].filter(Boolean).join(" "),
+    classId: row.class_id ?? row.classId ?? null,
     className: row.class_name,
     classCode: row.class_code,
     subject: row.subject_name,

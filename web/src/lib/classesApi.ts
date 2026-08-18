@@ -4,9 +4,11 @@ export type ClassStatus = "active" | "inactive";
 
 export interface SchoolClass {
   id: string;
+  classId?: string | null;
   publicId: string;
   classCode: string;
   name: string;
+  className?: string;
   level: string;
   section: string;
   track: string;

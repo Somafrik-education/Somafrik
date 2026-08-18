@@ -37,14 +37,17 @@ function createClassesRepository(db) {
    */
   function mapClassRow(row) {
     const classCode = row.class_code;
+    const classId = row.id ?? row.class_id ?? null;
     const levelName = row.level_name ?? row.level ?? "";
     const trackName = row.stream_name ?? "";
     const groupCode = row.group_code ?? "";
     return {
-      id: classCode,
+      id: classId,
+      classId,
       publicId: classCode,
       classCode,
       name: row.name,
+      className: row.name,
       level: levelName,
       track: trackName,
       groupCode,

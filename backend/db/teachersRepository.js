@@ -68,13 +68,14 @@ function mapActiveAssignments(assignmentRows, teacherCode) {
     .filter((row) => String(row.teacher_code ?? "") === code)
     .map((row) => ({
       id: row.id ?? null,
+      classId: row.class_id ?? row.classId ?? null,
       className: row.class_name ?? "",
       classCode: row.class_code ?? "",
       course: row.subject_name ?? "",
       subjectCode: row.subject_code ?? "",
       status: row.status ?? "active",
     }))
-    .filter((item) => item.className || item.course);
+    .filter((item) => item.classId || item.classCode || item.className || item.course);
 }
 
 /**
@@ -109,6 +110,8 @@ function mapTeacherRow(row, assignmentRows = []) {
     mustChangePassword: Boolean(row.must_change_password),
     assignments,
     assignedClasses: [...new Set(assignments.map((item) => item.className).filter(Boolean))],
+    assignedClassCodes: [...new Set(assignments.map((item) => item.classCode).filter(Boolean))],
+    assignedClassIds: [...new Set(assignments.map((item) => item.classId).filter(Boolean))],
     courses: [...new Set(assignments.map((item) => item.course).filter(Boolean))],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -150,6 +153,7 @@ function createTeachersRepository(db) {
       return reader.all(
         `SELECT ta.id,
                 t.teacher_code,
+                cl.id AS class_id,
                 cl.name AS class_name,
                 cl.class_code,
                 sub.name AS subject_name,
@@ -169,6 +173,7 @@ function createTeachersRepository(db) {
     return reader.all(
       `SELECT ta.id,
               t.teacher_code,
+              cl.id AS class_id,
               cl.name AS class_name,
               cl.class_code,
               sub.name AS subject_name,

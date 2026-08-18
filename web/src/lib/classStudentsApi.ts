@@ -12,6 +12,7 @@ export interface ClassStudent {
   name: string;
   gender: string;
   birthDate: string;
+  classId?: string | null;
   className: string;
   classCode: string;
   schoolCode: string;
