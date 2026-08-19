@@ -4,7 +4,6 @@ import {
   AcademicManagementConfig,
   CountryProfile,
   Course,
-  CourseScheduleSlot,
   NoteItem,
   PaymentItem,
   PaymentStatus,
@@ -33,13 +32,19 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
 import { snapshotFromFailure, snapshotFromSuccess, type ResourceSnapshot } from "../lib/dataTruth";
 import {
   gradesForEvaluation,
   type CanonicalEvaluation,
   type CanonicalGrade,
 } from "../lib/evaluationsV2";
+import {
+  type CanonicalReplacement,
+  type CanonicalSchoolRoom,
+  type CanonicalWeeklySlot,
+  type PlanningCourseOption,
+} from "../lib/planningV2";
 import { useAuth } from "./AuthContext";
 
 export type AdminEntity =
@@ -66,13 +71,20 @@ type AdminDataContextValue = {
   countriesData: CountryProfile[];
   coursesData: Course[];
   assignmentsData: TeacherAssignment[];
-  courseSchedulesData: CourseScheduleSlot[];
+  courseSchedulesData: CanonicalWeeklySlot[];
   paymentsData: PaymentItem[];
   paymentsSnapshot: ResourceSnapshot<PaymentItem>;
-  courseSchedulesSnapshot: ResourceSnapshot<CourseScheduleSlot>;
+  courseSchedulesSnapshot: ResourceSnapshot<CanonicalWeeklySlot>;
+  planningCourseOptionsSnapshot: ResourceSnapshot<PlanningCourseOption>;
+  roomsSnapshot: ResourceSnapshot<CanonicalSchoolRoom>;
+  replacementsSnapshot: ResourceSnapshot<CanonicalReplacement>;
   reportCardsSnapshot: ResourceSnapshot<CanonicalReportCard>;
   loadPayments: () => Promise<void>;
   loadCourseSchedules: () => Promise<void>;
+  loadPlanningWeekly: () => Promise<void>;
+  loadPlanningCourseOptions: () => Promise<void>;
+  loadRooms: () => Promise<void>;
+  loadReplacements: () => Promise<void>;
   loadReportCards: () => Promise<void>;
   evaluationsSnapshot: ResourceSnapshot<CanonicalEvaluation>;
   notesSnapshot: ResourceSnapshot<CanonicalGrade>;
@@ -132,7 +144,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const [countriesData, setCountriesData] = useState<CountryProfile[]>([]);
   const [coursesData, setCoursesData] = useState<Course[]>([]);
   const [assignmentsData, setAssignmentsData] = useState<TeacherAssignment[]>([]);
-  const [courseSchedulesData, setCourseSchedulesData] = useState<CourseScheduleSlot[]>([]);
   const [paymentsData, setPaymentsData] = useState<PaymentItem[]>([]);
   const [subscriptionsData, setSubscriptionsData] = useState<SubscriptionItem[]>([]);
   const [paymentStatusesData, setPaymentStatusesData] = useState<PaymentStatus[]>([]);
@@ -151,7 +162,19 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     status: "idle",
     data: [],
   });
-  const [courseSchedulesSnapshot, setCourseSchedulesSnapshot] = useState<ResourceSnapshot<CourseScheduleSlot>>({
+  const [courseSchedulesSnapshot, setCourseSchedulesSnapshot] = useState<ResourceSnapshot<CanonicalWeeklySlot>>({
+    status: "idle",
+    data: [],
+  });
+  const [planningCourseOptionsSnapshot, setPlanningCourseOptionsSnapshot] = useState<ResourceSnapshot<PlanningCourseOption>>({
+    status: "idle",
+    data: [],
+  });
+  const [roomsSnapshot, setRoomsSnapshot] = useState<ResourceSnapshot<CanonicalSchoolRoom>>({
+    status: "idle",
+    data: [],
+  });
+  const [replacementsSnapshot, setReplacementsSnapshot] = useState<ResourceSnapshot<CanonicalReplacement>>({
     status: "idle",
     data: [],
   });
@@ -267,7 +290,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     applyArray(payload.countries, setCountriesData);
     applyArray(payload.courses, setCoursesData);
     applyArray(payload.assignments, setAssignmentsData);
-    applyArray(payload.courseSchedules, setCourseSchedulesData);
     applyArray(payload.payments, setPaymentsData);
     applyArray(payload.subscriptions, setSubscriptionsData);
     applyArray(payload.paymentStatuses, setPaymentStatusesData);
@@ -359,15 +381,47 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
-  const loadCourseSchedules = useCallback(async () => {
+  const loadPlanningWeekly = useCallback(async () => {
     if (!session) return;
     setCourseSchedulesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = (await getCourseSchedules()) as CourseScheduleSlot[];
-      setCourseSchedulesData(rows);
+      const rows = await getPlanningWeekly();
       setCourseSchedulesSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
       setCourseSchedulesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadPlanningCourseOptions = useCallback(async () => {
+    if (!session) return;
+    setPlanningCourseOptionsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getPlanningCourseOptions();
+      setPlanningCourseOptionsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setPlanningCourseOptionsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadRooms = useCallback(async () => {
+    if (!session) return;
+    setRoomsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getSchoolRooms();
+      setRoomsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setRoomsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadReplacements = useCallback(async () => {
+    if (!session) return;
+    setReplacementsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCourseScheduleReplacements();
+      setReplacementsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setReplacementsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
@@ -580,11 +634,18 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       paymentsData: paymentsSnapshot.data as PaymentItem[],
       paymentsSnapshot,
       courseSchedulesSnapshot,
+      planningCourseOptionsSnapshot,
+      roomsSnapshot,
+      replacementsSnapshot,
       reportCardsSnapshot,
       evaluationsSnapshot,
       notesSnapshot,
       loadPayments,
-      loadCourseSchedules,
+      loadCourseSchedules: loadPlanningWeekly,
+      loadPlanningWeekly,
+      loadPlanningCourseOptions,
+      loadRooms,
+      loadReplacements,
       loadReportCards,
       loadEvaluations,
       loadEvaluation,
@@ -765,7 +826,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     classesData,
     countriesData,
     coursesData,
-    courseSchedulesData,
     messagesData,
     notesData,
     paymentsData,
@@ -790,11 +850,17 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     refreshBackOfficeState,
     paymentsSnapshot,
     courseSchedulesSnapshot,
+    planningCourseOptionsSnapshot,
+    roomsSnapshot,
+    replacementsSnapshot,
     reportCardsSnapshot,
     evaluationsSnapshot,
     notesSnapshot,
     loadPayments,
-    loadCourseSchedules,
+    loadPlanningWeekly,
+    loadPlanningCourseOptions,
+    loadRooms,
+    loadReplacements,
     loadReportCards,
     loadEvaluations,
     loadEvaluation,

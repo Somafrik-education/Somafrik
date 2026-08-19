@@ -156,7 +156,7 @@ async function main() {
   const timetable = read(path.join(SRC, "screens", "TimetableScreen.tsx"));
   assert.doesNotMatch(timetable, /\btimetable\b/);
   assert.doesNotMatch(timetable, /getTeacherById/);
-  assert.match(timetable, /loadCourseSchedules/);
+  assert.match(timetable, /loadPlanningWeekly/);
   assert.match(timetable, /QueryStateView/);
   console.log("OK: planning sans fallback catalog / demo");
 

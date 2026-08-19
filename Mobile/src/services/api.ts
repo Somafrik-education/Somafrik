@@ -25,6 +25,25 @@ import {
   type CanonicalGrade,
 } from "../lib/evaluationsV2";
 import {
+  assertNoLegacyPlanningIdentity,
+  buildCreateReplacementPayload,
+  buildCreateWeeklySlotPayload,
+  buildUpdateWeeklySlotPayload,
+  normalizePlanningCourseOption,
+  normalizeReplacement,
+  normalizeReplacementTeacherOption,
+  normalizeSchoolRoom,
+  normalizeWeeklySlot,
+  unwrapPlanningList,
+  type CanonicalReplacement,
+  type CanonicalSchoolRoom,
+  type CanonicalWeeklySlot,
+  type PlanningCourseOption,
+  type ReplacementTeacherOption,
+  type ReplacementWriteInput,
+  type WeeklySlotWriteInput,
+} from "../lib/planningV2";
+import {
   beginRestrictedSession,
   clearRestrictedSession,
   getRestrictedAccessToken,
@@ -364,8 +383,92 @@ export function deleteTeacherAssignment(id: string) {
   });
 }
 
+export function getPlanningWeekly(): Promise<CanonicalWeeklySlot[]> {
+  return request<unknown>("/course-schedules").then((payload) =>
+    unwrapPlanningList(payload)
+      .map(normalizeWeeklySlot)
+      .filter((row): row is CanonicalWeeklySlot => Boolean(row)),
+  );
+}
+
+/** @deprecated LOT 3 — utiliser getPlanningWeekly (contrat weekly V2). */
 export function getCourseSchedules() {
-  return request<unknown>("/course-schedules").then((payload) => unwrapList(payload));
+  return getPlanningWeekly();
+}
+
+export function getPlanningCourseOptions(): Promise<PlanningCourseOption[]> {
+  return request<unknown>("/course-schedules?projection=planning-course-options").then((payload) =>
+    unwrapPlanningList(payload)
+      .map(normalizePlanningCourseOption)
+      .filter((row): row is PlanningCourseOption => Boolean(row)),
+  );
+}
+
+export function createCourseSchedule(input: WeeklySlotWriteInput) {
+  const body = buildCreateWeeklySlotPayload(input);
+  assertNoLegacyPlanningIdentity(body);
+  return request<unknown>("/course-schedules", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }).then(normalizeWeeklySlot);
+}
+
+export function updateCourseSchedule(scheduleId: string, input: Partial<WeeklySlotWriteInput> & { roomId?: string | null }) {
+  const body = buildUpdateWeeklySlotPayload(input);
+  assertNoLegacyPlanningIdentity(body);
+  return request<unknown>(`/course-schedules/${encodeURIComponent(scheduleId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  }).then(normalizeWeeklySlot);
+}
+
+export function deleteCourseSchedule(scheduleId: string) {
+  return request<{ id?: string; deleted?: boolean }>(`/course-schedules/${encodeURIComponent(scheduleId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function getSchoolRooms(): Promise<CanonicalSchoolRoom[]> {
+  return request<unknown>("/school-rooms").then((payload) =>
+    unwrapPlanningList(payload)
+      .map(normalizeSchoolRoom)
+      .filter((row): row is CanonicalSchoolRoom => Boolean(row)),
+  );
+}
+
+export function getCourseScheduleReplacements(): Promise<CanonicalReplacement[]> {
+  return request<unknown>("/course-schedule-replacements").then((payload) =>
+    unwrapPlanningList(payload)
+      .map(normalizeReplacement)
+      .filter((row): row is CanonicalReplacement => Boolean(row)),
+  );
+}
+
+export function getReplacementTeacherOptions(
+  weeklySlotId: string,
+  occurrenceDate: string,
+): Promise<ReplacementTeacherOption[]> {
+  const query = `weeklySlotId=${encodeURIComponent(weeklySlotId)}&occurrenceDate=${encodeURIComponent(occurrenceDate)}`;
+  return request<unknown>(`/course-schedule-replacements/options?${query}`).then((payload) =>
+    unwrapPlanningList(payload)
+      .map(normalizeReplacementTeacherOption)
+      .filter((row): row is ReplacementTeacherOption => Boolean(row)),
+  );
+}
+
+export function createCourseScheduleReplacement(input: ReplacementWriteInput) {
+  const body = buildCreateReplacementPayload(input);
+  return request<unknown>("/course-schedule-replacements", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }).then(normalizeReplacement);
+}
+
+export function deleteCourseScheduleReplacement(replacementId: string) {
+  return request<{ id?: string; deleted?: boolean }>(
+    `/course-schedule-replacements/${encodeURIComponent(replacementId)}`,
+    { method: "DELETE" },
+  );
 }
 
 export function getPayments() {

@@ -38,10 +38,14 @@ type Json = Record<string, unknown> | unknown[] | string | number | boolean | nu
 
 export class ApiClientError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  code?: string;
+  details?: unknown;
+  constructor(message: string, status?: number, code?: string, details?: unknown) {
     super(message);
     this.name = "ApiClientError";
     this.status = status;
+    this.code = code;
+    this.details = details;
   }
 }
 
@@ -236,13 +240,15 @@ export async function httpRequest<T = Json>(
   }
 
   if (!response.ok) {
+    const payload = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
     const message =
-      data && typeof data === "object" && data !== null && "message" in data
-        ? String((data as { message: unknown }).message)
-        : "La requête a échoué.";
+      payload && "message" in payload ? String(payload.message) : "La requête a échoué.";
+    const code = payload.code ? String(payload.code) : undefined;
     throw new ApiClientError(
       sanitizeUserFacingError(message, "La requête a échoué."),
       response.status,
+      code,
+      payload.details,
     );
   }
 
