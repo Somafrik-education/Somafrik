@@ -13,6 +13,7 @@ const {
   sqlTeacherPublicCodeEquals,
 } = require("../lib/teacherCodeAllocation");
 const { lockInt } = require("../services/idempotencyService");
+const { getIdempotencyTx, runWithIdempotencyTx } = require("../lib/idempotencyTxContext");
 
 const roleToDb = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -229,6 +230,10 @@ class PostgresRepository {
   }
 
   async query(sql, params = []) {
+    const current = getIdempotencyTx();
+    if (current?.tx) {
+      return current.tx.query(sql, params);
+    }
     return this.pool.query(sql, params);
   }
 
@@ -270,11 +275,42 @@ class PostgresRepository {
   }
 
   async withTransaction(fn) {
+    const current = getIdempotencyTx();
+    if (current?.tx) {
+      return fn(current.tx);
+    }
     const client = await this.pool.connect();
     const tx = createTxAdapter(client);
     try {
       await client.query("BEGIN");
       const result = await fn(tx);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_rollbackError) {
+        // conserve l'erreur métier d'origine
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Une seule transaction : claim/lock clé + mutation métier + audit + résultat idempotence.
+   * Toute panne avant COMMIT rollback l'ensemble (y compris un paiement déjà INSERT).
+   */
+  async withIdempotencyTransaction(cacheId, fn) {
+    await this.init();
+    const client = await this.pool.connect();
+    const tx = createTxAdapter(client);
+    const lockKey = lockInt(cacheId);
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
+      const result = await runWithIdempotencyTx({ tx, client }, fn);
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -6520,7 +6556,7 @@ class PostgresRepository {
   }
 
   async findIdempotencyRecord(cacheId) {
-    await this.init();
+    if (!getIdempotencyTx()) await this.init();
     const row = await this.query(
       `SELECT cache_id, route_key, principal_id, school_scope, request_hash, status_code, response_body, expires_at
        FROM idempotency_keys WHERE cache_id = $1 LIMIT 1`,
@@ -6539,7 +6575,7 @@ class PostgresRepository {
     responseBody,
     expiresAt,
   }) {
-    await this.init();
+    if (!getIdempotencyTx()) await this.init();
     await this.query(
       `INSERT INTO idempotency_keys (
          cache_id, route_key, principal_id, school_scope, request_hash, status_code, response_body, expires_at
@@ -6567,6 +6603,7 @@ class PostgresRepository {
   }
 
   async purgeExpiredIdempotencyRecords() {
+    if (getIdempotencyTx()) return;
     await this.init();
     await this.query(`DELETE FROM idempotency_keys WHERE expires_at < NOW()`);
   }

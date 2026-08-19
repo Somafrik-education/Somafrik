@@ -96,9 +96,41 @@ function main() {
   console.log("OK: un seul schéma idempotency PostgreSQL");
 
   const pgRepo = read(path.join(BACKEND, "db", "postgresRepository.js"));
-  assert.match(pgRepo, /pg_advisory_lock/);
+  assert.match(pgRepo, /withIdempotencyTransaction/);
+  assert.match(pgRepo, /pg_advisory_xact_lock/);
   assert.match(pgRepo, /purgeExpiredIdempotencyRecords/);
-  console.log("OK: verrou advisory + cleanup");
+  assert.match(pgRepo, /getIdempotencyTx/);
+  assert.match(pgRepo, /current\?\.tx/);
+  console.log("OK: transaction unique claim+mutation+idempotence + cleanup");
+
+  const idempotency = read(path.join(BACKEND, "services", "idempotencyService.js"));
+  assert.match(idempotency, /withIdempotencyTransaction/);
+  assert.match(idempotency, /beforeStoreHook/);
+  assert.match(idempotency, /logicalPayload/);
+  console.log("OK: withIdempotency exécute store dans la même TX que le handler");
+
+  const pgTest = read(path.join(BACKEND, "lib", "idempotency.pg.test.js"));
+  assert.match(pgTest, /crash after payment insert, before idempotency store/);
+  assert.match(pgTest, /rollback : aucun payment/);
+  assert.match(pgTest, /1 payment/);
+  assert.match(pgTest, /3 payment_items/);
+  console.log("OK: test PG crash-before-store (rollback + retry 1 payment / 3 items / 1 réf)");
+
+  const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
+  const security = read(path.join(ROOT, ".github", "workflows", "security.yml"));
+  assert.match(
+    ci,
+    /name: verify:mobile-network-resilience[\s\S]*DATABASE_URL: postgresql:\/\/somafrik:somafrik123@localhost:5432\/somafrik[\s\S]*npm run verify:mobile-network-resilience/,
+  );
+  assert.match(
+    security,
+    /name: verify:mobile-network-resilience[\s\S]*DATABASE_URL: postgresql:\/\/somafrik:somafrik123@localhost:5432\/somafrik[\s\S]*npm run verify:mobile-network-resilience/,
+  );
+  assert.match(security, /image: postgres:16/);
+  if (process.env.CI) {
+    assert.ok(String(process.env.DATABASE_URL || "").trim(), "DATABASE_URL requis en CI pour le test PG d'idempotence");
+  }
+  console.log("OK: CI + Security exécutent verify:mobile-network-resilience avec DATABASE_URL");
 
   const server = read(path.join(BACKEND, "server.js"));
   assert.match(server, /routeKey: "POST \/api\/backoffice\/messages"/);

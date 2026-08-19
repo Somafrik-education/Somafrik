@@ -238,6 +238,122 @@ test("Finance : retry même clé → même payment.id / référence, aucun secon
   assert.equal(lostResponseRetry.res.payload.totalAmount, 541);
 });
 
-test("hashPayload est stable quel que soit l'ordre des clés", () => {
-  assert.equal(hashPayload({ b: 1, a: 2 }), hashPayload({ a: 2, b: 1 }));
+test("hashPayload ignore le scope client forgé (schoolCode/createdBy)", () => {
+  assert.equal(
+    hashPayload({ amount: 25000, schoolCode: "BI-2026-0001", createdBy: "forged" }),
+    hashPayload({ amount: 25000 }),
+  );
+  assert.notEqual(hashPayload({ amount: 25000 }), hashPayload({ amount: 1 }));
+});
+
+test("crash avant stockage : rollback mutation, retry même clé = une seule écriture", async () => {
+  const { getIdempotencyTx, runWithIdempotencyTx } = require("./idempotencyTxContext");
+  const {
+    setIdempotencyBeforeStoreHook,
+  } = require("../services/idempotencyService");
+  const payments = [];
+  const records = new Map();
+  let committedPayments = [];
+  const repo = {
+    async query(sql, params = []) {
+      const current = getIdempotencyTx();
+      if (!current?.pending) return;
+      if (String(sql).includes("INSERT INTO payments")) {
+        current.pending.payments.push({ id: "pay-atomic", reference: "PAY-1", items: 3 });
+      }
+      return { rows: [] };
+    },
+    async findIdempotencyRecord(cacheId) {
+      return records.get(String(cacheId)) ?? null;
+    },
+    async saveIdempotencyRecord(row) {
+      const current = getIdempotencyTx();
+      if (current?.pending) {
+        current.pending.records.set(String(row.cacheId), {
+          cache_id: String(row.cacheId),
+          request_hash: row.requestHash,
+          status_code: row.statusCode,
+          response_body: row.responseBody,
+          expires_at: row.expiresAt,
+        });
+        return;
+      }
+      records.set(String(row.cacheId), {
+        cache_id: String(row.cacheId),
+        request_hash: row.requestHash,
+        status_code: row.statusCode,
+        response_body: row.responseBody,
+        expires_at: row.expiresAt,
+      });
+    },
+    async withIdempotencyTransaction(_cacheId, fn) {
+      const pending = { payments: [], records: new Map() };
+      try {
+        const result = await runWithIdempotencyTx({ tx: true, pending }, fn);
+        if (pending.payments.length) {
+          committedPayments = pending.payments.slice();
+          payments.splice(0, payments.length, ...committedPayments);
+        }
+        for (const [key, value] of pending.records) records.set(key, value);
+        return result;
+      } catch (error) {
+        committedPayments = [];
+        throw error;
+      }
+    },
+  };
+  const service = new IdempotencyService(repo);
+  const handler = async () => {
+    await repo.query("INSERT INTO payments");
+    return { statusCode: 201, body: { id: "pay-atomic", reference: "PAY-1", totalAmount: 541 } };
+  };
+  const principal = { sub: "acc-1", schoolCode: "CD-2026-0001" };
+  const payload = { studentId: "stu-esther", totalAmount: 541 };
+
+  try {
+    setIdempotencyBeforeStoreHook(() => {
+      throw new Error("crash after payment insert, before idempotency store");
+    });
+    const crashed = mockHttp("crash-key", payload, service);
+    await assert.rejects(
+      () =>
+        withIdempotency({
+          req: crashed.req,
+          res: crashed.res,
+          routeKey: "POST /api/payments",
+          principal,
+          handler,
+        }),
+      (error) => String(error.message).includes("before idempotency store"),
+    );
+    setIdempotencyBeforeStoreHook(null);
+    assert.equal(payments.length, 0, "rollback : aucun payment");
+    assert.equal(records.size, 0, "rollback : aucune clé d'idempotence");
+
+    const retry = mockHttp("crash-key", payload, service);
+    await withIdempotency({
+      req: retry.req,
+      res: retry.res,
+      routeKey: "POST /api/payments",
+      principal,
+      handler,
+    });
+    assert.equal(retry.res.statusCode, 201);
+    assert.equal(payments.length, 1);
+    assert.equal(records.size, 1);
+
+    const replay = mockHttp("crash-key", payload, service);
+    await withIdempotency({
+      req: replay.req,
+      res: replay.res,
+      routeKey: "POST /api/payments",
+      principal,
+      handler,
+    });
+    assert.equal(replay.res.payload.id, "pay-atomic");
+    assert.equal(replay.res.payload.idempotentReplay, true);
+    assert.equal(payments.length, 1, "retry + replay = 1 payment");
+  } finally {
+    setIdempotencyBeforeStoreHook(null);
+  }
 });

@@ -3,6 +3,7 @@
  * Réutilise la table PostgreSQL `idempotency_keys` (pas de second mécanisme).
  */
 const crypto = require("crypto");
+const { getIdempotencyTx } = require("../lib/idempotencyTxContext");
 
 const TTL_DEFAULT_MS = 24 * 60 * 60 * 1000;
 const TTL_PAYMENTS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -21,7 +22,24 @@ function stableSerialize(value) {
 }
 
 function hashPayload(body) {
-  return crypto.createHash("sha256").update(stableSerialize(body ?? null)).digest("hex");
+  return crypto.createHash("sha256").update(stableSerialize(logicalPayload(body))).digest("hex");
+}
+
+/** Payload logique : ignore le scope client forgé (schoolCode, createdBy, …). */
+function logicalPayload(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body ?? null;
+  const next = { ...body };
+  delete next.schoolId;
+  delete next.schoolCode;
+  delete next.country;
+  delete next.createdBy;
+  delete next.triggeredBy;
+  return next;
+}
+
+let beforeStoreHook = null;
+function setIdempotencyBeforeStoreHook(fn) {
+  beforeStoreHook = typeof fn === "function" ? fn : null;
 }
 
 function ttlForRoute(routeKey) {
@@ -62,14 +80,16 @@ class IdempotencyService {
     const key = normalizeKey(idempotencyKey);
     if (!key) return null;
     const cacheId = this.cacheKey(key, routeKey, principalId, schoolScope);
-    const memoryHit = this.memory.get(cacheId);
-    if (memoryHit && memoryHit.expiresAt > Date.now()) {
-      return {
-        statusCode: memoryHit.statusCode,
-        body: memoryHit.body,
-        requestHash: memoryHit.requestHash,
-        replay: true,
-      };
+    if (!getIdempotencyTx()) {
+      const memoryHit = this.memory.get(cacheId);
+      if (memoryHit && memoryHit.expiresAt > Date.now()) {
+        return {
+          statusCode: memoryHit.statusCode,
+          body: memoryHit.body,
+          requestHash: memoryHit.requestHash,
+          replay: true,
+        };
+      }
     }
 
     if (typeof this.repository.findIdempotencyRecord === "function") {
@@ -96,7 +116,6 @@ class IdempotencyService {
       body,
       expiresAt: Date.now() + ttlForRoute(routeKey),
     };
-    this.memory.set(cacheId, record);
     if (typeof this.repository.saveIdempotencyRecord === "function") {
       await this.repository.saveIdempotencyRecord({
         cacheId,
@@ -109,8 +128,11 @@ class IdempotencyService {
         expiresAt: new Date(record.expiresAt).toISOString(),
       });
     }
-    if (typeof this.repository.purgeExpiredIdempotencyRecords === "function") {
-      await this.repository.purgeExpiredIdempotencyRecords().catch(() => undefined);
+    if (!getIdempotencyTx()) {
+      this.memory.set(cacheId, record);
+      if (typeof this.repository.purgeExpiredIdempotencyRecords === "function") {
+        await this.repository.purgeExpiredIdempotencyRecords().catch(() => undefined);
+      }
     }
   }
 
@@ -168,6 +190,7 @@ async function withIdempotency({ req, res, routeKey, principal, handler }) {
     }
     const result = await runHandler();
     if (result?.statusCode >= 200 && result.statusCode < 300) {
+      if (beforeStoreHook) await beforeStoreHook();
       await service.store(
         idempotencyKey,
         routeKey,
@@ -181,7 +204,23 @@ async function withIdempotency({ req, res, routeKey, principal, handler }) {
     return result;
   };
 
-  const result = await service.withLock(idempotencyKey, routeKey, principalId, schoolScope, execute);
+  const cacheId = service.cacheKey(idempotencyKey, routeKey, principalId, schoolScope);
+  const result =
+    typeof service.repository?.withIdempotencyTransaction === "function"
+      ? await service.repository.withIdempotencyTransaction(cacheId, execute)
+      : await service.withLock(idempotencyKey, routeKey, principalId, schoolScope, execute);
+  if (result?.statusCode >= 200 && result.statusCode < 300 && !getIdempotencyTx()) {
+    const replayBody =
+      result.body && typeof result.body === "object" && !Array.isArray(result.body) && result.body.idempotentReplay
+        ? Object.fromEntries(Object.entries(result.body).filter(([key]) => key !== "idempotentReplay"))
+        : result.body;
+    service.memory.set(cacheId, {
+      requestHash,
+      statusCode: result.statusCode,
+      body: replayBody,
+      expiresAt: Date.now() + ttlForRoute(routeKey),
+    });
+  }
   return res.status(result.statusCode).json(result.body);
 }
 
@@ -197,8 +236,10 @@ module.exports = {
   readIdempotencyKey,
   withIdempotency,
   hashPayload,
+  logicalPayload,
   stableSerialize,
   IDEMPOTENCY_KEY_REUSED,
   lockInt,
   ttlForRoute,
+  setIdempotencyBeforeStoreHook,
 };

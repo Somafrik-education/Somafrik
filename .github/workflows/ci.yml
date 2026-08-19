@@ -131,6 +131,8 @@ jobs:
       - name: verify:mobile-domain-hydration
         run: npm --prefix Mobile run verify:mobile-domain-hydration
       - name: verify:mobile-network-resilience
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:mobile-network-resilience
 
       - name: verify:platform-management (mémoire + PostgreSQL CI)
