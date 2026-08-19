@@ -12,6 +12,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { hashSecret } = require("../services/credentialService");
+const { loadReconciledSchoolCourseId } = require("./loadReconciledSchoolCourse");
 
 const ROOT = path.resolve(__dirname, "../..");
 const API_PORT = 19893;
@@ -342,7 +343,7 @@ async function runHttpChecks(existingCourseId) {
   assert.equal(math.schoolCourseId, existingCourseId);
   assert.ok(math.classId);
   assert.ok(math.academicYearId);
-  assert.equal(math.teacherId, "ENS-0001");
+  assert.match(String(math.teacherId), /ENS-0001$/i);
   assert.equal(math.status, "active");
 
   const teacherToken = await login("ENS-0001", "1234");
@@ -460,16 +461,12 @@ async function main() {
     await waitForUrl(WEB_URL, "web");
     await stripSubjectsGrants(isolatedUrl);
 
-    const adminToken = await login("admin", "1234");
-    const course = await request("/courses", {
-      method: "POST",
-      token: adminToken,
-      body: { className: "2ème A", name: "Mathématiques", teacherId: "ENS-0001" },
+    assert.equal(await countSchoolCourses(isolatedUrl), 1, "bootstrap a matérialisé le school_course");
+    const existingCourseId = await loadReconciledSchoolCourseId(isolatedUrl, {
+      className: "2ème A",
+      subjectName: "Mathématiques",
     });
-    assert.equal(course.status, 201, JSON.stringify(course.data));
-    const existingCourseId = course.data.schoolCourseId || course.data.dbId;
     assert.match(String(existingCourseId), /^[0-9a-f-]{36}$/i);
-    assert.equal(await countSchoolCourses(isolatedUrl), 1);
 
     await runHttpChecks(existingCourseId);
     await runBrowserScenarios(existingCourseId, isolatedUrl);

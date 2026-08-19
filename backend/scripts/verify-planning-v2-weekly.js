@@ -11,6 +11,7 @@ const { Pool } = require("pg");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { hashSecret } = require("../services/credentialService");
 const { PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+const { loadReconciledSchoolCourseId } = require("./loadReconciledSchoolCourse");
 
 const ROOT = path.resolve(__dirname, "../..");
 const MEMORY_PORT = 19776;
@@ -270,21 +271,17 @@ async function runPostgresHttp(databaseUrl) {
     const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
     const yearId = (await pool.query(`SELECT id FROM academic_years LIMIT 1`)).rows[0].id;
 
-    const courseA = await request(PG_PORT, "/courses", {
-      method: "POST",
-      token: adminToken,
-      body: { className: "2ème A", name: "Mathématiques", teacherId: "ENS-0001" },
+    const courseAId = await loadReconciledSchoolCourseId(isolatedUrl, {
+      className: "2ème A",
+      subjectName: "Mathématiques",
     });
-    assert.equal(courseA.status, 201, JSON.stringify(courseA.data));
-    const courseB = await request(PG_PORT, "/courses", {
-      method: "POST",
-      token: adminToken,
-      body: { className: "2ème B", name: "Mathématiques", teacherId: "ENS-0001" },
+    const courseBId = await loadReconciledSchoolCourseId(isolatedUrl, {
+      className: "2ème B",
+      subjectName: "Mathématiques",
     });
-    assert.equal(courseB.status, 201, JSON.stringify(courseB.data));
 
     const weeklyBody = {
-      schoolCourseId: courseA.data.schoolCourseId,
+      schoolCourseId: courseAId,
       academicYearId: yearId,
       dayOfWeek: 1,
       startTime: "08:00",
@@ -319,7 +316,7 @@ async function runPostgresHttp(databaseUrl) {
       method: "POST",
       token: adminToken,
       body: {
-        schoolCourseId: courseB.data.schoolCourseId,
+        schoolCourseId: courseBId,
         academicYearId: yearId,
         dayOfWeek: 1,
         startTime: "08:30",
@@ -402,7 +399,7 @@ async function runPostgresHttp(databaseUrl) {
     assert.ok(Array.isArray(occ.data.items));
 
     const concurrentBody = {
-      schoolCourseId: courseB.data.schoolCourseId,
+      schoolCourseId: courseBId,
       academicYearId: yearId,
       dayOfWeek: 5,
       startTime: "08:00",

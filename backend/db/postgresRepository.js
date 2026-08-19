@@ -7,6 +7,11 @@ const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
+const {
+  sqlTeacherIdentityEquals,
+  sqlTeacherIdentityEqualsAny,
+  sqlTeacherPublicCodeEquals,
+} = require("../lib/teacherCodeAllocation");
 
 const roleToDb = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -93,6 +98,7 @@ class PostgresRepository {
     await this.ensureUsersLoginIdentityConstraints();
     await this.ensureFinanceCanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
+    await this.ensureTeacherCourseCanonicalReconcile();
     await this.ensurePlatformCanonicalSchema();
     await this.ensurePlatformRolePermissionsBootstrap();
     // Tables Clients PUIS inventaire fail-safe PUIS index parent-linking
@@ -516,6 +522,16 @@ class PostgresRepository {
     const { PEDAGOGY_SCHEMA_SQL } = require("./pedagogySchema");
     await this.query(PEDAGOGY_SCHEMA_SQL);
     await this.ensurePlanningWeeklyPreflight();
+  }
+
+  /**
+   * Réconciliation idempotente : teacher_code legacy ENS-#### + school_courses
+   * manquants depuis teacher_assignments. Jamais de recréation d'enseignant/classe.
+   */
+  async ensureTeacherCourseCanonicalReconcile() {
+    const { ensureTeacherCourseCanonicalReconcile } = require("../lib/teacherCourseCanonicalReconcile");
+    this.teacherCourseCanonicalReconcile = await ensureTeacherCourseCanonicalReconcile(this, console);
+    return this.teacherCourseCanonicalReconcile;
   }
 
   /**
@@ -1408,11 +1424,8 @@ class PostgresRepository {
           AND ta.subject_id = e.subject_id
           AND ta.status = 'active'
           AND (
-            te.teacher_code = ANY($${params.length}::text[])
-            OR te.id::text = ANY($${params.length}::text[])
-            OR te.user_id::text = ANY($${params.length}::text[])
-            OR tu.id::text = ANY($${params.length}::text[])
-            OR tu.user_code = ANY($${params.length}::text[])
+            te.user_id::text = ANY($${params.length}::text[])
+            OR ${sqlTeacherIdentityEqualsAny("te", "tu", `$${params.length}::text[]`)}
           )
       )`);
     } else if (isParentOrStudent) {
@@ -2657,7 +2670,7 @@ class PostgresRepository {
           : undefined,
         findTeacherByCode: (schoolId, code) =>
           this.one(
-            `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
+            `SELECT * FROM teachers WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2) LIMIT 1`,
             [schoolId, code],
           ),
         ensureTeacher: ensure
@@ -2703,7 +2716,7 @@ class PostgresRepository {
                  FROM teachers t
                  JOIN teacher_assignments ta ON ta.teacher_id = t.id
                  WHERE t.school_id = $1
-                   AND t.teacher_code = $2
+                   AND ${sqlTeacherPublicCodeEquals("t", "$2")}
                    AND ta.class_id = $3
                    AND ta.subject_id = $4
                    AND ta.status = 'active'
@@ -3586,7 +3599,7 @@ class PostgresRepository {
     }
 
     let teacher = await this.one(
-      `SELECT * FROM teachers WHERE school_id = $1 AND teacher_code = $2 LIMIT 1`,
+      `SELECT * FROM teachers WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2) LIMIT 1`,
       [school.id, validation.teacherCode],
     );
     if (!teacher) {
@@ -3973,12 +3986,7 @@ class PostgresRepository {
          FROM teachers t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (
-             t.teacher_code = $2
-             OR u.user_code = $2
-             OR u.id::text = $2
-             OR t.id::text = $2
-           )
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
          LIMIT 1`,
         [student.school_id, lookupValue],
       );
@@ -4089,12 +4097,7 @@ class PostgresRepository {
          FROM teachers t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (
-             t.teacher_code = $2
-             OR u.user_code = $2
-             OR u.id::text = $2
-             OR t.id::text = $2
-           )
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
          LIMIT 1`,
         [evaluation.school_id, lookupValue],
       );
@@ -4242,7 +4245,7 @@ class PostgresRepository {
          FROM teachers t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (u.id::text = $2 OR u.user_code = $2 OR t.teacher_code = $2)
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
          LIMIT 1`,
         [schoolId, principalSub],
       );
@@ -4316,12 +4319,7 @@ class PostgresRepository {
          FROM teachers t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (
-             t.teacher_code = $2
-             OR u.user_code = $2
-             OR u.id::text = $2
-             OR t.id::text = $2
-           )
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
          LIMIT 1`,
         [schoolId, lookupValue],
       );
@@ -5658,8 +5656,8 @@ class PostgresRepository {
   }
 
   extractTeacherLoginId(code) {
-    const match = String(code ?? "").match(/(ENS-\d+)$/i);
-    return match ? match[1].toUpperCase() : "";
+    const { extractTeacherLoginId } = require("../lib/teacherCodeAllocation");
+    return extractTeacherLoginId(code);
   }
 
   getUserIdentifier(user, role, teacherLoginId = "") {
@@ -6250,12 +6248,7 @@ class PostgresRepository {
        FROM teachers t
        LEFT JOIN users u ON u.id = t.user_id
        WHERE t.school_id = $1
-         AND (
-           t.teacher_code = $2
-           OR u.user_code = $2
-           OR u.id::text = $2
-           OR t.id::text = $2
-         )`,
+         AND ${sqlTeacherIdentityEquals("t", "u", "$2")}`,
       [schoolId, key],
     );
     if (!rows || rows.length !== 1) return null;
@@ -6290,12 +6283,7 @@ class PostgresRepository {
          JOIN teacher_assignments ta ON ta.teacher_id = t.id
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (
-             t.teacher_code = $2
-             OR u.user_code = $2
-             OR u.id::text = $2
-             OR t.id::text = $2
-           )
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
            AND ta.class_id = $3
            AND ta.subject_id = $4
            AND ta.status = 'active'
@@ -6323,12 +6311,7 @@ class PostgresRepository {
        LEFT JOIN users u ON u.id = t.user_id
        LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.class_id = $3
        WHERE t.school_id = $1
-         AND (
-           t.teacher_code = $2
-           OR u.user_code = $2
-           OR u.id::text = $2
-           OR t.id::text = $2
-         )
+         AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
        ORDER BY CASE WHEN ta.id IS NULL THEN 1 ELSE 0 END, t.created_at
        LIMIT 1`,
       [schoolId, lookupCode, classId],

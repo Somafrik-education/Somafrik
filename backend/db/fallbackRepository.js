@@ -1739,13 +1739,18 @@ class FallbackRepository {
           if (
             text.includes("FROM TEACHERS T") &&
             text.includes("T.TEACHER_CODE") &&
-            (text.includes("WHERE T.TEACHER_CODE") || text.includes("FOR UPDATE"))
+            (text.includes("WHERE T.TEACHER_CODE") ||
+              text.includes("LEGACY_TEACHER_CODE") ||
+              text.includes("FOR UPDATE"))
           ) {
-            const teacherCodeFirst = text.includes("WHERE T.TEACHER_CODE");
+            const teacherCodeFirst =
+              text.includes("T.SCHOOL_ID = $2") || text.includes("WHERE T.TEACHER_CODE");
             const teacherCode = teacherCodeFirst ? params[0] : params[1];
             const schoolId = teacherCodeFirst ? params[1] : params[0];
+            const { teacherPublicCodesMatch } = require("../lib/teacherCodeAllocation");
             const teacher = (self._managedTeachers ?? []).find(
-              (row) => row.teacher_code === teacherCode && row.school_id === schoolId,
+              (row) =>
+                teacherPublicCodesMatch(row.teacher_code, teacherCode) && row.school_id === schoolId,
             );
             if (!teacher) return null;
             const user = (self._managedTeacherUsers ?? []).find((row) => row.id === teacher.user_id);

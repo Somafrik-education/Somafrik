@@ -11,6 +11,7 @@ const { Pool } = require("pg");
 const { createTeachersRepository } = require("../db/teachersRepository");
 const { createTeacherAssignmentsRepository } = require("../db/teacherAssignmentsRepository");
 const { createTxAdapter } = require("../db/txAdapter");
+const { ensureTeachersLegacyCodeSchema } = require("../db/teachersLegacyCodeSchema");
 const { verifySecret } = require("../services/credentialService");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -149,6 +150,7 @@ async function setupFixture(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureTeachersLegacyCodeSchema(pool);
 
   const { ensureTeacherAssignmentsActiveUniqueness } = require("./teacherAssignmentsUniqueness");
   await ensureTeacherAssignmentsActiveUniqueness(

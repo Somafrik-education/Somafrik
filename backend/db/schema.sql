@@ -213,6 +213,13 @@ CREATE TABLE IF NOT EXISTS teachers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Alias de login temporaire (ENS-####) après réconciliation du code public.
+-- Non unique globalement : deux établissements peuvent avoir eu ENS-0001.
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS legacy_teacher_code VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_teachers_school_legacy_code
+  ON teachers (school_id, legacy_teacher_code)
+  WHERE legacy_teacher_code IS NOT NULL;
+
 -- Unicité (school_id, user_id) : index créé APRÈS inventaire fail-safe dans
 -- postgresRepository.ensureTeachersDomainConstraints() /
 -- migration 20260812_teachers_school_user_uniqueness.sql (bases legacy avec doublons).

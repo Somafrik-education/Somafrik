@@ -552,6 +552,7 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
 }
 
 module.exports = {
+  generateCourseCode,
   createCourse,
   updateCourse,
   deleteCourse,

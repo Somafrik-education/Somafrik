@@ -11,6 +11,7 @@ const { Pool } = require("pg");
 const { createTeacherAssignmentsRepository } = require("../db/teacherAssignmentsRepository");
 const { createTxAdapter } = require("../db/txAdapter");
 const { ensureTeacherAssignmentsActiveUniqueness } = require("./teacherAssignmentsUniqueness");
+const { ensureTeachersLegacyCodeSchema } = require("../db/teachersLegacyCodeSchema");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_SUBJECTS_ASSIGNMENTS_IT_DATABASE ?? "somafrik_subjects_assignments_it")
@@ -118,6 +119,7 @@ async function setupFixture(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureTeachersLegacyCodeSchema(pool);
 
   const poolAdapter = {
     async query(sql, params = []) {

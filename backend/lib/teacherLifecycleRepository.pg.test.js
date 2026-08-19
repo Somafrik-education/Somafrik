@@ -10,6 +10,7 @@ const { createTeacherAssignmentsRepository } = require("../db/teacherAssignments
 const { createTeacherLifecycleRepository } = require("../db/teacherLifecycleRepository");
 const { createTxAdapter } = require("../db/txAdapter");
 const { ensureTeacherAssignmentsActiveUniqueness } = require("./teacherAssignmentsUniqueness");
+const { ensureTeachersLegacyCodeSchema } = require("../db/teachersLegacyCodeSchema");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const TEACHER_IT_DATABASE = String(
@@ -240,6 +241,7 @@ async function setupFixture(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureTeachersLegacyCodeSchema(pool);
 
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_users_school_email
     ON users (school_id, lower(trim(email)))

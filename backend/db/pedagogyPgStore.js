@@ -8,6 +8,10 @@ const {
 } = require("../lib/pedagogyManagement");
 const pedagogyService = require("../lib/pedagogyService");
 const { mapWeeklyScheduleDto } = require("../lib/planningWeekly");
+const {
+  sqlTeacherIdentityEqualsAny,
+  sqlTeacherPublicCodeEquals,
+} = require("../lib/teacherCodeAllocation");
 
 const WEEKLY_SLOT_SELECT = `
           SELECT w.id, w.school_id, w.academic_year_id, w.school_course_id, w.class_id, w.teacher_id,
@@ -143,7 +147,7 @@ function createPedagogyPgStore(repo) {
         if (!key) return null;
         return one(
           `SELECT * FROM teachers
-           WHERE school_id = $1 AND (teacher_code = $2 OR id::text = $2)
+           WHERE school_id = $1 AND (${sqlTeacherPublicCodeEquals("teachers", "$2")} OR id::text = $2)
            LIMIT 1`,
           [schoolId, key],
         );
@@ -220,12 +224,7 @@ function createPedagogyPgStore(repo) {
            FROM teachers t
            LEFT JOIN users u ON u.id = t.user_id
            WHERE t.school_id = $1
-             AND (
-               t.id::text = ANY($2::text[])
-               OR t.teacher_code = ANY($2::text[])
-               OR u.id::text = ANY($2::text[])
-               OR u.user_code = ANY($2::text[])
-             )
+             AND ${sqlTeacherIdentityEqualsAny("t", "u", "$2::text[]")}
            LIMIT 1`,
           [schoolId, keys],
         );

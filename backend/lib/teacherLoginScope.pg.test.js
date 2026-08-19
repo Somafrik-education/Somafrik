@@ -7,6 +7,7 @@
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { mapAssignment, SELECT_ASSIGNMENT } = require("../db/teacherAssignmentsRepository");
+const { ensureTeachersLegacyCodeSchema } = require("../db/teachersLegacyCodeSchema");
 const { resolveTeacherAssignments } = require("../services/authService");
 const {
   enrichTeacherUserWithActiveAssignments,
@@ -104,6 +105,7 @@ async function setupFixture(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureTeachersLegacyCodeSchema(pool);
 
   for (const table of [
     "teacher_assignments",

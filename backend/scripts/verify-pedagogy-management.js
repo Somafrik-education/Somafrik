@@ -13,6 +13,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { hashSecret } = require("../services/credentialService");
+const { loadReconciledSchoolCourseId } = require("./loadReconciledSchoolCourse");
 
 const ROOT = path.resolve(__dirname, "../..");
 const MEMORY_PORT = 19676;
@@ -440,16 +441,18 @@ async function runPostgresHttpGuards(databaseUrl) {
     assert.equal(missingAssignment.status, 403, JSON.stringify(missingAssignment.data));
     assert.equal(missingAssignment.data?.code, PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED);
 
-    const validCourse = await request(PG_PORT, "/courses", {
-      method: "POST",
-      token: adminToken,
-      body: {
-        className: "6ème A",
-        name: "Mathématiques",
-        teacherId: "ENS-0001",
-      },
+    const validCourseId = await loadReconciledSchoolCourseId(isolatedUrl, {
+      className: "6ème A",
+      subjectName: "Mathématiques",
     });
-    assert.equal(validCourse.status, 201, JSON.stringify(validCourse.data));
+    const coursesAfterBoot = await request(PG_PORT, "/courses", { token: adminToken });
+    assert.equal(coursesAfterBoot.status, 200, JSON.stringify(coursesAfterBoot.data));
+    const validCourse = {
+      data: (coursesAfterBoot.data || []).find(
+        (row) => row.schoolCourseId === validCourseId || row.dbId === validCourseId,
+      ),
+    };
+    assert.ok(validCourse.data, `cours réconcilié introuvable: ${JSON.stringify(coursesAfterBoot.data)}`);
     assert.equal(validCourse.data.className, "6ème A");
 
     const unknownScheduleClass = await request(PG_PORT, "/course-schedules", {
