@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,9 @@ import { useCanonicalResource } from "../hooks/useCanonicalResource";
 import { classNameMatches, scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { sendClientsMessage } from "../services/api";
+import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
+import { NETWORK_COPY } from "../lib/networkResilience";
+import { submitProtectedMutation } from "../lib/outbox";
 import {
   getCanonicalMessages,
   getCanonicalTeachers,
@@ -51,6 +54,9 @@ export default function MessagesScreen() {
   const [teacherStudentId, setTeacherStudentId] = useState("");
   const [selectedMessage, setSelectedMessage] = useState<CanonicalSchoolMessage | null>(null);
   const [sending, setSending] = useState(false);
+  const [sendHint, setSendHint] = useState("");
+  const sendLockRef = useRef(createInFlightLock());
+  const sendIntentionRef = useRef(createIntentionStore());
 
   const role = session?.role;
   const canRead = canReadRoute(session, "Messages");
@@ -108,8 +114,13 @@ export default function MessagesScreen() {
   const unreadCount = messageService.countUnreadForRole(role, session, visibleMessages);
 
   const sendMessage = async () => {
-    if (sending || !canSend) return;
+    if (!sendLockRef.current.tryBegin()) return;
+    if (!canSend) {
+      sendLockRef.current.end();
+      return;
+    }
     if (!message.trim()) {
+      sendLockRef.current.end();
       Alert.alert("Message incomplet", "Veuillez écrire votre message avant l'envoi.");
       return;
     }
@@ -118,6 +129,7 @@ export default function MessagesScreen() {
     if (role === "parent_student") {
       const teacherId = recipient === "teacher" ? selectedTeacherId || availableTeachers[0]?.id : "";
       if (recipient === "teacher" && !teacherId) {
+        sendLockRef.current.end();
         Alert.alert("Enseignant requis", "Veuillez choisir un enseignant.");
         return;
       }
@@ -134,6 +146,7 @@ export default function MessagesScreen() {
     } else if (role === "teacher") {
       const student = teacherStudents.find((item) => item.id === teacherStudentId) ?? teacherStudents[0];
       if (!student) {
+        sendLockRef.current.end();
         Alert.alert("Parent introuvable", "Aucun parent n'est lié à vos classes.");
         return;
       }
@@ -148,18 +161,50 @@ export default function MessagesScreen() {
       };
     }
 
-    if (!payload) return;
+    if (!payload) {
+      sendLockRef.current.end();
+      return;
+    }
+    const intentionId = `message:${String(payload.direction)}:${String(payload.studentId)}:${String(payload.message)}`;
+    const idempotencyKey = sendIntentionRef.current.getOrCreate(intentionId);
     setSending(true);
+    setSendHint(NETWORK_COPY.recording);
     try {
-      await sendClientsMessage(payload);
+      const submitted = await submitProtectedMutation({
+        domain: "messages",
+        method: "POST",
+        path: "/backoffice/messages",
+        payload,
+        idempotencyKey,
+        userId: String(session?.user.id ?? ""),
+        schoolScope: String(session?.school?.code ?? session?.user.schoolCode ?? ""),
+        persistOutbox: true,
+        request: () => sendClientsMessage(payload, { idempotencyKey }),
+      });
+      if (submitted.outcome !== "confirmed") {
+        setSendHint(submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed);
+        Alert.alert(
+          submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed,
+          submitted.outcome === "queued"
+            ? "Le message est conservé en file d'attente. Il ne sera marqué envoyé qu'après confirmation serveur."
+            : submitted.error instanceof Error
+              ? submitted.error.message
+              : "Impossible d'envoyer le message.",
+        );
+        return;
+      }
+      sendIntentionRef.current.rotate(intentionId);
       await loadMessages();
       setMessage("");
       setAttachmentUrl("");
+      setSendHint("");
       Alert.alert("Message envoyé", "Le serveur a confirmé l'envoi du message.");
     } catch (error) {
+      setSendHint(NETWORK_COPY.failed);
       Alert.alert("Envoi impossible", error instanceof Error ? error.message : "Impossible d'envoyer le message.");
     } finally {
       setSending(false);
+      sendLockRef.current.end();
     }
   };
 
@@ -239,8 +284,9 @@ export default function MessagesScreen() {
             <TextInput value={attachmentUrl} onChangeText={setAttachmentUrl} placeholder="Lien de pièce jointe (optionnel)" editable={!sending} style={styles.input} />
             <TouchableOpacity style={[styles.sendButton, sending && styles.disabled]} onPress={() => void sendMessage()} disabled={sending}>
               {sending ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="send-outline" size={20} color="#FFFFFF" />}
-              <Text style={styles.sendText}>{sending ? "Envoi…" : "Envoyer"}</Text>
+              <Text style={styles.sendText}>{sending ? NETWORK_COPY.recording : "Envoyer"}</Text>
             </TouchableOpacity>
+            {sendHint ? <Text style={styles.meta}>{sendHint}</Text> : null}
           </View>
         )}
 

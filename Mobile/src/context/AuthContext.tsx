@@ -7,6 +7,7 @@ import {
 } from "../services/api";
 import { enrichSessionPermissions } from "../domain/security/permissions";
 import { canRestorePersistedSession } from "../lib/dataTruth";
+import { blockOutboxOnLogout } from "../lib/outbox";
 import { setSessionExpiredHandler } from "../services/httpClient";
 import { clearSecureSession, getSessionProfile } from "../services/secureStorage";
 import { safeLogger } from "../services/safeLogger";
@@ -98,8 +99,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       setSelectedStudentId,
       logout: () => {
-        void logoutSession().catch(() => undefined);
-        saveSession(null);
+        void blockOutboxOnLogout().finally(() => {
+          void logoutSession().catch(() => undefined);
+          saveSession(null);
+        });
       },
     }),
     [session, selectedStudentId, bootstrapping],

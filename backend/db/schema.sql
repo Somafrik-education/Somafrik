@@ -790,6 +790,8 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
   cache_id TEXT PRIMARY KEY,
   route_key TEXT NOT NULL,
   principal_id TEXT NOT NULL DEFAULT '',
+  school_scope TEXT NOT NULL DEFAULT '',
+  request_hash TEXT NOT NULL DEFAULT '',
   status_code INTEGER NOT NULL,
   response_body JSONB NOT NULL DEFAULT '{}'::jsonb,
   expires_at TIMESTAMPTZ NOT NULL,
@@ -797,6 +799,8 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_school_scope ON idempotency_keys(school_scope);
+CREATE INDEX IF NOT EXISTS idx_idempotency_principal_route ON idempotency_keys(principal_id, route_key);
 
 CREATE INDEX IF NOT EXISTS idx_schools_country_id ON schools(country_id);
 CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);

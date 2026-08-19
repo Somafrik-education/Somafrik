@@ -38,6 +38,20 @@ jobs:
   security:
     name: Security
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,6 +84,10 @@ jobs:
         run: npm run verify:mobile-planning-v2
       - name: verify:mobile-domain-hydration
         run: npm --prefix Mobile run verify:mobile-domain-hydration
+      - name: verify:mobile-network-resilience
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:mobile-network-resilience
 
   typescript:
     name: TypeScript
@@ -159,6 +177,8 @@ jobs:
         run: npm run ci:install
 
       - name: Existing automated verify suite (fail-fast)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: |
           set -euo pipefail
           npm run verify:v2-foundation
@@ -171,6 +191,7 @@ jobs:
           npm run verify:mobile-evaluations-v2
           npm run verify:mobile-planning-v2
           npm --prefix Mobile run verify:mobile-domain-hydration
+          npm run verify:mobile-network-resilience
           npm run verify:notes-sync
           npm run verify:students-sync
           npm run verify:pre-e1-hotfix-02

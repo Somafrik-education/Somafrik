@@ -159,6 +159,8 @@ export type HttpRequestOptions = RequestInit & {
   raw?: boolean;
   skipAuth?: boolean;
   timeoutMs?: number;
+  /** UUID d'intention — rejoué tel quel après timeout / refresh. */
+  idempotencyKey?: string;
   /** Interne : requête déjà rejouée après refresh. */
   _retried?: boolean;
 };
@@ -171,6 +173,7 @@ export async function httpRequest<T = Json>(
     raw = false,
     skipAuth = false,
     timeoutMs = REQUEST_TIMEOUT_MS,
+    idempotencyKey,
     _retried = false,
     headers: inputHeaders,
     ...rest
@@ -184,6 +187,11 @@ export async function httpRequest<T = Json>(
   const headers = new Headers(inputHeaders ?? {});
   if (!headers.has("Content-Type") && rest.body && !(rest.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
+  }
+
+  const method = String(rest.method ?? "GET").toUpperCase();
+  if (idempotencyKey && method !== "GET" && method !== "HEAD") {
+    headers.set("Idempotency-Key", idempotencyKey);
   }
 
   if (!skipAuth && !isAuthPublicPath(path)) {

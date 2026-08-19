@@ -688,9 +688,21 @@ app.delete("/api/courses/:courseId", requireAuth, requirePermission("POST /api/c
 }));
 
 app.post("/api/course-schedules", requireAuth, requirePermission("POST /api/course-schedules"), asyncHandler(async (req, res) => {
-  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
-  const created = await repository.createCourseSchedule(req.body ?? {}, req.principal, pedagogyAuditMetaFromRequest(req));
-  res.status(201).json(created);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/course-schedules",
+    principal: req.principal,
+    handler: async () => {
+      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+      const created = await repository.createCourseSchedule(
+        req.body ?? {},
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
 }));
 
 app.patch("/api/course-schedules/:scheduleId", requireAuth, requirePermission("PATCH /api/course-schedules/:scheduleId"), asyncHandler(async (req, res) => {
@@ -770,13 +782,21 @@ app.get("/api/course-schedule-replacements", requireAuth, requirePermission("GET
 
 app.post("/api/course-schedule-replacements", requireAuth, requirePermission("POST /api/course-schedule-replacements"), asyncHandler(async (req, res) => {
   if (!requireCanonicalPg(res, "createCourseScheduleReplacement", "Remplacements")) return;
-  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
-  const created = await repository.createCourseScheduleReplacement(
-    req.body ?? {},
-    req.principal,
-    pedagogyAuditMetaFromRequest(req),
-  );
-  res.status(201).json(created);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/course-schedule-replacements",
+    principal: req.principal,
+    handler: async () => {
+      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+      const created = await repository.createCourseScheduleReplacement(
+        req.body ?? {},
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
 }));
 
 app.patch("/api/course-schedule-replacements/:replacementId", requireAuth, requirePermission("PATCH /api/course-schedule-replacements/:replacementId"), asyncHandler(async (req, res) => {
@@ -832,14 +852,22 @@ app.post("/api/evaluations", requireAuth, requireSchoolSubscriptionFeature("writ
 }));
 
 app.patch("/api/evaluations/:evaluationId", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("PATCH /api/evaluations/:evaluationId"), asyncHandler(async (req, res) => {
-  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
-  const saved = await repository.updateSchoolEvaluation(
-    req.params.evaluationId,
-    req.body ?? {},
-    req.principal,
-    pedagogyAuditMetaFromRequest(req),
-  );
-  res.json(saved);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `PATCH /api/evaluations/${req.params.evaluationId}`,
+    principal: req.principal,
+    handler: async () => {
+      const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+      const saved = await repository.updateSchoolEvaluation(
+        req.params.evaluationId,
+        req.body ?? {},
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      );
+      return { statusCode: 200, body: saved };
+    },
+  });
 }));
 
 app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments"), asyncHandler(async (req, res) => {
@@ -2459,8 +2487,20 @@ app.get("/api/backoffice/messages", requireAuth, requirePermission("GET /api/bac
 }));
 
 app.post("/api/backoffice/messages", requireAuth, requirePermission("POST /api/backoffice/messages"), asyncHandler(async (req, res) => {
-  const created = await repository.sendClientsMessage(req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
-  res.status(201).json(created);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/backoffice/messages",
+    principal: req.principal,
+    handler: async () => {
+      const created = await repository.sendClientsMessage(
+        req.body ?? {},
+        req.principal,
+        clientsAuditMetaFromRequest(req),
+      );
+      return { statusCode: 201, body: created };
+    },
+  });
 }));
 
 app.patch("/api/backoffice/messages/:messageId/read", requireAuth, requirePermission("PATCH /api/backoffice/messages/:messageId/read"), asyncHandler(async (req, res) => {

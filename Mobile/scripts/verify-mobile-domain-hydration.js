@@ -93,7 +93,8 @@ function main() {
   const messages = source(path.join("screens", "MessagesScreen.tsx"));
   assert.match(messages, /getCanonicalMessages/);
   assert.match(messages, /markCanonicalMessageRead/);
-  assert.match(messages, /await sendClientsMessage\(payload\)/);
+  assert.match(messages, /submitProtectedMutation/);
+  assert.match(messages, /sendClientsMessage\(payload,\s*\{\s*idempotencyKey\s*\}\)/);
   assert.match(messages, /await loadMessages\(\)/);
   assert.match(messages, /sending/);
   assert.match(messages, /QueryStateView/);

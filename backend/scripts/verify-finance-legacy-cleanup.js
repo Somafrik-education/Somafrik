@@ -322,6 +322,21 @@ async function runHttpGuards() {
     assert.equal(replay.status, 201, JSON.stringify(replay.data));
     assert.equal(replay.data.reference, payment.data.reference);
 
+    const reused = await request("/payments", {
+      method: "POST",
+      token,
+      headers: { "Idempotency-Key": `lot4-pay-${stamp}` },
+      body: {
+        studentId: studentCode,
+        feeType: "Inscription",
+        amount: 1,
+        method: "Espèces",
+        date: "2026-08-13",
+      },
+    });
+    assert.equal(reused.status, 409, JSON.stringify(reused.data));
+    assert.equal(reused.data.code, "IDEMPOTENCY_KEY_REUSED");
+
     const projected = await request("/payments", { token });
     assert.equal(projected.status, 200);
     assert.ok(

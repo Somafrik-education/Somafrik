@@ -401,15 +401,41 @@ class FallbackRepository {
     return record;
   }
 
-  async saveIdempotencyRecord({ cacheId, routeKey, principalId, statusCode, responseBody, expiresAt }) {
-    this.idempotencyRecords.set(String(cacheId ?? ""), {
-      cache_id: String(cacheId ?? ""),
+  async saveIdempotencyRecord({
+    cacheId,
+    routeKey,
+    principalId,
+    schoolScope,
+    requestHash,
+    statusCode,
+    responseBody,
+    expiresAt,
+  }) {
+    const id = String(cacheId ?? "");
+    const existing = this.idempotencyRecords.get(id);
+    const nextHash = String(requestHash ?? "");
+    if (existing?.request_hash && existing.request_hash !== nextHash) {
+      return;
+    }
+    this.idempotencyRecords.set(id, {
+      cache_id: id,
       route_key: String(routeKey ?? ""),
       principal_id: String(principalId ?? ""),
+      school_scope: String(schoolScope ?? "").toUpperCase(),
+      request_hash: nextHash,
       status_code: Number(statusCode ?? 200),
       response_body: clone(responseBody ?? {}),
       expires_at: expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     });
+  }
+
+  async purgeExpiredIdempotencyRecords() {
+    const now = Date.now();
+    for (const [id, record] of this.idempotencyRecords.entries()) {
+      if (new Date(record.expires_at).getTime() <= now) {
+        this.idempotencyRecords.delete(id);
+      }
+    }
   }
 
   async getAcademicConfig(schoolCode) {
