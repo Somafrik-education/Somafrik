@@ -20,7 +20,6 @@ export default function AnnouncementsScreen({ navigation }: any) {
   const { session } = useAuth();
   const canRead = canReadEntity(session, "announcements");
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
-  const canUpdate = canMutateEntity(session, "announcements", "UPDATE");
   const canDelete = canMutateEntity(session, "announcements", "DELETE");
   const { snapshot, load } = useCanonicalResource<CanonicalAnnouncement>(getCanonicalAnnouncements);
   const [archivingId, setArchivingId] = useState("");
@@ -97,12 +96,7 @@ export default function AnnouncementsScreen({ navigation }: any) {
           ) : (
             snapshot.data.map((announcement) => (
               <View key={announcement.id} style={styles.card}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={styles.cardMain}
-                  onPress={() => canUpdate && navigation.navigate("AdminCrud", { entity: "announcements" })}
-                  disabled={!canUpdate}
-                >
+                <View style={styles.cardMain}>
                   <View style={styles.iconBox}>
                     <Ionicons name="megaphone-outline" size={24} color="#7C3AED" />
                   </View>
@@ -120,31 +114,27 @@ export default function AnnouncementsScreen({ navigation }: any) {
                     <Text style={styles.date}>{announcement.date}</Text>
                     {announcement.status ? <Text style={styles.status}>Statut : {announcement.status}</Text> : null}
                   </View>
-                </TouchableOpacity>
+                </View>
 
-                {(canUpdate || canDelete) && (
+                {canDelete && (
                   <View style={styles.actionRow}>
-                    {canUpdate && (
-                      <TouchableOpacity style={styles.smallAction} onPress={() => navigation.navigate("AdminCrud", { entity: "announcements" })}>
-                        <Ionicons name="create-outline" size={18} color="#2563EB" />
-                        <Text style={styles.smallActionText}>Modifier</Text>
-                      </TouchableOpacity>
-                    )}
-                    {canDelete && (
-                      <TouchableOpacity
-                        style={[styles.smallDangerAction, archivingId === announcement.id && styles.disabled]}
-                        onPress={() => confirmArchive(announcement)}
-                        disabled={Boolean(archivingId)}
-                      >
-                        <Ionicons name="archive-outline" size={18} color="#DC2626" />
-                        <Text style={styles.smallDangerText}>{archivingId === announcement.id ? "Archivage…" : "Archiver"}</Text>
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity
+                      style={[styles.smallDangerAction, archivingId === announcement.id && styles.disabled]}
+                      onPress={() => confirmArchive(announcement)}
+                      disabled={Boolean(archivingId)}
+                    >
+                      <Ionicons name="archive-outline" size={18} color="#DC2626" />
+                      <Text style={styles.smallDangerText}>{archivingId === announcement.id ? "Archivage…" : "Archiver"}</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
             ))
           )}
+
+          <Text style={styles.hint}>
+            La modification d'une annonce existante reste masquée tant qu'un écran d'édition canonique ciblé n'est pas branché.
+          </Text>
         </>
       )}
     </ScrollView>
@@ -194,11 +184,10 @@ const styles = StyleSheet.create({
   date: { marginTop: 8, color: "#7C3AED", fontWeight: "800" },
   status: { marginTop: 4, color: "#64748B", fontWeight: "700" },
   actionRow: { flexDirection: "row", gap: 10, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#F1F5F9" },
-  smallAction: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, backgroundColor: "#EFF6FF", paddingHorizontal: 12, paddingVertical: 8 },
-  smallActionText: { color: "#2563EB", fontWeight: "900" },
   smallDangerAction: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, backgroundColor: "#FEF2F2", paddingHorizontal: 12, paddingVertical: 8 },
   smallDangerText: { color: "#DC2626", fontWeight: "900" },
   disabled: { opacity: 0.5 },
+  hint: { color: "#64748B", fontWeight: "700", lineHeight: 20, marginTop: 8 },
   emptyState: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 18, alignItems: "center" },
   emptyText: { color: "#64748B", fontWeight: "800", marginTop: 8 },
 });
