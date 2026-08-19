@@ -2891,6 +2891,11 @@ class PostgresRepository {
       teacherId = teacher?.id ?? null;
     }
 
+    if (principal && !existing) {
+      const { assertTeacherCannotValidateEvaluation } = require("../lib/evaluationGradeEntry");
+      assertTeacherCannotValidateEvaluation(principal, status);
+    }
+
     if (existing && patchTouches(["status"])) {
       const previousStatus = toEvaluationStatus(existing.status, "draft");
       if (previousStatus !== status) {

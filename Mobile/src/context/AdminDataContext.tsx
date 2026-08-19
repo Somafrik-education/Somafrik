@@ -33,8 +33,13 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
 import { snapshotFromFailure, snapshotFromSuccess, type ResourceSnapshot } from "../lib/dataTruth";
+import {
+  gradesForEvaluation,
+  type CanonicalEvaluation,
+  type CanonicalGrade,
+} from "../lib/evaluationsV2";
 import { useAuth } from "./AuthContext";
 
 export type AdminEntity =
@@ -69,6 +74,12 @@ type AdminDataContextValue = {
   loadPayments: () => Promise<void>;
   loadCourseSchedules: () => Promise<void>;
   loadReportCards: () => Promise<void>;
+  evaluationsSnapshot: ResourceSnapshot<CanonicalEvaluation>;
+  notesSnapshot: ResourceSnapshot<CanonicalGrade>;
+  loadEvaluations: () => Promise<void>;
+  loadEvaluation: (evaluationId: string) => Promise<CanonicalEvaluation | null>;
+  loadNotes: () => Promise<void>;
+  loadEvaluationGrades: (evaluationId: string) => Promise<CanonicalGrade[]>;
   subscriptionsData: SubscriptionItem[];
   paymentStatusesData: PaymentStatus[];
   presencesData: PresenceItem[];
@@ -145,6 +156,14 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     data: [],
   });
   const [reportCardsSnapshot, setReportCardsSnapshot] = useState<ResourceSnapshot<CanonicalReportCard>>({
+    status: "idle",
+    data: [],
+  });
+  const [evaluationsSnapshot, setEvaluationsSnapshot] = useState<ResourceSnapshot<CanonicalEvaluation>>({
+    status: "idle",
+    data: [],
+  });
+  const [notesSnapshot, setNotesSnapshot] = useState<ResourceSnapshot<CanonicalGrade>>({
     status: "idle",
     data: [],
   });
@@ -304,7 +323,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       applyArray(studentPayload, setStudentsData);
       applyArray(classPayload, setClassesData);
       applyArray(coursePayload, setCoursesData);
-      applyArray(notePayload, setNotesData);
+      const canonicalNotes = Array.isArray(notePayload) ? notePayload : [];
+      setNotesSnapshot(snapshotFromSuccess(canonicalNotes));
+      setNotesData(canonicalNotes.map(canonicalGradeToNoteItem));
       applyArray(presencePayload, setPresencesData);
       applyArray(assignmentPayload, setAssignmentsData);
       const subjectRows = Array.isArray(subjectPayload)
@@ -360,6 +381,68 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       setReportCardsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
+
+  const loadEvaluations = useCallback(async () => {
+    if (!session) return;
+    setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getEvaluations();
+      setEvaluationsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setEvaluationsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadEvaluation = useCallback(
+    async (evaluationId: string) => {
+      const key = String(evaluationId ?? "").trim();
+      if (!session || !key) return null;
+      setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
+      try {
+        const rows = await getEvaluations();
+        setEvaluationsSnapshot(snapshotFromSuccess(rows));
+        return (
+          rows.find(
+            (row) =>
+              row.evaluationId === key || row.id === key || row.pgId === key || String(row.publicId ?? "") === key,
+          ) ?? null
+        );
+      } catch (error) {
+        setEvaluationsSnapshot((current) => snapshotFromFailure(error, current.data));
+        throw error;
+      }
+    },
+    [session],
+  );
+
+  const loadNotes = useCallback(async () => {
+    if (!session) return;
+    setNotesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getNotes();
+      setNotesSnapshot(snapshotFromSuccess(rows));
+      setNotesData(rows.map(canonicalGradeToNoteItem));
+    } catch (error) {
+      setNotesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadEvaluationGrades = useCallback(
+    async (evaluationId: string) => {
+      if (!session) return [];
+      setNotesSnapshot((current) => ({ ...current, status: "loading" }));
+      try {
+        const rows = await getNotes();
+        setNotesSnapshot(snapshotFromSuccess(rows));
+        setNotesData(rows.map(canonicalGradeToNoteItem));
+        return gradesForEvaluation(rows, evaluationId);
+      } catch (error) {
+        setNotesSnapshot((current) => snapshotFromFailure(error, current.data));
+        throw error;
+      }
+    },
+    [session],
+  );
 
   useEffect(() => {
     if (!session) {
@@ -498,9 +581,15 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       paymentsSnapshot,
       courseSchedulesSnapshot,
       reportCardsSnapshot,
+      evaluationsSnapshot,
+      notesSnapshot,
       loadPayments,
       loadCourseSchedules,
       loadReportCards,
+      loadEvaluations,
+      loadEvaluation,
+      loadNotes,
+      loadEvaluationGrades,
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
       presencesData: (state.presences ?? []) as PresenceItem[],
@@ -702,9 +791,15 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     paymentsSnapshot,
     courseSchedulesSnapshot,
     reportCardsSnapshot,
+    evaluationsSnapshot,
+    notesSnapshot,
     loadPayments,
     loadCourseSchedules,
     loadReportCards,
+    loadEvaluations,
+    loadEvaluation,
+    loadNotes,
+    loadEvaluationGrades,
   ]);
 
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;
@@ -714,6 +809,25 @@ function applyArray<T>(value: unknown, setter: React.Dispatch<React.SetStateActi
   if (Array.isArray(value)) {
     setter(value as T[]);
   }
+}
+
+function canonicalGradeToNoteItem(grade: CanonicalGrade): NoteItem {
+  return {
+    id: grade.id,
+    studentId: grade.studentId,
+    subject: grade.subject ?? "",
+    value: Number(grade.value ?? grade.score ?? 0),
+    coefficient: grade.evaluationCoefficient,
+    date: grade.date ?? "",
+    period: grade.period,
+    evaluationId: grade.evaluationId,
+    evaluationTitle: grade.evaluationTitle,
+    evaluationType: grade.evaluationType,
+    scale: grade.scale,
+    evaluationCoefficient: grade.evaluationCoefficient,
+    gradeStatus: grade.gradeStatus,
+    status: grade.status,
+  };
 }
 
 function getSessionSchoolCode(session: any) {

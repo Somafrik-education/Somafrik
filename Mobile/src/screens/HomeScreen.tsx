@@ -14,10 +14,11 @@ import { useAuth } from "../context/AuthContext";
 const somafrikLogo = require("../../assets/somafrik-logo.png");
 import StudentSwitcher from "../components/StudentSwitcher";
 import { useAdminData } from "../context/AdminDataContext";
-import { getPaymentStats, getPresenceStats, getStudentAcademicSummary } from "../domain/metrics/schoolMetrics";
+import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute } from "../domain/security/permissions";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, parentAverageDisplay } from "../lib/dataTruth";
+import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
 import CommunicationHeaderIcons from "../components/CommunicationHeaderIcons";
@@ -33,7 +34,7 @@ import { NAVIGATION_COPY, NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpe
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, paymentsData, paymentsSnapshot, loadPayments, notesData, coursesData, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData, teachersData, assignmentsData, classesData, syncStatus } = useAdminData();
+  const { studentsData, paymentsData, paymentsSnapshot, loadPayments, notesSnapshot, loadNotes, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData, teachersData, assignmentsData, classesData } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const scrollContentStyle = [
     styles.scrollContent,
@@ -79,7 +80,10 @@ export default function HomeScreen({ navigation }: any) {
       if (canReadEntity(session, "payments")) {
         void loadPayments();
       }
-    }, [session, loadPayments]),
+      if (session?.role === "parent_student" || session?.role === "student") {
+        void loadNotes();
+      }
+    }, [session, loadPayments, loadNotes]),
   );
 
   if (session?.role === "teacher") {
@@ -245,17 +249,17 @@ export default function HomeScreen({ navigation }: any) {
       (linkedChild
         ? { id: linkedChild.id, name: linkedChild.name, className: linkedChild.className }
         : undefined);
-    const studentNotes = notesData.filter((note) => note.studentId === selectedStudentId);
+    const studentNotes = notesForStudent(notesSnapshot.data, selectedStudentId);
+    const canonicalAverage = canonicalWeightedAverage(studentNotes);
+    const averageDisplay = parentAverageDisplay({
+      notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
+      notesForStudent: studentNotes,
+      average: canonicalAverage.available ? canonicalAverage.average ?? undefined : undefined,
+    });
     const studentPresences = presencesData.filter((presence) => presence.studentId === selectedStudentId);
     const studentPayments = paymentsReady
       ? paymentsData.filter((payment) => payment.studentId === selectedStudentId)
       : [];
-    const academicSummary = getStudentAcademicSummary(selectedStudentId, studentsData, notesData, coursesData);
-    const averageDisplay = parentAverageDisplay({
-      notesReady: syncStatus === "synced",
-      notesForStudent: studentNotes,
-      average: academicSummary.average,
-    });
     const studentPresenceStats = getPresenceStats(studentPresences);
     const studentPaymentStats = getPaymentStats(studentPayments);
     const latestAnnouncement = announcementsData[0];

@@ -61,6 +61,10 @@ test("enseignant ne peut pas valider / publier une évaluation", () => {
     () => assertTeacherCannotValidateEvaluation({ role: "Enseignant" }, "locked"),
     (error) => error.statusCode === 403,
   );
+  assert.throws(
+    () => assertTeacherCannotValidateEvaluation({ role: "teacher" }, "Validée"),
+    (error) => error.statusCode === 403,
+  );
   assert.doesNotThrow(() => assertTeacherCannotValidateEvaluation({ role: "Enseignant" }, "Brouillon"));
   assert.doesNotThrow(() => assertTeacherCannotValidateEvaluation({ role: "Préfet des études" }, "Validée"));
   assert.doesNotThrow(() => assertTeacherCannotValidateEvaluation({ role: "Admin School" }, "Validée"));

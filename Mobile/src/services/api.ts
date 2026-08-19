@@ -18,6 +18,13 @@ import {
 } from "./secureStorage";
 import { canPersistFullSession, normalizePaymentRow, unwrapList } from "../lib/dataTruth";
 import {
+  normalizeEvaluation,
+  normalizeGrade,
+  stripEvaluationClientScope,
+  type CanonicalEvaluation,
+  type CanonicalGrade,
+} from "../lib/evaluationsV2";
+import {
   beginRestrictedSession,
   clearRestrictedSession,
   getRestrictedAccessToken,
@@ -39,19 +46,28 @@ export type StudentSummary = {
   matricule: string;
   gender?: string;
   birthDate?: string;
+  classId?: string | null;
+  classCode?: string;
   className: string;
   schoolCode: string;
   parentName?: string;
   parentPhone: string;
   parentEmail?: string;
   archived?: boolean;
+  status?: string;
 };
 
 export type TeacherAssignment = {
+  id?: string;
+  classId?: string | null;
+  classCode?: string;
   className: string;
   course: string;
+  subject?: string;
+  subjectCode?: string;
   teacherId?: string;
   teacherName?: string;
+  status?: string;
 };
 
 type LoginPayload = {
@@ -269,7 +285,27 @@ export function getHealth() {
 }
 
 export function getNotes() {
-  return request<unknown[]>("/notes");
+  return request<unknown>("/notes").then((payload) => unwrapList(payload).map(normalizeGrade));
+}
+
+export function getEvaluations() {
+  return request<unknown>("/evaluations").then((payload) => unwrapList(payload).map(normalizeEvaluation));
+}
+
+export function createEvaluation(payload: Record<string, unknown>) {
+  const body = stripEvaluationClientScope(payload);
+  delete body.status;
+  return request<CanonicalEvaluation>("/evaluations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }).then(normalizeEvaluation);
+}
+
+export function updateEvaluation(evaluationId: string, payload: Record<string, unknown>) {
+  return request<CanonicalEvaluation>(`/evaluations/${encodeURIComponent(evaluationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(stripEvaluationClientScope(payload)),
+  }).then(normalizeEvaluation);
 }
 
 export function getPresences() {
@@ -277,7 +313,7 @@ export function getPresences() {
 }
 
 export function getStudents() {
-  return request<StudentSummary[]>("/students");
+  return request<unknown>("/students").then((payload) => unwrapList(payload) as StudentSummary[]);
 }
 
 export function getClasses() {
@@ -289,7 +325,7 @@ export function getCourses() {
 }
 
 export function getAssignments() {
-  return request<TeacherAssignment[]>("/assignments");
+  return request<unknown>("/assignments").then((payload) => unwrapList(payload) as TeacherAssignment[]);
 }
 
 export type SchoolSubject = {
@@ -393,10 +429,14 @@ export function saveAcademicConfig(payload: AcademicConfigPayload) {
 }
 
 export function saveNote(payload: unknown) {
-  return request<unknown>("/notes", {
+  const body =
+    payload && typeof payload === "object"
+      ? stripEvaluationClientScope(payload as Record<string, unknown>)
+      : payload;
+  return request<CanonicalGrade>("/notes", {
     method: "POST",
-    body: JSON.stringify(payload),
-  });
+    body: JSON.stringify(body),
+  }).then(normalizeGrade);
 }
 
 export function savePresences(payload: unknown) {
