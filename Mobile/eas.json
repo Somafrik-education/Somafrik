@@ -1,31 +1,66 @@
 ﻿{
   "cli": {
     "version": ">= 20.4.0",
-    "appVersionSource": "local"
+    "appVersionSource": "local",
+    "promptToConfigurePushNotifications": false
   },
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EAS_BUILD_PROFILE": "development",
+        "EXPO_PUBLIC_RELEASE_PROFILE": "development",
+        "EXPO_PUBLIC_DEMO_MODE": "false",
+        "EXPO_PUBLIC_DEMO_PIN": ""
+      }
     },
     "preview": {
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
+        "EAS_BUILD_PROFILE": "preview",
+        "EXPO_PUBLIC_RELEASE_PROFILE": "preview",
         "EXPO_PUBLIC_API_URL": "https://somafrik-api-preprod.onrender.com",
+        "EXPO_PUBLIC_API_URL_PREVIEW": "https://somafrik-api-preprod.onrender.com",
+        "EXPO_PUBLIC_DEMO_MODE": "false",
+        "EXPO_PUBLIC_DEMO_PIN": ""
+      }
+    },
+    "preproduction": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EAS_BUILD_PROFILE": "preproduction",
+        "EXPO_PUBLIC_RELEASE_PROFILE": "preproduction",
+        "EXPO_PUBLIC_API_URL": "https://somafrik-api-preprod.onrender.com",
+        "EXPO_PUBLIC_API_URL_PREPRODUCTION": "https://somafrik-api-preprod.onrender.com",
         "EXPO_PUBLIC_DEMO_MODE": "false",
         "EXPO_PUBLIC_DEMO_PIN": ""
       }
     },
     "production": {
-      "autoIncrement": false,
+      "distribution": "store",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
+        "EAS_BUILD_PROFILE": "production",
+        "EXPO_PUBLIC_RELEASE_PROFILE": "production",
         "EXPO_PUBLIC_API_URL": "https://api.somafrik.app",
+        "EXPO_PUBLIC_API_URL_PRODUCTION": "https://api.somafrik.app",
         "EXPO_PUBLIC_DEMO_MODE": "false",
         "EXPO_PUBLIC_DEMO_PIN": ""
       }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }

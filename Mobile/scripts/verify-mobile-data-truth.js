@@ -112,6 +112,8 @@ async function assertProductionMetroBundle() {
 
   process.env.EXPO_PUBLIC_DEMO_MODE = "false";
   process.env.EXPO_PUBLIC_DEMO_PIN = "";
+  process.env.EXPO_PUBLIC_RELEASE_PROFILE = "production";
+  process.env.EAS_BUILD_PROFILE = "production";
   if (!process.env.EXPO_PUBLIC_API_URL) {
     process.env.EXPO_PUBLIC_API_URL = "https://api.somafrik.app";
   }
@@ -210,8 +212,10 @@ async function main() {
   const eas = JSON.parse(read(path.join(MOBILE, "eas.json")).replace(/^\uFEFF/, ""));
   assert.equal(eas.build.production.env.EXPO_PUBLIC_DEMO_MODE, "false");
   assert.equal(eas.build.preview.env.EXPO_PUBLIC_DEMO_MODE, "false");
+  assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_DEMO_MODE, "false");
   assert.equal(eas.build.production.env.EXPO_PUBLIC_DEMO_PIN, "");
   assert.equal(eas.build.preview.env.EXPO_PUBLIC_DEMO_PIN, "");
+  assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_DEMO_PIN, "");
   const appConfig = read(path.join(MOBILE, "app.config.js"));
   assert.match(appConfig, /EXPO_PUBLIC_DEMO_MODE interdit en production/);
   assert.match(appConfig, /EXPO_PUBLIC_DEMO_PIN interdit en production/);

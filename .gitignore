@@ -11,8 +11,8 @@ web/dist/
 **/dist/
 Mobile/.expo/
 Mobile/web-build/
-Mobile/android/app/build/
-Mobile/ios/build/
+Mobile/android/
+Mobile/ios/
 
 # Environment
 .env
@@ -34,6 +34,9 @@ pnpm-debug.log*
 local.properties
 **/local.properties
 *.keystore
+*.jks
+credentials.json
+*.aab
 test-results/
 tmp/
 

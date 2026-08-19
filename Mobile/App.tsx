@@ -1,5 +1,5 @@
 import "./global.css";
-import type { ComponentProps } from "react";
+import { useMemo, type ComponentProps } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { MD3LightTheme, PaperProvider, type MD3Theme } from "react-native-paper";
@@ -7,6 +7,9 @@ import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider } from "./src/context/AuthContext";
 import { AdminDataProvider } from "./src/context/AdminDataContext";
 import OutboxRuntime from "./src/components/OutboxRuntime";
+import EnvironmentBadge from "./src/components/EnvironmentBadge";
+import ConfigurationErrorScreen from "./src/components/ConfigurationErrorScreen";
+import { resolveApiRootUrl } from "./src/config/env";
 
 /** Thème React Native Paper aligné sur la marque Somafrik (cohérent avec le web). */
 const paperTheme: MD3Theme = {
@@ -34,15 +37,29 @@ function paperIcon({ name, color, size }: PaperIconProps) {
 }
 
 export default function App() {
+  const configError = useMemo(() => {
+    try {
+      resolveApiRootUrl();
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "Configuration API invalide.";
+    }
+  }, []);
+
   return (
     <SafeAreaProvider>
       <PaperProvider theme={paperTheme} settings={{ icon: paperIcon }}>
-        <AuthProvider>
-          <AdminDataProvider>
-            <OutboxRuntime />
-            <AppNavigator />
-          </AdminDataProvider>
-        </AuthProvider>
+        {configError ? (
+          <ConfigurationErrorScreen message={configError} />
+        ) : (
+          <AuthProvider>
+            <AdminDataProvider>
+              <OutboxRuntime />
+              <AppNavigator />
+              <EnvironmentBadge />
+            </AdminDataProvider>
+          </AuthProvider>
+        )}
       </PaperProvider>
     </SafeAreaProvider>
   );

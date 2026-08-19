@@ -17,7 +17,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Somafrik utilise vos photos pour ajouter la photo du compte.",
-          "cameraPermission": "Somafrik utilise l'appareil photo pour prendre la photo du compte."
+          "cameraPermission": "Somafrik utilise l'appareil photo pour prendre la photo du compte.",
+          "microphonePermission": false
         }
       ]
     ],

@@ -189,7 +189,9 @@ function main() {
   assert.ok(/https:\/\//.test(env) && /production/i.test(env), "HTTPS production requis");
   const appConfig = read(path.join(MOBILE, "app.config.js"));
   assert.ok(appConfig.includes("usesCleartextTraffic"), "cleartext configuré");
-  assert.ok(/!isProdProfile|isProdProfile/.test(appConfig), "cleartext limité hors prod");
+  assert.ok(appConfig.includes("expo-build-properties"), "cleartext via expo-build-properties, pas le schéma android Expo");
+  assert.ok(/profileAllowsCleartext|isProdProfile/.test(appConfig), "cleartext limité hors store");
+  assert.doesNotMatch(read(path.join(MOBILE, "app.json")), /usesCleartextTraffic/);
   console.log("OK: validation URL / HTTPS production");
 
   // 6) Téléchargement sécurisé + adaptateur documenté

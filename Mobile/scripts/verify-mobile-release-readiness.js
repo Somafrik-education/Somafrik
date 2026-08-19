@@ -1,0 +1,236 @@
+/**
+ * LOT 7 — preuves de release readiness (Expo / EAS / Play Store), sans upload.
+ *
+ * Usage : npm run verify:mobile-release-readiness
+ */
+const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { spawnSync } = require("child_process");
+const {
+  ANDROID_PACKAGE,
+  ANDROID_VERSION_CODE,
+  APP_VERSION,
+  CANONICAL_API_URLS,
+} = require("../config/releaseEnvironments");
+
+const ROOT = path.join(__dirname, "..", "..");
+const MOBILE = path.join(ROOT, "Mobile");
+
+function read(file) {
+  return fs.readFileSync(file, "utf8");
+}
+
+function pngInfo(filePath) {
+  const buf = fs.readFileSync(filePath);
+  const isPng = buf.length >= 24
+    && buf[0] === 0x89
+    && buf[1] === 0x50
+    && buf[2] === 0x4e
+    && buf[3] === 0x47
+    && buf[4] === 0x0d
+    && buf[5] === 0x0a
+    && buf[6] === 0x1a
+    && buf[7] === 0x0a;
+  const isJpeg = buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  let width = 0;
+  let height = 0;
+  if (isPng) {
+    width = buf.readUInt32BE(16);
+    height = buf.readUInt32BE(20);
+  }
+  return { isPng, isJpeg, width, height, bytes: buf.length };
+}
+
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    cwd: options.cwd || MOBILE,
+    env: { ...process.env, ...(options.env || {}) },
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} ${args.join(" ")} failed:\n${result.stderr || result.stdout || result.error}`,
+    );
+  }
+  return result;
+}
+
+function scanBundle(label, bundle, expectedUrl, forbiddenUrl) {
+  assert.ok(bundle.length > 1000, `${label}: bundle vide`);
+  const expectedHost = expectedUrl.replace(/^https:\/\//, "");
+  const forbiddenHost = forbiddenUrl.replace(/^https:\/\//, "");
+  assert.ok(
+    bundle.includes(expectedUrl) || bundle.includes(expectedHost),
+    `${label}: URL API absente (${expectedUrl})`,
+  );
+  assert.ok(!bundle.includes(forbiddenHost), `${label}: URL interdite présente (${forbiddenHost})`);
+  assert.doesNotMatch(bundle, /http:\/\/localhost:5000/);
+  assert.doesNotMatch(bundle, /http:\/\/10\.0\.2\.2:5000/);
+  assert.doesNotMatch(bundle, /http:\/\/127\.0\.0\.1:5000/);
+  assert.doesNotMatch(bundle, /http:\/\/192\.168\./);
+  assert.doesNotMatch(bundle, /["']1234["']/);
+  assert.doesNotMatch(bundle, /Remplir un compte enseignant demo/);
+  assert.doesNotMatch(bundle, /DATABASE_URL\s*=\s*postgres/i);
+  assert.doesNotMatch(bundle, /BEGIN (RSA )?PRIVATE KEY/);
+  assert.doesNotMatch(bundle, /ghp_[A-Za-z0-9]{20,}/);
+  assert.doesNotMatch(bundle, /github_pat_[A-Za-z0-9_]{20,}/);
+  assert.doesNotMatch(bundle, /sk_live_[A-Za-z0-9]+/);
+  console.log(`OK: bundle ${label} (${bundle.length} octets)`);
+}
+
+function main() {
+  const envTest = spawnSync(process.execPath, ["config/releaseEnvironments.test.js"], {
+    encoding: "utf8",
+    cwd: MOBILE,
+  });
+  if (envTest.status !== 0) {
+    throw new Error(envTest.stderr || envTest.stdout || "releaseEnvironments.test.js failed");
+  }
+  process.stdout.write(envTest.stdout);
+
+  const eas = JSON.parse(read(path.join(MOBILE, "eas.json")).replace(/^\uFEFF/, ""));
+  for (const profile of ["development", "preview", "preproduction", "production"]) {
+    assert.ok(eas.build[profile], `eas.json profil manquant: ${profile}`);
+  }
+  assert.equal(eas.build.preview.distribution, "internal");
+  assert.equal(eas.build.preview.android.buildType, "apk");
+  assert.equal(eas.build.preproduction.distribution, "store");
+  assert.equal(eas.build.preproduction.android.buildType, "app-bundle");
+  assert.equal(eas.build.production.distribution, "store");
+  assert.equal(eas.build.production.android.buildType, "app-bundle");
+  assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.preproduction);
+  assert.equal(eas.build.production.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.production);
+  assert.notEqual(eas.build.preproduction.env.EXPO_PUBLIC_API_URL, eas.build.production.env.EXPO_PUBLIC_API_URL);
+  assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_DEMO_MODE, "false");
+  assert.equal(eas.build.production.env.EXPO_PUBLIC_DEMO_MODE, "false");
+  assert.ok(!eas.submit, "eas submit interdit dans ce lot");
+  console.log("OK: eas.json — 4 profils, preprod/prod AAB store, pas de submit");
+
+  const appJson = JSON.parse(read(path.join(MOBILE, "app.json")));
+  assert.equal(appJson.expo.android.package, ANDROID_PACKAGE);
+  assert.equal(appJson.expo.version, APP_VERSION);
+  assert.equal(appJson.expo.android.versionCode, ANDROID_VERSION_CODE);
+  assert.ok(Number.isInteger(appJson.expo.android.versionCode));
+  assert.doesNotMatch(JSON.stringify(appJson), /usesCleartextTraffic/);
+  assert.doesNotMatch(JSON.stringify(appJson), /SchoolLink|schoollink/i);
+  const permissions = appJson.expo.android.permissions || [];
+  assert.deepStrictEqual(permissions.sort(), ["CAMERA", "READ_MEDIA_IMAGES"].sort());
+  console.log("OK: app.json package/version/permissions/schema");
+
+  const appConfig = read(path.join(MOBILE, "app.config.js"));
+  assert.match(appConfig, /expo-build-properties/);
+  assert.match(appConfig, /usesCleartextTraffic/);
+  assert.match(appConfig, /profileAllowsCleartext/);
+  assert.doesNotMatch(appConfig, /http:\/\/localhost:5000/);
+  assert.match(appConfig, /withSomafrikAndroidSecurity/);
+  console.log("OK: app.config fail-closed + cleartext hors schéma Expo");
+
+  const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
+  assert.ok(pkg.dependencies["react-native-worklets"], "react-native-worklets manquant");
+  assert.ok(pkg.dependencies["expo-build-properties"], "expo-build-properties manquant");
+  assert.match(pkg.dependencies.expo || "", /54\./);
+  console.log("OK: packages SDK 54 + worklets");
+
+  const icon = pngInfo(path.join(MOBILE, "assets", "somafrik-app-icon.png"));
+  const splash = pngInfo(path.join(MOBILE, "assets", "somafrik-logo.png"));
+  assert.ok(icon.isPng && !icon.isJpeg, "icon doit être un vrai PNG");
+  assert.equal(icon.width, 1024);
+  assert.equal(icon.height, 1024);
+  assert.ok(splash.isPng && !splash.isJpeg, "splash doit être un vrai PNG (pas un JPEG renommé)");
+  assert.ok(splash.width >= 320 && splash.height >= 320, "splash dimensions insuffisantes");
+  assert.ok(!fs.existsSync(path.join(MOBILE, "assets", "schoollink-logo.png")), "relique SchoolLink");
+  console.log("OK: assets icon/splash MIME réel");
+
+  const gitignore = `${read(path.join(ROOT, ".gitignore"))}\n${read(path.join(MOBILE, ".gitignore"))}`;
+  for (const needle of ["*.jks", "*.keystore", "credentials.json"]) {
+    assert.ok(gitignore.includes(needle), `.gitignore doit contenir ${needle}`);
+  }
+  const trackedSecrets = spawnSync("git", ["ls-files", "*.jks", "*.keystore", "credentials.json"], {
+    encoding: "utf8",
+    cwd: ROOT,
+  });
+  assert.equal((trackedSecrets.stdout || "").trim(), "", "keystore / credentials.json suivis par git");
+  console.log("OK: gitignore release secrets");
+
+  const plugin = read(path.join(MOBILE, "plugins", "withSomafrikAndroidSecurity.js"));
+  assert.match(plugin, /allowBackup/);
+  assert.match(plugin, /cleartextTrafficPermitted="false"/);
+  assert.match(plugin, /allowCleartext \? NETWORK_SECURITY_DEV : NETWORK_SECURITY_RELEASE/);
+  assert.match(plugin, /usesCleartextTraffic/);
+  assert.match(plugin, /RECORD_AUDIO/);
+  assert.match(plugin, /POST_NOTIFICATIONS/);
+  const gitignoreMobile = read(path.join(MOBILE, ".gitignore"));
+  assert.match(gitignoreMobile, /^android\/$/m);
+  const trackedAndroid = spawnSync("git", ["ls-files", "Mobile/android"], {
+    encoding: "utf8",
+    cwd: ROOT,
+  });
+  assert.equal((trackedAndroid.stdout || "").trim(), "", "android/ ne doit plus être versionné (CNG)");
+  console.log("OK: CNG — plugin sécurité + android/ non suivi");
+
+  const docsInventory = read(path.join(ROOT, "docs", "mobile", "PLAY-STORE-DATA-INVENTORY.md"));
+  const docsReady = read(path.join(ROOT, "docs", "mobile", "RELEASE-READINESS.md"));
+  assert.match(docsInventory, /Donnée/);
+  assert.match(docsReady, /preproduction/);
+  assert.match(docsReady, /Internal testing/);
+  assert.match(docsReady, /NON effectué/);
+  console.log("OK: documentation Play Store");
+
+  const doctor = spawnSync("npx", ["expo-doctor"], { encoding: "utf8", cwd: MOBILE });
+  process.stdout.write(doctor.stdout || "");
+  process.stderr.write(doctor.stderr || "");
+  if (doctor.status !== 0) {
+    throw new Error("expo-doctor a échoué (cible 18/18 ou équivalent).");
+  }
+  console.log("OK: expo-doctor");
+
+  for (const profile of ["preview", "preproduction", "production"]) {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), `somafrik-${profile}-`));
+    const exported = run(process.execPath, ["scripts/export-release-bundle.js", profile], {
+      env: { SOMAFRIK_BUNDLE_OUT: outDir },
+    });
+    const bundlePath = (exported.stdout || "").trim().split(/\r?\n/).filter(Boolean).pop();
+    assert.ok(bundlePath && fs.existsSync(bundlePath), `${profile}: bundle introuvable`);
+    const bundle = read(bundlePath);
+    if (profile === "production") {
+      scanBundle(profile, bundle, CANONICAL_API_URLS.production, CANONICAL_API_URLS.preproduction);
+    } else {
+      scanBundle(profile, bundle, CANONICAL_API_URLS.preproduction, CANONICAL_API_URLS.production);
+    }
+  }
+
+  const sdkDir = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+  const androidDir = path.join(MOBILE, "android");
+  if (sdkDir && fs.existsSync(sdkDir) && fs.existsSync(path.join(androidDir, "gradlew"))) {
+    const gradleTask = spawnSync(
+      process.platform === "win32" ? "gradlew.bat" : "./gradlew",
+      ["bundleRelease", "-m"],
+      { encoding: "utf8", cwd: androidDir },
+    );
+    assert.equal(gradleTask.status, 0, gradleTask.stderr || gradleTask.stdout);
+    console.log("OK: Gradle bundleRelease dry-run");
+  } else {
+    console.log("SKIP: AAB Gradle local (SDK ou android/ prebuild absent) — générable via EAS app-bundle");
+  }
+
+  const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
+  const security = read(path.join(ROOT, ".github", "workflows", "security.yml"));
+  assert.match(ci, /name: verify:mobile-release-readiness/);
+  assert.match(ci, /npm run verify:mobile-release-readiness/);
+  assert.match(security, /name: verify:mobile-release-readiness/);
+  assert.match(security, /npm run verify:mobile-release-readiness/);
+  assert.match(ci, /name: verify:mobile-usability/);
+  assert.match(ci, /name: Bootstrap runtime guard/);
+  console.log("OK: CI + Security branchent verify:mobile-release-readiness");
+
+  console.log("verify:mobile-release-readiness OK");
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(error);
+  process.exit(1);
+}
