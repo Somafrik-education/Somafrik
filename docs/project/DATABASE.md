@@ -192,7 +192,8 @@ Autres domaines (examens, documents, messages…) : voir `schema.sql` — souven
 
 | Table | Rôle | Contraintes notables |
 |-------|------|----------------------|
-| `payments` | Paiements (référence serveur `payment_code`) | UNIQUE `payment_code` · `cancelled_at` / `cancel_reason` / `cancelled_by` (soft cancel) · aucun COPY depuis JSON |
+| `payments` | Reçu / encaissement (référence serveur `payment_code`) | UNIQUE `payment_code` · `amount` = total serveur `SUM(payment_items.amount)` · `cancelled_at` / `cancel_reason` / `cancelled_by` (soft cancel) · aucun COPY depuis JSON |
+| `payment_items` | Lignes de libellés d’un reçu | FK `payment_id` · `amount > 0` · trigger tenant (`PAYMENT_ITEM_TENANT_MISMATCH` / `FEE_ITEM_TENANT_MISMATCH`) · backfill historique 1:1 (jamais fusion élève+date) |
 | `audit_logs` | Effets Finance (`create_payment`, `cancel_payment`) | Même transaction que le paiement / l'annulation ; pas d'audit post-COMMIT |
 | `student_fee_obligations` | Dettes élève | UNIQUE active (élève + type + période) · soldes ≥ 0 |
 | `payment_allocations` | Ventilation paiement → obligation | FK payment + obligation · réversion `reversed_at` |

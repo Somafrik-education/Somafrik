@@ -117,6 +117,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:finance-management
+      - name: verify:finance-multi-item-payment (reçu unique multi-libellés)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:finance-multi-item-payment
 
       - name: verify:platform-management (mémoire + PostgreSQL CI)
         env:

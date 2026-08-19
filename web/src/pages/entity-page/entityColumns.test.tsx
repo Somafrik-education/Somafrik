@@ -133,6 +133,38 @@ describe("entityColumns (D2.8a)", () => {
     expect(screen.queryByRole("link", { name: "Élèves" })).not.toBeInTheDocument();
   });
 
+  it("liste paiements : une ligne par reçu, Détail cliquable et action Reçu", () => {
+    const module = getEntityModule("payments")!;
+    const columns = buildEntityColumns(baseCtx({ module }));
+    expect(columns.map((column) => column.key)).toEqual([
+      "reference",
+      "studentName",
+      "itemsDetail",
+      "amount",
+      "method",
+      "date",
+      "status",
+      "actions",
+    ]);
+    expect(columns.find((column) => column.key === "itemsDetail")?.header).toBe("Détail");
+    expect(columns.find((column) => column.key === "amount")?.header).toBe("Total");
+    const detail = columns.find((column) => column.key === "itemsDetail");
+    render(
+      <MemoryRouter>
+        {detail!.render!({
+          items: [
+            { feeLabel: "Minerval", amount: 500 },
+            { feeLabel: "Examen", amount: 1 },
+            { feeLabel: "Cantine", amount: 40 },
+          ],
+        })}
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("payment-items-detail")).toHaveTextContent("3 libellés");
+    renderActions(columns, { id: "p1", reference: "PAY-0004", status: "Payé" });
+    expect(screen.getByRole("button", { name: "Reçu" })).toBeInTheDocument();
+  });
+
   it("rend les noms d’élèves séparés pour les cellules multi-valeurs", () => {
     render(<>{renderSeparatedStudentNames(["Awa Diop", "Ibrahima Fall"])}</>);
     expect(screen.getByText("Awa Diop")).toBeInTheDocument();

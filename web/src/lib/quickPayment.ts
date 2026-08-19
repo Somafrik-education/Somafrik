@@ -69,6 +69,38 @@ export interface FeeBalance {
   currency: string;
 }
 
+export interface QuickPaymentLine {
+  id: string;
+  feeType: FeeType;
+  amount: string;
+}
+
+export function createPaymentLine(feeType: FeeType = "Minerval / scolarité"): QuickPaymentLine {
+  const rand = globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return { id: rand, feeType, amount: "" };
+}
+
+export function parseLineAmount(value: string | number | undefined): number {
+  return Number(String(value ?? "").replace(/\s/g, "").replace(",", "."));
+}
+
+export function sumPaymentLines(lines: { amount?: string | number }[]): number {
+  return lines.reduce((sum, line) => {
+    const amount = parseLineAmount(line.amount ?? "");
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+}
+
+export function paymentItemsDetailLabel(items: unknown): string {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return "";
+  if (list.length === 1) {
+    const first = list[0] as { feeLabel?: string; feeType?: string } | undefined;
+    return String(first?.feeLabel || first?.feeType || "1 libellé");
+  }
+  return `${list.length} libellés`;
+}
+
 export interface QuickPaymentInput {
   student: StudentSearchResult;
   feeType: FeeType;
@@ -401,6 +433,25 @@ export function validateQuickPaymentInput(input: Partial<QuickPaymentInput>): st
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) return "Le montant doit être supérieur à zéro";
   if (!input.date?.trim()) return "La date du paiement est obligatoire";
+  return null;
+}
+
+export function validateMultiItemPaymentInput(input: {
+  student?: StudentSearchResult | null;
+  method?: PaymentMethod | "";
+  date?: string;
+  lines?: QuickPaymentLine[];
+}): string | null {
+  if (!input.student?.id) return "Veuillez sélectionner un élève";
+  if (!input.method) return "Veuillez sélectionner le mode de paiement";
+  if (!input.date?.trim()) return "La date du paiement est obligatoire";
+  const lines = input.lines ?? [];
+  if (!lines.length) return "Ajoutez au moins un libellé";
+  for (const line of lines) {
+    if (!line.feeType) return "Chaque ligne doit avoir un type de frais";
+    const amount = parseLineAmount(line.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return "Chaque libellé doit avoir un montant strictement positif";
+  }
   return null;
 }
 

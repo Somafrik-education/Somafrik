@@ -7,7 +7,7 @@ import {
 } from "../../lib/assignments";
 import { getTeacherLoginIdentifier } from "../../lib/entityIdentifiers";
 import type { EntityModuleConfig } from "../../lib/entityModules";
-import { isPaymentCancelled, type PaymentRecord } from "../../lib/quickPayment";
+import { isPaymentCancelled, paymentItemsDetailLabel, type PaymentRecord } from "../../lib/quickPayment";
 import {
   formatContactPersonName,
   formatStudentPersonName,
@@ -132,6 +132,19 @@ function renderDataCell(
   if (module.key === "teachers" && key === "assignmentsSummary") {
     const teacherAssignments = listTeacherAssignments(row, scopedAssignments);
     return formatTeacherAssignmentsSummary(teacherAssignments);
+  }
+  if (module.key === "payments" && key === "itemsDetail") {
+    const label = paymentItemsDetailLabel(row.items) || String(row.itemsDetail ?? row.feeType ?? "—");
+    return (
+      <button
+        type="button"
+        className="font-semibold text-brand underline-offset-2 hover:underline"
+        data-testid="payment-items-detail"
+        onClick={() => ctx.onShowPaymentReceipt(row as PaymentRecord)}
+      >
+        {label}
+      </button>
+    );
   }
   return String(row[key] ?? "—");
 }

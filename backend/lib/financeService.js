@@ -22,6 +22,13 @@ const {
   canForceReminder,
   isSuperAdminPrincipal,
 } = require("./financeManagement");
+const {
+  resolvePaymentMethod,
+  resolvePaidAt,
+  decoratePaymentWithItems,
+  normalizeWriteItems,
+  assertItemAmount,
+} = require("./financePaymentItems");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -102,15 +109,35 @@ async function writeFinanceAudit(tx, principal, auditMeta, entry) {
   });
 }
 
+async function resolveCatalogFeeItem(tx, schoolId, feeTypeId) {
+  const key = asTrimmed(feeTypeId);
+  if (!key) return null;
+  if (typeof tx.getSchoolFeeItemById !== "function") {
+    throw createFinanceError(404, "Type de frais introuvable.", FINANCE_ERROR.FEE_ITEM_NOT_FOUND);
+  }
+  const catalog = await tx.getSchoolFeeItemById(key, schoolId);
+  if (catalog) return catalog;
+  if (typeof tx.getSchoolFeeItemByIdAnySchool === "function") {
+    const foreign = await tx.getSchoolFeeItemByIdAnySchool(key);
+    if (foreign) {
+      throw createFinanceError(
+        403,
+        "Type de frais hors établissement.",
+        FINANCE_ERROR.FEE_ITEM_TENANT_MISMATCH,
+      );
+    }
+  }
+  throw createFinanceError(404, "Type de frais introuvable.", FINANCE_ERROR.FEE_ITEM_NOT_FOUND);
+}
+
 async function createPayment(store, rawPayload, principal, auditMeta) {
   const payload = ignoreClientScope(rawPayload);
-  const amount = money(payload.amount);
-  if (!(amount > 0)) {
-    throw createFinanceError(400, "Le montant doit être strictement positif.", FINANCE_ERROR.PAYMENT_AMOUNT_INVALID);
-  }
+  const writeItems = normalizeWriteItems(payload);
   const studentKey = asTrimmed(payload.studentId);
-  if (!studentKey || !asTrimmed(payload.feeType) || !asTrimmed(payload.method) || !asTrimmed(payload.date)) {
-    throw createFinanceError(400, "Champs obligatoires manquants : studentId, feeType, amount, method, date.");
+  const method = resolvePaymentMethod(payload);
+  const paidAt = resolvePaidAt(payload);
+  if (!studentKey || !method || !asTrimmed(paidAt)) {
+    throw createFinanceError(400, "Champs obligatoires manquants : studentId, items, method, date.");
   }
 
   return store.withTransaction(async (tx) => {
@@ -124,22 +151,60 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     }
 
-    const obligations = (await tx.listObligationsByStudent(school.id, student.dbId || student.id, { lock: true })).filter(
-      (fee) =>
-        !["Annulé", "Payé", "Exonéré"].includes(fee.status) &&
-        normalizeKey(fee.feeType) === normalizeKey(payload.feeType),
-    );
-    const remainingBefore = obligations.reduce((sum, fee) => sum + money(fee.balance), 0);
-    const { updated, allocations, leftover } = allocateAmount(obligations, amount);
-    const overpayment = leftover;
-    if (overpayment < 0) {
+    const resolvedItems = [];
+    for (const item of writeItems) {
+      assertItemAmount(item.amount);
+      const feeTypeId = asTrimmed(item.feeTypeId || item.schoolFeeItemId);
+      let feeType = asTrimmed(item.feeType || item.feeLabel || item.label);
+      let feeLabel = asTrimmed(item.feeLabel || item.feeType || item.label);
+      let catalogId = null;
+      if (feeTypeId) {
+        const catalog = await resolveCatalogFeeItem(tx, school.id, feeTypeId);
+        feeType = catalog.feeType || catalog.label;
+        feeLabel = catalog.label || catalog.feeType;
+        catalogId = catalog.dbId || null;
+      }
+      if (!feeType) {
+        throw createFinanceError(400, "Chaque libellé doit indiquer un type de frais.", FINANCE_ERROR.PAYMENT_FEE_TYPE_REQUIRED);
+      }
+      resolvedItems.push({
+        feeTypeId: catalogId,
+        feeType,
+        feeLabel: feeLabel || feeType,
+        amount: money(item.amount),
+      });
+    }
+
+    const totalAmount = money(resolvedItems.reduce((sum, item) => sum + item.amount, 0));
+    if (!(totalAmount > 0)) {
+      throw createFinanceError(400, "Le montant doit être strictement positif.", FINANCE_ERROR.PAYMENT_AMOUNT_INVALID);
+    }
+
+    let obligations = await tx.listObligationsByStudent(school.id, student.dbId || student.id, { lock: true });
+    const allocations = [];
+    let leftoverTotal = 0;
+    let remainingBefore = 0;
+    for (const item of resolvedItems) {
+      const open = obligations.filter(
+        (fee) =>
+          !["Annulé", "Payé", "Exonéré"].includes(fee.status) &&
+          normalizeKey(fee.feeType) === normalizeKey(item.feeType),
+      );
+      remainingBefore += open.reduce((sum, fee) => sum + money(fee.balance), 0);
+      const { updated, allocations: itemAllocations, leftover } = allocateAmount(open, item.amount);
+      leftoverTotal += leftover;
+      allocations.push(...itemAllocations);
+      const byId = new Map(updated.map((fee) => [String(fee.dbId || fee.id), fee]));
+      obligations = obligations.map((fee) => byId.get(String(fee.dbId || fee.id)) || fee);
+    }
+    if (leftoverTotal < 0) {
       throw createFinanceError(400, "Solde négatif interdit.", FINANCE_ERROR.NEGATIVE_BALANCE_FORBIDDEN);
     }
 
     const existingCodes = await tx.listPaymentCodes(school.id);
     const reference = generatePaymentReference(student.schoolCode, existingCodes);
     const now = new Date().toISOString();
-    const status = resolvePaymentStatus(amount, remainingBefore, payload.method);
+    const status = resolvePaymentStatus(totalAmount, remainingBefore, method);
     const payment = {
       reference,
       schoolId: school.id,
@@ -148,24 +213,39 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       studentId: student.publicId || student.studentCode || student.id,
       studentName: `${student.firstName ?? ""} ${student.lastName ?? student.name ?? ""}`.trim(),
       className: student.className || "",
-      feeType: payload.feeType,
-      label: payload.feeType,
-      amount,
+      feeType: resolvedItems.length === 1 ? resolvedItems[0].feeType : `${resolvedItems.length} libellés`,
+      label: resolvedItems.length === 1 ? resolvedItems[0].feeLabel : `${resolvedItems.length} libellés`,
+      amount: totalAmount,
       currency: school.currency || "CDF",
-      method: payload.method,
-      date: toIsoDate(payload.date) || payload.date,
+      method,
+      date: toIsoDate(paidAt) || paidAt,
       status,
       comment: asTrimmed(payload.comment),
       verificationCode: `VF-${reference.replace(/[^A-Z0-9]/gi, "").slice(-12)}`,
       amountDue: remainingBefore + obligations.reduce((sum, fee) => sum + money(fee.amountPaid), 0),
-      remainingAfter: Math.max(0, remainingBefore - amount),
-      overpaymentAmount: overpayment,
-      overpaymentAction: overpayment > 0 ? payload.overpaymentAction || "À confirmer" : "",
+      remainingAfter: Math.max(0, remainingBefore - totalAmount),
+      overpaymentAmount: leftoverTotal,
+      overpaymentAction: leftoverTotal > 0 ? payload.overpaymentAction || "À confirmer" : "",
       createdAt: now,
       createdByName: actorName(principal),
     };
 
     const saved = await tx.insertPayment(payment);
+    const insertedItems = [];
+    for (let index = 0; index < resolvedItems.length; index += 1) {
+      const item = resolvedItems[index];
+      insertedItems.push(
+        await tx.insertPaymentItem({
+          schoolId: school.id,
+          paymentId: saved.dbId,
+          schoolFeeItemId: item.feeTypeId || null,
+          feeType: item.feeType,
+          feeLabel: item.feeLabel,
+          amount: item.amount,
+          sortOrder: index,
+        }),
+      );
+    }
     for (const allocation of allocations) {
       await tx.insertAllocation({
         schoolId: school.id,
@@ -174,17 +254,20 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
         amount: allocation.amount,
       });
     }
-    for (const fee of updated) {
-      await tx.updateObligation(fee);
+    for (const fee of obligations) {
+      if (allocations.some((row) => String(row.obligationId) === String(fee.dbId || fee.id))) {
+        await tx.updateObligation(fee);
+      }
     }
+    const result = decoratePaymentWithItems(saved, insertedItems);
     await writeFinanceAudit(tx, principal, auditMeta, {
       action: "create_payment",
       entityType: "payment",
-      entityId: saved.id,
-      schoolCode: saved.schoolCode,
-      newValue: saved,
+      entityId: result.id,
+      schoolCode: result.schoolCode,
+      newValue: result,
     });
-    return saved;
+    return result;
   });
 }
 
@@ -219,7 +302,9 @@ async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
     }
     const result = await tx.cancelPayment(payment.dbId, motif, principal);
     if (!result.cancelledNow) {
-      return result.payment;
+      const existingItems =
+        typeof tx.listPaymentItems === "function" ? await tx.listPaymentItems(result.payment.dbId) : payment.items || [];
+      return decoratePaymentWithItems(result.payment, existingItems);
     }
     await writeFinanceAudit(tx, principal, auditMeta, {
       action: "cancel_payment",
@@ -228,7 +313,9 @@ async function cancelPayment(store, paymentId, reason, principal, auditMeta) {
       schoolCode: result.payment.schoolCode,
       newValue: { reason: result.payment.cancelReason, cancelledBy: result.payment.cancelledBy },
     });
-    return result.payment;
+    const items =
+      typeof tx.listPaymentItems === "function" ? await tx.listPaymentItems(result.payment.dbId) : payment.items || [];
+    return decoratePaymentWithItems(result.payment, items);
   });
 }
 
