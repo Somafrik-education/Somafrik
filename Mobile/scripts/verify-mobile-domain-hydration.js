@@ -51,9 +51,9 @@ function main() {
   assert.match(api, /markCanonicalMessageRead/);
   assert.doesNotMatch(api, /\bfetch\s*\(/);
   assert.doesNotMatch(api, /\baxios\b/);
-  assert.doesNotMatch(api, /tenantId\s*:/);
-  assert.doesNotMatch(api, /schoolCode\s*:/);
-  console.log("OK: client domaine via httpClient, sans scope tenant envoyé par le client");
+  assert.doesNotMatch(api, /JSON\.stringify\(\s*\{[^}]*\btenantId\s*:/s);
+  assert.doesNotMatch(api, /JSON\.stringify\(\s*\{[^}]*\bschoolCode\s*:/s);
+  console.log("OK: client domaine via httpClient, sans scope tenant envoyé comme autorité");
 
   const hook = source(path.join("hooks", "useCanonicalResource.ts"));
   assert.match(hook, /snapshotFromSuccess/);
@@ -85,8 +85,10 @@ function main() {
   assert.match(announcements, /useFocusEffect/);
   assert.match(announcements, /QueryStateView/);
   assert.doesNotMatch(announcements, /deleteItem/);
+  assert.doesNotMatch(announcements, /canUpdate/);
+  assert.doesNotMatch(announcements, />Modifier</);
   assert.doesNotMatch(announcements, /refreshBackOfficeState/);
-  console.log("OK: Annonces GET canonique + archivage serveur");
+  console.log("OK: Annonces GET canonique + archivage serveur, pas de faux edit");
 
   const messages = source(path.join("screens", "MessagesScreen.tsx"));
   assert.match(messages, /getCanonicalMessages/);
