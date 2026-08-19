@@ -31,6 +31,9 @@ module.exports = ({ config }) => {
   if (isProdProfile && apiUrl && !apiUrl.startsWith("https://")) {
     throw new Error("S2.3 — EXPO_PUBLIC_API_URL doit être HTTPS en production.");
   }
+  if (isProdProfile && demoMode) {
+    throw new Error("EXPO_PUBLIC_DEMO_MODE interdit en production.");
+  }
 
   return {
     ...config,
@@ -41,7 +44,7 @@ module.exports = ({ config }) => {
     extra: {
       ...config.extra,
       apiUrl: apiUrl || (isProdProfile ? "" : "http://localhost:5000"),
-      demoMode,
+      demoMode: isProdProfile ? false : demoMode,
       certificatePinningReady: true,
     },
     ios: {

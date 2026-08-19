@@ -147,14 +147,31 @@ export const DEFAULT_SUBJECTS = [
   "Informatique",
 ];
 
+export type PaymentLine = {
+  id?: string;
+  feeTypeId?: string | null;
+  feeType?: string;
+  feeLabel?: string;
+  amount: number;
+};
+
 export type PaymentItem = {
   id: string;
-  publicId: string;
+  publicId?: string;
+  reference?: string;
   studentId: string;
+  studentName?: string;
   amount: number;
-  date: string;
+  totalAmount?: number;
+  date?: string;
+  paidAt?: string;
   status: string;
-  method: string;
+  method?: string;
+  paymentMethod?: string;
+  items?: PaymentLine[];
+  itemCount?: number;
+  itemsDetail?: string;
+  feeType?: string;
 };
 
 export type PaymentStatus = {

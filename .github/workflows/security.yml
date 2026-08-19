@@ -62,6 +62,9 @@ jobs:
       - name: verify:mobile-security
         run: npm run verify:mobile-security
 
+      - name: verify:mobile-data-truth
+        run: npm run verify:mobile-data-truth
+
   typescript:
     name: TypeScript
     runs-on: ubuntu-latest
@@ -158,6 +161,7 @@ jobs:
           npm run verify:sanitize-user-responses
           npm run verify:db-config
           npm run verify:mobile-security
+          npm run verify:mobile-data-truth
           npm run verify:notes-sync
           npm run verify:students-sync
           npm run verify:pre-e1-hotfix-02

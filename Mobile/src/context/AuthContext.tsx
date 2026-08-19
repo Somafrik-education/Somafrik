@@ -6,6 +6,7 @@ import {
   persistAuthenticatedSession,
 } from "../services/api";
 import { enrichSessionPermissions } from "../domain/security/permissions";
+import { canRestorePersistedSession } from "../lib/dataTruth";
 import { setSessionExpiredHandler } from "../services/httpClient";
 import { clearSecureSession, getSessionProfile } from "../services/secureStorage";
 import { safeLogger } from "../services/safeLogger";
@@ -43,9 +44,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const hasToken = await hasActiveAccessToken();
-        if (!hasToken) return;
         const profile = await getSessionProfile();
-        if (!mounted || !profile) return;
+        if (!mounted) return;
+        if (!canRestorePersistedSession({ hasAccessToken: hasToken, profile })) {
+          if (profile?.user?.mustChangePassword) {
+            await clearSecureSession();
+          }
+          return;
+        }
+        if (!profile) return;
         saveSession({
           role: profile.role as LoginResponse["role"],
           permissions: profile.permissions,
@@ -77,7 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       selectedStudentId,
       bootstrapping,
       setSession: (next: LoginResponse | null) => {
-        // Tokens already persisted by login/persistAuthenticatedSession when present.
+        if (next?.user?.mustChangePassword) {
+          if (next.accessToken || next.refreshToken) {
+            void persistAuthenticatedSession(next);
+          }
+          return;
+        }
         if (next?.accessToken || next?.refreshToken) {
           void persistAuthenticatedSession(next).then((safe) => saveSession(safe));
           return;

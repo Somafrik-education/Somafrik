@@ -1,4 +1,5 @@
 import type { Course, NoteItem, PaymentItem, PresenceItem, Student } from "../../data/catalog";
+import { isPaidStatus, paymentTotal } from "../../lib/dataTruth";
 import { GradeBookService } from "../academics/GradeBookService";
 
 export type PresenceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
@@ -67,7 +68,7 @@ export function getPresenceStats(presences: PresenceItem[], studentIds?: string[
 }
 
 export function isPaidPayment(payment: Pick<PaymentItem, "status">) {
-  return payment.status === "PAYE";
+  return isPaidStatus(payment.status);
 }
 
 export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]): PaymentStats {
@@ -81,8 +82,8 @@ export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]):
     total: scopedRows.length,
     paid: paidRows.length,
     pending: pendingRows.length,
-    paidAmount: paidRows.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
-    pendingAmount: pendingRows.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    paidAmount: paidRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
+    pendingAmount: pendingRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
     rate: scopedRows.length ? Math.round((paidRows.length / scopedRows.length) * 100) : 0,
   };
 }

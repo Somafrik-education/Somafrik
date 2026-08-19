@@ -12,9 +12,17 @@ import { sanitizeUserFacingError } from "./safeLogger";
 import {
   clearSecureSession,
   getAccessToken,
+  getRefreshToken,
   saveSessionProfile,
   saveTokens,
 } from "./secureStorage";
+import { canPersistFullSession, normalizePaymentRow, unwrapList } from "../lib/dataTruth";
+import {
+  beginRestrictedSession,
+  clearRestrictedSession,
+  getRestrictedAccessToken,
+  getRestrictedRefreshToken,
+} from "../lib/restrictedSession";
 
 export function getApiBaseUrl() {
   return resolveApiBaseUrl();
@@ -151,7 +159,20 @@ export type AcademicConfigPayload = {
 
 /** Persist tokens in SecureStore and return a session object without secrets. */
 export async function persistAuthenticatedSession(session: LoginResponse): Promise<LoginResponse> {
-  await saveTokens(session.accessToken ?? null, session.refreshToken ?? null);
+  if (!canPersistFullSession(session)) {
+    beginRestrictedSession(session.accessToken, session.refreshToken);
+    await clearSecureSession();
+    return {
+      ...session,
+      accessToken: undefined,
+      refreshToken: undefined,
+    };
+  }
+
+  clearRestrictedSession();
+  if (session.accessToken || session.refreshToken) {
+    await saveTokens(session.accessToken ?? null, session.refreshToken ?? null);
+  }
   const safeSession: LoginResponse = {
     ...session,
     accessToken: undefined,
@@ -200,6 +221,7 @@ export async function logout() {
   } catch {
     // best effort — on nettoie toujours localement
   } finally {
+    clearRestrictedSession();
     await clearSecureSession();
   }
 }
@@ -212,10 +234,12 @@ export function changePassword(newPassword: string) {
       body: JSON.stringify({ newPassword }),
     },
   ).then(async (response) => {
-    if (response.accessToken) {
-      const { getRefreshToken } = await import("./secureStorage");
-      await saveTokens(response.accessToken, await getRefreshToken());
+    const refresh = getRestrictedRefreshToken() ?? (await getRefreshToken());
+    const access = response.accessToken ?? getRestrictedAccessToken();
+    if (access) {
+      await saveTokens(access, refresh);
     }
+    clearRestrictedSession();
     return response;
   });
 }
@@ -305,7 +329,42 @@ export function deleteTeacherAssignment(id: string) {
 }
 
 export function getCourseSchedules() {
-  return request<unknown[]>("/course-schedules");
+  return request<unknown>("/course-schedules").then((payload) => unwrapList(payload));
+}
+
+export function getPayments() {
+  return request<unknown>("/payments").then((payload) => unwrapList(payload).map(normalizePaymentRow));
+}
+
+export type CanonicalReportCard = {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  className?: string;
+  period?: string;
+  status?: string;
+  average?: number | null;
+  rank?: number | null;
+  publishedAt?: string | null;
+};
+
+export function getReportCards() {
+  return request<unknown>("/report-cards").then((payload) =>
+    unwrapList(payload).map((row) => {
+      const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+      return {
+        id: String(item.id ?? ""),
+        studentId: String(item.studentId ?? item.student_id ?? ""),
+        studentName: item.studentName ? String(item.studentName) : undefined,
+        className: item.className ? String(item.className) : undefined,
+        period: String(item.period ?? item.term ?? ""),
+        status: String(item.status ?? ""),
+        average: item.average == null || item.average === "" ? null : Number(item.average),
+        rank: item.rank == null || item.rank === "" ? null : Number(item.rank),
+        publishedAt: item.publishedAt ? String(item.publishedAt) : null,
+      } satisfies CanonicalReportCard;
+    }),
+  );
 }
 
 export type CanonicalEvaluationType = {

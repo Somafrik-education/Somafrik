@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { AdminEntity, useAdminData } from "../context/AdminDataContext";
 import { messageThemes, rolePermissions } from "../data/catalog";
@@ -27,9 +28,10 @@ import {
   resetUserPassword as resetUserPasswordOnBackend,
   updateCourse,
   updateTeacherAssignment,
-  createSchoolPayment,
   upsertFinancePaymentStatus,
 } from "../services/api";
+import QueryStateView from "../components/QueryStateView";
+import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentItemsDetail, paymentMethodLabel, paymentReference, paymentStatusLabel, paymentTotal } from "../lib/dataTruth";
 import { formatTeacherClasses } from "../lib/teacherClasses";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { PENDING_VALIDATION_STATUS } from "../lib/orgHierarchy";
@@ -291,9 +293,11 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     updateRoleFeatureAccess,
     academicConfigData,
     refreshBackOfficeState,
+    loadPayments,
+    paymentsSnapshot,
   } = useAdminData();
   const config = configs[entity];
-  const items = getItems(entity);
+  const items = entity === "payments" ? paymentsSnapshot.data : getItems(entity);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [visible, setVisible] = useState(false);
@@ -313,6 +317,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
   // PR1 : création élèves uniquement via Classes → Inscrire (API PG).
   const canCreate =
     !isStudentsEntity &&
+    entity !== "payments" &&
     canMutateEntity(session, entity, "CREATE") &&
     !entityCreateViaContactsOnly(entity);
   const canRead = canReadEntity(session, entity);
@@ -332,6 +337,14 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       setDateField(null);
     }
   }, [canRead]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (entity === "payments") {
+        void loadPayments();
+      }
+    }, [entity, loadPayments]),
+  );
 
   useEffect(() => {
     if (entity === "courses" && !selectedCourseClass && classesData.length > 0) {
@@ -420,6 +433,10 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
   }, [entity, filter, visibleItems]);
 
   const openCreate = () => {
+    if (entity === "payments") {
+      Alert.alert("Saisie indisponible", DATA_TRUTH_COPY.writePaymentsWebOnly);
+      return;
+    }
     if (entityCreateViaContactsOnly(entity)) {
       Alert.alert("Création via Contacts", CONTACT_PROVISIONING_HINT);
       return;
@@ -527,29 +544,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     }
 
     if (entity === "payments") {
-      if (editingItem) {
-        Alert.alert(
-          "Modification générique indisponible",
-          "Les paiements se créent via l'API dédiée. L'annulation se fait depuis le web établissement.",
-        );
-        return;
-      }
-      try {
-        await createSchoolPayment({
-          studentId: nextItem.studentId,
-          feeType: nextItem.feeType || nextItem.label || "Inscription",
-          amount: nextItem.amount,
-          method: nextItem.method || "Espèces",
-          date: nextItem.date,
-        });
-        await refreshBackOfficeState();
-        setVisible(false);
-      } catch (error) {
-        Alert.alert(
-          "Paiement impossible",
-          error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
-        );
-      }
+      Alert.alert("Saisie indisponible", DATA_TRUTH_COPY.writePaymentsWebOnly);
       return;
     }
 
@@ -1042,6 +1037,20 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
               </View>
             ))}
           </View>
+        ) : entity === "payments" && (paymentsSnapshot.status !== "success" || visibleItems.length === 0) ? (
+          <QueryStateView
+            snapshot={
+              paymentsSnapshot.status === "success" && visibleItems.length === 0
+                ? { status: "empty", data: [] }
+                : paymentsSnapshot
+            }
+            emptyMessage={DATA_TRUTH_COPY.emptyPayments}
+            errorMessage={DATA_TRUTH_COPY.errorPayments}
+            offlineMessage={DATA_TRUTH_COPY.offlinePayments}
+            emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
+            errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
+            onRetry={() => void loadPayments()}
+          />
         ) : (
           visibleItems.map((item: any) => (
             <View key={item.id} style={styles.card}>
@@ -1689,7 +1698,11 @@ function formToItem(entity: AdminEntity, form: Record<string, string>, id?: stri
 function getPrimaryText(entity: AdminEntity, item: any) {
   if (entity === "countries") return `${item.name} • ${item.code}`;
   if (entity === "subscriptions") return `${item.schoolCode} • ${item.plan}`;
-  if (entity === "payments") return `${item.amount?.toLocaleString?.() ?? item.amount} FC`;
+  if (entity === "payments") {
+    const total = paymentTotal(item);
+    const reference = paymentReference(item);
+    return `${reference} · ${item.studentName || item.studentId} · ${total.toLocaleString()} FC`;
+  }
   if (entity === "paymentStatuses") return item.label;
   if (entity === "schools") return `${item.name} • ${item.publicId ?? item.code}`;
   if (entity === "users") return `${item.firstName} ${item.lastName}`;
@@ -1730,7 +1743,9 @@ function getSecondaryText(
   if (entity === "users") {
     return `${item.role} • ${item.accessChannel} • ${item.status} • Identifiant : ${item.identifier}${item.temporaryPassword ? ` • Mot de passe temporaire : ${item.temporaryPassword}` : ""}`;
   }
-  if (entity === "payments") return `${item.publicId ?? item.id} • Élève ${item.studentId} • ${item.date} • ${item.status} • ${item.method ?? "Mode non renseigné"}`;
+  if (entity === "payments") {
+    return `${paymentItemsDetail(item)} • ${paymentMethodLabel(item)} • ${paymentStatusLabel(item.status)}`;
+  }
   if (entity === "messages") {
     return `${item.direction} • ${item.parentPhone} • ${item.status} • ${item.date}`;
   }

@@ -122,6 +122,9 @@ jobs:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:finance-multi-item-payment
 
+      - name: verify:mobile-data-truth
+        run: npm run verify:mobile-data-truth
+
       - name: verify:platform-management (mémoire + PostgreSQL CI)
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
