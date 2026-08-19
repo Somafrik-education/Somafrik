@@ -997,10 +997,14 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
           () =>
             financeApi.createPayment({
               studentId: preparedItem.studentId,
-              feeType: preparedItem.feeType || preparedItem.label || "Inscription",
-              amount: preparedItem.amount,
-              method: preparedItem.method,
-              date: preparedItem.date,
+              items: [
+                {
+                  feeType: preparedItem.feeType || preparedItem.label || "Inscription",
+                  amount: preparedItem.amount,
+                },
+              ],
+              paymentMethod: preparedItem.method,
+              paidAt: preparedItem.date,
               comment: preparedItem.comment,
             }),
           entityMutationSuccessMessage(module.label, false),
@@ -1557,7 +1561,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     <>
       {module.key === "payments" && canCreate ? (
         <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
-          Saisie rapide
+          Enregistrer un paiement
         </Button>
       ) : null}
       {linkableContactKind && canUpdate ? (

@@ -2020,11 +2020,11 @@ app.get("/api/payments", requireAuth, requirePermission("GET /api/payments"), as
   const scope = deriveSchoolScope(req.principal, { students });
   let scopedPayments = tenantScopeService.filterRows(payments, req.principal, scope);
   const result = scopedPayments.map((payment) => {
-    const student = students.find((item) => item.id === payment.studentId);
+    const student = findStudent(students, payment.studentId);
     return {
       ...payment,
-      studentName: student?.name ?? "Eleve inconnu",
-      className: student?.className ?? "",
+      studentName: student?.name || payment.studentName || "Eleve inconnu",
+      className: student?.className || payment.className || "",
     };
   });
 

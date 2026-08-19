@@ -759,6 +759,18 @@ CREATE TABLE IF NOT EXISTS payment_allocations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS payment_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+  school_fee_item_id UUID REFERENCES school_fee_items(id),
+  fee_type TEXT NOT NULL,
+  fee_label TEXT NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id),
@@ -804,6 +816,8 @@ CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id,
 -- dans postgresRepository.ensureClassesDomainConstraints() (pas de suppression silencieuse).
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_school_id ON payments(school_id);
+CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items(payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_items_school ON payment_items(school_id);
 CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_school_student ON student_fee_obligations(school_id, student_id);
 CREATE INDEX IF NOT EXISTS idx_student_fee_obligations_status_due ON student_fee_obligations(school_id, status, due_date);
 CREATE INDEX IF NOT EXISTS idx_payment_reminders_student ON payment_reminders(school_id, student_id, sent_at DESC);

@@ -299,6 +299,112 @@ async function main() {
     ]);
     assert.equal(String(cancelledRow.rows[0].cancelled_by), String(admin.sub));
 
+    await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name)
+       VALUES ($1, 'CD-2026-0001-STU-ESTHER', 'Esther', 'Okito')`,
+      [schoolA.rows[0].id],
+    );
+    const paymentsBefore = (await pool.query(`SELECT count(*)::int AS c FROM payments`)).rows[0].c;
+    const itemsBefore = (await pool.query(`SELECT count(*)::int AS c FROM payment_items`)).rows[0].c;
+    const multi = await store.createSchoolPayment(
+      {
+        studentId: "CD-2026-0001-STU-ESTHER",
+        items: [
+          { feeType: "Minerval / scolarité", amount: 500 },
+          { feeType: "Frais d'examen", amount: 1 },
+          { feeType: "Frais de cantine", amount: 40 },
+        ],
+        paymentMethod: "cash",
+        paidAt: "2026-08-19",
+        totalAmount: 1,
+      },
+      admin,
+    );
+    assert.equal(multi.totalAmount, 541);
+    assert.equal(multi.items.length, 3);
+    assert.equal((await pool.query(`SELECT count(*)::int AS c FROM payments`)).rows[0].c, paymentsBefore + 1);
+    assert.equal((await pool.query(`SELECT count(*)::int AS c FROM payment_items`)).rows[0].c, itemsBefore + 3);
+    const refs = await pool.query(`SELECT DISTINCT payment_code FROM payments WHERE student_id = (SELECT id FROM students WHERE student_code = 'CD-2026-0001-STU-ESTHER')`);
+    assert.equal(refs.rowCount, 1);
+
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          { studentId: "CD-2026-0001-STU-ESTHER", items: [], paymentMethod: "Espèces", paidAt: "2026-08-19" },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.PAYMENT_ITEMS_REQUIRED,
+    );
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: "CD-2026-0001-STU-ESTHER",
+            items: [{ feeType: "Minerval / scolarité", amount: -5 }],
+            paymentMethod: "Espèces",
+            paidAt: "2026-08-19",
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.PAYMENT_ITEM_AMOUNT_INVALID,
+    );
+
+    const gridB = await pool.query(
+      `INSERT INTO fee_grids (school_id, grid_code, name, class_name, academic_year, currency, status)
+       VALUES ($1, 'GRID-B', 'B', '6ème A', '2025-2026', 'CDF', 'Active') RETURNING id`,
+      [schoolB.rows[0].id],
+    );
+    const itemB = await pool.query(
+      `INSERT INTO school_fee_items (school_id, fee_grid_id, item_code, fee_type, label, amount)
+       VALUES ($1, $2, 'FEE-B', 'Inscription', 'Inscription B', 10) RETURNING id`,
+      [schoolB.rows[0].id, gridB.rows[0].id],
+    );
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: "CD-2026-0001-STU-ESTHER",
+            items: [{ feeTypeId: itemB.rows[0].id, amount: 10 }],
+            paymentMethod: "Espèces",
+            paidAt: "2026-08-19",
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.FEE_ITEM_TENANT_MISMATCH,
+    );
+
+    const cancelledMulti = await store.cancelSchoolPayment(multi.reference, "Annulation reçu complet", admin);
+    assert.equal(cancelledMulti.status, "Annulé");
+    assert.equal(cancelledMulti.itemCount, 3);
+
+    const sameDayA = await store.createSchoolPayment(
+      {
+        studentId: "CD-2026-0001-STU-0001",
+        feeType: "Frais de cantine",
+        amount: 10,
+        method: "Espèces",
+        date: "2026-08-21",
+      },
+      admin,
+    );
+    const sameDayB = await store.createSchoolPayment(
+      {
+        studentId: "CD-2026-0001-STU-0001",
+        feeType: "Frais de transport",
+        amount: 11,
+        method: "Espèces",
+        date: "2026-08-21",
+      },
+      admin,
+    );
+    assert.notEqual(sameDayA.reference, sameDayB.reference);
+    const sameDayCount = await pool.query(
+      `SELECT count(*)::int AS c FROM payments p
+       JOIN students st ON st.id = p.student_id
+       WHERE st.student_code = 'CD-2026-0001-STU-0001' AND p.payment_date = '2026-08-21'`,
+    );
+    assert.equal(sameDayCount.rows[0].c, 2, "pas de fusion automatique même élève + même date");
+
     console.log("financeRepository.pg.test.js: OK");
   } finally {
     await pool.end();

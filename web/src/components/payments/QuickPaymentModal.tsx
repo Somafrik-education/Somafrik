@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Zap } from "lucide-react";
+import { Plus, Trash2, Zap } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
@@ -7,29 +7,25 @@ import { Modal } from "../ui/Modal";
 import { Field, Input, Select } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { useToast } from "../ui/Toast";
-import { useConfirm } from "../ui/ConfirmDialog";
-import { getCurrentSchool, scopedPayments, scopedStudents } from "../../lib/establishment";
-import { scopedStudentFees } from "../../lib/fees";
+import { getCurrentSchool, scopedStudents } from "../../lib/establishment";
 import { formatMetric } from "../../lib/format";
 import {
-  buildQuickPaymentRecord,
-  computeFeeBalance,
+  createPaymentLine,
   defaultPaymentDate,
-  detectDuplicatePayment,
   FEE_TYPES,
-  OVERPAYMENT_ACTIONS,
   PAYMENT_METHODS,
   paymentDateFromInput,
   paymentDateToInput,
-  QUICK_AMOUNT_SHORTCUTS,
-  resolveSchoolCurrency,
-  resolveSchoolYear,
-  searchStudentsForPayment,
-  validateQuickPaymentInput,
+  parseLineAmount,
+  sumPaymentLines,
+  validateMultiItemPaymentInput,
   type FeeType,
   type PaymentMethod,
   type PaymentRecord,
+  type QuickPaymentLine,
   type StudentSearchResult,
+  searchStudentsForPayment,
+  resolveSchoolCurrency,
 } from "../../lib/quickPayment";
 import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWorkflow";
 import { financeApi } from "../../lib/financeApi";
@@ -46,31 +42,20 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   const { state, update, refresh } = useData();
   const { activeSchoolCode: schoolCode, scopedUser } = useActiveSchool();
   const { showToast } = useToast();
-  const { confirm } = useConfirm();
   const scopeUser = scopedUser ?? session?.user ?? null;
 
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
-  const [feeType, setFeeType] = useState<FeeType>("Minerval / scolarité");
-  const [amount, setAmount] = useState("");
+  const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine()]);
   const [method, setMethod] = useState<PaymentMethod>("Espèces");
   const [dateInput, setDateInput] = useState(paymentDateToInput(defaultPaymentDate()));
   const [comment, setComment] = useState("");
-  const [overpaymentAction, setOverpaymentAction] = useState<string>(OVERPAYMENT_ACTIONS[0]);
   const [busy, setBusy] = useState(false);
   const [savedPayment, setSavedPayment] = useState<PaymentRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
 
   const students = useMemo(
     () => scopedStudents(scopeUser, state) as PaymentRecord[],
-    [scopeUser, state],
-  );
-  const payments = useMemo(
-    () => scopedPayments(scopeUser, state) as PaymentRecord[],
-    [scopeUser, state],
-  );
-  const studentFees = useMemo(
-    () => scopedStudentFees(scopeUser, state),
     [scopeUser, state],
   );
   const school = useMemo(
@@ -93,31 +78,17 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     [search, students, state.schools, schoolCode],
   );
 
-  const balance = useMemo(() => {
-    if (!selectedStudent) return null;
-    return computeFeeBalance(
-      selectedStudent.id,
-      feeType,
-      payments,
-      resolveSchoolCurrency(school),
-      studentFees,
-    );
-  }, [selectedStudent, feeType, payments, school, studentFees]);
-
-  const parsedAmount = Number(amount.replace(/\s/g, "").replace(",", "."));
-  const overpayment =
-    balance && Number.isFinite(parsedAmount) ? Math.max(0, parsedAmount - balance.remaining) : 0;
+  const total = sumPaymentLines(lines);
+  const currency = resolveSchoolCurrency(school);
 
   useEffect(() => {
     if (!open) return;
     setSearch("");
     setSelectedStudent(null);
-    setFeeType("Minerval / scolarité");
-    setAmount("");
+    setLines([createPaymentLine()]);
     setMethod("Espèces");
     setDateInput(paymentDateToInput(defaultPaymentDate()));
     setComment("");
-    setOverpaymentAction(OVERPAYMENT_ACTIONS[0]);
     setSavedPayment(null);
     setShowReceipt(false);
   }, [open]);
@@ -127,17 +98,28 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     setSearch(student.name);
   }
 
-  async function persistPayment(_payment: PaymentRecord, printAfter = false) {
+  function updateLine(id: string, patch: Partial<QuickPaymentLine>) {
+    setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  }
+
+  function removeLine(id: string) {
+    setLines((current) => (current.length <= 1 ? current : current.filter((line) => line.id !== id)));
+  }
+
+  async function persistPayment(printAfter = false) {
+    if (!selectedStudent) return;
     setBusy(true);
     try {
       const created = await financeApi.createPayment({
-        studentId: selectedStudent?.id,
-        feeType,
-        amount: parsedAmount,
-        method,
-        date: paymentDateFromInput(dateInput),
+        studentId: selectedStudent.id,
+        items: lines.map((line) => ({
+          feeType: line.feeType,
+          feeLabel: line.feeType,
+          amount: parseLineAmount(line.amount),
+        })),
+        paymentMethod: method,
+        paidAt: paymentDateFromInput(dateInput),
         comment,
-        overpaymentAction: overpayment > 0 ? overpaymentAction : undefined,
       });
       await refresh();
       setSavedPayment(created as unknown as PaymentRecord);
@@ -158,58 +140,17 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
 
   async function handleSubmit(event: FormEvent, printAfter = false) {
     event.preventDefault();
-    if (!selectedStudent) {
-      showToast("Veuillez sélectionner un élève", "error");
-      return;
-    }
-
-    const input = {
+    const validationError = validateMultiItemPaymentInput({
       student: selectedStudent,
-      feeType,
-      amount: parsedAmount,
       method,
       date: paymentDateFromInput(dateInput),
-      comment,
-      overpaymentAction: overpayment > 0 ? overpaymentAction : undefined,
-      schoolYear: resolveSchoolYear(state, selectedStudent.schoolCode),
-    };
-
-    const validationError = validateQuickPaymentInput(input);
+      lines,
+    });
     if (validationError) {
       showToast(validationError, "error");
       return;
     }
-
-    const duplicate = detectDuplicatePayment(input, payments, scopeUser?.id ?? scopeUser?.identifier);
-    if (duplicate.duplicate) {
-      const proceed = await confirm({
-        title: "Doublon potentiel",
-        description:
-          "Un paiement similaire existe déjà pour cet élève (même montant, type de frais, date et mode). Confirmer l'enregistrement ?",
-        confirmLabel: "Enregistrer quand même",
-        tone: "danger",
-      });
-      if (!proceed) return;
-    }
-
-    if (overpayment > 0) {
-      const proceed = await confirm({
-        title: "Trop-perçu détecté",
-        description: `Le montant dépasse le solde dû de ${formatMetric(overpayment, balance?.currency)}. Action : ${overpaymentAction}. Confirmer l'enregistrement ?`,
-        confirmLabel: "Confirmer",
-      });
-      if (!proceed) return;
-    }
-
-    const payment = buildQuickPaymentRecord(input, {
-      payments,
-      studentFees,
-      school,
-      user: scopeUser,
-      schoolYear: input.schoolYear ?? resolveSchoolYear(state, selectedStudent.schoolCode),
-    });
-
-    await persistPayment(payment, printAfter);
+    await persistPayment(printAfter);
   }
 
   if (showReceipt && savedPayment) {
@@ -257,8 +198,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   return (
     <Modal
       open={open}
-      title="Saisie rapide paiement"
-      description="Enregistrez un paiement scolaire en quelques secondes."
+      title="Enregistrer le paiement"
+      description="Un reçu unique pour plusieurs libellés."
       onClose={onClose}
       size="lg"
       footer={
@@ -274,13 +215,13 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             Enregistrer et imprimer
           </Button>
           <Button disabled={busy} onClick={(event) => void handleSubmit(event, false)}>
-            Enregistrer
+            Enregistrer le paiement
           </Button>
         </div>
       }
     >
       <form className="space-y-5" onSubmit={(event) => void handleSubmit(event, false)}>
-        <Field label="Rechercher élève" hint="Nom, matricule, téléphone parent ou code élève">
+        <Field label="Élève *">
           <Input
             value={search}
             onChange={(event) => {
@@ -289,8 +230,9 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
                 setSelectedStudent(null);
               }
             }}
-            placeholder="Ex. Mukendi, CD-IN-EL-26-001, +243..."
+            placeholder="Nom, matricule ou code élève"
             autoFocus
+            data-testid="payment-student-search"
           />
         </Field>
 
@@ -322,100 +264,79 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
             <p className="mt-1 text-muted">
               Classe : {selectedStudent.className || "—"} · Matricule : {selectedStudent.matricule}
             </p>
-            <p className="text-muted">Établissement : {selectedStudent.schoolName}</p>
-            {balance ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-lg bg-white px-3 py-2">
-                  <p className="text-xs text-muted">Montant dû</p>
-                  <p className="font-bold">{formatMetric(balance.amountDue, balance.currency)}</p>
-                </div>
-                <div className="rounded-lg bg-white px-3 py-2">
-                  <p className="text-xs text-muted">Déjà payé</p>
-                  <p className="font-bold">{formatMetric(balance.amountPaid, balance.currency)}</p>
-                </div>
-                <div className="rounded-lg bg-white px-3 py-2">
-                  <p className="text-xs text-muted">Solde restant</p>
-                  <p className="font-bold text-brand">{formatMetric(balance.remaining, balance.currency)}</p>
-                </div>
-              </div>
-            ) : null}
           </div>
         ) : null}
 
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-ink">Libellés</p>
+          {lines.map((line, index) => (
+            <div
+              key={line.id}
+              className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
+              data-testid={`payment-line-${index}`}
+            >
+              <Field label="Type de frais / libellé">
+                <Select
+                  value={line.feeType}
+                  onChange={(event) => updateLine(line.id, { feeType: event.target.value as FeeType })}
+                  options={FEE_TYPES.map((value) => ({ value, label: value }))}
+                />
+              </Field>
+              <Field label="Montant">
+                <Input
+                  type="number"
+                  min={1}
+                  step="0.01"
+                  value={line.amount}
+                  onChange={(event) => updateLine(line.id, { amount: event.target.value })}
+                  placeholder="0"
+                />
+              </Field>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={lines.length <= 1}
+                  onClick={() => removeLine(line.id)}
+                  aria-label="Supprimer la ligne"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="secondary"
+            data-testid="payment-add-line"
+            onClick={() => setLines((current) => [...current, createPaymentLine("Frais d'examen")])}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Ajouter un libellé
+          </Button>
+        </div>
+
+        <div className="rounded-xl border border-line bg-white px-4 py-3 text-right">
+          <p className="text-xs uppercase tracking-wide text-muted">Total</p>
+          <p className="text-2xl font-black text-brand" data-testid="payment-total">
+            {formatMetric(total, currency)}
+          </p>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Type de frais">
-            <Select
-              value={feeType}
-              onChange={(event) => setFeeType(event.target.value as FeeType)}
-              options={FEE_TYPES.map((value) => ({ value, label: value }))}
-            />
-          </Field>
-          <Field label="Mode de paiement">
+          <Field label="Mode de paiement *">
             <Select
               value={method}
               onChange={(event) => setMethod(event.target.value as PaymentMethod)}
               options={PAYMENT_METHODS.map((value) => ({ value, label: value }))}
             />
           </Field>
-        </div>
-
-        <Field label={`Montant payé (${resolveSchoolCurrency(school)})`}>
-          <Input
-            type="number"
-            min={1}
-            step={1}
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            placeholder="Ex. 25000"
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {QUICK_AMOUNT_SHORTCUTS.map((shortcut) => (
-              <button
-                key={shortcut}
-                type="button"
-                className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-brand/40 hover:text-brand"
-                onClick={() => setAmount(String(shortcut))}
-              >
-                {formatMetric(shortcut)}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        {overpayment > 0 ? (
-          <Field label="Trop-perçu — action">
-            <Select
-              value={overpaymentAction}
-              onChange={(event) => setOverpaymentAction(event.target.value)}
-              options={OVERPAYMENT_ACTIONS.map((value) => ({ value, label: value }))}
-            />
-            <p className="mt-1 text-xs text-amber-700">
-              Trop-perçu : {formatMetric(overpayment, balance?.currency)}
-            </p>
-          </Field>
-        ) : null}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Date du paiement">
-            <Input
-              type="date"
-              value={dateInput}
-              onChange={(event) => setDateInput(event.target.value)}
-            />
-          </Field>
-          <Field label="Année scolaire">
-            <Input
-              readOnly
-              value={
-                selectedStudent
-                  ? resolveSchoolYear(state, selectedStudent.schoolCode)
-                  : resolveSchoolYear(state, schoolCode ?? "")
-              }
-            />
+          <Field label="Date *">
+            <Input type="date" value={dateInput} onChange={(event) => setDateInput(event.target.value)} />
           </Field>
         </div>
 
-        <Field label="Commentaire (facultatif)">
+        <Field label="Commentaire">
           <textarea
             value={comment}
             onChange={(event) => setComment(event.target.value)}
@@ -427,7 +348,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
 
         <p className="flex items-center gap-2 text-xs text-muted">
           <Zap className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
-          Saisie tracée · référence unique · notification interne au parent
+          Un reçu · une référence · total recalculé côté serveur
         </p>
       </form>
     </Modal>

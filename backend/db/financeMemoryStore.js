@@ -17,6 +17,7 @@ const {
   toIsoDate,
   mapBoStatusToDb,
 } = require("../lib/financeManagement");
+const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const financeService = require("../lib/financeService");
 
 function clone(value) {
@@ -33,6 +34,7 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
     feeTariffHistory: [],
     paymentReminders: [],
     allocations: [],
+    paymentItems: [],
     auditLogs: [],
   };
 
@@ -89,6 +91,40 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         tables.payments.push(row);
         return mapPaymentRow(row);
       },
+      async insertPaymentItem(item) {
+        const row = {
+          id: randomUUID(),
+          school_id: item.schoolId,
+          payment_id: item.paymentId,
+          school_fee_item_id: item.schoolFeeItemId || null,
+          fee_type: item.feeType,
+          fee_label: item.feeLabel,
+          amount: item.amount,
+          sort_order: Number(item.sortOrder || 0),
+          created_at: new Date().toISOString(),
+        };
+        tables.paymentItems.push(row);
+        return row;
+      },
+      async listPaymentItems(paymentId) {
+        return tables.paymentItems
+          .filter((row) => String(row.payment_id) === String(paymentId))
+          .sort((a, b) => Number(a.sort_order) - Number(b.sort_order));
+      },
+      async getSchoolFeeItemById(feeItemId, schoolId) {
+        const row = tables.schoolFeeItems.find(
+          (item) =>
+            String(item.school_id) === String(schoolId) &&
+            (item.id === feeItemId || item.item_code === feeItemId),
+        );
+        return row ? mapItemRow(row) : null;
+      },
+      async getSchoolFeeItemByIdAnySchool(feeItemId) {
+        const row = tables.schoolFeeItems.find(
+          (item) => item.id === feeItemId || item.item_code === feeItemId,
+        );
+        return row ? mapItemRow(row) : null;
+      },
       async getPaymentByCode(code, principal, _opts) {
         const row = tables.payments.find(
           (item) => item.payment_code === code || item.id === code || item.profile_payload?.reference === code,
@@ -99,7 +135,8 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         if (scope && scope !== "*" && String(mapped.schoolCode ?? "").toUpperCase() !== scope.toUpperCase()) {
           return null;
         }
-        return mapped;
+        const items = await this.listPaymentItems(row.id);
+        return decoratePaymentWithItems(mapped, items);
       },
       async cancelPayment(dbId, reason, principal) {
         const row = tables.payments.find((item) => item.id === dbId);
@@ -362,13 +399,19 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
         tables.feeTariffHistory = snapshot.feeTariffHistory;
         tables.paymentReminders = snapshot.paymentReminders;
         tables.allocations = snapshot.allocations;
+        tables.paymentItems = snapshot.paymentItems;
         tables.auditLogs = snapshot.auditLogs;
         throw error;
       }
     },
     async listProjection() {
       return {
-        payments: tables.payments.map(mapPaymentRow),
+        payments: tables.payments.map((row) =>
+          decoratePaymentWithItems(
+            mapPaymentRow(row),
+            tables.paymentItems.filter((item) => String(item.payment_id) === String(row.id)),
+          ),
+        ),
         paymentStatuses: tables.paymentStatuses.map(mapStatusRow),
         feeGrids: tables.feeGrids.map(mapGridRow),
         schoolFeeItems: tables.schoolFeeItems.map(mapItemRow),

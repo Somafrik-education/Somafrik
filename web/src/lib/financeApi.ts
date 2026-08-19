@@ -1,11 +1,23 @@
 import { api } from "../api/client";
 
+export interface FinancePaymentItem {
+  id?: string;
+  feeTypeId?: string | null;
+  feeType: string;
+  feeLabel?: string;
+  amount: number;
+}
+
 export interface FinancePayment {
   id: string;
   reference: string;
   studentId: string;
   amount: number;
+  totalAmount?: number;
   feeType: string;
+  items?: FinancePaymentItem[];
+  itemCount?: number;
+  itemsDetail?: string;
   method: string;
   date: string;
   status: string;

@@ -140,6 +140,7 @@ npm run verify:runtime-bootstrap # si touch bootstrap / auth runtime
 npm run verify:schools-legacy-cleanup # si touch établissements / PUT schools
 npm run verify:finance-legacy-cleanup # si touch Finance / PUT payments* fee* reminders
 npm run verify:finance-management     # si touch paiements, grilles, obligations, relances
+npm run verify:finance-multi-item-payment # si touch reçu multi-libellés / payment_items
 ```
 
 ### Principes

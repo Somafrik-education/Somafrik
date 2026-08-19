@@ -18,6 +18,7 @@ const {
   mapBoStatusToDb,
   parsePayload,
 } = require("../lib/financeManagement");
+const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
 const financeService = require("../lib/financeService");
 
 function createFinancePgStore(repo) {
@@ -125,6 +126,54 @@ function createFinancePgStore(repo) {
           throw error;
         }
       },
+      async insertPaymentItem(item) {
+        const row = await one(
+          `INSERT INTO payment_items (
+             school_id, payment_id, school_fee_item_id, fee_type, fee_label, amount, sort_order
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+           RETURNING *`,
+          [
+            item.schoolId,
+            item.paymentId,
+            item.schoolFeeItemId || null,
+            item.feeType,
+            item.feeLabel,
+            item.amount,
+            Number(item.sortOrder || 0),
+          ],
+        );
+        return row;
+      },
+      async listPaymentItems(paymentId) {
+        return all(
+          `SELECT * FROM payment_items WHERE payment_id = $1 ORDER BY sort_order ASC, created_at ASC`,
+          [paymentId],
+        );
+      },
+      async getSchoolFeeItemById(feeItemId, schoolId) {
+        const row = await one(
+          `SELECT i.*, g.grid_code, s.school_code
+           FROM school_fee_items i
+           JOIN fee_grids g ON g.id = i.fee_grid_id
+           JOIN schools s ON s.id = i.school_id
+           WHERE i.school_id = $2 AND (i.id::text = $1 OR i.item_code = $1)
+           LIMIT 1`,
+          [asTrimmed(feeItemId), schoolId],
+        );
+        return row ? mapItemRow(row) : null;
+      },
+      async getSchoolFeeItemByIdAnySchool(feeItemId) {
+        const row = await one(
+          `SELECT i.*, g.grid_code, s.school_code
+           FROM school_fee_items i
+           JOIN fee_grids g ON g.id = i.fee_grid_id
+           JOIN schools s ON s.id = i.school_id
+           WHERE i.id::text = $1 OR i.item_code = $1
+           LIMIT 1`,
+          [asTrimmed(feeItemId)],
+        );
+        return row ? mapItemRow(row) : null;
+      },
       async getPaymentByCode(code, principal, { lock } = {}) {
         const params = [code, code];
         let sql = `
@@ -142,7 +191,9 @@ function createFinancePgStore(repo) {
         sql += " LIMIT 1";
         if (lock) sql += " FOR UPDATE OF p";
         const row = await one(sql, params);
-        return row ? mapPaymentRow(row) : null;
+        if (!row) return null;
+        const items = await this.listPaymentItems(row.id);
+        return decoratePaymentWithItems(mapPaymentRow(row), items);
       },
       async resolveActorUserId(principal) {
         const normalized = asTrimmed(principal?.sub || principal?.id);
@@ -448,7 +499,7 @@ function createFinancePgStore(repo) {
       });
     },
     async listProjection() {
-      const [payments, statuses, grids, items, fees, history, reminders] = await Promise.all([
+      const [payments, statuses, grids, items, fees, history, reminders, paymentItems] = await Promise.all([
         repo.all(
           `SELECT p.*, s.school_code, st.student_code
            FROM payments p
@@ -483,9 +534,16 @@ function createFinancePgStore(repo) {
            JOIN students st ON st.id = r.student_id
            ORDER BY r.sent_at DESC`,
         ),
+        repo.all(`SELECT * FROM payment_items ORDER BY sort_order ASC, created_at ASC`),
       ]);
+      const itemsByPayment = new Map();
+      for (const item of paymentItems) {
+        const list = itemsByPayment.get(item.payment_id) || [];
+        list.push(item);
+        itemsByPayment.set(item.payment_id, list);
+      }
       return {
-        payments: payments.map(mapPaymentRow),
+        payments: payments.map((row) => decoratePaymentWithItems(mapPaymentRow(row), itemsByPayment.get(row.id) || [])),
         paymentStatuses: statuses.map(mapStatusRow),
         feeGrids: grids.map(mapGridRow),
         schoolFeeItems: items.map(mapItemRow),

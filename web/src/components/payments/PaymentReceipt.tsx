@@ -7,8 +7,28 @@ interface PaymentReceiptProps {
   school?: School | null;
 }
 
+function receiptItems(payment: PaymentRecord): { label: string; amount: number }[] {
+  const items = Array.isArray(payment.items) ? payment.items : [];
+  if (items.length) {
+    return items.map((item) => {
+      const row = item as { feeLabel?: string; feeType?: string; amount?: number };
+      return {
+        label: String(row.feeLabel || row.feeType || "Libellé"),
+        amount: Number(row.amount ?? 0),
+      };
+    });
+  }
+  return [
+    {
+      label: String(payment.feeType ?? payment.label ?? "Libellé"),
+      amount: Number(payment.totalAmount ?? payment.amount ?? 0),
+    },
+  ];
+}
+
 export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
-  const amount = Number(payment.amount ?? 0);
+  const items = receiptItems(payment);
+  const total = items.reduce((sum, item) => sum + item.amount, 0);
   const currency = String(payment.currency ?? school?.currency ?? "CDF");
 
   return (
@@ -39,16 +59,34 @@ export function PaymentReceipt({ payment, school }: PaymentReceiptProps) {
           <dt className="text-muted">Classe</dt>
           <dd>{String(payment.className ?? "—")}</dd>
         </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted">Type de frais</dt>
-          <dd>{String(payment.feeType ?? payment.label ?? "—")}</dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted">Montant</dt>
-          <dd className="text-lg font-black text-brand">
-            {formatMetric(amount, currency)}
-          </dd>
-        </div>
+      </dl>
+
+      <table className="mt-5 w-full text-sm">
+        <thead>
+          <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+            <th className="py-2 font-semibold">Libellé</th>
+            <th className="py-2 text-right font-semibold">Montant</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={`${item.label}-${index}`} className="border-b border-line/70">
+              <td className="py-2">{item.label}</td>
+              <td className="py-2 text-right font-semibold">{formatMetric(item.amount, currency)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td className="pt-3 font-black">Total</td>
+            <td className="pt-3 text-right text-lg font-black text-brand">
+              {formatMetric(total, currency)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <dl className="mt-5 space-y-2">
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Date</dt>
           <dd>{String(payment.date ?? "—")}</dd>
