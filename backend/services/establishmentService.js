@@ -5,6 +5,7 @@ const {
   COUNTRY_NOT_FOUND_MESSAGE,
 } = require("../lib/schoolsManagement");
 const { schoolMatchesCountryScope } = require("../lib/countryScope");
+const { matchesSchoolLookup } = require("../lib/schoolCodeV2");
 const {
   generateSchoolCode,
   filterActiveSchools,
@@ -42,7 +43,7 @@ function scopeEstablishments(state, principal) {
     return schools.filter((school) => schoolMatchesCountryScope(school, scope));
   }
   const code = String(principal.schoolCode ?? "").trim().toUpperCase();
-  return schools.filter((school) => String(school.code ?? "").trim().toUpperCase() === code);
+  return schools.filter((school) => matchesSchoolLookup(school, code));
 }
 
 function assertCanAccessEstablishment(principal, school) {
@@ -141,9 +142,9 @@ function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
   const canonical = findCanonicalCountry(state.countries, payload.countryCode, payload.country);
   const country = canonical?.name ?? payload.country;
   const countryCode = canonical?.code ?? payload.countryCode;
-  const code =
-    payload.code?.trim().toUpperCase() ||
-    (countryCode && isNew ? generateSchoolCode(countryCode, schools) : "");
+  const requested = payload.code?.trim().toUpperCase() || "";
+  const generated = countryCode && isNew ? generateSchoolCode(countryCode, schools) : "";
+  const code = requested || generated;
 
   return {
     ...payload,
@@ -171,9 +172,7 @@ class EstablishmentService {
   }
 
   get(code, state, principal) {
-    const school = (state.schools ?? []).find(
-      (item) => String(item.code ?? "").trim().toUpperCase() === String(code).trim().toUpperCase(),
-    );
+    const school = (state.schools ?? []).find((item) => matchesSchoolLookup(item, code));
     assertCanReadEstablishment(principal, school);
     return school;
   }
@@ -266,9 +265,7 @@ class EstablishmentService {
   }
 
   update(code, patch, state, principal) {
-    const existing = (state.schools ?? []).find(
-      (item) => String(item.code ?? "").trim().toUpperCase() === String(code).trim().toUpperCase(),
-    );
+    const existing = (state.schools ?? []).find((item) => matchesSchoolLookup(item, code));
     assertCanAccessEstablishment(principal, existing);
     const updateMode = assertCanUpdateEstablishment(principal, patch);
     const effectivePatch = updateMode === "profile" ? filterEstablishmentProfilePatch(patch) : patch ?? {};

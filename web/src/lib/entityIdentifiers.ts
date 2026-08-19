@@ -1,11 +1,11 @@
 const TEACHER_PROFILE = "ENS";
 const STUDENT_CANONICAL_RE = /^([A-Z]{2})-([A-Z0-9]{2,5})-EL-([0-9]{2})-([0-9]{3})$/;
-const SCHOOL_YEAR_BASE = 2025;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Parse le code public V2 `{ISO}-{INITIALES}-{YY}-{SEQ3}` (ex. CD-IN-26-001). */
 export function parseSchoolCodeSegments(schoolCode: string): {
   country: string;
   year: string;
@@ -13,24 +13,24 @@ export function parseSchoolCodeSegments(schoolCode: string): {
   yearIndex: string;
 } {
   const normalized = schoolCode.trim().toUpperCase();
-  const match = /^([A-Z]{2})-(\d{4})-(\d{4})$/.exec(normalized);
-  if (match) {
-    const country = match[1];
-    const year = match[2];
-    const establishment = match[3];
-    const yearIndex = Math.max(1, Number.parseInt(year, 10) - SCHOOL_YEAR_BASE);
+  const v2 = /^([A-Z]{2})-([A-Z0-9]{2,5})-(\d{2})-(\d{3})$/.exec(normalized);
+  if (v2) {
+    const country = v2[1];
+    const initials = v2[2];
+    const yy = v2[3];
+    const seq = v2[4];
+    const fullYear = String(2000 + Number.parseInt(yy, 10));
     return {
       country,
-      year,
-      establishment,
-      yearIndex: String(yearIndex).padStart(4, "0"),
+      year: fullYear,
+      establishment: initials,
+      yearIndex: seq.padStart(4, "0"),
     };
   }
-  const digits = normalized.replace(/\D/g, "");
   return {
     country: "",
-    year: (digits.slice(0, 4) || "0000").padStart(4, "0").slice(-4),
-    establishment: (digits.slice(-4) || "0000").padStart(4, "0"),
+    year: "0000",
+    establishment: "",
     yearIndex: "0001",
   };
 }
@@ -125,7 +125,7 @@ export function getTeacherLoginIdentifier(publicIdOrIdentifier: string): string 
   return `${TEACHER_PROFILE}-${String(Number(match[1])).padStart(4, "0")}`;
 }
 
-/** Identifiant complet : code_pays-année-n°_établissement-ENS-n° (ex. CD-2026-0001-ENS-0001). */
+/** Identifiant complet : {login_code}-{ENS-n°} (ex. CD-IN-26-001-ENS-0001). */
 export function generateTeacherIdentifiers(
   schoolCode: string,
   teachers: Record<string, unknown>[] = [],

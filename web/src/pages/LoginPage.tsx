@@ -213,7 +213,7 @@ export function LoginPage() {
                       </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="ex. CD-2026-0001"
+                          placeholder="ex. CD-IN-26-001"
                           data-testid="login-school-code"
                           {...field}
                           value={field.value ?? ""}

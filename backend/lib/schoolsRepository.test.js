@@ -130,7 +130,6 @@ async function main() {
   const repo = createSchoolsRepository(db);
 
   const created = await repo.persist({
-    code: "CD-2026-0401",
     name: "Lycée Lot 1",
     type: "Lycée",
     country: "RDC",
@@ -142,14 +141,30 @@ async function main() {
     status: "En attente",
     validationStatus: "En attente de validation",
   });
-  assert.equal(created.code, "CD-2026-0401");
+  assert.match(created.code, /^SCH-[A-Z0-9]+$/);
   assert.equal(created.status, "En attente");
   assert.equal(created.principalName, "Awa Kabila");
   assert.equal(created.countryCode, "CD");
 
+  await assert.rejects(
+    () =>
+      repo.persist({
+        code: "CD-2026-0001",
+        name: "Legacy Interdit",
+        type: "Lycée",
+        country: "RDC",
+        countryCode: "CD",
+        city: "Kinshasa",
+        phone: "+243 990 111 222",
+        email: "legacy@test.cd",
+        status: "Actif",
+      }),
+    (error) => error.code === "SCHOOL_CODE_LEGACY_FORBIDDEN" && error.statusCode === 400,
+  );
+
   const listed = await repo.listAll();
   assert.equal(listed.length, 1);
-  assert.equal(listed[0].code, "CD-2026-0401");
+  assert.equal(listed[0].code, created.code);
 
   const updated = await repo.persist({
     ...created,
@@ -160,14 +175,14 @@ async function main() {
   assert.equal(updated.name, "Lycée Lot 1 Persisté");
   assert.equal(updated.status, "Actif");
 
-  const reread = await repo.getByCode("cd-2026-0401");
+  const reread = await repo.getByCode(created.code);
   assert.equal(reread.name, "Lycée Lot 1 Persisté");
   assert.equal(reread.principalName, "Awa Kabila");
 
   db.schools[0].login_code = "CD-LL1-26-001";
   const rereadCanonical = await repo.getByCode("cd-ll1-26-001");
   assert.equal(rereadCanonical.name, "Lycée Lot 1 Persisté");
-  assert.equal(rereadCanonical.code, "CD-2026-0401");
+  assert.equal(rereadCanonical.code, created.code);
   assert.equal(rereadCanonical.loginCode, "CD-LL1-26-001");
   assert.equal(db.schools.length, 1);
 

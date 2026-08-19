@@ -64,8 +64,8 @@ assert.equal(sameCountryContact[0]?.level, DUPLICATE_CONTACT);
 
 assert.equal(
   generateSchoolCode("CD", [{ code: "CD-2026-0001" }]),
-  "CD-2026-0002",
-  "generateSchoolCode backend reste l'alias interne school_code, pas le SEQ3 login_code",
+  "",
+  "generateSchoolCode n'alloue plus CD-YYYY-NNNN — PostgreSQL seul produit login_code V2",
 );
 
 console.log("schoolModule.test.js OK");

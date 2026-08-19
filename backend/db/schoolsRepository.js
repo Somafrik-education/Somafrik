@@ -15,6 +15,7 @@ const {
   extractProfilePayload,
   mapEstablishmentRow,
 } = require("../lib/schoolsManagement");
+const { isLegacySchoolCodeFormat, validateSchoolCode } = require("../lib/schoolCodeV2");
 
 function createHttpError(statusCode, message, code) {
   const error = new Error(message);
@@ -109,7 +110,6 @@ function createSchoolsRepository(db) {
       if (requestedCode === "*") {
         throw createHttpError(400, "Code établissement invalide.", "SCHOOL_CODE_INVALID");
       }
-      const code = requestedCode || generateInternalSchoolAlias();
       const name = String(record?.name ?? "").trim();
       if (!name) {
         throw createHttpError(400, "Nom d'établissement requis.", "SCHOOL_NAME_REQUIRED");
@@ -117,6 +117,14 @@ function createSchoolsRepository(db) {
 
       const country = await requireCountry(record ?? {});
       const existing = requestedCode ? await getByCode(requestedCode) : null;
+      if (!existing && requestedCode && isLegacySchoolCodeFormat(requestedCode)) {
+        try {
+          validateSchoolCode(requestedCode, { forCreation: true });
+        } catch (error) {
+          throw createHttpError(error.statusCode || 400, error.message, error.code);
+        }
+      }
+      const code = existing?.legacySchoolCode || existing?.code || generateInternalSchoolAlias();
       if (!existing) {
         const { classifySchoolDuplicates, DUPLICATE_STRONG } = require("../lib/schoolModule");
         const sameCountryRows = await db.all(

@@ -337,8 +337,8 @@ export type SubscriptionItem = {
 
 export const school: SchoolProfile = {
   id: "550e8400-e29b-41d4-a716-446655440001",
-  publicId: "CD-2026-0001",
-  code: "CD-2026-0001",
+  publicId: "CD-IN-26-001",
+  code: "CD-IN-26-001",
   name: "Université de Kinshasa",
   type: "Université",
   city: "Kinshasa",
@@ -368,9 +368,9 @@ export const schools: SchoolProfile[] = [
   school,
   {
     ...school,
-    id: "SCHOOL-BI-2026-0002",
-    publicId: "BI-2026-0002",
-    code: "BI-2026-0002",
+    id: "SCHOOL-BI-ESB-26-001",
+    publicId: "BI-ESB-26-001",
+    code: "BI-ESB-26-001",
     name: "Établissement Somafrik Burundi",
     type: "Université",
     city: "Bujumbura",
@@ -425,8 +425,8 @@ export const countries: CountryProfile[] = [
 
 export const subscriptions: SubscriptionItem[] = [
   {
-    id: "SUB-CD-2026-0001",
-    schoolCode: "CD-2026-0001",
+    id: "SUB-CD-IN-26-001",
+    schoolCode: "CD-IN-26-001",
     countryCode: "CD",
     country: "RDC",
     plan: "Premium",
@@ -574,7 +574,7 @@ export const rolePermissions: Record<string, string[]> = {
 };
 
 export const defaultAcademicConfig: AcademicManagementConfig = {
-  schoolCode: "CD-2026-0001",
+  schoolCode: "CD-IN-26-001",
   periodMode: "trimestre",
   periods: [
     { name: "Trimestre 1", type: "Trimestre", startDate: "01-09-2025", endDate: "31-12-2025", active: true },
@@ -657,7 +657,7 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "admin",
     status: "Actif",
@@ -753,7 +753,7 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "prefet",
     status: "Actif",
@@ -777,7 +777,7 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "secretaire",
     status: "Actif",
@@ -801,7 +801,7 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "T1",
     status: "Actif",
@@ -825,7 +825,7 @@ export const userAccounts: UserAccount[] = [
     secondaryRoles: [],
     scopeLevel: "Établissement",
     countryScope: "RDC",
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     accessChannel: "Application",
     identifier: "+243 820 000 001",
     status: "Actif",
@@ -926,10 +926,10 @@ export const classes: SchoolClass[] = [
 ];
 
 export const students: Student[] = [
-  { id: "1", publicId: "CD-IN-EL-26-001", name: "Jean Dupont", firstName: "Jean", matricule: "CD-IN-EL-26-001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-2026-0001", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
-  { id: "2", publicId: "CD-IN-EL-26-002", name: "Marie Martin", firstName: "Marie", matricule: "CD-IN-EL-26-002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-2026-0001", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
-  { id: "3", publicId: "CD-IN-EL-26-003", name: "Paul Bernard", firstName: "Paul", matricule: "CD-IN-EL-26-003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-2026-0001", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
-  { id: "4", publicId: "CD-IN-EL-26-004", name: "Sarah Mbala", firstName: "Sarah", matricule: "CD-IN-EL-26-004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-2026-0001", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
+  { id: "1", publicId: "CD-IN-EL-26-001", name: "Jean Dupont", firstName: "Jean", matricule: "CD-IN-EL-26-001", gender: "Masculin", birthDate: "12-04-2012", className: "6ème A", schoolCode: "CD-IN-26-001", parentName: "Parent Dupont", parentPhone: "+243 820 000 001", parentEmail: "parent.dupont@example.com", archived: false },
+  { id: "2", publicId: "CD-IN-EL-26-002", name: "Marie Martin", firstName: "Marie", matricule: "CD-IN-EL-26-002", gender: "Féminin", birthDate: "18-09-2012", className: "6ème A", schoolCode: "CD-IN-26-001", parentName: "Parent Martin", parentPhone: "+243 820 000 001", parentEmail: "parent.martin@example.com", archived: false },
+  { id: "3", publicId: "CD-IN-EL-26-003", name: "Paul Bernard", firstName: "Paul", matricule: "CD-IN-EL-26-003", gender: "Masculin", birthDate: "03-02-2011", className: "6ème B", schoolCode: "CD-IN-26-001", parentName: "Parent Bernard", parentPhone: "+243 820 000 003", parentEmail: "parent.bernard@example.com", archived: false },
+  { id: "4", publicId: "CD-IN-EL-26-004", name: "Sarah Mbala", firstName: "Sarah", matricule: "CD-IN-EL-26-004", gender: "Féminin", birthDate: "21-07-2011", className: "5ème A", schoolCode: "CD-IN-26-001", parentName: "Parent Mbala", parentPhone: "+243 820 000 004", parentEmail: "parent.mbala@example.com", archived: false },
 ];
 
 export const notes: NoteItem[] = [
@@ -1225,7 +1225,7 @@ while (students.length < 50) {
     gender: index % 2 === 0 ? "Féminin" : "Masculin",
     birthDate: `${String((index % 27) + 1).padStart(2, "0")}-${String((index % 12) + 1).padStart(2, "0")}-2012`,
     className: classItem.name,
-    schoolCode: "CD-2026-0001",
+    schoolCode: "CD-IN-26-001",
     parentName: `Parent ${lastName}`,
     parentPhone: `+243 820 100 ${String(Math.ceil(index / 2)).padStart(3, "0")}`,
     parentEmail: `parent-${index}@example.com`,

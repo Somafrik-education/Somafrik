@@ -31,19 +31,16 @@ function normalize(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/** Alias interne school_code (CD-YYYY-NNNN). Ce n'est PAS le SEQ3 de login_code. */
-function generateSchoolCode(countryCode, schools = []) {
-  const code = String(countryCode ?? "").trim().toUpperCase();
-  if (!code) return "";
-  const year = new Date().getFullYear();
-  const prefix = `${code}-${year}-`;
-  const maxNum = schools.reduce((max, school) => {
-    const value = String(school.code ?? "").trim().toUpperCase();
-    if (!value.startsWith(prefix)) return max;
-    const match = value.match(/-(\d{4})$/);
-    return match ? Math.max(max, Number.parseInt(match[1], 10)) : max;
-  }, 0);
-  return `${prefix}${String(maxNum + 1).padStart(4, "0")}`;
+/**
+ * Compatibilité d'appel uniquement.
+ * Ni le backend applicatif ni les clients n'allouent login_code V2 :
+ * PostgreSQL (`somafrik_prepare_school_login_code`) est l'unique générateur.
+ * school_code interne SCH-* est alloué à la persistance, pas ici.
+ */
+function generateSchoolCode(_countryCode, _schools = []) {
+  void _countryCode;
+  void _schools;
+  return "";
 }
 
 function isSchoolDeleted(school) {
@@ -71,11 +68,20 @@ function validateSchoolPayload(school, schools, { isNew = false } = {}) {
   if (!String(school.principalName ?? "").trim()) return "Le responsable principal est obligatoire.";
 
   const code = String(school.code ?? "").trim().toUpperCase();
-  if (!code) return "Le code établissement est obligatoire.";
-  const duplicateCode = isNew
-    ? schools.some((item) => normalize(item.code) === normalize(code))
-    : schools.some((item) => normalize(item.code) === normalize(code) && item.code !== school.code);
-  if (duplicateCode) return "Ce code établissement existe déjà.";
+  if (isNew) {
+    const { isLegacySchoolCodeFormat } = require("./schoolCodeV2");
+    if (code && isLegacySchoolCodeFormat(code)) {
+      return "Format établissement legacy interdit pour une création (ex. CD-2026-0001).";
+    }
+  } else if (!code) {
+    return "Le code établissement est obligatoire.";
+  }
+  if (code) {
+    const duplicateCode = isNew
+      ? schools.some((item) => normalize(item.code) === normalize(code))
+      : schools.some((item) => normalize(item.code) === normalize(code) && item.code !== school.code);
+    if (duplicateCode) return "Ce code établissement existe déjà.";
+  }
 
   return null;
 }

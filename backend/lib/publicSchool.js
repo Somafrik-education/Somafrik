@@ -1,7 +1,7 @@
+const { publicSchoolCodeFromRecord } = require("./schoolCodeV2");
+
 function toPublicSchool(school = {}) {
-  const canonicalCode = String(
-    school.loginCode ?? school.publicId ?? school.code ?? "",
-  ).trim().toUpperCase();
+  const canonicalCode = publicSchoolCodeFromRecord(school);
   return {
     code: canonicalCode,
     loginCode: canonicalCode,

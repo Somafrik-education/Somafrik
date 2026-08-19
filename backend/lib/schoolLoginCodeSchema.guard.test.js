@@ -46,7 +46,14 @@ assert.match(boot, /20260825_school_login_code_country_year\.sql/);
 assert.doesNotMatch(boot, /readFileSync\([^)]*20260825_school_login_code_seq_backfill/);
 
 assert.match(webSchoolModule, /return "";/);
-assert.match(mobileAdmin, /\$\{countryCode\}-\$\{year\}-\$\{String\(next\)\.padStart\(4, "0"\)\}/);
+assert.doesNotMatch(mobileAdmin, /\$\{countryCode\}-\$\{year\}-\$\{String\(next\)\.padStart\(4, "0"\)\}/);
+assert.match(mobileAdmin, /Le client ne génère plus de code établissement/);
 assert.doesNotMatch(mobileAdmin, /login_code_counters/);
+const backendSchoolModule = fs.readFileSync(
+  path.join(__dirname, "schoolModule.js"),
+  "utf8",
+);
+assert.doesNotMatch(backendSchoolModule, /\$\{prefix\}\$\{String\(maxNum \+ 1\)\.padStart\(4, "0"\)\}/);
+assert.match(backendSchoolModule, /return "";/);
 
 console.log("schoolLoginCodeSchema.guard.test.js: OK");

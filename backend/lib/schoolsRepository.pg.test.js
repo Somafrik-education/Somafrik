@@ -184,13 +184,24 @@ async function main() {
     );
 
     /*
-     * 1. Création via l'ancien code interne.
-     *
-     * Le repository LOT 1 continue à accepter school_code comme alias
-     * technique pendant la transition vers login_code.
+     * 1. Création sans code client — school_code interne SCH-*, login_code V2 côté PG réel.
+     *    CD-YYYY-NNNN est refusé à la création.
      */
+    await assert.rejects(
+      () =>
+        repo.persist({
+          code: "CD-2026-0001",
+          name: "Legacy Interdit PG",
+          type: "Lycée",
+          country: "Burundi",
+          countryCode: "BI",
+          city: "Bujumbura",
+          status: "Actif",
+        }),
+      (error) => error.code === "SCHOOL_CODE_LEGACY_FORBIDDEN" && error.statusCode === 400,
+    );
+
     const created = await repo.persist({
-      code: "BI-2026-0401",
       name: "Collège Lot 1 PG",
       type: "Collège",
       country: "Burundi",
@@ -203,7 +214,7 @@ async function main() {
       validationStatus: "En attente de validation",
     });
 
-    assert.equal(created.code, "BI-2026-0401");
+    assert.match(String(created.code), /^SCH-[A-Z0-9]+$/);
     assert.equal(created.status, "En attente");
     assert.equal(
       created.principalName,
@@ -224,7 +235,7 @@ async function main() {
         FROM schools
         WHERE school_code = $1
       `,
-      ["BI-2026-0401"],
+      [created.code],
     );
 
     assert.equal(row.rows.length, 1);
@@ -251,15 +262,13 @@ async function main() {
     assert.equal(updated.status, "Actif");
 
     /*
-     * 4. Relecture via alias historique school_code.
+     * 4. Relecture via alias interne school_code (SCH-*).
      */
-    const rereadLegacy = await repo.getByCode(
-      "bi-2026-0401",
-    );
+    const rereadLegacy = await repo.getByCode(created.code);
 
     assert.ok(
       rereadLegacy,
-      "l'établissement doit être résolu via school_code legacy",
+      "l'établissement doit être résolu via school_code interne",
     );
 
     assert.equal(
@@ -295,7 +304,7 @@ async function main() {
       `,
       [
         canonicalLoginCode,
-        "BI-2026-0401",
+        created.code,
       ],
     );
 
@@ -310,7 +319,7 @@ async function main() {
         FROM schools
         WHERE school_code = $1
       `,
-      ["BI-2026-0401"],
+      [created.code],
     );
 
     assert.equal(
@@ -320,7 +329,7 @@ async function main() {
 
     assert.equal(
       canonicalRow.rows[0].school_code,
-      "BI-2026-0401",
+      created.code,
     );
 
     assert.equal(
@@ -352,14 +361,9 @@ async function main() {
       "Jean Ndayishimiye",
     );
 
-    /*
-     * Le repository peut continuer à exposer le code legacy dans `code`
-     * pendant la transition. Ce test prouve surtout que login_code permet
-     * de retrouver exactement le même établissement.
-     */
     assert.equal(
       rereadCanonical.code,
-      "BI-2026-0401",
+      created.code,
     );
 
     /*

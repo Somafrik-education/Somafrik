@@ -174,6 +174,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 
 ---
 
+## ADR-013 — Code établissement V2 `CD-IN-26-001`
+
+| | |
+|--|--|
+| **Date** | 2026-08-19 |
+| **Décision** | Le code public d'établissement est `schools.login_code` au format `{ISO}-{INITIALES}-{YY}-{SEQ3}` (ex. `CD-IN-26-001`). PostgreSQL est l'unique générateur (`somafrik_prepare_school_login_code`, compteur `(country_id, creation_year)`). `IN` = initiales déterministes du nom (`somafrik_school_short_code`), jamais une constante « INSTITUT NURU ». L'ancien format `CD-2026-0001` (`CC-YYYY-NNNN`) est interdit à la création et retiré des UI / bundles ; la lecture par `school_code` reste temporaire. Aucune mutation préprod dans le lot code. |
+| **Contexte** | L'APK Preview QA affichait encore `CD-2026-0001` (placeholder Mobile + mapping public `code` = `school_code`). |
+| **Alternatives** | Dual-write login_code + school_code public ; regex unique acceptant les deux formats ; génération Web/Mobile. |
+| **Impact** | `toPublicSchool` expose le V2 ; `GET /api/schools/:code` matche login_code ; gate `verify:school-code-v2` ; bundle Preview sans `CD-2026-0001`. Contrat : `docs/project/SCHOOL-CODE-V2.md`. |
+| **Statut** | Proposée |
+
+---
+
 ## Comment ajouter une décision
 
 1. Incrémenter `ADR-00N`

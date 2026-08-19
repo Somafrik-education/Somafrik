@@ -5746,7 +5746,7 @@ class PostgresRepository {
       "ADM-CD-2026-0001": "admin-rdc",
       "USR-PREFET-0001": "prefet",
       "USR-SECRETARY-0001": "secretaire",
-      // Jeu bulk : comptes démo de CD-2026-0001 (voir bulkPlatformSeed.buildSchoolRoleUser)
+      // Jeu bulk : alias user_code historiques (school_code interne, pas login_code V2)
       "ADMIN-CD-2026-0001-01": "admin",
       "ADMIN-CG-2026-0001-01": "admin-cg",
       "ADMIN-BI-2026-0001-01": "admin-bi",

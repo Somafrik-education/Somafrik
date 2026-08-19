@@ -5,6 +5,7 @@ const result = toPublicSchool({
   id: "SCHOOL-1",
   publicId: "CD-2026-0001",
   code: " CD-2026-0001 ",
+  loginCode: "CD-IN-26-001",
   name: " École Test ",
   city: " Kinshasa ",
   logoUrl: "https://example.test/logo.png",
@@ -18,11 +19,13 @@ const result = toPublicSchool({
 });
 
 assert.deepStrictEqual(result, {
-  code: "CD-2026-0001",
+  code: "CD-IN-26-001",
+  loginCode: "CD-IN-26-001",
   name: "École Test",
   city: "Kinshasa",
   logoUrl: "https://example.test/logo.png",
 });
+assert.notEqual(result.code, "CD-2026-0001");
 
 for (const privateField of [
   "id",

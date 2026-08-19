@@ -8,6 +8,7 @@ export const ROLE_SELECTION_COPY = {
   description:
     "Utilisez le code fourni par l'administration pour ouvrir les espaces élève, parent, enseignant et direction.",
   codeLabel: "Code établissement",
+  placeholderExample: "CD-IN-26-001",
   verifyButton: "Vérifier le code",
   openLoginButton: "Ouvrir la connexion",
   successMessage: "Établissement trouvé. Vous pouvez continuer.",

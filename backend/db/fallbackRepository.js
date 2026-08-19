@@ -268,7 +268,7 @@ class FallbackRepository {
         for (const [schoolCode] of Object.entries(seedData.academicConfigs ?? {})) {
           store.saveAcademicConfig(String(schoolCode).toUpperCase(), {});
         }
-        const defaultSchool = String(seedData.school?.code ?? "CD-2026-0001").toUpperCase();
+        const defaultSchool = String(seedData.school?.loginCode ?? seedData.school?.code ?? "").toUpperCase();
         void defaultSchool;
       }
     }
@@ -331,11 +331,28 @@ class FallbackRepository {
       COUNTRY_NOT_FOUND_CODE,
       COUNTRY_NOT_FOUND_MESSAGE,
     } = require("../lib/schoolsManagement");
-    const code = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.publicId);
+    const { isLegacySchoolCodeFormat, matchesSchoolLookup } = require("../lib/schoolCodeV2");
+    const { randomUUID } = require("node:crypto");
+    const requested = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.legacySchoolCode);
+    const store = this._establishmentStore();
+    const existing = requested
+      ? store.find((row) => matchesSchoolLookup(row, requested))
+      : null;
+    if (!existing && requested && isLegacySchoolCodeFormat(requested)) {
+      const error = new Error(
+        "Format établissement legacy interdit pour une création (ex. CD-2026-0001). Utiliser le code V2 généré par PostgreSQL.",
+      );
+      error.statusCode = 400;
+      error.code = "SCHOOL_CODE_LEGACY_FORBIDDEN";
+      throw error;
+    }
+    const code =
+      existing?.code ||
+      (requested && requested !== "*" ? requested : `SCH-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`);
     if (!code || code === "*") {
       const error = new Error("Code établissement requis.");
       error.statusCode = 400;
-      error.code = "SCHOOL_CODE_REQUIRED";
+      error.code = "SCHOOL_CODE_INVALID";
       throw error;
     }
     const catalog = [
@@ -348,11 +365,15 @@ class FallbackRepository {
       error.code = COUNTRY_NOT_FOUND_CODE;
       throw error;
     }
-    const school = { ...record, code, publicId: record?.publicId || code };
-    const store = this._establishmentStore();
-    const index = store.findIndex(
-      (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === code,
-    );
+    const school = {
+      ...record,
+      code,
+      publicId: record?.publicId || existing?.publicId || existing?.loginCode || code,
+      loginCode: record?.loginCode || existing?.loginCode || "",
+    };
+    const index = existing
+      ? store.findIndex((row) => matchesSchoolLookup(row, requested || existing.code))
+      : -1;
     if (index >= 0) {
       store[index] = { ...store[index], ...school };
     } else {

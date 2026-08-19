@@ -31,7 +31,7 @@ const somafrikLogo = require("../../assets/somafrik-logo.png");
 export default function RoleSelectionScreen({ navigation }: Props) {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const containerStyle = [styles.container, { paddingBottom: stackPaddingBottom }];
-  const [accessCode, setAccessCode] = useState("CD-2026-0001");
+  const [accessCode, setAccessCode] = useState("");
   const [school, setSchool] = useState<SchoolInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(`API : ${getApiBaseUrl()}`);
@@ -121,7 +121,7 @@ export default function RoleSelectionScreen({ navigation }: Props) {
           <View style={styles.inputShell}>
             <Ionicons name="keypad-outline" size={20} color="#64748B" />
             <TextInput
-              placeholder="CD-2026-0001"
+              placeholder={ROLE_SELECTION_COPY.placeholderExample}
               value={accessCode}
               onChangeText={(value) => {
                 setAccessCode(value);
@@ -228,12 +228,13 @@ export default function RoleSelectionScreen({ navigation }: Props) {
 }
 
 function getPlatformSchool(scope: string): SchoolInfo {
+  const isGlobal = scope === "Global";
   return {
     id: `PLATFORM-${scope}`,
-    publicId: scope,
-    code: "CD-2026-0001",
-    name: scope === "Global" ? "Somafrik Global" : `Somafrik ${scope}`,
-    city: scope === "Global" ? "Plateforme" : scope,
+    publicId: isGlobal ? "PLATFORM" : `PLATFORM-${scope}`,
+    code: isGlobal ? "PLATFORM" : `PLATFORM-${scope}`,
+    name: isGlobal ? "Somafrik Global" : `Somafrik ${scope}`,
+    city: isGlobal ? "Plateforme" : scope,
     country: scope,
     slogan: "ERP scolaire mobile et tablette par Somafrik",
     status: "Actif",

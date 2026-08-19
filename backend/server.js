@@ -313,12 +313,10 @@ if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
 
 app.get("/api/schools/:code", asyncHandler(async (req, res) => {
   const { platformSchools } = await getRuntime();
+  const { matchesSchoolLookup } = require("./lib/schoolCodeV2");
   const requestedCode = req.params.code.toUpperCase();
-  const foundSchool = platformSchools.find((item) =>
-    [item.code, item.publicId].some(
-      (value) => String(value ?? "").trim().toUpperCase() === requestedCode
-    )
-  );
+  // Lecture : login_code V2 canonique, plus alias interne school_code (legacy, lecture seule).
+  const foundSchool = platformSchools.find((item) => matchesSchoolLookup(item, requestedCode));
 
   if (!foundSchool) {
     return res.status(404).json({ message: "Code etablissement invalide" });
