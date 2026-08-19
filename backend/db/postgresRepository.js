@@ -1365,6 +1365,42 @@ class PostgresRepository {
     return this.getPedagogyStore().listCourseSchedules(principal, query);
   }
 
+  listSchoolRooms(principal, query) {
+    return this.getPedagogyStore().listSchoolRooms(principal, query);
+  }
+
+  createSchoolRoom(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createSchoolRoom(payload, principal, auditMeta);
+  }
+
+  updateSchoolRoom(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateSchoolRoom(id, patch, principal, auditMeta);
+  }
+
+  archiveSchoolRoom(id, principal, auditMeta) {
+    return this.getPedagogyStore().archiveSchoolRoom(id, principal, auditMeta);
+  }
+
+  listCourseScheduleReplacements(principal, query) {
+    return this.getPedagogyStore().listCourseScheduleReplacements(principal, query);
+  }
+
+  listReplacementTeacherOptions(principal, query) {
+    return this.getPedagogyStore().listReplacementTeacherOptions(principal, query);
+  }
+
+  createCourseScheduleReplacement(payload, principal, auditMeta) {
+    return this.getPedagogyStore().createCourseScheduleReplacement(payload, principal, auditMeta);
+  }
+
+  updateCourseScheduleReplacement(id, patch, principal, auditMeta) {
+    return this.getPedagogyStore().updateCourseScheduleReplacement(id, patch, principal, auditMeta);
+  }
+
+  cancelCourseScheduleReplacement(id, principal, auditMeta) {
+    return this.getPedagogyStore().cancelCourseScheduleReplacement(id, principal, auditMeta);
+  }
+
   createSchoolEvaluation(payload, principal, auditMeta) {
     return this.getPedagogyStore().createEvaluation(payload, principal, auditMeta);
   }

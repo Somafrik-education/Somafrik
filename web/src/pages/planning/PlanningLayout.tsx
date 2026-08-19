@@ -17,7 +17,7 @@ export function PlanningLayout() {
         <p className="text-xs font-black uppercase tracking-wide text-brand">Pédagogie</p>
         <h1 className="mt-1 text-2xl font-black text-ink">Planning</h1>
         <p className="mt-1 text-sm text-muted">
-          Emploi du temps hebdomadaire, salles (à venir) et remplacements (à venir).
+          Emploi du temps hebdomadaire, salles canoniques et remplacements ponctuels.
           Un créneau est une règle PostgreSQL rattachée à un cours canonique.
         </p>
       </div>

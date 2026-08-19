@@ -70,7 +70,16 @@ function isoWeekdayFromUtcDate(date) {
 
 function mapExclusionViolation(error) {
   const constraint = String(error?.constraint ?? "");
-  const teacher = constraint.includes("teacher");
+  const message = String(error?.message ?? "");
+  if (constraint.includes("room") || /no_room_overlap/i.test(message)) {
+    return createPedagogyError(
+      409,
+      "Conflit d'emploi du temps : salle déjà occupée.",
+      PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT,
+      { constraint: constraint || undefined, pgCode: error?.code },
+    );
+  }
+  const teacher = constraint.includes("teacher") || /no_teacher_overlap/i.test(message);
   return createPedagogyError(
     409,
     teacher ? "Conflit d'emploi du temps : enseignant déjà occupé." : "Conflit d'emploi du temps.",
@@ -80,7 +89,10 @@ function mapExclusionViolation(error) {
 }
 
 function isExclusionViolation(error) {
-  return error?.code === "23P01" || /exclusion|overlap|no_class_overlap|no_teacher_overlap/i.test(String(error?.message ?? ""));
+  return (
+    error?.code === "23P01" ||
+    /exclusion|overlap|no_class_overlap|no_teacher_overlap|no_room_overlap/i.test(String(error?.message ?? ""))
+  );
 }
 
 function mapWeeklyScheduleDto(row) {
@@ -97,7 +109,10 @@ function mapWeeklyScheduleDto(row) {
     endTime: formatTimeHm(row.end_time),
     status: row.status,
     schoolCode: row.school_code,
-    room: row.room || "",
+    roomId: row.room_id || null,
+    room: row.room_name || row.room || "",
+    roomCode: row.room_code || "",
+    roomCapacity: row.room_capacity == null || row.room_capacity === "" ? null : Number(row.room_capacity),
     className: row.class_name || "",
     courseName: row.subject_name || "",
     subject: row.subject_name || "",

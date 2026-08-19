@@ -131,7 +131,8 @@ export function toWeeklyScheduleWritePayload(slot: CourseScheduleSlot): Record<s
     startTime,
     endTime,
   };
-  const room = String(slot.room ?? "").trim();
-  if (room) payload.room = room;
+  const roomId = String(slot.roomId ?? "").trim();
+  if (roomId) payload.roomId = roomId;
+  else payload.roomId = null;
   return payload;
 }

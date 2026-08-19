@@ -52,8 +52,13 @@ function main() {
 
   const placeholders = read("web/src/pages/planning/PlanningPlaceholders.tsx");
   assert.match(placeholders, /ComingSoonState/);
-  assert.match(placeholders, /title="Salles"/);
-  assert.match(placeholders, /title="Remplacements"/);
+  assert.match(placeholders, /title="Emploi du temps par salle"/);
+  assert.doesNotMatch(placeholders, /title="Salles"/);
+  assert.doesNotMatch(placeholders, /title="Remplacements"/);
+  assert.match(read("web/src/pages/planning/PlanningRoomsPage.tsx"), /data-testid="planning-rooms-page"/);
+  assert.match(read("web/src/pages/planning/PlanningSubstitutionsPage.tsx"), /data-testid="planning-replacements-page"/);
+  assert.doesNotMatch(read("web/src/pages/CoursePlanningPage.tsx"), /Salles et remplacements ne sont pas/);
+  assert.match(read("web/src/pages/CoursePlanningPage.tsx"), /planning-room-select/);
 
   const mobileConstants = read("Mobile/src/lib/constants.ts");
   assert.doesNotMatch(mobileConstants, /PLANNING_WEB_UI_ENABLED = true/);

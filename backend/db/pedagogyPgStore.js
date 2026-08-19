@@ -7,6 +7,8 @@ const {
   createPedagogyError,
 } = require("../lib/pedagogyManagement");
 const pedagogyService = require("../lib/pedagogyService");
+const schoolRoomsService = require("../lib/schoolRoomsService");
+const replacementsService = require("../lib/courseScheduleReplacementsService");
 const { mapWeeklyScheduleDto } = require("../lib/planningWeekly");
 const {
   sqlTeacherIdentityEqualsAny,
@@ -15,11 +17,12 @@ const {
 
 const WEEKLY_SLOT_SELECT = `
           SELECT w.id, w.school_id, w.academic_year_id, w.school_course_id, w.class_id, w.teacher_id,
-                 w.day_of_week, w.start_time, w.end_time, w.status, w.room, w.created_at, w.updated_at,
+                 w.day_of_week, w.start_time, w.end_time, w.status, w.room, w.room_id, w.created_at, w.updated_at,
                  s.school_code, c.name AS class_name, sc.subject_id, sc.status AS school_course_status,
                  sub.name AS subject_name, t.teacher_code,
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
-                 ay.name AS academic_year_name, ay.status AS academic_year_status
+                 ay.name AS academic_year_name, ay.status AS academic_year_status,
+                 COALESCE(r.name, w.room) AS room_name, r.room_code, r.capacity AS room_capacity, r.status AS room_status
           FROM course_schedule_weekly_slots w
           JOIN schools s ON s.id = w.school_id
           JOIN classes c ON c.id = w.class_id
@@ -28,7 +31,45 @@ const WEEKLY_SLOT_SELECT = `
           JOIN teachers t ON t.id = w.teacher_id
           LEFT JOIN users u ON u.id = t.user_id
           LEFT JOIN academic_years ay ON ay.id = w.academic_year_id
+          LEFT JOIN school_rooms r ON r.id = w.room_id
 `;
+
+const REPLACEMENT_SELECT = `
+          SELECT r.id, r.school_id, r.weekly_slot_id, r.occurrence_date, r.original_teacher_id,
+                 r.substitute_teacher_id, r.reason, r.note, r.status, r.created_by, r.cancelled_by,
+                 r.academic_year_id, r.start_time, r.end_time, r.created_at, r.updated_at,
+                 s.school_code, w.class_id, w.day_of_week, w.room_id,
+                 c.name AS class_name, sub.name AS subject_name,
+                 orig.teacher_code AS original_teacher_code,
+                 subste.teacher_code AS substitute_teacher_code,
+                 NULLIF(TRIM(CONCAT(COALESCE(ou.first_name, ''), ' ', COALESCE(ou.last_name, ''))), '') AS original_teacher_name,
+                 NULLIF(TRIM(CONCAT(COALESCE(su.first_name, ''), ' ', COALESCE(su.last_name, ''))), '') AS substitute_teacher_name,
+                 COALESCE(room.name, w.room) AS room_name
+          FROM course_schedule_replacements r
+          JOIN schools s ON s.id = r.school_id
+          JOIN course_schedule_weekly_slots w ON w.id = r.weekly_slot_id
+          JOIN classes c ON c.id = w.class_id
+          JOIN school_courses sc ON sc.id = w.school_course_id
+          JOIN subjects sub ON sub.id = sc.subject_id
+          JOIN teachers orig ON orig.id = r.original_teacher_id
+          JOIN teachers subste ON subste.id = r.substitute_teacher_id
+          LEFT JOIN users ou ON ou.id = orig.user_id
+          LEFT JOIN users su ON su.id = subste.user_id
+          LEFT JOIN school_rooms room ON room.id = w.room_id
+`;
+
+function isoWeekdayToday() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Kinshasa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type) => Number(parts.find((part) => part.type === type)?.value);
+  const utc = new Date(Date.UTC(get("year"), get("month") - 1, get("day")));
+  const js = utc.getUTCDay();
+  return js === 0 ? 7 : js;
+}
 
 function parsePayload(value) {
   if (!value) return {};
@@ -49,6 +90,12 @@ function createPedagogyPgStore(repo) {
     return {
       async all(sql, params) {
         return all(sql, params);
+      },
+      async one(sql, params) {
+        return one(sql, params);
+      },
+      async query(sql, params) {
+        return query(sql, params);
       },
       async getSchoolByCode(code) {
         const row = await one("SELECT * FROM schools WHERE school_code = $1", [asTrimmed(code).toUpperCase()]);
@@ -234,8 +281,8 @@ function createPedagogyPgStore(repo) {
         const row = await one(
           `INSERT INTO course_schedule_weekly_slots
              (school_id, academic_year_id, school_course_id, class_id, teacher_id,
-              day_of_week, start_time, end_time, status, room)
-           VALUES ($1,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10)
+              day_of_week, start_time, end_time, status, room, room_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10,$11)
            RETURNING id`,
           [
             payload.schoolId,
@@ -248,6 +295,7 @@ function createPedagogyPgStore(repo) {
             payload.endTime,
             payload.status ?? "active",
             payload.room ?? "",
+            payload.roomId ?? null,
           ],
         );
         return this.getWeeklyScheduleById(row.id, { schoolCode: "*" });
@@ -264,6 +312,7 @@ function createPedagogyPgStore(repo) {
                start_time = $8::time,
                end_time = $9::time,
                room = COALESCE($10, room),
+               room_id = $11,
                updated_at = NOW()
            WHERE id = $1
            RETURNING id`,
@@ -278,6 +327,7 @@ function createPedagogyPgStore(repo) {
             patch.startTime,
             patch.endTime,
             patch.room ?? null,
+            patch.roomId === undefined ? null : patch.roomId,
           ],
         );
         return this.getWeeklyScheduleById(id, { schoolCode: "*" });
@@ -357,7 +407,24 @@ function createPedagogyPgStore(repo) {
         }
         if (filters.academicYearId) push("w.academic_year_id::text = ?", filters.academicYearId);
         if (filters.classId) push("w.class_id::text = ?", filters.classId);
-        if (filters.teacherId) push("w.teacher_id::text = ?", filters.teacherId);
+        if (filters.teacherOrSubstituteId && filters.from && filters.to) {
+          params.push(filters.teacherOrSubstituteId, filters.from, filters.to);
+          const teacherIdx = params.length - 2;
+          const fromIdx = params.length - 1;
+          const toIdx = params.length;
+          where.push(`(
+            w.teacher_id::text = $${teacherIdx}
+            OR EXISTS (
+              SELECT 1 FROM course_schedule_replacements rpl
+               WHERE rpl.weekly_slot_id = w.id
+                 AND rpl.substitute_teacher_id::text = $${teacherIdx}
+                 AND rpl.status IN ('planned', 'completed')
+                 AND rpl.occurrence_date BETWEEN $${fromIdx}::date AND $${toIdx}::date
+            )
+          )`);
+        } else if (filters.teacherId) {
+          push("w.teacher_id::text = ?", filters.teacherId);
+        }
         if (filters.schoolCourseId) push("w.school_course_id::text = ?", filters.schoolCourseId);
         if (filters.dayOfWeek != null) push("w.day_of_week = ?", filters.dayOfWeek);
         if (filters.status && filters.status !== "all") push("w.status = ?", filters.status);
@@ -567,6 +634,499 @@ function createPedagogyPgStore(repo) {
       async upsertAttendanceBatch(payload, principal) {
         return scopedRepo.upsertAttendanceBatch(payload, principal);
       },
+      async listSchoolRooms(filters = {}) {
+        const params = [filters.schoolId];
+        const where = ["r.school_id = $1"];
+        if (filters.status) {
+          params.push(filters.status);
+          where.push(`r.status = $${params.length}`);
+        }
+        if (filters.roomType) {
+          params.push(filters.roomType);
+          where.push(`lower(btrim(r.room_type)) = lower(btrim($${params.length}))`);
+        }
+        if (filters.minCapacity != null) {
+          params.push(filters.minCapacity);
+          where.push(`r.capacity >= $${params.length}`);
+        }
+        if (filters.search) {
+          params.push(`%${filters.search}%`);
+          where.push(`(r.name ILIKE $${params.length} OR r.room_code ILIKE $${params.length} OR COALESCE(r.building, '') ILIKE $${params.length})`);
+        }
+        const classSizeSql = filters.classId
+          ? `(SELECT COUNT(*)::int FROM enrollments e WHERE e.class_id = $class::uuid AND lower(e.status) = 'active')`
+          : "NULL";
+        if (filters.classId) params.push(filters.classId);
+        const classParam = filters.classId ? `$${params.length}` : "NULL";
+        const occupancyDow = isoWeekdayToday();
+        const rows = await all(
+          `SELECT r.*,
+                  (
+                    SELECT COUNT(*)::int
+                    FROM course_schedule_weekly_slots w
+                    WHERE w.room_id = r.id AND w.status = 'active' AND w.day_of_week = ${occupancyDow}
+                  ) AS occupation_today,
+                  ${classSizeSql.replace("$class", classParam)} AS class_size
+           FROM school_rooms r
+           WHERE ${where.join(" AND ")}
+           ORDER BY r.room_code, r.name`,
+          params,
+        );
+        return rows.map((row) => mapSchoolRoom(row));
+      },
+      async getSchoolRoomById(id, schoolId) {
+        const row = await one(
+          `SELECT r.*,
+                  (
+                    SELECT COUNT(*)::int
+                    FROM course_schedule_weekly_slots w
+                    WHERE w.room_id = r.id AND w.status = 'active' AND w.day_of_week = ${isoWeekdayToday()}
+                  ) AS occupation_today
+           FROM school_rooms r
+           WHERE r.id::text = $1 AND r.school_id = $2
+           LIMIT 1`,
+          [id, schoolId],
+        );
+        return row ? mapSchoolRoom(row) : null;
+      },
+      async insertSchoolRoom(payload) {
+        const row = await one(
+          `INSERT INTO school_rooms
+             (school_id, room_code, name, capacity, room_type, building, floor, equipment, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
+           RETURNING *`,
+          [
+            payload.schoolId,
+            payload.roomCode,
+            payload.name,
+            payload.capacity,
+            payload.roomType,
+            payload.building,
+            payload.floor,
+            JSON.stringify(payload.equipment ?? []),
+            payload.status ?? "active",
+          ],
+        );
+        return mapSchoolRoom(row);
+      },
+      async updateSchoolRoom(id, schoolId, patch) {
+        const row = await one(
+          `UPDATE school_rooms
+           SET name = COALESCE($3, name),
+               capacity = CASE WHEN $10::boolean THEN $4 ELSE capacity END,
+               room_type = CASE WHEN $11::boolean THEN $5 ELSE room_type END,
+               building = CASE WHEN $12::boolean THEN $6 ELSE building END,
+               floor = CASE WHEN $13::boolean THEN $7 ELSE floor END,
+               equipment = COALESCE($8::jsonb, equipment),
+               status = COALESCE($9, status),
+               updated_at = NOW()
+           WHERE id = $1 AND school_id = $2
+           RETURNING *`,
+          [
+            id,
+            schoolId,
+            patch.name ?? null,
+            patch.capacity === undefined ? null : patch.capacity,
+            patch.roomType === undefined ? null : patch.roomType,
+            patch.building === undefined ? null : patch.building,
+            patch.floor === undefined ? null : patch.floor,
+            patch.equipment ? JSON.stringify(patch.equipment) : null,
+            patch.status ?? null,
+            patch.capacity !== undefined,
+            patch.roomType !== undefined,
+            patch.building !== undefined,
+            patch.floor !== undefined,
+          ],
+        );
+        return row ? mapSchoolRoom(row) : null;
+      },
+      async archiveSchoolRoom(id, schoolId) {
+        const row = await one(
+          `UPDATE school_rooms
+           SET status = 'archived', updated_at = NOW()
+           WHERE id = $1 AND school_id = $2
+           RETURNING *`,
+          [id, schoolId],
+        );
+        return row ? mapSchoolRoom(row) : null;
+      },
+      async classActiveEnrollmentCount(classId, schoolId) {
+        const row = await one(
+          `SELECT COUNT(*)::int AS count
+           FROM enrollments e
+           JOIN classes c ON c.id = e.class_id
+           WHERE e.class_id = $1 AND c.school_id = $2 AND lower(e.status) = 'active'`,
+          [classId, schoolId],
+        );
+        return Number(row?.count ?? 0);
+      },
+      async listPlanningDiagnostics({ schoolId }) {
+        const roomConflicts = await all(
+          `SELECT a.id AS slot_id, a.class_id, ca.name AS class_name, suba.name AS subject,
+                  a.day_of_week, a.start_time::text AS start_time, a.end_time::text AS end_time,
+                  ra.name AS room_name, 'room' AS kind,
+                  'Conflit salle : deux classes sur le même local.' AS message
+           FROM course_schedule_weekly_slots a
+           JOIN course_schedule_weekly_slots b
+             ON a.id < b.id
+            AND a.school_id = b.school_id
+            AND a.academic_year_id = b.academic_year_id
+            AND a.room_id = b.room_id
+            AND a.day_of_week = b.day_of_week
+            AND a.status = 'active' AND b.status = 'active'
+            AND a.room_id IS NOT NULL
+            AND a.slot_minutes && b.slot_minutes
+           JOIN classes ca ON ca.id = a.class_id
+           JOIN school_courses sca ON sca.id = a.school_course_id
+           JOIN subjects suba ON suba.id = sca.subject_id
+           JOIN school_rooms ra ON ra.id = a.room_id
+           WHERE a.school_id = $1`,
+          [schoolId],
+        );
+        const teacherConflicts = await all(
+          `SELECT a.id AS slot_id, a.class_id, ca.name AS class_name, suba.name AS subject,
+                  a.day_of_week, a.start_time::text AS start_time, a.end_time::text AS end_time,
+                  NULL AS room_name, 'teacher' AS kind,
+                  'Conflit enseignant : déjà occupé.' AS message
+           FROM course_schedule_weekly_slots a
+           JOIN course_schedule_weekly_slots b
+             ON a.id < b.id
+            AND a.school_id = b.school_id
+            AND a.academic_year_id = b.academic_year_id
+            AND a.teacher_id = b.teacher_id
+            AND a.day_of_week = b.day_of_week
+            AND a.status = 'active' AND b.status = 'active'
+            AND a.slot_minutes && b.slot_minutes
+           JOIN classes ca ON ca.id = a.class_id
+           JOIN school_courses sca ON sca.id = a.school_course_id
+           JOIN subjects suba ON suba.id = sca.subject_id
+           WHERE a.school_id = $1`,
+          [schoolId],
+        );
+        const classConflicts = await all(
+          `SELECT a.id AS slot_id, a.class_id, ca.name AS class_name, suba.name AS subject,
+                  a.day_of_week, a.start_time::text AS start_time, a.end_time::text AS end_time,
+                  NULL AS room_name, 'class' AS kind,
+                  'Conflit classe : déjà un cours à cet horaire.' AS message
+           FROM course_schedule_weekly_slots a
+           JOIN course_schedule_weekly_slots b
+             ON a.id < b.id
+            AND a.school_id = b.school_id
+            AND a.academic_year_id = b.academic_year_id
+            AND a.class_id = b.class_id
+            AND a.day_of_week = b.day_of_week
+            AND a.status = 'active' AND b.status = 'active'
+            AND a.slot_minutes && b.slot_minutes
+           JOIN classes ca ON ca.id = a.class_id
+           JOIN school_courses sca ON sca.id = a.school_course_id
+           JOIN subjects suba ON suba.id = sca.subject_id
+           WHERE a.school_id = $1`,
+          [schoolId],
+        );
+        const substituteConflicts = await all(
+          `SELECT r.id AS slot_id, w.class_id, c.name AS class_name, sub.name AS subject,
+                  w.day_of_week, w.start_time::text AS start_time, w.end_time::text AS end_time,
+                  NULL AS room_name, 'substitute' AS kind,
+                  'Conflit remplaçant : enseignant déjà occupé.' AS message
+           FROM course_schedule_replacements r
+           JOIN course_schedule_weekly_slots w ON w.id = r.weekly_slot_id
+           JOIN classes c ON c.id = w.class_id
+           JOIN school_courses sc ON sc.id = w.school_course_id
+           JOIN subjects sub ON sub.id = sc.subject_id
+           WHERE r.school_id = $1
+             AND r.status IN ('planned', 'completed')
+             AND (
+               EXISTS (
+                 SELECT 1 FROM course_schedule_weekly_slots other
+                 WHERE other.teacher_id = r.substitute_teacher_id
+                   AND other.school_id = r.school_id
+                   AND other.academic_year_id = r.academic_year_id
+                   AND other.status = 'active'
+                   AND other.day_of_week = w.day_of_week
+                   AND other.start_time < r.end_time
+                   AND r.start_time < other.end_time
+               )
+               OR EXISTS (
+                 SELECT 1 FROM course_schedule_replacements other
+                 WHERE other.id <> r.id
+                   AND other.school_id = r.school_id
+                   AND other.substitute_teacher_id = r.substitute_teacher_id
+                   AND other.occurrence_date = r.occurrence_date
+                   AND other.status IN ('planned', 'completed')
+                   AND other.start_time < r.end_time
+                   AND r.start_time < other.end_time
+               )
+             )`,
+          [schoolId],
+        );
+        const capacityWarnings = await all(
+          `SELECT w.id AS slot_id, w.class_id, c.name AS class_name, sub.name AS subject,
+                  w.day_of_week, w.start_time::text AS start_time, w.end_time::text AS end_time,
+                  r.name AS room_name, 'capacity' AS kind,
+                  'Capacité salle inférieure à l''effectif de la classe.' AS message
+           FROM course_schedule_weekly_slots w
+           JOIN school_rooms r ON r.id = w.room_id
+           JOIN classes c ON c.id = w.class_id
+           JOIN school_courses sc ON sc.id = w.school_course_id
+           JOIN subjects sub ON sub.id = sc.subject_id
+           WHERE w.school_id = $1
+             AND w.status = 'active'
+             AND r.capacity IS NOT NULL
+             AND r.capacity < (
+               SELECT COUNT(*) FROM enrollments e
+               WHERE e.class_id = w.class_id AND lower(e.status) = 'active'
+             )`,
+          [schoolId],
+        );
+        return [...classConflicts, ...teacherConflicts, ...roomConflicts, ...substituteConflicts, ...capacityWarnings].map(
+          mapDiagnosticRow,
+        );
+      },
+      async lockWeeklyScheduleForReplacement(id, schoolId) {
+        return one(
+          `SELECT * FROM course_schedule_weekly_slots
+           WHERE id::text = $1 AND school_id = $2 AND status = 'active'
+           FOR UPDATE`,
+          [id, schoolId],
+        );
+      },
+      async lockTeacherForReplacement(teacherId, schoolId) {
+        const row = await one(
+          `SELECT id FROM teachers
+           WHERE id::text = $1 AND school_id = $2 AND lower(status) = 'active'
+           FOR UPDATE`,
+          [teacherId, schoolId],
+        );
+        if (!row) {
+          const { createPedagogyError, PEDAGOGY_ERROR } = require("../lib/pedagogyManagement");
+          throw createPedagogyError(404, "Enseignant introuvable ou inactif.", PEDAGOGY_ERROR.TEACHER_ASSIGNMENT_REQUIRED);
+        }
+        return row;
+      },
+      async findSubstituteWeeklyOverlap({ schoolId, academicYearId, teacherId, dayOfWeek, startTime, endTime }) {
+        return one(
+          `SELECT id FROM course_schedule_weekly_slots
+           WHERE school_id = $1
+             AND academic_year_id = $2
+             AND teacher_id::text = $3
+             AND status = 'active'
+             AND day_of_week = $4
+             AND start_time < $6::time
+             AND $5::time < end_time
+           LIMIT 1`,
+          [schoolId, academicYearId, teacherId, dayOfWeek, startTime, endTime],
+        );
+      },
+      async findSubstituteReplacementOverlap({
+        schoolId,
+        substituteTeacherId,
+        occurrenceDate,
+        startTime,
+        endTime,
+        excludeReplacementId,
+        excludeWeeklySlotId,
+      }) {
+        return one(
+          `SELECT id FROM course_schedule_replacements
+           WHERE school_id = $1
+             AND substitute_teacher_id::text = $2
+             AND occurrence_date = $3::date
+             AND status IN ('planned', 'completed')
+             AND start_time < $5::time
+             AND $4::time < end_time
+             AND ($6::uuid IS NULL OR id <> $6)
+             AND ($7::uuid IS NULL OR weekly_slot_id <> $7)
+           LIMIT 1`,
+          [
+            schoolId,
+            substituteTeacherId,
+            occurrenceDate,
+            startTime,
+            endTime,
+            excludeReplacementId ?? null,
+            excludeWeeklySlotId ?? null,
+          ],
+        );
+      },
+      async listEligibleSubstituteTeachers({
+        schoolId,
+        academicYearId,
+        weeklySlotId,
+        occurrenceDate,
+        dayOfWeek,
+        startTime,
+        endTime,
+        originalTeacherId,
+        subjectName,
+      }) {
+        const rows = await all(
+          `SELECT t.id, t.teacher_code, t.speciality, t.status,
+                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
+                  EXISTS (
+                    SELECT 1 FROM course_schedule_weekly_slots w
+                    WHERE w.teacher_id = t.id
+                      AND w.school_id = t.school_id
+                      AND w.academic_year_id = $2
+                      AND w.status = 'active'
+                      AND w.day_of_week = $3
+                      AND w.start_time < $5::time
+                      AND $4::time < w.end_time
+                  ) AS weekly_conflict,
+                  EXISTS (
+                    SELECT 1 FROM course_schedule_replacements r
+                    WHERE r.substitute_teacher_id = t.id
+                      AND r.school_id = t.school_id
+                      AND r.occurrence_date = $6::date
+                      AND r.status IN ('planned', 'completed')
+                      AND r.start_time < $5::time
+                      AND $4::time < r.end_time
+                      AND r.weekly_slot_id <> $7
+                  ) AS replacement_conflict
+           FROM teachers t
+           LEFT JOIN users u ON u.id = t.user_id
+           WHERE t.school_id = $1
+             AND lower(t.status) = 'active'
+             AND t.id <> $8
+           ORDER BY teacher_name, t.teacher_code`,
+          [schoolId, academicYearId, dayOfWeek, startTime, endTime, occurrenceDate, weeklySlotId, originalTeacherId],
+        );
+        const coursesByTeacher = await all(
+          `SELECT sc.teacher_id, c.name AS class_name, sub.name AS subject_name
+           FROM school_courses sc
+           JOIN classes c ON c.id = sc.class_id
+           JOIN subjects sub ON sub.id = sc.subject_id
+           WHERE sc.school_id = $1 AND sc.status = 'active' AND sc.teacher_id IS NOT NULL`,
+          [schoolId],
+        );
+        const grouped = new Map();
+        for (const row of coursesByTeacher) {
+          const key = String(row.teacher_id);
+          if (!grouped.has(key)) grouped.set(key, []);
+          grouped.get(key).push({ className: row.class_name, subject: row.subject_name });
+        }
+        const subjectNorm = String(subjectName ?? "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        return rows.map((row) => {
+          const conflict = Boolean(row.weekly_conflict || row.replacement_conflict);
+          const speciality = String(row.speciality ?? "").trim();
+          const specialityNorm = speciality
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
+          const subjectMismatch = Boolean(subjectNorm && specialityNorm && !specialityNorm.includes(subjectNorm) && !subjectNorm.includes(specialityNorm));
+          return {
+            teacherId: row.id,
+            teacherCode: row.teacher_code,
+            name: row.teacher_name || row.teacher_code,
+            speciality,
+            courses: grouped.get(String(row.id)) || [],
+            availability: conflict ? "schedule_conflict" : subjectMismatch ? "subject_mismatch" : "available",
+            selectable: !conflict,
+          };
+        });
+      },
+      async insertCourseScheduleReplacement(payload) {
+        const row = await one(
+          `INSERT INTO course_schedule_replacements
+             (school_id, weekly_slot_id, occurrence_date, original_teacher_id, substitute_teacher_id,
+              reason, note, status, created_by, academic_year_id, start_time, end_time)
+           VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11::time,$12::time)
+           RETURNING id`,
+          [
+            payload.schoolId,
+            payload.weeklySlotId,
+            payload.occurrenceDate,
+            payload.originalTeacherId,
+            payload.substituteTeacherId,
+            payload.reason,
+            payload.note,
+            payload.status ?? "planned",
+            payload.createdBy ?? null,
+            payload.academicYearId,
+            payload.startTime,
+            payload.endTime,
+          ],
+        );
+        return { id: row.id };
+      },
+      async updateCourseScheduleReplacement(id, schoolId, patch) {
+        await one(
+          `UPDATE course_schedule_replacements
+           SET substitute_teacher_id = COALESCE($3, substitute_teacher_id),
+               reason = CASE WHEN $4::boolean THEN $5 ELSE reason END,
+               note = CASE WHEN $6::boolean THEN $7 ELSE note END,
+               status = COALESCE($8, status),
+               updated_at = NOW()
+           WHERE id = $1 AND school_id = $2
+           RETURNING id`,
+          [
+            id,
+            schoolId,
+            patch.substituteTeacherId ?? null,
+            patch.reason !== undefined,
+            patch.reason ?? null,
+            patch.note !== undefined,
+            patch.note ?? null,
+            patch.status ?? null,
+          ],
+        );
+        return this.getCourseScheduleReplacementById(id, schoolId);
+      },
+      async cancelCourseScheduleReplacement(id, schoolId, cancelledBy) {
+        await one(
+          `UPDATE course_schedule_replacements
+           SET status = 'cancelled', cancelled_by = $3, updated_at = NOW()
+           WHERE id = $1 AND school_id = $2 AND status <> 'cancelled'
+           RETURNING id`,
+          [id, schoolId, cancelledBy ?? null],
+        );
+        return this.getCourseScheduleReplacementById(id, schoolId);
+      },
+      async getCourseScheduleReplacementById(id, schoolId) {
+        const row = await one(`${REPLACEMENT_SELECT} WHERE r.id::text = $1 AND r.school_id = $2 LIMIT 1`, [id, schoolId]);
+        return row ? mapReplacementRow(row) : null;
+      },
+      async listCourseScheduleReplacements(filters = {}) {
+        const params = [];
+        const where = [];
+        const push = (sql, value) => {
+          params.push(value);
+          where.push(sql.replace("?", `$${params.length}`));
+        };
+        if (filters.schoolId) push("r.school_id = ?", filters.schoolId);
+        if (filters.from) push("r.occurrence_date >= ?::date", filters.from);
+        if (filters.to) push("r.occurrence_date <= ?::date", filters.to);
+        if (filters.teacherId) push("r.original_teacher_id::text = ?", filters.teacherId);
+        if (filters.substituteTeacherId) push("r.substitute_teacher_id::text = ?", filters.substituteTeacherId);
+        if (filters.classId) push("w.class_id::text = ?", filters.classId);
+        if (filters.weeklySlotId) push("r.weekly_slot_id::text = ?", filters.weeklySlotId);
+        if (filters.status) push("r.status = ?", filters.status);
+        if (filters.concernedTeacherId) {
+          params.push(filters.concernedTeacherId);
+          where.push(`(r.original_teacher_id::text = $${params.length} OR r.substitute_teacher_id::text = $${params.length})`);
+        }
+        const rows = await all(
+          `${REPLACEMENT_SELECT}
+           ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+           ORDER BY r.occurrence_date, w.start_time, r.id`,
+          params,
+        );
+        return rows.map(mapReplacementRow);
+      },
+      async listActiveReplacementsForSlots({ schoolId, slotIds, from, to }) {
+        if (!slotIds?.length) return [];
+        const rows = await all(
+          `${REPLACEMENT_SELECT}
+           WHERE r.school_id = $1
+             AND r.weekly_slot_id = ANY($2::uuid[])
+             AND r.status IN ('planned', 'completed')
+             AND r.occurrence_date BETWEEN $3::date AND $4::date`,
+          [schoolId, slotIds, from, to],
+        );
+        return rows.map(mapReplacementRow);
+      },
     };
   }
 
@@ -681,6 +1241,27 @@ function createPedagogyPgStore(repo) {
       pedagogyService.upsertGrade(api, payload, principal, auditMeta),
     upsertSchoolAttendanceBatch: (payload, principal, auditMeta) =>
       pedagogyService.upsertAttendanceBatch(api, payload, principal, auditMeta),
+    listSchoolRooms: (principal, query) => schoolRoomsService.listSchoolRooms(api, principal, query),
+    createSchoolRoom: (payload, principal, auditMeta) =>
+      schoolRoomsService.createSchoolRoom(api, payload, principal, auditMeta),
+    updateSchoolRoom: (id, patch, principal, auditMeta) =>
+      schoolRoomsService.updateSchoolRoom(api, id, patch, principal, auditMeta),
+    archiveSchoolRoom: (id, principal, auditMeta) =>
+      schoolRoomsService.archiveSchoolRoom(api, id, principal, auditMeta),
+    listCourseScheduleReplacements: (principal, query) =>
+      replacementsService.listCourseScheduleReplacements(api, principal, query),
+    listReplacementTeacherOptions: (principal, query) =>
+      replacementsService.listReplacementTeacherOptions(api, principal, query),
+    createCourseScheduleReplacement: (payload, principal, auditMeta) =>
+      replacementsService.createCourseScheduleReplacement(api, payload, principal, auditMeta),
+    updateCourseScheduleReplacement: (id, patch, principal, auditMeta) =>
+      replacementsService.updateCourseScheduleReplacement(api, id, patch, principal, auditMeta),
+    cancelCourseScheduleReplacement: (id, principal, auditMeta) =>
+      replacementsService.cancelCourseScheduleReplacement(api, id, principal, auditMeta),
+    listActiveReplacementsForSlots: (filters) => bind(repo).listActiveReplacementsForSlots(filters),
+    listPlanningDiagnostics: (filters) => bind(repo).listPlanningDiagnostics(filters),
+    classActiveEnrollmentCount: (classId, schoolId) => bind(repo).classActiveEnrollmentCount(classId, schoolId),
+    getSchoolRoomById: (id, schoolId) => bind(repo).getSchoolRoomById(id, schoolId),
   };
 
   return api;
@@ -742,6 +1323,84 @@ function mapScheduleRow(row) {
     periodStart: row.period_start || profile.periodStart,
     periodEnd: row.period_end || profile.periodEnd,
     ...profile,
+  };
+}
+
+function mapDiagnosticRow(row) {
+  return {
+    slotId: row.slot_id,
+    classId: row.class_id,
+    className: row.class_name || "",
+    subject: row.subject || "",
+    dayOfWeek: Number(row.day_of_week),
+    startTime: String(row.start_time || "").slice(0, 5),
+    endTime: String(row.end_time || "").slice(0, 5),
+    roomName: row.room_name || "",
+    kind: row.kind,
+    message: row.message,
+    blocking: row.kind !== "capacity",
+  };
+}
+
+function mapSchoolRoom(row) {
+  const equipment = parsePayload(row.equipment);
+  const classSize = row.class_size == null ? null : Number(row.class_size);
+  const capacity = row.capacity == null ? null : Number(row.capacity);
+  return {
+    id: row.id,
+    schoolId: row.school_id,
+    roomCode: row.room_code,
+    name: row.name,
+    capacity,
+    roomType: row.room_type || "",
+    building: row.building || "",
+    floor: row.floor || "",
+    equipment: Array.isArray(equipment) ? equipment : [],
+    status: row.status,
+    occupationToday: Number(row.occupation_today ?? 0),
+    classSize,
+    capacityWarning:
+      capacity != null && classSize != null && classSize > capacity
+        ? {
+            roomCapacity: capacity,
+            classSize,
+            message: `Salle ${row.name} : capacité ${capacity}. Classe : ${classSize} élèves. Capacité inférieure à l'effectif de la classe.`,
+          }
+        : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReplacementRow(row) {
+  const occurrenceDate =
+    row.occurrence_date instanceof Date
+      ? row.occurrence_date.toISOString().slice(0, 10)
+      : String(row.occurrence_date ?? "").slice(0, 10);
+  return {
+    id: row.id,
+    schoolId: row.school_id,
+    schoolCode: row.school_code,
+    weeklySlotId: row.weekly_slot_id,
+    occurrenceDate,
+    originalTeacherId: row.original_teacher_id,
+    originalTeacherName: row.original_teacher_name || "",
+    originalTeacherCode: row.original_teacher_code || "",
+    substituteTeacherId: row.substitute_teacher_id,
+    substituteTeacherName: row.substitute_teacher_name || "",
+    substituteTeacherCode: row.substitute_teacher_code || "",
+    classId: row.class_id,
+    className: row.class_name || "",
+    courseName: row.subject_name || "",
+    dayOfWeek: Number(row.day_of_week),
+    startTime: String(row.start_time || "").slice(0, 5),
+    endTime: String(row.end_time || "").slice(0, 5),
+    room: row.room_name || "",
+    reason: row.reason || "",
+    note: row.note || "",
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

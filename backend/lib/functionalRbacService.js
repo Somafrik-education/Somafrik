@@ -28,6 +28,7 @@ const {
 const { createFunctionalRbacPgStore } = require("../db/functionalRbacPgStore");
 const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
 const { reconcileCanonicalPlanningGrants } = require("./planningRbacCanonical");
+const { reconcileCanonicalRoomsReplacementsGrants } = require("./planningRoomsReplacementsRbac");
 
 function rbacStore(repo) {
   if (typeof repo.getFunctionalRbacStore === "function") {
@@ -83,6 +84,7 @@ async function ensureFunctionalRbacBootstrap(repo) {
   // existait déjà avec d'autres grants. backfillMissing* ne complète un module
   // que depuis le catalogue établissement, souvent périmé après le 1er bootstrap.
   await reconcileCanonicalPlanningGrants(store);
+  await reconcileCanonicalRoomsReplacementsGrants(store);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
@@ -718,4 +720,5 @@ module.exports = {
   mergeRolePermissionMaps,
   backfillMissingGlobalModuleGrants,
   reconcileCanonicalPlanningGrants,
+  reconcileCanonicalRoomsReplacementsGrants,
 };

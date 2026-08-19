@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { PlanningRoomsPage } from "./PlanningPlaceholders";
+import { TimetableByRoomPage } from "./PlanningPlaceholders";
 
-describe("PlanningPlaceholders (D2.5)", () => {
-  it("renders Salles with ComingSoonState", () => {
-    render(<PlanningRoomsPage />);
-    expect(screen.getByRole("heading", { name: "Salles" })).toBeInTheDocument();
+describe("PlanningPlaceholders (emploi du temps par salle)", () => {
+  it("garde ComingSoonState pour la vue par salle", () => {
+    render(<TimetableByRoomPage />);
+    expect(screen.getByRole("heading", { name: "Emploi du temps par salle" })).toBeInTheDocument();
     expect(screen.getByText("Bientôt disponible")).toBeInTheDocument();
   });
 });
