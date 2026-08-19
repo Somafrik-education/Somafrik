@@ -35,6 +35,10 @@ module.exports = ({ config }) => {
     throw new Error("EXPO_PUBLIC_DEMO_MODE interdit en production.");
   }
 
+  if (isProdProfile && process.env.EXPO_PUBLIC_DEMO_PIN) {
+    throw new Error("EXPO_PUBLIC_DEMO_PIN interdit en production.");
+  }
+
   return {
     ...config,
     name: "Somafrik",

@@ -30,6 +30,7 @@ import {
   clearRestrictedSession,
   hasRestrictedSession,
 } from "./restrictedSession";
+import { resolveDemoPin } from "../data/demoCredentials";
 
 function expectThrow(label: string, fn: () => void) {
   try {
@@ -150,6 +151,14 @@ function run() {
   expectThrow("restricted home", () => assertUnrestrictedApiPath("/students"));
   clearRestrictedSession();
   assert.equal(hasRestrictedSession(), false);
+
+  const previousPin = process.env.EXPO_PUBLIC_DEMO_PIN;
+  process.env.EXPO_PUBLIC_DEMO_PIN = "";
+  assert.equal(resolveDemoPin(), null);
+  process.env.EXPO_PUBLIC_DEMO_PIN = "local-dev-only";
+  assert.equal(resolveDemoPin(), "local-dev-only");
+  if (previousPin == null) delete process.env.EXPO_PUBLIC_DEMO_PIN;
+  else process.env.EXPO_PUBLIC_DEMO_PIN = previousPin;
 
   console.log("dataTruth.test.ts OK");
 }

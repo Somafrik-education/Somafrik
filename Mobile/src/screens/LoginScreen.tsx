@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, type ComponentType } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +16,6 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
-import DemoLoginButtons from "../components/DemoLoginButtons";
 import { shouldShowDemoLogin } from "../config/env";
 import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import {
@@ -33,6 +32,17 @@ import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
+
+type DemoLoginButtonsComponent = ComponentType<{
+  accessRole?: string;
+  onFill: (identifier: string, pin: string) => void;
+}>;
+
+/** Metro DCE production : ce require disparaît quand `__DEV__` est false. */
+let DemoLoginButtons: DemoLoginButtonsComponent | null = null;
+if (__DEV__) {
+  DemoLoginButtons = require("../components/DemoLoginButtons").default;
+}
 
 export default function LoginScreen({ navigation, route }: Props) {
   const { school, accessIdentifier, accessRole, accessRoleLabel } = route.params;
@@ -281,7 +291,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         )}
       </TouchableOpacity>
 
-      {shouldShowDemoLogin() ? (
+      {__DEV__ && DemoLoginButtons && shouldShowDemoLogin() ? (
         <DemoLoginButtons
           accessRole={accessRole}
           onFill={(identifier, pin) => {

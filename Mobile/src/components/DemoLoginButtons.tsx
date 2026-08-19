@@ -1,5 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { DEMO_PIN, demoIdentifierFor, type DemoAccountKind } from "../data/demoCredentials";
+import { demoIdentifierFor, resolveDemoPin, type DemoAccountKind } from "../data/demoCredentials";
 
 type Props = {
   accessRole?: string;
@@ -15,13 +15,16 @@ const KINDS: Array<{ kind: DemoAccountKind; label: string }> = [
 ];
 
 export default function DemoLoginButtons({ accessRole, onFill }: Props) {
+  const pin = resolveDemoPin();
+  if (!pin) return null;
+
   return (
     <View>
       {KINDS.map((row) => (
         <TouchableOpacity
           key={row.kind}
           style={styles.demoButton}
-          onPress={() => onFill(accessRole ? "" : demoIdentifierFor(row.kind), DEMO_PIN)}
+          onPress={() => onFill(accessRole ? "" : demoIdentifierFor(row.kind), pin)}
         >
           <Text style={styles.demoButtonText}>{row.label}</Text>
         </TouchableOpacity>

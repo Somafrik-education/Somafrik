@@ -1,10 +1,15 @@
 /**
- * Identifiants de démo — importés uniquement par DemoLoginButtons,
- * jamais par le chemin Login de production.
+ * Identifiants de démo — module DEV ONLY.
+ * Interdit dans le graphe / bundle production (require derrière `if (__DEV__)` uniquement).
+ * PIN : uniquement EXPO_PUBLIC_DEMO_PIN, sans fallback.
  */
-export const DEMO_PIN = "1234";
-
 export type DemoAccountKind = "country_admin" | "school_admin" | "prefet" | "secretary" | "teacher";
+
+export function resolveDemoPin(): string | null {
+  const pin = String(process.env.EXPO_PUBLIC_DEMO_PIN ?? "").trim();
+  if (!pin) return null;
+  return pin;
+}
 
 export function demoIdentifierFor(kind: DemoAccountKind): string {
   if (kind === "country_admin") return "admin-rdc";
