@@ -173,6 +173,9 @@ function runNativeProof() {
   const aabProfiles = profilesNeedingAab();
   fs.rmSync(ANDROID, { recursive: true, force: true });
 
+  prebuildProfile("preview");
+  console.log("OK: config native preview inspectée (APK interne, pas d'AAB Play)");
+
   prebuildProfile("preproduction");
   if (aabProfiles.includes("preproduction")) {
     bundleReleaseAab("preproduction");

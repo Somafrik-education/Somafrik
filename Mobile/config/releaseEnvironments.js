@@ -90,6 +90,11 @@ function assertReleaseApiUrl(profile, url) {
   ) {
     throw new Error(`Le profil ${profile} ne peut pas utiliser l'API production.`);
   }
+  if (profile === "preview" && normalized && normalized !== CANONICAL_API_URLS.preview) {
+    throw new Error(
+      `Le profil preview doit cibler ${CANONICAL_API_URLS.preview} (reçu: ${normalized}).`,
+    );
+  }
   return normalized;
 }
 

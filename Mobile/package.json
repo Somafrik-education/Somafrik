@@ -11,6 +11,7 @@
     "build:aab": "node scripts/build-android-aab.js",
     "build:aab:preproduction": "node scripts/build-android-aab.js preproduction",
     "build:aab:production": "node scripts/build-android-aab.js production",
+    "build:preview": "eas build --platform android --profile preview",
     "build:play": "eas build --platform android --profile production",
     "build:play:preproduction": "eas build --platform android --profile preproduction",
     "ios": "expo run:ios",
@@ -27,6 +28,7 @@
     "verify:mobile-network-resilience": "node scripts/verify-mobile-network-resilience.js",
     "verify:mobile-usability": "node scripts/verify-mobile-usability.js",
     "verify:mobile-release-readiness": "node scripts/verify-mobile-release-readiness.js",
+    "verify:mobile-preview-apk": "node scripts/verify-mobile-preview-apk.js",
     "verify:mobile-native-aab": "node scripts/verify-native-prebuild.js",
     "test:release-environments": "node config/releaseEnvironments.test.js",
     "test:network-resilience": "npx --yes tsx src/lib/networkResilience.test.ts && npx --yes tsx src/lib/mutationGuard.test.ts && npx --yes tsx src/lib/outbox.test.ts"

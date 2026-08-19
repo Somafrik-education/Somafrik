@@ -14,8 +14,7 @@
       "env": {
         "EAS_BUILD_PROFILE": "development",
         "EXPO_PUBLIC_RELEASE_PROFILE": "development",
-        "EXPO_PUBLIC_DEMO_MODE": "false",
-        "EXPO_PUBLIC_DEMO_PIN": ""
+        "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     },
     "preview": {
@@ -28,8 +27,7 @@
         "EXPO_PUBLIC_RELEASE_PROFILE": "preview",
         "EXPO_PUBLIC_API_URL": "https://somafrik-api-preprod.onrender.com",
         "EXPO_PUBLIC_API_URL_PREVIEW": "https://somafrik-api-preprod.onrender.com",
-        "EXPO_PUBLIC_DEMO_MODE": "false",
-        "EXPO_PUBLIC_DEMO_PIN": ""
+        "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     },
     "preproduction": {
@@ -43,8 +41,7 @@
         "EXPO_PUBLIC_RELEASE_PROFILE": "preproduction",
         "EXPO_PUBLIC_API_URL": "https://somafrik-api-preprod.onrender.com",
         "EXPO_PUBLIC_API_URL_PREPRODUCTION": "https://somafrik-api-preprod.onrender.com",
-        "EXPO_PUBLIC_DEMO_MODE": "false",
-        "EXPO_PUBLIC_DEMO_PIN": ""
+        "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     },
     "production": {
@@ -58,8 +55,7 @@
         "EXPO_PUBLIC_RELEASE_PROFILE": "production",
         "EXPO_PUBLIC_API_URL": "https://api.somafrik.app",
         "EXPO_PUBLIC_API_URL_PRODUCTION": "https://api.somafrik.app",
-        "EXPO_PUBLIC_DEMO_MODE": "false",
-        "EXPO_PUBLIC_DEMO_PIN": ""
+        "EXPO_PUBLIC_DEMO_MODE": "false"
       }
     }
   }
