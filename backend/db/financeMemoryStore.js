@@ -18,6 +18,7 @@ const {
   mapBoStatusToDb,
 } = require("../lib/financeManagement");
 const { decoratePaymentWithItems } = require("../lib/financePaymentItems");
+const financeService = require("../lib/financeService");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
