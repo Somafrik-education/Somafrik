@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -1083,11 +1085,11 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       </ScrollView>
 
       <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : "padding"}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{editingItem ? "Modifier" : config.addLabel}</Text>
 
-            <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {config.fields.map((field) => (
                 shouldHideField(entity, form, field) ? null : (
                 <View key={field.key} style={styles.fieldGroup}>
@@ -1150,6 +1152,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                             style={styles.photoRemoveButton}
                             activeOpacity={0.85}
                             onPress={() => setForm((current) => ({ ...current, [field.key]: "" }))}
+                            accessibilityRole="button"
+                            accessibilityLabel="Retirer la photo"
                           >
                             <Ionicons name="close" size={18} color="#DC2626" />
                           </TouchableOpacity>
@@ -1182,15 +1186,25 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setVisible(false)}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Fermer le formulaire"
+              >
                 <Text style={styles.cancelText}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={() => void save()}>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={() => void save()}
+                accessibilityRole="button"
+                accessibilityLabel={editingItem ? "Enregistrer les modifications" : "Enregistrer"}
+              >
                 <Text style={styles.saveText}>Enregistrer</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -1289,6 +1303,9 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
               <TouchableOpacity
                 style={styles.calendarNav}
                 onPress={() => setDateField(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Fermer le calendrier"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="close" size={20} color="#64748B" />
               </TouchableOpacity>
@@ -3104,8 +3121,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   calendarNav: {
-    width: 38,
-    height: 38,
+    minWidth: 44,
+    minHeight: 44,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: "#F1F5F9",
     alignItems: "center",

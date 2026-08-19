@@ -77,6 +77,7 @@ export type Course = {
 export type SchoolClass = {
   id: string;
   publicId: string;
+  classCode?: string;
   name: string;
   level: string;
   track: string;

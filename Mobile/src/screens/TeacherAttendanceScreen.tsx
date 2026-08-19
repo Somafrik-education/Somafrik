@@ -1,4 +1,4 @@
-import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
@@ -19,6 +19,11 @@ import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY } from "../lib/networkResilience";
 import { submitProtectedMutation } from "../lib/outbox";
+import {
+  ATTENDANCE_ACTIONS,
+  attendanceActionForStudent,
+  MIN_TOUCH_TARGET_DP,
+} from "../lib/mobileUsability";
 
 type AttendanceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
 
@@ -119,7 +124,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     );
   }, [attendance, selectedRows]);
 
-  const cycleAttendance = (studentId: string) => {
+  const setAttendanceStatus = (studentId: string, nextStatus: AttendanceStatus) => {
     if (!canUpdatePresences) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier les présences.");
       return;
@@ -127,11 +132,11 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
     setAttendance((current) => {
       const currentEntry = current[studentId] ?? { status: "Présent" };
-      const nextStatus = getNextStatus(currentEntry.status);
       const nextEntry = buildEntry(nextStatus, currentEntry.status, session?.user.name ?? "Enseignant");
+      const studentName = selectedRows.find((row) => row.id === studentId)?.name ?? studentId;
 
       setAuditLog((log) => [
-        `${formatDate(new Date())} ${formatHour(new Date())} • ${studentId} : ${currentEntry.status} -> ${nextStatus}`,
+        `${formatDate(new Date())} ${formatHour(new Date())} • ${studentName} : ${currentEntry.status} -> ${nextStatus}`,
         ...log.slice(0, 9),
       ]);
 
@@ -269,30 +274,45 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     }
   };
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
-      <Text style={styles.title}>Présences</Text>
-      <Text style={styles.subtitle}>
-        {selectedClass ? `Appel de ${selectedClass}` : "Sélectionnez une classe"} • {todayLabel} à {currentHour}
-      </Text>
+  const selectedClassCourses = selectedClass
+    ? assignments
+        .filter((assignment) => classNameMatches(assignment.className, selectedClass))
+        .map((assignment) => assignment.course)
+    : [];
+  const selectedClassStats = selectedClass
+    ? getPresenceStats(
+        selectedRows.map((student) => ({
+          id: `CURRENT-${student.id}`,
+          publicId: `CURRENT-${student.id}`,
+          studentId: student.id,
+          date: todayLabel,
+          present: false,
+          status: attendance[student.id]?.status ?? "Présent",
+        })),
+      )
+    : null;
 
-      {!selectedClass && (
-        <>
-          <Text style={styles.sectionTitle}>Mes classes</Text>
-          <View style={isTablet ? styles.classGridTablet : undefined}>
+  if (!selectedClass) {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
+        <Text style={styles.title}>Présences</Text>
+        <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
+        <Text style={styles.sectionTitle}>Mes classes</Text>
+        <View style={isTablet ? styles.classGridTablet : undefined}>
           {assignedClasses.map((className, index) => {
             const rows = filterStudentsByClassName(classStudents, className);
             const classCourses = assignments
               .filter((assignment) => classNameMatches(assignment.className, className))
               .map((assignment) => assignment.course);
             const savedCount = todayCallGroups.filter((call) => classNameMatches(call.className, className)).length;
-
             return (
               <TouchableOpacity
                 key={`${className}-${index}`}
                 activeOpacity={0.85}
                 style={[styles.selectClassCard, isTablet && styles.selectClassCardTablet]}
                 onPress={() => setSelectedClass(className)}
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir l'appel de ${className}`}
               >
                 <View style={styles.selectClassIcon}>
                   <Ionicons name="grid-outline" size={24} color="#2563EB" />
@@ -306,107 +326,132 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
               </TouchableOpacity>
             );
           })}
-          </View>
-        </>
-      )}
+        </View>
+      </ScrollView>
+    );
+  }
 
-      {selectedClass && (
+  return (
+    <FlatList
+      style={styles.container}
+      contentContainerStyle={contentStyle}
+      data={selectedRows}
+      keyExtractor={(student) => student.id}
+      keyboardShouldPersistTaps="handled"
+      ListHeaderComponent={
         <>
+          <Text style={styles.title}>Présences</Text>
+          <Text style={styles.subtitle}>Appel de {selectedClass} • {todayLabel} à {currentHour}</Text>
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.backToClasses}
             onPress={() => setSelectedClass(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Changer de classe"
           >
             <Ionicons name="arrow-back" size={18} color="#0F172A" />
             <Text style={styles.backToClassesText}>Changer de classe</Text>
           </TouchableOpacity>
-
           <View style={styles.dashboard}>
             <StatPill label="Présents" value={dailyStats.present} color="#16A34A" />
             <StatPill label="Absents" value={dailyStats.absent} color="#DC2626" />
             <StatPill label="Retards" value={dailyStats.late} color="#D97706" />
             <StatPill label="Taux" value={`${dailyStats.rate}%`} color="#2563EB" />
           </View>
-
-      {[selectedClass].map((className, index) => {
-        const rows = filterStudentsByClassName(classStudents, className);
-        const classCourses = assignments
-          .filter((assignment) => classNameMatches(assignment.className, className))
-          .map((assignment) => assignment.course);
-        const classStats = getPresenceStats(
-          rows.map((student) => ({
-            id: `CURRENT-${student.id}`,
-            publicId: `CURRENT-${student.id}`,
-            studentId: student.id,
-            date: todayLabel,
-            present: false,
-            status: attendance[student.id]?.status ?? "Présent",
-          }))
-        );
-
-        return (
-          <View key={`${className}-${index}`} style={styles.classCard}>
+          <View style={styles.classCard}>
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.classHeader}
-              onPress={() => navigation.navigate("Students", { className })}
+              onPress={() => navigation.navigate("Students", { className: selectedClass })}
+              accessibilityRole="button"
+              accessibilityLabel={`Voir les élèves de ${selectedClass}`}
             >
               <View>
-                <Text style={styles.className}>{className}</Text>
-                <Text style={styles.meta}>{classCourses.join(", ") || "Cours non renseignés"}</Text>
+                <Text style={styles.className}>{selectedClass}</Text>
+                <Text style={styles.meta}>{selectedClassCourses.join(", ") || "Cours non renseignés"}</Text>
                 <Text style={styles.meta}>
-                  {classStats.attended}/{rows.length} présent(s) • {classStats.absent} absent(s) • {classStats.late} retard(s)
+                  {selectedClassStats?.attended}/{selectedRows.length} présent(s) • {selectedClassStats?.absent} absent(s) • {selectedClassStats?.late} retard(s)
                 </Text>
               </View>
               <Ionicons name="checkbox-outline" size={24} color="#16A34A" />
             </TouchableOpacity>
-
             {canUpdatePresences && (
               <View style={styles.classActions}>
-                <TouchableOpacity style={styles.secondaryButton} onPress={() => markClassPresent(className)} disabled={saving}>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => markClassPresent(selectedClass)}
+                  disabled={saving}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Marquer toute la classe ${selectedClass} présente`}
+                  accessibilityState={{ disabled: saving }}
+                >
                   <Text style={styles.secondaryText}>Tout présent</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveButton} onPress={() => saveCall(className)} disabled={saving}>
+                <TouchableOpacity
+                  style={styles.saveButton}
+                  onPress={() => saveCall(selectedClass)}
+                  disabled={saving}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Enregistrer l'appel de ${selectedClass}`}
+                  accessibilityState={{ busy: saving, disabled: saving }}
+                >
                   {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveText}>Enregistrer l'appel</Text>}
                 </TouchableOpacity>
               </View>
             )}
             {saveHint ? <Text style={styles.meta}>{saveHint}</Text> : null}
-
-            {rows.map((student) => {
-              const entry = attendance[student.id] ?? { status: "Présent" };
-              const status = entry.status;
-
-              return (
-                <TouchableOpacity
-                  key={student.id}
-                  activeOpacity={0.85}
-                  style={styles.studentRow}
-                  onPress={() => cycleAttendance(student.id)}
-                  onLongPress={() => canOpenStudentDetail && navigation.navigate("StudentDetail", { studentId: student.id })}
-                >
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{student.name.charAt(0)}</Text>
-                  </View>
-                  <View style={styles.studentContent}>
-                    <Text style={styles.studentName}>{student.name}</Text>
-                    <Text style={styles.meta}>
-                      {student.matricule}
-                      {entry.arrivalTime ? ` • arrivée ${entry.arrivalTime}` : ""}
-                      {entry.reason ? ` • ${entry.reason}` : ""}
-                    </Text>
-                  </View>
-                  <Text style={[styles.badge, getStatusStyle(status)]}>{status}</Text>
-                </TouchableOpacity>
-              );
-            })}
+          </View>
+        </>
+      }
+      renderItem={({ item: student }) => {
+        const entry = attendance[student.id] ?? { status: "Présent" as AttendanceStatus };
+        const status = entry.status;
+        return (
+          <View style={styles.studentRow}>
+            <TouchableOpacity
+              style={styles.studentIdentity}
+              onLongPress={() => canOpenStudentDetail && navigation.navigate("StudentDetail", { studentId: student.id })}
+              accessibilityRole="button"
+              accessibilityLabel={`Élève ${student.name}`}
+              accessibilityHint="Appui long pour ouvrir la fiche"
+            >
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{student.name.charAt(0)}</Text>
+              </View>
+              <View style={styles.studentContent}>
+                <Text style={styles.studentName} numberOfLines={3}>{student.name}</Text>
+                <Text style={styles.meta}>
+                  {student.matricule}
+                  {entry.arrivalTime ? ` • arrivée ${entry.arrivalTime}` : ""}
+                  {entry.reason ? ` • ${entry.reason}` : ""}
+                </Text>
+                <Text style={styles.statusLabel}>Statut : {status}</Text>
+              </View>
+            </TouchableOpacity>
+            <View style={styles.statusActions}>
+              {ATTENDANCE_ACTIONS.map((action) => {
+                const selected = status === action;
+                const spec = attendanceActionForStudent(student.id, action);
+                return (
+                  <TouchableOpacity
+                    key={action}
+                    testID={spec.testID}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${action} pour ${student.name}`}
+                    accessibilityState={{ selected, disabled: !canUpdatePresences || saving }}
+                    disabled={!canUpdatePresences || saving}
+                    onPress={() => setAttendanceStatus(student.id, action)}
+                    style={[styles.statusAction, selected && styles.statusActionActive]}
+                  >
+                    <Text style={[styles.statusActionText, selected && styles.statusActionTextActive]}>{action}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         );
-      })}
-        </>
-      )}
-
-      {selectedClass && (
+      }}
+      ListFooterComponent={
         <View style={styles.reportCard}>
           <Text style={styles.reportTitle}>Historique synchronisé</Text>
           <Text style={styles.meta}>
@@ -424,8 +469,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
             <Text key={row} style={styles.auditRow}>{row}</Text>
           ))}
         </View>
-      )}
-    </ScrollView>
+      }
+    />
   );
 }
 
@@ -453,13 +498,6 @@ function buildEntry(
   };
 }
 
-function getNextStatus(status: AttendanceStatus): AttendanceStatus {
-  if (status === "Présent") return "Absent";
-  if (status === "Absent") return "Retard";
-  if (status === "Retard") return "Justifié";
-  return "Présent";
-}
-
 function studentPresenceKeys(student: { id?: string; matricule?: string; publicId?: string }) {
   return [student.id, student.matricule, student.publicId]
     .map((value) => String(value ?? "").trim())
@@ -480,7 +518,6 @@ function formatDate(date: Date) {
 function formatHour(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
-
 
 function groupAttendanceCalls(presences: any[], students: any[]) {
   const studentClassById = new Map<string, string>();
@@ -516,13 +553,6 @@ function normalizeDateKey(value?: string) {
   const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
   return text;
-}
-
-function getStatusStyle(status: AttendanceStatus) {
-  if (status === "Présent") return styles.success;
-  if (status === "Retard") return styles.warning;
-  if (status === "Justifié") return styles.info;
-  return styles.danger;
 }
 
 const styles = StyleSheet.create({
@@ -610,11 +640,16 @@ const styles = StyleSheet.create({
   },
   saveText: { color: "#FFFFFF", fontWeight: "900" },
   studentRow: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 10,
+    gap: 10,
+  },
+  studentIdentity: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
+    minHeight: MIN_TOUCH_TARGET_DP,
   },
   avatar: {
     width: 42,
@@ -628,11 +663,20 @@ const styles = StyleSheet.create({
   avatarText: { color: "#2563EB", fontWeight: "900", fontSize: 18 },
   studentContent: { flex: 1 },
   studentName: { color: "#0F172A", fontWeight: "900", fontSize: 16 },
-  badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, fontWeight: "900" },
-  success: { backgroundColor: "#DCFCE7", color: "#166534" },
-  warning: { backgroundColor: "#FEF3C7", color: "#92400E" },
-  info: { backgroundColor: "#DBEAFE", color: "#1D4ED8" },
-  danger: { backgroundColor: "#FEE2E2", color: "#991B1B" },
+  statusLabel: { color: "#334155", fontWeight: "800", marginTop: 4 },
+  statusActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  statusAction: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    minWidth: MIN_TOUCH_TARGET_DP,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusActionActive: { backgroundColor: "#0F172A" },
+  statusActionText: { color: "#334155", fontWeight: "800", fontSize: 12 },
+  statusActionTextActive: { color: "#FFFFFF" },
   reportCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,

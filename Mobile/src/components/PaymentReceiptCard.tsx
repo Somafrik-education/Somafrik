@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import StatusBadge from "./StatusBadge";
 import {
   DATA_TRUTH_TEST_IDS,
-  isPaidStatus,
   paymentItemCount,
   paymentItems,
   paymentItemsDetail,
@@ -31,19 +31,25 @@ export default function PaymentReceiptCard({ payment, studentName, onPress, show
       style={styles.card}
       {...(onPress ? { activeOpacity: 0.85, onPress } : {})}
       testID={`${DATA_TRUTH_TEST_IDS.paymentsReceipt}-${reference || payment.id}`}
+      accessibilityRole={onPress ? "button" : "summary"}
+      accessibilityLabel={`Reçu ${reference || payment.id}, ${paymentStatusLabel(payment.status)}, ${total.toLocaleString("fr-FR")} FC`}
     >
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.reference}>{reference || payment.id}</Text>
-          <Text style={styles.student}>{studentName || payment.studentName || "Élève"}</Text>
+          <Text style={styles.reference} selectable>
+            {reference || payment.id}
+          </Text>
+          <Text style={styles.student} numberOfLines={3}>
+            {studentName || payment.studentName || "Élève"}
+          </Text>
           <Text style={styles.meta}>{paymentItemsDetail(payment)}</Text>
         </View>
-        <Text style={[styles.badge, !isPaidStatus(payment.status) && styles.badgePending]}>
-          {paymentStatusLabel(payment.status)}
-        </Text>
+        <StatusBadge status={paymentStatusLabel(payment.status)} />
       </View>
 
-      <Text style={styles.total}>{total.toLocaleString()} FC</Text>
+      <Text style={styles.total} selectable>
+        {total.toLocaleString("fr-FR")} FC
+      </Text>
       <Text style={styles.meta}>
         {paymentMethodLabel(payment)}
         {paymentPaidAt(payment) ? ` • ${paymentPaidAt(payment)}` : ""}
@@ -55,12 +61,16 @@ export default function PaymentReceiptCard({ payment, studentName, onPress, show
           {items.map((item, index) => (
             <View key={item.id || `${reference}-${index}`} style={styles.itemRow}>
               <Text style={styles.itemLabel}>{item.feeLabel || item.feeType || "Libellé"}</Text>
-              <Text style={styles.itemAmount}>{Number(item.amount || 0).toLocaleString()} FC</Text>
+              <Text style={styles.itemAmount} selectable>
+                {Number(item.amount || 0).toLocaleString("fr-FR")} FC
+              </Text>
             </View>
           ))}
           <View style={[styles.itemRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>TOTAL</Text>
-            <Text style={styles.totalLabel}>{total.toLocaleString()} FC</Text>
+            <Text style={styles.totalLabel} selectable>
+              {total.toLocaleString("fr-FR")} FC
+            </Text>
           </View>
         </View>
       ) : null}
@@ -84,17 +94,6 @@ const styles = StyleSheet.create({
   meta: { color: "#64748B", fontSize: 13, fontWeight: "700", marginTop: 4 },
   count: { color: "#64748B", fontSize: 12, fontWeight: "800", marginTop: 2 },
   total: { color: "#0F172A", fontSize: 22, fontWeight: "900", marginTop: 10 },
-  badge: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    color: "#0F766E",
-    backgroundColor: "#ECFDF5",
-    fontSize: 12,
-    fontWeight: "900",
-    overflow: "hidden",
-  },
-  badgePending: { color: "#B45309", backgroundColor: "#FFFBEB" },
   items: {
     marginTop: 14,
     borderTopWidth: 1,
@@ -102,9 +101,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 8,
   },
-  itemRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
-  itemLabel: { color: "#334155", fontWeight: "700", flex: 1 },
-  itemAmount: { color: "#0F172A", fontWeight: "800" },
+  itemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
+  itemLabel: { color: "#334155", fontWeight: "700", flex: 1, flexShrink: 1 },
+  itemAmount: { color: "#0F172A", fontWeight: "800", flexShrink: 0 },
   totalRow: { marginTop: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
   totalLabel: { color: "#0F172A", fontWeight: "900" },
 });

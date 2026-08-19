@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -43,6 +43,8 @@ import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY, executeMutation } from "../lib/networkResilience";
 import { submitProtectedMutation } from "../lib/outbox";
+import KeyboardAwareScreen, { KeyboardAvoidingContainer } from "../components/KeyboardAwareScreen";
+import { MIN_TOUCH_TARGET_DP, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 
 type GradeDraft = {
   value: string;
@@ -365,7 +367,7 @@ export default function TeacherGradesScreen() {
 
   if (mode === "create") {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={contentStyle} testID={EVALUATIONS_V2_TEST_IDS.createForm}>
+      <KeyboardAwareScreen style={styles.container} contentContainerStyle={contentStyle} testID={EVALUATIONS_V2_TEST_IDS.createForm}>
         <BackButton onPress={() => setMode("list")} />
         <Text style={styles.title}>Nouvelle évaluation</Text>
         <Text style={styles.subtitle}>
@@ -384,6 +386,9 @@ export default function TeacherGradesScreen() {
                   setCreateClassId(String(assignment.classId));
                   setCreateSubjectKey(String(assignment.subjectCode ?? assignment.course));
                 }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`${assignment.className} ${assignment.course}`}
               >
                 <Text style={[styles.typeText, active && styles.typeTextActive]}>
                   {assignment.className} • {assignment.course}
@@ -407,6 +412,9 @@ export default function TeacherGradesScreen() {
               key={type.id}
               style={[styles.typePill, createTypeId === type.id && styles.typePillActive]}
               onPress={() => setCreateTypeId(type.id)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: createTypeId === type.id }}
+              accessibilityLabel={type.name}
             >
               <Text style={[styles.typeText, createTypeId === type.id && styles.typeTextActive]}>{type.name}</Text>
             </TouchableOpacity>
@@ -415,11 +423,11 @@ export default function TeacherGradesScreen() {
         {typesError ? <Text style={styles.errorText}>{typesError}</Text> : null}
 
         <Text style={styles.label}>Date</Text>
-        <TextInput value={createDate} onChangeText={setCreateDate} placeholder="AAAA-MM-JJ" style={styles.sessionInput} />
+        <TextInput value={createDate} onChangeText={setCreateDate} placeholder="AAAA-MM-JJ" keyboardType="numbers-and-punctuation" autoCapitalize="none" style={styles.sessionInput} accessibilityLabel="Date de l'évaluation" />
         <Text style={styles.label}>Barème</Text>
-        <TextInput value={createScale} onChangeText={setCreateScale} keyboardType="numeric" style={styles.sessionInput} />
+        <TextInput value={createScale} onChangeText={setCreateScale} keyboardType="numeric" style={styles.sessionInput} accessibilityLabel="Barème" />
         <Text style={styles.label}>Titre (optionnel)</Text>
-        <TextInput value={createTitle} onChangeText={setCreateTitle} placeholder="Devoir" style={styles.sessionInput} />
+        <TextInput value={createTitle} onChangeText={setCreateTitle} placeholder="Devoir" style={styles.sessionInput} accessibilityLabel="Titre de l'évaluation" />
 
         <TouchableOpacity
           style={[styles.primaryButton, creating && styles.disabledButton]}
@@ -432,53 +440,63 @@ export default function TeacherGradesScreen() {
             <Text style={styles.primaryText}>{EVALUATIONS_V2_COPY.create}</Text>
           )}
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScreen>
     );
   }
 
   if (mode === "grades" && selected) {
     const canEnter = evaluationAllowsGradeEntry(selected) && (canCreate || canUpdate);
+    const rosterReady = rosterStatus === "success";
     return (
-      <ScrollView style={styles.container} contentContainerStyle={contentStyle} testID={EVALUATIONS_V2_TEST_IDS.gradesForm}>
-        <BackButton onPress={() => setMode("list")} />
-        <Text style={styles.title}>{selected.title}</Text>
-        <Text style={styles.subtitle}>
-          {selected.className} • {selected.courseName} • {selected.periodName} • {selected.status} • /{selected.scale}
-        </Text>
-        {!canEnter ? <Text style={styles.warning}>{EVALUATIONS_V2_COPY.notValidated}</Text> : null}
-
-        {rosterStatus === "loading" || rosterStatus === "idle" ? (
-          <QueryStateView
-            snapshot={{ status: "loading", data: [] }}
-            emptyMessage={EVALUATIONS_V2_COPY.emptyRoster}
-            errorMessage={EVALUATIONS_V2_COPY.errorRoster}
-            offlineMessage={EVALUATIONS_V2_COPY.offlineRoster}
-            emptyTestId="evaluations-v2-roster-empty"
-            errorTestId="evaluations-v2-roster-error"
-            onRetry={() => void openGrades(selected)}
-          />
-        ) : rosterStatus === "error" || rosterStatus === "offline" ? (
-          <QueryStateView
-            snapshot={{ status: rosterStatus, data: [], errorMessage: rosterError }}
-            emptyMessage={EVALUATIONS_V2_COPY.emptyRoster}
-            errorMessage={EVALUATIONS_V2_COPY.errorRoster}
-            offlineMessage={EVALUATIONS_V2_COPY.offlineRoster}
-            emptyTestId="evaluations-v2-roster-empty"
-            errorTestId="evaluations-v2-roster-error"
-            onRetry={() => void openGrades(selected)}
-          />
-        ) : rosterStatus === "empty" ? (
-          <QueryStateView
-            snapshot={{ status: "empty", data: [] }}
-            emptyMessage={EVALUATIONS_V2_COPY.emptyRoster}
-            errorMessage={EVALUATIONS_V2_COPY.errorRoster}
-            offlineMessage={EVALUATIONS_V2_COPY.offlineRoster}
-            emptyTestId="evaluations-v2-roster-empty"
-            errorTestId="evaluations-v2-roster-error"
-            onRetry={() => void openGrades(selected)}
-          />
-        ) : (
-          roster.map((student) => {
+      <KeyboardAvoidingContainer style={styles.container} testID={EVALUATIONS_V2_TEST_IDS.gradesForm}>
+        <FlatList
+          data={rosterReady ? roster : []}
+          keyExtractor={(student) => studentApiId(student)}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={contentStyle}
+          ListHeaderComponent={
+            <>
+              <BackButton onPress={() => setMode("list")} />
+              <Text style={styles.title}>{selected.title}</Text>
+              <Text style={styles.subtitle}>
+                {selected.className} • {selected.courseName} • {selected.periodName} • {selected.status} • /{selected.scale}
+              </Text>
+              {!canEnter ? <Text style={styles.warning}>{EVALUATIONS_V2_COPY.notValidated}</Text> : null}
+              {rosterStatus === "loading" || rosterStatus === "idle" ? (
+                <QueryStateView
+                  snapshot={{ status: "loading", data: [] }}
+                  emptyMessage={EVALUATIONS_V2_COPY.emptyRoster}
+                  errorMessage={EVALUATIONS_V2_COPY.errorRoster}
+                  offlineMessage={EVALUATIONS_V2_COPY.offlineRoster}
+                  emptyTestId="evaluations-v2-roster-empty"
+                  errorTestId="evaluations-v2-roster-error"
+                  onRetry={() => void openGrades(selected)}
+                />
+              ) : rosterStatus === "error" || rosterStatus === "offline" ? (
+                <QueryStateView
+                  snapshot={{ status: rosterStatus, data: [], errorMessage: rosterError }}
+                  emptyMessage={EVALUATIONS_V2_COPY.emptyRoster}
+                  errorMessage={EVALUATIONS_V2_COPY.errorRoster}
+                  offlineMessage={EVALUATIONS_V2_COPY.offlineRoster}
+                  emptyTestId="evaluations-v2-roster-empty"
+                  errorTestId="evaluations-v2-roster-error"
+                  onRetry={() => void openGrades(selected)}
+                />
+              ) : rosterStatus === "empty" ? (
+                <QueryStateView
+                  snapshot={{ status: "empty", data: [] }}
+                  emptyMessage={EVALUATIONS_V2_COPY.emptyRoster}
+                  errorMessage={EVALUATIONS_V2_COPY.errorRoster}
+                  offlineMessage={EVALUATIONS_V2_COPY.offlineRoster}
+                  emptyTestId="evaluations-v2-roster-empty"
+                  errorTestId="evaluations-v2-roster-error"
+                  onRetry={() => void openGrades(selected)}
+                />
+              ) : null}
+            </>
+          }
+          renderItem={({ item: student }) => {
             const key = studentApiId(student);
             const draft = drafts[key] ?? { value: "", status: "not_submitted" as const };
             return (
@@ -499,6 +517,9 @@ export default function TeacherGradesScreen() {
                     }))
                   }
                   disabled={!canEnter || saving}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Marquer ${student.name} absent`}
+                  accessibilityState={{ selected: draft.status === "absent", disabled: !canEnter || saving }}
                 >
                   <Text style={[styles.absentText, draft.status === "absent" && styles.absentTextActive]}>Abs</Text>
                 </TouchableOpacity>
@@ -510,38 +531,45 @@ export default function TeacherGradesScreen() {
                       [key]: { value, status: value.trim() ? "graded" : "not_submitted" },
                     }))
                   }
-                  keyboardType="numeric"
+                  keyboardType="decimal-pad"
                   placeholder={`/${selected.scale}`}
                   editable={canEnter && !saving && draft.status !== "absent"}
                   style={styles.gradeInput}
+                  testID={USABILITY_TEST_IDS.notesGradeInput(key)}
+                  accessibilityLabel={`Note de ${student.name} sur ${selected.scale}`}
                 />
               </View>
             );
-          })
-        )}
-
-        {saveError ? (
-          <Text style={styles.errorText} testID={EVALUATIONS_V2_TEST_IDS.saveError}>
-            {saveError}
-          </Text>
-        ) : null}
-
-        <TouchableOpacity
-          style={[styles.primaryButton, (saving || !canEnter) && styles.disabledButton]}
-          onPress={() => void handleSaveGrades()}
-          disabled={saving || !canEnter}
-          testID={EVALUATIONS_V2_TEST_IDS.saveButton}
-        >
-          {saving ? (
+          }}
+          ListFooterComponent={
             <>
-              <ActivityIndicator color="#FFFFFF" />
-              <Text style={styles.primaryText}>{EVALUATIONS_V2_COPY.saving}</Text>
+              {saveError ? (
+                <Text style={styles.errorText} testID={EVALUATIONS_V2_TEST_IDS.saveError}>
+                  {saveError}
+                </Text>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.primaryButton, (saving || !canEnter) && styles.disabledButton]}
+                onPress={() => void handleSaveGrades()}
+                disabled={saving || !canEnter}
+                testID={EVALUATIONS_V2_TEST_IDS.saveButton}
+                accessibilityRole="button"
+                accessibilityLabel={EVALUATIONS_V2_COPY.saveGrades}
+                accessibilityState={{ disabled: saving || !canEnter, busy: saving }}
+              >
+                {saving ? (
+                  <>
+                    <ActivityIndicator color="#FFFFFF" />
+                    <Text style={styles.primaryText}>{EVALUATIONS_V2_COPY.saving}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.primaryText}>{saveError ? EVALUATIONS_V2_COPY.retry : EVALUATIONS_V2_COPY.saveGrades}</Text>
+                )}
+              </TouchableOpacity>
             </>
-          ) : (
-            <Text style={styles.primaryText}>{saveError ? EVALUATIONS_V2_COPY.retry : EVALUATIONS_V2_COPY.saveGrades}</Text>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
+          }
+        />
+      </KeyboardAvoidingContainer>
     );
   }
 
@@ -612,7 +640,12 @@ export default function TeacherGradesScreen() {
 
 function BackButton({ onPress }: { onPress: () => void }) {
   return (
-    <TouchableOpacity style={styles.backButton} onPress={onPress}>
+    <TouchableOpacity
+      style={styles.backButton}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Retour aux évaluations"
+    >
       <Ionicons name="arrow-back" size={18} color="#0F172A" />
       <Text style={styles.backText}>Retour</Text>
     </TouchableOpacity>
@@ -634,7 +667,14 @@ function PeriodPills({
         const id = String(period.id || period.name);
         const active = id === selectedId;
         return (
-          <TouchableOpacity key={id} style={[styles.typePill, active && styles.typePillActive]} onPress={() => onSelect(id)}>
+          <TouchableOpacity
+            key={id}
+            style={[styles.typePill, active && styles.typePillActive]}
+            onPress={() => onSelect(id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={period.name}
+          >
             <Text style={[styles.typeText, active && styles.typeTextActive]}>
               {period.name}
               {period.active ? "" : " (inactive)"}
@@ -728,7 +768,14 @@ const styles = StyleSheet.create({
   backText: { marginLeft: 8, color: "#0F172A", fontWeight: "900" },
   label: { color: "#0F172A", fontWeight: "900", marginBottom: 8 },
   typeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
-  typePill: { backgroundColor: "#FFFFFF", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9 },
+  typePill: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    justifyContent: "center",
+  },
   typePillActive: { backgroundColor: "#0F172A" },
   typeText: { color: "#334155", fontWeight: "900" },
   typeTextActive: { color: "#FFFFFF" },
@@ -776,6 +823,10 @@ const styles = StyleSheet.create({
     borderColor: "#CBD5E1",
     paddingHorizontal: 10,
     paddingVertical: 8,
+    minWidth: MIN_TOUCH_TARGET_DP,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    alignItems: "center",
+    justifyContent: "center",
   },
   absentChipActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
   absentText: { color: "#334155", fontWeight: "900" },

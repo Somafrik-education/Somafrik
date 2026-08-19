@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
@@ -21,50 +21,59 @@ export default function UsersScreen() {
   );
 
   return (
-    <ScrollView
+    <FlatList
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: bottomPadding }]}
-    >
-      <Text style={styles.title}>Utilisateurs</Text>
-      <Text style={styles.subtitle}>Identités et rôles actifs chargés depuis PostgreSQL</Text>
-
-      {snapshot.status !== "success" ? (
-        <QueryStateView
-          snapshot={snapshot}
-          emptyMessage="Aucun utilisateur."
-          errorMessage="Impossible de charger les utilisateurs."
-          offlineMessage="Réseau indisponible. Les utilisateurs n'ont pas pu être chargés."
-          emptyTestId="users-empty"
-          errorTestId="users-error"
-          onRetry={() => void load()}
-          loadingLabel="Chargement des utilisateurs…"
-        />
-      ) : (
-        snapshot.data.map((user) => {
-          const roles = user.activeRoles?.length
-            ? user.activeRoles
-            : [user.role, ...(user.secondaryRoles ?? [])].filter(Boolean);
-          return (
-            <View key={user.id} style={styles.card}>
-              <View style={styles.iconBox}>
-                <Ionicons name="person-outline" size={22} color="#2563EB" />
-              </View>
-              <View style={styles.cardBody}>
-                <Text style={styles.name}>{[user.firstName, user.lastName].filter(Boolean).join(" ") || user.identifier}</Text>
-                <Text style={styles.identifier}>{user.identifier || user.publicId}</Text>
-                <Text style={styles.meta}>Rôles actifs : {roles.join(", ") || "Aucun rôle actif"}</Text>
-                <Text style={styles.meta}>Statut : {user.status || "Non renseigné"}</Text>
-                {user.schoolCode ? <Text style={styles.meta}>Établissement : {user.schoolCode}</Text> : null}
-              </View>
+      data={snapshot.status === "success" ? snapshot.data : []}
+      keyExtractor={(user) => user.id}
+      refreshControl={<RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} />}
+      ListHeaderComponent={
+        <>
+          <Text style={styles.title}>Utilisateurs</Text>
+          <Text style={styles.subtitle}>Identités et rôles actifs chargés depuis PostgreSQL</Text>
+          {snapshot.status !== "success" ? (
+            <QueryStateView
+              snapshot={snapshot}
+              emptyMessage="Aucun utilisateur."
+              errorMessage="Impossible de charger les utilisateurs."
+              offlineMessage="Réseau indisponible. Les utilisateurs n'ont pas pu être chargés."
+              emptyTestId="users-empty"
+              errorTestId="users-error"
+              onRetry={() => void load()}
+              loadingLabel="Chargement des utilisateurs…"
+            />
+          ) : null}
+        </>
+      }
+      renderItem={({ item: user }) => {
+        const roles = user.activeRoles?.length
+          ? user.activeRoles
+          : [user.role, ...(user.secondaryRoles ?? [])].filter(Boolean);
+        return (
+          <View style={styles.card}>
+            <View style={styles.iconBox}>
+              <Ionicons name="person-outline" size={22} color="#2563EB" />
             </View>
-          );
-        })
-      )}
-
-      <Text style={styles.hint}>
-        Ce lot expose la lecture canonique. Les GRANT/REVOKE restent soumis aux contrats serveur et ne sont pas simulés localement.
-      </Text>
-    </ScrollView>
+            <View style={styles.cardBody}>
+              <Text style={styles.name} numberOfLines={3}>
+                {[user.firstName, user.lastName].filter(Boolean).join(" ") || user.identifier}
+              </Text>
+              <Text style={styles.identifier}>{user.identifier || user.publicId}</Text>
+              <Text style={styles.meta}>Rôles actifs : {roles.join(", ") || "Aucun rôle actif"}</Text>
+              <Text style={styles.meta}>Statut : {user.status || "Non renseigné"}</Text>
+              {user.schoolCode ? <Text style={styles.meta}>Établissement : {user.schoolCode}</Text> : null}
+              {user.email ? <Text style={styles.meta} numberOfLines={2}>{user.email}</Text> : null}
+              {user.phone ? <Text style={styles.meta}>{user.phone}</Text> : null}
+            </View>
+          </View>
+        );
+      }}
+      ListFooterComponent={
+        <Text style={styles.hint}>
+          Ce lot expose la lecture canonique. Les GRANT/REVOKE restent soumis aux contrats serveur et ne sont pas simulés localement.
+        </Text>
+      }
+    />
   );
 }
 
@@ -89,7 +98,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  cardBody: { flex: 1 },
+  cardBody: { flex: 1, minWidth: 0 },
   name: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
   identifier: { color: "#2563EB", fontWeight: "800", marginTop: 3 },
   meta: { color: "#64748B", fontWeight: "700", marginTop: 4 },

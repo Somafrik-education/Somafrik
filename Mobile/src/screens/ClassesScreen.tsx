@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
@@ -33,6 +33,7 @@ import {
 } from "../lib/classesLoadingSpec";
 import { OFFLINE_COPY, OFFLINE_TEST_IDS } from "../lib/offlineModeSpec";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
+import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 
 export default function ClassesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -50,6 +51,7 @@ export default function ClassesScreen({ navigation }: any) {
   const { session } = useAuth();
   const { classesData, studentsData, teachersData, assignmentsData, refreshBackOfficeState, syncStatus } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
   const isOffline = syncStatus === "offline";
   const showLoading = isLoading && !isOffline;
@@ -86,139 +88,181 @@ export default function ClassesScreen({ navigation }: any) {
     setOfflineActionMessage(OFFLINE_COPY.actionBlocked);
   };
 
+  const filteredClasses = filterClassesByQuery(
+    visibleClasses.map((item) => ({
+      ...item,
+      classCode: item.classCode || item.publicId,
+    })),
+    searchQuery,
+  );
+
+  const listHeader = (
+    <>
+      <View style={styles.header}>
+        <View style={styles.headerText}>
+          <Text style={styles.title} testID={CLASSES_STUDENT_TEST_IDS.classesTitle} numberOfLines={2}>
+            {CLASSES_STUDENT_COPY.classesTitle}
+          </Text>
+          <Text style={styles.subtitle} numberOfLines={3}>
+            Gérez les classes et les élèves
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.searchBox, blockNetworkActions && styles.disabledControl]} pointerEvents={blockNetworkActions ? "none" : "auto"}>
+        <Ionicons name="search-outline" size={22} color="#94A3B8" />
+        <TextInput
+          placeholder="Rechercher une classe"
+          placeholderTextColor="#94A3B8"
+          style={styles.searchInput}
+          editable={!blockNetworkActions}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          testID={USABILITY_TEST_IDS.classesSearch}
+          accessibilityLabel="Rechercher une classe par nom ou code"
+        />
+      </View>
+
+      {offlineActionMessage ? (
+        <View style={styles.offlineActionBanner} testID={OFFLINE_TEST_IDS.actionMessage}>
+          <Text style={styles.offlineActionText}>{offlineActionMessage}</Text>
+        </View>
+      ) : null}
+
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={[styles.summaryCard, blockNetworkActions && styles.disabledControl]}
+        disabled={blockNetworkActions}
+        testID={CLASSES_LOADING_TEST_IDS.summaryCard}
+        accessibilityRole="button"
+        accessibilityLabel="Voir tous les élèves"
+        accessibilityState={{ disabled: isLoading }}
+        onPress={() =>
+          blockNetworkActions
+            ? handleBlockedNetworkAction()
+            : canOpenStudents && navigation.navigate("Students", { className: "Toutes les classes" })
+        }
+      >
+        <View>
+          <Text style={styles.summaryValue}>{showLoading ? "—" : visibleClasses.length}</Text>
+          <Text style={styles.summaryLabel}>Classes actives</Text>
+        </View>
+
+        <View style={styles.summaryDivider} />
+
+        <View>
+          <Text style={styles.summaryValue}>{showLoading ? "—" : totalStudents}</Text>
+          <Text style={styles.summaryLabel}>Élèves inscrits</Text>
+        </View>
+      </TouchableOpacity>
+
+      <Text style={styles.sectionTitle}>Liste des classes</Text>
+
+      {showLoading ? (
+        <View testID={CLASSES_LOADING_TEST_IDS.loadingSkeleton}>
+          <View
+            style={styles.loadingRow}
+            testID={CLASSES_LOADING_TEST_IDS.loadingIndicator}
+            accessibilityRole="progressbar"
+            accessibilityLabel={CLASSES_LOADING_COPY.loadingLabel}
+          >
+            <ActivityIndicator size="small" color="#2563EB" />
+            <Text style={styles.loadingText}>{CLASSES_LOADING_COPY.loadingLabel}</Text>
+          </View>
+
+          {Array.from({ length: CLASSES_SKELETON_CARD_COUNT }, (_, index) => (
+            <View
+              key={`skeleton-${index}`}
+              style={styles.skeletonCard}
+              testID={classesSkeletonCardTestId(index)}
+            >
+              <View style={styles.skeletonIcon} />
+              <View style={styles.skeletonContent}>
+                <View style={styles.skeletonLineWide} />
+                <View style={styles.skeletonLineMedium} />
+                <View style={styles.skeletonLineShort} />
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </>
+  );
+
   return (
     <View style={styles.screen} testID={CLASSES_STUDENT_TEST_IDS.classesScreen}>
-      <ScrollView
+      <FlatList
+        data={showLoading ? [] : filteredClasses}
+        keyExtractor={(item) => String(item.id ?? item.name)}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={scrollContentStyle}
-      >
-        <View style={styles.header}>
-          <View style={styles.headerText}>
-            <Text style={styles.title} testID={CLASSES_STUDENT_TEST_IDS.classesTitle} numberOfLines={1}>
-              {CLASSES_STUDENT_COPY.classesTitle}
+        testID={CLASSES_LOADING_TEST_IDS.classesList}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={
+          showLoading ? null : searchQuery.trim() ? (
+            <Text style={styles.emptySearch} testID={USABILITY_TEST_IDS.classesEmptySearch}>
+              Aucune classe ne correspond à cette recherche.
             </Text>
-            <Text style={styles.subtitle} numberOfLines={2}>
-              Gérez les classes et les élèves
-            </Text>
-          </View>
-        </View>
+          ) : (
+            <Text style={styles.emptySearch}>Aucune classe à afficher.</Text>
+          )
+        }
+        renderItem={({ item }) => {
+          const classStudents = visibleStudents.filter((student) => classNameMatches(student.className, item.name));
+          const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
+          const presenceRate = getPresenceRate(classStudents.map((student) => student.id));
 
-        <View style={[styles.searchBox, blockNetworkActions && styles.disabledControl]} pointerEvents={blockNetworkActions ? "none" : "auto"}>
-          <Ionicons name="search-outline" size={22} color="#94A3B8" />
-          <TextInput
-            placeholder="Rechercher une classe"
-            placeholderTextColor="#94A3B8"
-            style={styles.searchInput}
-            editable={!blockNetworkActions}
-          />
-        </View>
-
-        {offlineActionMessage ? (
-          <View style={styles.offlineActionBanner} testID={OFFLINE_TEST_IDS.actionMessage}>
-            <Text style={styles.offlineActionText}>{offlineActionMessage}</Text>
-          </View>
-        ) : null}
-
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={[styles.summaryCard, blockNetworkActions && styles.disabledControl]}
-          disabled={blockNetworkActions}
-          testID={CLASSES_LOADING_TEST_IDS.summaryCard}
-          accessibilityState={{ disabled: isLoading }}
-          onPress={() => canOpenStudents && navigation.navigate("Students", { className: "Toutes les classes" })}
-        >
-          <View>
-            <Text style={styles.summaryValue}>{showLoading ? "—" : visibleClasses.length}</Text>
-            <Text style={styles.summaryLabel}>Classes actives</Text>
-          </View>
-
-          <View style={styles.summaryDivider} />
-
-          <View>
-            <Text style={styles.summaryValue}>{showLoading ? "—" : totalStudents}</Text>
-            <Text style={styles.summaryLabel}>Élèves inscrits</Text>
-          </View>
-        </TouchableOpacity>
-
-        <Text style={styles.sectionTitle}>Liste des classes</Text>
-
-        {showLoading ? (
-          <View testID={CLASSES_LOADING_TEST_IDS.loadingSkeleton}>
-            <View
-              style={styles.loadingRow}
-              testID={CLASSES_LOADING_TEST_IDS.loadingIndicator}
-              accessibilityRole="progressbar"
-              accessibilityLabel={CLASSES_LOADING_COPY.loadingLabel}
+          return (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.classCard}
+              testID={CLASS_CARD_TEST_ID(item.name)}
+              accessibilityRole="button"
+              accessibilityLabel={`Ouvrir la classe ${item.name}`}
+              onPress={() =>
+                canOpenStudents && navigation.navigate("Students", {
+                  className: item.name,
+                })
+              }
             >
-              <ActivityIndicator size="small" color="#2563EB" />
-              <Text style={styles.loadingText}>{CLASSES_LOADING_COPY.loadingLabel}</Text>
-            </View>
-
-            {Array.from({ length: CLASSES_SKELETON_CARD_COUNT }, (_, index) => (
-              <View
-                key={`skeleton-${index}`}
-                style={styles.skeletonCard}
-                testID={classesSkeletonCardTestId(index)}
-              >
-                <View style={styles.skeletonIcon} />
-                <View style={styles.skeletonContent}>
-                  <View style={styles.skeletonLineWide} />
-                  <View style={styles.skeletonLineMedium} />
-                  <View style={styles.skeletonLineShort} />
-                </View>
+              <View style={styles.classIconBox}>
+                <Ionicons name="grid-outline" size={26} color="#2563EB" />
               </View>
-            ))}
-          </View>
-        ) : (
-          <View testID={CLASSES_LOADING_TEST_IDS.classesList}>
-            {visibleClasses.map((item) => {
-              const classStudents = visibleStudents.filter((student) => classNameMatches(student.className, item.name));
-              const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
-              const presenceRate = getPresenceRate(classStudents.map((student) => student.id));
 
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  activeOpacity={0.85}
-                  style={styles.classCard}
-                  testID={CLASS_CARD_TEST_ID(item.name)}
-                  onPress={() =>
-                    canOpenStudents && navigation.navigate("Students", {
-                      className: item.name,
-                    })
-                  }
-                >
-                  <View style={styles.classIconBox}>
-                    <Ionicons name="grid-outline" size={26} color="#2563EB" />
+              <View style={styles.classContent}>
+                <View style={styles.classTopRow}>
+                  <Text style={styles.className} numberOfLines={3}>
+                    {item.name}
+                  </Text>
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>Présence {presenceRate}%</Text>
                   </View>
+                </View>
 
-                  <View style={styles.classContent}>
-                    <View style={styles.classTopRow}>
-                      <Text style={styles.className} numberOfLines={2}>
-                        {item.name}
-                      </Text>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{presenceRate}%</Text>
-                      </View>
-                    </View>
+                <Text style={styles.classInfo}>{classStudents.length} élèves</Text>
+                {item.classCode ? (
+                  <Text style={styles.classInfo} numberOfLines={2}>
+                    Code : {item.classCode}
+                  </Text>
+                ) : null}
+                <Text style={styles.classTeacher}>
+                  Professeur principal : {teacher?.name ?? "Non assigné"}
+                </Text>
+              </View>
 
-                    <Text style={styles.classInfo}>{classStudents.length} élèves</Text>
-                    <Text style={styles.classTeacher}>
-                      Professeur principal : {teacher?.name ?? "Non assigné"}
-                    </Text>
-                  </View>
-
-                  <Ionicons
-                    name="chevron-forward-outline"
-                    size={20}
-                    color="#CBD5E1"
-                  />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
+              <Ionicons
+                name="chevron-forward-outline"
+                size={20}
+                color="#CBD5E1"
+              />
+            </TouchableOpacity>
+          );
+        }}
+      />
     </View>
   );
 }
@@ -259,6 +303,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#64748B",
+  },
+  emptySearch: {
+    color: "#64748B",
+    fontWeight: "700",
+    paddingVertical: 24,
   },
 
   disabledControl: {
@@ -431,6 +480,9 @@ const styles = StyleSheet.create({
   },
 
   className: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
     fontSize: 18,
     fontWeight: "900",
     color: "#0F172A",

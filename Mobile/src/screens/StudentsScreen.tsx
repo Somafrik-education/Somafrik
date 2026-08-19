@@ -386,6 +386,12 @@ export default function StudentsScreen({ route, navigation }: any) {
 
             onPress={() => navigation.goBack()}
 
+            accessibilityRole="button"
+
+            accessibilityLabel="Retour aux classes"
+
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+
           >
 
             <Ionicons name="arrow-back" size={24} color="#0F172A" />
@@ -726,9 +732,13 @@ const styles = StyleSheet.create({
 
   backButton: {
 
-    width: 40,
+    minWidth: 44,
 
-    height: 40,
+    minHeight: 44,
+
+    width: 44,
+
+    height: 44,
 
     borderRadius: 14,
 

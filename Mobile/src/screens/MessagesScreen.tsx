@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  RefreshControl,
   ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -26,6 +28,9 @@ import { sendClientsMessage } from "../services/api";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY } from "../lib/networkResilience";
 import { submitProtectedMutation } from "../lib/outbox";
+import { KeyboardAvoidingContainer } from "../components/KeyboardAwareScreen";
+import AccessibleIconButton from "../components/AccessibleIconButton";
+import { MIN_TOUCH_TARGET_DP, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import {
   getCanonicalMessages,
   getCanonicalTeachers,
@@ -222,13 +227,38 @@ export default function MessagesScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollContentPaddingBottom }]} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingContainer>
+      <SectionList
+        sections={
+          canRead && messagesSnapshot.status === "success"
+            ? [
+                { title: "Messages reçus", data: receivedMessages },
+                { title: "Messages envoyés", data: sentMessages },
+              ]
+            : []
+        }
+        keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          canRead ? (
+            <RefreshControl
+              refreshing={messagesSnapshot.status === "loading"}
+              onRefresh={() => {
+                void loadMessages();
+                if (role === "parent_student" || role === "teacher") void loadTeachers();
+              }}
+            />
+          ) : undefined
+        }
+        contentContainerStyle={[styles.content, { paddingBottom: scrollContentPaddingBottom }]}
+        ListHeaderComponent={
+          <>
         {role === "parent_student" && <StudentSwitcher />}
         <Text style={styles.title}>Messages</Text>
         <Text style={styles.subtitle}>{unreadCount} non lu(s) • données serveur</Text>
 
         {(role === "parent_student" || role === "teacher") && canSend && (
-          <View style={styles.composeCard}>
+          <View style={styles.composeCard} testID={USABILITY_TEST_IDS.messagesComposer}>
             <Text style={styles.cardTitle}>{role === "teacher" ? "Écrire à un parent" : "Écrire un message"}</Text>
 
             {role === "teacher" && (
@@ -280,9 +310,38 @@ export default function MessagesScreen() {
               disabled={sending}
             />
 
-            <TextInput value={message} onChangeText={setMessage} placeholder="Expliquez votre message..." multiline editable={!sending} style={styles.messageInput} />
-            <TextInput value={attachmentUrl} onChangeText={setAttachmentUrl} placeholder="Lien de pièce jointe (optionnel)" editable={!sending} style={styles.input} />
-            <TouchableOpacity style={[styles.sendButton, sending && styles.disabled]} onPress={() => void sendMessage()} disabled={sending}>
+            <TextInput
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Expliquez votre message..."
+              multiline
+              editable={!sending}
+              style={styles.messageInput}
+              textAlignVertical="top"
+              autoCapitalize="sentences"
+              autoCorrect
+              returnKeyType="default"
+              accessibilityLabel="Texte du message"
+            />
+            <TextInput
+              value={attachmentUrl}
+              onChangeText={setAttachmentUrl}
+              placeholder="Lien de pièce jointe (optionnel)"
+              editable={!sending}
+              autoCapitalize="none"
+              keyboardType="url"
+              style={styles.input}
+              accessibilityLabel="Lien de pièce jointe"
+            />
+            <TouchableOpacity
+              style={[styles.sendButton, sending && styles.disabled]}
+              onPress={() => void sendMessage()}
+              disabled={sending}
+              testID={USABILITY_TEST_IDS.messagesSend}
+              accessibilityRole="button"
+              accessibilityLabel="Envoyer le message"
+              accessibilityState={{ busy: sending, disabled: sending }}
+            >
               {sending ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="send-outline" size={20} color="#FFFFFF" />}
               <Text style={styles.sendText}>{sending ? NETWORK_COPY.recording : "Envoyer"}</Text>
             </TouchableOpacity>
@@ -304,24 +363,46 @@ export default function MessagesScreen() {
             loadingLabel="Chargement des messages…"
           />
         ) : (
-          <>
-            <TextInput value={query} onChangeText={setQuery} placeholder="Rechercher" style={styles.input} />
-            <MessageSection title="Messages reçus" messages={receivedMessages} teachers={teachersData} onOpen={openMessage} />
-            <MessageSection title="Messages envoyés" messages={sentMessages} teachers={teachersData} onOpen={openMessage} />
-          </>
+          <TextInput value={query} onChangeText={setQuery} placeholder="Rechercher" style={styles.input} accessibilityLabel="Rechercher un message" />
         )}
-      </ScrollView>
+          </>
+        }
+        renderSectionHeader={({ section }) => (
+          <Text style={styles.sectionTitle}>
+            {section.title} ({section.data.length})
+          </Text>
+        )}
+        renderItem={({ item }) => {
+          const teacher = teachersData.find((row) => row.id === item.teacherId);
+          return (
+            <TouchableOpacity style={styles.messageCard} onPress={() => void openMessage(item)} accessibilityRole="button" accessibilityLabel={item.theme}>
+              <Text style={styles.messageTitle}>{item.theme}</Text>
+              <Text style={styles.meta}>{item.direction} • {teacher?.name || item.parentPhone} • {item.date}</Text>
+              <Text style={styles.messageBody} numberOfLines={3}>{item.message}</Text>
+              <Text style={styles.status}>Statut : {item.status}</Text>
+            </TouchableOpacity>
+          );
+        }}
+        ListEmptyComponent={
+          canRead && messagesSnapshot.status === "success" ? <Text style={styles.meta}>Aucun message.</Text> : null
+        }
+      />
+      </KeyboardAvoidingContainer>
 
       <Modal visible={Boolean(selectedMessage)} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.readerCard}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedMessage(null)}>
-              <Ionicons name="close" size={20} color="#0F172A" />
-            </TouchableOpacity>
+          <ScrollView contentContainerStyle={styles.readerCard} keyboardShouldPersistTaps="handled">
+            <AccessibleIconButton
+              accessibilityLabel="Fermer le message"
+              icon="close"
+              onPress={() => setSelectedMessage(null)}
+              style={styles.closeButton}
+            />
             <Text style={styles.cardTitle}>{selectedMessage?.theme}</Text>
             <Text style={styles.meta}>{selectedMessage?.direction} • {selectedMessage?.date}</Text>
+            {selectedMessage?.status ? <Text style={styles.status}>Statut : {selectedMessage.status}</Text> : null}
             <Text style={styles.readerBody}>{selectedMessage?.message}</Text>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -340,7 +421,15 @@ function ChoiceRow({ label, values, selectedId, onSelect, disabled }: {
       <Text style={styles.label}>{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>
         {values.map((item) => (
-          <TouchableOpacity key={item.id} style={[styles.chip, selectedId === item.id && styles.chipActive]} onPress={() => onSelect(item.id)} disabled={disabled}>
+          <TouchableOpacity
+            key={item.id}
+            style={[styles.chip, selectedId === item.id && styles.chipActive]}
+            onPress={() => onSelect(item.id)}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={`${label} ${item.label}`}
+            accessibilityState={{ selected: selectedId === item.id, disabled }}
+          >
             <Text style={[styles.chipText, selectedId === item.id && styles.chipTextActive]}>{item.label}</Text>
           </TouchableOpacity>
         ))}
@@ -351,34 +440,15 @@ function ChoiceRow({ label, values, selectedId, onSelect, disabled }: {
 
 function SegmentButton({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <TouchableOpacity style={[styles.segmentButton, selected && styles.chipActive]} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.segmentButton, selected && styles.chipActive]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+    >
       <Text style={[styles.chipText, selected && styles.chipTextActive]}>{label}</Text>
     </TouchableOpacity>
-  );
-}
-
-function MessageSection({ title, messages, teachers, onOpen }: {
-  title: string;
-  messages: CanonicalSchoolMessage[];
-  teachers: CanonicalTeacher[];
-  onOpen: (message: CanonicalSchoolMessage) => void;
-}) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title} ({messages.length})</Text>
-      {messages.length === 0 ? <Text style={styles.meta}>Aucun message.</Text> : null}
-      {messages.map((item) => {
-        const teacher = teachers.find((row) => row.id === item.teacherId);
-        return (
-          <TouchableOpacity key={item.id} style={styles.messageCard} onPress={() => void onOpen(item)}>
-            <Text style={styles.messageTitle}>{item.theme}</Text>
-            <Text style={styles.meta}>{item.direction} • {teacher?.name || item.parentPhone} • {item.date}</Text>
-            <Text style={styles.messageBody} numberOfLines={2}>{item.message}</Text>
-            <Text style={styles.status}>{item.status}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
   );
 }
 
@@ -404,8 +474,8 @@ const styles = StyleSheet.create({
   label: { color: "#334155", fontSize: 12, fontWeight: "900", marginBottom: 6 },
   choiceRow: { gap: 8, marginBottom: 12 },
   segmentRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  segmentButton: { flex: 1, alignItems: "center", borderRadius: 14, padding: 10, backgroundColor: "#F1F5F9" },
-  chip: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: "#F1F5F9" },
+  segmentButton: { flex: 1, minHeight: MIN_TOUCH_TARGET_DP, alignItems: "center", justifyContent: "center", borderRadius: 14, padding: 10, backgroundColor: "#F1F5F9" },
+  chip: { borderRadius: 999, paddingHorizontal: 12, minHeight: MIN_TOUCH_TARGET_DP, justifyContent: "center", paddingVertical: 8, backgroundColor: "#F1F5F9" },
   chipActive: { backgroundColor: "#0F172A" },
   chipText: { color: "#475569", fontWeight: "800" },
   chipTextActive: { color: "#FFFFFF" },

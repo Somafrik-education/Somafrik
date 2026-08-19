@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import PaymentReceiptCard from "../components/PaymentReceiptCard";
@@ -32,92 +32,97 @@ export default function PaymentsScreen({ navigation }: any) {
   const showQueryState = paymentsSnapshot.status !== "success";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
-      <Text style={styles.title}>Paiements</Text>
+    <FlatList
+      style={styles.container}
+      contentContainerStyle={contentStyle}
+      data={showQueryState ? [] : paymentsData}
+      keyExtractor={(payment) => String(payment.id)}
+      keyboardShouldPersistTaps="handled"
+      ListHeaderComponent={
+        <>
+          <Text style={styles.title}>Paiements</Text>
+          {showQueryState ? (
+            <QueryStateView
+              snapshot={paymentsSnapshot}
+              emptyMessage={DATA_TRUTH_COPY.emptyPayments}
+              errorMessage={DATA_TRUTH_COPY.errorPayments}
+              offlineMessage={DATA_TRUTH_COPY.offlinePayments}
+              emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
+              errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
+              onRetry={() => void loadPayments()}
+            />
+          ) : (
+            <View testID={DATA_TRUTH_TEST_IDS.paymentsList}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.summaryCard}
+                onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments" })}
+              >
+                <Text style={styles.summaryLabel}>Frais de scolarité estimés</Text>
+                <Text style={styles.summaryAmount}>
+                  {(paymentStats.paidAmount + paymentStats.pendingAmount).toLocaleString("fr-FR")} FC
+                </Text>
+                <Text style={styles.summarySub}>Reste estimé : {paymentStats.pendingAmount.toLocaleString("fr-FR")} FC</Text>
+              </TouchableOpacity>
 
-      {showQueryState ? (
-        <QueryStateView
-          snapshot={paymentsSnapshot}
-          emptyMessage={DATA_TRUTH_COPY.emptyPayments}
-          errorMessage={DATA_TRUTH_COPY.errorPayments}
-          offlineMessage={DATA_TRUTH_COPY.offlinePayments}
-          emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
-          errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
-          onRetry={() => void loadPayments()}
-        />
-      ) : (
-        <View testID={DATA_TRUTH_TEST_IDS.paymentsList}>
+              <View style={styles.summaryCardSecondary}>
+                <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
+                <Text style={styles.summaryAmountDark}>{paymentStats.paidAmount.toLocaleString("fr-FR")} FC</Text>
+                <Text style={styles.summarySubDark}>
+                  {paymentsReady ? `${paymentStats.rate}% des paiements réglés` : "Données non chargées"}
+                </Text>
+              </View>
+
+              <View style={styles.row}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.smallCard}
+                  onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "paid" })}
+                >
+                  <Text style={styles.smallNumber}>{paymentStats.paid}</Text>
+                  <Text style={styles.smallLabel}>Payés</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.smallCard}
+                  onPress={() =>
+                    canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "pending" })
+                  }
+                >
+                  <Text style={styles.smallNumber}>{paymentStats.pending}</Text>
+                  <Text style={styles.smallLabel}>Impayés</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.sectionTitle}>Reçus récents</Text>
+            </View>
+          )}
+        </>
+      }
+      renderItem={({ item: payment }) => {
+        const student = studentsData.find((row) => row.id === payment.studentId);
+        return (
+          <PaymentReceiptCard
+            payment={payment}
+            studentName={student?.name}
+            onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
+            showItems={false}
+          />
+        );
+      }}
+      ListFooterComponent={
+        canCreate ? (
           <TouchableOpacity
             activeOpacity={0.85}
-            style={styles.summaryCard}
-            onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments" })}
+            style={styles.button}
+            onPress={() => Alert.alert("Saisie indisponible", DATA_TRUTH_COPY.writePaymentsWebOnly)}
           >
-            <Text style={styles.summaryLabel}>Frais de scolarité estimés</Text>
-            <Text style={styles.summaryAmount}>
-              {(paymentStats.paidAmount + paymentStats.pendingAmount).toLocaleString()} FC
-            </Text>
-            <Text style={styles.summarySub}>Reste estimé : {paymentStats.pendingAmount.toLocaleString()} FC</Text>
+            <Text style={styles.buttonText}>Enregistrer un paiement</Text>
           </TouchableOpacity>
-
-          <View style={styles.summaryCardSecondary}>
-            <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
-            <Text style={styles.summaryAmountDark}>{paymentStats.paidAmount.toLocaleString()} FC</Text>
-            <Text style={styles.summarySubDark}>
-              {paymentsReady ? `${paymentStats.rate}% des paiements réglés` : "Données non chargées"}
-            </Text>
-          </View>
-
-          <View style={styles.row}>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.smallCard}
-              onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "paid" })}
-            >
-              <Text style={styles.smallNumber}>{paymentStats.paid}</Text>
-              <Text style={styles.smallLabel}>Payés</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.smallCard}
-              onPress={() =>
-                canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "pending" })
-              }
-            >
-              <Text style={styles.smallNumber}>{paymentStats.pending}</Text>
-              <Text style={styles.smallLabel}>Impayés</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.sectionTitle}>Reçus récents</Text>
-
-          {paymentsData.map((payment) => {
-            const student = studentsData.find((item) => item.id === payment.studentId);
-            return (
-              <PaymentReceiptCard
-                key={payment.id}
-                payment={payment}
-                studentName={student?.name}
-                onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
-                showItems={false}
-              />
-            );
-          })}
-        </View>
-      )}
-
-      {canCreate && (
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.button}
-          onPress={() =>
-            Alert.alert("Saisie indisponible", DATA_TRUTH_COPY.writePaymentsWebOnly)
-          }
-        >
-          <Text style={styles.buttonText}>Enregistrer un paiement</Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+        ) : null
+      }
+    />
   );
 }
 

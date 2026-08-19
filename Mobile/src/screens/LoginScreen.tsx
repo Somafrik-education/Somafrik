@@ -1,9 +1,11 @@
 import React, { useEffect, useState, type ComponentType } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -29,6 +31,8 @@ import {
   resolveSecretKeyboardType,
 } from "../lib/loginScreenSpec";
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
+import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
+import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -58,6 +62,7 @@ export default function LoginScreen({ navigation, route }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
   const { setSession } = useAuth();
 
   useEffect(() => {
@@ -153,15 +158,16 @@ export default function LoginScreen({ navigation, route }: Props) {
   const submitNewPassword = async () => {
     if (!pendingSession) return;
     if (newPassword.trim().length < 6) {
-      Alert.alert("Mot de passe trop court", "Le nouveau mot de passe doit contenir au moins 6 caractères.");
+      setPasswordChangeError("Le nouveau mot de passe doit contenir au moins 6 caractères.");
       return;
     }
     if (newPassword.trim() !== confirmPassword.trim()) {
-      Alert.alert("Confirmation incorrecte", "Les deux mots de passe ne correspondent pas.");
+      setPasswordChangeError("Les deux mots de passe ne correspondent pas.");
       return;
     }
 
     setIsChangingPassword(true);
+    setPasswordChangeError(null);
     try {
       const response = await changePassword(newPassword.trim());
       await completeLogin({
@@ -174,7 +180,7 @@ export default function LoginScreen({ navigation, route }: Props) {
       });
       setPendingSession(null);
     } catch (error) {
-      Alert.alert("Modification impossible", error instanceof Error ? error.message : "Veuillez réessayer.");
+      setPasswordChangeError(error instanceof Error ? error.message : "Modification impossible. Réessayez.");
     } finally {
       setIsChangingPassword(false);
     }
@@ -186,12 +192,16 @@ export default function LoginScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView
-      style={styles.container}
+      style={styles.safe}
       edges={["top", "bottom"]}
       testID={LOGIN_TEST_IDS.screen}
       accessible
       accessibilityLabel={MOBILE_ACCESSIBILITY_COPY.loginScreenLabel}
     >
+      <KeyboardAwareScreen
+        testID={USABILITY_TEST_IDS.loginKeyboardScroll}
+        contentContainerStyle={styles.container}
+      >
       <View style={styles.schoolLogo} testID={LOGIN_TEST_IDS.schoolLogo}>
         {school.logoUrl ? (
           <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
@@ -217,6 +227,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         keyboardType={identifierKeyboard}
         textContentType={identifierKeyboard === "email-address" ? "emailAddress" : "username"}
         autoComplete={identifierKeyboard === "email-address" ? "email" : "username"}
+        returnKeyType="next"
         style={styles.input}
         editable={!accessRole}
         testID={LOGIN_TEST_IDS.identifierInput}
@@ -258,6 +269,10 @@ export default function LoginScreen({ navigation, route }: Props) {
           keyboardType={secretKeyboard}
           textContentType="password"
           autoComplete="password"
+          returnKeyType="go"
+          onSubmitEditing={() => {
+            if (loginReady) void handleLogin();
+          }}
           style={styles.input}
           testID={LOGIN_TEST_IDS.passwordInput}
           accessibilityLabel={
@@ -279,7 +294,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         style={[styles.loginButton, !loginReady && styles.loginButtonDisabled]}
         onPress={handleLogin}
         disabled={!loginReady}
-        testID={LOGIN_TEST_IDS.loginButton}
+        testID={USABILITY_TEST_IDS.loginSubmit}
         accessibilityRole="button"
         accessibilityLabel={LOGIN_SCREEN_COPY.loginButton}
         accessibilityState={{ disabled: !loginReady, busy: isLoading }}
@@ -300,48 +315,84 @@ export default function LoginScreen({ navigation, route }: Props) {
           }}
         />
       ) : null}
+      </KeyboardAwareScreen>
 
       <Modal visible={Boolean(pendingSession)} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.passwordCard} testID={DATA_TRUTH_TEST_IDS.passwordChangeModal}>
-            <Text style={styles.passwordTitle}>Nouveau mot de passe</Text>
-            <Text style={styles.passwordHint}>
-              Votre mot de passe temporaire a été accepté. Choisissez maintenant votre mot de passe personnel.
-            </Text>
-            <TextInput
-              placeholder="Nouveau mot de passe"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Confirmer le mot de passe"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              style={styles.input}
-            />
-            <TouchableOpacity
-              style={[styles.loginButton, isChangingPassword && styles.loginButtonDisabled]}
-              onPress={submitNewPassword}
-              disabled={isChangingPassword}
-            >
-              {isChangingPassword ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Valider</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        >
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.modalScroll}
+          >
+            <View style={styles.passwordCard} testID={DATA_TRUTH_TEST_IDS.passwordChangeModal}>
+              <Text style={styles.passwordTitle}>Nouveau mot de passe</Text>
+              <Text style={styles.passwordHint}>
+                Votre mot de passe temporaire a été accepté. Choisissez maintenant votre mot de passe personnel.
+              </Text>
+              <TextInput
+                placeholder="Nouveau mot de passe"
+                value={newPassword}
+                onChangeText={(value) => {
+                  setNewPassword(value);
+                  setPasswordChangeError(null);
+                }}
+                secureTextEntry
+                textContentType="newPassword"
+                autoComplete="password-new"
+                style={styles.input}
+                accessibilityLabel="Nouveau mot de passe"
+              />
+              <TextInput
+                placeholder="Confirmer le mot de passe"
+                value={confirmPassword}
+                onChangeText={(value) => {
+                  setConfirmPassword(value);
+                  setPasswordChangeError(null);
+                }}
+                secureTextEntry
+                textContentType="password"
+                style={styles.input}
+                accessibilityLabel="Confirmer le mot de passe"
+              />
+              {passwordChangeError ? (
+                <View style={styles.errorBanner} accessibilityRole="alert">
+                  <Text style={styles.errorText}>{passwordChangeError}</Text>
+                </View>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.loginButton, isChangingPassword && styles.loginButtonDisabled]}
+                onPress={submitNewPassword}
+                disabled={isChangingPassword}
+                accessibilityRole="button"
+                accessibilityLabel="Valider le nouveau mot de passe"
+                accessibilityState={{ busy: isChangingPassword, disabled: isChangingPassword }}
+              >
+                {isChangingPassword ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Valider</Text>}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  container: {
+    flexGrow: 1,
+    justifyContent: "flex-start",
     alignItems: "center",
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 480,
     padding: 20,
+    paddingTop: 24,
     backgroundColor: "#FFFFFF",
   },
   schoolLogo: {
@@ -483,6 +534,9 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.45)",
+  },
+  modalScroll: {
+    flexGrow: 1,
     justifyContent: "center",
     padding: 24,
   },
