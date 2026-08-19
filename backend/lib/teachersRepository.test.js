@@ -67,7 +67,7 @@ function createMemoryDb() {
         teachers.push(row);
         return { ...row };
       }
-      if (text.includes("FROM TEACHERS T") && text.includes("WHERE T.TEACHER_CODE")) {
+      if (text.includes("FROM TEACHERS T") && text.includes("T.TEACHER_CODE") && text.includes("T.SCHOOL_ID")) {
         const teacher = teachers.find((row) => row.teacher_code === params[0] && row.school_id === params[1]);
         if (!teacher) return null;
         const user = users.find((row) => row.id === teacher.user_id);
