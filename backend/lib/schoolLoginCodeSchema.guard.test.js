@@ -16,6 +16,7 @@ const backfill = fs.readFileSync(
   path.join(__dirname, "../db/migrations/20260825_school_login_code_seq_backfill.sql"),
   "utf8",
 );
+const schemaSql = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
 const boot = fs.readFileSync(path.join(__dirname, "../db/userRolesSchema.js"), "utf8");
 const webSchoolModule = fs.readFileSync(
   path.join(__dirname, "../../web/src/lib/schoolModule.ts"),
@@ -41,6 +42,11 @@ assert.match(countryYear, /school_login_code_sequence_audit/);
 assert.match(backfill, /APPLY_CTO_APPROVED/);
 assert.match(backfill, /SCHOOL_LOGIN_SEQ_BACKFILL_DRY_RUN/);
 assert.match(backfill, /DISABLE TRIGGER USER/);
+
+assert.match(
+  schemaSql,
+  /CREATE TABLE IF NOT EXISTS schools \([\s\S]*?login_code TEXT,/m,
+);
 
 assert.match(boot, /20260825_school_login_code_country_year\.sql/);
 assert.doesNotMatch(boot, /readFileSync\([^)]*20260825_school_login_code_seq_backfill/);

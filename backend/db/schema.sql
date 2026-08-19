@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS schools (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   country_id UUID NOT NULL REFERENCES countries(id),
   school_code VARCHAR(32) NOT NULL UNIQUE,
+  login_code TEXT,
   name TEXT NOT NULL,
   logo_url TEXT,
   address TEXT,
