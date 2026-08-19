@@ -92,3 +92,32 @@ test("boot PostgreSQL appelle la réconciliation après le schéma pédagogie", 
   assert.match(source, /ensureTeacherCourseCanonicalReconcile/);
   assert.match(source, /ensurePedagogyCanonicalSchema\(\)/);
 });
+
+test("schema.sql et la migration dédiée exposent legacy_teacher_code", () => {
+  const schema = fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8");
+  const migration = fs.readFileSync(
+    path.join(__dirname, "../db/migrations/20260819_teacher_legacy_code.sql"),
+    "utf8",
+  );
+  assert.match(schema, /legacy_teacher_code/);
+  assert.match(migration, /legacy_teacher_code/);
+  const helper = fs.readFileSync(path.join(__dirname, "../db/teachersLegacyCodeSchema.js"), "utf8");
+  assert.match(helper, /20260819_teacher_legacy_code\.sql/);
+});
+
+test("fixtures PG enseignants appliquent la migration legacy_teacher_code", () => {
+  const files = [
+    "teachersRepository.pg.test.js",
+    "teacherLifecycleRepository.pg.test.js",
+    "subjectsAssignments.pg.test.js",
+    "teacherLoginScope.pg.test.js",
+  ];
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(__dirname, file), "utf8");
+    assert.match(
+      source,
+      /ensureTeachersLegacyCodeSchema/,
+      `${file} doit appliquer la migration canonique legacy_teacher_code`,
+    );
+  }
+});

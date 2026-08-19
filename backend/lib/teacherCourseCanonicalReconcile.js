@@ -16,16 +16,13 @@ const {
   isLegacyShortTeacherCode,
 } = require("./teacherCodeAllocation");
 const { generateCourseCode } = require("./pedagogyService");
+const {
+  TEACHERS_LEGACY_CODE_SCHEMA_SQL,
+  ensureTeachersLegacyCodeSchema,
+} = require("../db/teachersLegacyCodeSchema");
 
 const CANONICAL_TEACHER_CODE_CONFLICT = "CANONICAL_TEACHER_CODE_CONFLICT";
 const CANONICAL_SCHOOL_COURSE_AMBIGUOUS = "CANONICAL_SCHOOL_COURSE_AMBIGUOUS";
-
-const TEACHERS_LEGACY_CODE_SCHEMA_SQL = `
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS legacy_teacher_code VARCHAR(64);
-CREATE INDEX IF NOT EXISTS idx_teachers_school_legacy_code
-  ON teachers (school_id, legacy_teacher_code)
-  WHERE legacy_teacher_code IS NOT NULL;
-`;
 
 function createCanonicalReconcileError(code, message, details) {
   const error = new Error(message);
@@ -98,7 +95,7 @@ async function exec(db, sql, params) {
 }
 
 async function ensureTeacherCourseCanonicalSchema(db) {
-  await exec(db, TEACHERS_LEGACY_CODE_SCHEMA_SQL);
+  await ensureTeachersLegacyCodeSchema(db);
 }
 
 async function inventoryTeachers(db) {
