@@ -12,6 +12,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { hashSecret } = require("../services/credentialService");
+const { loadReconciledSchoolCourseId } = require("./loadReconciledSchoolCourse");
 
 const ROOT = path.resolve(__dirname, "../..");
 const API_PORT = 19881;
@@ -325,14 +326,13 @@ async function runBrowserScenarios() {
   }
 }
 
-async function seedCanonicalCourse() {
-  const token = await loginApi("admin", "1234");
-  const course = await request("/courses", {
-    method: "POST",
-    token,
-    body: { className: "2ème A", name: "Mathématiques", teacherId: "ENS-0001" },
+async function seedCanonicalCourse(databaseUrl) {
+  const id = await loadReconciledSchoolCourseId(databaseUrl, {
+    className: "2ème A",
+    subjectName: "Mathématiques",
   });
-  assert.equal(course.status, 201, JSON.stringify(course.data));
+  assert.match(String(id), /^[0-9a-f-]{36}$/i);
+  return id;
 }
 
 async function main() {
@@ -371,7 +371,7 @@ async function main() {
   try {
     await waitForUrl(`${apiBase()}/health`, "backend");
     await waitForUrl(WEB_URL, "web");
-    await seedCanonicalCourse();
+    await seedCanonicalCourse(isolatedUrl);
     await runBrowserScenarios();
   } catch (error) {
     console.error("backend log:\n", backendLog.slice(-4000));
