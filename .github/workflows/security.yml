@@ -216,6 +216,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
         run: npm run verify:planning-rooms
+      - name: verify:planning-replacements (exceptions datées + projection)
+        env:
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+        run: npm run verify:planning-replacements
       - name: verify:planning-course-options (Préfet/Enseignant — projection cours planifiables)
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
