@@ -258,6 +258,12 @@ export const DATA_TRUTH_COPY = {
   writePaymentsWebOnly:
     "La saisie d'un paiement multi-libellés se fait depuis le web établissement pour le moment.",
   parentAverageUnavailable: "Moyenne indisponible",
+  emptyEvaluations: "Aucune évaluation.",
+  errorEvaluations: "Impossible de charger les évaluations.",
+  offlineEvaluations: "Réseau indisponible. Les évaluations n'ont pas pu être chargées.",
+  emptyNotes: "Aucune note disponible",
+  errorNotes: "Impossible de charger les notes.",
+  offlineNotes: "Réseau indisponible. Les notes n'ont pas pu être chargées.",
 } as const;
 
 export const DATA_TRUTH_TEST_IDS = {
@@ -274,4 +280,10 @@ export const DATA_TRUTH_TEST_IDS = {
   parentAverage: "parent-average-value",
   passwordChangeModal: "login-password-change-modal",
   paymentsReceipt: "payments-receipt",
+  evaluationsList: "evaluations-v2-list",
+  evaluationsEmpty: "evaluations-v2-empty",
+  evaluationsError: "evaluations-v2-error",
+  notesList: "evaluations-v2-notes-list",
+  notesEmpty: "evaluations-v2-notes-empty",
+  notesError: "evaluations-v2-notes-error",
 } as const;

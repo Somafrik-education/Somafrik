@@ -165,7 +165,7 @@ async function main() {
   assert.doesNotMatch(home, /getStudentById/);
   assert.match(home, /parentAverageDisplay/);
   assert.match(home, /Moyenne indisponible|parentAverageDisplay/);
-  assert.match(home, /notesData/);
+  assert.match(home, /notesSnapshot|loadNotes|notesData/);
   console.log("OK: dashboard Parent sans catalog.ts");
 
   const reports = read(path.join(SRC, "screens", "ReportCardsScreen.tsx"));

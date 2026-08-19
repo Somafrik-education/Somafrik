@@ -124,6 +124,8 @@ jobs:
 
       - name: verify:mobile-data-truth
         run: npm run verify:mobile-data-truth
+      - name: verify:mobile-evaluations-v2
+        run: npm run verify:mobile-evaluations-v2
 
       - name: verify:platform-management (mémoire + PostgreSQL CI)
         env:

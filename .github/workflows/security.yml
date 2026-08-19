@@ -64,6 +64,8 @@ jobs:
 
       - name: verify:mobile-data-truth
         run: npm run verify:mobile-data-truth
+      - name: verify:mobile-evaluations-v2
+        run: npm run verify:mobile-evaluations-v2
 
   typescript:
     name: TypeScript
@@ -162,6 +164,7 @@ jobs:
           npm run verify:db-config
           npm run verify:mobile-security
           npm run verify:mobile-data-truth
+          npm run verify:mobile-evaluations-v2
           npm run verify:notes-sync
           npm run verify:students-sync
           npm run verify:pre-e1-hotfix-02

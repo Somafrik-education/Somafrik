@@ -6,12 +6,15 @@ export type Student = {
   matricule: string;
   gender: "Masculin" | "Féminin" | string;
   birthDate: string;
+  classId?: string | null;
+  classCode?: string;
   className: string;
   schoolCode: string;
   parentName: string;
   parentPhone: string;
   parentEmail: string;
   archived?: boolean;
+  status?: string;
 };
 
 export type Teacher = {
@@ -35,8 +38,13 @@ export type TeacherAssignment = {
   id?: string;
   teacherId?: string;
   teacherName?: string;
+  classId?: string | null;
+  classCode?: string;
   className: string;
   course: string;
+  subject?: string;
+  subjectCode?: string;
+  status?: string;
 };
 
 /** Créneau de planning réel synchronisé depuis le back-office (jour/heure). */
@@ -88,6 +96,8 @@ export type NoteItem = {
   evaluationType?: string;
   scale?: number;
   evaluationCoefficient?: number;
+  gradeStatus?: string;
+  status?: string;
   authorId?: string;
   enteredAt?: string;
   audit?: {
@@ -110,11 +120,13 @@ export type PresenceItem = {
 };
 
 export type AcademicPeriodConfig = {
+  id?: string;
   name: string;
   type: "Trimestre" | "Semestre" | "Période" | string;
   startDate: string;
   endDate: string;
   active?: boolean;
+  status?: string;
 };
 
 export type AcademicManagementConfig = {
