@@ -18,7 +18,7 @@ const {
 const WEEKLY_SLOT_SELECT = `
           SELECT w.id, w.school_id, w.academic_year_id, w.school_course_id, w.class_id, w.teacher_id,
                  w.day_of_week, w.start_time, w.end_time, w.status, w.room, w.room_id, w.created_at, w.updated_at,
-                 s.school_code, c.name AS class_name, sc.subject_id, sc.status AS school_course_status,
+                 s.school_code, c.name AS class_name, c.class_code, sc.subject_id, sc.status AS school_course_status,
                  sub.name AS subject_name, t.teacher_code,
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name,
                  ay.name AS academic_year_name, ay.status AS academic_year_status,

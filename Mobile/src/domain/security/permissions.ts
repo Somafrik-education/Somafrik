@@ -81,7 +81,7 @@ export const routeFeatureMap: Record<string, string> = {
   Paiements: "Paiements",
   Messages: "Messages",
   Announcements: "Notifications",
-  Timetable: "Années Académiques",
+  Timetable: "Planning de cours",
   ReportCards: "Bulletins",
   Documents: "Documents",
   Reports: "Rapports",

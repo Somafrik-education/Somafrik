@@ -79,6 +79,14 @@ function mapExclusionViolation(error) {
       { constraint: constraint || undefined, pgCode: error?.code },
     );
   }
+  if (constraint.includes("class") || /no_class_overlap/i.test(message)) {
+    return createPedagogyError(
+      409,
+      "Conflit d'emploi du temps : classe déjà occupée.",
+      PEDAGOGY_ERROR.COURSE_SCHEDULE_CONFLICT,
+      { constraint: constraint || undefined, pgCode: error?.code },
+    );
+  }
   const teacher = constraint.includes("teacher") || /no_teacher_overlap/i.test(message);
   return createPedagogyError(
     409,
@@ -113,6 +121,7 @@ function mapWeeklyScheduleDto(row) {
     room: row.room_name || row.room || "",
     roomCode: row.room_code || "",
     roomCapacity: row.room_capacity == null || row.room_capacity === "" ? null : Number(row.room_capacity),
+    classCode: row.class_code || "",
     className: row.class_name || "",
     courseName: row.subject_name || "",
     subject: row.subject_name || "",

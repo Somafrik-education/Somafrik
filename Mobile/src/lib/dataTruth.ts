@@ -246,8 +246,8 @@ export function canRestorePersistedSession(options: {
 
 export const DATA_TRUTH_COPY = {
   retry: "Réessayer",
-  emptyPlanning: "Aucun cours planifié.",
-  errorPlanning: "Impossible de charger l'emploi du temps.",
+  emptyPlanning: "Aucun créneau planifié",
+  errorPlanning: "Impossible de charger le planning",
   offlinePlanning: "Réseau indisponible. L'emploi du temps n'a pas pu être chargé.",
   emptyPayments: "Aucun paiement.",
   errorPayments: "Impossible de charger les paiements.",
