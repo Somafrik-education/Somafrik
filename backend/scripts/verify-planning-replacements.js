@@ -171,6 +171,22 @@ function decodeJwt(token) {
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
 }
 
+async function teacherIdByPublicCode(pool, code) {
+  const row = await pool.query(
+    `SELECT t.id
+     FROM teachers t
+     LEFT JOIN users u ON u.id = t.user_id
+     WHERE t.teacher_code = $1
+        OR t.legacy_teacher_code = $1
+        OR u.user_code = $1
+        OR right(t.teacher_code, char_length($1) + 1) = '-' || $1
+     LIMIT 1`,
+    [code],
+  );
+  assert.ok(row.rows[0], `enseignant ${code} introuvable après reconcile`);
+  return row.rows[0].id;
+}
+
 async function prepareDatabase(databaseUrl) {
   const isolatedUrl = await ensureIsolatedDatabase(databaseUrl, PG_HTTP_DATABASE);
   const pool = new Pool({ connectionString: isolatedUrl });
@@ -317,8 +333,8 @@ async function runHttp(databaseUrl) {
     );
 
     const yearId = (await pool.query(`SELECT id FROM academic_years LIMIT 1`)).rows[0].id;
-    const kabeyaId = (await pool.query(`SELECT id FROM teachers WHERE teacher_code = 'ENS-0002'`)).rows[0].id;
-    const sekeId = (await pool.query(`SELECT id FROM teachers WHERE teacher_code = 'ENS-0001'`)).rows[0].id;
+    const kabeyaId = await teacherIdByPublicCode(pool, "ENS-0002");
+    const sekeId = await teacherIdByPublicCode(pool, "ENS-0001");
     const courseAId = await loadReconciledSchoolCourseId(isolatedUrl, { className: "2ème A", subjectName: "Mathématiques" });
     const courseBId = await loadReconciledSchoolCourseId(isolatedUrl, { className: "2ème B", subjectName: "Français" });
 
@@ -441,7 +457,7 @@ async function runBrowser(databaseUrl) {
     const yearId = (await request(PG_PORT, "/course-schedules", { token: prefetToken })).data;
     const pool = new Pool({ connectionString: isolatedUrl });
     const year = (await pool.query(`SELECT id FROM academic_years LIMIT 1`)).rows[0].id;
-    const kabeyaId = (await pool.query(`SELECT id FROM teachers WHERE teacher_code = 'ENS-0002'`)).rows[0].id;
+    const kabeyaId = await teacherIdByPublicCode(pool, "ENS-0002");
     await pool.end();
     const courseAId = await loadReconciledSchoolCourseId(isolatedUrl, { className: "2ème A", subjectName: "Mathématiques" });
     const slot = await request(PG_PORT, "/course-schedules", {
