@@ -6,6 +6,7 @@ import { MD3LightTheme, PaperProvider, type MD3Theme } from "react-native-paper"
 import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider } from "./src/context/AuthContext";
 import { AdminDataProvider } from "./src/context/AdminDataContext";
+import OutboxRuntime from "./src/components/OutboxRuntime";
 
 /** Thème React Native Paper aligné sur la marque Somafrik (cohérent avec le web). */
 const paperTheme: MD3Theme = {
@@ -38,6 +39,7 @@ export default function App() {
       <PaperProvider theme={paperTheme} settings={{ icon: paperIcon }}>
         <AuthProvider>
           <AdminDataProvider>
+            <OutboxRuntime />
             <AppNavigator />
           </AdminDataProvider>
         </AuthProvider>

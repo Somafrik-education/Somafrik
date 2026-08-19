@@ -5,6 +5,7 @@ import {
   ApiClientError,
   httpRequest,
   httpUpload,
+  type HttpRequestOptions,
   type SecureUploadFile,
   type SecureUploadRequestOptions,
 } from "./httpClient";
@@ -226,7 +227,11 @@ export async function hasActiveAccessToken() {
   return Boolean(await getAccessToken());
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export type MutationRequestOptions = {
+  idempotencyKey?: string;
+};
+
+async function request<T>(path: string, options?: HttpRequestOptions): Promise<T> {
   try {
     return await httpRequest<T>(path, options);
   } catch (error) {
@@ -311,19 +316,25 @@ export function getEvaluations() {
   return request<unknown>("/evaluations").then((payload) => unwrapList(payload).map(normalizeEvaluation));
 }
 
-export function createEvaluation(payload: Record<string, unknown>) {
+export function createEvaluation(payload: Record<string, unknown>, options?: MutationRequestOptions) {
   const body = stripEvaluationClientScope(payload);
   delete body.status;
   return request<CanonicalEvaluation>("/evaluations", {
     method: "POST",
     body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
   }).then(normalizeEvaluation);
 }
 
-export function updateEvaluation(evaluationId: string, payload: Record<string, unknown>) {
+export function updateEvaluation(
+  evaluationId: string,
+  payload: Record<string, unknown>,
+  options?: MutationRequestOptions,
+) {
   return request<CanonicalEvaluation>(`/evaluations/${encodeURIComponent(evaluationId)}`, {
     method: "PATCH",
     body: JSON.stringify(stripEvaluationClientScope(payload)),
+    idempotencyKey: options?.idempotencyKey,
   }).then(normalizeEvaluation);
 }
 
@@ -404,12 +415,13 @@ export function getPlanningCourseOptions(): Promise<PlanningCourseOption[]> {
   );
 }
 
-export function createCourseSchedule(input: WeeklySlotWriteInput) {
+export function createCourseSchedule(input: WeeklySlotWriteInput, options?: MutationRequestOptions) {
   const body = buildCreateWeeklySlotPayload(input);
   assertNoLegacyPlanningIdentity(body);
   return request<unknown>("/course-schedules", {
     method: "POST",
     body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
   }).then(normalizeWeeklySlot);
 }
 
@@ -456,11 +468,12 @@ export function getReplacementTeacherOptions(
   );
 }
 
-export function createCourseScheduleReplacement(input: ReplacementWriteInput) {
+export function createCourseScheduleReplacement(input: ReplacementWriteInput, options?: MutationRequestOptions) {
   const body = buildCreateReplacementPayload(input);
   return request<unknown>("/course-schedule-replacements", {
     method: "POST",
     body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
   }).then(normalizeReplacement);
 }
 
@@ -531,7 +544,7 @@ export function saveAcademicConfig(payload: AcademicConfigPayload) {
   });
 }
 
-export function saveNote(payload: unknown) {
+export function saveNote(payload: unknown, options?: MutationRequestOptions) {
   const body =
     payload && typeof payload === "object"
       ? stripEvaluationClientScope(payload as Record<string, unknown>)
@@ -539,13 +552,15 @@ export function saveNote(payload: unknown) {
   return request<CanonicalGrade>("/notes", {
     method: "POST",
     body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
   }).then(normalizeGrade);
 }
 
-export function savePresences(payload: unknown) {
+export function savePresences(payload: unknown, options?: MutationRequestOptions) {
   return request<unknown[]>("/presences", {
     method: "POST",
     body: JSON.stringify(payload),
+    idempotencyKey: options?.idempotencyKey,
   });
 }
 
@@ -579,10 +594,11 @@ export function updateClientsAnnouncement(announcementId: string, payload: Recor
   });
 }
 
-export function sendClientsMessage(payload: Record<string, unknown>) {
+export function sendClientsMessage(payload: Record<string, unknown>, options?: MutationRequestOptions) {
   return request("/backoffice/messages", {
     method: "POST",
     body: JSON.stringify(payload),
+    idempotencyKey: options?.idempotencyKey,
   });
 }
 
@@ -647,10 +663,11 @@ export function deleteCourse(courseId: string) {
   });
 }
 
-export function createSchoolPayment(payload: Record<string, unknown>) {
+export function createSchoolPayment(payload: Record<string, unknown>, options?: MutationRequestOptions) {
   return request("/payments", {
     method: "POST",
     body: JSON.stringify(payload),
+    idempotencyKey: options?.idempotencyKey,
   });
 }
 

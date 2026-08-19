@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -38,6 +38,8 @@ import {
   type PlanningCourseOption,
   type ReplacementTeacherOption,
 } from "../lib/planningV2";
+import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
+import { NETWORK_COPY, executeMutation } from "../lib/networkResilience";
 
 type Mode = "list" | "create" | "edit" | "replace";
 
@@ -92,6 +94,8 @@ export default function TimetableScreen() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [optionsError, setOptionsError] = useState("");
+  const saveLockRef = useRef(createInFlightLock());
+  const intentionRef = useRef(createIntentionStore());
 
   const refreshPlanning = useCallback(async () => {
     await loadPlanningWeekly();
@@ -190,23 +194,35 @@ export default function TimetableScreen() {
   };
 
   const handleSaveSlot = async () => {
-    if (saving) return;
+    if (!saveLockRef.current.tryBegin()) return;
     const option = selectedOption;
     if (!option && mode === "create") {
+      saveLockRef.current.end();
       setSaveError("Choisissez un cours planifiable.");
       return;
     }
     setSaving(true);
     setSaveError("");
+    const intentionId =
+      mode === "create"
+        ? `planning:${option?.schoolCourseId}:${dayOfWeek}:${startTime}:${endTime}`
+        : `planning-edit:${editing?.id}:${dayOfWeek}:${startTime}:${endTime}`;
+    const idempotencyKey = intentionRef.current.getOrCreate(intentionId);
     try {
       if (mode === "create" && option) {
-        await createCourseSchedule({
-          schoolCourseId: option.schoolCourseId,
-          academicYearId: option.academicYearId,
-          dayOfWeek,
-          startTime,
-          endTime,
-          roomId,
+        await executeMutation({
+          request: () =>
+            createCourseSchedule(
+              {
+                schoolCourseId: option.schoolCourseId,
+                academicYearId: option.academicYearId,
+                dayOfWeek,
+                startTime,
+                endTime,
+                roomId,
+              },
+              { idempotencyKey },
+            ),
         });
       } else if (mode === "edit" && editing) {
         await updateCourseSchedule(editing.id, {
@@ -218,6 +234,7 @@ export default function TimetableScreen() {
           roomId,
         });
       }
+      intentionRef.current.rotate(intentionId);
       setMode("list");
       setEditing(null);
       await loadPlanningWeekly();
@@ -225,6 +242,7 @@ export default function TimetableScreen() {
       setSaveError(mapPlanningConflictMessage(error));
     } finally {
       setSaving(false);
+      saveLockRef.current.end();
     }
   };
 
@@ -245,19 +263,29 @@ export default function TimetableScreen() {
   };
 
   const handleSaveReplacement = async () => {
-    if (saving || !editing) return;
+    if (!saveLockRef.current.tryBegin() || !editing) return;
     if (!substituteTeacherId) {
+      saveLockRef.current.end();
       setSaveError("Choisissez un remplaçant.");
       return;
     }
     setSaving(true);
     setSaveError("");
+    const intentionId = `replacement:${editing.id}:${occurrenceDate}:${substituteTeacherId}`;
+    const idempotencyKey = intentionRef.current.getOrCreate(intentionId);
     try {
-      await createCourseScheduleReplacement({
-        weeklySlotId: editing.id,
-        occurrenceDate,
-        substituteTeacherId,
+      await executeMutation({
+        request: () =>
+          createCourseScheduleReplacement(
+            {
+              weeklySlotId: editing.id,
+              occurrenceDate,
+              substituteTeacherId,
+            },
+            { idempotencyKey },
+          ),
       });
+      intentionRef.current.rotate(intentionId);
       setMode("list");
       setEditing(null);
       await loadPlanningWeekly();
@@ -266,6 +294,7 @@ export default function TimetableScreen() {
       setSaveError(mapPlanningConflictMessage(error));
     } finally {
       setSaving(false);
+      saveLockRef.current.end();
     }
   };
 
@@ -432,7 +461,14 @@ export default function TimetableScreen() {
           disabled={saving}
           testID={PLANNING_V2_TEST_IDS.saveButton}
         >
-          {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>{saveError ? PLANNING_V2_COPY.retry : "Enregistrer"}</Text>}
+          {saving ? (
+            <>
+              <ActivityIndicator color="#FFFFFF" />
+              <Text style={styles.primaryText}>{NETWORK_COPY.recording}</Text>
+            </>
+          ) : (
+            <Text style={styles.primaryText}>{saveError ? PLANNING_V2_COPY.retry : "Enregistrer"}</Text>
+          )}
         </TouchableOpacity>
         {mode === "edit" && canDelete ? (
           <TouchableOpacity style={styles.dangerButton} onPress={() => void handleDelete()} disabled={saving}>
@@ -483,7 +519,14 @@ export default function TimetableScreen() {
           onPress={() => void handleSaveReplacement()}
           disabled={saving}
         >
-          {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>{saveError ? PLANNING_V2_COPY.retry : "Enregistrer le remplacement"}</Text>}
+          {saving ? (
+            <>
+              <ActivityIndicator color="#FFFFFF" />
+              <Text style={styles.primaryText}>{NETWORK_COPY.recording}</Text>
+            </>
+          ) : (
+            <Text style={styles.primaryText}>{saveError ? PLANNING_V2_COPY.retry : "Enregistrer le remplacement"}</Text>
+          )}
         </TouchableOpacity>
         <TouchableOpacity style={styles.secondaryButton} onPress={() => setMode("list")} disabled={saving}>
           <Text style={styles.secondaryText}>Annuler</Text>
@@ -640,6 +683,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
   },
   dangerButton: {
     backgroundColor: "#B91C1C",

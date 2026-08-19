@@ -12,6 +12,7 @@ const {
   sqlTeacherIdentityEqualsAny,
   sqlTeacherPublicCodeEquals,
 } = require("../lib/teacherCodeAllocation");
+const { lockInt } = require("../services/idempotencyService");
 
 const roleToDb = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -87,6 +88,7 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.query(schema);
+    await this.ensureIdempotencySchema();
     await this.ensureLoginLockoutsCanonicalSchema();
     this.attachLoginLockoutStore();
     await this.ensureSchoolsCanonicalColumns();
@@ -6508,33 +6510,82 @@ class PostgresRepository {
     return "pending";
   }
 
+  async ensureIdempotencySchema() {
+    await this.query(`ALTER TABLE idempotency_keys ADD COLUMN IF NOT EXISTS school_scope TEXT NOT NULL DEFAULT ''`);
+    await this.query(`ALTER TABLE idempotency_keys ADD COLUMN IF NOT EXISTS request_hash TEXT NOT NULL DEFAULT ''`);
+    await this.query(`CREATE INDEX IF NOT EXISTS idx_idempotency_school_scope ON idempotency_keys(school_scope)`);
+    await this.query(
+      `CREATE INDEX IF NOT EXISTS idx_idempotency_principal_route ON idempotency_keys(principal_id, route_key)`,
+    );
+  }
+
   async findIdempotencyRecord(cacheId) {
     await this.init();
     const row = await this.query(
-      "SELECT cache_id, status_code, response_body, expires_at FROM idempotency_keys WHERE cache_id = $1 LIMIT 1",
+      `SELECT cache_id, route_key, principal_id, school_scope, request_hash, status_code, response_body, expires_at
+       FROM idempotency_keys WHERE cache_id = $1 LIMIT 1`,
       [String(cacheId ?? "")],
     );
     return row.rows[0] ?? null;
   }
 
-  async saveIdempotencyRecord({ cacheId, routeKey, principalId, statusCode, responseBody, expiresAt }) {
+  async saveIdempotencyRecord({
+    cacheId,
+    routeKey,
+    principalId,
+    schoolScope,
+    requestHash,
+    statusCode,
+    responseBody,
+    expiresAt,
+  }) {
     await this.init();
     await this.query(
-      `INSERT INTO idempotency_keys (cache_id, route_key, principal_id, status_code, response_body, expires_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+      `INSERT INTO idempotency_keys (
+         cache_id, route_key, principal_id, school_scope, request_hash, status_code, response_body, expires_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
        ON CONFLICT (cache_id) DO UPDATE SET
          status_code = EXCLUDED.status_code,
          response_body = EXCLUDED.response_body,
-         expires_at = EXCLUDED.expires_at`,
+         expires_at = EXCLUDED.expires_at,
+         school_scope = EXCLUDED.school_scope,
+         request_hash = EXCLUDED.request_hash
+       WHERE idempotency_keys.request_hash = ''
+          OR idempotency_keys.request_hash = EXCLUDED.request_hash`,
       [
         String(cacheId ?? ""),
         String(routeKey ?? ""),
         String(principalId ?? ""),
+        String(schoolScope ?? "").toUpperCase(),
+        String(requestHash ?? ""),
         Number(statusCode ?? 200),
         JSON.stringify(responseBody ?? {}),
         expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       ],
     );
+  }
+
+  async purgeExpiredIdempotencyRecords() {
+    await this.init();
+    await this.query(`DELETE FROM idempotency_keys WHERE expires_at < NOW()`);
+  }
+
+  async withIdempotencyLock(cacheId, fn) {
+    await this.init();
+    const client = await this.pool.connect();
+    const lockKey = lockInt(cacheId);
+    try {
+      await client.query("SELECT pg_advisory_lock($1)", [lockKey]);
+      return await fn();
+    } finally {
+      try {
+        await client.query("SELECT pg_advisory_unlock($1)", [lockKey]);
+      } catch {
+        // conserve l'erreur métier d'origine
+      }
+      client.release();
+    }
   }
 }
 

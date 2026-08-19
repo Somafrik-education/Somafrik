@@ -1,6 +1,6 @@
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
@@ -40,6 +40,9 @@ import {
 } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
+import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
+import { NETWORK_COPY, executeMutation } from "../lib/networkResilience";
+import { submitProtectedMutation } from "../lib/outbox";
 
 type GradeDraft = {
   value: string;
@@ -98,6 +101,10 @@ export default function TeacherGradesScreen() {
   const [createScale, setCreateScale] = useState("20");
   const [createTitle, setCreateTitle] = useState("");
   const [creating, setCreating] = useState(false);
+  const createLockRef = useRef(createInFlightLock());
+  const saveLockRef = useRef(createInFlightLock());
+  const createIntentionRef = useRef(createIntentionStore());
+  const noteIntentionRef = useRef(createIntentionStore());
 
   const periods = useMemo(
     () => selectablePeriods(canonicalPeriodsFromConfig(academicConfigData.periods ?? [])),
@@ -224,14 +231,23 @@ export default function TeacherGradesScreen() {
         Alert.alert("Requête invalide", "teacherId et statut Validée sont interdits à la création.");
         return;
       }
+      if (!createLockRef.current.tryBegin()) return;
+      const intentionId = `evaluation:${createClassId}:${createSubjectKey}:${createDate}:${createTypeId}`;
+      const idempotencyKey = createIntentionRef.current.getOrCreate(intentionId);
       setCreating(true);
-      await createEvaluation(payload);
-      setMode("list");
-      await loadEvaluations();
+      try {
+        await executeMutation({
+          request: () => createEvaluation(payload, { idempotencyKey }),
+        });
+        createIntentionRef.current.rotate(intentionId);
+        setMode("list");
+        await loadEvaluations();
+      } finally {
+        setCreating(false);
+        createLockRef.current.end();
+      }
     } catch (error) {
       Alert.alert("Création refusée", apiErrorMessage(error, "Impossible de créer l'évaluation."));
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -302,11 +318,39 @@ export default function TeacherGradesScreen() {
       Alert.alert("Aucune note", "Saisissez au moins une note ou marquez un élève absent.");
       return;
     }
+    if (!saveLockRef.current.tryBegin()) return;
     setSaving(true);
     setSaveError("");
     try {
+      let queued = 0;
       for (const entry of entries) {
-        await saveNote(entry.payload);
+        const intentionId = `note:${selected.evaluationId}:${studentApiId(entry.student)}`;
+        const idempotencyKey = noteIntentionRef.current.getOrCreate(intentionId);
+        const submitted = await submitProtectedMutation({
+          domain: "notes",
+          method: "POST",
+          path: "/notes",
+          payload: entry.payload,
+          idempotencyKey,
+          userId: String(session?.user.id ?? ""),
+          schoolScope: String(session?.school?.code ?? session?.user.schoolCode ?? ""),
+          persistOutbox: true,
+          request: () => saveNote(entry.payload, { idempotencyKey }),
+        });
+        if (submitted.outcome === "confirmed") {
+          noteIntentionRef.current.rotate(intentionId);
+          continue;
+        }
+        if (submitted.outcome === "queued") {
+          queued += 1;
+          continue;
+        }
+        setSaveError(apiErrorMessage(submitted.error, "Les notes n'ont pas été enregistrées."));
+        return;
+      }
+      if (queued) {
+        setSaveError(NETWORK_COPY.queued);
+        return;
       }
       const grades = await loadEvaluationGrades(selected.evaluationId);
       setDrafts(draftsFromGrades(roster, grades));
@@ -315,6 +359,7 @@ export default function TeacherGradesScreen() {
       setSaveError(apiErrorMessage(error, "Les notes n'ont pas été enregistrées."));
     } finally {
       setSaving(false);
+      saveLockRef.current.end();
     }
   };
 
@@ -381,7 +426,11 @@ export default function TeacherGradesScreen() {
           onPress={() => void handleCreate()}
           disabled={creating}
         >
-          {creating ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>{EVALUATIONS_V2_COPY.create}</Text>}
+          {creating ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryText}>{EVALUATIONS_V2_COPY.create}</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     );
@@ -484,7 +533,10 @@ export default function TeacherGradesScreen() {
           testID={EVALUATIONS_V2_TEST_IDS.saveButton}
         >
           {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <>
+              <ActivityIndicator color="#FFFFFF" />
+              <Text style={styles.primaryText}>{EVALUATIONS_V2_COPY.saving}</Text>
+            </>
           ) : (
             <Text style={styles.primaryText}>{saveError ? EVALUATIONS_V2_COPY.retry : EVALUATIONS_V2_COPY.saveGrades}</Text>
           )}
@@ -649,6 +701,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 8,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
   },
   disabledButton: { opacity: 0.6 },
   primaryText: { color: "#FFFFFF", fontWeight: "900" },

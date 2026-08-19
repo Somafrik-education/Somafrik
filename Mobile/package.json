@@ -20,7 +20,9 @@
     "verify:mobile-data-truth": "node scripts/verify-mobile-data-truth.js",
     "verify:mobile-evaluations-v2": "node scripts/verify-mobile-evaluations-v2.js",
     "verify:mobile-planning-v2": "node scripts/verify-mobile-planning-v2.js",
-    "verify:mobile-domain-hydration": "node scripts/verify-mobile-domain-hydration.js"
+    "verify:mobile-domain-hydration": "node scripts/verify-mobile-domain-hydration.js",
+    "verify:mobile-network-resilience": "node scripts/verify-mobile-network-resilience.js",
+    "test:network-resilience": "npx --yes tsx src/lib/networkResilience.test.ts && npx --yes tsx src/lib/mutationGuard.test.ts && npx --yes tsx src/lib/outbox.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

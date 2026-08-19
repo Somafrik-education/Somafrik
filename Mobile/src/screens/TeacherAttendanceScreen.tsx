@@ -1,6 +1,6 @@
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPresenceStats, rollCallInitialStatus } from "../domain/metrics/schoolMetrics";
@@ -16,6 +16,9 @@ import {
 import { savePresences } from "../services/api";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
+import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
+import { NETWORK_COPY } from "../lib/networkResilience";
+import { submitProtectedMutation } from "../lib/outbox";
 
 type AttendanceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
 
@@ -52,8 +55,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { studentsData, classesData, presencesData, teachersData, assignmentsData, refreshBackOfficeState } =
+  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences } =
     useAdminData();
+  const saveLockRef = useRef(createInFlightLock());
+  const intentionRef = useRef(createIntentionStore());
+  const [saving, setSaving] = useState(false);
+  const [saveHint, setSaveHint] = useState("");
   const scopeState = useMemo(
     () => ({ teachers: teachersData, assignments: assignmentsData, classes: classesData }),
     [teachersData, assignmentsData, classesData],
@@ -151,13 +158,16 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   };
 
   const saveCall = async (className: string) => {
+    if (!saveLockRef.current.tryBegin()) return;
     if (!canUpdatePresences) {
+      saveLockRef.current.end();
       Alert.alert("Accès refusé", "Votre rôle ne permet pas d'enregistrer l'appel.");
       return;
     }
 
     const rows = filterStudentsByClassName(classStudents, className);
     if (!rows.length) {
+      saveLockRef.current.end();
       Alert.alert(
         "Aucun élève chargé",
         "Impossible d'enregistrer l'appel: aucun élève n'est rattaché à cette classe dans la synchronisation."
@@ -189,20 +199,48 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         };
       });
 
+    const payload = {
+      className,
+      date: todayLabel,
+      hour: currentHour,
+      items: presencePayload,
+    };
+    const intentionId = `presence:${className}:${todayLabel}`;
+    const idempotencyKey = intentionRef.current.getOrCreate(intentionId);
+    setSaving(true);
+    setSaveHint(NETWORK_COPY.recording);
     try {
-      const savedPresences = await savePresences({
-        className,
-        date: todayLabel,
-        hour: currentHour,
-        items: presencePayload,
+      const submitted = await submitProtectedMutation({
+        domain: "presences",
+        method: "POST",
+        path: "/presences",
+        payload,
+        idempotencyKey,
+        userId: String(session?.user.id ?? ""),
+        schoolScope: String(session?.school?.code ?? session?.user.schoolCode ?? ""),
+        persistOutbox: true,
+        request: () => savePresences(payload, { idempotencyKey }),
       });
-      if (!savedPresences.length) {
+      if (submitted.outcome !== "confirmed") {
+        setSaveHint(submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed);
+        Alert.alert(
+          submitted.outcome === "queued" ? NETWORK_COPY.queued : NETWORK_COPY.failed,
+          submitted.outcome === "queued"
+            ? "L'appel est conservé en file d'attente avec la même intention. Aucune confirmation locale."
+            : submitted.error instanceof Error
+              ? submitted.error.message
+              : "Impossible d'enregistrer l'appel dans la base.",
+        );
+        return;
+      }
+      const savedPresences = submitted.result;
+      if (!Array.isArray(savedPresences) || !savedPresences.length) {
         throw new Error("Aucune présence n'a été enregistrée par le backend.");
       }
 
       setSavedCalls((current) => [
         {
-          id: `CALL-${Date.now()}`,
+          id: `CALL-${todayLabel}-${className}`,
           className,
           course: classAssignments[0]?.course ?? "Cours non renseigné",
           teacherId: session?.user.id ?? "",
@@ -212,17 +250,22 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         },
         ...current,
       ]);
-      await refreshBackOfficeState();
-
+      await loadPresences();
+      intentionRef.current.rotate(intentionId);
+      setSaveHint("");
       Alert.alert(
         "Appel enregistré",
         `${className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\nAppel enregistré.`
       );
     } catch (error) {
+      setSaveHint(NETWORK_COPY.failed);
       Alert.alert(
-        "Appel non enregistré",
+        NETWORK_COPY.failed,
         error instanceof Error ? error.message : "Impossible d'enregistrer l'appel dans la base."
       );
+    } finally {
+      setSaving(false);
+      saveLockRef.current.end();
     }
   };
 
@@ -320,14 +363,15 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
             {canUpdatePresences && (
               <View style={styles.classActions}>
-                <TouchableOpacity style={styles.secondaryButton} onPress={() => markClassPresent(className)}>
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => markClassPresent(className)} disabled={saving}>
                   <Text style={styles.secondaryText}>Tout présent</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveButton} onPress={() => saveCall(className)}>
-                  <Text style={styles.saveText}>Enregistrer l'appel</Text>
+                <TouchableOpacity style={styles.saveButton} onPress={() => saveCall(className)} disabled={saving}>
+                  {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveText}>Enregistrer l'appel</Text>}
                 </TouchableOpacity>
               </View>
             )}
+            {saveHint ? <Text style={styles.meta}>{saveHint}</Text> : null}
 
             {rows.map((student) => {
               const entry = attendance[student.id] ?? { status: "Présent" };

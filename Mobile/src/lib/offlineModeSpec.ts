@@ -5,9 +5,10 @@
 export const OFFLINE_COPY = {
   bannerTitle: "Hors connexion",
   bannerHint:
-    "Les données déjà chargées restent consultables. Les modifications reprendront dès le retour du réseau.",
+    "Les listes déjà chargées restent consultables. Un envoi n'est rejoué que s'il figure réellement dans la file d'attente.",
   actionBlocked: "Action impossible sans connexion internet.",
   reconnected: "Connexion rétablie",
+  pendingOutbox: "Envoi en attente — confirmation serveur requise.",
 } as const;
 
 export const OFFLINE_TEST_IDS = {

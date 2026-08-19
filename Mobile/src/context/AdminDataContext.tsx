@@ -34,6 +34,7 @@ import {
 } from "../lib/platformNotificationSync";
 import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
 import { snapshotFromFailure, snapshotFromSuccess, type ResourceSnapshot } from "../lib/dataTruth";
+import { createIdempotencyKey } from "../lib/networkResilience";
 import {
   gradesForEvaluation,
   type CanonicalEvaluation,
@@ -92,6 +93,7 @@ type AdminDataContextValue = {
   loadEvaluation: (evaluationId: string) => Promise<CanonicalEvaluation | null>;
   loadNotes: () => Promise<void>;
   loadEvaluationGrades: (evaluationId: string) => Promise<CanonicalGrade[]>;
+  loadPresences: () => Promise<void>;
   subscriptionsData: SubscriptionItem[];
   paymentStatusesData: PaymentStatus[];
   presencesData: PresenceItem[];
@@ -481,6 +483,16 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
+  const loadPresences = useCallback(async () => {
+    if (!session) return;
+    try {
+      const rows = await getPresences();
+      applyArray(rows, setPresencesData);
+    } catch (error) {
+      snapshotFromFailure(error, []);
+    }
+  }, [session]);
+
   const loadEvaluationGrades = useCallback(
     async (evaluationId: string) => {
       if (!session) return [];
@@ -651,6 +663,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       loadEvaluation,
       loadNotes,
       loadEvaluationGrades,
+      loadPresences,
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
       presencesData: (state.presences ?? []) as PresenceItem[],
@@ -683,7 +696,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         if (entity === "messages") {
-          void sendClientsMessage(item as Record<string, unknown>)
+          void sendClientsMessage(item as Record<string, unknown>, { idempotencyKey: createIdempotencyKey() })
             .then((created) => setMessagesData((current) => [created as SchoolMessage, ...current]))
             .catch(() => setSyncStatus("offline"));
           return;
@@ -866,6 +879,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadEvaluation,
     loadNotes,
     loadEvaluationGrades,
+    loadPresences,
   ]);
 
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;

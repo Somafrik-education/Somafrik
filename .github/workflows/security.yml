@@ -70,6 +70,8 @@ jobs:
         run: npm run verify:mobile-planning-v2
       - name: verify:mobile-domain-hydration
         run: npm --prefix Mobile run verify:mobile-domain-hydration
+      - name: verify:mobile-network-resilience
+        run: npm run verify:mobile-network-resilience
 
   typescript:
     name: TypeScript
@@ -171,6 +173,7 @@ jobs:
           npm run verify:mobile-evaluations-v2
           npm run verify:mobile-planning-v2
           npm --prefix Mobile run verify:mobile-domain-hydration
+          npm run verify:mobile-network-resilience
           npm run verify:notes-sync
           npm run verify:students-sync
           npm run verify:pre-e1-hotfix-02
