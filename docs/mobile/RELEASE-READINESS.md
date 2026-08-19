@@ -42,12 +42,48 @@ EXPO_PUBLIC_RELEASE_PROFILE
 
 ## Versioning
 
-| Champ | Valeur locale | Mécanisme |
-| ----- | ------------- | --------- |
-| `version` | `1.2.1` (`app.json`) | `cli.appVersionSource: local` |
-| `android.versionCode` | `13` entier monotone | Baseline Git. Profils store EAS : `autoIncrement: true` |
+Contrat Play pour **un seul** `applicationId` `com.somafrik.app` (préprod Internal testing + production) :
 
-Pas de `Date.now()` / random. Chaque AAB uploadé sur Play (étape humaine ultérieure) doit avoir un `versionCode` supérieur — EAS incrémente sur `preproduction` et `production`. Préprod `10` puis prod `11` est l’idée ; la baseline actuelle du dépôt est **13**. Ne pas réutiliser un versionCode déjà uploadé.
+| Champ | Rôle |
+| ----- | ---- |
+| `cli.appVersionSource` | **`remote`** — source de vérité EAS pour `android.versionCode` |
+| `preproduction.autoIncrement` | `true` — chaque AAB store consomme N+1 |
+| `production.autoIncrement` | `true` — même compteur remote Android |
+| `version` (user-facing) | `1.2.1` dans `app.json` (piloté localement) |
+| `android.versionCode` dans `app.json` | Baseline Git **13** pour prebuild local uniquement. **Ignoré par EAS Build** dès que le remote est initialisé. |
+
+**Interdit :** `appVersionSource: local` + `autoIncrement` sur préprod et prod. Expo ne persiste l’incrément local que si le changement est commité, ce qui est ingérable en CI et peut produire deux AAB avec le même `versionCode` Play.
+
+Séquence attendue (même package, même compteur remote) :
+
+```text
+eas build --profile preproduction  → versionCode N
+eas build --profile production     → versionCode N+1
+```
+
+Pas de `Date.now()` / random. Ne pas réutiliser un versionCode déjà uploadé sur Play.
+
+### Initialisation humaine — ne pas inventer le versionCode Play
+
+Le remote EAS n’est **pas** initialisé par cette PR (aucune valeur Play n’est inventée).
+
+```bash
+cd Mobile
+eas build:version:set
+# Platform : Android
+# « What version would you like to initialize it with? »
+# → le dernier versionCode RÉELLEMENT présent sur Google Play Console
+#    pour com.somafrik.app.
+```
+
+- Si un AAB a déjà été uploadé : coller **exactement** ce versionCode Play.
+- Si Play n’a encore **aucun** AAB : le constater dans la Console, puis seulement initialiser (souvent à partir de la baseline Git 13). Ne pas inventer un numéro « au cas où ».
+
+Référence Expo : [App version management](https://docs.expo.dev/build-reference/app-versions/).
+
+```bash
+eas build:version:sync   # optionnel : recopier le remote vers un prebuild local
+```
 
 ## Cleartext / network security
 
@@ -113,12 +149,21 @@ Ne pas lancer `eas submit`.
 
 ## AAB
 
-| Profil | Commande | Artefact | Upload |
-| ------ | -------- | -------- | ------ |
-| preproduction | `eas build -p android --profile preproduction` | `.aab` (non commité) | **NON effectué** — destination : Play Console → Testing → Internal testing |
-| production | `eas build -p android --profile production` | `.aab` (non commité) | **NON effectué** — destination : Play Console → Production |
+`eas.json` `android.buildType: app-bundle` **n’est pas une preuve de compilation**. La preuve native est :
 
-Local : `npm --prefix Mobile run build:aab:preproduction` / `build:aab:production` via Gradle `bundleRelease` si `ANDROID_HOME` + JDK sont présents. L’environnement Cloud Agent n’a souvent pas le SDK Android : la générabilité est prouvée par `buildType: app-bundle` + wrapper Gradle + EAS.
+1. `npx expo prebuild --platform android --clean --no-install` pour `preproduction` puis `production`
+2. Inspection du natif généré (package, nom, cleartext, backup, permissions)
+3. Si SDK Android : `./gradlew bundleRelease` et présence d’un `.aab` sous `android/app/build/outputs/bundle/release/`
+4. Le `.aab` est **supprimé en fin de job**, jamais commité, jamais uploadé
+
+| Profil | Commande EAS (humaine, après credentials) | Artefact | Upload |
+| ------ | ---------------------------------------- | -------- | ------ |
+| preproduction | `eas build -p android --profile preproduction` | `.aab` | **NON effectué** — Play Console → Testing → Internal testing |
+| production | `eas build -p android --profile production` | `.aab` | **NON effectué** — Play Console → Production |
+
+Job CI isolé : `Mobile AAB preproduction` (`SOMAFRIK_REQUIRE_AAB=1` + Android SDK). Si ce job ne peut pas Gradle, un **EAS Build preproduction réussi** (sans submit) reste requis avant GO CTO.
+
+Local sans SDK : `verify:mobile-release-readiness` inspecte quand même le prebuild ; il ne considère pas `app-bundle` comme GO.
 
 ## Google Play — support listing
 
@@ -153,9 +198,9 @@ Les parcours auth / API passent par `safeLogger` (redaction JWT / Authorization)
 | HTTPS only | preview/préprod/prod | fail-closed + network security | Oui |
 | Permissions | CAMERA + READ_MEDIA_IMAGES (+ INTERNET système) | matrice ci-dessus | Oui |
 | Bundle préprod | URL préprod, pas prod / localhost | Metro minify | Oui |
-| AAB préprod | générable EAS `app-bundle` | `eas.json` + Gradle | Oui (générabilité, pas l’artefact Git) |
+| AAB préprod | prebuild inspecté + Gradle `.aab` si SDK / EAS | `verify-native-prebuild` + job CI isolé | Oui (compilation, pas l’upload) |
 | Bundle production | URL prod, pas préprod / demo PIN | Metro minify | Oui |
-| AAB production | générable EAS `app-bundle` | `eas.json` + Gradle | Oui (générabilité) |
+| AAB production | prebuild inspecté ; Gradle si `SOMAFRIK_REQUIRE_AAB` | job isolé / EAS | Oui (compilation) |
 | Demo credentials | absents des bundles store | scan bundle | Oui |
 | Secrets | absents Git + bundles | gitignore + scan | Oui |
 | Privacy policy | **Absente** | mandat | P0 Store, pas cette PR |

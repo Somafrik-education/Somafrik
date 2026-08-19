@@ -114,6 +114,7 @@
     "verify:mobile-network-resilience": "npm --prefix Mobile run verify:mobile-network-resilience",
     "verify:mobile-usability": "npm --prefix Mobile run verify:mobile-usability",
     "verify:mobile-release-readiness": "npm --prefix Mobile run verify:mobile-release-readiness",
+    "verify:mobile-native-aab": "npm --prefix Mobile run verify:mobile-native-aab",
     "audit:integrity": "node scripts/audit-data-integrity.js",
     "audit:sql-integrity": "node scripts/audit-sql-integrity.js",
     "audit:ids": "node scripts/audit-ids-uniqueness.js",

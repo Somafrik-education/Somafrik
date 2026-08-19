@@ -247,3 +247,31 @@ jobs:
           SOMAFRIK_BOOTSTRAP_REQUIRED: "true"
           SOMAFRIK_BOOTSTRAP_PORT: "5057"
         run: node scripts/verify-runtime-bootstrap.js
+
+  mobile-android-aab:
+    name: Mobile AAB preproduction
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Mobile/package-lock.json
+      - name: Install workspace + Mobile
+        run: npm ci && npm ci --prefix Mobile
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: verify:mobile-native-aab
+        env:
+          SOMAFRIK_REQUIRE_AAB: "1"
+          SOMAFRIK_AAB_PROFILES: preproduction
+        run: npm run verify:mobile-native-aab

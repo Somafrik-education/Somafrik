@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 const {
   ANDROID_PACKAGE,
   ANDROID_VERSION_CODE,
@@ -84,3 +86,16 @@ assert.equal(
 );
 
 console.log("OK: 4 profils, preprod ≠ prod, fail-closed HTTPS, pas de fallback localhost store");
+
+const eas = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "eas.json"), "utf8").replace(/^\uFEFF/, ""));
+assert.notEqual(
+  eas.cli.appVersionSource === "local"
+    && eas.build.preproduction.autoIncrement
+    && eas.build.production.autoIncrement,
+  true,
+  "local + autoIncrement preprod/prod interdit",
+);
+assert.equal(eas.cli.appVersionSource, "remote");
+assert.equal(eas.build.preproduction.autoIncrement, true);
+assert.equal(eas.build.production.autoIncrement, true);
+console.log("OK: contrat EAS remote versionCode — préprod puis prod incrémentent le même compteur Android");

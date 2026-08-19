@@ -81,6 +81,8 @@ function scanBundle(label, bundle, expectedUrl, forbiddenUrl) {
 }
 
 function main() {
+  fs.rmSync(path.join(MOBILE, "android"), { recursive: true, force: true });
+
   const envTest = spawnSync(process.execPath, ["config/releaseEnvironments.test.js"], {
     encoding: "utf8",
     cwd: MOBILE,
@@ -100,13 +102,26 @@ function main() {
   assert.equal(eas.build.preproduction.android.buildType, "app-bundle");
   assert.equal(eas.build.production.distribution, "store");
   assert.equal(eas.build.production.android.buildType, "app-bundle");
+  if (
+    eas.cli.appVersionSource === "local"
+    && eas.build.preproduction.autoIncrement
+    && eas.build.production.autoIncrement
+  ) {
+    throw new Error(
+      "NO-GO: appVersionSource=local + autoIncrement preproduction/production — "
+        + "deux AAB du même Git versionCode peuvent entrer en collision Play. Utiliser remote.",
+    );
+  }
+  assert.equal(eas.cli.appVersionSource, "remote", "Play versionCode doit être remote (pas local+autoIncrement)");
+  assert.equal(eas.build.preproduction.autoIncrement, true);
+  assert.equal(eas.build.production.autoIncrement, true);
   assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.preproduction);
   assert.equal(eas.build.production.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.production);
   assert.notEqual(eas.build.preproduction.env.EXPO_PUBLIC_API_URL, eas.build.production.env.EXPO_PUBLIC_API_URL);
   assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_DEMO_MODE, "false");
   assert.equal(eas.build.production.env.EXPO_PUBLIC_DEMO_MODE, "false");
   assert.ok(!eas.submit, "eas submit interdit dans ce lot");
-  console.log("OK: eas.json — 4 profils, preprod/prod AAB store, pas de submit");
+  console.log("OK: eas.json — remote versionCode + autoIncrement store + 4 profils, pas de submit");
 
   const appJson = JSON.parse(read(path.join(MOBILE, "app.json")));
   assert.equal(appJson.expo.android.package, ANDROID_PACKAGE);
@@ -176,6 +191,8 @@ function main() {
   assert.match(docsReady, /preproduction/);
   assert.match(docsReady, /Internal testing/);
   assert.match(docsReady, /NON effectué/);
+  assert.match(docsReady, /appVersionSource/);
+  assert.match(docsReady, /eas build:version:set/);
   console.log("OK: documentation Play Store");
 
   const doctor = spawnSync("npx", ["expo-doctor"], { encoding: "utf8", cwd: MOBILE });
@@ -201,19 +218,8 @@ function main() {
     }
   }
 
-  const sdkDir = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
-  const androidDir = path.join(MOBILE, "android");
-  if (sdkDir && fs.existsSync(sdkDir) && fs.existsSync(path.join(androidDir, "gradlew"))) {
-    const gradleTask = spawnSync(
-      process.platform === "win32" ? "gradlew.bat" : "./gradlew",
-      ["bundleRelease", "-m"],
-      { encoding: "utf8", cwd: androidDir },
-    );
-    assert.equal(gradleTask.status, 0, gradleTask.stderr || gradleTask.stdout);
-    console.log("OK: Gradle bundleRelease dry-run");
-  } else {
-    console.log("SKIP: AAB Gradle local (SDK ou android/ prebuild absent) — générable via EAS app-bundle");
-  }
+  const { runNativeProof } = require("./verify-native-prebuild");
+  runNativeProof();
 
   const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
   const security = read(path.join(ROOT, ".github", "workflows", "security.yml"));
@@ -223,7 +229,10 @@ function main() {
   assert.match(security, /npm run verify:mobile-release-readiness/);
   assert.match(ci, /name: verify:mobile-usability/);
   assert.match(ci, /name: Bootstrap runtime guard/);
-  console.log("OK: CI + Security branchent verify:mobile-release-readiness");
+  assert.match(ci, /name: Mobile AAB preproduction/);
+  assert.match(ci, /SOMAFRIK_REQUIRE_AAB/);
+  assert.match(ci, /android-actions\/setup-android/);
+  console.log("OK: CI + Security branchent verify:mobile-release-readiness + job AAB isolé");
 
   console.log("verify:mobile-release-readiness OK");
 }
