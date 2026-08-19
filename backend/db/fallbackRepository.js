@@ -2751,6 +2751,10 @@ class FallbackRepository {
   }
 
   async listCourseSchedules(principal, query = {}) {
+    const projection = String(query.projection ?? "").trim().toLowerCase();
+    if (projection === "course-options" || projection === "planning-course-options") {
+      return this.listPlanningCourseOptions(principal, query);
+    }
     const state = (await this.getBackOfficeState()) ?? {};
     const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
     let rows = Array.isArray(state.courseSchedules) ? [...state.courseSchedules] : [];
@@ -2781,6 +2785,51 @@ class FallbackRepository {
     if (academicYearId) rows = rows.filter((row) => String(row.academicYearId ?? "") === academicYearId);
     if (dayOfWeek) rows = rows.filter((row) => String(row.dayOfWeek ?? "") === dayOfWeek);
     return rows;
+  }
+
+  async listPlanningCourseOptions(principal, query = {}) {
+    const state = (await this.getBackOfficeState()) ?? {};
+    const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
+    const classId = String(query.classId ?? query.class_id ?? "").trim();
+    const className = String(query.className ?? query.class_name ?? "").trim().toLowerCase();
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const role = String(principal?.role ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+    const teacherKeys = new Set(
+      [principal?.sub, principal?.id, principal?.identifier, principal?.teacherId, principal?.teacherCode]
+        .map((value) => String(value ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const isTeacher = role === "enseignant" || role === "teacher" || role.includes("prof");
+    const items = [];
+    for (const row of Array.isArray(state.courses) ? state.courses : []) {
+      const status = String(row.status ?? "").trim().toLowerCase();
+      if (status === "archived" || status === "archivé") continue;
+      const rowSchool = String(row.schoolCode ?? "").trim().toUpperCase();
+      if (schoolCode && schoolCode !== "*" && rowSchool && rowSchool !== schoolCode) continue;
+      if (classId && String(row.classId ?? "") !== classId) continue;
+      if (!classId && className && String(row.className ?? "").trim().toLowerCase() !== className) continue;
+      const schoolCourseId = String(row.schoolCourseId ?? row.dbId ?? row.id ?? "").trim();
+      if (!UUID_RE.test(schoolCourseId)) continue;
+      if (isTeacher) {
+        const courseTeacher = String(row.teacherId ?? "").trim().toLowerCase();
+        if (!teacherKeys.has(courseTeacher)) continue;
+      }
+      items.push({
+        schoolCourseId,
+        classId: String(row.classId ?? ""),
+        className: String(row.className ?? ""),
+        academicYearId: String(row.academicYearId ?? ""),
+        name: String(row.name ?? row.subject ?? "").trim(),
+        teacherId: String(row.teacherId ?? ""),
+        teacherName: String(row.teacherName ?? ""),
+        status: "active",
+      });
+    }
+    return { projection: "planning-course-options", items };
   }
 
   async listSchoolEvaluations(schoolCode, principal = {}) {

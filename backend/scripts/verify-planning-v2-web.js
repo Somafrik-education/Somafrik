@@ -29,10 +29,13 @@ function main() {
 
   const page = read("web/src/pages/CoursePlanningPage.tsx");
   assert.match(page, /schoolCourseId/);
-  assert.match(page, /listSchoolCoursesForClass/);
+  assert.match(page, /listPlanningCourseOptions/);
+  assert.match(page, /planningNoSchedulableCoursesMessage/);
   assert.match(page, /listCourseScheduleOccurrences/);
   assert.match(page, /mapServerOccurrencesToCalendarEvents/);
   assert.match(page, /refresh\(\["courseSchedules"\]\)/);
+  assert.doesNotMatch(page, /listSchoolCoursesForClass/);
+  assert.doesNotMatch(page, /Créez-le dans Mon établissement/);
   assert.doesNotMatch(page, /slotsToClassCalendarEvents/);
   assert.doesNotMatch(page, /expandScheduleOccurrences/);
   assert.doesNotMatch(page, /await refresh\(\)/);
@@ -42,6 +45,8 @@ function main() {
 
   const api = read("web/src/lib/pedagogyApi.ts");
   assert.match(api, /listCourseScheduleOccurrences/);
+  assert.match(api, /listPlanningCourseOptions/);
+  assert.match(api, /projection: "course-options"/);
   assert.match(api, /from: query\.from/);
   assert.match(api, /to: query\.to/);
 
@@ -56,6 +61,10 @@ function main() {
   const routeMap = read("web/src/lib/routeDomainMap.ts");
   assert.match(routeMap, /prefix: "\/planning"/);
   assert.match(routeMap, /assignments/);
+  assert.match(
+    routeMap,
+    /prefix: "\/planning", domains: \["academicConfigs", "courseSchedules", "classes", "teachers", "assignments"\]/,
+  );
 
   const e2e = path.join(ROOT, "backend/scripts/verify-planning-v2-web-e2e.js");
   assert.ok(fs.existsSync(e2e), "E2E navigateur Planning manquant");

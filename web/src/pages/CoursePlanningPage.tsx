@@ -36,8 +36,10 @@ import {
 import { pedagogyApi } from "../lib/pedagogyApi";
 import { syncSchoolCourseSchedules } from "../lib/pedagogyPlanningSync";
 import {
-  listSchoolCoursesForClass,
+  mapPlanningCourseOptions,
+  planningNoSchedulableCoursesMessage,
   resolveClassAcademicYearId,
+  type PlanningSchoolCourseOption,
 } from "../lib/planningWeeklyWrite";
 import type { BackOfficeState, SessionUser } from "../types";
 
@@ -121,6 +123,8 @@ export function CoursePlanningPage() {
   const [saving, setSaving] = useState(false);
   const [visibleRange, setVisibleRange] = useState<{ from: string; to: string } | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<PlanningCalendarEvent[]>([]);
+  const [classCourses, setClassCourses] = useState<PlanningSchoolCourseOption[]>([]);
+  const [courseOptionsStatus, setCourseOptionsStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
 
   const schoolPeriods = useMemo(
     () => getSchoolAcademicPeriods(state, schoolCode),
@@ -181,11 +185,6 @@ export function CoursePlanningPage() {
     });
   }, [classNamesKey, classes.length]);
 
-  const classCourses = useMemo(
-    () => listSchoolCoursesForClass(scopeUser, state, selectedClassName),
-    [scopeUser, state, selectedClassName],
-  );
-
   const classAcademicYearId = useMemo(
     () => resolveClassAcademicYearId(scopeUser, state, selectedClassName),
     [scopeUser, state, selectedClassName],
@@ -198,6 +197,34 @@ export function CoursePlanningPage() {
     const id = String((row as { id?: string } | undefined)?.id ?? "").trim();
     return UUID_RE.test(id) ? id : "";
   }, [scopeUser, state.classes, selectedClassName]);
+
+  useEffect(() => {
+    if (!canRead || !selectedClassName) {
+      setClassCourses([]);
+      setCourseOptionsStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setCourseOptionsStatus("loading");
+    pedagogyApi
+      .listPlanningCourseOptions({
+        classId: selectedClassId || undefined,
+        className: selectedClassName,
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setClassCourses(mapPlanningCourseOptions(payload?.items));
+        setCourseOptionsStatus("ok");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setClassCourses([]);
+        setCourseOptionsStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canRead, selectedClassName, selectedClassId]);
 
   const weeklySlots = useMemo(
     () => schoolSlots.filter((slot) => !isExamSchedule(slot) && String(slot.status ?? "active") !== "cancelled"),
@@ -289,8 +316,16 @@ export function CoursePlanningPage() {
       showToast("Année académique introuvable pour cette classe.", "error");
       return;
     }
+    if (courseOptionsStatus === "loading") {
+      showToast("Chargement des cours planifiables…", "info");
+      return;
+    }
+    if (courseOptionsStatus === "error") {
+      showToast("Impossible de charger les cours planifiables. Réessayez.", "error");
+      return;
+    }
     if (!classCourses.length) {
-      showToast("Aucun cours actif pour cette classe. Créez-le dans Mon établissement.", "error");
+      showToast(planningNoSchedulableCoursesMessage(selectedClassName), "error");
       return;
     }
     const course = classCourses[0];
@@ -554,7 +589,13 @@ export function CoursePlanningPage() {
           </Field>
           {canCreate && selectedClassName ? (
             <div className="flex flex-wrap items-end gap-2">
-              <Button data-testid="planning-create-button" onClick={() => openCreate()}>Planifier un cours</Button>
+              <Button
+                data-testid="planning-create-button"
+                disabled={courseOptionsStatus === "loading"}
+                onClick={() => openCreate()}
+              >
+                Planifier un cours
+              </Button>
               {canDelete ? (
                 <Button
                   type="button"
@@ -604,6 +645,7 @@ export function CoursePlanningPage() {
             </Field>
             <Field label="Cours" hint="Identifiant school_courses, pas le libellé seul.">
               <Select
+                data-testid="planning-course-select"
                 value={form.schoolCourseId}
                 onChange={(event) => applyCourseDefaults(event.target.value)}
                 options={classCourses.map((row) => ({ value: row.schoolCourseId, label: row.name }))}

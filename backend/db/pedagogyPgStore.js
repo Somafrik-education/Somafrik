@@ -304,6 +304,47 @@ function createPedagogyPgStore(repo) {
         const row = await one(sql, params);
         return mapWeeklyScheduleDto(row);
       },
+      async listPlanningCourseOptions(filters = {}) {
+        const params = [];
+        const where = ["sc.status = 'active'", "c.status = 'active'", "t.status = 'active'"];
+        const push = (sql, value) => {
+          params.push(value);
+          where.push(sql.replace("?", `$${params.length}`));
+        };
+        if (filters.schoolId) push("sc.school_id = ?", filters.schoolId);
+        if (filters.classId) push("c.id::text = ?", filters.classId);
+        else if (filters.className) push("lower(btrim(c.name)) = lower(btrim(?))", filters.className);
+        if (filters.academicYearId) push("c.academic_year_id::text = ?", filters.academicYearId);
+        if (filters.teacherId) {
+          params.push(filters.teacherId);
+          const idx = params.length;
+          where.push(`(
+            sc.teacher_id = $${idx}
+            OR EXISTS (
+              SELECT 1 FROM teacher_assignments ta
+               WHERE ta.teacher_id = $${idx}
+                 AND ta.class_id = sc.class_id
+                 AND ta.subject_id = sc.subject_id
+                 AND ta.status = 'active'
+            )
+          )`);
+        }
+        const sql = `
+          SELECT sc.id, sc.status,
+                 c.id AS class_id, c.name AS class_name, c.academic_year_id,
+                 sub.name AS subject_name, t.teacher_code,
+                 NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS teacher_name
+          FROM school_courses sc
+          JOIN schools s ON s.id = sc.school_id
+          JOIN classes c ON c.id = sc.class_id
+          JOIN subjects sub ON sub.id = sc.subject_id
+          JOIN teachers t ON t.id = sc.teacher_id
+          LEFT JOIN users u ON u.id = t.user_id
+          WHERE ${where.join(" AND ")}
+          ORDER BY c.name, sub.name, sc.id`;
+        const rows = await all(sql, params);
+        return rows.map(mapPlanningCourseOption);
+      },
       async listWeeklyScheduleSlots(filters = {}) {
         const params = [];
         const where = [];
@@ -615,6 +656,7 @@ function createPedagogyPgStore(repo) {
     getSchoolByCode: (code) => bind(repo).getSchoolByCode(code),
     resolveTeacherIdForPrincipal: (principal, schoolId) =>
       bind(repo).resolveTeacherIdForPrincipal(principal, schoolId),
+    listPlanningCourseOptions: (filters) => bind(repo).listPlanningCourseOptions(filters),
     listWeeklyScheduleSlots: (filters) => bind(repo).listWeeklyScheduleSlots(filters),
     getWeeklyScheduleById: (id, principal) => bind(repo).getWeeklyScheduleById(id, principal),
     listCourseSchedules: (principal, query) => pedagogyService.listCourseSchedules(api, principal, query),
@@ -643,6 +685,19 @@ function createPedagogyPgStore(repo) {
   };
 
   return api;
+}
+
+function mapPlanningCourseOption(row) {
+  return {
+    schoolCourseId: row.id,
+    classId: row.class_id,
+    className: row.class_name,
+    academicYearId: row.academic_year_id,
+    name: row.subject_name,
+    teacherId: row.teacher_code || "",
+    teacherName: row.teacher_name || "",
+    status: row.status === "archived" ? "archived" : "active",
+  };
 }
 
 function mapCourseRow(row) {

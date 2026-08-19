@@ -20,7 +20,7 @@ const DOMAIN_VIEW_MAP: Partial<Record<DomainKey, string>> = {
   students: "students",
   teachers: "teachers",
   classes: "classes",
-  courses: "courses",
+  courses: "courses", // lecture catalogue Matières — pas une dépendance Planning
   courseSchedules: "planning",
   assignments: "assignments",
   payments: "payments",

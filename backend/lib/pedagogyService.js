@@ -367,6 +367,34 @@ function isTeacherRole(principal) {
   return role === "enseignant" || role === "teacher" || role.includes("prof");
 }
 
+function isPlanningCourseOptionsProjection(query = {}) {
+  const projection = asTrimmed(query.projection).toLowerCase();
+  return projection === "course-options" || projection === "planning-course-options";
+}
+
+async function listPlanningCourseOptions(store, principal, query = {}, school = null) {
+  if (!school?.id) {
+    return { projection: "planning-course-options", items: [] };
+  }
+  const filters = {
+    schoolId: school.id,
+    classId: asTrimmed(query.classId || query.class_id) || null,
+    className: asTrimmed(query.className || query.class_name) || null,
+    academicYearId: asTrimmed(query.academicYearId || query.academic_year_id) || null,
+    teacherId: null,
+  };
+  if (isTeacherRole(principal)) {
+    const teacherId = await store.resolveTeacherIdForPrincipal(principal, school.id);
+    if (!teacherId) return { projection: "planning-course-options", items: [] };
+    filters.teacherId = teacherId;
+  }
+  if (typeof store.listPlanningCourseOptions !== "function") {
+    return { projection: "planning-course-options", items: [] };
+  }
+  const items = await store.listPlanningCourseOptions(filters);
+  return { projection: "planning-course-options", items };
+}
+
 async function listCourseSchedules(store, principal, query = {}) {
   const schoolCode = asTrimmed(principal?.schoolCode);
   let school = null;
@@ -375,6 +403,9 @@ async function listCourseSchedules(store, principal, query = {}) {
     if (!school) {
       throw createPedagogyError(404, "Établissement introuvable.", PEDAGOGY_ERROR.TENANT_MISMATCH);
     }
+  }
+  if (isPlanningCourseOptionsProjection(query)) {
+    return listPlanningCourseOptions(store, principal, query, school);
   }
   const filters = {
     schoolId: school?.id ?? null,
@@ -528,6 +559,7 @@ module.exports = {
   updateCourseSchedule,
   deleteCourseSchedule,
   listCourseSchedules,
+  listPlanningCourseOptions,
   createEvaluation,
   updateEvaluation,
   upsertGrade,
