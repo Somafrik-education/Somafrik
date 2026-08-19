@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "test:user-teacher-sync": "npx --yes tsx src/lib/userTeacherSync.test.ts",
     "test:platform-notification-sync": "npx --yes tsx src/lib/platformNotificationSync.test.ts",
-    "verify:mobile-security": "node scripts/verify-mobile-security.js"
+    "test:data-truth": "npx --yes tsx src/lib/dataTruth.test.ts",
+    "verify:mobile-security": "node scripts/verify-mobile-security.js",
+    "verify:mobile-data-truth": "node scripts/verify-mobile-data-truth.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

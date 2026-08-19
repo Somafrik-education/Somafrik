@@ -33,7 +33,8 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPresences, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getCourseSchedules, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
+import { snapshotFromFailure, snapshotFromSuccess, type ResourceSnapshot } from "../lib/dataTruth";
 import { useAuth } from "./AuthContext";
 
 export type AdminEntity =
@@ -62,6 +63,12 @@ type AdminDataContextValue = {
   assignmentsData: TeacherAssignment[];
   courseSchedulesData: CourseScheduleSlot[];
   paymentsData: PaymentItem[];
+  paymentsSnapshot: ResourceSnapshot<PaymentItem>;
+  courseSchedulesSnapshot: ResourceSnapshot<CourseScheduleSlot>;
+  reportCardsSnapshot: ResourceSnapshot<CanonicalReportCard>;
+  loadPayments: () => Promise<void>;
+  loadCourseSchedules: () => Promise<void>;
+  loadReportCards: () => Promise<void>;
   subscriptionsData: SubscriptionItem[];
   paymentStatusesData: PaymentStatus[];
   presencesData: PresenceItem[];
@@ -129,6 +136,18 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const [academicConfigData, setAcademicConfigData] = useState<AcademicManagementConfig>(emptyAcademicConfig);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "synced" | "offline">("idle");
   const [activeSchoolCode, setActiveSchoolCodeState] = useState("");
+  const [paymentsSnapshot, setPaymentsSnapshot] = useState<ResourceSnapshot<PaymentItem>>({
+    status: "idle",
+    data: [],
+  });
+  const [courseSchedulesSnapshot, setCourseSchedulesSnapshot] = useState<ResourceSnapshot<CourseScheduleSlot>>({
+    status: "idle",
+    data: [],
+  });
+  const [reportCardsSnapshot, setReportCardsSnapshot] = useState<ResourceSnapshot<CanonicalReportCard>>({
+    status: "idle",
+    data: [],
+  });
 
   const scopeUser = useMemo(
     () =>
@@ -270,7 +289,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         presencePayload,
         academicConfigPayload,
         assignmentPayload,
-        courseSchedulePayload,
         subjectPayload,
       ] = await Promise.all([
         getStudents(),
@@ -280,7 +298,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         getPresences(),
         getAcademicConfig(),
         getAssignments(),
-        getCourseSchedules().catch(() => [] as unknown[]),
         getSubjects(),
       ]);
 
@@ -290,7 +307,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       applyArray(notePayload, setNotesData);
       applyArray(presencePayload, setPresencesData);
       applyArray(assignmentPayload, setAssignmentsData);
-      applyArray(courseSchedulePayload, setCourseSchedulesData);
       const subjectRows = Array.isArray(subjectPayload)
         ? subjectPayload
         : subjectPayload && typeof subjectPayload === "object" && Array.isArray((subjectPayload as { items?: unknown[] }).items)
@@ -307,6 +323,41 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setSyncStatus("offline");
       throw new Error("Synchronisation impossible");
+    }
+  }, [session]);
+
+  const loadPayments = useCallback(async () => {
+    if (!session) return;
+    setPaymentsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = (await getPayments()) as PaymentItem[];
+      setPaymentsData(rows);
+      setPaymentsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setPaymentsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadCourseSchedules = useCallback(async () => {
+    if (!session) return;
+    setCourseSchedulesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = (await getCourseSchedules()) as CourseScheduleSlot[];
+      setCourseSchedulesData(rows);
+      setCourseSchedulesSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setCourseSchedulesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadReportCards = useCallback(async () => {
+    if (!session) return;
+    setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getReportCards();
+      setReportCardsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setReportCardsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
@@ -442,8 +493,14 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       countriesData: (state.countries ?? []) as CountryProfile[],
       coursesData: (state.courses ?? []) as Course[],
       assignmentsData: (state.assignments ?? []) as TeacherAssignment[],
-      courseSchedulesData,
-      paymentsData: (state.payments ?? []) as PaymentItem[],
+      courseSchedulesData: courseSchedulesSnapshot.data,
+      paymentsData: paymentsSnapshot.data as PaymentItem[],
+      paymentsSnapshot,
+      courseSchedulesSnapshot,
+      reportCardsSnapshot,
+      loadPayments,
+      loadCourseSchedules,
+      loadReportCards,
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
       presencesData: (state.presences ?? []) as PresenceItem[],
@@ -642,6 +699,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     stateSnapshot,
     syncStatus,
     refreshBackOfficeState,
+    paymentsSnapshot,
+    courseSchedulesSnapshot,
+    reportCardsSnapshot,
+    loadPayments,
+    loadCourseSchedules,
+    loadReportCards,
   ]);
 
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;

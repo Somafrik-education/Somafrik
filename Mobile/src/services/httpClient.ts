@@ -12,6 +12,12 @@ import {
   saveTokens,
 } from "./secureStorage";
 import {
+  assertUnrestrictedApiPath,
+  clearRestrictedSession,
+  getRestrictedAccessToken,
+  getRestrictedRefreshToken,
+} from "../lib/restrictedSession";
+import {
   isDevelopmentRuntime,
   resolveApiBaseUrl,
   resolveApiRootUrl,
@@ -105,7 +111,7 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
-    const refreshToken = await getRefreshToken();
+    const refreshToken = (await getRefreshToken()) || getRestrictedRefreshToken();
     if (!refreshToken) return null;
 
     const root = resolveApiRootUrl();
@@ -177,7 +183,15 @@ export async function httpRequest<T = Json>(
   }
 
   if (!skipAuth && !isAuthPublicPath(path)) {
-    const token = await getAccessToken();
+    try {
+      assertUnrestrictedApiPath(path);
+    } catch (error) {
+      throw new ApiClientError(
+        error instanceof Error ? error.message : "Changement de mot de passe obligatoire.",
+        403,
+      );
+    }
+    const token = (await getAccessToken()) || getRestrictedAccessToken();
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
     }
@@ -198,6 +212,7 @@ export async function httpRequest<T = Json>(
       return httpRequest<T>(path, { ...options, _retried: true });
     }
     await clearSecureSession();
+    clearRestrictedSession();
     notifySessionExpired();
     throw new ApiClientError("Session expirée. Veuillez vous reconnecter.", 401);
   }

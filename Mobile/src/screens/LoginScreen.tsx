@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, type ComponentType } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -13,9 +13,11 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
-import { IdentifyResponse, changePassword, identifyAccount, login, LoginResponse } from "../services/api";
+import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { shouldShowDemoLogin } from "../config/env";
+import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import {
   LOGIN_SCREEN_COPY,
   LOGIN_TEST_IDS,
@@ -30,6 +32,17 @@ import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
+
+type DemoLoginButtonsComponent = ComponentType<{
+  accessRole?: string;
+  onFill: (identifier: string, pin: string) => void;
+}>;
+
+/** Metro DCE production : ce require disparaît quand `__DEV__` est false. */
+let DemoLoginButtons: DemoLoginButtonsComponent | null = null;
+if (__DEV__) {
+  DemoLoginButtons = require("../components/DemoLoginButtons").default;
+}
 
 export default function LoginScreen({ navigation, route }: Props) {
   const { school, accessIdentifier, accessRole, accessRoleLabel } = route.params;
@@ -113,7 +126,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         return;
       }
 
-      completeLogin(session);
+      await completeLogin(session);
     } catch (error) {
       setErrorMessage(
         mapLoginApiError(error instanceof Error ? error.message : "", identity?.role),
@@ -123,27 +136,17 @@ export default function LoginScreen({ navigation, route }: Props) {
     }
   };
 
-  const fillDemo = (demo: "country_admin" | "school_admin" | "prefet" | "secretary" | "teacher" = "teacher") => {
-    if (!accessRole) {
-      setIdentifier(
-        demo === "country_admin"
-          ? "admin-rdc"
-          : demo === "school_admin"
-            ? "admin"
-            : demo === "prefet"
-              ? "prefet"
-              : demo === "secretary"
-                ? "secretaire"
-                : "ENS-0001"
-      );
-    }
-    setPassword("1234");
-  };
-
-  const completeLogin = (session: LoginResponse) => {
-    setSession(session);
+  const completeLogin = async (session: LoginResponse) => {
+    const safe = await persistAuthenticatedSession({
+      ...session,
+      user: {
+        ...session.user,
+        mustChangePassword: false,
+      },
+    });
+    setSession(safe);
     navigation.navigate("Home", {
-      role: session.role,
+      role: safe.role,
     });
   };
 
@@ -161,7 +164,7 @@ export default function LoginScreen({ navigation, route }: Props) {
     setIsChangingPassword(true);
     try {
       const response = await changePassword(newPassword.trim());
-      completeLogin({
+      await completeLogin({
         ...pendingSession,
         user: {
           ...pendingSession.user,
@@ -288,25 +291,19 @@ export default function LoginScreen({ navigation, route }: Props) {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("teacher")}>
-        <Text style={styles.demoButtonText}>Remplir un compte enseignant demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("school_admin")}>
-        <Text style={styles.demoButtonText}>Remplir admin établissement demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("prefet")}>
-        <Text style={styles.demoButtonText}>Remplir préfet des études demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("secretary")}>
-        <Text style={styles.demoButtonText}>Remplir secrétaire demo</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo("country_admin")}>
-        <Text style={styles.demoButtonText}>Remplir admin pays demo</Text>
-      </TouchableOpacity>
+      {__DEV__ && DemoLoginButtons && shouldShowDemoLogin() ? (
+        <DemoLoginButtons
+          accessRole={accessRole}
+          onFill={(identifier, pin) => {
+            if (identifier) setIdentifier(identifier);
+            setPassword(pin);
+          }}
+        />
+      ) : null}
 
       <Modal visible={Boolean(pendingSession)} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={styles.passwordCard} testID="login-password-change-modal">
+          <View style={styles.passwordCard} testID={DATA_TRUTH_TEST_IDS.passwordChangeModal}>
             <Text style={styles.passwordTitle}>Nouveau mot de passe</Text>
             <Text style={styles.passwordHint}>
               Votre mot de passe temporaire a été accepté. Choisissez maintenant votre mot de passe personnel.

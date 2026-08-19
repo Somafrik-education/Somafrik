@@ -127,6 +127,7 @@ function runGradle(task) {
       ...process.env,
       EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
       EXPO_PUBLIC_DEMO_MODE: process.env.EXPO_PUBLIC_DEMO_MODE ?? "false",
+      EXPO_PUBLIC_DEMO_PIN: process.env.EXPO_PUBLIC_DEMO_PIN ?? "",
     },
   });
 

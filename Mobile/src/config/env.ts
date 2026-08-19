@@ -134,6 +134,13 @@ export function isDemoMode(): boolean {
   return process.env.EXPO_PUBLIC_DEMO_MODE === "true";
 }
 
+/** Boutons démo : jamais en preview/production. Expo Go / __DEV__ seulement, ou EXPO_PUBLIC_DEMO_MODE. */
+export function shouldShowDemoLogin(): boolean {
+  if (!isDevelopmentRuntime()) return false;
+  if (isDemoMode()) return true;
+  return typeof __DEV__ !== "undefined" && __DEV__;
+}
+
 export function isUsingLocalhostOnDevice(): boolean {
   try {
     const root =

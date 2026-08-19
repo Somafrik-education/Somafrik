@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getTeacherById, timetable, type CourseScheduleSlot } from "../data/catalog";
+import { useFocusEffect } from "@react-navigation/native";
+import type { CourseScheduleSlot } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import QueryStateView from "../components/QueryStateView";
 import { classNameMatches, teacherScopedClassNames } from "../lib/establishment";
 import { normalize } from "../lib/format";
 import {
@@ -13,23 +15,35 @@ import {
   scopeSlots,
   slotTimeRange,
 } from "../lib/coursePlanning";
+import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
-
-const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
 
 export default function TimetableScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, teachersData, assignmentsData, classesData, courseSchedulesData, activeSchoolCode } =
-    useAdminData();
+  const {
+    studentsData,
+    teachersData,
+    assignmentsData,
+    classesData,
+    courseSchedulesSnapshot,
+    loadCourseSchedules,
+    activeSchoolCode,
+  } = useAdminData();
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
 
   const schoolCode = session?.user?.schoolCode || session?.school?.code || activeSchoolCode || "";
 
-  // Créneaux réels synchronisés depuis le back-office (jour/heure), scopés au rôle.
+  useFocusEffect(
+    useCallback(() => {
+      void loadCourseSchedules();
+    }, [loadCourseSchedules]),
+  );
+
   const scopedSlots = useMemo<CourseScheduleSlot[]>(() => {
-    let slots = scopeSlots(courseSchedulesData, { schoolCode });
+    if (courseSchedulesSnapshot.status !== "success") return [];
+    let slots = scopeSlots(courseSchedulesSnapshot.data, { schoolCode });
 
     if (session?.role === "teacher") {
       const scopedClasses = teacherScopedClassNames(session, teacherScopeState);
@@ -45,55 +59,72 @@ export default function TimetableScreen() {
     }
 
     return slots;
-  }, [courseSchedulesData, schoolCode, session, selectedStudentId, studentsData, teachersData, assignmentsData, classesData]);
+  }, [
+    courseSchedulesSnapshot,
+    schoolCode,
+    session,
+    selectedStudentId,
+    studentsData,
+    teachersData,
+    assignmentsData,
+    classesData,
+  ]);
 
   const dayGroups = useMemo(() => groupSlotsByDay(scopedSlots), [scopedSlots]);
   const conflicts = useMemo(() => detectConflicts(scopedSlots), [scopedSlots]);
-  const hasRealPlanning = scopedSlots.length > 0;
-
-  // Repli sur les données de démonstration si aucun créneau réel n'est disponible.
-  const demoRows = useMemo(() => {
-    if (hasRealPlanning) return [];
-    if (session?.role === "teacher") {
-      const scopedClasses = teacherScopedClassNames(session, teacherScopeState);
-      if (!scopedClasses) return timetable;
-      return timetable.filter((item) => scopedClasses.has(normalize(item.className)));
-    }
-    if ((session?.role === "parent_student" || session?.role === "student") && selectedStudentId) {
-      const student = studentsData.find((item) => item.id === selectedStudentId);
-      return timetable.filter((item) => classNameMatches(item.className, student?.className));
-    }
-    return timetable;
-  }, [hasRealPlanning, assignmentsData, classesData, selectedStudentId, session, studentsData, teachersData]);
+  const showQueryState =
+    courseSchedulesSnapshot.status === "idle" ||
+    courseSchedulesSnapshot.status === "loading" ||
+    courseSchedulesSnapshot.status === "error" ||
+    courseSchedulesSnapshot.status === "offline" ||
+    courseSchedulesSnapshot.status === "empty" ||
+    (courseSchedulesSnapshot.status === "success" && scopedSlots.length === 0);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>
       <Text style={styles.title}>Emploi du temps</Text>
       <Text style={styles.subtitle}>
-        {hasRealPlanning ? `${scopedSlots.length} créneau(x) planifié(s)` : `${demoRows.length} créneau(x) planifié(s)`}
+        {courseSchedulesSnapshot.status === "success"
+          ? `${scopedSlots.length} créneau(x) planifié(s)`
+          : "Planning établissement"}
       </Text>
 
-      {conflicts.length > 0 && (
-        <View style={styles.conflictBanner}>
-          <View style={styles.conflictHeader}>
-            <Ionicons name="warning-outline" size={18} color="#B45309" />
-            <Text style={styles.conflictTitle}>
-              {conflicts.length} conflit(s) d'horaire détecté(s)
-            </Text>
-          </View>
-          {conflicts.slice(0, 4).map((conflict, index) => (
-            <Text key={`${conflict.slotId}-${index}`} style={styles.conflictText}>
-              • {conflict.message}
-            </Text>
-          ))}
-          {conflicts.length > 4 && (
-            <Text style={styles.conflictText}>… et {conflicts.length - 4} autre(s).</Text>
+      {showQueryState ? (
+        <QueryStateView
+          snapshot={
+            courseSchedulesSnapshot.status === "success" && scopedSlots.length === 0
+              ? { status: "empty", data: [] }
+              : courseSchedulesSnapshot
+          }
+          emptyMessage={DATA_TRUTH_COPY.emptyPlanning}
+          errorMessage={DATA_TRUTH_COPY.errorPlanning}
+          offlineMessage={DATA_TRUTH_COPY.offlinePlanning}
+          emptyTestId={DATA_TRUTH_TEST_IDS.planningEmpty}
+          errorTestId={DATA_TRUTH_TEST_IDS.planningError}
+          onRetry={() => void loadCourseSchedules()}
+        />
+      ) : (
+        <View testID={DATA_TRUTH_TEST_IDS.planningList}>
+          {conflicts.length > 0 && (
+            <View style={styles.conflictBanner}>
+              <View style={styles.conflictHeader}>
+                <Ionicons name="warning-outline" size={18} color="#B45309" />
+                <Text style={styles.conflictTitle}>
+                  {conflicts.length} conflit(s) d'horaire détecté(s)
+                </Text>
+              </View>
+              {conflicts.slice(0, 4).map((conflict, index) => (
+                <Text key={`${conflict.slotId}-${index}`} style={styles.conflictText}>
+                  • {conflict.message}
+                </Text>
+              ))}
+              {conflicts.length > 4 && (
+                <Text style={styles.conflictText}>… et {conflicts.length - 4} autre(s).</Text>
+              )}
+            </View>
           )}
-        </View>
-      )}
 
-      {hasRealPlanning
-        ? dayGroups.map((group) => (
+          {dayGroups.map((group) => (
             <View key={group.weekday} style={styles.dayBlock}>
               <Text style={styles.dayTitle}>{group.label}</Text>
               {group.slots.map((slot) => {
@@ -123,33 +154,9 @@ export default function TimetableScreen() {
                 );
               })}
             </View>
-          ))
-        : days.map((day) => {
-            const dayRows = demoRows.filter((item) => item.day === day);
-            if (!dayRows.length) return null;
-            return (
-              <View key={day} style={styles.dayBlock}>
-                <Text style={styles.dayTitle}>{day}</Text>
-                {dayRows.map((item) => {
-                  const teacher = getTeacherById(item.teacherId);
-                  return (
-                    <View key={item.id} style={styles.card}>
-                      <View style={styles.timeBox}>
-                        <Text style={styles.time}>{item.startTime}</Text>
-                        <Text style={styles.timeMuted}>{item.endTime}</Text>
-                      </View>
-                      <View style={styles.cardBody}>
-                        <Text style={styles.course}>{item.course}</Text>
-                        <Text style={styles.meta}>{item.className} • {item.room}</Text>
-                        <Text style={styles.meta}>{teacher?.name ?? "Enseignant à affecter"}</Text>
-                      </View>
-                      <Ionicons name="calendar-outline" size={22} color="#2563EB" />
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })}
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }

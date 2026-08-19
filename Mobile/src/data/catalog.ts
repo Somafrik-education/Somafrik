@@ -147,14 +147,31 @@ export const DEFAULT_SUBJECTS = [
   "Informatique",
 ];
 
+export type PaymentLine = {
+  id?: string;
+  feeTypeId?: string | null;
+  feeType?: string;
+  feeLabel?: string;
+  amount: number;
+};
+
 export type PaymentItem = {
   id: string;
-  publicId: string;
+  publicId?: string;
+  reference?: string;
   studentId: string;
+  studentName?: string;
   amount: number;
-  date: string;
+  totalAmount?: number;
+  date?: string;
+  paidAt?: string;
   status: string;
-  method: string;
+  method?: string;
+  paymentMethod?: string;
+  items?: PaymentLine[];
+  itemCount?: number;
+  itemsDetail?: string;
+  feeType?: string;
 };
 
 export type PaymentStatus = {
@@ -632,7 +649,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "admin",
     status: "Actif",
     permissions: rolePermissions["Admin School"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "01-06-2026",
@@ -656,7 +673,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "superadmin",
     status: "Actif",
     permissions: rolePermissions["Super Administrateur Somafrik"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "01-06-2026",
@@ -680,7 +697,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "admin-rdc",
     status: "Actif",
     permissions: rolePermissions["Admin Pays"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "01-06-2026",
@@ -704,7 +721,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "admin-bi",
     status: "Actif",
     permissions: rolePermissions["Admin Pays"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "15-05-2026",
     lastLoginAt: "",
@@ -728,7 +745,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "prefet",
     status: "Actif",
     permissions: rolePermissions["Préfet des études"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "",
@@ -752,7 +769,7 @@ export const userAccounts: UserAccount[] = [
     identifier: "secretaire",
     status: "Actif",
     permissions: rolePermissions.Secrétaire,
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: "01-09-2025",
     lastLoginAt: "",
@@ -1348,7 +1365,7 @@ while (userAccounts.length < 50) {
             : `USR-${String(index).padStart(5, "0")}`,
     status: index % 13 === 0 ? "Suspendu" : "Actif",
     permissions: rolePermissions[role] ?? ["Voir tableau de bord"],
-    temporaryPassword: "1234",
+    temporaryPassword: "",
     photoUrl: "",
     createdAt: `${String((index % 27) + 1).padStart(2, "0")}-01-2026`,
     lastLoginAt: `${String((index % 27) + 1).padStart(2, "0")}-06-2026`,

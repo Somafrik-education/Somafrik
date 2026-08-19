@@ -6,13 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
 } from "react-native";
+import { useCallback } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  getStudentById,
-  courses,
-  notes,
-  school,
-} from "../data/catalog";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -21,6 +17,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats, getStudentAcademicSummary } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute } from "../domain/security/permissions";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
+import { DATA_TRUTH_TEST_IDS, parentAverageDisplay } from "../lib/dataTruth";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
 import CommunicationHeaderIcons from "../components/CommunicationHeaderIcons";
@@ -36,7 +33,7 @@ import { NAVIGATION_COPY, NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpe
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, paymentsData, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData, teachersData, assignmentsData, classesData } = useAdminData();
+  const { studentsData, paymentsData, paymentsSnapshot, loadPayments, notesData, coursesData, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData, teachersData, assignmentsData, classesData, syncStatus } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const scrollContentStyle = [
     styles.scrollContent,
@@ -54,12 +51,13 @@ export default function HomeScreen({ navigation }: any) {
     schoolsData.find((item) => item.code === session?.school.code || item.code === session?.user.schoolCode) ??
     session?.school ??
     schoolsData[0] ??
-    school;
+    { name: "École", timezone: undefined, code: "" };
   const studentIds = studentsData.map((student) => student.id);
   const todayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
   const presenceStats = getPresenceStats(todayPresenceRows, studentIds);
   const attendanceCallCount = countAttendanceCalls(todayPresenceRows, studentsData);
-  const paymentStats = getPaymentStats(paymentsData, studentIds);
+  const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
+  const paymentStats = getPaymentStats(paymentsReady ? paymentsData : [], studentIds);
   const activeUsersCount = usersData.filter(isActiveUserAccount).length;
   const userName = session?.user.name ?? "Administrateur";
   const welcomeGreeting = buildTimeGreeting(currentSchool.timezone);
@@ -76,6 +74,14 @@ export default function HomeScreen({ navigation }: any) {
   const openUsers = () =>
     isSchoolAdmin ? navigation.navigate("Utilisateurs") : navigation.navigate("AdminCrud", { entity: "users" });
 
+  useFocusEffect(
+    useCallback(() => {
+      if (canReadEntity(session, "payments")) {
+        void loadPayments();
+      }
+    }, [session, loadPayments]),
+  );
+
   if (session?.role === "teacher") {
     const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
     const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
@@ -88,9 +94,6 @@ export default function HomeScreen({ navigation }: any) {
     const teacherTodayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
     const teacherPresenceStats = getPresenceStats(teacherTodayPresenceRows, teacherStudentIds);
     const teacherAttendanceCallCount = countAttendanceCalls(teacherTodayPresenceRows, teacherStudents);
-    const teacherNotes = notes.filter(
-      (note) => teacherStudentIds.includes(note.studentId) && courses.includes(note.subject)
-    );
 
     return (
       <View style={styles.screen}>
@@ -236,11 +239,23 @@ export default function HomeScreen({ navigation }: any) {
   }
 
   if ((session?.role === "parent_student" || session?.role === "student") && selectedStudentId) {
-    const student = studentsData.find((item) => item.id === selectedStudentId) ?? getStudentById(selectedStudentId);
-    const studentNotes = notes.filter((note) => note.studentId === selectedStudentId);
+    const linkedChild = session.user.children?.find((child) => child.id === selectedStudentId);
+    const student =
+      studentsData.find((item) => item.id === selectedStudentId) ??
+      (linkedChild
+        ? { id: linkedChild.id, name: linkedChild.name, className: linkedChild.className }
+        : undefined);
+    const studentNotes = notesData.filter((note) => note.studentId === selectedStudentId);
     const studentPresences = presencesData.filter((presence) => presence.studentId === selectedStudentId);
-    const studentPayments = paymentsData.filter((payment) => payment.studentId === selectedStudentId);
-    const academicSummary = getStudentAcademicSummary(selectedStudentId, studentsData, notes, courses);
+    const studentPayments = paymentsReady
+      ? paymentsData.filter((payment) => payment.studentId === selectedStudentId)
+      : [];
+    const academicSummary = getStudentAcademicSummary(selectedStudentId, studentsData, notesData, coursesData);
+    const averageDisplay = parentAverageDisplay({
+      notesReady: syncStatus === "synced",
+      notesForStudent: studentNotes,
+      average: academicSummary.average,
+    });
     const studentPresenceStats = getPresenceStats(studentPresences);
     const studentPaymentStats = getPaymentStats(studentPayments);
     const latestAnnouncement = announcementsData[0];
@@ -299,10 +314,11 @@ export default function HomeScreen({ navigation }: any) {
           <View style={styles.statsGrid}>
             <StatCard
               icon="school-outline"
-              value={academicSummary.average.toFixed(1)}
+              value={averageDisplay.label}
               label="Moyenne"
               color="#2563EB"
               bg="#EFF6FF"
+              testID={DATA_TRUTH_TEST_IDS.parentAverage}
               onPress={() => navigation.navigate("StudentNotes", { studentId: selectedStudentId })}
             />
 
@@ -326,7 +342,7 @@ export default function HomeScreen({ navigation }: any) {
 
             <StatCard
               icon="card-outline"
-              value={`${studentPaymentStats.paid}/${studentPaymentStats.total}`}
+              value={paymentsReady ? `${studentPaymentStats.paid}/${studentPaymentStats.total}` : "—"}
               label="Paiements"
               color="#EA580C"
               bg="#FFF7ED"
@@ -461,7 +477,7 @@ export default function HomeScreen({ navigation }: any) {
               />
             )}
             {canReadEntity(session, "payments") && (
-              <StatCard icon="card-outline" value={`${paymentStats.rate}%`} label="Paiements" color="#EA580C" bg="#FFF7ED" onPress={() => navigation.navigate("Payments")} />
+              <StatCard icon="card-outline" value={paymentsReady ? `${paymentStats.rate}%` : "—"} label="Paiements" color="#EA580C" bg="#FFF7ED" onPress={() => navigation.navigate("Payments")} />
             )}
           </View>
 
@@ -634,7 +650,7 @@ export default function HomeScreen({ navigation }: any) {
           {canReadPayments && (
             <StatCard
               icon="card-outline"
-              value={`${paymentStats.rate}%`}
+              value={paymentsReady ? `${paymentStats.rate}%` : "—"}
               label="Paiements"
               color="#EA580C"
               bg="#FFF7ED"
@@ -925,11 +941,12 @@ type StatCardProps = {
   color: string;
   bg: string;
   onPress?: () => void;
+  testID?: string;
 };
 
-function StatCard({ icon, value, label, meta, color, bg, onPress }: StatCardProps) {
+function StatCard({ icon, value, label, meta, color, bg, onPress, testID }: StatCardProps) {
   return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.statCard} onPress={onPress}>
+    <TouchableOpacity activeOpacity={0.85} style={styles.statCard} onPress={onPress} testID={testID}>
       <View style={[styles.statIconBox, { backgroundColor: bg }]}>
         <Ionicons name={icon} size={24} color={color} />
       </View>

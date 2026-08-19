@@ -1,27 +1,53 @@
+import { useCallback, useMemo } from "react";
 import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { reportCards } from "../data/catalog";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import QueryStateView from "../components/QueryStateView";
 import { downloadReportCardPdf } from "../services/api";
+import {
+  bulletinPeriod,
+  DATA_TRUTH_COPY,
+  DATA_TRUTH_TEST_IDS,
+  isPublishedBulletin,
+} from "../lib/dataTruth";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function ReportCardsScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData } = useAdminData();
-  const visibleStudentIds =
-    session?.role === "parent_student"
-      ? session.user.children?.map((child) => child.id) ?? []
-      : session?.role === "student" && selectedStudentId
-        ? [selectedStudentId]
-        : studentsData.map((student) => student.id);
-  const rows = reportCards.filter((card) => visibleStudentIds.includes(card.studentId));
+  const { studentsData, reportCardsSnapshot, loadReportCards } = useAdminData();
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadReportCards();
+    }, [loadReportCards]),
+  );
+
+  const visibleStudentIds = useMemo(() => {
+    if (session?.role === "parent_student") {
+      return session.user.children?.map((child) => child.id) ?? [];
+    }
+    if (session?.role === "student" && selectedStudentId) {
+      return [selectedStudentId];
+    }
+    return studentsData.map((student) => student.id);
+  }, [session, selectedStudentId, studentsData]);
+
+  const rows = useMemo(
+    () =>
+      reportCardsSnapshot.status === "success"
+        ? reportCardsSnapshot.data.filter((card) =>
+            visibleStudentIds.length ? visibleStudentIds.includes(card.studentId) : true,
+          )
+        : [],
+    [reportCardsSnapshot, visibleStudentIds],
+  );
 
   const openPdf = async (studentId: string, period: string) => {
     try {
-      // S2.1 — fetch Authorization: Bearer puis ouverture locale (plus de JWT en query).
       const localUri = await downloadReportCardPdf(studentId, period);
       const canOpen = await Linking.canOpenURL(localUri);
 
@@ -34,51 +60,82 @@ export default function ReportCardsScreen() {
     } catch (error) {
       Alert.alert(
         "Bulletin PDF",
-        error instanceof Error ? error.message : "Impossible d'ouvrir le bulletin PDF."
+        error instanceof Error ? error.message : "Impossible d'ouvrir le bulletin PDF.",
       );
     }
   };
 
+  const showQueryState =
+    reportCardsSnapshot.status !== "success" || rows.length === 0;
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>
       <Text style={styles.title}>Bulletins</Text>
-      <Text style={styles.subtitle}>{rows.length} bulletin(s) disponible(s)</Text>
+      <Text style={styles.subtitle}>
+        {reportCardsSnapshot.status === "success"
+          ? `${rows.length} bulletin(s) disponible(s)`
+          : "Documents générés par l'établissement"}
+      </Text>
 
-      {rows.map((card) => {
-        const student = studentsData.find((item) => item.id === card.studentId);
-        const isPublished = card.status === "Publié";
+      {showQueryState ? (
+        <QueryStateView
+          snapshot={
+            reportCardsSnapshot.status === "success" && rows.length === 0
+              ? { status: "empty", data: [] }
+              : reportCardsSnapshot
+          }
+          emptyMessage={DATA_TRUTH_COPY.emptyBulletins}
+          errorMessage={DATA_TRUTH_COPY.errorBulletins}
+          offlineMessage={DATA_TRUTH_COPY.offlineBulletins}
+          emptyTestId={DATA_TRUTH_TEST_IDS.bulletinsEmpty}
+          errorTestId={DATA_TRUTH_TEST_IDS.bulletinsError}
+          onRetry={() => void loadReportCards()}
+        />
+      ) : (
+        <View testID={DATA_TRUTH_TEST_IDS.bulletinsList}>
+          {rows.map((card) => {
+            const student = studentsData.find((item) => item.id === card.studentId);
+            const period = bulletinPeriod(card);
+            const isPublished = isPublishedBulletin(card.status);
+            const averageLabel =
+              card.average == null || !Number.isFinite(Number(card.average))
+                ? "—"
+                : `${Number(card.average).toFixed(1)}/20`;
+            const rankLabel =
+              card.rank == null || !Number.isFinite(Number(card.rank)) ? "—" : `${card.rank}e`;
 
-        return (
-          <View key={card.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View>
-                <Text style={styles.student}>{student?.name ?? "Élève"}</Text>
-                <Text style={styles.term}>{card.term}</Text>
+            return (
+              <View key={card.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View>
+                    <Text style={styles.student}>{card.studentName || student?.name || "Élève"}</Text>
+                    <Text style={styles.term}>{period || "Période non renseignée"}</Text>
+                  </View>
+                  <Text style={[styles.status, !isPublished && styles.statusDraft]}>
+                    {card.status || "—"}
+                  </Text>
+                </View>
+
+                <View style={styles.metricsRow}>
+                  <Metric label="Moyenne" value={averageLabel} />
+                  <Metric label="Rang" value={rankLabel} />
+                  <Metric label="Publié le" value={card.publishedAt || "À valider"} />
+                </View>
+
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.pdfButton, (!isPublished || !card.studentId || !period) && styles.pdfButtonDisabled]}
+                  disabled={!isPublished || !card.studentId || !period}
+                  onPress={() => openPdf(card.studentId, period)}
+                >
+                  <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.pdfText}>Visionner le bulletin</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={[styles.status, !isPublished && styles.statusDraft]}>{card.status}</Text>
-            </View>
-
-            <View style={styles.metricsRow}>
-              <Metric label="Moyenne" value={`${card.average}/20`} />
-              <Metric label="Rang" value={`${card.rank}e`} />
-              <Metric label="Publié le" value={card.publishedAt || "À valider"} />
-            </View>
-
-            <Text style={styles.comment}>{card.teacherComment}</Text>
-            <Text style={styles.comment}>{card.principalComment}</Text>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[styles.pdfButton, !isPublished && styles.pdfButtonDisabled]}
-              disabled={!isPublished}
-              onPress={() => openPdf(card.studentId, card.term)}
-            >
-              <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.pdfText}>Visionner le bulletin</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      })}
+            );
+          })}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -122,7 +179,6 @@ const styles = StyleSheet.create({
   metric: { flex: 1, backgroundColor: "#F8FAFC", borderRadius: 14, padding: 10 },
   metricLabel: { color: "#64748B", fontSize: 11, fontWeight: "900" },
   metricValue: { color: "#0F172A", fontSize: 14, fontWeight: "900", marginTop: 4 },
-  comment: { color: "#475569", fontSize: 13, fontWeight: "700", marginTop: 6 },
   pdfButton: {
     marginTop: 14,
     borderRadius: 14,
