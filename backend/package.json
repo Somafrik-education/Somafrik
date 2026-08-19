@@ -6,6 +6,7 @@
   },
   "main": "server.js",
   "scripts": {
+    "prestart": "node scripts/prestart-idempotency-schema.js",
     "start": "node server.js",
     "dev": "node server.js",
     "dev:memory": "node scripts/dev-memory.js",
@@ -17,7 +18,8 @@
     "verify:rbac-admin-01": "node scripts/verify-rbac-admin-01.js",
     "verify:jwt-header": "node scripts/verify-jwt-header.js",
     "verify:db-config": "node scripts/verify-db-config.js",
-    "verify:runtime-bootstrap": "node scripts/verify-runtime-bootstrap.js",
+    "verify:idempotency-boot-preflight": "node scripts/verify-idempotency-boot-preflight.js",
+    "verify:runtime-bootstrap": "node scripts/verify-idempotency-boot-preflight.js && node scripts/verify-runtime-bootstrap.js",
     "postinstall": "node ./node_modules/puppeteer/install.mjs"
   },
   "dependencies": {
