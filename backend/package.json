@@ -6,6 +6,7 @@
   },
   "main": "server.js",
   "scripts": {
+    "prestart": "node scripts/prestart-idempotency-schema.js",
     "start": "node server.js",
     "dev": "node server.js",
     "dev:memory": "node scripts/dev-memory.js",
