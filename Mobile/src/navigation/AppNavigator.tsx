@@ -15,6 +15,7 @@ import StudentNotesScreen from "../screens/StudentNotesScreen";
 import StudentPresencesScreen from "../screens/StudentPresencesScreen";
 import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
 import TeachersScreen from "../screens/TeachersScreen";
+import UsersScreen from "../screens/UsersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
 import AdminCrudScreen from "../screens/AdminCrudScreen";
@@ -68,27 +69,16 @@ export type RootStackParamList = {
     accessRole?: UserRole;
     accessRoleLabel?: string;
   };
-  Home: {
-    role: UserRole;
-  };
-  Students: {
-    className?: string;
-  };
-  StudentDetail: {
-    studentId: string;
-  };
-  StudentNotes: {
-    studentId: string;
-  };
-  StudentPresences: {
-    studentId: string;
-  };
-  StudentPayments: {
-    studentId: string;
-  };
+  Home: { role: UserRole };
+  Students: { className?: string };
+  StudentDetail: { studentId: string };
+  StudentNotes: { studentId: string };
+  StudentPresences: { studentId: string };
+  StudentPayments: { studentId: string };
   SchoolManagement: undefined;
   Classes: undefined;
   Teachers: undefined;
+  Users: undefined;
   TeacherStudents: undefined;
   TeacherAttendance: undefined;
   TeacherGrades: undefined;
@@ -149,62 +139,26 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Welcome">
-        <Stack.Screen
-          name="Welcome"
-          component={WelcomeScreen}
-          options={{ headerShown: false }}
-        />
-
-        <Stack.Screen
-          name="RoleSelection"
-          component={RoleSelectionScreen}
-          options={{ title: "Se connecter à l'établissement" }}
-        />
-
-        <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-          options={{ headerShown: false }}
-        />
-
-        <Stack.Screen
-          name="Home"
-          component={HomeTabs}
-          options={{ headerShown: false }}
-        />
+        <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} options={{ title: "Se connecter à l'établissement" }} />
+        <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Home" component={HomeTabs} options={{ headerShown: false }} />
 
         {canOpenAdminCrud && (
           <>
             {session?.role !== "school_admin" && canReadRoute(session, "SchoolManagement") && <Stack.Screen name="SchoolManagement" component={SchoolManagementScreen} />}
             {canReadRoute(session, "Teachers") && <Stack.Screen name="Teachers" component={TeachersScreen} />}
+            {canReadView(session, "users") && <Stack.Screen name="Users" component={UsersScreen} options={{ title: "Utilisateurs" }} />}
             {canReadRoute(session, "Payments") && <Stack.Screen name="Payments" component={PaymentsScreen} />}
             <Stack.Screen name="AdminCrud" component={AdminCrudScreen} options={{ title: "Administration" }} />
           </>
         )}
 
-        {canReadRoute(session, "Classes") && (
-          <>
-            <Stack.Screen name="Classes" component={ClassesScreen} />
-          </>
-        )}
-
-        {canReadRoute(session, "Students") && (
-          <>
-            <Stack.Screen name="Students" component={StudentsScreen} options={{ title: "Élèves" }} />
-          </>
-        )}
-
-        {canReadRoute(session, "TeacherStudents") && (
-          <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />
-        )}
-
-        {canReadRoute(session, "TeacherAttendance") && (
-          <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />
-        )}
-
-        {canReadRoute(session, "TeacherGrades") && (
-          <Stack.Screen name="TeacherGrades" component={TeacherGradesScreen} options={{ title: "Notes" }} />
-        )}
+        {canReadRoute(session, "Classes") && <Stack.Screen name="Classes" component={ClassesScreen} />}
+        {canReadRoute(session, "Students") && <Stack.Screen name="Students" component={StudentsScreen} options={{ title: "Élèves" }} />}
+        {canReadRoute(session, "TeacherStudents") && <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />}
+        {canReadRoute(session, "TeacherAttendance") && <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />}
+        {canReadRoute(session, "TeacherGrades") && <Stack.Screen name="TeacherGrades" component={TeacherGradesScreen} options={{ title: "Notes" }} />}
 
         {canOpenStudentScreens && (
           <>
@@ -214,17 +168,9 @@ export default function AppNavigator() {
           </>
         )}
 
-        {canReadRoute(session, "StudentPayments") && (
-          <Stack.Screen name="StudentPayments" component={StudentPaymentsScreen} options={{ title: "Paiements" }} />
-        )}
-
-        {canReadRoute(session, "Announcements") && (
-          <Stack.Screen name="Announcements" component={AnnouncementsScreen} />
-        )}
-
-        {canReadRoute(session, "Messages") && (
-          <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: "Messages" }} />
-        )}
+        {canReadRoute(session, "StudentPayments") && <Stack.Screen name="StudentPayments" component={StudentPaymentsScreen} options={{ title: "Paiements" }} />}
+        {canReadRoute(session, "Announcements") && <Stack.Screen name="Announcements" component={AnnouncementsScreen} />}
+        {canReadRoute(session, "Messages") && <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: "Messages" }} />}
 
         {(canReadRoute(session, "Timetable") || canReadRoute(session, "ReportCards")) && (
           <>
@@ -233,40 +179,16 @@ export default function AppNavigator() {
           </>
         )}
 
-        {canReadRoute(session, "Documents") && (
-          <Stack.Screen name="Documents" component={DocumentsScreen} options={{ title: "Documents" }} />
-        )}
-        {canReadRoute(session, "Reports") && (
-          <Stack.Screen name="Reports" component={ReportsScreen} options={{ title: "Rapports" }} />
-        )}
-        {canReadRoute(session, "Audit") && (
-          <Stack.Screen name="Audit" component={AuditScreen} options={{ title: "Audit" }} />
-        )}
-        {canReadRoute(session, "MobilePayment") && (
-          <Stack.Screen name="MobilePayment" component={MobilePaymentScreen} options={{ title: "Paiement mobile" }} />
-        )}
-        {canReadRoute(session, "OfflineMode") && (
-          <Stack.Screen name="OfflineMode" component={OfflineModeScreen} options={{ title: "Mode hors ligne" }} />
-        )}
-        {canReadRoute(session, "Synchronization") && (
-          <Stack.Screen name="Synchronization" component={SynchronizationScreen} options={{ title: "Synchronisation" }} />
-        )}
-        {canReadRoute(session, "Support") && (
-          <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />
-        )}
-        {canReadView(session, "Configuration") && (
-          <Stack.Screen name="Configuration" component={ConfigurationScreen} options={{ title: "Configuration" }} />
-        )}
-        {canReadView(session, "PlatformNotifications") && (
-          <Stack.Screen
-            name="PlatformNotifications"
-            component={PlatformNotificationsScreen}
-            options={{ title: "Notifications plateforme" }}
-          />
-        )}
-        {canReadView(session, "Permissions") && (
-          <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />
-        )}
+        {canReadRoute(session, "Documents") && <Stack.Screen name="Documents" component={DocumentsScreen} options={{ title: "Documents" }} />}
+        {canReadRoute(session, "Reports") && <Stack.Screen name="Reports" component={ReportsScreen} options={{ title: "Rapports" }} />}
+        {canReadRoute(session, "Audit") && <Stack.Screen name="Audit" component={AuditScreen} options={{ title: "Audit" }} />}
+        {canReadRoute(session, "MobilePayment") && <Stack.Screen name="MobilePayment" component={MobilePaymentScreen} options={{ title: "Paiement mobile" }} />}
+        {canReadRoute(session, "OfflineMode") && <Stack.Screen name="OfflineMode" component={OfflineModeScreen} options={{ title: "Mode hors ligne" }} />}
+        {canReadRoute(session, "Synchronization") && <Stack.Screen name="Synchronization" component={SynchronizationScreen} options={{ title: "Synchronisation" }} />}
+        {canReadRoute(session, "Support") && <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />}
+        {canReadView(session, "Configuration") && <Stack.Screen name="Configuration" component={ConfigurationScreen} options={{ title: "Configuration" }} />}
+        {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}
+        {canReadView(session, "Permissions") && <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />}
       </Stack.Navigator>
     </NavigationContainer>
   );
