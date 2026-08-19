@@ -1,4 +1,13 @@
 .expo/
 .env.local
+.env*
+!.env.example
 release.keystore
+*.jks
+*.keystore
+credentials.json
+dist/
+*.aab
+android/
+ios/
 android/keystore.properties
