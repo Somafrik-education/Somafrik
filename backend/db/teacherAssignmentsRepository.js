@@ -6,6 +6,7 @@ const {
 } = require("../lib/teacherAssignmentsManagement");
 const { assignmentAuditScope, writeTransactionalAudit } = require("../lib/teacherTransactionalAudit");
 const { isTeacherAssignmentsActiveUniquenessViolation } = require("../lib/teacherAssignmentsUniqueness");
+const { sqlTeacherIdentityEquals } = require("../lib/teacherCodeAllocation");
 
 function mapAssignment(row) {
   return {
@@ -75,7 +76,7 @@ function createTeacherAssignmentsRepository(db) {
         `SELECT t.id, t.teacher_code FROM teachers t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.school_id = $1
-           AND (t.teacher_code = $2 OR t.id::text = $2 OR u.user_code = $2 OR u.id::text = $2)
+           AND ${sqlTeacherIdentityEquals("t", "u", "$2")}
            AND COALESCE(t.status, 'active') = 'active'
            AND COALESCE(u.status, 'active') = 'active'
          LIMIT 1`,

@@ -10,6 +10,8 @@ const {
   allocateTeacherCodesLocked,
   acquireTeacherSchoolCreationLock,
   isTeacherOrUserCodeUniquenessViolation,
+  sqlTeacherPublicCodeEquals,
+  teacherPublicCodesMatch,
 } = require("../lib/teacherCodeAllocation");
 const { isTeachersSchoolUserUniquenessViolation } = require("../lib/teachersUniqueness");
 const { hashSecret } = require("../services/credentialService");
@@ -65,7 +67,7 @@ function formatIsoDate(value) {
 function mapActiveAssignments(assignmentRows, teacherCode) {
   const code = String(teacherCode ?? "");
   return (assignmentRows ?? [])
-    .filter((row) => String(row.teacher_code ?? "") === code)
+    .filter((row) => teacherPublicCodesMatch(row.teacher_code, code))
     .map((row) => ({
       id: row.id ?? null,
       classId: row.class_id ?? row.classId ?? null,
@@ -164,7 +166,7 @@ function createTeachersRepository(db) {
          JOIN classes cl ON cl.id = ta.class_id
          JOIN subjects sub ON sub.id = ta.subject_id
          WHERE t.school_id = $1
-           AND t.teacher_code = $2
+           AND ${sqlTeacherPublicCodeEquals("t", "$2")}
            AND ta.status = 'active'
          ORDER BY cl.name, sub.name`,
         [schoolId, teacherCode],
@@ -385,7 +387,7 @@ function createTeachersRepository(db) {
          FROM teachers t
          JOIN schools s ON s.id = t.school_id
          LEFT JOIN users u ON u.id = t.user_id
-         WHERE t.teacher_code = $1 AND t.school_id = $2
+         WHERE (${sqlTeacherPublicCodeEquals("t", "$1")} OR t.id::text = $1) AND t.school_id = $2
            AND COALESCE(t.status, 'active') NOT IN ('deleted', 'archived')
            AND COALESCE(u.status, 'active') NOT IN ('deleted', 'archived')
          LIMIT 1`,

@@ -10,7 +10,7 @@ const {
   assertUniqueUserLoginIdentity,
   isUsersLoginIdentityUniquenessViolation,
 } = require("../lib/usersLoginIdentity");
-const { acquireTeacherSchoolCreationLock } = require("../lib/teacherCodeAllocation");
+const { acquireTeacherSchoolCreationLock, sqlTeacherPublicCodeEquals } = require("../lib/teacherCodeAllocation");
 const { teacherAuditScope, writeTransactionalAudit } = require("../lib/teacherTransactionalAudit");
 
 const FORBIDDEN_PATCH_KEYS = Object.freeze([
@@ -165,7 +165,7 @@ function createTeacherLifecycleRepository(db) {
        FROM teachers t
        JOIN users u ON u.id = t.user_id
        JOIN schools s ON s.id = t.school_id
-       WHERE t.school_id = $1 AND t.teacher_code = $2
+       WHERE t.school_id = $1 AND ${sqlTeacherPublicCodeEquals("t", "$2")}
        FOR UPDATE OF t, u`,
       [schoolId, teacherCode],
     );
