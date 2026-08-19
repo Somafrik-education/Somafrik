@@ -35,8 +35,8 @@ const sections: ConfigSection[] = [
   },
   {
     title: "Utilisateurs et roles",
-    description: "Comptes internes et pilotage local des droits.",
-    entity: "users",
+    description: "Identites et roles actifs issus de PostgreSQL.",
+    route: "Users",
     view: "users",
   },
   {
@@ -110,12 +110,12 @@ export default function ConfigurationScreen() {
               key={section.title}
               style={[styles.card, isTablet && { width: `${100 / columns - 2}%`, minWidth: 280 }]}
               onPress={() => {
-                if (section.entity) {
-                  navigation.navigate("AdminCrud", { entity: section.entity });
-                  return;
-                }
                 if (section.route) {
                   navigation.navigate(section.route);
+                  return;
+                }
+                if (section.entity) {
+                  navigation.navigate("AdminCrud", { entity: section.entity });
                 }
               }}
             >
@@ -127,10 +127,7 @@ export default function ConfigurationScreen() {
       </View>
 
       {session?.role === "school_admin" && (
-        <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={() => navigation.navigate("Utilisateurs")}
-        >
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => navigation.navigate("Users")}>
           <Text style={styles.primaryBtnText}>Pilotage des droits (Utilisateurs)</Text>
         </TouchableOpacity>
       )}
@@ -142,23 +139,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F7FB" },
   title: { fontSize: 28, fontWeight: "800", color: "#111827" },
   subtitle: { color: "#64748B", marginTop: 6, marginBottom: 16, lineHeight: 20 },
-  summaryCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 16,
-  },
+  summaryCard: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 18, marginBottom: 16 },
   summaryTitle: { fontSize: 16, fontWeight: "800", color: "#111827" },
   summaryText: { color: "#2563EB", fontWeight: "700", marginTop: 6 },
   summaryMeta: { color: "#64748B", marginTop: 4, fontWeight: "600" },
   readOnly: { color: "#B45309", marginTop: 10, fontWeight: "700" },
   grid: { gap: 12 },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 12,
-  },
+  card: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 18, marginBottom: 12 },
   cardTitle: { fontSize: 16, fontWeight: "800", color: "#111827", marginBottom: 6 },
   cardDescription: { color: "#64748B", lineHeight: 20 },
   primaryBtn: { backgroundColor: "#2563EB", borderRadius: 16, padding: 16, marginTop: 8 },

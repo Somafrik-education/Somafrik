@@ -128,6 +128,8 @@ jobs:
         run: npm run verify:mobile-evaluations-v2
       - name: verify:mobile-planning-v2
         run: npm run verify:mobile-planning-v2
+      - name: verify:mobile-domain-hydration
+        run: npm --prefix Mobile run verify:mobile-domain-hydration
 
       - name: verify:platform-management (mémoire + PostgreSQL CI)
         env:
