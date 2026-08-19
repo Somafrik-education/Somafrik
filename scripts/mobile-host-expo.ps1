@@ -81,7 +81,7 @@ if ($Tunnel) {
   Write-Host "   Ou scannez le QR code affiche ci-dessous"
 }
 Write-Host ""
-Write-Host "Comptes demo : CD-2026-0001 | ELE-0001 ou ENS-0001 | PIN 1234"
+Write-Host "Comptes demo : CD-IN-26-001 | ELE-0001 ou ENS-0001 | PIN 1234"
 Write-Host ""
 
 Set-Location (Join-Path $root "Mobile")

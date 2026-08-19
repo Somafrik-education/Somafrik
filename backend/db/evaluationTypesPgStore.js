@@ -31,7 +31,8 @@ function createEvaluationTypesPgStore(repo) {
     return one(
       `SELECT s.id, s.school_code
        FROM schools s
-       WHERE upper(s.school_code) = upper($1)`,
+       WHERE upper(s.school_code) = upper($1)
+          OR upper(coalesce(s.login_code, '')) = upper($1)`,
       [asTrimmed(schoolCode).toUpperCase()],
     );
   }

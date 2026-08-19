@@ -176,7 +176,8 @@ function createFunctionalRbacPgStore(repo) {
       school = await one(
         `SELECT s.id, s.school_code, s.country_id, c.iso_code AS country_code
          FROM schools s JOIN countries c ON c.id = s.country_id
-         WHERE upper(s.school_code) = upper($1)`,
+         WHERE upper(s.school_code) = upper($1)
+            OR upper(coalesce(s.login_code, '')) = upper($1)`,
         [schoolCodeLookup],
       );
     }

@@ -29,7 +29,8 @@ function createEducationReferencePgStore(repo) {
       `SELECT s.id, s.school_code, c.iso_code AS country_code, s.country_id
        FROM schools s
        JOIN countries c ON c.id = s.country_id
-       WHERE upper(s.school_code) = upper($1)`,
+       WHERE upper(s.school_code) = upper($1)
+          OR upper(coalesce(s.login_code, '')) = upper($1)`,
       [asTrimmed(schoolCode).toUpperCase()],
     );
   }

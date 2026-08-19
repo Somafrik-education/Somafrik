@@ -1321,10 +1321,16 @@ class FallbackRepository {
       const memoryAdapter = {
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
-          const match = (seedData.platformSchools ?? [seedData.school]).find(
-            (row) => String(row.code ?? "").toUpperCase() === normalized,
-          );
-          const isPrimary = normalized === String(seedData.school.code).toUpperCase();
+          const match = (seedData.platformSchools ?? [seedData.school]).find((row) => {
+            const keys = [row.code, row.schoolCode, row.loginCode, row.login_code, row.publicId]
+              .map((value) => String(value ?? "").trim().toUpperCase())
+              .filter(Boolean);
+            return keys.includes(normalized);
+          });
+          const isPrimary =
+            normalized === String(seedData.school.code).toUpperCase() ||
+            normalized === String(seedData.school.loginCode ?? "").toUpperCase() ||
+            normalized === String(seedData.school.publicId ?? "").toUpperCase();
           return {
             id: isPrimary ? seedData.school.id : `school-${normalized}`,
             school_code: match?.code ?? normalized,
@@ -3084,9 +3090,11 @@ class FallbackRepository {
         async resolveCountryAndSchool({ countryCode, schoolCode, countryId, schoolId }) {
           const dataset = await self.getDataset();
           const school = (dataset.platformSchools ?? []).find((row) => {
-            const code = String(row.code ?? row.schoolCode ?? row.school_code ?? "").toUpperCase();
+            const keys = [row.code, row.schoolCode, row.school_code, row.loginCode, row.login_code, row.publicId]
+              .map((value) => String(value ?? "").toUpperCase())
+              .filter(Boolean);
             return (
-              (schoolCode && code === String(schoolCode).toUpperCase()) ||
+              (schoolCode && keys.includes(String(schoolCode).toUpperCase())) ||
               (schoolId && String(row.id) === String(schoolId))
             );
           });
