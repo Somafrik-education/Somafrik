@@ -55,6 +55,23 @@ function filterActiveSchools(schools = []) {
   return schools.filter((school) => !isSchoolDeleted(school));
 }
 
+function schoolConflictsExistingIdentity(school, existing, { isNew = false } = {}) {
+  const { matchesSchoolLookup } = require("./schoolCodeV2");
+  if (!isNew && normalize(existing.code) === normalize(school.code) && school.code) {
+    return false;
+  }
+  const candidates = [
+    school.requestedCode,
+    school.code,
+    school.loginCode,
+    school.login_code,
+    school.publicId,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  return candidates.some((value) => matchesSchoolLookup(existing, value));
+}
+
 function validateSchoolPayload(school, schools, { isNew = false } = {}) {
   const name = String(school.name ?? "").trim();
   if (name.length < 2) return "Le nom de l'établissement doit contenir au moins 2 caractères.";
@@ -67,21 +84,20 @@ function validateSchoolPayload(school, schools, { isNew = false } = {}) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Format email invalide.";
   if (!String(school.principalName ?? "").trim()) return "Le responsable principal est obligatoire.";
 
+  const { isLegacySchoolCodeFormat } = require("./schoolCodeV2");
+  const requested = String(school.requestedCode ?? school.code ?? "").trim().toUpperCase();
   const code = String(school.code ?? "").trim().toUpperCase();
   if (isNew) {
-    const { isLegacySchoolCodeFormat } = require("./schoolCodeV2");
-    if (code && isLegacySchoolCodeFormat(code)) {
+    if (requested && isLegacySchoolCodeFormat(requested)) {
       return "Format établissement legacy interdit pour une création (ex. CD-2026-0001).";
     }
   } else if (!code) {
     return "Le code établissement est obligatoire.";
   }
-  if (code) {
-    const duplicateCode = isNew
-      ? schools.some((item) => normalize(item.code) === normalize(code))
-      : schools.some((item) => normalize(item.code) === normalize(code) && item.code !== school.code);
-    if (duplicateCode) return "Ce code établissement existe déjà.";
-  }
+  const duplicateCode = (schools ?? []).some((item) =>
+    schoolConflictsExistingIdentity(school, item, { isNew }),
+  );
+  if (duplicateCode) return "Ce code établissement existe déjà.";
 
   return null;
 }

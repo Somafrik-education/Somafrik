@@ -8,8 +8,9 @@
  * déterministes de `somafrik_school_short_code` / `schoolShortCodeFromName`
  * (première lettre de chaque mot significatif, mots-outils DE/DU/DES/LA/LE/LES/D/ET ignorés).
  *
- * Allocation SEQ3 : PostgreSQL only (`somafrik_prepare_school_login_code`).
- * Ce module formate et valide. Il n'incrémente aucun compteur.
+ * Allocation SEQ3 : PostgreSQL (`somafrik_prepare_school_login_code`) en
+ * production. `allocateNextSchoolLoginCode` n'existe que pour le fallback /
+ * E2E in-memory et n'émet jamais CC-YYYY-NNNN.
  */
 "use strict";
 
@@ -117,16 +118,63 @@ function matchesSchoolLookup(school, requestedCode) {
   return schoolLookupKeys(school).includes(requested);
 }
 
+function generateInternalSchoolAlias() {
+  const { randomUUID } = require("node:crypto");
+  return `SCH-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`;
+}
+
+function isInternalSchoolAlias(value) {
+  return /^SCH-[A-Z0-9]+$/.test(normalizeSchoolCode(value));
+}
+
+/**
+ * Prochain SEQ3 pour un pays / année civile, d'après les login_code déjà
+ * présents en mémoire. Miroir du compteur PG `(country_id, creation_year)`.
+ * Réservé au fallback / E2E in-memory — pas aux clients Web/Mobile.
+ */
+function nextLoginSequenceFromSchools(schools, countryIso, year) {
+  const iso = normalizeSchoolCode(countryIso).slice(0, 2);
+  const yy = identityYearShort(year);
+  let max = 0;
+  for (const school of schools ?? []) {
+    const login = publicSchoolCodeFromRecord(school);
+    if (!isV2SchoolLoginCode(login)) continue;
+    const parts = login.split("-");
+    if (parts.length < 4) continue;
+    if (parts[0] !== iso) continue;
+    if (parts[parts.length - 2] !== yy) continue;
+    const seq = Number(parts[parts.length - 1]);
+    if (Number.isInteger(seq) && seq > max) max = seq;
+  }
+  return max + 1;
+}
+
+/**
+ * Alloue un login_code V2 en mémoire (E2E / fallback). Production = trigger PG.
+ * N'émet jamais CC-YYYY-NNNN.
+ */
+function allocateNextSchoolLoginCode(
+  schools,
+  { countryIso, schoolName, year = new Date().getFullYear() } = {},
+) {
+  const sequence = nextLoginSequenceFromSchools(schools, countryIso, year);
+  return formatSchoolLoginCode({ countryIso, schoolName, year, sequence });
+}
+
 module.exports = {
   V2_SCHOOL_LOGIN_PATTERN,
   LEGACY_SCHOOL_CODE_PATTERN,
   normalizeSchoolCode,
   isV2SchoolLoginCode,
   isLegacySchoolCodeFormat,
+  isInternalSchoolAlias,
   padSchoolSequence,
   formatSchoolLoginCode,
   validateSchoolCode,
   publicSchoolCodeFromRecord,
   schoolLookupKeys,
   matchesSchoolLookup,
+  generateInternalSchoolAlias,
+  nextLoginSequenceFromSchools,
+  allocateNextSchoolLoginCode,
 };

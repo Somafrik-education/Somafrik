@@ -153,7 +153,9 @@ function assertRoleSelectionSource() {
   assert.match(screen, /useState<SchoolInfo \| null>\(null\)/);
   assert.doesNotMatch(screen, /useState\(["']CD-2026-0001["']\)/);
   assert.doesNotMatch(screen, /code:\s*["']CD-2026-0001["']/);
-  assert.match(screen, /PLATFORM-\$\{scope\}/);
+  assert.doesNotMatch(screen, /code:\s*isGlobal\s*\?\s*"PLATFORM"/);
+  assert.doesNotMatch(screen, /PLATFORM-\$\{scope\}/);
+  assert.match(screen, /buildPlatformLoginParams\("global"\)/);
   assert.match(screen, /disabled=\{isLoading \|\| !accessCode\.trim\(\)\}/);
   const spec = fs.readFileSync(
     path.join(ROOT, "Mobile/src/lib/loginScreenSpec.ts"),

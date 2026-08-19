@@ -35,14 +35,15 @@ PostgreSQL :
 
 L'API publique `GET /api/schools/:code` renvoie `code` = `loginCode` = `login_code` V2 (`toPublicSchool` / `publicSchoolCodeFromRecord`).
 
-Backend, Web et Mobile **n'allouent plus** de code établissement.
+Backend, Web et Mobile **n'allouent plus** de code établissement sur les clients.  
+En mémoire (E2E / fallback sans PostgreSQL), `allocateNextSchoolLoginCode` reflète le compteur PG `(pays, année)` pour émettre un `login_code` V2. Ce n'est **pas** le générateur legacy `CC-YYYY-NNNN`.
 
 ## Génération
 
-Unique : PostgreSQL.  
-`formatSchoolLoginCode` (JS) formate et teste ; il n'incrémente aucun compteur.
+Unique en production : PostgreSQL.  
+`formatSchoolLoginCode` (JS) formate et teste ; il n'incrémente aucun compteur applicatif client.
 
-Création applicative : `schoolsRepository.persist` refuse `CD-YYYY-NNNN`, alloue `school_code = SCH-…`, laisse le trigger écrire `login_code`.
+Création applicative : `schoolsRepository.persist` refuse `CD-YYYY-NNNN`, alloue `school_code = SCH-…`, laisse le trigger écrire `login_code`. Un UPDATE identifié par un code public (legacy ou V2) est **converti en UUID** puis écrit `WHERE id = $uuid`. Aucune nouvelle génération de `school_code` legacy.
 
 ## Concurrence
 

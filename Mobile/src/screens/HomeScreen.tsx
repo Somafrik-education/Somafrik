@@ -49,7 +49,7 @@ export default function HomeScreen({ navigation }: any) {
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
   const currentSchool =
-    schoolsData.find((item) => item.code === session?.school.code || item.code === session?.user.schoolCode) ??
+    schoolsData.find((item) => item.code === session?.school?.code || item.code === session?.user.schoolCode) ??
     session?.school ??
     schoolsData[0] ??
     { name: "École", timezone: undefined, code: "" };

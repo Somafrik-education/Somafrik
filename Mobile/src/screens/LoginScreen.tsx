@@ -30,6 +30,12 @@ import {
   resolveIdentifierKeyboardType,
   resolveSecretKeyboardType,
 } from "../lib/loginScreenSpec";
+import {
+  buildMobileLoginPayload,
+  isPlatformMobileRole,
+  platformLoginSubtitle,
+  platformLoginTitle,
+} from "../lib/platformLogin";
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
@@ -49,7 +55,8 @@ if (__DEV__) {
 }
 
 export default function LoginScreen({ navigation, route }: Props) {
-  const { school, accessIdentifier, accessRole, accessRoleLabel } = route.params;
+  const { school, platformContext, accessIdentifier, accessRole, accessRoleLabel } = route.params;
+  const isPlatformLogin = Boolean(platformContext) || isPlatformMobileRole(accessRole);
   const [identifier, setIdentifier] = useState(accessIdentifier ?? "");
   const [password, setPassword] = useState("");
   const [identity, setIdentity] = useState<IdentifyResponse | null>(
@@ -75,7 +82,7 @@ export default function LoginScreen({ navigation, route }: Props) {
     setIdentity(null);
     setErrorMessage(null);
 
-    if (normalizedIdentifier.length < 3) {
+    if (normalizedIdentifier.length < 3 || isPlatformLogin || !school) {
       return;
     }
 
@@ -100,7 +107,7 @@ export default function LoginScreen({ navigation, route }: Props) {
     }, 450);
 
     return () => clearTimeout(timeout);
-  }, [accessRole, accessRoleLabel, identifier, school.code]);
+  }, [accessRole, accessRoleLabel, identifier, isPlatformLogin, school]);
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
@@ -117,12 +124,15 @@ export default function LoginScreen({ navigation, route }: Props) {
     setErrorMessage(null);
 
     try {
-      const session = await login({
-        role: identity.role,
-        schoolCode: school.code,
-        identifier: identifier.trim(),
-        pin: password.trim(),
-      });
+      const session = await login(
+        buildMobileLoginPayload({
+          role: identity.role,
+          identifier: identifier.trim(),
+          pin: password.trim(),
+          schoolCode: school?.code,
+          platformContext,
+        }),
+      );
 
       if (session.user.mustChangePassword) {
         setPendingSession(session);
@@ -203,14 +213,18 @@ export default function LoginScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.container}
       >
       <View style={styles.schoolLogo} testID={LOGIN_TEST_IDS.schoolLogo}>
-        {school.logoUrl ? (
+        {school?.logoUrl ? (
           <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
         ) : (
           <Image source={somafrikLogo} style={styles.schoolLogoImage} />
         )}
       </View>
-      <Text style={styles.title} testID={LOGIN_TEST_IDS.schoolName}>{school.name}</Text>
-      <Text style={styles.subtitle}>{school.city} • {school.code}</Text>
+      <Text style={styles.title} testID={LOGIN_TEST_IDS.schoolName}>
+        {school?.name ?? platformLoginTitle(platformContext)}
+      </Text>
+      <Text style={styles.subtitle}>
+        {school ? `${school.city} • ${school.code}` : platformLoginSubtitle(platformContext)}
+      </Text>
 
       <Text style={styles.instructionText} testID={LOGIN_TEST_IDS.instructionText}>
         {LOGIN_SCREEN_COPY.identifierHint}

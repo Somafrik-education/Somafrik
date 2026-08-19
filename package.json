@@ -114,7 +114,7 @@
     "verify:mobile-network-resilience": "npm --prefix Mobile run verify:mobile-network-resilience",
     "verify:mobile-usability": "npm --prefix Mobile run verify:mobile-usability",
     "verify:mobile-release-readiness": "npm --prefix Mobile run verify:mobile-release-readiness",
-    "verify:school-code-v2": "node backend/lib/schoolCodeV2.test.js && node backend/lib/publicSchool.test.js && npx --yes tsx Mobile/src/lib/roleSelectionSchoolCode.test.ts && node backend/scripts/verify-school-code-v2.js",
+    "verify:school-code-v2": "node backend/lib/schoolCodeV2.test.js && node backend/lib/publicSchool.test.js && node --test backend/lib/authPlatformLogin.test.js && npx --yes tsx Mobile/src/lib/roleSelectionSchoolCode.test.ts && npx --yes tsx Mobile/src/lib/platformLogin.test.ts && node backend/scripts/verify-school-code-v2.js",
     "verify:mobile-native-aab": "npm --prefix Mobile run verify:mobile-native-aab",
     "audit:integrity": "node scripts/audit-data-integrity.js",
     "audit:sql-integrity": "node scripts/audit-sql-integrity.js",

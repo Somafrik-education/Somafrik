@@ -5,7 +5,6 @@
  * Ne lit ni n'écrit backoffice_state JSON.
  */
 
-const { randomUUID } = require("node:crypto");
 const {
   COUNTRY_NOT_FOUND_CODE,
   COUNTRY_NOT_FOUND_MESSAGE,
@@ -15,17 +14,18 @@ const {
   extractProfilePayload,
   mapEstablishmentRow,
 } = require("../lib/schoolsManagement");
-const { isLegacySchoolCodeFormat, validateSchoolCode } = require("../lib/schoolCodeV2");
+const {
+  generateInternalSchoolAlias,
+  isInternalSchoolAlias,
+  isLegacySchoolCodeFormat,
+  validateSchoolCode,
+} = require("../lib/schoolCodeV2");
 
 function createHttpError(statusCode, message, code) {
   const error = new Error(message);
   error.statusCode = statusCode;
   if (code) error.code = code;
   return error;
-}
-
-function generateInternalSchoolAlias() {
-  return `SCH-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`;
 }
 
 /**
@@ -99,14 +99,23 @@ function createSchoolsRepository(db) {
 
     /**
      * Upsert canonique — source de vérité PostgreSQL.
-     * `school_code` reste un alias interne de compatibilité. Pour une création,
-     * le client n'a plus à le fournir : `login_code` est généré par le trigger PG.
+     *
+     * Lecture / résolution : `getByCode` accepte encore un identifiant public
+     * (login_code V2 ou school_code legacy).
+     * Écriture :
+     *   - CREATE avec code legacy → interdit
+     *   - UPDATE identifié par un code public (legacy ou V2) → converti
+     *     immédiatement en UUID, puis UPDATE `WHERE id = $uuid`
+     *   - `school_code` interne : existant conservé, sinon SCH-* ; jamais
+     *     de nouvelle génération CC-YYYY-NNNN
+     *
      * @param {object} record
      */
     async persist(record) {
       const requestedCode = normalizeSchoolCode(
         record?.code ?? record?.schoolCode ?? record?.legacySchoolCode,
       );
+      const requestedId = String(record?.id ?? "").trim();
       if (requestedCode === "*") {
         throw createHttpError(400, "Code établissement invalide.", "SCHOOL_CODE_INVALID");
       }
@@ -116,7 +125,21 @@ function createSchoolsRepository(db) {
       }
 
       const country = await requireCountry(record ?? {});
-      const existing = requestedCode ? await getByCode(requestedCode) : null;
+
+      let existing = null;
+      if (requestedId) {
+        try {
+          existing = await loadMappedById(requestedId);
+        } catch {
+          existing = null;
+        }
+      }
+      if (!existing && requestedCode) {
+        const lookedUp = await getByCode(requestedCode);
+        if (lookedUp) {
+          existing = lookedUp;
+        }
+      }
       if (!existing && requestedCode && isLegacySchoolCodeFormat(requestedCode)) {
         try {
           validateSchoolCode(requestedCode, { forCreation: true });
@@ -124,7 +147,18 @@ function createSchoolsRepository(db) {
           throw createHttpError(error.statusCode || 400, error.message, error.code);
         }
       }
-      const code = existing?.legacySchoolCode || existing?.code || generateInternalSchoolAlias();
+
+      const code =
+        existing?.legacySchoolCode ||
+        existing?.code ||
+        (isInternalSchoolAlias(requestedCode) ? requestedCode : generateInternalSchoolAlias());
+      if (isLegacySchoolCodeFormat(code) && !existing) {
+        try {
+          validateSchoolCode(code, { forCreation: true });
+        } catch (error) {
+          throw createHttpError(error.statusCode || 400, error.message, error.code);
+        }
+      }
       if (!existing) {
         const { classifySchoolDuplicates, DUPLICATE_STRONG } = require("../lib/schoolModule");
         const sameCountryRows = await db.all(
@@ -150,40 +184,50 @@ function createSchoolsRepository(db) {
       const deletedAt =
         record?.deletedAt || record?.status === "Supprimé" ? record?.deletedAt || new Date().toISOString() : null;
 
+      const writeParams = [
+        country.id,
+        name,
+        record?.logoUrl ?? "",
+        record?.address ?? "",
+        record?.city ?? "",
+        record?.phone ?? "",
+        record?.email ?? "",
+        record?.type ?? "Établissement",
+        dbStatus,
+        JSON.stringify(profile),
+        deletedAt,
+      ];
+
+      if (existing?.id) {
+        const updated = await db.one(
+          `UPDATE schools SET
+             country_id = $2,
+             name = $3,
+             logo_url = $4,
+             address = $5,
+             city = $6,
+             phone = $7,
+             email = $8,
+             school_type = $9,
+             status = $10,
+             profile_payload = $11::jsonb,
+             deleted_at = $12,
+             updated_at = NOW()
+           WHERE id = $1
+           RETURNING id`,
+          [existing.id, ...writeParams],
+        );
+        return loadMappedById(updated.id);
+      }
+
       const inserted = await db.one(
         `INSERT INTO schools (
            country_id, school_code, name, logo_url, address, city, phone, email,
            school_type, status, profile_payload, deleted_at, created_at, updated_at
          )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), NOW())
-         ON CONFLICT (school_code) DO UPDATE SET
-           country_id = EXCLUDED.country_id,
-           name = EXCLUDED.name,
-           logo_url = EXCLUDED.logo_url,
-           address = EXCLUDED.address,
-           city = EXCLUDED.city,
-           phone = EXCLUDED.phone,
-           email = EXCLUDED.email,
-           school_type = EXCLUDED.school_type,
-           status = EXCLUDED.status,
-           profile_payload = EXCLUDED.profile_payload,
-           deleted_at = EXCLUDED.deleted_at,
-           updated_at = NOW()
          RETURNING id`,
-        [
-          country.id,
-          code,
-          name,
-          record?.logoUrl ?? "",
-          record?.address ?? "",
-          record?.city ?? "",
-          record?.phone ?? "",
-          record?.email ?? "",
-          record?.type ?? "Établissement",
-          dbStatus,
-          JSON.stringify(profile),
-          deletedAt,
-        ],
+        [country.id, code, ...writeParams.slice(1)],
       );
 
       return loadMappedById(inserted.id);

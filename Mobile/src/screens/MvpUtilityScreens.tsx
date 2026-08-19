@@ -273,7 +273,7 @@ export function SupportScreen() {
       <InfoCard
         icon="business-outline"
         title="Perimetre"
-        value={session?.school.name ?? "Somafrik"}
+        value={session?.school?.name ?? "Somafrik"}
         detail="Les demandes support seront journalisees dans le centre d'assistance lors de l'evolution P1."
       />
     </ScreenShell>

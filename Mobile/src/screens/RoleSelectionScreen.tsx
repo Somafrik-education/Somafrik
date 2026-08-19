@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { SchoolInfo, getApiBaseUrl, getSchoolByCode } from "../services/api";
+import { buildPlatformLoginParams } from "../lib/platformLogin";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import {
   ROLE_SELECTION_COPY,
@@ -51,23 +52,13 @@ export default function RoleSelectionScreen({ navigation }: Props) {
       normalizedAccess === "SUPERADMIN" ||
       normalizedAccess === "SUPERADMIN-SOMAFRIK"
     ) {
-      navigation.navigate("Login", {
-        school: getPlatformSchool("Global"),
-        accessIdentifier: "superadmin",
-        accessRole: "super_admin",
-        accessRoleLabel: "Super Administrateur",
-      });
+      navigation.navigate("Login", buildPlatformLoginParams("global"));
       return;
     }
 
     if (normalizedAccess.startsWith("ADMINPAYS-")) {
       const countryCode = normalizedAccess.replace("ADMINPAYS-", "");
-      navigation.navigate("Login", {
-        school: getPlatformSchool(countryCode),
-        accessIdentifier: countryCode === "CD" ? "admin-rdc" : `admin-${countryCode.toLowerCase()}`,
-        accessRole: "country_admin",
-        accessRoleLabel: "Admin Pays",
-      });
+      navigation.navigate("Login", buildPlatformLoginParams("country", countryCode));
       return;
     }
 
@@ -225,20 +216,6 @@ export default function RoleSelectionScreen({ navigation }: Props) {
       </ScrollView>
     </KeyboardAvoidingView>
   );
-}
-
-function getPlatformSchool(scope: string): SchoolInfo {
-  const isGlobal = scope === "Global";
-  return {
-    id: `PLATFORM-${scope}`,
-    publicId: isGlobal ? "PLATFORM" : `PLATFORM-${scope}`,
-    code: isGlobal ? "PLATFORM" : `PLATFORM-${scope}`,
-    name: isGlobal ? "Somafrik Global" : `Somafrik ${scope}`,
-    city: isGlobal ? "Plateforme" : scope,
-    country: scope,
-    slogan: "ERP scolaire mobile et tablette par Somafrik",
-    status: "Actif",
-  };
 }
 
 const styles = StyleSheet.create({

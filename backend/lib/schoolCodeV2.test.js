@@ -8,6 +8,9 @@ const {
   padSchoolSequence,
   publicSchoolCodeFromRecord,
   validateSchoolCode,
+  allocateNextSchoolLoginCode,
+  generateInternalSchoolAlias,
+  isInternalSchoolAlias,
 } = require("./schoolCodeV2");
 const { schoolShortCodeFromName } = require("./permanentIdentifier");
 
@@ -58,6 +61,21 @@ assert.notEqual(
     loginCode: "CD-IN-26-001",
   }),
   "CD-2026-0001",
+);
+
+assert.match(generateInternalSchoolAlias(), /^SCH-[A-Z0-9]+$/);
+assert.equal(isInternalSchoolAlias("SCH-ABCDEF"), true);
+assert.equal(isInternalSchoolAlias("CD-2026-0001"), false);
+assert.equal(
+  allocateNextSchoolLoginCode([], { countryIso: "CD", schoolName: "Lycée Somafrik Test", year: 2026 }),
+  "CD-LST-26-001",
+);
+assert.equal(
+  allocateNextSchoolLoginCode(
+    [{ loginCode: "CD-LST-26-001" }],
+    { countryIso: "CD", schoolName: "Autre École", year: 2026 },
+  ),
+  "CD-AE-26-002",
 );
 
 const src = require("fs").readFileSync(require("path").join(__dirname, "schoolCodeV2.js"), "utf8");

@@ -41,6 +41,26 @@ function createMemoryDb() {
           country_currency: country?.currency,
         };
       }
+      if (text.startsWith("UPDATE SCHOOLS")) {
+        const school = schools.find((row) => row.id === params[0]);
+        if (!school) return null;
+        const now = new Date().toISOString();
+        Object.assign(school, {
+          country_id: params[1],
+          name: params[2],
+          logo_url: params[3],
+          address: params[4],
+          city: params[5],
+          phone: params[6],
+          email: params[7],
+          school_type: params[8],
+          status: params[9],
+          profile_payload: JSON.parse(params[10]),
+          deleted_at: params[11],
+          updated_at: now,
+        });
+        return { id: school.id };
+      }
       if (text.includes("FROM SCHOOLS S") && text.includes("S.SCHOOL_CODE") && text.includes("WHERE")) {
         const requested = String(params[0] ?? "").trim().toUpperCase();
         const school = schools.find(
@@ -61,21 +81,7 @@ function createMemoryDb() {
         const existing = schools.find((row) => row.school_code === params[1]);
         const now = new Date().toISOString();
         if (existing) {
-          Object.assign(existing, {
-            country_id: params[0],
-            name: params[2],
-            logo_url: params[3],
-            address: params[4],
-            city: params[5],
-            phone: params[6],
-            email: params[7],
-            school_type: params[8],
-            status: params[9],
-            profile_payload: JSON.parse(params[10]),
-            deleted_at: params[11],
-            updated_at: now,
-          });
-          return { id: existing.id };
+          throw new Error("INSERT ne doit plus upsert via school_code");
         }
         const row = {
           id: nextId(),
@@ -185,6 +191,23 @@ async function main() {
   assert.equal(rereadCanonical.code, created.code);
   assert.equal(rereadCanonical.loginCode, "CD-LL1-26-001");
   assert.equal(db.schools.length, 1);
+
+  const updatedViaPublic = await repo.persist({
+    code: "CD-LL1-26-001",
+    name: "Lycée Lot 1 via login_code",
+    type: "Lycée",
+    country: "RDC",
+    countryCode: "CD",
+    city: "Kinshasa",
+    phone: "+243 990 111 222",
+    email: "lot1@test.cd",
+    status: "Actif",
+  });
+  assert.equal(updatedViaPublic.id, created.id);
+  assert.equal(updatedViaPublic.code, created.code);
+  assert.equal(updatedViaPublic.name, "Lycée Lot 1 via login_code");
+  assert.equal(db.schools.length, 1);
+  assert.match(db.schools[0].school_code, /^SCH-[A-Z0-9]+$/);
 
   await assert.rejects(
     () =>

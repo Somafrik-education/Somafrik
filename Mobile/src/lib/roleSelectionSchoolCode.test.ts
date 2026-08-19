@@ -28,7 +28,9 @@ assert.ok(
   screen.indexOf("const [school, setSchool]") < screen.indexOf("ROLE_SELECTION_COPY.successMessage"),
   "successMessage n'est pas un état initial",
 );
-assert.match(screen, /code: isGlobal \? "PLATFORM" : `PLATFORM-\$\{scope\}`/);
+assert.doesNotMatch(screen, /getPlatformSchool/);
+assert.doesNotMatch(screen, /code: isGlobal \? "PLATFORM" : `PLATFORM-\$\{scope\}`/);
 assert.doesNotMatch(screen, /code:\s*["']CD-2026-0001["']/);
+assert.match(screen, /buildPlatformLoginParams\("global"\)/);
 
 console.log("OK roleSelectionSchoolCode: accessCode === \"\" ; school === null ; pas d'école auto-sélectionnée");

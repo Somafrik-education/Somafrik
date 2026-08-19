@@ -331,13 +331,20 @@ class FallbackRepository {
       COUNTRY_NOT_FOUND_CODE,
       COUNTRY_NOT_FOUND_MESSAGE,
     } = require("../lib/schoolsManagement");
-    const { isLegacySchoolCodeFormat, matchesSchoolLookup } = require("../lib/schoolCodeV2");
-    const { randomUUID } = require("node:crypto");
+    const {
+      allocateNextSchoolLoginCode,
+      generateInternalSchoolAlias,
+      isInternalSchoolAlias,
+      isLegacySchoolCodeFormat,
+      matchesSchoolLookup,
+    } = require("../lib/schoolCodeV2");
+    const requestedId = String(record?.id ?? "").trim();
     const requested = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.legacySchoolCode);
     const store = this._establishmentStore();
-    const existing = requested
-      ? store.find((row) => matchesSchoolLookup(row, requested))
-      : null;
+    let existing = requestedId ? store.find((row) => String(row.id ?? "") === requestedId) : null;
+    if (!existing && requested) {
+      existing = store.find((row) => matchesSchoolLookup(row, requested)) ?? null;
+    }
     if (!existing && requested && isLegacySchoolCodeFormat(requested)) {
       const error = new Error(
         "Format établissement legacy interdit pour une création (ex. CD-2026-0001). Utiliser le code V2 généré par PostgreSQL.",
@@ -347,8 +354,9 @@ class FallbackRepository {
       throw error;
     }
     const code =
+      existing?.legacySchoolCode ||
       existing?.code ||
-      (requested && requested !== "*" ? requested : `SCH-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`);
+      (isInternalSchoolAlias(requested) ? requested : generateInternalSchoolAlias());
     if (!code || code === "*") {
       const error = new Error("Code établissement requis.");
       error.statusCode = 400;
@@ -359,20 +367,35 @@ class FallbackRepository {
       ...(Array.isArray(seedData.countries) ? seedData.countries : []),
       ...(Array.isArray(this.backOfficeState?.countries) ? this.backOfficeState.countries : []),
     ];
-    if (!findCanonicalCountry(catalog, record?.countryCode, record?.country)) {
+    const canonical = findCanonicalCountry(catalog, record?.countryCode, record?.country);
+    if (!canonical) {
       const error = new Error(COUNTRY_NOT_FOUND_MESSAGE);
       error.statusCode = 400;
       error.code = COUNTRY_NOT_FOUND_CODE;
       throw error;
     }
+    const loginCode =
+      record?.loginCode ||
+      existing?.loginCode ||
+      (existing
+        ? ""
+        : allocateNextSchoolLoginCode(store, {
+            countryIso: canonical.code,
+            schoolName: record?.name,
+          }));
     const school = {
       ...record,
+      id: existing?.id || record?.id,
       code,
-      publicId: record?.publicId || existing?.publicId || existing?.loginCode || code,
-      loginCode: record?.loginCode || existing?.loginCode || "",
+      publicId: record?.publicId || existing?.publicId || loginCode || code,
+      loginCode,
     };
     const index = existing
-      ? store.findIndex((row) => matchesSchoolLookup(row, requested || existing.code))
+      ? store.findIndex(
+          (row) =>
+            (existing.id && String(row.id ?? "") === String(existing.id)) ||
+            matchesSchoolLookup(row, existing.code || requested),
+        )
       : -1;
     if (index >= 0) {
       store[index] = { ...store[index], ...school };

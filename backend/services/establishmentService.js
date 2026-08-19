@@ -5,9 +5,14 @@ const {
   COUNTRY_NOT_FOUND_MESSAGE,
 } = require("../lib/schoolsManagement");
 const { schoolMatchesCountryScope } = require("../lib/countryScope");
-const { matchesSchoolLookup } = require("../lib/schoolCodeV2");
 const {
-  generateSchoolCode,
+  allocateNextSchoolLoginCode,
+  generateInternalSchoolAlias,
+  isLegacySchoolCodeFormat,
+  matchesSchoolLookup,
+  publicSchoolCodeFromRecord,
+} = require("../lib/schoolCodeV2");
+const {
   filterActiveSchools,
   validateSchoolPayload,
   findPotentialDuplicates,
@@ -142,14 +147,32 @@ function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
   const canonical = findCanonicalCountry(state.countries, payload.countryCode, payload.country);
   const country = canonical?.name ?? payload.country;
   const countryCode = canonical?.code ?? payload.countryCode;
-  const requested = payload.code?.trim().toUpperCase() || "";
-  const generated = countryCode && isNew ? generateSchoolCode(countryCode, schools) : "";
-  const code = requested || generated;
+  const requested = String(payload.code ?? "").trim().toUpperCase();
+  const name = String(payload.name ?? "").trim();
+
+  let code = requested;
+  let loginCode = String(payload.loginCode ?? payload.login_code ?? payload.publicId ?? "").trim().toUpperCase();
+  if (isNew) {
+    // Client/Web/Mobile n'allouent plus. En mémoire (E2E / fallback) on
+    // reflète le trigger PG : SCH-* interne + login_code V2. Jamais CC-YYYY-NNNN.
+    code = generateInternalSchoolAlias();
+    if (!isLegacySchoolCodeFormat(requested)) {
+      loginCode = allocateNextSchoolLoginCode(schools, {
+        countryIso: countryCode,
+        schoolName: name,
+      });
+    }
+  } else if (!code) {
+    code = String(payload.legacySchoolCode ?? "").trim().toUpperCase();
+  }
 
   return {
     ...payload,
+    requestedCode: requested,
     code,
-    name: String(payload.name ?? "").trim(),
+    loginCode,
+    publicId: loginCode || payload.publicId || code,
+    name,
     type: payload.type ?? "Collège",
     country,
     countryCode,
@@ -246,15 +269,16 @@ class EstablishmentService {
 
     school.createdAt = new Date().toISOString();
     school.updatedAt = school.createdAt;
+    delete school.requestedCode;
 
     const nextState = {
       ...state,
       schools: [school, ...(state.schools ?? [])],
       auditLog: appendAudit(state, {
         action: "Création établissement",
-        entityId: school.code,
+        entityId: publicSchoolCodeFromRecord(school) || school.code,
         entityLabel: school.name,
-        schoolCode: school.code,
+        schoolCode: publicSchoolCodeFromRecord(school) || school.code,
         actorId: principal.sub,
         actorName: principal.identifier,
         actorRole: principal.role,
@@ -290,6 +314,7 @@ class EstablishmentService {
     assertCanonicalCountry(merged, state);
 
     merged.updatedAt = new Date().toISOString();
+    delete merged.requestedCode;
 
     const nextState = {
       ...state,

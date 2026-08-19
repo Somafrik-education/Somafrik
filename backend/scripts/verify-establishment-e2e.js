@@ -25,6 +25,11 @@ const assert = require("assert");
 
 const { EstablishmentService } = require("../services/establishmentService");
 const { AuthService, BusinessError } = require("../services/authService");
+const {
+  isV2SchoolLoginCode,
+  matchesSchoolLookup,
+  publicSchoolCodeFromRecord,
+} = require("../lib/schoolCodeV2");
 
 let passed = 0;
 const failures = [];
@@ -66,9 +71,7 @@ async function expectBusinessError(fn, { statusCode, messageIncludes } = {}) {
 }
 
 function buildAuthService(state, schoolCode) {
-  const school = (state.schools ?? []).find(
-    (item) => String(item.code ?? "").trim().toUpperCase() === String(schoolCode).trim().toUpperCase(),
-  );
+  const school = (state.schools ?? []).find((item) => matchesSchoolLookup(item, schoolCode));
   return new AuthService({
     school,
     schools: state.schools ?? [],
@@ -156,14 +159,15 @@ async function main() {
   });
 
   await check("2. Le système génère un code établissement unique et bien formé", () => {
-    assert.match(
-      String(created.code),
-      /^CD-\d{4}-0001$/,
-      `Code généré inattendu : ${created.code}`,
+    const publicCode = publicSchoolCodeFromRecord(created);
+    assert.ok(
+      isV2SchoolLoginCode(publicCode),
+      `Code généré inattendu : ${JSON.stringify({ code: created.code, loginCode: created.loginCode, publicId: created.publicId })}`,
     );
+    assert.match(String(created.code), /^SCH-[A-Z0-9]+$/);
   });
 
-  const schoolCode = created.code;
+  const schoolCode = publicSchoolCodeFromRecord(created);
 
   await check("2b. Le contact principal et le logo sont conservés", () => {
     assert.strictEqual(created.principalName, "Awa Kabila");
@@ -178,7 +182,7 @@ async function main() {
   await check("3. L'établissement apparaît dans la liste du superadmin", () => {
     const list = service.list(state, superAdmin);
     assert.ok(
-      list.some((school) => school.code === schoolCode),
+      list.some((school) => matchesSchoolLookup(school, schoolCode)),
       "Établissement absent de la liste du superadmin.",
     );
   });
@@ -298,7 +302,7 @@ async function main() {
   await check("MÉTIER. Invisible pour un admin pays d'un autre pays (BI)", () => {
     const list = service.list(state, countryAdminBI);
     assert.ok(
-      !list.some((school) => school.code === schoolCode),
+      !list.some((school) => matchesSchoolLookup(school, schoolCode)),
       "L'établissement RDC ne doit pas être visible pour l'admin pays BI.",
     );
   });
@@ -306,7 +310,7 @@ async function main() {
   await check("MÉTIER. Invisible pour l'admin d'un autre établissement", async () => {
     const list = service.list(state, foreignSchoolAdmin);
     assert.ok(
-      !list.some((school) => school.code === schoolCode),
+      !list.some((school) => matchesSchoolLookup(school, schoolCode)),
       "L'établissement ne doit pas être visible pour l'admin d'une autre école.",
     );
     await expectBusinessError(() => service.get(schoolCode, state, foreignSchoolAdmin), {
@@ -377,8 +381,12 @@ async function main() {
     const auth = buildAuthService(state, schoolCode);
     const session = await auth.login({ role: "school_admin", schoolCode, identifier: "admin", pin: "1234" });
     assert.strictEqual(session.role, "school_admin");
-    assert.strictEqual(session.school.code, schoolCode);
-    assert.strictEqual(session.user.schoolCode, schoolCode);
+    assert.strictEqual(publicSchoolCodeFromRecord(session.school), schoolCode);
+    assert.ok(
+      matchesSchoolLookup(session.school, session.user.schoolCode) ||
+        String(session.user.schoolCode ?? "").trim().toUpperCase() === schoolCode,
+      "Le compte admin doit rester rattaché à l'établissement créé.",
+    );
   });
 
   await check("5b. Un code établissement inconnu est rejeté à la connexion (401)", async () => {
