@@ -4,6 +4,8 @@ import type { CourseScheduleSlot } from "./coursePlanning";
 import {
   canonicalSchoolCourseId,
   listSchoolCoursesForClass,
+  mapPlanningCourseOptions,
+  planningNoSchedulableCoursesMessage,
   resolveClassAcademicYearId,
   toWeeklyScheduleWritePayload,
 } from "./planningWeeklyWrite";
@@ -103,5 +105,28 @@ describe("Planning V2 — payload d'écriture Web", () => {
     expect(resolveClassAcademicYearId(admin, state, "2ème A")).toBe(
       "66666666-6666-4666-8666-666666666666",
     );
+  });
+
+  it("mappe la projection serveur sans exiger state.courses", () => {
+    const options = mapPlanningCourseOptions([
+      {
+        schoolCourseId: "44444444-4444-4444-8444-444444444444",
+        name: "Mathématiques",
+        className: "2ème A",
+        classId: "c1",
+        teacherId: "ENS-0001",
+        academicYearId: "66666666-6666-4666-8666-666666666666",
+        status: "active",
+      },
+    ]);
+    expect(options).toHaveLength(1);
+    expect(options[0]?.name).toBe("Mathématiques");
+  });
+
+  it("ne dit jamais de recréer le cours dans Mon établissement", () => {
+    const message = planningNoSchedulableCoursesMessage("2ème A");
+    expect(message).toMatch(/2ème A/);
+    expect(message).not.toMatch(/Mon établissement/);
+    expect(message).toMatch(/ne le recréez pas/i);
   });
 });

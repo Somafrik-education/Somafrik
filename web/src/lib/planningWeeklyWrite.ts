@@ -28,6 +28,35 @@ export interface PlanningSchoolCourseOption {
   teacherId: string;
   teacherName: string;
   classId: string;
+  academicYearId?: string;
+}
+
+export function mapPlanningCourseOptions(items: unknown[] | undefined | null): PlanningSchoolCourseOption[] {
+  const options: PlanningSchoolCourseOption[] = [];
+  const seen = new Set<string>();
+  for (const raw of items ?? []) {
+    const row = (raw ?? {}) as Record<string, unknown>;
+    if (isArchivedSchoolCourse(row)) continue;
+    const schoolCourseId = canonicalSchoolCourseId(row);
+    const name = String(row.name ?? row.subject ?? "").trim();
+    if (!schoolCourseId || !name || seen.has(schoolCourseId)) continue;
+    seen.add(schoolCourseId);
+    options.push({
+      schoolCourseId,
+      className: String(row.className ?? ""),
+      name,
+      teacherId: String(row.teacherId ?? ""),
+      teacherName: String(row.teacherName ?? "").trim(),
+      classId: String(row.classId ?? ""),
+      academicYearId: String(row.academicYearId ?? "").trim(),
+    });
+  }
+  return options.sort((a, b) => a.name.localeCompare(b.name, "fr"));
+}
+
+export function planningNoSchedulableCoursesMessage(className: string): string {
+  const label = className.trim() || "cette classe";
+  return `Aucun cours planifiable n'est visible pour « ${label} ». Le cours peut déjà exister en base — ne le recréez pas. Vérifiez qu'il est actif, rattaché à un enseignant actif, et autorisé pour ce compte.`;
 }
 
 export function listSchoolCoursesForClass(

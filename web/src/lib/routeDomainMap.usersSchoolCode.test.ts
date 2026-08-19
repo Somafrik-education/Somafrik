@@ -30,6 +30,30 @@ const teacherNotesContext: PermissionContext = {
   rolePermissions: {},
 };
 
+describe("domainsForPath — /planning ne dépend pas de Matières:READ", () => {
+  it("Préfet Planning:CRUD sans Matières charge courseSchedules, pas courses", () => {
+    const ctx: PermissionContext = {
+      user: {
+        role: "Préfet des études",
+        schoolCode: "CD-2026-0001",
+        permissions: [
+          "Planning de cours:READ",
+          "Planning de cours:CREATE",
+          "Planning de cours:UPDATE",
+          "Planning de cours:DELETE",
+          "Classes:READ",
+          "Enseignants:READ",
+        ],
+      },
+      rolePermissions: {},
+    };
+    const domains = domainsForPath("/planning", ctx);
+    expect(domains).toContain("courseSchedules");
+    expect(domains).toContain("classes");
+    expect(domains).not.toContain("courses");
+  });
+});
+
 describe("domainsForPath — /notes n'hydrate pas les domaines globaux d'affectation", () => {
   it("charge notes + evaluations, sans assignments ni courses", () => {
     const domains = domainsForPath("/notes", teacherNotesContext);

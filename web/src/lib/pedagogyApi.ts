@@ -27,6 +27,23 @@ export const pedagogyApi = {
 
   /** Définitions weekly (sans from/to). */
   listCourseSchedules: () => api.get<unknown[]>("/course-schedules"),
+  /**
+   * Cours planifiables canoniques — gated Planning de cours:READ,
+   * indépendant du domaine Web `courses` / `Matières:READ`.
+   */
+  listPlanningCourseOptions: (query?: {
+    classId?: string;
+    className?: string;
+    academicYearId?: string;
+  }) =>
+    api.get<{ projection: "planning-course-options"; items: unknown[] }>(
+      withQuery("/course-schedules", {
+        projection: "course-options",
+        classId: query?.classId,
+        className: query?.className,
+        academicYearId: query?.academicYearId,
+      }),
+    ),
   /** Projection datée serveur — source de vérité du calendrier /planning. */
   listCourseScheduleOccurrences: (query: {
     from: string;

@@ -51,6 +51,15 @@ describe("Planning V2 — réexposition Web contrôlée", () => {
     expect(canReadView(ctx("Secrétaire", ["Élèves:READ"]), "planning")).toBe(false);
   });
 
+  it("Préfet Planning:READ sans Matières:READ n'ouvre pas la vue Matières", () => {
+    expect(canReadView(ctx("Préfet des études", planningCrud), "courses")).toBe(false);
+    expect(canReadView(ctx("Préfet des études", planningCrud), "planning")).toBe(true);
+  });
+
+  it("Enseignant Planning:READ n'obtient pas Matières", () => {
+    expect(canReadView(ctx("Enseignant", planningRead), "courses")).toBe(false);
+  });
+
   it("Super Admin ne voit pas le planning établissement", () => {
     expect(canReadView(ctx("Super Administrateur Somafrik", planningCrud), "planning")).toBe(false);
   });
