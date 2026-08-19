@@ -157,4 +157,14 @@ npm --prefix Mobile run verify:mobile-preview-apk
 npm run verify:mobile-release-readiness
 ```
 
-`verify:mobile-preview-apk` inspecte `eas.json`, `expo config` preview, le bundle Metro, le prebuild Android CNG, et sonde `eas project:info`. Sans login Expo, la sonde affiche `BLOCKED_EAS_AUTH` (schéma `eas.json` déjà validé) : ce n’est pas un skip silencieux.
+`verify:mobile-preview-apk` inspecte `eas.json`, `expo config` preview, le bundle Metro, le prebuild Android CNG, et sonde `eas project:info`.
+
+`BLOCKED_EAS_AUTH` n’est émis **que** pour une vraie absence d’authentification (`Not logged in`, compte Expo requis, `eas login` / `EXPO_TOKEN`). Tout autre échec (`project not found`, permission denied, projectId inattendu, erreur réseau / CLI) **fait échouer** le gate.
+
+Pour une validation de release où l’auth EAS est obligatoire (y compris l’absence d’auth) :
+
+```bash
+SOMAFRIK_REQUIRE_EAS_AUTH=1 npm --prefix Mobile run verify:mobile-preview-apk
+```
+
+Sans cette variable, CI Cursor sans `eas login` peut rester vert sur le reste du contrat Preview, tout en affichant explicitement `BLOCKED_EAS_AUTH` — ce n’est pas un skip d’erreur projet.

@@ -94,6 +94,74 @@ function scanPreviewBundle(bundle) {
   console.log(`OK: bundle preview API guard (${bundle.length} octets)`);
 }
 
+/** Absence d'authentification Expo/EAS uniquement — pas une erreur projet / réseau / ACL. */
+function isEasAuthMissing(output) {
+  const text = String(output || "");
+  return (
+    /Not logged in/i.test(text)
+    || /An Expo user account is required/i.test(text)
+    || /log in with eas login/i.test(text)
+    || /set the EXPO_TOKEN environment variable/i.test(text)
+  );
+}
+
+function easProjectInfoOutput(result) {
+  const errorText = result.error ? String(result.error.message || result.error) : "";
+  return `${result.stdout || ""}\n${result.stderr || ""}\n${errorText}`;
+}
+
+function requireEasAuthEnabled(options = {}) {
+  if (options.requireAuth === true) return true;
+  if (options.requireAuth === false) return false;
+  return process.env.SOMAFRIK_REQUIRE_EAS_AUTH === "1";
+}
+
+/**
+ * Interprète `eas project:info`.
+ * BLOCKED_EAS_AUTH uniquement si l'auth est absente (sauf SOMAFRIK_REQUIRE_EAS_AUTH=1).
+ * Tout autre status !== 0 échoue.
+ */
+function interpretEasProjectInfo(result, options = {}) {
+  const output = easProjectInfoOutput(result);
+  if (/is not allowed to be empty/i.test(output) || /Invalid eas\.json/i.test(output)) {
+    throw new Error(`eas.json rejeté par EAS CLI:\n${output}`);
+  }
+  if (isEasAuthMissing(output)) {
+    if (requireEasAuthEnabled(options)) {
+      throw new Error(
+        "EAS_AUTH_REQUIRED (SOMAFRIK_REQUIRE_EAS_AUTH=1) : eas login / EXPO_TOKEN obligatoire.\n"
+          + output,
+      );
+    }
+    return "BLOCKED_EAS_AUTH";
+  }
+  if (result.error && result.status == null) {
+    throw new Error(`eas project:info a échoué (${result.error.code || "spawn"}):\n${output}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`eas project:info a échoué (status ${result.status}):\n${output}`);
+  }
+  if (!output.includes(EXPO_PROJECT_ID)) {
+    throw new Error(
+      `eas project:info: projectId attendu ${EXPO_PROJECT_ID} absent de la sortie:\n${output}`,
+    );
+  }
+  return "OK";
+}
+
+function logBlockedEasAuth() {
+  console.log("BLOCKED_EAS_AUTH");
+  console.log("EAS_AUTH_REQUIRED — action humaine :");
+  console.log("cd Mobile");
+  console.log("eas login");
+  console.log("eas whoami");
+  console.log("eas project:info");
+  console.log("eas build --platform android --profile preview");
+  console.log("Privilégier EAS-managed credentials si EAS propose un keystore Preview.");
+  console.log("Interdit : eas submit, upload Play, secret de signature dans Git.");
+  console.log("Validation release (auth obligatoire) : SOMAFRIK_REQUIRE_EAS_AUTH=1");
+}
+
 function probeEasAuth() {
   const result = spawnSync("npx", ["eas-cli", "project:info"], {
     encoding: "utf8",
@@ -101,29 +169,27 @@ function probeEasAuth() {
     env: process.env,
     timeout: 60_000,
   });
-  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
-  if (/is not allowed to be empty/i.test(output) || /Invalid eas\.json/i.test(output)) {
-    throw new Error(`eas.json rejeté par EAS CLI:\n${output}`);
+  const outcome = interpretEasProjectInfo(result);
+  if (outcome === "BLOCKED_EAS_AUTH") {
+    logBlockedEasAuth();
+    return outcome;
   }
-  if (/Not logged in|not logged in|log in/i.test(output) || result.status !== 0) {
-    console.log("BLOCKED_EAS_AUTH");
-    console.log("EAS_AUTH_REQUIRED — action humaine :");
-    console.log("cd Mobile");
-    console.log("eas login");
-    console.log("eas whoami");
-    console.log("eas project:info");
-    console.log("eas build --platform android --profile preview");
-    console.log("Privilégier EAS-managed credentials si EAS propose un keystore Preview.");
-    console.log("Interdit : eas submit, upload Play, secret de signature dans Git.");
-    return "BLOCKED_EAS_AUTH";
-  }
-  process.stdout.write(output);
-  assert.match(output, new RegExp(EXPO_PROJECT_ID));
+  process.stdout.write(easProjectInfoOutput(result));
   console.log("OK: eas project:info (projectId existant inchangé)");
-  return "OK";
+  return outcome;
 }
 
 function main() {
+  const unit = spawnSync(process.execPath, ["scripts/verify-mobile-preview-apk.test.js"], {
+    encoding: "utf8",
+    cwd: MOBILE,
+  });
+  process.stdout.write(unit.stdout || "");
+  process.stderr.write(unit.stderr || "");
+  if (unit.status !== 0) {
+    throw new Error("verify-mobile-preview-apk.test.js failed");
+  }
+
   assert.equal(PREVIEW_API, "https://somafrik-api-preprod.onrender.com");
   assert.equal(DISPLAY_NAMES.preview, "Somafrik QA");
   assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
@@ -213,6 +279,7 @@ function main() {
   assert.match(docs, /somafrik-api-preprod\.onrender\.com/);
   assert.match(docs, /ne constitue pas un service Render/);
   assert.match(docs, /BLOCKED_EAS_AUTH|eas login/);
+  assert.match(docs, /SOMAFRIK_REQUIRE_EAS_AUTH/);
   console.log("OK: documentation Preview APK reproductible");
 
   const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
@@ -244,9 +311,18 @@ function main() {
   console.log("verify:mobile-preview-apk OK");
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error);
-  process.exit(1);
+module.exports = {
+  EXPO_PROJECT_ID,
+  isEasAuthMissing,
+  interpretEasProjectInfo,
+  probeEasAuth,
+};
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
 }
