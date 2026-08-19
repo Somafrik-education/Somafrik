@@ -46,8 +46,17 @@ function createInjectablePostgresRepository() {
     const text = String(sql).replace(/\s+/g, " ").trim();
     const upper = text.toUpperCase();
 
-    if (upper.startsWith("SELECT * FROM SCHOOLS WHERE SCHOOL_CODE")) {
-      return tables.schools.filter((row) => eq(row.school_code, params[0]));
+    if (
+      upper.includes("FROM SCHOOLS") &&
+      (upper.includes("WHERE UPPER(SCHOOL_CODE)") ||
+        upper.startsWith("SELECT * FROM SCHOOLS WHERE SCHOOL_CODE"))
+    ) {
+      const needle = String(params[0] ?? "").trim().toUpperCase();
+      return tables.schools.filter((row) => {
+        const schoolCode = String(row.school_code ?? "").trim().toUpperCase();
+        const loginCode = String(row.login_code ?? "").trim().toUpperCase();
+        return schoolCode === needle || loginCode === needle;
+      });
     }
     if (upper.includes("SELECT SCHOOL_CODE FROM SCHOOLS WHERE ID")) {
       return tables.schools.filter((row) => eq(row.id, params[0])).map((row) => ({
