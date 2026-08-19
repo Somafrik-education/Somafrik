@@ -376,6 +376,11 @@ export function scopedCourseSchedules(user: SessionUser | null, state: BackOffic
 
 const OCCURRENCE_ID_SUFFIX = "__";
 
+export function getMasterScheduleId(eventId: string): string {
+  const marker = eventId.indexOf(OCCURRENCE_ID_SUFFIX);
+  return marker >= 0 ? eventId.slice(0, marker) : eventId;
+}
+
 export function getOccurrenceDateFromEventId(eventId: string): string {
   const marker = eventId.indexOf(OCCURRENCE_ID_SUFFIX);
   if (marker < 0) return "";
