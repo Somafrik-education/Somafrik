@@ -27,6 +27,7 @@ const {
 } = require("./rbacMandatoryPermissions");
 const { createFunctionalRbacPgStore } = require("../db/functionalRbacPgStore");
 const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
+const { reconcileCanonicalPlanningGrants } = require("./planningRbacCanonical");
 
 function rbacStore(repo) {
   if (typeof repo.getFunctionalRbacStore === "function") {
@@ -78,6 +79,10 @@ async function ensureFunctionalRbacBootstrap(repo) {
   }
   await backfillGlobalGrantsFromLegacyMaps(repo, store);
   await backfillMissingGlobalModuleGrants(repo, store);
+  // Planning de cours : UNION canonique même si le rôle (Préfet / Enseignant)
+  // existait déjà avec d'autres grants. backfillMissing* ne complète un module
+  // que depuis le catalogue établissement, souvent périmé après le 1er bootstrap.
+  await reconcileCanonicalPlanningGrants(store);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
@@ -712,4 +717,5 @@ module.exports = {
   getModuleOrThrow,
   mergeRolePermissionMaps,
   backfillMissingGlobalModuleGrants,
+  reconcileCanonicalPlanningGrants,
 };
