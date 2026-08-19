@@ -174,6 +174,13 @@ async function listCourseScheduleReplacements(store, principal, query = {}) {
 }
 
 async function listReplacementTeacherOptions(store, principal, query = {}) {
+  if (isTeacherRole(principal)) {
+    throw createPedagogyError(
+      403,
+      "Seul un Admin School ou un Préfet des Études peut consulter les options de remplaçant.",
+      "PERMISSION_DENIED",
+    );
+  }
   return store.withTransaction(async (tx) => {
     const school = await resolveSchoolContext(tx, principal);
     const weeklySlotId = asTrimmed(query.weeklySlotId || query.scheduleId);

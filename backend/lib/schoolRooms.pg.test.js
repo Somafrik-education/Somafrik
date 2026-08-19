@@ -180,6 +180,23 @@ async function main() {
     );
     assert.equal(slotA.roomId, a01.id);
 
+    const roomText = await store
+      .createCourseSchedule(
+        {
+          schoolCourseId: courseB.schoolCourseId,
+          academicYearId: fixture.yearOpen,
+          dayOfWeek: 3,
+          startTime: "08:00",
+          endTime: "09:00",
+          room: "A12",
+        },
+        admin,
+        auditMeta,
+      )
+      .catch((error) => error);
+    assert.equal(roomText.statusCode, 400);
+    assert.equal(roomText.code, PEDAGOGY_ERROR.ROOM_TEXT_DEPRECATED);
+
     const overlap = await store
       .createCourseSchedule(
         {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Card, SectionHeader } from "../../components/ui/Card";

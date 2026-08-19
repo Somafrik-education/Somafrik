@@ -33,7 +33,8 @@ Interdit : `localStorage`, `backoffice_state`, mock runtime, lookup enseignant p
 - UNIQUE actif/inactif `(school_id, lower(btrim(name)))`
 
 `course_schedule_weekly_slots.room_id UUID NULL REFERENCES school_rooms(id)`  
-`room_id` = autorité V2. `room TEXT` = cache d’affichage déprécié, jamais SoT des nouveaux écrans.
+`room_id` = autorité V2. `room TEXT` = cache d’affichage déprécié, lisible pour les anciennes lignes.  
+POST/PATCH Planning V2 : `roomId` UUID **ou aucune salle**. Un `room` texte non vide sans `roomId` est rejeté (`400 ROOM_TEXT_DEPRECATED`).
 
 Trigger tenant : `room_id` doit appartenir au même `school_id`.
 
@@ -67,7 +68,7 @@ Filtres GET : `status`, `capacity`, `type`, `search`, `classId` (pour le warning
 
 Audit : `ROOM_CREATE`, `ROOM_UPDATE`, `ROOM_ARCHIVE`.
 
-Écran : `/planning/salles`. Formulaire Planning : select `roomId` (option « Aucune salle »).
+Écran : `/planning/salles`. Formulaire Planning : select `roomId` (option « Aucune salle »). Le Web n’envoie plus `room` texte.
 
 ---
 
@@ -110,13 +111,14 @@ DELETE = `status = cancelled`. La projection revient au titulaire du weekly slot
 | Méthode | Route | RBAC |
 | --- | --- | --- |
 | GET | `/api/course-schedule-replacements` | `Remplacements:READ` |
-| GET | `/api/course-schedule-replacements/options` | `Remplacements:READ` |
+| GET | `/api/course-schedule-replacements/options` | `Remplacements:CREATE` (Admin School / Préfet). Enseignant READ-only → **403**. |
 | POST | `/api/course-schedule-replacements` | `Remplacements:CREATE` |
 | PATCH | `/api/course-schedule-replacements/:replacementId` | `Remplacements:UPDATE` |
 | DELETE | `/api/course-schedule-replacements/:replacementId` | `Remplacements:DELETE` (cancel) |
 
 Filtres : `from`, `to`, `teacherId`, `substituteTeacherId`, `classId`, `weeklySlotId`, `status`.  
-Enseignant : lecture filtrée à `original_teacher_id OR substitute_teacher_id = soi`. Pas de CREATE.
+Enseignant : lecture filtrée à `original_teacher_id OR substitute_teacher_id = soi`. Pas de CREATE.  
+`GET /options` sert à **choisir un remplaçant** : hors contrat Enseignant READ.
 
 Options remplaçants : UUID `teacherId`, code public, spécialité, `availability` (`available` / `schedule_conflict` / `subject_mismatch`). La spécialité **classe** mais ne bloque pas.
 
@@ -198,6 +200,10 @@ Couverture exigée :
 - `teacher_assignments` inchangé
 - concurrence → un seul INSERT accepté
 - Parent / Secrétaire 403
+- Enseignant `GET /replacements` → 200 (ses lignes)
+- Enseignant `GET /replacements/options` → 403
+- Préfet/Admin `GET /options` → 200
+- POST/PATCH créneau avec `room` texte sans `roomId` → `400 ROOM_TEXT_DEPRECATED`
 
 Conserver verts :
 

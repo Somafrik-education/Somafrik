@@ -295,6 +295,11 @@ function assertSourceGuards() {
   assert.doesNotMatch(service, /school_courses.teacher_id/);
   assert.match(service, /weeklySlotId/);
   assert.match(service, /occurrenceDate/);
+  const rbac = fs.readFileSync(path.join(ROOT, "backend/services/rbacService.js"), "utf8");
+  assert.match(
+    rbac,
+    /"GET \/api\/course-schedule-replacements\/options": \["Remplacements:CREATE"/,
+  );
 }
 
 async function ensureChromium() {
@@ -314,6 +319,7 @@ async function runHttp(databaseUrl) {
   try {
     await waitForHealth(child, PG_PORT);
     const prefetToken = await loginReady(PG_PORT, "prefet", "1234", SCHOOL_CODE);
+    const adminToken = await login(PG_PORT, "admin", "1234", SCHOOL_CODE);
     const teacherToken = await login(PG_PORT, "ENS-0001", "1234", SCHOOL_CODE);
     const kabeyaToken = await login(PG_PORT, "ENS-0002", "1234", SCHOOL_CODE);
     const secretaryToken = await loginReady(PG_PORT, "secretaire", "1234", SCHOOL_CODE);
@@ -345,6 +351,29 @@ async function runHttp(databaseUrl) {
     });
     assert.equal(slotA.status, 201, JSON.stringify(slotA.data));
 
+    const teacherOptions = await request(
+      PG_PORT,
+      `/course-schedule-replacements/options?weeklySlotId=${encodeURIComponent(slotA.data.id)}&occurrenceDate=2026-08-24`,
+      { token: teacherToken },
+    );
+    assert.equal(teacherOptions.status, 403, JSON.stringify(teacherOptions.data));
+
+    const prefetOptions = await request(
+      PG_PORT,
+      `/course-schedule-replacements/options?weeklySlotId=${encodeURIComponent(slotA.data.id)}&occurrenceDate=2026-08-24`,
+      { token: prefetToken },
+    );
+    assert.equal(prefetOptions.status, 200, JSON.stringify(prefetOptions.data));
+    assert.ok(Array.isArray(prefetOptions.data.items));
+
+    const adminOptions = await request(
+      PG_PORT,
+      `/course-schedule-replacements/options?weeklySlotId=${encodeURIComponent(slotA.data.id)}&occurrenceDate=2026-08-24`,
+      { token: adminToken },
+    );
+    assert.equal(adminOptions.status, 200, JSON.stringify(adminOptions.data));
+    assert.ok(Array.isArray(adminOptions.data.items));
+
     const weeklyTeacherBefore = slotA.data.teacherId;
     const courseTeacherBefore = (await pool.query(`SELECT teacher_id FROM school_courses WHERE id = $1`, [courseAId])).rows[0]
       .teacher_id;
@@ -371,6 +400,10 @@ async function runHttp(databaseUrl) {
       },
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
+
+    const teacherList = await request(PG_PORT, "/course-schedule-replacements", { token: teacherToken });
+    assert.equal(teacherList.status, 200, JSON.stringify(teacherList.data));
+    assert.ok((teacherList.data.items || []).some((row) => row.id === created.data.id));
 
     const projection = await request(PG_PORT, "/course-schedules?from=2026-08-24&to=2026-08-24", { token: prefetToken });
     assert.equal(projection.status, 200);

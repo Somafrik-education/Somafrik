@@ -213,6 +213,25 @@ async function archiveSchoolRoom(store, roomId, principal, auditMeta) {
   });
 }
 
+function hasRoomIdAuthority(payload) {
+  const hasKey =
+    Object.prototype.hasOwnProperty.call(payload, "roomId") ||
+    Object.prototype.hasOwnProperty.call(payload, "room_id");
+  if (!hasKey) return false;
+  const raw = payload.roomId ?? payload.room_id;
+  return raw !== null && asTrimmed(raw) !== "";
+}
+
+function assertNoLegacyRoomTextWrite(payload = {}) {
+  if (hasRoomIdAuthority(payload)) return;
+  if (!asTrimmed(payload.room)) return;
+  throw createPedagogyError(
+    400,
+    "Les salles V2 s'écrivent par roomId UUID. Le champ texte room n'est plus une autorité d'écriture.",
+    PEDAGOGY_ERROR.ROOM_TEXT_DEPRECATED,
+  );
+}
+
 async function resolveActiveRoomId(tx, schoolId, roomIdRaw) {
   const roomId = asTrimmed(roomIdRaw);
   if (!roomId) return { roomId: null, room: null };
@@ -245,4 +264,6 @@ module.exports = {
   archiveSchoolRoom,
   resolveActiveRoomId,
   capacityWarningFor,
+  hasRoomIdAuthority,
+  assertNoLegacyRoomTextWrite,
 };

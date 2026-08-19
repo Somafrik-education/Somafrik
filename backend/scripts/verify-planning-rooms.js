@@ -281,6 +281,9 @@ function assertSourceGuards() {
   const form = fs.readFileSync(path.join(ROOT, "web/src/pages/CoursePlanningPage.tsx"), "utf8");
   assert.match(form, /planning-room-select/);
   assert.doesNotMatch(form, /Pas d'entité salles V2/);
+  const pedagogy = fs.readFileSync(path.join(ROOT, "backend/lib/pedagogyService.js"), "utf8");
+  assert.match(pedagogy, /assertNoLegacyRoomTextWrite/);
+  assert.doesNotMatch(pedagogy, /asTrimmed\(payload\.room\)/);
 }
 
 async function runHttp(databaseUrl) {
@@ -338,6 +341,35 @@ async function runHttp(databaseUrl) {
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.equal(created.data.roomId, a01.data.id);
+
+    const roomTextRejected = await request(PG_PORT, "/course-schedules", {
+      method: "POST",
+      token: prefetToken,
+      body: {
+        schoolCourseId: courseBId,
+        academicYearId: yearId,
+        dayOfWeek: 3,
+        startTime: "08:00",
+        endTime: "09:00",
+        room: "A12",
+      },
+    });
+    assert.equal(roomTextRejected.status, 400, JSON.stringify(roomTextRejected.data));
+    assert.equal(roomTextRejected.data?.code, PEDAGOGY_ERROR.ROOM_TEXT_DEPRECATED);
+
+    const noRoom = await request(PG_PORT, "/course-schedules", {
+      method: "POST",
+      token: prefetToken,
+      body: {
+        schoolCourseId: courseBId,
+        academicYearId: yearId,
+        dayOfWeek: 3,
+        startTime: "08:00",
+        endTime: "09:00",
+      },
+    });
+    assert.equal(noRoom.status, 201, JSON.stringify(noRoom.data));
+    assert.equal(noRoom.data.roomId, null);
 
     const overlap = await request(PG_PORT, "/course-schedules", {
       method: "POST",

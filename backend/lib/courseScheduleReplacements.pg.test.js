@@ -121,6 +121,7 @@ async function seed(pool) {
     schoolA: schoolA.rows[0].id,
     yearOpen: yearOpen.rows[0].id,
     seke: seke.rows[0].id,
+    sekeUser: sekeUser.rows[0].id,
     kabeya: kabeya.rows[0].id,
     mbala: mbala.rows[0].id,
     adminUser: adminUser.rows[0].id,
@@ -198,6 +199,19 @@ async function main() {
     );
     assert.equal(created.substituteTeacherId, fixture.mbala);
     assert.equal(created.originalTeacherId, fixture.seke);
+
+    const teacher = { role: "Enseignant", schoolCode: "CD-2026-0001", sub: fixture.sekeUser };
+    const teacherList = await store.listCourseScheduleReplacements(teacher, {});
+    assert.ok((teacherList.items || []).some((row) => row.id === created.id));
+    const teacherOptions = await store
+      .listReplacementTeacherOptions(teacher, { weeklySlotId: slotA.id, occurrenceDate: "2026-08-24" })
+      .catch((error) => error);
+    assert.equal(teacherOptions.statusCode, 403);
+    const adminOptions = await store.listReplacementTeacherOptions(admin, {
+      weeklySlotId: slotA.id,
+      occurrenceDate: "2026-08-24",
+    });
+    assert.ok(Array.isArray(adminOptions.items));
 
     const badDay = await store
       .createCourseScheduleReplacement(

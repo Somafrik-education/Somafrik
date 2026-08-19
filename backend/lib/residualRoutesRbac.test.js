@@ -94,9 +94,28 @@ assert.equal(
   "Enseignant READ-only ne crée pas de créneau",
 );
 assert.deepEqual(routePermissions["GET /api/school-rooms"], ["Salles:READ", "ALL_PRIVILEGES"]);
+assert.deepEqual(routePermissions["GET /api/course-schedule-replacements"], ["Remplacements:READ", "ALL_PRIVILEGES"]);
+assert.deepEqual(routePermissions["GET /api/course-schedule-replacements/options"], ["Remplacements:CREATE", "ALL_PRIVILEGES"]);
 assert.deepEqual(routePermissions["POST /api/course-schedule-replacements"], ["Remplacements:CREATE", "ALL_PRIVILEGES"]);
 assert.equal(rbac.canAccess(teacherPrincipal, "GET /api/school-rooms"), false);
 assert.ok(rbac.canAccess({ ...teacherPrincipal, permissions: ["Salles:READ"] }, "GET /api/school-rooms"));
 assert.equal(rbac.canAccess({ ...teacherPrincipal, permissions: ["Salles:READ"] }, "POST /api/school-rooms"), false);
+assert.ok(
+  rbac.canAccess({ ...teacherPrincipal, permissions: ["Remplacements:READ"] }, "GET /api/course-schedule-replacements"),
+  "Enseignant GET /replacements → 200 (ses lignes)",
+);
+assert.equal(
+  rbac.canAccess({ ...teacherPrincipal, permissions: ["Remplacements:READ"] }, "GET /api/course-schedule-replacements/options"),
+  false,
+  "Enseignant GET /replacements/options → 403",
+);
+assert.ok(
+  rbac.canAccess({ role: "Préfet des études", permissions: ["Remplacements:CREATE"] }, "GET /api/course-schedule-replacements/options"),
+  "Préfet GET /options → 200",
+);
+assert.ok(
+  rbac.canAccess({ role: "Admin School", permissions: ["Remplacements:CREATE"] }, "GET /api/course-schedule-replacements/options"),
+  "Admin GET /options → 200",
+);
 assert.equal(rbac.canAccess({ role: "Parent", permissions: ["Élèves:READ"] }, "GET /api/course-schedule-replacements"), false);
 assert.equal(rbac.canAccess({ role: "Secrétaire", permissions: ["Élèves:READ"] }, "GET /api/school-rooms"), false);

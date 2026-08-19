@@ -28,7 +28,11 @@ const {
   expandWeeklyOccurrences,
   resolveSchoolTimeZone,
 } = require("./planningWeeklyOccurrences");
-const { resolveActiveRoomId, capacityWarningFor } = require("./schoolRoomsService");
+const {
+  resolveActiveRoomId,
+  capacityWarningFor,
+  assertNoLegacyRoomTextWrite,
+} = require("./schoolRoomsService");
 const { overlayOccurrenceReplacement } = require("./courseScheduleReplacementsService");
 
 function assertTenant(principal, schoolCode) {
@@ -274,6 +278,7 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
     const school = await resolveSchoolContext(tx, principal);
     const { course, year } = await assertWeeklySlotReferences(tx, school, payload, { requireOpenYear: true });
     const times = parseWeeklyTimes(payload);
+    assertNoLegacyRoomTextWrite(payload);
     const { roomId, room } = await resolveActiveRoomId(tx, school.id, payload.roomId ?? payload.room_id);
     let classSize = 0;
     if (roomId && typeof tx.classActiveEnrollmentCount === "function") {
@@ -290,7 +295,7 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
         startTime: times.startTime,
         endTime: times.endTime,
         status: "active",
-        room: room?.name || asTrimmed(payload.room) || "",
+        room: room?.name || "",
         roomId,
       }),
     );
@@ -319,10 +324,17 @@ async function updateCourseSchedule(store, scheduleId, patchRaw, principal, audi
     };
     const { course, year } = await assertWeeklySlotReferences(tx, school, nextPayload, { requireOpenYear: true });
     const times = parseWeeklyTimes(patch, existing);
-    const nextRoomId =
-      patch.roomId !== undefined || patch.room_id !== undefined
-        ? patch.roomId ?? patch.room_id
-        : existing.roomId;
+    const hasRoomIdPatch =
+      Object.prototype.hasOwnProperty.call(patch, "roomId") ||
+      Object.prototype.hasOwnProperty.call(patch, "room_id");
+    const hasRoomTextPatch = Object.prototype.hasOwnProperty.call(patch, "room");
+    assertNoLegacyRoomTextWrite(patch);
+    let nextRoomId = existing.roomId;
+    if (hasRoomIdPatch) {
+      nextRoomId = patch.roomId ?? patch.room_id;
+    } else if (hasRoomTextPatch) {
+      nextRoomId = null;
+    }
     const { roomId, room } = await resolveActiveRoomId(tx, school.id, nextRoomId);
     let classSize = 0;
     if (roomId && typeof tx.classActiveEnrollmentCount === "function") {
@@ -338,7 +350,7 @@ async function updateCourseSchedule(store, scheduleId, patchRaw, principal, audi
         dayOfWeek: times.dayOfWeek,
         startTime: times.startTime,
         endTime: times.endTime,
-        room: room?.name || (patch.room !== undefined ? asTrimmed(patch.room) : existing.room) || "",
+        room: room?.name || (!hasRoomIdPatch && !hasRoomTextPatch ? existing.room : "") || "",
         roomId,
       }),
     );
