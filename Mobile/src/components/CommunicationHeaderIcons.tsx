@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { countUnreadAnnouncements, useAnnouncementsReadListener } from "../lib/announcementsRead";
+import { ICON_HIT_SLOP, MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -22,6 +23,8 @@ function HeaderIconButton({
     <TouchableOpacity
       accessibilityLabel={label}
       accessibilityRole="button"
+      accessibilityHint={`Ouvrir ${label}`}
+      hitSlop={ICON_HIT_SLOP}
       activeOpacity={0.85}
       style={styles.iconButton}
       onPress={onPress}
@@ -100,9 +103,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    minWidth: MIN_TOUCH_TARGET_DP,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    width: MIN_TOUCH_TARGET_DP,
+    height: MIN_TOUCH_TARGET_DP,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#F8FAFC",

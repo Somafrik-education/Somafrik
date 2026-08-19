@@ -308,6 +308,9 @@ export default function TimetableScreen() {
             style={[styles.chip, active && styles.chipActive]}
             onPress={() => onChange(chip.dayOfWeek)}
             testID={`${PLANNING_V2_TEST_IDS.dayChip}-${chip.dayOfWeek}`}
+            accessibilityRole="button"
+            accessibilityLabel={chip.short}
+            accessibilityState={{ selected: active }}
           >
             <Text style={[styles.chipText, active && styles.chipTextActive]}>{chip.short}</Text>
           </TouchableOpacity>
@@ -329,10 +332,10 @@ export default function TimetableScreen() {
         <Text style={styles.timeMuted}>{item.endTime}</Text>
       </View>
       <View style={styles.cardBody}>
-        <Text style={styles.course}>{item.courseName || "Cours"}</Text>
-        <Text style={styles.meta}>{item.className || item.classCode}</Text>
-        {item.roomName ? <Text style={styles.meta}>{item.roomName}</Text> : null}
-        <Text style={styles.meta}>{item.isReplacement ? item.originalTeacherName : item.teacherName}</Text>
+        <Text style={styles.course} numberOfLines={3}>{item.courseName || "Cours"}</Text>
+        <Text style={styles.meta} numberOfLines={2}>Classe : {item.className || item.classCode || "—"}</Text>
+        <Text style={styles.meta} numberOfLines={2}>Enseignant : {item.isReplacement ? item.originalTeacherName : item.teacherName || "—"}</Text>
+        <Text style={styles.meta} numberOfLines={2}>Salle : {item.roomName || "Sans salle"}</Text>
         {item.replacementsUnverified ? (
           <Text style={styles.unverified} testID={PLANNING_V2_TEST_IDS.usualTeacherUnverified}>
             {PLANNING_V2_COPY.usualTeacherUnverified} : {item.teacherName}
@@ -344,7 +347,13 @@ export default function TimetableScreen() {
         ) : null}
       </View>
       {canReplace && !compact ? (
-        <TouchableOpacity onPress={() => void openReplace(item)} accessibilityLabel="Remplacer">
+        <TouchableOpacity
+          onPress={() => void openReplace(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`Remplacer le cours ${item.courseName || ""} de ${item.className || ""}`}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
+        >
           <Ionicons name="swap-horizontal-outline" size={20} color="#2563EB" />
         </TouchableOpacity>
       ) : (
@@ -415,6 +424,10 @@ export default function TimetableScreen() {
           onChangeText={setStartTime}
           editable={!saving}
           placeholder="08:00"
+          keyboardType="numbers-and-punctuation"
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel="Heure de début"
         />
         <Text style={styles.label}>Fin</Text>
         <TextInput
@@ -423,6 +436,10 @@ export default function TimetableScreen() {
           onChangeText={setEndTime}
           editable={!saving}
           placeholder="09:00"
+          keyboardType="numbers-and-punctuation"
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel="Heure de fin"
         />
 
         <Text style={styles.label}>Salle</Text>
@@ -607,6 +624,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   chipActive: { backgroundColor: "#2563EB" },
   chipText: { color: "#334155", fontWeight: "800" },

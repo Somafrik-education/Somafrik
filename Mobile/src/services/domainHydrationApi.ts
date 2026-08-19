@@ -16,6 +16,7 @@ export type CanonicalAnnouncement = Announcement & {
   audience?: string;
   status?: string;
   createdAt?: string;
+  author?: string;
 };
 
 export type CanonicalSchoolMessage = SchoolMessage & {
@@ -113,6 +114,7 @@ function normalizeAnnouncement(value: unknown): CanonicalAnnouncement | null {
     audience: text(row.audience) || undefined,
     status: text(row.status) || undefined,
     createdAt: text(row.createdAt ?? row.created_at) || undefined,
+    author: text(row.author ?? row.authorName ?? row.createdBy ?? row.created_by) || undefined,
   };
 }
 

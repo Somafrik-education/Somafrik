@@ -91,7 +91,7 @@ export default function RoleSelectionScreen({ navigation }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "padding"}
       testID={ROLE_SELECTION_TEST_IDS.screen}
       accessibilityLabel={MOBILE_ACCESSIBILITY_COPY.roleSelectionScreenLabel}
     >

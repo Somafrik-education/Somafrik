@@ -8,8 +8,10 @@ export const studentSubScreenStyles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   backButton: {
-    width: 40,
-    height: 40,
+    minWidth: 44,
+    minHeight: 44,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
     alignItems: "center",

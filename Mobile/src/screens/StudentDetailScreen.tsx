@@ -72,6 +72,9 @@ export default function StudentDetailScreen({
         style={styles.backButton}
         testID={CLASSES_STUDENT_TEST_IDS.studentDetailBackButton}
         onPress={() => navigation?.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel={`Retour depuis la fiche de ${displayName}`}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Ionicons name="arrow-back" size={24} color="#0F172A" />
       </TouchableOpacity>
@@ -190,8 +193,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   backButton: {
-    width: 40,
-    height: 40,
+    minWidth: 44,
+    minHeight: 44,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
