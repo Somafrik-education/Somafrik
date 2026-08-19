@@ -17,6 +17,7 @@ import {
   normalizeWeeklySlot,
   overlayReplacementForDate,
   PLANNING_V2_COPY,
+  resolveReplacementProjection,
   selectableRooms,
   slotsForDay,
   stripPlanningClientScope,
@@ -166,6 +167,64 @@ function run() {
     occurrenceDate: "2026-09-14",
   });
   assert.equal(displayed[0].isReplacement, true);
+  assert.equal(displayed[0].replacementsUnverified, false);
+
+  const replacementsFailed = resolveReplacementProjection(
+    { status: "error", data: [] },
+    true,
+  );
+  assert.equal(replacementsFailed.showUnavailableWarning, true);
+  assert.equal(replacementsFailed.confirmedEmpty, false);
+  assert.equal(replacementsFailed.overlay, false);
+  assert.equal(replacementsFailed.unverified, true);
+  const failedOccurrences = displayedOccurrencesForDay({
+    slots: [weekly],
+    replacements: replacementsFailed.replacements,
+    dayOfWeek: 1,
+    occurrenceDate: "2026-09-14",
+    unverified: replacementsFailed.unverified,
+  });
+  assert.equal(failedOccurrences[0].isReplacement, false);
+  assert.equal(failedOccurrences[0].replacementsUnverified, true);
+  assert.equal(failedOccurrences[0].teacherName, "M. Okito");
+  assert.notEqual(replacementsFailed.showUnavailableWarning, replacementsFailed.confirmedEmpty);
+
+  const replacementsOffline = resolveReplacementProjection({ status: "offline", data: [] }, true);
+  assert.equal(replacementsOffline.showUnavailableWarning, true);
+  assert.equal(replacementsOffline.confirmedEmpty, false);
+
+  const replacementsEmpty = resolveReplacementProjection({ status: "empty", data: [] }, true);
+  assert.equal(replacementsEmpty.showUnavailableWarning, false);
+  assert.equal(replacementsEmpty.confirmedEmpty, true);
+  assert.equal(replacementsEmpty.overlay, true);
+  const emptyOccurrences = displayedOccurrencesForDay({
+    slots: [weekly],
+    replacements: replacementsEmpty.replacements,
+    dayOfWeek: 1,
+    occurrenceDate: "2026-09-14",
+    unverified: replacementsEmpty.unverified,
+  });
+  assert.equal(emptyOccurrences[0].isReplacement, false);
+  assert.equal(emptyOccurrences[0].replacementsUnverified, false);
+  assert.equal(emptyOccurrences[0].teacherName, "M. Okito");
+
+  const replacementsOk = resolveReplacementProjection({ status: "success", data: [replacement] }, true);
+  assert.equal(replacementsOk.showUnavailableWarning, false);
+  assert.equal(replacementsOk.confirmedEmpty, false);
+  assert.equal(replacementsOk.overlay, true);
+  const okOccurrences = displayedOccurrencesForDay({
+    slots: [weekly],
+    replacements: replacementsOk.replacements,
+    dayOfWeek: 1,
+    occurrenceDate: "2026-09-14",
+    unverified: replacementsOk.unverified,
+  });
+  assert.equal(okOccurrences[0].isReplacement, true);
+  assert.equal(okOccurrences[0].replacementsUnverified, false);
+  assert.equal(okOccurrences[0].substituteTeacherName, "Mme Mbala");
+
+  assert.equal(PLANNING_V2_COPY.replacementsUnavailable, "Remplacements indisponibles");
+  assert.equal(PLANNING_V2_COPY.usualTeacherUnverified, "Titulaire habituel (non vérifié)");
 
   const replacementWrite = buildCreateReplacementPayload({
     weeklySlotId: "slot-1",

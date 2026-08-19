@@ -31,6 +31,7 @@ import {
   PLANNING_V2_COPY,
   PLANNING_V2_TEST_IDS,
   PLANNING_WEEKDAY_CHIPS,
+  resolveReplacementProjection,
   selectableRooms,
   type CanonicalWeeklySlot,
   type DisplayedOccurrence,
@@ -115,18 +116,23 @@ export default function TimetableScreen() {
   );
 
   const occurrenceDateForDay = nearestOccurrenceDate(selectedDay);
-  const replacements = replacementsSnapshot.status === "error" || replacementsSnapshot.status === "offline"
-    ? []
-    : replacementsSnapshot.data;
+  const replacementProjection = resolveReplacementProjection(replacementsSnapshot, canReadReplacements);
   const occurrences = useMemo(
     () =>
       displayedOccurrencesForDay({
         slots: courseSchedulesSnapshot.data,
-        replacements,
+        replacements: replacementProjection.replacements,
         dayOfWeek: selectedDay,
         occurrenceDate: occurrenceDateForDay,
+        unverified: replacementProjection.unverified,
       }),
-    [courseSchedulesSnapshot.data, replacements, selectedDay, occurrenceDateForDay],
+    [
+      courseSchedulesSnapshot.data,
+      replacementProjection.replacements,
+      replacementProjection.unverified,
+      selectedDay,
+      occurrenceDateForDay,
+    ],
   );
 
   const roomsForForm = selectableRooms(roomsSnapshot.data, editing?.roomId);
@@ -298,7 +304,11 @@ export default function TimetableScreen() {
         <Text style={styles.meta}>{item.className || item.classCode}</Text>
         {item.roomName ? <Text style={styles.meta}>{item.roomName}</Text> : null}
         <Text style={styles.meta}>{item.isReplacement ? item.originalTeacherName : item.teacherName}</Text>
-        {item.isReplacement ? (
+        {item.replacementsUnverified ? (
+          <Text style={styles.unverified} testID={PLANNING_V2_TEST_IDS.usualTeacherUnverified}>
+            {PLANNING_V2_COPY.usualTeacherUnverified} : {item.teacherName}
+          </Text>
+        ) : item.isReplacement ? (
           <Text style={styles.replacement} testID={PLANNING_V2_TEST_IDS.replacementBadge}>
             {PLANNING_V2_COPY.usualTeacher} : {item.originalTeacherName}. {PLANNING_V2_COPY.replacedBy} {item.substituteTeacherName}
           </Text>
@@ -319,9 +329,10 @@ export default function TimetableScreen() {
       {PLANNING_WEEKDAY_CHIPS.map((chip) => {
         const items = displayedOccurrencesForDay({
           slots: courseSchedulesSnapshot.data,
-          replacements,
+          replacements: replacementProjection.replacements,
           dayOfWeek: chip.dayOfWeek,
           occurrenceDate: nearestOccurrenceDate(chip.dayOfWeek),
+          unverified: replacementProjection.unverified,
         });
         return (
           <View key={chip.dayOfWeek} style={styles.weekCol}>
@@ -498,6 +509,22 @@ export default function TimetableScreen() {
 
       {!isTablet ? renderDayChips(selectedDay, setSelectedDay) : null}
 
+      {replacementProjection.showUnavailableWarning ? (
+        <View style={styles.warningBanner} testID={PLANNING_V2_TEST_IDS.replacementsWarning} accessibilityRole="alert">
+          <Text style={styles.warningTitle}>⚠ {PLANNING_V2_COPY.replacementsUnavailable}</Text>
+          <Text style={styles.warningText}>{PLANNING_V2_COPY.replacementsUnverifiedHint}</Text>
+          <TouchableOpacity
+            style={styles.retry}
+            onPress={() => void loadReplacements()}
+            testID={PLANNING_V2_TEST_IDS.replacementsRetry}
+            accessibilityRole="button"
+            accessibilityLabel={PLANNING_V2_COPY.retry}
+          >
+            <Text style={styles.retryText}>{PLANNING_V2_COPY.retry}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {showQueryState && !(isTablet && courseSchedulesSnapshot.status === "success") ? (
         <QueryStateView
           snapshot={
@@ -565,6 +592,26 @@ const styles = StyleSheet.create({
   course: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
   meta: { color: "#64748B", fontSize: 12, fontWeight: "700", marginTop: 4 },
   replacement: { color: "#B45309", fontSize: 12, fontWeight: "800", marginTop: 6 },
+  unverified: { color: "#B45309", fontSize: 12, fontWeight: "800", marginTop: 6 },
+  warningBanner: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    padding: 14,
+    marginBottom: 16,
+  },
+  warningTitle: { color: "#B45309", fontWeight: "900", fontSize: 14 },
+  warningText: { color: "#92400E", fontSize: 12, fontWeight: "700", marginTop: 6 },
+  retry: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    backgroundColor: "#B45309",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  retryText: { color: "#FFFFFF", fontWeight: "800" },
   muted: { color: "#94A3B8", fontWeight: "700" },
   label: { color: "#0F172A", fontWeight: "800", marginTop: 12, marginBottom: 6 },
   input: {

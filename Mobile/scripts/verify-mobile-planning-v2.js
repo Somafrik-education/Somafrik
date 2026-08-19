@@ -116,6 +116,19 @@ function main() {
   assert.match(timetable, /PLANNING_V2_COPY\.error/);
   assert.match(timetable, /PLANNING_V2_COPY\.usualTeacher/);
   assert.match(timetable, /PLANNING_V2_COPY\.replacedBy/);
+  assert.match(timetable, /resolveReplacementProjection/);
+  assert.match(timetable, /showUnavailableWarning/);
+  assert.match(timetable, /PLANNING_V2_COPY\.usualTeacherUnverified/);
+  assert.match(timetable, /PLANNING_V2_COPY\.replacementsUnavailable/);
+  assert.match(timetable, /replacementsUnverified/);
+  assert.doesNotMatch(
+    timetable,
+    /replacementsSnapshot\.status === ["']error["'][\s\S]{0,120}\? \[\]/,
+  );
+  assert.doesNotMatch(
+    timetable,
+    /status === ["']error["']\s*\|\|\s*[\s\S]{0,80}status === ["']offline["']\s*\? \[\]/,
+  );
   assert.match(timetable, /createCourseSchedule/);
   assert.match(timetable, /createCourseScheduleReplacement/);
   assert.doesNotMatch(timetable, /from ["']\.\.\/data\/catalog["']/);
@@ -166,7 +179,13 @@ function main() {
   assert.match(v2, /Classe déjà occupée/);
   assert.match(v2, /Enseignant déjà occupé/);
   assert.match(v2, /Salle déjà occupée/);
+  assert.match(v2, /function resolveReplacementProjection/);
+  assert.match(v2, /showUnavailableWarning/);
+  assert.match(v2, /confirmedEmpty/);
+  assert.match(v2, /Titulaire habituel \(non vérifié\)/);
+  assert.match(v2, /Remplacements indisponibles/);
   console.log("OK: helpers V2 identities canoniques + overlay remplacement");
+  console.log("OK: error/offline remplacements ≠ empty confirmé");
 
   const constants = read(path.join(SRC, "lib", "constants.ts"));
   const permissions = read(path.join(SRC, "domain", "security", "permissions.ts"));

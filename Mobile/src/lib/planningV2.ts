@@ -1,4 +1,4 @@
-import { classifyLoadFailure } from "./dataTruth";
+import { classifyLoadFailure, type ResourceSnapshot } from "./dataTruth";
 
 export const PLANNING_V2_COPY = {
   empty: "Aucun créneau planifié",
@@ -6,7 +6,11 @@ export const PLANNING_V2_COPY = {
   retry: "Réessayer",
   saving: "Enregistrement…",
   usualTeacher: "Enseignant habituel",
+  usualTeacherUnverified: "Titulaire habituel (non vérifié)",
   replacedBy: "Remplacé par",
+  replacementsUnavailable: "Remplacements indisponibles",
+  replacementsUnverifiedHint:
+    "Les enseignants affichés sont les titulaires habituels. Les remplacements n'ont pas pu être vérifiés.",
   conflictClass: "Classe déjà occupée",
   conflictTeacher: "Enseignant déjà occupé",
   conflictRoom: "Salle déjà occupée",
@@ -17,6 +21,9 @@ export const PLANNING_V2_TEST_IDS = {
   dayChip: "planning-day-chip",
   slotCard: "planning-slot-card",
   replacementBadge: "planning-replacement-badge",
+  replacementsWarning: "planning-replacements-warning",
+  replacementsRetry: "planning-replacements-retry",
+  usualTeacherUnverified: "planning-usual-teacher-unverified",
   createButton: "planning-create",
   saveButton: "planning-save",
   conflictError: "planning-conflict-error",
@@ -104,9 +111,18 @@ export type CanonicalReplacement = {
 export type DisplayedOccurrence = CanonicalWeeklySlot & {
   occurrenceDate?: string;
   isReplacement: boolean;
+  replacementsUnverified: boolean;
   originalTeacherId: string;
   originalTeacherName: string;
   substituteTeacherName: string;
+};
+
+export type ReplacementProjection = {
+  replacements: CanonicalReplacement[];
+  overlay: boolean;
+  unverified: boolean;
+  confirmedEmpty: boolean;
+  showUnavailableWarning: boolean;
 };
 
 export type WeeklySlotWriteInput = {
@@ -281,7 +297,19 @@ export function overlayReplacementForDate(
   slot: CanonicalWeeklySlot,
   replacements: CanonicalReplacement[],
   occurrenceDate: string,
+  options: { unverified?: boolean } = {},
 ): DisplayedOccurrence {
+  if (options.unverified) {
+    return {
+      ...slot,
+      occurrenceDate,
+      isReplacement: false,
+      replacementsUnverified: true,
+      originalTeacherId: slot.teacherId,
+      originalTeacherName: slot.teacherName,
+      substituteTeacherName: "",
+    };
+  }
   const match = replacements.find(
     (item) =>
       item.weeklySlotId === slot.id &&
@@ -293,6 +321,7 @@ export function overlayReplacementForDate(
       ...slot,
       occurrenceDate,
       isReplacement: false,
+      replacementsUnverified: false,
       originalTeacherId: slot.teacherId,
       originalTeacherName: slot.teacherName,
       substituteTeacherName: "",
@@ -302,6 +331,7 @@ export function overlayReplacementForDate(
     ...slot,
     occurrenceDate,
     isReplacement: true,
+    replacementsUnverified: false,
     teacherId: slot.teacherId,
     teacherName: slot.teacherName,
     originalTeacherId: match.originalTeacherId || slot.teacherId,
@@ -310,14 +340,42 @@ export function overlayReplacementForDate(
   };
 }
 
+export function resolveReplacementProjection(
+  snapshot: Pick<ResourceSnapshot<CanonicalReplacement>, "status" | "data">,
+  canReadReplacements: boolean,
+): ReplacementProjection {
+  if (!canReadReplacements) {
+    return {
+      replacements: [],
+      overlay: false,
+      unverified: false,
+      confirmedEmpty: false,
+      showUnavailableWarning: false,
+    };
+  }
+  const failed = snapshot.status === "error" || snapshot.status === "offline";
+  const pending = snapshot.status === "idle" || snapshot.status === "loading";
+  const overlay = snapshot.status === "success" || snapshot.status === "empty";
+  return {
+    replacements: overlay ? snapshot.data : [],
+    overlay,
+    unverified: failed || pending,
+    confirmedEmpty: snapshot.status === "empty",
+    showUnavailableWarning: failed,
+  };
+}
+
 export function displayedOccurrencesForDay(params: {
   slots: CanonicalWeeklySlot[];
   replacements: CanonicalReplacement[];
   dayOfWeek: number;
   occurrenceDate: string;
+  unverified?: boolean;
 }): DisplayedOccurrence[] {
   return slotsForDay(params.slots, params.dayOfWeek).map((slot) =>
-    overlayReplacementForDate(slot, params.replacements, params.occurrenceDate),
+    overlayReplacementForDate(slot, params.replacements, params.occurrenceDate, {
+      unverified: params.unverified,
+    }),
   );
 }
 
