@@ -49,6 +49,12 @@ export interface CourseScheduleSlot {
   endTime?: string;
   status?: string;
   courseName?: string;
+  roomId?: string;
+  originalTeacher?: string;
+  originalTeacherId?: string;
+  replacement?: boolean;
+  replacementId?: string;
+  occurrenceDate?: string;
 }
 
 export interface PlanningCalendarEvent {
@@ -370,9 +376,10 @@ export function scopedCourseSchedules(user: SessionUser | null, state: BackOffic
 
 const OCCURRENCE_ID_SUFFIX = "__";
 
-export function getMasterScheduleId(eventId: string): string {
+export function getOccurrenceDateFromEventId(eventId: string): string {
   const marker = eventId.indexOf(OCCURRENCE_ID_SUFFIX);
-  return marker >= 0 ? eventId.slice(0, marker) : eventId;
+  if (marker < 0) return "";
+  return eventId.slice(marker + OCCURRENCE_ID_SUFFIX.length).slice(0, 10);
 }
 
 export function hasSchedulePeriod(slot: CourseScheduleSlot): boolean {
@@ -836,6 +843,12 @@ export function mapServerOccurrencesToCalendarEvents(
       start,
       end,
       room: item.room != null ? String(item.room) : undefined,
+      roomId: item.roomId != null ? String(item.roomId) : undefined,
+      originalTeacher: item.originalTeacher != null ? String(item.originalTeacher) : undefined,
+      originalTeacherId: item.originalTeacherId != null ? String(item.originalTeacherId) : undefined,
+      replacement: Boolean(item.replacement),
+      replacementId: item.replacementId != null ? String(item.replacementId) : undefined,
+      occurrenceDate: item.occurrenceDate != null ? String(item.occurrenceDate) : undefined,
       kind: "course",
       schoolCourseId: item.schoolCourseId != null ? String(item.schoolCourseId) : undefined,
       academicYearId: item.academicYearId != null ? String(item.academicYearId) : undefined,

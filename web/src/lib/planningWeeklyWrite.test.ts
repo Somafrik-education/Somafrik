@@ -39,7 +39,9 @@ describe("Planning V2 — payload d'écriture Web", () => {
       dayOfWeek: 1,
       startTime: "08:00",
       endTime: "09:00",
+      roomId: null,
     });
+    expect(payload).not.toHaveProperty("room");
     expect(payload).not.toHaveProperty("className");
     expect(payload).not.toHaveProperty("subject");
     expect(payload).not.toHaveProperty("start");

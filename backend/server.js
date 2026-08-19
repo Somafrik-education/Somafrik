@@ -714,6 +714,94 @@ app.delete("/api/course-schedules/:scheduleId", requireAuth, requirePermission("
   res.json(deleted);
 }));
 
+function requireCanonicalPg(res, methodName, label) {
+  if (typeof repository[methodName] === "function") return true;
+  res.status(501).json({ message: `${label} : PostgreSQL canonique requis.` });
+  return false;
+}
+
+app.get("/api/school-rooms", requireAuth, requirePermission("GET /api/school-rooms"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "listSchoolRooms", "Salles")) return;
+  const result = await repository.listSchoolRooms(req.principal, req.query ?? {});
+  res.json(result);
+}));
+
+app.post("/api/school-rooms", requireAuth, requirePermission("POST /api/school-rooms"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "createSchoolRoom", "Salles")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const created = await repository.createSchoolRoom(req.body ?? {}, req.principal, pedagogyAuditMetaFromRequest(req));
+  res.status(201).json(created);
+}));
+
+app.patch("/api/school-rooms/:roomId", requireAuth, requirePermission("PATCH /api/school-rooms/:roomId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "updateSchoolRoom", "Salles")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateSchoolRoom(
+    req.params.roomId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/school-rooms/:roomId", requireAuth, requirePermission("DELETE /api/school-rooms/:roomId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "archiveSchoolRoom", "Salles")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const archived = await repository.archiveSchoolRoom(
+    req.params.roomId,
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(archived);
+}));
+
+app.get("/api/course-schedule-replacements/options", requireAuth, requirePermission("GET /api/course-schedule-replacements/options"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "listReplacementTeacherOptions", "Remplacements")) return;
+  const result = await repository.listReplacementTeacherOptions(req.principal, req.query ?? {});
+  res.json(result);
+}));
+
+app.get("/api/course-schedule-replacements", requireAuth, requirePermission("GET /api/course-schedule-replacements"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "listCourseScheduleReplacements", "Remplacements")) return;
+  const result = await repository.listCourseScheduleReplacements(req.principal, req.query ?? {});
+  res.json(result);
+}));
+
+app.post("/api/course-schedule-replacements", requireAuth, requirePermission("POST /api/course-schedule-replacements"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "createCourseScheduleReplacement", "Remplacements")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const created = await repository.createCourseScheduleReplacement(
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.status(201).json(created);
+}));
+
+app.patch("/api/course-schedule-replacements/:replacementId", requireAuth, requirePermission("PATCH /api/course-schedule-replacements/:replacementId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "updateCourseScheduleReplacement", "Remplacements")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const updated = await repository.updateCourseScheduleReplacement(
+    req.params.replacementId,
+    req.body ?? {},
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.delete("/api/course-schedule-replacements/:replacementId", requireAuth, requirePermission("DELETE /api/course-schedule-replacements/:replacementId"), asyncHandler(async (req, res) => {
+  if (!requireCanonicalPg(res, "cancelCourseScheduleReplacement", "Remplacements")) return;
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  const cancelled = await repository.cancelCourseScheduleReplacement(
+    req.params.replacementId,
+    req.principal,
+    pedagogyAuditMetaFromRequest(req),
+  );
+  res.json(cancelled);
+}));
+
 app.get("/api/evaluations", requireAuth, requirePermission("GET /api/evaluations"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   if (!schoolCode || schoolCode === "*") {

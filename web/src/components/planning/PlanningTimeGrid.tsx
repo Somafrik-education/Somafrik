@@ -118,6 +118,9 @@ function PlanningEventBlock({
           <span className="planning-event__time">{formatEventTimeRange(event.start, event.end)}</span>
           <span className="planning-event__subject">{subject}</span>
           <span className="planning-event__teacher">{teacher}</span>
+          {event.slot.replacement && event.slot.originalTeacher ? (
+            <span className="planning-event__replacement">Remplace {event.slot.originalTeacher}</span>
+          ) : null}
           {room ? <span className="planning-event__room">{room}</span> : null}
         </>
       )}

@@ -93,3 +93,10 @@ assert.equal(
   false,
   "Enseignant READ-only ne crée pas de créneau",
 );
+assert.deepEqual(routePermissions["GET /api/school-rooms"], ["Salles:READ", "ALL_PRIVILEGES"]);
+assert.deepEqual(routePermissions["POST /api/course-schedule-replacements"], ["Remplacements:CREATE", "ALL_PRIVILEGES"]);
+assert.equal(rbac.canAccess(teacherPrincipal, "GET /api/school-rooms"), false);
+assert.ok(rbac.canAccess({ ...teacherPrincipal, permissions: ["Salles:READ"] }, "GET /api/school-rooms"));
+assert.equal(rbac.canAccess({ ...teacherPrincipal, permissions: ["Salles:READ"] }, "POST /api/school-rooms"), false);
+assert.equal(rbac.canAccess({ role: "Parent", permissions: ["Élèves:READ"] }, "GET /api/course-schedule-replacements"), false);
+assert.equal(rbac.canAccess({ role: "Secrétaire", permissions: ["Élèves:READ"] }, "GET /api/school-rooms"), false);

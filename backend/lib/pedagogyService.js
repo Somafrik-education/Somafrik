@@ -28,6 +28,8 @@ const {
   expandWeeklyOccurrences,
   resolveSchoolTimeZone,
 } = require("./planningWeeklyOccurrences");
+const { resolveActiveRoomId, capacityWarningFor } = require("./schoolRoomsService");
+const { overlayOccurrenceReplacement } = require("./courseScheduleReplacementsService");
 
 function assertTenant(principal, schoolCode) {
   const scope = asTrimmed(principal?.schoolCode);
@@ -272,6 +274,11 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
     const school = await resolveSchoolContext(tx, principal);
     const { course, year } = await assertWeeklySlotReferences(tx, school, payload, { requireOpenYear: true });
     const times = parseWeeklyTimes(payload);
+    const { roomId, room } = await resolveActiveRoomId(tx, school.id, payload.roomId ?? payload.room_id);
+    let classSize = 0;
+    if (roomId && typeof tx.classActiveEnrollmentCount === "function") {
+      classSize = await tx.classActiveEnrollmentCount(course.class_id, school.id);
+    }
     const saved = await persistWeeklySlot(tx, () =>
       tx.insertWeeklyScheduleSlot({
         schoolId: school.id,
@@ -283,17 +290,19 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
         startTime: times.startTime,
         endTime: times.endTime,
         status: "active",
-        room: payload.room,
+        room: room?.name || asTrimmed(payload.room) || "",
+        roomId,
       }),
     );
+    const warning = capacityWarningFor(room, classSize);
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "create_course_schedule",
       entityType: "course_schedule",
       entityId: saved.id,
       schoolCode: saved.schoolCode,
-      newValue: saved,
+      newValue: { ...saved, capacityWarning: warning },
     });
-    return saved;
+    return warning ? { ...saved, capacityWarning: warning } : saved;
   });
 }
 
@@ -310,6 +319,15 @@ async function updateCourseSchedule(store, scheduleId, patchRaw, principal, audi
     };
     const { course, year } = await assertWeeklySlotReferences(tx, school, nextPayload, { requireOpenYear: true });
     const times = parseWeeklyTimes(patch, existing);
+    const nextRoomId =
+      patch.roomId !== undefined || patch.room_id !== undefined
+        ? patch.roomId ?? patch.room_id
+        : existing.roomId;
+    const { roomId, room } = await resolveActiveRoomId(tx, school.id, nextRoomId);
+    let classSize = 0;
+    if (roomId && typeof tx.classActiveEnrollmentCount === "function") {
+      classSize = await tx.classActiveEnrollmentCount(course.class_id, school.id);
+    }
     const saved = await persistWeeklySlot(tx, () =>
       tx.updateWeeklyScheduleSlot(existing.id, {
         schoolId: school.id,
@@ -320,18 +338,20 @@ async function updateCourseSchedule(store, scheduleId, patchRaw, principal, audi
         dayOfWeek: times.dayOfWeek,
         startTime: times.startTime,
         endTime: times.endTime,
-        room: patch.room !== undefined ? patch.room : existing.room,
+        room: room?.name || (patch.room !== undefined ? asTrimmed(patch.room) : existing.room) || "",
+        roomId,
       }),
     );
+    const warning = capacityWarningFor(room, classSize);
     await writePedagogyAudit(tx, principal, auditMeta, {
       action: "update_course_schedule",
       entityType: "course_schedule",
       entityId: saved.id,
       schoolCode: saved.schoolCode,
       oldValue: existing,
-      newValue: saved,
+      newValue: { ...saved, capacityWarning: warning },
     });
-    return saved;
+    return warning ? { ...saved, capacityWarning: warning } : saved;
   });
 }
 
@@ -395,6 +415,19 @@ async function listPlanningCourseOptions(store, principal, query = {}, school = 
   return { projection: "planning-course-options", items };
 }
 
+function isPlanningDiagnosticsProjection(query = {}) {
+  const projection = asTrimmed(query.projection).toLowerCase();
+  return projection === "diagnostics" || projection === "conflicts";
+}
+
+async function listPlanningDiagnostics(store, principal, query = {}, school = null) {
+  if (!school?.id || typeof store.listPlanningDiagnostics !== "function") {
+    return { projection: "diagnostics", items: [] };
+  }
+  const items = await store.listPlanningDiagnostics({ schoolId: school.id });
+  return { projection: "diagnostics", items };
+}
+
 async function listCourseSchedules(store, principal, query = {}) {
   const schoolCode = asTrimmed(principal?.schoolCode);
   let school = null;
@@ -407,6 +440,11 @@ async function listCourseSchedules(store, principal, query = {}) {
   if (isPlanningCourseOptionsProjection(query)) {
     return listPlanningCourseOptions(store, principal, query, school);
   }
+  if (isPlanningDiagnosticsProjection(query)) {
+    return listPlanningDiagnostics(store, principal, query, school);
+  }
+  const from = asTrimmed(query.from);
+  const to = asTrimmed(query.to);
   const filters = {
     schoolId: school?.id ?? null,
     schoolCode: school?.code ?? schoolCode,
@@ -425,23 +463,39 @@ async function listCourseSchedules(store, principal, query = {}) {
     if (filters.teacherId && String(filters.teacherId) !== String(teacherId)) {
       return [];
     }
-    filters.teacherId = teacherId;
+    if (from && to) {
+      filters.teacherOrSubstituteId = teacherId;
+      delete filters.teacherId;
+      filters.from = from;
+      filters.to = to;
+    } else {
+      filters.teacherId = teacherId;
+    }
   }
 
   const rows = await store.listWeeklyScheduleSlots(filters);
-  const from = asTrimmed(query.from);
-  const to = asTrimmed(query.to);
   if (!from || !to) {
     return rows;
   }
 
   const timeZone = resolveSchoolTimeZone(school?.timezone || school?.profile_payload?.timezone);
+  let replacements = [];
+  if (school?.id && typeof store.listActiveReplacementsForSlots === "function") {
+    replacements = await store.listActiveReplacementsForSlots({
+      schoolId: school.id,
+      slotIds: rows.map((row) => row.id),
+      from,
+      to,
+    });
+  }
+  const replacementByKey = new Map(
+    replacements.map((row) => [`${row.weeklySlotId}|${row.occurrenceDate}`, row]),
+  );
   const items = rows.flatMap((slot) =>
-    expandWeeklyOccurrences(slot, { from, to, timeZone }).map((occurrence) => ({
-      ...slot,
-      ...occurrence,
-      projection: "occurrence",
-    })),
+    expandWeeklyOccurrences(slot, { from, to, timeZone }).map((occurrence) => {
+      const replacement = replacementByKey.get(`${slot.id}|${occurrence.occurrenceDate}`);
+      return overlayOccurrenceReplacement(slot, { ...occurrence, projection: "occurrence" }, replacement);
+    }),
   );
   return {
     projection: "occurrences",

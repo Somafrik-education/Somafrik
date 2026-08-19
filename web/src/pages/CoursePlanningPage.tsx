@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -21,6 +22,7 @@ import {
   formatScheduleRecurrenceSummary,
   getDefaultPlanningPeriod,
   getMasterScheduleId,
+  getOccurrenceDateFromEventId,
   getSchoolAcademicPeriods,
   isoWeekdayFromLocalDate,
   isExamSchedule,
@@ -34,6 +36,7 @@ import {
   type PlanningCalendarEvent,
 } from "../lib/coursePlanning";
 import { pedagogyApi } from "../lib/pedagogyApi";
+import { schoolRoomsApi, type SchoolRoom } from "../lib/planningRoomsReplacementsApi";
 import { syncSchoolCourseSchedules } from "../lib/pedagogyPlanningSync";
 import {
   mapPlanningCourseOptions,
@@ -61,7 +64,8 @@ type FormState = {
   weekday: number;
   startTime: string;
   endTime: string;
-  room: string;
+  roomId: string;
+  occurrenceDate: string;
 };
 
 const EMPTY_FORM = (className: string, academicYearId = ""): FormState => ({
@@ -75,7 +79,8 @@ const EMPTY_FORM = (className: string, academicYearId = ""): FormState => ({
   weekday: 1,
   startTime: "08:00",
   endTime: "09:00",
-  room: "",
+  roomId: "",
+  occurrenceDate: "",
 });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -102,7 +107,8 @@ function formFromSlot(
     weekday: weekday >= 1 && weekday <= 7 ? weekday : isoWeekdayFromLocalDate(new Date(slot.start)),
     startTime: String(slot.startTime ?? "").trim().slice(0, 5) || extractTimeFromIso(slot.start),
     endTime: String(slot.endTime ?? "").trim().slice(0, 5) || extractTimeFromIso(slot.end),
-    room: slot.room ?? "",
+    roomId: slot.roomId ?? "",
+    occurrenceDate: slot.occurrenceDate ?? "",
   };
 }
 
@@ -115,6 +121,8 @@ export function CoursePlanningPage() {
   const scopeUser = scopedUser ?? session?.user ?? null;
   const schoolCode = activeSchoolCode || scopeUser?.schoolCode || "";
   const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions("Planning de cours");
+  const replacements = useFeaturePermissions("Remplacements");
+  const navigate = useNavigate();
 
   const [selectedClassName, setSelectedClassName] = useState("");
   const selectedClassRef = useRef("");
@@ -125,6 +133,7 @@ export function CoursePlanningPage() {
   const [calendarEvents, setCalendarEvents] = useState<PlanningCalendarEvent[]>([]);
   const [classCourses, setClassCourses] = useState<PlanningSchoolCourseOption[]>([]);
   const [courseOptionsStatus, setCourseOptionsStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [rooms, setRooms] = useState<SchoolRoom[]>([]);
 
   const schoolPeriods = useMemo(
     () => getSchoolAcademicPeriods(state, schoolCode),
@@ -197,6 +206,25 @@ export function CoursePlanningPage() {
     const id = String((row as { id?: string } | undefined)?.id ?? "").trim();
     return UUID_RE.test(id) ? id : "";
   }, [scopeUser, state.classes, selectedClassName]);
+
+  useEffect(() => {
+    if (!canRead) {
+      setRooms([]);
+      return;
+    }
+    let cancelled = false;
+    schoolRoomsApi
+      .list({ status: "active", classId: selectedClassId || undefined })
+      .then((result) => {
+        if (!cancelled) setRooms(result.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRooms([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canRead, selectedClassId]);
 
   useEffect(() => {
     if (!canRead || !selectedClassName) {
@@ -399,7 +427,8 @@ export function CoursePlanningPage() {
       endTime: form.endTime,
       start: "",
       end: "",
-      room: form.room.trim() || undefined,
+      room: rooms.find((row) => row.id === form.roomId)?.name,
+      roomId: form.roomId || undefined,
       kind: "course",
       status: "active",
     });
@@ -416,6 +445,15 @@ export function CoursePlanningPage() {
     if (form.endTime <= form.startTime) {
       showToast("L'heure de fin doit être postérieure à l'heure de début.", "error");
       return;
+    }
+    const selectedRoom = rooms.find((row) => row.id === form.roomId);
+    if (selectedRoom?.capacityWarning) {
+      const ok = await confirm({
+        title: "Capacité inférieure à l'effectif",
+        description: `${selectedRoom.capacityWarning.message} Vous pouvez confirmer malgré tout.`,
+        confirmLabel: "Confirmer",
+      });
+      if (!ok) return;
     }
 
     const next = form.id
@@ -459,7 +497,8 @@ export function CoursePlanningPage() {
     (eventId: string) => {
       const masterId = getMasterScheduleId(eventId);
       const slot = weeklySlots.find((row) => row.id === masterId);
-      if (slot) openEdit(slot);
+      const occurrenceDate = getOccurrenceDateFromEventId(eventId);
+      if (slot) openEdit({ ...slot, occurrenceDate });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [weeklySlots, canRead, canUpdate, classCourses, classAcademicYearId],
@@ -523,8 +562,8 @@ export function CoursePlanningPage() {
         <h2 className="mt-2 text-2xl font-black">Planning de cours</h2>
         <p className="mt-2 max-w-3xl text-sm text-white/85">
           Emploi du temps hebdomadaire rattaché à un cours canonique, une année académique et un
-          enseignant. Les examens restent dans le module Examens. Salles et remplacements ne sont pas
-          encore ouverts.
+          enseignant. Les examens restent dans le module Examens. Les salles sont des ressources
+          canoniques ; un remplacement ponctuel n'altère pas le titulaire du cours.
         </p>
       </Card>
 
@@ -686,8 +725,21 @@ export function CoursePlanningPage() {
             >
               <Input value={resolvedFormTeacher?.teacherName || form.teacherName || "—"} readOnly />
             </Field>
-            <Field label="Salle" hint="Texte optionnel. Pas d'entité salles V2.">
-              <Input value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} />
+            <Field label="Salle" hint="Salle canonique optionnelle. Aucune salle si l'établissement ne gère pas encore les locaux.">
+              <Select
+                data-testid="planning-room-select"
+                value={form.roomId}
+                onChange={(event) => setForm({ ...form, roomId: event.target.value })}
+                options={[
+                  { value: "", label: "Aucune salle" },
+                  ...rooms.map((room) => ({
+                    value: room.id,
+                    label: `${room.name}${room.capacity ? ` · ${room.capacity} places` : ""}${
+                      room.capacityWarning ? " · ⚠ capacité" : ""
+                    }`,
+                  })),
+                ]}
+              />
             </Field>
           </div>
           {buildSlotFromForm() ? (
@@ -711,6 +763,19 @@ export function CoursePlanningPage() {
                 onClick={() => void deleteForm()}
               >
                 Annuler le créneau
+              </Button>
+            ) : null}
+            {form.id && form.occurrenceDate && replacements.canCreate ? (
+              <Button
+                variant="secondary"
+                data-testid="planning-program-replacement"
+                onClick={() =>
+                  navigate(
+                    `/planning/remplacements?weeklySlotId=${encodeURIComponent(form.id)}&occurrenceDate=${encodeURIComponent(form.occurrenceDate)}`,
+                  )
+                }
+              >
+                Programmer un remplacement
               </Button>
             ) : null}
             <Button variant="secondary" onClick={() => setForm(null)}>

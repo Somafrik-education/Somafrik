@@ -96,11 +96,11 @@ export const TimetableByTeacherPage = lazyPage(
   "TimetableByTeacherPage",
 );
 export const PlanningRoomsPage = lazyPage(
-  () => import("./pages/planning/PlanningPlaceholders"),
+  () => import("./pages/planning/PlanningRoomsPage"),
   "PlanningRoomsPage",
 );
 export const PlanningSubstitutionsPage = lazyPage(
-  () => import("./pages/planning/PlanningPlaceholders"),
+  () => import("./pages/planning/PlanningSubstitutionsPage"),
   "PlanningSubstitutionsPage",
 );
 export const TimetableByRoomPage = lazyPage(

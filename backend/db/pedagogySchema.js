@@ -16,6 +16,16 @@ const WEEKLY_SCHEMA_SQL = fs.readFileSync(
   "utf8",
 );
 
+const ROOMS_SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "migrations/20260829_school_rooms_canonical.sql"),
+  "utf8",
+);
+
+const REPLACEMENTS_SCHEMA_SQL = fs.readFileSync(
+  path.join(__dirname, "migrations/20260830_course_schedule_replacements.sql"),
+  "utf8",
+);
+
 const PEDAGOGY_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS school_courses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,6 +94,10 @@ BEGIN
 END $$;
 
 ${WEEKLY_SCHEMA_SQL}
+
+${ROOMS_SCHEMA_SQL}
+
+${REPLACEMENTS_SCHEMA_SQL}
 `;
 
-module.exports = { PEDAGOGY_SCHEMA_SQL, WEEKLY_SCHEMA_SQL };
+module.exports = { PEDAGOGY_SCHEMA_SQL, WEEKLY_SCHEMA_SQL, ROOMS_SCHEMA_SQL, REPLACEMENTS_SCHEMA_SQL };

@@ -63,6 +63,10 @@ export const pedagogyApi = {
         schoolCourseId: query.schoolCourseId,
       }),
     ),
+  listPlanningDiagnostics: () =>
+    api.get<{ projection: "diagnostics"; items: Record<string, unknown>[] }>(
+      withQuery("/course-schedules", { projection: "diagnostics" }),
+    ),
   createCourseSchedule: (payload: Record<string, unknown>) => api.post("/course-schedules", payload),
   updateCourseSchedule: (scheduleId: string, payload: Record<string, unknown>) =>
     api.patch(`/course-schedules/${encodeURIComponent(scheduleId)}`, payload),

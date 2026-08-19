@@ -409,6 +409,15 @@ const routePermissions = {
   "POST /api/course-schedules": ["Planning de cours:CREATE", "ALL_PRIVILEGES"],
   "PATCH /api/course-schedules/:scheduleId": ["Planning de cours:UPDATE", "ALL_PRIVILEGES"],
   "DELETE /api/course-schedules/:scheduleId": ["Planning de cours:DELETE", "ALL_PRIVILEGES"],
+  "GET /api/school-rooms": ["Salles:READ", "ALL_PRIVILEGES"],
+  "POST /api/school-rooms": ["Salles:CREATE", "ALL_PRIVILEGES"],
+  "PATCH /api/school-rooms/:roomId": ["Salles:UPDATE", "ALL_PRIVILEGES"],
+  "DELETE /api/school-rooms/:roomId": ["Salles:DELETE", "ALL_PRIVILEGES"],
+  "GET /api/course-schedule-replacements": ["Remplacements:READ", "ALL_PRIVILEGES"],
+  "GET /api/course-schedule-replacements/options": ["Remplacements:READ", "ALL_PRIVILEGES"],
+  "POST /api/course-schedule-replacements": ["Remplacements:CREATE", "ALL_PRIVILEGES"],
+  "PATCH /api/course-schedule-replacements/:replacementId": ["Remplacements:UPDATE", "ALL_PRIVILEGES"],
+  "DELETE /api/course-schedule-replacements/:replacementId": ["Remplacements:DELETE", "ALL_PRIVILEGES"],
 };
 
 const PERMISSION_DENIED = "PERMISSION_DENIED";
