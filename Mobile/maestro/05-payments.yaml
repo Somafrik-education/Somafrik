@@ -1,6 +1,27 @@
 appId: com.somafrik.app
 ---
-- launchApp
-- tapOn: "Paiements"
-- assertVisible:
-    id: "payments-list"
+- runFlow: flows/login-admin-school.yaml
+- tapOn:
+    id: "home-payments-value"
+- extendedWaitUntil:
+    visible: "Paiements"
+    timeout: 20000
+- assertNotVisible:
+    id: "payments-error"
+- retry:
+    maxRetries: 8
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: "payments-empty"
+          commands:
+            - assertVisible:
+                id: "payments-empty"
+      - runFlow:
+          when:
+            notVisible:
+              id: "payments-empty"
+          commands:
+            - assertVisible:
+                id: "payments-list"

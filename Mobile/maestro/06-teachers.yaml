@@ -1,5 +1,30 @@
 appId: com.somafrik.app
 ---
-- launchApp
-- tapOn: "Enseignants"
-- assertVisible: "Équipe pédagogique"
+- runFlow: flows/login-admin-school.yaml
+- tapOn:
+    id: "tab-enseignants"
+- extendedWaitUntil:
+    visible:
+      id: "teachers-screen"
+    timeout: 20000
+- assertVisible:
+    id: "teachers-title"
+- assertNotVisible:
+    id: "teachers-error"
+- retry:
+    maxRetries: 8
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: "teachers-empty"
+          commands:
+            - assertVisible:
+                id: "teachers-empty"
+      - runFlow:
+          when:
+            notVisible:
+              id: "teachers-empty"
+          commands:
+            - assertVisible:
+                id: "teachers-list"

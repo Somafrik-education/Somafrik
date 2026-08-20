@@ -98,6 +98,8 @@ jobs:
         run: npm run verify:mobile-attendance-hydration
       - name: verify:mobile-ui-e2e-scaffold
         run: npm run verify:mobile-ui-e2e-scaffold
+      - name: test:mobile-ui-e2e-runtime
+        run: npm run test:mobile-ui-e2e-runtime
       - name: verify:mobile-release-readiness
         run: npm run verify:mobile-release-readiness
       - name: verify:school-code-v2
@@ -218,6 +220,7 @@ jobs:
           npm run verify:mobile-canonical-route-map
           npm run verify:mobile-attendance-hydration
           npm run verify:mobile-ui-e2e-scaffold
+          npm run test:mobile-ui-e2e-runtime
           npm run verify:mobile-release-readiness
           npm run verify:school-code-v2
           npm run verify:mobile-preview-apk

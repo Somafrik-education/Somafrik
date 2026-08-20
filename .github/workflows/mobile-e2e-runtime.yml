@@ -1,0 +1,62 @@
+name: Mobile E2E runtime
+
+# Gate fail-closed, self-hosted Android uniquement.
+# Interdit dans le CI standard (ubuntu-latest) : pas d'émulateur lourd, pas de skip-as-success.
+# Ce job n'installe pas Maestro ni le SDK : ils doivent déjà être sur le runner.
+# Labels : self-hosted + linux + android + somafrik-mobile-e2e
+# Aucun secret en clair. Aucun eas submit.
+
+on:
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "22.12.0"
+
+jobs:
+  maestro-runtime:
+    name: verify mobile-ui-e2e-runtime (self-hosted Android)
+    runs-on: [self-hosted, linux, android, somafrik-mobile-e2e]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Mobile/package-lock.json
+
+      - name: Install Mobile dependencies
+        run: npm ci --prefix Mobile
+
+      - name: Tests unitaires du runner (sans Android)
+        run: npm run test:mobile-ui-e2e-runtime
+
+      - name: Preflight runner (Maestro + adb + device)
+        run: |
+          set -euo pipefail
+          maestro --version
+          adb --version
+          adb devices
+
+      - name: verify:mobile-ui-e2e-runtime
+        env:
+          SOMAFRIK_E2E_SCHOOL_CODE: ${{ secrets.SOMAFRIK_E2E_SCHOOL_CODE }}
+          SOMAFRIK_E2E_IDENTIFIER: ${{ secrets.SOMAFRIK_E2E_IDENTIFIER }}
+          SOMAFRIK_E2E_PASSWORD: ${{ secrets.SOMAFRIK_E2E_PASSWORD }}
+          ANDROID_SERIAL: ${{ secrets.ANDROID_SERIAL }}
+          SOMAFRIK_E2E_APK_PATH: ${{ vars.SOMAFRIK_E2E_APK_PATH }}
+          SOMAFRIK_E2E_PLATFORM_IDENTIFIER: ${{ secrets.SOMAFRIK_E2E_PLATFORM_IDENTIFIER }}
+          SOMAFRIK_E2E_PLATFORM_PASSWORD: ${{ secrets.SOMAFRIK_E2E_PLATFORM_PASSWORD }}
+          SOMAFRIK_E2E_SCHOOL_CODE_B: ${{ secrets.SOMAFRIK_E2E_SCHOOL_CODE_B }}
+        run: npm run verify:mobile-ui-e2e-runtime
+
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-runtime
+          path: Mobile/artifacts/maestro/
+          if-no-files-found: warn

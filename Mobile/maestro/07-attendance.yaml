@@ -1,5 +1,10 @@
+# Lecture seule. Mutation Nuru bloquée : MUTATION_ATTENDANCE_BLOCKED_NO_QA_FIXTURE
 appId: com.somafrik.app
 ---
-- launchApp
-- tapOn: "Présences"
+- runFlow: flows/login-admin-school.yaml
+- tapOn:
+    id: "home-presence-value"
+- extendedWaitUntil:
+    visible: "Présences"
+    timeout: 20000
 - assertVisible: "Mes classes"

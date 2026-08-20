@@ -141,6 +141,7 @@ export default function RoleSelectionScreen({ navigation }: Props) {
                 school && styles.statusTextSuccess,
                 errorMessage && styles.statusTextError,
               ]}
+              testID={ROLE_SELECTION_TEST_IDS.statusMessage}
             >
               {errorMessage ?? statusMessage}
             </Text>

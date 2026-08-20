@@ -16,10 +16,13 @@ export default function UsersScreen() {
     }, [load, resourceScopeKey]),
   );
 
+  const listHydrated = snapshot.status === "success" && snapshot.data.length > 0;
+
   return (
     <FlatList
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: bottomPadding }]}
+      testID={listHydrated ? "users-list" : undefined}
       data={snapshot.status === "success" ? snapshot.data : []}
       keyExtractor={(user) => user.id}
       refreshControl={<RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} />}
@@ -57,7 +60,11 @@ export default function UsersScreen() {
               <Text style={styles.identifier}>{user.identifier || user.publicId}</Text>
               <Text style={styles.meta}>Rôles actifs : {roles.join(", ") || "Aucun rôle actif"}</Text>
               <Text style={styles.meta}>Statut : {user.status || "Non renseigné"}</Text>
-              {user.schoolCode ? <Text style={styles.meta}>Établissement : {user.schoolCode}</Text> : null}
+              {user.schoolCode ? (
+                <Text style={styles.meta} testID={`user-school-${user.schoolCode}`}>
+                  Établissement : {user.schoolCode}
+                </Text>
+              ) : null}
               {user.email ? <Text style={styles.meta} numberOfLines={2}>{user.email}</Text> : null}
               {user.phone ? <Text style={styles.meta}>{user.phone}</Text> : null}
             </View>

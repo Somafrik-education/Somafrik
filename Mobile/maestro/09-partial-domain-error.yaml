@@ -1,7 +1,12 @@
+# BLOCKED_NO_FAILURE_INJECTION
+# Le runner runtime n'exécute PAS ce fichier comme preuve GO.
+# Contrat erreur partielle : tests unitaires metricLabelFromSnapshot
+# (loading → —, error sans cache → Indisponible, empty → 0 autorisé).
+# Si ce YAML est lancé par erreur, il doit échouer — jamais un faux vert.
 appId: com.somafrik.app
 ---
 - launchApp
-- assertNotVisible: "0"
-# Un domaine en erreur ne doit pas coller 0 sur les autres compteurs.
 - assertVisible:
-    id: "home-payments-value"
+    id: "role-selection-screen"
+- assertVisible:
+    id: "blocked-no-failure-injection"

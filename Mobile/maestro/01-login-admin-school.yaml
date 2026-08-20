@@ -1,7 +1,11 @@
 appId: com.somafrik.app
 ---
-- launchApp
-- assertVisible: "Connexion"
-- tapOn:
-    id: "login-submit-button"
-- assertVisible: "INSTITUT NURU"
+- runFlow: flows/login-admin-school.yaml
+- assertVisible:
+    id: "home-admin-dashboard"
+- assertVisible:
+    id: "home-users-value"
+- assertVisible:
+    id: "home-presence-value"
+- assertVisible:
+    id: "home-payments-value"
