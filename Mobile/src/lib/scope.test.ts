@@ -1,10 +1,16 @@
 /**
- * Filtrage partagé : une annonce établissement et un enseignant sans affectation
- * restent visibles après normalisation + scopeSchoolEntityData.
+ * Filtrage partagé :
+ * - Admin School conserve le filtrage client local par établissement.
+ * - Superadmin / Admin Pays avec une école active font confiance au dataset déjà
+ *   request-scoped par le backend et ne comparent plus SCH-* au login_code V2.
  *   npx tsx Mobile/src/lib/scope.test.ts
  */
 import assert from "node:assert/strict";
-import { scopeBackOfficeForSession, scopeSchoolEntityData } from "./scope";
+import {
+  scopeBackOfficeForSession,
+  scopeSchoolEntityData,
+  trustServerScopedPlatformTenant,
+} from "./scope";
 import {
   normalizeAnnouncement,
   normalizeMessage,
@@ -12,6 +18,7 @@ import {
 } from "./canonicalResourceNormalize";
 
 const SCHOOL = "CD-IN-26-001";
+const INTERNAL_SCHOOL = "SCH-ABC123";
 const OTHER = "BI-EC-26-001";
 
 function emptyPayload(overrides: Record<string, unknown> = {}) {
@@ -94,6 +101,7 @@ function run() {
   }
   assert.equal(schoolMessage.schoolCode, SCHOOL);
 
+  // Filtrage local conservé pour les comptes établissement.
   const scoped = scopeSchoolEntityData(
     emptyPayload({
       announcements: [schoolAnnouncement, otherAnnouncement, systemAnnouncement],
@@ -107,32 +115,12 @@ function run() {
     messages: Array<{ id: string }>;
   };
 
-  assert.equal(
-    scoped.announcements.some((item) => item.id === "ann-school"),
-    true,
-    "annonce établissement visible après re-filtrage",
-  );
-  assert.equal(
-    scoped.announcements.some((item) => item.id === "ann-other"),
-    false,
-  );
-  assert.equal(
-    scoped.announcements.some((item) => item.id === "ann-sys"),
-    true,
-  );
-  assert.equal(
-    scoped.teachers.some((item) => item.id === "ENS-1"),
-    true,
-    "enseignant sans affectation visible via schoolCode",
-  );
-  assert.equal(
-    scoped.teachers.some((item) => item.id === "ENS-2"),
-    false,
-  );
-  assert.equal(
-    scoped.messages.some((item) => item.id === "msg-1"),
-    true,
-  );
+  assert.equal(scoped.announcements.some((item) => item.id === "ann-school"), true);
+  assert.equal(scoped.announcements.some((item) => item.id === "ann-other"), false);
+  assert.equal(scoped.announcements.some((item) => item.id === "ann-sys"), true);
+  assert.equal(scoped.teachers.some((item) => item.id === "ENS-1"), true);
+  assert.equal(scoped.teachers.some((item) => item.id === "ENS-2"), false);
+  assert.equal(scoped.messages.some((item) => item.id === "msg-1"), true);
 
   const droppedAnnouncement = { ...schoolAnnouncement, schoolCode: undefined };
   const droppedTeacher = { ...unassignedTeacher, schoolCode: undefined, assignedClasses: [] };
@@ -146,26 +134,67 @@ function run() {
   assert.equal(lost.announcements.length, 0);
   assert.equal(lost.teachers.length, 0);
 
-  const sessionScoped = scopeBackOfficeForSession(
-    emptyPayload({
-      announcements: [schoolAnnouncement, otherAnnouncement],
-      teachers: [unassignedTeacher, otherTeacher],
-      schools: [
-        { code: SCHOOL, name: "Nuru" },
-        { code: OTHER, name: "Bujumbura" },
-      ],
-    }),
+  // Le serveur a déjà limité ces lignes à Nuru. Certaines projections PG peuvent
+  // encore porter l'alias interne : le Mobile ne doit surtout pas les transformer en [].
+  const serverScopedPayload = emptyPayload({
+    users: [{ id: "usr-nuru", role: "Enseignant", schoolCode: INTERNAL_SCHOOL }],
+    students: [{ id: "stu-nuru", schoolCode: INTERNAL_SCHOOL, className: "6A" }],
+    teachers: [{ id: "teacher-nuru", schoolCode: INTERNAL_SCHOOL, assignedClasses: [] }],
+    classes: [{ id: "class-nuru", schoolCode: INTERNAL_SCHOOL, name: "6A" }],
+    courses: [{ id: "course-nuru", schoolCode: INTERNAL_SCHOOL, className: "6A" }],
+    payments: [{ id: "pay-nuru", schoolCode: INTERNAL_SCHOOL, studentId: "stu-nuru" }],
+    presences: [{ id: "presence-nuru", schoolCode: INTERNAL_SCHOOL, studentId: "stu-nuru" }],
+    announcements: [{ id: "ann-nuru", schoolCode: INTERNAL_SCHOOL }],
+    messages: [{ id: "msg-nuru", schoolCode: INTERNAL_SCHOOL }],
+    schools: [
+      { code: SCHOOL, name: "Nuru", countryCode: "CD" },
+      { code: "CD-EL-26-002", name: "Lumière", countryCode: "CD" },
+    ],
+    countries: [{ code: "CD", name: "RDC" }],
+    subscriptions: [],
+    notifications: [],
+  });
+
+  const superSessionScoped = scopeBackOfficeForSession(
+    serverScopedPayload,
     { role: "super_admin", user: { schoolCode: "*", countryScope: "*" } },
     SCHOOL,
-  ) as { announcements: Array<{ id: string }>; teachers: Array<{ id: string }> };
-  assert.equal(
-    sessionScoped.announcements.some((item) => item.id === "ann-school"),
-    true,
-  );
-  assert.equal(
-    sessionScoped.teachers.some((item) => item.id === "ENS-1"),
-    true,
-  );
+  ) as Record<string, Array<{ id?: string; code?: string }>>;
+
+  for (const entity of [
+    "users",
+    "students",
+    "teachers",
+    "classes",
+    "courses",
+    "payments",
+    "presences",
+    "announcements",
+    "messages",
+  ]) {
+    assert.equal(
+      superSessionScoped[entity]?.length,
+      1,
+      `${entity} request-scoped ne doit pas disparaître sur SCH-* != login_code V2`,
+    );
+  }
+  assert.equal(superSessionScoped.schools.length, 2, "le sélecteur Superadmin conserve la liste principale");
+
+  const countrySessionScoped = scopeBackOfficeForSession(
+    serverScopedPayload,
+    { role: "country_admin", user: { schoolCode: "*", countryScope: "CD", countryCode: "CD" } },
+    SCHOOL,
+  ) as Record<string, Array<{ id?: string; code?: string }>>;
+  assert.equal(countrySessionScoped.users.length, 1);
+  assert.equal(countrySessionScoped.students.length, 1);
+  assert.equal(countrySessionScoped.schools.length, 2, "Admin Pays conserve les écoles de son pays");
+
+  const trusted = trustServerScopedPlatformTenant(
+    emptyPayload({ users: [{ id: "tenant-user", schoolCode: INTERNAL_SCHOOL }] }),
+    emptyPayload({ schools: [{ code: SCHOOL }], countries: [{ code: "CD", name: "RDC" }] }),
+  ) as { users: Array<{ id: string }>; schools: Array<{ code: string }> };
+  assert.equal(trusted.users[0]?.id, "tenant-user");
+  assert.equal(trusted.schools[0]?.code, SCHOOL);
 
   console.log("scope.test.ts OK");
 }
