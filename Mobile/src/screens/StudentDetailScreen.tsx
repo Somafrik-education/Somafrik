@@ -19,6 +19,7 @@ import {
   CLASSES_STUDENT_TEST_IDS,
 } from "../lib/classesStudentJourneySpec";
 import { STUDENT_SUB_SCREENS_TEST_IDS } from "../lib/studentSubScreensSpec";
+import { metricLabelFromSnapshot } from "../lib/dataTruth";
 import { normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 
 type Props = NativeStackScreenProps<
@@ -33,7 +34,7 @@ export default function StudentDetailScreen({
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const containerStyle = [styles.container, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, notesData, presencesData, paymentsData, loadStudents, loadPresences, loadNotes, loadPayments, studentsSnapshot, notesSnapshot, presencesSnapshot, paymentsSnapshot } = useAdminData();
+  const { studentsData, notesData, presencesData, paymentsData, loadStudents, loadPresences, loadNotes, loadPayments, studentsSnapshot, notesSnapshot, presencesSnapshot, paymentsSnapshot, resourceScopeKey } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const canSeeNotes = canReadRoute(session, "StudentNotes");
   const canSeePresences = canReadRoute(session, "StudentPresences");
@@ -45,7 +46,7 @@ export default function StudentDetailScreen({
       void loadPresences();
       void loadNotes();
       void loadPayments();
-    }, [loadStudents, loadPresences, loadNotes, loadPayments]),
+    }, [loadStudents, loadPresences, loadNotes, loadPayments, resourceScopeKey]),
   );
 
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
@@ -56,7 +57,9 @@ export default function StudentDetailScreen({
         <Text>
           {studentsSnapshot.status === "idle" || studentsSnapshot.status === "loading"
             ? "Chargement…"
-            : "Élève introuvable"}
+            : studentsSnapshot.status === "error" || studentsSnapshot.status === "offline"
+              ? "Indisponible"
+              : "Élève introuvable"}
         </Text>
       </View>
     );
@@ -71,6 +74,9 @@ export default function StudentDetailScreen({
     },
   ).length;
   const studentPayments = paymentsData.filter((item) => item.studentId === student.id);
+  const notesValue = metricLabelFromSnapshot(notesSnapshot, () => String(studentNotes.length));
+  const presencesValue = metricLabelFromSnapshot(presencesSnapshot, () => String(presentCount));
+  const paymentsDetail = metricLabelFromSnapshot(paymentsSnapshot, () => `${studentPayments.length} opération(s)`);
   const displayName = [student.firstName, student.name].filter(Boolean).join(" ").trim() || student.name;
 
   const openSubScreen = (screen: "StudentNotes" | "StudentPresences" | "StudentPayments") => {
@@ -123,7 +129,7 @@ export default function StudentDetailScreen({
             onPress={() => openSubScreen("StudentNotes")}
           >
             <Text style={styles.statValue}>
-              {notesSnapshot.status === "idle" || notesSnapshot.status === "loading" ? "—" : studentNotes.length}
+              {notesValue}
             </Text>
             <Text style={styles.statLabel}>Notes</Text>
           </TouchableOpacity>
@@ -137,7 +143,7 @@ export default function StudentDetailScreen({
             onPress={() => openSubScreen("StudentPresences")}
           >
             <Text style={styles.statValue}>
-              {presencesSnapshot.status === "idle" || presencesSnapshot.status === "loading" ? "—" : presentCount}
+              {presencesValue}
             </Text>
             <Text style={styles.statLabel}>Présences</Text>
           </TouchableOpacity>
@@ -168,7 +174,7 @@ export default function StudentDetailScreen({
         <StudentAction
           icon="card-outline"
           label="Paiements"
-          detail={`${studentPayments.length} opération(s)`}
+          detail={paymentsDetail}
           testID={STUDENT_SUB_SCREENS_TEST_IDS.openPaymentsButton}
           onPress={() => openSubScreen("StudentPayments")}
         />

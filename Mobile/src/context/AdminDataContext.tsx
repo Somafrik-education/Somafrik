@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Announcement,
   AcademicManagementConfig,
@@ -43,7 +43,15 @@ import {
   type CanonicalTeacher,
   type CanonicalUserAccount,
 } from "../services/domainHydrationApi";
-import { snapshotFromFailure, snapshotFromSuccess, type ResourceSnapshot } from "../lib/dataTruth";
+import {
+  NO_SESSION_RESOURCE_SCOPE,
+  buildResourceScopeKey,
+  emptyResourceSnapshot,
+  snapshotFromFailure,
+  snapshotFromSuccess,
+  withScopedSnapshotData,
+  type ResourceSnapshot,
+} from "../lib/dataTruth";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
   gradesForEvaluation,
@@ -129,6 +137,7 @@ type AdminDataContextValue = {
   rolePermissionsData: Record<string, string[]>;
   academicConfigData: AcademicManagementConfig;
   activeSchoolCode: string;
+  resourceScopeKey: string;
   availableSchools: SchoolProfile[];
   requiresSchoolSelection: boolean;
   setActiveSchoolCode: (code: string) => void;
@@ -244,6 +253,69 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     data: [],
   });
 
+  const requiresSchoolSelection = userRequiresSchoolSelection(
+    session
+      ? {
+          role: session.role,
+          schoolCode: session.user.schoolCode ?? session.school?.code,
+        }
+      : null,
+  );
+
+  const resourceScopeKey = useMemo(
+    () =>
+      buildResourceScopeKey({
+        hasSession: Boolean(session),
+        userId: session?.user?.id,
+        role: session?.role,
+        schoolCode: session?.user?.schoolCode ?? session?.school?.code,
+        countryScope: session?.user?.countryScope ?? session?.user?.countryCode,
+        activeSchoolCode: requiresSchoolSelection
+          ? activeSchoolCode
+          : session?.user?.schoolCode ?? session?.school?.code,
+      }),
+    [session, activeSchoolCode, requiresSchoolSelection],
+  );
+  const resourceScopeKeyRef = useRef(resourceScopeKey);
+  resourceScopeKeyRef.current = resourceScopeKey;
+
+  const resetResourceCaches = useCallback(() => {
+    setStudentsData([]);
+    setTeachersData([]);
+    setClassesData([]);
+    setCountriesData([]);
+    setCoursesData([]);
+    setAssignmentsData([]);
+    setPaymentsData([]);
+    setSubscriptionsData([]);
+    setPaymentStatusesData([]);
+    setPresencesData([]);
+    setNotesData([]);
+    setSchoolsData([]);
+    setUsersData([]);
+    setAnnouncementsData([]);
+    setMessagesData([]);
+    setNotificationsData([]);
+    setRolePermissionsData({});
+    setAcademicConfigData(emptyAcademicConfig);
+    setSyncStatus("idle");
+    setPaymentsSnapshot(emptyResourceSnapshot());
+    setCourseSchedulesSnapshot(emptyResourceSnapshot());
+    setPlanningCourseOptionsSnapshot(emptyResourceSnapshot());
+    setRoomsSnapshot(emptyResourceSnapshot());
+    setReplacementsSnapshot(emptyResourceSnapshot());
+    setReportCardsSnapshot(emptyResourceSnapshot());
+    setEvaluationsSnapshot(emptyResourceSnapshot());
+    setNotesSnapshot(emptyResourceSnapshot());
+    setUsersSnapshot(emptyResourceSnapshot());
+    setTeachersSnapshot(emptyResourceSnapshot());
+    setStudentsSnapshot(emptyResourceSnapshot());
+    setClassesSnapshot(emptyResourceSnapshot());
+    setPresencesSnapshot(emptyResourceSnapshot());
+    setAnnouncementsSnapshot(emptyResourceSnapshot());
+    setMessagesSnapshot(emptyResourceSnapshot());
+  }, []);
+
   const scopeUser = useMemo(
     () =>
       session
@@ -281,8 +353,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setActiveSchoolCodeState(code);
     writeStoredSchoolCode(code);
   };
-
-  const requiresSchoolSelection = userRequiresSchoolSelection(scopeUser);
 
   const stateSnapshot = useMemo(
     () => ({
@@ -371,6 +441,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     if (!session) {
       return;
     }
+    const scope = resourceScopeKeyRef.current;
 
     setSyncStatus("syncing");
 
@@ -394,6 +465,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         getAssignments(),
         getSubjects(),
       ]);
+
+      if (resourceScopeKeyRef.current !== scope) return;
 
       applyArray(studentPayload, setStudentsData);
       applyArray(classPayload, setClassesData);
@@ -423,6 +496,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       });
       setSyncStatus("synced");
     } catch {
+      if (resourceScopeKeyRef.current !== scope) return;
       setSyncStatus("offline");
       throw new Error("Synchronisation impossible");
     }
@@ -430,150 +504,189 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   const loadPayments = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setPaymentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = (await getPayments()) as PaymentItem[];
+      if (resourceScopeKeyRef.current !== scope) return;
       setPaymentsData(rows);
       setPaymentsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setPaymentsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadUsers = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setUsersSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getCanonicalUsers();
+      if (resourceScopeKeyRef.current !== scope) return;
       setUsersData(rows);
       setUsersSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setUsersSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadTeachers = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setTeachersSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getCanonicalTeachers();
+      if (resourceScopeKeyRef.current !== scope) return;
       setTeachersData(rows);
       setTeachersSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setTeachersSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadStudents = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setStudentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = (await getStudents()) as Student[];
+      if (resourceScopeKeyRef.current !== scope) return;
       setStudentsData(rows);
       setStudentsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setStudentsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadClasses = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setClassesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = (await getClasses()) as SchoolClass[];
+      if (resourceScopeKeyRef.current !== scope) return;
       setClassesData(rows);
       setClassesSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setClassesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadAnnouncements = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setAnnouncementsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getCanonicalAnnouncements();
+      if (resourceScopeKeyRef.current !== scope) return;
       setAnnouncementsData(rows);
       setAnnouncementsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setAnnouncementsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadMessages = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setMessagesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getCanonicalMessages();
+      if (resourceScopeKeyRef.current !== scope) return;
       setMessagesData(rows);
       setMessagesSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setMessagesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadPlanningWeekly = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setCourseSchedulesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getPlanningWeekly();
+      if (resourceScopeKeyRef.current !== scope) return;
       setCourseSchedulesSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setCourseSchedulesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadPlanningCourseOptions = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setPlanningCourseOptionsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getPlanningCourseOptions();
+      if (resourceScopeKeyRef.current !== scope) return;
       setPlanningCourseOptionsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setPlanningCourseOptionsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadRooms = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setRoomsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getSchoolRooms();
+      if (resourceScopeKeyRef.current !== scope) return;
       setRoomsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setRoomsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadReplacements = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setReplacementsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getCourseScheduleReplacements();
+      if (resourceScopeKeyRef.current !== scope) return;
       setReplacementsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setReplacementsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadReportCards = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getReportCards();
+      if (resourceScopeKeyRef.current !== scope) return;
       setReportCardsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setReportCardsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadEvaluations = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getEvaluations();
+      if (resourceScopeKeyRef.current !== scope) return;
       setEvaluationsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setEvaluationsSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
@@ -582,9 +695,11 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     async (evaluationId: string) => {
       const key = String(evaluationId ?? "").trim();
       if (!session || !key) return null;
+      const scope = resourceScopeKeyRef.current;
       setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
       try {
         const rows = await getEvaluations();
+        if (resourceScopeKeyRef.current !== scope) return null;
         setEvaluationsSnapshot(snapshotFromSuccess(rows));
         return (
           rows.find(
@@ -593,6 +708,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           ) ?? null
         );
       } catch (error) {
+        if (resourceScopeKeyRef.current !== scope) return null;
         setEvaluationsSnapshot((current) => snapshotFromFailure(error, current.data));
         throw error;
       }
@@ -602,24 +718,30 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   const loadNotes = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setNotesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = await getNotes();
+      if (resourceScopeKeyRef.current !== scope) return;
       setNotesSnapshot(snapshotFromSuccess(rows));
       setNotesData(rows.map(canonicalGradeToNoteItem));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setNotesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
   const loadPresences = useCallback(async () => {
     if (!session) return;
+    const scope = resourceScopeKeyRef.current;
     setPresencesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = (await getPresences()) as PresenceItem[];
+      if (resourceScopeKeyRef.current !== scope) return;
       applyArray(rows, setPresencesData);
       setPresencesSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
+      if (resourceScopeKeyRef.current !== scope) return;
       setPresencesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
@@ -627,13 +749,16 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const loadEvaluationGrades = useCallback(
     async (evaluationId: string) => {
       if (!session) return [];
+      const scope = resourceScopeKeyRef.current;
       setNotesSnapshot((current) => ({ ...current, status: "loading" }));
       try {
         const rows = await getNotes();
+        if (resourceScopeKeyRef.current !== scope) return [];
         setNotesSnapshot(snapshotFromSuccess(rows));
         setNotesData(rows.map(canonicalGradeToNoteItem));
         return gradesForEvaluation(rows, evaluationId);
       } catch (error) {
+        if (resourceScopeKeyRef.current !== scope) return [];
         setNotesSnapshot((current) => snapshotFromFailure(error, current.data));
         throw error;
       }
@@ -641,13 +766,37 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     [session],
   );
 
+  const scopedLoadersRef = useRef({
+    refreshBackOfficeState,
+    loadUsers,
+    loadTeachers,
+    loadPayments,
+    loadAnnouncements,
+    loadMessages,
+  });
+  scopedLoadersRef.current = {
+    refreshBackOfficeState,
+    loadUsers,
+    loadTeachers,
+    loadPayments,
+    loadAnnouncements,
+    loadMessages,
+  };
+
   useEffect(() => {
-    if (!session) {
+    resetResourceCaches();
+    if (resourceScopeKey === NO_SESSION_RESOURCE_SCOPE) {
+      setActiveSchoolCodeState("");
       return;
     }
-
-    void refreshBackOfficeState().catch(() => null);
-  }, [session, refreshBackOfficeState]);
+    const loaders = scopedLoadersRef.current;
+    void loaders.refreshBackOfficeState().catch(() => null);
+    void loaders.loadUsers();
+    void loaders.loadTeachers();
+    void loaders.loadPayments();
+    void loaders.loadAnnouncements();
+    void loaders.loadMessages();
+  }, [resourceScopeKey, resetResourceCaches]);
 
   useEffect(() => {
     if (!session) {
@@ -701,6 +850,28 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AdminDataContextValue>(() => {
     const state = scopedStateSnapshot;
+    const tenantFilterCode = requiresSchoolSelection ? activeSchoolCode : undefined;
+    const presentScopedSnapshot = <T,>(snapshot: ResourceSnapshot<T>, entity: string): ResourceSnapshot<T> => {
+      const sourceRows =
+        snapshot.status === "idle"
+          ? (((state as Record<string, unknown>)[entity] as T[] | undefined) ?? [])
+          : snapshot.data;
+      const scoped = scopeBackOfficeForSession(
+        { ...stateSnapshot, [entity]: sourceRows },
+        session,
+        tenantFilterCode,
+      );
+      const rows = ((scoped as Record<string, unknown>)[entity] as T[] | undefined) ?? [];
+      return withScopedSnapshotData(snapshot, rows);
+    };
+    const presentedUsersSnapshot = presentScopedSnapshot(usersSnapshot, "users");
+    const presentedTeachersSnapshot = presentScopedSnapshot(teachersSnapshot, "teachers");
+    const presentedStudentsSnapshot = presentScopedSnapshot(studentsSnapshot, "students");
+    const presentedClassesSnapshot = presentScopedSnapshot(classesSnapshot, "classes");
+    const presentedPresencesSnapshot = presentScopedSnapshot(presencesSnapshot, "presences");
+    const presentedPaymentsSnapshot = presentScopedSnapshot(paymentsSnapshot, "payments");
+    const presentedAnnouncementsSnapshot = presentScopedSnapshot(announcementsSnapshot, "announcements");
+    const presentedMessagesSnapshot = presentScopedSnapshot(messagesSnapshot, "messages");
 
     const setters = {
       students: setStudentsData,
@@ -767,22 +938,22 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     };
 
     return {
-      studentsData: (studentsSnapshot.status === "idle" ? state.students ?? [] : studentsSnapshot.data) as Student[],
-      teachersData: (teachersSnapshot.status === "idle" ? state.teachers ?? [] : teachersSnapshot.data) as Teacher[],
-      classesData: (classesSnapshot.status === "idle" ? state.classes ?? [] : classesSnapshot.data) as SchoolClass[],
+      studentsData: presentedStudentsSnapshot.data as Student[],
+      teachersData: presentedTeachersSnapshot.data as Teacher[],
+      classesData: presentedClassesSnapshot.data as SchoolClass[],
       countriesData: (state.countries ?? []) as CountryProfile[],
       coursesData: (state.courses ?? []) as Course[],
       assignmentsData: (state.assignments ?? []) as TeacherAssignment[],
       courseSchedulesData: courseSchedulesSnapshot.data,
-      paymentsData: paymentsSnapshot.data as PaymentItem[],
-      paymentsSnapshot,
-      usersSnapshot,
-      teachersSnapshot,
-      studentsSnapshot,
-      classesSnapshot,
-      presencesSnapshot,
-      announcementsSnapshot,
-      messagesSnapshot,
+      paymentsData: presentedPaymentsSnapshot.data as PaymentItem[],
+      paymentsSnapshot: presentedPaymentsSnapshot,
+      usersSnapshot: presentedUsersSnapshot,
+      teachersSnapshot: presentedTeachersSnapshot,
+      studentsSnapshot: presentedStudentsSnapshot,
+      classesSnapshot: presentedClassesSnapshot,
+      presencesSnapshot: presentedPresencesSnapshot,
+      announcementsSnapshot: presentedAnnouncementsSnapshot,
+      messagesSnapshot: presentedMessagesSnapshot,
       courseSchedulesSnapshot,
       planningCourseOptionsSnapshot,
       roomsSnapshot,
@@ -810,31 +981,30 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       loadPresences,
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
-      presencesData: (presencesSnapshot.status === "idle" ? state.presences ?? [] : presencesSnapshot.data) as PresenceItem[],
+      presencesData: presentedPresencesSnapshot.data as PresenceItem[],
       notesData: (state.notes ?? []) as NoteItem[],
       schoolsData: (state.schools ?? []) as SchoolProfile[],
-      usersData: (usersSnapshot.status === "idle" ? state.users ?? [] : usersSnapshot.data) as UserAccount[],
-      announcementsData: (announcementsSnapshot.status === "idle" ? state.announcements ?? [] : announcementsSnapshot.data) as Announcement[],
-      messagesData: (messagesSnapshot.status === "idle" ? state.messages ?? [] : messagesSnapshot.data) as SchoolMessage[],
+      usersData: presentedUsersSnapshot.data as UserAccount[],
+      announcementsData: presentedAnnouncementsSnapshot.data as Announcement[],
+      messagesData: presentedMessagesSnapshot.data as SchoolMessage[],
       notificationsData: (state.notifications ?? []) as PlatformNotification[],
       rolePermissionsData,
       academicConfigData,
       activeSchoolCode,
+      resourceScopeKey,
       availableSchools,
       requiresSchoolSelection,
       setActiveSchoolCode,
       syncStatus,
       refreshBackOfficeState,
       getItems: (entity) => {
-        if (entity === "users") return usersSnapshot.status === "idle" ? state.users : usersSnapshot.data;
-        if (entity === "teachers") return teachersSnapshot.status === "idle" ? state.teachers : teachersSnapshot.data;
-        if (entity === "students") return studentsSnapshot.status === "idle" ? state.students : studentsSnapshot.data;
-        if (entity === "classes") return classesSnapshot.status === "idle" ? state.classes : classesSnapshot.data;
-        if (entity === "payments") return paymentsSnapshot.data;
-        if (entity === "announcements") {
-          return announcementsSnapshot.status === "idle" ? state.announcements : announcementsSnapshot.data;
-        }
-        if (entity === "messages") return messagesSnapshot.status === "idle" ? state.messages : messagesSnapshot.data;
+        if (entity === "users") return presentedUsersSnapshot.data;
+        if (entity === "teachers") return presentedTeachersSnapshot.data;
+        if (entity === "students") return presentedStudentsSnapshot.data;
+        if (entity === "classes") return presentedClassesSnapshot.data;
+        if (entity === "payments") return presentedPaymentsSnapshot.data;
+        if (entity === "announcements") return presentedAnnouncementsSnapshot.data;
+        if (entity === "messages") return presentedMessagesSnapshot.data;
         return state[entity];
       },
       createItem: (entity, item) => {
@@ -1021,6 +1191,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     usersData,
     rolePermissionsData,
     activeSchoolCode,
+    resourceScopeKey,
     availableSchools,
     requiresSchoolSelection,
     session,

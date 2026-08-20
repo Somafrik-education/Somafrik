@@ -15,6 +15,7 @@ import {
   teacherScopedClassLabels,
 } from "../lib/establishment";
 import { savePresences } from "../services/api";
+import { clearConfirmedAttendanceDirty, shouldPreserveLocalAttendanceDraft } from "../lib/attendanceDraft";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
@@ -61,7 +62,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences, loadStudents, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot } =
+  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences, loadStudents, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, resourceScopeKey } =
     useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -94,14 +95,18 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       void loadPresences();
       void loadTeachers();
       void loadClasses();
-    }, [loadStudents, loadPresences, loadTeachers, loadClasses]),
+    }, [loadStudents, loadPresences, loadTeachers, loadClasses, resourceScopeKey]),
   );
+
+  useEffect(() => {
+    setAttendance({});
+  }, [resourceScopeKey]);
 
   useEffect(() => {
     setAttendance((current) => {
       const next = { ...current };
       for (const student of classStudents) {
-        if (next[student.id]?.modifiedAt) continue;
+        if (shouldPreserveLocalAttendanceDraft(next[student.id])) continue;
         const latest = [...presencesData]
           .reverse()
           .find((presence) => presenceMatchesStudent(presence, student));
@@ -268,6 +273,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         ...current,
       ]);
       await loadPresences();
+      setAttendance((current) =>
+        clearConfirmedAttendanceDirty(
+          current,
+          rows.map((student) => student.id),
+        ),
+      );
       intentionRef.current.rotate(intentionId);
       setSaveHint("");
       Alert.alert(

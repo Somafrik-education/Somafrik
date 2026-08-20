@@ -14,6 +14,7 @@ import {
   STUDENT_SUB_SCREENS_COPY,
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
+import { metricLabelFromSnapshot } from "../lib/dataTruth";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPresences">;
@@ -22,7 +23,7 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { selectedStudentId } = useAuth();
-  const { studentsData, presencesData, loadPresences, loadStudents, presencesSnapshot } = useAdminData();
+  const { studentsData, presencesData, loadPresences, loadStudents, presencesSnapshot, resourceScopeKey } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
@@ -30,17 +31,17 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
     useCallback(() => {
       void loadStudents();
       void loadPresences();
-    }, [loadStudents, loadPresences]),
+    }, [loadStudents, loadPresences, resourceScopeKey]),
   );
 
   const presencesEleve = presencesData.filter((presence) => presence.studentId === studentId);
   const presenceStats = getPresenceStats(presencesEleve);
-  const presenceRateLabel =
-    presencesSnapshot.status === "idle" || presencesSnapshot.status === "loading"
-      ? "—"
-      : presencesSnapshot.status === "error"
-        ? "Indisponible"
-        : `${presenceStats.rate}%`;
+  const presenceRateLabel = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
+  const presenceMetaLabel = metricLabelFromSnapshot(
+    presencesSnapshot,
+    () => `${presenceStats.attended}/${presenceStats.total} présent(s), ${presenceStats.justified} justifié(s)`,
+    "0/0 présent(s), 0 justifié(s)",
+  );
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesScreen}>
@@ -67,7 +68,7 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
         <Text style={[styles.summaryLabel, { color: "#CBD5E1" }]}>Taux de présence</Text>
         <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{presenceRateLabel}</Text>
         <Text style={[styles.summaryMeta, { color: "#CBD5E1" }]}>
-          {presenceStats.attended}/{presenceStats.total} présent(s), {presenceStats.justified} justifié(s)
+          {presenceMetaLabel}
         </Text>
       </TouchableOpacity>
 

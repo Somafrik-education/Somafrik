@@ -61,6 +61,42 @@ export function snapshotFromFailure<T>(error: unknown, previous: T[] = []): Reso
   };
 }
 
+export const NO_SESSION_RESOURCE_SCOPE = "session:none";
+
+export function emptyResourceSnapshot<T>(): ResourceSnapshot<T> {
+  return { status: "idle", data: [] };
+}
+
+export function buildResourceScopeKey(input: {
+  hasSession: boolean;
+  userId?: string | null;
+  role?: string | null;
+  schoolCode?: string | null;
+  countryScope?: string | null;
+  activeSchoolCode?: string | null;
+}): string {
+  if (!input.hasSession) return NO_SESSION_RESOURCE_SCOPE;
+  const part = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
+  return [
+    `user:${String(input.userId ?? "").trim()}`,
+    `role:${String(input.role ?? "").trim()}`,
+    `home:${part(input.schoolCode)}`,
+    `country:${part(input.countryScope)}`,
+    `tenant:${part(input.activeSchoolCode)}`,
+  ].join("|");
+}
+
+/** Applique le filtrage tenant/session sans transformer une erreur en liste vide métier. */
+export function withScopedSnapshotData<T>(
+  snapshot: ResourceSnapshot<T>,
+  scopedData: T[],
+): ResourceSnapshot<T> {
+  if (snapshot.status === "success" || snapshot.status === "empty") {
+    return snapshotFromSuccess(scopedData);
+  }
+  return { ...snapshot, data: scopedData };
+}
+
 /** Une erreur réseau/serveur ne doit jamais être présentée comme une liste vide métier. */
 export function shouldRenderEmpty(snapshot: ResourceSnapshot<unknown>): boolean {
   return snapshot.status === "empty";

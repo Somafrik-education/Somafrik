@@ -21,13 +21,13 @@ export default function AnnouncementsScreen({ navigation }: any) {
   const canRead = canReadEntity(session, "announcements");
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
   const canDelete = canMutateEntity(session, "announcements", "DELETE");
-  const { announcementsSnapshot: snapshot, loadAnnouncements: load } = useAdminData();
+  const { announcementsSnapshot: snapshot, loadAnnouncements: load, resourceScopeKey } = useAdminData();
   const [archivingId, setArchivingId] = useState("");
 
   useFocusEffect(
     useCallback(() => {
       if (canRead) void load();
-    }, [canRead, load]),
+    }, [canRead, load, resourceScopeKey]),
   );
 
   useEffect(() => {

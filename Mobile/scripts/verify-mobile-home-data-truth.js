@@ -30,10 +30,20 @@ function main() {
   assert.match(context, /loadUsers/);
   assert.match(context, /getCanonicalUsers/);
   assert.match(context, /presencesSnapshot/);
+  assert.match(context, /buildResourceScopeKey/);
+  assert.match(context, /resetResourceCaches/);
+  assert.match(context, /resourceScopeKeyRef\.current !== scope/);
+  assert.match(context, /withScopedSnapshotData/);
+  assert.match(context, /NO_SESSION_RESOURCE_SCOPE/);
+  assert.match(context, /scopeBackOfficeForSession/);
   assert.match(home, /usersSnapshot/);
   assert.match(home, /loadUsers/);
   assert.match(home, /presencesSnapshot/);
   assert.match(home, /loadPresences/);
+  assert.match(home, /loadAnnouncements/);
+  assert.match(home, /loadMessages/);
+  assert.match(home, /announcementsSnapshot/);
+  assert.match(home, /messagesSnapshot/);
   assert.match(home, /metricLabelFromSnapshot/);
   assert.match(home, /DATA_TRUTH_TEST_IDS\.homeUsersValue/);
   assert.match(home, /DATA_TRUTH_TEST_IDS\.homePresenceValue/);
@@ -41,7 +51,32 @@ function main() {
   assert.doesNotMatch(home, /value=\{String\(activeUsersCount\)\}/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "users" \}/);
   assert.doesNotMatch(home, /navigate\("AdminCrud", \{ entity: "payments" \}/);
-  console.log("OK: Accueil hydrate users/presences/payments et n'affiche pas un 0 avant réponse serveur");
+  assert.doesNotMatch(home, /announcementsData\.length\} communication/);
+  assert.doesNotMatch(home, /messagesData\.length\} échange/);
+
+  const students = read(path.join("screens", "StudentsScreen.tsx"));
+  const studentDetail = read(path.join("screens", "StudentDetailScreen.tsx"));
+  const studentPresences = read(path.join("screens", "StudentPresencesScreen.tsx"));
+  const classes = read(path.join("screens", "ClassesScreen.tsx"));
+  for (const [label, source] of [
+    ["StudentsScreen", students],
+    ["StudentDetailScreen", studentDetail],
+    ["StudentPresencesScreen", studentPresences],
+    ["ClassesScreen", classes],
+  ]) {
+    assert.match(source, /metricLabelFromSnapshot/, `${label} must use metricLabelFromSnapshot`);
+  }
+  assert.match(students, /presenceRateLabel/);
+  assert.match(students, /paymentRateLabel/);
+  assert.match(studentDetail, /notesValue/);
+  assert.match(studentDetail, /presencesValue/);
+  assert.match(studentPresences, /presenceMetaLabel/);
+  assert.doesNotMatch(students, /summaryValue\}>\{presenceStats\.rate\}%/);
+  assert.doesNotMatch(students, /summaryValue\}>\{paymentStats\.rate\}%/);
+  assert.doesNotMatch(studentDetail, /: studentNotes\.length/);
+  assert.doesNotMatch(studentDetail, /: presentCount/);
+
+  console.log("OK: Accueil hydrate users/presences/payments/annonces/messages ; isolation de scope ; pas de faux 0");
 }
 
 main();

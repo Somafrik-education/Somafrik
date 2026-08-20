@@ -8,12 +8,12 @@ import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function UsersScreen() {
   const bottomPadding = useStackScreenBottomPadding();
-  const { usersSnapshot: snapshot, loadUsers: load } = useAdminData();
+  const { usersSnapshot: snapshot, loadUsers: load, resourceScopeKey } = useAdminData();
 
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+    }, [load, resourceScopeKey]),
   );
 
   return (

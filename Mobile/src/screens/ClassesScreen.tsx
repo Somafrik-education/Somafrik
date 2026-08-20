@@ -33,6 +33,7 @@ import {
 } from "../lib/classesLoadingSpec";
 import { OFFLINE_COPY, OFFLINE_TEST_IDS } from "../lib/offlineModeSpec";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
+import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 
 export default function ClassesScreen({ navigation }: any) {
@@ -49,7 +50,7 @@ export default function ClassesScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { classesData, studentsData, teachersData, assignmentsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, classesSnapshot, studentsSnapshot } = useAdminData();
+  const { classesData, studentsData, teachersData, assignmentsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, classesSnapshot, studentsSnapshot, resourceScopeKey } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
@@ -81,7 +82,7 @@ export default function ClassesScreen({ navigation }: any) {
       return () => {
         cancelled = true;
       };
-    }, [loadClasses, loadStudents, loadPresences, loadTeachers, isOffline]),
+    }, [loadClasses, loadStudents, loadPresences, loadTeachers, isOffline, resourceScopeKey]),
   );
 
   const handleBlockedNetworkAction = () => {
@@ -147,14 +148,14 @@ export default function ClassesScreen({ navigation }: any) {
         }
       >
         <View>
-          <Text style={styles.summaryValue}>{showLoading ? "—" : visibleClasses.length}</Text>
+          <Text style={styles.summaryValue}>{showLoading ? "—" : metricLabelFromSnapshot(classesSnapshot, () => String(visibleClasses.length))}</Text>
           <Text style={styles.summaryLabel}>Classes actives</Text>
         </View>
 
         <View style={styles.summaryDivider} />
 
         <View>
-          <Text style={styles.summaryValue}>{showLoading ? "—" : totalStudents}</Text>
+          <Text style={styles.summaryValue}>{showLoading ? "—" : metricLabelFromSnapshot(studentsSnapshot, () => String(totalStudents))}</Text>
           <Text style={styles.summaryLabel}>Élèves inscrits</Text>
         </View>
       </TouchableOpacity>
@@ -214,12 +215,11 @@ export default function ClassesScreen({ navigation }: any) {
         renderItem={({ item }) => {
           const classStudents = visibleStudents.filter((student) => classNameMatches(student.className, item.name));
           const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
-          const presenceRateLabel =
-            presencesSnapshot.status === "idle" || presencesSnapshot.status === "loading"
-              ? "—"
-              : presencesSnapshot.status === "error"
-                ? "Indisponible"
-                : `${getPresenceStats(presencesSnapshot.data, classStudents.map((student) => student.id)).rate}%`;
+          const presenceRateLabel = metricLabelFromSnapshot(
+            presencesSnapshot,
+            (rows) => `${getPresenceStats(rows, classStudents.map((student) => student.id)).rate}%`,
+            "0%",
+          );
 
           return (
             <TouchableOpacity
@@ -248,7 +248,11 @@ export default function ClassesScreen({ navigation }: any) {
                   </View>
                 </View>
 
-                <Text style={styles.classInfo}>{classStudents.length} élèves</Text>
+                <Text style={styles.classInfo}>
+                  {isMetricReady(studentsSnapshot)
+                    ? `${classStudents.length} élèves`
+                    : metricLabelFromSnapshot(studentsSnapshot, () => String(classStudents.length))}
+                </Text>
                 {item.classCode ? (
                   <Text style={styles.classInfo} numberOfLines={2}>
                     Code : {item.classCode}

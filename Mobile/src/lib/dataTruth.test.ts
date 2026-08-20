@@ -14,6 +14,10 @@ import {
   metricLabelFromSnapshot,
   METRIC_PENDING_LABEL,
   METRIC_UNAVAILABLE_LABEL,
+  NO_SESSION_RESOURCE_SCOPE,
+  buildResourceScopeKey,
+  emptyResourceSnapshot,
+  withScopedSnapshotData,
   parentAverageDisplay,
   paymentItemCount,
   paymentItemsDetail,
@@ -168,6 +172,68 @@ function run() {
     "1",
   );
   assert.equal(metricLabelFromSnapshot({ status: "offline", data: [] }, () => "6"), METRIC_UNAVAILABLE_LABEL);
+
+  assert.equal(buildResourceScopeKey({ hasSession: false }), NO_SESSION_RESOURCE_SCOPE);
+  const schoolAScope = buildResourceScopeKey({
+    hasSession: true,
+    userId: "admin-a",
+    role: "school_admin",
+    schoolCode: "NURU-A",
+    activeSchoolCode: "NURU-A",
+  });
+  const schoolBScope = buildResourceScopeKey({
+    hasSession: true,
+    userId: "admin-b",
+    role: "school_admin",
+    schoolCode: "NURU-B",
+    activeSchoolCode: "NURU-B",
+  });
+  assert.notEqual(schoolAScope, schoolBScope);
+  assert.notEqual(
+    buildResourceScopeKey({
+      hasSession: true,
+      userId: "super",
+      role: "super_admin",
+      activeSchoolCode: "NURU-A",
+    }),
+    buildResourceScopeKey({
+      hasSession: true,
+      userId: "super",
+      role: "super_admin",
+      activeSchoolCode: "NURU-B",
+    }),
+  );
+
+  const tenantAUsers = snapshotFromSuccess([{ id: "user-a" }]);
+  const purged = emptyResourceSnapshot<typeof tenantAUsers.data[number]>();
+  const failedAfterSwitch = snapshotFromFailure({ status: 0, message: "offline" }, purged.data);
+  assert.deepEqual(failedAfterSwitch.data, []);
+  assert.equal(
+    metricLabelFromSnapshot(failedAfterSwitch, (rows) => String(rows.length)),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  const leakedIfNotPurged = snapshotFromFailure({ status: 0, message: "offline" }, tenantAUsers.data);
+  assert.equal(metricLabelFromSnapshot(leakedIfNotPurged, (rows) => String(rows.length)), "1");
+
+  const mixedSchools = snapshotFromSuccess([
+    { id: "1", schoolCode: "A" },
+    { id: "2", schoolCode: "B" },
+  ]);
+  const scopedToB = withScopedSnapshotData(
+    mixedSchools,
+    mixedSchools.data.filter((row) => row.schoolCode === "B"),
+  );
+  assert.equal(scopedToB.status, "success");
+  assert.equal(scopedToB.data.length, 1);
+  assert.equal(withScopedSnapshotData(mixedSchools, []).status, "empty");
+  assert.equal(
+    metricLabelFromSnapshot({ status: "error", data: [] }, () => String([].length)),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  assert.equal(
+    metricLabelFromSnapshot({ status: "offline", data: [] }, () => "0"),
+    METRIC_UNAVAILABLE_LABEL,
+  );
 
   const previousPin = process.env.EXPO_PUBLIC_DEMO_PIN;
   process.env.EXPO_PUBLIC_DEMO_PIN = "";

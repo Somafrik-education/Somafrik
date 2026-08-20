@@ -41,7 +41,7 @@ const priorities: MessagePriority[] = ["Faible", "Moyenne", "Haute", "Critique"]
 export default function MessagesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, assignmentsData, classesData, messagesSnapshot, loadMessages, teachersSnapshot, loadTeachers } = useAdminData();
+  const { studentsData, assignmentsData, classesData, messagesSnapshot, loadMessages, teachersSnapshot, loadTeachers, resourceScopeKey } = useAdminData();
 
   const [theme, setTheme] = useState(messageThemes[0]);
   const [message, setMessage] = useState("");
@@ -73,7 +73,7 @@ export default function MessagesScreen() {
     useCallback(() => {
       if (canRead) void loadMessages();
       if (role === "parent_student" || role === "teacher") void loadTeachers();
-    }, [canRead, loadMessages, loadTeachers, role]),
+    }, [canRead, loadMessages, loadTeachers, role, resourceScopeKey]),
   );
 
   const availableTeachers = useMemo(() => {

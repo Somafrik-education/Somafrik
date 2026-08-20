@@ -14,12 +14,12 @@ import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 export default function TeachersScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { assignmentsData, teachersSnapshot: snapshot, loadTeachers: load } = useAdminData();
+  const { assignmentsData, teachersSnapshot: snapshot, loadTeachers: load, resourceScopeKey } = useAdminData();
 
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+    }, [load, resourceScopeKey]),
   );
 
   const showQueryState = snapshot.status !== "success";

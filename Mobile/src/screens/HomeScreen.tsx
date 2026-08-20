@@ -17,7 +17,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute } from "../domain/security/permissions";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
-import { DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
+import { DATA_TRUTH_TEST_IDS, isMetricReady, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
@@ -45,14 +45,17 @@ export default function HomeScreen({ navigation }: any) {
     presencesData,
     presencesSnapshot,
     loadPresences,
-    announcementsData,
-    messagesData,
+    announcementsSnapshot,
+    messagesSnapshot,
+    loadAnnouncements,
+    loadMessages,
     schoolsData,
     usersSnapshot,
     loadUsers,
     loadStudents,
     loadTeachers,
     loadClasses,
+    resourceScopeKey,
     countriesData,
     subscriptionsData,
     teachersData,
@@ -98,10 +101,14 @@ export default function HomeScreen({ navigation }: any) {
     () => `${attendanceCallCount} appel(s) • ${presenceStats.attended}/${presenceStats.total} élève(s)`,
     "0 appel(s)",
   );
+  const announcementsValue = metricLabelFromSnapshot(announcementsSnapshot, (rows) => String(rows.length));
+  const messagesValue = metricLabelFromSnapshot(messagesSnapshot, (rows) => String(rows.length));
+  const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, studentsData, teacherScopeState);
+  const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesCount));
+  const unreadMessages = isMetricReady(messagesSnapshot) ? unreadMessagesCount : 0;
   const userName = session?.user.name ?? "Administrateur";
   const welcomeGreeting = buildTimeGreeting(currentSchool.timezone);
   const welcomeName = getGreetingName(userName, session?.role);
-  const unreadMessages = getUnreadMessagesCount(session, messagesData, studentsData, teacherScopeState);
   const canReadStudents = canReadEntity(session, "students");
   const canReadUsers = canReadEntity(session, "users");
   const canReadPayments = canReadEntity(session, "payments");
@@ -130,10 +137,16 @@ export default function HomeScreen({ navigation }: any) {
       if (canReadEntity(session, "payments")) {
         void loadPayments();
       }
+      if (canReadEntity(session, "announcements")) {
+        void loadAnnouncements();
+      }
+      if (canReadEntity(session, "messages")) {
+        void loadMessages();
+      }
       if (session?.role === "parent_student" || session?.role === "student") {
         void loadNotes();
       }
-    }, [session, loadUsers, loadStudents, loadPresences, loadTeachers, loadClasses, loadPayments, loadNotes]),
+    }, [session, resourceScopeKey, loadUsers, loadStudents, loadPresences, loadTeachers, loadClasses, loadPayments, loadAnnouncements, loadMessages, loadNotes]),
   );
 
   if (session?.role === "teacher") {
@@ -321,7 +334,7 @@ export default function HomeScreen({ navigation }: any) {
       : [];
     const studentPresenceStats = getPresenceStats(studentPresences);
     const studentPaymentStats = getPaymentStats(studentPayments);
-    const latestAnnouncement = announcementsData[0];
+    const latestAnnouncement = announcementsSnapshot.data[0];
 
     return (
       <View style={styles.screen}>
@@ -768,7 +781,7 @@ export default function HomeScreen({ navigation }: any) {
             <ActivityItem
               icon="megaphone-outline"
               title="Annonce publiée"
-              description={`${announcementsData.length} communication(s) envoyée(s)`}
+              description={`${announcementsValue} communication(s) envoyée(s)`}
               color="#7C3AED"
               onPress={() => navigation.navigate("Announcements")}
             />
@@ -777,7 +790,7 @@ export default function HomeScreen({ navigation }: any) {
             <ActivityItem
               icon="chatbubbles-outline"
               title="Messages parents"
-              description={`${unreadMessages} non lu(s) • ${messagesData.length} échange(s)`}
+              description={`${unreadMessagesValue} non lu(s) • ${messagesValue} échange(s)`}
               color="#0F766E"
               onPress={() => navigation.navigate("Messages")}
             />
