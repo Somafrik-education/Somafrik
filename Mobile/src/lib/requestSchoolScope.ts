@@ -1,10 +1,11 @@
 /**
  * Transport du tenant école : header authentifié request-scoped.
- * Jamais SCH-* (alias interne). Jamais "*" (périmètre plateforme).
+ * Uniquement login_code V2 public. Jamais SCH-* (alias interne), jamais "*".
  * Ce module est la source de vérité HTTP, distincte de activeSchoolCode React.
  */
 
 export const SCHOOL_SCOPE_HEADER = "X-Somafrik-School-Code";
+export const V2_SCHOOL_LOGIN_PATTERN = /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/;
 
 const PLATFORM_EXACT_PATHS = new Set([
   "/login",
@@ -30,10 +31,15 @@ export function isInternalSchoolAlias(code?: string | null): boolean {
   return /^SCH-[A-Z0-9]+$/.test(String(code ?? "").trim().toUpperCase());
 }
 
+export function isV2PublicSchoolCode(code?: string | null): boolean {
+  return V2_SCHOOL_LOGIN_PATTERN.test(String(code ?? "").trim().toUpperCase());
+}
+
 export function publicRequestSchoolScope(code?: string | null): string | null {
   const normalized = String(code ?? "").trim().toUpperCase();
   if (!normalized || normalized === "*") return null;
   if (isInternalSchoolAlias(normalized)) return null;
+  if (!isV2PublicSchoolCode(normalized)) return null;
   return normalized;
 }
 
