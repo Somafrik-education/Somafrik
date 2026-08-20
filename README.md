@@ -144,17 +144,17 @@ Plateforme web (`http://localhost:5173/` ou `http://localhost:5000/web/`) — mo
 | Plateforme | Super Admin | `superadmin` | — |
 | Plateforme | Admin Pays RDC | `admin-rdc` | — |
 | Plateforme | Admin Pays BI | `admin-bi` | — |
-| Établissement | Admin école | `admin` | `CD-2026-0001` |
-| Établissement | Secrétaire | `secretaire` | `CD-2026-0001` |
-| Établissement | Préfet | `prefet` | `CD-2026-0001` |
-| Métier | Enseignant | `ENS-0001` | `CD-2026-0001` |
-| Métier | Parent | `+243 820 000 001` | `CD-2026-0001` |
-| Métier | Élève | `ELE-0001` | `CD-2026-0001` |
+| Établissement | Admin école | `admin` | `CD-IN-26-001` |
+| Établissement | Secrétaire | `secretaire` | `CD-IN-26-001` |
+| Établissement | Préfet | `prefet` | `CD-IN-26-001` |
+| Métier | Enseignant | `ENS-0001` | `CD-IN-26-001` |
+| Métier | Parent | `+243 820 000 001` | `CD-IN-26-001` |
+| Métier | Élève | `ELE-0001` | `CD-IN-26-001` |
 
 Mobile (API `/api/login`) :
 
 ```text
-Code établissement : CD-2026-0001
+Code établissement : CD-IN-26-001
 Enseignant : ENS-0001 / PIN 1234
 Parent : +243 820 000 001 / PIN 1234
 Élève : ELE-0001 / PIN 1234

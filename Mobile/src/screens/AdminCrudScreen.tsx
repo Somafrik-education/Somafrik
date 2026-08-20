@@ -205,7 +205,7 @@ const configs: Record<
     addLabel: "Ajouter un établissement",
     fields: [
       { key: "name", label: "Nom", placeholder: "Nom de l'établissement" },
-      { key: "code", label: "Code unique", placeholder: "Auto : CD-2026-0001" },
+      { key: "code", label: "Code unique", placeholder: "Auto : CD-IN-26-001" },
       { key: "type", label: "Type", placeholder: "Choisir le type", type: "select" },
       { key: "country", label: "Pays", placeholder: "RDC" },
       { key: "city", label: "Ville", placeholder: "Kinshasa" },
@@ -1451,7 +1451,7 @@ function getInitialForm(entity: AdminEntity, context?: any): Record<string, stri
 function formToItem(entity: AdminEntity, form: Record<string, string>, id?: string, context?: any) {
   const nextId = id ?? createInternalId(entity);
   const year = String(new Date().getFullYear());
-  const schoolCode = context?.schoolsData?.[0]?.code ?? "CD-2026-0001";
+  const schoolCode = context?.schoolsData?.[0]?.code ?? context?.schoolsData?.[0]?.loginCode ?? "";
 
   if (entity === "students") {
     // PR1 : pas de création AdminCrud — inscription via Classes uniquement.
@@ -2062,15 +2062,9 @@ function generateTeacherPublicId(schoolCode: string, teachersData: any[]) {
   return `${normalizedSchool}-${identifier}`;
 }
 
-/** Alias interne school_code (CD-YYYY-NNNN). Ce n'est PAS le SEQ3 public login_code. */
-function generateSchoolCode(country: string, year: string, schoolsData: any[]) {
-  const countryCode = getCountryCode(country);
-  const next = getNextSequence(
-    schoolsData,
-    new RegExp(`^${countryCode}-${year}-(\\d+)$`, "i"),
-    "code"
-  );
-  return `${countryCode}-${year}-${String(next).padStart(4, "0")}`;
+/** Le client ne génère plus de code établissement. PostgreSQL alloue login_code V2. */
+function generateSchoolCode(_country: string, _year: string, _schoolsData: any[]) {
+  return "";
 }
 
 function getNextSequence(items: any[], pattern: RegExp, field = "publicId") {
@@ -2234,13 +2228,13 @@ function getDefaultSchoolCode(schoolsData: any[], session?: any) {
   const sessionSchool = session?.user?.schoolCode && session.user.schoolCode !== "*"
     ? session.user.schoolCode
     : session?.school?.code;
-  return sessionSchool || schoolsData[0]?.code || "CD-2026-0001";
+  return sessionSchool || schoolsData[0]?.code || schoolsData[0]?.loginCode || "";
 }
 
 function schoolCodeFromContext(context?: any) {
   return context?.session
     ? getDefaultSchoolCode(context?.schoolsData ?? [], context.session)
-    : context?.schoolsData?.[0]?.code ?? "CD-2026-0001";
+    : context?.schoolsData?.[0]?.code ?? context?.schoolsData?.[0]?.loginCode ?? "";
 }
 
 function formatSelectOptionLabel(key: string, option: string): string {

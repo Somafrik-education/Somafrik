@@ -268,7 +268,7 @@ class FallbackRepository {
         for (const [schoolCode] of Object.entries(seedData.academicConfigs ?? {})) {
           store.saveAcademicConfig(String(schoolCode).toUpperCase(), {});
         }
-        const defaultSchool = String(seedData.school?.code ?? "CD-2026-0001").toUpperCase();
+        const defaultSchool = String(seedData.school?.loginCode ?? seedData.school?.code ?? "").toUpperCase();
         void defaultSchool;
       }
     }
@@ -331,28 +331,72 @@ class FallbackRepository {
       COUNTRY_NOT_FOUND_CODE,
       COUNTRY_NOT_FOUND_MESSAGE,
     } = require("../lib/schoolsManagement");
-    const code = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.publicId);
+    const {
+      allocateNextSchoolLoginCode,
+      generateInternalSchoolAlias,
+      isInternalSchoolAlias,
+      isLegacySchoolCodeFormat,
+      matchesSchoolLookup,
+    } = require("../lib/schoolCodeV2");
+    const requestedId = String(record?.id ?? "").trim();
+    const requested = normalizeSchoolCode(record?.code ?? record?.schoolCode ?? record?.legacySchoolCode);
+    const store = this._establishmentStore();
+    let existing = requestedId ? store.find((row) => String(row.id ?? "") === requestedId) : null;
+    if (!existing && requested) {
+      existing = store.find((row) => matchesSchoolLookup(row, requested)) ?? null;
+    }
+    if (!existing && requested && isLegacySchoolCodeFormat(requested)) {
+      const error = new Error(
+        "Format établissement legacy interdit pour une création (ex. CD-2026-0001). Utiliser le code V2 généré par PostgreSQL.",
+      );
+      error.statusCode = 400;
+      error.code = "SCHOOL_CODE_LEGACY_FORBIDDEN";
+      throw error;
+    }
+    const code =
+      existing?.legacySchoolCode ||
+      existing?.code ||
+      (isInternalSchoolAlias(requested) ? requested : generateInternalSchoolAlias());
     if (!code || code === "*") {
       const error = new Error("Code établissement requis.");
       error.statusCode = 400;
-      error.code = "SCHOOL_CODE_REQUIRED";
+      error.code = "SCHOOL_CODE_INVALID";
       throw error;
     }
     const catalog = [
       ...(Array.isArray(seedData.countries) ? seedData.countries : []),
       ...(Array.isArray(this.backOfficeState?.countries) ? this.backOfficeState.countries : []),
     ];
-    if (!findCanonicalCountry(catalog, record?.countryCode, record?.country)) {
+    const canonical = findCanonicalCountry(catalog, record?.countryCode, record?.country);
+    if (!canonical) {
       const error = new Error(COUNTRY_NOT_FOUND_MESSAGE);
       error.statusCode = 400;
       error.code = COUNTRY_NOT_FOUND_CODE;
       throw error;
     }
-    const school = { ...record, code, publicId: record?.publicId || code };
-    const store = this._establishmentStore();
-    const index = store.findIndex(
-      (row) => String(row.code ?? row.publicId ?? "").trim().toUpperCase() === code,
-    );
+    const loginCode =
+      record?.loginCode ||
+      existing?.loginCode ||
+      (existing
+        ? ""
+        : allocateNextSchoolLoginCode(store, {
+            countryIso: canonical.code,
+            schoolName: record?.name,
+          }));
+    const school = {
+      ...record,
+      id: existing?.id || record?.id,
+      code,
+      publicId: record?.publicId || existing?.publicId || loginCode || code,
+      loginCode,
+    };
+    const index = existing
+      ? store.findIndex(
+          (row) =>
+            (existing.id && String(row.id ?? "") === String(existing.id)) ||
+            matchesSchoolLookup(row, existing.code || requested),
+        )
+      : -1;
     if (index >= 0) {
       store[index] = { ...store[index], ...school };
     } else {
@@ -1300,10 +1344,16 @@ class FallbackRepository {
       const memoryAdapter = {
         async getSchoolByCode(code) {
           const normalized = String(code ?? "").trim().toUpperCase();
-          const match = (seedData.platformSchools ?? [seedData.school]).find(
-            (row) => String(row.code ?? "").toUpperCase() === normalized,
-          );
-          const isPrimary = normalized === String(seedData.school.code).toUpperCase();
+          const match = (seedData.platformSchools ?? [seedData.school]).find((row) => {
+            const keys = [row.code, row.schoolCode, row.loginCode, row.login_code, row.publicId]
+              .map((value) => String(value ?? "").trim().toUpperCase())
+              .filter(Boolean);
+            return keys.includes(normalized);
+          });
+          const isPrimary =
+            normalized === String(seedData.school.code).toUpperCase() ||
+            normalized === String(seedData.school.loginCode ?? "").toUpperCase() ||
+            normalized === String(seedData.school.publicId ?? "").toUpperCase();
           return {
             id: isPrimary ? seedData.school.id : `school-${normalized}`,
             school_code: match?.code ?? normalized,
@@ -3063,9 +3113,11 @@ class FallbackRepository {
         async resolveCountryAndSchool({ countryCode, schoolCode, countryId, schoolId }) {
           const dataset = await self.getDataset();
           const school = (dataset.platformSchools ?? []).find((row) => {
-            const code = String(row.code ?? row.schoolCode ?? row.school_code ?? "").toUpperCase();
+            const keys = [row.code, row.schoolCode, row.school_code, row.loginCode, row.login_code, row.publicId]
+              .map((value) => String(value ?? "").toUpperCase())
+              .filter(Boolean);
             return (
-              (schoolCode && code === String(schoolCode).toUpperCase()) ||
+              (schoolCode && keys.includes(String(schoolCode).toUpperCase())) ||
               (schoolId && String(row.id) === String(schoolId))
             );
           });

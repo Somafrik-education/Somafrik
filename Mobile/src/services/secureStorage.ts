@@ -12,7 +12,7 @@ export type SessionProfile = {
   role: string;
   permissions?: string[];
   user: Record<string, unknown>;
-  school: Record<string, unknown>;
+  school?: Record<string, unknown>;
 };
 
 async function setItem(key: string, value: string | null) {

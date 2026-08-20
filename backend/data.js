@@ -1,9 +1,12 @@
 const { buildSchoolBulletinBundle } = require("./lib/bulletinSeedData");
 const { buildSchoolPlanningSlots, buildAcademicConfigForSchool } = require("./lib/planningSeedData");
 
+// Seed mémoire : `code` = alias interne school_code (tests / lecture legacy).
+// Code public canonique = `loginCode` / `publicId` = CD-IN-26-001.
+// Aucune nouvelle création ne doit réutiliser CD-YYYY-NNNN.
 const school = {
   id: "550e8400-e29b-41d4-a716-446655440001",
-  publicId: "CD-2026-0001",
+  publicId: "CD-IN-26-001",
   code: "CD-2026-0001",
   loginCode: "CD-IN-26-001",
   name: "Universite de Kinshasa",
@@ -1231,11 +1234,12 @@ const platformSchools = [school, burundiSchool];
 while (platformSchools.length < 50) {
   const index = platformSchools.length + 1;
   const country = countries[index % countries.length];
-  const code = `${country.code}-2026-${String(index).padStart(4, "0")}`;
+  const code = `SCH-DEMO-${String(index).padStart(4, "0")}`;
   platformSchools.push({
     ...school,
     id: `SCHOOL-${String(index).padStart(4, "0")}`,
     publicId: code,
+    loginCode: "",
     code,
     name: `Établissement Somafrik ${index}`,
     type: ["École primaire", "Collège", "Lycée", "Université", "Institut"][index % 5],

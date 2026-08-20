@@ -3,7 +3,7 @@
  *
  * Usage:
  *   node scripts/repair-student-matricules.js
- *   node scripts/repair-student-matricules.js CD-2026-0001
+ *   node scripts/repair-student-matricules.js CD-IN-26-001
  */
 
 function repairStudentMatriculesInline(students, schoolCode) {

@@ -71,6 +71,7 @@ function scanBundle(label, bundle, expectedUrl, forbiddenUrl) {
   assert.doesNotMatch(bundle, /http:\/\/127\.0\.0\.1:5000/);
   assert.doesNotMatch(bundle, /http:\/\/192\.168\./);
   assert.doesNotMatch(bundle, /["']1234["']/);
+  assert.doesNotMatch(bundle, /CD-2026-0001/);
   assert.doesNotMatch(bundle, /Remplir un compte enseignant demo/);
   assert.doesNotMatch(bundle, /DATABASE_URL\s*=\s*postgres/i);
   assert.doesNotMatch(bundle, /BEGIN (RSA )?PRIVATE KEY/);

@@ -134,7 +134,11 @@ function pad(value, width = 4) {
 }
 
 function schoolCode(iso, index) {
-  return `${iso}-2026-${pad(index, 4)}`;
+  return `SCH-BULK-${iso}-${pad(index, 4)}`;
+}
+
+function isPrimaryCdDemoSchool(school) {
+  return String(school?.loginCode ?? school?.publicId ?? "").toUpperCase() === "CD-IN-26-001";
 }
 
 function scopedEmail(schoolCodeValue, localPart, domain = "somafrik.demo") {
@@ -225,7 +229,7 @@ function buildSchoolRecord(country, schoolIndex) {
 
   return {
     id: `SCHOOL-${country.code}-${pad(schoolIndex, 4)}`,
-    publicId: code,
+    publicId: country.code === "CD" && schoolIndex === 1 ? "CD-IN-26-001" : code,
     code,
     name: `Établissement Somafrik ${country.code} ${pad(schoolIndex, 2)}`,
     type: types[(schoolIndex - 1) % types.length],
@@ -284,7 +288,7 @@ function buildSchoolRoleUser(school, country, role, userIndex) {
       ? country.code === "CD"
         ? "admin"
         : `admin-${country.code.toLowerCase()}`
-      : isPrimaryDemo && code === "CD-2026-0001"
+      : isPrimaryDemo && isPrimaryCdDemoSchool(school)
         ? role === "Préfet des études"
           ? "prefet"
           : role === "Secrétaire"
@@ -440,7 +444,7 @@ function buildSchoolAcademicBundle(school, country) {
     const teacherId = `TCH-${code}-${pad(index, 3)}`;
     const teacherPublicId = `${code}-ENS-${pad(index, 4)}`;
     const teacherLoginId =
-      code === "CD-2026-0001" && index === 1 ? "ENS-0001" : `ENS-${pad(parseInt(code.slice(-4), 10) * 100 + index, 4)}`;
+      isPrimaryCdDemoSchool(school) && index === 1 ? "ENS-0001" : `ENS-${pad(parseInt(code.slice(-4), 10) * 100 + index, 4)}`;
     const teacherFirstName = DEMO_FIRST_NAMES[(index - 1) % DEMO_FIRST_NAMES.length];
     const teacherLastName = DEMO_LAST_NAMES[(index + 2) % DEMO_LAST_NAMES.length];
     const mainSubject = subjectNames[(index - 1) % SUBJECTS_PER_SCHOOL];

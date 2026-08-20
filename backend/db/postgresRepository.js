@@ -5746,7 +5746,7 @@ class PostgresRepository {
       "ADM-CD-2026-0001": "admin-rdc",
       "USR-PREFET-0001": "prefet",
       "USR-SECRETARY-0001": "secretaire",
-      // Jeu bulk : comptes démo de CD-2026-0001 (voir bulkPlatformSeed.buildSchoolRoleUser)
+      // Jeu bulk : alias user_code historiques (school_code interne, pas login_code V2)
       "ADMIN-CD-2026-0001-01": "admin",
       "ADMIN-CG-2026-0001-01": "admin-cg",
       "ADMIN-BI-2026-0001-01": "admin-bi",
@@ -6050,7 +6050,15 @@ class PostgresRepository {
   }
 
   getSchoolByCode(code) {
-    return this.one("SELECT * FROM schools WHERE school_code = $1", [String(code ?? "").trim().toUpperCase()]);
+    const normalized = String(code ?? "").trim().toUpperCase();
+    if (!normalized) return null;
+    return this.one(
+      `SELECT * FROM schools
+       WHERE upper(school_code) = $1
+          OR upper(coalesce(login_code, '')) = $1
+       LIMIT 1`,
+      [normalized],
+    );
   }
 
   getSchoolsRepository() {

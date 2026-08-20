@@ -3,7 +3,7 @@
  *
  * Usage :
  *   node backend/scripts/reset-school-planning.js
- *   node backend/scripts/reset-school-planning.js --school=CD-2026-0001
+ *   node backend/scripts/reset-school-planning.js --school=CD-IN-26-001
  */
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });

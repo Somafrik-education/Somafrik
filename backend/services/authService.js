@@ -311,8 +311,22 @@ class AuthService {
   }
 
   identify({ schoolCode, identifier }) {
-    this.assertRequiredFields({ schoolCode, identifier }, "Champs manquants");
-    const schoolContext = this.assertSchoolCanConnect(schoolCode);
+    this.assertRequiredFields({ identifier }, "Champs manquants");
+    const requestedSchool = String(schoolCode ?? "").trim();
+    if (!requestedSchool) {
+      const platformUser = this.findPlatformManagedUser(identifier);
+      if (!platformUser) {
+        throw new BusinessError(400, "Champs manquants");
+      }
+      this.assertManagedUserCanUseMobile(platformUser);
+      const managedMobileRole = this.getManagedMobileRole(platformUser);
+      if (!managedMobileRole || !this.isPlatformMobileRole(managedMobileRole.role)) {
+        throw new BusinessError(400, "Champs manquants");
+      }
+      return managedMobileRole;
+    }
+
+    const schoolContext = this.assertSchoolCanConnect(requestedSchool);
     const accountSchoolCode = this.resolveSchoolAccountCode(schoolContext);
 
     const managedUser = this.findManagedUser(identifier, accountSchoolCode);
@@ -337,10 +351,15 @@ class AuthService {
   }
 
   async login({ role, schoolCode, identifier, pin }) {
-    this.assertRequiredFields({ role, schoolCode, identifier, pin }, "Champs manquants");
-    const schoolContext = this.assertSchoolCanConnect(schoolCode);
+    this.assertRequiredFields({ role, identifier, pin }, "Champs manquants");
+    const requestedSchool = String(schoolCode ?? "").trim();
+    if (!requestedSchool) {
+      return this.loginPlatformAccount({ role, identifier, pin });
+    }
+
+    const schoolContext = this.assertSchoolCanConnect(requestedSchool);
     const accountSchoolCode = this.resolveSchoolAccountCode(schoolContext);
-    const canonicalSchoolCode = schoolContext.loginCode || schoolCode;
+    const canonicalSchoolCode = schoolContext.loginCode || requestedSchool;
 
     const loginKey = getLoginAttemptKey(canonicalSchoolCode, identifier);
     try {
@@ -382,6 +401,81 @@ class AuthService {
     };
   }
 
+  async loginPlatformAccount({ role, identifier, pin }) {
+    if (!this.isPlatformMobileRole(role)) {
+      throw new BusinessError(400, "Champs manquants");
+    }
+
+    const loginKey = getLoginAttemptKey("*", identifier);
+    try {
+      await assertLoginNotLocked(loginKey);
+    } catch (error) {
+      if (error?.code === "LOGIN_LOCKED" || error?.message === "LOCKED") {
+        throw new BusinessError(
+          423,
+          "Compte temporairement verrouillé après plusieurs tentatives. Réessayez dans 15 minutes.",
+        );
+      }
+      throw error;
+    }
+
+    const managedUser = this.findPlatformManagedUser(identifier, role);
+    if (!managedUser || !this.isPlatformAccount(managedUser)) {
+      await recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(400, "Champs manquants");
+    }
+
+    this.assertManagedUserCanUseMobile(managedUser);
+
+    const managedMobileRole = this.getManagedMobileRole(managedUser, role);
+    if (!managedMobileRole || managedMobileRole.role !== role || !this.isPlatformMobileRole(managedMobileRole.role)) {
+      await recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
+    }
+
+    if (!this.verifyUserSecret(managedUser, pin)) {
+      await recordFailedLoginAttempt(loginKey);
+      throw new BusinessError(401, GENERIC_AUTH_ERROR);
+    }
+
+    await clearFailedLoginAttempts(loginKey);
+    const countryCode =
+      this.getCountryCode(managedUser.countryScope) ||
+      this.getCountryCode(managedUser.countryCode) ||
+      "";
+    return {
+      role,
+      user: this.buildManagedMobileUser(managedUser, role),
+      platformContext: {
+        kind: role === "super_admin" ? "global" : "country",
+        countryCode: role === "country_admin" ? countryCode : "",
+      },
+    };
+  }
+
+  isPlatformMobileRole(role) {
+    return role === "super_admin" || role === "country_admin";
+  }
+
+  isPlatformAccount(user) {
+    if (!user) return false;
+    const granted = this.userGrantedMobileRoles(user);
+    return granted.some((item) => this.isPlatformMobileRole(item.role));
+  }
+
+  findPlatformManagedUser(identifier, preferredMobileRole = null) {
+    const matches = this.userAccounts.filter(
+      (user) => this.userMatchesIdentifier(user, identifier) && this.isPlatformAccount(user),
+    );
+    if (matches.length > 1 && preferredMobileRole) {
+      const preferred = matches.find(
+        (user) => this.getManagedMobileRole(user, preferredMobileRole)?.role === preferredMobileRole,
+      );
+      if (preferred) return preferred;
+    }
+    return matches[0] || null;
+  }
+
   userMatchesIdentifier(user, identifier) {
     const normalizedIdentifier = normalizeText(identifier);
     const fields = ["identifier", "phone", "publicId", "email"];
@@ -402,13 +496,26 @@ class AuthService {
   }
 
   findManagedUser(identifier, schoolCode, preferredMobileRole = null) {
-    const normalizedSchoolCode = String(schoolCode).trim().toUpperCase();
-
-    const matches = this.userAccounts.filter(
-      (user) =>
-        (user.schoolCode === "*" || user.schoolCode === normalizedSchoolCode) &&
-        this.userMatchesIdentifier(user, identifier)
+    const school = this.findSchoolByCode(schoolCode);
+    const tenantKeys = new Set(
+      [
+        schoolCode,
+        school?.code,
+        school?.loginCode,
+        school?.publicId,
+        school?.legacySchoolCode,
+      ]
+        .map((value) => String(value ?? "").trim().toUpperCase())
+        .filter(Boolean),
     );
+
+    const matches = this.userAccounts.filter((user) => {
+      const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
+      return (
+        (userSchool === "*" || tenantKeys.has(userSchool)) &&
+        this.userMatchesIdentifier(user, identifier)
+      );
+    });
 
     if (matches.length > 1 && preferredMobileRole) {
       const preferred = matches.find(
@@ -432,7 +539,7 @@ class AuthService {
 
     const teacher = this.teachers.find(
       (item) =>
-        (!item.schoolCode || normalizeText(item.schoolCode) === normalizeText(normalizedSchoolCode)) &&
+        (!item.schoolCode || tenantKeys.has(String(item.schoolCode).trim().toUpperCase())) &&
         [item.identifier, item.publicId, item.id].some(
           (value) => normalizeText(value) === normalizeText(identifier)
         )
@@ -441,11 +548,13 @@ class AuthService {
       return undefined;
     }
 
-    return this.userAccounts.find(
-      (user) =>
-        (user.schoolCode === "*" || user.schoolCode === normalizedSchoolCode) &&
+    return this.userAccounts.find((user) => {
+      const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
+      return (
+        (userSchool === "*" || tenantKeys.has(userSchool)) &&
         String(user.id) === String(teacher.userId)
-    );
+      );
+    });
   }
 
   findLinkedTeacher(user) {
@@ -485,6 +594,7 @@ class AuthService {
       id: user.id,
       publicId: user.publicId,
       contactId: user.contactId,
+      identifier: user.identifier,
       name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.identifier,
       firstName: user.firstName,
       lastName: user.lastName,

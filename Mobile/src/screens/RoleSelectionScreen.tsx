@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { SchoolInfo, getApiBaseUrl, getSchoolByCode } from "../services/api";
+import { buildPlatformLoginParams } from "../lib/platformLogin";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import {
   ROLE_SELECTION_COPY,
@@ -31,7 +32,7 @@ const somafrikLogo = require("../../assets/somafrik-logo.png");
 export default function RoleSelectionScreen({ navigation }: Props) {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const containerStyle = [styles.container, { paddingBottom: stackPaddingBottom }];
-  const [accessCode, setAccessCode] = useState("CD-2026-0001");
+  const [accessCode, setAccessCode] = useState("");
   const [school, setSchool] = useState<SchoolInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState(`API : ${getApiBaseUrl()}`);
@@ -51,23 +52,13 @@ export default function RoleSelectionScreen({ navigation }: Props) {
       normalizedAccess === "SUPERADMIN" ||
       normalizedAccess === "SUPERADMIN-SOMAFRIK"
     ) {
-      navigation.navigate("Login", {
-        school: getPlatformSchool("Global"),
-        accessIdentifier: "superadmin",
-        accessRole: "super_admin",
-        accessRoleLabel: "Super Administrateur",
-      });
+      navigation.navigate("Login", buildPlatformLoginParams("global"));
       return;
     }
 
     if (normalizedAccess.startsWith("ADMINPAYS-")) {
       const countryCode = normalizedAccess.replace("ADMINPAYS-", "");
-      navigation.navigate("Login", {
-        school: getPlatformSchool(countryCode),
-        accessIdentifier: countryCode === "CD" ? "admin-rdc" : `admin-${countryCode.toLowerCase()}`,
-        accessRole: "country_admin",
-        accessRoleLabel: "Admin Pays",
-      });
+      navigation.navigate("Login", buildPlatformLoginParams("country", countryCode));
       return;
     }
 
@@ -121,7 +112,7 @@ export default function RoleSelectionScreen({ navigation }: Props) {
           <View style={styles.inputShell}>
             <Ionicons name="keypad-outline" size={20} color="#64748B" />
             <TextInput
-              placeholder="CD-2026-0001"
+              placeholder={ROLE_SELECTION_COPY.placeholderExample}
               value={accessCode}
               onChangeText={(value) => {
                 setAccessCode(value);
@@ -225,19 +216,6 @@ export default function RoleSelectionScreen({ navigation }: Props) {
       </ScrollView>
     </KeyboardAvoidingView>
   );
-}
-
-function getPlatformSchool(scope: string): SchoolInfo {
-  return {
-    id: `PLATFORM-${scope}`,
-    publicId: scope,
-    code: "CD-2026-0001",
-    name: scope === "Global" ? "Somafrik Global" : `Somafrik ${scope}`,
-    city: scope === "Global" ? "Plateforme" : scope,
-    country: scope,
-    slogan: "ERP scolaire mobile et tablette par Somafrik",
-    status: "Actif",
-  };
 }
 
 const styles = StyleSheet.create({

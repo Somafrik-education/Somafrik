@@ -42,9 +42,18 @@ Le parcours décennal de l'élève reste attaché au même UUID et au même `ide
 
 ## Établissements
 
-`schools.short_code` est un code canonique de 2 à 5 caractères, majuscule/alphanumérique, unique dans un pays et immuable après création.
+Le **code public de connexion** n'est pas `short_code` seul. Contrat V2 :
 
-Exemple : `Institut Kibwija -> IK`.
+```text
+{ISO}-{INITIALES}-{YY}-{SEQ3}
+CD-IN-26-001
+```
+
+Détail : [School code V2](./SCHOOL-CODE-V2.md).
+
+`schools.short_code` est un code canonique de 2 à 5 caractères, majuscule/alphanumérique, unique dans un pays et immuable après création. Il alimente le segment initiales (`Institut Nuru` → `IN`, `Institut Kibwija` → `IK`).
+
+L'ancien format public `CD-2026-0001` (`CC-YYYY-NNNN`) est **legacy** : lecture seule, jamais régénéré.
 
 ## Compteur
 

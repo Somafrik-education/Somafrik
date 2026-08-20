@@ -92,7 +92,7 @@ export type TeacherAssignment = {
 
 type LoginPayload = {
   role: UserRole;
-  schoolCode: string;
+  schoolCode?: string;
   identifier: string;
   pin: string;
 };
@@ -158,7 +158,11 @@ export type LoginResponse = {
     assignedClasses?: string[];
     courses?: string[];
   };
-  school: SchoolInfo;
+  school?: SchoolInfo;
+  platformContext?: {
+    kind: "global" | "country";
+    countryCode?: string;
+  };
 };
 
 export type BackOfficeStatePayload = Record<string, unknown> & {
@@ -218,7 +222,9 @@ export async function persistAuthenticatedSession(session: LoginResponse): Promi
     role: safeSession.role,
     permissions: safeSession.permissions,
     user: safeSession.user as unknown as Record<string, unknown>,
-    school: safeSession.school as unknown as Record<string, unknown>,
+    ...(safeSession.school
+      ? { school: safeSession.school as unknown as Record<string, unknown> }
+      : {}),
   });
   return safeSession;
 }

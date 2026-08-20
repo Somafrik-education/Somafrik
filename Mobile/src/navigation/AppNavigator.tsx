@@ -56,7 +56,7 @@ export type RootStackParamList = {
   Welcome: undefined;
   RoleSelection: undefined;
   Login: {
-    school: {
+    school?: {
       id?: string;
       publicId?: string;
       code: string;
@@ -64,6 +64,10 @@ export type RootStackParamList = {
       city: string;
       slogan?: string;
       logoUrl?: string;
+    };
+    platformContext?: {
+      kind: "global" | "country";
+      countryCode?: string;
     };
     accessIdentifier?: string;
     accessRole?: UserRole;

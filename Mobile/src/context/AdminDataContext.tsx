@@ -199,7 +199,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         ? {
             role: session.role,
             countryScope: session.user.countryScope ?? session.user.countryCode,
-            schoolCode: session.user.schoolCode ?? session.school.code,
+            schoolCode: session.user.schoolCode ?? session.school?.code,
           }
         : null,
     [session],
@@ -855,7 +855,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     requiresSchoolSelection,
     session,
     session?.role,
-    session?.school.code,
+    session?.school?.code,
     session?.user.schoolCode,
     scopedStateSnapshot,
     stateSnapshot,

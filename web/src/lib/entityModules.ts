@@ -321,7 +321,7 @@ export const SCHOOL_ENTITY_MODULES = ([
         key: "publicId",
         label: "Identifiant unique",
         readOnly: true,
-        hint: "Format : code pays-année-n° établissement-ENS-n° (ex. CD-2026-0001-ENS-0001).",
+        hint: "Format : identifiant enseignant (ex. ENS-0001). Le code établissement public est du type CD-IN-26-001.",
       },
       {
         key: "identifier",
