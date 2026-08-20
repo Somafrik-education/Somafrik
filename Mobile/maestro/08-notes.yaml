@@ -1,6 +1,25 @@
+# Lecture seule. Mutation Nuru bloquée : MUTATION_NOTES_BLOCKED_NO_QA_FIXTURE
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: flows/login-admin-school.yaml
 - tapOn: "Notes"
-- assertVisible:
-    id: "evaluations-v2-list"
+- extendedWaitUntil:
+    visible: "Évaluations"
+    timeout: 20000
+- wait: 8000
+- assertNotVisible:
+    id: "evaluations-v2-error"
+- runFlow:
+    when:
+      visible:
+        id: "evaluations-v2-empty"
+    commands:
+      - assertVisible:
+          id: "evaluations-v2-empty"
+- runFlow:
+    when:
+      notVisible:
+        id: "evaluations-v2-empty"
+    commands:
+      - assertVisible:
+          id: "evaluations-v2-list"

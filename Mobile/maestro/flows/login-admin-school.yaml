@@ -1,0 +1,48 @@
+appId: com.somafrik.app
+---
+- launchApp:
+    clearState: true
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: "role-selection-screen"
+    timeout: 20000
+- tapOn:
+    id: "role-school-code-input"
+- eraseText
+- inputText: "${SOMAFRIK_E2E_SCHOOL_CODE}"
+- hideKeyboard
+- tapOn:
+    id: "role-verify-button"
+- extendedWaitUntil:
+    visible:
+      id: "role-school-card"
+    timeout: 25000
+- assertVisible:
+    id: "role-school-name"
+- tapOn:
+    id: "role-open-login-button"
+- extendedWaitUntil:
+    visible:
+      id: "login-screen"
+    timeout: 15000
+- tapOn:
+    id: "login-identifier-input"
+- eraseText
+- inputText: "${SOMAFRIK_E2E_IDENTIFIER}"
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      id: "login-role-badge"
+    timeout: 20000
+- tapOn:
+    id: "login-password-input"
+- eraseText
+- inputText: "${SOMAFRIK_E2E_PASSWORD}"
+- hideKeyboard
+- tapOn:
+    id: "login-submit-button"
+- extendedWaitUntil:
+    visible:
+      id: "home-admin-dashboard"
+    timeout: 35000

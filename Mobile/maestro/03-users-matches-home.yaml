@@ -1,6 +1,30 @@
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: flows/login-admin-school.yaml
+- waitForAnimationToEnd
+- wait: 12000
+- copyTextFrom:
+    id: "home-users-value"
 - tapOn:
     id: "home-users-value"
-- assertVisible: "Utilisateurs"
+- extendedWaitUntil:
+    visible: "Utilisateurs"
+    timeout: 20000
+- wait: 8000
+- assertNotVisible:
+    id: "users-error"
+# Home > 0 + liste vide = échec. 0 Home + liste vide = métier légitime.
+- runFlow:
+    when:
+      visible:
+        id: "users-empty"
+    commands:
+      - assertTrue: "${maestro.copiedText.startsWith('0')}"
+# Chargement infini : users-empty absent et users-list absent → fail.
+- runFlow:
+    when:
+      notVisible:
+        id: "users-empty"
+    commands:
+      - assertVisible:
+          id: "users-list"

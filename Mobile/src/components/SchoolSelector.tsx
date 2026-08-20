@@ -21,7 +21,7 @@ export default function SchoolSelector() {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="school-selector">
       <Text style={styles.label}>Etablissement actif</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
         {options.map((option) => {
@@ -31,6 +31,7 @@ export default function SchoolSelector() {
               key={option.code}
               style={[styles.chip, active && styles.chipActive]}
               onPress={() => setActiveSchoolCode(option.code)}
+              testID={option.code === ALL_SCHOOLS_CODE ? "school-selector-chip-all" : `school-selector-chip-${option.code}`}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
                 {option.label}

@@ -39,6 +39,7 @@ credentials.json
 *.aab
 test-results/
 tmp/
+Mobile/artifacts/
 
 # Caches / tooling
 .cache/

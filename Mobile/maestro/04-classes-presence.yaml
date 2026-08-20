@@ -1,5 +1,36 @@
 appId: com.somafrik.app
 ---
-- launchApp
-- tapOn: "Classes"
-- assertVisible: "Présence"
+- runFlow: flows/login-admin-school.yaml
+- tapOn:
+    id: "tab-classes"
+- extendedWaitUntil:
+    visible:
+      id: "classes-screen"
+    timeout: 20000
+- wait: 8000
+- assertVisible:
+    id: "classes-list"
+- runFlow:
+    when:
+      visible:
+        id: "class-card-.*"
+    commands:
+      - tapOn:
+          id: "class-card-.*"
+      - extendedWaitUntil:
+          visible:
+            id: "students-screen"
+          timeout: 20000
+      - runFlow:
+          when:
+            visible:
+              id: "students-list"
+          commands:
+            - tapOn:
+                id: "student-row-.*"
+            - extendedWaitUntil:
+                visible:
+                  id: "student-detail-screen"
+                timeout: 15000
+            - assertVisible:
+                id: "student-detail-name"

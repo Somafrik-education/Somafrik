@@ -1,0 +1,48 @@
+# Exécuté seulement si SOMAFRIK_E2E_PLATFORM_* est fourni.
+# Sinon le runner enregistre BLOCKED_NO_PLATFORM_QA_CREDENTIALS.
+appId: com.somafrik.app
+---
+- launchApp:
+    clearState: true
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: "role-selection-screen"
+    timeout: 20000
+- tapOn:
+    id: "role-school-code-input"
+- eraseText
+- inputText: "SUPERADMIN"
+- hideKeyboard
+- tapOn:
+    id: "role-verify-button"
+- extendedWaitUntil:
+    visible:
+      id: "login-screen"
+    timeout: 15000
+- tapOn:
+    id: "login-identifier-input"
+- eraseText
+- inputText: "${SOMAFRIK_E2E_PLATFORM_IDENTIFIER}"
+- hideKeyboard
+- tapOn:
+    id: "login-password-input"
+- eraseText
+- inputText: "${SOMAFRIK_E2E_PLATFORM_PASSWORD}"
+- hideKeyboard
+- tapOn:
+    id: "login-submit-button"
+- extendedWaitUntil:
+    visible:
+      id: "home-admin-dashboard"
+    timeout: 35000
+- tapOn:
+    id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE}"
+- wait: 5000
+- assertVisible:
+    id: "home-users-value"
+- tapOn:
+    id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE_B}"
+- wait: 5000
+- assertVisible:
+    id: "home-users-value"

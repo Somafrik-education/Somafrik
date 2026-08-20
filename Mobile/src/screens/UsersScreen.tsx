@@ -16,10 +16,13 @@ export default function UsersScreen() {
     }, [load, resourceScopeKey]),
   );
 
+  const listHydrated = snapshot.status === "success" && snapshot.data.length > 0;
+
   return (
     <FlatList
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: bottomPadding }]}
+      testID={listHydrated ? "users-list" : undefined}
       data={snapshot.status === "success" ? snapshot.data : []}
       keyExtractor={(user) => user.id}
       refreshControl={<RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} />}

@@ -23,12 +23,14 @@ export default function TeachersScreen() {
   );
 
   const showQueryState = snapshot.status !== "success";
+  const listHydrated = snapshot.status === "success" && snapshot.data.length > 0;
 
   return (
+    <View style={styles.container} testID={NAVIGATION_TEST_IDS.teachersScreen}>
     <FlatList
-      style={styles.container}
+      style={styles.list}
       contentContainerStyle={contentStyle}
-      testID={NAVIGATION_TEST_IDS.teachersScreen}
+      testID={listHydrated ? "teachers-list" : undefined}
       data={showQueryState ? [] : snapshot.data}
       keyExtractor={(teacher) => teacher.id}
       refreshControl={<RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} />}
@@ -77,11 +79,13 @@ export default function TeachersScreen() {
         </Text>
       }
     />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8FAFC" },
+  list: { flex: 1 },
   content: { padding: 20 },
   title: { fontSize: 32, fontWeight: "900", color: "#0F172A" },
   subtitle: { marginTop: 6, marginBottom: 20, color: "#64748B", fontWeight: "700" },

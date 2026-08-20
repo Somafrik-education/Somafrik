@@ -1,8 +1,28 @@
 appId: com.somafrik.app
 ---
-- launchApp
-- stopApp
-- launchApp
-- assertNotVisible: "catalog"
+- runFlow: flows/login-admin-school.yaml
+- assertVisible:
+    id: "home-admin-dashboard"
 - assertVisible:
     id: "home-users-value"
+- assertVisible:
+    id: "home-overview-title"
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "home-admin-dashboard"
+    timeout: 25000
+- wait: 8000
+- assertVisible:
+    id: "home-users-value"
+- assertVisible:
+    id: "home-overview-title"
+- assertVisible:
+    id: "home-presence-value"
+- assertNotVisible:
+    id: "role-selection-screen"
+- copyTextFrom:
+    id: "home-users-value"
+- assertTrue: "${!maestro.copiedText.startsWith('—') && !maestro.copiedText.includes('Indisponible')}"

@@ -12,3 +12,4 @@ dist/
 android/
 ios/
 android/keystore.properties
+artifacts/
