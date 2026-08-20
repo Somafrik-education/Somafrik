@@ -144,8 +144,8 @@ Le workflow GitHub conserve ces artifacts 14 jours.
 
 - permissions GitHub : `contents: read` ;
 - uniquement actions officielles `actions/*` dans ce workflow ;
-- Android Emulator démarré directement via Android SDK ;
-- Maestro CLI verrouillé sur `2.8.0` et installé avant toute injection des secrets ;
+- Android Emulator API 34 démarré directement via Android SDK ;
+- Maestro CLI verrouillé sur `2.7.0` et installé avant toute injection des secrets ;
 - secrets injectés uniquement dans les étapes `Run ... black-box suite` ;
 - aucun EAS submit ;
 - aucun upload Play Store ;
