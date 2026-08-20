@@ -12,9 +12,10 @@ import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import { canReadRoute } from "../domain/security/permissions";
+import { shortBottomTabLabel } from "../lib/mobileUxV1Layout";
 
-/** Nombre max d'onglets métier dans le menu flottant (hors Accueil et Menu). */
-export const MAX_FLOATING_ROLE_TABS = 5;
+/** Nombre max d'onglets métier visibles (Accueil occupe le cinquième emplacement). */
+export const MAX_FLOATING_ROLE_TABS = 4;
 
 export type RoleTabDefinition = {
   tabName: string;
@@ -52,7 +53,7 @@ const schoolAdminTabs: RoleTabDefinition[] = [
     tabName: "Utilisateurs",
     route: "Users",
     component: UsersScreen,
-    label: "Utilisateurs",
+    label: "Comptes",
     icon: "person-outline",
     focusedIcon: "person",
     quickActionIcon: "person-circle-outline",
@@ -62,7 +63,7 @@ const schoolAdminTabs: RoleTabDefinition[] = [
     tabName: "Enseignants",
     route: "Teachers",
     component: TeachersScreen,
-    label: "Enseignants",
+    label: "Profs",
     icon: "school-outline",
     focusedIcon: "school",
     quickActionIcon: "person-add-outline",
@@ -224,7 +225,7 @@ const globalAdminTabs: RoleTabDefinition[] = [
     tabName: "Enseignants",
     route: "Teachers",
     component: TeachersScreen,
-    label: "Enseignants",
+    label: "Profs",
     icon: "school-outline",
     focusedIcon: "school",
     quickActionIcon: "person-add-outline",
@@ -276,5 +277,5 @@ export function buildOverflowQuickActionItems(session: any): QuickActionItem[] {
 }
 
 export function getTabBarLabel(tabName: string, definition?: RoleTabDefinition) {
-  return definition?.label ?? tabName;
+  return shortBottomTabLabel(tabName, definition?.label);
 }
