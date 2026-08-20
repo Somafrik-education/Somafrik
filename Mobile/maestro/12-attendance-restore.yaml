@@ -1,0 +1,18 @@
+appId: com.somafrik.app
+---
+- runFlow: _login-admin-school.yaml
+- tapOn: "Présences"
+- extendedWaitUntil:
+    visible: "${SOMAFRIK_E2E_CLASS_NAME}"
+    timeout: 15000
+- tapOn: "${SOMAFRIK_E2E_CLASS_NAME}"
+- extendedWaitUntil:
+    visible: "${SOMAFRIK_E2E_STUDENT_NAME}"
+    timeout: 15000
+- tapOn:
+    id: "attendance-action-${SOMAFRIK_E2E_STUDENT_ID}-${SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG}"
+- tapOn: "Enregistrer l'appel"
+- extendedWaitUntil:
+    visible: "Appel enregistré"
+    timeout: 20000
+- tapOn: "OK"
