@@ -43,6 +43,25 @@ on:
         description: "Libellé d'évaluation canonique visible"
         required: true
         type: string
+      run_mutations:
+        description: "Exécuter le test réversible de présence (tenant QA dédié uniquement)"
+        required: true
+        default: false
+        type: boolean
+      student_id:
+        description: "UUID/ID exact de l'élève du test mutationnel"
+        required: false
+        type: string
+      original_attendance_status:
+        description: "Statut à restaurer: Présent, Absent, Retard ou Justifié"
+        required: false
+        default: "Présent"
+        type: string
+      target_attendance_status:
+        description: "Statut temporaire différent de l'original"
+        required: false
+        default: "Absent"
+        type: string
 
 permissions:
   contents: read
@@ -97,6 +116,9 @@ jobs:
       - name: Install workspace + Mobile
         run: npm ci && npm ci --prefix Mobile
 
+      - name: Static runtime contract
+        run: npm --prefix Mobile run verify:mobile-ui-e2e-scaffold
+
       - name: Install Maestro
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
@@ -133,6 +155,15 @@ jobs:
             test -n "$APK" || { echo "Preview APK introuvable"; exit 1; }
             adb install -r "$APK"
             npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+
+            if [ "${{ inputs.run_mutations }}" = "true" ]; then
+              export SOMAFRIK_E2E_MODE=mutation
+              export SOMAFRIK_E2E_ALLOW_MUTATIONS=1
+              export SOMAFRIK_E2E_STUDENT_ID='${{ inputs.student_id }}'
+              export SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS='${{ inputs.original_attendance_status }}'
+              export SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS='${{ inputs.target_attendance_status }}'
+              npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+            fi
 
       - name: Upload live runtime evidence
         if: always()
@@ -177,6 +208,9 @@ jobs:
 
       - name: Install workspace + Mobile
         run: npm ci && npm ci --prefix Mobile
+
+      - name: Static runtime contract
+        run: npm --prefix Mobile run verify:mobile-ui-e2e-scaffold
 
       - name: Install Maestro
         run: |
@@ -233,13 +267,19 @@ jobs:
             adb install -r "$APK"
             npm --prefix Mobile run verify:mobile-ui-e2e-runtime
 
+      - name: Collect fault proxy evidence
+        if: always()
+        run: |
+          mkdir -p Mobile/artifacts/maestro-runtime
+          if [ -f /tmp/somafrik-e2e-proxy.log ]; then
+            cp /tmp/somafrik-e2e-proxy.log Mobile/artifacts/maestro-runtime/fault-proxy.log
+          fi
+
       - name: Upload fault runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mobile-e2e-fault-${{ github.run_id }}
-          path: |
-            Mobile/artifacts/maestro-runtime
-            /tmp/somafrik-e2e-proxy.log
+          path: Mobile/artifacts/maestro-runtime
           if-no-files-found: error
           retention-days: 14
