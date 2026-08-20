@@ -9,6 +9,7 @@ import {
   normalizeTeacher,
   readTenantScopeFields,
 } from "./canonicalResourceNormalize";
+import { pickInitialSchoolCode, schoolSelectorChoice } from "./activeSchool";
 
 function run() {
   const tenant = readTenantScopeFields({
@@ -53,14 +54,28 @@ function run() {
 
   const school = normalizeSchool({
     id: "school-uuid",
-    code: "CD-IN-26-001",
+    code: "SCH-ABC123",
+    schoolCode: "SCH-ABC123",
     loginCode: "CD-IN-26-001",
+    publicId: "CD-IN-26-001",
     name: "Institut Nuru",
     countryCode: "CD",
   });
-  assert.equal(school?.code, "CD-IN-26-001");
-  assert.equal(school?.name, "Institut Nuru");
-  assert.equal(school?.countryCode, "CD");
+  if (!school) throw new Error("normalizeSchool a échoué");
+  assert.equal(school.code, "CD-IN-26-001");
+  assert.equal(school.publicId, "CD-IN-26-001");
+  assert.equal(school.name, "Institut Nuru");
+  assert.equal(school.countryCode, "CD");
+  assert.notEqual(school.code, "SCH-ABC123");
+  assert.doesNotMatch(JSON.stringify(school), /SCH-ABC123/);
+
+  const selector = schoolSelectorChoice(school);
+  assert.equal(selector.code, "CD-IN-26-001");
+  assert.match(selector.label, /CD-IN-26-001/);
+  assert.doesNotMatch(selector.label, /SCH-ABC123/);
+  const activeSchoolCode = pickInitialSchoolCode({ role: "super_admin" }, [selector.code]);
+  assert.equal(activeSchoolCode, "CD-IN-26-001");
+  assert.notEqual(activeSchoolCode, "SCH-ABC123");
 
   console.log("canonicalResourceNormalize.test.ts OK");
 }

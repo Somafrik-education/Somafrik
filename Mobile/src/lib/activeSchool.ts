@@ -56,3 +56,11 @@ export function resolveTargetSchoolCodes(activeSchoolCode: string, availableScho
   }
   return activeSchoolCode ? [activeSchoolCode] : [];
 }
+
+/** Identité affichée / active du sélecteur : toujours school.code (code public V2). */
+export function schoolSelectorChoice(school: { code: string; name: string }): { code: string; label: string } {
+  return {
+    code: school.code,
+    label: `${school.name} (${school.code})`,
+  };
+}

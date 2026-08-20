@@ -63,6 +63,8 @@ function main() {
   assert.match(normalize, /readTenantScopeFields/);
   assert.match(normalize, /schoolCode: tenant\.schoolCode/);
   assert.match(normalize, /export function normalizeSchool/);
+  assert.match(normalize, /const publicCode = loginCode \|\| internalCode/);
+  assert.match(normalize, /code: publicCode/);
   assert.doesNotMatch(api, /\bfetch\s*\(/);
   assert.doesNotMatch(api, /\baxios\b/);
   assert.doesNotMatch(api, /JSON\.stringify\(\s*\{[^}]*\btenantId\s*:/s);

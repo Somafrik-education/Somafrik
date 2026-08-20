@@ -187,15 +187,16 @@ export function normalizeMessage(value: unknown): CanonicalSchoolMessage | null 
 
 export function normalizeSchool(value: unknown): SchoolProfile | null {
   const row = record(value);
+  const internalCode = text(row.code ?? row.schoolCode ?? row.school_code);
   const loginCode = text(row.loginCode ?? row.login_code ?? row.publicId ?? row.public_id);
-  const code = text(row.code ?? row.schoolCode ?? row.school_code) || loginCode;
-  if (!code) return null;
+  const publicCode = loginCode || internalCode;
+  if (!publicCode) return null;
   const tenant = readTenantScopeFields(row);
   return {
-    id: text(row.id) || code,
-    publicId: loginCode || code,
-    code,
-    name: text(row.name) || code,
+    id: text(row.id) || publicCode,
+    publicId: publicCode,
+    code: publicCode,
+    name: text(row.name) || publicCode,
     type: text(row.type ?? row.schoolType ?? row.school_type) || "Établissement",
     city: text(row.city),
     country: text(row.country),

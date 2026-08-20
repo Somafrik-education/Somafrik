@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { useAdminData } from "../context/AdminDataContext";
-import { ALL_SCHOOLS_CODE } from "../lib/activeSchool";
+import { ALL_SCHOOLS_CODE, schoolSelectorChoice } from "../lib/activeSchool";
 
 export default function SchoolSelector() {
   const {
@@ -17,7 +17,7 @@ export default function SchoolSelector() {
 
   const options = [
     { code: ALL_SCHOOLS_CODE, label: "Tous les etablissements" },
-    ...availableSchools.map((school) => ({ code: school.code, label: `${school.name} (${school.code})` })),
+    ...availableSchools.map((school) => schoolSelectorChoice(school)),
   ];
 
   return (

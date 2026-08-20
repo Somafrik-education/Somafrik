@@ -120,6 +120,16 @@ function main() {
   assert.doesNotMatch(normalizeTest, /CD-2026-0001|BI-2026-0001/);
   assert.match(scopeTest, /CD-IN-26-001/);
   assert.match(scopeTest, /BI-EC-26-001/);
+  assert.match(normalizeTest, /SCH-ABC123/);
+  assert.match(normalizeTest, /loginCode: "CD-IN-26-001"/);
+  assert.match(normalizeTest, /school\.code, "CD-IN-26-001"/);
+  assert.match(normalizeTest, /schoolSelectorChoice/);
+  assert.match(normalizeTest, /activeSchoolCode, "CD-IN-26-001"/);
+
+  const selector = read(path.join("components", "SchoolSelector.tsx"));
+  assert.match(selector, /schoolSelectorChoice/);
+  assert.doesNotMatch(selector, /loginCode/);
+  assert.doesNotMatch(selector, /legacySchoolCode/);
 
   console.log("OK: Accueil hydrate users/presences/payments/annonces/messages ; isolation de scope ; pas de faux 0");
 }
