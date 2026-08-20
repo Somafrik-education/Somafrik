@@ -40,6 +40,11 @@ export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
   "Conception bulletins",
 ]);
 
+/**
+ * Vues Mobile explicitement admises pour le Super Admin. Cette liste est
+ * volontairement stricte : on ne déduit jamais une vue opérationnelle depuis
+ * un alias de feature (ex. Audit -> Utilisateurs, Support -> Messages).
+ */
 const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
   "overview",
   "countries",
@@ -345,9 +350,7 @@ export function canManagePresences(session: any): boolean {
 
 export function canReadView(session: any, viewName: string): boolean {
   if (isSuperAdminSessionRole(session?.role)) {
-    if (SUPER_ADMIN_ALLOWED_VIEWS.has(viewName)) return true;
-    const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
-    return Boolean(feature) && SUPER_ADMIN_ALLOWED_FEATURES.has(feature);
+    return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
   }
   if (viewName === "overview") return true;
 
@@ -429,6 +432,9 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
 }
 
 export function canReadRoute(session: any, routeName?: string) {
+  if (isSuperAdminSessionRole(session?.role)) {
+    return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
+  }
   if (routeName && canReadView(session, routeName)) return true;
   const feature = routeName ? routeFeatureMap[routeName] : undefined;
   return Boolean(feature) && hasSecurityPermission(session, feature, "READ");
