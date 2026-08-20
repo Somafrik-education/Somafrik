@@ -27,11 +27,3 @@ appId: com.somafrik.app
 - extendedWaitUntil:
     visible: "Statut : ${SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS}"
     timeout: 15000
-# Cleanup obligatoire : restaurer le statut d'origine du fixture QA.
-- tapOn:
-    id: "attendance-action-${SOMAFRIK_E2E_STUDENT_ID}-${SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG}"
-- tapOn: "Enregistrer l'appel"
-- extendedWaitUntil:
-    visible: "Appel enregistré"
-    timeout: 20000
-- tapOn: "OK"
