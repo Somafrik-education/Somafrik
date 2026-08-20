@@ -20,6 +20,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useCallback, useMemo, useState } from "react";
 
+import { useFocusEffect } from "@react-navigation/native";
+
 import { useAuth } from "../context/AuthContext";
 
 import { useAdminData } from "../context/AdminDataContext";
@@ -74,11 +76,21 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const { session } = useAuth();
 
-  const { studentsData, paymentsData, presencesData, teachersData, assignmentsData, classesData } = useAdminData();
+  const { studentsData, paymentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadTeachers, loadClasses } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
   const [query, setQuery] = useState("");
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+      void loadPayments();
+      void loadTeachers();
+      void loadClasses();
+    }, [loadStudents, loadPresences, loadPayments, loadTeachers, loadClasses]),
+  );
 
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
 

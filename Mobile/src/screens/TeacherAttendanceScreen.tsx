@@ -1,6 +1,7 @@
 import { Alert, ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPresenceStats, rollCallInitialStatus } from "../domain/metrics/schoolMetrics";
@@ -60,7 +61,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences } =
+  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences, loadStudents, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot } =
     useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -85,21 +86,32 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
   const [auditLog, setAuditLog] = useState<string[]>([]);
-  const [attendance, setAttendance] = useState<Record<string, AttendanceEntry>>(() =>
-    Object.fromEntries(
-      classStudents.map((student) => {
+  const [attendance, setAttendance] = useState<Record<string, AttendanceEntry>>({});
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+      void loadTeachers();
+      void loadClasses();
+    }, [loadStudents, loadPresences, loadTeachers, loadClasses]),
+  );
+
+  useEffect(() => {
+    setAttendance((current) => {
+      const next = { ...current };
+      for (const student of classStudents) {
+        if (next[student.id]?.modifiedAt) continue;
         const latest = [...presencesData]
           .reverse()
           .find((presence) => presenceMatchesStudent(presence, student));
-        return [
-          student.id,
-          {
-            status: rollCallInitialStatus(latest) as AttendanceStatus,
-          },
-        ];
-      })
-    )
-  );
+        next[student.id] = {
+          status: rollCallInitialStatus(latest) as AttendanceStatus,
+        };
+      }
+      return next;
+    });
+  }, [classStudents, presencesData, studentsSnapshot.status, presencesSnapshot.status]);
 
   const todayLabel = formatDate(new Date());
   const currentHour = formatHour(new Date());

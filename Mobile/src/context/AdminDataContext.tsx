@@ -33,6 +33,16 @@ import {
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
 import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
+import {
+  getCanonicalAnnouncements,
+  getCanonicalMessages,
+  getCanonicalTeachers,
+  getCanonicalUsers,
+  type CanonicalAnnouncement,
+  type CanonicalSchoolMessage,
+  type CanonicalTeacher,
+  type CanonicalUserAccount,
+} from "../services/domainHydrationApi";
 import { snapshotFromFailure, snapshotFromSuccess, type ResourceSnapshot } from "../lib/dataTruth";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
@@ -75,12 +85,25 @@ type AdminDataContextValue = {
   courseSchedulesData: CanonicalWeeklySlot[];
   paymentsData: PaymentItem[];
   paymentsSnapshot: ResourceSnapshot<PaymentItem>;
+  usersSnapshot: ResourceSnapshot<CanonicalUserAccount>;
+  teachersSnapshot: ResourceSnapshot<CanonicalTeacher>;
+  studentsSnapshot: ResourceSnapshot<Student>;
+  classesSnapshot: ResourceSnapshot<SchoolClass>;
+  presencesSnapshot: ResourceSnapshot<PresenceItem>;
+  announcementsSnapshot: ResourceSnapshot<CanonicalAnnouncement>;
+  messagesSnapshot: ResourceSnapshot<CanonicalSchoolMessage>;
   courseSchedulesSnapshot: ResourceSnapshot<CanonicalWeeklySlot>;
   planningCourseOptionsSnapshot: ResourceSnapshot<PlanningCourseOption>;
   roomsSnapshot: ResourceSnapshot<CanonicalSchoolRoom>;
   replacementsSnapshot: ResourceSnapshot<CanonicalReplacement>;
   reportCardsSnapshot: ResourceSnapshot<CanonicalReportCard>;
   loadPayments: () => Promise<void>;
+  loadUsers: () => Promise<void>;
+  loadTeachers: () => Promise<void>;
+  loadStudents: () => Promise<void>;
+  loadClasses: () => Promise<void>;
+  loadAnnouncements: () => Promise<void>;
+  loadMessages: () => Promise<void>;
   loadCourseSchedules: () => Promise<void>;
   loadPlanningWeekly: () => Promise<void>;
   loadPlanningCourseOptions: () => Promise<void>;
@@ -189,6 +212,34 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     data: [],
   });
   const [notesSnapshot, setNotesSnapshot] = useState<ResourceSnapshot<CanonicalGrade>>({
+    status: "idle",
+    data: [],
+  });
+  const [usersSnapshot, setUsersSnapshot] = useState<ResourceSnapshot<CanonicalUserAccount>>({
+    status: "idle",
+    data: [],
+  });
+  const [teachersSnapshot, setTeachersSnapshot] = useState<ResourceSnapshot<CanonicalTeacher>>({
+    status: "idle",
+    data: [],
+  });
+  const [studentsSnapshot, setStudentsSnapshot] = useState<ResourceSnapshot<Student>>({
+    status: "idle",
+    data: [],
+  });
+  const [classesSnapshot, setClassesSnapshot] = useState<ResourceSnapshot<SchoolClass>>({
+    status: "idle",
+    data: [],
+  });
+  const [presencesSnapshot, setPresencesSnapshot] = useState<ResourceSnapshot<PresenceItem>>({
+    status: "idle",
+    data: [],
+  });
+  const [announcementsSnapshot, setAnnouncementsSnapshot] = useState<ResourceSnapshot<CanonicalAnnouncement>>({
+    status: "idle",
+    data: [],
+  });
+  const [messagesSnapshot, setMessagesSnapshot] = useState<ResourceSnapshot<CanonicalSchoolMessage>>({
     status: "idle",
     data: [],
   });
@@ -347,10 +398,16 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       applyArray(studentPayload, setStudentsData);
       applyArray(classPayload, setClassesData);
       applyArray(coursePayload, setCoursesData);
+      const studentRows = Array.isArray(studentPayload) ? (studentPayload as Student[]) : [];
+      const classRows = Array.isArray(classPayload) ? (classPayload as SchoolClass[]) : [];
+      const presenceRows = Array.isArray(presencePayload) ? (presencePayload as PresenceItem[]) : [];
+      setStudentsSnapshot(snapshotFromSuccess(studentRows));
+      setClassesSnapshot(snapshotFromSuccess(classRows));
       const canonicalNotes = Array.isArray(notePayload) ? notePayload : [];
       setNotesSnapshot(snapshotFromSuccess(canonicalNotes));
       setNotesData(canonicalNotes.map(canonicalGradeToNoteItem));
       applyArray(presencePayload, setPresencesData);
+      setPresencesSnapshot(snapshotFromSuccess(presenceRows));
       applyArray(assignmentPayload, setAssignmentsData);
       const subjectRows = Array.isArray(subjectPayload)
         ? subjectPayload
@@ -380,6 +437,78 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       setPaymentsSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
       setPaymentsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadUsers = useCallback(async () => {
+    if (!session) return;
+    setUsersSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalUsers();
+      setUsersData(rows);
+      setUsersSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setUsersSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadTeachers = useCallback(async () => {
+    if (!session) return;
+    setTeachersSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalTeachers();
+      setTeachersData(rows);
+      setTeachersSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setTeachersSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadStudents = useCallback(async () => {
+    if (!session) return;
+    setStudentsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = (await getStudents()) as Student[];
+      setStudentsData(rows);
+      setStudentsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setStudentsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadClasses = useCallback(async () => {
+    if (!session) return;
+    setClassesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = (await getClasses()) as SchoolClass[];
+      setClassesData(rows);
+      setClassesSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setClassesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadAnnouncements = useCallback(async () => {
+    if (!session) return;
+    setAnnouncementsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalAnnouncements();
+      setAnnouncementsData(rows);
+      setAnnouncementsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setAnnouncementsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadMessages = useCallback(async () => {
+    if (!session) return;
+    setMessagesSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalMessages();
+      setMessagesData(rows);
+      setMessagesSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      setMessagesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
@@ -485,11 +614,13 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   const loadPresences = useCallback(async () => {
     if (!session) return;
+    setPresencesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getPresences();
+      const rows = (await getPresences()) as PresenceItem[];
       applyArray(rows, setPresencesData);
+      setPresencesSnapshot(snapshotFromSuccess(rows));
     } catch (error) {
-      snapshotFromFailure(error, []);
+      setPresencesSnapshot((current) => snapshotFromFailure(error, current.data));
     }
   }, [session]);
 
@@ -636,15 +767,22 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     };
 
     return {
-      studentsData: (state.students ?? []) as Student[],
-      teachersData: (state.teachers ?? []) as Teacher[],
-      classesData: (state.classes ?? []) as SchoolClass[],
+      studentsData: (studentsSnapshot.status === "idle" ? state.students ?? [] : studentsSnapshot.data) as Student[],
+      teachersData: (teachersSnapshot.status === "idle" ? state.teachers ?? [] : teachersSnapshot.data) as Teacher[],
+      classesData: (classesSnapshot.status === "idle" ? state.classes ?? [] : classesSnapshot.data) as SchoolClass[],
       countriesData: (state.countries ?? []) as CountryProfile[],
       coursesData: (state.courses ?? []) as Course[],
       assignmentsData: (state.assignments ?? []) as TeacherAssignment[],
       courseSchedulesData: courseSchedulesSnapshot.data,
       paymentsData: paymentsSnapshot.data as PaymentItem[],
       paymentsSnapshot,
+      usersSnapshot,
+      teachersSnapshot,
+      studentsSnapshot,
+      classesSnapshot,
+      presencesSnapshot,
+      announcementsSnapshot,
+      messagesSnapshot,
       courseSchedulesSnapshot,
       planningCourseOptionsSnapshot,
       roomsSnapshot,
@@ -653,6 +791,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       evaluationsSnapshot,
       notesSnapshot,
       loadPayments,
+      loadUsers,
+      loadTeachers,
+      loadStudents,
+      loadClasses,
+      loadAnnouncements,
+      loadMessages,
       loadCourseSchedules: loadPlanningWeekly,
       loadPlanningWeekly,
       loadPlanningCourseOptions,
@@ -666,12 +810,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       loadPresences,
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
-      presencesData: (state.presences ?? []) as PresenceItem[],
+      presencesData: (presencesSnapshot.status === "idle" ? state.presences ?? [] : presencesSnapshot.data) as PresenceItem[],
       notesData: (state.notes ?? []) as NoteItem[],
       schoolsData: (state.schools ?? []) as SchoolProfile[],
-      usersData: (state.users ?? []) as UserAccount[],
-      announcementsData: (state.announcements ?? []) as Announcement[],
-      messagesData: (state.messages ?? []) as SchoolMessage[],
+      usersData: (usersSnapshot.status === "idle" ? state.users ?? [] : usersSnapshot.data) as UserAccount[],
+      announcementsData: (announcementsSnapshot.status === "idle" ? state.announcements ?? [] : announcementsSnapshot.data) as Announcement[],
+      messagesData: (messagesSnapshot.status === "idle" ? state.messages ?? [] : messagesSnapshot.data) as SchoolMessage[],
       notificationsData: (state.notifications ?? []) as PlatformNotification[],
       rolePermissionsData,
       academicConfigData,
@@ -681,7 +825,18 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       setActiveSchoolCode,
       syncStatus,
       refreshBackOfficeState,
-      getItems: (entity) => state[entity],
+      getItems: (entity) => {
+        if (entity === "users") return usersSnapshot.status === "idle" ? state.users : usersSnapshot.data;
+        if (entity === "teachers") return teachersSnapshot.status === "idle" ? state.teachers : teachersSnapshot.data;
+        if (entity === "students") return studentsSnapshot.status === "idle" ? state.students : studentsSnapshot.data;
+        if (entity === "classes") return classesSnapshot.status === "idle" ? state.classes : classesSnapshot.data;
+        if (entity === "payments") return paymentsSnapshot.data;
+        if (entity === "announcements") {
+          return announcementsSnapshot.status === "idle" ? state.announcements : announcementsSnapshot.data;
+        }
+        if (entity === "messages") return messagesSnapshot.status === "idle" ? state.messages : messagesSnapshot.data;
+        return state[entity];
+      },
       createItem: (entity, item) => {
         if (
           entity === "classes" || entity === "schools" || entity === "students" ||
@@ -691,19 +846,31 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         ) return;
         if (entity === "announcements") {
           void createClientsAnnouncement(item as Record<string, unknown>)
-            .then((created) => setAnnouncementsData((current) => [created as Announcement, ...current]))
+            .then((created) => {
+              const row = created as CanonicalAnnouncement;
+              setAnnouncementsData((current) => [row, ...current]);
+              setAnnouncementsSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
+            })
             .catch(() => setSyncStatus("offline"));
           return;
         }
         if (entity === "messages") {
           void sendClientsMessage(item as Record<string, unknown>, { idempotencyKey: createIdempotencyKey() })
-            .then((created) => setMessagesData((current) => [created as SchoolMessage, ...current]))
+            .then((created) => {
+              const row = created as CanonicalSchoolMessage;
+              setMessagesData((current) => [row, ...current]);
+              setMessagesSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
+            })
             .catch(() => setSyncStatus("offline"));
           return;
         }
         if (entity === "users") {
           void createClientsUser(item as Record<string, unknown>)
-            .then((created) => setUsersData((current) => [created as UserAccount, ...current]))
+            .then((created) => {
+              const row = created as CanonicalUserAccount;
+              setUsersData((current) => [row, ...current]);
+              setUsersSnapshot((current) => snapshotFromSuccess([row, ...current.data]));
+            })
             .catch(() => setSyncStatus("offline"));
           return;
         }
@@ -747,17 +914,20 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         ) return;
         commitEntity(entity, (items) => items.filter((row) => row.id !== id));
       },
-      upsertPresenceItems: (items) =>
+      upsertPresenceItems: (items) => {
         setPresencesData((current) => {
           const scopedItems = items.map((item) => applyItemScope("presences", item, session, state));
           const keys = new Set(scopedItems.map((item) => `${item.studentId}-${item.date}`));
-          return enforceEntityScope(
+          const next = enforceEntityScope(
             "presences",
             [...scopedItems, ...current.filter((item) => !keys.has(`${item.studentId}-${item.date}`))],
             session,
             state,
           );
-        }),
+          setPresencesSnapshot(snapshotFromSuccess(next));
+          return next;
+        });
+      },
       upsertNoteItem: (item) =>
         setNotesData((current) => {
           const scopedItem = applyItemScope("notes", item, session, state);
@@ -869,7 +1039,20 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     reportCardsSnapshot,
     evaluationsSnapshot,
     notesSnapshot,
+    usersSnapshot,
+    teachersSnapshot,
+    studentsSnapshot,
+    classesSnapshot,
+    presencesSnapshot,
+    announcementsSnapshot,
+    messagesSnapshot,
     loadPayments,
+    loadUsers,
+    loadTeachers,
+    loadStudents,
+    loadClasses,
+    loadAnnouncements,
+    loadMessages,
     loadPlanningWeekly,
     loadPlanningCourseOptions,
     loadRooms,

@@ -1,5 +1,7 @@
 import { View, Text, FlatList, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
@@ -20,12 +22,25 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { selectedStudentId } = useAuth();
-  const { studentsData, presencesData } = useAdminData();
+  const { studentsData, presencesData, loadPresences, loadStudents, presencesSnapshot } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+    }, [loadStudents, loadPresences]),
+  );
+
   const presencesEleve = presencesData.filter((presence) => presence.studentId === studentId);
   const presenceStats = getPresenceStats(presencesEleve);
+  const presenceRateLabel =
+    presencesSnapshot.status === "idle" || presencesSnapshot.status === "loading"
+      ? "—"
+      : presencesSnapshot.status === "error"
+        ? "Indisponible"
+        : `${presenceStats.rate}%`;
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesScreen}>
@@ -50,7 +65,7 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
         onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
       >
         <Text style={[styles.summaryLabel, { color: "#CBD5E1" }]}>Taux de présence</Text>
-        <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{presenceStats.rate}%</Text>
+        <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{presenceRateLabel}</Text>
         <Text style={[styles.summaryMeta, { color: "#CBD5E1" }]}>
           {presenceStats.attended}/{presenceStats.total} présent(s), {presenceStats.justified} justifié(s)
         </Text>

@@ -1,0 +1,8 @@
+appId: com.somafrik.app
+---
+- launchApp
+- stopApp
+- launchApp
+- assertNotVisible: "catalog"
+- assertVisible:
+    id: "home-users-value"

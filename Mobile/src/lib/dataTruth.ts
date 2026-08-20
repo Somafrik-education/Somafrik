@@ -70,6 +70,32 @@ export function shouldRenderError(snapshot: ResourceSnapshot<unknown>): boolean 
   return snapshot.status === "error" || snapshot.status === "offline";
 }
 
+export const METRIC_PENDING_LABEL = "—";
+export const METRIC_UNAVAILABLE_LABEL = "Indisponible";
+
+/**
+ * Un 0 n'est affiché que si le serveur a confirmé une liste vide (status empty)
+ * ou une valeur métier nulle après success. idle/loading → —, error → Indisponible.
+ */
+export function metricLabelFromSnapshot<T>(
+  snapshot: ResourceSnapshot<T>,
+  formatReady: (data: T[]) => string,
+  emptyLabel = "0",
+): string {
+  if (snapshot.status === "idle" || snapshot.status === "loading") return METRIC_PENDING_LABEL;
+  if (snapshot.status === "error") return METRIC_UNAVAILABLE_LABEL;
+  if (snapshot.status === "offline") {
+    return snapshot.data.length ? formatReady(snapshot.data) : METRIC_UNAVAILABLE_LABEL;
+  }
+  if (snapshot.status === "empty") return emptyLabel;
+  return formatReady(snapshot.data);
+}
+
+export function isMetricReady(snapshot: ResourceSnapshot<unknown>): boolean {
+  return snapshot.status === "success" || snapshot.status === "empty"
+    || (snapshot.status === "offline" && snapshot.data.length > 0);
+}
+
 export type PaymentLine = {
   id?: string;
   feeTypeId?: string | null;
@@ -264,6 +290,7 @@ export const DATA_TRUTH_COPY = {
   emptyNotes: "Aucune note disponible",
   errorNotes: "Impossible de charger les notes.",
   offlineNotes: "Réseau indisponible. Les notes n'ont pas pu être chargées.",
+  unavailable: "Indisponible",
 } as const;
 
 export const DATA_TRUTH_TEST_IDS = {
@@ -286,4 +313,8 @@ export const DATA_TRUTH_TEST_IDS = {
   notesList: "evaluations-v2-notes-list",
   notesEmpty: "evaluations-v2-notes-empty",
   notesError: "evaluations-v2-notes-error",
+  homeUsersValue: "home-users-value",
+  homePresenceValue: "home-presence-value",
+  homePaymentsValue: "home-payments-value",
+  homeStudentsValue: "home-students-value",
 } as const;

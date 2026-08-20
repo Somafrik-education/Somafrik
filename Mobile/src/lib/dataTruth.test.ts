@@ -11,6 +11,9 @@ import {
   DATA_TRUTH_COPY,
   isPublishedBulletin,
   normalizePaymentRow,
+  metricLabelFromSnapshot,
+  METRIC_PENDING_LABEL,
+  METRIC_UNAVAILABLE_LABEL,
   parentAverageDisplay,
   paymentItemCount,
   paymentItemsDetail,
@@ -151,6 +154,20 @@ function run() {
   expectThrow("restricted home", () => assertUnrestrictedApiPath("/students"));
   clearRestrictedSession();
   assert.equal(hasRestrictedSession(), false);
+
+  assert.equal(metricLabelFromSnapshot({ status: "idle", data: [] }, () => "6"), METRIC_PENDING_LABEL);
+  assert.equal(metricLabelFromSnapshot({ status: "loading", data: [] }, () => "6"), METRIC_PENDING_LABEL);
+  assert.equal(
+    metricLabelFromSnapshot({ status: "error", data: [], errorMessage: "boom" }, () => "6"),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  assert.equal(metricLabelFromSnapshot({ status: "empty", data: [] }, () => "6"), "0");
+  assert.equal(metricLabelFromSnapshot({ status: "success", data: [{ id: "1" }, { id: "2" }] }, (rows) => String(rows.length)), "2");
+  assert.equal(
+    metricLabelFromSnapshot({ status: "offline", data: [{ id: "1" }] }, (rows) => String(rows.length)),
+    "1",
+  );
+  assert.equal(metricLabelFromSnapshot({ status: "offline", data: [] }, () => "6"), METRIC_UNAVAILABLE_LABEL);
 
   const previousPin = process.env.EXPO_PUBLIC_DEMO_PIN;
   process.env.EXPO_PUBLIC_DEMO_PIN = "";

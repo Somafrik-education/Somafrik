@@ -5,13 +5,12 @@ import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
+import { useAdminData } from "../context/AdminDataContext";
 import { canMutateEntity, canReadEntity } from "../domain/security/permissions";
-import { useCanonicalResource } from "../hooks/useCanonicalResource";
 import { markAnnouncementsRead } from "../lib/announcementsRead";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
   archiveCanonicalAnnouncement,
-  getCanonicalAnnouncements,
   type CanonicalAnnouncement,
 } from "../services/domainHydrationApi";
 
@@ -22,7 +21,7 @@ export default function AnnouncementsScreen({ navigation }: any) {
   const canRead = canReadEntity(session, "announcements");
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
   const canDelete = canMutateEntity(session, "announcements", "DELETE");
-  const { snapshot, load } = useCanonicalResource<CanonicalAnnouncement>(getCanonicalAnnouncements);
+  const { announcementsSnapshot: snapshot, loadAnnouncements: load } = useAdminData();
   const [archivingId, setArchivingId] = useState("");
 
   useFocusEffect(

@@ -1,0 +1,6 @@
+appId: com.somafrik.app
+---
+- launchApp
+- tapOn:
+    id: "home-users-value"
+- assertVisible: "Utilisateurs"

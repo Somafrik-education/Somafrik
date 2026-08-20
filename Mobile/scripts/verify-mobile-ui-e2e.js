@@ -1,0 +1,46 @@
+/**
+ * Matrice black-box Maestro (APK installé). N'exécute pas Maestro sauf SOMAFRIK_RUN_MAESTRO=1.
+ * Sans émulateur, le gate vérifie que les parcours existent et ciblent com.somafrik.app.
+ */
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+const { spawnSync } = require("child_process");
+
+const MOBILE = path.join(__dirname, "..");
+const MAESTRO = path.join(MOBILE, "maestro");
+
+const REQUIRED = [
+  "01-login-admin-school.yaml",
+  "02-home-metrics.yaml",
+  "03-users-matches-home.yaml",
+  "04-classes-presence.yaml",
+  "05-payments.yaml",
+  "06-teachers.yaml",
+  "07-attendance.yaml",
+  "08-notes.yaml",
+  "09-partial-domain-error.yaml",
+  "10-relaunch-no-catalog.yaml",
+];
+
+function main() {
+  for (const name of REQUIRED) {
+    const file = path.join(MAESTRO, name);
+    assert.ok(fs.existsSync(file), `parcours manquant: ${name}`);
+    const source = fs.readFileSync(file, "utf8");
+    assert.match(source, /appId:\s*com\.somafrik\.app/);
+  }
+  console.log(`OK: ${REQUIRED.length} parcours Maestro présents (appId com.somafrik.app)`);
+
+  if (process.env.SOMAFRIK_RUN_MAESTRO === "1") {
+    const result = spawnSync("maestro", ["test", MAESTRO], { encoding: "utf8", cwd: MOBILE });
+    if (result.status !== 0) {
+      throw new Error(result.stderr || result.stdout || "maestro test failed");
+    }
+    process.stdout.write(result.stdout || "");
+    return;
+  }
+  console.log("SKIP run: définir SOMAFRIK_RUN_MAESTRO=1 pour piloter l'APK installé");
+}
+
+main();

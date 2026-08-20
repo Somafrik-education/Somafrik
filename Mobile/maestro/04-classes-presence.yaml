@@ -1,0 +1,5 @@
+appId: com.somafrik.app
+---
+- launchApp
+- tapOn: "Classes"
+- assertVisible: "Présence"

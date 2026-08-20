@@ -296,6 +296,10 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     academicConfigData,
     refreshBackOfficeState,
     loadPayments,
+    loadUsers,
+    loadTeachers,
+    loadAnnouncements,
+    loadStudents,
     paymentsSnapshot,
   } = useAdminData();
   const config = configs[entity];
@@ -342,10 +346,12 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      if (entity === "payments") {
-        void loadPayments();
-      }
-    }, [entity, loadPayments]),
+      if (entity === "payments") void loadPayments();
+      if (entity === "users") void loadUsers();
+      if (entity === "teachers") void loadTeachers();
+      if (entity === "announcements") void loadAnnouncements();
+      if (entity === "students") void loadStudents();
+    }, [entity, loadPayments, loadUsers, loadTeachers, loadAnnouncements, loadStudents]),
   );
 
   useEffect(() => {

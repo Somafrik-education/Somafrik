@@ -10,9 +10,9 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { getPresenceRate } from "../data/catalog";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import { getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadRoute } from "../domain/security/permissions";
 import {
   classNameMatches,
@@ -49,11 +49,11 @@ export default function ClassesScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { classesData, studentsData, teachersData, assignmentsData, refreshBackOfficeState, syncStatus } = useAdminData();
+  const { classesData, studentsData, teachersData, assignmentsData, presencesSnapshot, loadClasses, loadStudents, loadPresences, loadTeachers, classesSnapshot, studentsSnapshot } = useAdminData();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [offlineActionMessage, setOfflineActionMessage] = useState<string | null>(null);
-  const isOffline = syncStatus === "offline";
+  const isOffline = classesSnapshot.status === "offline" || studentsSnapshot.status === "offline" || presencesSnapshot.status === "offline";
   const showLoading = isLoading && !isOffline;
   const blockNetworkActions = showLoading || isOffline;
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
@@ -70,7 +70,7 @@ export default function ClassesScreen({ navigation }: any) {
         setIsLoading(true);
       }
 
-      refreshBackOfficeState()
+      Promise.all([loadClasses(), loadStudents(), loadPresences(), loadTeachers()])
         .catch(() => null)
         .finally(() => {
           if (!cancelled) {
@@ -81,7 +81,7 @@ export default function ClassesScreen({ navigation }: any) {
       return () => {
         cancelled = true;
       };
-    }, [refreshBackOfficeState, isOffline]),
+    }, [loadClasses, loadStudents, loadPresences, loadTeachers, isOffline]),
   );
 
   const handleBlockedNetworkAction = () => {
@@ -214,7 +214,12 @@ export default function ClassesScreen({ navigation }: any) {
         renderItem={({ item }) => {
           const classStudents = visibleStudents.filter((student) => classNameMatches(student.className, item.name));
           const teacher = teachersData.find((teacherItem) => teacherItem.id === item.teacherId);
-          const presenceRate = getPresenceRate(classStudents.map((student) => student.id));
+          const presenceRateLabel =
+            presencesSnapshot.status === "idle" || presencesSnapshot.status === "loading"
+              ? "—"
+              : presencesSnapshot.status === "error"
+                ? "Indisponible"
+                : `${getPresenceStats(presencesSnapshot.data, classStudents.map((student) => student.id)).rate}%`;
 
           return (
             <TouchableOpacity
@@ -239,7 +244,7 @@ export default function ClassesScreen({ navigation }: any) {
                     {item.name}
                   </Text>
                   <View style={styles.badge}>
-                    <Text style={styles.badgeText}>Présence {presenceRate}%</Text>
+                    <Text style={styles.badgeText}>Présence {presenceRateLabel}</Text>
                   </View>
                 </View>
 

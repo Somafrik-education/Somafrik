@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
@@ -31,18 +33,31 @@ export default function StudentDetailScreen({
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const containerStyle = [styles.container, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, notesData, presencesData, paymentsData } = useAdminData();
+  const { studentsData, notesData, presencesData, paymentsData, loadStudents, loadPresences, loadNotes, loadPayments, studentsSnapshot, notesSnapshot, presencesSnapshot, paymentsSnapshot } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const canSeeNotes = canReadRoute(session, "StudentNotes");
   const canSeePresences = canReadRoute(session, "StudentPresences");
   const canSeePayments = canReadRoute(session, "StudentPayments");
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+      void loadNotes();
+      void loadPayments();
+    }, [loadStudents, loadPresences, loadNotes, loadPayments]),
+  );
 
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
   if (!student) {
     return (
       <View style={styles.container} testID={CLASSES_STUDENT_TEST_IDS.studentDetailScreen}>
-        <Text>Élève introuvable</Text>
+        <Text>
+          {studentsSnapshot.status === "idle" || studentsSnapshot.status === "loading"
+            ? "Chargement…"
+            : "Élève introuvable"}
+        </Text>
       </View>
     );
   }
@@ -107,7 +122,9 @@ export default function StudentDetailScreen({
             testID="student-detail-notes-stat"
             onPress={() => openSubScreen("StudentNotes")}
           >
-            <Text style={styles.statValue}>{studentNotes.length}</Text>
+            <Text style={styles.statValue}>
+              {notesSnapshot.status === "idle" || notesSnapshot.status === "loading" ? "—" : studentNotes.length}
+            </Text>
             <Text style={styles.statLabel}>Notes</Text>
           </TouchableOpacity>
         )}
@@ -119,7 +136,9 @@ export default function StudentDetailScreen({
             testID="student-detail-presences-stat"
             onPress={() => openSubScreen("StudentPresences")}
           >
-            <Text style={styles.statValue}>{presentCount}</Text>
+            <Text style={styles.statValue}>
+              {presencesSnapshot.status === "idle" || presencesSnapshot.status === "loading" ? "—" : presentCount}
+            </Text>
             <Text style={styles.statLabel}>Présences</Text>
           </TouchableOpacity>
         )}

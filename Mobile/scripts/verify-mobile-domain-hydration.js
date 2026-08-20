@@ -61,8 +61,11 @@ function main() {
   assert.doesNotMatch(hook, /catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
   console.log("OK: error/offline distincts de empty");
 
+  const context = source(path.join("context", "AdminDataContext.tsx"));
   const teachers = source(path.join("screens", "TeachersScreen.tsx"));
-  assert.match(teachers, /getCanonicalTeachers/);
+  assert.match(context, /getCanonicalTeachers/);
+  assert.match(teachers, /loadTeachers/);
+  assert.match(teachers, /teachersSnapshot/);
   assert.match(teachers, /useFocusEffect/);
   assert.match(teachers, /QueryStateView/);
   assert.match(teachers, /Impossible de charger les enseignants/);
@@ -71,7 +74,9 @@ function main() {
   console.log("OK: Enseignants hydratés à l'ouverture, actions no-op retirées");
 
   const users = source(path.join("screens", "UsersScreen.tsx"));
-  assert.match(users, /getCanonicalUsers/);
+  assert.match(context, /getCanonicalUsers/);
+  assert.match(users, /loadUsers/);
+  assert.match(users, /usersSnapshot/);
   assert.match(users, /activeRoles/);
   assert.match(users, /useFocusEffect/);
   assert.match(users, /QueryStateView/);
@@ -80,7 +85,8 @@ function main() {
   console.log("OK: Utilisateurs + rôles actifs hydratés au relaunch");
 
   const announcements = source(path.join("screens", "AnnouncementsScreen.tsx"));
-  assert.match(announcements, /getCanonicalAnnouncements/);
+  assert.match(context, /getCanonicalAnnouncements/);
+  assert.match(announcements, /loadAnnouncements/);
   assert.match(announcements, /archiveCanonicalAnnouncement/);
   assert.match(announcements, /useFocusEffect/);
   assert.match(announcements, /QueryStateView/);
@@ -91,7 +97,8 @@ function main() {
   console.log("OK: Annonces GET canonique + archivage serveur, pas de faux edit");
 
   const messages = source(path.join("screens", "MessagesScreen.tsx"));
-  assert.match(messages, /getCanonicalMessages/);
+  assert.match(context, /getCanonicalMessages/);
+  assert.match(messages, /loadMessages/);
   assert.match(messages, /markCanonicalMessageRead/);
   assert.match(messages, /submitProtectedMutation/);
   assert.match(messages, /sendClientsMessage\(payload,\s*\{\s*idempotencyKey\s*\}\)/);

@@ -17,7 +17,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute } from "../domain/security/permissions";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
-import { DATA_TRUTH_TEST_IDS, parentAverageDisplay } from "../lib/dataTruth";
+import { DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
@@ -34,7 +34,32 @@ import { NAVIGATION_COPY, NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpe
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, paymentsData, paymentsSnapshot, loadPayments, notesSnapshot, loadNotes, presencesData, announcementsData, messagesData, schoolsData, usersData, countriesData, subscriptionsData, teachersData, assignmentsData, classesData } = useAdminData();
+  const {
+    studentsData,
+    studentsSnapshot,
+    paymentsData,
+    paymentsSnapshot,
+    loadPayments,
+    notesSnapshot,
+    loadNotes,
+    presencesData,
+    presencesSnapshot,
+    loadPresences,
+    announcementsData,
+    messagesData,
+    schoolsData,
+    usersSnapshot,
+    loadUsers,
+    loadStudents,
+    loadTeachers,
+    loadClasses,
+    countriesData,
+    subscriptionsData,
+    teachersData,
+    assignmentsData,
+    classesData,
+    classesSnapshot,
+  } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const scrollContentStyle = [
     styles.scrollContent,
@@ -57,9 +82,22 @@ export default function HomeScreen({ navigation }: any) {
   const todayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
   const presenceStats = getPresenceStats(todayPresenceRows, studentIds);
   const attendanceCallCount = countAttendanceCalls(todayPresenceRows, studentsData);
-  const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
-  const paymentStats = getPaymentStats(paymentsReady ? paymentsData : [], studentIds);
-  const activeUsersCount = usersData.filter(isActiveUserAccount).length;
+  const paymentStats = getPaymentStats(paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [], studentIds);
+  const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) =>
+    String(rows.filter(isActiveUserAccount).length),
+  );
+  const studentsValue = metricLabelFromSnapshot(studentsSnapshot, (rows) => String(rows.length));
+  const presenceValue = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
+  const paymentsValue = metricLabelFromSnapshot(paymentsSnapshot, () => `${paymentStats.rate}%`, "0%");
+  const paymentsReady =
+    paymentsSnapshot.status === "success" ||
+    paymentsSnapshot.status === "empty" ||
+    (paymentsSnapshot.status === "offline" && paymentsSnapshot.data.length > 0);
+  const presenceMeta = metricLabelFromSnapshot(
+    presencesSnapshot,
+    () => `${attendanceCallCount} appel(s) • ${presenceStats.attended}/${presenceStats.total} élève(s)`,
+    "0 appel(s)",
+  );
   const userName = session?.user.name ?? "Administrateur";
   const welcomeGreeting = buildTimeGreeting(currentSchool.timezone);
   const welcomeName = getGreetingName(userName, session?.role);
@@ -72,18 +110,30 @@ export default function HomeScreen({ navigation }: any) {
   const canReadAttendance = canReadRoute(session, "TeacherAttendance");
   const canOpenSchoolManagement = canReadRoute(session, "SchoolManagement");
   const isSchoolAdmin = session?.role === "school_admin";
-  const openUsers = () =>
-    isSchoolAdmin ? navigation.navigate("Utilisateurs") : navigation.navigate("AdminCrud", { entity: "users" });
+  const openUsers = () => navigation.navigate(isSchoolAdmin ? "Utilisateurs" : "Users");
 
   useFocusEffect(
     useCallback(() => {
+      if (canReadEntity(session, "users")) {
+        void loadUsers();
+      }
+      if (canReadEntity(session, "students")) {
+        void loadStudents();
+      }
+      if (canReadRoute(session, "TeacherAttendance") || canReadEntity(session, "students")) {
+        void loadPresences();
+      }
+      if (session?.role === "teacher") {
+        void loadTeachers();
+        void loadClasses();
+      }
       if (canReadEntity(session, "payments")) {
         void loadPayments();
       }
       if (session?.role === "parent_student" || session?.role === "student") {
         void loadNotes();
       }
-    }, [session, loadPayments, loadNotes]),
+    }, [session, loadUsers, loadStudents, loadPresences, loadTeachers, loadClasses, loadPayments, loadNotes]),
   );
 
   if (session?.role === "teacher") {
@@ -98,6 +148,14 @@ export default function HomeScreen({ navigation }: any) {
     const teacherTodayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
     const teacherPresenceStats = getPresenceStats(teacherTodayPresenceRows, teacherStudentIds);
     const teacherAttendanceCallCount = countAttendanceCalls(teacherTodayPresenceRows, teacherStudents);
+    const teacherStudentsValue = metricLabelFromSnapshot(studentsSnapshot, () => String(teacherStudents.length));
+    const teacherClassesValue = metricLabelFromSnapshot(classesSnapshot, () => String(assignedClasses.length));
+    const teacherPresenceValue = metricLabelFromSnapshot(presencesSnapshot, () => `${teacherPresenceStats.rate}%`, "0%");
+    const teacherPresenceMeta = metricLabelFromSnapshot(
+      presencesSnapshot,
+      () => `${teacherAttendanceCallCount} appel(s) • ${teacherPresenceStats.attended}/${teacherPresenceStats.total} élève(s)`,
+      "0 appel(s)",
+    );
 
     return (
       <View style={styles.screen}>
@@ -149,7 +207,7 @@ export default function HomeScreen({ navigation }: any) {
           <View style={styles.statsGrid}>
             <StatCard
               icon="grid-outline"
-              value={String(assignedClasses.length)}
+              value={teacherClassesValue}
               label="Classes"
               color="#2563EB"
               bg="#EFF6FF"
@@ -157,7 +215,7 @@ export default function HomeScreen({ navigation }: any) {
             />
             <StatCard
               icon="people-outline"
-              value={String(teacherStudents.length)}
+              value={teacherStudentsValue}
               label="Élèves"
               color="#7C3AED"
               bg="#F5F3FF"
@@ -165,12 +223,13 @@ export default function HomeScreen({ navigation }: any) {
             />
             <StatCard
               icon="checkmark-circle-outline"
-              value={`${teacherPresenceStats.rate}%`}
+              value={teacherPresenceValue}
               label="Présence"
-              meta={`${teacherAttendanceCallCount} appel(s) • ${teacherPresenceStats.attended}/${teacherPresenceStats.total} élève(s)`}
+              meta={teacherPresenceMeta === "—" || teacherPresenceMeta === "Indisponible" ? undefined : teacherPresenceMeta}
               color="#16A34A"
               bg="#ECFDF5"
               onPress={() => navigation.navigate("TeacherAttendance")}
+              testID={DATA_TRUTH_TEST_IDS.homePresenceValue}
             />
             <StatCard
               icon="book-outline"
@@ -580,11 +639,12 @@ export default function HomeScreen({ navigation }: any) {
             />
             <StatCard
               icon="people-outline"
-              value={String(usersData.length)}
+              value={usersValue}
               label="Admins etablissement"
               color="#16A34A"
               bg="#ECFDF5"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "users" })}
+              onPress={() => navigation.navigate("Users")}
+              testID={DATA_TRUTH_TEST_IDS.homeUsersValue}
             />
           </View>
         )}
@@ -619,46 +679,50 @@ export default function HomeScreen({ navigation }: any) {
           {canReadUsers && (
             <StatCard
               icon="person-outline"
-              value={String(activeUsersCount)}
+              value={usersValue}
               label="Utilisateurs"
               meta="Comptes actifs"
               color="#2563EB"
               bg="#EFF6FF"
               onPress={openUsers}
+              testID={DATA_TRUTH_TEST_IDS.homeUsersValue}
             />
           )}
 
           {!isSchoolAdmin && canReadStudents && (
             <StatCard
               icon="people-outline"
-              value={String(studentsData.length)}
+              value={studentsValue}
               label="Élèves"
               color="#7C3AED"
               bg="#F5F3FF"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "students" })}
+              onPress={() => navigation.navigate("Students")}
+              testID={DATA_TRUTH_TEST_IDS.homeStudentsValue}
             />
           )}
 
           {canReadAttendance && (
             <StatCard
               icon="checkmark-circle-outline"
-              value={`${presenceStats.rate}%`}
+              value={presenceValue}
               label="Présence"
-              meta={`${attendanceCallCount} appel(s) • ${presenceStats.attended}/${presenceStats.total} élève(s)`}
+              meta={presenceMeta === "—" || presenceMeta === "Indisponible" ? undefined : presenceMeta}
               color="#16A34A"
               bg="#ECFDF5"
               onPress={() => navigation.navigate("TeacherAttendance")}
+              testID={DATA_TRUTH_TEST_IDS.homePresenceValue}
             />
           )}
 
           {canReadPayments && (
             <StatCard
               icon="card-outline"
-              value={paymentsReady ? `${paymentStats.rate}%` : "—"}
+              value={paymentsValue}
               label="Paiements"
               color="#EA580C"
               bg="#FFF7ED"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "payments" })}
+              onPress={() => navigation.navigate("Payments")}
+              testID={DATA_TRUTH_TEST_IDS.homePaymentsValue}
             />
           )}
         </View>
@@ -676,7 +740,7 @@ export default function HomeScreen({ navigation }: any) {
               title="Paiement reçu"
               description={`${paymentsData.filter((payment) => payment.status === "PAYE").length} paiement(s) validé(s)`}
               color="#16A34A"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "payments" })}
+              onPress={() => navigation.navigate("Payments")}
             />
           )}
 
@@ -684,7 +748,7 @@ export default function HomeScreen({ navigation }: any) {
             <ActivityItem
               icon="person-add-outline"
               title="Comptes utilisateurs"
-              description={`${activeUsersCount} compte(s) actif(s)`}
+              description={`${usersValue} compte(s) actif(s)`}
               color="#2563EB"
               onPress={openUsers}
             />
@@ -694,9 +758,9 @@ export default function HomeScreen({ navigation }: any) {
             <ActivityItem
               icon="person-add-outline"
               title="Élèves inscrits"
-              description={`${studentsData.length} dossier(s) actif(s)`}
+              description={`${studentsValue} dossier(s) actif(s)`}
               color="#2563EB"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "students" })}
+              onPress={() => navigation.navigate("Students")}
             />
           )}
 
@@ -706,7 +770,7 @@ export default function HomeScreen({ navigation }: any) {
               title="Annonce publiée"
               description={`${announcementsData.length} communication(s) envoyée(s)`}
               color="#7C3AED"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "announcements" })}
+              onPress={() => navigation.navigate("Announcements")}
             />
           )}
           {canReadMessages && (
@@ -737,21 +801,21 @@ export default function HomeScreen({ navigation }: any) {
             <QuickAction
               icon="add-circle-outline"
               label="Élèves"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "students" })}
+              onPress={() => navigation.navigate("Students")}
             />
           )}
           {canReadEntity(session, "teachers") && (
             <QuickAction
               icon="person-add-outline"
               label="Profs"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "teachers" })}
+              onPress={() => navigation.navigate("Teachers")}
             />
           )}
           {canReadEntity(session, "payments") && (
             <QuickAction
               icon="card-outline"
               label="Paiements"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "payments" })}
+              onPress={() => navigation.navigate("Payments")}
             />
           )}
           {canReadEntity(session, "paymentStatuses") && (
@@ -765,7 +829,7 @@ export default function HomeScreen({ navigation }: any) {
             <QuickAction
               icon="megaphone-outline"
               label="Annonces"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "announcements" })}
+              onPress={() => navigation.navigate("Announcements")}
             />
           )}
           {canReadEntity(session, "messages") && (

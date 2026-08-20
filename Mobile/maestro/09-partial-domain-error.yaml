@@ -1,0 +1,7 @@
+appId: com.somafrik.app
+---
+- launchApp
+- assertNotVisible: "0"
+# Un domaine en erreur ne doit pas coller 0 sur les autres compteurs.
+- assertVisible:
+    id: "home-payments-value"
