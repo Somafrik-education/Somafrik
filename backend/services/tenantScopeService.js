@@ -13,13 +13,18 @@ class TenantScopeService {
       schoolClassNames = null,
     } = options;
 
-    if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
+    if (!principal) {
+      return rows;
+    }
+
+    const hasEffectiveSchoolScope = this.hasEffectiveSchoolScope(principal);
+    if (SUPER_ADMIN_ROLES.has(principal.role) && !hasEffectiveSchoolScope) {
       return rows;
     }
 
     const roleScoped = this.filterByRoleOwnership(rows, principal);
 
-    if (principal.role === "Admin Pays") {
+    if (principal.role === "Admin Pays" && !hasEffectiveSchoolScope) {
       return roleScoped.filter((row) => {
         if (this.isSystemBroadcast(row)) return true;
         const countryCode = row[countryField] ?? this.countryCodeFromCountry(row.country) ?? this.countryCodeFromSchool(row[schoolField]);
@@ -28,11 +33,11 @@ class TenantScopeService {
     }
 
     // Périmètre établissement : un compte ne doit jamais voir les données d'un autre
-    // établissement (SOM-SAA-002). On rattache chaque ligne à l'établissement par son
-    // code, son élève ou sa/ses classe(s). Les anciennes lignes sans code établissement
-    // ne sont plus diffusées globalement : elles doivent être reliées à l'établissement.
+    // établissement (SOM-SAA-002). Ce bloc s'applique aussi aux rôles plateforme
+    // lorsqu'un scope request-scoped a été validé par requireAuth.
     const studentIds = new Set([...(principal.studentIds ?? []), ...(schoolStudentIds ?? [])]);
     const classNames = new Set([...(principal.classNames ?? []), ...(schoolClassNames ?? [])]);
+    const principalSchools = this.principalSchoolCodes(principal);
 
     return roleScoped.filter((row) => {
       // Diffusion système (Super Admin) : annonce/message destiné à tous les établissements.
@@ -45,10 +50,9 @@ class TenantScopeService {
         return true;
       }
 
-      const rowSchool = this.normalizeSchoolCode(row[schoolField]);
-      const principalSchool = this.normalizeSchoolCode(principal.schoolCode);
-      if (rowSchool) {
-        return rowSchool === principalSchool;
+      const rowSchools = this.rowSchoolCodes(row, schoolField);
+      if (rowSchools.size) {
+        return [...rowSchools].some((code) => principalSchools.has(code));
       }
 
       const studentId = row[studentField];
@@ -76,6 +80,41 @@ class TenantScopeService {
 
   normalizeSchoolCode(value) {
     return String(value ?? "").trim().toUpperCase();
+  }
+
+  hasEffectiveSchoolScope(principal) {
+    return Boolean(
+      principal?.schoolScopeSource === "request" &&
+      this.normalizeSchoolCode(principal?.effectiveSchoolCode),
+    );
+  }
+
+  principalSchoolCodes(principal = {}) {
+    return new Set(
+      [
+        principal.effectiveSchoolCode,
+        principal.effectiveSchoolInternalCode,
+        principal.schoolCode,
+      ]
+        .map((value) => this.normalizeSchoolCode(value))
+        .filter((value) => value && value !== "*"),
+    );
+  }
+
+  rowSchoolCodes(row = {}, schoolField = "schoolCode") {
+    return new Set(
+      [
+        row[schoolField],
+        row.schoolCode,
+        row.school_code,
+        row.schoolPublicCode,
+        row.school_public_code,
+        row.schoolLoginCode,
+        row.school_login_code,
+      ]
+        .map((value) => this.normalizeSchoolCode(value))
+        .filter(Boolean),
+    );
   }
 
   rowMatchesStudentScope(row = {}, studentIds = new Set()) {
@@ -146,6 +185,11 @@ class TenantScopeService {
       return;
     }
 
+    const requested = this.normalizeSchoolCode(schoolCode);
+    if (requested && this.principalSchoolCodes(principal).has(requested)) {
+      return;
+    }
+
     if (principal.role === "Admin Pays") {
       if (this.countryCodeFromSchool(schoolCode) === principal.countryCode) {
         return;
@@ -153,9 +197,7 @@ class TenantScopeService {
       throw new BusinessError(403, "Accès refusé: pays hors périmètre.");
     }
 
-    if (schoolCode && schoolCode !== principal.schoolCode) {
-      throw new BusinessError(403, "Accès refusé: établissement hors périmètre.");
-    }
+    throw new BusinessError(403, "Accès refusé: établissement hors périmètre.");
   }
 
   isSystemBroadcast(row = {}) {
