@@ -179,13 +179,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPermissionsBootstrap("loading");
       setPermissionsBootstrapError(null);
 
+      // Installer immédiatement une session sans secrets afin que le navigateur
+      // authentifié tombe dans le gate `loading` au même rendu. On ne laisse
+      // jamais Home s'afficher pendant la persistance asynchrone du profil.
+      const safeSnapshot = saveSession(stripSecrets(next));
+
       const persistAndHydrate = async () => {
         try {
-          const safe =
-            next.accessToken || next.refreshToken
-              ? await persistAuthenticatedSession(next)
-              : stripSecrets(next);
-          saveSession(safe);
+          if (next.accessToken || next.refreshToken) {
+            await persistAuthenticatedSession(next);
+          } else if (safeSnapshot) {
+            await persistAuthenticatedSession(safeSnapshot);
+          }
           await refreshEffectivePermissions();
         } catch (error) {
           safeLogger.warn("session permission bootstrap failed", error);
