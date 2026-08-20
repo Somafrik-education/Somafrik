@@ -22,13 +22,17 @@ Package Android **stable** : `com.somafrik.app` (identique préprod / prod). Mê
 | Profil | API | Package | Nom affiché | Distribution | Artefact | Google Play |
 | ------ | --- | ------- | ----------- | ------------ | -------- | ----------- |
 | development | `EXPO_PUBLIC_API_URL` / LAN (HTTP local autorisé) | `com.somafrik.app` | Somafrik + badge Développement | internal | APK / dev client | Non |
-| preview | `https://somafrik-api-preprod.onrender.com` | `com.somafrik.app` | Somafrik QA + badge | internal | APK | Non |
+| preview | `https://somafrik-api-preprod.onrender.com` | `com.somafrik.app` | Somafrik QA + badge | internal | APK | Non — voir [PREVIEW-APK.md](./PREVIEW-APK.md) |
 | **preproduction** | **`https://somafrik-api-preprod.onrender.com`** (Render, déjà dans `docs/preproduction.md`) | `com.somafrik.app` | Somafrik Préprod + badge | store | **AAB** | **Internal testing** |
 | production | `https://api.somafrik.app` | `com.somafrik.app` | Somafrik | store | AAB | Production |
 
 Preview et préproduction partagent l’API Render préprod : **aucune URL QA distincte n’existe dans le dépôt**. La séparation Play vs APK interne reste obligatoire. `preproduction ≠ production`.
 
-Fail-closed : preview / préprod / prod refusent URL absente, HTTP, localhost, `10.0.2.2`, `192.168.*`. Aucun `API_URL \|\| "http://localhost:5000"` sur ces profils.
+Render héberge l’API et le Web. Le Mobile Preview est distribué via Expo/EAS et ne constitue pas un service Render. Parcours APK sideload : [PREVIEW-APK.md](./PREVIEW-APK.md).
+
+`EXPO_PUBLIC_DEMO_PIN` est omis de tous les profils `eas.json` : EAS CLI 22 refuse une valeur d’environnement vide (`""`). Le PIN démo reste interdit en preview / préprod / prod.
+
+Fail-closed : preview / préprod / prod refusent URL absente, HTTP, localhost, `10.0.2.2`, `192.168.*`. Aucun `API_URL \|\| "http://localhost:5000"` sur ces profils. Le profil `preview` doit cibler **exactement** `https://somafrik-api-preprod.onrender.com`.
 
 Variables publiques (URLs seulement, jamais un secret) :
 
@@ -197,6 +201,7 @@ Les parcours auth / API passent par `safeLogger` (redaction JWT / Authorization)
 | Prod API | `https://api.somafrik.app` | `eas.json` + bundles | Oui |
 | HTTPS only | preview/préprod/prod | fail-closed + network security | Oui |
 | Permissions | CAMERA + READ_MEDIA_IMAGES (+ INTERNET système) | matrice ci-dessus | Oui |
+| Preview APK | internal APK → API préprod, jamais prod / localhost | `verify:mobile-preview-apk` + [PREVIEW-APK.md](./PREVIEW-APK.md) | Oui (sideload, pas Play) |
 | Bundle préprod | URL préprod, pas prod / localhost | Metro minify | Oui |
 | AAB préprod | prebuild inspecté + Gradle `.aab` si SDK / EAS | `verify-native-prebuild` + job CI isolé | Oui (compilation, pas l’upload) |
 | Bundle production | URL prod, pas préprod / demo PIN | Metro minify | Oui |
