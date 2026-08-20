@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getEnvironmentBadgeLabel, shouldShowEnvironmentBadge } from "../config/env";
+import { UX_V1_SPEC_VERSION } from "../lib/mobileUxV1Layout";
 
 /** Marqueur d'environnement visible, non intrusif — jamais en production. */
 export default function EnvironmentBadge() {
@@ -13,15 +14,16 @@ export default function EnvironmentBadge() {
 
 function EnvironmentBadgeInner({ label }: { label: string }) {
   const insets = useSafeAreaInsets();
+  const display = `${label} · V${UX_V1_SPEC_VERSION}`;
   return (
     <View
       pointerEvents="none"
-      style={[styles.wrap, { top: Math.max(insets.top > 12 ? 2 : 0, 0) }]}
+      style={[styles.wrap, { top: insets.top + 2 }]}
       testID="environment-badge"
       accessibilityRole="text"
-      accessibilityLabel={`Environnement ${label}`}
+      accessibilityLabel={`Environnement ${display}`}
     >
-      <Text style={styles.text}>{label}</Text>
+      <Text style={styles.text}>{display}</Text>
     </View>
   );
 }
@@ -32,8 +34,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
-    zIndex: 8,
-    borderRadius: 999,
+    zIndex: 40,
   },
   text: {
     color: "#F8FAFC",

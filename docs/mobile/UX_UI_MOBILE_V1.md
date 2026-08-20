@@ -16,6 +16,8 @@ Le GO visuel n’est **pas** un contrat géométrique dans les tests. Il est une
 
 Viewport de validation : **~360×800 dp**, plus **320 / 360 / 390 / 412 dp** et **fontScale 1.0 / 1.3**.
 
+**Preuve bundle :** la capture device doit afficher le badge `Développement · V1.2` (ou `Preview QA · V1.2`) **sous** la barre système, dans la bande header. Une capture qui n’affiche que `Développement` sans `V1.2`, ou qui montre encore la carte établissement / un hero bleu / `Utilisate…` / `Enseigna…` / une bottom nav sombre flottante, **n’exécute pas ce HEAD** — recharger Expo Go depuis `feat/mobile-ux-ui-v1` avec cache vidé (`expo start --clear`, Reload).
+
 Interdits V1.2 :
 - grosse carte établissement redondante avec le header ;
 - duplication de `CommunicationHeaderIcons` sur Home ;
@@ -69,7 +71,8 @@ Contraintes :
 - le nom établissement est prioritaire, une ligne, **sans** ligne secondaire ville/rôle ;
 - maximum 3 actions à droite ;
 - les actions non autorisées par RBAC ne sont pas affichées ;
-- le badge d’environnement reste dans la bande status-bar (`zIndex` inférieur au header).
+- le badge d’environnement reste **sous** la barre système (bande `HEADER_BADGE_BAND_DP` dans le header), jamais dans l’horloge / réseau / batterie ;
+- le badge non-production affiche la version de spec (`Développement · V1.2`) pour authentifier le bundle.
 
 ### Menu latéral gauche
 

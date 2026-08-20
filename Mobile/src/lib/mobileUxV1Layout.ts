@@ -12,7 +12,9 @@ export const UX_V1_FONT_SCALES = [1, 1.3] as const;
 export const UX_V1_VALIDATION_VIEWPORT = { width: 360, height: 800 } as const;
 
 export const COMPACT_HEADER_ROW_DP = MIN_TOUCH_TARGET_DP;
+export const HEADER_MENU_SLOT_DP = MIN_TOUCH_TARGET_DP;
 export const HEADER_ACTIONS_SLOT_DP = MIN_TOUCH_TARGET_DP * 3;
+export const HEADER_BADGE_BAND_DP = 18;
 export const COMPACT_WELCOME_MAX_DP = 40;
 export const HOME_SCROLL_TOP_DP = 4;
 export const OVERVIEW_SECTION_HEADER_DP = 24;
@@ -31,6 +33,22 @@ export const MAX_FONT_SCALE = 1.3;
 export const FLOATING_TAB_BAR_HEIGHT_V11 = TAB_BAR_CONTENT_HEIGHT;
 
 export const SCHOOL_ADMIN_BOTTOM_LABELS = ["Accueil", "Classes", "Frais", "Comptes", "Profs"] as const;
+
+/** Libellés courts imposés — jamais le tabName long (`Utilisateurs`, `Enseignants`). */
+export const BOTTOM_TAB_SHORT_LABELS: Record<string, string> = {
+  Accueil: "Accueil",
+  Classes: "Classes",
+  Paiements: "Frais",
+  Payments: "Frais",
+  Utilisateurs: "Comptes",
+  Users: "Comptes",
+  Enseignants: "Profs",
+  Teachers: "Profs",
+};
+
+export function shortBottomTabLabel(tabName: string, fallback?: string): string {
+  return BOTTOM_TAB_SHORT_LABELS[tabName] ?? fallback ?? tabName;
+}
 
 export function tabBarItemWidth(viewportWidth: number, tabCount = MAX_BOTTOM_TABS): number {
   const chrome = TAB_BAR_SIDE_INSET_DP * 2 + TAB_BAR_INNER_PADDING_DP * 2;
@@ -75,7 +93,7 @@ export function measureHomeShell(
   fontScale = 1,
 ): HomeShellBoxes {
   const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
-  const headerBottom = insets.top + COMPACT_HEADER_ROW_DP;
+  const headerBottom = insets.top + HEADER_BADGE_BAND_DP + COMPACT_HEADER_ROW_DP;
   const welcomeHeight = Math.min(COMPACT_WELCOME_MAX_DP, Math.ceil(32 * Math.min(scale, 1.15)));
   const welcomeBottom = headerBottom + HOME_SCROLL_TOP_DP + welcomeHeight;
   const overviewHeight = Math.ceil(OVERVIEW_SECTION_HEADER_DP * Math.min(scale, 1.15));

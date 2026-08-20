@@ -4,6 +4,8 @@ import {
   COMPACT_HEADER_ROW_DP,
   COMPACT_WELCOME_MAX_DP,
   HEADER_ACTIONS_SLOT_DP,
+  HEADER_BADGE_BAND_DP,
+  HEADER_MENU_SLOT_DP,
   HOME_SCROLL_TOP_DP,
   KPI_ROW_MIN_DP,
   MAX_BOTTOM_TABS,
@@ -21,6 +23,7 @@ import {
   homeAboveFoldFitsAllViewports,
   measureHomeShell,
   schoolAdminLabelsFitAllViewports,
+  shortBottomTabLabel,
   tabLabelFitsViewport,
 } from "./mobileUxV1Layout";
 
@@ -29,6 +32,11 @@ assert.equal(MAX_BOTTOM_TABS, 5);
 assert.equal(MAX_ROLE_TABS, 4);
 assert.equal(COMPACT_HEADER_ROW_DP, 44);
 assert.equal(HEADER_ACTIONS_SLOT_DP, MIN_TOUCH_TARGET_DP * 3);
+assert.equal(HEADER_MENU_SLOT_DP, MIN_TOUCH_TARGET_DP);
+assert.equal(HEADER_BADGE_BAND_DP, 18);
+assert.equal(shortBottomTabLabel("Utilisateurs"), "Comptes");
+assert.equal(shortBottomTabLabel("Enseignants"), "Profs");
+assert.equal(shortBottomTabLabel("Paiements"), "Frais");
 assert.equal(COMPACT_WELCOME_MAX_DP, 40);
 assert.equal(HOME_SCROLL_TOP_DP, 4);
 assert.equal(KPI_ROW_MIN_DP, 92);

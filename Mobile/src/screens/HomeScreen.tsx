@@ -581,17 +581,19 @@ export default function HomeScreen({ navigation }: any) {
       >
         {isPlatformAdmin && <SchoolSelector />}
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.welcomeQuiet}
-          onPress={() => canOpenSchoolManagement && navigation.navigate("SchoolManagement")}
-          testID={isSchoolAdmin ? HOME_TEST_IDS.adminDashboard : undefined}
-        >
-          <Text style={styles.welcomeQuietText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            {welcomeGreeting}
-            {welcomeName ? ` ${welcomeName}` : ""}
-          </Text>
-        </TouchableOpacity>
+        <View testID={isSchoolAdmin ? "home-ux-v1-2" : undefined} collapsable={false}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.welcomeQuiet}
+            onPress={() => canOpenSchoolManagement && navigation.navigate("SchoolManagement")}
+            testID={isSchoolAdmin ? HOME_TEST_IDS.adminDashboard : undefined}
+          >
+            <Text style={styles.welcomeQuietText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+              {welcomeGreeting}
+              {welcomeName ? ` ${welcomeName}` : ""}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle} testID={NAVIGATION_TEST_IDS.homeOverviewTitle}>

@@ -35,6 +35,9 @@ function main() {
   assert.match(layout, /SCHOOL_ADMIN_BOTTOM_LABELS/);
   assert.match(layout, /MAX_TAB_LABEL_CHARS = 8/);
   assert.match(layout, /HEADER_ACTIONS_SLOT_DP/);
+  assert.match(layout, /HEADER_MENU_SLOT_DP/);
+  assert.match(layout, /HEADER_BADGE_BAND_DP/);
+  assert.match(layout, /shortBottomTabLabel/);
   assert.match(layout, /COMPACT_WELCOME_MAX_DP = 40/);
   assert.match(layout, /KPI_ROW_MIN_DP = 92/);
   assert.match(layout, /TAB_BAR_CONTENT_HEIGHT = 52/);
@@ -55,6 +58,7 @@ function main() {
   assert.match(tabs, /headerStatusBarHeight:\s*0/);
   assert.match(tabs, /CompactTabLabel/);
   assert.match(tabs, /TAB_LABEL_FONT_SIZE/);
+  assert.match(tabs, /shortBottomTabLabel/);
   assert.match(tabs, /size=\{20\}/);
   assert.doesNotMatch(tabs, /adjustsFontSizeToFit/);
   assert.doesNotMatch(tabs, /minimumFontScale/);
@@ -73,7 +77,10 @@ function main() {
   assert.match(header, /SafeAreaView/);
   assert.match(header, /edges=\{\["top"\]\}/);
   assert.match(header, /HEADER_ACTIONS_SLOT_DP/);
-  assert.match(header, /styles\.sideSlot/);
+  assert.match(header, /HEADER_MENU_SLOT_DP/);
+  assert.match(header, /badgeBand/);
+  assert.match(header, /styles\.menuSlot/);
+  assert.doesNotMatch(header, /schoolCity|roleLabel|Uvira/);
   assert.match(header, /mobile-header-menu/);
   assert.match(header, /mobile-header-school-name/);
   assert.match(header, /mobile-header-sync/);
@@ -85,6 +92,7 @@ function main() {
 
   assert.doesNotMatch(home, /CommunicationHeaderIcons/);
   assert.match(home, /welcomeQuiet/);
+  assert.match(home, /home-ux-v1-2/);
   assert.match(home, /maxHeight:\s*COMPACT_WELCOME_MAX_DP|maxHeight:\s*40/);
   assert.match(home, /KPI_ROW_MIN_DP/);
   assert.match(home, /home-admin-dashboard|HOME_TEST_IDS\.adminDashboard/);
@@ -99,7 +107,8 @@ function main() {
   );
 
   assert.match(badge, /testID="environment-badge"/);
-  assert.match(badge, /zIndex:\s*8/);
+  assert.match(badge, /UX_V1_SPEC_VERSION/);
+  assert.match(badge, /insets\.top \+ 2/);
 
   assert.doesNotMatch(navSpec, /tabMenu/);
   assert.doesNotMatch(navSpec, /tab-menu/);

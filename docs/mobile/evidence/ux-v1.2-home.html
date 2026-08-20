@@ -43,10 +43,13 @@
     .status {
       height: var(--status);
       background: #FFFFFF;
+    }
+    .badge-band {
+      height: 18px;
+      background: #FFFFFF;
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: center;
-      padding-top: 2px;
     }
     .badge {
       background: rgba(15, 23, 42, 0.72);
@@ -72,7 +75,8 @@
       display: flex;
       align-items: center;
     }
-    .slot.right { justify-content: flex-end; }
+    .slot.menu { width: 44px; }
+    .slot.right { width: 132px; justify-content: flex-end; }
     .hit {
       width: 44px; height: 44px;
       display: flex; align-items: center; justify-content: center;
@@ -159,9 +163,10 @@
 <body>
   <h1>UX/UI Mobile V1.2 — composition Accueil school_admin</h1>
   <p class="note">
-    Maquette CSS calée sur les constantes StyleSheet V1.2 (header 44, slots 132, welcome ≤40,
-    KPI min 92, tab 52 + inset). Ce n’est <strong>pas</strong> une capture Expo Go / device :
-    le GO visuel reste une photo appareil réelle. Overlays Expo <code>↻ / ...</code> volontairement absents.
+    Maquette CSS calée sur les constantes StyleSheet V1.2 (header 44 + bande badge 18,
+    welcome ≤40, KPI min 92, tab 52 + inset). Le badge <strong>Développement · V1.2</strong>
+    authentifie le bundle : une capture device sans <code>V1.2</code> n’est pas ce HEAD.
+    Ce n’est <strong>pas</strong> une capture Expo Go / device. Overlays Expo <code>↻ / ...</code> absents.
   </p>
   <div class="gallery">
     <div>
@@ -190,10 +195,11 @@
     </div>
   </div>
   <template id="shell">
-    <div class="status"><span class="badge">PREVIEW</span></div>
+    <div class="status"></div>
+    <div class="badge-band"><span class="badge">Développement · V1.2</span></div>
     <header class="header">
-      <div class="slot"><div class="hit">☰</div></div>
-      <div class="school">Lycée Somafrik</div>
+      <div class="slot menu"><div class="hit">☰</div></div>
+      <div class="school">INSTITUT NURU</div>
       <div class="slot right">
         <div class="hit">⟳</div>
         <div class="hit">⌕</div>

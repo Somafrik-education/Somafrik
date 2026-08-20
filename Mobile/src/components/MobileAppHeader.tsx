@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP } from "../lib/mobileUxV1Layout";
+import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP, HEADER_BADGE_BAND_DP, HEADER_MENU_SLOT_DP } from "../lib/mobileUxV1Layout";
+import { shouldShowEnvironmentBadge } from "../config/env";
 import RoleNavigationDrawer from "./RoleNavigationDrawer";
 
 export default function MobileAppHeader({ navigation }: { navigation: any }) {
@@ -42,8 +43,9 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
   return (
     <>
       <SafeAreaView edges={["top"]} style={styles.safe} testID="mobile-app-header">
+        {shouldShowEnvironmentBadge() ? <View style={styles.badgeBand} /> : null}
         <View style={styles.row}>
-          <View style={styles.sideSlot}>
+          <View style={styles.menuSlot}>
             <TouchableOpacity
               style={styles.menuButton}
               onPress={() => setDrawerOpen(true)}
@@ -66,7 +68,7 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
             </Text>
           </View>
 
-          <View style={[styles.sideSlot, styles.actionsSlot]}>
+          <View style={styles.actionsSlot}>
             {syncRoute ? (
               <HeaderAction
                 icon="sync-outline"
@@ -142,8 +144,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 2,
   },
-  sideSlot: {
-    width: HEADER_ACTIONS_SLOT_DP,
+  badgeBand: {
+    height: HEADER_BADGE_BAND_DP,
+  },
+  menuSlot: {
+    width: HEADER_MENU_SLOT_DP,
     minHeight: MIN_TOUCH_TARGET_DP,
     flexDirection: "row",
     alignItems: "center",
@@ -169,6 +174,10 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   actionsSlot: {
+    width: HEADER_ACTIONS_SLOT_DP,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "flex-end",
   },
   actionButton: {

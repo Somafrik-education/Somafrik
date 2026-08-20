@@ -12,6 +12,7 @@ import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import { canReadRoute } from "../domain/security/permissions";
+import { shortBottomTabLabel } from "../lib/mobileUxV1Layout";
 
 /** Nombre max d'onglets métier visibles (Accueil occupe le cinquième emplacement). */
 export const MAX_FLOATING_ROLE_TABS = 4;
@@ -276,5 +277,5 @@ export function buildOverflowQuickActionItems(session: any): QuickActionItem[] {
 }
 
 export function getTabBarLabel(tabName: string, definition?: RoleTabDefinition) {
-  return definition?.label ?? tabName;
+  return shortBottomTabLabel(tabName, definition?.label);
 }

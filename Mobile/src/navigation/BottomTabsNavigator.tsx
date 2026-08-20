@@ -14,7 +14,7 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
 import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { TAB_BAR_CONTENT_HEIGHT, TAB_LABEL_FONT_SIZE } from "../lib/mobileUxV1Layout";
+import { TAB_BAR_CONTENT_HEIGHT, TAB_LABEL_FONT_SIZE, shortBottomTabLabel } from "../lib/mobileUxV1Layout";
 import MobileAppHeader from "../components/MobileAppHeader";
 
 const Tab = createBottomTabNavigator();
@@ -121,6 +121,7 @@ export default function BottomTabsNavigator() {
         name="Accueil"
         component={HomeScreen}
         options={{
+          tabBarLabel: "Accueil",
           tabBarButtonTestID: TAB_TEST_IDS.accueil,
           tabBarAccessibilityLabel: "Accueil",
         }}
@@ -135,10 +136,11 @@ export default function BottomTabsNavigator() {
             options={
               tabTestId
                 ? {
+                    tabBarLabel: tab.label,
                     tabBarButtonTestID: tabTestId,
                     tabBarAccessibilityLabel: tab.label,
                   }
-                : { tabBarAccessibilityLabel: tab.label }
+                : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
             }
           />
         );
@@ -172,5 +174,5 @@ function getTabLabel(
 ) {
   if (tabName === "Accueil") return "Accueil";
   const definition = findTabDefinition(tabName, visibleTabs, overflowTabs, hiddenTabs);
-  return definition?.label ?? tabName;
+  return shortBottomTabLabel(tabName, definition?.label);
 }
