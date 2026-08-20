@@ -99,16 +99,15 @@ Les statuts autorisés sont `Présent`, `Absent`, `Retard`, `Justifié`, avec ci
 
 Le test mutationnel doit utiliser un **tenant QA dédié**.
 
-### Restauration
+### Précondition et restauration
 
-Le flow `11-attendance-persistence.yaml` :
+Le cycle mutationnel est volontairement séparé en trois flows :
 
-1. change le statut d'un élève QA ;
-2. enregistre côté backend ;
-3. relance l'application ;
-4. vérifie que la valeur confirmée est toujours visible.
+1. `11-attendance-precondition.yaml` — vérifie que le statut réellement affiché est bien `original_attendance_status`. Aucune écriture. Si cette précondition échoue, le runner arrête le scénario et **n'exécute aucun cleanup**, afin de ne pas remplacer une donnée inattendue par une valeur fournie par l'opérateur.
+2. `12-attendance-persistence.yaml` — change le statut, enregistre côté backend, relance l'application et vérifie que la valeur confirmée persiste après relaunch.
+3. `13-attendance-restore.yaml` — restaure le statut initial.
 
-Le cleanup est un flow indépendant `12-attendance-restore.yaml`. Le runner l'exécute dans un bloc `finally`, y compris si la preuve de persistance échoue. Si le cleanup échoue, l'exécution est P0/rouge et le manifeste l'indique.
+Une fois la précondition validée, le runner exécute le cleanup dans un bloc `finally`, y compris si la preuve de persistance échoue. Si le cleanup échoue, l'exécution est P0/rouge et le manifeste indique `cleanupSucceeded: false`.
 
 ## Fail-closed runtime
 
@@ -146,7 +145,8 @@ Le workflow GitHub conserve ces artifacts 14 jours.
 - permissions GitHub : `contents: read` ;
 - uniquement actions officielles `actions/*` dans ce workflow ;
 - Android Emulator démarré directement via Android SDK ;
-- Maestro CLI verrouillé sur une version précise et installé avant toute injection des secrets ;
+- Maestro CLI verrouillé sur `2.8.0` et installé avant toute injection des secrets ;
+- secrets injectés uniquement dans les étapes `Run ... black-box suite` ;
 - aucun EAS submit ;
 - aucun upload Play Store ;
 - aucune donnée d'authentification dans le dépôt.
@@ -157,7 +157,7 @@ Le workflow GitHub conserve ces artifacts 14 jours.
 
 `npm --prefix Mobile run verify:mobile-ui-e2e-scaffold`
 
-Il vérifie la structure des flows, le runner, le proxy, les tests unitaires, le workflow et l'isolation des secrets. Il affiche explicitement qu'il **n'a pas piloté d'APK**.
+Il vérifie la structure des flows, le runner, le proxy, les tests unitaires, le workflow, le cycle précondition/mutation/cleanup et l'isolation des secrets. Il affiche explicitement qu'il **n'a pas piloté d'APK**.
 
 ### Gate runtime réel
 
@@ -173,5 +173,6 @@ Un GO runtime ne peut être déclaré qu'après une exécution réelle avec arti
 - utiliser `SCH-*` comme code UI ;
 - committer des credentials ;
 - muter un tenant protégé ;
+- muter si la précondition d'état initial n'est pas vérifiée ;
 - laisser un fixture modifié après le test d'appel ;
 - considérer une APK construite mais non installée/pilotée comme preuve.
