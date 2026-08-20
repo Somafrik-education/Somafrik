@@ -29,6 +29,7 @@
     "verify:mobile-domain-hydration": "node scripts/verify-mobile-domain-hydration.js",
     "verify:mobile-network-resilience": "node scripts/verify-mobile-network-resilience.js",
     "verify:mobile-usability": "node scripts/verify-mobile-usability.js",
+    "verify:mobile-ux-v1": "node scripts/verify-mobile-ux-v1.js",
     "verify:mobile-home-data-truth": "node scripts/verify-mobile-home-data-truth.js",
     "verify:mobile-school-scope-transport": "node scripts/verify-mobile-school-scope-transport.js",
     "verify:mobile-no-catalog-runtime-data": "node scripts/verify-mobile-no-catalog-runtime-data.js",
