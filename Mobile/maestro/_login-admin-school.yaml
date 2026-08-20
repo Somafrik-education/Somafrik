@@ -4,7 +4,7 @@ appId: com.somafrik.app
     clearState: true
 - assertVisible:
     id: "environment-badge"
-- assertVisible: "Preview QA"
+- assertVisible: "${SOMAFRIK_E2E_ENV_BADGE}"
 - assertVisible:
     id: "role-selection-screen"
 - tapOn:
