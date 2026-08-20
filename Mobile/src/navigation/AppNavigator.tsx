@@ -1,4 +1,4 @@
-import { View } from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
@@ -121,13 +121,100 @@ function HomeTabs() {
   );
 }
 
+function PermissionsBootstrapScreen({
+  error,
+  onRetry,
+  onLogout,
+}: {
+  error?: string | null;
+  onRetry?: () => void;
+  onLogout?: () => void;
+}) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: "#F8FAFC",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 28,
+      }}
+    >
+      {error ? (
+        <>
+          <Text style={{ color: "#0F172A", fontSize: 20, fontWeight: "800", textAlign: "center" }}>
+            Permissions indisponibles
+          </Text>
+          <Text style={{ color: "#64748B", fontSize: 15, lineHeight: 22, textAlign: "center", marginTop: 10 }}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={onRetry}
+            style={{
+              marginTop: 22,
+              minHeight: 48,
+              minWidth: 180,
+              borderRadius: 14,
+              backgroundColor: "#2563EB",
+              alignItems: "center",
+              justifyContent: "center",
+              paddingHorizontal: 20,
+            }}
+          >
+            <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 16 }}>Réessayer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={onLogout}
+            style={{ marginTop: 12, minHeight: 44, justifyContent: "center", paddingHorizontal: 18 }}
+          >
+            <Text style={{ color: "#475569", fontWeight: "700" }}>Se déconnecter</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={{ color: "#475569", fontSize: 15, fontWeight: "600", marginTop: 14 }}>
+            Vérification des droits…
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function AppNavigator() {
-  const { session, bootstrapping } = useAuth();
+  const {
+    session,
+    bootstrapping,
+    permissionsBootstrap,
+    permissionsBootstrapError,
+    refreshEffectivePermissions,
+    logout,
+  } = useAuth();
   const role = session?.role;
 
   if (bootstrapping) {
     return <View style={{ flex: 1, backgroundColor: "#F8FAFC" }} />;
   }
+
+  if (session && (permissionsBootstrap === "idle" || permissionsBootstrap === "loading")) {
+    return <PermissionsBootstrapScreen />;
+  }
+
+  if (session && permissionsBootstrap === "error") {
+    return (
+      <PermissionsBootstrapScreen
+        error={permissionsBootstrapError}
+        onRetry={() => {
+          void refreshEffectivePermissions();
+        }}
+        onLogout={logout}
+      />
+    );
+  }
+
   const isSuperAdmin = role === "super_admin";
   const isCountryAdmin = role === "country_admin";
   const isSchoolAdmin = role === "school_admin";
