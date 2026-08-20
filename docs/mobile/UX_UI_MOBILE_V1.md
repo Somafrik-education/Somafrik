@@ -1,14 +1,36 @@
-# Somafrik Mobile — Spécification UX/UI V1
+# Somafrik Mobile — Spécification UX/UI V1.1
 
-Statut : **cible produit adoptée**  
+Statut : **cible produit adoptée — correctif densité visuelle V1.1**  
 Portée : application Mobile Somafrik (Web/Backend inchangés)  
 Référence ergonomique : principes de hiérarchie mobile grand public (header clair, actions essentielles, navigation basse stable), **sans reproduire l’identité visuelle d’un produit tiers**.
+
+## 0. V1.1 — densité et first screen
+
+Priorité verticale Accueil (viewport de validation **~360×800 dp**) :
+
+1. **Header compact** + Safe Area réelle (aucun double padding statut).
+2. **Bienvenue compacte** (~90–110 dp), typographie réduite, une ligne.
+3. **Vue d’ensemble** immédiatement sous la bienvenue.
+4. **Au moins 2 KPI complets** visibles avant la bottom nav.
+5. Contenu secondaire (activité, actions rapides) ensuite.
+
+Interdits V1.1 :
+- grosse carte établissement redondante avec le header ;
+- duplication de `CommunicationHeaderIcons` sur Home (les actions globales sont dans le header) ;
+- libellés bottom tronqués (`Utilisate…`, `Enseigna…`) ;
+- onglet bottom « Menu ».
+
+`school_admin` — libellés courts : `Accueil / Classes / Frais / Comptes / Profs`.
+
+Les overlays Expo Go / système (`↻`, `...`) ne sont **pas** des composants Somafrik : on ne les retire du code applicatif que s’ils sont confirmés comme tels.
+
+Cibles tactiles : **>= 44 dp**. Le grossissement de texte (jusqu’à ~1.3) ne doit pas tronquer les libellés bottom (`adjustsFontSizeToFit`).
 
 ## 1. Principes produit
 
 1. **Le header sert aux actions globales.**
    - gauche : menu latéral global ;
-   - centre : établissement / contexte courant ;
+   - centre : établissement / contexte courant (prioritaire, une ligne) ;
    - droite : synchronisation, recherche, notifications selon permissions.
 2. **La bottom navigation sert uniquement aux tâches quotidiennes du rôle.**
    - aucun onglet « Menu » ;
@@ -35,11 +57,13 @@ Ordre :
 `[☰]  [Nom établissement / contexte]        [Sync] [Recherche] [Notifications]`
 
 Contraintes :
+- Safe Area haute réelle ; `headerStatusBarHeight: 0` côté navigator (pas de double inset) ;
 - cible tactile >= 44 dp ;
 - le nom établissement est prioritaire et peut être tronqué sur une ligne ;
-- une ligne secondaire peut afficher ville, année scolaire ou rôle ;
+- une ligne secondaire peut afficher ville ou rôle, en compact ;
 - maximum 3 actions à droite ;
-- les actions non autorisées par RBAC ne sont pas affichées.
+- les actions non autorisées par RBAC ne sont pas affichées ;
+- le badge d’environnement ne doit pas recouvrir burger ni actions.
 
 ### Menu latéral gauche
 
@@ -60,6 +84,8 @@ Règle : **Accueil + 4 onglets métier maximum**.
 
 Le menu latéral remplace totalement l’ancien onglet bottom « Menu ».
 
+Libellés courts, barre responsive (320 / 360 / 390 / 412 dp), zéro ellipsis.
+
 ## 3. Navigation par rôle
 
 La liste effective reste filtrée par les permissions existantes. Lorsqu’un rôle n’a pas droit à un module, l’onglet disparaît au lieu d’être désactivé.
@@ -69,9 +95,9 @@ La liste effective reste filtrée par les permissions existantes. Lorsqu’un r�
 Priorité :
 1. Accueil
 2. Classes
-3. Frais / Paiements
-4. Utilisateurs
-5. Enseignants
+3. Frais
+4. Comptes
+5. Profs
 
 Le menu latéral héberge notamment : Élèves, présences, notes, emploi du temps, bulletins, annonces, messages, rapports, configuration, synchronisation et support selon droits.
 
@@ -124,19 +150,21 @@ La navigation basse doit rester courte et orientée pilotage. La navigation éte
 
 ## 4. Dashboard / Accueil
 
-Ordre recommandé :
-1. contexte établissement / utilisateur ;
-2. message de bienvenue ;
-3. KPI réellement chargés depuis l’API ;
-4. actions rapides du rôle ;
-5. alertes / activité récente ;
-6. état offline / synchronisation si nécessaire.
+Ordre V1.1 :
+1. header compact (contexte établissement) ;
+2. message de bienvenue compact ;
+3. Vue d’ensemble ;
+4. KPI réellement chargés depuis l’API (≥ 2 visibles above-the-fold) ;
+5. actions rapides du rôle ;
+6. alertes / activité récente ;
+7. état offline / synchronisation si nécessaire.
 
 Interdits :
 - KPI inventés pendant un échec réseau ;
 - faux `0` pour masquer une erreur ;
 - duplication d’une même action dans trois zones différentes ;
-- tuiles purement décoratives sans destination métier.
+- tuiles purement décoratives sans destination métier ;
+- carte établissement dupliquant le header.
 
 ## 5. Synchronisation et mode local
 
@@ -180,14 +208,15 @@ L’action notifications du header pointe vers la source pertinente autorisée :
 - respecter le grossissement de texte autant que possible ;
 - aucun CTA important masqué par la barre système ou le clavier.
 
-## 10. Critères d’acceptation V1
+## 10. Critères d’acceptation V1.1
 
-La V1 est considérée conforme lorsque :
+La V1.1 est considérée conforme lorsque :
 - l’onglet bottom « Menu » n’existe plus ;
-- la bottom nav contient au plus 5 entrées visibles ;
+- la bottom nav contient au plus 5 entrées visibles, libellés courts non tronqués ;
 - un burger ouvre le drawer gauche ;
-- le header affiche le contexte établissement ;
-- sync / recherche / notifications sont permission-aware ;
+- le header compact affiche le contexte établissement avec Safe Area réelle ;
+- Home : header → welcome compact → Vue d’ensemble → ≥ 2 KPI avant la bottom nav ;
+- sync / recherche / notifications sont permission-aware et non dupliqués sur Home ;
 - le drawer est filtré par RBAC ;
 - les routes legacy ne sont pas réintroduites ;
 - les écrans existants restent atteignables ;
@@ -198,7 +227,7 @@ La V1 est considérée conforme lorsque :
 
 La refonte est livrée en plusieurs incréments dans la même direction produit :
 1. shell global : header + drawer + bottom nav ;
-2. dashboards par rôle ;
+2. dashboards par rôle (densité V1.1) ;
 3. listes et fiches métier ;
 4. synchronisation / offline UX ;
 5. tests utilisateurs terrain et ajustements.

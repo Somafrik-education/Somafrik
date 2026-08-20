@@ -9,7 +9,6 @@ import { canReadEntity, canReadRoute, canReadView } from "../domain/security/per
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { MENU_TEST_IDS } from "../lib/loginScreenSpec";
-import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 import {
   resolveTeacherAssignmentsForSession,
@@ -129,9 +128,9 @@ export default function MenuScreen() {
         { paddingBottom: scrollContentPaddingBottom, paddingHorizontal: horizontalPadding, maxWidth: contentMaxWidth, alignSelf: "center", width: "100%" },
       ]}
       showsVerticalScrollIndicator={false}
-      testID={NAVIGATION_TEST_IDS.menuScreen}
+      testID="menu-screen-legacy"
     >
-      <Text style={styles.title} testID={NAVIGATION_TEST_IDS.menuTitle}>
+      <Text style={styles.title} testID="menu-title-legacy">
         Menu
       </Text>
       <Text style={styles.userName}>{session?.user.name ?? "Utilisateur"}</Text>

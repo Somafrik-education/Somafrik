@@ -3,7 +3,7 @@
  *
  * Scénarios :
  *   - Admin établissement connecté
- *   - Navigation Accueil → Classes → Enseignants → Menu
+ *   - Navigation Accueil → Classes → Profs + drawer header
  *   - Barre toujours visible, transitions fluides, retour fonctionnel
  *
  * Prérequis : backend + mobile web (voir verify:e2e-0017)
@@ -131,24 +131,27 @@ async function runNavigationUiTests(fixtures, results) {
     await navigateToTabScreen(
       page,
       TAB_TEST_IDS.teachers,
-      "Enseignants",
+      "Profs",
       NAVIGATION_TEST_IDS.teachersScreen,
       results,
-      'Onglet "Enseignants"',
+      'Onglet "Profs"',
     );
     const teachersTitle = (await page.locator(testIdSelector(NAVIGATION_TEST_IDS.teachersTitle)).innerText()).trim();
     pushUiResult(results, 'Enseignants — Titre écran', "Enseignants", teachersTitle, teachersTitle === "Enseignants");
 
-    await navigateToTabScreen(
-      page,
-      TAB_TEST_IDS.menu,
-      "Menu",
-      NAVIGATION_TEST_IDS.menuScreen,
+    await page.locator(testIdSelector(NAVIGATION_TEST_IDS.headerMenu)).click();
+    await page.waitForSelector(testIdSelector(NAVIGATION_TEST_IDS.roleDrawer), {
+      state: "visible",
+      timeout: LOGIN_MAX_MS,
+    });
+    pushUiResult(
       results,
-      'Onglet "Menu"',
+      "Drawer — menu latéral ouvert depuis le header",
+      NAVIGATION_TEST_IDS.roleDrawer,
+      "visible",
+      await page.locator(testIdSelector(NAVIGATION_TEST_IDS.roleDrawer)).isVisible(),
     );
-    const menuTitle = (await page.locator(testIdSelector(NAVIGATION_TEST_IDS.menuTitle)).innerText()).trim();
-    pushUiResult(results, 'Menu — Titre écran', "Menu", menuTitle, menuTitle === "Menu");
+    await page.locator(testIdSelector("mobile-role-drawer-close")).click();
 
     // Retour depuis liste élèves → classes, barre toujours visible
     await clickTab(page, TAB_TEST_IDS.classes, "Classes");
@@ -176,8 +179,7 @@ async function runNavigationUiTests(fixtures, results) {
     await assertTabBarVisible(page, results, "Retour — Barre de navigation");
 
     // Cycle complet sans perte de barre
-    await clickTab(page, TAB_TEST_IDS.menu, "Menu");
-    await page.waitForSelector(testIdSelector(NAVIGATION_TEST_IDS.menuScreen), { timeout: LOGIN_MAX_MS });
+    await clickTab(page, TAB_TEST_IDS.frais, "Frais");
     await clickTab(page, TAB_TEST_IDS.accueil, "Accueil");
     await page.locator(testIdSelector(HOME_TEST_IDS.adminDashboard)).waitFor({ state: "visible", timeout: LOGIN_MAX_MS });
     pushUiResult(

@@ -99,6 +99,7 @@ export default function RoleNavigationDrawer({
               onPress={handleLogout}
               accessibilityRole="button"
               accessibilityLabel="Déconnexion"
+              testID="mobile-role-drawer-logout"
             >
               <Ionicons name="log-out-outline" size={21} color="#B91C1C" />
               <Text style={styles.logoutText}>Déconnexion</Text>

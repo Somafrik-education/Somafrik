@@ -113,6 +113,7 @@
     "verify:mobile-planning-v2": "npm --prefix Mobile run verify:mobile-planning-v2",
     "verify:mobile-network-resilience": "npm --prefix Mobile run verify:mobile-network-resilience",
     "verify:mobile-usability": "npm --prefix Mobile run verify:mobile-usability",
+    "verify:mobile-ux-v1": "npm --prefix Mobile run verify:mobile-ux-v1",
     "verify:mobile-home-data-truth": "npm --prefix Mobile run verify:mobile-home-data-truth",
     "verify:mobile-school-scope-transport": "npm --prefix Mobile run verify:mobile-school-scope-transport",
     "verify:mobile-no-catalog-runtime-data": "npm --prefix Mobile run verify:mobile-no-catalog-runtime-data",

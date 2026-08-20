@@ -1,5 +1,6 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { Text } from "react-native";
 
 import HomeScreen from "../screens/HomeScreen";
 import StudentsScreen from "../screens/StudentsScreen";
@@ -12,6 +13,7 @@ import {
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
 import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
+import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import MobileAppHeader from "../components/MobileAppHeader";
 
 const Tab = createBottomTabNavigator();
@@ -20,6 +22,28 @@ const hiddenTabOptions = {
   tabBarButton: () => null,
   tabBarItemStyle: { display: "none" } as const,
 };
+
+function CompactTabLabel({ label, color }: { label: string; color: string }) {
+  return (
+    <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.75}
+      maxFontSizeMultiplier={1.3}
+      allowFontScaling
+      style={{
+        color,
+        fontSize: 11,
+        fontWeight: "800",
+        textAlign: "center",
+        width: "100%",
+        includeFontPadding: false,
+      }}
+    >
+      {label}
+    </Text>
+  );
+}
 
 export default function BottomTabsNavigator() {
   const { session } = useAuth();
@@ -48,32 +72,33 @@ export default function BottomTabsNavigator() {
     <Tab.Navigator
       screenOptions={({ route, navigation }) => ({
         headerShown: true,
+        headerStatusBarHeight: 0,
         header: () => <MobileAppHeader navigation={navigation} />,
         tabBarShowLabel: true,
         tabBarActiveTintColor: "#FFFFFF",
         tabBarInactiveTintColor: "#94A3B8",
-        tabBarLabel: getTabLabel(route.name, visibleTabs, overflowTabs, hiddenTabs),
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "800",
-          marginTop: 2,
-        },
+        tabBarLabel: ({ color }) => (
+          <CompactTabLabel
+            label={getTabLabel(route.name, visibleTabs, overflowTabs, hiddenTabs)}
+            color={color}
+          />
+        ),
         tabBarStyle,
         tabBarItemStyle: {
           flex: 1,
-          minWidth: 48,
-          minHeight: 48,
-          height: 58,
-          borderRadius: 18,
-          marginHorizontal: 1,
-          paddingVertical: 5,
+          minWidth: 0,
+          minHeight: MIN_TOUCH_TARGET_DP,
+          height: 52,
+          borderRadius: 16,
+          marginHorizontal: 0,
+          paddingVertical: 2,
         },
         tabBarIcon: ({ focused }) => {
           if (route.name === "Accueil") {
             return (
               <Ionicons
                 name={focused ? "home" : "home-outline"}
-                size={24}
+                size={22}
                 color={focused ? "#FFFFFF" : "#94A3B8"}
               />
             );
@@ -85,7 +110,7 @@ export default function BottomTabsNavigator() {
           return (
             <Ionicons
               name={iconName}
-              size={24}
+              size={22}
               color={focused ? "#FFFFFF" : "#94A3B8"}
             />
           );
@@ -96,7 +121,6 @@ export default function BottomTabsNavigator() {
         name="Accueil"
         component={HomeScreen}
         options={{
-          tabBarLabel: "Accueil",
           tabBarButtonTestID: TAB_TEST_IDS.accueil,
           tabBarAccessibilityLabel: "Accueil",
         }}
@@ -112,10 +136,9 @@ export default function BottomTabsNavigator() {
               tabTestId
                 ? {
                     tabBarButtonTestID: tabTestId,
-                    tabBarLabel: tab.label,
                     tabBarAccessibilityLabel: tab.label,
                   }
-                : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
+                : { tabBarAccessibilityLabel: tab.label }
             }
           />
         );

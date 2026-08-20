@@ -1,7 +1,6 @@
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -11,7 +10,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 
-const somafrikLogo = require("../../assets/somafrik-logo.png");
 import StudentSwitcher from "../components/StudentSwitcher";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
@@ -21,7 +19,6 @@ import { DATA_TRUTH_TEST_IDS, isMetricReady, metricLabelFromSnapshot, parentAver
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import SchoolSelector from "../components/SchoolSelector";
-import CommunicationHeaderIcons from "../components/CommunicationHeaderIcons";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import {
   resolveTeacherAssignmentsForSession,
@@ -196,8 +193,6 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </TouchableOpacity>
 
-          <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
-
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.teacherWelcomeCard}
@@ -364,8 +359,6 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </TouchableOpacity>
 
-          <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
-
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.parentWelcomeCard}
@@ -517,8 +510,6 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </TouchableOpacity>
 
-          <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
-
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.welcomeCard}
@@ -591,96 +582,26 @@ export default function HomeScreen({ navigation }: any) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={scrollContentStyle}
       >
-        {/* Header Somafrik
-        <View style={styles.topHeader}>
-          <View>
-            <Text style={styles.brand}>Somafrik</Text>
-            <Text style={styles.subtitle}>Smart Education Platform</Text>
-          </View>
-
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>U</Text>
-          </View>
-        </View> */}
-
-        {/* Établissement */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.schoolCard}
-          onPress={() => canOpenSchoolManagement && navigation.navigate("SchoolManagement")}
-        >
-          <View style={styles.schoolIconBox}>
-            {currentSchool.logoUrl ? (
-              <Image source={{ uri: currentSchool.logoUrl }} style={styles.schoolLogoImage} />
-            ) : (
-              <Image source={somafrikLogo} style={styles.schoolLogoImage} />
-            )}
-          </View>
-
-          <View style={styles.schoolInfo}>
-            <Text style={styles.schoolName}>{currentSchool.name}</Text>
-            <Text style={styles.schoolCity}>{currentSchool.city}</Text>
-            <Text style={styles.schoolTagline}>{currentSchool.slogan}</Text>
-          </View>
-        </TouchableOpacity>
-
-        <CommunicationHeaderIcons navigation={navigation} unreadMessages={unreadMessages} />
-
         {isPlatformAdmin && <SchoolSelector />}
 
-        {isPlatformAdmin && (
-          <View style={[styles.statsGrid, isTablet && styles.statsGridTablet]}>
-            <StatCard
-              icon="earth-outline"
-              value={String(countriesData.length)}
-              label="Pays"
-              color="#2563EB"
-              bg="#EFF6FF"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "countries" })}
-            />
-            <StatCard
-              icon="business-outline"
-              value={String(schoolsData.length)}
-              label="Etablissements"
-              color="#7C3AED"
-              bg="#F5F3FF"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "schools" })}
-            />
-            <StatCard
-              icon="cube-outline"
-              value={String(subscriptionsData.length)}
-              label="Abonnements"
-              color="#EA580C"
-              bg="#FFF7ED"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "subscriptions" })}
-            />
-            <StatCard
-              icon="people-outline"
-              value={usersValue}
-              label="Admins etablissement"
-              color="#16A34A"
-              bg="#ECFDF5"
-              onPress={() => navigation.navigate("Users")}
-              testID={DATA_TRUTH_TEST_IDS.homeUsersValue}
-            />
-          </View>
-        )}
-
-        {/* Bienvenue */}
+        {/* Bienvenue compacte — le header porte déjà le contexte établissement */}
         <TouchableOpacity
           activeOpacity={0.85}
           style={styles.welcomeCard}
           onPress={() => canOpenSchoolManagement && navigation.navigate("SchoolManagement")}
           testID={isSchoolAdmin ? HOME_TEST_IDS.adminDashboard : undefined}
         >
-          <View>
-            <Text style={styles.welcomeTitle}>
-              {welcomeGreeting}{welcomeName ? ` ${welcomeName}` : ""}
-            </Text>
-          </View>
-
+          <Text
+            style={styles.welcomeTitle}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            maxFontSizeMultiplier={1.2}
+          >
+            {welcomeGreeting}{welcomeName ? ` ${welcomeName}` : ""}
+          </Text>
           <View style={styles.welcomeIcon}>
-            <Ionicons name="grid-outline" size={28} color="#FFFFFF" />
+            <Ionicons name="grid-outline" size={22} color="#FFFFFF" />
           </View>
         </TouchableOpacity>
 
@@ -743,6 +664,43 @@ export default function HomeScreen({ navigation }: any) {
             />
           )}
         </View>
+
+        {isPlatformAdmin && (
+          <View style={[styles.statsGrid, isTablet && styles.statsGridTablet]}>
+            <StatCard
+              icon="earth-outline"
+              value={String(countriesData.length)}
+              label="Pays"
+              color="#2563EB"
+              bg="#EFF6FF"
+              onPress={() => navigation.navigate("AdminCrud", { entity: "countries" })}
+            />
+            <StatCard
+              icon="business-outline"
+              value={String(schoolsData.length)}
+              label="Etablissements"
+              color="#7C3AED"
+              bg="#F5F3FF"
+              onPress={() => navigation.navigate("AdminCrud", { entity: "schools" })}
+            />
+            <StatCard
+              icon="cube-outline"
+              value={String(subscriptionsData.length)}
+              label="Abonnements"
+              color="#EA580C"
+              bg="#FFF7ED"
+              onPress={() => navigation.navigate("AdminCrud", { entity: "subscriptions" })}
+            />
+            <StatCard
+              icon="people-outline"
+              value={usersValue}
+              label="Admins etablissement"
+              color="#16A34A"
+              bg="#ECFDF5"
+              onPress={() => navigation.navigate("Users")}
+            />
+          </View>
+        )}
 
         {/* Activité récente */}
         <View style={styles.sectionHeader}>
@@ -1033,11 +991,11 @@ function StatCard({ icon, value, label, meta, color, bg, onPress, testID }: Stat
   return (
     <TouchableOpacity activeOpacity={0.85} style={styles.statCard} onPress={onPress} testID={testID}>
       <View style={[styles.statIconBox, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={24} color={color} />
+        <Ionicons name={icon} size={20} color={color} />
       </View>
 
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, { color }]} maxFontSizeMultiplier={1.3}>{value}</Text>
+      <Text style={styles.statLabel} maxFontSizeMultiplier={1.3}>{label}</Text>
       {meta ? <Text style={styles.statMeta}>{meta}</Text> : null}
     </TouchableOpacity>
   );
@@ -1120,8 +1078,8 @@ const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingTop: 48,
-    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingHorizontal: 16,
   },
 
   topHeader: {
@@ -1222,72 +1180,65 @@ const styles = StyleSheet.create({
 
   welcomeCard: {
     backgroundColor: "#1D4ED8",
-    borderRadius: 30,
-    padding: 22,
-    minHeight: 128,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 44,
+    maxHeight: 110,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 26,
-    shadowColor: "#1D4ED8",
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    marginBottom: 12,
   },
 
   parentWelcomeCard: {
     backgroundColor: "#0F766E",
-    borderRadius: 30,
-    padding: 22,
-    minHeight: 128,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 44,
+    maxHeight: 110,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 26,
-    shadowColor: "#0F766E",
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    marginBottom: 12,
   },
 
   teacherWelcomeCard: {
     backgroundColor: "#4338CA",
-    borderRadius: 30,
-    padding: 22,
-    minHeight: 128,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 44,
+    maxHeight: 110,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 26,
-    shadowColor: "#4338CA",
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    marginBottom: 12,
   },
 
   welcomeTitle: {
     color: "#FFFFFF",
-    fontSize: 30,
-    fontWeight: "900",
-    letterSpacing: -0.5,
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    flex: 1,
+    marginRight: 8,
   },
 
   welcomeText: {
-    marginTop: 10,
+    marginTop: 4,
     color: "#DBEAFE",
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "700",
-    lineHeight: 23,
-    maxWidth: 230,
+    lineHeight: 18,
+    maxWidth: 220,
   },
 
   welcomeIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
@@ -1297,14 +1248,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: "900",
+    fontSize: 16,
+    fontWeight: "800",
     color: "#0F172A",
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
 
   sectionLink: {
@@ -1317,7 +1268,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    marginBottom: 26,
+    marginBottom: 16,
   },
   statsGridTablet: {
     gap: 16,
@@ -1326,10 +1277,10 @@ const styles = StyleSheet.create({
   statCard: {
     width: "48%",
     backgroundColor: "#FFFFFF",
-    borderRadius: 26,
-    padding: 18,
-    marginBottom: 14,
-    minHeight: 150,
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 10,
+    minHeight: 108,
     shadowColor: "#0F172A",
     shadowOpacity: 0.07,
     shadowRadius: 16,
@@ -1338,18 +1289,18 @@ const styles = StyleSheet.create({
   },
 
   statIconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 18,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    marginBottom: 8,
   },
 
   statValue: {
-    fontSize: 36,
+    fontSize: 24,
     fontWeight: "900",
-    letterSpacing: -0.7,
+    letterSpacing: -0.4,
   },
 
   statLabel: {

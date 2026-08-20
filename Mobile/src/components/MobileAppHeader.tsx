@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { COMPACT_HEADER_ROW_DP } from "../lib/mobileUxV1Layout";
 import RoleNavigationDrawer from "./RoleNavigationDrawer";
 
 export default function MobileAppHeader({ navigation }: { navigation: any }) {
@@ -40,51 +42,62 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
 
   return (
     <>
-      <View style={styles.container} testID="mobile-app-header">
-        <TouchableOpacity
-          style={styles.menuButton}
-          onPress={() => setDrawerOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Ouvrir le menu"
-          testID="mobile-header-menu"
-        >
-          <Ionicons name="menu" size={28} color="#0F172A" />
-        </TouchableOpacity>
+      <SafeAreaView edges={["top"]} style={styles.safe} testID="mobile-app-header">
+        <View style={styles.row}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => setDrawerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Ouvrir le menu"
+            testID="mobile-header-menu"
+          >
+            <Ionicons name="menu" size={24} color="#0F172A" />
+          </TouchableOpacity>
 
-        <View style={styles.context}>
-          <Text style={styles.schoolName} numberOfLines={1} testID="mobile-header-school-name">
-            {schoolName}
-          </Text>
-          <Text style={styles.contextLabel} numberOfLines={1}>{contextLabel}</Text>
-        </View>
+          <View style={styles.context}>
+            <Text
+              style={styles.schoolName}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.2}
+              testID="mobile-header-school-name"
+            >
+              {schoolName}
+            </Text>
+            {contextLabel ? (
+              <Text style={styles.contextLabel} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+                {contextLabel}
+              </Text>
+            ) : null}
+          </View>
 
-        <View style={styles.actions}>
-          {syncRoute ? (
-            <HeaderAction
-              icon="sync-outline"
-              label="Synchroniser"
-              testID="mobile-header-sync"
-              onPress={() => openRootRoute(syncRoute)}
-            />
-          ) : null}
-          {searchRoute ? (
-            <HeaderAction
-              icon="search-outline"
-              label="Rechercher"
-              testID="mobile-header-search"
-              onPress={() => openRootRoute(searchRoute)}
-            />
-          ) : null}
-          {notificationsRoute ? (
-            <HeaderAction
-              icon="notifications-outline"
-              label="Notifications"
-              testID="mobile-header-notifications"
-              onPress={() => openRootRoute(notificationsRoute)}
-            />
-          ) : null}
+          <View style={styles.actions}>
+            {syncRoute ? (
+              <HeaderAction
+                icon="sync-outline"
+                label="Synchroniser"
+                testID="mobile-header-sync"
+                onPress={() => openRootRoute(syncRoute)}
+              />
+            ) : null}
+            {searchRoute ? (
+              <HeaderAction
+                icon="search-outline"
+                label="Rechercher"
+                testID="mobile-header-search"
+                onPress={() => openRootRoute(searchRoute)}
+              />
+            ) : null}
+            {notificationsRoute ? (
+              <HeaderAction
+                icon="notifications-outline"
+                label="Notifications"
+                testID="mobile-header-notifications"
+                onPress={() => openRootRoute(notificationsRoute)}
+              />
+            ) : null}
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
 
       <RoleNavigationDrawer
         visible={drawerOpen}
@@ -115,7 +128,7 @@ function HeaderAction({
       testID={testID}
       activeOpacity={0.82}
     >
-      <Ionicons name={icon} size={21} color="#334155" />
+      <Ionicons name={icon} size={20} color="#334155" />
     </TouchableOpacity>
   );
 }
@@ -124,7 +137,7 @@ function roleLabel(role?: string) {
   switch (role) {
     case "super_admin": return "Administration Somafrik";
     case "country_admin": return "Administration pays";
-    case "school_admin": return "Administration établissement";
+    case "school_admin": return "Établissement";
     case "principal": return "Direction";
     case "prefet": return "Préfet des études";
     case "secretary": return "Secrétariat";
@@ -136,15 +149,17 @@ function roleLabel(role?: string) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    minHeight: 64,
+  safe: {
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E2E8F0",
+  },
+  row: {
+    minHeight: COMPACT_HEADER_ROW_DP,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   menuButton: {
     minWidth: MIN_TOUCH_TARGET_DP,
@@ -156,26 +171,26 @@ const styles = StyleSheet.create({
   context: {
     flex: 1,
     minWidth: 0,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
   schoolName: {
     color: "#0F172A",
-    fontSize: 16,
-    fontWeight: "900",
+    fontSize: 15,
+    fontWeight: "800",
     textAlign: "center",
   },
   contextLabel: {
     color: "#64748B",
-    fontSize: 11,
-    fontWeight: "800",
+    fontSize: 10,
+    fontWeight: "700",
     textAlign: "center",
-    marginTop: 2,
+    marginTop: 1,
   },
   actions: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 2,
+    gap: 0,
   },
   actionButton: {
     width: MIN_TOUCH_TARGET_DP,

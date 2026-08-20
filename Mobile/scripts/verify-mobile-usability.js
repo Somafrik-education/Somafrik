@@ -36,7 +36,7 @@ function main() {
   console.log("OK: tests unitaires Login/Classes/Notes/Finance/Planning/Messages/a11y");
 
   run("node", [path.join("scripts", "verify-mobile-ux-v1.js")], MOBILE);
-  console.log("OK: contrat UX/UI Mobile V1 — header + drawer + bottom nav sans Menu");
+  console.log("OK: contrat UX/UI Mobile V1.1 — header compact + drawer + bottom nav sans Menu");
 
   const login = source(path.join("screens", "LoginScreen.tsx"));
   assert.match(login, /KeyboardAwareScreen/);

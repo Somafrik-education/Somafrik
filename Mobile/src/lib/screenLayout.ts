@@ -1,12 +1,18 @@
 import { Platform } from "react-native";
 import { useSafeAreaInsets, type EdgeInsets } from "react-native-safe-area-context";
+import {
+  FLOATING_TAB_BAR_HEIGHT_V11,
+  TAB_BAR_INNER_PADDING_DP,
+  TAB_BAR_SIDE_INSET_DP,
+} from "./mobileUxV1Layout";
+import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 
-export const FLOATING_TAB_BAR_HEIGHT = 76;
-export const FLOATING_TAB_BAR_GAP = 10;
-export const CONTENT_ABOVE_TAB_GAP = 16;
+export const FLOATING_TAB_BAR_HEIGHT = FLOATING_TAB_BAR_HEIGHT_V11;
+export const FLOATING_TAB_BAR_GAP = 6;
+export const CONTENT_ABOVE_TAB_GAP = 12;
 
 function getTabBarBottomOffset(insets: EdgeInsets): number {
-  const minBottom = Platform.OS === "android" ? 12 : 8;
+  const minBottom = Platform.OS === "android" ? 10 : 8;
   return Math.max(insets.bottom, minBottom) + FLOATING_TAB_BAR_GAP;
 }
 
@@ -21,16 +27,16 @@ export function computeFloatingTabBarLayout(insets: EdgeInsets) {
     scrollContentPaddingBottom,
     tabBarStyle: {
       position: "absolute" as const,
-      left: 16,
-      right: 16,
+      left: TAB_BAR_SIDE_INSET_DP,
+      right: TAB_BAR_SIDE_INSET_DP,
       bottom: tabBarBottom,
       height: FLOATING_TAB_BAR_HEIGHT,
       backgroundColor: "#0F172A",
-      borderRadius: 24,
+      borderRadius: 20,
       borderTopWidth: 0,
-      paddingTop: 8,
-      paddingBottom: 10,
-      paddingHorizontal: 8,
+      paddingTop: 4,
+      paddingBottom: 6,
+      paddingHorizontal: TAB_BAR_INNER_PADDING_DP,
       elevation: 12,
       shadowColor: "#000",
       shadowOffset: {
@@ -39,7 +45,8 @@ export function computeFloatingTabBarLayout(insets: EdgeInsets) {
       },
       shadowOpacity: 0.15,
       shadowRadius: 10,
-      overflow: "hidden" as const,
+      overflow: "visible" as const,
+      minHeight: MIN_TOUCH_TARGET_DP + 8,
     },
   };
 }
