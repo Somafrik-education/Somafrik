@@ -65,7 +65,14 @@ export function readTenantScopeFields(value: unknown): {
 } {
   const row = record(value);
   return {
-    schoolCode: optionalText(row.schoolCode ?? row.school_code),
+    schoolCode: optionalText(
+      row.schoolPublicCode ??
+        row.school_public_code ??
+        row.schoolLoginCode ??
+        row.school_login_code ??
+        row.schoolCode ??
+        row.school_code,
+    ),
     schoolId: optionalText(row.schoolId ?? row.school_id),
     countryCode: optionalText(row.countryCode ?? row.country_code),
     countryScope: optionalText(row.countryScope ?? row.country_scope),
