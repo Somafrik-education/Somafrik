@@ -50,6 +50,8 @@ import {
   getRestrictedAccessToken,
   getRestrictedRefreshToken,
 } from "../lib/restrictedSession";
+import { clearRequestSchoolScope } from "../lib/requestSchoolScope";
+import { clearStoredSchoolCode } from "../lib/activeSchool";
 
 export function getApiBaseUrl() {
   return resolveApiBaseUrl();
@@ -267,6 +269,8 @@ export async function logout() {
   } catch {
     // best effort — on nettoie toujours localement
   } finally {
+    clearRequestSchoolScope();
+    clearStoredSchoolCode();
     clearRestrictedSession();
     await clearSecureSession();
   }

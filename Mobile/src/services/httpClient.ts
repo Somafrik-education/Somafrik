@@ -17,6 +17,7 @@ import {
   getRestrictedAccessToken,
   getRestrictedRefreshToken,
 } from "../lib/restrictedSession";
+import { applyAuthenticatedSchoolScopeHeader, clearRequestSchoolScope } from "../lib/requestSchoolScope";
 import {
   isDevelopmentRuntime,
   resolveApiBaseUrl,
@@ -207,6 +208,7 @@ export async function httpRequest<T = Json>(
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
     }
+    applyAuthenticatedSchoolScopeHeader(headers, path);
   }
 
   const response = await fetchWithTimeout(
@@ -225,6 +227,7 @@ export async function httpRequest<T = Json>(
     }
     await clearSecureSession();
     clearRestrictedSession();
+    clearRequestSchoolScope();
     notifySessionExpired();
     throw new ApiClientError("Session expirée. Veuillez vous reconnecter.", 401);
   }

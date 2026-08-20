@@ -23,6 +23,10 @@ export function writeStoredSchoolCode(code: string): void {
   storedSchoolCode = code;
 }
 
+export function clearStoredSchoolCode(): void {
+  storedSchoolCode = "";
+}
+
 export function pickInitialSchoolCode(
   user: { schoolCode?: string; role?: string } | null,
   availableCodes: string[],

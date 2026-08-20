@@ -19,10 +19,12 @@ import {
 } from "../data/catalog";
 import {
   ALL_SCHOOLS_CODE,
+  clearStoredSchoolCode,
   pickInitialSchoolCode,
   userRequiresSchoolSelection,
   writeStoredSchoolCode,
 } from "../lib/activeSchool";
+import { clearRequestSchoolScope, setRequestSchoolScope } from "../lib/requestSchoolScope";
 import { normalize } from "../lib/format";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
 import {
@@ -389,7 +391,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const setActiveSchoolCode = (code: string) => {
     setActiveSchoolCodeState(code);
     writeStoredSchoolCode(code);
+    setRequestSchoolScope(code);
   };
+
+  useEffect(() => {
+    setRequestSchoolScope(activeSchoolCode);
+  }, [activeSchoolCode]);
 
   const stateSnapshot = useMemo(
     () => ({
@@ -897,11 +904,18 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     previousPrincipalKeyRef.current = principalScopeKey;
     if (plan.resetKind === "principal") {
       resetResourceCaches();
+      clearRequestSchoolScope();
+      if (requiresSchoolSelection) {
+        setActiveSchoolCodeState("");
+        clearStoredSchoolCode();
+      }
     } else {
       resetTenantResourceCaches();
     }
     if (!plan.loadPrincipal && !plan.loadTenant) {
       setActiveSchoolCodeState("");
+      clearStoredSchoolCode();
+      clearRequestSchoolScope();
       return;
     }
     const loaders = scopedLoadersRef.current;
@@ -911,7 +925,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       void loaders.loadSubscriptions();
       void loaders.loadNotifications();
     }
-    if (plan.loadTenant) {
+    const tenantReady =
+      !requiresSchoolSelection || Boolean(activeSchoolCode && activeSchoolCode !== ALL_SCHOOLS_CODE);
+    const skipTenantUntilSchoolChosen = requiresSchoolSelection && plan.resetKind === "principal";
+    if (plan.loadTenant && tenantReady && !skipTenantUntilSchoolChosen) {
       void loaders.refreshBackOfficeState().catch(() => null);
       void loaders.loadUsers();
       void loaders.loadTeachers();
@@ -922,6 +939,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [
     principalScopeKey,
     resourceScopeKey,
+    requiresSchoolSelection,
+    activeSchoolCode,
     resetResourceCaches,
     resetPrincipalResourceCaches,
     resetTenantResourceCaches,

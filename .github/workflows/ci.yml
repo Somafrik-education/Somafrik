@@ -136,6 +136,8 @@ jobs:
         run: npm run verify:mobile-usability
       - name: verify:mobile-home-data-truth
         run: npm run verify:mobile-home-data-truth
+      - name: verify:mobile-school-scope-transport
+        run: npm run verify:mobile-school-scope-transport
       - name: verify:mobile-no-catalog-runtime-data
         run: npm run verify:mobile-no-catalog-runtime-data
       - name: verify:mobile-canonical-route-map
