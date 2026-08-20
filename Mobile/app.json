@@ -7,7 +7,7 @@
     "icon": "./assets/somafrik-app-icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/somafrik-logo.png",
+      "image": "./assets/somafrik-splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
