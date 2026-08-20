@@ -10,22 +10,22 @@ const {
 const { BusinessError } = require("../services/authService");
 
 test("scopeResidualItems force le schoolCode du principal", () => {
-  const scoped = scopeResidualItems("CD-2026-0001", [{ id: "EX-1", title: "Devoir" }]);
-  assert.deepEqual(scoped, [{ id: "EX-1", title: "Devoir", schoolCode: "CD-2026-0001" }]);
+  const scoped = scopeResidualItems("CD-IN-26-001", [{ id: "EX-1", title: "Devoir" }]);
+  assert.deepEqual(scoped, [{ id: "EX-1", title: "Devoir", schoolCode: "CD-IN-26-001" }]);
 });
 
 test("scopeResidualItems rejette un schoolCode imbriqué étranger", () => {
   assert.throws(
     () =>
-      scopeResidualItems("CD-2026-0001", [
-        { id: "EX-FOREIGN", schoolCode: "BI-2026-0002", title: "Inject" },
+      scopeResidualItems("CD-IN-26-001", [
+        { id: "EX-FOREIGN", schoolCode: "BI-EC-26-001", title: "Inject" },
       ]),
     (error) => error instanceof BusinessError && error.statusCode === 400,
   );
 });
 
 test("stripClientSchoolCode retire le schoolCode racine", () => {
-  assert.deepEqual(stripClientSchoolCode({ schoolCode: "BI-2026-0002", periodMode: "trimestre" }), {
+  assert.deepEqual(stripClientSchoolCode({ schoolCode: "BI-EC-26-001", periodMode: "trimestre" }), {
     periodMode: "trimestre",
   });
 });
@@ -80,6 +80,10 @@ test("Superadmin + CD-IN-26-001 scope students/teachers vers Nuru", () => {
     school: nuru,
   });
   assert.equal(resolvePrincipalSchoolCode(principal), "CD-IN-26-001");
+  assert.equal(principal.effectiveSchoolCode, "CD-IN-26-001");
+  assert.equal(principal.effectiveSchoolInternalCode, "SCH-ABC123");
+  assert.equal(principal.effectiveSchoolId, "school-nuru");
+  assert.equal(principal.schoolScopeSource, "request");
   assert.equal(principal.sub, "super-1");
   assert.equal(principal.role, "Super Administrateur Somafrik");
 });
@@ -91,6 +95,7 @@ test("Superadmin sans sélection conserve * (GET students → 400)", () => {
     school: null,
   });
   assert.equal(principal.schoolCode, "*");
+  assert.equal(principal.effectiveSchoolCode, undefined);
   assert.throws(
     () => resolvePrincipalSchoolCode(principal),
     (error) => error instanceof BusinessError && error.statusCode === 400,
@@ -104,6 +109,7 @@ test("Admin Pays CD + école CD autorisé", () => {
     school: nuru,
   });
   assert.equal(resolvePrincipalSchoolCode(principal), "CD-IN-26-001");
+  assert.equal(principal.effectiveSchoolInternalCode, "SCH-ABC123");
 });
 
 test("Admin Pays CD + école BI → 403", () => {
@@ -141,6 +147,7 @@ test("Admin School + login_code V2 de son école est accepté", () => {
     school: nuru,
   });
   assert.equal(principal.schoolCode, "CD-IN-26-001");
+  assert.equal(principal.effectiveSchoolInternalCode, "SCH-ABC123");
 });
 
 test("SCH-* envoyé par le client est refusé", () => {
@@ -155,6 +162,21 @@ test("SCH-* envoyé par le client est refusé", () => {
       error instanceof BusinessError &&
       error.statusCode === 400 &&
       error.code === "SCHOOL_SCOPE_INTERNAL_ALIAS_FORBIDDEN",
+  );
+});
+
+test("code client non V2 est refusé avant autorité tenant", () => {
+  assert.throws(
+    () =>
+      resolveEffectiveSchoolScope({
+        principal: { role: "Super Administrateur Somafrik", schoolCode: "*" },
+        requestedSchoolCode: "NURU",
+        school: null,
+      }),
+    (error) =>
+      error instanceof BusinessError &&
+      error.statusCode === 400 &&
+      error.code === "SCHOOL_SCOPE_V2_REQUIRED",
   );
 });
 
@@ -182,5 +204,6 @@ test("applyEffectiveSchoolScope lit X-Somafrik-School-Code et résout le princip
   };
   await applyEffectiveSchoolScope(req, lookup);
   assert.equal(req.principal.schoolCode, "CD-IN-26-001");
+  assert.equal(req.principal.effectiveSchoolInternalCode, "SCH-ABC123");
   assert.equal(SCHOOL_SCOPE_HEADER, "X-Somafrik-School-Code");
 });
