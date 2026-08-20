@@ -6,7 +6,9 @@ const {
   ALL_FLOWS,
   LIVE_FLOWS,
   FAULT_FLOWS,
+  MUTATION_PRECONDITION_FLOW,
   MUTATION_FLOWS,
+  MUTATION_CLEANUP_FLOW,
   flowEnvPairs,
   flowsForMode,
   parseAdbDevices,
@@ -59,7 +61,7 @@ const MUTATION_ENV = {
   SOMAFRIK_E2E_ALLOW_MUTATIONS: "1",
 };
 
-test("runtime contract keeps 10 read-only/fault flows plus one separate mutation flow", () => {
+test("runtime contract keeps read-only/fault flows and separates mutation lifecycle", () => {
   assert.deepEqual(ALL_FLOWS, [
     "01-login-admin-school.yaml",
     "02-home-metrics.yaml",
@@ -74,7 +76,9 @@ test("runtime contract keeps 10 read-only/fault flows plus one separate mutation
   ]);
   assert.equal(LIVE_FLOWS.length, 9);
   assert.deepEqual(FAULT_FLOWS, ["09-partial-domain-error.yaml"]);
-  assert.deepEqual(MUTATION_FLOWS, ["11-attendance-persistence.yaml"]);
+  assert.equal(MUTATION_PRECONDITION_FLOW, "11-attendance-precondition.yaml");
+  assert.deepEqual(MUTATION_FLOWS, ["12-attendance-persistence.yaml"]);
+  assert.equal(MUTATION_CLEANUP_FLOW, "13-attendance-restore.yaml");
   assert.deepEqual([...LIVE_FLOWS, ...FAULT_FLOWS].sort(), [...ALL_FLOWS].sort());
 });
 
