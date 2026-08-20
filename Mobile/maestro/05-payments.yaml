@@ -1,6 +1,12 @@
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: _login-admin-school.yaml
 - tapOn: "Paiements"
+- extendedWaitUntil:
+    visible:
+      id: "payments-list"
+    timeout: 15000
 - assertVisible:
     id: "payments-list"
+- assertVisible: "${SOMAFRIK_E2E_PAYMENT_REFERENCE}"
+- assertNotVisible: "Impossible de charger les paiements."
