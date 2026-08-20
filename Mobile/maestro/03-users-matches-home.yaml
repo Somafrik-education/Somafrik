@@ -1,6 +1,13 @@
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: _login-admin-school.yaml
+- assertVisible:
+    id: "home-users-value"
+    text: "${SOMAFRIK_E2E_EXPECTED_USERS}"
 - tapOn:
     id: "home-users-value"
-- assertVisible: "Utilisateurs"
+- extendedWaitUntil:
+    visible: "Utilisateurs"
+    timeout: 15000
+- assertVisible: "${SOMAFRIK_E2E_ADMIN_IDENTIFIER}"
+- assertNotVisible: "Impossible de charger les utilisateurs."
