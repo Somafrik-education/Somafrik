@@ -1,0 +1,245 @@
+name: Mobile Runtime E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      school_code:
+        description: "login_code V2 du tenant QA dédié"
+        required: true
+        type: string
+      school_name:
+        description: "Nom exact affiché du tenant QA"
+        required: true
+        type: string
+      expected_users:
+        description: "Nombre d'utilisateurs actifs attendu sur Home"
+        required: true
+        type: string
+      expected_presence:
+        description: "Taux de présence attendu, ex. 75%"
+        required: true
+        type: string
+      expected_payments:
+        description: "Taux de paiements attendu, ex. 25%"
+        required: true
+        type: string
+      class_name:
+        description: "Classe canonique visible dans le fixture QA"
+        required: true
+        type: string
+      student_name:
+        description: "Élève canonique visible dans la classe QA"
+        required: true
+        type: string
+      teacher_name:
+        description: "Enseignant canonique visible"
+        required: true
+        type: string
+      payment_reference:
+        description: "Référence paiement canonique visible"
+        required: true
+        type: string
+      evaluation_label:
+        description: "Libellé d'évaluation canonique visible"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-runtime-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22.12.0"
+  SOMAFRIK_E2E_SCHOOL_CODE: ${{ inputs.school_code }}
+  SOMAFRIK_E2E_SCHOOL_NAME: ${{ inputs.school_name }}
+  SOMAFRIK_E2E_ADMIN_IDENTIFIER: ${{ secrets.SOMAFRIK_E2E_ADMIN_IDENTIFIER }}
+  SOMAFRIK_E2E_ADMIN_PASSWORD: ${{ secrets.SOMAFRIK_E2E_ADMIN_PASSWORD }}
+  SOMAFRIK_E2E_EXPECTED_USERS: ${{ inputs.expected_users }}
+  SOMAFRIK_E2E_EXPECTED_PRESENCE: ${{ inputs.expected_presence }}
+  SOMAFRIK_E2E_EXPECTED_PAYMENTS: ${{ inputs.expected_payments }}
+  SOMAFRIK_E2E_CLASS_NAME: ${{ inputs.class_name }}
+  SOMAFRIK_E2E_STUDENT_NAME: ${{ inputs.student_name }}
+  SOMAFRIK_E2E_TEACHER_NAME: ${{ inputs.teacher_name }}
+  SOMAFRIK_E2E_PAYMENT_REFERENCE: ${{ inputs.payment_reference }}
+  SOMAFRIK_E2E_EVALUATION_LABEL: ${{ inputs.evaluation_label }}
+
+jobs:
+  live-preview:
+    name: Preview APK — live preprod
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      SOMAFRIK_E2E_MODE: live
+      SOMAFRIK_E2E_API_URL: https://somafrik-api-preprod.onrender.com
+      SOMAFRIK_E2E_ENV_BADGE: Preview QA
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install workspace + Mobile
+        run: npm ci && npm ci --prefix Mobile
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: Prebuild Preview native project
+        working-directory: Mobile
+        env:
+          EXPO_PUBLIC_RELEASE_PROFILE: preview
+          EAS_BUILD_PROFILE: preview
+          EXPO_PUBLIC_API_URL: https://somafrik-api-preprod.onrender.com
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build Preview APK locally
+        working-directory: Mobile
+        env:
+          EXPO_PUBLIC_RELEASE_PROFILE: preview
+          EAS_BUILD_PROFILE: preview
+          EXPO_PUBLIC_API_URL: https://somafrik-api-preprod.onrender.com
+        run: npm run build:apk
+
+      - name: Run live black-box suite on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            export PATH="$HOME/.maestro/bin:$PATH"
+            APK="$(find Mobile/dist -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+            test -n "$APK" || { echo "Preview APK introuvable"; exit 1; }
+            adb install -r "$APK"
+            npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+
+      - name: Upload live runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-live-${{ github.run_id }}
+          path: Mobile/artifacts/maestro-runtime
+          if-no-files-found: error
+          retention-days: 14
+
+  fault-injection:
+    name: Partial-domain fault injection
+    needs: live-preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      SOMAFRIK_E2E_MODE: fault
+      SOMAFRIK_E2E_API_URL: http://10.0.2.2:5055
+      SOMAFRIK_E2E_PROBE_URL: http://127.0.0.1:5055
+      SOMAFRIK_E2E_ENV_BADGE: Développement
+      SOMAFRIK_E2E_PROXY_TARGET: https://somafrik-api-preprod.onrender.com
+      SOMAFRIK_E2E_FAIL_PATH: /api/backoffice/users
+      SOMAFRIK_E2E_FAIL_METHOD: GET
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install workspace + Mobile
+        run: npm ci && npm ci --prefix Mobile
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: Start controlled preprod fault proxy
+        run: |
+          node Mobile/scripts/mobile-e2e-fault-proxy.js > /tmp/somafrik-e2e-proxy.log 2>&1 &
+          echo $! > /tmp/somafrik-e2e-proxy.pid
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5055/ > /tmp/somafrik-proxy-probe.json; then
+              cat /tmp/somafrik-proxy-probe.json
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/somafrik-e2e-proxy.log
+          exit 1
+
+      - name: Prebuild fault-injection APK
+        working-directory: Mobile
+        env:
+          EXPO_PUBLIC_RELEASE_PROFILE: development
+          EAS_BUILD_PROFILE: development
+          EXPO_PUBLIC_API_URL: http://10.0.2.2:5055
+          EXPO_PUBLIC_DEMO_MODE: "false"
+          EXPO_PUBLIC_DEMO_PIN: ""
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build fault-injection APK locally
+        working-directory: Mobile
+        env:
+          EXPO_PUBLIC_RELEASE_PROFILE: development
+          EAS_BUILD_PROFILE: development
+          EXPO_PUBLIC_API_URL: http://10.0.2.2:5055
+          EXPO_PUBLIC_DEMO_MODE: "false"
+          EXPO_PUBLIC_DEMO_PIN: ""
+        run: npm run build:apk
+
+      - name: Run partial-domain black-box suite on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            export PATH="$HOME/.maestro/bin:$PATH"
+            APK="$(find Mobile/dist -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+            test -n "$APK" || { echo "Fault APK introuvable"; exit 1; }
+            adb install -r "$APK"
+            npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+
+      - name: Upload fault runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-fault-${{ github.run_id }}
+          path: |
+            Mobile/artifacts/maestro-runtime
+            /tmp/somafrik-e2e-proxy.log
+          if-no-files-found: error
+          retention-days: 14
