@@ -26,6 +26,7 @@ function main() {
   assert.match(attendance, /setAttendance\(\(current\) =>/);
   assert.match(attendance, /clearConfirmedAttendanceDirty/);
   assert.match(attendance, /shouldPreserveLocalAttendanceDraft/);
+  assert.match(attendance, /applyConfirmedPresences/);
   assert.match(attendance, /presencesSnapshot/);
   assert.match(attendance, /resourceScopeKey/);
   assert.doesNotMatch(attendance, /useState<Record<string, AttendanceEntry>>\(\(\) =>\s*Object\.fromEntries/);

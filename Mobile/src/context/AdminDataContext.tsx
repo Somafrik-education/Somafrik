@@ -45,13 +45,16 @@ import {
 } from "../services/domainHydrationApi";
 import {
   NO_SESSION_RESOURCE_SCOPE,
+  buildPrincipalScopeKey,
   buildResourceScopeKey,
   emptyResourceSnapshot,
+  resourceCacheResetKind,
   snapshotFromFailure,
   snapshotFromSuccess,
   withScopedSnapshotData,
   type ResourceSnapshot,
 } from "../lib/dataTruth";
+import { mergeConfirmedPresences } from "../lib/attendanceDraft";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
   gradesForEvaluation,
@@ -124,7 +127,8 @@ type AdminDataContextValue = {
   loadEvaluation: (evaluationId: string) => Promise<CanonicalEvaluation | null>;
   loadNotes: () => Promise<void>;
   loadEvaluationGrades: (evaluationId: string) => Promise<CanonicalGrade[]>;
-  loadPresences: () => Promise<void>;
+  loadPresences: () => Promise<boolean>;
+  applyConfirmedPresences: (rows: unknown[]) => void;
   subscriptionsData: SubscriptionItem[];
   paymentStatusesData: PaymentStatus[];
   presencesData: PresenceItem[];
@@ -262,6 +266,17 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       : null,
   );
 
+  const principalScopeKey = useMemo(
+    () =>
+      buildPrincipalScopeKey({
+        hasSession: Boolean(session),
+        userId: session?.user?.id,
+        role: session?.role,
+        schoolCode: session?.user?.schoolCode ?? session?.school?.code,
+        countryScope: session?.user?.countryScope ?? session?.user?.countryCode,
+      }),
+    [session],
+  );
   const resourceScopeKey = useMemo(
     () =>
       buildResourceScopeKey({
@@ -278,25 +293,21 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   );
   const resourceScopeKeyRef = useRef(resourceScopeKey);
   resourceScopeKeyRef.current = resourceScopeKey;
+  const previousPrincipalKeyRef = useRef<string | null>(null);
 
-  const resetResourceCaches = useCallback(() => {
+  const resetTenantResourceCaches = useCallback(() => {
     setStudentsData([]);
     setTeachersData([]);
     setClassesData([]);
-    setCountriesData([]);
     setCoursesData([]);
     setAssignmentsData([]);
     setPaymentsData([]);
-    setSubscriptionsData([]);
     setPaymentStatusesData([]);
     setPresencesData([]);
     setNotesData([]);
-    setSchoolsData([]);
     setUsersData([]);
     setAnnouncementsData([]);
     setMessagesData([]);
-    setNotificationsData([]);
-    setRolePermissionsData({});
     setAcademicConfigData(emptyAcademicConfig);
     setSyncStatus("idle");
     setPaymentsSnapshot(emptyResourceSnapshot());
@@ -315,6 +326,17 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setAnnouncementsSnapshot(emptyResourceSnapshot());
     setMessagesSnapshot(emptyResourceSnapshot());
   }, []);
+
+  const resetPrincipalResourceCaches = useCallback(() => {
+    resetTenantResourceCaches();
+    setSchoolsData([]);
+    setCountriesData([]);
+    setSubscriptionsData([]);
+    setNotificationsData([]);
+    setRolePermissionsData({});
+  }, [resetTenantResourceCaches]);
+
+  const resetResourceCaches = resetPrincipalResourceCaches;
 
   const scopeUser = useMemo(
     () =>
@@ -731,18 +753,27 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
+  const applyConfirmedPresences = useCallback((rows: unknown[]) => {
+    if (!Array.isArray(rows) || !rows.length) return;
+    const saved = rows as PresenceItem[];
+    setPresencesData((current) => mergeConfirmedPresences(current, saved));
+    setPresencesSnapshot((current) => snapshotFromSuccess(mergeConfirmedPresences(current.data, saved)));
+  }, []);
+
   const loadPresences = useCallback(async () => {
-    if (!session) return;
+    if (!session) return false;
     const scope = resourceScopeKeyRef.current;
     setPresencesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
       const rows = (await getPresences()) as PresenceItem[];
-      if (resourceScopeKeyRef.current !== scope) return;
+      if (resourceScopeKeyRef.current !== scope) return false;
       applyArray(rows, setPresencesData);
       setPresencesSnapshot(snapshotFromSuccess(rows));
+      return true;
     } catch (error) {
-      if (resourceScopeKeyRef.current !== scope) return;
+      if (resourceScopeKeyRef.current !== scope) return false;
       setPresencesSnapshot((current) => snapshotFromFailure(error, current.data));
+      return false;
     }
   }, [session]);
 
@@ -784,7 +815,17 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    resetResourceCaches();
+    const resetKind = resourceCacheResetKind({
+      previousPrincipalKey: previousPrincipalKeyRef.current,
+      nextPrincipalKey: principalScopeKey,
+      nextResourceKey: resourceScopeKey,
+    });
+    previousPrincipalKeyRef.current = principalScopeKey;
+    if (resetKind === "principal") {
+      resetResourceCaches();
+    } else {
+      resetTenantResourceCaches();
+    }
     if (resourceScopeKey === NO_SESSION_RESOURCE_SCOPE) {
       setActiveSchoolCodeState("");
       return;
@@ -796,7 +837,13 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     void loaders.loadPayments();
     void loaders.loadAnnouncements();
     void loaders.loadMessages();
-  }, [resourceScopeKey, resetResourceCaches]);
+  }, [
+    principalScopeKey,
+    resourceScopeKey,
+    resetResourceCaches,
+    resetPrincipalResourceCaches,
+    resetTenantResourceCaches,
+  ]);
 
   useEffect(() => {
     if (!session) {
@@ -979,6 +1026,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       loadNotes,
       loadEvaluationGrades,
       loadPresences,
+      applyConfirmedPresences,
       subscriptionsData: (state.subscriptions ?? []) as SubscriptionItem[],
       paymentStatusesData: (state.paymentStatuses ?? []) as PaymentStatus[],
       presencesData: presentedPresencesSnapshot.data as PresenceItem[],
@@ -1234,6 +1282,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadNotes,
     loadEvaluationGrades,
     loadPresences,
+    applyConfirmedPresences,
   ]);
 
   return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;

@@ -31,6 +31,8 @@ function source(pathFromSrc) {
 
 function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "dataTruth.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "scope.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "canonicalResourceNormalize.test.ts")], MOBILE);
 
   const server = read(path.join(BACKEND, "server.js"));
   assert.match(server, /app\.get\("\/api\/teachers"/);
@@ -43,12 +45,18 @@ function main() {
   console.log("OK: endpoints canoniques réels présents côté backend");
 
   const api = source(path.join("services", "domainHydrationApi.ts"));
+  const normalize = source(path.join("lib", "canonicalResourceNormalize.ts"));
   assert.match(api, /httpRequest<unknown>\("\/teachers"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/users"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/announcements"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/messages"\)/);
   assert.match(api, /archiveCanonicalAnnouncement/);
   assert.match(api, /markCanonicalMessageRead/);
+  assert.match(api, /normalizeTeacher/);
+  assert.match(api, /normalizeAnnouncement/);
+  assert.match(api, /normalizeMessage/);
+  assert.match(normalize, /readTenantScopeFields/);
+  assert.match(normalize, /schoolCode: tenant\.schoolCode/);
   assert.doesNotMatch(api, /\bfetch\s*\(/);
   assert.doesNotMatch(api, /\baxios\b/);
   assert.doesNotMatch(api, /JSON\.stringify\(\s*\{[^}]*\btenantId\s*:/s);

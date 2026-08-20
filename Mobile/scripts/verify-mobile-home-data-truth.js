@@ -23,6 +23,15 @@ function main() {
   }
   process.stdout.write(unit.stdout || "");
 
+  const scopeUnit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "scope.test.ts")], {
+    cwd: MOBILE,
+    encoding: "utf8",
+  });
+  if (scopeUnit.status !== 0) {
+    throw new Error(scopeUnit.stderr || scopeUnit.stdout || "scope.test.ts failed");
+  }
+  process.stdout.write(scopeUnit.stdout || "");
+
   const home = read(path.join("screens", "HomeScreen.tsx"));
   const context = read(path.join("context", "AdminDataContext.tsx"));
 
@@ -31,7 +40,25 @@ function main() {
   assert.match(context, /getCanonicalUsers/);
   assert.match(context, /presencesSnapshot/);
   assert.match(context, /buildResourceScopeKey/);
+  assert.match(context, /buildPrincipalScopeKey/);
+  assert.match(context, /resourceCacheResetKind/);
+  assert.match(context, /resetTenantResourceCaches/);
+  assert.match(context, /resetPrincipalResourceCaches/);
   assert.match(context, /resetResourceCaches/);
+  const tenantReset = context.match(
+    /const resetTenantResourceCaches = useCallback\(\(\) => \{[\s\S]*?\}, \[\]\);/,
+  );
+  assert.ok(tenantReset, "resetTenantResourceCaches must be present");
+  assert.doesNotMatch(
+    tenantReset[0],
+    /setSchoolsData/,
+    "changement d'école active ne doit pas purger schoolsData",
+  );
+  const principalReset = context.match(
+    /const resetPrincipalResourceCaches = useCallback\(\(\) => \{[\s\S]*?\}, \[resetTenantResourceCaches\]\);/,
+  );
+  assert.ok(principalReset, "resetPrincipalResourceCaches must be present");
+  assert.match(principalReset[0], /setSchoolsData\(\[\]\)/);
   assert.match(context, /resourceScopeKeyRef\.current !== scope/);
   assert.match(context, /withScopedSnapshotData/);
   assert.match(context, /NO_SESSION_RESOURCE_SCOPE/);

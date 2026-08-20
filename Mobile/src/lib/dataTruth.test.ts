@@ -15,7 +15,9 @@ import {
   METRIC_PENDING_LABEL,
   METRIC_UNAVAILABLE_LABEL,
   NO_SESSION_RESOURCE_SCOPE,
+  buildPrincipalScopeKey,
   buildResourceScopeKey,
+  resourceCacheResetKind,
   emptyResourceSnapshot,
   withScopedSnapshotData,
   parentAverageDisplay,
@@ -202,6 +204,56 @@ function run() {
       role: "super_admin",
       activeSchoolCode: "NURU-B",
     }),
+  );
+
+  const superPrincipalA = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+  });
+  const superPrincipalB = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+  });
+  assert.equal(superPrincipalA, superPrincipalB);
+  assert.equal(
+    resourceCacheResetKind({
+      previousPrincipalKey: superPrincipalA,
+      nextPrincipalKey: superPrincipalB,
+      nextResourceKey: buildResourceScopeKey({
+        hasSession: true,
+        userId: "super",
+        role: "super_admin",
+        activeSchoolCode: "NURU-B",
+      }),
+    }),
+    "tenant",
+  );
+  assert.equal(
+    resourceCacheResetKind({
+      previousPrincipalKey: superPrincipalA,
+      nextPrincipalKey: buildPrincipalScopeKey({
+        hasSession: true,
+        userId: "other-super",
+        role: "super_admin",
+      }),
+      nextResourceKey: buildResourceScopeKey({
+        hasSession: true,
+        userId: "other-super",
+        role: "super_admin",
+        activeSchoolCode: "NURU-A",
+      }),
+    }),
+    "principal",
+  );
+  assert.equal(
+    resourceCacheResetKind({
+      previousPrincipalKey: superPrincipalA,
+      nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+      nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+    }),
+    "principal",
   );
 
   const tenantAUsers = snapshotFromSuccess([{ id: "user-a" }]);

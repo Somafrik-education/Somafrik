@@ -62,7 +62,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences, loadStudents, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, resourceScopeKey } =
+  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences, applyConfirmedPresences, loadStudents, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, resourceScopeKey } =
     useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -272,6 +272,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         },
         ...current,
       ]);
+      applyConfirmedPresences(savedPresences);
       await loadPresences();
       setAttendance((current) =>
         clearConfirmedAttendanceDirty(

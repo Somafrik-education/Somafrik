@@ -67,6 +67,32 @@ export function emptyResourceSnapshot<T>(): ResourceSnapshot<T> {
   return { status: "idle", data: [] };
 }
 
+export type ResourceCacheResetKind = "principal" | "tenant";
+
+function scopePart(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+/**
+ * Identité utilisateur/pays. La liste des établissements accessibles
+ * appartient à ce scope, pas à l'école active du sélecteur.
+ */
+export function buildPrincipalScopeKey(input: {
+  hasSession: boolean;
+  userId?: string | null;
+  role?: string | null;
+  schoolCode?: string | null;
+  countryScope?: string | null;
+}): string {
+  if (!input.hasSession) return NO_SESSION_RESOURCE_SCOPE;
+  return [
+    `user:${String(input.userId ?? "").trim()}`,
+    `role:${String(input.role ?? "").trim()}`,
+    `home:${scopePart(input.schoolCode)}`,
+    `country:${scopePart(input.countryScope)}`,
+  ].join("|");
+}
+
 export function buildResourceScopeKey(input: {
   hasSession: boolean;
   userId?: string | null;
@@ -76,14 +102,18 @@ export function buildResourceScopeKey(input: {
   activeSchoolCode?: string | null;
 }): string {
   if (!input.hasSession) return NO_SESSION_RESOURCE_SCOPE;
-  const part = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
-  return [
-    `user:${String(input.userId ?? "").trim()}`,
-    `role:${String(input.role ?? "").trim()}`,
-    `home:${part(input.schoolCode)}`,
-    `country:${part(input.countryScope)}`,
-    `tenant:${part(input.activeSchoolCode)}`,
-  ].join("|");
+  return `${buildPrincipalScopeKey(input)}|tenant:${scopePart(input.activeSchoolCode)}`;
+}
+
+/** Purge écoles/pays seulement si l'identité change, pas si on change d'établissement actif. */
+export function resourceCacheResetKind(input: {
+  previousPrincipalKey: string | null;
+  nextPrincipalKey: string;
+  nextResourceKey: string;
+}): ResourceCacheResetKind {
+  if (input.nextResourceKey === NO_SESSION_RESOURCE_SCOPE) return "principal";
+  if (input.previousPrincipalKey !== input.nextPrincipalKey) return "principal";
+  return "tenant";
 }
 
 /** Applique le filtrage tenant/session sans transformer une erreur en liste vide métier. */

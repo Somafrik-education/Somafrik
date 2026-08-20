@@ -29,6 +29,7 @@ export type Teacher = {
   phone: string;
   email: string;
   mainSubject: string;
+  schoolCode?: string;
   assignments?: TeacherAssignment[];
   assignedClasses?: string[];
   courses?: string[];
@@ -200,6 +201,9 @@ export type Announcement = {
   date: string;
   scope?: string;
   systemBroadcast?: boolean;
+  schoolCode?: string;
+  schoolId?: string;
+  countryCode?: string;
 };
 
 export type TimetableItem = {
@@ -231,6 +235,8 @@ export type SchoolMessage = {
   parentPhone: string;
   studentId?: string;
   teacherId?: string;
+  schoolCode?: string;
+  schoolId?: string;
   theme: string;
   direction:
     | "École vers parent"
