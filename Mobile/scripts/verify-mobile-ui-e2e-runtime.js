@@ -29,6 +29,8 @@ const ALL_FLOWS = [
 ];
 const LIVE_FLOWS = ALL_FLOWS.filter((name) => name !== "09-partial-domain-error.yaml");
 const FAULT_FLOWS = ["09-partial-domain-error.yaml"];
+const MUTATION_FLOWS = ["11-attendance-persistence.yaml"];
+const ATTENDANCE_STATUSES = ["Présent", "Absent", "Retard", "Justifié"];
 const SECRET_ENV_KEYS = [
   "SOMAFRIK_E2E_ADMIN_IDENTIFIER",
   "SOMAFRIK_E2E_ADMIN_PASSWORD",
@@ -42,10 +44,28 @@ function required(value, name) {
 
 function normalizeMode(value) {
   const mode = String(value || "live").trim().toLowerCase();
-  if (mode !== "live" && mode !== "fault") {
-    throw new Error(`SOMAFRIK_E2E_MODE doit valoir live ou fault (reçu: ${mode}).`);
+  if (!new Set(["live", "fault", "mutation"]).has(mode)) {
+    throw new Error(`SOMAFRIK_E2E_MODE doit valoir live, fault ou mutation (reçu: ${mode}).`);
   }
   return mode;
+}
+
+function slugifyAttendanceStatus(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function requireAttendanceStatus(value, name) {
+  const status = required(value, name);
+  if (!ATTENDANCE_STATUSES.includes(status)) {
+    throw new Error(`${name} invalide: ${status}. Valeurs: ${ATTENDANCE_STATUSES.join(", ")}.`);
+  }
+  return status;
 }
 
 function validateRuntimeConfig(env = process.env) {
@@ -63,7 +83,7 @@ function validateRuntimeConfig(env = process.env) {
     .trim()
     .replace(/\/$/, "");
 
-  if (mode === "live" && apiUrl !== CANONICAL_API_URLS.preview) {
+  if ((mode === "live" || mode === "mutation") && apiUrl !== CANONICAL_API_URLS.preview) {
     throw new Error(
       `Le runtime E2E Preview doit cibler uniquement ${CANONICAL_API_URLS.preview} (reçu: ${apiUrl}).`,
     );
@@ -97,20 +117,20 @@ function validateRuntimeConfig(env = process.env) {
       env.SOMAFRIK_E2E_ADMIN_PASSWORD,
       "SOMAFRIK_E2E_ADMIN_PASSWORD",
     ),
-    expectedPresence: required(
-      env.SOMAFRIK_E2E_EXPECTED_PRESENCE,
-      "SOMAFRIK_E2E_EXPECTED_PRESENCE",
-    ),
-    expectedPayments: required(
-      env.SOMAFRIK_E2E_EXPECTED_PAYMENTS,
-      "SOMAFRIK_E2E_EXPECTED_PAYMENTS",
-    ),
     deviceSerial: String(env.SOMAFRIK_E2E_DEVICE_SERIAL ?? "").trim(),
   };
 
   if (mode === "live") {
     Object.assign(config, {
       expectedUsers: required(env.SOMAFRIK_E2E_EXPECTED_USERS, "SOMAFRIK_E2E_EXPECTED_USERS"),
+      expectedPresence: required(
+        env.SOMAFRIK_E2E_EXPECTED_PRESENCE,
+        "SOMAFRIK_E2E_EXPECTED_PRESENCE",
+      ),
+      expectedPayments: required(
+        env.SOMAFRIK_E2E_EXPECTED_PAYMENTS,
+        "SOMAFRIK_E2E_EXPECTED_PAYMENTS",
+      ),
       className: required(env.SOMAFRIK_E2E_CLASS_NAME, "SOMAFRIK_E2E_CLASS_NAME"),
       studentName: required(env.SOMAFRIK_E2E_STUDENT_NAME, "SOMAFRIK_E2E_STUDENT_NAME"),
       teacherName: required(env.SOMAFRIK_E2E_TEACHER_NAME, "SOMAFRIK_E2E_TEACHER_NAME"),
@@ -125,11 +145,69 @@ function validateRuntimeConfig(env = process.env) {
     });
   }
 
+  if (mode === "fault") {
+    Object.assign(config, {
+      expectedPresence: required(
+        env.SOMAFRIK_E2E_EXPECTED_PRESENCE,
+        "SOMAFRIK_E2E_EXPECTED_PRESENCE",
+      ),
+      expectedPayments: required(
+        env.SOMAFRIK_E2E_EXPECTED_PAYMENTS,
+        "SOMAFRIK_E2E_EXPECTED_PAYMENTS",
+      ),
+    });
+  }
+
+  if (mode === "mutation") {
+    if (env.SOMAFRIK_E2E_ALLOW_MUTATIONS !== "1") {
+      throw new Error(
+        "Le mode mutation exige SOMAFRIK_E2E_ALLOW_MUTATIONS=1 explicitement.",
+      );
+    }
+    const protectedCodes = new Set(
+      String(env.SOMAFRIK_E2E_PROTECTED_SCHOOL_CODES || "CD-IN-26-001")
+        .split(",")
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean),
+    );
+    if (protectedCodes.has(schoolCode)) {
+      throw new Error(
+        `Mutations E2E interdites sur l'établissement protégé ${schoolCode}. Utiliser un tenant QA dédié.`,
+      );
+    }
+
+    const originalAttendanceStatus = requireAttendanceStatus(
+      env.SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS,
+      "SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS",
+    );
+    const targetAttendanceStatus = requireAttendanceStatus(
+      env.SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS,
+      "SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS",
+    );
+    if (originalAttendanceStatus === targetAttendanceStatus) {
+      throw new Error("Le statut cible doit être différent du statut initial pour prouver la persistance.");
+    }
+
+    Object.assign(config, {
+      className: required(env.SOMAFRIK_E2E_CLASS_NAME, "SOMAFRIK_E2E_CLASS_NAME"),
+      studentName: required(env.SOMAFRIK_E2E_STUDENT_NAME, "SOMAFRIK_E2E_STUDENT_NAME"),
+      studentId: required(env.SOMAFRIK_E2E_STUDENT_ID, "SOMAFRIK_E2E_STUDENT_ID"),
+      originalAttendanceStatus,
+      originalAttendanceSlug: slugifyAttendanceStatus(originalAttendanceStatus),
+      targetAttendanceStatus,
+      targetAttendanceSlug: slugifyAttendanceStatus(targetAttendanceStatus),
+      mutationsAllowed: true,
+    });
+  }
+
   return config;
 }
 
 function flowsForMode(mode) {
-  return normalizeMode(mode) === "fault" ? FAULT_FLOWS : LIVE_FLOWS;
+  const normalized = normalizeMode(mode);
+  if (normalized === "fault") return FAULT_FLOWS;
+  if (normalized === "mutation") return MUTATION_FLOWS;
+  return LIVE_FLOWS;
 }
 
 function parseAdbDevices(stdout) {
@@ -231,6 +309,11 @@ function flowEnvPairs(config) {
     SOMAFRIK_E2E_TEACHER_NAME: config.teacherName,
     SOMAFRIK_E2E_PAYMENT_REFERENCE: config.paymentReference,
     SOMAFRIK_E2E_EVALUATION_LABEL: config.evaluationLabel,
+    SOMAFRIK_E2E_STUDENT_ID: config.studentId,
+    SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS: config.originalAttendanceStatus,
+    SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG: config.originalAttendanceSlug,
+    SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS: config.targetAttendanceStatus,
+    SOMAFRIK_E2E_TARGET_ATTENDANCE_SLUG: config.targetAttendanceSlug,
   };
   return Object.entries(pairs).filter(([, value]) => String(value ?? "").length > 0);
 }
@@ -245,7 +328,7 @@ function redact(text, config) {
 }
 
 function ensureFlowFiles() {
-  for (const name of [...ALL_FLOWS, "_login-admin-school.yaml"]) {
+  for (const name of [...ALL_FLOWS, ...MUTATION_FLOWS, "_login-admin-school.yaml"]) {
     const file = path.join(MAESTRO_ROOT, name);
     if (!fs.existsSync(file)) throw new Error(`Parcours Maestro manquant: ${name}`);
   }
@@ -323,6 +406,7 @@ async function main() {
     schoolCode: config.schoolCode,
     schoolName: config.schoolName,
     deviceSerial: serial,
+    reversibleMutation: config.mode === "mutation",
     flows: [],
   };
 
@@ -357,10 +441,13 @@ module.exports = {
   ALL_FLOWS,
   LIVE_FLOWS,
   FAULT_FLOWS,
+  MUTATION_FLOWS,
+  ATTENDANCE_STATUSES,
   SECRET_ENV_KEYS,
   flowsForMode,
   parseAdbDevices,
   validateRuntimeConfig,
   redact,
   flowEnvPairs,
+  slugifyAttendanceStatus,
 };
