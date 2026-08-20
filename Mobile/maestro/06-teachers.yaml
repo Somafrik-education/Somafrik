@@ -1,5 +1,10 @@
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: _login-admin-school.yaml
 - tapOn: "Enseignants"
+- extendedWaitUntil:
+    visible: "Équipe pédagogique"
+    timeout: 15000
 - assertVisible: "Équipe pédagogique"
+- assertVisible: "${SOMAFRIK_E2E_TEACHER_NAME}"
+- assertNotVisible: "Impossible de charger les enseignants."
