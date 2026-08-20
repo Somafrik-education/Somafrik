@@ -86,6 +86,32 @@ function canonicalSchoolCodeFromRecord(school) {
   );
 }
 
+function internalSchoolCodeFromRecord(school) {
+  for (const value of [
+    school?.school_code,
+    school?.schoolCode,
+    school?.legacySchoolCode,
+    school?.code,
+  ]) {
+    const normalized = normalizeSchoolCode(value);
+    if (normalized && isInternalSchoolAlias(normalized)) {
+      return normalized;
+    }
+  }
+  return "";
+}
+
+function withEffectiveSchoolScope(principal, school, canonical) {
+  return {
+    ...principal,
+    schoolCode: canonical,
+    effectiveSchoolCode: canonical,
+    effectiveSchoolInternalCode: internalSchoolCodeFromRecord(school),
+    effectiveSchoolId: String(school?.id ?? school?.schoolId ?? school?.school_id ?? "").trim(),
+    schoolScopeSource: "request",
+  };
+}
+
 function schoolRecordForCountryMatch(school = {}) {
   const publicCode = canonicalSchoolCodeFromRecord(school);
   return {
@@ -147,6 +173,13 @@ function resolveEffectiveSchoolScope({ principal, requestedSchoolCode, school } 
       "SCHOOL_SCOPE_INTERNAL_ALIAS_FORBIDDEN",
     );
   }
+  if (requested && !isV2SchoolLoginCode(requested)) {
+    throw scopeError(
+      400,
+      "Code établissement public V2 invalide.",
+      "SCHOOL_SCOPE_V2_REQUIRED",
+    );
+  }
 
   if (!isPlatformSchoolScope(principal)) {
     if (!requested) {
@@ -160,10 +193,10 @@ function resolveEffectiveSchoolScope({ principal, requestedSchoolCode, school } 
       );
     }
     const canonical = canonicalSchoolCodeFromRecord(school);
-    return {
-      ...principal,
-      schoolCode: canonical || jwtSchool,
-    };
+    if (!canonical || !isV2SchoolLoginCode(canonical)) {
+      throw scopeError(404, "Établissement V2 introuvable.", "SCHOOL_SCOPE_NOT_FOUND");
+    }
+    return withEffectiveSchoolScope(principal, school, canonical);
   }
 
   if (!requested) {
@@ -185,20 +218,17 @@ function resolveEffectiveSchoolScope({ principal, requestedSchoolCode, school } 
   }
 
   const canonical = canonicalSchoolCodeFromRecord(school);
-  if (!canonical) {
-    throw scopeError(404, "Établissement introuvable.", "SCHOOL_SCOPE_NOT_FOUND");
+  if (!canonical || !isV2SchoolLoginCode(canonical)) {
+    throw scopeError(404, "Établissement V2 introuvable.", "SCHOOL_SCOPE_NOT_FOUND");
   }
-  return {
-    ...principal,
-    schoolCode: canonical,
-  };
+  return withEffectiveSchoolScope(principal, school, canonical);
 }
 
 async function applyEffectiveSchoolScope(req, lookupSchool) {
   if (!req?.principal) return req?.principal ?? null;
   const requested = readRequestedSchoolCode(req);
   let school = null;
-  if (requested && requested !== "*" && !isInternalSchoolAlias(requested) && typeof lookupSchool === "function") {
+  if (requested && isV2SchoolLoginCode(requested) && typeof lookupSchool === "function") {
     school = await lookupSchool(requested);
   }
   req.principal = resolveEffectiveSchoolScope({
@@ -218,5 +248,6 @@ module.exports = {
   applyEffectiveSchoolScope,
   readRequestedSchoolCode,
   canonicalSchoolCodeFromRecord,
+  internalSchoolCodeFromRecord,
   isPlatformSchoolScope,
 };
