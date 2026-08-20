@@ -29,8 +29,9 @@ const ALL_FLOWS = [
 ];
 const LIVE_FLOWS = ALL_FLOWS.filter((name) => name !== "09-partial-domain-error.yaml");
 const FAULT_FLOWS = ["09-partial-domain-error.yaml"];
-const MUTATION_FLOWS = ["11-attendance-persistence.yaml"];
-const MUTATION_CLEANUP_FLOW = "12-attendance-restore.yaml";
+const MUTATION_PRECONDITION_FLOW = "11-attendance-precondition.yaml";
+const MUTATION_FLOWS = ["12-attendance-persistence.yaml"];
+const MUTATION_CLEANUP_FLOW = "13-attendance-restore.yaml";
 const ATTENDANCE_STATUSES = ["Présent", "Absent", "Retard", "Justifié"];
 const SECRET_ENV_KEYS = [
   "SOMAFRIK_E2E_ADMIN_IDENTIFIER",
@@ -331,6 +332,7 @@ function redact(text, config) {
 function ensureFlowFiles() {
   for (const name of [
     ...ALL_FLOWS,
+    MUTATION_PRECONDITION_FLOW,
     ...MUTATION_FLOWS,
     MUTATION_CLEANUP_FLOW,
     "_login-admin-school.yaml",
@@ -413,6 +415,8 @@ async function main() {
     schoolName: config.schoolName,
     deviceSerial: serial,
     reversibleMutation: config.mode === "mutation",
+    success: false,
+    preconditionFlows: [],
     flows: [],
     cleanupFlows: [],
   };
@@ -423,6 +427,15 @@ async function main() {
   console.log(`Preuves: ${artifactDir}`);
 
   if (config.mode === "mutation") {
+    const precondition = runMaestroFlow(MUTATION_PRECONDITION_FLOW, config, serial, artifactDir);
+    manifest.preconditionFlows.push(precondition);
+    writeManifest(artifactDir, manifest);
+    if (!precondition.success) {
+      throw new Error(
+        `Précondition mutationnelle non satisfaite: ${MUTATION_PRECONDITION_FLOW}. Aucune écriture E2E autorisée.`,
+      );
+    }
+
     let mutationFailure = null;
     try {
       for (const flowName of flows) {
@@ -476,6 +489,7 @@ module.exports = {
   ALL_FLOWS,
   LIVE_FLOWS,
   FAULT_FLOWS,
+  MUTATION_PRECONDITION_FLOW,
   MUTATION_FLOWS,
   MUTATION_CLEANUP_FLOW,
   ATTENDANCE_STATUSES,
