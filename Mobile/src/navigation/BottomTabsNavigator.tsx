@@ -3,7 +3,6 @@ import { Ionicons } from "@expo/vector-icons";
 
 import HomeScreen from "../screens/HomeScreen";
 import StudentsScreen from "../screens/StudentsScreen";
-import MenuScreen from "../screens/MenuScreen";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute } from "../domain/security/permissions";
 import {
@@ -13,6 +12,7 @@ import {
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
 import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
+import MobileAppHeader from "../components/MobileAppHeader";
 
 const Tab = createBottomTabNavigator();
 
@@ -46,8 +46,9 @@ export default function BottomTabsNavigator() {
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
+      screenOptions={({ route, navigation }) => ({
+        headerShown: true,
+        header: () => <MobileAppHeader navigation={navigation} />,
         tabBarShowLabel: true,
         tabBarActiveTintColor: "#FFFFFF",
         tabBarInactiveTintColor: "#94A3B8",
@@ -72,16 +73,6 @@ export default function BottomTabsNavigator() {
             return (
               <Ionicons
                 name={focused ? "home" : "home-outline"}
-                size={24}
-                color={focused ? "#FFFFFF" : "#94A3B8"}
-              />
-            );
-          }
-
-          if (route.name === "Menu") {
-            return (
-              <Ionicons
-                name={focused ? "menu" : "menu-outline"}
                 size={24}
                 color={focused ? "#FFFFFF" : "#94A3B8"}
               />
@@ -113,20 +104,20 @@ export default function BottomTabsNavigator() {
       {visibleTabs.map((tab) => {
         const tabTestId = tabTestIdForTabName(tab.tabName) ?? tabTestIdForTabName(tab.label);
         return (
-        <Tab.Screen
-          key={tab.tabName}
-          name={tab.tabName}
-          component={tab.component}
-          options={
-            tabTestId
-              ? {
-                  tabBarButtonTestID: tabTestId,
-                  tabBarLabel: tab.label,
-                  tabBarAccessibilityLabel: tab.label,
-                }
-              : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
-          }
-        />
+          <Tab.Screen
+            key={tab.tabName}
+            name={tab.tabName}
+            component={tab.component}
+            options={
+              tabTestId
+                ? {
+                    tabBarButtonTestID: tabTestId,
+                    tabBarLabel: tab.label,
+                    tabBarAccessibilityLabel: tab.label,
+                  }
+                : { tabBarLabel: tab.label, tabBarAccessibilityLabel: tab.label }
+            }
+          />
         );
       })}
       {hiddenTabs.map((tab) => (
@@ -137,15 +128,6 @@ export default function BottomTabsNavigator() {
           options={hiddenTabOptions}
         />
       ))}
-      <Tab.Screen
-        name="Menu"
-        component={MenuScreen}
-        options={{
-          tabBarLabel: "Menu",
-          tabBarButtonTestID: TAB_TEST_IDS.menu,
-          tabBarAccessibilityLabel: "Menu",
-        }}
-      />
     </Tab.Navigator>
   );
 }
@@ -166,7 +148,6 @@ function getTabLabel(
   hiddenTabs: RoleTabDefinition[],
 ) {
   if (tabName === "Accueil") return "Accueil";
-  if (tabName === "Menu") return "Menu";
   const definition = findTabDefinition(tabName, visibleTabs, overflowTabs, hiddenTabs);
   return definition?.label ?? tabName;
 }
