@@ -72,10 +72,9 @@ concurrency:
 
 env:
   NODE_VERSION: "22.12.0"
+  MAESTRO_VERSION: "2.8.0"
   SOMAFRIK_E2E_SCHOOL_CODE: ${{ inputs.school_code }}
   SOMAFRIK_E2E_SCHOOL_NAME: ${{ inputs.school_name }}
-  SOMAFRIK_E2E_ADMIN_IDENTIFIER: ${{ secrets.SOMAFRIK_E2E_ADMIN_IDENTIFIER }}
-  SOMAFRIK_E2E_ADMIN_PASSWORD: ${{ secrets.SOMAFRIK_E2E_ADMIN_PASSWORD }}
   SOMAFRIK_E2E_EXPECTED_USERS: ${{ inputs.expected_users }}
   SOMAFRIK_E2E_EXPECTED_PRESENCE: ${{ inputs.expected_presence }}
   SOMAFRIK_E2E_EXPECTED_PAYMENTS: ${{ inputs.expected_payments }}
@@ -114,19 +113,28 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install workspace + Mobile
         run: npm ci && npm ci --prefix Mobile
 
       - name: Static runtime contract
         run: npm --prefix Mobile run verify:mobile-ui-e2e-scaffold
 
-      - name: Install Maestro
+      - name: Install pinned Maestro CLI
         run: |
-          curl -Ls "https://get.maestro.mobile.dev" | bash
+          export MAESTRO_VERSION="${MAESTRO_VERSION}"
+          curl --fail --silent --show-error --location "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-          "$HOME/.maestro/bin/maestro" --version
+          test "$($HOME/.maestro/bin/maestro --version | tr -d '\r')" = "$MAESTRO_VERSION"
+
+      - name: Install Android emulator image
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+          test -x "$SDKMANAGER"
+          test -x "$AVDMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
+          echo no | "$AVDMANAGER" create avd --force --name somafrik-e2e --package "system-images;android-35;google_apis;x86_64"
 
       - name: Prebuild Preview native project
         working-directory: Mobile
@@ -144,26 +152,52 @@ jobs:
           EXPO_PUBLIC_API_URL: https://somafrik-api-preprod.onrender.com
         run: npm run build:apk
 
-      - name: Run live black-box suite on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: |
-            export PATH="$HOME/.maestro/bin:$PATH"
-            APK="$(find Mobile/dist -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-            test -n "$APK" || { echo "Preview APK introuvable"; exit 1; }
-            adb install -r "$APK"
-            npm --prefix Mobile run verify:mobile-ui-e2e-runtime
-
-            if [ "${{ inputs.run_mutations }}" = "true" ]; then
-              export SOMAFRIK_E2E_MODE=mutation
-              export SOMAFRIK_E2E_ALLOW_MUTATIONS=1
-              npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+      - name: Start Android emulator
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+          nohup "$ANDROID_HOME/emulator/emulator" \
+            -avd somafrik-e2e \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect \
+            > /tmp/somafrik-emulator.log 2>&1 &
+          adb wait-for-device
+          for i in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+              adb shell settings put global window_animation_scale 0
+              adb shell settings put global transition_animation_scale 0
+              adb shell settings put global animator_duration_scale 0
+              exit 0
             fi
+            sleep 2
+          done
+          cat /tmp/somafrik-emulator.log
+          exit 1
+
+      - name: Run live black-box suite
+        env:
+          SOMAFRIK_E2E_ADMIN_IDENTIFIER: ${{ secrets.SOMAFRIK_E2E_ADMIN_IDENTIFIER }}
+          SOMAFRIK_E2E_ADMIN_PASSWORD: ${{ secrets.SOMAFRIK_E2E_ADMIN_PASSWORD }}
+        run: |
+          export PATH="$HOME/.maestro/bin:$PATH"
+          APK="$(find Mobile/dist -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK" || { echo "Preview APK introuvable"; exit 1; }
+          adb install -r "$APK"
+          npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+
+          if [ "${{ inputs.run_mutations }}" = "true" ]; then
+            export SOMAFRIK_E2E_MODE=mutation
+            export SOMAFRIK_E2E_ALLOW_MUTATIONS=1
+            npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+          fi
+
+      - name: Collect emulator evidence
+        if: always()
+        run: |
+          mkdir -p Mobile/artifacts/maestro-runtime
+          if [ -f /tmp/somafrik-emulator.log ]; then
+            cp /tmp/somafrik-emulator.log Mobile/artifacts/maestro-runtime/emulator.log
+          fi
+          adb emu kill >/dev/null 2>&1 || true
 
       - name: Upload live runtime evidence
         if: always()
@@ -204,19 +238,28 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install workspace + Mobile
         run: npm ci && npm ci --prefix Mobile
 
       - name: Static runtime contract
         run: npm --prefix Mobile run verify:mobile-ui-e2e-scaffold
 
-      - name: Install Maestro
+      - name: Install pinned Maestro CLI
         run: |
-          curl -Ls "https://get.maestro.mobile.dev" | bash
+          export MAESTRO_VERSION="${MAESTRO_VERSION}"
+          curl --fail --silent --show-error --location "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-          "$HOME/.maestro/bin/maestro" --version
+          test "$($HOME/.maestro/bin/maestro --version | tr -d '\r')" = "$MAESTRO_VERSION"
+
+      - name: Install Android emulator image
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+          test -x "$SDKMANAGER"
+          test -x "$AVDMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
+          echo no | "$AVDMANAGER" create avd --force --name somafrik-e2e --package "system-images;android-35;google_apis;x86_64"
 
       - name: Start controlled preprod fault proxy
         run: |
@@ -252,28 +295,49 @@ jobs:
           EXPO_PUBLIC_DEMO_PIN: ""
         run: npm run build:apk
 
-      - name: Run partial-domain black-box suite on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: |
-            export PATH="$HOME/.maestro/bin:$PATH"
-            APK="$(find Mobile/dist -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-            test -n "$APK" || { echo "Fault APK introuvable"; exit 1; }
-            adb install -r "$APK"
-            npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+      - name: Start Android emulator
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+          nohup "$ANDROID_HOME/emulator/emulator" \
+            -avd somafrik-e2e \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect \
+            > /tmp/somafrik-emulator.log 2>&1 &
+          adb wait-for-device
+          for i in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+              adb shell settings put global window_animation_scale 0
+              adb shell settings put global transition_animation_scale 0
+              adb shell settings put global animator_duration_scale 0
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/somafrik-emulator.log
+          exit 1
 
-      - name: Collect fault proxy evidence
+      - name: Run partial-domain black-box suite
+        env:
+          SOMAFRIK_E2E_ADMIN_IDENTIFIER: ${{ secrets.SOMAFRIK_E2E_ADMIN_IDENTIFIER }}
+          SOMAFRIK_E2E_ADMIN_PASSWORD: ${{ secrets.SOMAFRIK_E2E_ADMIN_PASSWORD }}
+        run: |
+          export PATH="$HOME/.maestro/bin:$PATH"
+          APK="$(find Mobile/dist -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK" || { echo "Fault APK introuvable"; exit 1; }
+          adb install -r "$APK"
+          npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+
+      - name: Collect fault runtime evidence
         if: always()
         run: |
           mkdir -p Mobile/artifacts/maestro-runtime
           if [ -f /tmp/somafrik-e2e-proxy.log ]; then
             cp /tmp/somafrik-e2e-proxy.log Mobile/artifacts/maestro-runtime/fault-proxy.log
           fi
+          if [ -f /tmp/somafrik-emulator.log ]; then
+            cp /tmp/somafrik-emulator.log Mobile/artifacts/maestro-runtime/emulator.log
+          fi
+          adb emu kill >/dev/null 2>&1 || true
 
       - name: Upload fault runtime evidence
         if: always()
