@@ -261,9 +261,11 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
     return scoped;
   }
 
-  const schoolCode = String(session.user?.schoolCode || session.school?.code || "").trim();
-  if (session.role === "school_admin" && schoolCode) {
-    return scopeSchoolEntityData(payload, schoolCode);
+  // Pour les comptes établissement, le JWT et les repositories PostgreSQL sont déjà
+  // tenant-scoped. Ne pas refaire côté UI un contrôle d'identité pouvant comparer
+  // l'alias interne de session à un schoolCode public V2 normalisé.
+  if (session.role === "school_admin") {
+    return payload;
   }
 
   return payload;
