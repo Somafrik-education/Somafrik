@@ -37,6 +37,7 @@ function run(command, args, cwd) {
 function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "requestSchoolScope.test.ts")], MOBILE);
   run("npx", ["--yes", "tsx", path.join("src", "lib", "canonicalResourceNormalize.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "scope.test.ts")], MOBILE);
   run("node", ["--test", path.join("lib", "principalSchoolScope.test.js")], BACKEND);
   run("node", ["--test", path.join("lib", "requestSchoolScopeData.test.js")], BACKEND);
 
@@ -80,6 +81,11 @@ function main() {
   assert.match(normalizer, /row\.schoolPublicCode/);
   assert.match(normalizer, /row\.school_login_code/);
   console.log("OK: normalisation Mobile préfère le login_code V2 au school_code interne");
+
+  const scopeUi = source(path.join("lib", "scope.ts"));
+  assert.match(scopeUi, /trustServerScopedPlatformTenant/);
+  assert.match(scopeUi, /Le client ne doit/);
+  console.log("OK: le Mobile ne refiltre pas un dataset plateforme déjà validé côté serveur");
 
   const backendScope = read(path.join(BACKEND, "lib", "principalSchoolScope.js"));
   assert.match(backendScope, /function resolveEffectiveSchoolScope/);
