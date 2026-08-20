@@ -573,7 +573,10 @@ async function assertCanonicalStudentLogin(pool, studentCode, schoolCode, expect
   assert.equal(row.pin_hash, row.password_hash);
   assert.equal(verifySecret("1234", row.password_hash), false);
   assert.equal(verifySecret(row.student_code, row.password_hash), false);
-  assert.doesNotMatch(String(row.password_hash), /1234/);
+  // Do not substring-match /1234/ inside the scrypt hex: a digest can contain
+  // those four characters without storing the plaintext PIN (CI flake on develop).
+  assert.notEqual(String(row.password_hash), "1234");
+  assert.doesNotMatch(String(row.password_hash), /(^|\$)1234(\$|$)/);
 }
 
 function assertEnrollmentProjectionHasNoSecret(row) {
