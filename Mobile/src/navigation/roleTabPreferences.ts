@@ -13,8 +13,8 @@ import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import { canReadRoute } from "../domain/security/permissions";
 
-/** Nombre max d'onglets métier dans le menu flottant (hors Accueil et Menu). */
-export const MAX_FLOATING_ROLE_TABS = 5;
+/** Nombre max d'onglets métier visibles (Accueil occupe le cinquième emplacement). */
+export const MAX_FLOATING_ROLE_TABS = 4;
 
 export type RoleTabDefinition = {
   tabName: string;
