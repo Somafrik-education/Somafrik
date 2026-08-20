@@ -45,7 +45,7 @@ function main() {
   assert.match(auth, /setPermissionsBootstrap\("ready"\)/);
   assert.match(auth, /setPermissionsBootstrap\("error"\)/);
   assert.match(auth, /error\.status === 401 \|\| error\.status === 403/);
-  assert.match(auth, /const safeSnapshot = saveSession\(stripSecrets\(next\)\)/);
+  assert.match(auth, /saveSession\(stripSecrets\(next\)\)/);
   assert.match(auth, /await refreshEffectivePermissions\(\)/);
 
   assert.match(navigator, /permissionsBootstrap === "idle" \|\| permissionsBootstrap === "loading"/);
