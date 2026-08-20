@@ -1,9 +1,16 @@
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: _login-admin-school.yaml
+- extendedWaitUntil:
+    visible:
+      id: "home-users-value"
+    timeout: 20000
 - assertVisible:
     id: "home-users-value"
+    text: "${SOMAFRIK_E2E_EXPECTED_USERS}"
 - assertVisible:
     id: "home-presence-value"
+    text: "${SOMAFRIK_E2E_EXPECTED_PRESENCE}"
 - assertVisible:
     id: "home-payments-value"
+    text: "${SOMAFRIK_E2E_EXPECTED_PAYMENTS}"
