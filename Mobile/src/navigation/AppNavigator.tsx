@@ -111,6 +111,15 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function HomeTabs() {
+  const { session, permissionsBootstrap } = useAuth();
+
+  // Défense en profondeur : même si une transition de navigation arrive dans
+  // le même tick que le login/logout, aucune coque métier ne se rend sans
+  // session authentifiée ET permissions live prêtes.
+  if (!session || permissionsBootstrap !== "ready") {
+    return <View style={{ flex: 1, backgroundColor: "#F8FAFC" }} />;
+  }
+
   return (
     <View style={{ flex: 1 }}>
       <OfflineBanner />
@@ -228,8 +237,8 @@ export default function AppNavigator() {
     canReadRoute(session, "StudentPresences");
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="Welcome">
+    <NavigationContainer key={session ? "authenticated" : "public"}>
+      <Stack.Navigator initialRouteName={session ? "Home" : "Welcome"}>
         <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} options={{ title: "Se connecter à l'établissement" }} />
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
