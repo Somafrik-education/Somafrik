@@ -102,11 +102,15 @@ function internalSchoolCodeFromRecord(school) {
 }
 
 function withEffectiveSchoolScope(principal, school, canonical) {
+  const internal = internalSchoolCodeFromRecord(school);
   return {
     ...principal,
-    schoolCode: canonical,
+    // Compat repositories PostgreSQL : beaucoup de requêtes joignent encore
+    // directement schools.school_code. Le contrat HTTP/public reste le login_code V2
+    // via effectiveSchoolCode ; l'alias interne ne sort pas vers le sélecteur Mobile.
+    schoolCode: internal || canonical,
     effectiveSchoolCode: canonical,
-    effectiveSchoolInternalCode: internalSchoolCodeFromRecord(school),
+    effectiveSchoolInternalCode: internal,
     effectiveSchoolId: String(school?.id ?? school?.schoolId ?? school?.school_id ?? "").trim(),
     schoolScopeSource: "request",
   };
