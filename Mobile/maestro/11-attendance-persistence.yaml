@@ -1,0 +1,37 @@
+appId: com.somafrik.app
+---
+- runFlow: _login-admin-school.yaml
+- tapOn: "Présences"
+- extendedWaitUntil:
+    visible: "${SOMAFRIK_E2E_CLASS_NAME}"
+    timeout: 15000
+- tapOn: "${SOMAFRIK_E2E_CLASS_NAME}"
+- extendedWaitUntil:
+    visible: "${SOMAFRIK_E2E_STUDENT_NAME}"
+    timeout: 15000
+- tapOn:
+    id: "attendance-action-${SOMAFRIK_E2E_STUDENT_ID}-${SOMAFRIK_E2E_TARGET_ATTENDANCE_SLUG}"
+- tapOn: "Enregistrer l'appel"
+- extendedWaitUntil:
+    visible: "Appel enregistré"
+    timeout: 20000
+- tapOn: "OK"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "home-admin-dashboard"
+    timeout: 20000
+- tapOn: "Présences"
+- tapOn: "${SOMAFRIK_E2E_CLASS_NAME}"
+- extendedWaitUntil:
+    visible: "Statut : ${SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS}"
+    timeout: 15000
+# Cleanup obligatoire : restaurer le statut d'origine du fixture QA.
+- tapOn:
+    id: "attendance-action-${SOMAFRIK_E2E_STUDENT_ID}-${SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG}"
+- tapOn: "Enregistrer l'appel"
+- extendedWaitUntil:
+    visible: "Appel enregistré"
+    timeout: 20000
+- tapOn: "OK"
