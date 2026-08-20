@@ -176,15 +176,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Installer immédiatement une session sans secrets afin que le navigateur
       // authentifié tombe dans le gate `loading` au même rendu. On ne laisse
-      // jamais Home s'afficher pendant la persistance asynchrone du profil.
-      const safeSnapshot = saveSession(stripSecrets(next));
+      // jamais Home s'afficher pendant une éventuelle persistance asynchrone.
+      saveSession(stripSecrets(next));
 
       const persistAndHydrate = async () => {
         try {
+          // Le chemin login() fournit déjà une session sans secrets après avoir
+          // persisté les tokens. On ne réécrit SecureStore que si un appelant
+          // fournit explicitement de nouveaux tokens.
           if (next.accessToken || next.refreshToken) {
             await persistAuthenticatedSession(next);
-          } else if (safeSnapshot) {
-            await persistAuthenticatedSession(safeSnapshot);
           }
           await refreshEffectivePermissions();
         } catch (error) {
