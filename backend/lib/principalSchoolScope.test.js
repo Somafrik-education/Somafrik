@@ -79,7 +79,7 @@ test("Superadmin + CD-IN-26-001 scope students/teachers vers Nuru", () => {
     requestedSchoolCode: "CD-IN-26-001",
     school: nuru,
   });
-  assert.equal(resolvePrincipalSchoolCode(principal), "CD-IN-26-001");
+  assert.equal(resolvePrincipalSchoolCode(principal), "SCH-ABC123");
   assert.equal(principal.effectiveSchoolCode, "CD-IN-26-001");
   assert.equal(principal.effectiveSchoolInternalCode, "SCH-ABC123");
   assert.equal(principal.effectiveSchoolId, "school-nuru");
@@ -108,7 +108,8 @@ test("Admin Pays CD + école CD autorisé", () => {
     requestedSchoolCode: "CD-IN-26-001",
     school: nuru,
   });
-  assert.equal(resolvePrincipalSchoolCode(principal), "CD-IN-26-001");
+  assert.equal(resolvePrincipalSchoolCode(principal), "SCH-ABC123");
+  assert.equal(principal.effectiveSchoolCode, "CD-IN-26-001");
   assert.equal(principal.effectiveSchoolInternalCode, "SCH-ABC123");
 });
 
@@ -140,13 +141,14 @@ test("Admin School ne peut pas override son école", () => {
   );
 });
 
-test("Admin School + login_code V2 de son école est accepté", () => {
+test("Admin School + login_code V2 de son école est accepté sans casser la clé repository", () => {
   const principal = resolveEffectiveSchoolScope({
     principal: { role: "Admin School", schoolCode: "SCH-ABC123" },
     requestedSchoolCode: "CD-IN-26-001",
     school: nuru,
   });
-  assert.equal(principal.schoolCode, "CD-IN-26-001");
+  assert.equal(principal.schoolCode, "SCH-ABC123");
+  assert.equal(principal.effectiveSchoolCode, "CD-IN-26-001");
   assert.equal(principal.effectiveSchoolInternalCode, "SCH-ABC123");
 });
 
@@ -203,7 +205,8 @@ test("applyEffectiveSchoolScope lit X-Somafrik-School-Code et résout le princip
     return nuru;
   };
   await applyEffectiveSchoolScope(req, lookup);
-  assert.equal(req.principal.schoolCode, "CD-IN-26-001");
+  assert.equal(req.principal.schoolCode, "SCH-ABC123");
+  assert.equal(req.principal.effectiveSchoolCode, "CD-IN-26-001");
   assert.equal(req.principal.effectiveSchoolInternalCode, "SCH-ABC123");
   assert.equal(SCHOOL_SCOPE_HEADER, "X-Somafrik-School-Code");
 });
