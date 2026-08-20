@@ -27,6 +27,7 @@ const REQUIRED = [
   "10-relaunch-no-catalog.yaml",
 ];
 const MUTATION = "11-attendance-persistence.yaml";
+const MUTATION_CLEANUP = "12-attendance-restore.yaml";
 
 function main() {
   const helper = path.join(MAESTRO, "_login-admin-school.yaml");
@@ -53,12 +54,18 @@ function main() {
   }
 
   const mutationFile = path.join(MAESTRO, MUTATION);
+  const cleanupFile = path.join(MAESTRO, MUTATION_CLEANUP);
   assert.ok(fs.existsSync(mutationFile), `parcours mutationnel manquant: ${MUTATION}`);
+  assert.ok(fs.existsSync(cleanupFile), `cleanup mutationnel manquant: ${MUTATION_CLEANUP}`);
   const mutationSource = fs.readFileSync(mutationFile, "utf8");
+  const cleanupSource = fs.readFileSync(cleanupFile, "utf8");
   assert.match(mutationSource, /SOMAFRIK_E2E_TARGET_ATTENDANCE_SLUG/);
-  assert.match(mutationSource, /SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG/);
+  assert.match(mutationSource, /SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS/);
   assert.match(mutationSource, /stopApp/);
   assert.match(mutationSource, /Appel enregistré/);
+  assert.match(cleanupSource, /SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG/);
+  assert.match(cleanupSource, /Enregistrer l'appel/);
+  assert.doesNotMatch(cleanupSource, /SOMAFRIK_E2E_TARGET_ATTENDANCE_SLUG/);
 
   const runtimeScript = path.join(__dirname, "verify-mobile-ui-e2e-runtime.js");
   const runtimeTest = path.join(__dirname, "verify-mobile-ui-e2e-runtime.test.js");
@@ -77,9 +84,12 @@ function main() {
   assert.match(runtimeSource, /LIVE_FLOWS/);
   assert.match(runtimeSource, /FAULT_FLOWS/);
   assert.match(runtimeSource, /MUTATION_FLOWS/);
+  assert.match(runtimeSource, /MUTATION_CLEANUP_FLOW/);
+  assert.match(runtimeSource, /finally\s*\{/);
   assert.match(runtimeSource, /SOMAFRIK_E2E_ALLOW_MUTATIONS/);
   assert.match(runtimeSource, /CD-IN-26-001/);
   assert.match(runtimeSource, /Mutations E2E interdites/);
+  assert.match(runtimeSource, /restauration du fixture/);
 
   const workflow = path.join(WORKSPACE, ".github", "workflows", "mobile-e2e-runtime.yml");
   assert.ok(fs.existsSync(workflow), "workflow Mobile Runtime E2E manquant");
@@ -92,6 +102,8 @@ function main() {
   assert.match(workflowSource, /actions\/upload-artifact@v4/);
   assert.match(workflowSource, /secrets\.SOMAFRIK_E2E_ADMIN_IDENTIFIER/);
   assert.match(workflowSource, /secrets\.SOMAFRIK_E2E_ADMIN_PASSWORD/);
+  assert.match(workflowSource, /run_mutations:/);
+  assert.match(workflowSource, /SOMAFRIK_E2E_ALLOW_MUTATIONS=1/);
   assert.doesNotMatch(workflowSource, /SOMAFRIK_E2E_ADMIN_PASSWORD:\s*["']?[A-Za-z0-9].+/);
 
   const unit = spawnSync(
@@ -104,7 +116,7 @@ function main() {
   }
 
   console.log(
-    `OK: contrat Maestro ${REQUIRED.length} flows read-only/fault + 1 flow mutationnel réversible ` +
+    `OK: contrat Maestro ${REQUIRED.length} flows read-only/fault + mutation + cleanup indépendant ` +
       "+ workflow Android runtime + tests. Aucune exécution APK n'est revendiquée par ce gate statique.",
   );
 }
