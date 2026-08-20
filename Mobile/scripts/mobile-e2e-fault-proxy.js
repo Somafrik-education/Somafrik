@@ -18,9 +18,12 @@ function shouldFaultRequest({ method, url }, options = {}) {
 }
 
 function safeForwardHeaders(headers) {
-  const next = { ...headers };
-  for (const key of ["host", "content-length", "connection", "accept-encoding"]) {
-    delete next[key];
+  const blocked = new Set(["host", "content-length", "connection", "accept-encoding"]);
+  const next = {};
+  for (const [rawKey, rawValue] of Object.entries(headers || {})) {
+    const key = String(rawKey).toLowerCase();
+    if (blocked.has(key) || rawValue === undefined) continue;
+    next[key] = Array.isArray(rawValue) ? rawValue.join(", ") : String(rawValue);
   }
   return next;
 }
