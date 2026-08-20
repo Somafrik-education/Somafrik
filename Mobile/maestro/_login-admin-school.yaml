@@ -1,0 +1,39 @@
+appId: com.somafrik.app
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "environment-badge"
+- assertVisible: "Preview QA"
+- assertVisible:
+    id: "role-selection-screen"
+- tapOn:
+    id: "role-school-code-input"
+- inputText: "${SOMAFRIK_E2E_SCHOOL_CODE}"
+- tapOn:
+    id: "role-verify-button"
+- extendedWaitUntil:
+    visible:
+      id: "role-school-card"
+    timeout: 20000
+- assertVisible: "${SOMAFRIK_E2E_SCHOOL_NAME}"
+- tapOn:
+    id: "role-open-login-button"
+- assertVisible:
+    id: "login-screen"
+- tapOn:
+    id: "login-identifier-input"
+- inputText: "${SOMAFRIK_E2E_ADMIN_IDENTIFIER}"
+- extendedWaitUntil:
+    visible:
+      id: "login-password-input"
+    timeout: 10000
+- tapOn:
+    id: "login-password-input"
+- inputText: "${SOMAFRIK_E2E_ADMIN_PASSWORD}"
+- tapOn:
+    id: "login-submit-button"
+- extendedWaitUntil:
+    visible:
+      id: "home-admin-dashboard"
+    timeout: 30000
