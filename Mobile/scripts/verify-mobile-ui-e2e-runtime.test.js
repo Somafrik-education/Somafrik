@@ -14,10 +14,13 @@ const {
   validateSchoolCode,
   validateApiUrl,
   validateCredentials,
+  validateApkArtifact,
   packageIsInstalled,
   redactSecrets,
   evaluateRuntimeGate,
   executableFlowsFor,
+  mutationCoverageReport,
+  blockedFlowReport,
 } = require("./lib/e2eRuntimeGate");
 
 const qaEnv = {
@@ -33,8 +36,13 @@ function readyProbes(overrides = {}) {
     adbDevicesOutput: "List of devices attached\nemulator-5554\tdevice\n",
     packagePmOutput: "package:com.somafrik.app\n",
     appLaunchOk: true,
-    apiUrl: CANONICAL_PREPROD_API,
+    apiUrl: "",
     env: qaEnv,
+    apkPath: "/tmp/somafrik-qa.apk",
+    apkExists: true,
+    sha256: "a".repeat(64),
+    apkText: "package:com.somafrik.app\nhttps://somafrik-api-preprod.onrender.com",
+    apkInstallOk: true,
     maestroExecuted: true,
     maestroExitCode: 0,
     ...overrides,
@@ -84,6 +92,7 @@ test("API localhost → fail", () => {
 
 test("API production → fail", () => {
   assert.equal(validateApiUrl("https://api.somafrik.app").code, BLOCKED.API_PRODUCTION);
+  assert.equal(validateApiUrl(CANONICAL_PREPROD_API).ok, true);
 });
 
 test("credential manquant → fail", () => {
@@ -186,4 +195,41 @@ test("SOMAFRIK_RUN_MAESTRO n'ouvre pas un SUCCESS", () => {
   assert.equal(result.ok, false);
   assert.notEqual(result.outcome, "SUCCESS");
   assert.equal(result.failures[0].code, BLOCKED.MAESTRO_NOT_EXECUTED);
+});
+
+test("API env vide n'est pas considérée comme préprod prouvée", () => {
+  const validated = validateApiUrl("");
+  assert.equal(validated.ok, true);
+  assert.equal(validated.apiUrl, null);
+  assert.equal(validated.provenance, "ui");
+  const result = evaluateRuntimeGate(readyProbes({ apiUrl: "" }));
+  assert.equal(result.apiUrl, null);
+  assert.equal(result.apiProvenance, "ui");
+});
+
+test("APK path manquant → fail", () => {
+  const result = evaluateRuntimeGate(readyProbes({ apkPath: "", maestroExecuted: false }));
+  assert.ok(result.failures.some((item) => item.code === BLOCKED.APK_PATH_MISSING));
+});
+
+test("APK package mismatch → fail", () => {
+  const result = validateApkArtifact({
+    apkPath: "/tmp/other.apk",
+    apkExists: true,
+    sha256: "b".repeat(64),
+    badgingOutput: "package: name='com.other.app'",
+    installOk: true,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, BLOCKED.APK_PACKAGE_MISMATCH);
+});
+
+test("07/08 sont exécutés en lecture, mutation BLOCKED", () => {
+  const mutation = mutationCoverageReport();
+  assert.equal(mutation[0].executed, true);
+  assert.equal(mutation[0].flowExecution, "READ");
+  assert.equal(mutation[0].mutationCoverage, BLOCKED.ATTENDANCE_MUTATION);
+  const blocked = blockedFlowReport(qaEnv);
+  assert.equal(blocked.some((item) => item.file === "07-attendance.yaml"), false);
+  assert.equal(blocked.some((item) => item.file === "08-notes.yaml"), false);
 });

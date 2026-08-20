@@ -33,7 +33,14 @@ const BLOCKED = Object.freeze({
   NOTES_MUTATION: "MUTATION_NOTES_BLOCKED_NO_QA_FIXTURE",
   EAS_AUTH: "BLOCKED_EAS_AUTH",
   APK_FORBIDDEN_HOST: "BLOCKED_APK_FORBIDDEN_HOST",
+  APK_PATH_MISSING: "BLOCKED_APK_PATH_MISSING",
+  APK_NOT_FOUND: "BLOCKED_APK_NOT_FOUND",
+  APK_HASH_MISSING: "BLOCKED_APK_HASH_MISSING",
+  APK_PACKAGE_MISMATCH: "BLOCKED_APK_PACKAGE_MISMATCH",
+  APK_INSTALL_FAILED: "BLOCKED_APK_INSTALL_FAILED",
 });
+
+const EXPECTED_API_STATUS_LABEL = `API : ${CANONICAL_PREPROD_API}/api`;
 
 const EXECUTABLE_FLOWS = Object.freeze([
   "01-login-admin-school.yaml",
@@ -120,21 +127,61 @@ function validateSchoolCode(code) {
 }
 
 function validateApiUrl(url) {
-  const normalized = normalizeApiUrl(url) || CANONICAL_PREPROD_API;
+  const normalized = normalizeApiUrl(url);
+  if (!normalized) {
+    return { ok: true, apiUrl: null, provenance: "ui" };
+  }
   if (/localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\./i.test(normalized) || /^http:\/\//i.test(normalized)) {
     return { ok: false, code: BLOCKED.API_LOCALHOST, message: `API locale/LAN/HTTP interdite (${normalized}).` };
   }
   if (/api\.somafrik\.app/i.test(normalized)) {
     return { ok: false, code: BLOCKED.API_PRODUCTION, message: "API production interdite pour le LOT 8." };
   }
-  if (normalized !== CANONICAL_PREPROD_API) {
+  if (normalized !== CANONICAL_PREPROD_API && normalized !== `${CANONICAL_PREPROD_API}/api`) {
     return {
       ok: false,
       code: BLOCKED.API_NOT_PREPROD,
       message: `API préprod canonique exigée: ${CANONICAL_PREPROD_API}.`,
     };
   }
-  return { ok: true, apiUrl: normalized };
+  return { ok: true, apiUrl: CANONICAL_PREPROD_API, provenance: "env" };
+}
+
+function parseApkPackageName({ badgingOutput, apkText } = {}) {
+  const fromBadging = String(badgingOutput || "").match(/package:\s*name=['"]([^'"]+)['"]/i);
+  if (fromBadging) return fromBadging[1];
+  const text = String(apkText || "");
+  if (text.includes(ANDROID_PACKAGE)) return ANDROID_PACKAGE;
+  return null;
+}
+
+function validateApkArtifact(input = {}) {
+  const apkPath = asTrimmed(input.apkPath);
+  if (!apkPath) {
+    return { ok: false, code: BLOCKED.APK_PATH_MISSING, message: "SOMAFRIK_E2E_APK_PATH obligatoire pour un RUNTIME GO." };
+  }
+  if (!input.apkExists) {
+    return { ok: false, code: BLOCKED.APK_NOT_FOUND, message: `APK introuvable: ${apkPath}` };
+  }
+  const sha256 = asTrimmed(input.sha256).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(sha256)) {
+    return { ok: false, code: BLOCKED.APK_HASH_MISSING, message: "SHA256 APK manquant ou invalide." };
+  }
+  const packageName = parseApkPackageName({
+    badgingOutput: input.badgingOutput,
+    apkText: input.apkText,
+  });
+  if (packageName !== ANDROID_PACKAGE) {
+    return {
+      ok: false,
+      code: BLOCKED.APK_PACKAGE_MISMATCH,
+      message: `Package APK attendu ${ANDROID_PACKAGE}, obtenu ${packageName || "inconnu"}.`,
+    };
+  }
+  if (input.installOk === false) {
+    return { ok: false, code: BLOCKED.APK_INSTALL_FAILED, message: "adb install -r de l'APK fournie a échoué." };
+  }
+  return { ok: true, apkPath, sha256, packageName };
 }
 
 function validateCredentials(env = {}) {
@@ -204,28 +251,39 @@ function maestroEnvFrom(env = {}) {
   return next;
 }
 
+function mutationCoverageReport() {
+  return [
+    {
+      file: "07-attendance.yaml",
+      flowExecution: "READ",
+      mutationCoverage: BLOCKED.ATTENDANCE_MUTATION,
+      executed: true,
+      reason: "Lecture seule. Aucune fixture QA isolée pour muter une présence Nuru.",
+    },
+    {
+      file: "08-notes.yaml",
+      flowExecution: "READ",
+      mutationCoverage: BLOCKED.NOTES_MUTATION,
+      executed: true,
+      reason: "Lecture seule. Aucune fixture QA isolée pour muter une note Nuru.",
+    },
+  ];
+}
+
 function blockedFlowReport(env = {}) {
-  const blocked = BLOCKED_FLOWS.map((item) => ({ ...item, executed: false, outcome: "BLOCKED" }));
-  blocked.push({
-    file: "07-attendance.yaml",
-    code: BLOCKED.ATTENDANCE_MUTATION,
-    reason: "Lecture seule. Aucune fixture QA isolée pour muter une présence Nuru.",
+  const blocked = BLOCKED_FLOWS.map((item) => ({
+    ...item,
     executed: false,
+    flowExecution: "NOT_EXECUTED",
     outcome: "BLOCKED",
-  });
-  blocked.push({
-    file: "08-notes.yaml",
-    code: BLOCKED.NOTES_MUTATION,
-    reason: "Lecture seule. Aucune fixture QA isolée pour muter une note Nuru.",
-    executed: false,
-    outcome: "BLOCKED",
-  });
+  }));
   if (!hasPlatformCredentials(env)) {
     blocked.push({
       file: "11-platform-tenant-switch.yaml",
       code: BLOCKED.NO_PLATFORM_QA,
       reason: "Pas de credentials plateforme QA. Preuve backend X-Somafrik-School-Code conservée.",
       executed: false,
+      flowExecution: "NOT_EXECUTED",
       outcome: "BLOCKED",
     });
   }
@@ -254,12 +312,19 @@ function executableFlowsFor(env = {}) {
  *   maestroExecuted?: boolean,
  *   maestroExitCode?: number | null,
  *   requireMaestroExecution?: boolean,
+ *   apkPath?: string,
+ *   apkExists?: boolean,
+ *   sha256?: string,
+ *   badgingOutput?: string,
+ *   apkInstallOk?: boolean,
+ *   requireApk?: boolean,
  * }} input
  */
 function evaluateRuntimeGate(input = {}) {
   const failures = [];
   const env = input.env || {};
   const requireMaestroExecution = input.requireMaestroExecution !== false;
+  const requireApk = input.requireApk !== false;
 
   if (!input.maestroAvailable) {
     failures.push({ code: BLOCKED.MAESTRO_MISSING, message: "maestro --version a échoué." });
@@ -272,6 +337,18 @@ function evaluateRuntimeGate(input = {}) {
   const device = selectDevice(devices, input.selectedSerial);
   if (!device.ok) failures.push({ code: device.code, message: device.message });
 
+  const apk = requireApk
+    ? validateApkArtifact({
+      apkPath: input.apkPath || env.SOMAFRIK_E2E_APK_PATH,
+      apkExists: input.apkExists,
+      sha256: input.sha256,
+      badgingOutput: input.badgingOutput,
+      apkText: input.apkText,
+      installOk: input.apkInstallOk,
+    })
+    : { ok: true, apkPath: null, sha256: null, packageName: null };
+  if (!apk.ok) failures.push({ code: apk.code, message: apk.message });
+
   if (!packageIsInstalled(input.packagePmOutput, ANDROID_PACKAGE)) {
     failures.push({
       code: BLOCKED.PACKAGE_MISSING,
@@ -282,19 +359,31 @@ function evaluateRuntimeGate(input = {}) {
     failures.push({ code: BLOCKED.APP_LAUNCH_FAILED, message: "Impossible de lancer com.somafrik.app." });
   }
 
-  const api = validateApiUrl(input.apiUrl || env.SOMAFRIK_E2E_API_URL);
+  const api = validateApiUrl(input.apiUrl !== undefined ? input.apiUrl : env.SOMAFRIK_E2E_API_URL);
   if (!api.ok) failures.push({ code: api.code, message: api.message });
 
   const credentials = validateCredentials(env);
   if (!credentials.ok) failures.push({ code: credentials.code, message: credentials.message });
 
   if (input.apkText) {
-    const apk = scanApkTextForForbiddenHosts(input.apkText);
-    if (!apk.ok) failures.push({ code: apk.code, message: apk.message });
+    const apkHosts = scanApkTextForForbiddenHosts(input.apkText);
+    if (!apkHosts.ok) failures.push({ code: apkHosts.code, message: apkHosts.message });
   }
 
   const blocked = blockedFlowReport(env);
+  const mutationCoverage = mutationCoverageReport();
   const executable = executableFlowsFor(env);
+
+  const base = {
+    blocked,
+    mutationCoverage,
+    executable,
+    device: device.ok ? device.device : null,
+    apiUrl: api.ok ? api.apiUrl : null,
+    apiProvenance: api.ok ? api.provenance : null,
+    apkPath: apk.ok ? apk.apkPath : null,
+    apkSha256: apk.ok ? apk.sha256 : null,
+  };
 
   if (failures.length) {
     return {
@@ -302,11 +391,8 @@ function evaluateRuntimeGate(input = {}) {
       outcome: "FAIL",
       status: "BLOCKED",
       failures,
-      blocked,
-      executable,
-      device: device.ok ? device.device : null,
-      apiUrl: api.ok ? api.apiUrl : null,
       maestroExecuted: false,
+      ...base,
     };
   }
 
@@ -316,11 +402,8 @@ function evaluateRuntimeGate(input = {}) {
       outcome: "PREFLIGHT",
       status: "PREFLIGHT_OK",
       failures: [],
-      blocked,
-      executable,
-      device: device.device,
-      apiUrl: api.apiUrl,
       maestroExecuted: false,
+      ...base,
     };
   }
 
@@ -335,11 +418,8 @@ function evaluateRuntimeGate(input = {}) {
           message: "Maestro n'a pas été exécuté. Absence de runtime ≠ SUCCESS.",
         },
       ],
-      blocked,
-      executable,
-      device: device.device,
-      apiUrl: api.apiUrl,
       maestroExecuted: false,
+      ...base,
     };
   }
 
@@ -354,12 +434,9 @@ function evaluateRuntimeGate(input = {}) {
           message: `Maestro a retourné ${input.maestroExitCode}.`,
         },
       ],
-      blocked,
-      executable,
-      device: device.device,
-      apiUrl: api.apiUrl,
       maestroExecuted: true,
       maestroExitCode: input.maestroExitCode,
+      ...base,
     };
   }
 
@@ -368,18 +445,16 @@ function evaluateRuntimeGate(input = {}) {
     outcome: "SUCCESS",
     status: "SUCCESS",
     failures: [],
-    blocked,
-    executable,
-    device: device.device,
-    apiUrl: api.apiUrl,
     maestroExecuted: true,
     maestroExitCode: 0,
+    ...base,
   };
 }
 
 module.exports = {
   ANDROID_PACKAGE,
   CANONICAL_PREPROD_API,
+  EXPECTED_API_STATUS_LABEL,
   EXPECTED_SCHOOL_CODE,
   BLOCKED,
   EXECUTABLE_FLOWS,
@@ -389,12 +464,15 @@ module.exports = {
   validateSchoolCode,
   validateApiUrl,
   validateCredentials,
+  validateApkArtifact,
+  parseApkPackageName,
   hasPlatformCredentials,
   packageIsInstalled,
   scanApkTextForForbiddenHosts,
   redactSecrets,
   maestroEnvFrom,
   blockedFlowReport,
+  mutationCoverageReport,
   executableFlowsFor,
   evaluateRuntimeGate,
 };

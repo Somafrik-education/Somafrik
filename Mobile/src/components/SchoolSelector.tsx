@@ -32,6 +32,9 @@ export default function SchoolSelector() {
               style={[styles.chip, active && styles.chipActive]}
               onPress={() => setActiveSchoolCode(option.code)}
               testID={option.code === ALL_SCHOOLS_CODE ? "school-selector-chip-all" : `school-selector-chip-${option.code}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={option.label}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
                 {option.label}

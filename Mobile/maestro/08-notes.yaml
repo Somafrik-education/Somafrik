@@ -6,20 +6,22 @@ appId: com.somafrik.app
 - extendedWaitUntil:
     visible: "Évaluations"
     timeout: 20000
-- wait: 8000
 - assertNotVisible:
     id: "evaluations-v2-error"
-- runFlow:
-    when:
-      visible:
-        id: "evaluations-v2-empty"
+- retry:
+    maxRetries: 8
     commands:
-      - assertVisible:
-          id: "evaluations-v2-empty"
-- runFlow:
-    when:
-      notVisible:
-        id: "evaluations-v2-empty"
-    commands:
-      - assertVisible:
-          id: "evaluations-v2-list"
+      - runFlow:
+          when:
+            visible:
+              id: "evaluations-v2-empty"
+          commands:
+            - assertVisible:
+                id: "evaluations-v2-empty"
+      - runFlow:
+          when:
+            notVisible:
+              id: "evaluations-v2-empty"
+          commands:
+            - assertVisible:
+                id: "evaluations-v2-list"

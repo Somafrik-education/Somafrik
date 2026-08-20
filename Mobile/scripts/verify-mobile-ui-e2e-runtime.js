@@ -10,10 +10,10 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 const {
   ANDROID_PACKAGE,
-  CANONICAL_PREPROD_API,
   BLOCKED,
   evaluateRuntimeGate,
   executableFlowsFor,
@@ -79,6 +79,21 @@ function readApkText(apkPath) {
   }
 }
 
+function sha256File(filePath) {
+  const hash = crypto.createHash("sha256");
+  hash.update(fs.readFileSync(filePath));
+  return hash.digest("hex");
+}
+
+function dumpApkBadging(apkPath) {
+  for (const command of ["aapt", "aapt2"]) {
+    const args = command === "aapt2" ? ["dump", "badging", apkPath] : ["dump", "badging", apkPath];
+    const result = runCaptured(command, args);
+    if (result.status === 0 && result.stdout) return String(result.stdout);
+  }
+  return "";
+}
+
 function writeSummary(summary) {
   writeArtifact("runtime-summary.json", `${JSON.stringify(summary, null, 2)}\n`);
 }
@@ -97,6 +112,18 @@ function main() {
   const adbDevices = adb.available ? runCaptured("adb", ["devices"]) : { stdout: "", status: 1 };
   const selectedSerial = String(env.ANDROID_SERIAL || "").trim();
   const deviceArgs = selectedSerial ? ["-s", selectedSerial] : [];
+
+  const apkPath = String(env.SOMAFRIK_E2E_APK_PATH || "").trim();
+  const apkExists = Boolean(apkPath && fs.existsSync(apkPath));
+  const sha256 = apkExists ? sha256File(apkPath) : "";
+  const apkText = apkExists ? readApkText(apkPath) : null;
+  const badgingOutput = apkExists ? dumpApkBadging(apkPath) : "";
+
+  // adb install -r de CETTE APK (preuve package, pas une app déjà présente).
+  const install = apkExists && adb.available
+    ? runCaptured("adb", [...deviceArgs, "install", "-r", apkPath])
+    : { status: 1, stdout: "", stderr: apkExists ? "adb missing" : "apk missing" };
+
   const pm = adb.available
     ? runCaptured("adb", [...deviceArgs, "shell", "pm", "path", ANDROID_PACKAGE])
     : { stdout: "", status: 1 };
@@ -113,9 +140,6 @@ function main() {
     ])
     : { status: 1, stdout: "", stderr: "package missing" };
 
-  const apkPath = String(env.SOMAFRIK_E2E_APK_PATH || "").trim();
-  const apkText = apkPath ? readApkText(apkPath) : null;
-
   const preflight = evaluateRuntimeGate({
     maestroAvailable: maestro.available,
     adbAvailable: adb.available,
@@ -123,9 +147,14 @@ function main() {
     selectedSerial,
     packagePmOutput: `${pm.stdout || ""}\n${pm.stderr || ""}`,
     appLaunchOk: launch.status === 0,
-    apiUrl: env.SOMAFRIK_E2E_API_URL || CANONICAL_PREPROD_API,
+    apiUrl: env.SOMAFRIK_E2E_API_URL || "",
     env,
+    apkPath,
+    apkExists,
+    sha256,
+    badgingOutput,
     apkText,
+    apkInstallOk: install.status === 0,
     maestroExecuted: false,
     maestroExitCode: null,
     requireMaestroExecution: false,
@@ -134,26 +163,45 @@ function main() {
   const deviceInfo = redactSecrets(
     [
       `adb devices:\n${adbDevices.stdout || adbDevices.stderr || ""}`,
+      `apk: ${apkPath || "(missing)"}`,
+      `apkSha256: ${sha256 || "(missing)"}`,
+      `aapt:\n${badgingOutput || "(unavailable)"}`,
+      `install:\n${install.stdout || install.stderr || ""}`,
       `package:\n${pm.stdout || pm.stderr || ""}`,
       `launch:\n${launch.stdout || launch.stderr || ""}`,
     ].join("\n"),
     secretsFrom(env),
   );
   writeArtifact("device-info.txt", deviceInfo);
-  writeArtifact("app-package.txt", `${ANDROID_PACKAGE}\ninstalled=${preflight.failures.every((item) => item.code !== BLOCKED.PACKAGE_MISSING)}\n`);
+  writeArtifact(
+    "app-package.txt",
+    [
+      ANDROID_PACKAGE,
+      `apkPath=${apkPath || ""}`,
+      `apkSha256=${sha256 || ""}`,
+      `installed=${preflight.failures.every((item) => item.code !== BLOCKED.PACKAGE_MISSING)}`,
+      `apiProof=maestro-ui-role-status-message`,
+      "",
+    ].join("\n"),
+  );
 
   if (!preflight.ok) {
     const summary = {
       lot: 8,
       outcome: "FAIL",
       status: preflight.status,
-      api: CANONICAL_PREPROD_API,
+      api: preflight.apiUrl,
+      apiProvenance: preflight.apiProvenance,
+      apiProof: "maestro-ui-role-status-message",
       package: ANDROID_PACKAGE,
+      apkPath: preflight.apkPath,
+      apkSha256: preflight.apkSha256,
       maestroExecuted: false,
       failures: preflight.failures,
       blocked: preflight.blocked,
+      mutationCoverage: preflight.mutationCoverage,
       executable: preflight.executable,
-      note: "Absence de runtime Android/Maestro/credentials = FAIL. Jamais SUCCESS.",
+      note: "Absence de runtime Android/Maestro/APK/credentials = FAIL. Jamais SUCCESS. L'API n'est pas supposée préprod par défaut.",
     };
     fail(
       `verify:mobile-ui-e2e-runtime FAIL/BLOCKED: ${preflight.failures.map((item) => item.code).join(", ")}`,
@@ -198,9 +246,14 @@ function main() {
     selectedSerial,
     packagePmOutput: `${pm.stdout || ""}\n${pm.stderr || ""}`,
     appLaunchOk: true,
-    apiUrl: env.SOMAFRIK_E2E_API_URL || CANONICAL_PREPROD_API,
+    apiUrl: env.SOMAFRIK_E2E_API_URL || "",
     env,
+    apkPath,
+    apkExists,
+    sha256,
+    badgingOutput,
     apkText,
+    apkInstallOk: true,
     maestroExecuted: true,
     maestroExitCode: maestroRun.status,
   });
@@ -210,13 +263,18 @@ function main() {
     outcome: result.outcome,
     status: result.status,
     api: result.apiUrl,
+    apiProvenance: result.apiProvenance,
+    apiProof: "maestro-ui-role-status-message",
     package: ANDROID_PACKAGE,
     device: result.device,
+    apkPath: result.apkPath,
+    apkSha256: result.apkSha256,
     maestroExecuted: true,
     maestroExitCode: maestroRun.status,
     flowsAttempted: executableFlowsFor(env),
     flowsAttemptedCount: flows.length,
     blocked: result.blocked,
+    mutationCoverage: result.mutationCoverage,
     failures: result.failures,
     artifacts: ARTIFACTS,
   };

@@ -7,6 +7,13 @@ appId: com.somafrik.app
     visible:
       id: "role-selection-screen"
     timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: "role-status-message"
+    timeout: 10000
+- copyTextFrom:
+    id: "role-status-message"
+- assertTrue: "${maestro.copiedText == 'API : https://somafrik-api-preprod.onrender.com/api'}"
 - tapOn:
     id: "role-school-code-input"
 - eraseText

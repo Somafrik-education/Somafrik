@@ -57,11 +57,17 @@ API = https://somafrik-api-preprod.onrender.com
 Preuve valide :
 
 ```text
-APK existante
-+ install réussie
-+ package détecté par adb
-+ Maestro réellement exécuté
+SOMAFRIK_E2E_APK_PATH obligatoire
+→ fichier existe
+→ SHA256 enregistré
+→ package inspecté (aapt/aapt2 ou contenu APK)
+→ adb install -r de CETTE APK
+→ lancement
+→ assertion UI : « API : https://somafrik-api-preprod.onrender.com/api »
+→ Maestro réellement exécuté
 ```
+
+Le runner **ne décide pas** que l’API est la préprod si aucune preuve n’est lue depuis l’app. `SOMAFRIK_E2E_API_URL` vide ≠ préprod. La preuve canonique est le texte `role-status-message` au lancement.
 
 `eas.json buildType = apk` seul n’est pas une preuve.
 
@@ -78,7 +84,7 @@ adb shell pm path com.somafrik.app
 
 Désinstaller d’abord une app production / autre signature du même package.
 
-Optionnel : `SOMAFRIK_E2E_APK_PATH=/chemin/app.apk` pour scanner l’APK (localhost / LAN / production interdits).
+Optionnel : aucun. `SOMAFRIK_E2E_APK_PATH` est **obligatoire** pour un RUNTIME GO.
 
 ## Choix device
 
@@ -97,13 +103,13 @@ Aucune valeur secrète dans Git, YAML, TypeScript, JS, `.env.example` ou GitHub 
 SOMAFRIK_E2E_SCHOOL_CODE     # login_code V2, attendu CD-IN-26-001 en préprod Nuru
 SOMAFRIK_E2E_IDENTIFIER
 SOMAFRIK_E2E_PASSWORD
+SOMAFRIK_E2E_APK_PATH        # obligatoire — chemin de l'APK Preview à installer
 ```
 
 Optionnel :
 
 ```text
-SOMAFRIK_E2E_API_URL                 # doit être exactement l’URL préprod canonique
-SOMAFRIK_E2E_APK_PATH
+SOMAFRIK_E2E_API_URL                 # si défini, doit être la préprod canonique ; ne prouve pas l'APK
 ANDROID_SERIAL
 SOMAFRIK_E2E_PLATFORM_IDENTIFIER     # superadmin / admin pays
 SOMAFRIK_E2E_PLATFORM_PASSWORD
@@ -120,6 +126,7 @@ Interdit : `SCH-*`, `CD-2026-0001`, PIN hardcodé, `localhost`, `10.0.2.2`, LAN,
 export SOMAFRIK_E2E_SCHOOL_CODE=CD-IN-26-001
 export SOMAFRIK_E2E_IDENTIFIER='…'   # secret runtime, jamais commité
 export SOMAFRIK_E2E_PASSWORD='…'
+export SOMAFRIK_E2E_APK_PATH=/chemin/vers/somafrik-qa.apk
 
 npm run verify:mobile-ui-e2e-runtime
 ```
@@ -129,18 +136,17 @@ Le runner vérifie dans l’ordre :
 1. `maestro --version`
 2. `adb`
 3. exactement un device (ou `ANDROID_SERIAL`)
-4. `com.somafrik.app` installé
-5. lancement de l’application
-6. API = `https://somafrik-api-preprod.onrender.com`
-7. pas de localhost / LAN / production
-8. credentials via l’environnement
-9. exécution réelle de Maestro
-10. exit code 0
-11. artifacts
+4. `SOMAFRIK_E2E_APK_PATH` : fichier, SHA256, package `com.somafrik.app`
+5. `adb install -r` de **cette** APK
+6. lancement de l’application
+7. credentials via l’environnement
+8. Maestro : l’écran Role Selection affiche `API : https://somafrik-api-preprod.onrender.com/api`
+9. exécution réelle des parcours, exit code 0
+10. artifacts (dont SHA256, sans secrets)
 
 `SOMAFRIK_RUN_MAESTRO` n’existe plus comme skip-vert.
 
-Parcours exécutés (lecture) : `01`–`08`, `10`. `11` seulement si credentials plateforme QA.
+Parcours exécutés (lecture) : `01`–`08`, `10`. `11` seulement si credentials plateforme QA **et** les deux écoles exposent des utilisateurs avec `Établissement : <login_code>`. Sinon le scénario échoue ou reste BLOCKED — jamais un SUCCESS sur un simple `home-users-value` visible.
 
 ## Artifacts
 
@@ -152,8 +158,17 @@ maestro.log
 screenshots/
 device-info.txt
 app-package.txt
-runtime-summary.json
+runtime-summary.json   # blocked ≠ mutationCoverage
 ```
+
+`runtime-summary.json` distingue :
+
+```text
+flowExecution: READ          # 07 / 08 réellement exécutés en lecture
+mutationCoverage: BLOCKED_NO_QA_FIXTURE
+```
+
+Un flow BLOCKED non exécuté (09, 11 sans credentials) a `flowExecution: NOT_EXECUTED`.
 
 Aucun token / password / PIN en clair.
 
@@ -181,6 +196,11 @@ Aucun token / password / PIN en clair.
 | `MUTATION_NOTES_BLOCKED_NO_QA_FIXTURE` | 08 lecture seule |
 | `BLOCKED_EAS_AUTH` | pas d’auth EAS pour construire une APK |
 | `BLOCKED_APK_FORBIDDEN_HOST` | APK scanée : localhost / LAN / prod |
+| `BLOCKED_APK_PATH_MISSING` | `SOMAFRIK_E2E_APK_PATH` absent |
+| `BLOCKED_APK_NOT_FOUND` | fichier APK introuvable |
+| `BLOCKED_APK_HASH_MISSING` | SHA256 manquant |
+| `BLOCKED_APK_PACKAGE_MISMATCH` | package ≠ `com.somafrik.app` |
+| `BLOCKED_APK_INSTALL_FAILED` | `adb install -r` a échoué |
 
 ## Règles sécurité
 
@@ -200,7 +220,13 @@ Aucun token / password / PIN en clair.
 ## CI
 
 - Job GitHub standard : **scaffold + tests unitaires du runner** uniquement. Pas d’émulateur Android lourd.
-- Runtime : workflow `mobile-e2e-runtime.yml`, `workflow_dispatch` uniquement, **fail-closed**. Un Ubuntu sans device échoue. Pas de `continue-on-error`. Pas de skip déclaré SUCCESS.
+- Runtime : `.github/workflows/mobile-e2e-runtime.yml`, `workflow_dispatch` uniquement, runner **self-hosted** :
+
+```yaml
+runs-on: [self-hosted, linux, android, somafrik-mobile-e2e]
+```
+
+Ce runner doit déjà exposer Maestro, Android SDK/`adb`, un device, et le chemin `vars.SOMAFRIK_E2E_APK_PATH`. Le job n’installe pas d’émulateur. Pas de `ubuntu-latest`. Pas de `continue-on-error`. Pas de skip déclaré SUCCESS.
 
 Tests du runner (sans Android) :
 

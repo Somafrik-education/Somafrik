@@ -9,20 +9,22 @@ appId: com.somafrik.app
     timeout: 20000
 - assertVisible:
     id: "teachers-title"
-- wait: 8000
 - assertNotVisible:
     id: "teachers-error"
-- runFlow:
-    when:
-      visible:
-        id: "teachers-empty"
+- retry:
+    maxRetries: 8
     commands:
-      - assertVisible:
-          id: "teachers-empty"
-- runFlow:
-    when:
-      notVisible:
-        id: "teachers-empty"
-    commands:
-      - assertVisible:
-          id: "teachers-list"
+      - runFlow:
+          when:
+            visible:
+              id: "teachers-empty"
+          commands:
+            - assertVisible:
+                id: "teachers-empty"
+      - runFlow:
+          when:
+            notVisible:
+              id: "teachers-empty"
+          commands:
+            - assertVisible:
+                id: "teachers-list"

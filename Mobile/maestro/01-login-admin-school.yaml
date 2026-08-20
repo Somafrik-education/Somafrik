@@ -4,4 +4,8 @@ appId: com.somafrik.app
 - assertVisible:
     id: "home-admin-dashboard"
 - assertVisible:
-    id: "home-overview-title"
+    id: "home-users-value"
+- assertVisible:
+    id: "home-presence-value"
+- assertVisible:
+    id: "home-payments-value"

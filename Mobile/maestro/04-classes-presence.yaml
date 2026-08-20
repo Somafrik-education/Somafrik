@@ -7,30 +7,31 @@ appId: com.somafrik.app
     visible:
       id: "classes-screen"
     timeout: 20000
-- wait: 8000
-- assertVisible:
-    id: "classes-list"
-- runFlow:
-    when:
-      visible:
-        id: "class-card-.*"
+- extendedWaitUntil:
+    visible:
+      id: "classes-list"
+    timeout: 20000
+- retry:
+    maxRetries: 8
     commands:
-      - tapOn:
+      - assertVisible:
           id: "class-card-.*"
-      - extendedWaitUntil:
-          visible:
-            id: "students-screen"
-          timeout: 20000
-      - runFlow:
-          when:
-            visible:
-              id: "students-list"
-          commands:
-            - tapOn:
-                id: "student-row-.*"
-            - extendedWaitUntil:
-                visible:
-                  id: "student-detail-screen"
-                timeout: 15000
-            - assertVisible:
-                id: "student-detail-name"
+- tapOn:
+    id: "class-card-.*"
+- extendedWaitUntil:
+    visible:
+      id: "students-screen"
+    timeout: 20000
+- retry:
+    maxRetries: 8
+    commands:
+      - assertVisible:
+          id: "students-list"
+- tapOn:
+    id: "student-row-.*"
+- extendedWaitUntil:
+    visible:
+      id: "student-detail-screen"
+    timeout: 15000
+- assertVisible:
+    id: "student-detail-name"

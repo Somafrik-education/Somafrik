@@ -55,6 +55,16 @@ function main() {
   for (const item of allYaml) {
     assert.doesNotMatch(
       item.source,
+      /^\s*- wait\s*:/m,
+      `${item.rel}: commande Maestro 'wait:' interdite. Utiliser extendedWaitUntil.`,
+    );
+    assert.doesNotMatch(
+      item.source,
+      /home-overview-title/,
+      `${item.rel}: home-overview-title n'est pas un identifiant métier Home.`,
+    );
+    assert.doesNotMatch(
+      item.source,
       /assertNotVisible:\s*["']0["']/,
       `${item.rel}: assertNotVisible "0" interdit (0 peut être métier).`,
     );
@@ -85,12 +95,17 @@ function main() {
   assert.match(loginFlow, /id:\s*["']login-password-input["']/);
   assert.match(loginFlow, /id:\s*["']login-submit-button["']/);
   assert.match(loginFlow, /id:\s*["']home-admin-dashboard["']/);
+  assert.match(loginFlow, /id:\s*["']role-status-message["']/);
+  assert.match(loginFlow, /somafrik-api-preprod\.onrender\.com/);
   assert.match(loginFlow, /\$\{SOMAFRIK_E2E_SCHOOL_CODE\}/);
   assert.match(loginFlow, /\$\{SOMAFRIK_E2E_IDENTIFIER\}/);
   assert.match(loginFlow, /\$\{SOMAFRIK_E2E_PASSWORD\}/);
 
   const login01 = fs.readFileSync(path.join(MAESTRO, "01-login-admin-school.yaml"), "utf8");
   assert.match(login01, /runFlow:\s*flows\/login-admin-school\.yaml/);
+  assert.match(login01, /home-admin-dashboard/);
+  assert.match(login01, /home-users-value/);
+  assert.doesNotMatch(login01, /home-overview-title/);
 
   const home = fs.readFileSync(path.join(MAESTRO, "02-home-metrics.yaml"), "utf8");
   assert.match(home, /home-users-value/);
@@ -110,7 +125,8 @@ function main() {
   assert.match(relaunch, /stopApp/);
   assert.match(relaunch, /clearState:\s*false/);
   assert.match(relaunch, /home-admin-dashboard/);
-  assert.match(relaunch, /home-overview-title/);
+  assert.match(relaunch, /home-users-value/);
+  assert.doesNotMatch(relaunch, /home-overview-title/);
   assert.doesNotMatch(relaunch, /assertNotVisible:\s*["']catalog["']/);
 
   const attendance = fs.readFileSync(path.join(MAESTRO, "07-attendance.yaml"), "utf8");
@@ -135,6 +151,12 @@ function main() {
 
   assert.match(partial, /blocked-no-failure-injection/);
 
+  const tenant = fs.readFileSync(path.join(MAESTRO, "11-platform-tenant-switch.yaml"), "utf8");
+  assert.match(tenant, /selected:\s*true/);
+  assert.match(tenant, /Établissement :/);
+  assert.match(tenant, /role-status-message/);
+  assert.doesNotMatch(tenant, /^\s*- wait\s*:/m);
+
   const scaffoldSelf = fs.readFileSync(__filename, "utf8");
   assert.doesNotMatch(scaffoldSelf, /spawnSync\(\s*["']maestro["']/);
 
@@ -142,7 +164,9 @@ function main() {
   const runtime = fs.readFileSync(RUNTIME, "utf8");
   assert.match(runtime, /evaluateRuntimeGate/);
   assert.match(runtime, /Jamais SUCCESS/);
+  assert.match(runtime, /adb install/);
   assert.equal(runtime.includes(skipFlag), false, "runtime ne doit pas honorer un skip-vert optionnel");
+  assert.doesNotMatch(runtime, /SOMAFRIK_E2E_API_URL \|\| CANONICAL_PREPROD_API/);
   const gate = fs.readFileSync(GATE, "utf8");
   assert.match(gate, /BLOCKED_MAESTRO_NOT_EXECUTED/);
   assert.match(gate, /BLOCKED_NO_FAILURE_INJECTION/);

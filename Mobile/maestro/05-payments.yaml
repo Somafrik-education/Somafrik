@@ -6,20 +6,22 @@ appId: com.somafrik.app
 - extendedWaitUntil:
     visible: "Paiements"
     timeout: 20000
-- wait: 8000
 - assertNotVisible:
     id: "payments-error"
-- runFlow:
-    when:
-      visible:
-        id: "payments-empty"
+- retry:
+    maxRetries: 8
     commands:
-      - assertVisible:
-          id: "payments-empty"
-- runFlow:
-    when:
-      notVisible:
-        id: "payments-empty"
-    commands:
-      - assertVisible:
-          id: "payments-list"
+      - runFlow:
+          when:
+            visible:
+              id: "payments-empty"
+          commands:
+            - assertVisible:
+                id: "payments-empty"
+      - runFlow:
+          when:
+            notVisible:
+              id: "payments-empty"
+          commands:
+            - assertVisible:
+                id: "payments-list"

@@ -1,5 +1,6 @@
 # Exécuté seulement si SOMAFRIK_E2E_PLATFORM_* est fourni.
 # Sinon le runner enregistre BLOCKED_NO_PLATFORM_QA_CREDENTIALS.
+# Preuve isolation : chip selected + Users school A vs B. Pas un simple home-users-value visible.
 appId: com.somafrik.app
 ---
 - launchApp:
@@ -9,6 +10,13 @@ appId: com.somafrik.app
     visible:
       id: "role-selection-screen"
     timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: "role-status-message"
+    timeout: 10000
+- copyTextFrom:
+    id: "role-status-message"
+- assertTrue: "${maestro.copiedText == 'API : https://somafrik-api-preprod.onrender.com/api'}"
 - tapOn:
     id: "role-school-code-input"
 - eraseText
@@ -36,13 +44,50 @@ appId: com.somafrik.app
     visible:
       id: "home-admin-dashboard"
     timeout: 35000
+- extendedWaitUntil:
+    visible:
+      id: "school-selector"
+    timeout: 15000
 - tapOn:
     id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE}"
-- wait: 5000
-- assertVisible:
+- extendedWaitUntil:
+    visible:
+      id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE}"
+      selected: true
+    timeout: 15000
+- tapOn:
     id: "home-users-value"
+- extendedWaitUntil:
+    visible: "Utilisateurs"
+    timeout: 20000
+- retry:
+    maxRetries: 8
+    commands:
+      - assertVisible: "Établissement : ${SOMAFRIK_E2E_SCHOOL_CODE}"
+- assertNotVisible: "Établissement : ${SOMAFRIK_E2E_SCHOOL_CODE_B}"
+- tapOn:
+    id: "tab-accueil"
+- extendedWaitUntil:
+    visible:
+      id: "home-admin-dashboard"
+    timeout: 20000
 - tapOn:
     id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE_B}"
-- wait: 5000
+- extendedWaitUntil:
+    visible:
+      id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE_B}"
+      selected: true
+    timeout: 15000
 - assertVisible:
+    id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE}"
+    selected: false
+- tapOn:
     id: "home-users-value"
+- extendedWaitUntil:
+    visible: "Utilisateurs"
+    timeout: 20000
+- retry:
+    maxRetries: 8
+    commands:
+      - assertVisible: "Établissement : ${SOMAFRIK_E2E_SCHOOL_CODE_B}"
+- assertNotVisible: "Établissement : ${SOMAFRIK_E2E_SCHOOL_CODE}"

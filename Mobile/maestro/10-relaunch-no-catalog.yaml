@@ -5,8 +5,6 @@ appId: com.somafrik.app
     id: "home-admin-dashboard"
 - assertVisible:
     id: "home-users-value"
-- assertVisible:
-    id: "home-overview-title"
 - stopApp
 - launchApp:
     clearState: false
@@ -14,15 +12,17 @@ appId: com.somafrik.app
     visible:
       id: "home-admin-dashboard"
     timeout: 25000
-- wait: 8000
-- assertVisible:
-    id: "home-users-value"
-- assertVisible:
-    id: "home-overview-title"
+- extendedWaitUntil:
+    visible:
+      id: "home-users-value"
+    timeout: 25000
 - assertVisible:
     id: "home-presence-value"
 - assertNotVisible:
     id: "role-selection-screen"
-- copyTextFrom:
-    id: "home-users-value"
-- assertTrue: "${!maestro.copiedText.startsWith('—') && !maestro.copiedText.includes('Indisponible')}"
+- retry:
+    maxRetries: 8
+    commands:
+      - copyTextFrom:
+          id: "home-users-value"
+      - assertTrue: "${!maestro.copiedText.startsWith('—') && !maestro.copiedText.includes('Indisponible')}"
