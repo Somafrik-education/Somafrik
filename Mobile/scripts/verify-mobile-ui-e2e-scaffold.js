@@ -26,8 +26,9 @@ const REQUIRED = [
   "09-partial-domain-error.yaml",
   "10-relaunch-no-catalog.yaml",
 ];
-const MUTATION = "11-attendance-persistence.yaml";
-const MUTATION_CLEANUP = "12-attendance-restore.yaml";
+const MUTATION_PRECONDITION = "11-attendance-precondition.yaml";
+const MUTATION = "12-attendance-persistence.yaml";
+const MUTATION_CLEANUP = "13-attendance-restore.yaml";
 
 function main() {
   const helper = path.join(MAESTRO, "_login-admin-school.yaml");
@@ -53,14 +54,20 @@ function main() {
     );
   }
 
+  const preconditionFile = path.join(MAESTRO, MUTATION_PRECONDITION);
   const mutationFile = path.join(MAESTRO, MUTATION);
   const cleanupFile = path.join(MAESTRO, MUTATION_CLEANUP);
-  assert.ok(fs.existsSync(mutationFile), `parcours mutationnel manquant: ${MUTATION}`);
-  assert.ok(fs.existsSync(cleanupFile), `cleanup mutationnel manquant: ${MUTATION_CLEANUP}`);
+  for (const file of [preconditionFile, mutationFile, cleanupFile]) {
+    assert.ok(fs.existsSync(file), `flow mutationnel manquant: ${path.basename(file)}`);
+  }
+  const preconditionSource = fs.readFileSync(preconditionFile, "utf8");
   const mutationSource = fs.readFileSync(mutationFile, "utf8");
   const cleanupSource = fs.readFileSync(cleanupFile, "utf8");
+  assert.match(preconditionSource, /SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS/);
+  assert.doesNotMatch(preconditionSource, /Enregistrer l'appel|TARGET_ATTENDANCE_SLUG/);
   assert.match(mutationSource, /SOMAFRIK_E2E_TARGET_ATTENDANCE_SLUG/);
   assert.match(mutationSource, /SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS/);
+  assert.match(mutationSource, /SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS/);
   assert.match(mutationSource, /stopApp/);
   assert.match(mutationSource, /Appel enregistré/);
   assert.match(cleanupSource, /SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG/);
@@ -83,8 +90,10 @@ function main() {
   assert.match(runtimeSource, /\[REDACTED\]/);
   assert.match(runtimeSource, /LIVE_FLOWS/);
   assert.match(runtimeSource, /FAULT_FLOWS/);
+  assert.match(runtimeSource, /MUTATION_PRECONDITION_FLOW/);
   assert.match(runtimeSource, /MUTATION_FLOWS/);
   assert.match(runtimeSource, /MUTATION_CLEANUP_FLOW/);
+  assert.match(runtimeSource, /Précondition mutationnelle non satisfaite/);
   assert.match(runtimeSource, /finally\s*\{/);
   assert.match(runtimeSource, /SOMAFRIK_E2E_ALLOW_MUTATIONS/);
   assert.match(runtimeSource, /CD-IN-26-001/);
@@ -128,7 +137,7 @@ function main() {
   }
 
   console.log(
-    `OK: contrat Maestro ${REQUIRED.length} flows read-only/fault + mutation + cleanup indépendant ` +
+    `OK: contrat Maestro ${REQUIRED.length} flows read-only/fault + précondition/mutation/cleanup ` +
       "+ workflow Android runtime, secrets isolés et actions officielles uniquement. " +
       "Aucune exécution APK n'est revendiquée par ce gate statique.",
   );
