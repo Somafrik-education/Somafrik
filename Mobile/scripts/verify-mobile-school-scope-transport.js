@@ -1,9 +1,10 @@
 /**
- * Gate — transport du tenant école (header request-scoped).
+ * Gate — transport + données du tenant école (header request-scoped).
  *
  * Vérifie que activeSchoolCode n'est pas seulement du state React :
  * le client HTTP envoie X-Somafrik-School-Code, le backend le résout
- * via resolveEffectiveSchoolScope, et SCH-* n'est jamais produit.
+ * via resolveEffectiveSchoolScope, puis les datasets sont réellement
+ * limités à l'école sélectionnée. SCH-* n'est jamais produit par l'UI.
  *
  * Usage : npm run verify:mobile-school-scope-transport
  */
@@ -35,7 +36,9 @@ function run(command, args, cwd) {
 
 function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "requestSchoolScope.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "canonicalResourceNormalize.test.ts")], MOBILE);
   run("node", ["--test", path.join("lib", "principalSchoolScope.test.js")], BACKEND);
+  run("node", ["--test", path.join("lib", "requestSchoolScopeData.test.js")], BACKEND);
 
   const scopeLib = source(path.join("lib", "requestSchoolScope.ts"));
   assert.match(scopeLib, /export const SCHOOL_SCOPE_HEADER = "X-Somafrik-School-Code"/);
@@ -73,13 +76,30 @@ function main() {
   assert.doesNotMatch(selector, /SCH-/);
   console.log("OK: SchoolSelector ne produit jamais SCH-*");
 
+  const normalizer = source(path.join("lib", "canonicalResourceNormalize.ts"));
+  assert.match(normalizer, /row\.schoolPublicCode/);
+  assert.match(normalizer, /row\.school_login_code/);
+  console.log("OK: normalisation Mobile préfère le login_code V2 au school_code interne");
+
   const backendScope = read(path.join(BACKEND, "lib", "principalSchoolScope.js"));
   assert.match(backendScope, /function resolveEffectiveSchoolScope/);
   assert.match(backendScope, /function applyEffectiveSchoolScope/);
+  assert.match(backendScope, /effectiveSchoolCode/);
+  assert.match(backendScope, /effectiveSchoolInternalCode/);
+  assert.match(backendScope, /schoolScopeSource: "request"/);
   assert.match(backendScope, /SCHOOL_SCOPE_HEADER = "X-Somafrik-School-Code"/);
   assert.match(backendScope, /SCHOOL_SCOPE_INTERNAL_ALIAS_FORBIDDEN/);
+  assert.match(backendScope, /SCHOOL_SCOPE_V2_REQUIRED/);
   assert.match(backendScope, /SCHOOL_SCOPE_OVERRIDE_FORBIDDEN/);
   assert.match(backendScope, /SCHOOL_SCOPE_COUNTRY_FORBIDDEN/);
+
+  const tenantScope = read(path.join(BACKEND, "services", "tenantScopeService.js"));
+  assert.match(tenantScope, /hasEffectiveSchoolScope/);
+  assert.match(tenantScope, /principalSchoolCodes/);
+  assert.match(tenantScope, /schoolPublicCode/);
+  assert.match(tenantScope, /school_login_code/);
+  console.log("OK: scope effectif limite aussi les datasets Superadmin/Admin Pays");
+
   const server = read(path.join(BACKEND, "server.js"));
   assert.match(server, /lookupSchoolForEffectiveScope/);
   assert.match(server, /applyEffectiveSchoolScope\(req, lookupSchoolForEffectiveScope\)/);
@@ -92,7 +112,13 @@ function main() {
   assert.match(backendTest, /Admin Pays CD \+ école BI/);
   assert.match(backendTest, /Admin School ne peut pas override/);
   assert.match(backendTest, /SCH-\* envoyé par le client/);
-  console.log("OK: cas Superadmin / Admin Pays / Admin School / SCH-* couverts");
+  assert.match(backendTest, /code client non V2 est refusé/);
+
+  const dataTest = read(path.join(BACKEND, "lib", "requestSchoolScopeData.test.js"));
+  assert.match(dataTest, /Superadmin \+ Nuru ne reçoit que les datasets Nuru/);
+  assert.match(dataTest, /Admin Pays \+ Nuru ne reçoit pas les autres écoles du même pays/);
+  assert.match(dataTest, /switch Nuru → Lumière ne conserve aucune ligne Nuru/);
+  console.log("OK: cas data multi-écoles couverts");
 
   console.log("verify:mobile-school-scope-transport OK");
 }
