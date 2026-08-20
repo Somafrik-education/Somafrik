@@ -181,12 +181,27 @@ class TenantScopeService {
   }
 
   assertSchoolAccess(principal, schoolCode) {
-    if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
+    if (!principal) {
       return;
     }
 
     const requested = this.normalizeSchoolCode(schoolCode);
-    if (requested && this.principalSchoolCodes(principal).has(requested)) {
+    const principalSchools = this.principalSchoolCodes(principal);
+
+    // Un scope request-scoped validé devient autoritaire pour toute la requête,
+    // y compris pour un Superadmin. Un paramètre/path vers une autre école est refusé.
+    if (this.hasEffectiveSchoolScope(principal)) {
+      if (requested && principalSchools.has(requested)) {
+        return;
+      }
+      throw new BusinessError(403, "Accès refusé: établissement hors périmètre request-scoped.");
+    }
+
+    if (SUPER_ADMIN_ROLES.has(principal.role)) {
+      return;
+    }
+
+    if (requested && principalSchools.has(requested)) {
       return;
     }
 
