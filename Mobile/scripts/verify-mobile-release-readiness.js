@@ -14,6 +14,7 @@ const {
   APP_VERSION,
   CANONICAL_API_URLS,
 } = require("../config/releaseEnvironments");
+const { verifyMobileBranding } = require("./verify-mobile-branding");
 
 const ROOT = path.join(__dirname, "..", "..");
 const MOBILE = path.join(ROOT, "Mobile");
@@ -154,15 +155,19 @@ function main() {
   assert.match(pkg.dependencies.expo || "", /54\./);
   console.log("OK: packages SDK 54 + worklets");
 
+  verifyMobileBranding();
   const icon = pngInfo(path.join(MOBILE, "assets", "somafrik-app-icon.png"));
-  const splash = pngInfo(path.join(MOBILE, "assets", "somafrik-logo.png"));
+  const uiLogo = pngInfo(path.join(MOBILE, "assets", "somafrik-logo.png"));
+  const splash = pngInfo(path.join(MOBILE, "assets", "somafrik-splash.png"));
   assert.ok(icon.isPng && !icon.isJpeg, "icon doit être un vrai PNG");
-  assert.equal(icon.width, 1024);
-  assert.equal(icon.height, 1024);
+  assert.ok(icon.width >= 1024 && icon.height >= 1024, "icon dimensions insuffisantes");
+  assert.equal(icon.width, icon.height, "icon Android doit être carrée");
+  assert.ok(uiLogo.isPng && !uiLogo.isJpeg, "logo UI doit être un vrai PNG");
+  assert.ok(uiLogo.width >= 1024 && uiLogo.height >= 1024, "logo UI dimensions insuffisantes");
   assert.ok(splash.isPng && !splash.isJpeg, "splash doit être un vrai PNG (pas un JPEG renommé)");
-  assert.ok(splash.width >= 320 && splash.height >= 320, "splash dimensions insuffisantes");
+  assert.ok(splash.width >= 1024 && splash.height >= 1024, "splash dimensions insuffisantes");
   assert.ok(!fs.existsSync(path.join(MOBILE, "assets", "schoollink-logo.png")), "relique SchoolLink");
-  console.log("OK: assets icon/splash MIME réel");
+  console.log("OK: assets BRANDING-V2 icon/logo/splash MIME réel + dimensions");
 
   const gitignore = `${read(path.join(ROOT, ".gitignore"))}\n${read(path.join(MOBILE, ".gitignore"))}`;
   for (const needle of ["*.jks", "*.keystore", "credentials.json", "*.apk"]) {
