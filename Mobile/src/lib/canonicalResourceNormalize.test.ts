@@ -7,13 +7,15 @@ import {
   normalizeMessage,
   normalizeSchool,
   normalizeTeacher,
+  normalizeUser,
   readTenantScopeFields,
 } from "./canonicalResourceNormalize";
 import { pickInitialSchoolCode, schoolSelectorChoice } from "./activeSchool";
 
 function run() {
   const tenant = readTenantScopeFields({
-    school_code: "CD-IN-26-001",
+    school_code: "SCH-ABC123",
+    school_login_code: "CD-IN-26-001",
     schoolId: "uuid-school",
     country_code: "CD",
   });
@@ -26,17 +28,30 @@ function run() {
     teacher_code: "CD-IN-ENS-26-009",
     first_name: "Amina",
     last_name: "Diallo",
-    schoolCode: "CD-IN-26-001",
+    schoolCode: "SCH-ABC123",
+    schoolPublicCode: "CD-IN-26-001",
     assigned_classes: [],
   });
   assert.equal(teacher?.schoolCode, "CD-IN-26-001");
   assert.deepEqual(teacher?.assignedClasses, []);
 
+  const user = normalizeUser({
+    id: "user-pg",
+    userCode: "USR-2026-00001",
+    firstName: "Jean",
+    lastName: "Mbuyi",
+    schoolCode: "SCH-ABC123",
+    schoolPublicCode: "CD-IN-26-001",
+  });
+  assert.equal(user?.schoolCode, "CD-IN-26-001");
+  assert.notEqual(user?.schoolCode, "SCH-ABC123");
+
   const announcement = normalizeAnnouncement({
     id: "ann-pg",
     title: "Conseil",
     message: "18h",
-    school_code: "CD-IN-26-001",
+    school_code: "SCH-ABC123",
+    school_login_code: "CD-IN-26-001",
     school_id: "school-1",
   });
   assert.equal(announcement?.schoolCode, "CD-IN-26-001");
@@ -48,7 +63,8 @@ function run() {
     parent_phone: "+243820000009",
     theme: "Absence",
     message: "Justifiée",
-    school_code: "CD-IN-26-001",
+    school_code: "SCH-ABC123",
+    school_login_code: "CD-IN-26-001",
   });
   assert.equal(message?.schoolCode, "CD-IN-26-001");
 
