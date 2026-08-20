@@ -1,8 +1,8 @@
 /**
  * Filtrage partagé :
- * - Admin School conserve le filtrage client local par établissement.
- * - Superadmin / Admin Pays avec une école active font confiance au dataset déjà
- *   request-scoped par le backend et ne comparent plus SCH-* au login_code V2.
+ * - scopeSchoolEntityData reste disponible pour les contrôles locaux explicites.
+ * - Les sessions canoniques font confiance au tenant déjà imposé par le backend ;
+ *   elles ne doivent jamais convertir une réponse valide en [] à cause de SCH-* / V2.
  *   npx tsx Mobile/src/lib/scope.test.ts
  */
 import assert from "node:assert/strict";
@@ -101,7 +101,7 @@ function run() {
   }
   assert.equal(schoolMessage.schoolCode, SCHOOL);
 
-  // Filtrage local conservé pour les comptes établissement.
+  // Le helper de filtrage local reste déterministe lorsqu'il est explicitement utilisé.
   const scoped = scopeSchoolEntityData(
     emptyPayload({
       announcements: [schoolAnnouncement, otherAnnouncement, systemAnnouncement],
@@ -188,6 +188,20 @@ function run() {
   assert.equal(countrySessionScoped.users.length, 1);
   assert.equal(countrySessionScoped.students.length, 1);
   assert.equal(countrySessionScoped.schools.length, 2, "Admin Pays conserve les écoles de son pays");
+
+  // Admin School : le JWT/repository impose déjà le tenant. Une projection Users
+  // normalisée en public V2 ne doit pas être comparée à l'alias interne de session.
+  const schoolAdminScoped = scopeBackOfficeForSession(
+    emptyPayload({
+      users: [{ id: "usr-school", schoolCode: SCHOOL }],
+      students: [{ id: "stu-school", schoolCode: INTERNAL_SCHOOL }],
+      teachers: [{ id: "teacher-school", schoolCode: INTERNAL_SCHOOL }],
+    }),
+    { role: "school_admin", user: { schoolCode: INTERNAL_SCHOOL } },
+  ) as Record<string, Array<{ id?: string }>>;
+  assert.equal(schoolAdminScoped.users.length, 1);
+  assert.equal(schoolAdminScoped.students.length, 1);
+  assert.equal(schoolAdminScoped.teachers.length, 1);
 
   const trusted = trustServerScopedPlatformTenant(
     emptyPayload({ users: [{ id: "tenant-user", schoolCode: INTERNAL_SCHOOL }] }),
