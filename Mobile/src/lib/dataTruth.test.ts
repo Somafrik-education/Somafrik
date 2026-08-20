@@ -18,6 +18,7 @@ import {
   buildPrincipalScopeKey,
   buildResourceScopeKey,
   resourceCacheResetKind,
+  scopeHydrationPlan,
   emptyResourceSnapshot,
   withScopedSnapshotData,
   parentAverageDisplay,
@@ -255,6 +256,144 @@ function run() {
     }),
     "principal",
   );
+
+  const superLogin = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+  });
+  const superTenantA = buildResourceScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+    activeSchoolCode: "CD-IN-26-001",
+  });
+  const superTenantB = buildResourceScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+    activeSchoolCode: "BI-EC-26-001",
+  });
+  const otherPrincipal = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "country-admin",
+    role: "country_admin",
+    countryScope: "CD",
+  });
+  const otherResource = buildResourceScopeKey({
+    hasSession: true,
+    userId: "country-admin",
+    role: "country_admin",
+    countryScope: "CD",
+    activeSchoolCode: "CD-IN-26-001",
+  });
+
+  function applySchoolsLifecycle(
+    events: Array<{
+      nextPrincipalKey: string;
+      nextResourceKey: string;
+      apiSchools: string[];
+    }>,
+  ) {
+    let schools: string[] = ["LEAK-PREVIOUS"];
+    let previousPrincipalKey: string | null = null;
+    for (const event of events) {
+      const plan = scopeHydrationPlan({
+        previousPrincipalKey,
+        nextPrincipalKey: event.nextPrincipalKey,
+        nextResourceKey: event.nextResourceKey,
+      });
+      previousPrincipalKey = event.nextPrincipalKey;
+      if (plan.resetKind === "principal") schools = [];
+      if (plan.loadPrincipal) schools = event.apiSchools;
+    }
+    return schools;
+  }
+
+  const afterSuperLogin = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+  ]);
+  assert.deepEqual(afterSuperLogin, ["CD-IN-26-001", "BI-EC-26-001"]);
+  assert.equal(afterSuperLogin.length > 0, true);
+
+  const afterTenantSwitch = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantB,
+      apiSchools: ["SHOULD-NOT-RELOAD"],
+    },
+  ]);
+  assert.deepEqual(afterTenantSwitch, ["CD-IN-26-001", "BI-EC-26-001"]);
+
+  const afterLogout = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+    {
+      nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+      nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+      apiSchools: ["CD-IN-26-001"],
+    },
+  ]);
+  assert.deepEqual(afterLogout, []);
+
+  const afterOtherLogin = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+    {
+      nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+      nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+      apiSchools: [],
+    },
+    {
+      nextPrincipalKey: otherPrincipal,
+      nextResourceKey: otherResource,
+      apiSchools: ["CD-IN-26-001"],
+    },
+  ]);
+  assert.deepEqual(afterOtherLogin, ["CD-IN-26-001"]);
+  assert.equal(afterOtherLogin.includes("BI-EC-26-001"), false);
+
+  const loginPlan = scopeHydrationPlan({
+    previousPrincipalKey: null,
+    nextPrincipalKey: superLogin,
+    nextResourceKey: superTenantA,
+  });
+  assert.equal(loginPlan.resetKind, "principal");
+  assert.equal(loginPlan.loadPrincipal, true);
+  assert.equal(loginPlan.loadTenant, true);
+
+  const switchPlan = scopeHydrationPlan({
+    previousPrincipalKey: superLogin,
+    nextPrincipalKey: superLogin,
+    nextResourceKey: superTenantB,
+  });
+  assert.equal(switchPlan.resetKind, "tenant");
+  assert.equal(switchPlan.loadPrincipal, false);
+  assert.equal(switchPlan.loadTenant, true);
+
+  const logoutPlan = scopeHydrationPlan({
+    previousPrincipalKey: superLogin,
+    nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+    nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+  });
+  assert.equal(logoutPlan.resetKind, "principal");
+  assert.equal(logoutPlan.loadPrincipal, false);
+  assert.equal(logoutPlan.loadTenant, false);
 
   const tenantAUsers = snapshotFromSuccess([{ id: "user-a" }]);
   const purged = emptyResourceSnapshot<typeof tenantAUsers.data[number]>();

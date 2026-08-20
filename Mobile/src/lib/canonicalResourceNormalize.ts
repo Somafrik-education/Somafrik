@@ -1,4 +1,13 @@
-import type { Announcement, SchoolMessage, Teacher, UserAccount } from "../data/catalog";
+import type {
+  Announcement,
+  CountryProfile,
+  SchoolMessage,
+  SchoolProfile,
+  SubscriptionItem,
+  Teacher,
+  UserAccount,
+} from "../data/catalog";
+import type { PlatformNotification } from "./scope";
 
 export type CanonicalTeacher = Teacher & {
   teacherCode: string;
@@ -173,5 +182,105 @@ export function normalizeMessage(value: unknown): CanonicalSchoolMessage | null 
     readAt: text(row.readAt ?? row.read_at) || undefined,
     archivedAt: text(row.archivedAt ?? row.archived_at) || undefined,
     createdAt: text(row.createdAt ?? row.created_at) || undefined,
+  };
+}
+
+export function normalizeSchool(value: unknown): SchoolProfile | null {
+  const row = record(value);
+  const loginCode = text(row.loginCode ?? row.login_code ?? row.publicId ?? row.public_id);
+  const code = text(row.code ?? row.schoolCode ?? row.school_code) || loginCode;
+  if (!code) return null;
+  const tenant = readTenantScopeFields(row);
+  return {
+    id: text(row.id) || code,
+    publicId: loginCode || code,
+    code,
+    name: text(row.name) || code,
+    type: text(row.type ?? row.schoolType ?? row.school_type) || "Établissement",
+    city: text(row.city),
+    country: text(row.country),
+    address: text(row.address),
+    phone: text(row.phone),
+    email: text(row.email),
+    website: text(row.website),
+    currency: text(row.currency),
+    slogan: text(row.slogan),
+    status: (text(row.status) || "Actif") as SchoolProfile["status"],
+    logoUrl: optionalText(row.logoUrl ?? row.logo_url),
+    schoolYear: text(row.schoolYear ?? row.school_year),
+    timezone: text(row.timezone) || "Africa/Kinshasa",
+    language: text(row.language) || "Français",
+    dateFormat: text(row.dateFormat) || "JJ-MM-AAAA",
+    primaryColor: text(row.primaryColor) || "#2563EB",
+    subscriptionPlan: text(row.subscriptionPlan),
+    subscriptionStartDate: text(row.subscriptionStartDate),
+    subscriptionEndDate: text(row.subscriptionEndDate),
+    maxStudents: Number(row.maxStudents || 0),
+    maxTeachers: Number(row.maxTeachers || 0),
+    createdAt: text(row.createdAt ?? row.created_at),
+    countryCode: tenant.countryCode,
+  };
+}
+
+export function normalizeCountry(value: unknown): CountryProfile | null {
+  const row = record(value);
+  const code = text(row.code ?? row.isoCode ?? row.iso_code);
+  const name = text(row.name);
+  if (!code && !name) return null;
+  return {
+    id: text(row.id) || code || name,
+    name: name || code,
+    code: code || name,
+    phonePrefix: text(row.phonePrefix ?? row.phone_code ?? row.phoneCode),
+    currency: text(row.currency),
+    timezone: text(row.timezone) || "UTC",
+    status: (text(row.status) || "Actif") as CountryProfile["status"],
+    administratorId: optionalText(row.administratorId),
+    createdAt: text(row.createdAt ?? row.created_at),
+  };
+}
+
+export function normalizeSubscription(value: unknown): SubscriptionItem | null {
+  const row = record(value);
+  const id = text(row.id);
+  const tenant = readTenantScopeFields(row);
+  const schoolCode = tenant.schoolCode ?? "";
+  if (!id && !schoolCode) return null;
+  return {
+    id: id || schoolCode,
+    schoolCode,
+    countryCode: tenant.countryCode ?? text(row.countryCode ?? row.country_code),
+    country: text(row.country ?? row.country_name),
+    plan: text(row.plan ?? row.plan_name),
+    monthlyPrice: Number(row.monthlyPrice ?? 0),
+    annualPrice: Number(row.annualPrice ?? 0),
+    currency: text(row.currency) || "USD",
+    status: (text(row.status) || "Actif") as SubscriptionItem["status"],
+    paymentStatus: (text(row.paymentStatus) || "À jour") as SubscriptionItem["paymentStatus"],
+    startDate: text(row.startDate ?? row.start_date),
+    endDate: text(row.endDate ?? row.end_date),
+    lastPaymentDate: text(row.lastPaymentDate ?? row.last_payment_date),
+  };
+}
+
+export function normalizePlatformNotification(value: unknown): PlatformNotification | null {
+  const row = record(value);
+  const id = text(row.id);
+  const title = text(row.title);
+  const message = text(row.message);
+  if (!id && !title && !message) return null;
+  const tenant = readTenantScopeFields(row);
+  return {
+    id: id || undefined,
+    title,
+    message,
+    type: optionalText(row.type),
+    audience: optionalText(row.audience),
+    priority: optionalText(row.priority),
+    status: optionalText(row.status),
+    date: optionalText(row.date ?? row.createdAt ?? row.created_at),
+    countryCode: tenant.countryCode,
+    schoolCode: tenant.schoolCode,
+    createdBy: optionalText(row.createdBy ?? row.created_by),
   };
 }

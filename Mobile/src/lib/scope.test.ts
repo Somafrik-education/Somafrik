@@ -11,8 +11,8 @@ import {
   normalizeTeacher,
 } from "./canonicalResourceNormalize";
 
-const SCHOOL = "CD-2026-0001";
-const OTHER = "BI-2026-0001";
+const SCHOOL = "CD-IN-26-001";
+const OTHER = "BI-EC-26-001";
 
 function emptyPayload(overrides: Record<string, unknown> = {}) {
   return {

@@ -49,6 +49,7 @@ export default function HomeScreen({ navigation }: any) {
     messagesSnapshot,
     loadAnnouncements,
     loadMessages,
+    loadSchools,
     schoolsData,
     usersSnapshot,
     loadUsers,
@@ -143,10 +144,13 @@ export default function HomeScreen({ navigation }: any) {
       if (canReadEntity(session, "messages")) {
         void loadMessages();
       }
+      if (session?.role === "super_admin" || session?.role === "country_admin") {
+        void loadSchools();
+      }
       if (session?.role === "parent_student" || session?.role === "student") {
         void loadNotes();
       }
-    }, [session, resourceScopeKey, loadUsers, loadStudents, loadPresences, loadTeachers, loadClasses, loadPayments, loadAnnouncements, loadMessages, loadNotes]),
+    }, [session, resourceScopeKey, loadUsers, loadStudents, loadPresences, loadTeachers, loadClasses, loadPayments, loadAnnouncements, loadMessages, loadSchools, loadNotes]),
   );
 
   if (session?.role === "teacher") {

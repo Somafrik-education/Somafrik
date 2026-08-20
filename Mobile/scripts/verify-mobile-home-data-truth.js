@@ -41,7 +41,7 @@ function main() {
   assert.match(context, /presencesSnapshot/);
   assert.match(context, /buildResourceScopeKey/);
   assert.match(context, /buildPrincipalScopeKey/);
-  assert.match(context, /resourceCacheResetKind/);
+  assert.match(context, /scopeHydrationPlan/);
   assert.match(context, /resetTenantResourceCaches/);
   assert.match(context, /resetPrincipalResourceCaches/);
   assert.match(context, /resetResourceCaches/);
@@ -61,8 +61,19 @@ function main() {
   assert.match(principalReset[0], /setSchoolsData\(\[\]\)/);
   assert.match(context, /resourceScopeKeyRef\.current !== scope/);
   assert.match(context, /withScopedSnapshotData/);
-  assert.match(context, /NO_SESSION_RESOURCE_SCOPE/);
   assert.match(context, /scopeBackOfficeForSession/);
+  assert.match(context, /scopeHydrationPlan/);
+  const dataTruth = read(path.join("lib", "dataTruth.ts"));
+  assert.match(dataTruth, /NO_SESSION_RESOURCE_SCOPE/);
+  assert.match(dataTruth, /scopeHydrationPlan/);
+  assert.match(dataTruth, /resourceCacheResetKind/);
+  assert.match(context, /loadSchools/);
+  assert.match(context, /getCanonicalSchools/);
+  assert.match(context, /plan\.loadPrincipal/);
+  assert.match(context, /loaders\.loadSchools\(\)/);
+  assert.match(context, /principalScopeKeyRef\.current !== scope/);
+  assert.doesNotMatch(tenantReset[0], /loadSchools/);
+  assert.match(home, /loadSchools/);
   assert.match(home, /usersSnapshot/);
   assert.match(home, /loadUsers/);
   assert.match(home, /presencesSnapshot/);
@@ -102,6 +113,13 @@ function main() {
   assert.doesNotMatch(students, /summaryValue\}>\{paymentStats\.rate\}%/);
   assert.doesNotMatch(studentDetail, /: studentNotes\.length/);
   assert.doesNotMatch(studentDetail, /: presentCount/);
+
+  const scopeTest = read(path.join("lib", "scope.test.ts"));
+  const normalizeTest = read(path.join("lib", "canonicalResourceNormalize.test.ts"));
+  assert.doesNotMatch(scopeTest, /CD-2026-0001|BI-2026-0001/);
+  assert.doesNotMatch(normalizeTest, /CD-2026-0001|BI-2026-0001/);
+  assert.match(scopeTest, /CD-IN-26-001/);
+  assert.match(scopeTest, /BI-EC-26-001/);
 
   console.log("OK: Accueil hydrate users/presences/payments/annonces/messages ; isolation de scope ; pas de faux 0");
 }

@@ -292,6 +292,7 @@ export type SchoolProfile = {
   type: string;
   city: string;
   country: string;
+  countryCode?: string;
   address: string;
   phone: string;
   email: string;

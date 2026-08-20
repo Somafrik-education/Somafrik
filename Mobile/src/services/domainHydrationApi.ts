@@ -1,7 +1,11 @@
 import { unwrapList } from "../lib/dataTruth";
 import {
   normalizeAnnouncement,
+  normalizeCountry,
   normalizeMessage,
+  normalizePlatformNotification,
+  normalizeSchool,
+  normalizeSubscription,
   normalizeTeacher,
   normalizeUser,
   type CanonicalAnnouncement,
@@ -9,6 +13,8 @@ import {
   type CanonicalTeacher,
   type CanonicalUserAccount,
 } from "../lib/canonicalResourceNormalize";
+import type { CountryProfile, SchoolProfile, SubscriptionItem } from "../data/catalog";
+import type { PlatformNotification } from "../lib/scope";
 import { httpRequest } from "./httpClient";
 
 export type {
@@ -20,6 +26,7 @@ export type {
 export {
   normalizeAnnouncement,
   normalizeMessage,
+  normalizeSchool,
   normalizeTeacher,
   readTenantScopeFields,
 } from "../lib/canonicalResourceNormalize";
@@ -46,6 +53,30 @@ export async function getCanonicalMessages(): Promise<CanonicalSchoolMessage[]> 
   return unwrapList(payload)
     .map(normalizeMessage)
     .filter((row): row is CanonicalSchoolMessage => Boolean(row));
+}
+
+export async function getCanonicalSchools(): Promise<SchoolProfile[]> {
+  const payload = await httpRequest<unknown>("/backoffice/establishments");
+  return unwrapList(payload).map(normalizeSchool).filter((row): row is SchoolProfile => Boolean(row));
+}
+
+export async function getCanonicalCountries(): Promise<CountryProfile[]> {
+  const payload = await httpRequest<unknown>("/backoffice/countries");
+  return unwrapList(payload).map(normalizeCountry).filter((row): row is CountryProfile => Boolean(row));
+}
+
+export async function getCanonicalSubscriptions(): Promise<SubscriptionItem[]> {
+  const payload = await httpRequest<unknown>("/backoffice/subscriptions");
+  return unwrapList(payload)
+    .map(normalizeSubscription)
+    .filter((row): row is SubscriptionItem => Boolean(row));
+}
+
+export async function getCanonicalNotifications(): Promise<PlatformNotification[]> {
+  const payload = await httpRequest<unknown>("/backoffice/notifications");
+  return unwrapList(payload)
+    .map(normalizePlatformNotification)
+    .filter((row): row is PlatformNotification => Boolean(row));
 }
 
 export async function archiveCanonicalAnnouncement(announcementId: string): Promise<CanonicalAnnouncement | null> {

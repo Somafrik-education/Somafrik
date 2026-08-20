@@ -116,6 +116,49 @@ export function resourceCacheResetKind(input: {
   return "tenant";
 }
 
+export const PRINCIPAL_RESOURCE_LOADERS = [
+  "loadSchools",
+  "loadCountries",
+  "loadSubscriptions",
+  "loadNotifications",
+] as const;
+
+export const TENANT_RESOURCE_LOADERS = [
+  "refreshBackOfficeState",
+  "loadUsers",
+  "loadTeachers",
+  "loadPayments",
+  "loadAnnouncements",
+  "loadMessages",
+] as const;
+
+export type ScopeHydrationPlan = {
+  resetKind: ResourceCacheResetKind;
+  loadPrincipal: boolean;
+  loadTenant: boolean;
+};
+
+/**
+ * Login / changement d'identité → reset + reload principal (écoles).
+ * Changement d'école active → reset tenant seulement, écoles conservées.
+ * Logout → reset principal, aucun reload.
+ */
+export function scopeHydrationPlan(input: {
+  previousPrincipalKey: string | null;
+  nextPrincipalKey: string;
+  nextResourceKey: string;
+}): ScopeHydrationPlan {
+  const resetKind = resourceCacheResetKind(input);
+  if (input.nextResourceKey === NO_SESSION_RESOURCE_SCOPE) {
+    return { resetKind, loadPrincipal: false, loadTenant: false };
+  }
+  return {
+    resetKind,
+    loadPrincipal: resetKind === "principal",
+    loadTenant: true,
+  };
+}
+
 /** Applique le filtrage tenant/session sans transformer une erreur en liste vide métier. */
 export function withScopedSnapshotData<T>(
   snapshot: ResourceSnapshot<T>,

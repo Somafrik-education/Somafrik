@@ -39,6 +39,7 @@ function main() {
   assert.match(server, /app\.get\("\/api\/backoffice\/users"/);
   assert.match(server, /app\.get\("\/api\/backoffice\/announcements"/);
   assert.match(server, /app\.get\("\/api\/backoffice\/messages"/);
+  assert.match(server, /app\.get\("\/api\/backoffice\/establishments"/);
   assert.match(server, /\/api\/backoffice\/announcements\/:announcementId\/archive/);
   assert.match(server, /\/api\/backoffice\/messages\/:messageId\/read/);
   assert.match(server, /repository\.listClientsProjection\(\)/);
@@ -50,6 +51,10 @@ function main() {
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/users"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/announcements"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/messages"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/establishments"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/countries"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/subscriptions"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/notifications"\)/);
   assert.match(api, /archiveCanonicalAnnouncement/);
   assert.match(api, /markCanonicalMessageRead/);
   assert.match(api, /normalizeTeacher/);
@@ -57,6 +62,7 @@ function main() {
   assert.match(api, /normalizeMessage/);
   assert.match(normalize, /readTenantScopeFields/);
   assert.match(normalize, /schoolCode: tenant\.schoolCode/);
+  assert.match(normalize, /export function normalizeSchool/);
   assert.doesNotMatch(api, /\bfetch\s*\(/);
   assert.doesNotMatch(api, /\baxios\b/);
   assert.doesNotMatch(api, /JSON\.stringify\(\s*\{[^}]*\btenantId\s*:/s);

@@ -35,7 +35,11 @@ import {
 import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
 import {
   getCanonicalAnnouncements,
+  getCanonicalCountries,
   getCanonicalMessages,
+  getCanonicalNotifications,
+  getCanonicalSchools,
+  getCanonicalSubscriptions,
   getCanonicalTeachers,
   getCanonicalUsers,
   type CanonicalAnnouncement,
@@ -44,11 +48,10 @@ import {
   type CanonicalUserAccount,
 } from "../services/domainHydrationApi";
 import {
-  NO_SESSION_RESOURCE_SCOPE,
   buildPrincipalScopeKey,
   buildResourceScopeKey,
   emptyResourceSnapshot,
-  resourceCacheResetKind,
+  scopeHydrationPlan,
   snapshotFromFailure,
   snapshotFromSuccess,
   withScopedSnapshotData,
@@ -103,6 +106,7 @@ type AdminDataContextValue = {
   presencesSnapshot: ResourceSnapshot<PresenceItem>;
   announcementsSnapshot: ResourceSnapshot<CanonicalAnnouncement>;
   messagesSnapshot: ResourceSnapshot<CanonicalSchoolMessage>;
+  schoolsSnapshot: ResourceSnapshot<SchoolProfile>;
   courseSchedulesSnapshot: ResourceSnapshot<CanonicalWeeklySlot>;
   planningCourseOptionsSnapshot: ResourceSnapshot<PlanningCourseOption>;
   roomsSnapshot: ResourceSnapshot<CanonicalSchoolRoom>;
@@ -115,6 +119,10 @@ type AdminDataContextValue = {
   loadClasses: () => Promise<void>;
   loadAnnouncements: () => Promise<void>;
   loadMessages: () => Promise<void>;
+  loadSchools: () => Promise<void>;
+  loadCountries: () => Promise<void>;
+  loadSubscriptions: () => Promise<void>;
+  loadNotifications: () => Promise<void>;
   loadCourseSchedules: () => Promise<void>;
   loadPlanningWeekly: () => Promise<void>;
   loadPlanningCourseOptions: () => Promise<void>;
@@ -256,6 +264,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     status: "idle",
     data: [],
   });
+  const [schoolsSnapshot, setSchoolsSnapshot] = useState<ResourceSnapshot<SchoolProfile>>({
+    status: "idle",
+    data: [],
+  });
 
   const requiresSchoolSelection = userRequiresSchoolSelection(
     session
@@ -293,6 +305,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   );
   const resourceScopeKeyRef = useRef(resourceScopeKey);
   resourceScopeKeyRef.current = resourceScopeKey;
+  const principalScopeKeyRef = useRef(principalScopeKey);
+  principalScopeKeyRef.current = principalScopeKey;
   const previousPrincipalKeyRef = useRef<string | null>(null);
 
   const resetTenantResourceCaches = useCallback(() => {
@@ -330,6 +344,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const resetPrincipalResourceCaches = useCallback(() => {
     resetTenantResourceCaches();
     setSchoolsData([]);
+    setSchoolsSnapshot(emptyResourceSnapshot());
     setCountriesData([]);
     setSubscriptionsData([]);
     setNotificationsData([]);
@@ -629,6 +644,57 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
+  const loadSchools = useCallback(async () => {
+    if (!session) return;
+    const scope = principalScopeKeyRef.current;
+    setSchoolsSnapshot((current) => ({ ...current, status: "loading" }));
+    try {
+      const rows = await getCanonicalSchools();
+      if (principalScopeKeyRef.current !== scope) return;
+      setSchoolsData(rows);
+      setSchoolsSnapshot(snapshotFromSuccess(rows));
+    } catch (error) {
+      if (principalScopeKeyRef.current !== scope) return;
+      setSchoolsSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadCountries = useCallback(async () => {
+    if (!session) return;
+    const scope = principalScopeKeyRef.current;
+    try {
+      const rows = await getCanonicalCountries();
+      if (principalScopeKeyRef.current !== scope) return;
+      setCountriesData(rows);
+    } catch {
+      if (principalScopeKeyRef.current !== scope) return;
+    }
+  }, [session]);
+
+  const loadSubscriptions = useCallback(async () => {
+    if (!session) return;
+    const scope = principalScopeKeyRef.current;
+    try {
+      const rows = await getCanonicalSubscriptions();
+      if (principalScopeKeyRef.current !== scope) return;
+      setSubscriptionsData(rows);
+    } catch {
+      if (principalScopeKeyRef.current !== scope) return;
+    }
+  }, [session]);
+
+  const loadNotifications = useCallback(async () => {
+    if (!session) return;
+    const scope = principalScopeKeyRef.current;
+    try {
+      const rows = await getCanonicalNotifications();
+      if (principalScopeKeyRef.current !== scope) return;
+      setNotificationsData(rows);
+    } catch {
+      if (principalScopeKeyRef.current !== scope) return;
+    }
+  }, [session]);
+
   const loadPlanningWeekly = useCallback(async () => {
     if (!session) return;
     const scope = resourceScopeKeyRef.current;
@@ -804,6 +870,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadPayments,
     loadAnnouncements,
     loadMessages,
+    loadSchools,
+    loadCountries,
+    loadSubscriptions,
+    loadNotifications,
   });
   scopedLoadersRef.current = {
     refreshBackOfficeState,
@@ -812,31 +882,43 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadPayments,
     loadAnnouncements,
     loadMessages,
+    loadSchools,
+    loadCountries,
+    loadSubscriptions,
+    loadNotifications,
   };
 
   useEffect(() => {
-    const resetKind = resourceCacheResetKind({
+    const plan = scopeHydrationPlan({
       previousPrincipalKey: previousPrincipalKeyRef.current,
       nextPrincipalKey: principalScopeKey,
       nextResourceKey: resourceScopeKey,
     });
     previousPrincipalKeyRef.current = principalScopeKey;
-    if (resetKind === "principal") {
+    if (plan.resetKind === "principal") {
       resetResourceCaches();
     } else {
       resetTenantResourceCaches();
     }
-    if (resourceScopeKey === NO_SESSION_RESOURCE_SCOPE) {
+    if (!plan.loadPrincipal && !plan.loadTenant) {
       setActiveSchoolCodeState("");
       return;
     }
     const loaders = scopedLoadersRef.current;
-    void loaders.refreshBackOfficeState().catch(() => null);
-    void loaders.loadUsers();
-    void loaders.loadTeachers();
-    void loaders.loadPayments();
-    void loaders.loadAnnouncements();
-    void loaders.loadMessages();
+    if (plan.loadPrincipal) {
+      void loaders.loadSchools();
+      void loaders.loadCountries();
+      void loaders.loadSubscriptions();
+      void loaders.loadNotifications();
+    }
+    if (plan.loadTenant) {
+      void loaders.refreshBackOfficeState().catch(() => null);
+      void loaders.loadUsers();
+      void loaders.loadTeachers();
+      void loaders.loadPayments();
+      void loaders.loadAnnouncements();
+      void loaders.loadMessages();
+    }
   }, [
     principalScopeKey,
     resourceScopeKey,
@@ -1001,6 +1083,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       presencesSnapshot: presentedPresencesSnapshot,
       announcementsSnapshot: presentedAnnouncementsSnapshot,
       messagesSnapshot: presentedMessagesSnapshot,
+      schoolsSnapshot,
       courseSchedulesSnapshot,
       planningCourseOptionsSnapshot,
       roomsSnapshot,
@@ -1015,6 +1098,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       loadClasses,
       loadAnnouncements,
       loadMessages,
+      loadSchools,
+      loadCountries,
+      loadSubscriptions,
+      loadNotifications,
       loadCourseSchedules: loadPlanningWeekly,
       loadPlanningWeekly,
       loadPlanningCourseOptions,
@@ -1265,6 +1352,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     presencesSnapshot,
     announcementsSnapshot,
     messagesSnapshot,
+    schoolsSnapshot,
     loadPayments,
     loadUsers,
     loadTeachers,
@@ -1272,6 +1360,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadClasses,
     loadAnnouncements,
     loadMessages,
+    loadSchools,
+    loadCountries,
+    loadSubscriptions,
+    loadNotifications,
     loadPlanningWeekly,
     loadPlanningCourseOptions,
     loadRooms,
