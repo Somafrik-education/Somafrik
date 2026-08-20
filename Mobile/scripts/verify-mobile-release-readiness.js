@@ -99,6 +99,11 @@ function main() {
   }
   assert.equal(eas.build.preview.distribution, "internal");
   assert.equal(eas.build.preview.android.buildType, "apk");
+  assert.equal(eas.build.preview.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.preview);
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(eas.build.preview.env, "EXPO_PUBLIC_DEMO_PIN"),
+    "preview: EXPO_PUBLIC_DEMO_PIN omis (EAS CLI 22 refuse la chaîne vide)",
+  );
   assert.equal(eas.build.preproduction.distribution, "store");
   assert.equal(eas.build.preproduction.android.buildType, "app-bundle");
   assert.equal(eas.build.production.distribution, "store");
@@ -160,7 +165,7 @@ function main() {
   console.log("OK: assets icon/splash MIME réel");
 
   const gitignore = `${read(path.join(ROOT, ".gitignore"))}\n${read(path.join(MOBILE, ".gitignore"))}`;
-  for (const needle of ["*.jks", "*.keystore", "credentials.json"]) {
+  for (const needle of ["*.jks", "*.keystore", "credentials.json", "*.apk"]) {
     assert.ok(gitignore.includes(needle), `.gitignore doit contenir ${needle}`);
   }
   const trackedSecrets = spawnSync("git", ["ls-files", "*.jks", "*.keystore", "credentials.json"], {
@@ -188,13 +193,16 @@ function main() {
 
   const docsInventory = read(path.join(ROOT, "docs", "mobile", "PLAY-STORE-DATA-INVENTORY.md"));
   const docsReady = read(path.join(ROOT, "docs", "mobile", "RELEASE-READINESS.md"));
+  const docsPreview = read(path.join(ROOT, "docs", "mobile", "PREVIEW-APK.md"));
   assert.match(docsInventory, /Donnée/);
   assert.match(docsReady, /preproduction/);
   assert.match(docsReady, /Internal testing/);
   assert.match(docsReady, /NON effectué/);
   assert.match(docsReady, /appVersionSource/);
   assert.match(docsReady, /eas build:version:set/);
-  console.log("OK: documentation Play Store");
+  assert.match(docsPreview, /eas build --platform android --profile preview/);
+  assert.match(docsPreview, /ne constitue pas un service Render/);
+  console.log("OK: documentation Play Store + Preview APK");
 
   const doctor = spawnSync("npx", ["expo-doctor"], { encoding: "utf8", cwd: MOBILE });
   process.stdout.write(doctor.stdout || "");
@@ -228,6 +236,10 @@ function main() {
   assert.match(ci, /npm run verify:mobile-release-readiness/);
   assert.match(security, /name: verify:mobile-release-readiness/);
   assert.match(security, /npm run verify:mobile-release-readiness/);
+  assert.match(ci, /name: verify:mobile-preview-apk/);
+  assert.match(ci, /npm run verify:mobile-preview-apk/);
+  assert.match(security, /name: verify:mobile-preview-apk/);
+  assert.match(security, /npm run verify:mobile-preview-apk/);
   assert.match(ci, /name: verify:mobile-usability/);
   assert.match(ci, /name: Bootstrap runtime guard/);
   assert.match(ci, /name: Mobile AAB preproduction/);

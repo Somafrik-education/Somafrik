@@ -8,6 +8,7 @@ release.keystore
 credentials.json
 dist/
 *.aab
+*.apk
 android/
 ios/
 android/keystore.properties

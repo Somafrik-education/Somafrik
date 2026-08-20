@@ -27,6 +27,7 @@ assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
 assert.equal(APP_VERSION, "1.2.1");
 assert.equal(ANDROID_VERSION_CODE, 13);
 assert.ok(Number.isInteger(ANDROID_VERSION_CODE) && ANDROID_VERSION_CODE > 0);
+assert.equal(DISPLAY_NAMES.preview, "Somafrik QA");
 assert.equal(DISPLAY_NAMES.preproduction, "Somafrik Préprod");
 assert.equal(DISPLAY_NAMES.production, "Somafrik");
 assert.equal(DISPLAY_NAMES.development, "Somafrik");
@@ -76,6 +77,26 @@ assert.throws(
   () => assertReleaseApiUrl("preview", "http://10.0.2.2:5000"),
   /HTTPS|localhost|émulateur/i,
 );
+assert.throws(
+  () => assertReleaseApiUrl("preview", CANONICAL_API_URLS.production),
+  /production/,
+);
+assert.throws(
+  () => assertReleaseApiUrl("preview", "http://localhost:5000"),
+  /HTTPS|localhost/i,
+);
+assert.throws(
+  () => assertReleaseApiUrl("preview", "http://192.168.1.10:5000"),
+  /HTTPS|localhost|LAN|192\.168/i,
+);
+assert.throws(
+  () => assertReleaseApiUrl("preview", "https://example.invalid"),
+  /preview doit cibler/,
+);
+assert.equal(
+  assertReleaseApiUrl("preview", CANONICAL_API_URLS.preview),
+  CANONICAL_API_URLS.preview,
+);
 assert.equal(
   assertReleaseApiUrl("preproduction", CANONICAL_API_URLS.preproduction),
   CANONICAL_API_URLS.preproduction,
@@ -98,4 +119,13 @@ assert.notEqual(
 assert.equal(eas.cli.appVersionSource, "remote");
 assert.equal(eas.build.preproduction.autoIncrement, true);
 assert.equal(eas.build.production.autoIncrement, true);
+assert.equal(eas.build.preview.distribution, "internal");
+assert.equal(eas.build.preview.android.buildType, "apk");
+assert.equal(eas.build.preview.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.preview);
+for (const profile of RELEASE_PROFILES) {
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(eas.build[profile].env, "EXPO_PUBLIC_DEMO_PIN"),
+    `${profile}: EXPO_PUBLIC_DEMO_PIN omis (EAS CLI 22 refuse la chaîne vide)`,
+  );
+}
 console.log("OK: contrat EAS remote versionCode — préprod puis prod incrémentent le même compteur Android");

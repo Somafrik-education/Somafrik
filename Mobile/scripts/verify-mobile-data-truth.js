@@ -213,9 +213,9 @@ async function main() {
   assert.equal(eas.build.production.env.EXPO_PUBLIC_DEMO_MODE, "false");
   assert.equal(eas.build.preview.env.EXPO_PUBLIC_DEMO_MODE, "false");
   assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_DEMO_MODE, "false");
-  assert.equal(eas.build.production.env.EXPO_PUBLIC_DEMO_PIN, "");
-  assert.equal(eas.build.preview.env.EXPO_PUBLIC_DEMO_PIN, "");
-  assert.equal(eas.build.preproduction.env.EXPO_PUBLIC_DEMO_PIN, "");
+  assert.ok(!Object.prototype.hasOwnProperty.call(eas.build.production.env, "EXPO_PUBLIC_DEMO_PIN"));
+  assert.ok(!Object.prototype.hasOwnProperty.call(eas.build.preview.env, "EXPO_PUBLIC_DEMO_PIN"));
+  assert.ok(!Object.prototype.hasOwnProperty.call(eas.build.preproduction.env, "EXPO_PUBLIC_DEMO_PIN"));
   const appConfig = read(path.join(MOBILE, "app.config.js"));
   assert.match(appConfig, /EXPO_PUBLIC_DEMO_MODE interdit en production/);
   assert.match(appConfig, /EXPO_PUBLIC_DEMO_PIN interdit en production/);

@@ -136,6 +136,8 @@ jobs:
         run: npm run verify:mobile-usability
       - name: verify:mobile-release-readiness
         run: npm run verify:mobile-release-readiness
+      - name: verify:mobile-preview-apk
+        run: npm run verify:mobile-preview-apk
       - name: verify:mobile-network-resilience
         env:
           DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
