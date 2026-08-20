@@ -84,6 +84,9 @@ env:
   SOMAFRIK_E2E_TEACHER_NAME: ${{ inputs.teacher_name }}
   SOMAFRIK_E2E_PAYMENT_REFERENCE: ${{ inputs.payment_reference }}
   SOMAFRIK_E2E_EVALUATION_LABEL: ${{ inputs.evaluation_label }}
+  SOMAFRIK_E2E_STUDENT_ID: ${{ inputs.student_id }}
+  SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS: ${{ inputs.original_attendance_status }}
+  SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS: ${{ inputs.target_attendance_status }}
 
 jobs:
   live-preview:
@@ -159,9 +162,6 @@ jobs:
             if [ "${{ inputs.run_mutations }}" = "true" ]; then
               export SOMAFRIK_E2E_MODE=mutation
               export SOMAFRIK_E2E_ALLOW_MUTATIONS=1
-              export SOMAFRIK_E2E_STUDENT_ID='${{ inputs.student_id }}'
-              export SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS='${{ inputs.original_attendance_status }}'
-              export SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS='${{ inputs.target_attendance_status }}'
               npm --prefix Mobile run verify:mobile-ui-e2e-runtime
             fi
 
