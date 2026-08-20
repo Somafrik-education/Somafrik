@@ -30,6 +30,7 @@ const ALL_FLOWS = [
 const LIVE_FLOWS = ALL_FLOWS.filter((name) => name !== "09-partial-domain-error.yaml");
 const FAULT_FLOWS = ["09-partial-domain-error.yaml"];
 const MUTATION_FLOWS = ["11-attendance-persistence.yaml"];
+const MUTATION_CLEANUP_FLOW = "12-attendance-restore.yaml";
 const ATTENDANCE_STATUSES = ["Présent", "Absent", "Retard", "Justifié"];
 const SECRET_ENV_KEYS = [
   "SOMAFRIK_E2E_ADMIN_IDENTIFIER",
@@ -328,7 +329,12 @@ function redact(text, config) {
 }
 
 function ensureFlowFiles() {
-  for (const name of [...ALL_FLOWS, ...MUTATION_FLOWS, "_login-admin-school.yaml"]) {
+  for (const name of [
+    ...ALL_FLOWS,
+    ...MUTATION_FLOWS,
+    MUTATION_CLEANUP_FLOW,
+    "_login-admin-school.yaml",
+  ]) {
     const file = path.join(MAESTRO_ROOT, name);
     if (!fs.existsSync(file)) throw new Error(`Parcours Maestro manquant: ${name}`);
   }
@@ -408,6 +414,7 @@ async function main() {
     deviceSerial: serial,
     reversibleMutation: config.mode === "mutation",
     flows: [],
+    cleanupFlows: [],
   };
 
   console.log(`Runtime E2E (${config.mode}): ${ANDROID_PACKAGE} sur ${serial}`);
@@ -415,12 +422,40 @@ async function main() {
   console.log(`Établissement QA: ${config.schoolCode}`);
   console.log(`Preuves: ${artifactDir}`);
 
-  for (const flowName of flows) {
-    const outcome = runMaestroFlow(flowName, config, serial, artifactDir);
-    manifest.flows.push(outcome);
-    writeManifest(artifactDir, manifest);
-    if (!outcome.success) {
-      throw new Error(`E2E runtime échoué: ${flowName} (code ${outcome.exitCode}).`);
+  if (config.mode === "mutation") {
+    let mutationFailure = null;
+    try {
+      for (const flowName of flows) {
+        const outcome = runMaestroFlow(flowName, config, serial, artifactDir);
+        manifest.flows.push(outcome);
+        writeManifest(artifactDir, manifest);
+        if (!outcome.success) {
+          mutationFailure = new Error(
+            `E2E mutation échoué: ${flowName} (code ${outcome.exitCode}).`,
+          );
+          break;
+        }
+      }
+    } finally {
+      const cleanup = runMaestroFlow(MUTATION_CLEANUP_FLOW, config, serial, artifactDir);
+      manifest.cleanupFlows.push(cleanup);
+      manifest.cleanupSucceeded = cleanup.success;
+      writeManifest(artifactDir, manifest);
+      if (!cleanup.success) {
+        throw new Error(
+          `P0 E2E: restauration du fixture de présence échouée (${MUTATION_CLEANUP_FLOW}, code ${cleanup.exitCode}).`,
+        );
+      }
+    }
+    if (mutationFailure) throw mutationFailure;
+  } else {
+    for (const flowName of flows) {
+      const outcome = runMaestroFlow(flowName, config, serial, artifactDir);
+      manifest.flows.push(outcome);
+      writeManifest(artifactDir, manifest);
+      if (!outcome.success) {
+        throw new Error(`E2E runtime échoué: ${flowName} (code ${outcome.exitCode}).`);
+      }
     }
   }
 
@@ -442,6 +477,7 @@ module.exports = {
   LIVE_FLOWS,
   FAULT_FLOWS,
   MUTATION_FLOWS,
+  MUTATION_CLEANUP_FLOW,
   ATTENDANCE_STATUSES,
   SECRET_ENV_KEYS,
   flowsForMode,
