@@ -1,0 +1,6 @@
+appId: com.somafrik.app
+---
+- launchApp
+- tapOn: "Paiements"
+- assertVisible:
+    id: "payments-list"

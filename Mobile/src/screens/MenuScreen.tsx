@@ -32,15 +32,15 @@ const adminMenuItems: MenuItem[] = [
   { label: "🔔 Notifications plateforme", route: "PlatformNotifications", view: "PlatformNotifications" },
   { label: "🔐 Droits par rôle", route: "Permissions", view: "Permissions" },
   { label: "⚙️ Configuration", route: "Configuration", view: "Configuration" },
-  { label: "👤 Utilisateurs", entity: "users", view: "users" },
-  { label: "👥 Élèves", entity: "students", view: "students" },
-  { label: "👨‍🏫 Enseignants", entity: "teachers", view: "teachers" },
+  { label: "👤 Utilisateurs", entity: "users", route: "Users", view: "users" },
+  { label: "👥 Élèves", entity: "students", route: "Students", view: "students" },
+  { label: "👨‍🏫 Enseignants", entity: "teachers", route: "Teachers", view: "teachers" },
   { label: "📚 Classes", route: "Classes", view: "classes" },
   { label: "📖 Cours", entity: "courses", view: "courses" },
   { label: "🔁 Affectations", entity: "assignments", view: "assignments" },
-  { label: "💰 Paiements", entity: "payments", view: "payments" },
+  { label: "💰 Paiements", entity: "payments", route: "Payments", view: "payments" },
   { label: "⚙️ Statuts paiement", entity: "paymentStatuses", view: "configuration" },
-  { label: "📢 Annonces", entity: "announcements", view: "announcements" },
+  { label: "📢 Annonces", entity: "announcements", route: "Announcements", view: "announcements" },
   { label: "🗓️ Emplois du temps", route: "Timetable", view: "Timetable" },
   { label: "📄 Bulletins", route: "ReportCards", view: "ReportCards" },
   { label: "📄 Documents scolaires", route: "Documents", view: "Documents" },
@@ -172,17 +172,12 @@ export default function MenuScreen() {
             key={item.label}
             style={[styles.item, isTablet && { width: `${100 / columns - 2}%`, minWidth: 280 }]}
             onPress={() => {
-              if (item.entity === "users" && session?.role === "school_admin") {
-                navigation.navigate("Utilisateurs");
+              if (item.route) {
+                navigation.navigate(item.route as never);
                 return;
               }
               if (item.entity) {
                 navigation.navigate("AdminCrud", { entity: item.entity });
-                return;
-              }
-
-              if (item.route) {
-                navigation.navigate(item.route as never);
                 return;
               }
 

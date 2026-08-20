@@ -11,6 +11,8 @@ import { blockOutboxOnLogout } from "../lib/outbox";
 import { setSessionExpiredHandler } from "../services/httpClient";
 import { clearSecureSession, getSessionProfile } from "../services/secureStorage";
 import { safeLogger } from "../services/safeLogger";
+import { clearStoredSchoolCode } from "../lib/activeSchool";
+import { clearRequestSchoolScope } from "../lib/requestSchoolScope";
 
 type AuthContextValue = {
   session: LoginResponse | null;
@@ -99,6 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       setSelectedStudentId,
       logout: () => {
+        clearRequestSchoolScope();
+        clearStoredSchoolCode();
         void blockOutboxOnLogout().finally(() => {
           void logoutSession().catch(() => undefined);
           saveSession(null);

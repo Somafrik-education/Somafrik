@@ -11,6 +11,16 @@ import {
   DATA_TRUTH_COPY,
   isPublishedBulletin,
   normalizePaymentRow,
+  metricLabelFromSnapshot,
+  METRIC_PENDING_LABEL,
+  METRIC_UNAVAILABLE_LABEL,
+  NO_SESSION_RESOURCE_SCOPE,
+  buildPrincipalScopeKey,
+  buildResourceScopeKey,
+  resourceCacheResetKind,
+  scopeHydrationPlan,
+  emptyResourceSnapshot,
+  withScopedSnapshotData,
   parentAverageDisplay,
   paymentItemCount,
   paymentItemsDetail,
@@ -151,6 +161,270 @@ function run() {
   expectThrow("restricted home", () => assertUnrestrictedApiPath("/students"));
   clearRestrictedSession();
   assert.equal(hasRestrictedSession(), false);
+
+  assert.equal(metricLabelFromSnapshot({ status: "idle", data: [] }, () => "6"), METRIC_PENDING_LABEL);
+  assert.equal(metricLabelFromSnapshot({ status: "loading", data: [] }, () => "6"), METRIC_PENDING_LABEL);
+  assert.equal(
+    metricLabelFromSnapshot({ status: "error", data: [], errorMessage: "boom" }, () => "6"),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  assert.equal(metricLabelFromSnapshot({ status: "empty", data: [] }, () => "6"), "0");
+  assert.equal(metricLabelFromSnapshot({ status: "success", data: [{ id: "1" }, { id: "2" }] }, (rows) => String(rows.length)), "2");
+  assert.equal(
+    metricLabelFromSnapshot({ status: "offline", data: [{ id: "1" }] }, (rows) => String(rows.length)),
+    "1",
+  );
+  assert.equal(metricLabelFromSnapshot({ status: "offline", data: [] }, () => "6"), METRIC_UNAVAILABLE_LABEL);
+
+  assert.equal(buildResourceScopeKey({ hasSession: false }), NO_SESSION_RESOURCE_SCOPE);
+  const schoolAScope = buildResourceScopeKey({
+    hasSession: true,
+    userId: "admin-a",
+    role: "school_admin",
+    schoolCode: "NURU-A",
+    activeSchoolCode: "NURU-A",
+  });
+  const schoolBScope = buildResourceScopeKey({
+    hasSession: true,
+    userId: "admin-b",
+    role: "school_admin",
+    schoolCode: "NURU-B",
+    activeSchoolCode: "NURU-B",
+  });
+  assert.notEqual(schoolAScope, schoolBScope);
+  assert.notEqual(
+    buildResourceScopeKey({
+      hasSession: true,
+      userId: "super",
+      role: "super_admin",
+      activeSchoolCode: "NURU-A",
+    }),
+    buildResourceScopeKey({
+      hasSession: true,
+      userId: "super",
+      role: "super_admin",
+      activeSchoolCode: "NURU-B",
+    }),
+  );
+
+  const superPrincipalA = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+  });
+  const superPrincipalB = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+  });
+  assert.equal(superPrincipalA, superPrincipalB);
+  assert.equal(
+    resourceCacheResetKind({
+      previousPrincipalKey: superPrincipalA,
+      nextPrincipalKey: superPrincipalB,
+      nextResourceKey: buildResourceScopeKey({
+        hasSession: true,
+        userId: "super",
+        role: "super_admin",
+        activeSchoolCode: "NURU-B",
+      }),
+    }),
+    "tenant",
+  );
+  assert.equal(
+    resourceCacheResetKind({
+      previousPrincipalKey: superPrincipalA,
+      nextPrincipalKey: buildPrincipalScopeKey({
+        hasSession: true,
+        userId: "other-super",
+        role: "super_admin",
+      }),
+      nextResourceKey: buildResourceScopeKey({
+        hasSession: true,
+        userId: "other-super",
+        role: "super_admin",
+        activeSchoolCode: "NURU-A",
+      }),
+    }),
+    "principal",
+  );
+  assert.equal(
+    resourceCacheResetKind({
+      previousPrincipalKey: superPrincipalA,
+      nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+      nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+    }),
+    "principal",
+  );
+
+  const superLogin = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+  });
+  const superTenantA = buildResourceScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+    activeSchoolCode: "CD-IN-26-001",
+  });
+  const superTenantB = buildResourceScopeKey({
+    hasSession: true,
+    userId: "super",
+    role: "super_admin",
+    activeSchoolCode: "BI-EC-26-001",
+  });
+  const otherPrincipal = buildPrincipalScopeKey({
+    hasSession: true,
+    userId: "country-admin",
+    role: "country_admin",
+    countryScope: "CD",
+  });
+  const otherResource = buildResourceScopeKey({
+    hasSession: true,
+    userId: "country-admin",
+    role: "country_admin",
+    countryScope: "CD",
+    activeSchoolCode: "CD-IN-26-001",
+  });
+
+  function applySchoolsLifecycle(
+    events: Array<{
+      nextPrincipalKey: string;
+      nextResourceKey: string;
+      apiSchools: string[];
+    }>,
+  ) {
+    let schools: string[] = ["LEAK-PREVIOUS"];
+    let previousPrincipalKey: string | null = null;
+    for (const event of events) {
+      const plan = scopeHydrationPlan({
+        previousPrincipalKey,
+        nextPrincipalKey: event.nextPrincipalKey,
+        nextResourceKey: event.nextResourceKey,
+      });
+      previousPrincipalKey = event.nextPrincipalKey;
+      if (plan.resetKind === "principal") schools = [];
+      if (plan.loadPrincipal) schools = event.apiSchools;
+    }
+    return schools;
+  }
+
+  const afterSuperLogin = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+  ]);
+  assert.deepEqual(afterSuperLogin, ["CD-IN-26-001", "BI-EC-26-001"]);
+  assert.equal(afterSuperLogin.length > 0, true);
+
+  const afterTenantSwitch = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantB,
+      apiSchools: ["SHOULD-NOT-RELOAD"],
+    },
+  ]);
+  assert.deepEqual(afterTenantSwitch, ["CD-IN-26-001", "BI-EC-26-001"]);
+
+  const afterLogout = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+    {
+      nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+      nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+      apiSchools: ["CD-IN-26-001"],
+    },
+  ]);
+  assert.deepEqual(afterLogout, []);
+
+  const afterOtherLogin = applySchoolsLifecycle([
+    {
+      nextPrincipalKey: superLogin,
+      nextResourceKey: superTenantA,
+      apiSchools: ["CD-IN-26-001", "BI-EC-26-001"],
+    },
+    {
+      nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+      nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+      apiSchools: [],
+    },
+    {
+      nextPrincipalKey: otherPrincipal,
+      nextResourceKey: otherResource,
+      apiSchools: ["CD-IN-26-001"],
+    },
+  ]);
+  assert.deepEqual(afterOtherLogin, ["CD-IN-26-001"]);
+  assert.equal(afterOtherLogin.includes("BI-EC-26-001"), false);
+
+  const loginPlan = scopeHydrationPlan({
+    previousPrincipalKey: null,
+    nextPrincipalKey: superLogin,
+    nextResourceKey: superTenantA,
+  });
+  assert.equal(loginPlan.resetKind, "principal");
+  assert.equal(loginPlan.loadPrincipal, true);
+  assert.equal(loginPlan.loadTenant, true);
+
+  const switchPlan = scopeHydrationPlan({
+    previousPrincipalKey: superLogin,
+    nextPrincipalKey: superLogin,
+    nextResourceKey: superTenantB,
+  });
+  assert.equal(switchPlan.resetKind, "tenant");
+  assert.equal(switchPlan.loadPrincipal, false);
+  assert.equal(switchPlan.loadTenant, true);
+
+  const logoutPlan = scopeHydrationPlan({
+    previousPrincipalKey: superLogin,
+    nextPrincipalKey: NO_SESSION_RESOURCE_SCOPE,
+    nextResourceKey: NO_SESSION_RESOURCE_SCOPE,
+  });
+  assert.equal(logoutPlan.resetKind, "principal");
+  assert.equal(logoutPlan.loadPrincipal, false);
+  assert.equal(logoutPlan.loadTenant, false);
+
+  const tenantAUsers = snapshotFromSuccess([{ id: "user-a" }]);
+  const purged = emptyResourceSnapshot<typeof tenantAUsers.data[number]>();
+  const failedAfterSwitch = snapshotFromFailure({ status: 0, message: "offline" }, purged.data);
+  assert.deepEqual(failedAfterSwitch.data, []);
+  assert.equal(
+    metricLabelFromSnapshot(failedAfterSwitch, (rows) => String(rows.length)),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  const leakedIfNotPurged = snapshotFromFailure({ status: 0, message: "offline" }, tenantAUsers.data);
+  assert.equal(metricLabelFromSnapshot(leakedIfNotPurged, (rows) => String(rows.length)), "1");
+
+  const mixedSchools = snapshotFromSuccess([
+    { id: "1", schoolCode: "A" },
+    { id: "2", schoolCode: "B" },
+  ]);
+  const scopedToB = withScopedSnapshotData(
+    mixedSchools,
+    mixedSchools.data.filter((row) => row.schoolCode === "B"),
+  );
+  assert.equal(scopedToB.status, "success");
+  assert.equal(scopedToB.data.length, 1);
+  assert.equal(withScopedSnapshotData(mixedSchools, []).status, "empty");
+  assert.equal(
+    metricLabelFromSnapshot({ status: "error", data: [] }, () => String([].length)),
+    METRIC_UNAVAILABLE_LABEL,
+  );
+  assert.equal(
+    metricLabelFromSnapshot({ status: "offline", data: [] }, () => "0"),
+    METRIC_UNAVAILABLE_LABEL,
+  );
 
   const previousPin = process.env.EXPO_PUBLIC_DEMO_PIN;
   process.env.EXPO_PUBLIC_DEMO_PIN = "";

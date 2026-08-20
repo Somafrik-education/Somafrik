@@ -134,6 +134,18 @@ jobs:
         run: npm --prefix Mobile run verify:mobile-domain-hydration
       - name: verify:mobile-usability
         run: npm run verify:mobile-usability
+      - name: verify:mobile-home-data-truth
+        run: npm run verify:mobile-home-data-truth
+      - name: verify:mobile-school-scope-transport
+        run: npm run verify:mobile-school-scope-transport
+      - name: verify:mobile-no-catalog-runtime-data
+        run: npm run verify:mobile-no-catalog-runtime-data
+      - name: verify:mobile-canonical-route-map
+        run: npm run verify:mobile-canonical-route-map
+      - name: verify:mobile-attendance-hydration
+        run: npm run verify:mobile-attendance-hydration
+      - name: verify:mobile-ui-e2e-scaffold
+        run: npm run verify:mobile-ui-e2e-scaffold
       - name: verify:mobile-release-readiness
         run: npm run verify:mobile-release-readiness
       - name: verify:mobile-preview-apk

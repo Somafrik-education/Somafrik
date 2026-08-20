@@ -20,6 +20,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useCallback, useMemo, useState } from "react";
 
+import { useFocusEffect } from "@react-navigation/native";
+
 import { useAuth } from "../context/AuthContext";
 
 import { useAdminData } from "../context/AdminDataContext";
@@ -48,6 +50,8 @@ import {
 
 } from "../lib/classesStudentJourneySpec";
 
+import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
+
 import type { PresenceItem } from "../data/catalog";
 
 
@@ -74,11 +78,21 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const { session } = useAuth();
 
-  const { studentsData, paymentsData, presencesData, teachersData, assignmentsData, classesData } = useAdminData();
+  const { studentsData, paymentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, paymentsSnapshot, resourceScopeKey } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
   const [query, setQuery] = useState("");
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+      void loadPayments();
+      void loadTeachers();
+      void loadClasses();
+    }, [loadStudents, loadPresences, loadPayments, loadTeachers, loadClasses, resourceScopeKey]),
+  );
 
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
 
@@ -163,6 +177,11 @@ export default function StudentsScreen({ route, navigation }: any) {
     [paymentsData, classStudentIds],
 
   );
+
+  const studentsCountLabel = metricLabelFromSnapshot(studentsSnapshot, () => String(filteredStudents.length));
+  const presenceRateLabel = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
+  const paymentRateLabel = metricLabelFromSnapshot(paymentsSnapshot, () => `${paymentStats.rate}%`, "0%");
+  const studentsSubtitle = isMetricReady(studentsSnapshot) ? `${filteredStudents.length} élèves inscrits` : studentsCountLabel;
 
 
 
@@ -410,7 +429,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
             <Text style={styles.subtitle} testID={CLASSES_STUDENT_TEST_IDS.studentsCount}>
 
-              {filteredStudents.length} élèves inscrits
+              {studentsSubtitle}
 
             </Text>
 
@@ -478,7 +497,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           <View>
 
-            <Text style={styles.summaryValue}>{filteredStudents.length}</Text>
+            <Text style={styles.summaryValue}>{studentsCountLabel}</Text>
 
             <Text style={styles.summaryLabel}>Élèves</Text>
 
@@ -492,7 +511,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           <View>
 
-            <Text style={styles.summaryValue}>{presenceStats.rate}%</Text>
+            <Text style={styles.summaryValue}>{presenceRateLabel}</Text>
 
             <Text style={styles.summaryLabel}>Présence</Text>
 
@@ -506,7 +525,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           <View>
 
-            <Text style={styles.summaryValue}>{paymentStats.rate}%</Text>
+            <Text style={styles.summaryValue}>{paymentRateLabel}</Text>
 
             <Text style={styles.summaryLabel}>Paiements</Text>
 
@@ -536,9 +555,13 @@ export default function StudentsScreen({ route, navigation }: any) {
 
       navigation,
 
-      paymentStats.rate,
+      paymentRateLabel,
 
-      presenceStats.rate,
+      presenceRateLabel,
+
+      studentsCountLabel,
+
+      studentsSubtitle,
 
       query,
 

@@ -22,15 +22,15 @@ export default function SchoolManagementScreen({
   const isSchoolAdmin = session?.role === "school_admin";
   const items: { title: string; entity?: AdminEntity; route?: string }[] = [
     { title: "🏫 Établissements", entity: "schools" },
-    { title: "👤 Utilisateurs", entity: "users" },
-    ...(isSchoolAdmin ? [] : [{ title: "👥 Élèves", entity: "students" as const }]),
-    { title: "👨‍🏫 Enseignants", entity: "teachers" },
+    { title: "👤 Utilisateurs", entity: "users", route: "Users" },
+    ...(isSchoolAdmin ? [] : [{ title: "👥 Élèves", entity: "students" as const, route: "Students" }]),
+    { title: "👨‍🏫 Enseignants", entity: "teachers", route: "Teachers" },
     { title: "📚 Classes", route: "Classes" },
     { title: "📖 Cours", entity: "courses" },
     { title: "🔁 Affectations", entity: "assignments" },
-    { title: "💰 Paiements", entity: "payments" },
+    { title: "💰 Paiements", entity: "payments", route: "Payments" },
     { title: "⚙️ Statuts paiement", entity: "paymentStatuses" },
-    { title: "📢 Annonces", entity: "announcements" },
+    { title: "📢 Annonces", entity: "announcements", route: "Announcements" },
   ];
   const visibleItems = items.filter((item) =>
     item.entity ? canReadEntity(session, item.entity) : canReadRoute(session, item.route)
@@ -53,11 +53,15 @@ export default function SchoolManagementScreen({
         <MenuCard
           key={item.entity ?? item.route}
           title={item.title}
-          onPress={() =>
-            item.entity
-              ? navigation.navigate("AdminCrud", { entity: item.entity })
-              : navigation.navigate(item.route as never)
-          }
+          onPress={() => {
+            if (item.route) {
+              navigation.navigate(item.route as never);
+              return;
+            }
+            if (item.entity) {
+              navigation.navigate("AdminCrud", { entity: item.entity });
+            }
+          }}
         />
       ))}
 

@@ -5386,6 +5386,31 @@ async function hydrateParentPrincipal(principal) {
   };
 }
 
+async function lookupSchoolForEffectiveScope(code) {
+  const { matchesSchoolLookup } = require("./lib/schoolCodeV2");
+  const requested = String(code ?? "").trim().toUpperCase();
+  if (!requested) return null;
+
+  if (typeof repository.getSchoolsRepository === "function") {
+    const schoolsRepo = repository.getSchoolsRepository();
+    if (schoolsRepo && typeof schoolsRepo.getByCode === "function") {
+      const mapped = await schoolsRepo.getByCode(requested);
+      if (mapped) return mapped;
+    }
+  }
+
+  if (typeof repository.listEstablishments === "function") {
+    const list = await repository.listEstablishments();
+    const found = (list ?? []).find((row) => matchesSchoolLookup(row, requested));
+    if (found) return found;
+  }
+
+  if (typeof repository.getSchoolByCode === "function") {
+    return repository.getSchoolByCode(requested);
+  }
+  return null;
+}
+
 function rejectJwtInQueryString(req, res, next) {
   const query = req.query ?? {};
   if (query.token != null || query.access_token != null) {
@@ -5426,6 +5451,9 @@ function requireAuth(req, res, next) {
         throw new BusinessError(401, "Session révoquée.");
       }
     }
+
+    const { applyEffectiveSchoolScope } = require("./lib/principalSchoolScope");
+    await applyEffectiveSchoolScope(req, lookupSchoolForEffectiveScope);
 
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",

@@ -1,0 +1,7 @@
+appId: com.somafrik.app
+---
+- launchApp
+- assertVisible: "Connexion"
+- tapOn:
+    id: "login-submit-button"
+- assertVisible: "INSTITUT NURU"

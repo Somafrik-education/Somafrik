@@ -1,0 +1,9 @@
+appId: com.somafrik.app
+---
+- launchApp
+- assertVisible:
+    id: "home-users-value"
+- assertVisible:
+    id: "home-presence-value"
+- assertVisible:
+    id: "home-payments-value"

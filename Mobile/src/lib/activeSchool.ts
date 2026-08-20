@@ -23,6 +23,10 @@ export function writeStoredSchoolCode(code: string): void {
   storedSchoolCode = code;
 }
 
+export function clearStoredSchoolCode(): void {
+  storedSchoolCode = "";
+}
+
 export function pickInitialSchoolCode(
   user: { schoolCode?: string; role?: string } | null,
   availableCodes: string[],
@@ -55,4 +59,12 @@ export function resolveTargetSchoolCodes(activeSchoolCode: string, availableScho
     return availableSchoolCodes;
   }
   return activeSchoolCode ? [activeSchoolCode] : [];
+}
+
+/** Identité affichée / active du sélecteur : toujours school.code (code public V2). */
+export function schoolSelectorChoice(school: { code: string; name: string }): { code: string; label: string } {
+  return {
+    code: school.code,
+    label: `${school.name} (${school.code})`,
+  };
 }

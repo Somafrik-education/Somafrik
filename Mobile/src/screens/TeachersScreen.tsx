@@ -4,11 +4,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import { useAdminData } from "../context/AdminDataContext";
-import { useCanonicalResource } from "../hooks/useCanonicalResource";
-import {
-  getCanonicalTeachers,
-  type CanonicalTeacher,
-} from "../services/domainHydrationApi";
 import {
   resolveTeacherClassesForRecord,
   resolveTeacherCoursesForRecord,
@@ -19,13 +14,12 @@ import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 export default function TeachersScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { assignmentsData } = useAdminData();
-  const { snapshot, load } = useCanonicalResource<CanonicalTeacher>(getCanonicalTeachers);
+  const { assignmentsData, teachersSnapshot: snapshot, loadTeachers: load, resourceScopeKey } = useAdminData();
 
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+    }, [load, resourceScopeKey]),
   );
 
   const showQueryState = snapshot.status !== "success";

@@ -31,24 +31,40 @@ function source(pathFromSrc) {
 
 function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "dataTruth.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "scope.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "canonicalResourceNormalize.test.ts")], MOBILE);
 
   const server = read(path.join(BACKEND, "server.js"));
   assert.match(server, /app\.get\("\/api\/teachers"/);
   assert.match(server, /app\.get\("\/api\/backoffice\/users"/);
   assert.match(server, /app\.get\("\/api\/backoffice\/announcements"/);
   assert.match(server, /app\.get\("\/api\/backoffice\/messages"/);
+  assert.match(server, /app\.get\("\/api\/backoffice\/establishments"/);
   assert.match(server, /\/api\/backoffice\/announcements\/:announcementId\/archive/);
   assert.match(server, /\/api\/backoffice\/messages\/:messageId\/read/);
   assert.match(server, /repository\.listClientsProjection\(\)/);
   console.log("OK: endpoints canoniques réels présents côté backend");
 
   const api = source(path.join("services", "domainHydrationApi.ts"));
+  const normalize = source(path.join("lib", "canonicalResourceNormalize.ts"));
   assert.match(api, /httpRequest<unknown>\("\/teachers"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/users"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/announcements"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/messages"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/establishments"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/countries"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/subscriptions"\)/);
+  assert.match(api, /httpRequest<unknown>\("\/backoffice\/notifications"\)/);
   assert.match(api, /archiveCanonicalAnnouncement/);
   assert.match(api, /markCanonicalMessageRead/);
+  assert.match(api, /normalizeTeacher/);
+  assert.match(api, /normalizeAnnouncement/);
+  assert.match(api, /normalizeMessage/);
+  assert.match(normalize, /readTenantScopeFields/);
+  assert.match(normalize, /schoolCode: tenant\.schoolCode/);
+  assert.match(normalize, /export function normalizeSchool/);
+  assert.match(normalize, /const publicCode = loginCode \|\| internalCode/);
+  assert.match(normalize, /code: publicCode/);
   assert.doesNotMatch(api, /\bfetch\s*\(/);
   assert.doesNotMatch(api, /\baxios\b/);
   assert.doesNotMatch(api, /JSON\.stringify\(\s*\{[^}]*\btenantId\s*:/s);
@@ -61,8 +77,11 @@ function main() {
   assert.doesNotMatch(hook, /catch\(\s*\(\)\s*=>\s*\[\s*\]\s*\)/);
   console.log("OK: error/offline distincts de empty");
 
+  const context = source(path.join("context", "AdminDataContext.tsx"));
   const teachers = source(path.join("screens", "TeachersScreen.tsx"));
-  assert.match(teachers, /getCanonicalTeachers/);
+  assert.match(context, /getCanonicalTeachers/);
+  assert.match(teachers, /loadTeachers/);
+  assert.match(teachers, /teachersSnapshot/);
   assert.match(teachers, /useFocusEffect/);
   assert.match(teachers, /QueryStateView/);
   assert.match(teachers, /Impossible de charger les enseignants/);
@@ -71,7 +90,9 @@ function main() {
   console.log("OK: Enseignants hydratés à l'ouverture, actions no-op retirées");
 
   const users = source(path.join("screens", "UsersScreen.tsx"));
-  assert.match(users, /getCanonicalUsers/);
+  assert.match(context, /getCanonicalUsers/);
+  assert.match(users, /loadUsers/);
+  assert.match(users, /usersSnapshot/);
   assert.match(users, /activeRoles/);
   assert.match(users, /useFocusEffect/);
   assert.match(users, /QueryStateView/);
@@ -80,7 +101,8 @@ function main() {
   console.log("OK: Utilisateurs + rôles actifs hydratés au relaunch");
 
   const announcements = source(path.join("screens", "AnnouncementsScreen.tsx"));
-  assert.match(announcements, /getCanonicalAnnouncements/);
+  assert.match(context, /getCanonicalAnnouncements/);
+  assert.match(announcements, /loadAnnouncements/);
   assert.match(announcements, /archiveCanonicalAnnouncement/);
   assert.match(announcements, /useFocusEffect/);
   assert.match(announcements, /QueryStateView/);
@@ -91,7 +113,8 @@ function main() {
   console.log("OK: Annonces GET canonique + archivage serveur, pas de faux edit");
 
   const messages = source(path.join("screens", "MessagesScreen.tsx"));
-  assert.match(messages, /getCanonicalMessages/);
+  assert.match(context, /getCanonicalMessages/);
+  assert.match(messages, /loadMessages/);
   assert.match(messages, /markCanonicalMessageRead/);
   assert.match(messages, /submitProtectedMutation/);
   assert.match(messages, /sendClientsMessage\(payload,\s*\{\s*idempotencyKey\s*\}\)/);

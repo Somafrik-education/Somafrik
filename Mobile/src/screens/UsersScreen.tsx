@@ -3,21 +3,17 @@ import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
-import { useCanonicalResource } from "../hooks/useCanonicalResource";
-import {
-  getCanonicalUsers,
-  type CanonicalUserAccount,
-} from "../services/domainHydrationApi";
+import { useAdminData } from "../context/AdminDataContext";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function UsersScreen() {
   const bottomPadding = useStackScreenBottomPadding();
-  const { snapshot, load } = useCanonicalResource<CanonicalUserAccount>(getCanonicalUsers);
+  const { usersSnapshot: snapshot, loadUsers: load, resourceScopeKey } = useAdminData();
 
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+    }, [load, resourceScopeKey]),
   );
 
   return (

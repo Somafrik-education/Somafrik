@@ -1,6 +1,7 @@
 import { Alert, ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPresenceStats, rollCallInitialStatus } from "../domain/metrics/schoolMetrics";
@@ -14,6 +15,7 @@ import {
   teacherScopedClassLabels,
 } from "../lib/establishment";
 import { savePresences } from "../services/api";
+import { clearConfirmedAttendanceDirty, shouldPreserveLocalAttendanceDraft } from "../lib/attendanceDraft";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
@@ -60,7 +62,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     },
   ];
   const { session } = useAuth();
-  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences } =
+  const { studentsData, classesData, presencesData, teachersData, assignmentsData, loadPresences, applyConfirmedPresences, loadStudents, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, resourceScopeKey } =
     useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -85,21 +87,36 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
   const [auditLog, setAuditLog] = useState<string[]>([]);
-  const [attendance, setAttendance] = useState<Record<string, AttendanceEntry>>(() =>
-    Object.fromEntries(
-      classStudents.map((student) => {
+  const [attendance, setAttendance] = useState<Record<string, AttendanceEntry>>({});
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStudents();
+      void loadPresences();
+      void loadTeachers();
+      void loadClasses();
+    }, [loadStudents, loadPresences, loadTeachers, loadClasses, resourceScopeKey]),
+  );
+
+  useEffect(() => {
+    setAttendance({});
+  }, [resourceScopeKey]);
+
+  useEffect(() => {
+    setAttendance((current) => {
+      const next = { ...current };
+      for (const student of classStudents) {
+        if (shouldPreserveLocalAttendanceDraft(next[student.id])) continue;
         const latest = [...presencesData]
           .reverse()
           .find((presence) => presenceMatchesStudent(presence, student));
-        return [
-          student.id,
-          {
-            status: rollCallInitialStatus(latest) as AttendanceStatus,
-          },
-        ];
-      })
-    )
-  );
+        next[student.id] = {
+          status: rollCallInitialStatus(latest) as AttendanceStatus,
+        };
+      }
+      return next;
+    });
+  }, [classStudents, presencesData, studentsSnapshot.status, presencesSnapshot.status]);
 
   const todayLabel = formatDate(new Date());
   const currentHour = formatHour(new Date());
@@ -255,7 +272,14 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         },
         ...current,
       ]);
+      applyConfirmedPresences(savedPresences);
       await loadPresences();
+      setAttendance((current) =>
+        clearConfirmedAttendanceDirty(
+          current,
+          rows.map((student) => student.id),
+        ),
+      );
       intentionRef.current.rotate(intentionId);
       setSaveHint("");
       Alert.alert(

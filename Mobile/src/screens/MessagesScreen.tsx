@@ -21,7 +21,6 @@ import { useAuth } from "../context/AuthContext";
 import { messageThemes } from "../data/catalog";
 import { MessagePriority, MessageService } from "../domain/communication/MessageService";
 import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
-import { useCanonicalResource } from "../hooks/useCanonicalResource";
 import { classNameMatches, scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { sendClientsMessage } from "../services/api";
@@ -32,11 +31,8 @@ import { KeyboardAvoidingContainer } from "../components/KeyboardAwareScreen";
 import AccessibleIconButton from "../components/AccessibleIconButton";
 import { MIN_TOUCH_TARGET_DP, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import {
-  getCanonicalMessages,
-  getCanonicalTeachers,
   markCanonicalMessageRead,
   type CanonicalSchoolMessage,
-  type CanonicalTeacher,
 } from "../services/domainHydrationApi";
 
 const messageService = new MessageService();
@@ -45,9 +41,7 @@ const priorities: MessagePriority[] = ["Faible", "Moyenne", "Haute", "Critique"]
 export default function MessagesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, assignmentsData, classesData } = useAdminData();
-  const { snapshot: messagesSnapshot, load: loadMessages } = useCanonicalResource<CanonicalSchoolMessage>(getCanonicalMessages);
-  const { snapshot: teachersSnapshot, load: loadTeachers } = useCanonicalResource<CanonicalTeacher>(getCanonicalTeachers);
+  const { studentsData, assignmentsData, classesData, messagesSnapshot, loadMessages, teachersSnapshot, loadTeachers, resourceScopeKey } = useAdminData();
 
   const [theme, setTheme] = useState(messageThemes[0]);
   const [message, setMessage] = useState("");
@@ -79,7 +73,7 @@ export default function MessagesScreen() {
     useCallback(() => {
       if (canRead) void loadMessages();
       if (role === "parent_student" || role === "teacher") void loadTeachers();
-    }, [canRead, loadMessages, loadTeachers, role]),
+    }, [canRead, loadMessages, loadTeachers, role, resourceScopeKey]),
   );
 
   const availableTeachers = useMemo(() => {

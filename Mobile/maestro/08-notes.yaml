@@ -1,0 +1,6 @@
+appId: com.somafrik.app
+---
+- launchApp
+- tapOn: "Notes"
+- assertVisible:
+    id: "evaluations-v2-list"
