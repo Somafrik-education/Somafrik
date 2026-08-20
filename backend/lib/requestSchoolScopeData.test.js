@@ -81,7 +81,10 @@ test("Superadmin sans école sélectionnée conserve sa vue globale", () => {
 });
 
 test("Superadmin + Nuru ne reçoit que les datasets Nuru", () => {
-  const rows = tenantScopeService.filterRows(mixedTenantRows, selectedSuperadmin());
+  const principal = selectedSuperadmin();
+  assert.equal(principal.schoolCode, "SCH-ABC123", "clé repository interne");
+  assert.equal(principal.effectiveSchoolCode, "CD-IN-26-001", "identité publique V2");
+  const rows = tenantScopeService.filterRows(mixedTenantRows, principal);
   assert.deepEqual(rows.map((row) => row.id), ["nuru-public", "nuru-internal-only"]);
 });
 
@@ -113,6 +116,25 @@ test("scope effectif accepte les projections publiques login_code", () => {
   ];
   const scoped = tenantScopeService.filterRows(courses, principal);
   assert.deepEqual(scoped.map((row) => row.id), ["course-nuru"]);
+});
+
+test("scope request-scoped interdit un paramètre explicite vers une autre école même au Superadmin", () => {
+  const principal = selectedSuperadmin();
+  assert.doesNotThrow(() => tenantScopeService.assertSchoolAccess(principal, "SCH-ABC123"));
+  assert.doesNotThrow(() => tenantScopeService.assertSchoolAccess(principal, "CD-IN-26-001"));
+  assert.throws(
+    () => tenantScopeService.assertSchoolAccess(principal, "SCH-DEF456"),
+    (error) => error?.statusCode === 403,
+  );
+});
+
+test("Admin Pays request-scoped ne peut pas basculer implicitement sur une autre école du même pays", () => {
+  const principal = selectedCountryAdmin();
+  assert.doesNotThrow(() => tenantScopeService.assertSchoolAccess(principal, "CD-IN-26-001"));
+  assert.throws(
+    () => tenantScopeService.assertSchoolAccess(principal, "CD-EL-26-002"),
+    (error) => error?.statusCode === 403,
+  );
 });
 
 test("Admin School avec scope V2 validé peut relire son alias PostgreSQL interne", () => {
