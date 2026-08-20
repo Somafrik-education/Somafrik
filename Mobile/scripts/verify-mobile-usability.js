@@ -35,6 +35,9 @@ function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "mobileUsability.test.ts")], MOBILE);
   console.log("OK: tests unitaires Login/Classes/Notes/Finance/Planning/Messages/a11y");
 
+  run("node", [path.join("scripts", "verify-mobile-ux-v1.js")], MOBILE);
+  console.log("OK: contrat UX/UI Mobile V1 — header + drawer + bottom nav sans Menu");
+
   const login = source(path.join("screens", "LoginScreen.tsx"));
   assert.match(login, /KeyboardAwareScreen/);
   assert.match(login, /login-keyboard-scroll|USABILITY_TEST_IDS\.loginKeyboardScroll/);
