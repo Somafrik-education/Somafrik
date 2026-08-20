@@ -14,7 +14,8 @@ const {
 
 const MOBILE_ROOT = path.join(__dirname, "..");
 const MAESTRO_ROOT = path.join(MOBILE_ROOT, "maestro");
-const REQUIRED_FLOWS = [
+
+const ALL_FLOWS = [
   "01-login-admin-school.yaml",
   "02-home-metrics.yaml",
   "03-users-matches-home.yaml",
@@ -26,7 +27,8 @@ const REQUIRED_FLOWS = [
   "09-partial-domain-error.yaml",
   "10-relaunch-no-catalog.yaml",
 ];
-
+const LIVE_FLOWS = ALL_FLOWS.filter((name) => name !== "09-partial-domain-error.yaml");
+const FAULT_FLOWS = ["09-partial-domain-error.yaml"];
 const SECRET_ENV_KEYS = [
   "SOMAFRIK_E2E_ADMIN_IDENTIFIER",
   "SOMAFRIK_E2E_ADMIN_PASSWORD",
@@ -38,13 +40,37 @@ function required(value, name) {
   return text;
 }
 
+function normalizeMode(value) {
+  const mode = String(value || "live").trim().toLowerCase();
+  if (mode !== "live" && mode !== "fault") {
+    throw new Error(`SOMAFRIK_E2E_MODE doit valoir live ou fault (reçu: ${mode}).`);
+  }
+  return mode;
+}
+
 function validateRuntimeConfig(env = process.env) {
-  const apiUrl = String(env.SOMAFRIK_E2E_API_URL || CANONICAL_API_URLS.preview)
+  const mode = normalizeMode(env.SOMAFRIK_E2E_MODE);
+  const apiUrl = String(
+    env.SOMAFRIK_E2E_API_URL ||
+      (mode === "fault" ? "http://10.0.2.2:5055" : CANONICAL_API_URLS.preview),
+  )
     .trim()
     .replace(/\/$/, "");
-  if (apiUrl !== CANONICAL_API_URLS.preview) {
+  const probeUrl = String(
+    env.SOMAFRIK_E2E_PROBE_URL ||
+      (mode === "fault" ? "http://127.0.0.1:5055" : apiUrl),
+  )
+    .trim()
+    .replace(/\/$/, "");
+
+  if (mode === "live" && apiUrl !== CANONICAL_API_URLS.preview) {
     throw new Error(
       `Le runtime E2E Preview doit cibler uniquement ${CANONICAL_API_URLS.preview} (reçu: ${apiUrl}).`,
+    );
+  }
+  if (mode === "fault" && !/^http:\/\/10\.0\.2\.2:\d+$/i.test(apiUrl)) {
+    throw new Error(
+      `Le mode fault doit cibler le proxy hôte via 10.0.2.2 (reçu: ${apiUrl}).`,
     );
   }
 
@@ -53,48 +79,57 @@ function validateRuntimeConfig(env = process.env) {
     throw new Error(`SOMAFRIK_E2E_SCHOOL_CODE doit être un login_code V2 public (reçu: ${schoolCode}).`);
   }
 
-  const adminIdentifier = required(
-    env.SOMAFRIK_E2E_ADMIN_IDENTIFIER,
-    "SOMAFRIK_E2E_ADMIN_IDENTIFIER",
-  );
-  const adminPassword = required(
-    env.SOMAFRIK_E2E_ADMIN_PASSWORD,
-    "SOMAFRIK_E2E_ADMIN_PASSWORD",
-  );
+  const config = {
+    mode,
+    apiUrl,
+    probeUrl,
+    envBadge: required(
+      env.SOMAFRIK_E2E_ENV_BADGE || (mode === "fault" ? "Développement" : "Preview QA"),
+      "SOMAFRIK_E2E_ENV_BADGE",
+    ),
+    schoolCode,
+    schoolName: required(env.SOMAFRIK_E2E_SCHOOL_NAME, "SOMAFRIK_E2E_SCHOOL_NAME"),
+    adminIdentifier: required(
+      env.SOMAFRIK_E2E_ADMIN_IDENTIFIER,
+      "SOMAFRIK_E2E_ADMIN_IDENTIFIER",
+    ),
+    adminPassword: required(
+      env.SOMAFRIK_E2E_ADMIN_PASSWORD,
+      "SOMAFRIK_E2E_ADMIN_PASSWORD",
+    ),
+    expectedPresence: required(
+      env.SOMAFRIK_E2E_EXPECTED_PRESENCE,
+      "SOMAFRIK_E2E_EXPECTED_PRESENCE",
+    ),
+    expectedPayments: required(
+      env.SOMAFRIK_E2E_EXPECTED_PAYMENTS,
+      "SOMAFRIK_E2E_EXPECTED_PAYMENTS",
+    ),
+    deviceSerial: String(env.SOMAFRIK_E2E_DEVICE_SERIAL ?? "").trim(),
+  };
 
-  const mutationEnabled = env.SOMAFRIK_E2E_MUTATIONS === "1";
-  if (mutationEnabled) {
-    if (env.SOMAFRIK_E2E_ALLOW_MUTATIONS !== "1") {
-      throw new Error(
-        "SOMAFRIK_E2E_MUTATIONS=1 exige SOMAFRIK_E2E_ALLOW_MUTATIONS=1 explicitement.",
-      );
-    }
-    const protectedCodes = new Set(
-      String(env.SOMAFRIK_E2E_PROTECTED_SCHOOL_CODES || "CD-IN-26-001")
-        .split(",")
-        .map((value) => value.trim().toUpperCase())
-        .filter(Boolean),
-    );
-    if (protectedCodes.has(schoolCode)) {
-      throw new Error(
-        `Mutations E2E interdites sur l'établissement protégé ${schoolCode}. Utiliser un tenant QA dédié.`,
-      );
-    }
+  if (mode === "live") {
+    Object.assign(config, {
+      expectedUsers: required(env.SOMAFRIK_E2E_EXPECTED_USERS, "SOMAFRIK_E2E_EXPECTED_USERS"),
+      className: required(env.SOMAFRIK_E2E_CLASS_NAME, "SOMAFRIK_E2E_CLASS_NAME"),
+      studentName: required(env.SOMAFRIK_E2E_STUDENT_NAME, "SOMAFRIK_E2E_STUDENT_NAME"),
+      teacherName: required(env.SOMAFRIK_E2E_TEACHER_NAME, "SOMAFRIK_E2E_TEACHER_NAME"),
+      paymentReference: required(
+        env.SOMAFRIK_E2E_PAYMENT_REFERENCE,
+        "SOMAFRIK_E2E_PAYMENT_REFERENCE",
+      ),
+      evaluationLabel: required(
+        env.SOMAFRIK_E2E_EVALUATION_LABEL,
+        "SOMAFRIK_E2E_EVALUATION_LABEL",
+      ),
+    });
   }
 
-  return {
-    apiUrl,
-    schoolCode,
-    schoolName: String(env.SOMAFRIK_E2E_SCHOOL_NAME ?? "").trim(),
-    adminIdentifier,
-    adminPassword,
-    expectedUsers: String(env.SOMAFRIK_E2E_EXPECTED_USERS ?? "").trim(),
-    expectedStudents: String(env.SOMAFRIK_E2E_EXPECTED_STUDENTS ?? "").trim(),
-    expectedPresence: String(env.SOMAFRIK_E2E_EXPECTED_PRESENCE ?? "").trim(),
-    expectedPayments: String(env.SOMAFRIK_E2E_EXPECTED_PAYMENTS ?? "").trim(),
-    deviceSerial: String(env.SOMAFRIK_E2E_DEVICE_SERIAL ?? "").trim(),
-    mutationEnabled,
-  };
+  return config;
+}
+
+function flowsForMode(mode) {
+  return normalizeMode(mode) === "fault" ? FAULT_FLOWS : LIVE_FLOWS;
 }
 
 function parseAdbDevices(stdout) {
@@ -154,21 +189,21 @@ function assertAppInstalled(serial) {
   }
 }
 
-async function probeApi(apiUrl) {
+async function probeApi(probeUrl) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch(apiUrl, {
+    const response = await fetch(probeUrl, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new Error(`API préprod HTTP ${response.status}.`);
+      throw new Error(`API/proxy E2E HTTP ${response.status}.`);
     }
     const payload = await response.json();
     if (payload?.status !== "ok" || payload?.name !== "Somafrik API") {
-      throw new Error("La cible ne répond pas avec le contrat Somafrik API attendu.");
+      throw new Error("La cible E2E ne répond pas avec le contrat Somafrik API attendu.");
     }
     return {
       status: payload.status,
@@ -183,16 +218,21 @@ async function probeApi(apiUrl) {
 
 function flowEnvPairs(config) {
   const pairs = {
+    SOMAFRIK_E2E_ENV_BADGE: config.envBadge,
     SOMAFRIK_E2E_SCHOOL_CODE: config.schoolCode,
+    SOMAFRIK_E2E_SCHOOL_NAME: config.schoolName,
     SOMAFRIK_E2E_ADMIN_IDENTIFIER: config.adminIdentifier,
     SOMAFRIK_E2E_ADMIN_PASSWORD: config.adminPassword,
-    SOMAFRIK_E2E_SCHOOL_NAME: config.schoolName,
     SOMAFRIK_E2E_EXPECTED_USERS: config.expectedUsers,
-    SOMAFRIK_E2E_EXPECTED_STUDENTS: config.expectedStudents,
     SOMAFRIK_E2E_EXPECTED_PRESENCE: config.expectedPresence,
     SOMAFRIK_E2E_EXPECTED_PAYMENTS: config.expectedPayments,
+    SOMAFRIK_E2E_CLASS_NAME: config.className,
+    SOMAFRIK_E2E_STUDENT_NAME: config.studentName,
+    SOMAFRIK_E2E_TEACHER_NAME: config.teacherName,
+    SOMAFRIK_E2E_PAYMENT_REFERENCE: config.paymentReference,
+    SOMAFRIK_E2E_EVALUATION_LABEL: config.evaluationLabel,
   };
-  return Object.entries(pairs).filter(([, value]) => String(value).length > 0);
+  return Object.entries(pairs).filter(([, value]) => String(value ?? "").length > 0);
 }
 
 function redact(text, config) {
@@ -205,7 +245,7 @@ function redact(text, config) {
 }
 
 function ensureFlowFiles() {
-  for (const name of REQUIRED_FLOWS) {
+  for (const name of [...ALL_FLOWS, "_login-admin-school.yaml"]) {
     const file = path.join(MAESTRO_ROOT, name);
     if (!fs.existsSync(file)) throw new Error(`Parcours Maestro manquant: ${name}`);
   }
@@ -263,33 +303,35 @@ async function main() {
   assertCommand("maestro", ["--version"]);
   const serial = resolveDeviceSerial(config);
   assertAppInstalled(serial);
-  const api = await probeApi(config.apiUrl);
+  const api = await probeApi(config.probeUrl);
+  const flows = flowsForMode(config.mode);
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const artifactDir = path.resolve(
     process.env.SOMAFRIK_E2E_ARTIFACT_DIR ||
-      path.join(MOBILE_ROOT, "artifacts", "maestro-runtime", stamp),
+      path.join(MOBILE_ROOT, "artifacts", "maestro-runtime", `${config.mode}-${stamp}`),
   );
   fs.mkdirSync(artifactDir, { recursive: true });
 
   const manifest = {
     startedAt: new Date().toISOString(),
+    runtimeMode: config.mode,
     packageName: ANDROID_PACKAGE,
     apiUrl: config.apiUrl,
+    probeUrl: config.probeUrl,
     api,
     schoolCode: config.schoolCode,
-    schoolName: config.schoolName || undefined,
+    schoolName: config.schoolName,
     deviceSerial: serial,
-    mutationEnabled: config.mutationEnabled,
     flows: [],
   };
 
-  console.log(`Runtime E2E: ${ANDROID_PACKAGE} sur ${serial}`);
-  console.log(`API: ${config.apiUrl}`);
+  console.log(`Runtime E2E (${config.mode}): ${ANDROID_PACKAGE} sur ${serial}`);
+  console.log(`API app: ${config.apiUrl}`);
   console.log(`Établissement QA: ${config.schoolCode}`);
   console.log(`Preuves: ${artifactDir}`);
 
-  for (const flowName of REQUIRED_FLOWS) {
+  for (const flowName of flows) {
     const outcome = runMaestroFlow(flowName, config, serial, artifactDir);
     manifest.flows.push(outcome);
     writeManifest(artifactDir, manifest);
@@ -301,7 +343,7 @@ async function main() {
   manifest.completedAt = new Date().toISOString();
   manifest.success = true;
   writeManifest(artifactDir, manifest);
-  console.log(`OK: ${REQUIRED_FLOWS.length}/${REQUIRED_FLOWS.length} parcours Maestro réellement exécutés.`);
+  console.log(`OK runtime ${config.mode}: ${flows.length}/${flows.length} parcours réellement exécutés.`);
 }
 
 if (require.main === module) {
@@ -312,8 +354,11 @@ if (require.main === module) {
 }
 
 module.exports = {
-  REQUIRED_FLOWS,
+  ALL_FLOWS,
+  LIVE_FLOWS,
+  FAULT_FLOWS,
   SECRET_ENV_KEYS,
+  flowsForMode,
   parseAdbDevices,
   validateRuntimeConfig,
   redact,
