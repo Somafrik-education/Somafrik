@@ -6,6 +6,9 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const {
   BLOCKED,
   CANONICAL_PREPROD_API,
@@ -18,11 +21,13 @@ const {
   parseApkPackageName,
   packageIsInstalled,
   redactSecrets,
+  publishRedactedExternalText,
   evaluateRuntimeGate,
   executableFlowsFor,
   mutationCoverageReport,
   blockedFlowReport,
 } = require("./lib/e2eRuntimeGate");
+const { ARTIFACTS } = require("./verify-mobile-ui-e2e-runtime");
 
 const qaEnv = {
   SOMAFRIK_E2E_SCHOOL_CODE: "CD-IN-26-001",
@@ -298,4 +303,95 @@ test("07/08 sont exécutés en lecture, mutation BLOCKED", () => {
   const blocked = blockedFlowReport(qaEnv);
   assert.equal(blocked.some((item) => item.file === "07-attendance.yaml"), false);
   assert.equal(blocked.some((item) => item.file === "08-notes.yaml"), false);
+});
+
+test("JUnit contenant SOMAFRIK_E2E_PASSWORD → report.xml final ne contient pas le secret", () => {
+  const uploaded = fs.mkdtempSync(path.join(os.tmpdir(), "somafrik-uploaded-"));
+  const source = path.join(os.tmpdir(), `somafrik-raw-password-${process.pid}.xml`);
+  const dest = path.join(uploaded, "report.xml");
+  fs.writeFileSync(
+    source,
+    `<?xml version="1.0"?><testcase name="login"><system-out>inputText ${qaEnv.SOMAFRIK_E2E_PASSWORD}</system-out></testcase>`,
+  );
+  publishRedactedExternalText({
+    sourcePath: source,
+    destPath: dest,
+    uploadedRoot: uploaded,
+    secrets: [qaEnv.SOMAFRIK_E2E_PASSWORD, qaEnv.SOMAFRIK_E2E_IDENTIFIER],
+  });
+  const final = fs.readFileSync(dest, "utf8");
+  assert.equal(final.includes(qaEnv.SOMAFRIK_E2E_PASSWORD), false);
+  assert.match(final, /\[REDACTED\]/);
+  fs.rmSync(uploaded, { recursive: true, force: true });
+});
+
+test("JUnit contenant SOMAFRIK_E2E_IDENTIFIER → valeur remplacée par [REDACTED]", () => {
+  const uploaded = fs.mkdtempSync(path.join(os.tmpdir(), "somafrik-uploaded-"));
+  const source = path.join(os.tmpdir(), `somafrik-raw-identifier-${process.pid}.xml`);
+  const dest = path.join(uploaded, "report.xml");
+  fs.writeFileSync(
+    source,
+    `<?xml version="1.0"?><failure message="inputText ${qaEnv.SOMAFRIK_E2E_IDENTIFIER}"/>`,
+  );
+  publishRedactedExternalText({
+    sourcePath: source,
+    destPath: dest,
+    uploadedRoot: uploaded,
+    secrets: [qaEnv.SOMAFRIK_E2E_PASSWORD, qaEnv.SOMAFRIK_E2E_IDENTIFIER],
+  });
+  const final = fs.readFileSync(dest, "utf8");
+  assert.equal(final.includes(qaEnv.SOMAFRIK_E2E_IDENTIFIER), false);
+  assert.match(final, /\[REDACTED\]/);
+  fs.rmSync(uploaded, { recursive: true, force: true });
+});
+
+test("rapport raw → jamais écrit sous Mobile/artifacts/maestro/", () => {
+  assert.throws(
+    () => publishRedactedExternalText({
+      sourcePath: path.join(ARTIFACTS, "report.xml"),
+      destPath: path.join(ARTIFACTS, "report.xml"),
+      uploadedRoot: ARTIFACTS,
+      secrets: [qaEnv.SOMAFRIK_E2E_PASSWORD],
+    }),
+    /raw/,
+  );
+
+  const uploaded = fs.mkdtempSync(path.join(os.tmpdir(), "somafrik-uploaded-"));
+  const source = path.join(os.tmpdir(), `somafrik-raw-location-${process.pid}.xml`);
+  const dest = path.join(uploaded, "report.xml");
+  fs.writeFileSync(source, `secret ${qaEnv.SOMAFRIK_E2E_PASSWORD}`);
+  publishRedactedExternalText({
+    sourcePath: source,
+    destPath: dest,
+    uploadedRoot: uploaded,
+    secrets: [qaEnv.SOMAFRIK_E2E_PASSWORD],
+  });
+  assert.equal(fs.existsSync(source), false);
+  assert.equal(path.resolve(dest).startsWith(path.resolve(uploaded)), true);
+  assert.equal(path.resolve(source).startsWith(path.resolve(ARTIFACTS)), false);
+  fs.rmSync(uploaded, { recursive: true, force: true });
+});
+
+test("failure Maestro → rapport final redacted avant exit", () => {
+  const uploaded = fs.mkdtempSync(path.join(os.tmpdir(), "somafrik-uploaded-"));
+  const source = path.join(os.tmpdir(), `somafrik-raw-fail-${process.pid}.xml`);
+  const dest = path.join(uploaded, "report.xml");
+  fs.writeFileSync(
+    source,
+    `<?xml version="1.0"?><testsuite failures="1"><testcase name="login"><failure>inputText ${qaEnv.SOMAFRIK_E2E_PASSWORD} identifier=${qaEnv.SOMAFRIK_E2E_IDENTIFIER}</failure></testcase></testsuite>`,
+  );
+  const maestroExitCode = 1;
+  publishRedactedExternalText({
+    sourcePath: source,
+    destPath: dest,
+    uploadedRoot: uploaded,
+    secrets: [qaEnv.SOMAFRIK_E2E_PASSWORD, qaEnv.SOMAFRIK_E2E_IDENTIFIER],
+  });
+  assert.equal(maestroExitCode, 1);
+  assert.equal(fs.existsSync(source), false);
+  const final = fs.readFileSync(dest, "utf8");
+  assert.equal(final.includes(qaEnv.SOMAFRIK_E2E_PASSWORD), false);
+  assert.equal(final.includes(qaEnv.SOMAFRIK_E2E_IDENTIFIER), false);
+  assert.match(final, /\[REDACTED\]/);
+  fs.rmSync(uploaded, { recursive: true, force: true });
 });

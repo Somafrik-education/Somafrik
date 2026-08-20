@@ -166,8 +166,22 @@ Le scénario Maestro prouve la sélection et l’absence de fuite dans les ligne
 
 Dossier **non commité** : `Mobile/artifacts/maestro/`
 
+Ce dossier est uploadé par le workflow runtime (`if: always()`). **Aucun fichier texte d’un outil externe n’y est écrit brut.**
+
+Chaîne JUnit Maestro :
+
 ```text
-report.xml
+Maestro --output → os.tmpdir() (RAW)
+→ readFile()
+→ redactSecrets(identifier, password, platform *)
+→ Mobile/artifacts/maestro/report.xml
+→ suppression du RAW
+```
+
+La même règle s’applique à tout futur artifact texte généré par un outil externe après une exécution avec credentials. Les fichiers internes (`maestro.log`, `device-info.txt`, `runtime-summary.json`) passent aussi par `redactSecrets` avant écriture.
+
+```text
+report.xml            # toujours redacted, jamais le JUnit brut
 maestro.log
 screenshots/
 device-info.txt
@@ -220,7 +234,7 @@ Aucun token / password / PIN en clair.
 ## Règles sécurité
 
 - Secrets uniquement via l’environnement / secrets runtime.
-- Pas de credential dans les YAML, le code, `.env.example` (valeurs), la CI, les logs.
+- Pas de credential dans les YAML, le code, `.env.example` (valeurs), la CI, les logs, **ni les artifacts GitHub**.
 - Header tenant `X-Somafrik-School-Code` = `login_code` V2 — preuve backend déjà couverte par `verify:mobile-school-scope-transport`. Ne pas contourner l’autorisation serveur.
 
 ## Règle données INSTITUT NURU

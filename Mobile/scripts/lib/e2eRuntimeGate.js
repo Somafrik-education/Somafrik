@@ -4,6 +4,9 @@
  */
 "use strict";
 
+const fs = require("fs");
+const path = require("path");
+
 const ANDROID_PACKAGE = "com.somafrik.app";
 const CANONICAL_PREPROD_API = "https://somafrik-api-preprod.onrender.com";
 const EXPECTED_SCHOOL_CODE = "CD-IN-26-001";
@@ -241,8 +244,65 @@ function redactSecrets(text, secrets = []) {
     const value = asTrimmed(secret);
     if (value.length < 2) continue;
     out = out.split(value).join("[REDACTED]");
+    const xmlEscaped = value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+    if (xmlEscaped !== value) {
+      out = out.split(xmlEscaped).join("[REDACTED]");
+    }
   }
   return out;
+}
+
+function isPathInside(root, target) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  const prefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+  return resolvedTarget === resolvedRoot || resolvedTarget.startsWith(prefix);
+}
+
+/**
+ * Copie un artifact texte d'un outil externe (Maestro, etc.) vers le dossier
+ * uploadé, après redaction. Le fichier RAW ne doit jamais vivre sous uploadedRoot.
+ */
+function publishRedactedExternalText(input = {}) {
+  const sourcePath = input.sourcePath;
+  const destPath = input.destPath;
+  const uploadedRoot = input.uploadedRoot;
+  const secrets = input.secrets || [];
+  if (!sourcePath || !destPath || !uploadedRoot) {
+    throw new Error("publishRedactedExternalText: sourcePath, destPath et uploadedRoot requis.");
+  }
+  const resolvedSource = path.resolve(sourcePath);
+  const resolvedDest = path.resolve(destPath);
+  const resolvedRoot = path.resolve(uploadedRoot);
+
+  if (isPathInside(resolvedRoot, resolvedSource)) {
+    throw new Error("rapport raw jamais écrit sous Mobile/artifacts/maestro/");
+  }
+  if (!isPathInside(resolvedRoot, resolvedDest)) {
+    throw new Error("artifact final hors du dossier uploadé.");
+  }
+
+  let raw = "";
+  try {
+    if (fs.existsSync(resolvedSource)) {
+      raw = fs.readFileSync(resolvedSource, "utf8");
+    }
+    const redacted = redactSecrets(raw, secrets);
+    fs.mkdirSync(path.dirname(resolvedDest), { recursive: true });
+    fs.writeFileSync(resolvedDest, redacted);
+    return { destPath: resolvedDest, redacted, missingSource: !raw && !fs.existsSync(resolvedSource) };
+  } finally {
+    try {
+      if (fs.existsSync(resolvedSource)) fs.unlinkSync(resolvedSource);
+    } catch {
+      // best-effort : ne pas laisser un RAW avec secrets
+    }
+  }
 }
 
 function maestroEnvFrom(env = {}) {
@@ -479,6 +539,8 @@ module.exports = {
   packageIsInstalled,
   scanApkTextForForbiddenHosts,
   redactSecrets,
+  isPathInside,
+  publishRedactedExternalText,
   maestroEnvFrom,
   blockedFlowReport,
   mutationCoverageReport,

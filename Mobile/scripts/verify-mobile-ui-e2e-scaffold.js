@@ -190,12 +190,17 @@ function main() {
   assert.match(runtime, /inspectApkIdentity/);
   assert.match(runtime, /badgingOutput:\s*identity\.output/);
   assert.doesNotMatch(runtime, /["']install["'],\s*["']-r["']/);
+  assert.match(runtime, /"--output",\s*rawReportPath/);
+  assert.match(runtime, /os\.tmpdir\(\)/);
+  assert.match(runtime, /publishRedactedExternalText/);
+  assert.doesNotMatch(runtime, /"--output",\s*path\.join\(ARTIFACTS/);
   assert.equal(runtime.includes(skipFlag), false, "runtime ne doit pas honorer un skip-vert optionnel");
   assert.doesNotMatch(runtime, /SOMAFRIK_E2E_API_URL \|\| CANONICAL_PREPROD_API/);
   const gate = fs.readFileSync(GATE, "utf8");
   assert.match(gate, /BLOCKED_MAESTRO_NOT_EXECUTED/);
   assert.match(gate, /BLOCKED_NO_FAILURE_INJECTION/);
   assert.match(gate, /BLOCKED_APK_PACKAGE_INSPECTOR_MISSING/);
+  assert.match(gate, /publishRedactedExternalText/);
   assert.doesNotMatch(gate, /apkText\.includes\(ANDROID_PACKAGE\)/);
   assert.doesNotMatch(gate, /text\.includes\(ANDROID_PACKAGE\)/);
   assert.doesNotMatch(gate, /outcome:\s*["']SUCCESS["'].*maestroExecuted:\s*false/s);

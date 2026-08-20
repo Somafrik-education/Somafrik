@@ -9,6 +9,7 @@
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { spawnSync } = require("child_process");
@@ -19,6 +20,7 @@ const {
   executableFlowsFor,
   maestroEnvFrom,
   parseApkPackageName,
+  publishRedactedExternalText,
   redactSecrets,
 } = require("./lib/e2eRuntimeGate");
 
@@ -48,10 +50,12 @@ function ensureArtifacts() {
   fs.mkdirSync(path.join(ARTIFACTS, "screenshots"), { recursive: true });
 }
 
+let uploadedTextSecrets = [];
+
 function writeArtifact(name, content) {
   ensureArtifacts();
   const file = path.join(ARTIFACTS, name);
-  fs.writeFileSync(file, content);
+  fs.writeFileSync(file, redactSecrets(String(content), uploadedTextSecrets));
   return file;
 }
 
@@ -121,6 +125,7 @@ function fail(message, summary) {
 function main() {
   ensureArtifacts();
   const env = process.env;
+  uploadedTextSecrets = secretsFrom(env);
   const maestro = which("maestro");
   const adb = which("adb");
   const adbDevices = adb.available ? runCaptured("adb", ["devices"]) : { stdout: "", status: 1 };
@@ -250,22 +255,30 @@ function main() {
 
   const maestroEnv = maestroEnvFrom(env);
   const envArgs = Object.entries(maestroEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
-  const reportPath = path.join(ARTIFACTS, "report.xml");
+  const rawReportPath = path.join(os.tmpdir(), `somafrik-maestro-junit-${process.pid}.xml`);
   const args = [
     "test",
     "--format",
     "junit",
     "--output",
-    reportPath,
+    rawReportPath,
     ...envArgs,
     ...flows,
   ];
   const maestroRun = runCaptured("maestro", args, { cwd: MOBILE, env: { ...process.env } });
-  const log = redactSecrets(
-    `${maestroRun.stdout || ""}\n${maestroRun.stderr || ""}`,
-    secretsFrom(env),
+  const secrets = secretsFrom(env);
+  writeArtifact(
+    "maestro.log",
+    redactSecrets(`${maestroRun.stdout || ""}\n${maestroRun.stderr || ""}`, secrets),
   );
-  writeArtifact("maestro.log", log);
+  // JUnit Maestro : RAW dans os.tmpdir(), puis redaction vers le dossier uploadé, puis suppression du RAW.
+  // Même en cas d'échec Maestro : l'artifact GitHub ne contient jamais le rapport brut.
+  publishRedactedExternalText({
+    sourcePath: rawReportPath,
+    destPath: path.join(ARTIFACTS, "report.xml"),
+    uploadedRoot: ARTIFACTS,
+    secrets,
+  });
 
   const result = evaluateRuntimeGate({
     maestroAvailable: true,
