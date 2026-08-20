@@ -104,7 +104,10 @@ function main() {
   assert.ok(fs.existsSync(workflow), "workflow Mobile Runtime E2E manquant");
   const workflowSource = fs.readFileSync(workflow, "utf8");
   assert.match(workflowSource, /workflow_dispatch:/);
-  assert.match(workflowSource, /MAESTRO_VERSION:\s*["']2\.8\.0["']/);
+  assert.match(workflowSource, /MAESTRO_VERSION:\s*["']2\.7\.0["']/);
+  assert.match(workflowSource, /platforms;android-34/);
+  assert.match(workflowSource, /system-images;android-34;google_apis;x86_64/);
+  assert.doesNotMatch(workflowSource, /android-35/);
   assert.match(workflowSource, /sdkmanager/);
   assert.match(workflowSource, /avdmanager/);
   assert.match(workflowSource, /emulator\/emulator/);
@@ -138,7 +141,7 @@ function main() {
 
   console.log(
     `OK: contrat Maestro ${REQUIRED.length} flows read-only/fault + précondition/mutation/cleanup ` +
-      "+ workflow Android runtime, secrets isolés et actions officielles uniquement. " +
+      "+ workflow Android runtime, Maestro 2.7.0/API 34, secrets isolés et actions officielles uniquement. " +
       "Aucune exécution APK n'est revendiquée par ce gate statique.",
   );
 }
