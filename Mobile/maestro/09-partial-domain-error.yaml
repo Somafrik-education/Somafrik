@@ -1,7 +1,21 @@
 appId: com.somafrik.app
 ---
-- launchApp
-- assertNotVisible: "0"
-# Un domaine en erreur ne doit pas coller 0 sur les autres compteurs.
+- runFlow: _login-admin-school.yaml
+# Ce flow est exécuté uniquement avec le proxy de faute LOT 8 qui force
+# /api/backoffice/users en 503 tout en laissant Présences/Paiements en ligne.
+- extendedWaitUntil:
+    visible:
+      id: "home-users-value"
+    timeout: 15000
+- assertVisible:
+    id: "home-users-value"
+    text: "Indisponible"
+- assertVisible:
+    id: "home-presence-value"
+    text: "${SOMAFRIK_E2E_EXPECTED_PRESENCE}"
 - assertVisible:
     id: "home-payments-value"
+    text: "${SOMAFRIK_E2E_EXPECTED_PAYMENTS}"
+- assertNotVisible:
+    id: "home-users-value"
+    text: "0"
