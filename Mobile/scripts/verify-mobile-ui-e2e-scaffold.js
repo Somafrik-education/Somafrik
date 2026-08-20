@@ -95,7 +95,10 @@ function main() {
   assert.ok(fs.existsSync(workflow), "workflow Mobile Runtime E2E manquant");
   const workflowSource = fs.readFileSync(workflow, "utf8");
   assert.match(workflowSource, /workflow_dispatch:/);
-  assert.match(workflowSource, /reactivecircus\/android-emulator-runner@v2/);
+  assert.match(workflowSource, /MAESTRO_VERSION:\s*["']2\.8\.0["']/);
+  assert.match(workflowSource, /sdkmanager/);
+  assert.match(workflowSource, /avdmanager/);
+  assert.match(workflowSource, /emulator\/emulator/);
   assert.match(workflowSource, /adb install -r/);
   assert.match(workflowSource, /verify:mobile-ui-e2e-runtime/);
   assert.match(workflowSource, /mobile-e2e-fault-proxy\.js/);
@@ -104,7 +107,16 @@ function main() {
   assert.match(workflowSource, /secrets\.SOMAFRIK_E2E_ADMIN_PASSWORD/);
   assert.match(workflowSource, /run_mutations:/);
   assert.match(workflowSource, /SOMAFRIK_E2E_ALLOW_MUTATIONS=1/);
+  assert.doesNotMatch(workflowSource, /reactivecircus|android-actions\//i);
   assert.doesNotMatch(workflowSource, /SOMAFRIK_E2E_ADMIN_PASSWORD:\s*["']?[A-Za-z0-9].+/);
+
+  const beforeJobs = workflowSource.split(/^jobs:/m)[0] || "";
+  assert.doesNotMatch(beforeJobs, /secrets\./, "Secrets interdits dans env global du workflow");
+  const uses = [...workflowSource.matchAll(/^\s*-\s*uses:\s*([^\s]+)\s*$/gm)].map((match) => match[1]);
+  assert.ok(uses.length > 0, "actions GitHub attendues");
+  for (const action of uses) {
+    assert.match(action, /^actions\//, `action tierce interdite dans le workflow runtime: ${action}`);
+  }
 
   const unit = spawnSync(
     process.execPath,
@@ -117,7 +129,8 @@ function main() {
 
   console.log(
     `OK: contrat Maestro ${REQUIRED.length} flows read-only/fault + mutation + cleanup indépendant ` +
-      "+ workflow Android runtime + tests. Aucune exécution APK n'est revendiquée par ce gate statique.",
+      "+ workflow Android runtime, secrets isolés et actions officielles uniquement. " +
+      "Aucune exécution APK n'est revendiquée par ce gate statique.",
   );
 }
 
