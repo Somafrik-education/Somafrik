@@ -12,6 +12,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const MOBILE = path.join(__dirname, "..");
+const WORKSPACE = path.join(MOBILE, "..");
 const MAESTRO = path.join(MOBILE, "maestro");
 const REQUIRED = [
   "01-login-admin-school.yaml",
@@ -25,6 +26,7 @@ const REQUIRED = [
   "09-partial-domain-error.yaml",
   "10-relaunch-no-catalog.yaml",
 ];
+const MUTATION = "11-attendance-persistence.yaml";
 
 function main() {
   const helper = path.join(MAESTRO, "_login-admin-school.yaml");
@@ -50,6 +52,14 @@ function main() {
     );
   }
 
+  const mutationFile = path.join(MAESTRO, MUTATION);
+  assert.ok(fs.existsSync(mutationFile), `parcours mutationnel manquant: ${MUTATION}`);
+  const mutationSource = fs.readFileSync(mutationFile, "utf8");
+  assert.match(mutationSource, /SOMAFRIK_E2E_TARGET_ATTENDANCE_SLUG/);
+  assert.match(mutationSource, /SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG/);
+  assert.match(mutationSource, /stopApp/);
+  assert.match(mutationSource, /Appel enregistré/);
+
   const runtimeScript = path.join(__dirname, "verify-mobile-ui-e2e-runtime.js");
   const runtimeTest = path.join(__dirname, "verify-mobile-ui-e2e-runtime.test.js");
   const proxyScript = path.join(__dirname, "mobile-e2e-fault-proxy.js");
@@ -66,6 +76,23 @@ function main() {
   assert.match(runtimeSource, /\[REDACTED\]/);
   assert.match(runtimeSource, /LIVE_FLOWS/);
   assert.match(runtimeSource, /FAULT_FLOWS/);
+  assert.match(runtimeSource, /MUTATION_FLOWS/);
+  assert.match(runtimeSource, /SOMAFRIK_E2E_ALLOW_MUTATIONS/);
+  assert.match(runtimeSource, /CD-IN-26-001/);
+  assert.match(runtimeSource, /Mutations E2E interdites/);
+
+  const workflow = path.join(WORKSPACE, ".github", "workflows", "mobile-e2e-runtime.yml");
+  assert.ok(fs.existsSync(workflow), "workflow Mobile Runtime E2E manquant");
+  const workflowSource = fs.readFileSync(workflow, "utf8");
+  assert.match(workflowSource, /workflow_dispatch:/);
+  assert.match(workflowSource, /reactivecircus\/android-emulator-runner@v2/);
+  assert.match(workflowSource, /adb install -r/);
+  assert.match(workflowSource, /verify:mobile-ui-e2e-runtime/);
+  assert.match(workflowSource, /mobile-e2e-fault-proxy\.js/);
+  assert.match(workflowSource, /actions\/upload-artifact@v4/);
+  assert.match(workflowSource, /secrets\.SOMAFRIK_E2E_ADMIN_IDENTIFIER/);
+  assert.match(workflowSource, /secrets\.SOMAFRIK_E2E_ADMIN_PASSWORD/);
+  assert.doesNotMatch(workflowSource, /SOMAFRIK_E2E_ADMIN_PASSWORD:\s*["']?[A-Za-z0-9].+/);
 
   const unit = spawnSync(
     process.execPath,
@@ -77,8 +104,8 @@ function main() {
   }
 
   console.log(
-    `OK: contrat Maestro ${REQUIRED.length} flows + helper + runtime/proxy tests. ` +
-      "Aucune exécution APK n'est revendiquée par ce gate statique.",
+    `OK: contrat Maestro ${REQUIRED.length} flows read-only/fault + 1 flow mutationnel réversible ` +
+      "+ workflow Android runtime + tests. Aucune exécution APK n'est revendiquée par ce gate statique.",
   );
 }
 
