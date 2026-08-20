@@ -1,15 +1,18 @@
+"use strict";
+
 /**
- * Scaffold Maestro (fichiers YAML présents). Ce n'est PAS une exécution black-box de l'APK.
- * Lot runtime : SOMAFRIK_RUN_MAESTRO=1.
+ * Contrat statique LOT 8.
+ * Ce gate CI vérifie que les flows runtime sont complets et fail-closed, mais ne
+ * prétend jamais avoir piloté une APK. L'exécution réelle est
+ * verify:mobile-ui-e2e-runtime sur appareil/émulateur Android.
  */
-const assert = require("assert");
-const fs = require("fs");
-const path = require("path");
-const { spawnSync } = require("child_process");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const MOBILE = path.join(__dirname, "..");
 const MAESTRO = path.join(MOBILE, "maestro");
-
 const REQUIRED = [
   "01-login-admin-school.yaml",
   "02-home-metrics.yaml",
@@ -24,23 +27,59 @@ const REQUIRED = [
 ];
 
 function main() {
+  const helper = path.join(MAESTRO, "_login-admin-school.yaml");
+  assert.ok(fs.existsSync(helper), "helper login Maestro manquant");
+  const helperSource = fs.readFileSync(helper, "utf8");
+  assert.match(helperSource, /role-school-code-input/);
+  assert.match(helperSource, /SOMAFRIK_E2E_SCHOOL_CODE/);
+  assert.match(helperSource, /SOMAFRIK_E2E_ADMIN_IDENTIFIER/);
+  assert.match(helperSource, /SOMAFRIK_E2E_ADMIN_PASSWORD/);
+  assert.match(helperSource, /home-admin-dashboard/);
+  assert.match(helperSource, /SOMAFRIK_E2E_ENV_BADGE/);
+
   for (const name of REQUIRED) {
     const file = path.join(MAESTRO, name);
     assert.ok(fs.existsSync(file), `parcours manquant: ${name}`);
     const source = fs.readFileSync(file, "utf8");
     assert.match(source, /appId:\s*com\.somafrik\.app/);
+    assert.match(source, /runFlow:\s*_login-admin-school\.yaml/);
+    assert.doesNotMatch(
+      source,
+      /^\s*-\s*assertNotVisible:\s*["']0["']\s*$/m,
+      `${name}: assertNotVisible global sur 0 interdit`,
+    );
   }
-  console.log(`OK: scaffold Maestro ${REQUIRED.length} YAML (appId com.somafrik.app) — pas d'exécution APK`);
 
-  if (process.env.SOMAFRIK_RUN_MAESTRO === "1") {
-    const result = spawnSync("maestro", ["test", MAESTRO], { encoding: "utf8", cwd: MOBILE });
-    if (result.status !== 0) {
-      throw new Error(result.stderr || result.stdout || "maestro test failed");
-    }
-    process.stdout.write(result.stdout || "");
-    return;
+  const runtimeScript = path.join(__dirname, "verify-mobile-ui-e2e-runtime.js");
+  const runtimeTest = path.join(__dirname, "verify-mobile-ui-e2e-runtime.test.js");
+  const proxyScript = path.join(__dirname, "mobile-e2e-fault-proxy.js");
+  const proxyTest = path.join(__dirname, "mobile-e2e-fault-proxy.test.js");
+  for (const file of [runtimeScript, runtimeTest, proxyScript, proxyTest]) {
+    assert.ok(fs.existsSync(file), `runtime LOT 8 manquant: ${path.basename(file)}`);
   }
-  console.log("SKIP run: définir SOMAFRIK_RUN_MAESTRO=1 pour piloter l'APK installé");
+
+  const runtimeSource = fs.readFileSync(runtimeScript, "utf8");
+  assert.match(runtimeSource, /assertAppInstalled/);
+  assert.match(runtimeSource, /resolveDeviceSerial/);
+  assert.match(runtimeSource, /probeApi/);
+  assert.match(runtimeSource, /captureScreenshot/);
+  assert.match(runtimeSource, /\[REDACTED\]/);
+  assert.match(runtimeSource, /LIVE_FLOWS/);
+  assert.match(runtimeSource, /FAULT_FLOWS/);
+
+  const unit = spawnSync(
+    process.execPath,
+    ["--test", runtimeTest, proxyTest],
+    { cwd: MOBILE, encoding: "utf8" },
+  );
+  if (unit.status !== 0) {
+    throw new Error(unit.stderr || unit.stdout || "Tests contrat runtime E2E échoués");
+  }
+
+  console.log(
+    `OK: contrat Maestro ${REQUIRED.length} flows + helper + runtime/proxy tests. ` +
+      "Aucune exécution APK n'est revendiquée par ce gate statique.",
+  );
 }
 
 main();
