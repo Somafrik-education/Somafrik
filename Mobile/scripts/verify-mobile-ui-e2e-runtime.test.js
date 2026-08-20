@@ -6,10 +6,12 @@ const {
   ALL_FLOWS,
   LIVE_FLOWS,
   FAULT_FLOWS,
+  MUTATION_FLOWS,
   flowEnvPairs,
   flowsForMode,
   parseAdbDevices,
   redact,
+  slugifyAttendanceStatus,
   validateRuntimeConfig,
 } = require("./verify-mobile-ui-e2e-runtime");
 
@@ -42,7 +44,22 @@ const FAULT_ENV = {
   SOMAFRIK_E2E_EXPECTED_PAYMENTS: "25%",
 };
 
-test("runtime contract keeps exactly the 10 audited black-box flows", () => {
+const MUTATION_ENV = {
+  SOMAFRIK_E2E_MODE: "mutation",
+  SOMAFRIK_E2E_API_URL: "https://somafrik-api-preprod.onrender.com",
+  SOMAFRIK_E2E_SCHOOL_CODE: "BI-EC-26-001",
+  SOMAFRIK_E2E_SCHOOL_NAME: "ÉCOLE CANONIQUE QA",
+  SOMAFRIK_E2E_ADMIN_IDENTIFIER: "qa-admin@example.test",
+  SOMAFRIK_E2E_ADMIN_PASSWORD: "secret-value",
+  SOMAFRIK_E2E_CLASS_NAME: "2ème A",
+  SOMAFRIK_E2E_STUDENT_NAME: "Esther QA",
+  SOMAFRIK_E2E_STUDENT_ID: "student-qa-1",
+  SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS: "Présent",
+  SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS: "Absent",
+  SOMAFRIK_E2E_ALLOW_MUTATIONS: "1",
+};
+
+test("runtime contract keeps 10 read-only/fault flows plus one separate mutation flow", () => {
   assert.deepEqual(ALL_FLOWS, [
     "01-login-admin-school.yaml",
     "02-home-metrics.yaml",
@@ -57,6 +74,7 @@ test("runtime contract keeps exactly the 10 audited black-box flows", () => {
   ]);
   assert.equal(LIVE_FLOWS.length, 9);
   assert.deepEqual(FAULT_FLOWS, ["09-partial-domain-error.yaml"]);
+  assert.deepEqual(MUTATION_FLOWS, ["11-attendance-persistence.yaml"]);
   assert.deepEqual([...LIVE_FLOWS, ...FAULT_FLOWS].sort(), [...ALL_FLOWS].sort());
 });
 
@@ -80,9 +98,53 @@ test("fault runtime uses emulator host proxy and development badge", () => {
   assert.deepEqual(flowsForMode("live"), LIVE_FLOWS);
 });
 
+test("mutation runtime is preview-only, explicit, reversible and derives action slugs", () => {
+  const config = validateRuntimeConfig(MUTATION_ENV);
+  assert.equal(config.mode, "mutation");
+  assert.equal(config.apiUrl, "https://somafrik-api-preprod.onrender.com");
+  assert.equal(config.mutationsAllowed, true);
+  assert.equal(config.originalAttendanceStatus, "Présent");
+  assert.equal(config.originalAttendanceSlug, "present");
+  assert.equal(config.targetAttendanceStatus, "Absent");
+  assert.equal(config.targetAttendanceSlug, "absent");
+  assert.deepEqual(flowsForMode("mutation"), MUTATION_FLOWS);
+});
+
+test("mutation runtime requires explicit opt-in", () => {
+  const env = { ...MUTATION_ENV };
+  delete env.SOMAFRIK_E2E_ALLOW_MUTATIONS;
+  assert.throws(() => validateRuntimeConfig(env), /ALLOW_MUTATIONS=1/);
+});
+
+test("mutation runtime refuses protected Nuru tenant by default", () => {
+  assert.throws(
+    () => validateRuntimeConfig({ ...MUTATION_ENV, SOMAFRIK_E2E_SCHOOL_CODE: "CD-IN-26-001" }),
+    /Mutations E2E interdites/,
+  );
+});
+
+test("mutation runtime validates attendance statuses and requires a real transition", () => {
+  assert.throws(
+    () => validateRuntimeConfig({ ...MUTATION_ENV, SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS: "Inconnu" }),
+    /TARGET_ATTENDANCE_STATUS invalide/,
+  );
+  assert.throws(
+    () => validateRuntimeConfig({ ...MUTATION_ENV, SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS: "Présent" }),
+    /différent du statut initial/,
+  );
+  assert.equal(slugifyAttendanceStatus("Justifié"), "justifie");
+});
+
 test("live runtime rejects production API", () => {
   assert.throws(
     () => validateRuntimeConfig({ ...LIVE_ENV, SOMAFRIK_E2E_API_URL: "https://api.somafrik.app" }),
+    /Preview doit cibler uniquement/,
+  );
+});
+
+test("mutation runtime also rejects production API", () => {
+  assert.throws(
+    () => validateRuntimeConfig({ ...MUTATION_ENV, SOMAFRIK_E2E_API_URL: "https://api.somafrik.app" }),
     /Preview doit cibler uniquement/,
   );
 });
@@ -141,4 +203,13 @@ test("Maestro env payload contains deterministic fixture values", () => {
   assert.equal(pairs.get("SOMAFRIK_E2E_ADMIN_PASSWORD"), "secret-value");
   assert.equal(pairs.get("SOMAFRIK_E2E_CLASS_NAME"), "2ème A");
   assert.equal(pairs.get("SOMAFRIK_E2E_PAYMENT_REFERENCE"), "PAY-0004");
+});
+
+test("mutation env payload includes exact IDs/statuses used by Maestro cleanup", () => {
+  const pairs = new Map(flowEnvPairs(validateRuntimeConfig(MUTATION_ENV)));
+  assert.equal(pairs.get("SOMAFRIK_E2E_STUDENT_ID"), "student-qa-1");
+  assert.equal(pairs.get("SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_STATUS"), "Présent");
+  assert.equal(pairs.get("SOMAFRIK_E2E_ORIGINAL_ATTENDANCE_SLUG"), "present");
+  assert.equal(pairs.get("SOMAFRIK_E2E_TARGET_ATTENDANCE_STATUS"), "Absent");
+  assert.equal(pairs.get("SOMAFRIK_E2E_TARGET_ATTENDANCE_SLUG"), "absent");
 });
