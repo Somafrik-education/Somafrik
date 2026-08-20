@@ -63,6 +63,7 @@ function main() {
 
   runTsx("mobileUxV1Layout.test.ts");
   runTsx("roleHomeConfig.test.ts");
+  runTsx("homeShellPermissions.test.ts");
 
   assert.match(tabs, /MobileAppHeader/);
   assert.match(tabs, /headerStatusBarHeight:\s*0/);
@@ -110,6 +111,11 @@ function main() {
   assert.match(roleHome, /Espace enseignant/);
   assert.match(home, /RoleDashboardLayout/);
   assert.match(home, /getRoleHomeShell/);
+  assert.match(home, /canShowHomeCoursesKpi/);
+  assert.match(home, /canShowHomeStudentAction/);
+  assert.match(home, /canReadRoute\(session, "Timetable"\)/);
+  assert.match(home, /studentPayments/);
+  assert.match(roleHome, /fail-closed/);
   assert.doesNotMatch(home, /CommunicationHeaderIcons/);
   assert.doesNotMatch(home, /welcomeQuiet/);
   assert.match(home, /home-admin-dashboard|HOME_TEST_IDS\.adminDashboard/);

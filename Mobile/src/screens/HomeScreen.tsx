@@ -24,6 +24,16 @@ import {
 } from "../lib/establishment";
 import { HOME_TEST_IDS } from "../lib/loginScreenSpec";
 import {
+  canOpenHomeStudentDetail,
+  canOpenHomeStudentNotes,
+  canShowHomeCoursesKpi,
+  canShowHomeNotesKpi,
+  canShowHomePresenceKpi,
+  canShowHomeStudentAction,
+  homeCoursesRoute,
+  homePresenceRoute,
+} from "../lib/homeShellPermissions";
+import {
   getRoleHomeShell,
   selectHomeKpis,
   type RoleHomeActionKey,
@@ -174,6 +184,12 @@ export default function HomeScreen({ navigation }: any) {
       ? "Students"
       : "Classes";
   const usersRoute = isSchoolAdmin ? "Utilisateurs" : "Users";
+  const presenceRoute = homePresenceRoute(session, isParentLike);
+  const canReadStudentPayments = canReadRoute(session, "StudentPayments");
+  const paymentsRoute = isParentLike && canReadStudentPayments ? "StudentPayments" : "Payments";
+  const canShowPaymentsKpi = isParentLike
+    ? canReadStudentPayments
+    : canReadEntity(session, "payments") || canReadStudentPayments;
 
   const kpiCatalog: Record<RoleHomeKpiKey, RoleDashboardKpi | null> = {
     users: canReadEntity(session, "users")
@@ -194,7 +210,7 @@ export default function HomeScreen({ navigation }: any) {
           DATA_TRUTH_TEST_IDS.homeStudentsValue,
         )
       : null,
-    presence: canReadRoute(session, "TeacherAttendance") || isParentLike
+    presence: canShowHomePresenceKpi(session)
       ? kpi(
           "presence",
           "checkmark-circle-outline",
@@ -204,13 +220,13 @@ export default function HomeScreen({ navigation }: any) {
           "#ECFDF5",
           () =>
             navigation.navigate(
-              isParentLike ? "StudentPresences" : "TeacherAttendance",
-              isParentLike ? { studentId: selectedStudentId } : undefined,
+              presenceRoute,
+              presenceRoute === "StudentPresences" ? { studentId: selectedStudentId } : undefined,
             ),
           DATA_TRUTH_TEST_IDS.homePresenceValue,
         )
       : null,
-    payments: canReadEntity(session, "payments") || canReadRoute(session, "StudentPayments")
+    payments: canShowPaymentsKpi
       ? kpi(
           "payments",
           "card-outline",
@@ -224,8 +240,8 @@ export default function HomeScreen({ navigation }: any) {
           "#FFF7ED",
           () =>
             navigation.navigate(
-              isParentLike ? "StudentPayments" : "Payments",
-              isParentLike ? { studentId: selectedStudentId } : undefined,
+              paymentsRoute,
+              paymentsRoute === "StudentPayments" ? { studentId: selectedStudentId } : undefined,
             ),
           DATA_TRUTH_TEST_IDS.homePaymentsValue,
         )
@@ -233,34 +249,40 @@ export default function HomeScreen({ navigation }: any) {
     teachers: canReadEntity(session, "teachers")
       ? kpi("teachers", "school-outline", teachersValue, "Personnel", "#7C3AED", "#F5F3FF", () => navigation.navigate("Teachers"))
       : null,
-    courses: kpi(
-      "courses",
-      "book-outline",
-      isTeacher ? String(courses.length) : String(new Set(studentNotes.map((note) => note.subject).filter(Boolean)).size || "—"),
-      "Cours",
-      "#EA580C",
-      "#FFF7ED",
-      () => navigation.navigate(isTeacher ? "TeacherGrades" : "Timetable"),
-    ),
-    notes: kpi(
-      "notes",
-      "reader-outline",
-      String(studentNotes.length),
-      "Notes",
-      "#7C3AED",
-      "#F5F3FF",
-      () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }),
-    ),
-    average: kpi(
-      "average",
-      "school-outline",
-      averageDisplay.label,
-      "Notes",
-      "#2563EB",
-      "#EFF6FF",
-      () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }),
-      DATA_TRUTH_TEST_IDS.parentAverage,
-    ),
+    courses: canShowHomeCoursesKpi(session, isTeacher)
+      ? kpi(
+          "courses",
+          "book-outline",
+          isTeacher ? String(courses.length) : String(new Set(studentNotes.map((note) => note.subject).filter(Boolean)).size || "—"),
+          "Cours",
+          "#EA580C",
+          "#FFF7ED",
+          () => navigation.navigate(homeCoursesRoute(isTeacher)),
+        )
+      : null,
+    notes: canShowHomeNotesKpi(session)
+      ? kpi(
+          "notes",
+          "reader-outline",
+          String(studentNotes.length),
+          "Notes",
+          "#7C3AED",
+          "#F5F3FF",
+          () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }),
+        )
+      : null,
+    average: canShowHomeNotesKpi(session)
+      ? kpi(
+          "average",
+          "school-outline",
+          averageDisplay.label,
+          "Notes",
+          "#2563EB",
+          "#EFF6FF",
+          () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }),
+          DATA_TRUTH_TEST_IDS.parentAverage,
+        )
+      : null,
     pendingPayments: canReadEntity(session, "payments")
       ? kpi("pendingPayments", "time-outline", paymentsReady ? formatAmount(paymentStats.pendingAmount) : "—", "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
       : null,
@@ -308,16 +330,16 @@ export default function HomeScreen({ navigation }: any) {
       ? action("messages", "chatbubbles-outline", unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages", () => navigation.navigate("Messages"))
       : null,
     timetable: canReadRoute(session, "Timetable") ? action("timetable", "time-outline", "Planning", () => navigation.navigate("Timetable")) : null,
-    profile: selectedStudentId
+    profile: canShowHomeStudentAction(session, "profile", selectedStudentId)
       ? action("profile", "person-outline", "Profil", () => navigation.navigate("StudentDetail", { studentId: selectedStudentId }))
       : null,
-    notes: selectedStudentId
+    notes: canShowHomeStudentAction(session, "notes", selectedStudentId)
       ? action("notes", "book-outline", "Notes", () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }))
       : null,
-    presences: selectedStudentId
+    presences: canShowHomeStudentAction(session, "presences", selectedStudentId)
       ? action("presences", "calendar-outline", "Présences", () => navigation.navigate("StudentPresences", { studentId: selectedStudentId }))
       : null,
-    studentPayments: selectedStudentId
+    studentPayments: canShowHomeStudentAction(session, "studentPayments", selectedStudentId)
       ? action("studentPayments", "card-outline", "Frais", () => navigation.navigate("StudentPayments", { studentId: selectedStudentId }))
       : null,
     documents: canReadRoute(session, "Documents") ? action("documents", "folder-open-outline", "Documents", () => navigation.navigate("Documents")) : null,
@@ -363,7 +385,7 @@ export default function HomeScreen({ navigation }: any) {
         icon: shell.identityIcon as keyof typeof Ionicons.glyphMap,
         accent: shell.accent,
         onPress: () => {
-          if (isParentLike && selectedStudentId) {
+          if (canOpenHomeStudentDetail(session, selectedStudentId)) {
             navigation.navigate("StudentDetail", { studentId: selectedStudentId });
             return;
           }
@@ -376,7 +398,7 @@ export default function HomeScreen({ navigation }: any) {
         icon: shell.bannerIcon as keyof typeof Ionicons.glyphMap,
         background: shell.accent,
         onPress: () => {
-          if (isParentLike && selectedStudentId) {
+          if (canOpenHomeStudentNotes(session, selectedStudentId)) {
             navigation.navigate("StudentNotes", { studentId: selectedStudentId });
             return;
           }

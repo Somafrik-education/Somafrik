@@ -6,7 +6,7 @@ Référence ergonomique : principes de hiérarchie mobile grand public (header c
 
 ## 0. V2 — même architecture pour tous les rôles
 
-Le dashboard **Préfet des études** est le modèle visuel de tous les Accueils. Même structure, même hiérarchie, même style de cartes ; le contenu métier (KPI, actions, onglets) est injecté par configuration et **filtré par les permissions existantes**.
+Le dashboard **Préfet des études** est le modèle visuel de tous les Accueils. Même structure, même hiérarchie, même style de cartes ; le contenu métier (KPI, actions, onglets) est injecté par configuration et **filtré par les permissions existantes**. Un KPI ou une action Accueil **disparaît** si le droit de la route de destination n’existe pas (fail-closed) : par exemple `courses` élève exige `Timetable`, `studentPayments` exige `StudentPayments`. Les matrices métier ne sont pas élargies pour peupler l’Accueil.
 
 Implémentation : un layout commun `RoleDashboardLayout` + `roleHomeConfig`. **Pas d’écran React Native dupliqué par rôle.**
 
@@ -236,6 +236,7 @@ La V2 est **CODE READY** lorsque :
 - un burger ouvre le drawer gauche ;
 - `measureHomeShell` tient sur 320/360/390/412 × fontScale 1.0/1.3 ;
 - les permissions métier ne sont pas élargies pour peupler l’Accueil ;
+- un KPI ou une action Accueil disparaît si la route de destination n’est pas lisible (`courses` élève → `Timetable`, `studentPayments` → `StudentPayments`, `profile`/`notes`/`presences` idem) ;
 - TypeScript et les vérifications Mobile existantes restent vertes ;
 - les parcours Maestro critiques restent possibles (`home-admin-dashboard`, onglets Accueil / Classes / Frais / Comptes / Profs).
 

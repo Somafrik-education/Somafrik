@@ -1,6 +1,7 @@
 /**
  * Accueil par rôle — configuration de coque unique (référence : dashboard Préfet).
- * Aucune permission n’est accordée ici : le runtime filtre KPI et actions.
+ * Aucune permission n’est accordée ici : le runtime filtre KPI et actions
+ * (fail-closed — un KPI ou une action disparaît si la route n’est pas lisible).
  */
 
 export const MAX_HOME_KPIS = 4;
