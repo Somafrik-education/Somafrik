@@ -190,6 +190,26 @@ export function scopeSchoolEntityData<T extends Record<string, unknown>>(
   };
 }
 
+/**
+ * Quand un rôle plateforme a choisi un établissement, les routes tenant sont déjà
+ * limitées côté backend via X-Somafrik-School-Code + requireAuth. Le client ne doit
+ * pas refaire un filtrage SCH-* === login_code V2 qui pourrait transformer une
+ * réponse PostgreSQL valide en tableau vide. Les collections de contexte plateforme
+ * restent, elles, scopées au principal afin de conserver le sélecteur et les droits.
+ */
+export function trustServerScopedPlatformTenant<T extends Record<string, unknown>>(
+  payload: T,
+  principalScoped: T,
+): T {
+  return {
+    ...payload,
+    countries: principalScoped.countries,
+    schools: principalScoped.schools,
+    subscriptions: principalScoped.subscriptions,
+    notifications: principalScoped.notifications,
+  } as T;
+}
+
 export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
   payload: T,
   session: any,
@@ -219,11 +239,11 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
       subscriptions: scopedSubscriptions(user, scopeState),
       users: scopedUsers(user, scopeState),
       notifications: scopedNotifications(user, scopeState),
-    };
+    } as T;
     if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return scopeSchoolEntityData(scoped, activeSchoolCode);
+      return trustServerScopedPlatformTenant(payload, scoped);
     }
-    return scoped as T;
+    return scoped;
   }
 
   if (session.role === "super_admin") {
@@ -234,11 +254,11 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
       subscriptions: scopedSubscriptions(user, scopeState),
       users: scopedUsers(user, scopeState),
       notifications: scopedNotifications(user, scopeState),
-    };
+    } as T;
     if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return scopeSchoolEntityData(scoped, activeSchoolCode);
+      return trustServerScopedPlatformTenant(payload, scoped);
     }
-    return scoped as T;
+    return scoped;
   }
 
   const schoolCode = String(session.user?.schoolCode || session.school?.code || "").trim();
