@@ -60,12 +60,17 @@ Preuve valide :
 SOMAFRIK_E2E_APK_PATH obligatoire
 → fichier existe
 → SHA256 enregistré
-→ package inspecté (aapt/aapt2 ou contenu APK)
-→ adb install -r de CETTE APK
+→ aapt / aapt2 / apkanalyzer obligatoire (identité package)
+→ package lu = com.somafrik.app
+→ adb uninstall com.somafrik.app
+→ adb install de CETTE APK (pas -r)
+→ adb shell pm path com.somafrik.app
 → lancement
 → assertion UI : « API : https://somafrik-api-preprod.onrender.com/api »
 → Maestro réellement exécuté
 ```
+
+Le scan ASCII du ZIP sert **uniquement** à détecter `localhost`, LAN ou production. La chaîne `com.somafrik.app` dans le binaire **n’est pas** une preuve d’identité. Inspecteur absent → `BLOCKED_APK_PACKAGE_INSPECTOR_MISSING`. Package lu ≠ `com.somafrik.app` → `BLOCKED_APK_PACKAGE_MISMATCH`.
 
 Le runner **ne décide pas** que l’API est la préprod si aucune preuve n’est lue depuis l’app. `SOMAFRIK_E2E_API_URL` vide ≠ préprod. La preuve canonique est le texte `role-status-message` au lancement.
 
@@ -75,14 +80,15 @@ Le runner **ne décide pas** que l’API est la préprod si aucune preuve n’es
 
 Si l’authentification EAS manque pour **construire** une APK : `BLOCKED_EAS_AUTH`. Ce n’est pas SUCCESS. Le LOT 8 peut rester CODE READY sans nouvelle build EAS si une APK Preview déjà produite est installée.
 
-Installer :
+Installer (runner E2E dédié) :
 
 ```bash
-adb install -r chemin/vers/somafrik-qa.apk
+adb uninstall com.somafrik.app   # ignore si le package n'était pas présent
+adb install chemin/vers/somafrik-qa.apk
 adb shell pm path com.somafrik.app
 ```
 
-Désinstaller d’abord une app production / autre signature du même package.
+L’application testée provient nécessairement de l’APK dont le SHA256 est enregistré. Une ancienne Somafrik déjà installée ne peut plus servir de faux RUNTIME GO.
 
 Optionnel : aucun. `SOMAFRIK_E2E_APK_PATH` est **obligatoire** pour un RUNTIME GO.
 
@@ -136,8 +142,8 @@ Le runner vérifie dans l’ordre :
 1. `maestro --version`
 2. `adb`
 3. exactement un device (ou `ANDROID_SERIAL`)
-4. `SOMAFRIK_E2E_APK_PATH` : fichier, SHA256, package `com.somafrik.app`
-5. `adb install -r` de **cette** APK
+4. `SOMAFRIK_E2E_APK_PATH` : fichier, SHA256, inspecteur aapt/aapt2/apkanalyzer, package `com.somafrik.app`
+5. `adb uninstall` puis `adb install` de **cette** APK, puis `pm path`
 6. lancement de l’application
 7. credentials via l’environnement
 8. Maestro : l’écran Role Selection affiche `API : https://somafrik-api-preprod.onrender.com/api`
@@ -147,6 +153,14 @@ Le runner vérifie dans l’ordre :
 `SOMAFRIK_RUN_MAESTRO` n’existe plus comme skip-vert.
 
 Parcours exécutés (lecture) : `01`–`08`, `10`. `11` seulement si credentials plateforme QA **et** les deux écoles exposent des utilisateurs avec `Établissement : <login_code>`. Sinon le scénario échoue ou reste BLOCKED — jamais un SUCCESS sur un simple `home-users-value` visible.
+
+Le login plateforme (SUPERADMIN / Admin Pays) attend `school-selector`, jamais `home-admin-dashboard` (réservé à `school_admin`).
+
+## Isolation tenant — scénario 11
+
+Le scénario Maestro prouve la sélection et l’absence de fuite dans les lignes UI observées ; l’isolation exhaustive du dataset est garantie par le gate backend school-scope.
+
+`assertNotVisible` sur une `FlatList` ne prouve pas qu’aucune ligne A hors écran n’existe. Maestro seul ne prouve pas l’absence exhaustive de toute ligne de l’établissement A. La preuve dataset reste `verify:mobile-school-scope-transport`.
 
 ## Artifacts
 
@@ -199,8 +213,9 @@ Aucun token / password / PIN en clair.
 | `BLOCKED_APK_PATH_MISSING` | `SOMAFRIK_E2E_APK_PATH` absent |
 | `BLOCKED_APK_NOT_FOUND` | fichier APK introuvable |
 | `BLOCKED_APK_HASH_MISSING` | SHA256 manquant |
-| `BLOCKED_APK_PACKAGE_MISMATCH` | package ≠ `com.somafrik.app` |
-| `BLOCKED_APK_INSTALL_FAILED` | `adb install -r` a échoué |
+| `BLOCKED_APK_PACKAGE_MISMATCH` | package lu par aapt/aapt2/apkanalyzer ≠ `com.somafrik.app` |
+| `BLOCKED_APK_PACKAGE_INSPECTOR_MISSING` | aapt, aapt2 et apkanalyzer absents — la chaîne dans le ZIP n’est pas une identité |
+| `BLOCKED_APK_INSTALL_FAILED` | `adb uninstall` + `adb install` de l’APK fournie a échoué |
 
 ## Règles sécurité
 

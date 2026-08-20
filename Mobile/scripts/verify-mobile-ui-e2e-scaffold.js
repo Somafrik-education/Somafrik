@@ -152,10 +152,31 @@ function main() {
   assert.match(partial, /blocked-no-failure-injection/);
 
   const tenant = fs.readFileSync(path.join(MAESTRO, "11-platform-tenant-switch.yaml"), "utf8");
+  assert.match(tenant, /SUPERADMIN/);
   assert.match(tenant, /selected:\s*true/);
   assert.match(tenant, /Établissement :/);
   assert.match(tenant, /role-status-message/);
+  assert.match(tenant, /id:\s*["']school-selector["']/);
+  assert.doesNotMatch(
+    tenant,
+    /home-admin-dashboard/,
+    "11-platform-tenant-switch.yaml: home-admin-dashboard est réservé à school_admin ; un login SUPERADMIN doit attendre school-selector.",
+  );
   assert.doesNotMatch(tenant, /^\s*- wait\s*:/m);
+
+  for (const item of allYaml) {
+    if (!/SUPERADMIN|COUNTRYADMIN/.test(item.source)) continue;
+    assert.doesNotMatch(
+      item.source,
+      /home-admin-dashboard/,
+      `${item.rel}: un flux plateforme ne doit pas cibler home-admin-dashboard (school_admin uniquement).`,
+    );
+    assert.match(
+      item.source,
+      /school-selector/,
+      `${item.rel}: un flux plateforme doit attendre school-selector après login.`,
+    );
+  }
 
   const scaffoldSelf = fs.readFileSync(__filename, "utf8");
   assert.doesNotMatch(scaffoldSelf, /spawnSync\(\s*["']maestro["']/);
@@ -165,11 +186,18 @@ function main() {
   assert.match(runtime, /evaluateRuntimeGate/);
   assert.match(runtime, /Jamais SUCCESS/);
   assert.match(runtime, /adb install/);
+  assert.match(runtime, /uninstall/);
+  assert.match(runtime, /inspectApkIdentity/);
+  assert.match(runtime, /badgingOutput:\s*identity\.output/);
+  assert.doesNotMatch(runtime, /["']install["'],\s*["']-r["']/);
   assert.equal(runtime.includes(skipFlag), false, "runtime ne doit pas honorer un skip-vert optionnel");
   assert.doesNotMatch(runtime, /SOMAFRIK_E2E_API_URL \|\| CANONICAL_PREPROD_API/);
   const gate = fs.readFileSync(GATE, "utf8");
   assert.match(gate, /BLOCKED_MAESTRO_NOT_EXECUTED/);
   assert.match(gate, /BLOCKED_NO_FAILURE_INJECTION/);
+  assert.match(gate, /BLOCKED_APK_PACKAGE_INSPECTOR_MISSING/);
+  assert.doesNotMatch(gate, /apkText\.includes\(ANDROID_PACKAGE\)/);
+  assert.doesNotMatch(gate, /text\.includes\(ANDROID_PACKAGE\)/);
   assert.doesNotMatch(gate, /outcome:\s*["']SUCCESS["'].*maestroExecuted:\s*false/s);
 
   console.log(`OK: scaffold Maestro ${REQUIRED.length} YAML + contrat anti-faux-E2E (pas d'exécution APK)`);

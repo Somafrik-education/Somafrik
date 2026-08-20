@@ -18,6 +18,7 @@ const {
   evaluateRuntimeGate,
   executableFlowsFor,
   maestroEnvFrom,
+  parseApkPackageName,
   redactSecrets,
 } = require("./lib/e2eRuntimeGate");
 
@@ -85,13 +86,26 @@ function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-function dumpApkBadging(apkPath) {
-  for (const command of ["aapt", "aapt2"]) {
-    const args = command === "aapt2" ? ["dump", "badging", apkPath] : ["dump", "badging", apkPath];
-    const result = runCaptured(command, args);
-    if (result.status === 0 && result.stdout) return String(result.stdout);
+function inspectApkIdentity(apkPath) {
+  const attempts = [
+    { command: "aapt", args: ["dump", "badging", apkPath] },
+    { command: "aapt2", args: ["dump", "badging", apkPath] },
+    { command: "apkanalyzer", args: ["manifest", "application-id", apkPath] },
+  ];
+  let inspectorAvailable = false;
+  for (const attempt of attempts) {
+    const result = runCaptured(attempt.command, attempt.args);
+    if (result.error && result.error.code === "ENOENT") continue;
+    inspectorAvailable = true;
+    if (result.status === 0 && String(result.stdout || "").trim()) {
+      const stdout = String(result.stdout);
+      const output = attempt.command === "apkanalyzer" && !/package:\s*name=/i.test(stdout)
+        ? `package: name='${stdout.trim()}'`
+        : stdout;
+      return { inspectorAvailable: true, output, tool: attempt.command };
+    }
   }
-  return "";
+  return { inspectorAvailable, output: "", tool: null };
 }
 
 function writeSummary(summary) {
@@ -117,12 +131,23 @@ function main() {
   const apkExists = Boolean(apkPath && fs.existsSync(apkPath));
   const sha256 = apkExists ? sha256File(apkPath) : "";
   const apkText = apkExists ? readApkText(apkPath) : null;
-  const badgingOutput = apkExists ? dumpApkBadging(apkPath) : "";
+  const identity = apkExists ? inspectApkIdentity(apkPath) : { inspectorAvailable: false, output: "", tool: null };
 
-  // adb install -r de CETTE APK (preuve package, pas une app déjà présente).
-  const install = apkExists && adb.available
-    ? runCaptured("adb", [...deviceArgs, "install", "-r", apkPath])
-    : { status: 1, stdout: "", stderr: apkExists ? "adb missing" : "apk missing" };
+  let uninstall = { status: 1, stdout: "", stderr: "skipped" };
+  let install = { status: 1, stdout: "", stderr: apkExists ? "adb missing" : "apk missing" };
+  let apkInstallOk;
+  const parsedPackage = parseApkPackageName(identity.output);
+  // Preuve identité : aapt/aapt2/apkanalyzer, puis adb uninstall + adb install de CETTE APK (pas -r).
+  if (
+    apkExists
+    && adb.available
+    && identity.inspectorAvailable
+    && parsedPackage === ANDROID_PACKAGE
+  ) {
+    uninstall = runCaptured("adb", [...deviceArgs, "uninstall", ANDROID_PACKAGE]);
+    install = runCaptured("adb", [...deviceArgs, "install", apkPath]);
+    apkInstallOk = install.status === 0;
+  }
 
   const pm = adb.available
     ? runCaptured("adb", [...deviceArgs, "shell", "pm", "path", ANDROID_PACKAGE])
@@ -152,9 +177,10 @@ function main() {
     apkPath,
     apkExists,
     sha256,
-    badgingOutput,
+    inspectorAvailable: identity.inspectorAvailable,
+    badgingOutput: identity.output,
     apkText,
-    apkInstallOk: install.status === 0,
+    apkInstallOk,
     maestroExecuted: false,
     maestroExitCode: null,
     requireMaestroExecution: false,
@@ -165,7 +191,9 @@ function main() {
       `adb devices:\n${adbDevices.stdout || adbDevices.stderr || ""}`,
       `apk: ${apkPath || "(missing)"}`,
       `apkSha256: ${sha256 || "(missing)"}`,
-      `aapt:\n${badgingOutput || "(unavailable)"}`,
+      `inspector: ${identity.tool || "(unavailable)"}`,
+      `aapt:\n${identity.output || "(unavailable)"}`,
+      `uninstall:\n${uninstall.stdout || uninstall.stderr || ""}`,
       `install:\n${install.stdout || install.stderr || ""}`,
       `package:\n${pm.stdout || pm.stderr || ""}`,
       `launch:\n${launch.stdout || launch.stderr || ""}`,
@@ -251,9 +279,10 @@ function main() {
     apkPath,
     apkExists,
     sha256,
-    badgingOutput,
+    inspectorAvailable: identity.inspectorAvailable,
+    badgingOutput: identity.output,
     apkText,
-    apkInstallOk: true,
+    apkInstallOk,
     maestroExecuted: true,
     maestroExitCode: maestroRun.status,
   });

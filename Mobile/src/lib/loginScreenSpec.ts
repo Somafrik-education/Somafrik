@@ -124,6 +124,7 @@ export const LOGIN_TEST_IDS = {
 export const HOME_TEST_IDS = {
   parentDashboard: "home-parent-dashboard",
   teacherDashboard: "home-teacher-dashboard",
+  /** Exposé uniquement si session.role === "school_admin". Superadmin / Admin Pays : school-selector. */
   adminDashboard: "home-admin-dashboard",
 } as const;
 

@@ -37,6 +37,7 @@ const BLOCKED = Object.freeze({
   APK_NOT_FOUND: "BLOCKED_APK_NOT_FOUND",
   APK_HASH_MISSING: "BLOCKED_APK_HASH_MISSING",
   APK_PACKAGE_MISMATCH: "BLOCKED_APK_PACKAGE_MISMATCH",
+  APK_PACKAGE_INSPECTOR_MISSING: "BLOCKED_APK_PACKAGE_INSPECTOR_MISSING",
   APK_INSTALL_FAILED: "BLOCKED_APK_INSTALL_FAILED",
 });
 
@@ -147,11 +148,14 @@ function validateApiUrl(url) {
   return { ok: true, apiUrl: CANONICAL_PREPROD_API, provenance: "env" };
 }
 
-function parseApkPackageName({ badgingOutput, apkText } = {}) {
-  const fromBadging = String(badgingOutput || "").match(/package:\s*name=['"]([^'"]+)['"]/i);
-  if (fromBadging) return fromBadging[1];
-  const text = String(apkText || "");
-  if (text.includes(ANDROID_PACKAGE)) return ANDROID_PACKAGE;
+function parseApkPackageName(badgingOutput) {
+  const text = String(badgingOutput || "");
+  const named = text.match(/package:\s*name=['"]([^'"]+)['"]/i);
+  if (named) return named[1];
+  const applicationId = text.match(/application-id[:\s]+([A-Za-z][\w.]*)/i);
+  if (applicationId) return applicationId[1];
+  const trimmed = text.trim();
+  if (/^[A-Za-z][\w.]*\.[A-Za-z][\w.]*$/.test(trimmed)) return trimmed;
   return null;
 }
 
@@ -167,10 +171,14 @@ function validateApkArtifact(input = {}) {
   if (!/^[a-f0-9]{64}$/.test(sha256)) {
     return { ok: false, code: BLOCKED.APK_HASH_MISSING, message: "SHA256 APK manquant ou invalide." };
   }
-  const packageName = parseApkPackageName({
-    badgingOutput: input.badgingOutput,
-    apkText: input.apkText,
-  });
+  if (input.inspectorAvailable !== true) {
+    return {
+      ok: false,
+      code: BLOCKED.APK_PACKAGE_INSPECTOR_MISSING,
+      message: "aapt, aapt2 ou apkanalyzer obligatoire. La chaîne com.somafrik.app dans le ZIP n'est pas une identité.",
+    };
+  }
+  const packageName = parseApkPackageName(input.badgingOutput);
   if (packageName !== ANDROID_PACKAGE) {
     return {
       ok: false,
@@ -179,7 +187,7 @@ function validateApkArtifact(input = {}) {
     };
   }
   if (input.installOk === false) {
-    return { ok: false, code: BLOCKED.APK_INSTALL_FAILED, message: "adb install -r de l'APK fournie a échoué." };
+    return { ok: false, code: BLOCKED.APK_INSTALL_FAILED, message: "adb uninstall + adb install de l'APK fournie a échoué." };
   }
   return { ok: true, apkPath, sha256, packageName };
 }
@@ -315,6 +323,7 @@ function executableFlowsFor(env = {}) {
  *   apkPath?: string,
  *   apkExists?: boolean,
  *   sha256?: string,
+ *   inspectorAvailable?: boolean,
  *   badgingOutput?: string,
  *   apkInstallOk?: boolean,
  *   requireApk?: boolean,
@@ -342,8 +351,8 @@ function evaluateRuntimeGate(input = {}) {
       apkPath: input.apkPath || env.SOMAFRIK_E2E_APK_PATH,
       apkExists: input.apkExists,
       sha256: input.sha256,
+      inspectorAvailable: input.inspectorAvailable,
       badgingOutput: input.badgingOutput,
-      apkText: input.apkText,
       installOk: input.apkInstallOk,
     })
     : { ok: true, apkPath: null, sha256: null, packageName: null };

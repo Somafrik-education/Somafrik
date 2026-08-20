@@ -42,12 +42,8 @@ appId: com.somafrik.app
     id: "login-submit-button"
 - extendedWaitUntil:
     visible:
-      id: "home-admin-dashboard"
-    timeout: 35000
-- extendedWaitUntil:
-    visible:
       id: "school-selector"
-    timeout: 15000
+    timeout: 35000
 - tapOn:
     id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE}"
 - extendedWaitUntil:
@@ -69,7 +65,7 @@ appId: com.somafrik.app
     id: "tab-accueil"
 - extendedWaitUntil:
     visible:
-      id: "home-admin-dashboard"
+      id: "school-selector"
     timeout: 20000
 - tapOn:
     id: "school-selector-chip-${SOMAFRIK_E2E_SCHOOL_CODE_B}"

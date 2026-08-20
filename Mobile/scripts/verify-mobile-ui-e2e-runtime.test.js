@@ -15,6 +15,7 @@ const {
   validateApiUrl,
   validateCredentials,
   validateApkArtifact,
+  parseApkPackageName,
   packageIsInstalled,
   redactSecrets,
   evaluateRuntimeGate,
@@ -41,7 +42,9 @@ function readyProbes(overrides = {}) {
     apkPath: "/tmp/somafrik-qa.apk",
     apkExists: true,
     sha256: "a".repeat(64),
-    apkText: "package:com.somafrik.app\nhttps://somafrik-api-preprod.onrender.com",
+    inspectorAvailable: true,
+    badgingOutput: "package: name='com.somafrik.app'\n",
+    apkText: "https://somafrik-api-preprod.onrender.com",
     apkInstallOk: true,
     maestroExecuted: true,
     maestroExitCode: 0,
@@ -217,11 +220,74 @@ test("APK package mismatch → fail", () => {
     apkPath: "/tmp/other.apk",
     apkExists: true,
     sha256: "b".repeat(64),
+    inspectorAvailable: true,
     badgingOutput: "package: name='com.other.app'",
     installOk: true,
   });
   assert.equal(result.ok, false);
   assert.equal(result.code, BLOCKED.APK_PACKAGE_MISMATCH);
+});
+
+test("aapt absent + chaîne com.somafrik.app dans APK → BLOCKED_APK_PACKAGE_INSPECTOR_MISSING", () => {
+  const result = evaluateRuntimeGate(
+    readyProbes({
+      inspectorAvailable: false,
+      badgingOutput: "",
+      apkText: "PK zip payload com.somafrik.app https://somafrik-api-preprod.onrender.com",
+      apkInstallOk: true,
+      maestroExecuted: false,
+      requireMaestroExecution: false,
+    }),
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some((item) => item.code === BLOCKED.APK_PACKAGE_INSPECTOR_MISSING));
+  assert.notEqual(result.outcome, "SUCCESS");
+});
+
+test("badging com.other.app → BLOCKED_APK_PACKAGE_MISMATCH", () => {
+  const result = evaluateRuntimeGate(
+    readyProbes({
+      badgingOutput: "package: name='com.other.app'\n",
+      apkText: "com.somafrik.app",
+      maestroExecuted: false,
+      requireMaestroExecution: false,
+    }),
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some((item) => item.code === BLOCKED.APK_PACKAGE_MISMATCH));
+});
+
+test("badging com.somafrik.app + install OK → PASS preflight", () => {
+  const result = evaluateRuntimeGate(
+    readyProbes({
+      maestroExecuted: false,
+      requireMaestroExecution: false,
+    }),
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "PREFLIGHT");
+  assert.notEqual(result.status, "SUCCESS");
+});
+
+test("ancienne app présente + mauvaise APK → impossible de faux-passer", () => {
+  const result = evaluateRuntimeGate(
+    readyProbes({
+      badgingOutput: "package: name='com.other.app'\n",
+      apkText: "com.somafrik.app",
+      packagePmOutput: "package:com.somafrik.app\n",
+      apkInstallOk: true,
+      maestroExecuted: true,
+      maestroExitCode: 0,
+    }),
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some((item) => item.code === BLOCKED.APK_PACKAGE_MISMATCH));
+  assert.notEqual(result.outcome, "SUCCESS");
+});
+
+test("scan ASCII n'identifie pas le package", () => {
+  assert.equal(parseApkPackageName("PK zip com.somafrik.app\nlocalhost"), null);
+  assert.equal(parseApkPackageName("package: name='com.somafrik.app'"), "com.somafrik.app");
 });
 
 test("07/08 sont exécutés en lecture, mutation BLOCKED", () => {
