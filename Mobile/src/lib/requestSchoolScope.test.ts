@@ -9,6 +9,7 @@ import {
   getRequestSchoolScope,
   isInternalSchoolAlias,
   isSchoolScopedApiPath,
+  isV2PublicSchoolCode,
   publicRequestSchoolScope,
   setRequestSchoolScope,
 } from "./requestSchoolScope";
@@ -28,8 +29,14 @@ function run() {
   assert.equal(SCHOOL_SCOPE_HEADER, "X-Somafrik-School-Code");
   assert.equal(isInternalSchoolAlias("SCH-ABC123"), true);
   assert.equal(isInternalSchoolAlias("CD-IN-26-001"), false);
+  assert.equal(isV2PublicSchoolCode("CD-IN-26-001"), true);
+  assert.equal(isV2PublicSchoolCode("BI-EC-26-001"), true);
+  assert.equal(isV2PublicSchoolCode("CD-2026-0001"), false);
+  assert.equal(isV2PublicSchoolCode("NURU"), false);
   assert.equal(publicRequestSchoolScope("CD-IN-26-001"), "CD-IN-26-001");
   assert.equal(publicRequestSchoolScope("sch-abc123"), null);
+  assert.equal(publicRequestSchoolScope("CD-2026-0001"), null);
+  assert.equal(publicRequestSchoolScope("NURU"), null);
   assert.equal(publicRequestSchoolScope("*"), null);
   assert.equal(publicRequestSchoolScope(""), null);
 
@@ -64,6 +71,11 @@ function run() {
   const sch = headerBag();
   assert.equal(applyAuthenticatedSchoolScopeHeader(sch, "/students"), false);
   assert.equal(sch.values.has(SCHOOL_SCOPE_HEADER), false);
+
+  setRequestSchoolScope("NURU");
+  assert.equal(getRequestSchoolScope(), null);
+  const invalid = headerBag();
+  assert.equal(applyAuthenticatedSchoolScopeHeader(invalid, "/students"), false);
 
   setRequestSchoolScope("CD-IN-26-001");
   writeStoredSchoolCode("CD-IN-26-001");
