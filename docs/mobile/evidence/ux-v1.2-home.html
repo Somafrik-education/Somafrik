@@ -94,16 +94,20 @@
       text-overflow: ellipsis;
     }
     .content { padding: var(--scroll-top) var(--pad) 0; }
-    .welcome {
-      height: 32px;
-      max-height: var(--welcome);
-      display: flex;
-      align-items: center;
-      color: #64748B;
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 2px;
+    .identity {
+      display: flex; align-items: center; gap: 12px;
+      background: #fff; border-radius: 22px; padding: 14px; margin-bottom: 12px;
+      box-shadow: 0 4px 10px rgba(15,23,42,0.06);
     }
+    .identity-ico { width: 56px; height: 56px; border-radius: 16px; background: #EFF6FF; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .identity b { display: block; font-size: 18px; }
+    .identity .ctx { color: #64748B; font-size: 13px; font-weight: 600; }
+    .identity .space { color: #1D4ED8; font-size: 13px; font-weight: 800; margin-top: 4px; }
+    .banner {
+      background: #1D4ED8; color: #fff; border-radius: 18px; padding: 14px; min-height: 72px; margin-bottom: 14px;
+    }
+    .banner strong { display: block; font-size: 16px; }
+    .banner p { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: #DBEAFE; line-height: 1.35; }
     .section {
       display: flex;
       justify-content: space-between;
@@ -113,7 +117,7 @@
     }
     .section h2 { margin: 0; font-size: 15px; font-weight: 800; }
     .section span { font-size: 13px; font-weight: 800; color: #2563EB; }
-    .kpis { display: flex; justify-content: space-between; gap: 8px; }
+    .kpis { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
     .kpi {
       width: 48%;
       min-height: var(--kpi);
@@ -161,12 +165,10 @@
   </style>
 </head>
 <body>
-  <h1>UX/UI Mobile V1.2 — composition Accueil school_admin</h1>
+  <h1>UX/UI Mobile V2 — Accueil school_admin (coque Préfet)</h1>
   <p class="note">
-    Maquette CSS calée sur les constantes StyleSheet V1.2 (header 44 + bande badge 18,
-    welcome ≤40, KPI min 92, tab 52 + inset). Le badge <strong>Développement · V1.2</strong>
-    authentifie le bundle : une capture device sans <code>V1.2</code> n’est pas ce HEAD.
-    Ce n’est <strong>pas</strong> une capture Expo Go / device. Overlays Expo <code>↻ / ...</code> absents.
+    Maquette de la coque unique V2. Badge <strong>Développement · V2.0</strong>.
+    Ce n’est <strong>pas</strong> une capture Expo Go / device.
   </p>
   <div class="gallery">
     <div>
@@ -196,7 +198,7 @@
   </div>
   <template id="shell">
     <div class="status"></div>
-    <div class="badge-band"><span class="badge">Développement · V1.2</span></div>
+    <div class="badge-band"><span class="badge">Développement · V2.0</span></div>
     <header class="header">
       <div class="slot menu"><div class="hit">☰</div></div>
       <div class="school">INSTITUT NURU</div>
@@ -207,21 +209,42 @@
       </div>
     </header>
     <div class="content">
-      <div class="welcome">Bonjour Administrateur</div>
+      <div class="identity">
+        <div class="identity-ico">👤</div>
+        <div>
+          <b>KIBWIJA TATA</b>
+          <div class="ctx">INSTITUT NURU</div>
+          <div class="space">Espace administrateur</div>
+        </div>
+      </div>
+      <div class="banner">
+        <strong>Espace administrateur</strong>
+        <p>Gestion de l'établissement, utilisateurs, finances et organisation scolaire.</p>
+      </div>
       <div class="section">
-        <h2>Vue d'ensemble</h2>
-        <span>Aujourd’hui</span>
+        <h2>Vue métier</h2>
+        <span>Matrice sécurité</span>
       </div>
       <div class="kpis">
         <div class="kpi">
           <div class="icon" style="background:#EFF6FF">👤</div>
-          <div class="val" style="color:#2563EB">24</div>
+          <div class="val" style="color:#2563EB">9</div>
           <div class="lab">Utilisateurs</div>
         </div>
         <div class="kpi">
-          <div class="icon" style="background:#ECFDF5">✓</div>
-          <div class="val" style="color:#16A34A">92%</div>
-          <div class="lab">Présence</div>
+          <div class="icon" style="background:#EFF6FF">▦</div>
+          <div class="val" style="color:#2563EB">2</div>
+          <div class="lab">Classes</div>
+        </div>
+        <div class="kpi">
+          <div class="icon" style="background:#F5F3FF">👥</div>
+          <div class="val" style="color:#7C3AED">2</div>
+          <div class="lab">Élèves</div>
+        </div>
+        <div class="kpi">
+          <div class="icon" style="background:#FFF7ED">💳</div>
+          <div class="val" style="color:#EA580C">25%</div>
+          <div class="lab">Paiements</div>
         </div>
       </div>
     </div>

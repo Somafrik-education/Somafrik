@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 import {
   COMPACT_HEADER_ROW_DP,
-  COMPACT_WELCOME_MAX_DP,
+  IDENTITY_CARD_MIN_DP,
+  MISSION_BANNER_MIN_DP,
   HEADER_ACTIONS_SLOT_DP,
   HEADER_BADGE_BAND_DP,
   HEADER_MENU_SLOT_DP,
@@ -27,7 +28,7 @@ import {
   tabLabelFitsViewport,
 } from "./mobileUxV1Layout";
 
-assert.equal(UX_V1_SPEC_VERSION, "1.2");
+assert.equal(UX_V1_SPEC_VERSION, "2.0");
 assert.equal(MAX_BOTTOM_TABS, 5);
 assert.equal(MAX_ROLE_TABS, 4);
 assert.equal(COMPACT_HEADER_ROW_DP, 44);
@@ -37,7 +38,8 @@ assert.equal(HEADER_BADGE_BAND_DP, 18);
 assert.equal(shortBottomTabLabel("Utilisateurs"), "Comptes");
 assert.equal(shortBottomTabLabel("Enseignants"), "Profs");
 assert.equal(shortBottomTabLabel("Paiements"), "Frais");
-assert.equal(COMPACT_WELCOME_MAX_DP, 40);
+assert.equal(IDENTITY_CARD_MIN_DP, 88);
+assert.equal(MISSION_BANNER_MIN_DP, 72);
 assert.equal(HOME_SCROLL_TOP_DP, 4);
 assert.equal(KPI_ROW_MIN_DP, 92);
 assert.equal(TAB_BAR_CONTENT_HEIGHT, 52);
@@ -65,13 +67,13 @@ assert.equal(UX_V1_VALIDATION_VIEWPORT.height, 800);
 
 const validation = measureHomeShell(UX_V1_VALIDATION_VIEWPORT, { top: 24, bottom: 16 }, 1);
 assert.equal(validation.kpiCompleteAboveTab, true, "360×800 : ≥ 2 KPI complets au-dessus de la bottom nav");
-assert.ok(validation.welcomeBottom - validation.headerBottom <= COMPACT_WELCOME_MAX_DP + HOME_SCROLL_TOP_DP);
+assert.ok(validation.welcomeBottom - validation.headerBottom >= IDENTITY_CARD_MIN_DP);
 assert.ok(validation.kpiRowBottom <= validation.tabTop - 8);
 
 assert.equal(
   homeAboveFoldFits(UX_V1_VALIDATION_VIEWPORT, { top: 24, bottom: 16 }),
   true,
-  "360×800 : welcome secondaire + Vue d’ensemble + 2 KPI au-dessus de la bottom nav",
+  "360×800 : identité + bannière + Vue métier + 2 KPI au-dessus de la bottom nav",
 );
 assert.equal(
   homeAboveFoldFits({ width: 320, height: 640 }, { top: 24, bottom: 16 }),

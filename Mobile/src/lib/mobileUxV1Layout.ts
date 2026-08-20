@@ -1,11 +1,13 @@
 /**
- * Contrats UX/UI Mobile V1.2 — densité réelle, pas seulement des maxima.
+ * Contrats UX/UI Mobile V2 — coque Accueil unique (référence Préfet).
  * Logique pure, testable hors device. Les nombres doivent matcher le StyleSheet.
  */
 
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 
-export const UX_V1_SPEC_VERSION = "1.2";
+import { MAX_HOME_KPIS } from "./roleHomeConfig";
+
+export const UX_V1_SPEC_VERSION = "2.0";
 
 export const UX_V1_VIEWPORTS = [320, 360, 390, 412] as const;
 export const UX_V1_FONT_SCALES = [1, 1.3] as const;
@@ -16,6 +18,8 @@ export const HEADER_MENU_SLOT_DP = MIN_TOUCH_TARGET_DP;
 export const HEADER_ACTIONS_SLOT_DP = MIN_TOUCH_TARGET_DP * 3;
 export const HEADER_BADGE_BAND_DP = 18;
 export const COMPACT_WELCOME_MAX_DP = 40;
+export const IDENTITY_CARD_MIN_DP = 88;
+export const MISSION_BANNER_MIN_DP = 72;
 export const HOME_SCROLL_TOP_DP = 4;
 export const OVERVIEW_SECTION_HEADER_DP = 24;
 export const KPI_ROW_MIN_DP = 92;
@@ -26,6 +30,7 @@ export const TAB_BAR_GAP_DP = 0;
 export const MAX_BOTTOM_TABS = 5;
 export const MAX_ROLE_TABS = 4;
 export const MAX_TAB_LABEL_CHARS = 8;
+export { MAX_HOME_KPIS };
 export const TAB_LABEL_FONT_SIZE = 10;
 export const MAX_FONT_SCALE = 1.3;
 
@@ -94,8 +99,9 @@ export function measureHomeShell(
 ): HomeShellBoxes {
   const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
   const headerBottom = insets.top + HEADER_BADGE_BAND_DP + COMPACT_HEADER_ROW_DP;
-  const welcomeHeight = Math.min(COMPACT_WELCOME_MAX_DP, Math.ceil(32 * Math.min(scale, 1.15)));
-  const welcomeBottom = headerBottom + HOME_SCROLL_TOP_DP + welcomeHeight;
+  const identityHeight = Math.ceil(IDENTITY_CARD_MIN_DP * Math.min(scale, 1.12));
+  const bannerHeight = Math.ceil(MISSION_BANNER_MIN_DP * Math.min(scale, 1.12));
+  const welcomeBottom = headerBottom + HOME_SCROLL_TOP_DP + identityHeight + bannerHeight;
   const overviewHeight = Math.ceil(OVERVIEW_SECTION_HEADER_DP * Math.min(scale, 1.15));
   const overviewBottom = welcomeBottom + overviewHeight;
   const kpiHeight = Math.ceil(KPI_ROW_MIN_DP * Math.min(scale, 1.12));
