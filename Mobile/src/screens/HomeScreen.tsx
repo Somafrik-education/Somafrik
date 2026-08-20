@@ -1,24 +1,21 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from "react-native";
 import { useCallback } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
-
 import StudentSwitcher from "../components/StudentSwitcher";
+import SchoolSelector from "../components/SchoolSelector";
+import RoleDashboardLayout, {
+  type RoleDashboardAction,
+  type RoleDashboardKpi,
+} from "../components/RoleDashboardLayout";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
-import { canReadEntity, canReadRoute } from "../domain/security/permissions";
+import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
-import { DATA_TRUTH_TEST_IDS, isMetricReady, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
+import { DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import SchoolSelector from "../components/SchoolSelector";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import {
   resolveTeacherAssignmentsForSession,
@@ -26,8 +23,12 @@ import {
   teacherScopedClassLabels,
 } from "../lib/establishment";
 import { HOME_TEST_IDS } from "../lib/loginScreenSpec";
-import { NAVIGATION_COPY, NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
-import { COMPACT_WELCOME_MAX_DP, HOME_SCROLL_TOP_DP, KPI_ROW_MIN_DP } from "../lib/mobileUxV1Layout";
+import {
+  getRoleHomeShell,
+  selectHomeKpis,
+  type RoleHomeActionKey,
+  type RoleHomeKpiKey,
+} from "../lib/roleHomeConfig";
 
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -56,840 +57,395 @@ export default function HomeScreen({ navigation }: any) {
     loadClasses,
     resourceScopeKey,
     countriesData,
-    subscriptionsData,
     teachersData,
     assignmentsData,
     classesData,
     classesSnapshot,
   } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
-  const scrollContentStyle = [
-    styles.scrollContent,
-    {
-      paddingTop: HOME_SCROLL_TOP_DP,
-      paddingBottom: scrollContentPaddingBottom,
-      paddingHorizontal: isTablet ? horizontalPadding : 12,
-      maxWidth: contentMaxWidth,
-      alignSelf: "center" as const,
-      width: "100%" as const,
-    },
-  ];
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const isPlatformAdmin = session?.role === "super_admin" || session?.role === "country_admin";
+  const isSchoolAdmin = session?.role === "school_admin";
   const currentSchool =
     schoolsData.find((item) => item.code === session?.school?.code || item.code === session?.user.schoolCode) ??
     session?.school ??
     schoolsData[0] ??
     { name: "École", timezone: undefined, code: "" };
+
   const studentIds = studentsData.map((student) => student.id);
   const todayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
   const presenceStats = getPresenceStats(todayPresenceRows, studentIds);
-  const attendanceCallCount = countAttendanceCalls(todayPresenceRows, studentsData);
-  const paymentStats = getPaymentStats(paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [], studentIds);
-  const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) =>
-    String(rows.filter(isActiveUserAccount).length),
+  const paymentStats = getPaymentStats(
+    paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [],
+    studentIds,
   );
-  const studentsValue = metricLabelFromSnapshot(studentsSnapshot, (rows) => String(rows.length));
-  const presenceValue = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
-  const paymentsValue = metricLabelFromSnapshot(paymentsSnapshot, () => `${paymentStats.rate}%`, "0%");
   const paymentsReady =
     paymentsSnapshot.status === "success" ||
     paymentsSnapshot.status === "empty" ||
     (paymentsSnapshot.status === "offline" && paymentsSnapshot.data.length > 0);
+
+  const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) => String(rows.filter(isActiveUserAccount).length));
+  const studentsValue = metricLabelFromSnapshot(studentsSnapshot, (rows) => String(rows.length));
+  const classesValue = metricLabelFromSnapshot(classesSnapshot, (rows) =>
+    String(rows.length || new Set(studentsData.map((student) => student.className)).size),
+  );
+  const presenceValue = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
+  const paymentsValue = metricLabelFromSnapshot(paymentsSnapshot, () => `${paymentStats.rate}%`, "0%");
   const announcementsValue = metricLabelFromSnapshot(announcementsSnapshot, (rows) => String(rows.length));
-  const messagesValue = metricLabelFromSnapshot(messagesSnapshot, (rows) => String(rows.length));
   const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, studentsData, teacherScopeState);
   const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesCount));
-  const unreadMessages = isMetricReady(messagesSnapshot) ? unreadMessagesCount : 0;
-  const userName = session?.user.name ?? "Administrateur";
-  const welcomeGreeting = buildTimeGreeting(currentSchool.timezone);
-  const welcomeName = getGreetingName(userName, session?.role);
-  const canReadStudents = canReadEntity(session, "students");
-  const canReadUsers = canReadEntity(session, "users");
-  const canReadPayments = canReadEntity(session, "payments");
-  const canReadAnnouncements = canReadEntity(session, "announcements");
-  const canReadMessages = canReadEntity(session, "messages");
-  const canReadAttendance = canReadRoute(session, "TeacherAttendance");
-  const canOpenSchoolManagement = canReadRoute(session, "SchoolManagement");
-  const isSchoolAdmin = session?.role === "school_admin";
-  const openUsers = () => navigation.navigate(isSchoolAdmin ? "Utilisateurs" : "Users");
+  const unreadMessages = messagesSnapshot.status === "success" || messagesSnapshot.status === "empty" ? unreadMessagesCount : 0;
+  const teachersValue = String(teachersData.length);
+  const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const teacherStudentIds = teacherStudents.map((student) => student.id);
+  const teacherPresenceStats = getPresenceStats(
+    presencesData.filter((presence) => isTodayPresence(presence.date)),
+    teacherStudentIds,
+  );
+  const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
+  const sessionCourses = session?.user?.courses ?? [];
+  const assignmentCourses = resolveTeacherAssignmentsForSession(session, assignmentsData)
+    .map((assignment) => String(assignment.course ?? "").trim())
+    .filter(Boolean);
+  const courses = [...new Set([...sessionCourses, ...assignmentCourses])];
+
+  const linkedChild = session?.user?.children?.find((child: { id: string }) => child.id === selectedStudentId);
+  const selectedStudent =
+    studentsData.find((item) => item.id === selectedStudentId) ??
+    (linkedChild ? { id: linkedChild.id, name: linkedChild.name, className: linkedChild.className } : undefined);
+  const studentNotes = selectedStudentId ? notesForStudent(notesSnapshot.data, selectedStudentId) : [];
+  const canonicalAverage = canonicalWeightedAverage(studentNotes);
+  const averageDisplay = parentAverageDisplay({
+    notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
+    notesForStudent: studentNotes,
+    average: canonicalAverage.available ? canonicalAverage.average ?? undefined : undefined,
+  });
+  const studentPresences = presencesData.filter((presence) => presence.studentId === selectedStudentId);
+  const studentPayments = paymentsReady ? paymentsData.filter((payment) => payment.studentId === selectedStudentId) : [];
+  const studentPresenceStats = getPresenceStats(studentPresences);
+  const studentPaymentStats = getPaymentStats(studentPayments);
 
   useFocusEffect(
     useCallback(() => {
-      if (canReadEntity(session, "users")) {
-        void loadUsers();
-      }
-      if (canReadEntity(session, "students")) {
-        void loadStudents();
-      }
-      if (canReadRoute(session, "TeacherAttendance") || canReadEntity(session, "students")) {
-        void loadPresences();
-      }
-      if (session?.role === "teacher") {
+      if (canReadEntity(session, "users")) void loadUsers();
+      if (canReadEntity(session, "students")) void loadStudents();
+      if (canReadEntity(session, "classes") || canReadRoute(session, "Classes")) void loadClasses();
+      if (canReadRoute(session, "TeacherAttendance") || canReadEntity(session, "students")) void loadPresences();
+      if (session?.role === "teacher" || canReadEntity(session, "teachers")) {
         void loadTeachers();
         void loadClasses();
       }
-      if (canReadEntity(session, "payments")) {
-        void loadPayments();
-      }
-      if (canReadEntity(session, "announcements")) {
-        void loadAnnouncements();
-      }
-      if (canReadEntity(session, "messages")) {
-        void loadMessages();
-      }
-      if (session?.role === "super_admin" || session?.role === "country_admin") {
-        void loadSchools();
-      }
-      if (session?.role === "parent_student" || session?.role === "student") {
-        void loadNotes();
-      }
-    }, [session, resourceScopeKey, loadUsers, loadStudents, loadPresences, loadTeachers, loadClasses, loadPayments, loadAnnouncements, loadMessages, loadSchools, loadNotes]),
+      if (canReadEntity(session, "payments")) void loadPayments();
+      if (canReadEntity(session, "announcements")) void loadAnnouncements();
+      if (canReadEntity(session, "messages")) void loadMessages();
+      if (session?.role === "super_admin" || session?.role === "country_admin") void loadSchools();
+      if (session?.role === "parent_student" || session?.role === "student") void loadNotes();
+    }, [
+      session,
+      resourceScopeKey,
+      loadUsers,
+      loadStudents,
+      loadPresences,
+      loadTeachers,
+      loadClasses,
+      loadPayments,
+      loadAnnouncements,
+      loadMessages,
+      loadSchools,
+      loadNotes,
+    ]),
   );
 
-  if (session?.role === "teacher") {
-    const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
-    const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
-    const sessionCourses = session.user.courses ?? [];
-    const assignmentCourses = resolveTeacherAssignmentsForSession(session, assignmentsData)
-      .map((assignment) => String(assignment.course ?? "").trim())
-      .filter(Boolean);
-    const courses = [...new Set([...sessionCourses, ...assignmentCourses])];
-    const teacherStudentIds = teacherStudents.map((student) => student.id);
-    const teacherTodayPresenceRows = presencesData.filter((presence) => isTodayPresence(presence.date));
-    const teacherPresenceStats = getPresenceStats(teacherTodayPresenceRows, teacherStudentIds);
-    const teacherAttendanceCallCount = countAttendanceCalls(teacherTodayPresenceRows, teacherStudents);
-    const teacherStudentsValue = metricLabelFromSnapshot(studentsSnapshot, () => String(teacherStudents.length));
-    const teacherClassesValue = metricLabelFromSnapshot(classesSnapshot, () => String(assignedClasses.length));
-    const teacherPresenceValue = metricLabelFromSnapshot(presencesSnapshot, () => `${teacherPresenceStats.rate}%`, "0%");
-    const teacherPresenceMeta = metricLabelFromSnapshot(
-      presencesSnapshot,
-      () => `${teacherAttendanceCallCount} appel(s) • ${teacherPresenceStats.attended}/${teacherPresenceStats.total} élève(s)`,
-      "0 appel(s)",
-    );
+  const shell = getRoleHomeShell(session);
+  const userName = session?.user?.name ?? "Utilisateur";
+  const isTeacher = session?.role === "teacher";
+  const isParentLike = session?.role === "parent_student" || session?.role === "student";
 
-    return (
-      <View style={styles.screen}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={scrollContentStyle}
-        >
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.schoolCard}
-            onPress={() => navigation.navigate("Classes")}
-          >
-            <View style={styles.schoolIconBox}>
-              <Ionicons name="school-outline" size={28} color="#2563EB" />
-            </View>
+  const identityName = isParentLike ? selectedStudent?.name ?? "Élève" : userName;
+  const identityContext = isTeacher
+    ? assignedClasses.join(", ") || currentSchool.name
+    : isParentLike
+      ? selectedStudent?.className ?? currentSchool.name
+      : currentSchool.name;
 
-            <View style={styles.schoolInfo}>
-              <Text style={styles.schoolName}>{userName}</Text>
-              <Text style={styles.schoolCity}>{courses.join(", ") || "Cours non renseignés"}</Text>
-              <Text style={styles.schoolTagline}>{assignedClasses.join(", ") || currentSchool.name}</Text>
-            </View>
-          </TouchableOpacity>
+  const studentsRoute = canReadRoute(session, "TeacherStudents")
+    ? "TeacherStudents"
+    : canReadRoute(session, "Students")
+      ? "Students"
+      : "Classes";
+  const usersRoute = isSchoolAdmin ? "Utilisateurs" : "Users";
 
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.teacherWelcomeCard}
-            onPress={() => navigation.navigate("TeacherAttendance")}
-            testID={HOME_TEST_IDS.teacherDashboard}
-          >
-            <View>
-              <Text style={styles.welcomeTitle}>Espace enseignant</Text>
-              <Text style={styles.welcomeText}>
-                Suivez vos classes, l'appel et les résultats des élèves.
-              </Text>
-            </View>
+  const kpiCatalog: Record<RoleHomeKpiKey, RoleDashboardKpi | null> = {
+    users: canReadEntity(session, "users")
+      ? kpi("users", "person-outline", usersValue, "Utilisateurs", "#2563EB", "#EFF6FF", () => navigation.navigate(usersRoute), DATA_TRUTH_TEST_IDS.homeUsersValue)
+      : null,
+    classes: canReadEntity(session, "classes") || canReadRoute(session, "Classes")
+      ? kpi("classes", "grid-outline", isTeacher ? String(assignedClasses.length) : classesValue, "Classes", "#2563EB", "#EFF6FF", () => navigation.navigate("Classes"))
+      : null,
+    students: canReadEntity(session, "students")
+      ? kpi(
+          "students",
+          "people-outline",
+          isTeacher ? String(teacherStudents.length) : studentsValue,
+          "Élèves",
+          "#7C3AED",
+          "#F5F3FF",
+          () => navigation.navigate(studentsRoute),
+          DATA_TRUTH_TEST_IDS.homeStudentsValue,
+        )
+      : null,
+    presence: canReadRoute(session, "TeacherAttendance") || isParentLike
+      ? kpi(
+          "presence",
+          "checkmark-circle-outline",
+          isParentLike ? `${studentPresenceStats.attended}/${studentPresenceStats.total}` : isTeacher ? `${teacherPresenceStats.rate}%` : presenceValue,
+          isParentLike ? "Présence" : "Présence",
+          "#16A34A",
+          "#ECFDF5",
+          () =>
+            navigation.navigate(
+              isParentLike ? "StudentPresences" : "TeacherAttendance",
+              isParentLike ? { studentId: selectedStudentId } : undefined,
+            ),
+          DATA_TRUTH_TEST_IDS.homePresenceValue,
+        )
+      : null,
+    payments: canReadEntity(session, "payments") || canReadRoute(session, "StudentPayments")
+      ? kpi(
+          "payments",
+          "card-outline",
+          isParentLike
+            ? paymentsReady
+              ? `${studentPaymentStats.paid}/${studentPaymentStats.total}`
+              : "—"
+            : paymentsValue,
+          "Paiements",
+          "#EA580C",
+          "#FFF7ED",
+          () =>
+            navigation.navigate(
+              isParentLike ? "StudentPayments" : "Payments",
+              isParentLike ? { studentId: selectedStudentId } : undefined,
+            ),
+          DATA_TRUTH_TEST_IDS.homePaymentsValue,
+        )
+      : null,
+    teachers: canReadEntity(session, "teachers")
+      ? kpi("teachers", "school-outline", teachersValue, "Personnel", "#7C3AED", "#F5F3FF", () => navigation.navigate("Teachers"))
+      : null,
+    courses: kpi(
+      "courses",
+      "book-outline",
+      isTeacher ? String(courses.length) : String(new Set(studentNotes.map((note) => note.subject).filter(Boolean)).size || "—"),
+      "Cours",
+      "#EA580C",
+      "#FFF7ED",
+      () => navigation.navigate(isTeacher ? "TeacherGrades" : "Timetable"),
+    ),
+    notes: kpi(
+      "notes",
+      "reader-outline",
+      String(studentNotes.length),
+      "Notes",
+      "#7C3AED",
+      "#F5F3FF",
+      () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }),
+    ),
+    average: kpi(
+      "average",
+      "school-outline",
+      averageDisplay.label,
+      "Notes",
+      "#2563EB",
+      "#EFF6FF",
+      () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }),
+      DATA_TRUTH_TEST_IDS.parentAverage,
+    ),
+    pendingPayments: canReadEntity(session, "payments")
+      ? kpi("pendingPayments", "time-outline", paymentsReady ? formatAmount(paymentStats.pendingAmount) : "—", "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
+      : null,
+    paidPayments: canReadEntity(session, "payments")
+      ? kpi("paidPayments", "checkmark-circle-outline", paymentsReady ? formatAmount(paymentStats.paidAmount) : "—", "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
+      : null,
+    unpaidPayments: canReadEntity(session, "payments")
+      ? kpi("unpaidPayments", "alert-circle-outline", paymentsReady ? String(paymentStats.pending) : "—", "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Payments"))
+      : null,
+    paymentCount: canReadEntity(session, "payments")
+      ? kpi("paymentCount", "card-outline", paymentsValue, "Paiements", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"), DATA_TRUTH_TEST_IDS.homePaymentsValue)
+      : null,
+    documents: canReadRoute(session, "Documents")
+      ? kpi("documents", "folder-open-outline", "—", "Documents", "#2563EB", "#EFF6FF", () => navigation.navigate("Documents"))
+      : null,
+    messages: canReadRoute(session, "Messages")
+      ? kpi("messages", "chatbubbles-outline", unreadMessagesValue, "Messages", "#0F766E", "#ECFDF5", () => navigation.navigate("Messages"))
+      : null,
+    announcements: canReadEntity(session, "announcements")
+      ? kpi("announcements", "megaphone-outline", announcementsValue, "Annonces", "#7C3AED", "#F5F3FF", () => navigation.navigate("Announcements"))
+      : null,
+    countries: isPlatformAdmin
+      ? kpi("countries", "earth-outline", String(countriesData.length), "Pays", "#2563EB", "#EFF6FF", () => navigation.navigate("AdminCrud", { entity: "countries" }))
+      : null,
+    schools: isPlatformAdmin
+      ? kpi("schools", "business-outline", String(schoolsData.length), "Établissements", "#7C3AED", "#F5F3FF", () => navigation.navigate("AdminCrud", { entity: "schools" }))
+      : null,
+  };
 
-            <View style={styles.welcomeIcon}>
-              <Ionicons name="reader-outline" size={28} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
+  const kpis = selectHomeKpis(
+    shell.kpiKeys.map((key) => kpiCatalog[key]).filter((item): item is RoleDashboardKpi => Boolean(item)),
+  );
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Mes classes</Text>
-            <Text style={styles.sectionLink}>Aujourd'hui</Text>
-          </View>
+  const actionCatalog: Record<RoleHomeActionKey, RoleDashboardAction | null> = {
+    users: canReadEntity(session, "users") ? action("users", "person-circle-outline", isSchoolAdmin ? "Comptes" : "Utilisateurs", () => navigation.navigate(usersRoute)) : null,
+    classes: canReadRoute(session, "Classes") ? action("classes", "grid-outline", "Classes", () => navigation.navigate("Classes")) : null,
+    teachers: canReadEntity(session, "teachers") ? action("teachers", "person-add-outline", "Enseignants", () => navigation.navigate("Teachers")) : null,
+    payments: canReadEntity(session, "payments") ? action("payments", "card-outline", "Frais", () => navigation.navigate("Payments")) : null,
+    announcements: canReadEntity(session, "announcements") ? action("announcements", "megaphone-outline", "Annonces", () => navigation.navigate("Announcements")) : null,
+    students: canReadEntity(session, "students") ? action("students", "people-outline", "Élèves", () => navigation.navigate(studentsRoute)) : null,
+    attendance: canReadRoute(session, "TeacherAttendance") ? action("attendance", "checkbox-outline", "Présences", () => navigation.navigate("TeacherAttendance")) : null,
+    grades: canReadRoute(session, "TeacherGrades") ? action("grades", "reader-outline", "Notes", () => navigation.navigate("TeacherGrades")) : null,
+    reportCards: canReadRoute(session, "ReportCards") ? action("reportCards", "document-text-outline", "Bulletins", () => navigation.navigate("ReportCards")) : null,
+    messages: canReadRoute(session, "Messages")
+      ? action("messages", "chatbubbles-outline", unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages", () => navigation.navigate("Messages"))
+      : null,
+    timetable: canReadRoute(session, "Timetable") ? action("timetable", "time-outline", "Planning", () => navigation.navigate("Timetable")) : null,
+    profile: selectedStudentId
+      ? action("profile", "person-outline", "Profil", () => navigation.navigate("StudentDetail", { studentId: selectedStudentId }))
+      : null,
+    notes: selectedStudentId
+      ? action("notes", "book-outline", "Notes", () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }))
+      : null,
+    presences: selectedStudentId
+      ? action("presences", "calendar-outline", "Présences", () => navigation.navigate("StudentPresences", { studentId: selectedStudentId }))
+      : null,
+    studentPayments: selectedStudentId
+      ? action("studentPayments", "card-outline", "Frais", () => navigation.navigate("StudentPayments", { studentId: selectedStudentId }))
+      : null,
+    documents: canReadRoute(session, "Documents") ? action("documents", "folder-open-outline", "Documents", () => navigation.navigate("Documents")) : null,
+  };
 
-          <View style={styles.statsGrid}>
-            <StatCard
-              icon="grid-outline"
-              value={teacherClassesValue}
-              label="Classes"
-              color="#2563EB"
-              bg="#EFF6FF"
-              onPress={() => navigation.navigate("Classes")}
-            />
-            <StatCard
-              icon="people-outline"
-              value={teacherStudentsValue}
-              label="Élèves"
-              color="#7C3AED"
-              bg="#F5F3FF"
-              onPress={() => navigation.navigate("TeacherStudents")}
-            />
-            <StatCard
-              icon="checkmark-circle-outline"
-              value={teacherPresenceValue}
-              label="Présence"
-              meta={teacherPresenceMeta === "—" || teacherPresenceMeta === "Indisponible" ? undefined : teacherPresenceMeta}
-              color="#16A34A"
-              bg="#ECFDF5"
-              onPress={() => navigation.navigate("TeacherAttendance")}
-              testID={DATA_TRUTH_TEST_IDS.homePresenceValue}
-            />
-            <StatCard
-              icon="book-outline"
-              value={String(courses.length)}
-              label="Cours"
-              color="#EA580C"
-              bg="#FFF7ED"
-              onPress={() => navigation.navigate("TeacherGrades")}
-            />
-          </View>
+  const configuredActions = shell.actionKeys
+    .map((key) => actionCatalog[key])
+    .filter((item): item is RoleDashboardAction => Boolean(item));
+  const configuredKeys = new Set(configuredActions.map((item) => item.key));
+  const overflowActions = buildOverflowQuickActionItems(session)
+    .filter((item) => !configuredKeys.has(item.tabName) && !configuredActions.some((action) => action.label === item.label))
+    .map((item) => action(item.tabName, item.icon, item.label, () => navigation.navigate(item.tabName)));
+  const actions = [...configuredActions, ...overflowActions];
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Actions rapides</Text>
-          </View>
+  const dashboardTestId =
+    session?.role === "school_admin"
+      ? HOME_TEST_IDS.adminDashboard
+      : session?.role === "teacher"
+        ? HOME_TEST_IDS.teacherDashboard
+        : session?.role === "parent_student" || session?.role === "student"
+          ? HOME_TEST_IDS.parentDashboard
+          : undefined;
 
-          <View style={styles.actionsGrid}>
-            <QuickAction
-              icon="grid-outline"
-              label="Classes"
-              onPress={() => navigation.navigate("Classes")}
-            />
-            <QuickAction
-              icon="people-outline"
-              label="Élèves"
-              onPress={() => navigation.navigate("TeacherStudents")}
-            />
-            <QuickAction
-              icon="checkbox-outline"
-              label="Appel"
-              onPress={() => navigation.navigate("TeacherAttendance")}
-            />
-            {canReadRoute(session, "TeacherGrades") && (
-              <QuickAction
-                icon="reader-outline"
-                label="Notes"
-                onPress={() => navigation.navigate("TeacherGrades")}
-              />
-            )}
-            {canReadRoute(session, "Timetable") && (
-              <QuickAction
-                icon="time-outline"
-                label="Planning"
-                onPress={() => navigation.navigate("Timetable")}
-              />
-            )}
-            {canReadRoute(session, "ReportCards") && (
-              <QuickAction
-                icon="document-text-outline"
-                label="Bulletins"
-                onPress={() => navigation.navigate("ReportCards")}
-              />
-            )}
-            {canReadRoute(session, "Messages") && (
-              <QuickAction
-                icon="chatbubbles-outline"
-                label={unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages"}
-                onPress={() => navigation.navigate("Messages")}
-              />
-            )}
-            <OverflowQuickActionsGrid
-              session={session}
-              navigation={navigation}
-              unreadMessages={unreadMessages}
-              excludeTabNames={["Classes", "TeacherStudents", "TeacherAttendance", "TeacherGrades"]}
-            />
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  if ((session?.role === "parent_student" || session?.role === "student") && selectedStudentId) {
-    const linkedChild = session.user.children?.find((child) => child.id === selectedStudentId);
-    const student =
-      studentsData.find((item) => item.id === selectedStudentId) ??
-      (linkedChild
-        ? { id: linkedChild.id, name: linkedChild.name, className: linkedChild.className }
-        : undefined);
-    const studentNotes = notesForStudent(notesSnapshot.data, selectedStudentId);
-    const canonicalAverage = canonicalWeightedAverage(studentNotes);
-    const averageDisplay = parentAverageDisplay({
-      notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
-      notesForStudent: studentNotes,
-      average: canonicalAverage.available ? canonicalAverage.average ?? undefined : undefined,
-    });
-    const studentPresences = presencesData.filter((presence) => presence.studentId === selectedStudentId);
-    const studentPayments = paymentsReady
-      ? paymentsData.filter((payment) => payment.studentId === selectedStudentId)
-      : [];
-    const studentPresenceStats = getPresenceStats(studentPresences);
-    const studentPaymentStats = getPaymentStats(studentPayments);
-    const latestAnnouncement = announcementsSnapshot.data[0];
-
-    return (
-      <View style={styles.screen}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={scrollContentStyle}
-        >
-          <StudentSwitcher />
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.schoolCard}
-            onPress={() => navigation.navigate("StudentDetail", { studentId: selectedStudentId })}
-          >
-            <View style={styles.schoolIconBox}>
-              <Ionicons name="person-circle-outline" size={30} color="#2563EB" />
-            </View>
-
-            <View style={styles.schoolInfo}>
-              <Text style={styles.schoolName}>{student?.name ?? "Élève"}</Text>
-              <Text style={styles.schoolCity}>{student?.className ?? "Classe non renseignée"}</Text>
-              <Text style={styles.schoolTagline}>{currentSchool.name}</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.parentWelcomeCard}
-            onPress={() => navigation.navigate("StudentNotes", { studentId: selectedStudentId })}
-            testID={HOME_TEST_IDS.parentDashboard}
-          >
-            <View>
-              <Text style={styles.welcomeTitle}>
-                {session.role === "student" ? "Espace élève" : "Suivi scolaire"}
-              </Text>
-              <Text style={styles.welcomeText}>
-                Consultez les résultats, présences et paiements de l'élève.
-              </Text>
-            </View>
-
-            <View style={styles.welcomeIcon}>
-              <Ionicons name="book-outline" size={28} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Résumé de l'élève</Text>
-            <Text style={styles.sectionLink}>Aujourd'hui</Text>
-          </View>
-
-          <View style={styles.statsGrid}>
-            <StatCard
-              icon="school-outline"
-              value={averageDisplay.label}
-              label="Moyenne"
-              color="#2563EB"
-              bg="#EFF6FF"
-              testID={DATA_TRUTH_TEST_IDS.parentAverage}
-              onPress={() => navigation.navigate("StudentNotes", { studentId: selectedStudentId })}
-            />
-
-            <StatCard
-              icon="checkmark-circle-outline"
-              value={`${studentPresenceStats.attended}/${studentPresenceStats.total}`}
-              label="Présences"
-              color="#16A34A"
-              bg="#ECFDF5"
-              onPress={() => navigation.navigate("StudentPresences", { studentId: selectedStudentId })}
-            />
-
-            <StatCard
-              icon="document-text-outline"
-              value={String(studentNotes.length)}
-              label="Notes"
-              color="#7C3AED"
-              bg="#F5F3FF"
-              onPress={() => navigation.navigate("StudentNotes", { studentId: selectedStudentId })}
-            />
-
-            <StatCard
-              icon="card-outline"
-              value={paymentsReady ? `${studentPaymentStats.paid}/${studentPaymentStats.total}` : "—"}
-              label="Paiements"
-              color="#EA580C"
-              bg="#FFF7ED"
-              onPress={() => navigation.navigate("StudentPayments", { studentId: selectedStudentId })}
-            />
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Accès rapides</Text>
-          </View>
-
-          <View style={styles.actionsGrid}>
-            <QuickAction
-              icon="person-outline"
-              label="Profil"
-              onPress={() => navigation.navigate("StudentDetail", { studentId: selectedStudentId })}
-            />
-            <QuickAction
-              icon="book-outline"
-              label="Notes"
-              onPress={() => navigation.navigate("StudentNotes", { studentId: selectedStudentId })}
-            />
-            <QuickAction
-              icon="calendar-outline"
-              label="Présences"
-              onPress={() => navigation.navigate("StudentPresences", { studentId: selectedStudentId })}
-            />
-            {canReadRoute(session, "Timetable") && (
-              <QuickAction
-                icon="time-outline"
-                label="Emploi du temps"
-                onPress={() => navigation.navigate("Timetable")}
-              />
-            )}
-            {canReadRoute(session, "ReportCards") && (
-              <QuickAction
-                icon="document-text-outline"
-                label="Bulletins"
-                onPress={() => navigation.navigate("ReportCards")}
-              />
-            )}
-            <QuickAction
-              icon="card-outline"
-              label="Paiements"
-              onPress={() => navigation.navigate("StudentPayments", { studentId: selectedStudentId })}
-            />
-            {session.role === "parent_student" && canReadRoute(session, "Messages") && (
-              <QuickAction
-                icon="chatbubbles-outline"
-                label={unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages"}
-                onPress={() => navigation.navigate("Messages")}
-              />
-            )}
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Dernière annonce</Text>
-          </View>
-
-          <View style={styles.activityCard}>
-            <ActivityItem
-              icon="megaphone-outline"
-              title={latestAnnouncement?.title ?? "Aucune annonce"}
-              description={latestAnnouncement?.message ?? "Les annonces de l'école apparaîtront ici."}
-              color="#7C3AED"
-              onPress={() => navigation.navigate("Announcements")}
-            />
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  if (session?.role === "principal" || session?.role === "prefet" || session?.role === "secretary") {
-    const isSecretary = session.role === "secretary";
-    const title = isSecretary ? "Espace secrétariat" : session.role === "prefet" ? "Espace préfet des études" : "Espace proviseur";
-    const description = isSecretary
-      ? "Suivi des élèves, présences, paiements et messages administratifs."
-      : "Pilotage pédagogique, présences, notes, bulletins et rapports.";
-
-    return (
-      <View style={styles.screen}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={scrollContentStyle}>
-          <TouchableOpacity activeOpacity={0.85} style={styles.schoolCard} onPress={() => navigation.navigate("Classes")}>
-            <View style={styles.schoolIconBox}>
-              <Ionicons name={isSecretary ? "briefcase-outline" : "analytics-outline"} size={28} color="#2563EB" />
-            </View>
-            <View style={styles.schoolInfo}>
-              <Text style={styles.schoolName}>{userName}</Text>
-              <Text style={styles.schoolCity}>{currentSchool.name}</Text>
-              <Text style={styles.schoolTagline}>{title}</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.welcomeCard}
-            onPress={() => navigation.navigate(isSecretary ? "TeacherStudents" : "TeacherAttendance")}
-          >
-            <View>
-              <Text style={styles.welcomeTitle}>{title}</Text>
-              <Text style={styles.welcomeText}>{description}</Text>
-            </View>
-            <View style={styles.welcomeIcon}>
-              <Ionicons name={isSecretary ? "people-outline" : "school-outline"} size={28} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Vue métier</Text>
-            <Text style={styles.sectionLink}>Matrice sécurité</Text>
-          </View>
-
-          <View style={styles.statsGrid}>
-            {canReadEntity(session, "classes") && (
-              <StatCard icon="grid-outline" value={String(studentsData.length ? new Set(studentsData.map((student) => student.className)).size : 0)} label="Classes" color="#2563EB" bg="#EFF6FF" onPress={() => navigation.navigate("Classes")} />
-            )}
-            {canReadEntity(session, "students") && (
-              <StatCard icon="people-outline" value={String(studentsData.length)} label="Élèves" color="#7C3AED" bg="#F5F3FF" onPress={() => navigation.navigate("TeacherStudents")} />
-            )}
-            {canReadRoute(session, "TeacherAttendance") && (
-              <StatCard
-                icon="checkmark-circle-outline"
-                value={`${presenceStats.rate}%`}
-                label="Présence"
-                meta={`${attendanceCallCount} appel(s) • ${presenceStats.attended}/${presenceStats.total} élève(s)`}
-                color="#16A34A"
-                bg="#ECFDF5"
-                onPress={() => navigation.navigate("TeacherAttendance")}
-              />
-            )}
-            {canReadEntity(session, "payments") && (
-              <StatCard icon="card-outline" value={paymentsReady ? `${paymentStats.rate}%` : "—"} label="Paiements" color="#EA580C" bg="#FFF7ED" onPress={() => navigation.navigate("Payments")} />
-            )}
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Actions rapides</Text>
-          </View>
-
-          <View style={styles.actionsGrid}>
-            {canReadEntity(session, "students") && <QuickAction icon="people-outline" label="Élèves" onPress={() => navigation.navigate("TeacherStudents")} />}
-            {canReadRoute(session, "TeacherAttendance") && <QuickAction icon="checkbox-outline" label="Présences" onPress={() => navigation.navigate("TeacherAttendance")} />}
-            {canReadRoute(session, "TeacherGrades") && <QuickAction icon="reader-outline" label="Notes" onPress={() => navigation.navigate("TeacherGrades")} />}
-            {canReadRoute(session, "ReportCards") && <QuickAction icon="document-text-outline" label="Bulletins" onPress={() => navigation.navigate("ReportCards")} />}
-            {canReadEntity(session, "payments") && <QuickAction icon="card-outline" label="Paiements" onPress={() => navigation.navigate("Payments")} />}
-            {canReadRoute(session, "Messages") && <QuickAction icon="chatbubbles-outline" label={unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages"} onPress={() => navigation.navigate("Messages")} />}
-            {canReadRoute(session, "Announcements") && <QuickAction icon="megaphone-outline" label="Annonces" onPress={() => navigation.navigate("Announcements")} />}
-            <OverflowQuickActionsGrid
-              session={session}
-              navigation={navigation}
-              unreadMessages={unreadMessages}
-              excludeTabNames={["TeacherStudents", "TeacherAttendance", "TeacherGrades", "Paiements", "Messages"]}
-            />
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
+  const latestAnnouncement = announcementsSnapshot.data[0];
+  const showParentAnnouncement = isParentLike && Boolean(latestAnnouncement || canReadRoute(session, "Announcements"));
 
   return (
-    <View style={styles.screen}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={scrollContentStyle}
-      >
-        {isPlatformAdmin && <SchoolSelector />}
-
-        <View testID={isSchoolAdmin ? "home-ux-v1-2" : undefined} collapsable={false}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.welcomeQuiet}
-            onPress={() => canOpenSchoolManagement && navigation.navigate("SchoolManagement")}
-            testID={isSchoolAdmin ? HOME_TEST_IDS.adminDashboard : undefined}
-          >
-            <Text style={styles.welcomeQuietText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-              {welcomeGreeting}
-              {welcomeName ? ` ${welcomeName}` : ""}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle} testID={NAVIGATION_TEST_IDS.homeOverviewTitle}>
-            {NAVIGATION_COPY.homeOverview}
-          </Text>
-          <Text style={styles.sectionLink}>Aujourd’hui</Text>
-        </View>
-
-        <View style={styles.statsGrid}>
-          {canReadUsers && (
-            <StatCard
-              icon="person-outline"
-              value={usersValue}
-              label="Utilisateurs"
-              color="#2563EB"
-              bg="#EFF6FF"
-              onPress={openUsers}
-              testID={DATA_TRUTH_TEST_IDS.homeUsersValue}
-            />
-          )}
-
-          {!isSchoolAdmin && canReadStudents && (
-            <StatCard
-              icon="people-outline"
-              value={studentsValue}
-              label="Élèves"
-              color="#7C3AED"
-              bg="#F5F3FF"
-              onPress={() => navigation.navigate("Students")}
-              testID={DATA_TRUTH_TEST_IDS.homeStudentsValue}
-            />
-          )}
-
-          {canReadAttendance && (
-            <StatCard
-              icon="checkmark-circle-outline"
-              value={presenceValue}
-              label="Présence"
-              color="#16A34A"
-              bg="#ECFDF5"
-              onPress={() => navigation.navigate("TeacherAttendance")}
-              testID={DATA_TRUTH_TEST_IDS.homePresenceValue}
-            />
-          )}
-
-          {canReadPayments && (
-            <StatCard
-              icon="card-outline"
-              value={paymentsValue}
-              label="Paiements"
-              color="#EA580C"
-              bg="#FFF7ED"
-              onPress={() => navigation.navigate("Payments")}
-              testID={DATA_TRUTH_TEST_IDS.homePaymentsValue}
-            />
-          )}
-        </View>
-
-        {isPlatformAdmin && (
-          <View style={[styles.statsGrid, isTablet && styles.statsGridTablet]}>
-            <StatCard
-              icon="earth-outline"
-              value={String(countriesData.length)}
-              label="Pays"
-              color="#2563EB"
-              bg="#EFF6FF"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "countries" })}
-            />
-            <StatCard
-              icon="business-outline"
-              value={String(schoolsData.length)}
-              label="Etablissements"
-              color="#7C3AED"
-              bg="#F5F3FF"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "schools" })}
-            />
-            <StatCard
-              icon="cube-outline"
-              value={String(subscriptionsData.length)}
-              label="Abonnements"
-              color="#EA580C"
-              bg="#FFF7ED"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "subscriptions" })}
-            />
-            <StatCard
-              icon="people-outline"
-              value={usersValue}
-              label="Admins etablissement"
-              color="#16A34A"
-              bg="#ECFDF5"
-              onPress={() => navigation.navigate("Users")}
-            />
+    <RoleDashboardLayout
+      paddingBottom={scrollContentPaddingBottom}
+      paddingHorizontal={isTablet ? horizontalPadding : 12}
+      contentMaxWidth={contentMaxWidth}
+      headerSlot={
+        isPlatformAdmin ? (
+          <SchoolSelector />
+        ) : isParentLike ? (
+          <StudentSwitcher />
+        ) : null
+      }
+      identity={{
+        name: identityName,
+        context: identityContext,
+        spaceLabel: shell.spaceLabel,
+        icon: shell.identityIcon as keyof typeof Ionicons.glyphMap,
+        accent: shell.accent,
+        onPress: () => {
+          if (isParentLike && selectedStudentId) {
+            navigation.navigate("StudentDetail", { studentId: selectedStudentId });
+            return;
+          }
+          if (canReadRoute(session, "Classes")) navigation.navigate("Classes");
+        },
+      }}
+      banner={{
+        title: shell.spaceLabel,
+        mission: shell.mission,
+        icon: shell.bannerIcon as keyof typeof Ionicons.glyphMap,
+        background: shell.accent,
+        onPress: () => {
+          if (isParentLike && selectedStudentId) {
+            navigation.navigate("StudentNotes", { studentId: selectedStudentId });
+            return;
+          }
+          if (canReadRoute(session, "TeacherAttendance")) {
+            navigation.navigate("TeacherAttendance");
+            return;
+          }
+          if (canReadRoute(session, "Classes")) navigation.navigate("Classes");
+        },
+        testID: dashboardTestId,
+      }}
+      kpis={kpis}
+      actions={actions}
+      showSecurityMatrix={shell.showSecurityMatrix && canReadView(session, "Permissions")}
+      onSecurityMatrixPress={() => navigation.navigate("Permissions")}
+      footerSlot={
+        showParentAnnouncement ? (
+          <View style={footerStyles.wrap}>
+            <Text style={footerStyles.title}>Dernière annonce</Text>
+            <TouchableOpacity style={footerStyles.card} onPress={() => navigation.navigate("Announcements")}>
+              <Text style={footerStyles.cardTitle}>{latestAnnouncement?.title ?? "Aucune annonce"}</Text>
+              <Text style={footerStyles.cardBody}>
+                {latestAnnouncement?.message ?? "Les annonces de l'école apparaîtront ici."}
+              </Text>
+            </TouchableOpacity>
           </View>
-        )}
-
-        {/* Activité récente */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Activité récente</Text>
-          <Text style={styles.sectionLink}>Voir tout</Text>
-        </View>
-
-        <View style={styles.activityCard}>
-          {canReadPayments && (
-            <ActivityItem
-              icon="cash-outline"
-              title="Paiement reçu"
-              description={`${paymentsData.filter((payment) => payment.status === "PAYE").length} paiement(s) validé(s)`}
-              color="#16A34A"
-              onPress={() => navigation.navigate("Payments")}
-            />
-          )}
-
-          {canReadUsers && (
-            <ActivityItem
-              icon="person-add-outline"
-              title="Comptes utilisateurs"
-              description={`${usersValue} compte(s) actif(s)`}
-              color="#2563EB"
-              onPress={openUsers}
-            />
-          )}
-
-          {!isSchoolAdmin && canReadStudents && (
-            <ActivityItem
-              icon="person-add-outline"
-              title="Élèves inscrits"
-              description={`${studentsValue} dossier(s) actif(s)`}
-              color="#2563EB"
-              onPress={() => navigation.navigate("Students")}
-            />
-          )}
-
-          {canReadAnnouncements && (
-            <ActivityItem
-              icon="megaphone-outline"
-              title="Annonce publiée"
-              description={`${announcementsValue} communication(s) envoyée(s)`}
-              color="#7C3AED"
-              onPress={() => navigation.navigate("Announcements")}
-            />
-          )}
-          {canReadMessages && (
-            <ActivityItem
-              icon="chatbubbles-outline"
-              title="Messages parents"
-              description={`${unreadMessagesValue} non lu(s) • ${messagesValue} échange(s)`}
-              color="#0F766E"
-              onPress={() => navigation.navigate("Messages")}
-            />
-          )}
-        </View>
-
-        {/* Actions rapides */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Actions rapides</Text>
-        </View>
-
-        <View style={styles.actionsGrid}>
-          {canReadEntity(session, "users") && (
-            <QuickAction
-              icon="person-circle-outline"
-              label="Utilisateurs"
-              onPress={openUsers}
-            />
-          )}
-          {!isSchoolAdmin && canReadEntity(session, "students") && (
-            <QuickAction
-              icon="add-circle-outline"
-              label="Élèves"
-              onPress={() => navigation.navigate("Students")}
-            />
-          )}
-          {canReadEntity(session, "teachers") && (
-            <QuickAction
-              icon="person-add-outline"
-              label="Profs"
-              onPress={() => navigation.navigate("Teachers")}
-            />
-          )}
-          {canReadEntity(session, "payments") && (
-            <QuickAction
-              icon="card-outline"
-              label="Paiements"
-              onPress={() => navigation.navigate("Payments")}
-            />
-          )}
-          {canReadEntity(session, "paymentStatuses") && (
-            <QuickAction
-              icon="settings-outline"
-              label="Statuts"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "paymentStatuses" })}
-            />
-          )}
-          {canReadEntity(session, "announcements") && (
-            <QuickAction
-              icon="megaphone-outline"
-              label="Annonces"
-              onPress={() => navigation.navigate("Announcements")}
-            />
-          )}
-          {canReadEntity(session, "messages") && (
-            <QuickAction
-              icon="chatbubbles-outline"
-              label={unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages"}
-              onPress={() => navigation.navigate("Messages")}
-            />
-          )}
-          {canReadEntity(session, "classes") && (
-            <QuickAction
-              icon="grid-outline"
-              label="Classes"
-              onPress={() => navigation.navigate("Classes")}
-            />
-          )}
-          {canReadEntity(session, "courses") && (
-            <QuickAction
-              icon="book-outline"
-              label="Cours"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "courses" })}
-            />
-          )}
-          {canReadEntity(session, "assignments") && (
-            <QuickAction
-              icon="swap-horizontal-outline"
-              label="Affectations"
-              onPress={() => navigation.navigate("AdminCrud", { entity: "assignments" })}
-            />
-          )}
-          {canReadRoute(session, "Timetable") && (
-            <QuickAction
-              icon="time-outline"
-              label="Planning"
-              onPress={() => navigation.navigate("Timetable")}
-            />
-          )}
-          {canReadRoute(session, "ReportCards") && (
-            <QuickAction
-              icon="document-text-outline"
-              label="Bulletins"
-              onPress={() => navigation.navigate("ReportCards")}
-            />
-          )}
-          <OverflowQuickActionsGrid session={session} navigation={navigation} unreadMessages={unreadMessages} />
-        </View>
-      </ScrollView>
-    </View>
+        ) : null
+      }
+    />
   );
 }
 
-function buildTimeGreeting(timezone?: string) {
-  const hour = getHourForTimezone(timezone);
-
-  if (hour >= 18 || hour < 5) return "Bonsoir";
-  if (hour >= 12) return "Bon après-midi";
-  return "Bonjour";
+function kpi(
+  key: RoleHomeKpiKey,
+  icon: keyof typeof Ionicons.glyphMap,
+  value: string,
+  label: string,
+  color: string,
+  bg: string,
+  onPress?: () => void,
+  testID?: string,
+): RoleDashboardKpi {
+  return { key, icon, value, label, color, bg, onPress, testID };
 }
 
-function getHourForTimezone(timezone?: string) {
-  try {
-    const formattedHour = new Intl.DateTimeFormat("fr-FR", {
-      hour: "2-digit",
-      hour12: false,
-      timeZone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }).format(new Date());
-    return Number(formattedHour.replace(/\D/g, ""));
-  } catch {
-    return new Date().getHours();
-  }
+function action(
+  key: string,
+  icon: keyof typeof Ionicons.glyphMap,
+  label: string,
+  onPress: () => void,
+): RoleDashboardAction {
+  return { key, icon, label, onPress };
+}
+
+function formatAmount(value: number) {
+  return `${Math.round(value).toLocaleString("fr-FR")} F`;
 }
 
 function isActiveUserAccount(user: any) {
-  const status = normalizeStatus(user?.status);
-  return !["suspendu", "desactive", "désactivé", "disabled", "inactive", "inactif"].includes(status);
-}
-
-function normalizeStatus(value?: string) {
-  return String(value ?? "Actif")
+  const status = String(user?.status ?? "Actif")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+  return !["suspendu", "desactive", "désactivé", "disabled", "inactive", "inactif"].includes(status);
 }
 
 function isTodayPresence(dateValue?: string) {
   return toDateKey(dateValue) === toDateKey(new Date());
-}
-
-function countAttendanceCalls(presenceRows: any[], students: any[]) {
-  const studentClassById = new Map(students.map((student) => [student.id, student.className]));
-  const callKeys = new Set(
-    presenceRows.map((presence) => {
-      const className = presence.className ?? studentClassById.get(presence.studentId) ?? "Classe inconnue";
-      return `${toDateKey(presence.date)}-${className}`;
-    })
-  );
-  return callKeys.size;
 }
 
 function toDateKey(value?: string | Date) {
@@ -901,25 +457,14 @@ function toDateKey(value?: string | Date) {
       String(value.getDate()).padStart(2, "0"),
     ].join("-");
   }
-
   const text = String(value).trim();
   const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-
   const localMatch = text.match(/^(\d{2})-(\d{2})-(\d{4})/);
   if (localMatch) return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
-
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) return "";
   return toDateKey(parsed);
-}
-
-function getGreetingName(userName: string, role?: string) {
-  if (!userName || /somafrik/i.test(userName)) {
-    return role === "school_admin" ? "Administrateur" : "";
-  }
-
-  return userName;
 }
 
 function getUnreadMessagesCount(
@@ -937,469 +482,36 @@ function getUnreadMessagesCount(
     session?.role === "secretary"
   ) {
     return messagesData.filter(
-      (message) => message.status === "Nouveau" && message.direction === "Parent vers école"
+      (message) => message.status === "Nouveau" && message.direction === "Parent vers école",
     ).length;
   }
-
   if (session?.role === "teacher") {
     const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
     const teacherParents = teacherStudents.map((student) => student.parentPhone);
-
     return messagesData.filter(
       (message) =>
         message.status === "Nouveau" &&
         (message.teacherId === session.user.id || teacherParents.includes(message.parentPhone)) &&
-        message.direction === "Parent vers enseignant"
+        message.direction === "Parent vers enseignant",
     ).length;
   }
-
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone;
-
   return messagesData.filter(
     (message) =>
       message.status === "Nouveau" &&
       message.parentPhone === parentPhone &&
-      (message.direction === "École vers parent" || message.direction === "Enseignant vers parent")
+      (message.direction === "École vers parent" || message.direction === "Enseignant vers parent"),
   ).length;
 }
 
-type StatCardProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  value: string;
-  label: string;
-  meta?: string;
-  color: string;
-  bg: string;
-  onPress?: () => void;
-  testID?: string;
-};
-
-function StatCard({ icon, value, label, meta, color, bg, onPress, testID }: StatCardProps) {
-  return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.statCard} onPress={onPress} testID={testID}>
-      <View style={[styles.statIconBox, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={18} color={color} />
-      </View>
-
-      <Text style={[styles.statValue, { color }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>{value}</Text>
-      <Text style={styles.statLabel} numberOfLines={1} maxFontSizeMultiplier={1.3}>{label}</Text>
-      {meta ? <Text style={styles.statMeta} numberOfLines={1}>{meta}</Text> : null}
-    </TouchableOpacity>
-  );
-}
-
-type ActivityItemProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  description: string;
-  color: string;
-  onPress?: () => void;
-};
-
-function ActivityItem({ icon, title, description, color, onPress }: ActivityItemProps) {
-  return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.activityItem} onPress={onPress}>
-      <View style={[styles.activityIcon, { backgroundColor: `${color}15` }]}>
-        <Ionicons name={icon} size={22} color={color} />
-      </View>
-
-      <View style={styles.activityTextBox}>
-        <Text style={styles.activityTitle}>{title}</Text>
-        <Text style={styles.activityDescription}>{description}</Text>
-      </View>
-
-      <Ionicons name="chevron-forward-outline" size={18} color="#CBD5E1" />
-    </TouchableOpacity>
-  );
-}
-
-type QuickActionProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-};
-
-type OverflowQuickActionsGridProps = {
-  session: any;
-  navigation: any;
-  unreadMessages?: number;
-  excludeTabNames?: string[];
-};
-
-function OverflowQuickActionsGrid({
-  session,
-  navigation,
-  unreadMessages = 0,
-  excludeTabNames = [],
-}: OverflowQuickActionsGridProps) {
-  const items = buildOverflowQuickActionItems(session).filter(
-    (item) => !excludeTabNames.includes(item.tabName),
-  );
-
-  return items.map((item) => (
-    <QuickAction
-      key={item.tabName}
-      icon={item.icon}
-      label={item.label}
-      onPress={() => navigation.navigate(item.tabName)}
-    />
-  ));
-}
-
-function QuickAction({ icon, label, onPress }: QuickActionProps) {
-  return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.quickAction} onPress={onPress}>
-      <View style={styles.quickActionIcon}>
-        <Ionicons name={icon} size={22} color="#2563EB" />
-      </View>
-
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
-
-  scrollContent: {
-    paddingTop: HOME_SCROLL_TOP_DP,
-    paddingHorizontal: 12,
-  },
-
-  topHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 22,
-  },
-
-  brand: {
-    fontSize: 30,
-    fontWeight: "900",
-    color: "#0F172A",
-    letterSpacing: -0.8,
-  },
-
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#64748B",
-  },
-
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 18,
-    backgroundColor: "#2563EB",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#2563EB",
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
-
-  avatarText: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "900",
-  },
-
-  schoolCard: {
+const footerStyles = StyleSheet.create({
+  wrap: { marginTop: 8, marginBottom: 16 },
+  title: { fontSize: 15, fontWeight: "800", color: "#0F172A", marginBottom: 8 },
+  card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 18,
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-
-  schoolIconBox: {
-    width: 76,
-    height: 76,
-    borderRadius: 20,
-    backgroundColor: "#EFF6FF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 14,
-    padding: 4,
-  },
-  schoolLogoImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 16,
-    resizeMode: "contain",
-  },
-
-  schoolInfo: {
-    flex: 1,
-  },
-
-  schoolName: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  schoolCity: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#64748B",
-  },
-
-  schoolTagline: {
-    marginTop: 6,
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#14B8A6",
-  },
-
-  welcomeQuiet: {
-    minHeight: 32,
-    maxHeight: COMPACT_WELCOME_MAX_DP,
-    paddingVertical: 6,
-    marginBottom: 2,
-    justifyContent: "center",
-  },
-
-  welcomeQuietText: {
-    color: "#64748B",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  welcomeCard: {
-    backgroundColor: "#1D4ED8",
     borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    minHeight: 44,
-    maxHeight: 110,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
+    padding: 14,
   },
-
-  parentWelcomeCard: {
-    backgroundColor: "#0F766E",
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    minHeight: 44,
-    maxHeight: 110,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-
-  teacherWelcomeCard: {
-    backgroundColor: "#4338CA",
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    minHeight: 44,
-    maxHeight: 110,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-
-  welcomeTitle: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    flex: 1,
-    marginRight: 8,
-  },
-
-  welcomeText: {
-    marginTop: 4,
-    color: "#DBEAFE",
-    fontSize: 13,
-    fontWeight: "700",
-    lineHeight: 18,
-    maxWidth: 220,
-  },
-
-  welcomeIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-    minHeight: 24,
-  },
-
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -0.2,
-  },
-
-  sectionLink: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#2563EB",
-  },
-
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  statsGridTablet: {
-    gap: 16,
-  },
-
-  statCard: {
-    width: "48%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    marginBottom: 8,
-    minHeight: KPI_ROW_MIN_DP,
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-
-  statIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-  },
-
-  statValue: {
-    fontSize: 20,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-
-  statLabel: {
-    marginTop: 2,
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#64748B",
-  },
-
-  statMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#94A3B8",
-  },
-
-  activityCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 8,
-    marginBottom: 26,
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
-  },
-
-  activityItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 20,
-  },
-
-  activityIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-
-  activityTextBox: {
-    flex: 1,
-  },
-
-  activityTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  activityDescription: {
-    marginTop: 3,
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#64748B",
-  },
-
-  actionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-
-  quickAction: {
-    width: "48%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
-  },
-
-  quickActionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
-    backgroundColor: "#EFF6FF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-
-  quickActionLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
+  cardTitle: { fontSize: 15, fontWeight: "800", color: "#0F172A" },
+  cardBody: { marginTop: 4, fontSize: 13, fontWeight: "600", color: "#64748B" },
 });

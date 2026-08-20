@@ -1,31 +1,43 @@
-# Somafrik Mobile — Spécification UX/UI V1.2
+# Somafrik Mobile — Spécification UX/UI V2
 
-Statut : **cible produit adoptée — correctif de rendu réel V1.2**  
+Statut : **cible produit adoptée — coque Accueil unique (référence Préfet)**  
 Portée : application Mobile Somafrik (Web/Backend inchangés)  
 Référence ergonomique : principes de hiérarchie mobile grand public (header clair, actions essentielles, navigation basse stable), **sans reproduire l’identité visuelle d’un produit tiers**.
 
-## 0. V1.2 — rendu réel, pas seulement des constantes
+## 0. V2 — même architecture pour tous les rôles
 
-Le GO visuel n’est **pas** un contrat géométrique dans les tests. Il est une capture device montrant, dans cet ordre :
+Le dashboard **Préfet des études** est le modèle visuel de tous les Accueils. Même structure, même hiérarchie, même style de cartes ; le contenu métier (KPI, actions, onglets) est injecté par configuration et **filtré par les permissions existantes**.
 
-1. **Header compact et équilibré** — nom d’établissement optiquement centré.
-2. **Bienvenue secondaire** — une ligne discrète, sans carte bleue ni icône.
-3. **Vue d’ensemble très haute**.
-4. **Au moins 2 KPI complets** visibles avant la bottom nav.
-5. **Bottom nav moderne et lisible** — dockée, moins massive, libellés entiers.
+Implémentation : un layout commun `RoleDashboardLayout` + `roleHomeConfig`. **Pas d’écran React Native dupliqué par rôle.**
+
+Ordre visuel :
+
+1. **Header compact commun** — menu, nom d’établissement, sync, recherche, notifications.
+2. **Carte identité** — nom/prénom, établissement (ou classe), `Espace …`.
+3. **Bannière métier colorée** — mission principale du rôle.
+4. **Vue métier** — 4 KPI maximum, réellement pertinents ; lien **Matrice sécurité** si autorisé.
+5. **Actions rapides** sous les KPI.
+6. **Bottom nav** adaptée au rôle, sans module non autorisé.
+
+Exemple `school_admin` :
+
+- identité : `KIBWIJA TATA` / `INSTITUT NURU` / `Espace administrateur`
+- bannière : *Gestion de l'établissement, utilisateurs, finances et organisation scolaire.*
+- KPI : Utilisateurs · Classes · Élèves · Paiements
+- actions : Comptes · Classes · Enseignants · Frais · Annonces (si droit)
 
 Viewport de validation : **~360×800 dp**, plus **320 / 360 / 390 / 412 dp** et **fontScale 1.0 / 1.3**.
 
-**Preuve bundle :** la capture device doit afficher le badge `Développement · V1.2` (ou `Preview QA · V1.2`) **sous** la barre système, dans la bande header. Une capture qui n’affiche que `Développement` sans `V1.2`, ou qui montre encore la carte établissement / un hero bleu / `Utilisate…` / `Enseigna…` / une bottom nav sombre flottante, **n’exécute pas ce HEAD** — recharger Expo Go depuis `feat/mobile-ux-ui-v1` avec cache vidé (`expo start --clear`, Reload).
+**Preuve bundle :** badge `Développement · V2.0` **sous** la barre système. Sans `V2.0`, le bundle n’est pas ce HEAD (`expo start --clear`, Reload).
 
-Interdits V1.2 :
-- grosse carte établissement redondante avec le header ;
+Interdits V2 :
 - duplication de `CommunicationHeaderIcons` sur Home ;
-- bienvenue en hero bleu / bloc coloré school_admin ;
-- KPI overview alourdis par une ligne `meta` (cartes trop hautes) ;
+- JSX Accueil recopié par rôle ;
+- plus de 4 KPI dans Vue métier ;
 - libellés bottom tronqués (`Utilisate…`, `Enseigna…`) ou `adjustsFontSizeToFit` agressif ;
 - onglet bottom « Menu » ;
-- capsule flottante (marges latérales + ombre lourde) pour la bottom nav.
+- capsule flottante pour la bottom nav ;
+- modification des permissions métier pour « faire tenir » un KPI.
 
 `school_admin` — libellés courts : `Accueil / Classes / Frais / Comptes / Profs`.
 
@@ -65,14 +77,13 @@ Ordre :
 
 Contraintes :
 - Safe Area haute réelle ; `headerStatusBarHeight: 0` côté navigator (pas de double inset) ;
-- slots latéraux de largeur égale (`HEADER_ACTIONS_SLOT_DP` = 3 × 44 dp) pour un centrage optique du nom ;
-- burger aligné à gauche du slot gauche ; 3 actions alignées à droite du slot droit ;
+- slots : burger 44 dp à gauche, 3 actions 132 dp à droite ; nom d’établissement lisible au centre ;
 - cible tactile >= 44 dp ;
 - le nom établissement est prioritaire, une ligne, **sans** ligne secondaire ville/rôle ;
 - maximum 3 actions à droite ;
 - les actions non autorisées par RBAC ne sont pas affichées ;
 - le badge d’environnement reste **sous** la barre système (bande `HEADER_BADGE_BAND_DP` dans le header), jamais dans l’horloge / réseau / batterie ;
-- le badge non-production affiche la version de spec (`Développement · V1.2`) pour authentifier le bundle.
+- le badge non-production affiche la version de spec (`Développement · V2.0`) pour authentifier le bundle.
 
 ### Menu latéral gauche
 
@@ -161,24 +172,17 @@ La navigation basse doit rester courte et orientée pilotage. La navigation éte
 
 ## 4. Dashboard / Accueil
 
-Ordre V1.2 (`school_admin`, chemin GO visuel) :
-1. header compact (contexte établissement, nom seul) ;
-2. bienvenue secondaire (`welcomeQuiet`, ~32–40 dp, couleur muted, sans icône) ;
-3. Vue d’ensemble immédiatement sous la bienvenue ;
-4. KPI réellement chargés depuis l’API (≥ 2 complets above-the-fold, `minHeight` 92 dp, **sans** `meta` sur la rangée d’overview) ;
-5. actions rapides du rôle ;
-6. alertes / activité récente ;
-7. état offline / synchronisation si nécessaire.
+Tous les rôles passent par `RoleDashboardLayout` :
 
-Les dashboards enseignant / parent / élève peuvent conserver une carte d’identité plus riche ; le GO visuel se juge sur Accueil `school_admin`.
+1. header commun ;
+2. carte identité (nom, établissement/classe, `Espace …`) ;
+3. bannière mission du rôle ;
+4. Vue métier (≤ 4 KPI, vérité API, sans `meta` de remplissage) ;
+5. Matrice sécurité si `canReadView(Permissions)` ;
+6. actions rapides filtrées par RBAC ;
+7. footer optionnel (annonce parent, sélecteur plateforme).
 
-Interdits :
-- KPI inventés pendant un échec réseau ;
-- faux `0` pour masquer une erreur ;
-- duplication d’une même action dans trois zones différentes ;
-- tuiles purement décoratives sans destination métier ;
-- carte établissement dupliquant le header ;
-- carte bleue de bienvenue sur Accueil school_admin.
+Les KPI et actions **disparaissent** si le rôle n’a pas le droit — on ne change pas la matrice de sécurité pour peupler la grille.
 
 ## 5. Synchronisation et mode local
 
@@ -222,22 +226,20 @@ L’action notifications du header pointe vers la source pertinente autorisée :
 - respecter le grossissement de texte autant que possible (fontScale 1.3) ;
 - aucun CTA important masqué par la barre système ou le clavier.
 
-## 10. Critères d’acceptation V1.2
+## 10. Critères d’acceptation V2
 
-La V1.2 est **CODE READY** lorsque :
+La V2 est **CODE READY** lorsque :
+- tous les Accueils utilisent `RoleDashboardLayout` + `roleHomeConfig` ;
+- `school_admin` affiche identité + bannière `Espace administrateur` + Vue métier ≤ 4 KPI ;
 - l’onglet bottom « Menu » n’existe plus ;
-- la bottom nav contient au plus 5 entrées visibles, dockée, libellés 10 sp non tronqués sans shrink agressif ;
+- la bottom nav contient au plus 5 entrées visibles, dockée, libellés courts ;
 - un burger ouvre le drawer gauche ;
-- le header compact a des slots latéraux égaux et le nom d’établissement au centre ;
-- Home school_admin : header → welcomeQuiet → Vue d’ensemble → ≥ 2 KPI avant la bottom nav ;
 - `measureHomeShell` tient sur 320/360/390/412 × fontScale 1.0/1.3 ;
-- sync / recherche / notifications sont permission-aware et non dupliqués sur Home ;
-- le drawer est filtré par RBAC ;
-- les routes legacy ne sont pas réintroduites ;
+- les permissions métier ne sont pas élargies pour peupler l’Accueil ;
 - TypeScript et les vérifications Mobile existantes restent vertes ;
 - les parcours Maestro critiques restent possibles (`home-admin-dashboard`, onglets Accueil / Classes / Frais / Comptes / Profs).
 
-La V1.2 est **GO visuel** uniquement lorsqu’une **capture device réelle** montre header compact → Vue d’ensemble très haute → ≥ 2 KPI complets → bottom nav moderne et lisible. Les tests automatiques ne remplacent pas cette preuve.
+La V2 est **GO visuel** uniquement avec une capture device du HEAD (badge `V2.0`) montrant la coque Préfet sur `school_admin`.
 
 ## 11. Déploiement progressif
 
