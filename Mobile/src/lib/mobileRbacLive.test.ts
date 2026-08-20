@@ -28,6 +28,8 @@ assert.equal(canReadRoute(superAdmin, "SchoolManagement"), true);
 assert.equal(canReadRoute(superAdmin, "Classes"), false);
 assert.equal(canReadRoute(superAdmin, "Students"), false);
 assert.equal(canReadRoute(superAdmin, "Timetable"), false);
+assert.equal(canReadRoute(superAdmin, "Audit"), false, "alias Utilisateurs ne doit pas ouvrir Audit");
+assert.equal(canReadRoute(superAdmin, "Support"), false, "alias Messages ne doit pas ouvrir Support");
 
 const liveSchoolAdmin = resolveEffectivePermissions(
   "Admin School",
