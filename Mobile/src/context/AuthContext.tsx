@@ -86,7 +86,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Session utilisateur absente après authentification.");
       }
 
-      const liveSession = saveSession({
+      // Le snapshot SecureStore n'est jamais une autorité RBAC. Les permissions
+      // live restent en mémoire et seront rechargées depuis PostgreSQL à chaque
+      // restauration de session. Cela évite aussi un write SecureStore inutile.
+      saveSession({
         ...latest,
         permissions: payload.permissions,
         user: {
@@ -94,14 +97,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           permissions: payload.permissions,
         },
       });
-
-      if (liveSession) {
-        try {
-          await persistAuthenticatedSession(liveSession);
-        } catch (error) {
-          safeLogger.warn("effective permissions profile persistence failed", error);
-        }
-      }
 
       setPermissionsBootstrap("ready");
       return true;
