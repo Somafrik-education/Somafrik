@@ -72,7 +72,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22.12.0"
-  MAESTRO_VERSION: "2.8.0"
+  MAESTRO_VERSION: "2.7.0"
   SOMAFRIK_E2E_SCHOOL_CODE: ${{ inputs.school_code }}
   SOMAFRIK_E2E_SCHOOL_NAME: ${{ inputs.school_name }}
   SOMAFRIK_E2E_EXPECTED_USERS: ${{ inputs.expected_users }}
@@ -133,8 +133,8 @@ jobs:
           test -x "$SDKMANAGER"
           test -x "$AVDMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
-          echo no | "$AVDMANAGER" create avd --force --name somafrik-e2e --package "system-images;android-35;google_apis;x86_64"
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "emulator" "system-images;android-34;google_apis;x86_64"
+          echo no | "$AVDMANAGER" create avd --force --name somafrik-e2e --package "system-images;android-34;google_apis;x86_64"
 
       - name: Prebuild Preview native project
         working-directory: Mobile
@@ -258,8 +258,8 @@ jobs:
           test -x "$SDKMANAGER"
           test -x "$AVDMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
-          echo no | "$AVDMANAGER" create avd --force --name somafrik-e2e --package "system-images;android-35;google_apis;x86_64"
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "emulator" "system-images;android-34;google_apis;x86_64"
+          echo no | "$AVDMANAGER" create avd --force --name somafrik-e2e --package "system-images;android-34;google_apis;x86_64"
 
       - name: Start controlled preprod fault proxy
         run: |
