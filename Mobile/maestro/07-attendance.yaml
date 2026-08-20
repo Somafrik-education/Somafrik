@@ -1,5 +1,14 @@
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: _login-admin-school.yaml
 - tapOn: "Présences"
+- extendedWaitUntil:
+    visible: "Mes classes"
+    timeout: 15000
 - assertVisible: "Mes classes"
+- assertVisible: "${SOMAFRIK_E2E_CLASS_NAME}"
+- tapOn: "${SOMAFRIK_E2E_CLASS_NAME}"
+- extendedWaitUntil:
+    visible: "Appel de ${SOMAFRIK_E2E_CLASS_NAME}"
+    timeout: 15000
+- assertVisible: "${SOMAFRIK_E2E_STUDENT_NAME}"
