@@ -8,10 +8,14 @@ on:
       - 'scripts/audit-api-orphans.test.js'
       - 'scripts/audit-feature-pg-relations.js'
       - 'scripts/verify-api-legacy-aliases.js'
-      - '.github/workflows/architecture-audit.yml'
+      - '.github/workflows/**'
       - 'backend/**'
       - 'web/src/**'
       - 'Mobile/src/**'
+      - 'Mobile/scripts/**'
+      - 'Mobile/maestro/**'
+      - 'Mobile/config/**'
+      - 'Mobile/package.json'
   workflow_dispatch:
 
 jobs:
