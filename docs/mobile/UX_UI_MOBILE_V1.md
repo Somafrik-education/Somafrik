@@ -1,30 +1,35 @@
-# Somafrik Mobile — Spécification UX/UI V1.1
+# Somafrik Mobile — Spécification UX/UI V1.2
 
-Statut : **cible produit adoptée — correctif densité visuelle V1.1**  
+Statut : **cible produit adoptée — correctif de rendu réel V1.2**  
 Portée : application Mobile Somafrik (Web/Backend inchangés)  
 Référence ergonomique : principes de hiérarchie mobile grand public (header clair, actions essentielles, navigation basse stable), **sans reproduire l’identité visuelle d’un produit tiers**.
 
-## 0. V1.1 — densité et first screen
+## 0. V1.2 — rendu réel, pas seulement des constantes
 
-Priorité verticale Accueil (viewport de validation **~360×800 dp**) :
+Le GO visuel n’est **pas** un contrat géométrique dans les tests. Il est une capture device montrant, dans cet ordre :
 
-1. **Header compact** + Safe Area réelle (aucun double padding statut).
-2. **Bienvenue compacte** (~90–110 dp), typographie réduite, une ligne.
-3. **Vue d’ensemble** immédiatement sous la bienvenue.
+1. **Header compact et équilibré** — nom d’établissement optiquement centré.
+2. **Bienvenue secondaire** — une ligne discrète, sans carte bleue ni icône.
+3. **Vue d’ensemble très haute**.
 4. **Au moins 2 KPI complets** visibles avant la bottom nav.
-5. Contenu secondaire (activité, actions rapides) ensuite.
+5. **Bottom nav moderne et lisible** — dockée, moins massive, libellés entiers.
 
-Interdits V1.1 :
+Viewport de validation : **~360×800 dp**, plus **320 / 360 / 390 / 412 dp** et **fontScale 1.0 / 1.3**.
+
+Interdits V1.2 :
 - grosse carte établissement redondante avec le header ;
-- duplication de `CommunicationHeaderIcons` sur Home (les actions globales sont dans le header) ;
-- libellés bottom tronqués (`Utilisate…`, `Enseigna…`) ;
-- onglet bottom « Menu ».
+- duplication de `CommunicationHeaderIcons` sur Home ;
+- bienvenue en hero bleu / bloc coloré school_admin ;
+- KPI overview alourdis par une ligne `meta` (cartes trop hautes) ;
+- libellés bottom tronqués (`Utilisate…`, `Enseigna…`) ou `adjustsFontSizeToFit` agressif ;
+- onglet bottom « Menu » ;
+- capsule flottante (marges latérales + ombre lourde) pour la bottom nav.
 
 `school_admin` — libellés courts : `Accueil / Classes / Frais / Comptes / Profs`.
 
-Les overlays Expo Go / système (`↻`, `...`) ne sont **pas** des composants Somafrik : on ne les retire du code applicatif que s’ils sont confirmés comme tels.
+Les overlays Expo Go / système (`↻`, `...`) ne sont **pas** des composants Somafrik.
 
-Cibles tactiles : **>= 44 dp**. Le grossissement de texte (jusqu’à ~1.3) ne doit pas tronquer les libellés bottom (`adjustsFontSizeToFit`).
+Cibles tactiles : **>= 44 dp**.
 
 ## 1. Principes produit
 
@@ -54,16 +59,17 @@ Cibles tactiles : **>= 44 dp**. Le grossissement de texte (jusqu’à ~1.3) ne d
 
 Ordre :
 
-`[☰]  [Nom établissement / contexte]        [Sync] [Recherche] [Notifications]`
+`[☰]  [Nom établissement]        [Sync] [Recherche] [Notifications]`
 
 Contraintes :
 - Safe Area haute réelle ; `headerStatusBarHeight: 0` côté navigator (pas de double inset) ;
+- slots latéraux de largeur égale (`HEADER_ACTIONS_SLOT_DP` = 3 × 44 dp) pour un centrage optique du nom ;
+- burger aligné à gauche du slot gauche ; 3 actions alignées à droite du slot droit ;
 - cible tactile >= 44 dp ;
-- le nom établissement est prioritaire et peut être tronqué sur une ligne ;
-- une ligne secondaire peut afficher ville ou rôle, en compact ;
+- le nom établissement est prioritaire, une ligne, **sans** ligne secondaire ville/rôle ;
 - maximum 3 actions à droite ;
 - les actions non autorisées par RBAC ne sont pas affichées ;
-- le badge d’environnement ne doit pas recouvrir burger ni actions.
+- le badge d’environnement reste dans la bande status-bar (`zIndex` inférieur au header).
 
 ### Menu latéral gauche
 
@@ -84,7 +90,9 @@ Règle : **Accueil + 4 onglets métier maximum**.
 
 Le menu latéral remplace totalement l’ancien onglet bottom « Menu ».
 
-Libellés courts, barre responsive (320 / 360 / 390 / 412 dp), zéro ellipsis.
+Libellés courts, barre **dockée bord à bord** (pas de capsule flottante), hauteur de contenu **52 dp** + inset bas, libellés **10 sp** lisibles à fontScale 1.3 **sans** `adjustsFontSizeToFit`. Icônes ~20 dp. Barre claire, état actif primaire Somafrik.
+
+Responsive 320 / 360 / 390 / 412 dp, zéro ellipsis.
 
 ## 3. Navigation par rôle
 
@@ -150,21 +158,24 @@ La navigation basse doit rester courte et orientée pilotage. La navigation éte
 
 ## 4. Dashboard / Accueil
 
-Ordre V1.1 :
-1. header compact (contexte établissement) ;
-2. message de bienvenue compact ;
-3. Vue d’ensemble ;
-4. KPI réellement chargés depuis l’API (≥ 2 visibles above-the-fold) ;
+Ordre V1.2 (`school_admin`, chemin GO visuel) :
+1. header compact (contexte établissement, nom seul) ;
+2. bienvenue secondaire (`welcomeQuiet`, ~32–40 dp, couleur muted, sans icône) ;
+3. Vue d’ensemble immédiatement sous la bienvenue ;
+4. KPI réellement chargés depuis l’API (≥ 2 complets above-the-fold, `minHeight` 92 dp, **sans** `meta` sur la rangée d’overview) ;
 5. actions rapides du rôle ;
 6. alertes / activité récente ;
 7. état offline / synchronisation si nécessaire.
+
+Les dashboards enseignant / parent / élève peuvent conserver une carte d’identité plus riche ; le GO visuel se juge sur Accueil `school_admin`.
 
 Interdits :
 - KPI inventés pendant un échec réseau ;
 - faux `0` pour masquer une erreur ;
 - duplication d’une même action dans trois zones différentes ;
 - tuiles purement décoratives sans destination métier ;
-- carte établissement dupliquant le header.
+- carte établissement dupliquant le header ;
+- carte bleue de bienvenue sur Accueil school_admin.
 
 ## 5. Synchronisation et mode local
 
@@ -205,29 +216,31 @@ L’action notifications du header pointe vers la source pertinente autorisée :
 - `accessibilityRole` sur les actions ;
 - `accessibilityLabel` explicite pour les boutons icon-only ;
 - ne jamais transmettre l’information uniquement par couleur ;
-- respecter le grossissement de texte autant que possible ;
+- respecter le grossissement de texte autant que possible (fontScale 1.3) ;
 - aucun CTA important masqué par la barre système ou le clavier.
 
-## 10. Critères d’acceptation V1.1
+## 10. Critères d’acceptation V1.2
 
-La V1.1 est considérée conforme lorsque :
+La V1.2 est **CODE READY** lorsque :
 - l’onglet bottom « Menu » n’existe plus ;
-- la bottom nav contient au plus 5 entrées visibles, libellés courts non tronqués ;
+- la bottom nav contient au plus 5 entrées visibles, dockée, libellés 10 sp non tronqués sans shrink agressif ;
 - un burger ouvre le drawer gauche ;
-- le header compact affiche le contexte établissement avec Safe Area réelle ;
-- Home : header → welcome compact → Vue d’ensemble → ≥ 2 KPI avant la bottom nav ;
+- le header compact a des slots latéraux égaux et le nom d’établissement au centre ;
+- Home school_admin : header → welcomeQuiet → Vue d’ensemble → ≥ 2 KPI avant la bottom nav ;
+- `measureHomeShell` tient sur 320/360/390/412 × fontScale 1.0/1.3 ;
 - sync / recherche / notifications sont permission-aware et non dupliqués sur Home ;
 - le drawer est filtré par RBAC ;
 - les routes legacy ne sont pas réintroduites ;
-- les écrans existants restent atteignables ;
 - TypeScript et les vérifications Mobile existantes restent vertes ;
-- les parcours Maestro critiques restent possibles après adaptation des sélecteurs si nécessaire.
+- les parcours Maestro critiques restent possibles (`home-admin-dashboard`, onglets Accueil / Classes / Frais / Comptes / Profs).
+
+La V1.2 est **GO visuel** uniquement lorsqu’une **capture device réelle** montre header compact → Vue d’ensemble très haute → ≥ 2 KPI complets → bottom nav moderne et lisible. Les tests automatiques ne remplacent pas cette preuve.
 
 ## 11. Déploiement progressif
 
 La refonte est livrée en plusieurs incréments dans la même direction produit :
 1. shell global : header + drawer + bottom nav ;
-2. dashboards par rôle (densité V1.1) ;
+2. dashboards par rôle (densité V1.2) ;
 3. listes et fiches métier ;
 4. synchronisation / offline UX ;
 5. tests utilisateurs terrain et ajustements.

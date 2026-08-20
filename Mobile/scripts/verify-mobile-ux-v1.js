@@ -21,15 +21,25 @@ function main() {
   const drawer = read("Mobile/src/components/RoleNavigationDrawer.tsx");
   const drawerPrefs = read("Mobile/src/navigation/roleDrawerPreferences.ts");
   const layout = read("Mobile/src/lib/mobileUxV1Layout.ts");
+  const screenLayout = read("Mobile/src/lib/screenLayout.ts");
+  const badge = read("Mobile/src/components/EnvironmentBadge.tsx");
 
-  assert.match(spec, /V1\.1/);
+  assert.match(spec, /V1\.2/);
   assert.match(spec, /aucun onglet « Menu »/i);
   assert.match(spec, /Accueil \+ 4 onglets métier maximum/i);
   assert.match(spec, /Header compact/i);
   assert.match(spec, /Accueil \/ Classes \/ Frais \/ Comptes \/ Profs/);
+  assert.match(spec, /bienvenue encore plus secondaire|welcomeQuiet|secondaire/i);
 
+  assert.match(layout, /UX_V1_SPEC_VERSION = "1\.2"/);
   assert.match(layout, /SCHOOL_ADMIN_BOTTOM_LABELS/);
   assert.match(layout, /MAX_TAB_LABEL_CHARS = 8/);
+  assert.match(layout, /HEADER_ACTIONS_SLOT_DP/);
+  assert.match(layout, /COMPACT_WELCOME_MAX_DP = 40/);
+  assert.match(layout, /KPI_ROW_MIN_DP = 92/);
+  assert.match(layout, /TAB_BAR_CONTENT_HEIGHT = 52/);
+  assert.match(layout, /measureHomeShell/);
+  assert.match(layout, /homeAboveFoldFitsAllViewports/);
 
   const layoutTest = spawnSync(
     "npx",
@@ -43,8 +53,11 @@ function main() {
 
   assert.match(tabs, /MobileAppHeader/);
   assert.match(tabs, /headerStatusBarHeight:\s*0/);
-  assert.match(tabs, /adjustsFontSizeToFit/);
   assert.match(tabs, /CompactTabLabel/);
+  assert.match(tabs, /TAB_LABEL_FONT_SIZE/);
+  assert.match(tabs, /size=\{20\}/);
+  assert.doesNotMatch(tabs, /adjustsFontSizeToFit/);
+  assert.doesNotMatch(tabs, /minimumFontScale/);
   assert.doesNotMatch(tabs, /name="Menu"/);
   assert.doesNotMatch(tabs, /import MenuScreen/);
   assert.match(roleTabs, /MAX_FLOATING_ROLE_TABS = 4/);
@@ -53,8 +66,14 @@ function main() {
   assert.doesNotMatch(roleTabs, /^\s*label: "Utilisateurs"/m);
   assert.doesNotMatch(roleTabs, /^\s*label: "Enseignants"/m);
 
+  assert.match(screenLayout, /TAB_BAR_CONTENT_HEIGHT/);
+  assert.match(screenLayout, /borderTopLeftRadius/);
+  assert.doesNotMatch(screenLayout, /borderRadius:\s*20/);
+
   assert.match(header, /SafeAreaView/);
   assert.match(header, /edges=\{\["top"\]\}/);
+  assert.match(header, /HEADER_ACTIONS_SLOT_DP/);
+  assert.match(header, /styles\.sideSlot/);
   assert.match(header, /mobile-header-menu/);
   assert.match(header, /mobile-header-school-name/);
   assert.match(header, /mobile-header-sync/);
@@ -62,11 +81,25 @@ function main() {
   assert.match(header, /mobile-header-notifications/);
   assert.match(header, /RoleNavigationDrawer/);
   assert.doesNotMatch(header, /globe/i);
+  assert.doesNotMatch(header, /roleLabel/);
 
   assert.doesNotMatch(home, /CommunicationHeaderIcons/);
-  assert.match(home, /maxHeight:\s*110/);
+  assert.match(home, /welcomeQuiet/);
+  assert.match(home, /maxHeight:\s*COMPACT_WELCOME_MAX_DP|maxHeight:\s*40/);
+  assert.match(home, /KPI_ROW_MIN_DP/);
   assert.match(home, /home-admin-dashboard|HOME_TEST_IDS\.adminDashboard/);
   assert.match(home, /Vue d'ensemble|NAVIGATION_COPY\.homeOverview/);
+  const adminHomeStart = home.indexOf("HOME_TEST_IDS.adminDashboard");
+  const adminHomeEnd = home.indexOf("Activité récente");
+  assert.ok(adminHomeStart >= 0 && adminHomeEnd > adminHomeStart, "bloc Accueil school_admin introuvable");
+  assert.doesNotMatch(
+    home.slice(adminHomeStart, adminHomeEnd),
+    /meta[=:]/,
+    "KPI overview school_admin : pas de meta (cartes trop hautes)",
+  );
+
+  assert.match(badge, /testID="environment-badge"/);
+  assert.match(badge, /zIndex:\s*8/);
 
   assert.doesNotMatch(navSpec, /tabMenu/);
   assert.doesNotMatch(navSpec, /tab-menu/);

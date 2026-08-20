@@ -1,6 +1,6 @@
 /**
  * Contrat UI/UX — navigation principale mobile (bottom tabs).
- * V1.1 : plus d’onglet Menu. Les modules secondaires sont dans le drawer.
+ * V1.2 : plus d’onglet Menu. Les modules secondaires sont dans le drawer.
  */
 
 export const NAVIGATION_COPY = {

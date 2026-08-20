@@ -16,7 +16,7 @@ function EnvironmentBadgeInner({ label }: { label: string }) {
   return (
     <View
       pointerEvents="none"
-      style={[styles.wrap, { top: Math.max(Math.min(insets.top - 18, 8), 2) }]}
+      style={[styles.wrap, { top: Math.max(insets.top > 12 ? 2 : 0, 0) }]}
       testID="environment-badge"
       accessibilityRole="text"
       accessibilityLabel={`Environnement ${label}`}
@@ -32,7 +32,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
-    zIndex: 40,
+    zIndex: 8,
     borderRadius: 999,
   },
   text: {

@@ -14,6 +14,7 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { TAB_TEST_IDS } from "../lib/loginScreenSpec";
 import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { TAB_BAR_CONTENT_HEIGHT, TAB_LABEL_FONT_SIZE } from "../lib/mobileUxV1Layout";
 import MobileAppHeader from "../components/MobileAppHeader";
 
 const Tab = createBottomTabNavigator();
@@ -27,14 +28,13 @@ function CompactTabLabel({ label, color }: { label: string; color: string }) {
   return (
     <Text
       numberOfLines={1}
-      adjustsFontSizeToFit
-      minimumFontScale={0.75}
       maxFontSizeMultiplier={1.3}
       allowFontScaling
       style={{
         color,
-        fontSize: 11,
-        fontWeight: "800",
+        fontSize: TAB_LABEL_FONT_SIZE,
+        fontWeight: "700",
+        letterSpacing: 0.1,
         textAlign: "center",
         width: "100%",
         includeFontPadding: false,
@@ -74,9 +74,10 @@ export default function BottomTabsNavigator() {
         headerShown: true,
         headerStatusBarHeight: 0,
         header: () => <MobileAppHeader navigation={navigation} />,
+        safeAreaInsets: { top: 0, bottom: 0 },
         tabBarShowLabel: true,
-        tabBarActiveTintColor: "#FFFFFF",
-        tabBarInactiveTintColor: "#94A3B8",
+        tabBarActiveTintColor: "#2563EB",
+        tabBarInactiveTintColor: "#64748B",
         tabBarLabel: ({ color }) => (
           <CompactTabLabel
             label={getTabLabel(route.name, visibleTabs, overflowTabs, hiddenTabs)}
@@ -88,18 +89,17 @@ export default function BottomTabsNavigator() {
           flex: 1,
           minWidth: 0,
           minHeight: MIN_TOUCH_TARGET_DP,
-          height: 52,
-          borderRadius: 16,
+          height: TAB_BAR_CONTENT_HEIGHT,
           marginHorizontal: 0,
-          paddingVertical: 2,
+          paddingVertical: 0,
         },
-        tabBarIcon: ({ focused }) => {
+        tabBarIcon: ({ focused, color }) => {
           if (route.name === "Accueil") {
             return (
               <Ionicons
                 name={focused ? "home" : "home-outline"}
-                size={22}
-                color={focused ? "#FFFFFF" : "#94A3B8"}
+                size={20}
+                color={color}
               />
             );
           }
@@ -110,8 +110,8 @@ export default function BottomTabsNavigator() {
           return (
             <Ionicons
               name={iconName}
-              size={22}
-              color={focused ? "#FFFFFF" : "#94A3B8"}
+              size={20}
+              color={color}
             />
           );
         },

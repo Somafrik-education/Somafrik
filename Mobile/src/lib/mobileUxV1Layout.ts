@@ -1,31 +1,35 @@
 /**
- * Contrats UX/UI Mobile V1.1 — layout compact, petits écrans, bottom nav.
- * Logique pure, testable hors device.
+ * Contrats UX/UI Mobile V1.2 — densité réelle, pas seulement des maxima.
+ * Logique pure, testable hors device. Les nombres doivent matcher le StyleSheet.
  */
 
 import { MIN_TOUCH_TARGET_DP } from "./mobileUsability";
 
-export const UX_V1_SPEC_VERSION = "1.1";
+export const UX_V1_SPEC_VERSION = "1.2";
 
-/** Viewports Android représentatifs (dp). */
 export const UX_V1_VIEWPORTS = [320, 360, 390, 412] as const;
+export const UX_V1_FONT_SCALES = [1, 1.3] as const;
 export const UX_V1_VALIDATION_VIEWPORT = { width: 360, height: 800 } as const;
 
 export const COMPACT_HEADER_ROW_DP = MIN_TOUCH_TARGET_DP;
-export const COMPACT_WELCOME_MAX_DP = 110;
-export const HOME_SCROLL_TOP_DP = 8;
-export const OVERVIEW_SECTION_HEADER_DP = 28;
-export const KPI_ROW_MIN_DP = 108;
-export const FLOATING_TAB_BAR_HEIGHT_V11 = 64;
-export const TAB_BAR_SIDE_INSET_DP = 8;
-export const TAB_BAR_INNER_PADDING_DP = 4;
+export const HEADER_ACTIONS_SLOT_DP = MIN_TOUCH_TARGET_DP * 3;
+export const COMPACT_WELCOME_MAX_DP = 40;
+export const HOME_SCROLL_TOP_DP = 4;
+export const OVERVIEW_SECTION_HEADER_DP = 24;
+export const KPI_ROW_MIN_DP = 92;
+export const TAB_BAR_CONTENT_HEIGHT = 52;
+export const TAB_BAR_SIDE_INSET_DP = 0;
+export const TAB_BAR_INNER_PADDING_DP = 0;
+export const TAB_BAR_GAP_DP = 0;
 export const MAX_BOTTOM_TABS = 5;
 export const MAX_ROLE_TABS = 4;
 export const MAX_TAB_LABEL_CHARS = 8;
-export const TAB_LABEL_FONT_SIZE = 11;
+export const TAB_LABEL_FONT_SIZE = 10;
 export const MAX_FONT_SCALE = 1.3;
 
-/** school_admin — libellés courts, zéro troncature type Utilisate... / Enseigna... */
+/** Alias conservé pour screenLayout. */
+export const FLOATING_TAB_BAR_HEIGHT_V11 = TAB_BAR_CONTENT_HEIGHT;
+
 export const SCHOOL_ADMIN_BOTTOM_LABELS = ["Accueil", "Classes", "Frais", "Comptes", "Profs"] as const;
 
 export function tabBarItemWidth(viewportWidth: number, tabCount = MAX_BOTTOM_TABS): number {
@@ -35,7 +39,7 @@ export function tabBarItemWidth(viewportWidth: number, tabCount = MAX_BOTTOM_TAB
 
 export function estimatedLabelWidth(label: string, fontScale = 1): number {
   const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
-  return Math.ceil(label.length * TAB_LABEL_FONT_SIZE * 0.62 * scale);
+  return Math.ceil(label.length * TAB_LABEL_FONT_SIZE * 0.58 * scale);
 }
 
 export function tabLabelFitsViewport(
@@ -44,11 +48,9 @@ export function tabLabelFitsViewport(
   options: { tabCount?: number; fontScale?: number } = {},
 ): boolean {
   if (label.length > MAX_TAB_LABEL_CHARS) return false;
-  const itemWidth = tabBarItemWidth(viewportWidth, options.tabCount ?? MAX_BOTTOM_TABS) - 2;
+  const itemWidth = tabBarItemWidth(viewportWidth, options.tabCount ?? MAX_BOTTOM_TABS) - 4;
   const needed = estimatedLabelWidth(label, options.fontScale ?? 1);
-  if (needed <= itemWidth) return true;
-  // CompactTabLabel : adjustsFontSizeToFit jusqu'à minimumFontScale 0.75 — pas d'ellipsis.
-  return needed * 0.75 <= itemWidth;
+  return needed <= itemWidth;
 }
 
 export function schoolAdminLabelsFitAllViewports(fontScale = 1): boolean {
@@ -57,24 +59,53 @@ export function schoolAdminLabelsFitAllViewports(fontScale = 1): boolean {
   );
 }
 
-export function homeAboveFoldHeight(insets: { top: number; bottom: number }): {
-  header: number;
-  tabBar: number;
-  neededContent: number;
-  chrome: number;
-} {
-  const header = insets.top + COMPACT_HEADER_ROW_DP;
-  const tabBar = FLOATING_TAB_BAR_HEIGHT_V11 + Math.max(insets.bottom, 8) + 6;
-  const neededContent =
-    HOME_SCROLL_TOP_DP + COMPACT_WELCOME_MAX_DP + OVERVIEW_SECTION_HEADER_DP + KPI_ROW_MIN_DP;
-  return { header, tabBar, neededContent, chrome: header + tabBar };
+export type HomeShellBoxes = {
+  headerBottom: number;
+  welcomeBottom: number;
+  overviewBottom: number;
+  kpiRowBottom: number;
+  tabTop: number;
+  kpiCompleteAboveTab: boolean;
+};
+
+/** Mesure du shell Accueil school_admin — doit coller aux styles V1.2. */
+export function measureHomeShell(
+  viewport: { width: number; height: number } = UX_V1_VALIDATION_VIEWPORT,
+  insets: { top: number; bottom: number } = { top: 24, bottom: 16 },
+  fontScale = 1,
+): HomeShellBoxes {
+  const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
+  const headerBottom = insets.top + COMPACT_HEADER_ROW_DP;
+  const welcomeHeight = Math.min(COMPACT_WELCOME_MAX_DP, Math.ceil(32 * Math.min(scale, 1.15)));
+  const welcomeBottom = headerBottom + HOME_SCROLL_TOP_DP + welcomeHeight;
+  const overviewHeight = Math.ceil(OVERVIEW_SECTION_HEADER_DP * Math.min(scale, 1.15));
+  const overviewBottom = welcomeBottom + overviewHeight;
+  const kpiHeight = Math.ceil(KPI_ROW_MIN_DP * Math.min(scale, 1.12));
+  const kpiRowBottom = overviewBottom + kpiHeight;
+  const tabTop = viewport.height - (TAB_BAR_CONTENT_HEIGHT + insets.bottom + TAB_BAR_GAP_DP);
+  return {
+    headerBottom,
+    welcomeBottom,
+    overviewBottom,
+    kpiRowBottom,
+    tabTop,
+    kpiCompleteAboveTab: kpiRowBottom <= tabTop - 8,
+  };
 }
 
-/** Sur ~360×800 : header + welcome compact + Vue d’ensemble + 2 KPI avant la bottom nav. */
 export function homeAboveFoldFits(
   viewport: { width: number; height: number } = UX_V1_VALIDATION_VIEWPORT,
   insets: { top: number; bottom: number } = { top: 24, bottom: 16 },
+  fontScale = 1,
 ): boolean {
-  const { neededContent, chrome } = homeAboveFoldHeight(insets);
-  return neededContent + chrome <= viewport.height;
+  return measureHomeShell(viewport, insets, fontScale).kpiCompleteAboveTab;
+}
+
+export function homeAboveFoldFitsAllViewports(): boolean {
+  const insets = { top: 24, bottom: 16 };
+  return UX_V1_VIEWPORTS.every((width) =>
+    UX_V1_FONT_SCALES.every((fontScale) =>
+      homeAboveFoldFits({ width, height: Math.max(640, Math.round(width * 800 / 360)) }, insets, fontScale),
+    ),
+  );
 }

@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { COMPACT_HEADER_ROW_DP } from "../lib/mobileUxV1Layout";
+import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP } from "../lib/mobileUxV1Layout";
 import RoleNavigationDrawer from "./RoleNavigationDrawer";
 
 export default function MobileAppHeader({ navigation }: { navigation: any }) {
@@ -13,7 +13,6 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
-  const contextLabel = session?.school?.city ?? roleLabel(session?.role);
 
   const syncRoute = canReadRoute(session, "Synchronization")
     ? "Synchronization"
@@ -44,33 +43,30 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
     <>
       <SafeAreaView edges={["top"]} style={styles.safe} testID="mobile-app-header">
         <View style={styles.row}>
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => setDrawerOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Ouvrir le menu"
-            testID="mobile-header-menu"
-          >
-            <Ionicons name="menu" size={24} color="#0F172A" />
-          </TouchableOpacity>
+          <View style={styles.sideSlot}>
+            <TouchableOpacity
+              style={styles.menuButton}
+              onPress={() => setDrawerOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Ouvrir le menu"
+              testID="mobile-header-menu"
+            >
+              <Ionicons name="menu" size={22} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.context}>
             <Text
               style={styles.schoolName}
               numberOfLines={1}
-              maxFontSizeMultiplier={1.2}
+              maxFontSizeMultiplier={1.3}
               testID="mobile-header-school-name"
             >
               {schoolName}
             </Text>
-            {contextLabel ? (
-              <Text style={styles.contextLabel} numberOfLines={1} maxFontSizeMultiplier={1.2}>
-                {contextLabel}
-              </Text>
-            ) : null}
           </View>
 
-          <View style={styles.actions}>
+          <View style={[styles.sideSlot, styles.actionsSlot]}>
             {syncRoute ? (
               <HeaderAction
                 icon="sync-outline"
@@ -133,69 +129,51 @@ function HeaderAction({
   );
 }
 
-function roleLabel(role?: string) {
-  switch (role) {
-    case "super_admin": return "Administration Somafrik";
-    case "country_admin": return "Administration pays";
-    case "school_admin": return "Établissement";
-    case "principal": return "Direction";
-    case "prefet": return "Préfet des études";
-    case "secretary": return "Secrétariat";
-    case "teacher": return "Espace enseignant";
-    case "parent_student": return "Espace parent";
-    case "student": return "Espace élève";
-    default: return "Somafrik";
-  }
-}
-
 const styles = StyleSheet.create({
   safe: {
     backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#E2E8F0",
+    zIndex: 30,
   },
   row: {
     minHeight: COMPACT_HEADER_ROW_DP,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 2,
+  },
+  sideSlot: {
+    width: HEADER_ACTIONS_SLOT_DP,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    flexDirection: "row",
+    alignItems: "center",
   },
   menuButton: {
     minWidth: MIN_TOUCH_TARGET_DP,
     minHeight: MIN_TOUCH_TARGET_DP,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
   },
   context: {
     flex: 1,
     minWidth: 0,
     paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
   },
   schoolName: {
     color: "#0F172A",
     fontSize: 15,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  contextLabel: {
-    color: "#64748B",
-    fontSize: 10,
     fontWeight: "700",
     textAlign: "center",
-    marginTop: 1,
+    width: "100%",
   },
-  actions: {
-    flexDirection: "row",
-    alignItems: "center",
+  actionsSlot: {
     justifyContent: "flex-end",
-    gap: 0,
   },
   actionButton: {
     width: MIN_TOUCH_TARGET_DP,
     height: MIN_TOUCH_TARGET_DP,
-    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },

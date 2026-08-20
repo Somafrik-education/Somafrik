@@ -27,6 +27,7 @@ import {
 } from "../lib/establishment";
 import { HOME_TEST_IDS } from "../lib/loginScreenSpec";
 import { NAVIGATION_COPY, NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
+import { COMPACT_WELCOME_MAX_DP, HOME_SCROLL_TOP_DP, KPI_ROW_MIN_DP } from "../lib/mobileUxV1Layout";
 
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -65,8 +66,9 @@ export default function HomeScreen({ navigation }: any) {
   const scrollContentStyle = [
     styles.scrollContent,
     {
+      paddingTop: HOME_SCROLL_TOP_DP,
       paddingBottom: scrollContentPaddingBottom,
-      paddingHorizontal: horizontalPadding,
+      paddingHorizontal: isTablet ? horizontalPadding : 12,
       maxWidth: contentMaxWidth,
       alignSelf: "center" as const,
       width: "100%" as const,
@@ -94,11 +96,6 @@ export default function HomeScreen({ navigation }: any) {
     paymentsSnapshot.status === "success" ||
     paymentsSnapshot.status === "empty" ||
     (paymentsSnapshot.status === "offline" && paymentsSnapshot.data.length > 0);
-  const presenceMeta = metricLabelFromSnapshot(
-    presencesSnapshot,
-    () => `${attendanceCallCount} appel(s) • ${presenceStats.attended}/${presenceStats.total} élève(s)`,
-    "0 appel(s)",
-  );
   const announcementsValue = metricLabelFromSnapshot(announcementsSnapshot, (rows) => String(rows.length));
   const messagesValue = metricLabelFromSnapshot(messagesSnapshot, (rows) => String(rows.length));
   const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, studentsData, teacherScopeState);
@@ -584,28 +581,18 @@ export default function HomeScreen({ navigation }: any) {
       >
         {isPlatformAdmin && <SchoolSelector />}
 
-        {/* Bienvenue compacte — le header porte déjà le contexte établissement */}
         <TouchableOpacity
           activeOpacity={0.85}
-          style={styles.welcomeCard}
+          style={styles.welcomeQuiet}
           onPress={() => canOpenSchoolManagement && navigation.navigate("SchoolManagement")}
           testID={isSchoolAdmin ? HOME_TEST_IDS.adminDashboard : undefined}
         >
-          <Text
-            style={styles.welcomeTitle}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            maxFontSizeMultiplier={1.2}
-          >
-            {welcomeGreeting}{welcomeName ? ` ${welcomeName}` : ""}
+          <Text style={styles.welcomeQuietText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+            {welcomeGreeting}
+            {welcomeName ? ` ${welcomeName}` : ""}
           </Text>
-          <View style={styles.welcomeIcon}>
-            <Ionicons name="grid-outline" size={22} color="#FFFFFF" />
-          </View>
         </TouchableOpacity>
 
-        {/* Statistiques */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle} testID={NAVIGATION_TEST_IDS.homeOverviewTitle}>
             {NAVIGATION_COPY.homeOverview}
@@ -619,7 +606,6 @@ export default function HomeScreen({ navigation }: any) {
               icon="person-outline"
               value={usersValue}
               label="Utilisateurs"
-              meta="Comptes actifs"
               color="#2563EB"
               bg="#EFF6FF"
               onPress={openUsers}
@@ -644,7 +630,6 @@ export default function HomeScreen({ navigation }: any) {
               icon="checkmark-circle-outline"
               value={presenceValue}
               label="Présence"
-              meta={presenceMeta === "—" || presenceMeta === "Indisponible" ? undefined : presenceMeta}
               color="#16A34A"
               bg="#ECFDF5"
               onPress={() => navigation.navigate("TeacherAttendance")}
@@ -991,12 +976,12 @@ function StatCard({ icon, value, label, meta, color, bg, onPress, testID }: Stat
   return (
     <TouchableOpacity activeOpacity={0.85} style={styles.statCard} onPress={onPress} testID={testID}>
       <View style={[styles.statIconBox, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={20} color={color} />
+        <Ionicons name={icon} size={18} color={color} />
       </View>
 
-      <Text style={[styles.statValue, { color }]} maxFontSizeMultiplier={1.3}>{value}</Text>
-      <Text style={styles.statLabel} maxFontSizeMultiplier={1.3}>{label}</Text>
-      {meta ? <Text style={styles.statMeta}>{meta}</Text> : null}
+      <Text style={[styles.statValue, { color }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>{value}</Text>
+      <Text style={styles.statLabel} numberOfLines={1} maxFontSizeMultiplier={1.3}>{label}</Text>
+      {meta ? <Text style={styles.statMeta} numberOfLines={1}>{meta}</Text> : null}
     </TouchableOpacity>
   );
 }
@@ -1078,8 +1063,8 @@ const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingTop: 8,
-    paddingHorizontal: 16,
+    paddingTop: HOME_SCROLL_TOP_DP,
+    paddingHorizontal: 12,
   },
 
   topHeader: {
@@ -1178,6 +1163,20 @@ const styles = StyleSheet.create({
     color: "#14B8A6",
   },
 
+  welcomeQuiet: {
+    minHeight: 32,
+    maxHeight: COMPACT_WELCOME_MAX_DP,
+    paddingVertical: 6,
+    marginBottom: 2,
+    justifyContent: "center",
+  },
+
+  welcomeQuietText: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
   welcomeCard: {
     backgroundColor: "#1D4ED8",
     borderRadius: 18,
@@ -1248,11 +1247,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 8,
+    minHeight: 24,
   },
 
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
     color: "#0F172A",
     letterSpacing: -0.2,
@@ -1268,7 +1268,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   statsGridTablet: {
     gap: 16,
@@ -1277,36 +1277,37 @@ const styles = StyleSheet.create({
   statCard: {
     width: "48%",
     backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 10,
-    minHeight: 108,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    minHeight: KPI_ROW_MIN_DP,
     shadowColor: "#0F172A",
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
 
   statIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
+    marginBottom: 6,
   },
 
   statValue: {
-    fontSize: 24,
-    fontWeight: "900",
-    letterSpacing: -0.4,
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
 
   statLabel: {
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: "800",
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: "700",
     color: "#64748B",
   },
 
