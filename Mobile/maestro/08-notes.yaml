@@ -1,6 +1,12 @@
 appId: com.somafrik.app
 ---
-- launchApp
+- runFlow: _login-admin-school.yaml
 - tapOn: "Notes"
+- extendedWaitUntil:
+    visible:
+      id: "evaluations-v2-list"
+    timeout: 15000
 - assertVisible:
     id: "evaluations-v2-list"
+- assertVisible: "${SOMAFRIK_E2E_EVALUATION_LABEL}"
+- assertNotVisible: "Impossible de charger les évaluations."
