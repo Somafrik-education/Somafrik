@@ -9,7 +9,7 @@ import {
   type PermissionsBootstrapState,
   type RefreshableSession,
 } from "./livePermissionsRefresh";
-import { canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
+import { canReadRoute, canReadView, hasSecurityPermission, isSuperAdminSessionRole } from "../domain/security/permissions";
 import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
 
 function sessionOf(input: {
@@ -77,6 +77,73 @@ assert.deepEqual(multi.user?.roleKeys, ["TEACHER"]);
 assert.equal(multi.roleKey, "TEACHER");
 assert.equal((multi.roleKeys ?? []).includes("PRINCIPAL"), false);
 assert.deepEqual(multi.permissions, ["Notes:READ"]);
+
+const lastRoleRevoked = applyLivePermissionsToSession(
+  attachCanonicalRoleIdentity({
+    role: "principal",
+    roleLabel: "Directeur",
+    roleKey: "PRINCIPAL",
+    roleKeys: ["PRINCIPAL"],
+    permissions: ["Élèves:READ"],
+    user: {
+      id: "u-a",
+      name: "u-a",
+      schoolCode: "CD-IN-26-001",
+      role: "Directeur",
+      roleKey: "PRINCIPAL",
+      roleKeys: ["PRINCIPAL"],
+      permissions: ["Élèves:READ"],
+    },
+  }) as RefreshableSession,
+  { roleKeys: [], permissions: [] },
+);
+assert.deepEqual(lastRoleRevoked.roleKeys, []);
+assert.deepEqual(lastRoleRevoked.user?.roleKeys, []);
+assert.equal((lastRoleRevoked.roleKeys as string[]).includes("PRINCIPAL"), false);
+assert.notEqual(lastRoleRevoked.role, "principal");
+assert.notEqual(lastRoleRevoked.roleKey, "PRINCIPAL");
+assert.notEqual(lastRoleRevoked.user?.role, "Directeur");
+assert.notEqual(lastRoleRevoked.roleLabel, "Directeur");
+assert.equal(lastRoleRevoked.role, "unassigned");
+assert.equal(lastRoleRevoked.roleLabel, "Sans affectation");
+assert.equal(lastRoleRevoked.user?.role, "Sans affectation");
+assert.deepEqual(lastRoleRevoked.permissions, []);
+assert.equal(hasSecurityPermission(lastRoleRevoked, "Élèves", "READ"), false);
+assert.equal(canReadRoute(lastRoleRevoked, "Students"), false);
+
+const privilegedRevoked = applyLivePermissionsToSession(
+  attachCanonicalRoleIdentity({
+    role: "super_admin",
+    roleLabel: "Super Administrateur Somafrik",
+    roleKey: "SUPER_ADMIN",
+    roleKeys: ["SUPER_ADMIN"],
+    permissions: ["ALL_PRIVILEGES"],
+    user: {
+      id: "sa-1",
+      name: "sa-1",
+      role: "Super Administrateur Somafrik",
+      roleKey: "SUPER_ADMIN",
+      roleKeys: ["SUPER_ADMIN"],
+      permissions: ["ALL_PRIVILEGES"],
+    },
+  }) as RefreshableSession,
+  { roleKeys: [], permissions: [] },
+);
+assert.deepEqual(privilegedRevoked.roleKeys, []);
+assert.notEqual(privilegedRevoked.role, "super_admin");
+assert.notEqual(privilegedRevoked.roleKey, "SUPER_ADMIN");
+assert.notEqual(privilegedRevoked.user?.role, "Super Administrateur Somafrik");
+assert.notEqual(privilegedRevoked.roleLabel, "Super Administrateur Somafrik");
+assert.equal(privilegedRevoked.role, "unassigned");
+assert.equal(hasSecurityPermission(privilegedRevoked, "Utilisateurs", "READ"), false);
+assert.equal(hasSecurityPermission(privilegedRevoked, "Établissements", "UPDATE"), false);
+assert.equal(canReadRoute(privilegedRevoked, "Users"), false);
+assert.equal(canReadView(privilegedRevoked, "Permissions"), false);
+assert.equal(isSuperAdminSessionRole(String(privilegedRevoked.role ?? "")), false);
+assert.equal(isSuperAdminSessionRole(String(privilegedRevoked.roleLabel ?? "")), false);
+assert.equal(isSuperAdminSessionRole(String(privilegedRevoked.user?.role ?? "")), false);
+assert.equal(String(privilegedRevoked.roleKey ?? ""), "");
+assert.notEqual(String(privilegedRevoked.roleKey ?? ""), "SUPER_ADMIN");
 
 function makeHarness(initial: RefreshableSession | null) {
   let session: RefreshableSession | null = initial;
@@ -196,6 +263,34 @@ async function main() {
     assert.deepEqual(harness.session?.permissions, ["Notes:READ"]);
     assert.equal(canReadRoute(harness.session, "Students"), false);
     assert.equal(canReadRoute(harness.session, "TeacherGrades"), true);
+  }
+
+  {
+    const harness = makeHarness(
+      attachCanonicalRoleIdentity({
+        role: "principal",
+        roleLabel: "Directeur",
+        roleKey: "PRINCIPAL",
+        roleKeys: ["PRINCIPAL"],
+        permissions: ["Élèves:READ"],
+        user: {
+          id: "u-a",
+          name: "u-a",
+          schoolCode: "CD-IN-26-001",
+          role: "Directeur",
+          roleKey: "PRINCIPAL",
+          roleKeys: ["PRINCIPAL"],
+          permissions: ["Élèves:READ"],
+        },
+      }) as RefreshableSession,
+    );
+    harness.setFetch(async () => ({ roleKeys: [], permissions: [] }));
+    await harness.refresher.refresh();
+    assert.deepEqual(harness.session?.roleKeys, []);
+    assert.equal(harness.session?.role, "unassigned");
+    assert.equal(harness.session?.roleLabel, "Sans affectation");
+    assert.equal(hasSecurityPermission(harness.session, "Élèves", "READ"), false);
+    assert.equal(canReadRoute(harness.session, "Students"), false);
   }
 
   {

@@ -19,6 +19,10 @@ export type CanonicalRoleIdentity = {
   permissions: string[];
 };
 
+/** État backend `displayRoles([])` : aucun rôle actif, fail-closed. */
+export const UNAFFECTED_ROLE_LABEL = "Sans affectation";
+export const UNAFFECTED_SESSION_ROLE = "unassigned";
+
 const ROLE_KEY_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Super Administrateur Somafrik",
   COUNTRY_ADMIN: "Admin Pays",
@@ -160,14 +164,23 @@ export function sessionRoleFromRoleKey(roleKey?: string | null, fallback?: strin
   return fallbackValue;
 }
 
+export function hasAuthoritativeRoleKeys(session: any): boolean {
+  return Array.isArray(session?.roleKeys) || Array.isArray(session?.user?.roleKeys);
+}
+
 function collectRoleKeys(session: any): string[] {
+  if (hasAuthoritativeRoleKeys(session)) {
+    const raw: string[] = [];
+    if (Array.isArray(session?.user?.roleKeys)) raw.push(...session.user.roleKeys);
+    if (Array.isArray(session?.roleKeys)) raw.push(...session.roleKeys);
+    return sortRoleKeysByPrivilege(raw);
+  }
+
   const raw: string[] = [];
-  if (Array.isArray(session?.user?.roleKeys)) raw.push(...session.user.roleKeys);
-  if (Array.isArray(session?.roleKeys)) raw.push(...session.roleKeys);
   if (session?.user?.roleKey) raw.push(session.user.roleKey);
   if (session?.roleKey) raw.push(session.roleKey);
-  const fromArrays = sortRoleKeysByPrivilege(raw);
-  if (fromArrays.length) return fromArrays;
+  const fromKeys = sortRoleKeysByPrivilege(raw);
+  if (fromKeys.length) return fromKeys;
 
   const fromUserRole = canonicalizeRoleKey(session?.user?.role);
   if (fromUserRole) return [fromUserRole];
@@ -184,7 +197,20 @@ function livePermissions(session: any): string[] | undefined {
 }
 
 export function resolveCanonicalRoleIdentity(session: any): CanonicalRoleIdentity {
+  const authoritative = hasAuthoritativeRoleKeys(session);
   const roleKeys = collectRoleKeys(session);
+  const permissions = livePermissions(session) ?? [];
+
+  if (authoritative && roleKeys.length === 0) {
+    return {
+      roleKey: "",
+      roleKeys: [],
+      roleLabel: UNAFFECTED_ROLE_LABEL,
+      sessionRole: UNAFFECTED_SESSION_ROLE,
+      permissions,
+    };
+  }
+
   const roleKey = roleKeys[0] ?? "";
   const explicitLabel = String(session?.user?.role ?? session?.roleLabel ?? "").trim();
   const roleLabel =
@@ -195,13 +221,12 @@ export function resolveCanonicalRoleIdentity(session: any): CanonicalRoleIdentit
     String(session?.role ?? "").trim() ||
     "Utilisateur";
   const sessionRole = sessionRoleFromRoleKey(roleKey, session?.role);
-  const permissions = livePermissions(session) ?? [];
 
   return {
-    roleKey: roleKey || String(session?.role ?? "").trim() || "UNKNOWN",
+    roleKey: roleKey || (authoritative ? "" : String(session?.role ?? "").trim()) || "UNKNOWN",
     roleKeys,
     roleLabel,
-    sessionRole: sessionRole || String(session?.role ?? "").trim(),
+    sessionRole: sessionRole || (authoritative ? UNAFFECTED_SESSION_ROLE : String(session?.role ?? "").trim()),
     permissions,
   };
 }
@@ -219,7 +244,7 @@ export function attachCanonicalRoleIdentity<T>(session: T | null | undefined): T
   const identity = resolveCanonicalRoleIdentity(current);
   return {
     ...current,
-    role: identity.sessionRole || current.role,
+    role: identity.sessionRole,
     roleLabel: identity.roleLabel,
     roleKey: identity.roleKey,
     roleKeys: identity.roleKeys,

@@ -35,7 +35,10 @@ function main() {
   const refresh = readSrc(path.join("lib", "livePermissionsRefresh.ts"));
   const permissions = stripComments(readSrc(path.join("domain", "security", "permissions.ts")));
   const outbox = stripComments(readSrc(path.join("components", "OutboxRuntime.tsx")));
+  const identity = readSrc(path.join("lib", "canonicalRoleIdentity.ts"));
   const permissionsScreen = readSrc(path.join("screens", "PermissionsScreen.tsx"));
+  const identityLib = stripComments(identity);
+  const tests = readSrc(path.join("lib", "mobileLivePermissionsRefresh.test.ts"));
 
   assert.match(auth, /AppState\.addEventListener\("change"/);
   assert.match(auth, /planForegroundRefresh/);
@@ -80,6 +83,22 @@ function main() {
 
   assert.match(outbox, /permissionsBootstrap !== "ready"/);
   assert.match(permissionsScreen, /GRANT\/REVOKE ne sont plus simulés localement/);
+
+  assert.match(identity, /hasAuthoritativeRoleKeys/);
+  assert.match(identity, /UNAFFECTED_ROLE_LABEL = "Sans affectation"/);
+  assert.match(identity, /UNAFFECTED_SESSION_ROLE = "unassigned"/);
+  assert.match(identityLib, /if \(authoritative && roleKeys\.length === 0\)/);
+  assert.doesNotMatch(
+    identityLib,
+    /if \(fromArrays\.length\) return fromArrays/,
+    "roleKeys: [] ne doit plus être traité comme une absence d'information",
+  );
+  assert.match(refresh, /Array\.isArray\(payload\.roleKeys\)/);
+  assert.match(tests, /roleKeys: \[\]/);
+  assert.match(tests, /permissions: \[\]/);
+  assert.match(tests, /super_admin/);
+  assert.match(tests, /Sans affectation/);
+  assert.match(tests, /unassigned/);
 
   console.log("OK: permissions live revalidées au foreground, fail-closed, AuthContext unique");
 }

@@ -246,4 +246,30 @@ assert.equal(canReadView(countryAdminNotifications, "Announcements"), true);
 assert.equal(canReadView(countryAdminNotifications, "PlatformNotifications"), true);
 assert.equal(canReadRoute(countryAdminNotifications, "Messages"), false);
 
+const fallbackWithoutRoleKeys = resolveCanonicalRoleIdentity({
+  role: "principal",
+  roleLabel: "Directeur",
+  user: { role: "Directeur" },
+});
+assert.equal(fallbackWithoutRoleKeys.roleKey, "PRINCIPAL");
+assert.deepEqual(fallbackWithoutRoleKeys.roleKeys, ["PRINCIPAL"]);
+
+const explicitEmptyRoleKeys = resolveCanonicalRoleIdentity({
+  role: "principal",
+  roleLabel: "Directeur",
+  roleKey: "PRINCIPAL",
+  roleKeys: [],
+  user: {
+    role: "Directeur",
+    roleKey: "PRINCIPAL",
+    roleKeys: [],
+  },
+});
+assert.deepEqual(explicitEmptyRoleKeys.roleKeys, []);
+assert.equal(explicitEmptyRoleKeys.roleKey, "");
+assert.equal(explicitEmptyRoleKeys.roleLabel, "Sans affectation");
+assert.equal(explicitEmptyRoleKeys.sessionRole, "unassigned");
+assert.notEqual(explicitEmptyRoleKeys.roleKey, "PRINCIPAL");
+assert.deepEqual(explicitEmptyRoleKeys.permissions, []);
+
 console.log("mobileCanonicalRoleIdentity.test.ts OK");

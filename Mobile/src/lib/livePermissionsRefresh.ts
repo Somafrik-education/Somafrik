@@ -59,26 +59,39 @@ export function applyLivePermissionsToSession<T extends RefreshableSession>(
     throw new Error("effective-permissions: payload invalide");
   }
   const permissions = [...payload.permissions];
-  const roleKeys = Array.isArray(payload.roleKeys) ? [...payload.roleKeys] : undefined;
+  const roleKeys = Array.isArray(payload.roleKeys) ? payload.roleKeys.slice() : undefined;
+  const hasRoleKeys = roleKeys !== undefined;
+  const nextUser = {
+    ...(session.user ?? {}),
+    permissions,
+    ...(hasRoleKeys
+      ? {
+          roleKeys,
+          roleKey: "",
+          ...(roleKeys && roleKeys.length === 0
+            ? {
+                role: undefined,
+              }
+            : {}),
+        }
+      : {}),
+  };
   const next = {
     ...session,
     permissions,
-    ...(roleKeys
+    ...(hasRoleKeys
       ? {
           roleKeys,
-          roleKey: undefined,
+          roleKey: "",
+          ...(roleKeys && roleKeys.length === 0
+            ? {
+                role: undefined,
+                roleLabel: undefined,
+              }
+            : {}),
         }
       : {}),
-    user: {
-      ...(session.user ?? {}),
-      permissions,
-      ...(roleKeys
-        ? {
-            roleKeys,
-            roleKey: undefined,
-          }
-        : {}),
-    },
+    user: nextUser,
   };
   return attachCanonicalRoleIdentity(next) as T;
 }
