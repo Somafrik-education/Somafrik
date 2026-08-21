@@ -2,8 +2,55 @@
 
 const assert = require("node:assert/strict");
 const { createPlatformMemoryStore } = require("../db/platformMemoryStore");
+const { PLATFORM_SCHEMA_SQL } = require("../db/platformSchema");
+const { shouldSeedDemoData } = require("./demoSeedPolicy");
+const seedData = require("../data");
+
+function assertDemoSubscriptionSeedIntegrity() {
+  const seedEnabled = shouldSeedDemoData({
+    NODE_ENV: "development",
+    SOMAFRIK_SKIP_DEMO_SEED: "false",
+  });
+  assert.equal(seedEnabled, true);
+
+  const schoolByCode = new Map(seedData.platformSchools.map((school) => [school.code, school]));
+  const subscriptionSchoolCodes = seedData.subscriptions.map((subscription) => subscription.schoolCode);
+
+  assert.equal(
+    seedData.subscriptions.length,
+    seedData.platformSchools.length,
+    "le seed doit produire exactement un abonnement par établissement",
+  );
+  assert.equal(
+    new Set(subscriptionSchoolCodes).size,
+    seedData.subscriptions.length,
+    "aucun établissement ne doit avoir plusieurs abonnements dans le seed",
+  );
+
+  for (const subscription of seedData.subscriptions) {
+    const school = schoolByCode.get(subscription.schoolCode);
+    assert.ok(school, `abonnement orphelin interdit: ${subscription.id}`);
+    assert.equal(subscription.countryCode, school.countryCode);
+  }
+
+  for (const school of seedData.platformSchools) {
+    assert.equal(
+      seedData.subscriptions.filter((subscription) => subscription.schoolCode === school.code).length,
+      1,
+      `un abonnement attendu pour ${school.code}`,
+    );
+  }
+
+  assert.match(
+    PLATFORM_SCHEMA_SQL,
+    /CREATE UNIQUE INDEX IF NOT EXISTS uq_subscriptions_school_id\s+ON subscriptions \(school_id\)/,
+    "la contrainte PostgreSQL uq_subscriptions_school_id doit rester intacte",
+  );
+}
 
 async function main() {
+  assertDemoSubscriptionSeedIntegrity();
+
   const auditLogs = [];
   const store = createPlatformMemoryStore({
     getSchoolByCode: async (code) => ({
