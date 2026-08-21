@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+
+# Image de développement locale : API PostgreSQL uniquement.
+# Aucun build Web, aucun APK/AAB, aucun EAS.
+FROM node:22.12-alpine
+
+RUN apk add --no-cache \
+    wget \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    && rm -rf /var/cache/apk/*
+
+ENV NODE_ENV=development
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV SOMAFRIK_API_ONLY=true
+
+WORKDIR /app
+
+COPY backend/package*.json ./
+RUN npm ci
+
+COPY backend/ .
+
+EXPOSE 5000
+
+# Le bind mount Docker Compose remplace /app par le code courant.
+# Les dépendances restent dans un volume nommé /app/node_modules.
+CMD ["sh", "-c", "npm run prestart && npm run dev:nodemon"]
