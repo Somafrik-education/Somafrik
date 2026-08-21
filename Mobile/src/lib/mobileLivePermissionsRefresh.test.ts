@@ -51,7 +51,7 @@ const revoked = applyLivePermissionsToSession(
   { permissions: [] },
 );
 assert.deepEqual(revoked.permissions, []);
-assert.equal(revoked.permissions?.includes("Élèves:READ"), false);
+assert.equal((revoked.permissions as string[]).includes("Élèves:READ"), false);
 assert.equal(hasSecurityPermission(revoked, "Élèves", "READ"), false);
 assert.equal(canReadRoute(revoked, "Students"), false);
 assert.equal(isMetierRenderable(revoked, "loading"), false);

@@ -107,14 +107,12 @@ export function createRefreshGate() {
       const nextGeneration = generation + 1;
       generation = nextGeneration;
       inFlightUserId = userId;
-      const promise = Promise.resolve()
-        .then(() => run(nextGeneration))
-        .finally(() => {
-          if (generation === nextGeneration) {
-            inFlight = null;
-            inFlightUserId = null;
-          }
-        });
+      const promise = run(nextGeneration).finally(() => {
+        if (generation === nextGeneration) {
+          inFlight = null;
+          inFlightUserId = null;
+        }
+      });
       inFlight = promise;
       return promise;
     },
