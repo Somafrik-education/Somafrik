@@ -12,6 +12,7 @@ const {
   ensureStudentLifecyclePgSchema,
 } = require("./studentLifecyclePg");
 const { ensureStudentGeneralIdentityPg } = require("./studentGeneralIdentityPg");
+const { attachCanonicalDemoSeedPostgres } = require("./demoSeedPostgres");
 const {
   resolveDatabaseConfig,
   isDatabaseRequired,
@@ -81,6 +82,7 @@ function createPostgresRepository(databaseConfig, env = process.env) {
   }
   const repository = new PostgresRepository(config);
   repository.engine = "postgresql";
+  attachCanonicalDemoSeedPostgres(repository);
   attachStudentLifecyclePg(repository);
   return assertRepositoryContract(repository, "postgresql");
 }
@@ -151,6 +153,7 @@ async function initializeRepository({
   const primary = repository ?? createPostgresRepository(databaseUrl, env);
   disableLegacyBackOfficeRuntimeMigrations(primary);
   if ((primary.engine ?? "postgresql") === "postgresql") {
+    attachCanonicalDemoSeedPostgres(primary);
     attachStudentLifecyclePg(primary);
   }
 
