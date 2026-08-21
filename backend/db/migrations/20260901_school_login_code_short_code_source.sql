@@ -1,5 +1,7 @@
 -- Source des initiales du login établissement : schools.short_code canonique.
 --
+-- IMPORTANT : cette migration est chargée après 20260825 afin que cette version
+-- de somafrik_prepare_school_login_code() soit l'autorité finale au boot.
 -- Le trigger short_code (schools_short_code_insert) s'exécute avant
 -- zz_schools_login_code_insert par ordre alphabétique des triggers PostgreSQL.
 -- Ainsi :
