@@ -134,6 +134,9 @@ export type IdentifyResponse = {
 
 export type LoginResponse = {
   role: UserRole;
+  roleLabel?: string;
+  roleKey?: string;
+  roleKeys?: string[];
   accessToken?: string;
   refreshToken?: string;
   tokenType?: string;
@@ -151,6 +154,10 @@ export type LoginResponse = {
     scopeLevel?: string;
     countryScope?: string;
     countryCode?: string;
+    role?: string;
+    roleKey?: string;
+    roleKeys?: string[];
+    roles?: string[];
     permissions?: string[];
     mustChangePassword?: boolean;
     parentPhone?: string;
@@ -650,7 +657,13 @@ export function replacePlatformRolePermissions(_payload: Record<string, string[]
 }
 
 export function getEffectivePermissions() {
-  return request<{ permissions?: string[] }>("/auth/effective-permissions", { method: "GET" });
+  return request<{
+    permissions?: string[];
+    roleKeys?: string[];
+    modules?: unknown;
+    source?: string;
+    resolvedAt?: string;
+  }>("/auth/effective-permissions", { method: "GET" });
 }
 
 export function createCourse(payload: Record<string, unknown>) {

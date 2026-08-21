@@ -2,6 +2,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { resolveCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
 import { getAllowedRoleDrawerItems, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
@@ -9,9 +10,13 @@ const ROLE_LABELS: Record<string, string> = {
   super_admin: "Superadmin",
   country_admin: "Admin pays",
   school_admin: "Admin établissement",
-  principal: "Direction",
+  principal: "Directeur",
+  proviseur: "Proviseur",
   prefet: "Préfet des études",
   secretary: "Secrétariat",
+  accountant: "Comptable",
+  adjoint: "Adjoint",
+  supervisor: "Surveillant",
   teacher: "Enseignant",
   parent_student: "Parent",
   student: "Élève",
@@ -30,7 +35,8 @@ export default function RoleNavigationDrawer({
   const items = getAllowedRoleDrawerItems(session);
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
   const userName = session?.user?.name ?? "Utilisateur";
-  const roleLabel = ROLE_LABELS[session?.role ?? ""] ?? "Compte Somafrik";
+  const identity = resolveCanonicalRoleIdentity(session);
+  const roleLabel = identity.roleLabel || ROLE_LABELS[session?.role ?? ""] || "Compte Somafrik";
 
   const rootNavigation = navigation.getParent?.() ?? navigation;
 

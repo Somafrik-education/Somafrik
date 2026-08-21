@@ -500,8 +500,11 @@ function getUnreadMessagesCount(
     session?.role === "school_admin" ||
     session?.role === "country_admin" ||
     session?.role === "principal" ||
+    session?.role === "proviseur" ||
     session?.role === "prefet" ||
-    session?.role === "secretary"
+    session?.role === "secretary" ||
+    session?.role === "accountant" ||
+    session?.role === "adjoint"
   ) {
     return messagesData.filter(
       (message) => message.status === "Nouveau" && message.direction === "Parent vers école",

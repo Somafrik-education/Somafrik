@@ -1,13 +1,4 @@
-type MobileLoginRole =
-  | "super_admin"
-  | "country_admin"
-  | "school_admin"
-  | "principal"
-  | "prefet"
-  | "secretary"
-  | "teacher"
-  | "parent_student"
-  | "student";
+export type MobileLoginRole = string;
 
 export type PlatformLoginContext = {
   kind: "global" | "country";

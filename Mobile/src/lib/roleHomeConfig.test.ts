@@ -30,6 +30,10 @@ assert.equal(parent.spaceLabel, "Espace parent");
 
 assert.equal(resolveRoleHomeKey({ role: "secretary" }), "secretary");
 assert.equal(resolveRoleHomeKey({ user: { role: "Comptable" } }), "accountant");
+assert.equal(resolveRoleHomeKey({ user: { role: "Directeur", roleKeys: ["PRINCIPAL"] } }), "principal");
+assert.equal(resolveRoleHomeKey({ user: { role: "Proviseur", roleKeys: ["PROVISEUR"] } }), "proviseur");
+assert.equal(resolveRoleHomeKey({ role: "ROLE_TEST_INCONNU" }), "unknown");
+assert.equal(getRoleHomeShell({ role: "ROLE_TEST_INCONNU" }).role, "unknown");
 
 const trimmed = selectHomeKpis(
   [

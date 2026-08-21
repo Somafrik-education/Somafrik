@@ -246,11 +246,12 @@ const globalAdminTabs: RoleTabDefinition[] = [
 function getRoleTabDefinitions(role?: string): RoleTabDefinition[] {
   if (role === "parent_student" || role === "student") return parentStudentTabs;
   if (role === "teacher") return teacherTabs;
-  if (role === "principal" || role === "prefet") return teacherTabs;
+  if (role === "principal" || role === "prefet" || role === "proviseur") return teacherTabs;
   if (role === "secretary") return secretaryTabs;
+  if (role === "accountant") return secretaryTabs;
   if (role === "school_admin") return schoolAdminTabs;
   if (role === "super_admin" || role === "country_admin") return globalAdminTabs;
-  return globalAdminTabs;
+  return secretaryTabs;
 }
 
 export function partitionRoleTabs(session: any) {

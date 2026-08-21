@@ -41,16 +41,7 @@ import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 
-export type UserRole =
-  | "super_admin"
-  | "country_admin"
-  | "school_admin"
-  | "principal"
-  | "prefet"
-  | "secretary"
-  | "teacher"
-  | "parent_student"
-  | "student";
+export type UserRole = string;
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -202,7 +193,6 @@ export default function AppNavigator() {
     refreshEffectivePermissions,
     logout,
   } = useAuth();
-  const role = session?.role;
 
   if (bootstrapping) {
     return <View style={{ flex: 1, backgroundColor: "#F8FAFC" }} />;
@@ -224,13 +214,13 @@ export default function AppNavigator() {
     );
   }
 
-  const isSuperAdmin = role === "super_admin";
-  const isCountryAdmin = role === "country_admin";
-  const isSchoolAdmin = role === "school_admin";
-  const isAdmin = isSuperAdmin || isCountryAdmin || isSchoolAdmin;
-  const isPedagogicalStaff = role === "principal" || role === "prefet";
-  const isSecretary = role === "secretary";
-  const canOpenAdminCrud = isAdmin || isPedagogicalStaff || isSecretary;
+  // Chaque écran reste filtré par canReadRoute. SchoolManagement n'ouvre plus
+  // le bundle par identité établissement : seul Établissements:READ le déclenche.
+  const canOpenAdminCrud =
+    canReadRoute(session, "SchoolManagement") ||
+    canReadRoute(session, "Teachers") ||
+    canReadView(session, "users") ||
+    canReadRoute(session, "Payments");
   const canOpenStudentScreens =
     canReadRoute(session, "StudentDetail") ||
     canReadRoute(session, "StudentNotes") ||

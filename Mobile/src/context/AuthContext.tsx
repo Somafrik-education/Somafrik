@@ -92,9 +92,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       saveSession({
         ...latest,
         permissions: payload.permissions,
+        ...(Array.isArray(payload.roleKeys) ? { roleKeys: payload.roleKeys } : {}),
         user: {
           ...latest.user,
           permissions: payload.permissions,
+          ...(Array.isArray(payload.roleKeys) ? { roleKeys: payload.roleKeys } : {}),
         },
       });
 

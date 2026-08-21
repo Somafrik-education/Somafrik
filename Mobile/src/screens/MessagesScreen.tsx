@@ -451,7 +451,20 @@ function isUnreadStatus(status?: string) {
 }
 
 function isReceivedMessage(message: CanonicalSchoolMessage, role: string | undefined, session: any) {
-  if (["super_admin", "school_admin", "country_admin", "principal", "prefet", "secretary"].includes(String(role))) {
+  if (
+    [
+      "super_admin",
+      "school_admin",
+      "country_admin",
+      "principal",
+      "proviseur",
+      "prefet",
+      "secretary",
+      "accountant",
+      "adjoint",
+      "supervisor",
+    ].includes(String(role))
+  ) {
     return message.direction === "Parent vers école";
   }
   if (role === "teacher") return message.direction === "Parent vers enseignant" && message.teacherId === session?.user.id;

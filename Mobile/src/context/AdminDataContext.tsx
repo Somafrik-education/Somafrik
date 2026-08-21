@@ -34,7 +34,7 @@ import {
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, getEffectivePermissions, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
+import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard } from "../services/api";
 import {
   getCanonicalAnnouncements,
   getCanonicalCountries,
@@ -185,7 +185,9 @@ const emptyAcademicConfig: AcademicManagementConfig = {
 };
 
 export function AdminDataProvider({ children }: { children: React.ReactNode }) {
-  const { session, setSession } = useAuth();
+  // L1 : AuthContext reste l'autorité unique du bootstrap permissions/rôle.
+  // Le fetch getEffectivePermissions() a été retiré d'ici. L8 traitera le refresh foreground.
+  const { session } = useAuth();
   const [studentsData, setStudentsData] = useState<Student[]>([]);
   const [teachersData, setTeachersData] = useState<Teacher[]>([]);
   const [classesData, setClassesData] = useState<SchoolClass[]>([]);
@@ -963,32 +965,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     return undefined;
   }, [session, refreshBackOfficeState]);
 
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    let cancelled = false;
-    void getEffectivePermissions()
-      .then((payload) => {
-        if (cancelled || !Array.isArray(payload?.permissions)) return;
-        const currentPermissions = session.permissions ?? session.user?.permissions ?? [];
-        if (sameStringSet(currentPermissions, payload.permissions)) return;
-        setSession({
-          ...session,
-          permissions: payload.permissions,
-          user: {
-            ...session.user,
-            permissions: payload.permissions,
-          },
-        });
-      })
-      .catch(() => null);
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.accessToken, setSession]);
-
   const persistSyncedState = (_nextState: BackOfficeStatePayload) => {
     throw Object.assign(
       new Error("La synchronisation globale BackOffice State a été supprimée. Utilisez les API dédiées."),
@@ -1435,7 +1411,16 @@ function filterBySchool(value: unknown, schoolCode: string) {
 }
 
 function applyItemScope(entity: ScopedEntity, item: any, session: any, state: BackOfficeStatePayload) {
-  const establishmentRoles = new Set(["school_admin", "principal", "prefet", "secretary"]);
+  const establishmentRoles = new Set([
+    "school_admin",
+    "principal",
+    "proviseur",
+    "prefet",
+    "secretary",
+    "accountant",
+    "adjoint",
+    "supervisor",
+  ]);
   if (!item || !establishmentRoles.has(String(session?.role ?? ""))) {
     return item;
   }
@@ -1469,7 +1454,16 @@ function applyItemScope(entity: ScopedEntity, item: any, session: any, state: Ba
 }
 
 function enforceEntityScope(entity: ScopedEntity, items: any[], session: any, state: BackOfficeStatePayload) {
-  const establishmentRoles = new Set(["school_admin", "principal", "prefet", "secretary"]);
+  const establishmentRoles = new Set([
+    "school_admin",
+    "principal",
+    "proviseur",
+    "prefet",
+    "secretary",
+    "accountant",
+    "adjoint",
+    "supervisor",
+  ]);
   if (!establishmentRoles.has(String(session?.role ?? ""))) {
     return items;
   }
@@ -1534,12 +1528,6 @@ function filterAcademicConfigs(value: unknown, schoolCode: string) {
 
   const config = (value as Record<string, AcademicManagementConfig>)[schoolCode];
   return config ? { [schoolCode]: config } : {};
-}
-
-function sameStringSet(left: string[], right: string[]) {
-  if (left.length !== right.length) return false;
-  const values = new Set(left);
-  return right.every((item) => values.has(item));
 }
 
 export function useAdminData() {

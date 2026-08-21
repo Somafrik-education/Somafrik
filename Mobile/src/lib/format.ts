@@ -74,10 +74,14 @@ export function isInternalSchoolRole(role?: string): boolean {
     "directeur",
     "directeur adjoint",
     "comptable",
+    "accountant",
     "school_admin",
     "principal",
+    "proviseur",
     "prefet",
     "secretary",
+    "adjoint",
+    "supervisor",
   ].includes(key);
 }
 
