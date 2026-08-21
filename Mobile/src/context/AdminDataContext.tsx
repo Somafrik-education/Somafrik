@@ -185,8 +185,8 @@ const emptyAcademicConfig: AcademicManagementConfig = {
 };
 
 export function AdminDataProvider({ children }: { children: React.ReactNode }) {
-  // L1 : AuthContext reste l'autorité unique du bootstrap permissions/rôle.
-  // Le fetch getEffectivePermissions() a été retiré d'ici. L8 traitera le refresh foreground.
+  // L8 : AuthContext reste l'autorité unique du bootstrap et du refresh foreground.
+  // AdminDataContext ne fetch pas effective-permissions et ne modifie pas session.permissions.
   const { session } = useAuth();
   const [studentsData, setStudentsData] = useState<Student[]>([]);
   const [teachersData, setTeachersData] = useState<Teacher[]>([]);

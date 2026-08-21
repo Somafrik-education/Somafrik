@@ -96,6 +96,8 @@ jobs:
         run: npm run verify:mobile-canonical-route-map
       - name: verify:mobile-canonical-role-identity
         run: npm run verify:mobile-canonical-role-identity
+      - name: verify:mobile-live-permissions-refresh
+        run: npm run verify:mobile-live-permissions-refresh
       - name: verify:mobile-attendance-hydration
         run: npm run verify:mobile-attendance-hydration
       - name: verify:mobile-ui-e2e-scaffold
@@ -221,6 +223,7 @@ jobs:
           npm run verify:mobile-no-catalog-runtime-data
           npm run verify:mobile-canonical-route-map
           npm run verify:mobile-canonical-role-identity
+          npm run verify:mobile-live-permissions-refresh
           npm run verify:mobile-attendance-hydration
           npm run verify:mobile-ui-e2e-scaffold
           npm run test:mobile-ui-e2e-runtime

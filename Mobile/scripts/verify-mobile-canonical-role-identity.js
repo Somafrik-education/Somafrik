@@ -18,6 +18,7 @@ const RUNTIME_FILES = [
   path.join("lib", "format.ts"),
   path.join("domain", "security", "permissions.ts"),
   path.join("context", "AuthContext.tsx"),
+  path.join("lib", "livePermissionsRefresh.ts"),
   path.join("context", "AdminDataContext.tsx"),
   path.join("navigation", "AppNavigator.tsx"),
   path.join("navigation", "roleTabPreferences.ts"),
@@ -51,6 +52,7 @@ function main() {
   const adminCtx = readSrc(path.join("context", "AdminDataContext.tsx"));
   const auth = readSrc(path.join("context", "AuthContext.tsx"));
   const identity = readSrc(path.join("lib", "canonicalRoleIdentity.ts"));
+  const liveRefresh = readSrc(path.join("lib", "livePermissionsRefresh.ts"));
 
   assert.doesNotMatch(
     org,
@@ -110,7 +112,9 @@ function main() {
     "AdminDataContext ne doit plus hydrater les permissions live (autorité AuthContext)",
   );
   assert.match(auth, /getEffectivePermissions/);
-  assert.match(auth, /payload\.roleKeys/);
+  assert.match(auth, /createEffectivePermissionsRefresher/);
+  assert.match(liveRefresh, /payload\.roleKeys/);
+  assert.match(liveRefresh, /applyLivePermissionsToSession/);
   assert.match(identity, /roleKey: string/);
   assert.match(identity, /roleLabel: string/);
   assert.match(identity, /permissions: string\[\]/);
