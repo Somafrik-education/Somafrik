@@ -1,5 +1,5 @@
 # Boucle rapide Somafrik : PostgreSQL + Backend Docker, Expo/Metro sur Windows.
-# Ne modifie jamais Mobile/eas.json et ne déclenche aucun APK/AAB.
+# Ne modifie jamais Mobile/eas.json et ne declenche aucun APK/AAB.
 #
 # Usage :
 #   powershell -ExecutionPolicy Bypass -File scripts\mobile-local-expo.ps1
@@ -31,10 +31,10 @@ function Read-DotEnv([string]$path) {
   return $map
 }
 
-Write-Host "=== Somafrik — Docker Core + Expo local ===" -ForegroundColor Cyan
+Write-Host "=== Somafrik - Docker Core + Expo local ===" -ForegroundColor Cyan
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-  Write-Error "Docker est introuvable. Démarrez Docker Desktop puis relancez."
+  Write-Error "Docker est introuvable. Demarrez Docker Desktop puis relancez."
 }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   Write-Error "Node.js est introuvable. Node 22.12+ est requis pour Expo local."
@@ -43,17 +43,17 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 $rootEnv = Read-DotEnv (Join-Path $root ".env")
 $lanIp = Resolve-LanIp $rootEnv
 if (-not $lanIp) {
-  Write-Error "IP LAN introuvable. Ajoutez LAN_IP=<IPv4 Wi-Fi> dans .env ou vérifiez ipconfig."
+  Write-Error "IP LAN introuvable. Ajoutez LAN_IP=<IPv4 Wi-Fi> dans .env ou verifiez ipconfig."
 }
 
 $backendPort = if ($rootEnv["BACKEND_PORT"]) { $rootEnv["BACKEND_PORT"] } else { "5000" }
 $expoPort = if ($rootEnv["EXPO_PORT"]) { $rootEnv["EXPO_PORT"] } else { "8083" }
 $apiUrl = "http://${lanIp}:${backendPort}"
 
-# Fichier local gitignored : aucun profil EAS/release n'est réécrit.
+# Fichier local gitignored : aucun profil EAS/release n'est reecrit.
 $mobileEnvPath = Join-Path $root "Mobile\.env.local"
 $mobileEnv = @"
-# Généré par scripts/mobile-local-expo.ps1 — développement local uniquement.
+# Genere par scripts/mobile-local-expo.ps1 - developpement local uniquement.
 LAN_IP=$lanIp
 EXPO_PORT=$expoPort
 REACT_NATIVE_PACKAGER_HOSTNAME=$lanIp
@@ -73,7 +73,7 @@ $env:EXPO_PUBLIC_DEMO_MODE = "false"
 $compose = @("compose", "-f", "docker-compose.local.yml")
 
 if ($ResetDb) {
-  Write-Host "Réinitialisation PostgreSQL local..." -ForegroundColor Yellow
+  Write-Host "Reinitialisation PostgreSQL local..." -ForegroundColor Yellow
   docker @compose down -v
 }
 
@@ -82,11 +82,11 @@ docker image inspect somafrik-backend-local:dev *> $null
 if ($LASTEXITCODE -eq 0) { $imageExists = $true }
 
 if ($RebuildBackend -or -not $imageExists) {
-  Write-Host "Construction de l'image backend locale (première fois / dépendances modifiées)..." -ForegroundColor Yellow
+  Write-Host "Construction de l'image backend locale (premiere fois / dependances modifiees)..." -ForegroundColor Yellow
   docker @compose build backend
 }
 
-Write-Host "Démarrage PostgreSQL + Backend..." -ForegroundColor Yellow
+Write-Host "Demarrage PostgreSQL + Backend..." -ForegroundColor Yellow
 docker @compose up -d postgres backend
 
 Write-Host "Attente de l'API PostgreSQL canonique..."
@@ -109,24 +109,24 @@ if (-not $healthy) {
   exit 1
 }
 
-# L'ouverture du pare-feu est utile sur téléphone physique mais ne doit pas bloquer l'émulateur.
+# L'ouverture du pare-feu est utile sur telephone physique mais ne doit pas bloquer l'emulateur.
 try {
   & (Join-Path $root "scripts\open-firewall-dev.ps1")
 } catch {
-  Write-Warning "Pare-feu non modifié. Si Expo Go ne voit pas le PC, exécutez open-firewall-dev.ps1 en administrateur."
+  Write-Warning "Pare-feu non modifie. Si Expo Go ne voit pas le PC, executez open-firewall-dev.ps1 en administrateur."
 }
 
 Write-Host ""
 Write-Host "API locale     : http://127.0.0.1:${backendPort}/api/health" -ForegroundColor Green
-Write-Host "API téléphone  : ${apiUrl}/api/health" -ForegroundColor Green
+Write-Host "API telephone  : ${apiUrl}/api/health" -ForegroundColor Green
 Write-Host "Expo/Metro     : ${lanIp}:${expoPort}" -ForegroundColor Green
 Write-Host "PostgreSQL     : Docker (volume persistant somafrik-local)" -ForegroundColor Green
-Write-Host "APK/AAB/EAS    : NON déclenché" -ForegroundColor Green
+Write-Host "APK/AAB/EAS    : NON declenche" -ForegroundColor Green
 Write-Host ""
 
 Set-Location (Join-Path $root "Mobile")
 if (-not (Test-Path "node_modules")) {
-  Write-Host "Installation des dépendances Mobile (première fois)..." -ForegroundColor Yellow
+  Write-Host "Installation des dependances Mobile (premiere fois)..." -ForegroundColor Yellow
   npm ci
 }
 
