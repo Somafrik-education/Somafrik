@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { AppState } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { bindOutboxToSession, processOutbox, type OutboxEntry } from "../lib/outbox";
@@ -28,11 +27,14 @@ async function dispatchOutboxEntry(entry: OutboxEntry) {
 }
 
 export default function OutboxRuntime() {
-  const { session } = useAuth();
+  const { session, permissionsBootstrap } = useAuth();
   const { loadPresences, loadNotes, loadPayments } = useAdminData();
 
   useEffect(() => {
-    if (!session) return undefined;
+    // L8 : aucun write outbox tant que les permissions live ne sont pas ready.
+    // Le retour foreground passe par AuthContext (bootstrap loading → ready) ;
+    // cet effet relance processOutbox uniquement après la revalidation.
+    if (!session || permissionsBootstrap !== "ready") return undefined;
     const fingerprint = {
       userId: String(session.user?.id ?? ""),
       schoolScope: String(session.school?.code ?? session.user?.schoolCode ?? "").toUpperCase(),
@@ -49,14 +51,10 @@ export default function OutboxRuntime() {
     };
 
     void run();
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void run();
-    });
     return () => {
       cancelled = true;
-      sub.remove();
     };
-  }, [loadNotes, loadPayments, loadPresences, session?.school?.code, session?.user?.id, session?.user?.schoolCode]);
+  }, [loadNotes, loadPayments, loadPresences, permissionsBootstrap, session?.school?.code, session?.user?.id, session?.user?.schoolCode]);
 
   return null;
 }

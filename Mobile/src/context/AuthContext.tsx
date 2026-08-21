@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import {
   LoginResponse,
   getEffectivePermissions,
@@ -9,13 +10,18 @@ import {
 import { enrichSessionPermissions } from "../domain/security/permissions";
 import { canRestorePersistedSession } from "../lib/dataTruth";
 import { blockOutboxOnLogout } from "../lib/outbox";
-import { ApiClientError, setSessionExpiredHandler } from "../services/httpClient";
+import { setSessionExpiredHandler } from "../services/httpClient";
 import { clearSecureSession, getSessionProfile } from "../services/secureStorage";
 import { safeLogger } from "../services/safeLogger";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
 import { clearRequestSchoolScope } from "../lib/requestSchoolScope";
+import {
+  createEffectivePermissionsRefresher,
+  planForegroundRefresh,
+  type PermissionsBootstrapState,
+} from "../lib/livePermissionsRefresh";
 
-export type PermissionsBootstrapState = "idle" | "loading" | "ready" | "error";
+export type { PermissionsBootstrapState };
 
 type AuthContextValue = {
   session: LoginResponse | null;
@@ -58,64 +64,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return enriched;
   }, []);
 
+  const refresherRef = useRef(
+    createEffectivePermissionsRefresher<LoginResponse>({
+      getSession: () => sessionRef.current,
+      applySession: (next) => {
+        saveSession(next);
+      },
+      fetchEffectivePermissions: getEffectivePermissions,
+      onAuthFailure: async () => {
+        await clearSecureSession().catch(() => undefined);
+        saveSession(null);
+        setPermissionsBootstrap("idle");
+        setPermissionsBootstrapError(null);
+      },
+      onBootstrap: (state, message) => {
+        setPermissionsBootstrap(state);
+        setPermissionsBootstrapError(message);
+      },
+    }),
+  );
+
   const clearAuthenticatedState = useCallback(() => {
+    refresherRef.current.invalidate();
     saveSession(null);
     setPermissionsBootstrap("idle");
     setPermissionsBootstrapError(null);
   }, [saveSession]);
 
   const refreshEffectivePermissions = useCallback(async () => {
-    const current = sessionRef.current;
-    if (!current) {
-      setPermissionsBootstrap("idle");
-      setPermissionsBootstrapError(null);
-      return false;
-    }
-
-    setPermissionsBootstrap("loading");
-    setPermissionsBootstrapError(null);
-
-    try {
-      const payload = await getEffectivePermissions();
-      if (!Array.isArray(payload?.permissions)) {
-        throw new Error("effective-permissions: payload invalide");
-      }
-
-      const latest = sessionRef.current;
-      if (!latest?.user) {
-        throw new Error("Session utilisateur absente après authentification.");
-      }
-
-      // Le snapshot SecureStore n'est jamais une autorité RBAC. Les permissions
-      // live restent en mémoire et seront rechargées depuis PostgreSQL à chaque
-      // restauration de session. Cela évite aussi un write SecureStore inutile.
-      saveSession({
-        ...latest,
-        permissions: payload.permissions,
-        ...(Array.isArray(payload.roleKeys) ? { roleKeys: payload.roleKeys } : {}),
-        user: {
-          ...latest.user,
-          permissions: payload.permissions,
-          ...(Array.isArray(payload.roleKeys) ? { roleKeys: payload.roleKeys } : {}),
-        },
-      });
-
-      setPermissionsBootstrap("ready");
-      return true;
-    } catch (error) {
-      safeLogger.warn("effective permissions bootstrap failed", error);
-
-      if (error instanceof ApiClientError && (error.status === 401 || error.status === 403)) {
-        await clearSecureSession().catch(() => undefined);
-        clearAuthenticatedState();
-        return false;
-      }
-
-      setPermissionsBootstrap("error");
-      setPermissionsBootstrapError(permissionsBootstrapMessage(error));
-      return false;
-    }
-  }, [clearAuthenticatedState, saveSession]);
+    return refresherRef.current.refresh();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -158,6 +136,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return () => setSessionExpiredHandler(null);
   }, [clearAuthenticatedState]);
+
+  useEffect(() => {
+    const appStateRef = { current: AppState.currentState as AppStateStatus };
+    const subscription = AppState.addEventListener("change", (next: AppStateStatus) => {
+      const previous = appStateRef.current;
+      appStateRef.current = next;
+      const decision = planForegroundRefresh({
+        previous,
+        next,
+        hasSession: Boolean(sessionRef.current),
+      });
+      if (decision === "refresh") {
+        void refreshEffectivePermissions();
+      }
+    });
+    return () => subscription.remove();
+  }, [refreshEffectivePermissions]);
 
   const setSession = useCallback(
     (next: LoginResponse | null) => {

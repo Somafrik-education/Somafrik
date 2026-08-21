@@ -42,11 +42,14 @@ function main() {
   assert.match(auth, /permissionsBootstrap: PermissionsBootstrapState/);
   assert.match(auth, /refreshEffectivePermissions: \(\) => Promise<boolean>/);
   assert.match(auth, /setPermissionsBootstrap\("loading"\)/);
-  assert.match(auth, /setPermissionsBootstrap\("ready"\)/);
-  assert.match(auth, /setPermissionsBootstrap\("error"\)/);
-  assert.match(auth, /error\.status === 401 \|\| error\.status === 403/);
   assert.match(auth, /saveSession\(stripSecrets\(next\)\)/);
   assert.match(auth, /await refreshEffectivePermissions\(\)/);
+  assert.match(auth, /createEffectivePermissionsRefresher/);
+  const refreshLib = read(path.join("lib", "livePermissionsRefresh.ts"));
+  assert.match(refreshLib, /onBootstrap\("ready"/);
+  assert.match(refreshLib, /onBootstrap\("error"/);
+  assert.match(refreshLib, /onBootstrap\("loading"/);
+  assert.match(refreshLib, /status === 401 \|\| status === 403/);
 
   assert.match(navigator, /permissionsBootstrap === "idle" \|\| permissionsBootstrap === "loading"/);
   assert.match(navigator, /permissionsBootstrap === "error"/);
