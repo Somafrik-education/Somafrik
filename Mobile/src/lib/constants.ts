@@ -1,6 +1,6 @@
 export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   overview: null,
-  establishment: null,
+  establishment: "Établissements",
   configuration: "Paramètres Établissement",
   countries: "Pays",
   schools: "Établissements",

@@ -4,7 +4,6 @@ import { canSchoolAdminMutateTeachers } from "../../lib/pedagogyGovernance";
 import { attachCanonicalRoleIdentity, resolveCanonicalRoleIdentity } from "../../lib/canonicalRoleIdentity";
 import {
   isSuperAdminRole,
-  COUNTRY_ADMIN_ROLE,
   sessionRoleToPlatformRole,
 } from "../../lib/orgHierarchy";
 import { COUNTRY_SCOPE_MODULES } from "../../lib/roleGovernance";
@@ -70,16 +69,6 @@ const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
   "Configuration",
   "bulletinDesign",
 ]);
-
-function isPlatformCommunicationSession(session: any): boolean {
-  const role = session?.role;
-  const platformRole = sessionRoleToPlatformRole(role);
-  return (
-    isSuperAdminSessionRole(role) ||
-    role === "country_admin" ||
-    platformRole === COUNTRY_ADMIN_ROLE
-  );
-}
 
 export const entityFeatureMap: Record<string, string> = {
   schools: "Établissements",
@@ -289,12 +278,6 @@ export function hasSecurityPermission(session: any, feature: string | undefined,
   if (isSuperAdminSessionRole(session?.role)) {
     return SUPER_ADMIN_ALLOWED_FEATURES.has(feature);
   }
-  if (
-    isPlatformCommunicationSession(session) &&
-    (feature === "Messages" || feature === "Notifications")
-  ) {
-    return true;
-  }
 
   const identity = resolveCanonicalRoleIdentity(session);
   const platformRole = identity.roleLabel;
@@ -349,18 +332,25 @@ export function canReadView(session: any, viewName: string): boolean {
   }
 
   if (session?.role === "country_admin") {
-    if (SCHOOL_ENTITY_VIEWS.has(viewName) || viewName === "establishment" || viewName === "Configuration") {
+    if (
+      SCHOOL_ENTITY_VIEWS.has(viewName) ||
+      viewName === "establishment" ||
+      viewName === "SchoolManagement" ||
+      viewName === "Configuration"
+    ) {
       return false;
     }
-    const feature = VIEW_PERMISSION_FEATURES[viewName];
+    const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
+    if (feature === "Messages" || feature === "Notifications") {
+      return hasSecurityPermission(session, feature, "READ");
+    }
     if (feature && !COUNTRY_SCOPE_MODULES.has(feature) && feature !== "Rapports") {
       return false;
     }
   }
 
   if (viewName === "establishment" || viewName === "SchoolManagement") {
-    const identity = resolveCanonicalRoleIdentity(session);
-    return isInternalSchoolRole(identity.sessionRole) || isInternalSchoolRole(identity.roleLabel);
+    return hasSecurityPermission(session, "Établissements", "READ");
   }
 
   if (viewName === "Configuration") {
@@ -379,8 +369,7 @@ export function canReadView(session: any, viewName: string): boolean {
   ]);
   if (communicationViews.has(viewName)) {
     const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
-    if (feature && hasSecurityPermission(session, feature, "READ")) return true;
-    return isPlatformCommunicationSession(session);
+    return Boolean(feature) && hasSecurityPermission(session, feature, "READ");
   }
 
   const feature = VIEW_PERMISSION_FEATURES[viewName];
@@ -406,12 +395,6 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
     action !== "CREATE"
   ) {
     return false;
-  }
-  if (
-    isPlatformCommunicationSession(session) &&
-    (entity === "messages" || entity === "announcements")
-  ) {
-    return true;
   }
   return Boolean(feature) && hasSecurityPermission(session, feature, action);
 }

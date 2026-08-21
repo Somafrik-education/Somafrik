@@ -79,6 +79,30 @@ function main() {
   );
   assert.match(permissions, /hasSecurityPermission\(session, "Paramètres Établissement", "READ"\)/);
   assert.match(permissions, /attachCanonicalRoleIdentity/);
+  assert.doesNotMatch(
+    stripComments(permissions),
+    /isPlatformCommunicationSession/,
+    "country_admin / plateforme ne doivent plus grant Messages/Notifications par rôle",
+  );
+  assert.doesNotMatch(
+    stripComments(permissions),
+    /return isInternalSchoolRole\(identity\.sessionRole\) \|\| isInternalSchoolRole\(identity\.roleLabel\)/,
+    "SchoolManagement/establishment ne doivent plus s'ouvrir par identité établissement",
+  );
+  const schoolManagementBranch = stripComments(permissions).match(
+    /if \(viewName === "establishment" \|\| viewName === "SchoolManagement"\) \{[\s\S]*?\n  \}/,
+  );
+  assert.ok(schoolManagementBranch, "branche SchoolManagement introuvable");
+  assert.doesNotMatch(
+    schoolManagementBranch[0],
+    /isInternalSchoolRole/,
+    "la branche SchoolManagement ne doit pas consulter l'identité de rôle",
+  );
+  assert.match(
+    schoolManagementBranch[0],
+    /hasSecurityPermission\(session, "Établissements", "READ"\)/,
+  );
+  assert.match(identity, /ADJOINT: "Directeur adjoint"/);
 
   assert.doesNotMatch(
     stripComments(adminCtx),

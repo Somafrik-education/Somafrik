@@ -214,6 +214,8 @@ export default function AppNavigator() {
     );
   }
 
+  // Chaque écran reste filtré par canReadRoute. SchoolManagement n'ouvre plus
+  // le bundle par identité établissement : seul Établissements:READ le déclenche.
   const canOpenAdminCrud =
     canReadRoute(session, "SchoolManagement") ||
     canReadRoute(session, "Teachers") ||

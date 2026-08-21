@@ -28,6 +28,7 @@ const ROLE_KEY_LABELS: Record<string, string> = {
   PREFET_ETUDES: "Préfet des études",
   SECRETARY: "Secrétaire",
   ACCOUNTANT: "Comptable",
+  ADJOINT: "Directeur adjoint",
   SUPERVISOR: "Surveillant",
   TEACHER: "Enseignant",
   PARENT: "Parent",
@@ -131,7 +132,7 @@ export function canonicalizeRoleKey(value?: string | null): string {
   if (fromAlias) return fromAlias;
   const upper = trimmed.toUpperCase().replace(/\s+/g, "_");
   if (CODE_ALIASES[upper]) return CODE_ALIASES[upper];
-  if (ROLE_KEY_LABELS[upper] || ROLE_KEY_TO_SESSION_ALIAS[upper] || upper === "ADJOINT") return upper;
+  if (ROLE_KEY_LABELS[upper] || ROLE_KEY_TO_SESSION_ALIAS[upper]) return upper;
   return upper;
 }
 
@@ -234,5 +235,5 @@ export function attachCanonicalRoleIdentity<T>(session: T | null | undefined): T
 export function isUnknownCanonicalRole(roleKey?: string | null): boolean {
   const key = canonicalizeRoleKey(roleKey);
   if (!key) return true;
-  return !ROLE_KEY_LABELS[key] && key !== "ADJOINT";
+  return !ROLE_KEY_LABELS[key];
 }
