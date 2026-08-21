@@ -7,6 +7,7 @@ const { USER_ROLES_SCHEMA_SQL } = require("../db/userRolesSchema");
 const {
   attachCanonicalDemoSeedPostgres,
   extractFixtureSchoolShortCode,
+  isAcademicStudentUserInsertSql,
   isStudentSeedUser,
 } = require("../db/demoSeedPostgres");
 const { shouldSeedDemoData } = require("./demoSeedPolicy");
@@ -128,9 +129,64 @@ async function assertCanonicalDemoIdentitySeedIntegrity() {
   }
 }
 
+async function assertAcademicStudentAccountSeedIntegrity() {
+  const academicWrites = [];
+  const ensureWrites = [];
+  const studentUserSql = `
+    INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
+    VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', $8)
+  `;
+  assert.equal(isAcademicStudentUserInsertSql(studentUserSql), true);
+  assert.equal(isAcademicStudentUserInsertSql("INSERT INTO users (role) VALUES ('TEACHER')"), false);
+
+  const fakeRepository = {
+    seedReferenceData: async () => ({}),
+    seedAcademicData: async (client) => {
+      await client.query("INSERT INTO students (student_code) VALUES ($1)", ["CD-IN-EL-26-001"]);
+      await client.query(studentUserSql, ["school-1", "CD-IN-EL-26-001"]);
+      await client.query("INSERT INTO enrollments (student_id) VALUES ($1)", ["student-1"]);
+      return "academic-ok";
+    },
+    ensureStudentUsers: async () => {
+      throw new Error("ensureStudentUsers legacy ne doit plus être appelé");
+    },
+    query: async (sql, params) => {
+      ensureWrites.push({ sql, params });
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const fakeClient = {
+    query: async (sql, params) => {
+      academicWrites.push({ sql, params });
+      return { rows: [], rowCount: 1 };
+    },
+  };
+
+  attachCanonicalDemoSeedPostgres(fakeRepository);
+  const result = await fakeRepository.seedAcademicData(fakeClient, {});
+  assert.equal(result, "academic-ok");
+  assert.ok(academicWrites.some((entry) => /INSERT INTO students/.test(entry.sql)));
+  assert.ok(academicWrites.some((entry) => /INSERT INTO enrollments/.test(entry.sql)));
+  assert.equal(
+    academicWrites.some((entry) => isAcademicStudentUserInsertSql(entry.sql)),
+    false,
+    "seedAcademicData ne doit plus écrire de compte STUDENT",
+  );
+
+  await fakeRepository.ensureStudentUsers();
+  assert.equal(ensureWrites.length, 1);
+  const accountWrite = ensureWrites[0].sql;
+  assert.match(accountWrite, /st\.student_code/);
+  assert.match(accountWrite, /NULL::text, NULL::text/);
+  assert.doesNotMatch(accountWrite, /st\.parent_email/);
+  assert.doesNotMatch(accountWrite, /st\.parent_phone/);
+  assert.match(accountWrite, /'STUDENT'/);
+}
+
 async function main() {
   assertDemoSubscriptionSeedIntegrity();
   await assertCanonicalDemoIdentitySeedIntegrity();
+  await assertAcademicStudentAccountSeedIntegrity();
 
   const auditLogs = [];
   const store = createPlatformMemoryStore({
