@@ -1,4 +1,5 @@
 const seedData = require("../data");
+const { COURSE_ROUTE_PERMISSIONS } = require("../lib/coursesRbacPolicy");
 
 const roleAliases = {
   super_admin: "Super Administrateur Somafrik",
@@ -12,6 +13,7 @@ const roleAliases = {
 };
 
 const routePermissions = {
+  ...COURSE_ROUTE_PERMISSIONS,
   "POST /api/users/:id/reset-password": [
     "Utilisateurs:UPDATE",
     "Gérer utilisateurs",
@@ -433,13 +435,13 @@ class RbacService {
   }
 
   canAccess(principal, routeKey) {
-    const requiredPermissions = routePermissions[routeKey];
-
-    if (
-      !requiredPermissions ||
-      process.env.SOMAFRIK_AUTH_OPTIONAL === "true"
-    ) {
+    if (process.env.SOMAFRIK_AUTH_OPTIONAL === "true") {
       return true;
+    }
+
+    const requiredPermissions = routePermissions[routeKey];
+    if (!Array.isArray(requiredPermissions) || requiredPermissions.length === 0) {
+      return false;
     }
 
     if (!principal) {
