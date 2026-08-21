@@ -621,9 +621,8 @@ const securityMatrix: Record<string, Record<string, "R" | "CRUD" | "-">> = {
 };
 
 function permissionsFromSecurityMatrix(role: string) {
-  const matrixRole = role === "Proviseur" || role === "Directeur" ? "Préfet des études" : role;
   return Object.entries(securityMatrix).flatMap(([feature, grants]) => {
-    const access = grants[matrixRole] ?? "-";
+    const access = grants[role] ?? "-";
     if (access === "-") return [];
     const actions = access === "CRUD" ? ["READ", "CREATE", "UPDATE", "DELETE", "SUSPEND"] : ["READ"];
     return actions.map((action) => `${feature}:${action}`);

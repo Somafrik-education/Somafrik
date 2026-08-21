@@ -40,8 +40,13 @@ export function sessionRoleToPlatformRole(sessionRole?: string): string {
   if (sessionRole === "super_admin") return SUPER_ADMIN_ROLE;
   if (sessionRole === "country_admin") return COUNTRY_ADMIN_ROLE;
   if (sessionRole === "school_admin") return SCHOOL_ADMIN_ROLE;
-  if (sessionRole === "principal" || sessionRole === "prefet") return "Préfet des études";
+  if (sessionRole === "principal") return "Directeur";
+  if (sessionRole === "proviseur") return "Proviseur";
+  if (sessionRole === "prefet") return "Préfet des études";
   if (sessionRole === "secretary") return "Secrétaire";
+  if (sessionRole === "accountant") return "Comptable";
+  if (sessionRole === "adjoint") return "Directeur adjoint";
+  if (sessionRole === "supervisor") return "Surveillant";
   if (sessionRole === "teacher") return "Enseignant";
   if (sessionRole === "parent_student") return "Parent";
   if (sessionRole === "student") return "Élève / Étudiant";

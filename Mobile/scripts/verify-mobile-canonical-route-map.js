@@ -55,6 +55,7 @@ function main() {
 
   runVerifier("verify-mobile-rbac-live.js");
   runVerifier("verify-mobile-no-false-writes.js");
+  runVerifier("verify-mobile-canonical-role-identity.js");
 }
 
 main();

@@ -36,6 +36,7 @@
     "verify:mobile-school-scope-transport": "node scripts/verify-mobile-school-scope-transport.js",
     "verify:mobile-no-catalog-runtime-data": "node scripts/verify-mobile-no-catalog-runtime-data.js",
     "verify:mobile-canonical-route-map": "node scripts/verify-mobile-canonical-route-map.js",
+    "verify:mobile-canonical-role-identity": "node scripts/verify-mobile-canonical-role-identity.js",
     "verify:mobile-attendance-hydration": "node scripts/verify-mobile-attendance-hydration.js",
     "verify:mobile-ui-e2e-scaffold": "node scripts/verify-mobile-ui-e2e-scaffold.js",
     "verify:mobile-ui-e2e": "node scripts/verify-mobile-ui-e2e-scaffold.js",

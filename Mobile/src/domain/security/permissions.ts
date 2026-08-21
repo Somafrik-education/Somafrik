@@ -1,6 +1,7 @@
 import { normalize, isInternalSchoolRole, isSchoolAdminRole } from "../../lib/format";
 import { getInternalRoleDefaults } from "../../lib/internalRoleDefaults";
 import { canSchoolAdminMutateTeachers } from "../../lib/pedagogyGovernance";
+import { attachCanonicalRoleIdentity, resolveCanonicalRoleIdentity } from "../../lib/canonicalRoleIdentity";
 import {
   isSuperAdminRole,
   COUNTRY_ADMIN_ROLE,
@@ -70,8 +71,6 @@ const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
   "bulletinDesign",
 ]);
 
-const PARENT_STUDENT_SESSION_ROLES = new Set(["parent_student", "student"]);
-
 function isPlatformCommunicationSession(session: any): boolean {
   const role = session?.role;
   const platformRole = sessionRoleToPlatformRole(role);
@@ -79,18 +78,6 @@ function isPlatformCommunicationSession(session: any): boolean {
     isSuperAdminSessionRole(role) ||
     role === "country_admin" ||
     platformRole === COUNTRY_ADMIN_ROLE
-  );
-}
-
-function isEstablishmentCommunicationSession(session: any): boolean {
-  const schoolCode = String(session?.user?.schoolCode ?? session?.school?.code ?? "").trim();
-  if (!schoolCode || schoolCode === "*") return false;
-  const role = session?.role;
-  const platformRole = sessionRoleToPlatformRole(role);
-  return (
-    isInternalSchoolRole(role) ||
-    isInternalSchoolRole(platformRole) ||
-    PARENT_STUDENT_SESSION_ROLES.has(role)
   );
 }
 
@@ -239,9 +226,9 @@ export function getEffectivePermissionsForSession(
   rolePermissions: Record<string, string[]> = {},
 ): string[] {
   if (!session) return [];
-  const roleLabel = roleLabelFromSessionRole(session.role) || session.user?.role;
+  const identity = resolveCanonicalRoleIdentity(session);
   return resolveEffectivePermissions(
-    roleLabel,
+    identity.roleLabel || session.user?.role,
     session.permissions ?? session.user?.permissions,
     session.rolePermissions ?? rolePermissions,
   );
@@ -249,28 +236,30 @@ export function getEffectivePermissionsForSession(
 
 export function enrichSessionPermissions(session: any, rolePermissions: Record<string, string[]> = {}) {
   if (!session) return null;
-  const permissions = getEffectivePermissionsForSession(session, rolePermissions);
+  const identified = attachCanonicalRoleIdentity(session);
+  const permissions = getEffectivePermissionsForSession(identified, rolePermissions);
   return {
-    ...session,
+    ...identified,
     permissions,
     user: {
-      ...session.user,
+      ...identified.user,
       permissions,
     },
   };
 }
 
 export function buildPermissionSession(session: any) {
-  const roleLabel = roleLabelFromSessionRole(session?.role);
+  const identified = attachCanonicalRoleIdentity(session) ?? session;
+  const identity = resolveCanonicalRoleIdentity(identified);
   const permissions = resolveEffectivePermissions(
-    roleLabel,
-    session?.permissions ?? session?.user?.permissions,
-    session?.rolePermissions ?? {},
+    identity.roleLabel,
+    identified?.permissions ?? identified?.user?.permissions,
+    identified?.rolePermissions ?? {},
   );
   return {
-    ...session,
+    ...identified,
     permissions,
-    platformRole: roleLabel,
+    platformRole: identity.roleLabel,
   };
 }
 
@@ -307,16 +296,17 @@ export function hasSecurityPermission(session: any, feature: string | undefined,
     return true;
   }
 
-  const platformRole = roleLabelFromSessionRole(session?.role);
+  const identity = resolveCanonicalRoleIdentity(session);
+  const platformRole = identity.roleLabel;
   if (
-    (session?.role === "school_admin" || isSchoolAdminRole(platformRole)) &&
+    (identity.sessionRole === "school_admin" || isSchoolAdminRole(platformRole)) &&
     schoolAdminForbiddenFeatures.has(feature)
   ) {
     return false;
   }
 
   if (
-    (session?.role === "school_admin" || isSchoolAdminRole(platformRole)) &&
+    (identity.sessionRole === "school_admin" || isSchoolAdminRole(platformRole)) &&
     feature === "Enseignants" &&
     !canSchoolAdminMutateTeachers(action)
   ) {
@@ -369,20 +359,14 @@ export function canReadView(session: any, viewName: string): boolean {
   }
 
   if (viewName === "establishment" || viewName === "SchoolManagement") {
-    return isInternalSchoolRole(session?.role) || isInternalSchoolRole(sessionRoleToPlatformRole(session?.role));
+    const identity = resolveCanonicalRoleIdentity(session);
+    return isInternalSchoolRole(identity.sessionRole) || isInternalSchoolRole(identity.roleLabel);
   }
 
   if (viewName === "Configuration") {
-    const platformRole = sessionRoleToPlatformRole(session?.role);
-    if (!isInternalSchoolRole(session?.role) && !isInternalSchoolRole(platformRole)) return false;
-    return (
-      hasSecurityPermission(session, "Paramètres Établissement", "READ") ||
-      session?.role === "school_admin" ||
-      isSchoolAdminRole(platformRole) ||
-      hasSecurityPermission(session, "Élèves", "READ") ||
-      hasSecurityPermission(session, "Enseignants", "READ") ||
-      hasSecurityPermission(session, "Utilisateurs", "READ")
-    );
+    const identity = resolveCanonicalRoleIdentity(session);
+    if (!isInternalSchoolRole(identity.sessionRole) && !isInternalSchoolRole(identity.roleLabel)) return false;
+    return hasSecurityPermission(session, "Paramètres Établissement", "READ");
   }
 
   const communicationViews = new Set([
@@ -396,7 +380,7 @@ export function canReadView(session: any, viewName: string): boolean {
   if (communicationViews.has(viewName)) {
     const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
     if (feature && hasSecurityPermission(session, feature, "READ")) return true;
-    return isPlatformCommunicationSession(session) || isEstablishmentCommunicationSession(session);
+    return isPlatformCommunicationSession(session);
   }
 
   const feature = VIEW_PERMISSION_FEATURES[viewName];
@@ -415,8 +399,9 @@ export function canReadEntity(session: any, entity?: string) {
 
 export function canMutateEntity(session: any, entity: string, action: Exclude<SecurityAction, "READ">) {
   const feature = entityFeatureMap[entity];
+  const identity = resolveCanonicalRoleIdentity(session);
   if (
-    (session?.role === "school_admin" || isSchoolAdminRole(sessionRoleToPlatformRole(session?.role))) &&
+    (identity.sessionRole === "school_admin" || isSchoolAdminRole(identity.roleLabel)) &&
     entity === "teachers" &&
     action !== "CREATE"
   ) {
