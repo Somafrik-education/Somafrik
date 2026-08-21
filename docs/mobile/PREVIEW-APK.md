@@ -168,3 +168,15 @@ SOMAFRIK_REQUIRE_EAS_AUTH=1 npm --prefix Mobile run verify:mobile-preview-apk
 ```
 
 Sans cette variable, CI Cursor sans `eas login` peut rester vert sur le reste du contrat Preview, tout en affichant explicitement `BLOCKED_EAS_AUTH` — ce n’est pas un skip d’erreur projet.
+
+## L10 — Smoke RC1 (après APK finished)
+
+Décision CTO L9 : **GO APK RC1**, chantier métier **fermé**. L10 produit l’APK Preview et le smoke téléphone ; il ne rouvre pas NFC, Mobile Money, GRANT/REVOKE, ni la création Élève / Classe / Paiement.
+
+Protocole (Admin School, Directeur / Préfet, Enseignant, réseau / outbox, Web-only jamais présentés comme écriture réussie) :
+
+[L10-APK-RC1-SMOKE.md](./L10-APK-RC1-SMOKE.md)
+
+Statut d’ouverture (EAS auth, SHA L8) : [mobile-l10-apk-rc1-status-2026-08-21.md](../audits/mobile-l10-apk-rc1-status-2026-08-21.md)
+
+Le vert `verify:mobile-preview-apk` n’est pas un GO terrain. `BLOCKED_EAS_AUTH` dans cette VM = action humaine `eas login`, pas un skip projet.

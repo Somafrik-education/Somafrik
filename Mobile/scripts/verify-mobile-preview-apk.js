@@ -280,7 +280,17 @@ function main() {
   assert.match(docs, /ne constitue pas un service Render/);
   assert.match(docs, /BLOCKED_EAS_AUTH|eas login/);
   assert.match(docs, /SOMAFRIK_REQUIRE_EAS_AUTH/);
+  assert.match(docs, /L10-APK-RC1-SMOKE/);
+  const l10 = read(path.join(ROOT, "docs", "mobile", "L10-APK-RC1-SMOKE.md"));
+  assert.match(l10, /NO-GO/);
+  assert.match(l10, /Admin School/);
+  assert.match(l10, /Enseignant/);
+  assert.match(l10, /somafrik-api-preprod\.onrender\.com/);
+  assert.match(l10, /GRANT/);
+  assert.match(l10, /outbox/);
+  assert.match(l10, /BLOCKED_EAS_AUTH/);
   console.log("OK: documentation Preview APK reproductible");
+  console.log("OK: protocole L10 smoke RC1 présent");
 
   const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
   const security = read(path.join(ROOT, ".github", "workflows", "security.yml"));
