@@ -544,8 +544,7 @@ async function runPostgresHttpGuards(databaseUrl) {
       token: teacherToken,
       body: { className: "6ème A", name: `Matière-${stamp}` },
     });
-    assert.equal(teacherUnknownSubject.status, 404, JSON.stringify(teacherUnknownSubject.data));
-    assert.equal(teacherUnknownSubject.data?.code, PEDAGOGY_ERROR.COURSE_NOT_FOUND);
+    assertPermissionDenied(teacherUnknownSubject, "enseignant POST /courses");
 
     const forgedEvaluation = await request(PG_PORT, "/evaluations", {
       method: "POST",
