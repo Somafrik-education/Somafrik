@@ -13,6 +13,8 @@ const USER_ROLES_SCHEMA_SQL = [
   // Compteur login_code établissement : (country_id, year) global.
   // Backfill rewrite opt-in : 20260825_school_login_code_seq_backfill.sql (jamais au boot).
   fs.readFileSync(path.join(__dirname, "migrations/20260825_school_login_code_country_year.sql"), "utf8"),
+  // Les initiales du login public suivent short_code, tandis que la séquence reste PostgreSQL-only.
+  fs.readFileSync(path.join(__dirname, "migrations/20260901_school_login_code_short_code_source.sql"), "utf8"),
 ].join("\n");
 
 const USER_ROLES_MIGRATION_AMBIGUOUS = "USER_ROLES_MIGRATION_AMBIGUOUS";
