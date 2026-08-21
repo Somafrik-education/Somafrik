@@ -321,9 +321,22 @@ export function canManagePresences(session: any): boolean {
   );
 }
 
+/**
+ * GET/POST/PATCH `/api/backoffice/notifications` exigent ALL_PRIVILEGES ou
+ * COUNTRY_PRIVILEGES. Notifications:READ établissement n'ouvre pas la plateforme.
+ */
+export function hasPlatformBackofficePrivilege(session: any): boolean {
+  if (!session) return false;
+  const live = getEffectivePermissionsForSession(session);
+  return live.includes("ALL_PRIVILEGES") || live.includes("COUNTRY_PRIVILEGES");
+}
+
 export function canReadView(session: any, viewName: string): boolean {
   if (isSuperAdminSessionRole(session?.role)) {
     return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
+  }
+  if (viewName === "PlatformNotifications") {
+    return hasPlatformBackofficePrivilege(session);
   }
   if (viewName === "overview") return true;
 
@@ -365,7 +378,6 @@ export function canReadView(session: any, viewName: string): boolean {
     "notifications",
     "announcements",
     "Announcements",
-    "PlatformNotifications",
   ]);
   if (communicationViews.has(viewName)) {
     const feature = VIEW_PERMISSION_FEATURES[viewName] ?? routeFeatureMap[viewName];
@@ -402,6 +414,9 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
 export function canReadRoute(session: any, routeName?: string) {
   if (isSuperAdminSessionRole(session?.role)) {
     return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
+  }
+  if (routeName === "PlatformNotifications") {
+    return hasPlatformBackofficePrivilege(session);
   }
   if (routeName && canReadView(session, routeName)) return true;
   const feature = routeName ? routeFeatureMap[routeName] : undefined;

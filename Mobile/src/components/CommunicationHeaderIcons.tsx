@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { countUnreadAnnouncements, useAnnouncementsReadListener } from "../lib/announcementsRead";
 import { ICON_HIT_SLOP, MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
@@ -51,7 +52,7 @@ export default function CommunicationHeaderIcons({
   const { notificationsData, announcementsData } = useAdminData();
   useAnnouncementsReadListener();
 
-  const canMessages = canReadRoute(session, "Messages");
+  const canMessages = canAccessMessagesRoute(session);
   const canAnnouncements = canReadRoute(session, "Announcements");
   const canNotifications = canReadView(session, "PlatformNotifications");
 

@@ -40,6 +40,7 @@ import OfflineBanner from "../components/OfflineBanner";
 import { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 
 export type UserRole = string;
 
@@ -260,7 +261,7 @@ export default function AppNavigator() {
 
         {canReadRoute(session, "StudentPayments") && <Stack.Screen name="StudentPayments" component={StudentPaymentsScreen} options={{ title: "Paiements" }} />}
         {canReadRoute(session, "Announcements") && <Stack.Screen name="Announcements" component={AnnouncementsScreen} />}
-        {canReadRoute(session, "Messages") && <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: "Messages" }} />}
+        {canAccessMessagesRoute(session) && <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: "Messages" }} />}
 
         {(canReadRoute(session, "Timetable") || canReadRoute(session, "ReportCards")) && (
           <>

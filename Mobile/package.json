@@ -38,6 +38,7 @@
     "verify:mobile-canonical-route-map": "node scripts/verify-mobile-canonical-route-map.js",
     "verify:mobile-canonical-role-identity": "node scripts/verify-mobile-canonical-role-identity.js",
     "verify:mobile-live-permissions-refresh": "node scripts/verify-mobile-live-permissions-refresh.js",
+    "verify:mobile-cta-rbac-alignment": "node scripts/verify-mobile-cta-rbac-alignment.js",
     "verify:mobile-attendance-hydration": "node scripts/verify-mobile-attendance-hydration.js",
     "verify:mobile-ui-e2e-scaffold": "node scripts/verify-mobile-ui-e2e-scaffold.js",
     "verify:mobile-ui-e2e": "node scripts/verify-mobile-ui-e2e-scaffold.js",

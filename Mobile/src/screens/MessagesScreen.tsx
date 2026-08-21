@@ -20,7 +20,14 @@ import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { messageThemes } from "../data/catalog";
 import { MessagePriority, MessageService } from "../domain/communication/MessageService";
-import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
+import {
+  buildStaffSchoolToParentMessagePayload,
+  canShowStaffMessagesComposer,
+  resolveCanonicalStaffRecipients,
+  resolveMessagesRouteAccess,
+  type CanonicalStaffRecipient,
+} from "../lib/mobileCtaRbacAlignment";
+import { ALL_SCHOOLS_CODE } from "../lib/activeSchool";
 import { classNameMatches, scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { sendClientsMessage } from "../services/api";
@@ -31,6 +38,14 @@ import { KeyboardAvoidingContainer } from "../components/KeyboardAwareScreen";
 import AccessibleIconButton from "../components/AccessibleIconButton";
 import { MIN_TOUCH_TARGET_DP, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import {
+  emptyResourceSnapshot,
+  snapshotFromFailure,
+  snapshotFromSuccess,
+  type ResourceSnapshot,
+} from "../lib/dataTruth";
+import {
+  getCanonicalContacts,
+  getCanonicalRelations,
   markCanonicalMessageRead,
   type CanonicalSchoolMessage,
 } from "../services/domainHydrationApi";
@@ -41,7 +56,17 @@ const priorities: MessagePriority[] = ["Faible", "Moyenne", "Haute", "Critique"]
 export default function MessagesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
-  const { studentsData, assignmentsData, classesData, messagesSnapshot, loadMessages, teachersSnapshot, loadTeachers, resourceScopeKey } = useAdminData();
+  const {
+    studentsData,
+    assignmentsData,
+    classesData,
+    messagesSnapshot,
+    loadMessages,
+    teachersSnapshot,
+    loadTeachers,
+    resourceScopeKey,
+    activeSchoolCode,
+  } = useAdminData();
 
   const [theme, setTheme] = useState(messageThemes[0]);
   const [message, setMessage] = useState("");
@@ -51,6 +76,9 @@ export default function MessagesScreen() {
   const [recipient, setRecipient] = useState<"school" | "teacher">("school");
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
   const [teacherStudentId, setTeacherStudentId] = useState("");
+  const [staffRecipientKey, setStaffRecipientKey] = useState("");
+  const [staffRecipientSnapshot, setStaffRecipientSnapshot] =
+    useState<ResourceSnapshot<CanonicalStaffRecipient>>(emptyResourceSnapshot());
   const [selectedMessage, setSelectedMessage] = useState<CanonicalSchoolMessage | null>(null);
   const [sending, setSending] = useState(false);
   const [sendHint, setSendHint] = useState("");
@@ -58,22 +86,54 @@ export default function MessagesScreen() {
   const sendIntentionRef = useRef(createIntentionStore());
 
   const role = session?.role;
-  const canRead = canReadRoute(session, "Messages");
-  const canSend =
-    canMutateEntity(session, "messages", "CREATE") ||
-    role === "parent_student" ||
-    role === "teacher";
+  const messagesAccess = resolveMessagesRouteAccess(session);
+  const canRead = messagesAccess.canReadList;
+  const canSend = messagesAccess.canCompose;
+  const showStaffComposer = canShowStaffMessagesComposer(session);
+  const showComposer = ((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer;
+  const staffComposerBlocked = Boolean(canSend && role !== "parent_student" && role !== "teacher" && !showStaffComposer);
+  const staffSendBlocked =
+    showStaffComposer && (staffRecipientSnapshot.status !== "success" || !staffRecipientKey);
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
   const parentChildren = session?.user.children ?? [];
   const teachersData = teachersSnapshot.data;
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
   const teacherStudents = scopedStudentsForSession(session, studentsData, teacherScopeState);
+  const recipientSchoolCode =
+    activeSchoolCode && activeSchoolCode !== ALL_SCHOOLS_CODE
+      ? activeSchoolCode
+      : String(session?.school?.code ?? session?.user.schoolCode ?? "");
+
+  const loadStaffRecipients = useCallback(async () => {
+    if (!showStaffComposer) {
+      setStaffRecipientSnapshot(emptyResourceSnapshot());
+      setStaffRecipientKey("");
+      return;
+    }
+    setStaffRecipientSnapshot({ status: "loading", data: [] });
+    setStaffRecipientKey("");
+    try {
+      const [contacts, relations] = await Promise.all([getCanonicalContacts(), getCanonicalRelations()]);
+      setStaffRecipientSnapshot(
+        snapshotFromSuccess(
+          resolveCanonicalStaffRecipients({
+            contacts,
+            relations,
+            schoolCode: recipientSchoolCode,
+          }),
+        ),
+      );
+    } catch (error) {
+      setStaffRecipientSnapshot(snapshotFromFailure(error, []));
+    }
+  }, [recipientSchoolCode, showStaffComposer]);
 
   useFocusEffect(
     useCallback(() => {
       if (canRead) void loadMessages();
       if (role === "parent_student" || role === "teacher") void loadTeachers();
-    }, [canRead, loadMessages, loadTeachers, role, resourceScopeKey]),
+      if (showStaffComposer) void loadStaffRecipients();
+    }, [canRead, loadMessages, loadStaffRecipients, loadTeachers, role, resourceScopeKey, showStaffComposer]),
   );
 
   const availableTeachers = useMemo(() => {
@@ -118,6 +178,14 @@ export default function MessagesScreen() {
       sendLockRef.current.end();
       return;
     }
+    if (staffComposerBlocked) {
+      sendLockRef.current.end();
+      Alert.alert(
+        "Rédaction indisponible",
+        "Messages:CREATE seul ne permet pas de choisir un destinataire. Contacts:READ et Relations:READ sont requis. Aucun message n'a été envoyé.",
+      );
+      return;
+    }
     if (!message.trim()) {
       sendLockRef.current.end();
       Alert.alert("Message incomplet", "Veuillez écrire votre message avant l'envoi.");
@@ -158,6 +226,47 @@ export default function MessagesScreen() {
         ...(attachmentUrl.trim() ? { attachmentUrl: attachmentUrl.trim() } : {}),
         priority,
       };
+    } else {
+      if (staffRecipientSnapshot.status !== "success") {
+        sendLockRef.current.end();
+        Alert.alert(
+          "Destinataires indisponibles",
+          staffRecipientSnapshot.errorMessage ||
+            "Aucun parent canonique n'est résolvable. Aucun message n'a été envoyé.",
+        );
+        return;
+      }
+      const built = buildStaffSchoolToParentMessagePayload({
+        selectedRecipientKey: staffRecipientKey,
+        recipients: staffRecipientSnapshot.data,
+        schoolCode: recipientSchoolCode,
+        theme,
+        message,
+        attachmentUrl,
+        priority,
+      });
+      if (!built.ok) {
+        sendLockRef.current.end();
+        const title =
+          built.code === "empty_message"
+            ? "Message incomplet"
+            : built.code === "no_canonical_parent"
+              ? "Compte parent introuvable"
+              : built.code === "cross_tenant"
+                ? "Destinataire hors établissement"
+                : "Destinataire requis";
+        const body =
+          built.code === "empty_message"
+            ? "Veuillez écrire votre message avant l'envoi."
+            : built.code === "no_canonical_parent"
+              ? "Aucun compte parent canonique n'est lié à ce destinataire. Aucun message n'a été envoyé."
+              : built.code === "cross_tenant"
+                ? "Le destinataire n'appartient pas à l'établissement actif. Aucun message n'a été envoyé."
+                : "Choisissez explicitement un élève/parent avant l'envoi. Aucun destinataire n'est présélectionné.";
+        Alert.alert(title, body);
+        return;
+      }
+      payload = built.payload;
     }
 
     if (!payload) {
@@ -240,6 +349,7 @@ export default function MessagesScreen() {
               onRefresh={() => {
                 void loadMessages();
                 if (role === "parent_student" || role === "teacher") void loadTeachers();
+                if (showStaffComposer) void loadStaffRecipients();
               }}
             />
           ) : undefined
@@ -249,9 +359,21 @@ export default function MessagesScreen() {
           <>
         {role === "parent_student" && <StudentSwitcher />}
         <Text style={styles.title}>Messages</Text>
-        <Text style={styles.subtitle}>{unreadCount} non lu(s) • données serveur</Text>
+        <Text style={styles.subtitle}>
+          {canRead ? `${unreadCount} non lu(s) • données serveur` : "Rédaction uniquement • lecture non autorisée"}
+        </Text>
 
-        {(role === "parent_student" || role === "teacher") && canSend && (
+        {staffComposerBlocked ? (
+          <View style={styles.composeCard} testID="messages-staff-composer-blocked">
+            <Text style={styles.cardTitle}>Rédaction école vers parent indisponible</Text>
+            <Text style={styles.meta}>
+              Messages:CREATE seul ne fournit pas de source canonique de destinataires. Le composer staff exige aussi
+              Contacts:READ et Relations:READ (ou Gérer utilisateurs / privilèges plateforme). Aucun envoi n'est proposé.
+            </Text>
+          </View>
+        ) : null}
+
+        {showComposer && (
           <View style={styles.composeCard} testID={USABILITY_TEST_IDS.messagesComposer}>
             <Text style={styles.cardTitle}>{role === "teacher" ? "Écrire à un parent" : "Écrire un message"}</Text>
 
@@ -263,6 +385,41 @@ export default function MessagesScreen() {
                 onSelect={setTeacherStudentId}
                 disabled={sending}
               />
+            )}
+
+            {showStaffComposer && (
+              <>
+                {staffRecipientSnapshot.status !== "success" ? (
+                  <QueryStateView
+                    snapshot={staffRecipientSnapshot}
+                    emptyMessage="Aucun parent avec compte canonique n'est disponible pour cet établissement. Aucun envoi n'est possible."
+                    errorMessage="Impossible de charger les destinataires canoniques."
+                    offlineMessage="Réseau indisponible. Les destinataires n'ont pas pu être chargés."
+                    emptyTestId="messages-staff-recipients-empty"
+                    errorTestId="messages-staff-recipients-error"
+                    onRetry={() => void loadStaffRecipients()}
+                    loadingLabel="Chargement des destinataires…"
+                  />
+                ) : (
+                  <>
+                    <ChoiceRow
+                      label="Élève / parent"
+                      values={staffRecipientSnapshot.data.map((row) => ({
+                        id: row.key,
+                        label: row.parentName
+                          ? `${row.studentName || row.studentId} (${row.parentName})`
+                          : row.studentName || row.studentId,
+                      }))}
+                      selectedId={staffRecipientKey}
+                      onSelect={setStaffRecipientKey}
+                      disabled={sending}
+                    />
+                    {!staffRecipientKey ? (
+                      <Text style={styles.meta}>Choisissez un destinataire. Aucun élève n'est présélectionné.</Text>
+                    ) : null}
+                  </>
+                )}
+              </>
             )}
 
             {role === "parent_student" && (
@@ -328,13 +485,13 @@ export default function MessagesScreen() {
               accessibilityLabel="Lien de pièce jointe"
             />
             <TouchableOpacity
-              style={[styles.sendButton, sending && styles.disabled]}
+              style={[styles.sendButton, (sending || staffSendBlocked) && styles.disabled]}
               onPress={() => void sendMessage()}
-              disabled={sending}
+              disabled={sending || staffSendBlocked}
               testID={USABILITY_TEST_IDS.messagesSend}
               accessibilityRole="button"
               accessibilityLabel="Envoyer le message"
-              accessibilityState={{ busy: sending, disabled: sending }}
+              accessibilityState={{ busy: sending, disabled: sending || staffSendBlocked }}
             >
               {sending ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="send-outline" size={20} color="#FFFFFF" />}
               <Text style={styles.sendText}>{sending ? NETWORK_COPY.recording : "Envoyer"}</Text>
@@ -344,7 +501,13 @@ export default function MessagesScreen() {
         )}
 
         {!canRead ? (
-          <Text style={styles.errorText}>Accès refusé aux messages.</Text>
+          <Text style={styles.errorText}>
+            {canSend
+              ? showComposer
+                ? "Lecture des messages non autorisée. Le composer reste disponible."
+                : "Lecture non autorisée. La rédaction staff n'est pas disponible sans source canonique de destinataires."
+              : "Accès refusé aux messages."}
+          </Text>
         ) : messagesSnapshot.status !== "success" ? (
           <QueryStateView
             snapshot={messagesSnapshot}

@@ -1,6 +1,7 @@
 import type { Ionicons } from "@expo/vector-icons";
 import type { AdminEntity } from "../context/AdminDataContext";
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 
 export type RoleDrawerItem = {
@@ -86,6 +87,9 @@ function itemsForRole(role?: string): RoleDrawerItem[] {
 
 export function getAllowedRoleDrawerItems(session: any): RoleDrawerItem[] {
   return itemsForRole(session?.role).filter((item) => {
+    if (item.route === "Messages" || item.view === "Messages") {
+      return canAccessMessagesRoute(session);
+    }
     const view = item.view ?? (item.entity ? ENTITY_VIEW_MAP[item.entity] : item.route);
     if (view && !canReadView(session, view)) return false;
     if (item.entity && !canReadEntity(session, item.entity)) return false;
