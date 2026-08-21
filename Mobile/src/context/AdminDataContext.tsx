@@ -26,6 +26,7 @@ import {
 } from "../lib/activeSchool";
 import { clearRequestSchoolScope, setRequestSchoolScope } from "../lib/requestSchoolScope";
 import { normalize } from "../lib/format";
+import { hasPlatformBackofficePrivilege } from "../domain/security/permissions";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
 import {
   applyCreatedPlatformNotification,
@@ -694,6 +695,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   const loadNotifications = useCallback(async () => {
     if (!session) return;
+    if (!hasPlatformBackofficePrivilege(session)) return;
     const scope = principalScopeKeyRef.current;
     try {
       const rows = await getCanonicalNotifications();

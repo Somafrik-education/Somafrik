@@ -243,8 +243,28 @@ const countryAdminNotifications = liveSession({
 assert.equal(hasSecurityPermission(countryAdminNotifications, "Notifications", "READ"), true);
 assert.equal(hasSecurityPermission(countryAdminNotifications, "Messages", "READ"), false);
 assert.equal(canReadView(countryAdminNotifications, "Announcements"), true);
-assert.equal(canReadView(countryAdminNotifications, "PlatformNotifications"), true);
+assert.equal(canReadView(countryAdminNotifications, "PlatformNotifications"), false);
 assert.equal(canReadRoute(countryAdminNotifications, "Messages"), false);
+
+const countryAdminPrivileges = liveSession({
+  sessionRole: "country_admin",
+  roleLabel: "Admin Pays",
+  roleKeys: ["COUNTRY_ADMIN"],
+  permissions: ["COUNTRY_PRIVILEGES"],
+  schoolCode: "*",
+});
+assert.equal(canReadView(countryAdminPrivileges, "PlatformNotifications"), true);
+assert.equal(canReadRoute(countryAdminPrivileges, "PlatformNotifications"), true);
+
+const schoolNotificationsRead = liveSession({
+  sessionRole: "principal",
+  roleLabel: "Directeur",
+  roleKeys: ["PRINCIPAL"],
+  permissions: ["Notifications:READ"],
+});
+assert.equal(canReadView(schoolNotificationsRead, "Announcements"), true);
+assert.equal(canReadView(schoolNotificationsRead, "PlatformNotifications"), false);
+assert.equal(canReadRoute(schoolNotificationsRead, "PlatformNotifications"), false);
 
 const fallbackWithoutRoleKeys = resolveCanonicalRoleIdentity({
   role: "principal",

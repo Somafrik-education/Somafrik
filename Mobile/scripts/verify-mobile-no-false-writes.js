@@ -56,11 +56,14 @@ function main() {
   assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?deleteTeacherAssignment/);
   assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?deleteCourse/);
 
+  const safety = read(path.join("lib", "mobileMutationSafety.ts"));
+  assert.match(safety, /MOBILE_GENERIC_ADMIN_CRUD_IN_RC1 = false/);
+
   // L'écran canonique Utilisateurs est lecture seule : le reset local de
   // l'ancien AdminCrud ne peut plus être atteint par la navigation runtime.
   assert.doesNotMatch(users, /resetUserPassword|temporaryPassword|updateItem\(/);
 
-  console.log("OK: faux writes AdminCrud/RBAC bloqués; seules courses et affectations utilisent le générique sous API canonique");
+  console.log("OK: faux writes AdminCrud/RBAC bloqués; courses/assignments câblés mais hors RC1 Mobile");
 }
 
 main();

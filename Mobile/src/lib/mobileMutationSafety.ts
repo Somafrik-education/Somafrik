@@ -1,13 +1,16 @@
 import type { AdminEntity } from "../context/AdminDataContext";
 
 /**
- * L0b — seules les entités dont AdminCrud utilise explicitement une API
- * canonique de bout en bout restent exécutables dans l'ancien écran générique.
+ * L0b / L9b — AdminCrud générique : le code d'écran a des branches API pour
+ * `courses` et `assignments`, mais ces writes ne font pas partie du contrat
+ * RC1 Mobile (graphe de navigation mort). Le flag ci-dessous les retire de
+ * la capacité opérationnelle : `canRunGenericAdminCrud` est fail-closed.
  *
- * Toutes les autres entités sont redirigées vers leur écran canonique ou une
- * vue fail-closed. Cela empêche les mutations locales/no-op de se présenter
- * comme des écritures PostgreSQL.
+ * Toutes les autres entités restent fail-closed. Ne pas réactiver d'autres
+ * CRUD génériques.
  */
+export const MOBILE_GENERIC_ADMIN_CRUD_IN_RC1 = false;
+
 export const SAFE_ADMIN_CRUD_ENTITIES = new Set<AdminEntity>([
   "courses",
   "assignments",
@@ -37,7 +40,7 @@ export const CANONICAL_ROUTE_BY_ADMIN_ENTITY: Partial<Record<AdminEntity, Canoni
 };
 
 export function canRunGenericAdminCrud(entity: AdminEntity): boolean {
-  return SAFE_ADMIN_CRUD_ENTITIES.has(entity);
+  return MOBILE_GENERIC_ADMIN_CRUD_IN_RC1 && SAFE_ADMIN_CRUD_ENTITIES.has(entity);
 }
 
 export function canonicalRouteForAdminEntity(entity: AdminEntity): CanonicalAdminRoute | null {

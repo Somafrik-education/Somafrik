@@ -20,7 +20,8 @@ import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { messageThemes } from "../data/catalog";
 import { MessagePriority, MessageService } from "../domain/communication/MessageService";
-import { canMutateEntity, canReadRoute } from "../domain/security/permissions";
+import { canReadRoute } from "../domain/security/permissions";
+import { canAccessBackofficeMessagesComposer } from "../lib/mobileCtaRbacAlignment";
 import { classNameMatches, scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { sendClientsMessage } from "../services/api";
@@ -59,10 +60,7 @@ export default function MessagesScreen() {
 
   const role = session?.role;
   const canRead = canReadRoute(session, "Messages");
-  const canSend =
-    canMutateEntity(session, "messages", "CREATE") ||
-    role === "parent_student" ||
-    role === "teacher";
+  const canSend = canAccessBackofficeMessagesComposer(session);
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
   const parentChildren = session?.user.children ?? [];
   const teachersData = teachersSnapshot.data;
@@ -154,6 +152,17 @@ export default function MessagesScreen() {
         studentId: student.id,
         theme,
         direction: "Enseignant vers parent",
+        message: message.trim(),
+        ...(attachmentUrl.trim() ? { attachmentUrl: attachmentUrl.trim() } : {}),
+        priority,
+      };
+    } else {
+      const student = teacherStudents.find((item) => item.id === teacherStudentId) ?? teacherStudents[0];
+      payload = {
+        ...(student?.parentPhone ? { parentPhone: student.parentPhone } : {}),
+        ...(student?.id ? { studentId: student.id } : {}),
+        theme,
+        direction: "École vers parent",
         message: message.trim(),
         ...(attachmentUrl.trim() ? { attachmentUrl: attachmentUrl.trim() } : {}),
         priority,
@@ -251,7 +260,7 @@ export default function MessagesScreen() {
         <Text style={styles.title}>Messages</Text>
         <Text style={styles.subtitle}>{unreadCount} non lu(s) • données serveur</Text>
 
-        {(role === "parent_student" || role === "teacher") && canSend && (
+        {canSend && (
           <View style={styles.composeCard} testID={USABILITY_TEST_IDS.messagesComposer}>
             <Text style={styles.cardTitle}>{role === "teacher" ? "Écrire à un parent" : "Écrire un message"}</Text>
 

@@ -146,6 +146,8 @@ jobs:
         run: npm run verify:mobile-canonical-role-identity
       - name: verify:mobile-live-permissions-refresh
         run: npm run verify:mobile-live-permissions-refresh
+      - name: verify:mobile-cta-rbac-alignment
+        run: npm run verify:mobile-cta-rbac-alignment
       - name: verify:mobile-attendance-hydration
         run: npm run verify:mobile-attendance-hydration
       - name: verify:mobile-ui-e2e-scaffold

@@ -1,0 +1,148 @@
+/**
+ * L9b — alignement CTA Mobile / contrat RBAC backend.
+ * Usage : npm run verify:mobile-cta-rbac-alignment
+ */
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+const { spawnSync } = require("child_process");
+
+const MOBILE = path.join(__dirname, "..");
+const ROOT = path.join(MOBILE, "..");
+const SRC = path.join(MOBILE, "src");
+
+function readSrc(rel) {
+  return fs.readFileSync(path.join(SRC, rel), "utf8");
+}
+
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+function main() {
+  const unit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "mobileCtaRbacAlignment.test.ts")], {
+    cwd: MOBILE,
+    encoding: "utf8",
+  });
+  if (unit.status !== 0) {
+    throw new Error(unit.stderr || unit.stdout || "mobileCtaRbacAlignment.test.ts failed");
+  }
+  process.stdout.write(unit.stdout || "");
+
+  const messages = stripComments(readSrc(path.join("screens", "MessagesScreen.tsx")));
+  assert.match(messages, /canAccessBackofficeMessagesComposer\(session\)/);
+  assert.doesNotMatch(
+    messages,
+    /canMutateEntity\(session,\s*["']messages["'],\s*["']CREATE["']\)\s*\|\|/,
+    "Messages composer ne doit plus unionner un grant CREATE local",
+  );
+  assert.doesNotMatch(
+    messages,
+    /\(role === ["']parent_student["']\s*\|\|\s*role === ["']teacher["']\)\s*&&\s*canSend/,
+    "Messages composer ne doit plus être accordé via role === PARENT/TEACHER",
+  );
+  assert.match(messages, /\{canSend && \(/);
+  assert.match(messages, /direction:\s*["']École vers parent["']/);
+
+  const announcements = stripComments(readSrc(path.join("screens", "AnnouncementsScreen.tsx")));
+  assert.match(announcements, /canArchiveAnnouncement\(session\)/);
+  assert.match(announcements, /const canArchive = canArchiveAnnouncement/);
+  assert.doesNotMatch(
+    announcements,
+    /canMutateEntity\(session,\s*["']announcements["'],\s*["']DELETE["']\)/,
+    "Archive annonce ne doit plus s'aligner sur DELETE",
+  );
+  assert.match(announcements, /\{canArchive && \(/);
+
+  const permissions = stripComments(readSrc(path.join("domain", "security", "permissions.ts")));
+  assert.match(permissions, /export function hasPlatformBackofficePrivilege/);
+  assert.match(permissions, /if \(viewName === ["']PlatformNotifications["']\)/);
+  assert.match(permissions, /if \(routeName === ["']PlatformNotifications["']\)/);
+  assert.doesNotMatch(
+    permissions,
+    /const communicationViews = new Set\(\[[\s\S]*PlatformNotifications[\s\S]*\]\)/,
+    "PlatformNotifications ne doit plus hériter de Notifications:READ via communicationViews",
+  );
+
+  const platformScreen = stripComments(readSrc(path.join("screens", "PlatformNotificationsScreen.tsx")));
+  assert.match(platformScreen, /hasPlatformBackofficePrivilege\(session\)/);
+  assert.match(platformScreen, /platform-notifications-denied/);
+  assert.doesNotMatch(platformScreen, /hasSecurityPermission\(session,\s*["']Notifications["'],\s*["']CREATE["']\)/);
+
+  const adminCtx = stripComments(readSrc(path.join("context", "AdminDataContext.tsx")));
+  assert.match(adminCtx, /if \(!hasPlatformBackofficePrivilege\(session\)\) return;/);
+
+  const safety = readSrc(path.join("lib", "mobileMutationSafety.ts"));
+  assert.match(safety, /MOBILE_GENERIC_ADMIN_CRUD_IN_RC1 = false/);
+
+  const liveNavFiles = [
+    path.join("screens", "HomeScreen.tsx"),
+    path.join("navigation", "roleDrawerPreferences.ts"),
+    path.join("navigation", "roleTabPreferences.ts"),
+    path.join("lib", "roleHomeConfig.ts"),
+    path.join("components", "MobileAppHeader.tsx"),
+    path.join("components", "CommunicationHeaderIcons.tsx"),
+  ];
+  for (const rel of liveNavFiles) {
+    const source = stripComments(readSrc(rel));
+    assert.doesNotMatch(
+      source,
+      /navigate\(["']AdminCrud["'],\s*\{\s*entity:\s*["']courses["']/,
+      `${rel}: pas de CTA live AdminCrud courses`,
+    );
+    assert.doesNotMatch(
+      source,
+      /navigate\(["']AdminCrud["'],\s*\{\s*entity:\s*["']assignments["']/,
+      `${rel}: pas de CTA live AdminCrud assignments`,
+    );
+    assert.doesNotMatch(
+      source,
+      /entity:\s*["']courses["']/,
+      `${rel}: courses ne doit pas être une entrée de navigation live`,
+    );
+    assert.doesNotMatch(
+      source,
+      /entity:\s*["']assignments["']/,
+      `${rel}: assignments ne doit pas être une entrée de navigation live`,
+    );
+  }
+
+  const rbac = fs.readFileSync(path.join(ROOT, "backend", "services", "rbacService.js"), "utf8");
+  assert.match(
+    rbac,
+    /"POST \/api\/backoffice\/messages":\s*\["Messages:CREATE",\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+  );
+  assert.match(
+    rbac,
+    /"POST \/api\/backoffice\/announcements\/:announcementId\/archive":\s*\["Notifications:UPDATE",\s*"Gérer notifications",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+  );
+  assert.match(
+    rbac,
+    /"GET \/api\/backoffice\/notifications":\s*\["ALL_PRIVILEGES",\s*"COUNTRY_PRIVILEGES"\]/,
+  );
+  assert.match(
+    rbac,
+    /"POST \/api\/backoffice\/notifications":\s*\["ALL_PRIVILEGES",\s*"COUNTRY_PRIVILEGES"\]/,
+  );
+  assert.match(
+    rbac,
+    /"PATCH \/api\/backoffice\/notifications\/:notificationId":\s*\["ALL_PRIVILEGES",\s*"COUNTRY_PRIVILEGES"\]/,
+  );
+
+  const ci = fs.readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  const security = fs.readFileSync(path.join(ROOT, ".github", "workflows", "security.yml"), "utf8");
+  const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  const mobilePkg = JSON.parse(fs.readFileSync(path.join(MOBILE, "package.json"), "utf8"));
+  assert.equal(mobilePkg.scripts["verify:mobile-cta-rbac-alignment"], "node scripts/verify-mobile-cta-rbac-alignment.js");
+  assert.equal(rootPkg.scripts["verify:mobile-cta-rbac-alignment"], "npm --prefix Mobile run verify:mobile-cta-rbac-alignment");
+  assert.match(ci, /name: verify:mobile-cta-rbac-alignment/);
+  assert.match(ci, /npm run verify:mobile-cta-rbac-alignment/);
+  assert.match(security, /name: verify:mobile-cta-rbac-alignment/);
+  assert.match(security, /npm run verify:mobile-cta-rbac-alignment/);
+
+  console.log("OK: CTA Messages/Archive/Plateforme/SafeAdminCrud alignés sur le contrat RBAC live");
+}
+
+main();

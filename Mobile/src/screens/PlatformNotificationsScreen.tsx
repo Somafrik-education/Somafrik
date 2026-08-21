@@ -12,7 +12,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import SchoolSelector from "../components/SchoolSelector";
-import { hasSecurityPermission } from "../domain/security/permissions";
+import { hasPlatformBackofficePrivilege } from "../domain/security/permissions";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import type { PlatformNotification } from "../lib/scope";
@@ -34,13 +34,25 @@ export default function PlatformNotificationsScreen() {
   const [composing, setComposing] = useState<Partial<PlatformNotification> | null>(null);
   const [markingRead, setMarkingRead] = useState(false);
 
-  const canCreate = hasSecurityPermission(session, "Notifications", "CREATE");
-  const canUpdate = hasSecurityPermission(session, "Notifications", "UPDATE");
+  const canManagePlatform = hasPlatformBackofficePrivilege(session);
+  const canCreate = canManagePlatform;
+  const canUpdate = canManagePlatform;
 
   const unreadCount = useMemo(
     () => notificationsData.filter((item) => String(item.status ?? "") !== "Lu" && String(item.status ?? "") !== "read").length,
     [notificationsData],
   );
+
+  if (!canManagePlatform) {
+    return (
+      <View style={styles.container} testID="platform-notifications-denied">
+        <Text style={styles.title}>Notifications plateforme</Text>
+        <Text style={styles.empty}>
+          Accès réservé aux privilèges plateforme (ALL_PRIVILEGES ou COUNTRY_PRIVILEGES).
+        </Text>
+      </View>
+    );
+  }
 
   const persistReadTargets = async (targets: PlatformNotification[]) => {
     const unreadTargets = targets.filter((item) => item.id && isUnreadNotification(item));

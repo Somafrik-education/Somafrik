@@ -7,6 +7,7 @@ import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canMutateEntity, canReadEntity } from "../domain/security/permissions";
+import { canArchiveAnnouncement } from "../lib/mobileCtaRbacAlignment";
 import { markAnnouncementsRead } from "../lib/announcementsRead";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
@@ -20,7 +21,7 @@ export default function AnnouncementsScreen({ navigation }: any) {
   const { session } = useAuth();
   const canRead = canReadEntity(session, "announcements");
   const canCreate = canMutateEntity(session, "announcements", "CREATE");
-  const canDelete = canMutateEntity(session, "announcements", "DELETE");
+  const canArchive = canArchiveAnnouncement(session);
   const { announcementsSnapshot: snapshot, loadAnnouncements: load, resourceScopeKey } = useAdminData();
   const [archivingId, setArchivingId] = useState("");
 
@@ -37,7 +38,7 @@ export default function AnnouncementsScreen({ navigation }: any) {
   }, [canRead, session?.user?.id, snapshot]);
 
   const confirmArchive = (announcement: CanonicalAnnouncement) => {
-    if (!canDelete || archivingId) return;
+    if (!canArchive || archivingId) return;
     Alert.alert("Archiver l'annonce", "L'annonce sera archivée côté serveur.", [
       { text: "Annuler", style: "cancel" },
       {
@@ -129,7 +130,7 @@ export default function AnnouncementsScreen({ navigation }: any) {
               {announcement.status ? <StatusBadge status={announcement.status} /> : null}
             </View>
           </View>
-          {canDelete && (
+          {canArchive && (
             <View style={styles.actionRow}>
               <TouchableOpacity
                 style={[styles.smallDangerAction, archivingId === announcement.id && styles.disabled]}
