@@ -77,17 +77,25 @@ if ($ResetDb) {
   docker @compose down -v
 }
 
-$imageExists = $false
-docker image inspect somafrik-backend-local:dev *> $null
-if ($LASTEXITCODE -eq 0) { $imageExists = $true }
+# Premiere execution : l'image locale n'existe pas encore. Ce n'est pas une erreur.
+# `docker image inspect` ecrit sur stderr et PowerShell 5.1 le transforme en erreur
+# terminante avec $ErrorActionPreference=Stop. `docker image ls` reste silencieux.
+$imageIds = @(docker image ls --quiet somafrik-backend-local:dev)
+$imageExists = $imageIds.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$imageIds[0])
 
 if ($RebuildBackend -or -not $imageExists) {
   Write-Host "Construction de l'image backend locale (premiere fois / dependances modifiees)..." -ForegroundColor Yellow
   docker @compose build backend
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "La construction de l'image backend a echoue."
+  }
 }
 
 Write-Host "Demarrage PostgreSQL + Backend..." -ForegroundColor Yellow
 docker @compose up -d postgres backend
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Le demarrage Docker a echoue."
+}
 
 Write-Host "Attente de l'API PostgreSQL canonique..."
 $healthy = $false
@@ -128,6 +136,9 @@ Set-Location (Join-Path $root "Mobile")
 if (-not (Test-Path "node_modules")) {
   Write-Host "Installation des dependances Mobile (premiere fois)..." -ForegroundColor Yellow
   npm ci
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "L'installation des dependances Mobile a echoue."
+  }
 }
 
 $expoArgs = @("expo", "start", "--clear", "--port", $expoPort)
