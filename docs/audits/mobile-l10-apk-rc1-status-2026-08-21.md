@@ -79,17 +79,19 @@ Keystore Preview : **EAS-managed**. Ne pas committer `*.jks` / `credentials.json
 
 ---
 
-## 5. CI `develop` au moment de l’ouverture L10
+## 5. CI
 
-Merge L8 `53457556` :
+Merge L8 `develop` @ `53457556` (terminé après ouverture L10) :
 
-| Workflow | Statut observé |
-| -------- | -------------- |
+| Workflow | Statut |
+| -------- | ------ |
 | Admin User Creation E2E | **success** |
-| CI | **in_progress** |
-| Security | **in_progress** |
+| CI | **success** |
+| Security | **success** |
 
-Le HEAD fonctionnel équivalent (#291 `8666cc2f`) était 10/10 SUCCESS avant merge. L10 n’attend pas un correctif métier ; le smoke téléphone reste le juge RC1.
+PR L10 #292 @ `2c59415c` : **9/9 SUCCESS** (Lint/build, Mobile AAB preproduction, Security, Tests, TypeScript, Lint, Audit, Secrets, Admin User Creation E2E).
+
+Le vert CI **n’est pas** un GO terrain. L10 n’attend pas un correctif métier ; le smoke téléphone reste le juge RC1.
 
 ---
 
@@ -100,6 +102,7 @@ Le HEAD fonctionnel équivalent (#291 `8666cc2f`) était 10/10 SUCCESS avant mer
 | Périmètre RC1 figé (docs) | **fait** |
 | Protocole smoke 3 rôles + NO-GO + Web-only | **fait** |
 | Contrat Preview APK (gate) | **OK** |
+| CI PR #292 | **9/9 SUCCESS** |
 | Build EAS installable | **`BLOCKED_EAS_AUTH`** |
 | Smoke téléphone réel | **bloqué** (pas d’APK, pas de device) |
 
