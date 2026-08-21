@@ -3,6 +3,12 @@
 const assert = require("node:assert/strict");
 const { createPlatformMemoryStore } = require("../db/platformMemoryStore");
 const { PLATFORM_SCHEMA_SQL } = require("../db/platformSchema");
+const { USER_ROLES_SCHEMA_SQL } = require("../db/userRolesSchema");
+const {
+  attachCanonicalDemoSeedPostgres,
+  extractFixtureSchoolShortCode,
+  isStudentSeedUser,
+} = require("../db/demoSeedPostgres");
 const { shouldSeedDemoData } = require("./demoSeedPolicy");
 const seedData = require("../data");
 
@@ -48,8 +54,83 @@ function assertDemoSubscriptionSeedIntegrity() {
   );
 }
 
+async function assertCanonicalDemoIdentitySeedIntegrity() {
+  const primarySchool = seedData.platformSchools.find((school) => school.code === "CD-2026-0001");
+  assert.ok(primarySchool, "fixture établissement principal attendue");
+  assert.equal(primarySchool.loginCode, "CD-IN-26-001");
+  assert.equal(extractFixtureSchoolShortCode(primarySchool), "IN");
+  assert.equal(isStudentSeedUser({ role: "Élève / Étudiant" }), true);
+  assert.equal(isStudentSeedUser({ role: "STUDENT" }), true);
+  assert.equal(isStudentSeedUser({ role: "Admin School" }), false);
+
+  assert.match(
+    USER_ROLES_SCHEMA_SQL,
+    /base_initials := upper\(btrim\(coalesce\(NEW\.short_code, ''\)\)\)/,
+    "le login établissement doit utiliser short_code comme source d'initiales",
+  );
+
+  const original = {
+    countries: seedData.countries.slice(),
+    platformSchools: seedData.platformSchools.slice(),
+    subscriptions: seedData.subscriptions.slice(),
+    userAccounts: seedData.userAccounts.slice(),
+  };
+  const admin = seedData.userAccounts.find((user) => user.role === "Admin School" && user.schoolCode === primarySchool.code);
+  const student = seedData.userAccounts.find((user) => isStudentSeedUser(user));
+  const subscription = seedData.subscriptions.find((item) => item.schoolCode === primarySchool.code);
+  assert.ok(admin && student && subscription, "fixtures minimales seed attendues");
+
+  const writes = [];
+  const fakeRepository = {
+    seedReferenceData: async () => {
+      throw new Error("seedReferenceData original ne doit plus être appelé");
+    },
+    getCountryCodeForSchool: (school) => school.countryCode || (school.country === "RDC" ? "CD" : ""),
+    insertOne: async (_client, sql, params) => {
+      writes.push({ sql, params });
+      return { id: `row-${writes.length}` };
+    },
+    toDbStatus: () => "active",
+    toSubscriptionStatus: () => "active",
+    parseDate: (value) => value || null,
+  };
+  const fakeClient = {
+    query: async (sql, params) => {
+      writes.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+
+  try {
+    seedData.countries.splice(0, seedData.countries.length, original.countries.find((country) => country.code === "CD"));
+    seedData.platformSchools.splice(0, seedData.platformSchools.length, primarySchool);
+    seedData.subscriptions.splice(0, seedData.subscriptions.length, subscription);
+    seedData.userAccounts.splice(0, seedData.userAccounts.length, admin, student);
+
+    attachCanonicalDemoSeedPostgres(fakeRepository);
+    const maps = await fakeRepository.seedReferenceData(fakeClient);
+
+    const schoolWrite = writes.find((entry) => /INSERT INTO schools/.test(entry.sql));
+    assert.ok(schoolWrite, "INSERT schools attendu");
+    assert.match(schoolWrite.sql, /school_code, short_code, name/);
+    assert.equal(schoolWrite.params[2], "IN");
+
+    const userWrites = writes.filter((entry) => /INSERT INTO users/.test(entry.sql));
+    assert.equal(userWrites.length, 1, "le compte élève ne doit pas être créé avant students");
+    assert.notEqual(userWrites[0].params[8], "STUDENT");
+    assert.equal(maps.userIds.has(student.id), false);
+    assert.equal(maps.userIds.has(admin.id), true);
+  } finally {
+    seedData.countries.splice(0, seedData.countries.length, ...original.countries);
+    seedData.platformSchools.splice(0, seedData.platformSchools.length, ...original.platformSchools);
+    seedData.subscriptions.splice(0, seedData.subscriptions.length, ...original.subscriptions);
+    seedData.userAccounts.splice(0, seedData.userAccounts.length, ...original.userAccounts);
+  }
+}
+
 async function main() {
   assertDemoSubscriptionSeedIntegrity();
+  await assertCanonicalDemoIdentitySeedIntegrity();
 
   const auditLogs = [];
   const store = createPlatformMemoryStore({
@@ -106,12 +187,12 @@ async function main() {
   );
   assert.equal(auditLogs.length, 1, "no audit on tenant rejection");
 
-  const subscription = await store.upsertSubscription(
+  const subscriptionRow = await store.upsertSubscription(
     { schoolCode: "CD-2026-0001", plan: "Premium", monthlyPrice: 10, currency: "CDF" },
     schoolAdmin,
     auditMeta,
   );
-  assert.equal(subscription.schoolCode, "CD-2026-0001");
+  assert.equal(subscriptionRow.schoolCode, "CD-2026-0001");
 
   const notification = await store.createNotification(
     { title: "Test", message: "Hello", type: "Information" },
