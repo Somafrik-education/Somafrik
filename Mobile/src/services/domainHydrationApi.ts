@@ -13,6 +13,7 @@ import {
   type CanonicalTeacher,
   type CanonicalUserAccount,
 } from "../lib/canonicalResourceNormalize";
+import type { CanonicalMessageContact, CanonicalMessageRelation } from "../lib/mobileCtaRbacAlignment";
 import type { CountryProfile, SchoolProfile, SubscriptionItem } from "../data/catalog";
 import type { PlatformNotification } from "../lib/scope";
 import { httpRequest } from "./httpClient";
@@ -53,6 +54,53 @@ export async function getCanonicalMessages(): Promise<CanonicalSchoolMessage[]> 
   return unwrapList(payload)
     .map(normalizeMessage)
     .filter((row): row is CanonicalSchoolMessage => Boolean(row));
+}
+
+function asTrimmedField(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+export async function getCanonicalContacts(): Promise<CanonicalMessageContact[]> {
+  const payload = await httpRequest<unknown>("/backoffice/contacts");
+  return unwrapList(payload)
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const item = row as Record<string, unknown>;
+      const id = asTrimmedField(item.id);
+      if (!id) return null;
+      return {
+        id,
+        userId: asTrimmedField(item.userId) || undefined,
+        schoolCode: asTrimmedField(item.schoolCode) || undefined,
+        status: asTrimmedField(item.status) || undefined,
+        firstName: asTrimmedField(item.firstName) || undefined,
+        lastName: asTrimmedField(item.lastName) || undefined,
+      } satisfies CanonicalMessageContact;
+    })
+    .filter((row): row is CanonicalMessageContact => Boolean(row));
+}
+
+export async function getCanonicalRelations(): Promise<CanonicalMessageRelation[]> {
+  const payload = await httpRequest<unknown>("/backoffice/relations");
+  return unwrapList(payload)
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const item = row as Record<string, unknown>;
+      const id = asTrimmedField(item.id);
+      const fromContactId = asTrimmedField(item.fromContactId);
+      const toStudentId = asTrimmedField(item.toStudentId);
+      if (!id || !fromContactId || !toStudentId) return null;
+      return {
+        id,
+        fromContactId,
+        toStudentId,
+        toStudentName: asTrimmedField(item.toStudentName) || undefined,
+        fromContactName: asTrimmedField(item.fromContactName) || undefined,
+        schoolCode: asTrimmedField(item.schoolCode) || undefined,
+        status: asTrimmedField(item.status) || undefined,
+      } satisfies CanonicalMessageRelation;
+    })
+    .filter((row): row is CanonicalMessageRelation => Boolean(row));
 }
 
 export async function getCanonicalSchools(): Promise<SchoolProfile[]> {

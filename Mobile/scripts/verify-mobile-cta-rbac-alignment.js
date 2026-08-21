@@ -39,15 +39,24 @@ function main() {
     /canMutateEntity\(session,\s*["']messages["'],\s*["']CREATE["']\)\s*\|\|/,
     "Messages composer ne doit plus unionner un grant CREATE local",
   );
+  assert.match(
+    messages,
+    /\(\(role === ["']parent_student["']\s*\|\|\s*role === ["']teacher["']\) && canSend\) \|\| showStaffComposer/,
+    "Parent/Teacher restent sur canSend ; le staff exige la source destinataires canonique",
+  );
+  assert.match(messages, /showComposer &&/);
+  assert.match(messages, /canShowStaffMessagesComposer\(session\)/);
+  assert.match(messages, /buildStaffSchoolToParentMessagePayload/);
+  assert.match(messages, /staffRecipientKey/);
+  assert.match(messages, /getCanonicalContacts\(\)/);
+  assert.match(messages, /getCanonicalRelations\(\)/);
+  assert.match(messages, /messages-staff-composer-blocked/);
+  assert.doesNotMatch(messages, /staffStudentId/);
   assert.doesNotMatch(
     messages,
-    /\(role === ["']parent_student["']\s*\|\|\s*role === ["']teacher["']\)\s*&&\s*canSend/,
-    "Messages composer ne doit plus être accordé via role === PARENT/TEACHER",
+    /selectedStudentId:\s*staffStudentId/,
+    "le payload staff ne doit plus partir d'un studentId de studentsData",
   );
-  assert.match(messages, /canSend && \(/);
-  assert.match(messages, /buildStaffSchoolToParentMessagePayload/);
-  assert.match(messages, /staffStudentId/);
-  assert.match(messages, /resolveMessagesRouteAccess\(session\)/);
   assert.doesNotMatch(
     messages,
     /else \{\s*const student = teacherStudents\.find/,
@@ -56,9 +65,28 @@ function main() {
 
   const ctaLib = stripComments(readSrc(path.join("lib", "mobileCtaRbacAlignment.ts")));
   assert.match(ctaLib, /direction:\s*["']École vers parent["']/);
+  assert.match(ctaLib, /participantUserIds:\s*\[parentUserId\]/);
   assert.match(ctaLib, /export function canAccessMessagesRoute/);
   assert.match(ctaLib, /export function resolveMessagesRouteAccess/);
+  assert.match(ctaLib, /export function canShowStaffMessagesComposer/);
   assert.match(ctaLib, /export function buildStaffSchoolToParentMessagePayload/);
+  assert.match(ctaLib, /MESSAGES_READ_ALLOWLIST/);
+  assert.match(ctaLib, /"Messages:READ"/);
+  assert.match(ctaLib, /"Gérer messages"/);
+  assert.match(ctaLib, /"COUNTRY_PRIVILEGES"/);
+  assert.match(ctaLib, /"ALL_PRIVILEGES"/);
+  assert.doesNotMatch(ctaLib, /"Messages:R"/);
+  assert.doesNotMatch(ctaLib, /"Messages:CRUD"/);
+  assert.doesNotMatch(
+    ctaLib,
+    /parentPhone/,
+    "le payload staff ne doit plus envoyer parentPhone comme substitut de participant",
+  );
+  assert.match(
+    ctaLib,
+    /liveHasExact\(getEffectivePermissionsForSession\(session\), MESSAGES_READ_ALLOWLIST\)/,
+    "canReadBackofficeMessagesList doit matcher l'allowlist backend exacte",
+  );
 
   const navigator = stripComments(readSrc(path.join("navigation", "AppNavigator.tsx")));
   assert.match(navigator, /canAccessMessagesRoute\(session\)/);
@@ -143,7 +171,19 @@ function main() {
   const rbac = fs.readFileSync(path.join(ROOT, "backend", "services", "rbacService.js"), "utf8");
   assert.match(
     rbac,
+    /"GET \/api\/backoffice\/messages":\s*\["Messages:READ",\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+  );
+  assert.match(
+    rbac,
     /"POST \/api\/backoffice\/messages":\s*\["Messages:CREATE",\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+  );
+  assert.match(
+    rbac,
+    /"GET \/api\/backoffice\/contacts":\s*\["Contacts:READ",\s*"Gérer utilisateurs",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+  );
+  assert.match(
+    rbac,
+    /"GET \/api\/backoffice\/relations":\s*\["Relations:READ",\s*"Gérer utilisateurs",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
   );
   assert.match(
     rbac,
