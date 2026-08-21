@@ -12,6 +12,7 @@ import RoleDashboardLayout, {
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
 import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
@@ -298,7 +299,7 @@ export default function HomeScreen({ navigation }: any) {
     documents: canReadRoute(session, "Documents")
       ? kpi("documents", "folder-open-outline", "—", "Documents", "#2563EB", "#EFF6FF", () => navigation.navigate("Documents"))
       : null,
-    messages: canReadRoute(session, "Messages")
+    messages: canAccessMessagesRoute(session)
       ? kpi("messages", "chatbubbles-outline", unreadMessagesValue, "Messages", "#0F766E", "#ECFDF5", () => navigation.navigate("Messages"))
       : null,
     announcements: canReadEntity(session, "announcements")
@@ -326,7 +327,7 @@ export default function HomeScreen({ navigation }: any) {
     attendance: canReadRoute(session, "TeacherAttendance") ? action("attendance", "checkbox-outline", "Présences", () => navigation.navigate("TeacherAttendance")) : null,
     grades: canReadRoute(session, "TeacherGrades") ? action("grades", "reader-outline", "Notes", () => navigation.navigate("TeacherGrades")) : null,
     reportCards: canReadRoute(session, "ReportCards") ? action("reportCards", "document-text-outline", "Bulletins", () => navigation.navigate("ReportCards")) : null,
-    messages: canReadRoute(session, "Messages")
+    messages: canAccessMessagesRoute(session)
       ? action("messages", "chatbubbles-outline", unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages", () => navigation.navigate("Messages"))
       : null,
     timetable: canReadRoute(session, "Timetable") ? action("timetable", "time-outline", "Planning", () => navigation.navigate("Timetable")) : null,

@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
 import {
+  buildStaffSchoolToParentMessagePayload,
   canAccessBackofficeMessagesComposer,
+  canAccessMessagesRoute,
   canAccessPlatformNotifications,
   canArchiveAnnouncement,
+  canReadBackofficeMessagesList,
+  resolveMessagesRouteAccess,
 } from "./mobileCtaRbacAlignment";
 import { MOBILE_GENERIC_ADMIN_CRUD_IN_RC1, canRunGenericAdminCrud } from "./mobileMutationSafety";
 
@@ -79,11 +83,14 @@ const staffCreate = liveSession({
   roleKeys: ["PRINCIPAL"],
   permissions: ["Messages:CREATE"],
 });
-assert.equal(
-  canAccessBackofficeMessagesComposer(staffCreate),
-  true,
-  "staff avec Messages:CREATE => composer",
-);
+assert.equal(canAccessBackofficeMessagesComposer(staffCreate), true, "staff CREATE => composer");
+assert.equal(canReadBackofficeMessagesList(staffCreate), false, "CREATE ne devient pas READ");
+assert.equal(canAccessMessagesRoute(staffCreate), true, "staff CREATE sans READ => route atteignable");
+assert.deepEqual(resolveMessagesRouteAccess(staffCreate), {
+  canAccessRoute: true,
+  canReadList: false,
+  canCompose: true,
+});
 
 const staffReadOnly = liveSession({
   sessionRole: "principal",
@@ -91,7 +98,108 @@ const staffReadOnly = liveSession({
   roleKeys: ["PRINCIPAL"],
   permissions: ["Messages:READ"],
 });
-assert.equal(canAccessBackofficeMessagesComposer(staffReadOnly), false);
+assert.equal(canAccessBackofficeMessagesComposer(staffReadOnly), false, "staff READ sans CREATE => aucun composer");
+assert.equal(canReadBackofficeMessagesList(staffReadOnly), true);
+assert.equal(canAccessMessagesRoute(staffReadOnly), true, "staff READ sans CREATE => route atteignable");
+assert.deepEqual(resolveMessagesRouteAccess(staffReadOnly), {
+  canAccessRoute: true,
+  canReadList: true,
+  canCompose: false,
+});
+
+const staffNone = liveSession({
+  sessionRole: "principal",
+  roleLabel: "Directeur",
+  roleKeys: ["PRINCIPAL"],
+  permissions: ["Élèves:READ"],
+});
+assert.equal(canAccessMessagesRoute(staffNone), false, "staff sans READ ni CREATE => route absente");
+assert.deepEqual(resolveMessagesRouteAccess(staffNone), {
+  canAccessRoute: false,
+  canReadList: false,
+  canCompose: false,
+});
+
+const teacherReadCreate = liveSession({
+  sessionRole: "teacher",
+  roleLabel: "Enseignant",
+  roleKeys: ["TEACHER"],
+  permissions: ["Messages:READ", "Messages:CREATE"],
+});
+assert.deepEqual(resolveMessagesRouteAccess(teacherReadCreate), {
+  canAccessRoute: true,
+  canReadList: true,
+  canCompose: true,
+});
+assert.equal(canAccessMessagesRoute(teacherReadOnly), true);
+assert.equal(canAccessBackofficeMessagesComposer(teacherReadOnly), false);
+
+const parentReadCreate = liveSession({
+  sessionRole: "parent_student",
+  roleLabel: "Parent",
+  roleKeys: ["PARENT"],
+  permissions: ["Messages:READ", "Messages:CREATE"],
+});
+assert.deepEqual(resolveMessagesRouteAccess(parentReadCreate), {
+  canAccessRoute: true,
+  canReadList: true,
+  canCompose: true,
+});
+
+const students = [
+  { id: "stu-1", parentPhone: "+243111" },
+  { id: "stu-2", parentPhone: "+243222" },
+];
+const missingRecipient = buildStaffSchoolToParentMessagePayload({
+  selectedStudentId: "",
+  students,
+  theme: "Absence",
+  message: "Bonjour",
+  priority: "Moyenne",
+});
+assert.equal(missingRecipient.ok, false, "staff CREATE sans destinataire => aucun POST");
+if (!missingRecipient.ok) assert.equal(missingRecipient.code, "missing_recipient");
+assert.equal(
+  buildStaffSchoolToParentMessagePayload({
+    selectedStudentId: "",
+    students,
+    theme: "Absence",
+    message: "Bonjour",
+    priority: "Moyenne",
+  }).ok,
+  false,
+  "aucun fallback teacherStudents[0]",
+);
+
+const explicit = buildStaffSchoolToParentMessagePayload({
+  selectedStudentId: "stu-2",
+  students,
+  theme: "Absence",
+  message: "Convocation",
+  attachmentUrl: "https://example.test/a.pdf",
+  priority: "Haute",
+});
+assert.equal(explicit.ok, true);
+if (explicit.ok) {
+  assert.equal(explicit.payload.studentId, "stu-2");
+  assert.equal(explicit.payload.parentPhone, "+243222");
+  assert.equal(explicit.payload.direction, "École vers parent");
+  assert.equal(explicit.payload.message, "Convocation");
+  assert.equal(explicit.payload.theme, "Absence");
+  assert.equal(explicit.payload.priority, "Haute");
+  assert.equal(explicit.payload.attachmentUrl, "https://example.test/a.pdf");
+  assert.notEqual(explicit.payload.studentId, "stu-1");
+}
+
+const unknownRecipient = buildStaffSchoolToParentMessagePayload({
+  selectedStudentId: "stu-missing",
+  students,
+  theme: "Absence",
+  message: "Bonjour",
+  priority: "Moyenne",
+});
+assert.equal(unknownRecipient.ok, false);
+if (!unknownRecipient.ok) assert.equal(unknownRecipient.code, "unknown_recipient");
 
 const gererMessages = liveSession({
   sessionRole: "secretary",

@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP, HEADER_BADGE_BAND_DP, HEADER_MENU_SLOT_DP } from "../lib/mobileUxV1Layout";
 import { shouldShowEnvironmentBadge } from "../config/env";
@@ -33,7 +34,7 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
     ? "PlatformNotifications"
     : canReadRoute(session, "Announcements")
       ? "Announcements"
-      : canReadRoute(session, "Messages")
+      : canAccessMessagesRoute(session)
         ? "Messages"
         : null;
 

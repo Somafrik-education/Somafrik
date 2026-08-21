@@ -20,8 +20,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { messageThemes } from "../data/catalog";
 import { MessagePriority, MessageService } from "../domain/communication/MessageService";
-import { canReadRoute } from "../domain/security/permissions";
-import { canAccessBackofficeMessagesComposer } from "../lib/mobileCtaRbacAlignment";
+import { buildStaffSchoolToParentMessagePayload, resolveMessagesRouteAccess } from "../lib/mobileCtaRbacAlignment";
 import { classNameMatches, scopedStudentsForSession } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { sendClientsMessage } from "../services/api";
@@ -52,6 +51,7 @@ export default function MessagesScreen() {
   const [recipient, setRecipient] = useState<"school" | "teacher">("school");
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
   const [teacherStudentId, setTeacherStudentId] = useState("");
+  const [staffStudentId, setStaffStudentId] = useState("");
   const [selectedMessage, setSelectedMessage] = useState<CanonicalSchoolMessage | null>(null);
   const [sending, setSending] = useState(false);
   const [sendHint, setSendHint] = useState("");
@@ -59,8 +59,10 @@ export default function MessagesScreen() {
   const sendIntentionRef = useRef(createIntentionStore());
 
   const role = session?.role;
-  const canRead = canReadRoute(session, "Messages");
-  const canSend = canAccessBackofficeMessagesComposer(session);
+  const messagesAccess = resolveMessagesRouteAccess(session);
+  const canRead = messagesAccess.canReadList;
+  const canSend = messagesAccess.canCompose;
+  const isStaffComposer = Boolean(canSend && role !== "parent_student" && role !== "teacher");
   const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
   const parentChildren = session?.user.children ?? [];
   const teachersData = teachersSnapshot.data;
@@ -157,16 +159,25 @@ export default function MessagesScreen() {
         priority,
       };
     } else {
-      const student = teacherStudents.find((item) => item.id === teacherStudentId) ?? teacherStudents[0];
-      payload = {
-        ...(student?.parentPhone ? { parentPhone: student.parentPhone } : {}),
-        ...(student?.id ? { studentId: student.id } : {}),
+      const built = buildStaffSchoolToParentMessagePayload({
+        selectedStudentId: staffStudentId,
+        students: teacherStudents,
         theme,
-        direction: "École vers parent",
-        message: message.trim(),
-        ...(attachmentUrl.trim() ? { attachmentUrl: attachmentUrl.trim() } : {}),
+        message,
+        attachmentUrl,
         priority,
-      };
+      });
+      if (!built.ok) {
+        sendLockRef.current.end();
+        Alert.alert(
+          built.code === "empty_message" ? "Message incomplet" : "Destinataire requis",
+          built.code === "empty_message"
+            ? "Veuillez écrire votre message avant l'envoi."
+            : "Choisissez explicitement un élève/parent avant l'envoi. Aucun destinataire n'est présélectionné.",
+        );
+        return;
+      }
+      payload = built.payload;
     }
 
     if (!payload) {
@@ -258,7 +269,9 @@ export default function MessagesScreen() {
           <>
         {role === "parent_student" && <StudentSwitcher />}
         <Text style={styles.title}>Messages</Text>
-        <Text style={styles.subtitle}>{unreadCount} non lu(s) • données serveur</Text>
+        <Text style={styles.subtitle}>
+          {canRead ? `${unreadCount} non lu(s) • données serveur` : "Rédaction uniquement • lecture non autorisée"}
+        </Text>
 
         {canSend && (
           <View style={styles.composeCard} testID={USABILITY_TEST_IDS.messagesComposer}>
@@ -272,6 +285,24 @@ export default function MessagesScreen() {
                 onSelect={setTeacherStudentId}
                 disabled={sending}
               />
+            )}
+
+            {isStaffComposer && (
+              <>
+                <ChoiceRow
+                  label="Élève / parent"
+                  values={teacherStudents.map((student) => ({
+                    id: student.id,
+                    label: student.parentName ? `${student.name} (${student.parentName})` : student.name,
+                  }))}
+                  selectedId={staffStudentId}
+                  onSelect={setStaffStudentId}
+                  disabled={sending}
+                />
+                {!staffStudentId ? (
+                  <Text style={styles.meta}>Choisissez un destinataire. Aucun élève n'est présélectionné.</Text>
+                ) : null}
+              </>
             )}
 
             {role === "parent_student" && (
@@ -337,13 +368,13 @@ export default function MessagesScreen() {
               accessibilityLabel="Lien de pièce jointe"
             />
             <TouchableOpacity
-              style={[styles.sendButton, sending && styles.disabled]}
+              style={[styles.sendButton, (sending || (isStaffComposer && !staffStudentId)) && styles.disabled]}
               onPress={() => void sendMessage()}
-              disabled={sending}
+              disabled={sending || (isStaffComposer && !staffStudentId)}
               testID={USABILITY_TEST_IDS.messagesSend}
               accessibilityRole="button"
               accessibilityLabel="Envoyer le message"
-              accessibilityState={{ busy: sending, disabled: sending }}
+              accessibilityState={{ busy: sending, disabled: sending || (isStaffComposer && !staffStudentId) }}
             >
               {sending ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="send-outline" size={20} color="#FFFFFF" />}
               <Text style={styles.sendText}>{sending ? NETWORK_COPY.recording : "Envoyer"}</Text>
@@ -353,7 +384,11 @@ export default function MessagesScreen() {
         )}
 
         {!canRead ? (
-          <Text style={styles.errorText}>Accès refusé aux messages.</Text>
+          <Text style={styles.errorText}>
+            {canSend
+              ? "Lecture des messages non autorisée. Le composer reste disponible."
+              : "Accès refusé aux messages."}
+          </Text>
         ) : messagesSnapshot.status !== "success" ? (
           <QueryStateView
             snapshot={messagesSnapshot}

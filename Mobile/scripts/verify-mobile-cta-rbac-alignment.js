@@ -32,7 +32,8 @@ function main() {
   process.stdout.write(unit.stdout || "");
 
   const messages = stripComments(readSrc(path.join("screens", "MessagesScreen.tsx")));
-  assert.match(messages, /canAccessBackofficeMessagesComposer\(session\)/);
+  assert.match(messages, /resolveMessagesRouteAccess\(session\)/);
+  assert.match(messages, /canSend = messagesAccess\.canCompose/);
   assert.doesNotMatch(
     messages,
     /canMutateEntity\(session,\s*["']messages["'],\s*["']CREATE["']\)\s*\|\|/,
@@ -43,8 +44,38 @@ function main() {
     /\(role === ["']parent_student["']\s*\|\|\s*role === ["']teacher["']\)\s*&&\s*canSend/,
     "Messages composer ne doit plus être accordé via role === PARENT/TEACHER",
   );
-  assert.match(messages, /\{canSend && \(/);
-  assert.match(messages, /direction:\s*["']École vers parent["']/);
+  assert.match(messages, /canSend && \(/);
+  assert.match(messages, /buildStaffSchoolToParentMessagePayload/);
+  assert.match(messages, /staffStudentId/);
+  assert.match(messages, /resolveMessagesRouteAccess\(session\)/);
+  assert.doesNotMatch(
+    messages,
+    /else \{\s*const student = teacherStudents\.find/,
+    "le chemin staff ne doit plus fallback sur teacherStudents[0]",
+  );
+
+  const ctaLib = stripComments(readSrc(path.join("lib", "mobileCtaRbacAlignment.ts")));
+  assert.match(ctaLib, /direction:\s*["']École vers parent["']/);
+  assert.match(ctaLib, /export function canAccessMessagesRoute/);
+  assert.match(ctaLib, /export function resolveMessagesRouteAccess/);
+  assert.match(ctaLib, /export function buildStaffSchoolToParentMessagePayload/);
+
+  const navigator = stripComments(readSrc(path.join("navigation", "AppNavigator.tsx")));
+  assert.match(navigator, /canAccessMessagesRoute\(session\)/);
+  assert.doesNotMatch(
+    navigator,
+    /canReadRoute\(session,\s*["']Messages["']\)/,
+    "AppNavigator ne doit plus n'enregistrer Messages que via READ",
+  );
+
+  const drawer = stripComments(readSrc(path.join("navigation", "roleDrawerPreferences.ts")));
+  assert.match(drawer, /canAccessMessagesRoute\(session\)/);
+  const home = stripComments(readSrc(path.join("screens", "HomeScreen.tsx")));
+  assert.match(home, /canAccessMessagesRoute\(session\)/);
+  const headerIcons = stripComments(readSrc(path.join("components", "CommunicationHeaderIcons.tsx")));
+  assert.match(headerIcons, /canAccessMessagesRoute\(session\)/);
+  const appHeader = stripComments(readSrc(path.join("components", "MobileAppHeader.tsx")));
+  assert.match(appHeader, /canAccessMessagesRoute\(session\)/);
 
   const announcements = stripComments(readSrc(path.join("screens", "AnnouncementsScreen.tsx")));
   assert.match(announcements, /canArchiveAnnouncement\(session\)/);
