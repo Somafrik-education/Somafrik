@@ -160,7 +160,7 @@ test("BackOfficeAccessService résout CD-IK-26-001 vers le tenant historique", a
   assert.equal(result.schoolContext.code, school.code);
 });
 
-test("PostgreSQL séquence deux établissements de mêmes initiales sans renumérotation au reboot", async (t) => {
+test("PostgreSQL découple short_code unique et initiales publiques sans renumérotation au reboot", async (t) => {
   if (!DATABASE_URL) {
     t.skip("DATABASE_URL absent");
     return;
@@ -192,6 +192,11 @@ test("PostgreSQL séquence deux établissements de mêmes initiales sans renumé
        VALUES ($1, 'CD-2026-1002', 'Institut Kibwija', 'active', '2026-05-01T00:00:00Z')`,
       [countryId],
     );
+    await pool.query(
+      `INSERT INTO schools (country_id, school_code, short_code, name, status, created_at)
+       VALUES ($1, 'CD-2026-1003', 'IN', 'Universite de Kinshasa', 'active', '2026-06-01T00:00:00Z')`,
+      [countryId],
+    );
 
     const rows = await pool.query(
       `SELECT school_code, short_code, login_code
@@ -200,12 +205,13 @@ test("PostgreSQL séquence deux établissements de mêmes initiales sans renumé
     );
     assert.deepEqual(
       rows.rows.map((row) => row.login_code),
-      ["CD-IK-26-001", "CD-IK-26-002"],
+      ["CD-IK-26-001", "CD-IK-26-002", "CD-IN-26-003"],
+      "le suffixe IK2 reste interne et l'override sémantique IN reste public",
     );
     assert.deepEqual(
       rows.rows.map((row) => row.short_code),
-      ["IK", "IK2"],
-      "short_code interne reste unique sans modifier les initiales du code public",
+      ["IK", "IK2", "IN"],
+      "short_code interne reste unique sans contaminer les initiales publiques",
     );
 
     await pool.query(USER_ROLES_SCHEMA_SQL);
@@ -214,7 +220,7 @@ test("PostgreSQL séquence deux établissements de mêmes initiales sans renumé
     );
     assert.deepEqual(
       stable.rows.map((row) => row.login_code),
-      ["CD-IK-26-001", "CD-IK-26-002"],
+      ["CD-IK-26-001", "CD-IK-26-002", "CD-IN-26-003"],
       "rerun migration/boot ne renumérote aucun établissement",
     );
   } finally {
