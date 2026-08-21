@@ -18,7 +18,7 @@ import TeachersScreen from "../screens/TeachersScreen";
 import UsersScreen from "../screens/UsersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
-import AdminCrudScreen from "../screens/AdminCrudScreen";
+import SafeAdminCrudScreen from "../screens/SafeAdminCrudScreen";
 import MessagesScreen from "../screens/MessagesScreen";
 import TimetableScreen from "../screens/TimetableScreen";
 import ReportCardsScreen from "../screens/ReportCardsScreen";
@@ -250,7 +250,7 @@ export default function AppNavigator() {
             {canReadRoute(session, "Teachers") && <Stack.Screen name="Teachers" component={TeachersScreen} />}
             {canReadView(session, "users") && <Stack.Screen name="Users" component={UsersScreen} options={{ title: "Utilisateurs" }} />}
             {canReadRoute(session, "Payments") && <Stack.Screen name="Payments" component={PaymentsScreen} />}
-            <Stack.Screen name="AdminCrud" component={AdminCrudScreen} options={{ title: "Administration" }} />
+            <Stack.Screen name="AdminCrud" component={SafeAdminCrudScreen} options={{ title: "Administration" }} />
           </>
         )}
 

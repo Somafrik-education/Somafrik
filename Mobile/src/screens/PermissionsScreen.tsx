@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import SchoolSelector from "../components/SchoolSelector";
@@ -8,12 +9,13 @@ import { getSuperadminMatrixModules } from "../lib/roleGovernance";
 import { CRUD_ACTIONS } from "../lib/constants";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
+import { MOBILE_ROLE_PERMISSION_MUTATION_ENABLED } from "../lib/mobileMutationSafety";
 
 const TARGET_ROLES = [COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE] as const;
 
 export default function PermissionsScreen() {
   const { session } = useAuth();
-  const { rolePermissionsData, updateRoleFeatureAccess } = useAdminData();
+  const { rolePermissionsData } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
   const [targetRole, setTargetRole] = useState<(typeof TARGET_ROLES)[number]>(SCHOOL_ADMIN_ROLE);
@@ -25,14 +27,10 @@ export default function PermissionsScreen() {
   if (session?.role !== "super_admin") {
     return (
       <View style={styles.denied}>
-        <Text style={styles.deniedText}>Matrice Super Admin reservee au Super Administrateur.</Text>
+        <Text style={styles.deniedText}>Matrice Super Admin réservée au Super Administrateur.</Text>
       </View>
     );
   }
-
-  const togglePermission = (module: string, action: string, enabled: boolean) => {
-    updateRoleFeatureAccess(targetRole, module, [`${module}:${action}`], enabled);
-  };
 
   const hasPermission = (module: string, action: string) =>
     rolePermissions.includes(`${module}:${action}`) || rolePermissions.includes(`${module}:CRUD`);
@@ -49,8 +47,21 @@ export default function PermissionsScreen() {
       }}
     >
       <SchoolSelector />
-      <Text style={styles.title}>Droits par role</Text>
-      <Text style={styles.subtitle}>Matrice plateforme alignee web v13 (Admin Pays / Admin School).</Text>
+      <Text style={styles.title}>Droits par rôle</Text>
+      <Text style={styles.subtitle}>Lecture de la matrice plateforme issue du backend canonique.</Text>
+
+      {!MOBILE_ROLE_PERMISSION_MUTATION_ENABLED ? (
+        <View style={styles.readOnlyBanner} testID="permissions-read-only-banner">
+          <Ionicons name="shield-checkmark-outline" size={20} color="#1D4ED8" />
+          <View style={styles.readOnlyTextBlock}>
+            <Text style={styles.readOnlyTitle}>Modification Mobile désactivée</Text>
+            <Text style={styles.readOnlyText}>
+              Les GRANT/REVOKE ne sont plus simulés localement. Utilisez le Web canonique jusqu&apos;au
+              branchement du PATCH RBAC Mobile avec contrôle de scope et de concurrence.
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.roleRow}>
         {TARGET_ROLES.map((role) => (
@@ -84,25 +95,22 @@ export default function PermissionsScreen() {
           (action) => {
             const enabled = hasPermission(selectedModule, action.key);
             return (
-              <TouchableOpacity
+              <View
                 key={action.key}
                 style={[styles.matrixRow, enabled && styles.matrixRowActive]}
-                onPress={() => togglePermission(selectedModule, action.key, !enabled)}
+                accessibilityLabel={`${action.label}: ${enabled ? "actif" : "inactif"}`}
               >
                 <Text style={styles.matrixLabel}>{action.label}</Text>
-                <Text style={styles.matrixValue}>{enabled ? "Active" : "Desactive"}</Text>
-              </TouchableOpacity>
+                <Text style={styles.matrixValue}>{enabled ? "Actif" : "Inactif"}</Text>
+              </View>
             );
           },
         )}
       </View>
 
-      <TouchableOpacity
-        style={styles.secondaryBtn}
-        onPress={() => Alert.alert("Synchronise", "Les droits sont enregistrés dans la plateforme partagée.")}
-      >
-        <Text style={styles.secondaryBtnText}>Les changements sont synchronises automatiquement</Text>
-      </TouchableOpacity>
+      <Text style={styles.readOnlyFooter}>
+        Lecture seule sur Mobile — aucune modification locale n&apos;est considérée comme enregistrée.
+      </Text>
     </ScrollView>
   );
 }
@@ -111,6 +119,19 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F7FB" },
   title: { fontSize: 28, fontWeight: "800", color: "#111827" },
   subtitle: { color: "#64748B", marginTop: 6, marginBottom: 16 },
+  readOnlyBanner: {
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  readOnlyTextBlock: { flex: 1 },
+  readOnlyTitle: { color: "#1E3A8A", fontWeight: "900", marginBottom: 4 },
+  readOnlyText: { color: "#475569", fontWeight: "700", lineHeight: 19 },
   roleRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
   roleChip: {
     flex: 1,
@@ -148,8 +169,13 @@ const styles = StyleSheet.create({
   matrixRowActive: { borderLeftWidth: 4, borderLeftColor: "#2563EB" },
   matrixLabel: { fontWeight: "700", color: "#111827" },
   matrixValue: { fontWeight: "800", color: "#2563EB" },
-  secondaryBtn: { marginTop: 16, padding: 12 },
-  secondaryBtnText: { textAlign: "center", color: "#64748B", fontWeight: "600" },
+  readOnlyFooter: {
+    marginTop: 16,
+    color: "#64748B",
+    fontWeight: "700",
+    lineHeight: 20,
+    textAlign: "center",
+  },
   denied: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   deniedText: { color: "#64748B", fontWeight: "700", textAlign: "center" },
 });

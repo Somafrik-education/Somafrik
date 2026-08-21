@@ -14,6 +14,17 @@ function read(rel) {
   return fs.readFileSync(path.join(SRC, rel), "utf8");
 }
 
+function runVerifier(scriptName) {
+  const result = spawnSync(process.execPath, [path.join("scripts", scriptName)], {
+    cwd: MOBILE,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `${scriptName} failed`);
+  }
+  process.stdout.write(result.stdout || "");
+}
+
 function main() {
   const unit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "canonicalRouteMap.test.ts")], {
     cwd: MOBILE,
@@ -42,14 +53,8 @@ function main() {
   assert.match(context, /getCanonicalUsers/);
   console.log("OK: Accueil et Utilisateurs partagent usersSnapshot");
 
-  const rbac = spawnSync(process.execPath, [path.join("scripts", "verify-mobile-rbac-live.js")], {
-    cwd: MOBILE,
-    encoding: "utf8",
-  });
-  if (rbac.status !== 0) {
-    throw new Error(rbac.stderr || rbac.stdout || "verify-mobile-rbac-live.js failed");
-  }
-  process.stdout.write(rbac.stdout || "");
+  runVerifier("verify-mobile-rbac-live.js");
+  runVerifier("verify-mobile-no-false-writes.js");
 }
 
 main();
