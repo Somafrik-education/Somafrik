@@ -9,9 +9,9 @@ function isProductionEnvironment(env = process.env) {
 function prepareDemoSeedIntegrity() {
   if (demoSeedIntegrityPrepared) return;
 
-  // Chargement paresseux : aucune fixture démo n'est chargée lorsque le seed est désactivé
-  // ou en production. Le tableau est muté en place car postgresRepository conserve la
-  // même référence de module `backend/data.js` pendant tout le bootstrap.
+  // Normalisation paresseuse : elle n'est exécutée que lorsque le seed est autorisé.
+  // Le tableau est muté en place car postgresRepository conserve la même référence
+  // de module `backend/data.js` pendant tout le bootstrap.
   const seedData = require("../data");
   const { buildDemoSubscriptions } = require("./demoSeedSubscriptions");
   const normalizedSubscriptions = buildDemoSubscriptions({
