@@ -2,6 +2,7 @@
 
 const seedData = require("../data");
 const { hashSecret } = require("../services/credentialService");
+const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
 
 const ROLE_TO_DB = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -33,15 +34,41 @@ function extractFixtureSchoolShortCode(school) {
   return match ? match[1] : null;
 }
 
+function isAcademicStudentUserInsertSql(sql) {
+  const normalized = String(sql ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+  return normalized.includes("INSERT INTO USERS") && normalized.includes("'STUDENT'");
+}
+
+function withoutAcademicStudentUserWrites(client) {
+  if (!client || typeof client.query !== "function") {
+    return client;
+  }
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop === "query") {
+        return async (sql, params) => {
+          if (isAcademicStudentUserInsertSql(sql)) {
+            return { rows: [], rowCount: 0 };
+          }
+          return target.query(sql, params);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
 /**
- * Correctif de seed PostgreSQL uniquement.
+ * Correctifs du seed PostgreSQL uniquement.
  *
- * Deux invariants :
+ * Invariants :
  * 1. Le short_code explicite du fixture est transmis à PostgreSQL pour que le
  *    login_code public soit alloué par le trigger à partir de la même source.
  * 2. Les comptes STUDENT ne sont jamais insérés avant les lignes students.
- *    PostgresRepository.ensureStudentUsers() les crée ensuite depuis la table
- *    students canonique, après seedAcademicData().
+ * 3. seedAcademicData() ne crée plus de compte STUDENT : il ne s'occupe que
+ *    des données académiques. ensureStudentUsers() crée ensuite les comptes à
+ *    partir de students, sans recopier parent_email / parent_phone dans users.
  */
 function attachCanonicalDemoSeedPostgres(repository) {
   if (!repository || typeof repository.seedReferenceData !== "function") {
@@ -50,6 +77,9 @@ function attachCanonicalDemoSeedPostgres(repository) {
   if (repository.__canonicalDemoSeedPostgresAttached) {
     return repository;
   }
+
+  const originalSeedAcademicData =
+    typeof repository.seedAcademicData === "function" ? repository.seedAcademicData : null;
 
   repository.seedReferenceData = async function seedReferenceDataCanonical(client) {
     const countryIds = new Map();
@@ -155,6 +185,35 @@ function attachCanonicalDemoSeedPostgres(repository) {
     return { countryIds, schoolIds, userIds };
   };
 
+  if (originalSeedAcademicData) {
+    repository.seedAcademicData = async function seedAcademicDataCanonical(client, maps) {
+      return originalSeedAcademicData.call(this, withoutAcademicStudentUserWrites(client), maps);
+    };
+  }
+
+  if (typeof repository.ensureStudentUsers === "function") {
+    repository.ensureStudentUsers = async function ensureStudentUsersCanonical() {
+      if (!shouldSeedDemoData()) {
+        return;
+      }
+      await this.query(
+        `INSERT INTO users (
+           school_id, user_code, first_name, last_name, email, phone,
+           password_hash, pin_hash, role, status
+         )
+         SELECT
+           st.school_id, st.student_code, st.first_name, st.last_name,
+           NULL::text, NULL::text, NULL, $1, 'STUDENT', st.status
+         FROM students st
+         LEFT JOIN users u
+           ON u.school_id = st.school_id AND u.user_code = st.student_code
+         WHERE u.id IS NULL
+         ON CONFLICT (user_code) DO NOTHING`,
+        [hashSecret("1234")],
+      );
+    };
+  }
+
   Object.defineProperty(repository, "__canonicalDemoSeedPostgresAttached", {
     value: true,
     enumerable: false,
@@ -168,5 +227,7 @@ function attachCanonicalDemoSeedPostgres(repository) {
 module.exports = {
   attachCanonicalDemoSeedPostgres,
   extractFixtureSchoolShortCode,
+  isAcademicStudentUserInsertSql,
   isStudentSeedUser,
+  withoutAcademicStudentUserWrites,
 };
