@@ -41,6 +41,15 @@ function main() {
   assert.match(home, /usersSnapshot/);
   assert.match(context, /getCanonicalUsers/);
   console.log("OK: Accueil et Utilisateurs partagent usersSnapshot");
+
+  const rbac = spawnSync(process.execPath, [path.join("scripts", "verify-mobile-rbac-live.js")], {
+    cwd: MOBILE,
+    encoding: "utf8",
+  });
+  if (rbac.status !== 0) {
+    throw new Error(rbac.stderr || rbac.stdout || "verify-mobile-rbac-live.js failed");
+  }
+  process.stdout.write(rbac.stdout || "");
 }
 
 main();

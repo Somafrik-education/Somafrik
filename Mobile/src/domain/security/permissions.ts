@@ -20,6 +20,56 @@ export function isSuperAdminSessionRole(role?: string) {
 
 const schoolAdminForbiddenFeatures = new Set(["Établissements", "Abonnements"]);
 
+/**
+ * Parité Web `superAdminAccess.ts` : ALL_PRIVILEGES n'ouvre pas les modules
+ * opérationnels d'un établissement dans les interfaces clientes.
+ */
+export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
+  "Pays",
+  "Établissements",
+  "Abonnements",
+  "Contacts",
+  "Relations",
+  "Utilisateurs",
+  "Référentiels pédagogiques",
+  "Notifications",
+  "Messages",
+  "Paramètres Établissement",
+  "Paramètres graphiques",
+  "Droits par rôle",
+  "Conception bulletins",
+]);
+
+/**
+ * Vues Mobile explicitement admises pour le Super Admin. Cette liste est
+ * volontairement stricte : on ne déduit jamais une vue opérationnelle depuis
+ * un alias de feature (ex. Audit -> Utilisateurs, Support -> Messages).
+ */
+const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
+  "overview",
+  "countries",
+  "educationReference",
+  "schools",
+  "SchoolManagement",
+  "subscriptions",
+  "contacts",
+  "relations",
+  "users",
+  "Users",
+  "permissions",
+  "Permissions",
+  "chartSettings",
+  "notifications",
+  "PlatformNotifications",
+  "messages",
+  "Messages",
+  "announcements",
+  "Announcements",
+  "configuration",
+  "Configuration",
+  "bulletinDesign",
+]);
+
 const PARENT_STUDENT_SESSION_ROLES = new Set(["parent_student", "student"]);
 
 function isPlatformCommunicationSession(session: any): boolean {
@@ -247,7 +297,9 @@ function hasSecurityPermissionInternal(
 
 export function hasSecurityPermission(session: any, feature: string | undefined, action: SecurityAction = "READ") {
   if (!feature) return true;
-  if (isSuperAdminSessionRole(session?.role)) return true;
+  if (isSuperAdminSessionRole(session?.role)) {
+    return SUPER_ADMIN_ALLOWED_FEATURES.has(feature);
+  }
   if (
     isPlatformCommunicationSession(session) &&
     (feature === "Messages" || feature === "Notifications")
@@ -297,11 +349,13 @@ export function canManagePresences(session: any): boolean {
 }
 
 export function canReadView(session: any, viewName: string): boolean {
-  if (isSuperAdminSessionRole(session?.role)) return true;
+  if (isSuperAdminSessionRole(session?.role)) {
+    return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
+  }
   if (viewName === "overview") return true;
 
   if (viewName === "Permissions") {
-    return isSuperAdminSessionRole(session?.role);
+    return false;
   }
 
   if (session?.role === "country_admin") {
@@ -319,7 +373,6 @@ export function canReadView(session: any, viewName: string): boolean {
   }
 
   if (viewName === "Configuration") {
-    if (isSuperAdminSessionRole(session?.role)) return true;
     const platformRole = sessionRoleToPlatformRole(session?.role);
     if (!isInternalSchoolRole(session?.role) && !isInternalSchoolRole(platformRole)) return false;
     return (
@@ -379,6 +432,9 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
 }
 
 export function canReadRoute(session: any, routeName?: string) {
+  if (isSuperAdminSessionRole(session?.role)) {
+    return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
+  }
   if (routeName && canReadView(session, routeName)) return true;
   const feature = routeName ? routeFeatureMap[routeName] : undefined;
   return Boolean(feature) && hasSecurityPermission(session, feature, "READ");
