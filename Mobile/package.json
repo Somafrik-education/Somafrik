@@ -24,6 +24,7 @@
     "test:scope": "npx --yes tsx src/lib/scope.test.ts",
     "verify:mobile-security": "node scripts/verify-mobile-security.js",
     "verify:mobile-rbac-live": "node scripts/verify-mobile-rbac-live.js",
+    "verify:mobile-no-false-writes": "node scripts/verify-mobile-no-false-writes.js",
     "verify:mobile-data-truth": "node scripts/verify-mobile-data-truth.js",
     "verify:mobile-evaluations-v2": "node scripts/verify-mobile-evaluations-v2.js",
     "verify:mobile-planning-v2": "node scripts/verify-mobile-planning-v2.js",
