@@ -60,46 +60,55 @@ function asTrimmedField(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function mapCanonicalContact(row: unknown): CanonicalMessageContact | null {
+  if (!row || typeof row !== "object") return null;
+  const item = row as Record<string, unknown>;
+  const id = asTrimmedField(item.id);
+  if (!id) return null;
+  const mapped: CanonicalMessageContact = { id };
+  const userId = asTrimmedField(item.userId);
+  const schoolCode = asTrimmedField(item.schoolCode);
+  const status = asTrimmedField(item.status);
+  const firstName = asTrimmedField(item.firstName);
+  const lastName = asTrimmedField(item.lastName);
+  if (userId) mapped.userId = userId;
+  if (schoolCode) mapped.schoolCode = schoolCode;
+  if (status) mapped.status = status;
+  if (firstName) mapped.firstName = firstName;
+  if (lastName) mapped.lastName = lastName;
+  return mapped;
+}
+
+function mapCanonicalRelation(row: unknown): CanonicalMessageRelation | null {
+  if (!row || typeof row !== "object") return null;
+  const item = row as Record<string, unknown>;
+  const id = asTrimmedField(item.id);
+  const fromContactId = asTrimmedField(item.fromContactId);
+  const toStudentId = asTrimmedField(item.toStudentId);
+  if (!id || !fromContactId || !toStudentId) return null;
+  const mapped: CanonicalMessageRelation = { id, fromContactId, toStudentId };
+  const toStudentName = asTrimmedField(item.toStudentName);
+  const fromContactName = asTrimmedField(item.fromContactName);
+  const schoolCode = asTrimmedField(item.schoolCode);
+  const status = asTrimmedField(item.status);
+  if (toStudentName) mapped.toStudentName = toStudentName;
+  if (fromContactName) mapped.fromContactName = fromContactName;
+  if (schoolCode) mapped.schoolCode = schoolCode;
+  if (status) mapped.status = status;
+  return mapped;
+}
+
 export async function getCanonicalContacts(): Promise<CanonicalMessageContact[]> {
   const payload = await httpRequest<unknown>("/backoffice/contacts");
   return unwrapList(payload)
-    .map((row) => {
-      if (!row || typeof row !== "object") return null;
-      const item = row as Record<string, unknown>;
-      const id = asTrimmedField(item.id);
-      if (!id) return null;
-      return {
-        id,
-        userId: asTrimmedField(item.userId) || undefined,
-        schoolCode: asTrimmedField(item.schoolCode) || undefined,
-        status: asTrimmedField(item.status) || undefined,
-        firstName: asTrimmedField(item.firstName) || undefined,
-        lastName: asTrimmedField(item.lastName) || undefined,
-      } satisfies CanonicalMessageContact;
-    })
+    .map(mapCanonicalContact)
     .filter((row): row is CanonicalMessageContact => Boolean(row));
 }
 
 export async function getCanonicalRelations(): Promise<CanonicalMessageRelation[]> {
   const payload = await httpRequest<unknown>("/backoffice/relations");
   return unwrapList(payload)
-    .map((row) => {
-      if (!row || typeof row !== "object") return null;
-      const item = row as Record<string, unknown>;
-      const id = asTrimmedField(item.id);
-      const fromContactId = asTrimmedField(item.fromContactId);
-      const toStudentId = asTrimmedField(item.toStudentId);
-      if (!id || !fromContactId || !toStudentId) return null;
-      return {
-        id,
-        fromContactId,
-        toStudentId,
-        toStudentName: asTrimmedField(item.toStudentName) || undefined,
-        fromContactName: asTrimmedField(item.fromContactName) || undefined,
-        schoolCode: asTrimmedField(item.schoolCode) || undefined,
-        status: asTrimmedField(item.status) || undefined,
-      } satisfies CanonicalMessageRelation;
-    })
+    .map(mapCanonicalRelation)
     .filter((row): row is CanonicalMessageRelation => Boolean(row));
 }
 
