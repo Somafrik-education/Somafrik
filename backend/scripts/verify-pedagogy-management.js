@@ -357,8 +357,37 @@ async function runMemoryHttpGuards() {
       token: parentToken,
       body: { className: "6ème A", name: "Mathématiques" },
     });
-    assert.notEqual(parentCourse.status, 201, "parent ne crée pas de cours");
-    assert.ok(parentCourse.status >= 400, `parent bloqué: ${parentCourse.status}`);
+    assertPermissionDenied(parentCourse, "parent POST /courses memory");
+    assertPermissionDenied(
+      await request(MEMORY_PORT, "/courses", { token: parentToken }),
+      "parent GET /courses memory",
+    );
+
+    const teacherCoursesRead = await request(MEMORY_PORT, "/courses", { token: teacherToken });
+    assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses memory");
+    assertPermissionDenied(
+      await request(MEMORY_PORT, "/courses", {
+        method: "POST",
+        token: teacherToken,
+        body: { className: "6ème A", name: "Mathématiques" },
+      }),
+      "enseignant POST /courses memory",
+    );
+    assertPermissionDenied(
+      await request(MEMORY_PORT, "/courses/course-rbac-deny", {
+        method: "PATCH",
+        token: teacherToken,
+        body: { name: "Mathématiques" },
+      }),
+      "enseignant PATCH /courses memory",
+    );
+    assertPermissionDenied(
+      await request(MEMORY_PORT, "/courses/course-rbac-deny", {
+        method: "DELETE",
+        token: teacherToken,
+      }),
+      "enseignant DELETE /courses memory",
+    );
 
     const teacherNote = await request(MEMORY_PORT, "/notes", {
       method: "POST",
@@ -545,6 +574,27 @@ async function runPostgresHttpGuards(databaseUrl) {
       body: { className: "6ème A", name: `Matière-${stamp}` },
     });
     assertPermissionDenied(teacherUnknownSubject, "enseignant POST /courses");
+    assertPermissionDenied(
+      await request(PG_PORT, `/courses/${validCourse.data.schoolCourseId || validCourse.data.id}`, {
+        method: "PATCH",
+        token: teacherToken,
+        body: { name: "Mathématiques" },
+      }),
+      "enseignant PATCH /courses",
+    );
+    assertPermissionDenied(
+      await request(PG_PORT, `/courses/${validCourse.data.schoolCourseId || validCourse.data.id}`, {
+        method: "DELETE",
+        token: teacherToken,
+      }),
+      "enseignant DELETE /courses",
+    );
+    assertPermissionDenied(
+      await request(PG_PORT, "/courses", { token: parentToken }),
+      "parent GET /courses",
+    );
+    const teacherCoursesRead = await request(PG_PORT, "/courses", { token: teacherToken });
+    assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses");
 
     const forgedEvaluation = await request(PG_PORT, "/evaluations", {
       method: "POST",

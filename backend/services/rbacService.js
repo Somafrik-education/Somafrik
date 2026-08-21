@@ -1,9 +1,5 @@
 const seedData = require("../data");
-const {
-  COURSE_WRITE_ROUTE_KEY,
-  COURSE_ROUTE_PERMISSIONS,
-  canAccessCourseWrite,
-} = require("../lib/coursesRbacPolicy");
+const { COURSE_ROUTE_PERMISSIONS } = require("../lib/coursesRbacPolicy");
 
 const roleAliases = {
   super_admin: "Super Administrateur Somafrik",
@@ -453,9 +449,6 @@ class RbacService {
     }
 
     const permissions = new Set(principal.permissions ?? this.permissionsFor(principal.role));
-    if (routeKey === COURSE_WRITE_ROUTE_KEY) {
-      return canAccessCourseWrite(permissions);
-    }
     return requiredPermissions.some((permission) => permissions.has(permission));
   }
 }

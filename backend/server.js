@@ -640,7 +640,7 @@ app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POS
   res.status(201).json({ student, credentials });
 }));
 
-app.get("/api/courses", requireAuth, asyncHandler(async (req, res) => {
+app.get("/api/courses", requireAuth, requirePermission("GET /api/courses"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
   const scope = deriveSchoolScope(req.principal, state);
   res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
@@ -664,7 +664,7 @@ app.post("/api/courses", requireAuth, requirePermission("POST /api/courses"), as
   res.status(201).json(created);
 }));
 
-app.patch("/api/courses/:courseId", requireAuth, requirePermission("POST /api/courses"), asyncHandler(async (req, res) => {
+app.patch("/api/courses/:courseId", requireAuth, requirePermission("PATCH /api/courses/:courseId"), asyncHandler(async (req, res) => {
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
   const updated = await repository.updateSchoolCourse(
     req.params.courseId,
@@ -675,7 +675,7 @@ app.patch("/api/courses/:courseId", requireAuth, requirePermission("POST /api/co
   res.json(updated);
 }));
 
-app.delete("/api/courses/:courseId", requireAuth, requirePermission("POST /api/courses"), asyncHandler(async (req, res) => {
+app.delete("/api/courses/:courseId", requireAuth, requirePermission("DELETE /api/courses/:courseId"), asyncHandler(async (req, res) => {
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
   const deleted = await repository.deleteSchoolCourse(
     req.params.courseId,
