@@ -74,12 +74,12 @@ const ROLES = [
   },
   {
     index: "02",
-    title: "Admin pays",
+    title: "Administrateur pays",
     description: "Gère les établissements, validations et administrateurs scolaires de son pays.",
   },
   {
     index: "03",
-    title: "Admin établissement",
+    title: "Administrateur établissement",
     description: "Administre son école : utilisateurs, classes, affectations, communication et rapports.",
   },
   {
