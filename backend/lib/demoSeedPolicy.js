@@ -1,7 +1,26 @@
 /** Désactive le rechargement automatique des données de démonstration (backend/data.js). */
 
+const { reconcileDemoSubscriptions } = require("./demoSeedSubscriptions");
+
 function isProductionEnvironment(env = process.env) {
   return env.NODE_ENV === "production";
+}
+
+function prepareDemoSeedData(seedData = require("../data")) {
+  const reconciledSubscriptions = reconcileDemoSubscriptions({
+    platformSchools: seedData.platformSchools,
+    countries: seedData.countries,
+    subscriptions: seedData.subscriptions,
+  });
+
+  // Mutation en place : postgresRepository conserve la même référence seedData
+  // chargée au niveau module. Aucun consommateur ne voit l'ancien tableau incohérent.
+  seedData.subscriptions.splice(
+    0,
+    seedData.subscriptions.length,
+    ...reconciledSubscriptions,
+  );
+  return seedData;
 }
 
 function shouldSeedDemoData(env = process.env) {
@@ -11,6 +30,10 @@ function shouldSeedDemoData(env = process.env) {
   if (isProductionEnvironment(env)) {
     return false;
   }
+
+  // Le seed de développement doit respecter les mêmes invariants PostgreSQL
+  // que le runtime : exactement un abonnement par établissement.
+  prepareDemoSeedData();
   return true;
 }
 
@@ -35,6 +58,7 @@ function assertProductionSecurityConfiguration(env = process.env) {
 
 module.exports = {
   isProductionEnvironment,
+  prepareDemoSeedData,
   shouldSeedDemoData,
   assertProductionSecurityConfiguration,
 };
