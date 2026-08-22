@@ -55,7 +55,7 @@ export default function PermissionsScreen() {
         <View style={styles.readOnlyBanner} testID="permissions-read-only-banner">
           <Ionicons name="shield-checkmark-outline" size={20} color="#1D4ED8" />
           <View style={styles.readOnlyTextBlock}>
-            <Text style={styles.readOnlyTitle}>Modification sur mobile désactivée</Text>
+            <Text style={styles.readOnlyTitle}>Modification Mobile désactivée</Text>
             <Text style={styles.readOnlyText}>
               L’attribution et le retrait des droits ne sont plus simulés localement. Utilisez l’interface Web canonique jusqu’au
               branchement de la modification RBAC sur mobile avec contrôle du périmètre et de la concurrence.
