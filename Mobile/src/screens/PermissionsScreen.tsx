@@ -28,7 +28,7 @@ export default function PermissionsScreen() {
   if (session?.role !== "super_admin") {
     return (
       <View style={styles.denied}>
-        <Text style={styles.deniedText}>Matrice Super Admin réservée au Super Administrateur.</Text>
+        <Text style={styles.deniedText}>Matrice réservée au Super administrateur.</Text>
       </View>
     );
   }

@@ -187,7 +187,7 @@ const configs: Record<
       { key: "currency", label: "Devise", placeholder: "CDF" },
       { key: "timezone", label: "Fuseau horaire", placeholder: "Africa/Kinshasa" },
       { key: "status", label: "Statut", placeholder: "Choisir le statut", type: "select" },
-      { key: "administratorId", label: "Admin pays", placeholder: "Choisir un utilisateur", type: "select" },
+      { key: "administratorId", label: "Administrateur pays", placeholder: "Choisir un utilisateur", type: "select" },
     ],
   },
   courses: {

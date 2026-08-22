@@ -8,10 +8,10 @@ type Props = {
 
 const KINDS: Array<{ kind: DemoAccountKind; label: string }> = [
   { kind: "teacher", label: "Remplir un compte enseignant demo" },
-  { kind: "school_admin", label: "Remplir admin établissement demo" },
+  { kind: "school_admin", label: "Remplir administrateur établissement démo" },
   { kind: "prefet", label: "Remplir préfet des études demo" },
   { kind: "secretary", label: "Remplir secrétaire demo" },
-  { kind: "country_admin", label: "Remplir admin pays demo" },
+  { kind: "country_admin", label: "Remplir administrateur pays démo" },
 ];
 
 export default function DemoLoginButtons({ accessRole, onFill }: Props) {

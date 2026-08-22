@@ -120,7 +120,7 @@ export function SubscriptionPaymentsPage() {
         <Card className="p-6">
           <SectionHeader
             title="Enregistrer un paiement manuel"
-            description="Mobile Money, virement, espèces chez un partenaire — validation admin requise."
+            description="Mobile Money, virement, espèces chez un partenaire — validation administrateur requise."
           />
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Établissement">

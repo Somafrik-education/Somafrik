@@ -25,8 +25,8 @@ import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/
 import type { LoginProfile } from "../types";
 
 const PROFILES: { id: LoginProfile; label: string }[] = [
-  { id: "superadmin", label: "Super Admin" },
-  { id: "country", label: "Admin Pays" },
+  { id: "superadmin", label: "Super administrateur" },
+  { id: "country", label: "Administrateur pays" },
   { id: "school", label: "Établissement" },
 ];
 
@@ -236,7 +236,7 @@ export function LoginPage() {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="ex. superadmin"
+                        placeholder="ex. identifiant administrateur"
                         autoComplete="username"
                         data-testid="login-identifier"
                         {...field}

@@ -674,7 +674,7 @@ export function UsersPage() {
           <>
             {isCountryAdminProvisionedUser(detail) || detail.validationRequestedBy ? (
               <div className="mb-4 rounded-xl border border-amber/30 bg-amber/10 p-4 text-sm text-ink">
-                <p className="font-bold text-amber">Créé par un Admin Pays</p>
+                <p className="font-bold text-amber">Créé par un Administrateur pays</p>
                 <p className="mt-1 text-muted">
                   Ce compte Admin École a été créé par un Admin Pays
                   {detail.validationRequestedBy ? ` (${detail.validationRequestedBy})` : ""}.
@@ -925,7 +925,7 @@ export function UsersPage() {
             {!isEditingExisting && isPendingValidationStatus(editing.status) ? (
               <div className="sm:col-span-2 rounded-xl border border-amber/30 bg-amber/10 p-4">
                 <p className="text-xs font-bold uppercase tracking-wide text-amber">
-                  Validation Super Admin requise
+                  Validation du Super administrateur requise
                 </p>
                 <p className="mt-1 text-sm text-muted">
                   En tant qu'Admin Pays, vous pouvez créer ce compte Admin École, mais il restera
