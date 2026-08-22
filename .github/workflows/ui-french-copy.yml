@@ -47,58 +47,17 @@ jobs:
           fs.writeFileSync(file, source);
           NODE
           node scripts/verify-ui-french-copy.js
-      - name: Restaurer le workflow permanent et retirer le workflow temporaire
+      - name: Commit UsersPage uniquement
         shell: bash
         run: |
-          cat > .github/workflows/ui-french-copy.yml <<'YAML'
-          name: UI French Copy
-
-          on:
-            pull_request:
-              branches: [develop, main]
-            push:
-              branches: [develop, main]
-
-          concurrency:
-            group: ui-french-copy-${{ github.workflow }}-${{ github.ref }}
-            cancel-in-progress: true
-
-          jobs:
-            ci-ui-french-copy:
-              name: CI / verify:ui-french-copy
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-node@v4
-                  with:
-                    node-version: "22.12.0"
-                - name: verify:ui-french-copy
-                  run: node scripts/verify-ui-french-copy.js
-
-            security-ui-french-copy:
-              name: Security / verify:ui-french-copy
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-node@v4
-                  with:
-                    node-version: "22.12.0"
-                - name: verify:ui-french-copy
-                  run: node scripts/verify-ui-french-copy.js
-          YAML
-          rm -f .github/workflows/ui-french-final-fix.yml
-      - name: Commit ciblé
-        shell: bash
-        run: |
-          if git diff --quiet; then
+          if git diff --quiet -- web/src/pages/UsersPage.tsx; then
             echo "Aucune modification"
             exit 0
           fi
           git config user.name "Somafrik UI French Bot"
           git config user.email "somafrik@outlook.fr"
-          git add web/src/pages/UsersPage.tsx .github/workflows/ui-french-copy.yml
-          git add -u .github/workflows/ui-french-final-fix.yml || true
-          git commit -m "fix(ui): finaliser la francisation avant merge"
+          git add web/src/pages/UsersPage.tsx
+          git commit -m "fix(ui): finaliser la francisation UsersPage"
           git push origin HEAD:fix/p1-ui-french-copy-audit
 
   ci-ui-french-copy:
