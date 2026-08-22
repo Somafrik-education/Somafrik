@@ -5,6 +5,7 @@ import { canManageRolePermissions } from "../lib/permissions";
 import { formatCountryOption, formatSchoolOption, schoolsForCountry } from "../lib/superadminCrudPath";
 import { scopedCountries, scopedSchools } from "../lib/scope";
 import { usePermissionContext } from "../lib/usePermissionContext";
+import { displayScopeName, displayStatusName } from "../lib/format";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { PrintButton } from "../components/ui/PrintButton";
@@ -29,10 +30,10 @@ import {
 } from "../lib/rbacLocks";
 
 const CRUD_ACTIONS = [
-  { key: "canCreate" as const, action: "create" as RbacAction, label: "CREATE" },
-  { key: "canRead" as const, action: "read" as RbacAction, label: "READ" },
-  { key: "canUpdate" as const, action: "update" as RbacAction, label: "UPDATE" },
-  { key: "canDelete" as const, action: "delete" as RbacAction, label: "DELETE" },
+  { key: "canCreate" as const, action: "create" as RbacAction, label: "Création" },
+  { key: "canRead" as const, action: "read" as RbacAction, label: "Lecture" },
+  { key: "canUpdate" as const, action: "update" as RbacAction, label: "Modification" },
+  { key: "canDelete" as const, action: "delete" as RbacAction, label: "Suppression" },
 ];
 
 function LockIcon({ label }: { label: string }) {
@@ -192,7 +193,7 @@ export function PermissionsPage() {
         setMatrix(payload);
       })
       .catch(() => {
-        if (!cancelled) showToast("Impossible de charger la matrice CRUD.", "error");
+        if (!cancelled) showToast("Impossible de charger la matrice des droits.", "error");
       })
       .finally(() => {
         if (!cancelled) setBusy(false);
@@ -239,14 +240,14 @@ export function PermissionsPage() {
       });
       const next = await rbacApi.getConfigured({ roleKey: selectedRoleKey, countryCode, schoolCode });
       setMatrix({ ...next, updatedAt: saved.updatedAt ?? next.updatedAt });
-      showToast("Permissions enregistrées", "success");
+      showToast("Droits enregistrés", "success");
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 0;
       const code = error instanceof ApiError ? error.code : undefined;
       const message = error instanceof ApiError ? error.message : "";
       showToast(
         code === "MANDATORY_PERMISSION"
-          ? message || "Permission obligatoire : modification refusée."
+          ? message || "Droit obligatoire : modification refusée."
           : status === 409
             ? "Conflit : la matrice a été modifiée. Rechargez avant d'enregistrer."
             : message || "Échec de l'enregistrement",
@@ -302,15 +303,15 @@ export function PermissionsPage() {
   return (
     <Card className="p-6">
       <SectionHeader
-        title="Rôles & permissions"
+        title="Rôles & droits"
         description={
           canManage
-            ? "Point canonique Superadmin : pays → établissement → rôle → module → CRUD. PostgreSQL est la source d’autorité."
-            : "Consultation réservée. Seul le Superadmin peut modifier les droits."
+            ? "Point canonique Super administrateur : pays → établissement → rôle → module → droits. PostgreSQL est la source d’autorité."
+            : "Consultation réservée. Seul le Super administrateur peut modifier les droits."
         }
         actions={
           <>
-            <PrintButton documentTitle="Rôles et permissions — Somafrik" />
+            <PrintButton documentTitle="Rôles et droits — Somafrik" />
             {canManage && tab === "permissions" ? (
               <Button size="sm" onClick={() => void save()} disabled={busy || !pathComplete}>
                 Enregistrer
@@ -322,7 +323,7 @@ export function PermissionsPage() {
 
       <div className="mt-4 flex gap-2">
         <Button variant={tab === "permissions" ? "primary" : "secondary"} size="sm" onClick={() => setTab("permissions")}>
-          Permissions
+          Droits
         </Button>
         <Button variant={tab === "roles" ? "primary" : "secondary"} size="sm" onClick={() => setTab("roles")}>
           Rôles
@@ -340,7 +341,7 @@ export function PermissionsPage() {
                   placeholder="Préfet des études"
                 />
               </Field>
-              <Field label="role_key (optionnel)">
+              <Field label="Code technique du rôle (role_key)">
                 <Input
                   value={roleForm.roleCode}
                   onChange={(event) => setRoleForm((current) => ({ ...current, roleCode: event.target.value }))}
@@ -360,7 +361,7 @@ export function PermissionsPage() {
               <thead>
                 <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
                   <th className="px-3 py-3 text-left">Nom</th>
-                  <th className="px-3 py-3 text-left">role_key</th>
+                  <th className="px-3 py-3 text-left">Code technique</th>
                   <th className="px-3 py-3 text-left">Portée</th>
                   <th className="px-3 py-3 text-left">Statut</th>
                   <th className="px-3 py-3 text-left">Utilisateurs actifs</th>
@@ -373,8 +374,8 @@ export function PermissionsPage() {
                   <tr key={role.id} className="border-b border-line/70">
                     <td className="px-3 py-2.5 font-medium">{role.roleName}</td>
                     <td className="px-3 py-2.5 font-mono text-xs">{role.roleCode}</td>
-                    <td className="px-3 py-2.5">{role.scope}</td>
-                    <td className="px-3 py-2.5">{role.status}</td>
+                    <td className="px-3 py-2.5">{displayScopeName(role.scope)}</td>
+                    <td className="px-3 py-2.5">{displayStatusName(role.status)}</td>
                     <td className="px-3 py-2.5">{role.activeUserCount ?? 0}</td>
                     <td className="px-3 py-2.5">{formatDate(role.updatedAt)}</td>
                     <td className="px-3 py-2.5">
@@ -400,9 +401,9 @@ export function PermissionsPage() {
             <p>
               <span className="font-semibold text-ink">A.</span> Rôles système protégés : SUPER_ADMIN, COUNTRY_ADMIN,
               SCHOOL_ADMIN. <span className="font-semibold text-ink">B.</span> Rôles métier établissement (catalogue
-              PostgreSQL). <span className="font-semibold text-ink">C.</span> Permissions CRUD par module.
+              PostgreSQL). <span className="font-semibold text-ink">C.</span> Droits par module.
             </p>
-            <p>Résolution fail-closed : établissement → pays → global → DENY. Multi-rôle = union des rôles actifs.</p>
+            <p>Résolution restrictive : établissement → pays → global → refus par défaut. Multi-rôle = union des rôles actifs.</p>
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -423,7 +424,7 @@ export function PermissionsPage() {
                 disabled={!countryCode}
               />
             </Field>
-            <Field label="Rôle cible" hint="Rôles applicables à ce scope">
+            <Field label="Rôle cible" hint="Rôles applicables à ce périmètre">
               <Select
                 id="rbac-role"
                 value={selectedRoleKey}
@@ -432,7 +433,7 @@ export function PermissionsPage() {
                 disabled={!schoolCode}
               />
             </Field>
-            <Field label="Module fonctionnel" hint="Catalogue réel Web + Mobile">
+            <Field label="Module fonctionnel" hint="Catalogue réel Web + mobile">
               <Select
                 id="rbac-module"
                 value={selectedModuleKey}
@@ -462,18 +463,18 @@ export function PermissionsPage() {
 
           {!pathComplete ? (
             <p className="mt-6 rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-              Sélectionnez un pays, un établissement, un rôle, puis un module pour afficher les droits CRUD.
+              Sélectionnez un pays, un établissement, un rôle, puis un module pour afficher les droits.
             </p>
           ) : (
             <>
               <p className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-sm font-medium text-brand">
-                Module « {selectedModule?.moduleName} » — CREATE / READ / UPDATE / DELETE pour{" "}
+                Module « {selectedModule?.moduleName} » — Création / Lecture / Modification / Suppression pour{" "}
                 {selectedRole?.roleName}.
               </p>
               <p className="mt-2 text-xs text-muted">
-                Case verrouillée (cadenas) : invariant de rôle ou prérequis READ tant qu’une action
-                CREATE / UPDATE / DELETE est active. Impossible à décocher ici ; le backend refuse
-                aussi tout PATCH contraire (`MANDATORY_PERMISSION`).
+                Case verrouillée (cadenas) : invariant de rôle ou prérequis de lecture tant qu’une action de
+                création, modification ou suppression est active. Impossible à décocher ici ; le serveur refuse
+                aussi toute modification contraire.
               </p>
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
