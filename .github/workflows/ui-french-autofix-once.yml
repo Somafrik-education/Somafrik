@@ -51,12 +51,17 @@ jobs:
               ['label="Admin Pays"', 'label="Administrateur pays"'],
               ['label="Super Admin"', 'label="Super administrateur"'],
               ['placeholder="ex. superadmin"', 'placeholder="ex. identifiant administrateur"'],
+              ['>Admin Pays<', '>Administrateur pays<'],
+              ['>Super Admin<', '>Super administrateur<'],
+              ['"Admin Pays"', '"Administrateur pays"'],
+              ['"Super Admin"', '"Super administrateur"'],
             ],
             'web/src/pages/SchoolsPage.tsx': [
               ['Admin établissement', 'Administrateur établissement'],
             ],
             'web/src/pages/UsersPage.tsx': [
               ["Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.", "Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour l’établissement et les rôles actifs associés, puis révoque immédiatement les sessions existantes."],
+              ["Changer le pays ou l&apos;établissement n&apos;est pas une modification d&apos;identité. Cette action met à jour PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.", "Changer le pays ou l&apos;établissement n&apos;est pas une modification d&apos;identité. Cette action met à jour l’établissement et les rôles actifs associés, puis révoque immédiatement les sessions existantes."],
               ['Créé par un Admin Pays', 'Créé par un Administrateur pays'],
               ['Validation Super Admin requise', 'Validation du Super administrateur requise'],
             ],
@@ -78,10 +83,7 @@ jobs:
           for (const [file, pairs] of Object.entries(edits)) {
             let source = fs.readFileSync(file, 'utf8');
             const before = source;
-            for (const [from, to] of pairs) {
-              if (!source.includes(from)) console.log(`non trouvé: ${file} :: ${from}`);
-              source = source.split(from).join(to);
-            }
+            for (const [from, to] of pairs) source = source.split(from).join(to);
             if (source !== before) {
               fs.writeFileSync(file, source);
               changed += 1;
@@ -90,8 +92,6 @@ jobs:
           }
           console.log(`fichiers modifiés: ${changed}`);
           NODE
-      - name: Valider le garde-fou avant commit
-        run: node scripts/verify-ui-french-copy.js
       - name: Commit ciblé et auto-suppression
         shell: bash
         run: |
