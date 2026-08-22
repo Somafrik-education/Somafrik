@@ -10,6 +10,7 @@ import {
   resolveTeacherClassesForRecord,
   resolveTeacherCoursesForRecord,
 } from "../lib/establishment";
+import { displayStatusName } from "../lib/format";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 import { getSubjects, type SchoolSubject } from "../services/api";
@@ -92,7 +93,7 @@ export default function TeachersScreen() {
               <Text style={styles.code}>{teacher.teacherCode || teacher.publicId}</Text>
               <Text style={styles.meta} numberOfLines={3}>{teacherCourses.join(", ") || teacher.mainSubject || "Cours non renseignés"}</Text>
               <Text style={styles.meta} numberOfLines={3}>Classes : {teacherClasses.join(", ") || "Non assignées"}</Text>
-              {teacher.status ? <Text style={styles.meta}>Statut : {teacher.status}</Text> : null}
+              {teacher.status ? <Text style={styles.meta}>Statut : {displayStatusName(teacher.status)}</Text> : null}
               {teacher.phone ? <Text style={styles.phone}>{teacher.phone}</Text> : null}
               <TeacherMutationControls row={teacher} onChanged={() => load()} />
             </View>
@@ -101,7 +102,7 @@ export default function TeachersScreen() {
       }}
       ListFooterComponent={
         <Text style={styles.lifecycleHint}>
-          Les GRANT/REVOKE de la matrice RBAC restent Web-only. L'identité enseignant se crée via Utilisateurs puis rôle Enseignant.
+          L’attribution et le retrait des droits de la matrice RBAC restent disponibles uniquement sur le Web. L’identité enseignant se crée via Utilisateurs, puis par attribution du rôle Enseignant.
         </Text>
       }
     />
