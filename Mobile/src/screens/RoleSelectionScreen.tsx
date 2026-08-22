@@ -7,10 +7,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -20,7 +20,6 @@ import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import {
   ROLE_SELECTION_COPY,
   ROLE_SELECTION_TEST_IDS,
-  MIN_TOUCH_TARGET,
   ERROR_MESSAGES,
   mapSchoolCodeError,
 } from "../lib/loginScreenSpec";
@@ -108,26 +107,25 @@ export default function RoleSelectionScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.formPanel}>
-          <Text style={styles.inputLabel}>{ROLE_SELECTION_COPY.codeLabel}</Text>
-          <View style={styles.inputShell}>
-            <Ionicons name="keypad-outline" size={20} color="#64748B" />
-            <TextInput
-              placeholder={ROLE_SELECTION_COPY.placeholderExample}
-              value={accessCode}
-              onChangeText={(value) => {
-                setAccessCode(value);
-                setSchool(null);
-                setErrorMessage(null);
-                setStatusMessage(`API : ${getApiBaseUrl()}`);
-              }}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              style={styles.input}
-              placeholderTextColor="#94A3B8"
-              testID={ROLE_SELECTION_TEST_IDS.schoolCodeInput}
-              accessibilityLabel={ROLE_SELECTION_COPY.codeLabel}
-            />
-          </View>
+          <FormField
+            label={ROLE_SELECTION_COPY.codeLabel}
+            required
+            type="code"
+            placeholder={ROLE_SELECTION_COPY.placeholderExample}
+            value={accessCode}
+            onChangeText={(value) => {
+              setAccessCode(value);
+              setSchool(null);
+              setErrorMessage(null);
+              setStatusMessage(`API : ${getApiBaseUrl()}`);
+            }}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            leading={<Ionicons name="keypad-outline" size={20} color="#64748B" />}
+            testID={ROLE_SELECTION_TEST_IDS.schoolCodeInput}
+            accessibilityLabel={ROLE_SELECTION_COPY.codeLabel}
+            inputStyle={styles.codeInput}
+          />
 
           <View style={[styles.statusBox, school && styles.statusBoxSuccess, errorMessage && styles.statusBoxError]}>
             <Ionicons
@@ -291,28 +289,7 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     marginBottom: 16,
   },
-  inputLabel: {
-    color: "#334155",
-    fontSize: 13,
-    fontWeight: "900",
-    marginBottom: 8,
-  },
-  inputShell: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  input: {
-    flex: 1,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: 15,
-    paddingHorizontal: 10,
-    color: "#0F172A",
+  codeInput: {
     fontSize: 20,
     fontWeight: "800",
   },

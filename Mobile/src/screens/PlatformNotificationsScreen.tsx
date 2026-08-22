@@ -5,10 +5,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
+import { hasFieldErrors, trimField, validateAnnouncementDraft } from "../lib/formFieldValidation";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import SchoolSelector from "../components/SchoolSelector";
@@ -17,10 +18,11 @@ import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import type { PlatformNotification } from "../lib/scope";
 import {
+  buildPlatformNotificationCreatePayload,
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { updatePlatformNotification } from "../services/api";
+import { createPlatformNotification, updatePlatformNotification } from "../services/api";
 
 const TYPE_OPTIONS = ["Information", "Alerte", "Paiement", "Académique", "Système"];
 const PRIORITY_OPTIONS = ["Normale", "Haute", "Critique"];
@@ -28,11 +30,13 @@ const AUDIENCE_OPTIONS = ["Tous", "Super Administrateur Somafrik", "Admin Pays",
 
 export default function PlatformNotificationsScreen() {
   const { session } = useAuth();
-  const { notificationsData, upsertNotification, refreshBackOfficeState } = useAdminData();
+  const { notificationsData, loadNotifications, refreshBackOfficeState } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
   const [composing, setComposing] = useState<Partial<PlatformNotification> | null>(null);
   const [markingRead, setMarkingRead] = useState(false);
+  const [composeErrors, setComposeErrors] = useState<Record<string, string>>({});
+  const [composeSaving, setComposeSaving] = useState(false);
 
   const canManagePlatform = hasPlatformBackofficePrivilege(session);
   const canCreate = canManagePlatform;
@@ -87,22 +91,42 @@ export default function PlatformNotificationsScreen() {
     void persistReadTargets([item]);
   };
 
-  const saveNotification = () => {
-    if (!composing?.title?.trim() || !composing.message?.trim()) {
-      Alert.alert("Erreur", "Titre et message obligatoires.");
+  const saveNotification = async () => {
+    if (composeSaving) return;
+    const nextErrors = validateAnnouncementDraft({
+      title: composing?.title,
+      message: composing?.message,
+    });
+    if (hasFieldErrors(nextErrors)) {
+      setComposeErrors(nextErrors);
       return;
     }
-    upsertNotification({
-      title: composing.title.trim(),
-      message: composing.message.trim(),
-      type: composing.type ?? "Information",
-      audience: composing.audience ?? "Tous",
-      priority: composing.priority ?? "Normale",
-      status: composing.status ?? "Non lu",
-      date: composing.date ?? new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
+
+    const draft: PlatformNotification = {
+      title: trimField(composing?.title),
+      message: trimField(composing?.message),
+      type: composing?.type ?? "Information",
+      audience: composing?.audience ?? "Tous",
+      priority: composing?.priority ?? "Normale",
+      status: composing?.status ?? "Non lu",
+      date: composing?.date ?? new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
       createdBy: session?.user.name ?? "Mobile",
-    });
-    setComposing(null);
+    };
+
+    setComposeSaving(true);
+    try {
+      await createPlatformNotification(buildPlatformNotificationCreatePayload(draft));
+      await loadNotifications();
+      setComposeErrors({});
+      setComposing(null);
+    } catch (error) {
+      Alert.alert(
+        "Envoi impossible",
+        error instanceof Error ? error.message : "La notification n'a pas été enregistrée dans la base.",
+      );
+    } finally {
+      setComposeSaving(false);
+    }
   };
 
   return (
@@ -138,7 +162,9 @@ export default function PlatformNotificationsScreen() {
       {canCreate && (
         <TouchableOpacity
           style={styles.primaryBtn}
-          onPress={() =>
+          onPress={() => {
+            setComposeErrors({});
+            setComposeSaving(false);
             setComposing({
               title: "",
               message: "",
@@ -146,8 +172,8 @@ export default function PlatformNotificationsScreen() {
               audience: "Tous",
               priority: "Normale",
               status: "Non lu",
-            })
-          }
+            });
+          }}
         >
           <Text style={styles.primaryBtnText}>Nouvelle notification</Text>
         </TouchableOpacity>
@@ -180,18 +206,40 @@ export default function PlatformNotificationsScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, isTablet && styles.modalCardTablet]}>
             <Text style={styles.modalTitle}>Composer une notification</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Titre"
+            <FormField
+              label="Titre"
+              required
               value={composing?.title ?? ""}
-              onChangeText={(title) => setComposing((current) => ({ ...(current ?? {}), title }))}
+              onChangeText={(title) => {
+                setComposing((current) => ({ ...(current ?? {}), title }));
+                setComposeErrors((current) => {
+                  if (!current.title) return current;
+                  const next = { ...current };
+                  delete next.title;
+                  return next;
+                });
+              }}
+              placeholder="Ex. Maintenance plateforme"
+              error={composeErrors.title}
+              editable={!composeSaving}
             />
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Message"
-              multiline
+            <FormField
+              label="Message"
+              required
+              type="multiline"
               value={composing?.message ?? ""}
-              onChangeText={(message) => setComposing((current) => ({ ...(current ?? {}), message }))}
+              onChangeText={(message) => {
+                setComposing((current) => ({ ...(current ?? {}), message }));
+                setComposeErrors((current) => {
+                  if (!current.message) return current;
+                  const next = { ...current };
+                  delete next.message;
+                  return next;
+                });
+              }}
+              placeholder="Ex. La plateforme sera indisponible dimanche."
+              error={composeErrors.message}
+              editable={!composeSaving}
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionRow}>
               {TYPE_OPTIONS.map((type) => (
@@ -199,6 +247,7 @@ export default function PlatformNotificationsScreen() {
                   key={type}
                   style={[styles.optionChip, composing?.type === type && styles.optionChipActive]}
                   onPress={() => setComposing((current) => ({ ...(current ?? {}), type }))}
+                  disabled={composeSaving}
                 >
                   <Text style={styles.optionChipText}>{type}</Text>
                 </TouchableOpacity>
@@ -210,6 +259,7 @@ export default function PlatformNotificationsScreen() {
                   key={audience}
                   style={[styles.optionChip, composing?.audience === audience && styles.optionChipActive]}
                   onPress={() => setComposing((current) => ({ ...(current ?? {}), audience }))}
+                  disabled={composeSaving}
                 >
                   <Text style={styles.optionChipText}>{audience}</Text>
                 </TouchableOpacity>
@@ -221,17 +271,31 @@ export default function PlatformNotificationsScreen() {
                   key={priority}
                   style={[styles.optionChip, composing?.priority === priority && styles.optionChipActive]}
                   onPress={() => setComposing((current) => ({ ...(current ?? {}), priority }))}
+                  disabled={composeSaving}
                 >
                   <Text style={styles.optionChipText}>{priority}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => setComposing(null)}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => {
+                  setComposeErrors({});
+                  setComposeSaving(false);
+                  setComposing(null);
+                }}
+                disabled={composeSaving}
+              >
                 <Text style={styles.secondaryBtnText}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={saveNotification}>
-                <Text style={styles.primaryBtnText}>Envoyer</Text>
+              <TouchableOpacity
+                style={[styles.primaryBtn, composeSaving && styles.disabledBtn]}
+                onPress={() => void saveNotification()}
+                disabled={composeSaving}
+                accessibilityState={{ busy: composeSaving, disabled: composeSaving }}
+              >
+                <Text style={styles.primaryBtnText}>{composeSaving ? "Envoi…" : "Envoyer"}</Text>
               </TouchableOpacity>
             </View>
           </View>

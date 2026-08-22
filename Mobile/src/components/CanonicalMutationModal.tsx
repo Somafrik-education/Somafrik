@@ -1,6 +1,7 @@
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
+/** Erreur API globale sous les champs. Les erreurs locales vont dans FormField. */
 type Props = {
   visible: boolean;
   title: string;

@@ -134,6 +134,8 @@ jobs:
         run: npm --prefix Mobile run verify:mobile-domain-hydration
       - name: verify:mobile-usability
         run: npm run verify:mobile-usability
+      - name: verify:mobile-form-fields
+        run: npm run verify:mobile-form-fields
       - name: verify:mobile-home-data-truth
         run: npm run verify:mobile-home-data-truth
       - name: verify:mobile-school-scope-transport

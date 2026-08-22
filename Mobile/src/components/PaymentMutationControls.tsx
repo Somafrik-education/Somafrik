@@ -3,6 +3,8 @@ import { StyleSheet, Text, TextInput, TouchableOpacity } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
 import ChoiceChips from "./ChoiceChips";
+import FormField from "./FormField";
+import { hasFieldErrors, trimField, validatePaymentDraft } from "../lib/formFieldValidation";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { createIntentionStore } from "../lib/mutationGuard";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
@@ -30,8 +32,10 @@ export default function PaymentMutationControls({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [studentId, setStudentId] = useState("");
   const [amount, setAmount] = useState("");
+  const amountRef = useRef<TextInput>(null);
   const [feeType, setFeeType] = useState("Scolarité");
   const [method, setMethod] = useState("Espèces");
   const [draftDate, setDraftDate] = useState(todayIsoDate);
@@ -44,6 +48,7 @@ export default function PaymentMutationControls({
   const openDraft = () => {
     intentionsRef.current.rotate(PAYMENT_DRAFT_INTENTION);
     setError("");
+    setFieldErrors({});
     setStudentId("");
     setAmount("");
     setFeeType("Scolarité");
@@ -53,13 +58,18 @@ export default function PaymentMutationControls({
   };
 
   const submit = async () => {
-    const parsed = Number(amount);
-    if (!studentId || !Number.isFinite(parsed) || parsed <= 0) {
-      setError("Élève et montant positif obligatoires.");
+    if (saving) return;
+    const nextErrors = validatePaymentDraft({ studentId, amount });
+    if (hasFieldErrors(nextErrors)) {
+      setFieldErrors(nextErrors);
+      setError("");
+      if (nextErrors.amount) amountRef.current?.focus();
       return;
     }
     setSaving(true);
     setError("");
+    setFieldErrors({});
+    const parsed = Number(trimField(amount).replace(",", "."));
     const payload = {
       studentId,
       method,
@@ -107,8 +117,42 @@ export default function PaymentMutationControls({
         onClose={() => setOpen(false)}
         onSubmit={() => void submit()}
       >
-        <ChoiceChips label="Élève" options={options} selectedId={studentId} onSelect={setStudentId} disabled={saving} />
-        <TextInput style={styles.input} value={amount} onChangeText={setAmount} placeholder="Montant" keyboardType="numeric" editable={!saving} />
+        <ChoiceChips
+          label="Élève"
+          required
+          options={options}
+          selectedId={studentId}
+          onSelect={(id) => {
+            setStudentId(id);
+            setFieldErrors((current) => {
+              if (!current.studentId) return current;
+              const next = { ...current };
+              delete next.studentId;
+              return next;
+            });
+          }}
+          disabled={saving}
+          error={fieldErrors.studentId}
+        />
+        <FormField
+          ref={amountRef}
+          label="Montant"
+          required
+          type="amount"
+          value={amount}
+          onChangeText={(value) => {
+            setAmount(value);
+            setFieldErrors((current) => {
+              if (!current.amount) return current;
+              const next = { ...current };
+              delete next.amount;
+              return next;
+            });
+          }}
+          placeholder="Ex. 25000"
+          error={fieldErrors.amount}
+          editable={!saving}
+        />
         <ChoiceChips
           label="Type de frais"
           options={["Scolarité", "Inscription", "Cantine"].map((item) => ({ id: item, label: item }))}
@@ -131,5 +175,4 @@ export default function PaymentMutationControls({
 const styles = StyleSheet.create({
   create: { minHeight: MIN_TOUCH_TARGET_DP, borderRadius: 14, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center", marginBottom: 14 },
   createText: { color: "#FFFFFF", fontWeight: "900" },
-  input: { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, padding: 12, marginBottom: 10, color: "#0F172A" },
 });

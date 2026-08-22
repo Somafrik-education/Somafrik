@@ -1,10 +1,18 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
 import ChoiceChips from "./ChoiceChips";
+import FormField from "./FormField";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import {
+  firstErrorKey,
+  hasFieldErrors,
+  resolvePreferredClassCode,
+  trimField,
+  validateStudentEnrollmentDraft,
+} from "../lib/formFieldValidation";
 import { deleteSchoolStudent, enrollClassStudent, updateSchoolStudent } from "../services/api";
 import SecretHandoffModal, { type OneShotCredentials } from "./SecretHandoffModal";
 
@@ -44,11 +52,15 @@ export default function StudentMutationControls({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
   const [classCode, setClassCode] = useState("");
   const [handoff, setHandoff] = useState<OneShotCredentials | null>(null);
+  const firstNameRef = useRef<TextInput>(null);
+  const lastNameRef = useRef<TextInput>(null);
+  const parentPhoneRef = useRef<TextInput>(null);
   const editing = Boolean(row);
 
   const classOptions = useMemo(
@@ -59,37 +71,61 @@ export default function StudentMutationControls({
     [classes],
   );
 
+  const clearFieldError = (key: string) => {
+    setFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
   const openCreate = () => {
-    const preferred =
-      classOptions.find((item) => item.label === className)?.id || classOptions[0]?.id || "";
     setError("");
+    setFieldErrors({});
     setFirstName("");
     setLastName("");
     setParentPhone("");
-    setClassCode(preferred);
+    setClassCode(resolvePreferredClassCode(className, classOptions));
     setOpen(true);
   };
 
   const submit = async () => {
-    if (!firstName.trim() || !lastName.trim()) {
-      setError("Prénom et nom sont obligatoires.");
+    if (saving) return;
+    const nextErrors = validateStudentEnrollmentDraft({
+      firstName,
+      lastName,
+      parentPhone,
+      classCode,
+      editing,
+    });
+    if (hasFieldErrors(nextErrors)) {
+      setFieldErrors(nextErrors);
+      setError("");
+      const focus = firstErrorKey(["firstName", "lastName", "parentPhone"], nextErrors);
+      if (focus === "firstName") firstNameRef.current?.focus();
+      else if (focus === "lastName") lastNameRef.current?.focus();
+      else if (focus === "parentPhone") parentPhoneRef.current?.focus();
       return;
     }
     setSaving(true);
     setError("");
+    setFieldErrors({});
     try {
+      const first = trimField(firstName);
+      const last = trimField(lastName);
+      const phone = trimField(parentPhone);
       if (editing && row) {
         await updateSchoolStudent(row.id, {
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          parentPhone: parentPhone.trim(),
+          firstName: first,
+          lastName: last,
+          parentPhone: phone,
         });
       } else {
-        if (!classCode) throw new Error("Choisissez une classe.");
         const enrolled = await enrollClassStudent(classCode, {
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          parentPhone: parentPhone.trim() || undefined,
+          firstName: first,
+          lastName: last,
+          parentPhone: phone || undefined,
         });
         const login = String(enrolled.credentials?.login ?? "").trim();
         const secret = String(enrolled.credentials?.temporarySecret ?? "").trim();
@@ -139,11 +175,66 @@ export default function StudentMutationControls({
       onSubmit={() => void submit()}
     >
       {!editing ? (
-        <ChoiceChips label="Classe" options={classOptions} selectedId={classCode} onSelect={setClassCode} disabled={saving} />
+        <ChoiceChips
+          label="Classe"
+          required
+          options={classOptions}
+          selectedId={classCode}
+          onSelect={(id) => {
+            setClassCode(id);
+            clearFieldError("classCode");
+          }}
+          disabled={saving}
+          error={fieldErrors.classCode}
+        />
       ) : null}
-      <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} placeholder="Prénom" editable={!saving} />
-      <TextInput style={styles.input} value={lastName} onChangeText={setLastName} placeholder="Nom" editable={!saving} />
-      <TextInput style={styles.input} value={parentPhone} onChangeText={setParentPhone} placeholder="Téléphone parent" keyboardType="phone-pad" editable={!saving} />
+      <FormField
+        ref={firstNameRef}
+        label="Prénom"
+        required
+        type="name"
+        autoComplete="given-name"
+        textContentType="givenName"
+        value={firstName}
+        onChangeText={(value) => {
+          setFirstName(value);
+          clearFieldError("firstName");
+        }}
+        placeholder="Ex. Esther"
+        error={fieldErrors.firstName}
+        editable={!saving}
+      />
+      <FormField
+        ref={lastNameRef}
+        label="Nom"
+        required
+        type="name"
+        autoComplete="family-name"
+        textContentType="familyName"
+        value={lastName}
+        onChangeText={(value) => {
+          setLastName(value);
+          clearFieldError("lastName");
+        }}
+        placeholder="Ex. Okito"
+        error={fieldErrors.lastName}
+        editable={!saving}
+      />
+      <FormField
+        ref={parentPhoneRef}
+        label="Téléphone du parent"
+        optional
+        type="phone"
+        value={parentPhone}
+        onChangeText={(value) => {
+          setParentPhone(value);
+          clearFieldError("parentPhone");
+        }}
+        placeholder="Ex. +243 8xx xxx xxx"
+        error={fieldErrors.parentPhone}
+        helperText="Le même numéro peut servir pour plusieurs frères et sœurs."
+        editable={!saving}
+      />
     </CanonicalMutationModal>
   );
 
@@ -160,6 +251,7 @@ export default function StudentMutationControls({
               setLastName(row.lastName || parts.slice(1).join(" "));
               setParentPhone(row.parentPhone ?? "");
               setError("");
+              setFieldErrors({});
               setOpen(true);
             }}
             accessibilityRole="button"
@@ -203,5 +295,4 @@ const styles = StyleSheet.create({
   smallText: { color: "#0F172A", fontWeight: "800" },
   smallDanger: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#FEE2E2", justifyContent: "center" },
   smallDangerText: { color: "#B91C1C", fontWeight: "800" },
-  input: { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, padding: 12, marginBottom: 10, color: "#0F172A" },
 });

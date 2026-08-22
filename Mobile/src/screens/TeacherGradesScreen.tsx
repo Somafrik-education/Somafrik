@@ -1,4 +1,5 @@
-import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -422,12 +423,32 @@ export default function TeacherGradesScreen() {
         </View>
         {typesError ? <Text style={styles.errorText}>{typesError}</Text> : null}
 
-        <Text style={styles.label}>Date</Text>
-        <TextInput value={createDate} onChangeText={setCreateDate} placeholder="AAAA-MM-JJ" keyboardType="numbers-and-punctuation" autoCapitalize="none" style={styles.sessionInput} accessibilityLabel="Date de l'évaluation" />
-        <Text style={styles.label}>Barème</Text>
-        <TextInput value={createScale} onChangeText={setCreateScale} keyboardType="numeric" style={styles.sessionInput} accessibilityLabel="Barème" />
-        <Text style={styles.label}>Titre (optionnel)</Text>
-        <TextInput value={createTitle} onChangeText={setCreateTitle} placeholder="Devoir" style={styles.sessionInput} accessibilityLabel="Titre de l'évaluation" />
+        <FormField
+          label="Date"
+          required
+          type="date"
+          value={createDate}
+          onChangeText={setCreateDate}
+          placeholder="Ex. 2026-08-22"
+          accessibilityLabel="Date de l'évaluation"
+        />
+        <FormField
+          label="Barème"
+          required
+          type="amount"
+          value={createScale}
+          onChangeText={setCreateScale}
+          placeholder="Ex. 20"
+          accessibilityLabel="Barème"
+        />
+        <FormField
+          label="Titre"
+          optional
+          value={createTitle}
+          onChangeText={setCreateTitle}
+          placeholder="Ex. Devoir"
+          accessibilityLabel="Titre de l'évaluation"
+        />
 
         <TouchableOpacity
           style={[styles.primaryButton, creating && styles.disabledButton]}
@@ -523,7 +544,12 @@ export default function TeacherGradesScreen() {
                 >
                   <Text style={[styles.absentText, draft.status === "absent" && styles.absentTextActive]}>Abs</Text>
                 </TouchableOpacity>
-                <TextInput
+                <FormField
+                  label={`Note de ${student.name}`}
+                  hideVisibleLabel
+                  variant="compact"
+                  type="amount"
+                  keyboardType="decimal-pad"
                   value={draft.status === "absent" ? "" : draft.value}
                   onChangeText={(value) =>
                     setDrafts((current) => ({
@@ -531,10 +557,10 @@ export default function TeacherGradesScreen() {
                       [key]: { value, status: value.trim() ? "graded" : "not_submitted" },
                     }))
                   }
-                  keyboardType="decimal-pad"
                   placeholder={`/${selected.scale}`}
                   editable={canEnter && !saving && draft.status !== "absent"}
-                  style={styles.gradeInput}
+                  containerStyle={styles.gradeField}
+                  inputStyle={styles.gradeInput}
                   testID={USABILITY_TEST_IDS.notesGradeInput(key)}
                   accessibilityLabel={`Note de ${student.name} sur ${selected.scale}`}
                 />
@@ -798,16 +824,13 @@ const styles = StyleSheet.create({
   },
   studentInfo: { flex: 1, paddingRight: 12 },
   name: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
+  gradeField: {
+    width: 86,
+  },
   gradeInput: {
-    width: 78,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 14,
-    padding: 10,
-    textAlign: "center",
     fontSize: 18,
     fontWeight: "900",
-    color: "#0F172A",
+    textAlign: "center",
   },
   historyCard: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 14, marginBottom: 10 },
   historyTitle: { color: "#0F172A", fontSize: 17, fontWeight: "900" },

@@ -22,6 +22,8 @@
     "test:platform-notification-sync": "npx --yes tsx src/lib/platformNotificationSync.test.ts",
     "test:data-truth": "npx --yes tsx src/lib/dataTruth.test.ts",
     "test:mobile-crud-parity": "npx --yes tsx src/lib/mobileCrudParity.test.ts",
+    "test:form-fields": "npx --yes tsx src/lib/formFieldValidation.test.ts",
+    "verify:mobile-form-fields": "node scripts/verify-mobile-form-fields.js",
     "test:scope": "npx --yes tsx src/lib/scope.test.ts",
     "verify:mobile-security": "node scripts/verify-mobile-security.js",
     "verify:mobile-rbac-live": "node scripts/verify-mobile-rbac-live.js",

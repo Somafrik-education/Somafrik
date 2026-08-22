@@ -1,8 +1,15 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
+import FormField from "./FormField";
 import SecretHandoffModal, { type OneShotCredentials } from "./SecretHandoffModal";
+import {
+  firstErrorKey,
+  hasFieldErrors,
+  trimField,
+  validateUserIdentityDraft,
+} from "../lib/formFieldValidation";
 import { canGrantUserRole, resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { createClientsUser, grantClientsUserRole, updateClientsUser } from "../services/api";
@@ -49,16 +56,32 @@ export default function UserMutationControls({
   const [saving, setSaving] = useState(false);
   const [granting, setGranting] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [handoff, setHandoff] = useState<OneShotCredentials | null>(null);
+  const firstNameRef = useRef<TextInput>(null);
+  const lastNameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
   const editing = Boolean(row);
+
+  const clearFieldError = (key: string) => {
+    setFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
 
   const openForm = (target?: UserRow) => {
     setError("");
+    setFieldErrors({});
     setFirstName(target?.firstName ?? "");
     setLastName(target?.lastName ?? "");
     setEmail(target?.email ?? "");
@@ -68,35 +91,56 @@ export default function UserMutationControls({
   };
 
   const submit = async () => {
-    if (!firstName.trim() || !lastName.trim()) {
-      setError("Prénom et nom sont obligatoires.");
-      return;
-    }
-    if (!editing && !temporaryPassword.trim()) {
-      setError("Mot de passe temporaire obligatoire à la création.");
+    if (saving) return;
+    const nextErrors = validateUserIdentityDraft({
+      firstName,
+      lastName,
+      email,
+      phone,
+      temporaryPassword,
+      editing,
+    });
+    if (hasFieldErrors(nextErrors)) {
+      setFieldErrors(nextErrors);
+      setError("");
+      const focus = firstErrorKey(
+        ["firstName", "lastName", "email", "phone", "temporaryPassword"],
+        nextErrors,
+      );
+      if (focus === "firstName") firstNameRef.current?.focus();
+      else if (focus === "lastName") lastNameRef.current?.focus();
+      else if (focus === "email") emailRef.current?.focus();
+      else if (focus === "phone") phoneRef.current?.focus();
+      else if (focus === "temporaryPassword") passwordRef.current?.focus();
       return;
     }
     setSaving(true);
     setError("");
+    setFieldErrors({});
     try {
       const schoolCode = String(session?.school?.code ?? session?.user.schoolCode ?? "").trim();
+      const first = trimField(firstName);
+      const last = trimField(lastName);
+      const emailValue = trimField(email);
+      const phoneValue = trimField(phone);
+      const secret = trimField(temporaryPassword);
       if (editing && row) {
         await updateClientsUser(row.id, {
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          email: email.trim(),
-          phone: phone.trim(),
+          firstName: first,
+          lastName: last,
+          email: emailValue,
+          phone: phoneValue,
         });
         setOpen(false);
         await onChanged();
         return;
       }
       const created = await createClientsUser({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        temporaryPassword: temporaryPassword.trim(),
+        firstName: first,
+        lastName: last,
+        email: emailValue,
+        phone: phoneValue,
+        temporaryPassword: secret,
         ...(schoolCode && schoolCode !== "*" ? { schoolCode } : {}),
       });
       const login = String(created.publicId || created.identifier || created.id || "").trim();
@@ -104,7 +148,7 @@ export default function UserMutationControls({
         throw new Error("L'identifiant du compte n'a pas pu être remis. Aucun succès local.");
       }
       setOpen(false);
-      setHandoff({ login, secret: temporaryPassword.trim() });
+      setHandoff({ login, secret });
       await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enregistrement impossible.");
@@ -143,17 +187,77 @@ export default function UserMutationControls({
       onClose={() => setOpen(false)}
       onSubmit={() => void submit()}
     >
-      <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} placeholder="Prénom" editable={!saving} />
-      <TextInput style={styles.input} value={lastName} onChangeText={setLastName} placeholder="Nom" editable={!saving} />
-      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="Email" autoCapitalize="none" editable={!saving} />
-      <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder="Téléphone" keyboardType="phone-pad" editable={!saving} />
+      <FormField
+        ref={firstNameRef}
+        label="Prénom"
+        required
+        type="name"
+        autoComplete="given-name"
+        value={firstName}
+        onChangeText={(value) => {
+          setFirstName(value);
+          clearFieldError("firstName");
+        }}
+        placeholder="Ex. Esther"
+        error={fieldErrors.firstName}
+        editable={!saving}
+      />
+      <FormField
+        ref={lastNameRef}
+        label="Nom"
+        required
+        type="name"
+        autoComplete="family-name"
+        value={lastName}
+        onChangeText={(value) => {
+          setLastName(value);
+          clearFieldError("lastName");
+        }}
+        placeholder="Ex. Okito"
+        error={fieldErrors.lastName}
+        editable={!saving}
+      />
+      <FormField
+        ref={emailRef}
+        label="Email"
+        optional
+        type="email"
+        value={email}
+        onChangeText={(value) => {
+          setEmail(value);
+          clearFieldError("email");
+        }}
+        placeholder="Ex. parent@email.com"
+        error={fieldErrors.email}
+        editable={!saving}
+      />
+      <FormField
+        ref={phoneRef}
+        label="Téléphone"
+        optional
+        type="phone"
+        value={phone}
+        onChangeText={(value) => {
+          setPhone(value);
+          clearFieldError("phone");
+        }}
+        placeholder="Ex. +243 8xx xxx xxx"
+        error={fieldErrors.phone}
+        editable={!saving}
+      />
       {!editing ? (
-        <TextInput
-          style={styles.input}
+        <FormField
+          ref={passwordRef}
+          label="Mot de passe temporaire"
+          required
+          type="password"
           value={temporaryPassword}
-          onChangeText={setTemporaryPassword}
-          placeholder="Mot de passe temporaire"
-          secureTextEntry
+          onChangeText={(value) => {
+            setTemporaryPassword(value);
+            clearFieldError("temporaryPassword");
+          }}
+          placeholder="Ex. mot de passe à remettre"
+          error={fieldErrors.temporaryPassword}
           editable={!saving}
         />
       ) : null}
@@ -214,6 +318,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" },
   small: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#E2E8F0", justifyContent: "center", alignSelf: "flex-start" },
   smallText: { color: "#0F172A", fontWeight: "800" },
-  input: { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, padding: 12, marginBottom: 10, color: "#0F172A" },
   hint: { color: "#64748B", fontWeight: "700" },
 });
