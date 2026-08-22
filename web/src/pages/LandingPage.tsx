@@ -60,8 +60,8 @@ const HERO_HIGHLIGHTS = [
     detail: MODULE_SUMMARY,
   },
   {
-    title: "Rôles & droits",
-    subtitle: "Permissions CRUD ajustables",
+    title: "Rôles et droits",
+    subtitle: "Droits d'accès ajustables",
     detail: "Matrice configurable par le Super administrateur ou par établissement ; chaque profil accède à son périmètre.",
   },
 ] as const;

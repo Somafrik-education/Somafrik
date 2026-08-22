@@ -7,10 +7,10 @@ type Props = {
 };
 
 const KINDS: Array<{ kind: DemoAccountKind; label: string }> = [
-  { kind: "teacher", label: "Remplir un compte enseignant demo" },
+  { kind: "teacher", label: "Remplir un compte enseignant démo" },
   { kind: "school_admin", label: "Remplir administrateur établissement démo" },
-  { kind: "prefet", label: "Remplir préfet des études demo" },
-  { kind: "secretary", label: "Remplir secrétaire demo" },
+  { kind: "prefet", label: "Remplir préfet des études démo" },
+  { kind: "secretary", label: "Remplir secrétaire démo" },
   { kind: "country_admin", label: "Remplir administrateur pays démo" },
 ];
 

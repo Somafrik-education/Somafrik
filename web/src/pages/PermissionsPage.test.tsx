@@ -165,7 +165,7 @@ const expectedGrant: RbacCrudGrant = {
 
 async function selectPath(roleKey: string, moduleKey: string) {
   render(<PermissionsPage />);
-  await screen.findByText("Rôles & permissions");
+  await screen.findByText("Rôles et droits");
   fireEvent.change(document.getElementById("rbac-country") as HTMLSelectElement, { target: { value: "CD" } });
   await waitFor(() => {
     const schoolSelect = document.getElementById("rbac-school") as HTMLSelectElement;
@@ -195,7 +195,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
 
   it("enregistre uniquement le delta CRUD du module sélectionné", async () => {
     await selectPath("PREFET_ETUDES", "students");
-    const deleteBox = await screen.findByLabelText("Élèves DELETE");
+    const deleteBox = await screen.findByLabelText("Élèves Suppression");
     fireEvent.click(deleteBox);
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
     await waitFor(() => expect(patchMock).toHaveBeenCalled());
@@ -211,7 +211,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
 
   it("verrouille READ tant que UPDATE/DELETE sont actifs (dépendance)", async () => {
     await selectPath("PREFET_ETUDES", "students");
-    const readBox = await screen.findByLabelText("Élèves READ");
+    const readBox = await screen.findByLabelText("Élèves Lecture");
     expect(readBox).toBeChecked();
     expect(readBox).toBeDisabled();
     fireEvent.click(readBox);
@@ -220,8 +220,8 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
 
   it("cocher CREATE force et verrouille READ", async () => {
     await selectPath("PREFET_ETUDES", "students");
-    const createBox = await screen.findByLabelText("Élèves CREATE");
-    const readBox = await screen.findByLabelText("Élèves READ");
+    const createBox = await screen.findByLabelText("Élèves Création");
+    const readBox = await screen.findByLabelText("Élèves Lecture");
     expect(createBox).not.toBeDisabled();
     fireEvent.click(createBox);
     expect(createBox).toBeChecked();
@@ -231,7 +231,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
 
   it("SUPER_ADMIN Utilisateurs : cases obligatoires checked + disabled", async () => {
     await selectPath("SUPER_ADMIN", "users");
-    for (const action of ["CREATE", "READ", "UPDATE", "DELETE"]) {
+    for (const action of ["Création", "Lecture", "Modification", "Suppression"]) {
       const box = await screen.findByLabelText(`Utilisateurs ${action}`);
       expect(box).toBeChecked();
       expect(box).toBeDisabled();

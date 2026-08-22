@@ -201,6 +201,14 @@ function main() {
   assert.match(webPermissions, /label:\s*"Lecture"/);
   assert.match(webPermissions, /label:\s*"Modification"/);
   assert.match(webPermissions, /label:\s*"Suppression"/);
+  assert.match(webPermissions, /title="Rôles et droits"/);
+
+  const adminLayout = fs.readFileSync(
+    path.join(ROOT, "web", "src", "pages", "administration", "AdministrationLayout.tsx"),
+    "utf8",
+  );
+  assert.match(adminLayout, /label:\s*"Rôles et droits"/);
+  assert.doesNotMatch(adminLayout, /Rôles & permissions/);
 
   if (offenders.length) {
     console.error("UI française non conforme :\n" + [...new Set(offenders)].sort().join("\n"));

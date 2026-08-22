@@ -709,7 +709,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                         {resolvedPeriodRows[index]?.active ? (
                           <Badge tone="info">En cours</Badge>
                         ) : (
-                          <Badge tone="neutral">Inactive</Badge>
+                          <Badge tone="neutral">Inactif</Badge>
                         )}
                         {periodMode === "periode" && periodRows.length > 1 ? (
                           <Button

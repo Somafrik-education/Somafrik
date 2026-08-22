@@ -303,7 +303,7 @@ export function PermissionsPage() {
   return (
     <Card className="p-6">
       <SectionHeader
-        title="Rôles & droits"
+        title="Rôles et droits"
         description={
           canManage
             ? "Point canonique Super administrateur : pays → établissement → rôle → module → droits. PostgreSQL est la source d’autorité."

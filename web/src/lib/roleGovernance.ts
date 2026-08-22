@@ -18,7 +18,7 @@ export { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
  */
 export const ROLE_GOVERNANCE_NOTES = {
   superadminMatrix: `Parcours obligatoire : pays (code + nom) → établissement (code + nom) → rôle cible (catalogue PostgreSQL) → module fonctionnel → droits CRUD.`,
-  localOperational: "Les rôles métier d'établissement se gèrent dans Administration → Rôles & permissions (plus dans Configuration).",
+  localOperational: "Les rôles métier d'établissement se gèrent dans Administration → Rôles et droits (plus dans Configuration).",
 } as const;
 
 /** Modules pilotés au niveau pays (droits Admin Pays). */

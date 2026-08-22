@@ -137,7 +137,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Communication : Messages, Annonces et Notifications sont accessibles via les icônes
   // en haut à droite (voir Topbar), pas dans le menu latéral.
 
-  // Administration (module à onglets : Utilisateurs, Rôles & permissions, Documents, Conformité)
+  // Administration (module à onglets : Utilisateurs, Rôles et droits, Documents, Conformité)
   { view: "users", path: "/administration", label: "Administration", group: "administration" },
 
   // Paramètres (module à onglets : Établissement, Graphiques, Conception bulletins)
