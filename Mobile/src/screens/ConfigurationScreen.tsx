@@ -18,30 +18,30 @@ type ConfigSection = {
 
 const sections: ConfigSection[] = [
   {
-    title: "Periodes academiques",
-    description: "Trimestres, semestres et periode active.",
+    title: "Périodes académiques",
+    description: "Trimestres, semestres et période en cours.",
     view: "configuration",
   },
   {
-    title: "Niveaux et filieres",
-    description: "Listes pedagogiques de l etablissement.",
+    title: "Niveaux et filières",
+    description: "Listes pédagogiques de l’établissement.",
     view: "configuration",
   },
   {
     title: "Classes et cours",
-    description: "Referentiels utilises dans les cours et notes.",
+    description: "Référentiels utilisés dans les cours et notes.",
     entity: "classes",
     view: "classes",
   },
   {
-    title: "Utilisateurs et roles",
-    description: "Identites et roles actifs issus de PostgreSQL.",
+    title: "Utilisateurs et rôles",
+    description: "Identités et rôles actifs issus de PostgreSQL.",
     route: "Users",
     view: "users",
   },
   {
     title: "Statuts de paiement",
-    description: "Parametres financiers de l etablissement.",
+    description: "Paramètres financiers de l’établissement.",
     entity: "paymentStatuses",
     view: "configuration",
   },
@@ -57,7 +57,7 @@ export default function ConfigurationScreen() {
   if (!canReadView(session, "Configuration")) {
     return (
       <View style={styles.denied}>
-        <Text style={styles.deniedText}>Acces configuration non autorise pour ce role.</Text>
+        <Text style={styles.deniedText}>Accès à la configuration non autorisé pour ce rôle.</Text>
       </View>
     );
   }
@@ -77,28 +77,28 @@ export default function ConfigurationScreen() {
     >
       <Text style={styles.title}>Configuration</Text>
       <Text style={styles.subtitle}>
-        Hub etablissement aligne web v13 — periodes, referentiels et pilotage local.
+        Centre de configuration de l’établissement aligné avec l’interface Web — périodes, référentiels et pilotage local.
       </Text>
 
       <SchoolSelector />
 
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Perimetre actif</Text>
+        <Text style={styles.summaryTitle}>Périmètre actif</Text>
         <Text style={styles.summaryText}>
           {activeSchoolCode === "*"
-            ? `${availableSchools.length} etablissement(s)`
+            ? `${availableSchools.length} établissement(s)`
             : availableSchools.find((school) => school.code === activeSchoolCode)?.name ?? activeSchoolCode}
         </Text>
         <Text style={styles.summaryMeta}>
           {academicConfigData.schoolCode
-            ? `Mode : ${academicConfigData.periodMode} • Echelle : /${academicConfigData.defaultScale}`
+            ? `Organisation : ${academicConfigData.periodMode} • Échelle : /${academicConfigData.defaultScale}`
             : "Configuration établissement non chargée."}
         </Text>
         <Text style={styles.summaryMeta}>
-          Periodes : {academicConfigData.periods?.length ?? 0} • Cours : {academicConfigData.subjects?.length ?? 0}
+          Périodes : {academicConfigData.periods?.length ?? 0} • Cours : {academicConfigData.subjects?.length ?? 0}
         </Text>
         {!canEditSettings && (
-          <Text style={styles.readOnly}>Lecture seule — droits Parametres Etablissement requis pour modifier.</Text>
+          <Text style={styles.readOnly}>Lecture seule — droits Paramètres Établissement requis pour modifier.</Text>
         )}
       </View>
 
