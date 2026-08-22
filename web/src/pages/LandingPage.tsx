@@ -62,15 +62,15 @@ const HERO_HIGHLIGHTS = [
   {
     title: "Rôles & droits",
     subtitle: "Permissions CRUD ajustables",
-    detail: "Matrice configurable par le Superadmin ou par établissement ; chaque profil accède à son périmètre.",
+    detail: "Matrice configurable par le Super administrateur ou par établissement ; chaque profil accède à son périmètre.",
   },
 ] as const;
 
 const ROLES = [
   {
     index: "01",
-    title: "Superadmin",
-    description: "Pilote Somafrik : pays, établissements, droits Admin Pays/School, conformité et supervision globale.",
+    title: "Super administrateur",
+    description: "Pilote Somafrik : pays, établissements, droits des administrateurs pays et établissement, conformité et supervision globale.",
   },
   {
     index: "02",
@@ -93,7 +93,7 @@ const SECURITY = [
   "Identification par code établissement et identifiant unique utilisateur.",
   "Données séparées par pays, établissement, rôle et périmètre opérationnel.",
   "Actions synchronisées avec le backend pour éviter les écarts mobile / web.",
-  "Matrice de permissions configurable par le Superadmin ou par établissement ; chaque profil accède à son périmètre.",
+  "Matrice de permissions configurable par le Super administrateur ou par établissement ; chaque profil accède à son périmètre.",
 ];
 
 const NAV_LINKS = [
@@ -253,7 +253,7 @@ export function LandingPage() {
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
-                  {["Superadmin", "Admin pays", "Admin établissement"].map((profile) => (
+                  {["Super administrateur", "Administrateur pays", "Administrateur établissement"].map((profile) => (
                     <div
                       key={profile}
                       className="rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600"
@@ -263,7 +263,7 @@ export function LandingPage() {
                   ))}
                 </div>
                 <p className="mt-4 text-xs font-semibold leading-relaxed text-muted">
-                  Les autres rôles entrent selon les accès configurés par le Superadmin : secrétaire, préfet,
+                  Les autres rôles entrent selon les accès configurés par le Super administrateur : secrétaire, préfet,
                   enseignants, parents et élèves.
                 </p>
                 <Button
