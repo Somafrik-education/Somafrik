@@ -281,7 +281,7 @@ export default function TeacherMutationControls({
         />
       ) : null}
       {!editing ? (
-        <Text style={styles.hint}>Cycle canonique : compte Utilisateurs puis rôle Enseignant. POST /teachers est interdit.</Text>
+        <Text style={styles.hint}>Cycle canonique : créez le compte dans Utilisateurs, puis attribuez le rôle Enseignant.</Text>
       ) : null}
     </CanonicalMutationModal>
   );
