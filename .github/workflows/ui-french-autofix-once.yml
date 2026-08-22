@@ -1,0 +1,62 @@
+name: UI French Autofix Once
+
+on:
+  push:
+    branches: [fix/p1-ui-french-copy-audit]
+
+permissions:
+  contents: write
+
+jobs:
+  autofix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p1-ui-french-copy-audit
+      - name: Corriger les libellés administrateur restants
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const edits = [
+            {
+              file: 'web/src/pages/LandingPage.tsx',
+              pairs: [
+                ['Superadmin', 'Super administrateur'],
+                ['Admin Pays/School', 'administrateurs pays et établissement'],
+                ['Admin pays', 'Administrateur pays'],
+                ['Admin établissement', 'Administrateur établissement'],
+              ],
+            },
+            {
+              file: 'web/src/pages/parametres/EstablishmentProfilePage.tsx',
+              pairs: [
+                ["Seul l&apos;Admin School peut modifier le profil.", "Seul l’administrateur de l’établissement peut modifier le profil."],
+                ["Seul l'Admin School peut modifier le profil.", "Seul l’administrateur de l’établissement peut modifier le profil."],
+              ],
+            },
+          ];
+          for (const { file, pairs } of edits) {
+            let source = fs.readFileSync(file, 'utf8');
+            const before = source;
+            for (const [from, to] of pairs) source = source.split(from).join(to);
+            if (source !== before) {
+              fs.writeFileSync(file, source);
+              console.log(`modifié: ${file}`);
+            }
+          }
+          NODE
+      - name: Commit ciblé
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Aucune modification"
+            exit 0
+          fi
+          git config user.name "Somafrik UI French Bot"
+          git config user.email "somafrik@outlook.fr"
+          git add web/src/pages/LandingPage.tsx web/src/pages/parametres/EstablishmentProfilePage.tsx
+          git commit -m "fix(ui): franciser les libellés administrateur restants"
+          git push origin HEAD:fix/p1-ui-french-copy-audit
