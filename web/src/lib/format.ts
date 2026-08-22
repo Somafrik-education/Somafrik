@@ -17,8 +17,75 @@ export function getInitials(firstName?: string, lastName?: string): string {
   return `${firstName?.[0] ?? ""}${lastName?.[0] ?? ""}`.toUpperCase() || "·";
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  "super_admin": "Super administrateur",
+  "super admin": "Super administrateur",
+  "super administrateur somafrik": "Super administrateur Somafrik",
+  "country_admin": "Administrateur pays",
+  "admin pays": "Administrateur pays",
+  "school_admin": "Administrateur d’établissement",
+  "admin school": "Administrateur d’établissement",
+  "administrateur ecole": "Administrateur d’établissement",
+  "administrateur etablissement": "Administrateur d’établissement",
+  teacher: "Enseignant",
+  student: "Élève / Étudiant",
+  parent_student: "Parent",
+  principal: "Directeur",
+  prefet: "Préfet des études",
+  secretary: "Secrétaire",
+  accountant: "Comptable",
+  adjoint: "Directeur adjoint",
+  supervisor: "Surveillant",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "Actif",
+  actif: "Actif",
+  inactive: "Inactif",
+  inactif: "Inactif",
+  disabled: "Désactivé",
+  desactive: "Désactivé",
+  enabled: "Activé",
+  archived: "Archivé",
+  archive: "Archivé",
+  pending: "En attente",
+  approved: "Approuvé",
+  validated: "Validé",
+  rejected: "Refusé",
+  suspended: "Suspendu",
+  suspendu: "Suspendu",
+  cancelled: "Annulé",
+  canceled: "Annulé",
+  paid: "Payé",
+  unpaid: "Impayé",
+  overdue: "En retard",
+  draft: "Brouillon",
+  read: "Lu",
+  unread: "Non lu",
+};
+
+const SCOPE_LABELS: Record<string, string> = {
+  global: "Global",
+  country: "Pays",
+  pays: "Pays",
+  school: "Établissement",
+  establishment: "Établissement",
+  etablissement: "Établissement",
+};
+
 export function displayRoleName(role?: string): string {
-  return role ?? "Utilisateur";
+  if (!role) return "Utilisateur";
+  return ROLE_LABELS[normalize(role)] ?? role;
+}
+
+export function displayStatusName(status?: string): string {
+  if (!status) return "—";
+  return STATUS_LABELS[normalize(status)] ?? status;
+}
+
+export function displayScopeName(scope?: string): string {
+  if (!scope) return "—";
+  return SCOPE_LABELS[normalize(scope)] ?? scope;
 }
 
 export function isPastDate(value?: string): boolean {
