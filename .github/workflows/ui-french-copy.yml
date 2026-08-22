@@ -11,55 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fix-final-copy:
-    name: Fix final UI French copy
-    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: fix/p1-ui-french-copy-audit
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22.12.0"
-      - name: Corriger les dernières copies visibles
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const file = 'web/src/pages/UsersPage.tsx';
-          let source = fs.readFileSync(file, 'utf8');
-          const replacements = [
-            ["PostgreSQL (users.school_id et user_roles)", "l’établissement et les rôles actifs associés"],
-            ['"Super Admin"', '"Super administrateur"'],
-            ["Compte validé. L'Admin École peut désormais se connecter.", "Compte validé. L’administrateur de l’établissement peut désormais se connecter."],
-            ["${filtered.length} compte(s) plateforme. Le Super Admin valide et gère les Admin École créés par les Admin Pays.", "${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays."],
-            ["${filtered.length} admin(s) école dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.", "${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement."],
-            ["Ce compte Admin École a été créé par un Admin Pays", "Ce compte Administrateur établissement a été créé par un Administrateur pays"],
-            ["Admin Pays et Admin School sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité.", "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité."],
-            ["En tant qu'Admin Pays, vous pouvez créer ce compte Admin École", "En tant qu’Administrateur pays, vous pouvez créer ce compte Administrateur établissement"],
-            ["Admin école rattaché à un établissement précis", "Administrateur établissement rattaché à un établissement précis"],
-          ];
-          for (const [from, to] of replacements) source = source.split(from).join(to);
-          fs.writeFileSync(file, source);
-          NODE
-          node scripts/verify-ui-french-copy.js
-      - name: Commit UsersPage uniquement
-        shell: bash
-        run: |
-          if git diff --quiet -- web/src/pages/UsersPage.tsx; then
-            echo "Aucune modification"
-            exit 0
-          fi
-          git config user.name "Somafrik UI French Bot"
-          git config user.email "somafrik@outlook.fr"
-          git add web/src/pages/UsersPage.tsx
-          git commit -m "fix(ui): finaliser la francisation UsersPage"
-          git push origin HEAD:fix/p1-ui-french-copy-audit
-
   ci-ui-french-copy:
     name: CI / verify:ui-french-copy
     runs-on: ubuntu-latest
