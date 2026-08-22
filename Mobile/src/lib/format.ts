@@ -77,7 +77,6 @@ export function isInternalSchoolRole(role?: string): boolean {
     "accountant",
     "school_admin",
     "principal",
-    "proviseur",
     "prefet",
     "secretary",
     "adjoint",
@@ -90,6 +89,90 @@ export function isSchoolAdminRole(role?: string): boolean {
   return ["admin school", "administrateur ecole", "administrateur etablissement", "school_admin"].includes(key);
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  "super_admin": "Super administrateur",
+  "super admin": "Super administrateur",
+  "super administrateur somafrik": "Super administrateur Somafrik",
+  "country_admin": "Administrateur pays",
+  "admin pays": "Administrateur pays",
+  "school_admin": "Administrateur d’établissement",
+  "admin school": "Administrateur d’établissement",
+  "administrateur ecole": "Administrateur d’établissement",
+  "administrateur etablissement": "Administrateur d’établissement",
+  "teacher": "Enseignant",
+  "student": "Élève / Étudiant",
+  "parent_student": "Parent",
+  "principal": "Directeur",
+  "prefet": "Préfet des études",
+  "secretary": "Secrétaire",
+  "accountant": "Comptable",
+  "adjoint": "Directeur adjoint",
+  "supervisor": "Surveillant",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "Actif",
+  actif: "Actif",
+  inactive: "Inactif",
+  inactif: "Inactif",
+  disabled: "Désactivé",
+  desactive: "Désactivé",
+  enabled: "Activé",
+  archived: "Archivé",
+  archive: "Archivé",
+  pending: "En attente",
+  approved: "Approuvé",
+  validated: "Validé",
+  rejected: "Refusé",
+  suspended: "Suspendu",
+  suspendu: "Suspendu",
+  cancelled: "Annulé",
+  canceled: "Annulé",
+  paid: "Payé",
+  unpaid: "Impayé",
+  overdue: "En retard",
+  draft: "Brouillon",
+  read: "Lu",
+  unread: "Non lu",
+};
+
+const SCOPE_LABELS: Record<string, string> = {
+  global: "Global",
+  country: "Pays",
+  pays: "Pays",
+  school: "Établissement",
+  establishment: "Établissement",
+  etablissement: "Établissement",
+};
+
+const PERMISSION_ACTION_LABELS: Record<string, string> = {
+  read: "Lecture",
+  create: "Création",
+  update: "Modification",
+  delete: "Suppression",
+  suspend: "Suspension",
+  grant: "Attribution",
+  revoke: "Retrait",
+};
+
+/** Présentation uniquement : les codes/rôles canoniques restent inchangés dans les API. */
 export function displayRoleName(role?: string): string {
-  return role ?? "Utilisateur";
+  if (!role) return "Utilisateur";
+  return ROLE_LABELS[normalize(role)] ?? role;
+}
+
+/** Présentation uniquement : traduit les statuts techniques connus sans modifier leur valeur canonique. */
+export function displayStatusName(status?: string): string {
+  if (!status) return "—";
+  return STATUS_LABELS[normalize(status)] ?? status;
+}
+
+export function displayScopeName(scope?: string): string {
+  if (!scope) return "—";
+  return SCOPE_LABELS[normalize(scope)] ?? scope;
+}
+
+export function displayPermissionActionName(action?: string): string {
+  if (!action) return "—";
+  return PERMISSION_ACTION_LABELS[normalize(action)] ?? action;
 }
