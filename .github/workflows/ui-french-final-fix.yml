@@ -1,4 +1,5 @@
 name: UI French Final Fix
+# Exécution ponctuelle avant merge.
 
 on:
   push:
