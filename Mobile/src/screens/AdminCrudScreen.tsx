@@ -44,7 +44,7 @@ import { createTeacherRecordId, isTeacherUserRole } from "../lib/userTeacherSync
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 
 const LEGACY_CLASSES_CRUD_RETIRED_MESSAGE =
-  "Le CRUD Classes via AdminCrud est retire. Utilisez l'ecran Classes (lecture) ou /api/classes (web).";
+  "Le CRUD Classes via AdminCrud est retire. Utilisez l'ecran Classes (POST/PATCH /api/classes).";
 const LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE =
   "Le CRUD Etablissements via AdminCrud est retire. Utilisez le web /etablissements (API PostgreSQL).";
 

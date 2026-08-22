@@ -120,6 +120,7 @@ type AdminDataContextValue = {
   loadTeachers: () => Promise<void>;
   loadStudents: () => Promise<void>;
   loadClasses: () => Promise<void>;
+  loadAssignments: () => Promise<void>;
   loadAnnouncements: () => Promise<void>;
   loadMessages: () => Promise<void>;
   loadSchools: () => Promise<void>;
@@ -171,6 +172,18 @@ type AdminDataContextValue = {
 };
 
 const AdminDataContext = createContext<AdminDataContextValue | undefined>(undefined);
+
+/** P0 CRUD parity: screens canoniques appellent les APIs PostgreSQL. Ce garde-fou refuse tout commitEntity local. */
+const LOCAL_WRITE_FORBIDDEN_ENTITIES = new Set([
+  "classes",
+  "schools",
+  "students",
+  "teachers",
+  "assignments",
+  "payments",
+  "paymentStatuses",
+  "courses",
+]);
 
 const emptyAcademicConfig: AcademicManagementConfig = {
   schoolCode: "",
@@ -621,6 +634,18 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       if (resourceScopeKeyRef.current !== scope) return;
       setClassesSnapshot((current) => snapshotFromFailure(error, current.data));
+    }
+  }, [session]);
+
+  const loadAssignments = useCallback(async () => {
+    if (!session) return;
+    const scope = resourceScopeKeyRef.current;
+    try {
+      const rows = await getAssignments();
+      if (resourceScopeKeyRef.current !== scope) return;
+      setAssignmentsData(rows);
+    } catch {
+      if (resourceScopeKeyRef.current !== scope) return;
     }
   }, [session]);
 
@@ -1093,6 +1118,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       loadTeachers,
       loadStudents,
       loadClasses,
+      loadAssignments,
       loadAnnouncements,
       loadMessages,
       loadSchools,
@@ -1140,12 +1166,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         return state[entity];
       },
       createItem: (entity, item) => {
-        if (
-          entity === "classes" || entity === "schools" || entity === "students" ||
-          entity === "teachers" || entity === "assignments" ||
-          entity === "payments" || entity === "paymentStatuses" ||
-          entity === "courses"
-        ) return;
+        if (LOCAL_WRITE_FORBIDDEN_ENTITIES.has(entity)) return;
         if (entity === "announcements") {
           void createClientsAnnouncement(item as Record<string, unknown>)
             .then((created) => {
@@ -1179,12 +1200,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         commitEntity(entity, (items) => [applyItemScope(entity, item, session, state), ...items]);
       },
       updateItem: (entity, item) => {
-        if (
-          entity === "classes" || entity === "schools" || entity === "students" ||
-          entity === "teachers" || entity === "assignments" ||
-          entity === "payments" || entity === "paymentStatuses" ||
-          entity === "courses"
-        ) return;
+        if (LOCAL_WRITE_FORBIDDEN_ENTITIES.has(entity)) return;
         if (entity === "announcements") {
           void updateClientsAnnouncement(String(item.id), item as Record<string, unknown>)
             .then((updated) =>
@@ -1208,12 +1224,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         commitEntity(entity, (items) => items.map((row) => (row.id === item.id ? applyItemScope(entity, item, session, state) : row)));
       },
       deleteItem: (entity, id) => {
-        if (
-          entity === "classes" || entity === "schools" || entity === "students" ||
-          entity === "teachers" || entity === "assignments" ||
-          entity === "payments" || entity === "paymentStatuses" ||
-          entity === "courses"
-        ) return;
+        if (LOCAL_WRITE_FORBIDDEN_ENTITIES.has(entity)) return;
         commitEntity(entity, (items) => items.filter((row) => row.id !== id));
       },
       upsertPresenceItems: (items) => {
@@ -1355,6 +1366,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     loadTeachers,
     loadStudents,
     loadClasses,
+    loadAssignments,
     loadAnnouncements,
     loadMessages,
     loadSchools,

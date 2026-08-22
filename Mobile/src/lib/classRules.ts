@@ -18,7 +18,7 @@ export function classNamesMatch(left: unknown, right: unknown): boolean {
 
 /**
  * Projection lecture : filtre établissement.
- * Les mutations Classes passent par /api/classes (web) — plus de CRUD legacy mobile.
+ * Les mutations Classes passent par l'écran Classes → POST/PATCH /api/classes. Pas de CRUD legacy.
  */
 export function filterSchoolClassRecords(classes: Row[], schoolCode?: string) {
   if (!schoolCode || schoolCode === "*") return classes;

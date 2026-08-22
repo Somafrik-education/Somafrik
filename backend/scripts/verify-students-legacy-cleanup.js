@@ -126,10 +126,20 @@ function runUnitGuards() {
     path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"),
     "utf8",
   );
-  assert.match(
-    mobileContext,
-    /entity === "classes" \|\| entity === "schools" \|\| entity === "students"/,
+  const forbiddenMatch = mobileContext.match(
+    /const LOCAL_WRITE_FORBIDDEN_ENTITIES = new Set\(\[([\s\S]*?)\]\s*\)/,
   );
+  assert.ok(forbiddenMatch, "LOCAL_WRITE_FORBIDDEN_ENTITIES défini");
+  assert.match(forbiddenMatch[1], /["']students["']/, "students dans LOCAL_WRITE_FORBIDDEN_ENTITIES");
+  const createItem = mobileContext.match(/createItem:\s*\(entity,\s*item\)\s*=>\s*\{([\s\S]*?)\n      \},\n      updateItem:/);
+  const updateItem = mobileContext.match(/updateItem:\s*\(entity,\s*item\)\s*=>\s*\{([\s\S]*?)\n      \},\n      deleteItem:/);
+  const deleteItem = mobileContext.match(/deleteItem:\s*\(entity,\s*id\)\s*=>\s*\{([\s\S]*?)\n      \},\n      upsertPresenceItems:/);
+  assert.ok(createItem, "createItem présent");
+  assert.ok(updateItem, "updateItem présent");
+  assert.ok(deleteItem, "deleteItem présent");
+  assert.match(createItem[1], /LOCAL_WRITE_FORBIDDEN_ENTITIES\.has\(entity\)/, "createItem refuse students");
+  assert.match(updateItem[1], /LOCAL_WRITE_FORBIDDEN_ENTITIES\.has\(entity\)/, "updateItem refuse students");
+  assert.match(deleteItem[1], /LOCAL_WRITE_FORBIDDEN_ENTITIES\.has\(entity\)/, "deleteItem refuse students");
 
   const legacyBackOffice = fs.readFileSync(path.join(ROOT, "BackOffice/app.js"), "utf8");
   assert.doesNotMatch(legacyBackOffice, /\/backoffice\/state/);

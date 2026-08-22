@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import AnnouncementMutationControls from "../components/AnnouncementMutationControls";
 import QueryStateView from "../components/QueryStateView";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
@@ -15,7 +16,7 @@ import {
   type CanonicalAnnouncement,
 } from "../services/domainHydrationApi";
 
-export default function AnnouncementsScreen({ navigation }: any) {
+export default function AnnouncementsScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
   const { session } = useAuth();
@@ -80,18 +81,7 @@ export default function AnnouncementsScreen({ navigation }: any) {
             </View>
           ) : (
             <>
-              {canCreate && (
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={styles.addButton}
-                  onPress={() => navigation.navigate("AdminCrud", { entity: "announcements" })}
-                  accessibilityRole="button"
-                  accessibilityLabel="Nouvelle annonce"
-                >
-                  <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.addButtonText}>Nouvelle annonce</Text>
-                </TouchableOpacity>
-              )}
+              {canCreate ? <AnnouncementMutationControls onChanged={() => load()} /> : null}
               {snapshot.status !== "success" ? (
                 <QueryStateView
                   snapshot={snapshot}
@@ -150,7 +140,7 @@ export default function AnnouncementsScreen({ navigation }: any) {
       ListFooterComponent={
         canRead ? (
           <Text style={styles.hint}>
-            La modification d'une annonce existante reste masquée tant qu'un écran d'édition canonique ciblé n'est pas branché.
+            L'édition d'une annonce existante reste masquée tant qu'un écran d'édition canonique n'est pas branché. La création passe par POST /backoffice/announcements.
           </Text>
         ) : null
       }

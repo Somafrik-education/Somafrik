@@ -1,8 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, RefreshControl } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
+import TeacherMutationControls from "../components/TeacherMutationControls";
+import AssignmentMutationControls from "../components/AssignmentMutationControls";
 import { useAdminData } from "../context/AdminDataContext";
 import {
   resolveTeacherClassesForRecord,
@@ -10,11 +12,27 @@ import {
 } from "../lib/establishment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
+import { getSubjects, type SchoolSubject } from "../services/api";
 
 export default function TeachersScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { assignmentsData, teachersSnapshot: snapshot, loadTeachers: load, resourceScopeKey } = useAdminData();
+  const {
+    assignmentsData,
+    teachersSnapshot: snapshot,
+    loadTeachers,
+    loadAssignments,
+    loadClasses,
+    classesData,
+    resourceScopeKey,
+  } = useAdminData();
+  const [subjects, setSubjects] = useState<SchoolSubject[]>([]);
+
+  const load = useCallback(async () => {
+    await Promise.all([loadTeachers(), loadAssignments(), loadClasses()]);
+    const rows = await getSubjects().catch(() => [] as SchoolSubject[]);
+    setSubjects(rows);
+  }, [loadTeachers, loadAssignments, loadClasses]);
 
   useFocusEffect(
     useCallback(() => {
@@ -40,6 +58,13 @@ export default function TeachersScreen() {
             Enseignants
           </Text>
           <Text style={styles.subtitle}>Équipe pédagogique chargée depuis PostgreSQL</Text>
+          <TeacherMutationControls onChanged={() => load()} />
+          <AssignmentMutationControls
+            teachers={snapshot.status === "success" ? snapshot.data : []}
+            classes={classesData}
+            subjects={subjects}
+            onChanged={() => load()}
+          />
           {showQueryState ? (
             <QueryStateView
               snapshot={snapshot}
@@ -69,13 +94,14 @@ export default function TeachersScreen() {
               <Text style={styles.meta} numberOfLines={3}>Classes : {teacherClasses.join(", ") || "Non assignées"}</Text>
               {teacher.status ? <Text style={styles.meta}>Statut : {teacher.status}</Text> : null}
               {teacher.phone ? <Text style={styles.phone}>{teacher.phone}</Text> : null}
+              <TeacherMutationControls row={teacher} onChanged={() => load()} />
             </View>
           </View>
         );
       }}
       ListFooterComponent={
         <Text style={styles.lifecycleHint}>
-          La création d'une identité Enseignant se fait depuis Comptes utilisateurs. Les actions non branchées ne sont pas simulées sur Mobile.
+          Les GRANT/REVOKE de la matrice RBAC restent Web-only. L'identité enseignant se crée via Utilisateurs puis rôle Enseignant.
         </Text>
       }
     />
@@ -95,7 +121,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 14,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
   },
   iconBox: {
     width: 50,

@@ -205,6 +205,28 @@ async function main() {
     assert.equal(blockedCreate.status, 403, JSON.stringify(blockedCreate.data));
     assert.equal(blockedCreate.data.code, "TEACHER_IDENTITY_MUST_COME_FROM_USERS");
 
+    const orchestrated = await request("/backoffice/users/create-teacher", {
+      method: "POST",
+      token: admin.token,
+      body: teacherPayload({
+        firstName: "Awa",
+        lastName: "Ndiaye",
+        phone: "+243 811 000 088",
+        email: "awa.ndiaye.teacher@example.com",
+        temporaryPassword: "TempPass12",
+      }),
+    });
+    assert.equal(orchestrated.status, 201, JSON.stringify(orchestrated.data));
+    assert.ok(orchestrated.data?.credentials?.login, "login one-shot attendu");
+    assert.equal(orchestrated.data.credentials.temporarySecret, "TempPass12");
+    assert.equal(orchestrated.data.user?.temporaryPassword, undefined);
+    assert.equal(orchestrated.data.user?.temporarySecret, undefined);
+    const orchestratedListed = await request("/teachers", { token: admin.token });
+    assert.ok(
+      (orchestratedListed.data ?? []).some((row) => String(row.userId) === String(orchestrated.data.user.id)),
+      "profil enseignant attendu après POST /backoffice/users/create-teacher",
+    );
+
     const created = await createTeacherViaUsers(admin.token, teacherPayload());
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.match(String(created.data.teacherCode), /ENS-\d{4}$/);

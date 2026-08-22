@@ -1,32 +1,26 @@
 import { useCallback } from "react";
-import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import PaymentReceiptCard from "../components/PaymentReceiptCard";
+import PaymentMutationControls from "../components/PaymentMutationControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
-import { useAuth } from "../context/AuthContext";
-import { canMutateEntity, canReadEntity } from "../domain/security/permissions";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
 export default function PaymentsScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { session } = useAuth();
-  const { paymentsData, paymentsSnapshot, loadPayments, studentsData } = useAdminData();
+  const { paymentsData, paymentsSnapshot, loadPayments, loadStudents, studentsData } = useAdminData();
   const paymentStats = getPaymentStats(paymentsData);
-  const canCreate = canMutateEntity(session, "payments", "CREATE");
-  const canUpdate = canMutateEntity(session, "payments", "UPDATE");
-  const canReadPayments = canReadEntity(session, "payments");
-  const canOpenPaymentAdmin = canReadPayments || canCreate || canUpdate;
   const paymentsReady =
     paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
 
   useFocusEffect(
     useCallback(() => {
-      void loadPayments();
-    }, [loadPayments]),
+      void Promise.all([loadPayments(), loadStudents()]);
+    }, [loadPayments, loadStudents]),
   );
 
   const showQueryState = paymentsSnapshot.status !== "success";
@@ -53,17 +47,14 @@ export default function PaymentsScreen({ navigation }: any) {
             />
           ) : (
             <View testID={DATA_TRUTH_TEST_IDS.paymentsList}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={styles.summaryCard}
-                onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments" })}
-              >
+              <PaymentMutationControls students={studentsData} onChanged={() => loadPayments()} />
+              <View style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Frais de scolarité estimés</Text>
                 <Text style={styles.summaryAmount}>
                   {(paymentStats.paidAmount + paymentStats.pendingAmount).toLocaleString("fr-FR")} FC
                 </Text>
                 <Text style={styles.summarySub}>Reste estimé : {paymentStats.pendingAmount.toLocaleString("fr-FR")} FC</Text>
-              </TouchableOpacity>
+              </View>
 
               <View style={styles.summaryCardSecondary}>
                 <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
@@ -74,25 +65,15 @@ export default function PaymentsScreen({ navigation }: any) {
               </View>
 
               <View style={styles.row}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={styles.smallCard}
-                  onPress={() => canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "paid" })}
-                >
+                <View style={styles.smallCard}>
                   <Text style={styles.smallNumber}>{paymentStats.paid}</Text>
                   <Text style={styles.smallLabel}>Payés</Text>
-                </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={styles.smallCard}
-                  onPress={() =>
-                    canOpenPaymentAdmin && navigation.navigate("AdminCrud", { entity: "payments", filter: "pending" })
-                  }
-                >
+                <View style={styles.smallCard}>
                   <Text style={styles.smallNumber}>{paymentStats.pending}</Text>
                   <Text style={styles.smallLabel}>Impayés</Text>
-                </TouchableOpacity>
+                </View>
               </View>
 
               <Text style={styles.sectionTitle}>Reçus récents</Text>
@@ -111,17 +92,7 @@ export default function PaymentsScreen({ navigation }: any) {
           />
         );
       }}
-      ListFooterComponent={
-        canCreate ? (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.button}
-            onPress={() => Alert.alert("Saisie indisponible", DATA_TRUTH_COPY.writePaymentsWebOnly)}
-          >
-            <Text style={styles.buttonText}>Enregistrer un paiement</Text>
-          </TouchableOpacity>
-        ) : null
-      }
+      ListFooterComponent={null}
     />
   );
 }
