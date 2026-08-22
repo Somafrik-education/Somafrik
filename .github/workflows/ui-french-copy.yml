@@ -11,6 +11,94 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  fix-final-copy:
+    name: Fix final UI French copy
+    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p1-ui-french-copy-audit
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Corriger les dernières copies visibles
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'web/src/pages/UsersPage.tsx';
+          let source = fs.readFileSync(file, 'utf8');
+          const replacements = [
+            ["Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.", "Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour l’établissement et les rôles actifs associés, puis révoque immédiatement les sessions existantes."],
+            ['"Super Admin"', '"Super administrateur"'],
+            ["L'Admin École", "l’administrateur de l’établissement"],
+            ["Ce compte Admin École", "Ce compte Administrateur établissement"],
+            ["En tant qu'Admin Pays", "En tant qu’Administrateur pays"],
+            ["Admin Pays", "Administrateur pays"],
+            ["Admin École", "Administrateur établissement"],
+          ];
+          for (const [from, to] of replacements) source = source.split(from).join(to);
+          fs.writeFileSync(file, source);
+          NODE
+          node scripts/verify-ui-french-copy.js
+      - name: Restaurer le workflow permanent et retirer le workflow temporaire
+        shell: bash
+        run: |
+          cat > .github/workflows/ui-french-copy.yml <<'YAML'
+          name: UI French Copy
+
+          on:
+            pull_request:
+              branches: [develop, main]
+            push:
+              branches: [develop, main]
+
+          concurrency:
+            group: ui-french-copy-${{ github.workflow }}-${{ github.ref }}
+            cancel-in-progress: true
+
+          jobs:
+            ci-ui-french-copy:
+              name: CI / verify:ui-french-copy
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-node@v4
+                  with:
+                    node-version: "22.12.0"
+                - name: verify:ui-french-copy
+                  run: node scripts/verify-ui-french-copy.js
+
+            security-ui-french-copy:
+              name: Security / verify:ui-french-copy
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-node@v4
+                  with:
+                    node-version: "22.12.0"
+                - name: verify:ui-french-copy
+                  run: node scripts/verify-ui-french-copy.js
+          YAML
+          rm -f .github/workflows/ui-french-final-fix.yml
+      - name: Commit ciblé
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Aucune modification"
+            exit 0
+          fi
+          git config user.name "Somafrik UI French Bot"
+          git config user.email "somafrik@outlook.fr"
+          git add web/src/pages/UsersPage.tsx .github/workflows/ui-french-copy.yml
+          git add -u .github/workflows/ui-french-final-fix.yml || true
+          git commit -m "fix(ui): finaliser la francisation avant merge"
+          git push origin HEAD:fix/p1-ui-french-copy-audit
+
   ci-ui-french-copy:
     name: CI / verify:ui-french-copy
     runs-on: ubuntu-latest
