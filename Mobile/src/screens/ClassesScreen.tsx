@@ -35,6 +35,7 @@ import { OFFLINE_COPY, OFFLINE_TEST_IDS } from "../lib/offlineModeSpec";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
+import ClassMutationControls from "../components/ClassMutationControls";
 
 export default function ClassesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -109,6 +110,7 @@ export default function ClassesScreen({ navigation }: any) {
           </Text>
         </View>
       </View>
+      <ClassMutationControls onChanged={async () => { await Promise.all([loadClasses(), loadStudents()]); }} />
 
       <View style={[styles.searchBox, blockNetworkActions && styles.disabledControl]} pointerEvents={blockNetworkActions ? "none" : "auto"}>
         <Ionicons name="search-outline" size={22} color="#94A3B8" />
@@ -222,18 +224,19 @@ export default function ClassesScreen({ navigation }: any) {
           );
 
           return (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.classCard}
-              testID={CLASS_CARD_TEST_ID(item.name)}
-              accessibilityRole="button"
-              accessibilityLabel={`Ouvrir la classe ${item.name}`}
-              onPress={() =>
-                canOpenStudents && navigation.navigate("Students", {
-                  className: item.name,
-                })
-              }
-            >
+            <View style={styles.classCard}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.classMain}
+                testID={CLASS_CARD_TEST_ID(item.name)}
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir la classe ${item.name}`}
+                onPress={() =>
+                  canOpenStudents && navigation.navigate("Students", {
+                    className: item.name,
+                  })
+                }
+              >
               <View style={styles.classIconBox}>
                 <Ionicons name="grid-outline" size={26} color="#2563EB" />
               </View>
@@ -268,7 +271,12 @@ export default function ClassesScreen({ navigation }: any) {
                 size={20}
                 color="#CBD5E1"
               />
-            </TouchableOpacity>
+              </TouchableOpacity>
+              <ClassMutationControls
+                row={item}
+                onChanged={async () => { await Promise.all([loadClasses(), loadStudents()]); }}
+              />
+            </View>
           );
         }}
       />
@@ -459,13 +467,15 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     padding: 16,
     marginBottom: 14,
-    flexDirection: "row",
-    alignItems: "center",
     shadowColor: "#0F172A",
     shadowOpacity: 0.06,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
+  },
+  classMain: {
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   classIconBox: {

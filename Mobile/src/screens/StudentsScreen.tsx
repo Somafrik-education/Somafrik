@@ -52,6 +52,8 @@ import {
 
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 
+import StudentMutationControls from "../components/StudentMutationControls";
+
 import type { PresenceItem } from "../data/catalog";
 
 
@@ -219,9 +221,14 @@ export default function StudentsScreen({ route, navigation }: any) {
 
 
 
-  // PR1 consolidation : création élève uniquement via Classes → Inscrire (web/API PG).
-  const canManageStudents = false;
-  const canCreateStudent = false;
+  const renderStudentCreate = () => (
+    <StudentMutationControls
+      className={className}
+      classes={classesData}
+      createTestId={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
+      onChanged={() => loadStudents()}
+    />
+  );
 
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
 
@@ -270,6 +277,8 @@ export default function StudentsScreen({ route, navigation }: any) {
 
 
       return (
+
+        <View>
 
         <TouchableOpacity
 
@@ -356,12 +365,19 @@ export default function StudentsScreen({ route, navigation }: any) {
           </View>
 
         </TouchableOpacity>
+          <StudentMutationControls
+            row={student}
+            className={className}
+            classes={classesData}
+            onChanged={() => loadStudents()}
+          />
+        </View>
 
       );
 
     },
 
-    [className, openStudentDetail, presenceByStudentId],
+    [className, classesData, loadStudents, openStudentDetail, presenceByStudentId],
 
   );
 
@@ -435,41 +451,9 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           </View>
 
-
-
-          {canManageStudents && (
-
-            <TouchableOpacity
-
-              activeOpacity={0.85}
-
-              style={styles.addButton}
-
-              testID={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
-
-              onPress={() =>
-
-                navigation.navigate("AdminCrud", {
-
-                  entity: "students",
-
-                  ...(className !== "Toutes les classes" ? { className } : {}),
-
-                })
-
-              }
-
-            >
-
-              <Ionicons name="add" size={26} color="#FFFFFF" />
-
-            </TouchableOpacity>
-
-          )}
-
         </View>
 
-
+          {renderStudentCreate()}
 
         <View style={styles.searchBox}>
 
@@ -547,7 +531,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
     [
 
-      canManageStudents,
+      renderStudentCreate,
 
       className,
 
@@ -613,41 +597,11 @@ export default function StudentsScreen({ route, navigation }: any) {
 
         </Text>
 
-        {isClassEmpty && canManageStudents ? (
-
-          <TouchableOpacity
-
-            activeOpacity={0.85}
-
-            style={styles.emptyActionButton}
-
-            testID={CLASSES_STUDENT_TEST_IDS.studentsAddButton}
-
-            onPress={() =>
-
-              navigation.navigate("AdminCrud", {
-
-                entity: "students",
-
-                ...(className !== "Toutes les classes" ? { className } : {}),
-
-              })
-
-            }
-
-          >
-
-            <Text style={styles.emptyActionText}>{CLASSES_STUDENT_COPY.addStudentAction}</Text>
-
-          </TouchableOpacity>
-
-        ) : null}
-
       </View>
 
     ),
 
-    [canManageStudents, className, emptyMessage, isClassEmpty, navigation],
+    [className, emptyMessage, isClassEmpty],
 
   );
 

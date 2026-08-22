@@ -2,6 +2,7 @@
 
 const {
   asTrimmed,
+  toIsoDate,
   ignoreClientScope,
   isSuperAdminPrincipal,
   isCountryAdminPrincipal,
@@ -176,7 +177,7 @@ async function activateTeacherProfile(tx, user, school, principal) {
     const ambiguous = await tx.findAmbiguousTeacherIdentity(school.id, {
       firstName: user.first_name,
       lastName: user.last_name,
-      birthDate: user.birth_date ? String(user.birth_date).slice(0, 10) : "",
+      birthDate: toIsoDate(user.birth_date) || "",
       gender: user.gender,
       excludeUserId: user.id,
     });

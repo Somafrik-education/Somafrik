@@ -1211,6 +1211,15 @@ class PostgresRepository {
     return this._clientsStore;
   }
 
+  /**
+   * Store clients lié au client PostgreSQL de la transaction courante.
+   * withTransaction du store rejoint ce scope (pas de second BEGIN/COMMIT).
+   */
+  createTransactionalClientsStore(tx) {
+    const { createClientsPgStore } = require("./clientsPgStore");
+    return createClientsPgStore(this.createTxScope(tx));
+  }
+
   listClientsProjection() {
     return this.getClientsStore().listProjection();
   }

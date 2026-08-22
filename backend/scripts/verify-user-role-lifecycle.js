@@ -80,8 +80,13 @@ function assertStaticGuards() {
   assert.match(mobileCrud, /entityCreateViaContactsOnly\(entity\)/);
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
   assert.match(server, /TEACHER_IDENTITY_MUST_COME_FROM_USERS/);
+  assert.match(server, /backoffice\/users\/create-teacher/);
   assert.match(server, /roles\/grant/);
   assert.match(server, /roles\/revoke/);
+  const createTeacher = fs.readFileSync(path.join(ROOT, "backend/lib/createTeacherIdentityFromUsers.js"), "utf8");
+  assert.match(createTeacher, /createTransactionalClientsStore/);
+  assert.match(createTeacher, /withTransaction/);
+  assert.doesNotMatch(createTeacher, /sans rôle Enseignant/);
 }
 
 async function main() {

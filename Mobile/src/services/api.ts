@@ -367,6 +367,137 @@ export function getClasses() {
   return request<unknown[]>("/classes");
 }
 
+export type AcademicYearOption = {
+  id: string;
+  name: string;
+  schoolCode?: string;
+  isCurrent?: boolean;
+};
+
+export type EducationCatalogLevel = {
+  id: string;
+  name: string;
+  schoolActive?: boolean;
+};
+
+export type EducationCatalogStream = {
+  id: string;
+  name: string;
+  levelId?: string | null;
+  schoolActive?: boolean;
+};
+
+export type EducationCatalogGroup = {
+  id: string;
+  name: string;
+  code?: string;
+  schoolActive?: boolean;
+};
+
+export type EducationSchoolCatalog = {
+  schoolCode?: string;
+  labels?: { levelLabel?: string; trackLabel?: string; groupLabel?: string };
+  levels: EducationCatalogLevel[];
+  streams: EducationCatalogStream[];
+  groups: EducationCatalogGroup[];
+};
+
+export function getAcademicYears() {
+  return request<unknown>("/v2/academic-years").then((payload) => unwrapList(payload) as AcademicYearOption[]);
+}
+
+export function getEducationCatalog() {
+  return request<EducationSchoolCatalog>("/education-reference/catalog");
+}
+
+export function createSchoolClass(payload: {
+  academicYearId: string;
+  levelId: string;
+  streamId?: string | null;
+  groupId: string;
+  status?: "active" | "inactive";
+}) {
+  return request<Record<string, unknown>>("/classes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSchoolClass(
+  classCode: string,
+  payload: {
+    levelId?: string;
+    streamId?: string | null;
+    groupId?: string;
+    status?: "active" | "inactive";
+  },
+) {
+  return request<Record<string, unknown>>(`/classes/${encodeURIComponent(classCode)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function enrollClassStudent(
+  classCode: string,
+  payload: {
+    firstName: string;
+    lastName: string;
+    gender?: string;
+    birthDate?: string;
+    parentPhone?: string;
+    parentEmail?: string;
+  },
+) {
+  return request<{
+    student?: Record<string, unknown>;
+    credentials?: { login?: string; temporarySecret?: string };
+  }>(`/classes/${encodeURIComponent(classCode)}/students`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSchoolStudent(studentId: string, payload: Record<string, unknown>) {
+  return request<Record<string, unknown>>(`/students/${encodeURIComponent(studentId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSchoolStudent(studentId: string) {
+  return request(`/students/${encodeURIComponent(studentId)}`, { method: "DELETE" });
+}
+
+/** POST /teachers est 403 (`TEACHER_IDENTITY_MUST_COME_FROM_USERS`). Ne pas appeler depuis l'UI. */
+export function createSchoolTeacher(payload: {
+  firstName: string;
+  lastName: string;
+  gender?: string;
+  birthDate: string;
+  entryDate?: string;
+  phone?: string;
+  email?: string;
+  speciality?: string;
+  temporaryPassword: string;
+}) {
+  return request<Record<string, unknown>>("/teachers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSchoolTeacher(teacherCode: string, payload: Record<string, unknown>) {
+  return request<Record<string, unknown>>(`/teachers/${encodeURIComponent(teacherCode)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSchoolTeacher(teacherCode: string) {
+  return request(`/teachers/${encodeURIComponent(teacherCode)}`, { method: "DELETE" });
+}
+
 export function getCourses() {
   return request<unknown[]>("/courses");
 }
@@ -384,12 +515,23 @@ export type SchoolSubject = {
 };
 
 export function getSubjects() {
-  return request<SchoolSubject[] | { items: SchoolSubject[] }>("/v2/subjects");
+  return request<unknown>("/v2/subjects").then((payload) => unwrapList(payload) as SchoolSubject[]);
 }
 
-export function createTeacherAssignment(payload: Partial<TeacherAssignment>) {
+export type TeacherAssignmentWritePayload = {
+  teacherCode?: string;
+  teacherId?: string;
+  classCode?: string;
+  className?: string;
+  subjectCode?: string;
+  subject?: string;
+  course?: string;
+  assignmentRole?: string;
+};
+
+export function createTeacherAssignment(payload: TeacherAssignmentWritePayload) {
   const { schoolCode: _schoolCode, schoolId: _schoolId, academicYearId: _year, id: _id, ...canonical } =
-    payload as Partial<TeacherAssignment> & Record<string, unknown>;
+    payload as TeacherAssignmentWritePayload & Record<string, unknown>;
   return request<TeacherAssignment>("/assignments", {
     method: "POST",
     body: JSON.stringify(canonical),
@@ -620,7 +762,33 @@ export function sendClientsMessage(payload: Record<string, unknown>, options?: M
 }
 
 export function createClientsUser(payload: Record<string, unknown>) {
-  return request("/backoffice/users", {
+  return request<Record<string, unknown>>("/backoffice/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function grantClientsUserRole(userId: string, role: string) {
+  return request<Record<string, unknown>>(`/backoffice/users/${encodeURIComponent(userId)}/roles/grant`, {
+    method: "POST",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function createTeacherIdentityFromUsers(payload: {
+  firstName: string;
+  lastName: string;
+  birthDate?: string;
+  phone?: string;
+  email?: string;
+  gender?: string;
+  temporaryPassword: string;
+  schoolCode?: string;
+}) {
+  return request<{
+    user?: Record<string, unknown>;
+    credentials?: { login?: string; temporarySecret?: string };
+  }>("/backoffice/users/create-teacher", {
     method: "POST",
     body: JSON.stringify(payload),
   });

@@ -7,6 +7,7 @@ const {
   assertTeacherCreateScopeImmutable,
   isExactTeacherCivilIdentity,
 } = require("./teachersManagement");
+const { toIsoDate } = require("./clientsManagement");
 const { generateNextTeacherCodes, extractEnsSequence } = require("./teacherCodeAllocation");
 
 function expectStatus(fn, statusCode, code) {
@@ -90,6 +91,28 @@ function main() {
       { firstName: "Awa", lastName: "Diop", birthDate: "" },
     ),
     false,
+  );
+
+  // pg DATE → Date JS : String(date).slice(0, 10) n'est pas YYYY-MM-DD.
+  const pgDate = new Date("1990-05-01T00:00:00.000Z");
+  assert.notEqual(String(pgDate).slice(0, 10), "1990-05-01");
+  assert.equal(toIsoDate(pgDate), "1990-05-01");
+  assert.equal(toIsoDate("1990-05-01"), "1990-05-01");
+  assert.equal(
+    isExactTeacherCivilIdentity(
+      { firstName: "Awa", lastName: "Ndiaye", birthDate: String(pgDate).slice(0, 10), gender: "F" },
+      { firstName: "Awa", lastName: "Ndiaye", birthDate: "1990-05-01", gender: "F" },
+    ),
+    false,
+    "slice(0,10) sur Date JS ne doit pas matcher une date ISO",
+  );
+  assert.equal(
+    isExactTeacherCivilIdentity(
+      { firstName: "Awa", lastName: "Ndiaye", birthDate: toIsoDate(pgDate), gender: "F" },
+      { firstName: "Awa", lastName: "Ndiaye", birthDate: "1990-05-01", gender: "F" },
+    ),
+    true,
+    "toIsoDate(Date) doit matcher l'identité civile existante",
   );
 
   assert.equal(extractEnsSequence("CD-2026-0001-ENS-0012"), 12);

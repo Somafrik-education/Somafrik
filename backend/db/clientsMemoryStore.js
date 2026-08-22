@@ -6,6 +6,7 @@ const userRoleLifecycleService = require("../lib/userRoleLifecycleService");
 const { hashSecret } = require("../services/credentialService");
 const {
   asTrimmed,
+  toIsoDate,
   parsePayload,
   mapUserRow,
   mapUserRowToAuthAccount,
@@ -79,6 +80,7 @@ function createClientsMemoryStore(seed = {}) {
   }
 
   const auditLog = [];
+  let transactionDepth = 0;
 
   function isActiveUserStatus(status) {
     const normalized = String(status ?? "active").toLowerCase();
@@ -331,7 +333,7 @@ function createClientsMemoryStore(seed = {}) {
             return isExactTeacherCivilIdentity(identity, {
               firstName: user.first_name,
               lastName: user.last_name,
-              birthDate: user.birth_date ? String(user.birth_date).slice(0, 10) : "",
+              birthDate: toIsoDate(user.birth_date) || "",
               gender: user.gender,
             });
           }) ?? null
@@ -688,6 +690,10 @@ function createClientsMemoryStore(seed = {}) {
     getCountryByCode: (code) => txApi.getCountryByCode(code),
     getUserById: (id) => txApi.getUserById(id),
     async withTransaction(fn) {
+      if (transactionDepth > 0) {
+        return fn(txApi);
+      }
+      transactionDepth += 1;
       const snapshot = clone(tables);
       const auditSnapshot = [...auditLog];
       try {
@@ -699,6 +705,8 @@ function createClientsMemoryStore(seed = {}) {
         auditLog.length = 0;
         auditLog.push(...auditSnapshot);
         throw error;
+      } finally {
+        transactionDepth -= 1;
       }
     },
     listProjection() {

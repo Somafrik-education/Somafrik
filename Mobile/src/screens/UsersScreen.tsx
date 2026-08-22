@@ -3,6 +3,7 @@ import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
+import UserMutationControls from "../components/UserMutationControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
@@ -30,6 +31,7 @@ export default function UsersScreen() {
         <>
           <Text style={styles.title}>Utilisateurs</Text>
           <Text style={styles.subtitle}>Identités et rôles actifs chargés depuis PostgreSQL</Text>
+          <UserMutationControls onChanged={() => load()} />
           {snapshot.status !== "success" ? (
             <QueryStateView
               snapshot={snapshot}
@@ -67,13 +69,14 @@ export default function UsersScreen() {
               ) : null}
               {user.email ? <Text style={styles.meta} numberOfLines={2}>{user.email}</Text> : null}
               {user.phone ? <Text style={styles.meta}>{user.phone}</Text> : null}
+              <UserMutationControls row={user} onChanged={() => load()} />
             </View>
           </View>
         );
       }}
       ListFooterComponent={
         <Text style={styles.hint}>
-          Ce lot expose la lecture canonique. Les GRANT/REVOKE restent soumis aux contrats serveur et ne sont pas simulés localement.
+          L'attribution du rôle Enseignant à un compte est autorisée. La modification de la matrice RBAC reste Web-only.
         </Text>
       }
     />
