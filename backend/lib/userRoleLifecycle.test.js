@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { createClientsMemoryStore } = require("../db/clientsMemoryStore");
+const { toIsoDate } = require("./clientsManagement");
 const {
   USER_ROLE_ERROR,
   displayRoles,
@@ -38,6 +39,10 @@ async function expectRejection(promise, { status, code }) {
 }
 
 async function main() {
+  const pgDate = new Date("1990-05-01T00:00:00.000Z");
+  assert.notEqual(String(pgDate).slice(0, 10), "1990-05-01");
+  assert.equal(toIsoDate(pgDate), "1990-05-01");
+
   assert.deepEqual(sortRoleLabelsByPrivilege(["Enseignant", "Préfet des études", "Secrétaire"]), [
     "Préfet des études",
     "Secrétaire",

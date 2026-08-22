@@ -519,7 +519,15 @@ class FallbackRepository {
     return this;
   }
 
+  createTransactionalClientsStore(_tx) {
+    return this.getClientsStore();
+  }
+
   async withTransaction(fn) {
+    const store = this.getClientsStore();
+    if (typeof store.withTransaction === "function") {
+      return store.withTransaction(() => fn(null));
+    }
     return fn(null);
   }
 

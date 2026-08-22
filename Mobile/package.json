@@ -21,6 +21,7 @@
     "test:user-teacher-sync": "npx --yes tsx src/lib/userTeacherSync.test.ts",
     "test:platform-notification-sync": "npx --yes tsx src/lib/platformNotificationSync.test.ts",
     "test:data-truth": "npx --yes tsx src/lib/dataTruth.test.ts",
+    "test:mobile-crud-parity": "npx --yes tsx src/lib/mobileCrudParity.test.ts",
     "test:scope": "npx --yes tsx src/lib/scope.test.ts",
     "verify:mobile-security": "node scripts/verify-mobile-security.js",
     "verify:mobile-rbac-live": "node scripts/verify-mobile-rbac-live.js",

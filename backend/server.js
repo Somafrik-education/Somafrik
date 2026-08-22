@@ -2393,6 +2393,23 @@ app.post("/api/backoffice/users/provision", requireAuth, requirePermission("POST
   res.status(201).json(sanitizeUserForResponse(created));
 }));
 
+app.post("/api/backoffice/users/create-teacher", requireAuth, requirePermission("POST /api/backoffice/users/create-teacher"), asyncHandler(async (req, res) => {
+  if (!rbacService.canAccess(req.principal, "POST /api/backoffice/users/:userId/roles/grant")) {
+    throw denyPermission("Utilisateurs:UPDATE requis pour attribuer le rôle Enseignant.");
+  }
+  const { createTeacherIdentityFromUsers } = require("./lib/createTeacherIdentityFromUsers");
+  const created = await createTeacherIdentityFromUsers(
+    repository,
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.status(201).json({
+    user: sanitizeUserForResponse(created.user),
+    credentials: created.credentials,
+  });
+}));
+
 app.patch("/api/backoffice/users/:userId", requireAuth, requirePermission("PATCH /api/backoffice/users/:userId"), asyncHandler(async (req, res) => {
   const updated = await repository.updateClientsUser(req.params.userId, req.body ?? {}, req.principal, clientsAuditMetaFromRequest(req));
   res.json(sanitizeUserForResponse(updated));

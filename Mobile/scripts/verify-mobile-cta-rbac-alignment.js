@@ -202,6 +202,22 @@ function main() {
     /"PATCH \/api\/backoffice\/notifications\/:notificationId":\s*\["ALL_PRIVILEGES",\s*"COUNTRY_PRIVILEGES"\]/,
   );
 
+  for (const rel of [
+    path.join("screens", "PaymentsScreen.tsx"),
+    path.join("screens", "AnnouncementsScreen.tsx"),
+    path.join("screens", "StudentsScreen.tsx"),
+    path.join("screens", "UsersScreen.tsx"),
+    path.join("screens", "TeachersScreen.tsx"),
+    path.join("screens", "ClassesScreen.tsx"),
+  ]) {
+    const source = stripComments(readSrc(rel));
+    assert.doesNotMatch(
+      source,
+      /navigate\(["']AdminCrud["']/,
+      `${rel}: les CTA live ne doivent plus ouvrir AdminCrud`,
+    );
+  }
+
   const ci = fs.readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
   const security = fs.readFileSync(path.join(ROOT, ".github", "workflows", "security.yml"), "utf8");
   const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));

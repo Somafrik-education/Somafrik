@@ -185,10 +185,12 @@ async function main() {
   assert.match(paymentsScreen, /loadPayments/);
   assert.match(paymentsScreen, /PaymentReceiptCard/);
   assert.match(studentPayments, /showItems/);
-  assert.match(paymentsScreen, /writePaymentsWebOnly/);
+  assert.match(paymentsScreen, /PaymentMutationControls/);
+  assert.doesNotMatch(paymentsScreen, /writePaymentsWebOnly/);
+  assert.doesNotMatch(paymentsScreen, /AdminCrud/);
   const adminCrud = read(path.join(SRC, "screens", "AdminCrudScreen.tsx"));
   assert.doesNotMatch(adminCrud, /createSchoolPayment/);
-  console.log("OK: finance GET canonique + reçu, POST legacy désactivé");
+  console.log("OK: finance GET canonique + reçu, POST /payments via écran canonique");
 
   const persist = api;
   assert.match(persist, /canPersistFullSession/);

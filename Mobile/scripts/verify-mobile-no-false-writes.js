@@ -1,6 +1,6 @@
 /**
- * L0b — aucune action Mobile ne doit annoncer/presenter une mutation locale
- * comme une écriture canonique PostgreSQL.
+ * L0b / P0 CRUD parity — aucune action Mobile ne doit annoncer une mutation
+ * locale comme une écriture PostgreSQL. Les écrans canoniques appellent les APIs.
  */
 const assert = require("assert");
 const fs = require("fs");
@@ -14,21 +14,32 @@ function read(rel) {
   return fs.readFileSync(path.join(SRC, rel), "utf8");
 }
 
-function main() {
-  const unit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "mobileMutationSafety.test.ts")], {
+function runUnit(rel) {
+  const unit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", rel)], {
     cwd: MOBILE,
     encoding: "utf8",
   });
   if (unit.status !== 0) {
-    throw new Error(unit.stderr || unit.stdout || "mobileMutationSafety.test.ts failed");
+    throw new Error(unit.stderr || unit.stdout || `${rel} failed`);
   }
   process.stdout.write(unit.stdout || "");
+}
+
+function main() {
+  runUnit("mobileMutationSafety.test.ts");
+  runUnit("mobileCrudParity.test.ts");
 
   const navigator = read(path.join("navigation", "AppNavigator.tsx"));
   const gate = read(path.join("screens", "SafeAdminCrudScreen.tsx"));
   const permissions = read(path.join("screens", "PermissionsScreen.tsx"));
   const rawAdminCrud = read(path.join("screens", "AdminCrudScreen.tsx"));
   const users = read(path.join("screens", "UsersScreen.tsx"));
+  const classes = read(path.join("screens", "ClassesScreen.tsx"));
+  const teachers = read(path.join("screens", "TeachersScreen.tsx"));
+  const students = read(path.join("screens", "StudentsScreen.tsx"));
+  const payments = read(path.join("screens", "PaymentsScreen.tsx"));
+  const announcements = read(path.join("screens", "AnnouncementsScreen.tsx"));
+  const adminCtx = read(path.join("context", "AdminDataContext.tsx"));
 
   assert.match(navigator, /SafeAdminCrudScreen/);
   assert.doesNotMatch(
@@ -49,8 +60,6 @@ function main() {
   assert.match(permissions, /Modification Mobile désactivée/);
   assert.match(permissions, /GRANT\/REVOKE ne sont plus simulés localement/);
 
-  // Le code historique reste encapsulé pour courses/assignments uniquement :
-  // ces deux branches appellent explicitement les API avant le fallback générique.
   assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?await createTeacherAssignment/);
   assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?await createCourse/);
   assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?deleteTeacherAssignment/);
@@ -58,12 +67,62 @@ function main() {
 
   const safety = read(path.join("lib", "mobileMutationSafety.ts"));
   assert.match(safety, /MOBILE_GENERIC_ADMIN_CRUD_IN_RC1 = false/);
+  assert.match(safety, /MOBILE_ROLE_PERMISSION_MUTATION_ENABLED = false/);
 
-  // L'écran canonique Utilisateurs est lecture seule : le reset local de
-  // l'ancien AdminCrud ne peut plus être atteint par la navigation runtime.
-  assert.doesNotMatch(users, /resetUserPassword|temporaryPassword|updateItem\(/);
+  assert.match(classes, /ClassMutationControls/);
+  assert.match(read(path.join("components", "ClassMutationControls.tsx")), /createSchoolClass/);
+  assert.match(read(path.join("components", "ClassMutationControls.tsx")), /updateSchoolClass/);
+  assert.match(read(path.join("components", "ClassMutationControls.tsx")), /testID="classes-create"/);
+  assert.match(read(path.join("lib", "mobileCrudParity.ts")), /canMutateEntity\(session, entity, "CREATE"\)/);
 
-  console.log("OK: faux writes AdminCrud/RBAC bloqués; courses/assignments câblés mais hors RC1 Mobile");
+  assert.match(users, /UserMutationControls/);
+  assert.doesNotMatch(users, /resetUserPassword|updateItem\(/);
+  const userControls = read(path.join("components", "UserMutationControls.tsx"));
+  assert.match(userControls, /createClientsUser/);
+  assert.match(userControls, /updateClientsUser/);
+  assert.match(userControls, /grantClientsUserRole/);
+  assert.match(userControls, /testID="users-create"/);
+  assert.match(userControls, /testID="users-grant-teacher"/);
+  assert.match(userControls, /SecretHandoffModal/);
+
+  assert.match(teachers, /TeacherMutationControls/);
+  assert.match(teachers, /AssignmentMutationControls/);
+  const teacherControls = read(path.join("components", "TeacherMutationControls.tsx"));
+  assert.match(teacherControls, /createTeacherIdentityFromUsers/);
+  assert.match(teacherControls, /canCreateTeacherIdentity/);
+  assert.match(teacherControls, /SecretHandoffModal/);
+  assert.doesNotMatch(teacherControls, /createSchoolTeacher/);
+  assert.doesNotMatch(teacherControls, /["']\/teachers["']/);
+  assert.match(read(path.join("components", "AssignmentMutationControls.tsx")), /teacherCode/);
+  assert.match(read(path.join("components", "AssignmentMutationControls.tsx")), /subjectCode/);
+  assert.doesNotMatch(teachers, /AdminCrud/);
+
+  assert.match(students, /StudentMutationControls/);
+  assert.doesNotMatch(students, /AdminCrud/);
+  const studentControls = read(path.join("components", "StudentMutationControls.tsx"));
+  assert.match(studentControls, /enrollClassStudent/);
+  assert.match(studentControls, /deleteSchoolStudent/);
+  assert.match(studentControls, /credentials\?\.temporarySecret/);
+  assert.match(studentControls, /SecretHandoffModal/);
+  assert.doesNotMatch(studentControls, /persistOutbox|enqueueOutbox|AsyncStorage/);
+
+  assert.match(payments, /PaymentMutationControls/);
+  assert.doesNotMatch(payments, /AdminCrud/);
+  assert.doesNotMatch(payments, /writePaymentsWebOnly/);
+  const paymentControls = read(path.join("components", "PaymentMutationControls.tsx"));
+  assert.match(paymentControls, /createSchoolPayment\(payload, \{ idempotencyKey \}\)/);
+  assert.match(paymentControls, /createIntentionStore/);
+  assert.match(paymentControls, /getOrCreate\(PAYMENT_DRAFT_INTENTION\)/);
+  assert.doesNotMatch(paymentControls, /createIdempotencyKey\(\)/);
+
+  assert.match(announcements, /AnnouncementMutationControls/);
+  assert.doesNotMatch(announcements, /AdminCrud/);
+  assert.match(read(path.join("components", "AnnouncementMutationControls.tsx")), /createClientsAnnouncement/);
+
+  assert.match(adminCtx, /LOCAL_WRITE_FORBIDDEN_ENTITIES/);
+  assert.match(adminCtx, /if \(LOCAL_WRITE_FORBIDDEN_ENTITIES.has\(entity\)\) return;/);
+
+  console.log("OK: faux writes AdminCrud/RBAC bloqués; CRUD canonique branché sur les APIs PostgreSQL");
 }
 
 main();

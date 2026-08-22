@@ -130,7 +130,21 @@ function runUnitGuards() {
   assert.match(adminCrud, /LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE/);
 
   const adminData = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
-  assert.match(adminData, /entity === "classes" \|\| entity === "schools"/);
+  const forbiddenMatch = adminData.match(
+    /const LOCAL_WRITE_FORBIDDEN_ENTITIES = new Set\(\[([\s\S]*?)\]\s*\)/,
+  );
+  assert.ok(forbiddenMatch, "LOCAL_WRITE_FORBIDDEN_ENTITIES défini");
+  assert.match(forbiddenMatch[1], /["']classes["']/, "classes dans LOCAL_WRITE_FORBIDDEN_ENTITIES");
+  assert.match(forbiddenMatch[1], /["']schools["']/, "schools dans LOCAL_WRITE_FORBIDDEN_ENTITIES");
+  const createItem = adminData.match(/createItem:\s*\(entity,\s*item\)\s*=>\s*\{([\s\S]*?)\n      \},\n      updateItem:/);
+  const updateItem = adminData.match(/updateItem:\s*\(entity,\s*item\)\s*=>\s*\{([\s\S]*?)\n      \},\n      deleteItem:/);
+  const deleteItem = adminData.match(/deleteItem:\s*\(entity,\s*id\)\s*=>\s*\{([\s\S]*?)\n      \},\n      upsertPresenceItems:/);
+  assert.ok(createItem, "createItem présent");
+  assert.ok(updateItem, "updateItem présent");
+  assert.ok(deleteItem, "deleteItem présent");
+  assert.match(createItem[1], /LOCAL_WRITE_FORBIDDEN_ENTITIES\.has\(entity\)/, "createItem refuse classes/schools");
+  assert.match(updateItem[1], /LOCAL_WRITE_FORBIDDEN_ENTITIES\.has\(entity\)/, "updateItem refuse classes/schools");
+  assert.match(deleteItem[1], /LOCAL_WRITE_FORBIDDEN_ENTITIES\.has\(entity\)/, "deleteItem refuse classes/schools");
 
   const mobileApi = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
   assert.match(mobileApi, /BACKOFFICE_STATE_WRITE_REMOVED/);
