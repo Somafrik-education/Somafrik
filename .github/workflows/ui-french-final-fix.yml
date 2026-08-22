@@ -1,0 +1,62 @@
+name: UI French Final Fix
+
+on:
+  push:
+    branches: [fix/p1-ui-french-copy-audit]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p1-ui-french-copy-audit
+      - name: Appliquer les derniers correctifs de copie
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const edits = {
+            'web/src/components/SchoolEducationActivationPanel.tsx': [
+              ["Aucun niveau défini pour ce pays. Contactez le Superadmin ou l&apos;Admin Pays.", "Aucun niveau défini pour ce pays. Contactez le Super administrateur ou l&apos;Administrateur pays."],
+              ["Aucun groupe défini pour ce pays. Contactez le Superadmin ou l&apos;Admin Pays.", "Aucun groupe défini pour ce pays. Contactez le Super administrateur ou l&apos;Administrateur pays."],
+            ],
+            'web/src/pages/UsersPage.tsx': [
+              ["Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.", "Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour l’établissement et les rôles actifs associés, puis révoque immédiatement les sessions existantes."],
+              ['"Super Admin"', '"Super administrateur"'],
+              ["L'Admin École", "l’administrateur de l’établissement"],
+              ["Ce compte Admin École a été créé par un Administrateur pays", "Ce compte Administrateur établissement a été créé par un Administrateur pays"],
+              ["En tant qu'Admin Pays, vous pouvez créer ce compte Admin École", "En tant qu’Administrateur pays, vous pouvez créer ce compte Administrateur établissement"],
+              ["Ce compte Admin École", "Ce compte Administrateur établissement"],
+              ["Admin Pays", "Administrateur pays"],
+              ["Admin École", "Administrateur établissement"],
+            ],
+          };
+          let changed = 0;
+          for (const [file, pairs] of Object.entries(edits)) {
+            let source = fs.readFileSync(file, 'utf8');
+            const before = source;
+            for (const [from, to] of pairs) source = source.split(from).join(to);
+            if (source !== before) {
+              fs.writeFileSync(file, source);
+              changed++;
+              console.log(`modifié: ${file}`);
+            }
+          }
+          if (!changed) throw new Error('Aucun correctif appliqué');
+          NODE
+      - name: Vérifier le garde-fou français
+        run: node scripts/verify-ui-french-copy.js
+      - name: Commit et retrait du workflow temporaire
+        shell: bash
+        run: |
+          git config user.name "Somafrik UI French Bot"
+          git config user.email "somafrik@outlook.fr"
+          git rm .github/workflows/ui-french-final-fix.yml
+          git add web/src/components/SchoolEducationActivationPanel.tsx web/src/pages/UsersPage.tsx
+          git commit -m "fix(ui): terminer la francisation avant merge"
+          git push origin HEAD:fix/p1-ui-french-copy-audit
