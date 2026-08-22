@@ -33,13 +33,15 @@ jobs:
           const file = 'web/src/pages/UsersPage.tsx';
           let source = fs.readFileSync(file, 'utf8');
           const replacements = [
-            ["Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.", "Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour l’établissement et les rôles actifs associés, puis révoque immédiatement les sessions existantes."],
+            ["PostgreSQL (users.school_id et user_roles)", "l’établissement et les rôles actifs associés"],
             ['"Super Admin"', '"Super administrateur"'],
-            ["L'Admin École", "l’administrateur de l’établissement"],
-            ["Ce compte Admin École", "Ce compte Administrateur établissement"],
-            ["En tant qu'Admin Pays", "En tant qu’Administrateur pays"],
-            ["Admin Pays", "Administrateur pays"],
-            ["Admin École", "Administrateur établissement"],
+            ["Compte validé. L'Admin École peut désormais se connecter.", "Compte validé. L’administrateur de l’établissement peut désormais se connecter."],
+            ["${filtered.length} compte(s) plateforme. Le Super Admin valide et gère les Admin École créés par les Admin Pays.", "${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays."],
+            ["${filtered.length} admin(s) école dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.", "${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement."],
+            ["Ce compte Admin École a été créé par un Admin Pays", "Ce compte Administrateur établissement a été créé par un Administrateur pays"],
+            ["Admin Pays et Admin School sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité.", "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité."],
+            ["En tant qu'Admin Pays, vous pouvez créer ce compte Admin École", "En tant qu’Administrateur pays, vous pouvez créer ce compte Administrateur établissement"],
+            ["Admin école rattaché à un établissement précis", "Administrateur établissement rattaché à un établissement précis"],
           ];
           for (const [from, to] of replacements) source = source.split(from).join(to);
           fs.writeFileSync(file, source);
