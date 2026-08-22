@@ -82,7 +82,7 @@ function main() {
   );
 
   assert.match(outbox, /permissionsBootstrap !== "ready"/);
-  assert.match(permissionsScreen, /GRANT\/REVOKE ne sont plus simulés localement/);
+  assert.match(permissionsScreen, /L’attribution et le retrait des droits ne sont plus simulés localement/);
 
   assert.match(identity, /hasAuthoritativeRoleKeys/);
   assert.match(identity, /UNAFFECTED_ROLE_LABEL = "Sans affectation"/);
