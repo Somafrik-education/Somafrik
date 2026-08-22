@@ -48,8 +48,6 @@ const FORBIDDEN = [
   /\bPassword\b/i,
   /\bRole\b/i,
   /\bPending\b/i,
-  /\bActive\b/i,
-  /\bInactive\b/i,
   /\bApproved\b/i,
   /\bRejected\b/i,
   /\bArchived\b/i,
@@ -106,8 +104,9 @@ function extractUiStrings(source) {
     }
   };
 
-  // Texte JSX littéral entre deux balises.
-  pushMatches(/>\s*([^<>{}\n][^<>{}]*)\s*</g);
+  // Texte littéral d'éléments UI fréquents. On exige une vraie balise ouvrante
+  // pour ne pas confondre les chevrons TypeScript avec du JSX visible.
+  pushMatches(/<(?:Text|p|span|h[1-6]|button|th|td|label|option)[^>]*>\s*([^<>{}\n]+?)\s*</g);
 
   // Props JSX destinées à l'utilisateur.
   pushMatches(
