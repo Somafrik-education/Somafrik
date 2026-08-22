@@ -5,8 +5,8 @@
  * P1 UX — garde-fou des libellés visibles Somafrik.
  *
  * Objectif : empêcher le retour de mots anglais fonctionnels dans les copies
- * utilisateur Mobile/Web, sans toucher aux contrats techniques (routes, enums,
- * clés JSON, codes RBAC, PostgreSQL, API, etc.).
+ * utilisateur Mobile/Web (.ts, .tsx, .js, .jsx), sans toucher aux contrats
+ * techniques (routes, enums, clés JSON, codes RBAC, PostgreSQL, API, etc.).
  */
 
 const assert = require("node:assert/strict");
@@ -16,8 +16,9 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 const UI_ROOTS = [path.join(ROOT, "Mobile", "src"), path.join(ROOT, "web", "src")];
 
-const SOURCE_RE = /\.(tsx|jsx)$/i;
-const SKIP_RE = /(?:^|\/)(?:__tests__|fixtures|mocks)(?:\/|$)|\.(?:test|spec)\.[jt]sx$/i;
+const SOURCE_RE = /\.(tsx?|jsx?)$/i;
+const SKIP_RE =
+  /(?:^|\/)(?:__tests__|fixtures|mocks)(?:\/|$)|\.(?:test|spec)\.[jt]sx?$/i;
 
 const FORBIDDEN = [
   /\bTeachers?\b/i,
@@ -150,7 +151,60 @@ function findForbidden(value) {
   return null;
 }
 
+function collectOffenders(rel, source) {
+  const offenders = [];
+  for (const hard of [
+    { re: /GRANT\s*\/\s*REVOKE/gi, token: "GRANT/REVOKE" },
+    { re: /Web[- ]only/gi, token: "Web-only" },
+    { re: /label\s*:\s*["'](?:CREATE|READ|UPDATE|DELETE)["']/g, token: "CRUD anglais" },
+  ]) {
+    if (hard.re.test(source)) offenders.push(`${rel} — ${hard.token}`);
+  }
+  for (const value of extractUiStrings(source)) {
+    const token = findForbidden(value);
+    if (token) offenders.push(`${rel} — « ${value} » [${token}]`);
+  }
+  return offenders;
+}
+
+function assertTsSourcesAreGuarded() {
+  assert.match("web/src/lib/format.ts", SOURCE_RE, "les modules .ts doivent être scannés");
+  assert.match("web/src/lib/constants.ts", SOURCE_RE, "constants.ts doit être scanné");
+  assert.match("copy.js", SOURCE_RE, "les modules .js doivent être scannés");
+  assert.match("copy.tsx", SOURCE_RE);
+  assert.match("copy.jsx", SOURCE_RE);
+  assert.doesNotMatch("readme.md", SOURCE_RE);
+
+  assert.match("web/src/lib/format.test.ts", SKIP_RE, "les .test.ts doivent être exclus");
+  assert.match("foo.spec.js", SKIP_RE, "les .spec.js doivent être exclus");
+  assert.match("src/__tests__/copy.ts", SKIP_RE);
+  assert.match("src/fixtures/copy.ts", SKIP_RE);
+  assert.match("src/mocks/copy.ts", SKIP_RE);
+  assert.doesNotMatch("web/src/lib/format.ts", SKIP_RE);
+  assert.doesNotMatch("web/src/lib/constants.ts", SKIP_RE);
+
+  const tsModule = [
+    "export const PRODUCT_COPY = {",
+    '  label: "Settings",',
+    '  status: "Pending",',
+    "};",
+    "",
+  ].join("\n");
+  const rel = "web/src/lib/product-copy.ts";
+  assert.ok(SOURCE_RE.test(rel) && !SKIP_RE.test(rel), "un fichier .ts hors tests doit entrer dans le scan");
+  const extracted = extractUiStrings(tsModule);
+  assert.ok(extracted.includes("Settings"), "un label anglais dans un .ts doit être extrait");
+  assert.equal(findForbidden("Settings"), "Settings");
+  const offenders = collectOffenders(rel, tsModule);
+  assert.ok(
+    offenders.some((line) => line.includes("Settings")),
+    "un label Settings dans un .ts doit faire échouer le garde-fou",
+  );
+}
+
 function main() {
+  assertTsSourcesAreGuarded();
+
   const offenders = [];
 
   for (const root of UI_ROOTS) {
@@ -158,21 +212,7 @@ function main() {
       const rel = path.relative(ROOT, file).replace(/\\/g, "/");
       if (!SOURCE_RE.test(file) || SKIP_RE.test(rel)) continue;
       const source = fs.readFileSync(file, "utf8");
-
-      // Interdits absolus dans une source d'interface : jargon déjà observé en
-      // production et formulations qui ne doivent jamais réapparaître.
-      for (const hard of [
-        { re: /GRANT\s*\/\s*REVOKE/gi, token: "GRANT/REVOKE" },
-        { re: /Web[- ]only/gi, token: "Web-only" },
-        { re: /label\s*:\s*["'](?:CREATE|READ|UPDATE|DELETE)["']/g, token: "CRUD anglais" },
-      ]) {
-        if (hard.re.test(source)) offenders.push(`${rel} — ${hard.token}`);
-      }
-
-      for (const value of extractUiStrings(source)) {
-        const token = findForbidden(value);
-        if (token) offenders.push(`${rel} — « ${value} » [${token}]`);
-      }
+      offenders.push(...collectOffenders(rel, source));
     }
   }
 

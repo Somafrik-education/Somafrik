@@ -4,8 +4,9 @@ import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
  * L8 — revalidation des permissions live Mobile.
  *
  * AuthContext reste l’unique autorité. Aucun polling. Aucun merge avec une
- * matrice locale. GRANT/REVOKE n’existent pas dans le runtime Mobile (L0b) :
- * un changement Web est pris en compte au prochain retour foreground.
+ * matrice locale. L’attribution et le retrait des droits n’existent pas dans
+ * le runtime Mobile (L0b) : un changement Web est pris en compte au prochain
+ * retour foreground.
  */
 
 export type PermissionsBootstrapState = "idle" | "loading" | "ready" | "error";
