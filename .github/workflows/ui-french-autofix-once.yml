@@ -1,0 +1,102 @@
+name: UI French Autofix Once
+
+on:
+  push:
+    branches: [fix/p1-ui-french-copy-audit]
+
+permissions:
+  contents: write
+
+jobs:
+  autofix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p1-ui-french-copy-audit
+      - name: Corriger les copies détectées par le garde-fou
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const edits = {
+            'Mobile/src/components/DemoLoginButtons.tsx': [
+              ['Remplir admin pays demo', 'Remplir administrateur pays démo'],
+              ['Remplir admin établissement demo', 'Remplir administrateur établissement démo'],
+            ],
+            'Mobile/src/screens/AdminCrudScreen.tsx': [
+              ['label: "Admin pays"', 'label: "Administrateur pays"'],
+            ],
+            'Mobile/src/screens/PermissionsScreen.tsx': [
+              ['Matrice Super Admin réservée au Super Administrateur.', 'Matrice réservée au Super administrateur.'],
+            ],
+            'web/src/components/SchoolEducationActivationPanel.tsx': [
+              ["Aucun groupe défini pour ce pays. Contactez le Superadmin ou l'Admin Pays.", "Aucun groupe défini pour ce pays. Contactez le Super administrateur ou l’Administrateur pays."],
+              ["Aucun niveau défini pour ce pays. Contactez le Superadmin ou l'Admin Pays.", "Aucun niveau défini pour ce pays. Contactez le Super administrateur ou l’Administrateur pays."],
+            ],
+            'web/src/components/charts/ChartTypeSettingsPanel.tsx': [
+              ['Graphiques visibles sur /tableau-de-bord (Super Admin, Admin Pays).', 'Graphiques visibles sur le tableau de bord (Super administrateur, Administrateur pays).'],
+            ],
+            'web/src/pages/ConfigurationPage.tsx': [
+              ['Activez les éléments du référentiel national proposés par le Superadmin.', 'Activez les éléments du référentiel national proposés par le Super administrateur.'],
+              ['Catalogue canonique géré par le Superadmin.', 'Catalogue canonique géré par le Super administrateur.'],
+              ['Permissions accordées par le Superadmin (lecture seule).', 'Droits accordés par le Super administrateur (lecture seule).'],
+            ],
+            'web/src/pages/EducationReferencePage.tsx': [
+              ['Superadmin et Admin Pays habilité uniquement.', 'Réservé au Super administrateur et à l’Administrateur pays.'],
+            ],
+            'web/src/pages/LoginPage.tsx': [
+              ['label="Admin Pays"', 'label="Administrateur pays"'],
+              ['label="Super Admin"', 'label="Super administrateur"'],
+              ['placeholder="ex. superadmin"', 'placeholder="ex. identifiant administrateur"'],
+            ],
+            'web/src/pages/SchoolsPage.tsx': [
+              ['Admin établissement', 'Administrateur établissement'],
+            ],
+            'web/src/pages/UsersPage.tsx': [
+              ["Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.", "Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour l’établissement et les rôles actifs associés, puis révoque immédiatement les sessions existantes."],
+              ['Créé par un Admin Pays', 'Créé par un Administrateur pays'],
+              ['Validation Super Admin requise', 'Validation du Super administrateur requise'],
+            ],
+            'web/src/pages/abonnements/MonAbonnementPage.tsx': [
+              ['Contactez Somafrik ou votre Admin Pays.', 'Contactez Somafrik ou votre Administrateur pays.'],
+            ],
+            'web/src/pages/abonnements/SubscriptionDelinquencyPage.tsx': [
+              ['J+3 statut « En retard » · J+7 relance admin · J+14 accès limité · J+30 suspension.', 'J+3 statut « En retard » · J+7 relance administrateur · J+14 accès limité · J+30 suspension.'],
+            ],
+            'web/src/pages/abonnements/SubscriptionDiscountsPage.tsx': [
+              ['Remise proposée — validation Super Admin requise', 'Remise proposée — validation du Super administrateur requise'],
+            ],
+            'web/src/pages/abonnements/SubscriptionPaymentsPage.tsx': [
+              ['Mobile Money, virement, espèces chez un partenaire — validation admin requise.', 'Mobile Money, virement, espèces chez un partenaire — validation administrateur requise.'],
+            ],
+          };
+
+          let changed = 0;
+          for (const [file, pairs] of Object.entries(edits)) {
+            let source = fs.readFileSync(file, 'utf8');
+            const before = source;
+            for (const [from, to] of pairs) {
+              if (!source.includes(from)) console.log(`non trouvé: ${file} :: ${from}`);
+              source = source.split(from).join(to);
+            }
+            if (source !== before) {
+              fs.writeFileSync(file, source);
+              changed += 1;
+              console.log(`modifié: ${file}`);
+            }
+          }
+          console.log(`fichiers modifiés: ${changed}`);
+          NODE
+      - name: Valider le garde-fou avant commit
+        run: node scripts/verify-ui-french-copy.js
+      - name: Commit ciblé et auto-suppression
+        shell: bash
+        run: |
+          git config user.name "Somafrik UI French Bot"
+          git config user.email "somafrik@outlook.fr"
+          git rm .github/workflows/ui-french-autofix-once.yml
+          git add Mobile/src/components/DemoLoginButtons.tsx Mobile/src/screens/AdminCrudScreen.tsx Mobile/src/screens/PermissionsScreen.tsx web/src/components/SchoolEducationActivationPanel.tsx web/src/components/charts/ChartTypeSettingsPanel.tsx web/src/pages/ConfigurationPage.tsx web/src/pages/EducationReferencePage.tsx web/src/pages/LoginPage.tsx web/src/pages/SchoolsPage.tsx web/src/pages/UsersPage.tsx web/src/pages/abonnements/MonAbonnementPage.tsx web/src/pages/abonnements/SubscriptionDelinquencyPage.tsx web/src/pages/abonnements/SubscriptionDiscountsPage.tsx web/src/pages/abonnements/SubscriptionPaymentsPage.tsx
+          git commit -m "fix(ui): franciser les derniers libellés détectés"
+          git push origin HEAD:fix/p1-ui-french-copy-audit
