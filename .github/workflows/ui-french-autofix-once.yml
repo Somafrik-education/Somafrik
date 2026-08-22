@@ -1,4 +1,5 @@
 name: UI French Autofix Once
+# Workflow temporaire : il s'auto-supprime après la correction.
 
 on:
   push:
