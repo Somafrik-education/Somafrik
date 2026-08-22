@@ -56,6 +56,11 @@ const FORBIDDEN = [
   /\bOverview\b/i,
   /\bMarketplace\b/i,
   /\bWeb[- ]only\b/i,
+  /\bStaff\b/i,
+  /\bScope\b/i,
+  /\bHub\b/i,
+  /\bSuperadmin\b/i,
+  /\bAdmin\b/i,
 ];
 
 // Ces termes peuvent rester visibles : noms de technologies / formats et codes
@@ -94,19 +99,26 @@ function isAllowedWholeToken(value) {
   return ALLOWLIST.some((re) => re.test(String(value).trim()));
 }
 
+function normalizeVisibleText(value) {
+  return String(value ?? "")
+    .replace(/&apos;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function extractUiStrings(source) {
   const found = [];
   const pushMatches = (re, group = 1) => {
     let match;
     while ((match = re.exec(source))) {
-      const value = String(match[group] ?? "").replace(/&apos;/g, "'").trim();
+      const value = normalizeVisibleText(match[group]);
       if (value) found.push(value);
     }
   };
 
   // Texte littéral d'éléments UI fréquents. On exige une vraie balise ouvrante
-  // pour ne pas confondre les chevrons TypeScript avec du JSX visible.
-  pushMatches(/<(?:Text|p|span|h[1-6]|button|th|td|label|option)[^>]*>\s*([^<>{}\n]+?)\s*</g);
+  // et on accepte les retours à la ligne, sans traverser une expression JSX.
+  pushMatches(/<(?:Text|p|span|h[1-6]|button|th|td|label|option)[^>]*>\s*([^<>{}]+?)\s*<\/(?:Text|p|span|h[1-6]|button|th|td|label|option)>/gs);
 
   // Props JSX destinées à l'utilisateur.
   pushMatches(
