@@ -12,6 +12,11 @@ const FINANCE_ERROR = Object.freeze({
   FEE_ITEM_TENANT_MISMATCH: "FEE_ITEM_TENANT_MISMATCH",
   CANCEL_REASON_REQUIRED: "CANCEL_REASON_REQUIRED",
   STUDENT_NOT_FOUND: "STUDENT_NOT_FOUND",
+  ENROLLMENT_REQUIRED: "ENROLLMENT_REQUIRED",
+  CLASS_REQUIRED: "CLASS_REQUIRED",
+  CLASS_NOT_FOUND: "CLASS_NOT_FOUND",
+  CLASS_STUDENT_MISMATCH: "CLASS_STUDENT_MISMATCH",
+  CLASS_TENANT_MISMATCH: "CLASS_TENANT_MISMATCH",
   TENANT_MISMATCH: "TENANT_MISMATCH",
   FEE_GRID_NOT_FOUND: "FEE_GRID_NOT_FOUND",
   FEE_GRID_NOT_ACTIVE: "FEE_GRID_NOT_ACTIVE",
@@ -142,6 +147,8 @@ function mapPaymentRow(row) {
     schoolCode: row.school_code || profile.schoolCode,
     studentId: profile.studentId || row.student_code || row.student_id,
     studentName: profile.studentName || "",
+    classId: profile.classId || "",
+    classCode: profile.classCode || "",
     className: profile.className || "",
     feeType: row.fee_type || profile.feeType || "",
     label: profile.label || row.fee_type || "",
@@ -276,7 +283,17 @@ function mapStatusRow(row) {
 function studentMatches(student, key) {
   const needle = asTrimmed(key);
   if (!needle) return false;
-  const hay = [student.id, student.publicId, student.matricule, student.studentCode, student.student_code]
+  const hay = [
+    student.id,
+    student.publicId,
+    student.matricule,
+    student.studentCode,
+    student.student_code,
+    student.loginCode,
+    student.login_code,
+    student.identityCode,
+    student.identity_code,
+  ]
     .map((value) => asTrimmed(value))
     .filter(Boolean);
   return hay.some((value) => value === needle || value.toUpperCase() === needle.toUpperCase());

@@ -9,9 +9,14 @@ import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { createIntentionStore } from "../lib/mutationGuard";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { submitProtectedMutation } from "../lib/outbox";
+import {
+  buildSchoolPaymentPayload,
+  collectActivePaymentClasses,
+  paymentSubmitErrorMessage,
+  preselectPaymentClassId,
+  type PaymentStudent,
+} from "../lib/paymentEnrollment";
 import { createSchoolPayment } from "../services/api";
-
-type StudentOption = { id: string; name?: string };
 
 const PAYMENT_DRAFT_INTENTION = "payments-create-draft";
 
@@ -22,9 +27,11 @@ function todayIsoDate() {
 export default function PaymentMutationControls({
   students,
   onChanged,
+  initialStudentId = "",
 }: {
-  students: StudentOption[];
+  students: PaymentStudent[];
   onChanged: () => Promise<void> | void;
+  initialStudentId?: string;
 }) {
   const { session } = useAuth();
   const access = resolveEntityCrudAccess(session, "payments");
@@ -34,22 +41,42 @@ export default function PaymentMutationControls({
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [studentId, setStudentId] = useState("");
+  const [classId, setClassId] = useState("");
   const [amount, setAmount] = useState("");
   const amountRef = useRef<TextInput>(null);
   const [feeType, setFeeType] = useState("Scolarité");
   const [method, setMethod] = useState("Espèces");
   const [draftDate, setDraftDate] = useState(todayIsoDate);
 
-  const options = useMemo(
-    () => students.map((item) => ({ id: item.id, label: item.name || item.id })),
-    [students],
-  );
+  const studentOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return students.flatMap((item) => {
+      if (!item.id || seen.has(item.id)) return [];
+      seen.add(item.id);
+      return [{ id: item.id, label: item.name || item.id }];
+    });
+  }, [students]);
+
+  const classOptions = useMemo(() => collectActivePaymentClasses(studentId, students), [studentId, students]);
+
+  const applyStudent = (nextStudentId: string) => {
+    setStudentId(nextStudentId);
+    setClassId(preselectPaymentClassId(nextStudentId, students));
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.studentId;
+      delete next.classId;
+      return next;
+    });
+  };
 
   const openDraft = () => {
     intentionsRef.current.rotate(PAYMENT_DRAFT_INTENTION);
     setError("");
     setFieldErrors({});
-    setStudentId("");
+    const nextStudentId = trimField(initialStudentId);
+    setStudentId(nextStudentId);
+    setClassId(preselectPaymentClassId(nextStudentId, students));
     setAmount("");
     setFeeType("Scolarité");
     setMethod("Espèces");
@@ -59,7 +86,7 @@ export default function PaymentMutationControls({
 
   const submit = async () => {
     if (saving) return;
-    const nextErrors = validatePaymentDraft({ studentId, amount });
+    const nextErrors = validatePaymentDraft({ studentId, amount, classId, classOptions });
     if (hasFieldErrors(nextErrors)) {
       setFieldErrors(nextErrors);
       setError("");
@@ -70,12 +97,14 @@ export default function PaymentMutationControls({
     setError("");
     setFieldErrors({});
     const parsed = Number(trimField(amount).replace(",", "."));
-    const payload = {
+    const payload = buildSchoolPaymentPayload({
       studentId,
+      classId,
+      amount: parsed,
+      feeType,
       method,
       date: draftDate,
-      items: [{ feeType, amount: parsed }],
-    };
+    });
     const idempotencyKey = intentionsRef.current.getOrCreate(PAYMENT_DRAFT_INTENTION);
     try {
       const submitted = await submitProtectedMutation({
@@ -90,7 +119,7 @@ export default function PaymentMutationControls({
         request: () => createSchoolPayment(payload, { idempotencyKey }),
       });
       if (submitted.outcome !== "confirmed") {
-        setError(submitted.outcome === "queued" ? "Paiement conservé en file. Pas de succès local." : "Enregistrement refusé.");
+        setError(paymentSubmitErrorMessage(submitted.outcome, submitted.error));
         return;
       }
       setOpen(false);
@@ -120,19 +149,28 @@ export default function PaymentMutationControls({
         <ChoiceChips
           label="Élève"
           required
-          options={options}
+          options={studentOptions}
           selectedId={studentId}
+          onSelect={applyStudent}
+          disabled={saving}
+          error={fieldErrors.studentId}
+        />
+        <ChoiceChips
+          label="Classe"
+          required
+          options={classOptions.map((item) => ({ id: item.classId, label: item.className }))}
+          selectedId={classId}
           onSelect={(id) => {
-            setStudentId(id);
+            setClassId(id);
             setFieldErrors((current) => {
-              if (!current.studentId) return current;
+              if (!current.classId) return current;
               const next = { ...current };
-              delete next.studentId;
+              delete next.classId;
               return next;
             });
           }}
-          disabled={saving}
-          error={fieldErrors.studentId}
+          disabled={saving || !studentId}
+          error={fieldErrors.classId}
         />
         <FormField
           ref={amountRef}

@@ -152,7 +152,38 @@ assert.equal(userInvalid.temporaryPassword, "Mot de passe temporaire est obligat
 const payment = validatePaymentDraft({ studentId: "", amount: "0" });
 assert.equal(payment.studentId, "Élève est obligatoire.");
 assert.match(payment.amount, /montant positif/);
-assert.equal(hasFieldErrors(validatePaymentDraft({ studentId: "st-1", amount: "25000" })), false);
+assert.equal(payment.classId, undefined, "pas de classe tant que l'élève n'est pas choisi");
+
+const noEnrollment = validatePaymentDraft({ studentId: "st-1", amount: "25000", classId: "", classOptions: [] });
+assert.equal(noEnrollment.classId, "Cet élève n'a aucune inscription active.");
+
+const missingClass = validatePaymentDraft({
+  studentId: "st-1",
+  amount: "25000",
+  classId: "",
+  classOptions: [{ classId: "class-6a" }],
+});
+assert.equal(missingClass.classId, "Classe est obligatoire.");
+
+const foreignClass = validatePaymentDraft({
+  studentId: "st-1",
+  amount: "25000",
+  classId: "class-other",
+  classOptions: [{ classId: "class-6a" }],
+});
+assert.equal(foreignClass.classId, "Classe invalide pour cet élève.");
+
+assert.equal(
+  hasFieldErrors(
+    validatePaymentDraft({
+      studentId: "st-1",
+      amount: "25000",
+      classId: "class-6a",
+      classOptions: [{ classId: "class-6a" }],
+    }),
+  ),
+  false,
+);
 
 const announcement = validateAnnouncementDraft({ title: "  ", message: "Hello" });
 assert.equal(announcement.title, "Titre est obligatoire.");

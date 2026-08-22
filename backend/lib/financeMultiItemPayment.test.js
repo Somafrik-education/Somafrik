@@ -20,6 +20,8 @@ function createStore() {
       firstName: "Esther",
       lastName: "Okito",
       schoolCode: "CD-2026-0001",
+      classId: "class-6a",
+      classCode: "CLS-6A",
       className: "6ème A",
     },
   ];

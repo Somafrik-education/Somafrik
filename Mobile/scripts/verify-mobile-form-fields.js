@@ -23,15 +23,17 @@ function walk(dir, acc = []) {
 }
 
 function runUnitTests() {
-  const result = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "formFieldValidation.test.ts")], {
-    cwd: MOBILE,
-    encoding: "utf8",
-    env: process.env,
-  });
-  if (result.status !== 0) {
-    throw new Error(result.stderr || result.stdout || "formFieldValidation.test.ts a échoué");
+  for (const file of ["formFieldValidation.test.ts", "paymentEnrollment.test.ts"]) {
+    const result = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", file)], {
+      cwd: MOBILE,
+      encoding: "utf8",
+      env: process.env,
+    });
+    if (result.status !== 0) {
+      throw new Error(result.stderr || result.stdout || `${file} a échoué`);
+    }
+    process.stdout.write(result.stdout || "");
   }
-  process.stdout.write(result.stdout || "");
 }
 
 function main() {

@@ -21,12 +21,27 @@ describe("paiement multi-libellés", () => {
   it("refuse un libellé à montant nul", () => {
     expect(
       validateMultiItemPaymentInput({
-        student: { id: "stu-1" } as never,
+        student: { id: "stu-1", classId: "class-6a" } as never,
+        classId: "class-6a",
+        classOptions: [{ classId: "class-6a" }],
         method: "Espèces",
         date: "2026-08-19",
         lines: [createPaymentLine("Minerval / scolarité")],
       }),
     ).toMatch(/montant/);
+  });
+
+  it("refuse un élève sans inscription active", () => {
+    expect(
+      validateMultiItemPaymentInput({
+        student: { id: "stu-1" } as never,
+        classId: "",
+        classOptions: [],
+        method: "Espèces",
+        date: "2026-08-19",
+        lines: [{ ...createPaymentLine("Minerval / scolarité"), amount: "500" }],
+      }),
+    ).toMatch(/inscription active/);
   });
 
   it("détail vide ne force pas 1 libellé", () => {

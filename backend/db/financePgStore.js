@@ -65,6 +65,50 @@ function createFinancePgStore(repo) {
           className: row.class_name || profile.className || "",
         };
       },
+      async listActiveEnrollmentsForStudent(studentDbId, schoolId) {
+        const rows = await all(
+          `SELECT e.id AS enrollment_id,
+                  e.school_id,
+                  cl.id AS class_id,
+                  cl.class_code,
+                  cl.name AS class_name
+           FROM enrollments e
+           JOIN classes cl ON cl.id = e.class_id
+           WHERE e.student_id = $1
+             AND e.school_id = $2
+             AND e.status = 'active'
+             AND cl.school_id = $2
+           ORDER BY e.enrollment_date DESC NULLS LAST, e.created_at DESC NULLS LAST`,
+          [studentDbId, schoolId],
+        );
+        return rows.map((row) => ({
+          enrollmentId: row.enrollment_id,
+          schoolId: row.school_id,
+          classId: row.class_id,
+          classCode: row.class_code || "",
+          className: row.class_name || "",
+        }));
+      },
+      async getClassById(classId) {
+        const key = asTrimmed(classId);
+        if (!key) return null;
+        const row = await one(
+          `SELECT cl.id, cl.school_id, cl.class_code, cl.name, s.school_code
+           FROM classes cl
+           JOIN schools s ON s.id = cl.school_id
+           WHERE cl.id::text = $1
+           LIMIT 1`,
+          [key],
+        );
+        if (!row) return null;
+        return {
+          classId: row.id,
+          schoolId: row.school_id,
+          classCode: row.class_code || "",
+          className: row.name || "",
+          schoolCode: row.school_code,
+        };
+      },
       async listStudentsInClass(schoolCode, className) {
         const rows = await all(
           `SELECT st.*, s.school_code, cl.name AS class_name

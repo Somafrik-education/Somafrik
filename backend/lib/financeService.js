@@ -54,6 +54,46 @@ function actorName(principal) {
   return `${principal?.firstName ?? ""} ${principal?.lastName ?? ""}`.trim() || principal?.identifier || principal?.role;
 }
 
+async function resolvePaymentEnrollment(tx, student, payload, school) {
+  const requestedClassId = asTrimmed(payload.classId);
+  const enrollments =
+    typeof tx.listActiveEnrollmentsForStudent === "function"
+      ? await tx.listActiveEnrollmentsForStudent(student.dbId || student.id, school.id)
+      : [];
+
+  if (requestedClassId) {
+    const match = enrollments.find((row) => String(row.classId) === requestedClassId);
+    if (match) {
+      if (match.schoolId && String(match.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+      return match;
+    }
+    if (typeof tx.getClassById === "function") {
+      const klass = await tx.getClassById(requestedClassId);
+      if (!klass) {
+        throw createFinanceError(404, "Classe introuvable.", FINANCE_ERROR.CLASS_NOT_FOUND);
+      }
+      if (String(klass.schoolId) !== String(school.id)) {
+        throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+      }
+    }
+    throw createFinanceError(403, "Classe non rattachée à cet élève.", FINANCE_ERROR.CLASS_STUDENT_MISMATCH);
+  }
+
+  if (!enrollments.length) {
+    throw createFinanceError(400, "Cet élève n'a aucune inscription active.", FINANCE_ERROR.ENROLLMENT_REQUIRED);
+  }
+  if (enrollments.length > 1) {
+    throw createFinanceError(
+      400,
+      "Classe obligatoire : plusieurs inscriptions actives.",
+      FINANCE_ERROR.CLASS_REQUIRED,
+    );
+  }
+  return enrollments[0];
+}
+
 function allocateAmount(obligations, amount) {
   let remaining = money(amount);
   const allocations = [];
@@ -150,6 +190,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     if (!school) {
       throw createFinanceError(404, "Établissement introuvable", FINANCE_ERROR.TENANT_MISMATCH);
     }
+    const enrollment = await resolvePaymentEnrollment(tx, student, payload, school);
 
     const resolvedItems = [];
     for (const item of writeItems) {
@@ -212,7 +253,9 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       studentDbId: student.dbId || student.id,
       studentId: student.publicId || student.studentCode || student.id,
       studentName: `${student.firstName ?? ""} ${student.lastName ?? student.name ?? ""}`.trim(),
-      className: student.className || "",
+      classId: enrollment.classId,
+      classCode: enrollment.classCode || "",
+      className: enrollment.className || "",
       feeType: resolvedItems.length === 1 ? resolvedItems[0].feeType : `${resolvedItems.length} libellés`,
       label: resolvedItems.length === 1 ? resolvedItems[0].feeLabel : `${resolvedItems.length} libellés`,
       amount: totalAmount,

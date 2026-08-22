@@ -17,6 +17,8 @@ function createStore() {
       firstName: "Awa",
       lastName: "Diop",
       schoolCode: "CD-2026-0001",
+      classId: "class-6a",
+      classCode: "CLS-6A",
       className: "6ème A",
     },
     {
@@ -26,6 +28,8 @@ function createStore() {
       firstName: "Jean",
       lastName: "Nkurunziza",
       schoolCode: "BI-2026-0001",
+      classId: "class-bi-6a",
+      classCode: "CLS-BI-6A",
       className: "6ème A",
     },
   ];
