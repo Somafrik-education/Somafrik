@@ -154,7 +154,7 @@ export const MVP_COVERAGE = [
   ["Notes simples", "Web / Mobile", "Couvert", "P0"],
   ["Paiements scolaires", "Web / Mobile", "Couvert", "P0"],
   ["Notifications", "Web / Mobile", "Couvert", "P1"],
-  ["Dashboards", "Web / Mobile", "Couvert", "P1"],
-  ["Super Admin / Admin Pays", "Plateforme", "Couvert", "P1"],
+  ["Tableaux de bord", "Web / Mobile", "Couvert", "P1"],
+  ["Super administrateur / Administrateur pays", "Plateforme", "Couvert", "P1"],
   ["Séparation de données", "SaaS", "Couvert", "P0"],
 ].map(([module, scope, status, priority]) => ({ module, scope, status, priority }));
