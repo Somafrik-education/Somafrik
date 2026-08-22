@@ -10,6 +10,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const MOBILE = path.join(__dirname, "..");
+const REPO = path.join(MOBILE, "..");
 const SRC = path.join(MOBILE, "src");
 
 function walk(dir, acc = []) {
@@ -69,7 +70,34 @@ function main() {
   assert.match(student, /Téléphone du parent/);
   assert.doesNotMatch(student, /Prénom et nom sont obligatoires/);
 
-  console.log("OK: FormField canonique, labels permanents, placeholder non thématique, pas de fallback 1re classe");
+  const adminCrud = fs.readFileSync(path.join(SRC, "screens", "AdminCrudScreen.tsx"), "utf8");
+  assert.doesNotMatch(
+    adminCrud,
+    /keyboardType=\{field\.keyboardType \?\? "default"\}/,
+    "AdminCrud ne doit pas écraser le clavier canonique de FormField",
+  );
+  assert.match(adminCrud, /isRequiredAdminField\(entity, field\)/);
+  assert.match(adminCrud, /styles\.selectInputInvalid/);
+  assert.match(adminCrud, /fieldErrors\[field\.key\]/);
+
+  const notifications = fs.readFileSync(path.join(SRC, "screens", "PlatformNotificationsScreen.tsx"), "utf8");
+  assert.match(notifications, /await createPlatformNotification/);
+  assert.match(notifications, /await loadNotifications\(\)/);
+  assert.doesNotMatch(notifications, /upsertNotification\(/);
+
+  const login = fs.readFileSync(path.join(SRC, "screens", "LoginScreen.tsx"), "utf8");
+  assert.match(login, /passwordFieldErrors\.newPassword/);
+  assert.match(login, /passwordFieldErrors\.confirmPassword/);
+
+  const ciWorkflow = fs.readFileSync(path.join(REPO, ".github", "workflows", "ci.yml"), "utf8");
+  assert.match(ciWorkflow, /npm run verify:mobile-form-fields/);
+  const securityWorkflow = fs.readFileSync(path.join(REPO, ".github", "workflows", "security.yml"), "utf8");
+  assert.ok(
+    (securityWorkflow.match(/npm run verify:mobile-form-fields/g) ?? []).length >= 2,
+    "Security doit exécuter verify:mobile-form-fields dans le job Security et la suite Tests",
+  );
+
+  console.log("OK: FormField canonique, erreurs par champ, notifications awaitées et garde-fou exécuté en CI/Security");
 }
 
 main();

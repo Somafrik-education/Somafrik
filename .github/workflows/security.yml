@@ -86,6 +86,8 @@ jobs:
         run: npm --prefix Mobile run verify:mobile-domain-hydration
       - name: verify:mobile-usability
         run: npm run verify:mobile-usability
+      - name: verify:mobile-form-fields
+        run: npm run verify:mobile-form-fields
       - name: verify:mobile-home-data-truth
         run: npm run verify:mobile-home-data-truth
       - name: verify:mobile-school-scope-transport
@@ -220,6 +222,7 @@ jobs:
           npm run verify:mobile-planning-v2
           npm --prefix Mobile run verify:mobile-domain-hydration
           npm run verify:mobile-usability
+          npm run verify:mobile-form-fields
           npm run verify:mobile-home-data-truth
           npm run verify:mobile-school-scope-transport
           npm run verify:mobile-no-catalog-runtime-data

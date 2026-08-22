@@ -18,10 +18,11 @@ import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import type { PlatformNotification } from "../lib/scope";
 import {
+  buildPlatformNotificationCreatePayload,
   buildPlatformNotificationReadPatch,
   isUnreadNotification,
 } from "../lib/platformNotificationSync";
-import { updatePlatformNotification } from "../services/api";
+import { createPlatformNotification, updatePlatformNotification } from "../services/api";
 
 const TYPE_OPTIONS = ["Information", "Alerte", "Paiement", "Académique", "Système"];
 const PRIORITY_OPTIONS = ["Normale", "Haute", "Critique"];
@@ -29,7 +30,7 @@ const AUDIENCE_OPTIONS = ["Tous", "Super Administrateur Somafrik", "Admin Pays",
 
 export default function PlatformNotificationsScreen() {
   const { session } = useAuth();
-  const { notificationsData, upsertNotification, refreshBackOfficeState } = useAdminData();
+  const { notificationsData, loadNotifications, refreshBackOfficeState } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
   const [composing, setComposing] = useState<Partial<PlatformNotification> | null>(null);
@@ -90,7 +91,7 @@ export default function PlatformNotificationsScreen() {
     void persistReadTargets([item]);
   };
 
-  const saveNotification = () => {
+  const saveNotification = async () => {
     if (composeSaving) return;
     const nextErrors = validateAnnouncementDraft({
       title: composing?.title,
@@ -100,8 +101,8 @@ export default function PlatformNotificationsScreen() {
       setComposeErrors(nextErrors);
       return;
     }
-    setComposeSaving(true);
-    upsertNotification({
+
+    const draft: PlatformNotification = {
       title: trimField(composing?.title),
       message: trimField(composing?.message),
       type: composing?.type ?? "Information",
@@ -110,10 +111,22 @@ export default function PlatformNotificationsScreen() {
       status: composing?.status ?? "Non lu",
       date: composing?.date ?? new Date().toLocaleDateString("fr-FR").replace(/\//g, "-"),
       createdBy: session?.user.name ?? "Mobile",
-    });
-    setComposeErrors({});
-    setComposing(null);
-    setComposeSaving(false);
+    };
+
+    setComposeSaving(true);
+    try {
+      await createPlatformNotification(buildPlatformNotificationCreatePayload(draft));
+      await loadNotifications();
+      setComposeErrors({});
+      setComposing(null);
+    } catch (error) {
+      Alert.alert(
+        "Envoi impossible",
+        error instanceof Error ? error.message : "La notification n'a pas été enregistrée dans la base.",
+      );
+    } finally {
+      setComposeSaving(false);
+    }
   };
 
   return (
@@ -234,6 +247,7 @@ export default function PlatformNotificationsScreen() {
                   key={type}
                   style={[styles.optionChip, composing?.type === type && styles.optionChipActive]}
                   onPress={() => setComposing((current) => ({ ...(current ?? {}), type }))}
+                  disabled={composeSaving}
                 >
                   <Text style={styles.optionChipText}>{type}</Text>
                 </TouchableOpacity>
@@ -245,6 +259,7 @@ export default function PlatformNotificationsScreen() {
                   key={audience}
                   style={[styles.optionChip, composing?.audience === audience && styles.optionChipActive]}
                   onPress={() => setComposing((current) => ({ ...(current ?? {}), audience }))}
+                  disabled={composeSaving}
                 >
                   <Text style={styles.optionChipText}>{audience}</Text>
                 </TouchableOpacity>
@@ -256,6 +271,7 @@ export default function PlatformNotificationsScreen() {
                   key={priority}
                   style={[styles.optionChip, composing?.priority === priority && styles.optionChipActive]}
                   onPress={() => setComposing((current) => ({ ...(current ?? {}), priority }))}
+                  disabled={composeSaving}
                 >
                   <Text style={styles.optionChipText}>{priority}</Text>
                 </TouchableOpacity>
@@ -275,11 +291,11 @@ export default function PlatformNotificationsScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.primaryBtn, composeSaving && styles.disabledBtn]}
-                onPress={saveNotification}
+                onPress={() => void saveNotification()}
                 disabled={composeSaving}
                 accessibilityState={{ busy: composeSaving, disabled: composeSaving }}
               >
-                <Text style={styles.primaryBtnText}>Envoyer</Text>
+                <Text style={styles.primaryBtnText}>{composeSaving ? "Envoi…" : "Envoyer"}</Text>
               </TouchableOpacity>
             </View>
           </View>

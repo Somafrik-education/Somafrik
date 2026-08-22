@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import FormField from "../components/FormField";
-import type { FormFieldType } from "../lib/formFieldTokens";
+import { formatFieldLabel, type FormFieldType } from "../lib/formFieldTokens";
 import { hasFieldErrors, trimField, validateAmount, validateEmail, validatePhone } from "../lib/formFieldValidation";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
@@ -84,9 +84,24 @@ function isOptionalAdminField(field: Field): boolean {
   );
 }
 
-function isRequiredAdminField(field: Field): boolean {
-  const key = field.key.toLowerCase();
-  return key === "firstname" || key === "lastname" || key === "name" || key === "title" || key === "message" || key === "amount";
+const ADMIN_REQUIRED_FIELD_KEYS: Partial<Record<AdminEntity, ReadonlySet<string>>> = {
+  students: new Set(["name", "className"]),
+  teachers: new Set(["name", "phone"]),
+  classes: new Set(["name"]),
+  countries: new Set(["name", "code", "phonePrefix", "currency"]),
+  courses: new Set(["className", "name", "teacherId"]),
+  assignments: new Set(["teacherId", "className", "course"]),
+  payments: new Set(["studentId", "amount"]),
+  subscriptions: new Set(["schoolCode", "plan"]),
+  paymentStatuses: new Set(["label", "value"]),
+  schools: new Set(["name", "type", "country", "city", "address", "phone", "email"]),
+  users: new Set(["lastName", "firstName", "schoolCode"]),
+  announcements: new Set(["title", "message"]),
+  messages: new Set(["parentPhone", "theme", "message"]),
+};
+
+function isRequiredAdminField(entity: AdminEntity, field: Field): boolean {
+  return ADMIN_REQUIRED_FIELD_KEYS[entity]?.has(field.key) ?? false;
 }
 
 const teacherCourseAssignmentType = "Professeur → cours";
@@ -556,9 +571,13 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     const nextFieldErrors: Record<string, string> = {};
     for (const field of config.fields) {
       if (shouldHideField(entity, workingForm, field)) continue;
+      const value = workingForm[field.key];
+      if (isRequiredAdminField(entity, field) && !trimField(value)) {
+        nextFieldErrors[field.key] = `${field.label} est obligatoire.`;
+        continue;
+      }
       if (field.type === "select" || field.type === "date" || field.type === "photo") continue;
       const type = inferAdminFormFieldType(field);
-      const value = workingForm[field.key];
       let fieldError = "";
       if (type === "email") fieldError = validateEmail(value, field.label, false);
       else if (type === "phone") fieldError = validatePhone(value, field.label, false);
@@ -571,7 +590,11 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     }
     setFieldErrors({});
 
-    const nextItem = formToItem(entity, workingForm, editingItem?.id, {
+    const normalizedWorkingForm = Object.fromEntries(
+      Object.entries(workingForm).map(([key, value]) => [key, trimField(value)]),
+    );
+
+    const nextItem = formToItem(entity, normalizedWorkingForm, editingItem?.id, {
       studentsData,
       teachersData,
       classesData,
@@ -585,7 +608,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     });
 
     if (!nextItem) {
-      Alert.alert("Formulaire incomplet", "Veuillez remplir les champs principaux.");
+      Alert.alert("Formulaire invalide", "Vérifiez les valeurs saisies avant de réessayer.");
       return;
     }
 
@@ -1168,17 +1191,22 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                 shouldHideField(entity, form, field) ? null : (
                 <View key={field.key} style={styles.fieldGroup}>
                   {field.type === "select" || field.type === "date" || field.type === "photo" ? (
-                    <Text style={styles.fieldLabel}>{field.label}</Text>
+                    <Text style={styles.fieldLabel}>
+                      {formatFieldLabel(field.label, {
+                        required: isRequiredAdminField(entity, field),
+                        optional: isOptionalAdminField(field) && !isRequiredAdminField(entity, field),
+                      })}
+                    </Text>
                   ) : null}
                   {field.type === "select" ? (
                     entity === "students" && lockedClassName && field.key === "className" ? (
-                      <View style={[styles.selectInput, styles.selectInputLocked]}>
+                      <View style={[styles.selectInput, styles.selectInputLocked, fieldErrors[field.key] && styles.selectInputInvalid]}>
                         <Text style={styles.selectText}>{lockedClassName}</Text>
                         <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" />
                       </View>
                     ) : (
                       <TouchableOpacity
-                        style={styles.selectInput}
+                        style={[styles.selectInput, fieldErrors[field.key] && styles.selectInputInvalid]}
                         activeOpacity={0.85}
                         onPress={() => setSelectField(field)}
                       >
@@ -1195,7 +1223,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                     )
                   ) : field.type === "date" ? (
                     <TouchableOpacity
-                      style={styles.selectInput}
+                      style={[styles.selectInput, fieldErrors[field.key] && styles.selectInputInvalid]}
                       activeOpacity={0.85}
                       onPress={() => {
                         setCalendarMonth(getInitialCalendarDate(field, form[field.key]));
@@ -1214,7 +1242,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                       <Ionicons name="calendar-outline" size={18} color="#64748B" />
                     </TouchableOpacity>
                   ) : field.type === "photo" ? (
-                    <View style={styles.photoField}>
+                    <View style={[styles.photoField, fieldErrors[field.key] && styles.selectInputInvalid]}>
                       {form[field.key] ? (
                         <View style={styles.photoPreviewRow}>
                           <Image source={{ uri: form[field.key] }} style={styles.photoPreview} />
@@ -1250,8 +1278,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                   ) : (
                     <FormField
                       label={field.label}
-                      required={isRequiredAdminField(field)}
-                      optional={isOptionalAdminField(field)}
+                      required={isRequiredAdminField(entity, field)}
+                      optional={isOptionalAdminField(field) && !isRequiredAdminField(entity, field)}
                       type={inferAdminFormFieldType(field)}
                       value={form[field.key] ?? ""}
                       onChangeText={(value) => {
@@ -1264,10 +1292,14 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                         });
                       }}
                       placeholder={field.placeholder}
-                      keyboardType={field.keyboardType ?? "default"}
                       error={fieldErrors[field.key]}
                     />
                   )}
+                  {fieldErrors[field.key] && (field.type === "select" || field.type === "date" || field.type === "photo") ? (
+                    <Text style={styles.fieldError} accessibilityRole="alert">
+                      {fieldErrors[field.key]}
+                    </Text>
+                  ) : null}
                 </View>
                 )
               ))}
@@ -1328,24 +1360,31 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                   activeOpacity={0.85}
                   onPress={() => {
                     if (selectField) {
+                      const selectedKey = selectField.key;
                       setForm((current) => ({
                         ...current,
-                        [selectField.key]: option,
-        ...(entity === "assignments" && selectField.key === "assignmentType"
+                        [selectedKey]: option,
+        ...(entity === "assignments" && selectedKey === "assignmentType"
           ? option === studentClassAssignmentType
             ? { teacherId: "", course: "" }
             : { studentId: "" }
           : {}),
-        ...(entity === "users" && selectField.key === "role"
+        ...(entity === "users" && selectedKey === "role"
           ? {
               ...getRoleDefaults(option, form.schoolCode || getDefaultSchoolCode(schoolsData, session)),
               identifier: generateUserIdentifier(usersData, option),
             }
           : {}),
-                        ...(entity === "assignments" && selectField.key === "className"
+                        ...(entity === "assignments" && selectedKey === "className"
                           ? { course: "" }
                           : {}),
                       }));
+                      setFieldErrors((current) => {
+                        if (!current[selectedKey]) return current;
+                        const next = { ...current };
+                        delete next[selectedKey];
+                        return next;
+                      });
                     }
                     setSelectField(null);
                   }}
@@ -1468,7 +1507,14 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                         style={[styles.dayCell, !day && styles.dayCellEmpty]}
                         onPress={() => {
                           if (day && dateField) {
-                            setForm((current) => ({ ...current, [dateField.key]: formatDate(day) }));
+                            const selectedKey = dateField.key;
+                            setForm((current) => ({ ...current, [selectedKey]: formatDate(day) }));
+                            setFieldErrors((current) => {
+                              if (!current[selectedKey]) return current;
+                              const next = { ...current };
+                              delete next[selectedKey];
+                              return next;
+                            });
                           }
                           setDateField(null);
                         }}
@@ -3064,6 +3110,7 @@ const styles = StyleSheet.create({
   },
   fieldGroup: { marginBottom: 12 },
   fieldLabel: { color: "#334155", fontSize: 12, fontWeight: "900", marginBottom: 6 },
+  fieldError: { color: "#B91C1C", fontWeight: "800", marginTop: 6 },
   input: {
     borderWidth: 1,
     borderColor: "#E2E8F0",
@@ -3087,6 +3134,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     borderColor: "#CBD5E1",
   },
+  selectInputInvalid: { borderColor: "#DC2626" },
   selectText: {
     color: "#0F172A",
     fontWeight: "800",

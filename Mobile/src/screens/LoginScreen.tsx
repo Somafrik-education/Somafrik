@@ -70,6 +70,7 @@ export default function LoginScreen({ navigation, route }: Props) {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+  const [passwordFieldErrors, setPasswordFieldErrors] = useState<Record<string, string>>({});
   const { setSession } = useAuth();
 
   useEffect(() => {
@@ -138,6 +139,8 @@ export default function LoginScreen({ navigation, route }: Props) {
         setPendingSession(session);
         setNewPassword("");
         setConfirmPassword("");
+        setPasswordFieldErrors({});
+        setPasswordChangeError(null);
         return;
       }
 
@@ -165,21 +168,40 @@ export default function LoginScreen({ navigation, route }: Props) {
     });
   };
 
+  const clearPasswordFieldError = (key: string) => {
+    setPasswordFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
   const submitNewPassword = async () => {
-    if (!pendingSession) return;
-    if (newPassword.trim().length < 6) {
-      setPasswordChangeError("Le nouveau mot de passe doit contenir au moins 6 caractères.");
-      return;
+    if (!pendingSession || isChangingPassword) return;
+
+    const nextPassword = newPassword.trim();
+    const confirmation = confirmPassword.trim();
+    const nextErrors: Record<string, string> = {};
+    if (nextPassword.length < 6) {
+      nextErrors.newPassword = "Le nouveau mot de passe doit contenir au moins 6 caractères.";
     }
-    if (newPassword.trim() !== confirmPassword.trim()) {
-      setPasswordChangeError("Les deux mots de passe ne correspondent pas.");
+    if (!confirmation) {
+      nextErrors.confirmPassword = "La confirmation du mot de passe est obligatoire.";
+    } else if (nextPassword && nextPassword !== confirmation) {
+      nextErrors.confirmPassword = "Les deux mots de passe ne correspondent pas.";
+    }
+    if (Object.keys(nextErrors).length) {
+      setPasswordFieldErrors(nextErrors);
+      setPasswordChangeError(null);
       return;
     }
 
     setIsChangingPassword(true);
+    setPasswordFieldErrors({});
     setPasswordChangeError(null);
     try {
-      const response = await changePassword(newPassword.trim());
+      const response = await changePassword(nextPassword);
       await completeLogin({
         ...pendingSession,
         user: {
@@ -189,6 +211,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         },
       });
       setPendingSession(null);
+      setPasswordFieldErrors({});
     } catch (error) {
       setPasswordChangeError(error instanceof Error ? error.message : "Modification impossible. Réessayez.");
     } finally {
@@ -361,10 +384,13 @@ export default function LoginScreen({ navigation, route }: Props) {
                 value={newPassword}
                 onChangeText={(value) => {
                   setNewPassword(value);
+                  clearPasswordFieldError("newPassword");
                   setPasswordChangeError(null);
                 }}
+                error={passwordFieldErrors.newPassword}
                 textContentType="newPassword"
                 autoComplete="password-new"
+                editable={!isChangingPassword}
                 accessibilityLabel={LOGIN_SCREEN_COPY.newPasswordLabel}
               />
               <FormField
@@ -375,9 +401,12 @@ export default function LoginScreen({ navigation, route }: Props) {
                 value={confirmPassword}
                 onChangeText={(value) => {
                   setConfirmPassword(value);
+                  clearPasswordFieldError("confirmPassword");
                   setPasswordChangeError(null);
                 }}
+                error={passwordFieldErrors.confirmPassword}
                 textContentType="password"
+                editable={!isChangingPassword}
                 accessibilityLabel={LOGIN_SCREEN_COPY.confirmPasswordLabel}
               />
               {passwordChangeError ? (
@@ -387,7 +416,7 @@ export default function LoginScreen({ navigation, route }: Props) {
               ) : null}
               <TouchableOpacity
                 style={[styles.loginButton, isChangingPassword && styles.loginButtonDisabled]}
-                onPress={submitNewPassword}
+                onPress={() => void submitNewPassword()}
                 disabled={isChangingPassword}
                 accessibilityRole="button"
                 accessibilityLabel="Valider le nouveau mot de passe"
