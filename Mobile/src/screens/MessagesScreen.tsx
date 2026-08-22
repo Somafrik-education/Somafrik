@@ -8,10 +8,10 @@ import {
   SectionList,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
@@ -71,6 +71,7 @@ export default function MessagesScreen() {
   const [theme, setTheme] = useState(messageThemes[0]);
   const [message, setMessage] = useState("");
   const [attachmentUrl, setAttachmentUrl] = useState("");
+  const [messageError, setMessageError] = useState("");
   const [priority, setPriority] = useState<MessagePriority>("Moyenne");
   const [query, setQuery] = useState("");
   const [recipient, setRecipient] = useState<"school" | "teacher">("school");
@@ -188,9 +189,10 @@ export default function MessagesScreen() {
     }
     if (!message.trim()) {
       sendLockRef.current.end();
-      Alert.alert("Message incomplet", "Veuillez écrire votre message avant l'envoi.");
+      setMessageError("Message est obligatoire.");
       return;
     }
+    setMessageError("");
 
     let payload: Record<string, unknown> | null = null;
     if (role === "parent_student") {
@@ -461,27 +463,29 @@ export default function MessagesScreen() {
               disabled={sending}
             />
 
-            <TextInput
+            <FormField
+              label="Message"
+              required
+              type="multiline"
               value={message}
-              onChangeText={setMessage}
-              placeholder="Expliquez votre message..."
-              multiline
+              onChangeText={(value) => {
+                setMessage(value);
+                setMessageError("");
+              }}
+              placeholder="Ex. Expliquez votre message…"
               editable={!sending}
-              style={styles.messageInput}
-              textAlignVertical="top"
-              autoCapitalize="sentences"
               autoCorrect
-              returnKeyType="default"
+              error={messageError}
               accessibilityLabel="Texte du message"
             />
-            <TextInput
+            <FormField
+              label="Pièce jointe"
+              optional
+              type="url"
               value={attachmentUrl}
               onChangeText={setAttachmentUrl}
-              placeholder="Lien de pièce jointe (optionnel)"
+              placeholder="Ex. https://…"
               editable={!sending}
-              autoCapitalize="none"
-              keyboardType="url"
-              style={styles.input}
               accessibilityLabel="Lien de pièce jointe"
             />
             <TouchableOpacity
@@ -520,7 +524,15 @@ export default function MessagesScreen() {
             loadingLabel="Chargement des messages…"
           />
         ) : (
-          <TextInput value={query} onChangeText={setQuery} placeholder="Rechercher" style={styles.input} accessibilityLabel="Rechercher un message" />
+          <FormField
+            label="Recherche"
+            hideVisibleLabel
+            type="search"
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Ex. thème ou parent"
+            accessibilityLabel="Rechercher un message"
+          />
         )}
           </>
         }

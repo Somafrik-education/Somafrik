@@ -8,10 +8,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -230,7 +230,9 @@ export default function LoginScreen({ navigation, route }: Props) {
         {LOGIN_SCREEN_COPY.identifierHint}
       </Text>
 
-      <TextInput
+      <FormField
+        label={LOGIN_SCREEN_COPY.identifierLabel}
+        required
         placeholder={LOGIN_SCREEN_COPY.identifierPlaceholder}
         value={identifier}
         onChangeText={(value) => {
@@ -242,10 +244,10 @@ export default function LoginScreen({ navigation, route }: Props) {
         textContentType={identifierKeyboard === "email-address" ? "emailAddress" : "username"}
         autoComplete={identifierKeyboard === "email-address" ? "email" : "username"}
         returnKeyType="next"
-        style={styles.input}
         editable={!accessRole}
         testID={LOGIN_TEST_IDS.identifierInput}
-        accessibilityLabel={LOGIN_SCREEN_COPY.identifierPlaceholder}
+        accessibilityLabel={LOGIN_SCREEN_COPY.identifierLabel}
+        containerStyle={styles.field}
       />
 
       <View style={styles.roleRow}>
@@ -268,7 +270,14 @@ export default function LoginScreen({ navigation, route }: Props) {
       </View>
 
       {identity && (
-        <TextInput
+        <FormField
+          label={
+            identity.role === "parent_student" || identity.role === "student"
+              ? LOGIN_SCREEN_COPY.pinLabel
+              : LOGIN_SCREEN_COPY.passwordLabel
+          }
+          required
+          type="password"
           placeholder={
             identity.role === "parent_student" || identity.role === "student"
               ? LOGIN_SCREEN_COPY.pinPlaceholder
@@ -279,7 +288,6 @@ export default function LoginScreen({ navigation, route }: Props) {
             setPassword(value);
             setErrorMessage(null);
           }}
-          secureTextEntry
           keyboardType={secretKeyboard}
           textContentType="password"
           autoComplete="password"
@@ -287,13 +295,13 @@ export default function LoginScreen({ navigation, route }: Props) {
           onSubmitEditing={() => {
             if (loginReady) void handleLogin();
           }}
-          style={styles.input}
           testID={LOGIN_TEST_IDS.passwordInput}
           accessibilityLabel={
             identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinPlaceholder
-              : LOGIN_SCREEN_COPY.passwordPlaceholder
+              ? LOGIN_SCREEN_COPY.pinLabel
+              : LOGIN_SCREEN_COPY.passwordLabel
           }
+          containerStyle={styles.field}
         />
       )}
 
@@ -345,30 +353,32 @@ export default function LoginScreen({ navigation, route }: Props) {
               <Text style={styles.passwordHint}>
                 Votre mot de passe temporaire a été accepté. Choisissez maintenant votre mot de passe personnel.
               </Text>
-              <TextInput
-                placeholder="Nouveau mot de passe"
+              <FormField
+                label={LOGIN_SCREEN_COPY.newPasswordLabel}
+                required
+                type="password"
+                placeholder="Ex. mot de passe personnel"
                 value={newPassword}
                 onChangeText={(value) => {
                   setNewPassword(value);
                   setPasswordChangeError(null);
                 }}
-                secureTextEntry
                 textContentType="newPassword"
                 autoComplete="password-new"
-                style={styles.input}
-                accessibilityLabel="Nouveau mot de passe"
+                accessibilityLabel={LOGIN_SCREEN_COPY.newPasswordLabel}
               />
-              <TextInput
-                placeholder="Confirmer le mot de passe"
+              <FormField
+                label={LOGIN_SCREEN_COPY.confirmPasswordLabel}
+                required
+                type="password"
+                placeholder="Ex. retaper le mot de passe"
                 value={confirmPassword}
                 onChangeText={(value) => {
                   setConfirmPassword(value);
                   setPasswordChangeError(null);
                 }}
-                secureTextEntry
                 textContentType="password"
-                style={styles.input}
-                accessibilityLabel="Confirmer le mot de passe"
+                accessibilityLabel={LOGIN_SCREEN_COPY.confirmPasswordLabel}
               />
               {passwordChangeError ? (
                 <View style={styles.errorBanner} accessibilityRole="alert">
@@ -449,16 +459,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     textAlign: "center",
   },
-  input: {
+  field: {
     width: "100%",
-    minHeight: MIN_TOUCH_TARGET,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 14,
-    padding: 13,
     marginBottom: 14,
-    color: "#0F172A",
-    fontWeight: "800",
   },
   roleRow: {
     width: "100%",

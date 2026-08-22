@@ -8,10 +8,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
+import type { FormFieldType } from "../lib/formFieldTokens";
+import { hasFieldErrors, trimField, validateAmount, validateEmail, validatePhone } from "../lib/formFieldValidation";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -56,6 +58,37 @@ type Field = {
   type?: "text" | "select" | "date" | "photo";
 };
 
+function inferAdminFormFieldType(field: Field): FormFieldType {
+  const key = field.key.toLowerCase();
+  if (key.includes("email")) return "email";
+  if (key.includes("phone")) return "phone";
+  if (key.includes("password") || key.includes("secret")) return "password";
+  if (field.keyboardType === "numeric") return "amount";
+  if (key.includes("date")) return "date";
+  if (key === "message" || key === "address" || key === "slogan") return "multiline";
+  if (key.includes("firstname") || key.includes("lastname") || key === "name" || key === "parentname") return "name";
+  if (key.includes("url") || key.includes("website")) return "url";
+  return "text";
+}
+
+function isOptionalAdminField(field: Field): boolean {
+  const key = field.key.toLowerCase();
+  return (
+    key.includes("phone") ||
+    key.includes("email") ||
+    key.includes("website") ||
+    key.includes("slogan") ||
+    key.includes("attachment") ||
+    key.includes("logo") ||
+    key.includes("parent")
+  );
+}
+
+function isRequiredAdminField(field: Field): boolean {
+  const key = field.key.toLowerCase();
+  return key === "firstname" || key === "lastname" || key === "name" || key === "title" || key === "message" || key === "amount";
+}
+
 const teacherCourseAssignmentType = "Professeur → cours";
 const studentClassAssignmentType = "Élève → classe";
 const rolePilotageActions: Array<{ key: SecurityAction; label: string }> = [
@@ -97,25 +130,25 @@ const configs: Record<
     title: "Gestion des élèves",
     addLabel: "Ajouter un élève",
     fields: [
-      { key: "name", label: "Nom", placeholder: "Nom complet" },
-      { key: "firstName", label: "Prénom", placeholder: "Prénom" },
+      { key: "name", label: "Nom", placeholder: "Ex. Okito" },
+      { key: "firstName", label: "Prénom", placeholder: "Ex. Esther" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
       { key: "birthDate", label: "Date de naissance", placeholder: "JJ-MM-AAAA", type: "date" },
       { key: "className", label: "Classe", placeholder: "Choisir une classe", type: "select" },
       { key: "parentName", label: "Nom du parent", placeholder: "Nom complet du parent" },
-      { key: "parentPhone", label: "Téléphone parent", placeholder: "+243 ..." },
-      { key: "parentEmail", label: "Email parent", placeholder: "parent@email.com" },
+      { key: "parentPhone", label: "Téléphone parent", placeholder: "Ex. +243 8xx xxx xxx" },
+      { key: "parentEmail", label: "Email parent", placeholder: "Ex. parent@email.com" },
     ],
   },
   teachers: {
     title: "Gestion des enseignants",
     addLabel: "Ajouter un enseignant",
     fields: [
-      { key: "name", label: "Nom", placeholder: "Nom complet" },
-      { key: "firstName", label: "Prénom", placeholder: "Prénom" },
+      { key: "name", label: "Nom", placeholder: "Ex. Kabila" },
+      { key: "firstName", label: "Prénom", placeholder: "Ex. Amina" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
-      { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
-      { key: "email", label: "Email", placeholder: "enseignant@email.com" },
+      { key: "phone", label: "Téléphone", placeholder: "Ex. +243 8xx xxx xxx" },
+      { key: "email", label: "Email", placeholder: "Ex. amina@ecole.cd" },
       { key: "mainSubject", label: "Cours principal", placeholder: "Choisir un cours", type: "select" },
     ],
   },
@@ -233,10 +266,10 @@ const configs: Record<
     title: "Gestion des utilisateurs",
     addLabel: "Créer un utilisateur",
     fields: [
-      { key: "lastName", label: "Nom", placeholder: "Nom" },
-      { key: "firstName", label: "Prénom", placeholder: "Prénom" },
+      { key: "lastName", label: "Nom", placeholder: "Ex. Okito" },
+      { key: "firstName", label: "Prénom", placeholder: "Ex. Esther" },
       { key: "gender", label: "Sexe", placeholder: "Choisir le sexe", type: "select" },
-      { key: "phone", label: "Téléphone", placeholder: "+243 ..." },
+      { key: "phone", label: "Téléphone", placeholder: "Ex. +243 8xx xxx xxx" },
       { key: "schoolCode", label: "Établissement", placeholder: "Choisir l'établissement", type: "select" },
       { key: "accessChannel", label: "Canal d'accès", placeholder: "Plateforme ou Application", type: "select" },
       { key: "identifier", label: "Identifiant unique", placeholder: "Généré par le système" },
@@ -248,7 +281,7 @@ const configs: Record<
     title: "Gestion des annonces",
     addLabel: "Ajouter une annonce",
     fields: [
-      { key: "title", label: "Titre", placeholder: "Réunion des parents" },
+      { key: "title", label: "Titre", placeholder: "Ex. Réunion des parents" },
       { key: "message", label: "Message", placeholder: "Votre message" },
       { key: "date", label: "Date", placeholder: "JJ-MM-AAAA", type: "date" },
     ],
@@ -306,6 +339,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
   const items = entity === "payments" ? paymentsSnapshot.data : getItems(entity);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formSaving, setFormSaving] = useState(false);
   const [visible, setVisible] = useState(false);
   const [selectField, setSelectField] = useState<Field | null>(null);
   const [selectedCourseClass, setSelectedCourseClass] = useState("");
@@ -467,6 +502,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
         : {}),
       // Création élèves désactivée (canCreate=false pour students) — pas de préremplissage classe.
     });
+    setFieldErrors({});
+    setFormSaving(false);
     setVisible(true);
   };
 
@@ -478,6 +515,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
 
     setEditingItem(item);
     setForm(itemToForm(entity, item));
+    setFieldErrors({});
+    setFormSaving(false);
     if (entity === "courses") {
       setSelectedCourseClass(item.className);
     }
@@ -485,6 +524,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
   };
 
   const save = async () => {
+    if (formSaving) return;
     if (editingItem && !canUpdate) {
       Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier cet élément.");
       return;
@@ -512,6 +552,24 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
       entity === "students" && lockedClassName
         ? { ...form, className: lockedClassName }
         : form;
+
+    const nextFieldErrors: Record<string, string> = {};
+    for (const field of config.fields) {
+      if (shouldHideField(entity, workingForm, field)) continue;
+      if (field.type === "select" || field.type === "date" || field.type === "photo") continue;
+      const type = inferAdminFormFieldType(field);
+      const value = workingForm[field.key];
+      let fieldError = "";
+      if (type === "email") fieldError = validateEmail(value, field.label, false);
+      else if (type === "phone") fieldError = validatePhone(value, field.label, false);
+      else if (type === "amount" && trimField(value)) fieldError = validateAmount(value, field.label, false);
+      if (fieldError) nextFieldErrors[field.key] = fieldError;
+    }
+    if (hasFieldErrors(nextFieldErrors)) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+    setFieldErrors({});
 
     const nextItem = formToItem(entity, workingForm, editingItem?.id, {
       studentsData,
@@ -557,6 +615,7 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
     }
 
     if (entity === "paymentStatuses") {
+      setFormSaving(true);
       try {
         await upsertFinancePaymentStatus(
           {
@@ -573,11 +632,14 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
           "Statut impossible",
           error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
         );
+      } finally {
+        setFormSaving(false);
       }
       return;
     }
 
     if (entity === "assignments") {
+      setFormSaving(true);
       try {
         if (editingItem?.id) {
           await updateTeacherAssignment(String(editingItem.id), nextItem);
@@ -591,11 +653,14 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
           "Affectation impossible",
           error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
         );
+      } finally {
+        setFormSaving(false);
       }
       return;
     }
 
     if (entity === "courses") {
+      setFormSaving(true);
       try {
         if (editingItem?.id) {
           await updateCourse(String(editingItem.id ?? nextItem.id), nextItem);
@@ -610,6 +675,8 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
           "Cours impossible",
           error instanceof Error ? error.message : "Erreur de synchronisation PostgreSQL.",
         );
+      } finally {
+        setFormSaving(false);
       }
       return;
     }
@@ -911,15 +978,16 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
 
         {entity === "users" && (
           <View style={styles.filtersCard}>
-            <View style={styles.searchBox}>
-              <Ionicons name="search-outline" size={18} color="#64748B" />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Rechercher nom, téléphone ou identifiant"
-                style={styles.searchInput}
-              />
-            </View>
+            <FormField
+              label="Recherche"
+              hideVisibleLabel
+              type="search"
+              leading={<Ionicons name="search-outline" size={18} color="#64748B" />}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Ex. nom, téléphone ou identifiant"
+              accessibilityLabel="Rechercher nom, téléphone ou identifiant"
+            />
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
               {["Tous", ...getManageableSchoolUserRoles()].map((role) => (
@@ -1099,7 +1167,9 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
               {config.fields.map((field) => (
                 shouldHideField(entity, form, field) ? null : (
                 <View key={field.key} style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>{field.label}</Text>
+                  {field.type === "select" || field.type === "date" || field.type === "photo" ? (
+                    <Text style={styles.fieldLabel}>{field.label}</Text>
+                  ) : null}
                   {field.type === "select" ? (
                     entity === "students" && lockedClassName && field.key === "className" ? (
                       <View style={[styles.selectInput, styles.selectInputLocked]}>
@@ -1178,12 +1248,24 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TextInput
+                    <FormField
+                      label={field.label}
+                      required={isRequiredAdminField(field)}
+                      optional={isOptionalAdminField(field)}
+                      type={inferAdminFormFieldType(field)}
                       value={form[field.key] ?? ""}
-                      onChangeText={(value) => setForm((current) => ({ ...current, [field.key]: value }))}
+                      onChangeText={(value) => {
+                        setForm((current) => ({ ...current, [field.key]: value }));
+                        setFieldErrors((current) => {
+                          if (!current[field.key]) return current;
+                          const next = { ...current };
+                          delete next[field.key];
+                          return next;
+                        });
+                      }}
                       placeholder={field.placeholder}
                       keyboardType={field.keyboardType ?? "default"}
-                      style={styles.input}
+                      error={fieldErrors[field.key]}
                     />
                   )}
                 </View>
@@ -1201,10 +1283,12 @@ export default function AdminCrudScreen({ route, navigation }: Props) {
                 <Text style={styles.cancelText}>Annuler</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.saveButton}
+                style={[styles.saveButton, formSaving && styles.disabledButton]}
                 onPress={() => void save()}
+                disabled={formSaving}
                 accessibilityRole="button"
                 accessibilityLabel={editingItem ? "Enregistrer les modifications" : "Enregistrer"}
+                accessibilityState={{ busy: formSaving, disabled: formSaving }}
               >
                 <Text style={styles.saveText}>Enregistrer</Text>
               </TouchableOpacity>
@@ -3085,6 +3169,7 @@ const styles = StyleSheet.create({
   },
   cancelText: { color: "#334155", fontWeight: "900" },
   saveText: { color: "#FFFFFF", fontWeight: "900" },
+  disabledButton: { opacity: 0.5 },
   selectorBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.45)",

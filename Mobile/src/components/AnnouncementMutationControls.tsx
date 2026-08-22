@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
+import FormField from "./FormField";
+import { hasFieldErrors, trimField, validateAnnouncementDraft } from "../lib/formFieldValidation";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { createClientsAnnouncement } from "../services/api";
@@ -16,20 +18,29 @@ export default function AnnouncementMutationControls({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
+  const titleRef = useRef<TextInput>(null);
+  const messageRef = useRef<TextInput>(null);
 
   const submit = async () => {
-    if (!title.trim() || !message.trim()) {
-      setError("Titre et message obligatoires.");
+    if (saving) return;
+    const nextErrors = validateAnnouncementDraft({ title, message });
+    if (hasFieldErrors(nextErrors)) {
+      setFieldErrors(nextErrors);
+      setError("");
+      if (nextErrors.title) titleRef.current?.focus();
+      else if (nextErrors.message) messageRef.current?.focus();
       return;
     }
     setSaving(true);
     setError("");
+    setFieldErrors({});
     try {
       await createClientsAnnouncement({
-        title: title.trim(),
-        message: message.trim(),
+        title: trimField(title),
+        message: trimField(message),
       });
       setOpen(false);
       setTitle("");
@@ -49,6 +60,7 @@ export default function AnnouncementMutationControls({
         style={styles.create}
         onPress={() => {
           setError("");
+          setFieldErrors({});
           setOpen(true);
         }}
         testID="announcements-create"
@@ -65,13 +77,42 @@ export default function AnnouncementMutationControls({
         onClose={() => setOpen(false)}
         onSubmit={() => void submit()}
       >
-        <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Titre" editable={!saving} />
-        <TextInput
-          style={[styles.input, styles.area]}
+        <FormField
+          ref={titleRef}
+          label="Titre"
+          required
+          type="text"
+          value={title}
+          onChangeText={(value) => {
+            setTitle(value);
+            setFieldErrors((current) => {
+              if (!current.title) return current;
+              const next = { ...current };
+              delete next.title;
+              return next;
+            });
+          }}
+          placeholder="Ex. Réunion des parents"
+          error={fieldErrors.title}
+          editable={!saving}
+        />
+        <FormField
+          ref={messageRef}
+          label="Message"
+          required
+          type="multiline"
           value={message}
-          onChangeText={setMessage}
-          placeholder="Message"
-          multiline
+          onChangeText={(value) => {
+            setMessage(value);
+            setFieldErrors((current) => {
+              if (!current.message) return current;
+              const next = { ...current };
+              delete next.message;
+              return next;
+            });
+          }}
+          placeholder="Ex. La réunion aura lieu jeudi à 16 h."
+          error={fieldErrors.message}
           editable={!saving}
         />
       </CanonicalMutationModal>
@@ -82,6 +123,4 @@ export default function AnnouncementMutationControls({
 const styles = StyleSheet.create({
   create: { minHeight: MIN_TOUCH_TARGET_DP, borderRadius: 14, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center", marginBottom: 14 },
   createText: { color: "#FFFFFF", fontWeight: "900" },
-  input: { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, padding: 12, marginBottom: 10, color: "#0F172A" },
-  area: { minHeight: 100, textAlignVertical: "top" },
 });

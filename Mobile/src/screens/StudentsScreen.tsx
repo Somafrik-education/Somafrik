@@ -12,8 +12,6 @@ import {
 
   TouchableOpacity,
 
-  TextInput,
-
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -53,6 +51,7 @@ import {
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 
 import StudentMutationControls from "../components/StudentMutationControls";
+import FormField from "../components/FormField";
 
 import type { PresenceItem } from "../data/catalog";
 
@@ -455,25 +454,16 @@ export default function StudentsScreen({ route, navigation }: any) {
 
           {renderStudentCreate()}
 
-        <View style={styles.searchBox}>
-
-          <Ionicons name="search-outline" size={22} color="#94A3B8" />
-
-          <TextInput
-
-            placeholder="Rechercher un élève"
-
-            placeholderTextColor="#94A3B8"
-
-            value={query}
-
-            onChangeText={setQuery}
-
-            style={styles.searchInput}
-
-          />
-
-        </View>
+        <FormField
+          label="Recherche"
+          hideVisibleLabel
+          type="search"
+          leading={<Ionicons name="search-outline" size={22} color="#94A3B8" />}
+          placeholder="Ex. Esther Okito"
+          value={query}
+          onChangeText={setQuery}
+          accessibilityLabel="Rechercher un élève"
+        />
 
 
 

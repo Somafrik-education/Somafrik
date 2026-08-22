@@ -4,10 +4,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
@@ -417,28 +417,24 @@ export default function TimetableScreen() {
         <Text style={styles.label}>Jour</Text>
         {renderDayChips(dayOfWeek, setDayOfWeek)}
 
-        <Text style={styles.label}>Début</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Début"
+          required
+          type="time"
           value={startTime}
           onChangeText={setStartTime}
           editable={!saving}
-          placeholder="08:00"
-          keyboardType="numbers-and-punctuation"
-          autoCapitalize="none"
-          autoCorrect={false}
+          placeholder="Ex. 08:00"
           accessibilityLabel="Heure de début"
         />
-        <Text style={styles.label}>Fin</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Fin"
+          required
+          type="time"
           value={endTime}
           onChangeText={setEndTime}
           editable={!saving}
-          placeholder="09:00"
-          keyboardType="numbers-and-punctuation"
-          autoCapitalize="none"
-          autoCorrect={false}
+          placeholder="Ex. 09:00"
           accessibilityLabel="Heure de fin"
         />
 
@@ -509,8 +505,16 @@ export default function TimetableScreen() {
         <Text style={styles.meta}>
           {PLANNING_V2_COPY.usualTeacher} : {editing.teacherName}
         </Text>
-        <Text style={styles.label}>Date d'occurrence</Text>
-        <TextInput style={styles.input} value={occurrenceDate} onChangeText={setOccurrenceDate} editable={!saving} />
+        <FormField
+          label="Date d'occurrence"
+          required
+          type="date"
+          value={occurrenceDate}
+          onChangeText={setOccurrenceDate}
+          editable={!saving}
+          placeholder="Ex. 2026-08-22"
+          accessibilityLabel="Date d'occurrence"
+        />
         <Text style={styles.label}>Remplaçant</Text>
         {optionsError ? <Text style={styles.errorText}>{optionsError}</Text> : null}
         {substituteOptions.map((option) => {

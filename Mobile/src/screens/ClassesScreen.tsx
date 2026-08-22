@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -36,6 +35,7 @@ import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import ClassMutationControls from "../components/ClassMutationControls";
+import FormField from "../components/FormField";
 
 export default function ClassesScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -112,18 +112,16 @@ export default function ClassesScreen({ navigation }: any) {
       </View>
       <ClassMutationControls onChanged={async () => { await Promise.all([loadClasses(), loadStudents()]); }} />
 
-      <View style={[styles.searchBox, blockNetworkActions && styles.disabledControl]} pointerEvents={blockNetworkActions ? "none" : "auto"}>
-        <Ionicons name="search-outline" size={22} color="#94A3B8" />
-        <TextInput
-          placeholder="Rechercher une classe"
-          placeholderTextColor="#94A3B8"
-          style={styles.searchInput}
+      <View style={blockNetworkActions ? styles.disabledControl : undefined} pointerEvents={blockNetworkActions ? "none" : "auto"}>
+        <FormField
+          label="Recherche"
+          hideVisibleLabel
+          type="search"
+          leading={<Ionicons name="search-outline" size={22} color="#94A3B8" />}
+          placeholder="Ex. 6e A ou CLS-6A"
           editable={!blockNetworkActions}
           value={searchQuery}
           onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
           testID={USABILITY_TEST_IDS.classesSearch}
           accessibilityLabel="Rechercher une classe par nom ou code"
         />
