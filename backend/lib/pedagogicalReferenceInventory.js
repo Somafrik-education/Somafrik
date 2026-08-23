@@ -645,12 +645,20 @@ function sanitizeMatrixRow(row) {
   };
 }
 
+const PUBLIC_TARGET_LABELS = new Set(["DATABASE_URL", "PREPROD_DATABASE_URL", "ABSENT"]);
+
+/** Libellé non sensible uniquement — jamais hostname, user, mot de passe, nom de base. */
+function publicTargetLabel(source) {
+  const label = String(source ?? "").trim();
+  return PUBLIC_TARGET_LABELS.has(label) ? label : "ABSENT";
+}
+
 function sanitizeInventoryForPublication(report = {}) {
   return {
     generatedAt: report.generatedAt ?? null,
-    target: report.target
-      ? { source: report.target.source ?? null, databaseUrlRedacted: report.target.databaseUrlRedacted ?? null }
-      : undefined,
+    target: {
+      source: publicTargetLabel(report.target?.source),
+    },
     readOnly: true,
     autoMutation: false,
     identifiersRedacted: true,
@@ -675,6 +683,16 @@ function sanitizeInventoryForPublication(report = {}) {
 function containsOperationalIdentifiers(value) {
   const text = JSON.stringify(value ?? {});
   return /"school_code"|"school_name"|"class_code"|"class_codes"|"class_name"|"establishments"/i.test(text);
+}
+
+/** Hôte, nom de base, URL postgres ou champ redacted — interdits dans stdout / Markdown / JSON publiable. */
+function containsPublishedDatabaseInfrastructure(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value ?? {});
+  if (/postgresql:\/\//i.test(text)) return true;
+  if (/postgres:\/\//i.test(text)) return true;
+  if (/databaseUrlRedacted/i.test(text)) return true;
+  if (/@[a-z0-9][a-z0-9._-]*(?::\d+)?\/[a-z0-9][a-z0-9._-]*/i.test(text)) return true;
+  return false;
 }
 
 function assertProofPathAllowed(filePath, repoRoot = process.cwd()) {
@@ -704,7 +722,7 @@ function formatMarkdownReport(report, meta = {}) {
     "# Inventaire live — référentiels pédagogiques (PR-0)",
     "",
     `Généré : ${generatedAt}`,
-    `Cible : ${meta.databaseUrlRedacted || "non connecté"}`,
+    `Cible : ${publicTargetLabel(meta.source ?? report.target?.source)}`,
     `Verdict classification : **${report.classificationVerdict}**`,
     "",
     "Lecture seule. Aucune écriture SQL. Aucune migration de données.",
@@ -782,8 +800,10 @@ module.exports = {
   inventoryPedagogicalReference,
   formatMatrixMarkdown,
   formatMarkdownReport,
+  publicTargetLabel,
   sanitizeInventoryForPublication,
   containsOperationalIdentifiers,
+  containsPublishedDatabaseInfrastructure,
   assertProofPathAllowed,
   resolveCountryScopedProposal,
   normalizeCountryCode,

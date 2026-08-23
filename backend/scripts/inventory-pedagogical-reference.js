@@ -6,7 +6,8 @@
  *   DATABASE_URL=... npm run inventory:pedagogical-reference
  *   PREPROD_DATABASE_URL=... npm run inventory:pedagogical-reference
  *
- * stdout = rapport SANITISÉ (sans school_code / school_name / class_code).
+ * stdout = rapport SANITISÉ (sans school_code / school_name / class_code,
+ * ni hostname / nom de base / URL). Cible publiée = label env uniquement.
  * Dump brut ops uniquement hors dépôt :
  *   INVENTORY_RAW=1 PROOF_OUT=/tmp/pedagogical-inventory.json npm run inventory:pedagogical-reference
  *
@@ -22,6 +23,8 @@ const {
   inventoryPedagogicalReference,
   formatMarkdownReport,
   sanitizeInventoryForPublication,
+  publicTargetLabel,
+  containsPublishedDatabaseInfrastructure,
   assertNoWriteFlags,
   assertProofPathAllowed,
 } = require("../lib/pedagogicalReferenceInventory");
@@ -65,6 +68,7 @@ async function main() {
   if (!String(env.DATABASE_URL ?? "").trim()) {
     const pending = {
       generatedAt: new Date().toISOString(),
+      target: { source: publicTargetLabel("ABSENT") },
       readOnly: true,
       autoMutation: false,
       classificationVerdict: "PENDING_LIVE_DB",
@@ -81,7 +85,7 @@ async function main() {
   const pool = new Pool(poolConfig);
   const client = await pool.connect();
   const generatedAt = new Date().toISOString();
-  const databaseUrlRedacted = redactDatabaseUrl(connectionString || env.DATABASE_URL);
+  const targetLabel = publicTargetLabel(env.source);
 
   try {
     await client.query("BEGIN READ ONLY");
@@ -102,16 +106,33 @@ async function main() {
     const report = {
       generatedAt,
       target: {
-        source: env.source,
-        databaseUrlRedacted,
+        source: targetLabel,
       },
       ...inventory,
     };
     const published = sanitizeInventoryForPublication(report);
+    const markdown = formatMarkdownReport(published, { generatedAt, source: targetLabel });
+    if (
+      containsPublishedDatabaseInfrastructure(published) ||
+      containsPublishedDatabaseInfrastructure(markdown)
+    ) {
+      const error = new Error(
+        "Interdit : le rapport publiable ne doit pas exposer d'hôte, de nom de base ou d'URL.",
+      );
+      error.code = "PEDAGOGICAL_INVENTORY_INFRA_LEAK";
+      throw error;
+    }
     const wantRaw = String(process.env.INVENTORY_RAW ?? "").trim() === "1";
-    const payload = wantRaw ? report : published;
+    const payload = wantRaw
+      ? {
+          ...report,
+          target: {
+            source: targetLabel,
+            databaseUrlRedacted: redactDatabaseUrl(connectionString || env.DATABASE_URL),
+          },
+        }
+      : published;
     const json = `${JSON.stringify(payload, null, 2)}\n`;
-    const markdown = formatMarkdownReport(published, { generatedAt, databaseUrlRedacted });
 
     const jsonOut = String(process.env.PROOF_OUT ?? "").trim();
     const mdOut = String(process.env.PROOF_MD ?? "").trim();
@@ -150,7 +171,8 @@ async function main() {
     }
     if (
       error?.code === "PEDAGOGICAL_INVENTORY_WRITE_REFUSED" ||
-      error?.code === "PEDAGOGICAL_INVENTORY_PROOF_PATH_REFUSED"
+      error?.code === "PEDAGOGICAL_INVENTORY_PROOF_PATH_REFUSED" ||
+      error?.code === "PEDAGOGICAL_INVENTORY_INFRA_LEAK"
     ) {
       console.error(error.message);
       process.exitCode = 1;
@@ -168,7 +190,8 @@ async function main() {
 main().catch((error) => {
   if (
     error?.code === "PEDAGOGICAL_INVENTORY_WRITE_REFUSED" ||
-    error?.code === "PEDAGOGICAL_INVENTORY_PROOF_PATH_REFUSED"
+    error?.code === "PEDAGOGICAL_INVENTORY_PROOF_PATH_REFUSED" ||
+    error?.code === "PEDAGOGICAL_INVENTORY_INFRA_LEAK"
   ) {
     console.error(error.message);
   } else {

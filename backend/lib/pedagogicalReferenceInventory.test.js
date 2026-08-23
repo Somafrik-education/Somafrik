@@ -15,8 +15,10 @@ const {
   buildMatrix,
   buildInventoryReport,
   formatMarkdownReport,
+  publicTargetLabel,
   sanitizeInventoryForPublication,
   containsOperationalIdentifiers,
+  containsPublishedDatabaseInfrastructure,
   assertProofPathAllowed,
   assertSelectOnlySql,
   assertInventorySqlIsSelectOnly,
@@ -190,12 +192,20 @@ test("markdown contient la matrice et le mot STOP", () => {
     classesWithNullGroup: 0,
     nullGroupStructuralDuplicates: [],
   });
-  const md = formatMarkdownReport(report, { generatedAt: "2026-08-23T00:00:00.000Z", databaseUrlRedacted: "postgresql://***@localhost/somafrik" });
+  const md = formatMarkdownReport(report, {
+    generatedAt: "2026-08-23T00:00:00.000Z",
+    source: "DATABASE_URL",
+    databaseUrlRedacted: "postgresql://***@localhost/somafrik",
+  });
   assert.match(md, /Verdict classification : \*\*STOP\*\*/);
+  assert.match(md, /Cible : DATABASE_URL/);
   assert.match(md, /Générale/);
   assert.match(md, /Confession catholique/);
   assert.match(md, /oui — STOP/);
   assert.match(md, /Aucune écriture SQL/);
+  assert.doesNotMatch(md, /postgresql:/i);
+  assert.doesNotMatch(md, /localhost/);
+  assert.doesNotMatch(md, /somafrik/);
 });
 
 test("normalizeName est accent-insensible", () => {
@@ -226,12 +236,66 @@ test("publication : aucun school_code / class_code / school_name", () => {
   const published = sanitizeInventoryForPublication(report);
   assert.equal(published.identifiersRedacted, true);
   assert.equal(containsOperationalIdentifiers(published), false);
+  assert.equal(containsPublishedDatabaseInfrastructure(published), false);
+  assert.equal(published.target.source, "ABSENT");
+  assert.equal(published.target.databaseUrlRedacted, undefined);
   assert.equal(published.matrix[0].establishmentCount, 1);
   assert.equal(published.matrix[0].establishments, undefined);
   const md = formatMarkdownReport(published, { generatedAt: "2026-08-23T00:00:00.000Z" });
   assert.doesNotMatch(md, /CD-IN-26-001/);
   assert.doesNotMatch(md, /CLS-1/);
   assert.doesNotMatch(md, /Lycée Test/);
+  assert.match(md, /Cible : ABSENT/);
+}
+
+test("publication : cible = label env, aucun host ni nom de base", () => {
+  assert.equal(publicTargetLabel("PREPROD_DATABASE_URL"), "PREPROD_DATABASE_URL");
+  assert.equal(publicTargetLabel("DATABASE_URL"), "DATABASE_URL");
+  assert.equal(publicTargetLabel("postgresql://user:secret@db-preprod.internal/somafrik_preprod"), "ABSENT");
+  assert.equal(publicTargetLabel(""), "ABSENT");
+
+  const leakyHost = "db-preprod.internal.example";
+  const leakyDatabase = "somafrik_preprod";
+  const leakyUrl = `postgresql://***@${leakyHost}/${leakyDatabase}`;
+  const report = buildInventoryReport({
+    streams: [{ id: "s1", name: "Bio-chimie", stream_type: "filiere", country_code: "CD" }],
+    groups: [],
+    classes: [],
+    schoolStreams: [],
+    schoolGroups: [],
+    classesWithNullGroup: 0,
+    nullGroupStructuralDuplicates: [],
+  });
+  const leaky = {
+    ...report,
+    target: {
+      source: "PREPROD_DATABASE_URL",
+      databaseUrlRedacted: leakyUrl,
+    },
+  };
+  const published = sanitizeInventoryForPublication(leaky);
+  const md = formatMarkdownReport(published, {
+    generatedAt: "2026-08-23T00:00:00.000Z",
+    source: "PREPROD_DATABASE_URL",
+    databaseUrlRedacted: leakyUrl,
+  });
+  const publishedJson = JSON.stringify(published);
+
+  assert.deepEqual(published.target, { source: "PREPROD_DATABASE_URL" });
+  assert.equal(published.target.databaseUrlRedacted, undefined);
+  assert.match(md, /Cible : PREPROD_DATABASE_URL/);
+  assert.equal(containsPublishedDatabaseInfrastructure(published), false);
+  assert.equal(containsPublishedDatabaseInfrastructure(md), false);
+  assert.equal(containsPublishedDatabaseInfrastructure(publishedJson), false);
+  for (const surface of [publishedJson, md]) {
+    assert.doesNotMatch(surface, /postgresql:/i);
+    assert.doesNotMatch(surface, /databaseUrlRedacted/);
+    assert.doesNotMatch(surface, new RegExp(leakyHost.replace(/\./g, "\\.")));
+    assert.doesNotMatch(surface, new RegExp(leakyDatabase));
+    assert.doesNotMatch(surface, /@/);
+  }
+  assert.equal(containsPublishedDatabaseInfrastructure({ target: { databaseUrlRedacted: leakyUrl } }), true);
+  assert.equal(containsPublishedDatabaseInfrastructure(`Cible : ${leakyUrl}`), true);
 });
 
 test("PROOF_OUT sous docs/audits/evidence ou dans le repo est refusé", () => {

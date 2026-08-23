@@ -28,7 +28,8 @@ Toute valeur ambiguë → **STOP**, aucune correction automatique.
 # Tests du classificateur (sans base)
 node --test backend/lib/pedagogicalReferenceInventory.test.js
 
-# Inventaire live — stdout SANITISÉ (pas de school_code / class_code / school_name)
+# Inventaire live — stdout SANITISÉ (pas de school_code / class_code / school_name,
+# ni hostname / nom de base / URL). Cible publiée = DATABASE_URL | PREPROD_DATABASE_URL | ABSENT
 DATABASE_URL=postgresql://… npm run inventory:pedagogical-reference
 
 # Preprod
@@ -41,6 +42,9 @@ INVENTORY_RAW=1 PROOF_OUT=/tmp/pedagogical-reference-inventory.json \
 
 **Interdit :** écrire ou joindre un dump live sous `docs/audits/evidence/` (ou ailleurs dans le repo).  
 Le runner refuse ces chemins. Les identifiants établissement / classe restent chez l’opérateur.
+
+**Cible publiable :** uniquement le label `DATABASE_URL`, `PREPROD_DATABASE_URL` ou `ABSENT`.  
+`redactDatabaseUrl()` masque user/mot de passe mais laisse hostname + nom de base — ce champ ne doit **pas** sortir dans stdout, Markdown ou JSON publiable. Un dump `INVENTORY_RAW` hors repo peut encore le conserver.
 
 SQL brut `psql` (équivalent, **sortie ops locale**, ne pas committer) :
 
