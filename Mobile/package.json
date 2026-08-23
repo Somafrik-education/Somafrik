@@ -43,6 +43,8 @@
     "verify:mobile-canonical-role-identity": "node scripts/verify-mobile-canonical-role-identity.js",
     "verify:mobile-live-permissions-refresh": "node scripts/verify-mobile-live-permissions-refresh.js",
     "verify:mobile-cta-rbac-alignment": "node scripts/verify-mobile-cta-rbac-alignment.js",
+    "test:school-settings-access": "npx --yes tsx src/lib/schoolSettingsAccess.test.ts && npx --yes tsx src/lib/schoolSettingsApi.guard.test.ts",
+    "verify:mobile-school-settings-import": "node scripts/verify-mobile-school-settings-import.js",
     "verify:mobile-attendance-hydration": "node scripts/verify-mobile-attendance-hydration.js",
     "verify:mobile-ui-e2e-scaffold": "node scripts/verify-mobile-ui-e2e-scaffold.js",
     "verify:mobile-ui-e2e": "node scripts/verify-mobile-ui-e2e-scaffold.js",

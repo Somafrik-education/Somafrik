@@ -4,65 +4,62 @@ import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import SchoolSelector from "../components/SchoolSelector";
-import { canReadView, hasSecurityPermission } from "../domain/security/permissions";
+import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
+import { canReadView } from "../domain/security/permissions";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
-type ConfigSection = {
+type SettingsCard = {
   title: string;
   description: string;
-  route?: string;
-  entity?: string;
+  route: "EstablishmentProfile" | "SchoolYearSettings" | "SchoolPedagogicalStructure" | "SchoolAssignableRoles" | "Users";
   view: string;
 };
 
-const sections: ConfigSection[] = [
+const sections: SettingsCard[] = [
   {
-    title: "Périodes académiques",
-    description: "Trimestres, semestres et période en cours.",
-    view: "configuration",
+    title: "Profil établissement",
+    description: "Identité, contacts et responsable légal.",
+    route: "EstablishmentProfile",
+    view: "EstablishmentProfile",
   },
   {
-    title: "Niveaux et filières",
-    description: "Listes pédagogiques de l’établissement.",
-    view: "configuration",
+    title: "Année scolaire",
+    description: "Années, périodes, barème, mode de bulletin et types d’évaluation.",
+    route: "SchoolYearSettings",
+    view: "SchoolYearSettings",
   },
   {
-    title: "Classes et cours",
-    description: "Référentiels utilisés dans les cours et notes.",
-    entity: "classes",
-    view: "classes",
+    title: "Structure pédagogique",
+    description: "Activation des niveaux, filières et groupes pour votre établissement.",
+    route: "SchoolPedagogicalStructure",
+    view: "SchoolPedagogicalStructure",
   },
   {
-    title: "Utilisateurs et rôles",
-    description: "Identités et rôles actifs issus de PostgreSQL.",
+    title: "Rôles disponibles",
+    description: "Catalogue des rôles affectables — lecture seule.",
+    route: "SchoolAssignableRoles",
+    view: "SchoolAssignableRoles",
+  },
+  {
+    title: "Utilisateurs",
+    description: "Comptes et affectations de rôles de l’établissement.",
     route: "Users",
     view: "users",
-  },
-  {
-    title: "Statuts de paiement",
-    description: "Paramètres financiers de l’établissement.",
-    entity: "paymentStatuses",
-    view: "configuration",
   },
 ];
 
 export default function ConfigurationScreen() {
   const navigation = useNavigation<any>();
   const { session } = useAuth();
+  const { canOpen, canEdit } = useSchoolSettingsAccess("Configuration");
   const { academicConfigData, availableSchools, activeSchoolCode } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth, columns } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
 
-  if (!canReadView(session, "Configuration")) {
-    return (
-      <View style={styles.denied}>
-        <Text style={styles.deniedText}>Accès à la configuration non autorisé pour ce rôle.</Text>
-      </View>
-    );
+  if (!canOpen) {
+    return <SchoolSettingsDenied />;
   }
-
-  const canEditSettings = hasSecurityPermission(session, "Paramètres Établissement", "UPDATE");
 
   return (
     <ScrollView
@@ -75,9 +72,9 @@ export default function ConfigurationScreen() {
         width: "100%",
       }}
     >
-      <Text style={styles.title}>Configuration</Text>
+      <Text style={styles.title}>Paramètres</Text>
       <Text style={styles.subtitle}>
-        Centre de configuration de l’établissement aligné avec l’interface Web — périodes, référentiels et pilotage local.
+        Configuration de l’établissement alignée sur l’interface Web. Même source PostgreSQL, mêmes droits.
       </Text>
 
       <SchoolSelector />
@@ -97,8 +94,8 @@ export default function ConfigurationScreen() {
         <Text style={styles.summaryMeta}>
           Périodes : {academicConfigData.periods?.length ?? 0} • Cours : {academicConfigData.subjects?.length ?? 0}
         </Text>
-        {!canEditSettings && (
-          <Text style={styles.readOnly}>Lecture seule — droits Paramètres Établissement requis pour modifier.</Text>
+        {!canEdit && (
+          <Text style={styles.readOnly}>Lecture seule — un droit de modification est requis pour enregistrer.</Text>
         )}
       </View>
 
@@ -109,15 +106,10 @@ export default function ConfigurationScreen() {
             <TouchableOpacity
               key={section.title}
               style={[styles.card, isTablet && { width: `${100 / columns - 2}%`, minWidth: 280 }]}
-              onPress={() => {
-                if (section.route) {
-                  navigation.navigate(section.route);
-                  return;
-                }
-                if (section.entity) {
-                  navigation.navigate("AdminCrud", { entity: section.entity });
-                }
-              }}
+              onPress={() => navigation.navigate(section.route)}
+              accessibilityRole="button"
+              accessibilityLabel={section.title}
+              testID={`settings-card-${section.route}`}
             >
               <Text style={styles.cardTitle}>{section.title}</Text>
               <Text style={styles.cardDescription}>{section.description}</Text>
@@ -125,12 +117,6 @@ export default function ConfigurationScreen() {
           );
         })}
       </View>
-
-      {session?.role === "school_admin" && (
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => navigation.navigate("Users")}>
-          <Text style={styles.primaryBtnText}>Pilotage des droits (Utilisateurs)</Text>
-        </TouchableOpacity>
-      )}
     </ScrollView>
   );
 }
@@ -148,8 +134,4 @@ const styles = StyleSheet.create({
   card: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 18, marginBottom: 12 },
   cardTitle: { fontSize: 16, fontWeight: "800", color: "#111827", marginBottom: 6 },
   cardDescription: { color: "#64748B", lineHeight: 20 },
-  primaryBtn: { backgroundColor: "#2563EB", borderRadius: 16, padding: 16, marginTop: 8 },
-  primaryBtnText: { color: "#FFFFFF", fontWeight: "800", textAlign: "center" },
-  denied: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  deniedText: { color: "#64748B", fontWeight: "700", textAlign: "center" },
 });

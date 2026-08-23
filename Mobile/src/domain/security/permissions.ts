@@ -1,4 +1,4 @@
-import { normalize, isInternalSchoolRole, isSchoolAdminRole } from "../../lib/format";
+import { normalize, isSchoolAdminRole } from "../../lib/format";
 import { getInternalRoleDefaults } from "../../lib/internalRoleDefaults";
 import { canSchoolAdminMutateTeachers } from "../../lib/pedagogyGovernance";
 import { attachCanonicalRoleIdentity, resolveCanonicalRoleIdentity } from "../../lib/canonicalRoleIdentity";
@@ -8,6 +8,7 @@ import {
 } from "../../lib/orgHierarchy";
 import { COUNTRY_SCOPE_MODULES } from "../../lib/roleGovernance";
 import { SCHOOL_ENTITY_VIEWS, VIEW_PERMISSION_FEATURES, ENTITY_VIEW_MAP } from "../../lib/constants";
+import { isSchoolSettingsOperator, isSchoolSettingsView } from "../../lib/schoolSettingsAccess";
 
 export type SecurityAction = "READ" | "CREATE" | "UPDATE" | "DELETE" | "SUSPEND";
 
@@ -67,6 +68,10 @@ const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
   "Announcements",
   "configuration",
   "Configuration",
+  "EstablishmentProfile",
+  "SchoolYearSettings",
+  "SchoolPedagogicalStructure",
+  "SchoolAssignableRoles",
   "bulletinDesign",
 ]);
 
@@ -117,6 +122,10 @@ export const routeFeatureMap: Record<string, string> = {
   OfflineMode: "Documents",
   Synchronization: "Documents",
   Configuration: "Paramètres Établissement",
+  EstablishmentProfile: "Paramètres Établissement",
+  SchoolYearSettings: "Paramètres Établissement",
+  SchoolPedagogicalStructure: "Paramètres Établissement",
+  SchoolAssignableRoles: "Paramètres Établissement",
   PlatformNotifications: "Notifications",
   Permissions: "Droits par rôle",
 };
@@ -349,7 +358,7 @@ export function canReadView(session: any, viewName: string): boolean {
       SCHOOL_ENTITY_VIEWS.has(viewName) ||
       viewName === "establishment" ||
       viewName === "SchoolManagement" ||
-      viewName === "Configuration"
+      isSchoolSettingsView(viewName)
     ) {
       return false;
     }
@@ -366,9 +375,8 @@ export function canReadView(session: any, viewName: string): boolean {
     return hasSecurityPermission(session, "Établissements", "READ");
   }
 
-  if (viewName === "Configuration") {
-    const identity = resolveCanonicalRoleIdentity(session);
-    if (!isInternalSchoolRole(identity.sessionRole) && !isInternalSchoolRole(identity.roleLabel)) return false;
+  if (isSchoolSettingsView(viewName)) {
+    if (!isSchoolSettingsOperator(session)) return false;
     return hasSecurityPermission(session, "Paramètres Établissement", "READ");
   }
 
@@ -417,6 +425,9 @@ export function canReadRoute(session: any, routeName?: string) {
   }
   if (routeName === "PlatformNotifications") {
     return hasPlatformBackofficePrivilege(session);
+  }
+  if (isSchoolSettingsView(routeName)) {
+    return canReadView(session, routeName);
   }
   if (routeName && canReadView(session, routeName)) return true;
   const feature = routeName ? routeFeatureMap[routeName] : undefined;

@@ -30,6 +30,10 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   Audit: "Utilisateurs",
   SchoolManagement: "Établissements",
   Configuration: "Paramètres Établissement",
+  EstablishmentProfile: "Paramètres Établissement",
+  SchoolYearSettings: "Paramètres Établissement",
+  SchoolPedagogicalStructure: "Paramètres Établissement",
+  SchoolAssignableRoles: "Paramètres Établissement",
   PlatformNotifications: "Notifications",
   Permissions: "Droits par rôle",
 };

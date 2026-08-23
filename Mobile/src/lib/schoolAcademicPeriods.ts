@@ -1,0 +1,136 @@
+export type PeriodMode = "trimestre" | "semestre" | "periode";
+
+export type AcademicPeriodRow = {
+  name: string;
+  type: string;
+  startDate: string;
+  endDate: string;
+  active: boolean;
+  order: number;
+};
+
+export function periodTypeLabel(mode: PeriodMode): string {
+  if (mode === "semestre") return "Semestre";
+  if (mode === "periode") return "Période";
+  return "Trimestre";
+}
+
+export function coercePeriodMode(value: unknown): PeriodMode {
+  const mode = String(value ?? "trimestre").toLowerCase();
+  if (mode === "semestre") return "semestre";
+  if (mode === "periode" || mode === "custom") return "periode";
+  return "trimestre";
+}
+
+function buildDefaultRows(mode: PeriodMode): AcademicPeriodRow[] {
+  if (mode === "semestre") {
+    return [
+      { name: "Semestre 1", type: "Semestre", startDate: "01-09-2025", endDate: "31-01-2026", active: false, order: 1 },
+      { name: "Semestre 2", type: "Semestre", startDate: "01-02-2026", endDate: "30-06-2026", active: false, order: 2 },
+    ];
+  }
+  if (mode === "periode") {
+    return [
+      { name: "Période 1", type: "Période", startDate: "01-09-2025", endDate: "31-10-2025", active: false, order: 1 },
+    ];
+  }
+  return [
+    { name: "Trimestre 1", type: "Trimestre", startDate: "01-09-2025", endDate: "31-12-2025", active: false, order: 1 },
+    { name: "Trimestre 2", type: "Trimestre", startDate: "01-01-2026", endDate: "31-03-2026", active: false, order: 2 },
+    { name: "Trimestre 3", type: "Trimestre", startDate: "01-04-2026", endDate: "30-06-2026", active: false, order: 3 },
+  ];
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function endOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
+export function parsePeriodDate(value?: string): Date | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const dmy = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dmy) {
+    const date = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const ymd = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (ymd) {
+    const date = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function isDateWithinPeriod(now: Date, startDate: string, endDate: string): boolean {
+  const start = parsePeriodDate(startDate);
+  const end = parsePeriodDate(endDate);
+  if (!start && !end) return false;
+  const instant = now.getTime();
+  const startMs = start ? startOfDay(start).getTime() : Number.NEGATIVE_INFINITY;
+  const endMs = end ? endOfDay(end).getTime() : Number.POSITIVE_INFINITY;
+  return instant >= startMs && instant <= endMs;
+}
+
+export function findActivePeriodIndexByDate(rows: AcademicPeriodRow[], now: Date = new Date()): number {
+  if (!rows.length) return 0;
+  const exactIndex = rows.findIndex((row) => isDateWithinPeriod(now, row.startDate, row.endDate));
+  if (exactIndex >= 0) return exactIndex;
+  return 0;
+}
+
+export function ensureSingleActivePeriod(rows: AcademicPeriodRow[], activeIndex: number): AcademicPeriodRow[] {
+  return rows.map((row, index) => ({ ...row, active: index === activeIndex }));
+}
+
+export function applySystemActivePeriod(rows: AcademicPeriodRow[], now: Date = new Date()): AcademicPeriodRow[] {
+  if (!rows.length) return rows;
+  return ensureSingleActivePeriod(rows, findActivePeriodIndexByDate(rows, now));
+}
+
+export function defaultPeriodsForMode(mode: PeriodMode, now: Date = new Date()): AcademicPeriodRow[] {
+  return applySystemActivePeriod(buildDefaultRows(mode), now);
+}
+
+export function normalizeStoredPeriods(raw: unknown, mode: PeriodMode, now: Date = new Date()): AcademicPeriodRow[] {
+  if (!Array.isArray(raw) || !raw.length) {
+    return defaultPeriodsForMode(mode, now);
+  }
+  const typeLabel = periodTypeLabel(mode);
+  const rows = raw.map((item, index) => {
+    const row = item as Record<string, unknown>;
+    return {
+      name: String(row.name ?? `${typeLabel} ${index + 1}`),
+      type: String(row.type ?? typeLabel),
+      startDate: String(row.startDate ?? ""),
+      endDate: String(row.endDate ?? ""),
+      active: false,
+      order: Number(row.order ?? index + 1),
+    };
+  });
+  return applySystemActivePeriod(rows, now);
+}
+
+export function serializePeriods(rows: AcademicPeriodRow[], mode: PeriodMode, now: Date = new Date()) {
+  return applySystemActivePeriod(rows, now)
+    .map((row) => ({
+      ...row,
+      name: row.name.trim(),
+      startDate: row.startDate.trim(),
+      endDate: row.endDate.trim(),
+    }))
+    .filter((row) => row.name)
+    .map((row, index) => ({
+      id: `${mode}-${index + 1}`,
+      name: row.name,
+      type: row.type || periodTypeLabel(mode),
+      startDate: row.startDate,
+      endDate: row.endDate,
+      active: row.active,
+      order: index + 1,
+    }));
+}

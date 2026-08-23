@@ -384,6 +384,7 @@ export type EducationCatalogStream = {
   id: string;
   name: string;
   levelId?: string | null;
+  streamType?: "filiere" | "serie" | "option" | string;
   schoolActive?: boolean;
 };
 
@@ -396,6 +397,7 @@ export type EducationCatalogGroup = {
 
 export type EducationSchoolCatalog = {
   schoolCode?: string;
+  countryCode?: string;
   labels?: { levelLabel?: string; trackLabel?: string; groupLabel?: string };
   levels: EducationCatalogLevel[];
   streams: EducationCatalogStream[];
