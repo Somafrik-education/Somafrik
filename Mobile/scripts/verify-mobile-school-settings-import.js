@@ -27,6 +27,7 @@ function runTsx(rel) {
 function main() {
   runTsx("schoolSettingsAccess.test.ts");
   runTsx("schoolSettingsApi.guard.test.ts");
+  runTsx("schoolAcademicPeriods.test.ts");
 
   const drawer = readMobile(path.join("navigation", "roleDrawerPreferences.ts"));
   assert.match(drawer, /label:\s*"Paramètres"[\s\S]*route:\s*"Configuration"/);
@@ -54,7 +55,14 @@ function main() {
   assert.match(yearScreen, /patchSchoolSettings/);
   assert.match(yearScreen, /replaceAcademicPeriods/);
   assert.match(yearScreen, /createAcademicYear/);
+  assert.match(yearScreen, /selectCurrentAcademicYear/);
   assert.doesNotMatch(yearScreen, /saveAcademicConfig/);
+
+  const periodsLib = readMobile(path.join("lib", "schoolAcademicPeriods.ts"));
+  assert.match(periodsLib, /resolveAcademicYearBounds/);
+  assert.match(periodsLib, /selectCurrentAcademicYear/);
+  assert.doesNotMatch(periodsLib, /01-09-2025/);
+  assert.doesNotMatch(periodsLib, /31-12-2025/);
 
   const navigator = readMobile(path.join("navigation", "AppNavigator.tsx"));
   assert.match(navigator, /name="Configuration"[\s\S]*title:\s*"Paramètres"/);

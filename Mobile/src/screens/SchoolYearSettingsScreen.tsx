@@ -10,6 +10,7 @@ import {
   coercePeriodMode,
   defaultPeriodsForMode,
   normalizeStoredPeriods,
+  selectCurrentAcademicYear,
   serializePeriods,
   type AcademicPeriodRow,
   type PeriodMode,
@@ -56,8 +57,9 @@ export default function SchoolYearSettingsScreen() {
         listEvaluationTypes(),
       ]);
       const mode = coercePeriodMode(settings.periodMode || academicConfigData.periodMode);
+      const selectedYear = selectCurrentAcademicYear(yearRows);
       setPeriodMode(mode);
-      setPeriodRows(normalizeStoredPeriods(settings.periods ?? academicConfigData.periods, mode));
+      setPeriodRows(normalizeStoredPeriods(settings.periods ?? academicConfigData.periods, mode, new Date(), selectedYear));
       setDefaultScale(String(settings.defaultScale || academicConfigData.defaultScale || 20));
       setReportCardMode(String(settings.reportCardMode || academicConfigData.reportCardMode || "period"));
       setYears(yearRows);
@@ -75,7 +77,7 @@ export default function SchoolYearSettingsScreen() {
 
   function changePeriodMode(next: PeriodMode) {
     setPeriodMode(next);
-    setPeriodRows(defaultPeriodsForMode(next));
+    setPeriodRows(defaultPeriodsForMode(next, new Date(), selectCurrentAcademicYear(years)));
   }
 
   async function savePeriods() {
@@ -84,7 +86,7 @@ export default function SchoolYearSettingsScreen() {
       Alert.alert("Année manquante", "Créez une année scolaire avant d’enregistrer les périodes.");
       return;
     }
-    const periods = serializePeriods(periodRows, periodMode);
+    const periods = serializePeriods(periodRows, periodMode, new Date(), selectCurrentAcademicYear(years));
     if (!periods.length) {
       Alert.alert("Périodes", "Ajoutez au moins une sous-période.");
       return;

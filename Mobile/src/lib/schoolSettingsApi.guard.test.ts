@@ -40,6 +40,11 @@ assert.doesNotMatch(api, /persistOutbox/);
 const outbox = read("lib/outbox.ts");
 assert.match(outbox, /export const OUTBOX_ALLOWED_DOMAINS = \["messages", "presences", "notes", "payments"\]/);
 
+const periods = read("lib/schoolAcademicPeriods.ts");
+assert.match(periods, /resolveAcademicYearBounds/);
+assert.match(periods, /selectCurrentAcademicYear/);
+assert.doesNotMatch(periods, /01-09-2025/, "périodes par défaut : pas de dates 2025–2026");
+
 const catalog = read("../../backend/lib/functionalModulesCatalog.js");
 assert.match(
   catalog,
