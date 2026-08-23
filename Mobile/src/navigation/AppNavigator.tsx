@@ -35,6 +35,10 @@ import {
 } from "../screens/MvpUtilityScreens";
 import PermissionsScreen from "../screens/PermissionsScreen";
 import ConfigurationScreen from "../screens/ConfigurationScreen";
+import EstablishmentProfileScreen from "../screens/EstablishmentProfileScreen";
+import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
+import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
+import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
 import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
 import { AdminEntity } from "../context/AdminDataContext";
@@ -91,6 +95,10 @@ export type RootStackParamList = {
   OfflineMode: undefined;
   Synchronization: undefined;
   Configuration: undefined;
+  EstablishmentProfile: undefined;
+  SchoolYearSettings: undefined;
+  SchoolPedagogicalStructure: undefined;
+  SchoolAssignableRoles: undefined;
   PlatformNotifications: undefined;
   Permissions: undefined;
   AdminCrud: {
@@ -287,7 +295,23 @@ export default function AppNavigator() {
         {canReadRoute(session, "OfflineMode") && <Stack.Screen name="OfflineMode" component={OfflineModeScreen} options={{ title: "Mode hors ligne" }} />}
         {canReadRoute(session, "Synchronization") && <Stack.Screen name="Synchronization" component={SynchronizationScreen} options={{ title: "Synchronisation" }} />}
         {canReadRoute(session, "Support") && <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />}
-        {canReadView(session, "Configuration") && <Stack.Screen name="Configuration" component={ConfigurationScreen} options={{ title: "Configuration" }} />}
+        {canReadView(session, "Configuration") && <Stack.Screen name="Configuration" component={ConfigurationScreen} options={{ title: "Paramètres" }} />}
+        {canReadView(session, "EstablishmentProfile") && (
+          <Stack.Screen name="EstablishmentProfile" component={EstablishmentProfileScreen} options={{ title: "Profil établissement" }} />
+        )}
+        {canReadView(session, "SchoolYearSettings") && (
+          <Stack.Screen name="SchoolYearSettings" component={SchoolYearSettingsScreen} options={{ title: "Année scolaire" }} />
+        )}
+        {canReadView(session, "SchoolPedagogicalStructure") && (
+          <Stack.Screen
+            name="SchoolPedagogicalStructure"
+            component={SchoolPedagogicalStructureScreen}
+            options={{ title: "Structure pédagogique" }}
+          />
+        )}
+        {canReadView(session, "SchoolAssignableRoles") && (
+          <Stack.Screen name="SchoolAssignableRoles" component={SchoolAssignableRolesScreen} options={{ title: "Rôles disponibles" }} />
+        )}
         {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}
         {canReadView(session, "Permissions") && <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />}
       </Stack.Navigator>

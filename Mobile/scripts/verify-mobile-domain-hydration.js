@@ -132,7 +132,7 @@ function main() {
   const configuration = source(path.join("screens", "ConfigurationScreen.tsx"));
   const navigator = source(path.join("navigation", "AppNavigator.tsx"));
   assert.match(configuration, /route:\s*"Users"/);
-  assert.match(configuration, /navigate\("Users"\)/);
+  assert.match(configuration, /navigate\(section\.route\)/);
   assert.doesNotMatch(configuration, /navigate\("Utilisateurs"\)/);
   assert.match(navigator, /Users:\s*undefined/);
   assert.match(navigator, /name="Users"/);

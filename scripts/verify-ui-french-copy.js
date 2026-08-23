@@ -224,6 +224,8 @@ function main() {
     ["Payments", "Paiements"],
     ["Announcements", "Annonces"],
     ["StudentDetail", "Fiche élève"],
+    ["Configuration", "Paramètres"],
+    ["SchoolPedagogicalStructure", "Structure pédagogique"],
   ]) {
     const escapedRoute = route.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
