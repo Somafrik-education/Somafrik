@@ -176,11 +176,26 @@ export function validateUserIdentityDraft(input: {
   return errors;
 }
 
-export function validatePaymentDraft(input: { studentId: unknown; amount: unknown }): Record<string, string> {
+export function validatePaymentDraft(input: {
+  studentId: unknown;
+  amount: unknown;
+  classId?: unknown;
+  classOptions?: Array<{ classId: string }>;
+}): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!trimField(input.studentId)) errors.studentId = requiredError("Élève");
   const amount = validateAmount(input.amount, "Montant", true);
   if (amount) errors.amount = amount;
+  if (trimField(input.studentId)) {
+    const options = Array.isArray(input.classOptions) ? input.classOptions : [];
+    if (!options.length) {
+      errors.classId = "Cet élève n'a aucune inscription active.";
+    } else if (!trimField(input.classId)) {
+      errors.classId = requiredError("Classe");
+    } else if (!options.some((row) => trimField(row.classId) === trimField(input.classId))) {
+      errors.classId = "Classe invalide pour cet élève.";
+    }
+  }
   return errors;
 }
 

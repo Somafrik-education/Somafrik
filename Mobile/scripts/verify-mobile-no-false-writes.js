@@ -113,7 +113,19 @@ function main() {
   assert.match(paymentControls, /createSchoolPayment\(payload, \{ idempotencyKey \}\)/);
   assert.match(paymentControls, /createIntentionStore/);
   assert.match(paymentControls, /getOrCreate\(PAYMENT_DRAFT_INTENTION\)/);
+  assert.match(paymentControls, /label="Élève"/);
+  assert.match(paymentControls, /label="Classe"/);
+  assert.match(paymentControls, /buildSchoolPaymentPayload/);
+  assert.match(paymentControls, /preselectPaymentClassId/);
   assert.doesNotMatch(paymentControls, /createIdempotencyKey\(\)/);
+  const eleveAt = paymentControls.indexOf('label="Élève"');
+  const classeAt = paymentControls.indexOf('label="Classe"');
+  const montantAt = paymentControls.indexOf('label="Montant"');
+  assert.ok(eleveAt >= 0 && eleveAt < classeAt && classeAt < montantAt, "ordre Élève → Classe → Montant");
+
+  const studentPayments = read(path.join("screens", "StudentPaymentsScreen.tsx"));
+  assert.match(studentPayments, /PaymentMutationControls/);
+  assert.match(studentPayments, /initialStudentId/);
 
   assert.match(announcements, /AnnouncementMutationControls/);
   assert.doesNotMatch(announcements, /AdminCrud/);

@@ -54,11 +54,32 @@ export interface StudentSearchResult {
   id: string;
   name: string;
   matricule: string;
+  classId?: string;
+  classCode?: string;
   className: string;
   schoolCode: string;
   schoolName: string;
   parentPhone: string;
   parentEmail: string;
+}
+
+export function collectStudentPaymentClasses(
+  studentId: string,
+  students: Array<Record<string, unknown> | StudentSearchResult>,
+): Array<{ classId: string; className: string }> {
+  const wanted = String(studentId ?? "").trim();
+  if (!wanted) return [];
+  const acc: Array<{ classId: string; className: string }> = [];
+  for (const student of students) {
+    if (String(student.id ?? "").trim() !== wanted) continue;
+    const classId = String(student.classId ?? "").trim();
+    if (!classId || acc.some((row) => row.classId === classId)) continue;
+    acc.push({
+      classId,
+      className: String(student.className ?? student.classCode ?? classId),
+    });
+  }
+  return acc;
 }
 
 export interface FeeBalance {
@@ -182,6 +203,8 @@ export function searchStudentsForPayment(
         id: String(student.id ?? ""),
         name: String(student.name ?? `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim()),
         matricule: String(student.matricule ?? student.publicId ?? student.id ?? ""),
+        classId: String(student.classId ?? "").trim() || undefined,
+        classCode: String(student.classCode ?? "").trim() || undefined,
         className: String(student.className ?? ""),
         schoolCode: code,
         schoolName: String(school?.name ?? code),
@@ -438,11 +461,19 @@ export function validateQuickPaymentInput(input: Partial<QuickPaymentInput>): st
 
 export function validateMultiItemPaymentInput(input: {
   student?: StudentSearchResult | null;
+  classId?: string;
+  classOptions?: Array<{ classId: string }>;
   method?: PaymentMethod | "";
   date?: string;
   lines?: QuickPaymentLine[];
 }): string | null {
   if (!input.student?.id) return "Veuillez sélectionner un élève";
+  const classOptions = input.classOptions ?? [];
+  if (!classOptions.length) return "Cet élève n'a aucune inscription active.";
+  if (!String(input.classId ?? "").trim()) return "Veuillez sélectionner une classe";
+  if (!classOptions.some((row) => row.classId === String(input.classId ?? "").trim())) {
+    return "Classe invalide pour cet élève.";
+  }
   if (!input.method) return "Veuillez sélectionner le mode de paiement";
   if (!input.date?.trim()) return "La date du paiement est obligatoire";
   const lines = input.lines ?? [];

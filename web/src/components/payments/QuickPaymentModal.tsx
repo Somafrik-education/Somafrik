@@ -10,6 +10,7 @@ import { useToast } from "../ui/Toast";
 import { getCurrentSchool, scopedStudents } from "../../lib/establishment";
 import { formatMetric } from "../../lib/format";
 import {
+  collectStudentPaymentClasses,
   createPaymentLine,
   defaultPaymentDate,
   FEE_TYPES,
@@ -46,6 +47,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
 
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
+  const [classId, setClassId] = useState("");
   const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine()]);
   const [method, setMethod] = useState<PaymentMethod>("Espèces");
   const [dateInput, setDateInput] = useState(paymentDateToInput(defaultPaymentDate()));
@@ -78,6 +80,10 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     [search, students, state.schools, schoolCode],
   );
 
+  const classOptions = useMemo(
+    () => (selectedStudent ? collectStudentPaymentClasses(selectedStudent.id, students) : []),
+    [selectedStudent, students],
+  );
   const total = sumPaymentLines(lines);
   const currency = resolveSchoolCurrency(school);
 
@@ -85,6 +91,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     if (!open) return;
     setSearch("");
     setSelectedStudent(null);
+    setClassId("");
     setLines([createPaymentLine()]);
     setMethod("Espèces");
     setDateInput(paymentDateToInput(defaultPaymentDate()));
@@ -96,6 +103,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
   function selectStudent(student: StudentSearchResult) {
     setSelectedStudent(student);
     setSearch(student.name);
+    const options = collectStudentPaymentClasses(student.id, students);
+    setClassId(options.length === 1 ? options[0].classId : "");
   }
 
   function updateLine(id: string, patch: Partial<QuickPaymentLine>) {
@@ -112,6 +121,7 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     try {
       const created = await financeApi.createPayment({
         studentId: selectedStudent.id,
+        classId,
         items: lines.map((line) => ({
           feeType: line.feeType,
           feeLabel: line.feeType,
@@ -142,6 +152,8 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
     event.preventDefault();
     const validationError = validateMultiItemPaymentInput({
       student: selectedStudent,
+      classId,
+      classOptions,
       method,
       date: paymentDateFromInput(dateInput),
       lines,
@@ -261,9 +273,20 @@ export function QuickPaymentModal({ open, onClose, onSaved }: QuickPaymentModalP
         {selectedStudent ? (
           <div className="rounded-xl border border-brand/20 bg-brand-50/40 p-4 text-sm">
             <p className="font-bold text-ink">{selectedStudent.name}</p>
-            <p className="mt-1 text-muted">
-              Classe : {selectedStudent.className || "—"} · Matricule : {selectedStudent.matricule}
-            </p>
+            <p className="mt-1 text-muted">Matricule : {selectedStudent.matricule}</p>
+            <div className="mt-3">
+              <Field label="Classe" required>
+                <Select
+                  value={classId}
+                  onChange={(event) => setClassId(event.target.value)}
+                  options={
+                    classOptions.length
+                      ? classOptions.map((item) => ({ value: item.classId, label: item.className }))
+                      : [{ value: "", label: "Aucune inscription active" }]
+                  }
+                />
+              </Field>
+            </div>
           </div>
         ) : null}
 

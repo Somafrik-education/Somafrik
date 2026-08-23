@@ -299,10 +299,15 @@ async function main() {
     ]);
     assert.equal(String(cancelledRow.rows[0].cancelled_by), String(admin.sub));
 
-    await pool.query(
+    const esther = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name)
-       VALUES ($1, 'CD-2026-0001-STU-ESTHER', 'Esther', 'Okito')`,
+       VALUES ($1, 'CD-2026-0001-STU-ESTHER', 'Esther', 'Okito') RETURNING id`,
       [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'active')`,
+      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, year.rows[0].id],
     );
     const paymentsBefore = (await pool.query(`SELECT count(*)::int AS c FROM payments`)).rows[0].c;
     const itemsBefore = (await pool.query(`SELECT count(*)::int AS c FROM payment_items`)).rows[0].c;
@@ -404,6 +409,96 @@ async function main() {
        WHERE st.student_code = 'CD-2026-0001-STU-0001' AND p.payment_date = '2026-08-21'`,
     );
     assert.equal(sameDayCount.rows[0].c, 2, "pas de fusion automatique même élève + même date");
+
+    const orphan = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name)
+       VALUES ($1, 'CD-2026-0001-STU-ORPHAN', 'Sans', 'Classe') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: "CD-2026-0001-STU-ORPHAN",
+            feeType: "Inscription",
+            amount: 10,
+            method: "Espèces",
+            date: "2026-08-28",
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.ENROLLMENT_REQUIRED,
+    );
+    assert.ok(orphan.rows[0].id);
+
+    const yearB = await pool.query(
+      `INSERT INTO academic_years (school_id, name, status)
+       VALUES ($1, '2026-2027', 'open') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    const klassB = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-5B', '5ème B', 'active') RETURNING id`,
+      [schoolA.rows[0].id, yearB.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'active')`,
+      [schoolA.rows[0].id, student.rows[0].id, klassB.rows[0].id, yearB.rows[0].id],
+    );
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: "CD-2026-0001-STU-0001",
+            feeType: "Inscription",
+            amount: 12,
+            method: "Espèces",
+            date: "2026-08-29",
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.CLASS_REQUIRED,
+    );
+    const picked = await store.createSchoolPayment(
+      {
+        studentId: "CD-2026-0001-STU-0001",
+        classId: klassB.rows[0].id,
+        feeType: "Inscription",
+        amount: 13,
+        method: "Espèces",
+        date: "2026-08-29",
+      },
+      admin,
+    );
+    assert.equal(picked.className, "5ème B");
+    assert.equal(String(picked.classId), String(klassB.rows[0].id));
+
+    const foreignClass = await pool.query(
+      `INSERT INTO academic_years (school_id, name, status)
+       VALUES ($1, '2025-2026', 'open') RETURNING id`,
+      [schoolB.rows[0].id],
+    );
+    const foreignKlass = await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
+       VALUES ($1, $2, 'CLS-BI', '6ème A', 'active') RETURNING id`,
+      [schoolB.rows[0].id, foreignClass.rows[0].id],
+    );
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: "CD-2026-0001-STU-0001",
+            classId: foreignKlass.rows[0].id,
+            feeType: "Inscription",
+            amount: 14,
+            method: "Espèces",
+            date: "2026-08-30",
+          },
+          admin,
+        ),
+      (error) => error.code === FINANCE_ERROR.CLASS_TENANT_MISMATCH,
+    );
 
     console.log("financeRepository.pg.test.js: OK");
   } finally {

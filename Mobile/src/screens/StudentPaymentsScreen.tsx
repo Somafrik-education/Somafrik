@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import QueryStateView from "../components/QueryStateView";
 import PaymentReceiptCard from "../components/PaymentReceiptCard";
+import PaymentMutationControls from "../components/PaymentMutationControls";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
@@ -24,14 +25,14 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { selectedStudentId } = useAuth();
-  const { paymentsData, paymentsSnapshot, loadPayments, studentsData } = useAdminData();
+  const { paymentsData, paymentsSnapshot, loadPayments, loadStudents, studentsData } = useAdminData();
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
   useFocusEffect(
     useCallback(() => {
-      void loadPayments();
-    }, [loadPayments]),
+      void Promise.all([loadPayments(), loadStudents()]);
+    }, [loadPayments, loadStudents]),
   );
 
   const paiementsEleve = useMemo(
@@ -67,6 +68,11 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
       {student?.className ? (
         <Text style={localStyles.classLabel}>Classe : {student.className}</Text>
       ) : null}
+      <PaymentMutationControls
+        students={studentsData}
+        initialStudentId={studentId ? String(studentId) : ""}
+        onChanged={() => loadPayments()}
+      />
 
       {paymentsSnapshot.status === "success" ? (
         <>

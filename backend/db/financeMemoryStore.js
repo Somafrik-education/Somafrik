@@ -24,7 +24,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsInClass } = {}) {
+function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsInClass, getClassById: lookupClassById } = {}) {
   const tables = {
     payments: [],
     paymentStatuses: [],
@@ -58,6 +58,54 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
           dbId: student.dbId || student.id,
           schoolCode: student.schoolCode,
         };
+      },
+      async listActiveEnrollmentsForStudent(studentDbId, schoolId) {
+        const student =
+          (await findStudent?.(studentDbId, { schoolCode: "*" })) ||
+          null;
+        if (!student) return [];
+        const rows = Array.isArray(student.enrollments) ? student.enrollments : [];
+        const active = rows.filter((row) => !row.status || String(row.status).toLowerCase() === "active");
+        if (active.length) {
+          return active
+            .filter((row) => asTrimmed(row.classId))
+            .map((row) => ({
+              enrollmentId: row.id || row.enrollmentId,
+              schoolId: row.schoolId || schoolId,
+              classId: String(row.classId),
+              classCode: asTrimmed(row.classCode),
+              className: asTrimmed(row.className),
+            }));
+        }
+        if (asTrimmed(student.classId)) {
+          return [
+            {
+              schoolId,
+              classId: String(student.classId),
+              classCode: asTrimmed(student.classCode),
+              className: asTrimmed(student.className),
+            },
+          ];
+        }
+        return [];
+      },
+      async getClassById(classId) {
+        if (typeof lookupClassById === "function") {
+          return lookupClassById(classId);
+        }
+        const key = asTrimmed(classId);
+        if (!key) return null;
+        const student = (await findStudent?.(key, { schoolCode: "*" })) || null;
+        if (student && asTrimmed(student.classId) === key) {
+          return {
+            classId: String(student.classId),
+            schoolId: student.schoolId,
+            classCode: asTrimmed(student.classCode),
+            className: asTrimmed(student.className),
+            schoolCode: student.schoolCode,
+          };
+        }
+        return null;
       },
       async listStudentsInClass(schoolCode, className) {
         const rows = (await listStudentsInClass?.(schoolCode, className)) || [];
