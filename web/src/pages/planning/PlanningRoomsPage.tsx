@@ -20,8 +20,8 @@ const ROOM_TYPES = [
 ];
 
 const STATUS_OPTIONS = [
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
+  { value: "active", label: "Actif" },
+  { value: "inactive", label: "Inactif" },
   { value: "archived", label: "Archivée" },
 ];
 
@@ -48,9 +48,9 @@ const EMPTY_FORM: FormState = {
 };
 
 function statusLabel(status: string): string {
-  if (status === "inactive") return "Inactive";
+  if (status === "inactive") return "Inactif";
   if (status === "archived") return "Archivée";
-  return "Active";
+  return "Actif";
 }
 
 export function PlanningRoomsPage() {

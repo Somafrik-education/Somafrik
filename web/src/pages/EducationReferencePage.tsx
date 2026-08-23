@@ -203,7 +203,7 @@ export function EducationReferencePage() {
     <div className="space-y-6">
       <SectionHeader
         title="Référentiels pédagogiques"
-        description="Catalogue canonique par pays : niveaux, filières/options et groupes. Superadmin et Admin Pays habilité uniquement. Aucun défaut RDC."
+        description="Catalogue canonique par pays : niveaux, filières/options et groupes. Réservé au Super administrateur et à l’Administrateur pays. Aucun défaut RDC."
       />
 
       <Card className="p-4">

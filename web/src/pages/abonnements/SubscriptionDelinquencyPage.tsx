@@ -82,7 +82,7 @@ export function SubscriptionDelinquencyPage() {
       <Card className="p-6">
         <SectionHeader
           title="Politique de retard"
-          description="J+3 statut « En retard » · J+7 relance admin · J+14 accès limité · J+30 suspension."
+          description="J+3 statut « En retard » · J+7 relance administrateur · J+14 accès limité · J+30 suspension."
         />
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {[

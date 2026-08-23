@@ -22,28 +22,28 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
     title: "Plateforme",
     accounts: [
       {
-        label: "Super Admin",
+        label: "Super administrateur",
         role: "Super Administrateur Somafrik",
         identifier: "superadmin",
         password: DEMO_PASSWORD,
         profile: "superadmin",
       },
       {
-        label: "Admin Pays RDC",
+        label: "Administrateur pays RDC",
         role: "Admin Pays",
         identifier: "admin-rdc",
         password: DEMO_PASSWORD,
         profile: "country",
       },
       {
-        label: "Admin Pays CG",
+        label: "Administrateur pays CG",
         role: "Admin Pays",
         identifier: "admin-cg",
         password: DEMO_PASSWORD,
         profile: "country",
       },
       {
-        label: "Admin Pays BI",
+        label: "Administrateur pays BI",
         role: "Admin Pays",
         identifier: "admin-bi",
         password: DEMO_PASSWORD,
@@ -52,10 +52,10 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
     ],
   },
   {
-    title: "Admins établissement",
+    title: "Administrateurs établissement",
     accounts: [
       {
-        label: "Admin école CD",
+        label: "Administrateur d’établissement CD",
         role: "Admin School",
         identifier: "admin",
         password: DEMO_PASSWORD,
@@ -63,7 +63,7 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
         schoolCode: DEMO_SCHOOL_CODE,
       },
       {
-        label: "Admin école CG",
+        label: "Administrateur d’établissement CG",
         role: "Admin School",
         identifier: "admin-cg",
         password: DEMO_PASSWORD,
@@ -71,7 +71,7 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
         schoolCode: "CG-2026-0001",
       },
       {
-        label: "Admin école BI",
+        label: "Administrateur d’établissement BI",
         role: "Admin School",
         identifier: "admin-bi",
         password: DEMO_PASSWORD,

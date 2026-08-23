@@ -135,7 +135,7 @@ export function ChartTypeSettingsPanel() {
       <div className="mt-6 space-y-8">
         <CatalogSection
           title="Tableau de bord plateforme"
-          description="Graphiques visibles sur /tableau-de-bord (Super Admin, Admin Pays)."
+          description="Graphiques visibles sur le tableau de bord (Super administrateur, Administrateur pays)."
           catalog={PLATFORM_CHART_CATALOG}
           overrides={draft.platform}
           onChange={(chartId, value) => updateScope("platform", chartId, value)}

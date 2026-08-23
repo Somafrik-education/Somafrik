@@ -246,10 +246,10 @@ export function UsersPage() {
         {
           status: "Actif",
           validationStatus: VALIDATED_STATUS,
-          validatedBy: session?.user?.identifier ?? session?.user?.firstName ?? "Super Admin",
+          validatedBy: session?.user?.identifier ?? session?.user?.firstName ?? "Super administrateur",
           validatedAt: new Date().toISOString(),
         },
-        "Compte validé. L'Admin École peut désormais se connecter.",
+        "Compte validé. L’administrateur de l’établissement peut désormais se connecter.",
       );
       setDetail(null);
     } catch {
@@ -522,9 +522,9 @@ export function UsersPage() {
           title="Utilisateurs"
           description={
             isSuperadminView
-              ? `${filtered.length} compte(s) plateforme. Le Super Admin valide et gère les Admin École créés par les Admin Pays.`
+              ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
               : isCountryAdminView
-                ? `${filtered.length} admin(s) école dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
+                ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
                 : `${filtered.length} compte(s) accessibles.`
           }
           actions={
@@ -674,9 +674,9 @@ export function UsersPage() {
           <>
             {isCountryAdminProvisionedUser(detail) || detail.validationRequestedBy ? (
               <div className="mb-4 rounded-xl border border-amber/30 bg-amber/10 p-4 text-sm text-ink">
-                <p className="font-bold text-amber">Créé par un Admin Pays</p>
+                <p className="font-bold text-amber">Créé par un Administrateur pays</p>
                 <p className="mt-1 text-muted">
-                  Ce compte Admin École a été créé par un Admin Pays
+                  Ce compte Administrateur établissement a été créé par un Administrateur pays
                   {detail.validationRequestedBy ? ` (${detail.validationRequestedBy})` : ""}.
                   {isPendingValidationStatus(detail.validationStatus ?? detail.status)
                     ? " Le Super Administrateur doit le valider avant toute connexion."
@@ -726,7 +726,7 @@ export function UsersPage() {
             ) : (
               <p className="sm:col-span-2 text-sm text-muted">
                 {isSuperadminView
-                  ? "Admin Pays et Admin School sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité."
+                  ? "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité."
                   : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
               </p>
             )}
@@ -845,7 +845,7 @@ export function UsersPage() {
                     : isSuperadminView && editing.role === COUNTRY_ADMIN_ROLE
                       ? "Aucun établissement — périmètre national uniquement"
                       : isSuperadminView || isCountryAdminView
-                        ? "Admin école rattaché à un établissement précis"
+                        ? "Administrateur établissement rattaché à un établissement précis"
                         : "Périmètre autorisé du compte"
                 }
               >
@@ -880,7 +880,7 @@ export function UsersPage() {
                 <p className="text-sm font-semibold text-ink">Réaffectation d'établissement</p>
                 <p className="mt-1 text-sm text-muted">
                   Changer le pays ou l'établissement n'est pas une modification d'identité. Cette action met à jour
-                  PostgreSQL (users.school_id et user_roles) et révoque immédiatement les sessions existantes.
+                  l’établissement et les rôles actifs associés et révoque immédiatement les sessions existantes.
                 </p>
                 <Button
                   type="button"
@@ -925,10 +925,10 @@ export function UsersPage() {
             {!isEditingExisting && isPendingValidationStatus(editing.status) ? (
               <div className="sm:col-span-2 rounded-xl border border-amber/30 bg-amber/10 p-4">
                 <p className="text-xs font-bold uppercase tracking-wide text-amber">
-                  Validation Super Admin requise
+                  Validation du Super administrateur requise
                 </p>
                 <p className="mt-1 text-sm text-muted">
-                  En tant qu'Admin Pays, vous pouvez créer ce compte Admin École, mais il restera
+                  En tant qu’Administrateur pays, vous pouvez créer ce compte Administrateur établissement, mais il restera
                   « {PENDING_VALIDATION_STATUS} » et ne pourra pas se connecter tant qu'un Super
                   Administrateur ne l'aura pas validé.
                 </p>

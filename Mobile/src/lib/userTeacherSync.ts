@@ -308,7 +308,7 @@ export function upsertTeacherFromUser(
       twinIds: twins.map((teacher) => String(teacher.id)),
       action: "noop",
       message:
-        "Plusieurs fiches historiques TEACHER-* pour ce compte : aucune mutation automatique (pas de choix arbitraire).",
+        "Plusieurs fiches enseignants historiques pour ce compte : aucune mutation automatique (pas de choix arbitraire).",
     });
     return teachers;
   }

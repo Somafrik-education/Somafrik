@@ -357,7 +357,7 @@ export default function App() {
             </PermissionRoute>
           }
         />
-        {/* Module Administration (onglets : Utilisateurs, Rôles & permissions, Documents, Conformité) */}
+        {/* Module Administration (onglets : Utilisateurs, Rôles et droits, Documents, Conformité) */}
         <Route
           path="/administration"
           element={

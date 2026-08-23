@@ -46,9 +46,9 @@ import { createTeacherRecordId, isTeacherUserRole } from "../lib/userTeacherSync
 type Props = NativeStackScreenProps<RootStackParamList, "AdminCrud">;
 
 const LEGACY_CLASSES_CRUD_RETIRED_MESSAGE =
-  "Le CRUD Classes via AdminCrud est retire. Utilisez l'ecran Classes (POST/PATCH /api/classes).";
+  "Le CRUD Classes via AdminCrud est retiré. Utilisez l'écran Classes (POST/PATCH /api/classes).";
 const LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE =
-  "Le CRUD Etablissements via AdminCrud est retire. Utilisez le web /etablissements (API PostgreSQL).";
+  "Le CRUD Établissements via AdminCrud est retiré. Utilisez le web /etablissements (API PostgreSQL).";
 
 type Field = {
   key: string;
@@ -187,7 +187,7 @@ const configs: Record<
       { key: "currency", label: "Devise", placeholder: "CDF" },
       { key: "timezone", label: "Fuseau horaire", placeholder: "Africa/Kinshasa" },
       { key: "status", label: "Statut", placeholder: "Choisir le statut", type: "select" },
-      { key: "administratorId", label: "Admin pays", placeholder: "Choisir un utilisateur", type: "select" },
+      { key: "administratorId", label: "Administrateur pays", placeholder: "Choisir un utilisateur", type: "select" },
     ],
   },
   courses: {

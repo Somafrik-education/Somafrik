@@ -3,14 +3,14 @@ import { Store } from "lucide-react";
 import { ComingSoonState } from "../design-system";
 
 /**
- * Module marketplace (préproduction) — placeholder sans effet de bord sur les données.
+ * Module de place de marché (préproduction) — écran d'attente sans effet de bord sur les données.
  */
 export function MarketplacePage() {
   return (
     <div className="space-y-4">
       <ComingSoonState
         icon={<Store className="h-7 w-7" />}
-        title="Marketplace Somafrik"
+        title="Place de marché Somafrik"
         description="Catalogue de modules, extensions et services complémentaires pour les établissements. Ce module est en préparation : aucune transaction ni synchronisation n'est active."
         badge="Préproduction — accès pilote"
       />

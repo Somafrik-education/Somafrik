@@ -209,8 +209,8 @@ export default function ClassMutationControls({
           <ChoiceChips
             label="Statut"
             options={[
-              { id: "active", label: "Active" },
-              { id: "inactive", label: "Inactive" },
+              { id: "active", label: "Actif" },
+              { id: "inactive", label: "Inactif" },
             ]}
             selectedId={status}
             onSelect={(id) => setStatus(id as "active" | "inactive")}
