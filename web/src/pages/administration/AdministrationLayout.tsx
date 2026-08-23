@@ -5,7 +5,7 @@ import { TabNav, type TabItem } from "../../components/layout/TabNav";
 const ADMINISTRATION_TABS: TabItem[] = [
   { to: "/administration/relations", label: "Relations", icon: Link2 },
   { to: "/administration/utilisateurs", label: "Utilisateurs", icon: Users },
-  { to: "/administration/permissions", label: "Rôles & permissions", icon: ShieldCheck },
+  { to: "/administration/permissions", label: "Rôles et droits", icon: ShieldCheck },
   { to: "/administration/documents", label: "Documents", icon: FileText },
   { to: "/administration/conformite", label: "Conformité", icon: ClipboardCheck },
 ];

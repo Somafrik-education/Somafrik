@@ -237,15 +237,21 @@ export default function AppNavigator() {
 
         {canOpenAdminCrud && (
           <>
-            {session?.role !== "school_admin" && canReadRoute(session, "SchoolManagement") && <Stack.Screen name="SchoolManagement" component={SchoolManagementScreen} />}
-            {canReadRoute(session, "Teachers") && <Stack.Screen name="Teachers" component={TeachersScreen} />}
+            {session?.role !== "school_admin" && canReadRoute(session, "SchoolManagement") && (
+              <Stack.Screen name="SchoolManagement" component={SchoolManagementScreen} options={{ title: "Gestion de l'établissement" }} />
+            )}
+            {canReadRoute(session, "Teachers") && (
+              <Stack.Screen name="Teachers" component={TeachersScreen} options={{ title: "Enseignants" }} />
+            )}
             {canReadView(session, "users") && <Stack.Screen name="Users" component={UsersScreen} options={{ title: "Utilisateurs" }} />}
-            {canReadRoute(session, "Payments") && <Stack.Screen name="Payments" component={PaymentsScreen} />}
+            {canReadRoute(session, "Payments") && (
+              <Stack.Screen name="Payments" component={PaymentsScreen} options={{ title: "Paiements" }} />
+            )}
             <Stack.Screen name="AdminCrud" component={SafeAdminCrudScreen} options={{ title: "Administration" }} />
           </>
         )}
 
-        {canReadRoute(session, "Classes") && <Stack.Screen name="Classes" component={ClassesScreen} />}
+        {canReadRoute(session, "Classes") && <Stack.Screen name="Classes" component={ClassesScreen} options={{ title: "Classes" }} />}
         {canReadRoute(session, "Students") && <Stack.Screen name="Students" component={StudentsScreen} options={{ title: "Élèves" }} />}
         {canReadRoute(session, "TeacherStudents") && <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />}
         {canReadRoute(session, "TeacherAttendance") && <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />}
@@ -253,14 +259,18 @@ export default function AppNavigator() {
 
         {canOpenStudentScreens && (
           <>
-            {canReadRoute(session, "StudentDetail") && <Stack.Screen name="StudentDetail" component={StudentDetailScreen} />}
+            {canReadRoute(session, "StudentDetail") && (
+              <Stack.Screen name="StudentDetail" component={StudentDetailScreen} options={{ title: "Fiche élève" }} />
+            )}
             {canReadRoute(session, "StudentNotes") && <Stack.Screen name="StudentNotes" component={StudentNotesScreen} options={{ title: "Notes" }} />}
             {canReadRoute(session, "StudentPresences") && <Stack.Screen name="StudentPresences" component={StudentPresencesScreen} options={{ title: "Présences" }} />}
           </>
         )}
 
         {canReadRoute(session, "StudentPayments") && <Stack.Screen name="StudentPayments" component={StudentPaymentsScreen} options={{ title: "Paiements" }} />}
-        {canReadRoute(session, "Announcements") && <Stack.Screen name="Announcements" component={AnnouncementsScreen} />}
+        {canReadRoute(session, "Announcements") && (
+          <Stack.Screen name="Announcements" component={AnnouncementsScreen} options={{ title: "Annonces" }} />
+        )}
         {canAccessMessagesRoute(session) && <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: "Messages" }} />}
 
         {(canReadRoute(session, "Timetable") || canReadRoute(session, "ReportCards")) && (

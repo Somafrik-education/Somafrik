@@ -3,7 +3,8 @@
  *
  * Les boutons d'écriture s'alignent sur `canMutateEntity` (mêmes features que le Web).
  * Les mutations partent vers les APIs PostgreSQL existantes. Aucun no-op local.
- * GRANT/REVOKE de la matrice reste hors Mobile (`MOBILE_ROLE_PERMISSION_MUTATION_ENABLED`).
+ * L’attribution et le retrait des droits de la matrice restent hors Mobile
+ * (`MOBILE_ROLE_PERMISSION_MUTATION_ENABLED`).
  */
 import { canMutateEntity, canReadEntity, type SecurityAction } from "../domain/security/permissions";
 

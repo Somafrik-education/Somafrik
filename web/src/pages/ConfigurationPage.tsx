@@ -470,7 +470,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
         <Card className="p-6">
           <SectionHeader
             title="Rôles affectables"
-            description="Catalogue canonique géré par le Superadmin. Vous pouvez affecter ces rôles aux utilisateurs de votre établissement, sans modifier la politique globale."
+            description="Catalogue canonique géré par le Super administrateur. Vous pouvez affecter ces rôles aux utilisateurs de votre établissement, sans modifier la politique globale."
           />
           {rolesLoading ? (
             <p className="mt-4 text-sm text-muted">Chargement du catalogue…</p>
@@ -493,7 +493,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                     <Badge tone="neutral">{selectedCatalogueRole.roleCode}</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted">
-                    Permissions accordées par le Superadmin (lecture seule).
+                    Droits accordés par le Super administrateur (lecture seule).
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {selectedCatalogueRole.permissions.length ? (
@@ -709,7 +709,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                         {resolvedPeriodRows[index]?.active ? (
                           <Badge tone="info">En cours</Badge>
                         ) : (
-                          <Badge tone="neutral">Inactive</Badge>
+                          <Badge tone="neutral">Inactif</Badge>
                         )}
                         {periodMode === "periode" && periodRows.length > 1 ? (
                           <Button
@@ -763,7 +763,7 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
           <Card className="p-6">
             <SectionHeader
               title="Niveaux et filières"
-              description="Activez les éléments du référentiel national proposés par le Superadmin. La création libre n'est plus autorisée."
+              description="Activez les éléments du référentiel national proposés par le Super administrateur. La création libre n'est plus autorisée."
             />
             <div className="mt-4">
               {configTarget && !isAllSchoolsSelection(configTarget) ? (

@@ -178,7 +178,7 @@ export function SubscriptionOffersPage() {
       key: "status",
       header: "Statut",
       render: (o) => (
-        <Badge tone={o.active ? "success" : "neutral"}>{o.active ? "Active" : "Inactive"}</Badge>
+        <Badge tone={o.active ? "success" : "neutral"}>{o.active ? "Actif" : "Inactif"}</Badge>
       ),
     },
     {
@@ -325,8 +325,8 @@ export function SubscriptionOffersPage() {
               <Select
                 value={draft.active === false ? "inactive" : "active"}
                 options={[
-                  { value: "active", label: "Active" },
-                  { value: "inactive", label: "Inactive" },
+                  { value: "active", label: "Actif" },
+                  { value: "inactive", label: "Inactif" },
                 ]}
                 onChange={(e) => setDraft({ ...draft, active: e.target.value === "active" })}
               />

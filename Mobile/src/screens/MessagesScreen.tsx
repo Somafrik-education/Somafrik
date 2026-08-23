@@ -369,8 +369,8 @@ export default function MessagesScreen() {
           <View style={styles.composeCard} testID="messages-staff-composer-blocked">
             <Text style={styles.cardTitle}>Rédaction école vers parent indisponible</Text>
             <Text style={styles.meta}>
-              Messages:CREATE seul ne fournit pas de source canonique de destinataires. Le composer staff exige aussi
-              Contacts:READ et Relations:READ (ou Gérer utilisateurs / privilèges plateforme). Aucun envoi n'est proposé.
+              Le droit de création de messages ne fournit pas à lui seul de source canonique de destinataires. La composition d’un message au personnel exige aussi
+              les droits de lecture des Contacts et des Relations (ou la gestion des utilisateurs / privilèges plateforme). Aucun envoi n'est proposé.
             </Text>
           </View>
         ) : null}

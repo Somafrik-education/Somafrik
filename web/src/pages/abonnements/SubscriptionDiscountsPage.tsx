@@ -57,7 +57,7 @@ export function SubscriptionDiscountsPage() {
       await platformApi.createSubscriptionDiscount(discount as unknown as Record<string, unknown>);
       await refresh();
       setForm({ ...form, reason: "" });
-      showToast("Remise proposée — validation Super Admin requise", "success");
+      showToast("Remise proposée — validation du Super administrateur requise", "success");
     } catch {
       showToast("Échec", "error");
     } finally {

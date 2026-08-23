@@ -107,7 +107,7 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted">Aucun niveau défini pour ce pays. Contactez le Superadmin ou l&apos;Admin Pays.</p>
+          <p className="text-sm text-muted">Aucun niveau défini pour ce pays. Contactez le Super administrateur ou l&apos;Administrateur pays.</p>
         )}
       </div>
 
@@ -155,7 +155,7 @@ export function SchoolEducationActivationPanel({ schoolCode, canConfigure }: Pro
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted">Aucun groupe défini pour ce pays. Contactez le Superadmin ou l&apos;Admin Pays.</p>
+          <p className="text-sm text-muted">Aucun groupe défini pour ce pays. Contactez le Super administrateur ou l&apos;Administrateur pays.</p>
         )}
       </div>
 

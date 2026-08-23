@@ -54,11 +54,11 @@ function main() {
   assert.doesNotMatch(
     permissions,
     /updateRoleFeatureAccess/,
-    "PermissionsScreen ne doit plus simuler un GRANT\/REVOKE local",
+    "PermissionsScreen ne doit plus simuler une attribution ou un retrait de droit local",
   );
   assert.doesNotMatch(permissions, /synchronis[ée]s automatiquement/i);
   assert.match(permissions, /Modification Mobile désactivée/);
-  assert.match(permissions, /GRANT\/REVOKE ne sont plus simulés localement/);
+  assert.match(permissions, /L’attribution et le retrait des droits ne sont plus simulés localement/);
 
   assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?await createTeacherAssignment/);
   assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?await createCourse/);

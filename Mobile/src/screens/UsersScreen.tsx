@@ -5,6 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
 import UserMutationControls from "../components/UserMutationControls";
 import { useAdminData } from "../context/AdminDataContext";
+import { displayRoleName, displayStatusName } from "../lib/format";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function UsersScreen() {
@@ -60,8 +61,8 @@ export default function UsersScreen() {
                 {[user.firstName, user.lastName].filter(Boolean).join(" ") || user.identifier}
               </Text>
               <Text style={styles.identifier}>{user.identifier || user.publicId}</Text>
-              <Text style={styles.meta}>Rôles actifs : {roles.join(", ") || "Aucun rôle actif"}</Text>
-              <Text style={styles.meta}>Statut : {user.status || "Non renseigné"}</Text>
+              <Text style={styles.meta}>Rôles actifs : {roles.map((role) => displayRoleName(String(role))).join(", ") || "Aucun rôle actif"}</Text>
+              <Text style={styles.meta}>Statut : {displayStatusName(user.status)}</Text>
               {user.schoolCode ? (
                 <Text style={styles.meta} testID={`user-school-${user.schoolCode}`}>
                   Établissement : {user.schoolCode}
@@ -76,7 +77,7 @@ export default function UsersScreen() {
       }}
       ListFooterComponent={
         <Text style={styles.hint}>
-          L'attribution du rôle Enseignant à un compte est autorisée. La modification de la matrice RBAC reste Web-only.
+          L'attribution du rôle Enseignant à un compte est autorisée. La modification de la matrice des droits reste disponible uniquement sur le Web.
         </Text>
       }
     />

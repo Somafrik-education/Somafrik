@@ -7,6 +7,7 @@ import SchoolSelector from "../components/SchoolSelector";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "../lib/orgHierarchy";
 import { getSuperadminMatrixModules } from "../lib/roleGovernance";
 import { CRUD_ACTIONS } from "../lib/constants";
+import { displayRoleName } from "../lib/format";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import { MOBILE_ROLE_PERMISSION_MUTATION_ENABLED } from "../lib/mobileMutationSafety";
@@ -27,7 +28,7 @@ export default function PermissionsScreen() {
   if (session?.role !== "super_admin") {
     return (
       <View style={styles.denied}>
-        <Text style={styles.deniedText}>Matrice Super Admin réservée au Super Administrateur.</Text>
+        <Text style={styles.deniedText}>Matrice réservée au Super administrateur.</Text>
       </View>
     );
   }
@@ -56,8 +57,8 @@ export default function PermissionsScreen() {
           <View style={styles.readOnlyTextBlock}>
             <Text style={styles.readOnlyTitle}>Modification Mobile désactivée</Text>
             <Text style={styles.readOnlyText}>
-              Les GRANT/REVOKE ne sont plus simulés localement. Utilisez le Web canonique jusqu&apos;au
-              branchement du PATCH RBAC Mobile avec contrôle de scope et de concurrence.
+              L’attribution et le retrait des droits ne sont plus simulés localement. Utilisez l’interface Web canonique jusqu’au
+              branchement de la modification RBAC sur mobile avec contrôle du périmètre et de la concurrence.
             </Text>
           </View>
         </View>
@@ -73,7 +74,7 @@ export default function PermissionsScreen() {
               setSelectedModule(getSuperadminMatrixModules(role)[0] ?? "Utilisateurs");
             }}
           >
-            <Text style={[styles.roleChipText, targetRole === role && styles.roleChipTextActive]}>{role}</Text>
+            <Text style={[styles.roleChipText, targetRole === role && styles.roleChipTextActive]}>{displayRoleName(role)}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -109,7 +110,7 @@ export default function PermissionsScreen() {
       </View>
 
       <Text style={styles.readOnlyFooter}>
-        Lecture seule sur Mobile — aucune modification locale n&apos;est considérée comme enregistrée.
+        Lecture seule sur mobile — aucune modification locale n&apos;est considérée comme enregistrée.
       </Text>
     </ScrollView>
   );

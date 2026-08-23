@@ -880,7 +880,7 @@ function SchoolDetailView({ school, state }: { school: School; state: BackOffice
         <DetailRow label="Nom" value={school.principalName} />
         <DetailRow label="Email" value={school.principalEmail ?? school.email} />
         <DetailRow
-          label="Admin établissement"
+          label="Administrateur établissement"
           value={admin ? `${admin.firstName} ${admin.lastName} (${admin.identifier})` : "Non créé"}
         />
         {!admin ? (

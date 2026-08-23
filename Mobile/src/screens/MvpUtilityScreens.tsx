@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
 import { canReadRoute } from "../domain/security/permissions";
+import { displayRoleName, displayStatusName } from "../lib/format";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 function ScreenShell({
@@ -168,7 +169,7 @@ export function AuditScreen() {
       {recentUsers.map((user) => (
         <View key={user.id} style={styles.auditRow}>
           <Text style={styles.auditTitle}>{user.firstName} {user.lastName}</Text>
-          <Text style={styles.auditMeta}>{user.role} - {user.status} - {user.identifier}</Text>
+          <Text style={styles.auditMeta}>{displayRoleName(user.role)} - {displayStatusName(user.status)} - {user.identifier}</Text>
         </View>
       ))}
     </ScreenShell>

@@ -36,7 +36,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
 
 export const CRUD_ACTIONS = [
   { key: "READ", label: "Lire" },
-  { key: "CREATE", label: "Creer" },
+  { key: "CREATE", label: "Créer" },
   { key: "UPDATE", label: "Modifier" },
   { key: "DELETE", label: "Supprimer" },
   { key: "SUSPEND", label: "Suspendre" },

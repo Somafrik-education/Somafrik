@@ -261,7 +261,7 @@ export default function UserMutationControls({
           editable={!saving}
         />
       ) : null}
-      <Text style={styles.hint}>La matrice RBAC reste Web-only. L'attribution du rôle Enseignant à un compte est autorisée.</Text>
+      <Text style={styles.hint}>La matrice des droits reste disponible uniquement sur le Web. L'attribution du rôle Enseignant à un compte est autorisée.</Text>
     </CanonicalMutationModal>
   );
 

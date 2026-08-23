@@ -16,13 +16,13 @@ export default function SchoolSelector() {
   }
 
   const options = [
-    { code: ALL_SCHOOLS_CODE, label: "Tous les etablissements" },
+    { code: ALL_SCHOOLS_CODE, label: "Tous les établissements" },
     ...availableSchools.map((school) => schoolSelectorChoice(school)),
   ];
 
   return (
     <View style={styles.container} testID="school-selector">
-      <Text style={styles.label}>Etablissement actif</Text>
+      <Text style={styles.label}>Établissement actif</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
         {options.map((option) => {
           const active = activeSchoolCode === option.code || (!activeSchoolCode && option.code === ALL_SCHOOLS_CODE);
