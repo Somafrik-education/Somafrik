@@ -22,22 +22,7 @@ jobs:
   capture-web:
     name: Runtime captures W01-W06
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: somafrik
-          POSTGRES_USER: somafrik
-          POSTGRES_PASSWORD: somafrik123
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U somafrik -d somafrik"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -54,23 +39,20 @@ jobs:
       - name: Install workspace, backend and web
         run: npm ci && npm ci --prefix backend && npm ci --prefix web
 
-      - name: Start canonical backend with demo seed
+      - name: Start real Somafrik API with development demo-memory data
         env:
           NODE_ENV: development
           APP_ENV: development
           PORT: "5000"
-          DATABASE_URL: postgresql://somafrik:somafrik123@127.0.0.1:5432/somafrik
           JWT_SECRET: capture-user-guide-ci-secret-at-least-32-characters
-          SOMAFRIK_DB_REQUIRED: "true"
-          SOMAFRIK_SKIP_DEMO_SEED: "false"
           SOMAFRIK_DISABLE_LOGIN_LOCKOUT: "true"
           SOMAFRIK_API_ONLY: "true"
         run: |
-          npm --prefix backend run start > /tmp/somafrik-backend.log 2>&1 &
+          npm --prefix backend run dev:memory > /tmp/somafrik-backend.log 2>&1 &
           echo $! > /tmp/somafrik-backend.pid
-          for i in {1..60}; do
+          for i in {1..45}; do
             if curl -fsS http://127.0.0.1:5000/api/health >/dev/null; then
-              echo "Backend ready"
+              echo "Backend demo-memory ready"
               exit 0
             fi
             sleep 2
