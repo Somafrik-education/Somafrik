@@ -251,7 +251,8 @@ test("publication : aucun school_code / class_code / school_name", () => {
 test("publication : cible = label env, aucun host ni nom de base", () => {
   assert.equal(publicTargetLabel("PREPROD_DATABASE_URL"), "PREPROD_DATABASE_URL");
   assert.equal(publicTargetLabel("DATABASE_URL"), "DATABASE_URL");
-  assert.equal(publicTargetLabel("postgresql://user:secret@db-preprod.internal/somafrik_preprod"), "ABSENT");
+  assert.equal(publicTargetLabel("postgresql://db-preprod.internal.example/somafrik_preprod"), "ABSENT");
+  assert.equal(publicTargetLabel("not-an-env-label"), "ABSENT");
   assert.equal(publicTargetLabel(""), "ABSENT");
 
   const leakyHost = "db-preprod.internal.example";
