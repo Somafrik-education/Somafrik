@@ -133,7 +133,8 @@ Ordre transactionnel :
 | `repair-backoffice-state.js`, `repair-school-users-only.js`, `repair-school-subscriptions.js`, `repair-password-flags.js` | Réparations |
 | `seed-test-data.js`, `seed-bulletin-data.js`, `seed-platform-bulk.js` | Seeds |
 | `wipe-demo-data.js`, `trim-teachers.js`, `reset-school-planning.js` | Purges / trim |
-| `sync-contacts-registry.js`, `backfill-validation-alerts.js` | Sync / backfill |
+| `sync-contacts-registry.js` | **RETIRÉ** — refuse d’exécuter (P0-3). Plus de `db:sync-contacts`. |
+| `backfill-validation-alerts.js` | Sync / backfill |
 | Audits préprod enseignants | `cleanup-teacher-historical-preprod.js`, `audit-teacher-post-cleanup-full.js` |
 
 ---
