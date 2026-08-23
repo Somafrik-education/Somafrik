@@ -483,11 +483,21 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   {entry.arrivalTime ? ` • arrivée ${entry.arrivalTime}` : ""}
                   {entry.reason ? ` • ${entry.reason}` : ""}
                 </Text>
-                <Text style={styles.statusLabel}>
+                <Text
+                  testID={USABILITY_TEST_IDS.attendanceCurrentStatus(student.id)}
+                  accessibilityLabel={`Statut ${student.name}: ${status ?? ROLL_CALL_COPY.unset}`}
+                  style={styles.statusLabel}
+                >
                   Statut : {status ?? ROLL_CALL_COPY.unset}
                   {entry.source === "draft" ? ` • ${ROLL_CALL_COPY.draft}` : ""}
                   {entry.source === "postgres" ? ` • ${ROLL_CALL_COPY.postgres}` : ""}
                 </Text>
+                {status ? (
+                  <View
+                    testID={USABILITY_TEST_IDS.attendanceCurrentStatusValue(student.id, status)}
+                    accessible={false}
+                  />
+                ) : null}
               </View>
             </TouchableOpacity>
             <View style={styles.statusActions}>

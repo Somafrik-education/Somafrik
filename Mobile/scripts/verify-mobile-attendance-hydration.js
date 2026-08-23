@@ -41,6 +41,8 @@ function main() {
   assert.match(attendance, /attendanceStatusTheme/);
   assert.match(attendance, /USABILITY_TEST_IDS\.attendanceSave/);
   assert.match(attendance, /USABILITY_TEST_IDS\.attendanceMarkAllPresent/);
+  assert.match(attendance, /USABILITY_TEST_IDS\.attendanceCurrentStatus/);
+  assert.match(attendance, /USABILITY_TEST_IDS\.attendanceCurrentStatusValue/);
   assert.doesNotMatch(attendance, /rollCallInitialStatus/);
   assert.doesNotMatch(attendance, /statusActionActive/);
   assert.doesNotMatch(attendance, /attendance\[student\.id\] \?\? \{ status: "Présent"/);

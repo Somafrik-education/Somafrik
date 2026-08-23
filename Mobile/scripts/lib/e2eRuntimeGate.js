@@ -321,8 +321,18 @@ function maestroEnvFrom(env = {}) {
   return next;
 }
 
-function mutationCoverageReport(env = {}) {
-  const attendanceReady = hasAttendanceQaFixture(env);
+function mutationCoverageReport(env = {}, options = {}) {
+  const fixtureReady = hasAttendanceQaFixture(env);
+  const executable = fixtureReady;
+  const maestroExecuted = options.maestroExecuted === true;
+  const maestroOk = options.maestroExitCode === 0;
+  const executedFlows = Array.isArray(options.executedFlows) ? options.executedFlows : [];
+  const attendanceMutationExecuted =
+    fixtureReady
+    && executable
+    && maestroExecuted
+    && maestroOk
+    && executedFlows.includes("12-attendance-mutation.yaml");
   return [
     {
       file: "07-attendance.yaml",
@@ -333,12 +343,16 @@ function mutationCoverageReport(env = {}) {
     },
     {
       file: "12-attendance-mutation.yaml",
-      flowExecution: attendanceReady ? "MUTATION" : "NOT_EXECUTED",
-      mutationCoverage: attendanceReady ? "MUTATION_READY" : BLOCKED.ATTENDANCE_MUTATION,
-      executed: attendanceReady,
-      reason: attendanceReady
-        ? "Fixture QA-APPEL / QA-ATT- fournie. Maestro peut muter uniquement ces 4 élèves."
-        : "Pas de fixture QA isolée (QA-APPEL + QA-ATT-A/B/C/D). Mutation non exécutée, jamais un succès artificiel.",
+      fixtureReady,
+      executable,
+      flowExecution: executable ? "MUTATION" : "NOT_EXECUTED",
+      mutationCoverage: fixtureReady ? "MUTATION_READY" : BLOCKED.ATTENDANCE_MUTATION,
+      executed: attendanceMutationExecuted,
+      reason: attendanceMutationExecuted
+        ? "Maestro a réellement exécuté 12-attendance-mutation.yaml avec la fixture QA."
+        : fixtureReady
+          ? "Fixture QA-APPEL / QA-ATT- prête et flux exécutable. executed=false tant que Maestro n'a pas tourné ce YAML."
+          : "Pas de fixture QA isolée (QA-APPEL + QA-ATT-A/B/C/D). Mutation non exécutable, jamais un succès artificiel.",
     },
     {
       file: "08-notes.yaml",
@@ -465,8 +479,12 @@ function evaluateRuntimeGate(input = {}) {
   }
 
   const blocked = blockedFlowReport(env);
-  const mutationCoverage = mutationCoverageReport(env);
   const executable = executableFlowsFor(env);
+  const mutationCoverage = mutationCoverageReport(env, {
+    maestroExecuted: input.maestroExecuted === true,
+    maestroExitCode: input.maestroExitCode,
+    executedFlows: input.maestroExecuted === true && input.maestroExitCode === 0 ? executable : [],
+  });
 
   const base = {
     blocked,

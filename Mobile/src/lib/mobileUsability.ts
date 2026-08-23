@@ -17,6 +17,9 @@ export const USABILITY_TEST_IDS = {
     `attendance-action-${studentId}-${attendanceStatusSlug(status)}`,
   attendanceClass: (className: string) => `attendance-class-${slugify(className)}`,
   attendanceStudent: (studentId: string) => `attendance-student-${studentId}`,
+  attendanceCurrentStatus: (studentId: string) => `attendance-current-status-${studentId}`,
+  attendanceCurrentStatusValue: (studentId: string, status: string) =>
+    `attendance-current-status-${studentId}-${attendanceStatusSlug(status)}`,
   attendanceMarkAllPresent: "attendance-mark-all-present",
   attendanceSave: "attendance-save",
   attendancePresentCount: "attendance-present-count",

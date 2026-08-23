@@ -144,7 +144,23 @@ function main() {
   assert.match(attendanceMutation, /attendance-save/);
   assert.match(attendanceMutation, /clearState:\s*false/);
   assert.match(attendanceMutation, /MUTATION_ATTENDANCE_BLOCKED_NO_QA_FIXTURE/);
+  assert.match(attendanceMutation, /assert-attendance-qa-statuses/);
+  assert.doesNotMatch(attendanceMutation, /assertVisible:\s*["']Statut :/);
   assert.doesNotMatch(attendanceMutation, /inputText:\s*["']\d{4,}["']/);
+
+  const attendanceStatusProof = fs.readFileSync(
+    path.join(MAESTRO, "flows", "assert-attendance-qa-statuses.yaml"),
+    "utf8",
+  );
+  assert.match(attendanceStatusProof, /attendance-current-status-\$\{SOMAFRIK_E2E_ATTENDANCE_STUDENT_A\}-present/);
+  assert.match(attendanceStatusProof, /attendance-current-status-\$\{SOMAFRIK_E2E_ATTENDANCE_STUDENT_B\}-absent/);
+  assert.match(attendanceStatusProof, /attendance-current-status-\$\{SOMAFRIK_E2E_ATTENDANCE_STUDENT_C\}-late/);
+  assert.match(attendanceStatusProof, /attendance-current-status-\$\{SOMAFRIK_E2E_ATTENDANCE_STUDENT_D\}-excused/);
+  assert.match(attendanceStatusProof, /copyTextFrom/);
+  assert.match(attendanceStatusProof, /copiedText\.includes\('Statut : Présent'\)/);
+  assert.match(attendanceStatusProof, /copiedText\.includes\('Statut : Absent'\)/);
+  assert.match(attendanceStatusProof, /copiedText\.includes\('Statut : Retard'\)/);
+  assert.match(attendanceStatusProof, /copiedText\.includes\('Statut : Justifié'\)/);
 
   const notes = fs.readFileSync(path.join(MAESTRO, "08-notes.yaml"), "utf8");
   assert.match(notes, /evaluations-v2/);

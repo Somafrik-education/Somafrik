@@ -46,12 +46,9 @@ appId: com.somafrik.app
     id: "attendance-class-${SOMAFRIK_E2E_ATTENDANCE_CLASS_SLUG}"
 - extendedWaitUntil:
     visible:
-      id: "attendance-student-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}"
+      id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}"
     timeout: 20000
-- assertVisible: "Statut : Présent"
-- assertVisible: "Statut : Absent"
-- assertVisible: "Statut : Retard"
-- assertVisible: "Statut : Justifié"
+- runFlow: flows/assert-attendance-qa-statuses.yaml
 - stopApp
 - launchApp:
     clearState: false
@@ -65,12 +62,9 @@ appId: com.somafrik.app
     id: "attendance-class-${SOMAFRIK_E2E_ATTENDANCE_CLASS_SLUG}"
 - extendedWaitUntil:
     visible:
-      id: "attendance-student-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}"
+      id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}"
     timeout: 20000
-- assertVisible: "Statut : Présent"
-- assertVisible: "Statut : Absent"
-- assertVisible: "Statut : Retard"
-- assertVisible: "Statut : Justifié"
+- runFlow: flows/assert-attendance-qa-statuses.yaml
 - assertVisible: "Présents 1"
 - assertVisible: "Absents 1"
 - assertVisible: "Retards 1"
