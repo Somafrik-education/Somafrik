@@ -4,9 +4,9 @@ Ce fichier empêche le guide utilisateur de transformer une capacité partielle,
 
 Référence : `develop@3be39cfee2718157cfd54993b2745b4aa2dd1fb1`.
 
-## 1. Captures runtime non encore intégrées
+## 1. Captures runtime — lot W01→W06 intégré, reste à capturer
 
-Les composants métier ont été vérifiés dans le code courant, mais les images de `CAPTURES-METIER.md` restent `À CAPTURER` tant qu'une instance Somafrik exécutée n'a pas fourni les captures correspondantes.
+Les captures Web **W01 à W06** sont désormais issues d'une instance Somafrik réellement exécutée (Web Vite + API canonique + PostgreSQL) et marquées `VALIDÉE` dans `CAPTURES-METIER.md`. Les lignes W07+ et tout le lot Mobile restent `À CAPTURER`.
 
 **Décision documentation :** aucun mockup n'est utilisé comme remplacement temporaire.
 
@@ -73,6 +73,47 @@ Les routes/écrans suivants peuvent exister et être accessibles selon le RBAC, 
 - certaines configurations plateforme.
 
 Ils peuvent être mentionnés comme modules visibles, mais pas comme workflows garantis.
+
+## 11. Seed démo PostgreSQL — boot local cassé sans contournement ops
+
+Rôle / contexte : runtime local `backend:pg` + `shouldSeedDemoData()`.
+
+Comportement attendu : un `npm run backend:pg` sur base vide charge le jeu démo et reste relançable.
+
+Comportement observé sur le SHA du guide :
+
+- `seedIfEmpty` échoue sur `uq_subscriptions_school_id` (le seed construit 50 abonnements et répète le premier établissement) ;
+- l'insert élèves du seed lève `STUDENT_CANONICAL_IDENTIFIER_REQUIRED` (matricules legacy `CD-IN-EL-26-00x` vs trigger d'identité canonique) ;
+- `node backend/scripts/seed-platform-bulk.js` échoue sur `STUDENT_INITIALS_REQUIRED` ;
+- une relance après seed échoue sur `CANONICAL_SCHOOL_COURSE_AMBIGUOUS` puis `USER_ROLES_MIGRATION_AMBIGUOUS` (rôles démo générés hors catalogue).
+
+Impact guide : le lot W01→W06 a dû utiliser un wrapper de process hors dépôt (déduplication des abonnements, exclusion des comptes Élève du seed, stub des deux contrôles de relance). Aucun fichier `backend/` / `web/src/` n'a été modifié.
+
+Sévérité proposée : P1 — bloque un boot PG démo reproductible.
+
+## 12. Code établissement public ≠ code interne affiché
+
+Rôle : Admin établissement. Routes : `/connexion`, `/tableau-de-bord`, `/etablissement/*`.
+
+Comportement attendu : le code saisi à la connexion et le périmètre affiché dans le chrome sont le même identifiant public.
+
+Comportement observé : le trigger `somafrik_prepare_school_login_code` a émis `CD-UK-26-001` à partir du nom seed « Universite de Kinshasa » (ensuite renommé **Institut Nouvelle Espérance** via l'API Superadmin). Le chrome Web affiche `Périmètre établissement : CD-2026-0001` (school_code interne).
+
+Impact guide : les légendes W01–W06 ne présentent pas `CD-IN-26-001` comme le code runtime de cette instance. La connexion établissement utilise le login public réel.
+
+Sévérité proposée : P2 — ambiguïté d'identifiant, pas un blocage de parcours.
+
+## 13. Tableau de bord — effectifs élèves non alignés sur l'annuaire
+
+Rôle : Admin établissement. Route : `/tableau-de-bord`.
+
+Comportement attendu : les cartes Scolarité / Effectifs par classe reflètent les élèves inscrits rechargés depuis PostgreSQL.
+
+Comportement observé : après inscription canonique de 3 élèves dans `6ème A` (`POST /api/classes/:classCode/students`), le tableau de bord montrait un effectif élèves à 0 et « Aucune donnée à afficher » pour Effectifs par classe, alors que la liste Classes (filtre `6ème`) affichait effectif 3 et l'annuaire listait les 3 élèves.
+
+Impact guide : W02 documente les indicateurs réellement chargés, pas une cohérence garantie avec W03/W05.
+
+Sévérité proposée : P2 — divergence de synthèse, le parcours Classes / Élèves reste fiable.
 
 ## Gate d'évolution du guide
 

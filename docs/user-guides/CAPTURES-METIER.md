@@ -15,12 +15,12 @@ Statuts :
 
 | # | Capture cible | Écran / état métier | Rôle de référence | Source réelle `develop` | Statut |
 |---|---|---|---|---|---|
-| W01 | `assets/web/01-connexion-etablissement.png` | Connexion, profil Établissement, champs vides | Admin établissement | `web/src/pages/LoginPage.tsx` | À CAPTURER |
-| W02 | `assets/web/02-tableau-de-bord-etablissement.png` | Tableau de bord après connexion | Admin établissement | route `/tableau-de-bord` dans `web/src/App.tsx` | À CAPTURER |
-| W03 | `assets/web/03-classes-liste.png` | Liste avec plusieurs classes et statuts | Admin établissement | `web/src/pages/etablissement/ClassesListPage.tsx` | À CAPTURER |
-| W04 | `assets/web/04-classe-ajout.png` | Modal Ajouter une classe | Admin établissement | `ClassesListPage.tsx` | À CAPTURER |
-| W05 | `assets/web/05-eleves-annuaire.png` | Annuaire avec bouton Dossier, sans création globale | Secrétaire/Admin | `web/src/pages/etablissement/StudentsListPage.tsx` | À CAPTURER |
-| W06 | `assets/web/06-eleve-dossier.png` | Dossier d'un élève fictif | Admin établissement | `StudentWorkspacePage` via `web/src/App.tsx` | À CAPTURER |
+| W01 | `assets/web/01-connexion-etablissement.png` | Connexion, profil Établissement, champs vides | Admin établissement | `web/src/pages/LoginPage.tsx` | VALIDÉE |
+| W02 | `assets/web/02-tableau-de-bord-etablissement.png` | Tableau de bord après connexion | Admin établissement | route `/tableau-de-bord` dans `web/src/App.tsx` | VALIDÉE |
+| W03 | `assets/web/03-classes-liste.png` | Liste avec plusieurs classes et statuts | Admin établissement | `web/src/pages/etablissement/ClassesListPage.tsx` | VALIDÉE |
+| W04 | `assets/web/04-classe-ajout.png` | Modal Ajouter une classe | Admin établissement | `ClassesListPage.tsx` | VALIDÉE |
+| W05 | `assets/web/05-eleves-annuaire.png` | Annuaire avec bouton Dossier, sans création globale | Secrétaire/Admin | `web/src/pages/etablissement/StudentsListPage.tsx` | VALIDÉE |
+| W06 | `assets/web/06-eleve-dossier.png` | Dossier d'un élève fictif | Admin établissement | `StudentWorkspacePage` via `web/src/App.tsx` | VALIDÉE |
 | W07 | `assets/web/07-enseignants-liste.png` | Liste, Modifier/Affecter selon droits | Admin établissement | `web/src/pages/etablissement/TeachersListPage.tsx` | À CAPTURER |
 | W08 | `assets/web/08-enseignant-affectation.png` | Modal Affecter un cours | Admin établissement | `TeachersListPage.tsx` | À CAPTURER |
 | W09 | `assets/web/09-utilisateurs-liste.png` | Comptes et rôles actifs | Admin établissement | `web/src/pages/UsersPage.tsx` | À CAPTURER |

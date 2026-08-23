@@ -24,7 +24,9 @@ Si Somafrik indique que le mot de passe est temporaire, la fenêtre **Nouveau mo
 
 > Les comptes de démonstration visibles en environnement de développement ne doivent jamais être utilisés comme procédure de production.
 
-**Capture à intégrer :** `assets/web/01-connexion-etablissement.png` — voir `CAPTURES-METIER.md`.
+![Connexion établissement Somafrik](./assets/web/01-connexion-etablissement.png)
+
+*Connexion plateforme, profil **Établissement** : Code établissement, Identifiant, Mot de passe, puis **Se connecter**. Aucun compte démo n'est affiché.*
 
 ## 2. Comprendre les menus et les droits
 
@@ -41,7 +43,9 @@ Le **Tableau de bord** est le point d'entrée de pilotage. Les indicateurs et ra
 
 Utilisez-le pour rejoindre les modules disponibles sans modifier les données directement depuis une autre application ou un ancien écran.
 
-**Capture à intégrer :** `assets/web/02-tableau-de-bord-etablissement.png`.
+![Tableau de bord établissement Somafrik](./assets/web/02-tableau-de-bord-etablissement.png)
+
+*Tableau de bord d'un administrateur d'établissement après connexion. Les indicateurs viennent du runtime ; le périmètre affiché est le code interne de l'établissement.*
 
 # Mon établissement
 
@@ -78,7 +82,13 @@ Dans **Actions** :
 - **Modifier** permet de changer les champs autorisés ;
 - **Désactiver** rend une classe inactive sans la présenter comme une nouvelle classe active.
 
-**Captures à intégrer :** `03-classes-liste.png`, `04-classe-ajout.png`.
+![Liste des classes Somafrik](./assets/web/03-classes-liste.png)
+
+*Liste **Classes** : recherche, filtre de statut, colonnes métier, actions **Élèves** / **Modifier** / **Désactiver**, et **Ajouter** lorsque CREATE est accordé.*
+
+![Ajouter une classe Somafrik](./assets/web/04-classe-ajout.png)
+
+*Modal **Ajouter une classe**. Les valeurs présélectionnées (année, niveau, groupe) viennent du premier élément actif du catalogue : ce n'est pas une recommandation métier.*
 
 ## 5. Inscrire un élève
 
@@ -111,7 +121,13 @@ Cliquez sur **Dossier** pour ouvrir l'espace de l'élève.
 
 Si votre rôle possède le droit correspondant, **Archiver** retire l'élève de l'annuaire actif. L'archivage n'est pas présenté comme une suppression physique des données scolaires.
 
-**Captures à intégrer :** `05-eleves-annuaire.png`, `06-eleve-dossier.png`.
+![Annuaire élèves Somafrik](./assets/web/05-eleves-annuaire.png)
+
+*Annuaire **Élèves** : Nom, Prénom, Matricule, Classe, **Dossier**. L'inscription se fait depuis une classe, pas depuis un bouton global « Ajouter un élève ».*
+
+![Dossier élève Somafrik](./assets/web/06-eleve-dossier.png)
+
+*Dossier d'un élève fictif ouvert depuis **Dossier**. Seules les sections autorisées au rôle sont visibles.*
 
 ## 7. Enseignants
 
