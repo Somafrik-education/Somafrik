@@ -67,6 +67,37 @@ function run() {
   assert.strictEqual(repo.toAttendanceStatus("Justifié", false), "excused");
   assert.strictEqual(repo.toAttendanceStatus("justifie", false), "excused");
   assert.strictEqual(repo.fromAttendanceStatus("excused"), "Justifié");
+  assert.strictEqual(repo.toAttendanceStatus("Présent", false), "present");
+  assert.strictEqual(repo.toAttendanceStatus("Absent", true), "absent");
+  assert.strictEqual(repo.toAttendanceStatus("Retard", false), "late");
+  assert.strictEqual(repo.fromAttendanceStatus("present"), "Présent");
+  assert.strictEqual(repo.fromAttendanceStatus("absent"), "Absent");
+  assert.strictEqual(repo.fromAttendanceStatus("late"), "Retard");
+  const mappedPresent = repo.mapAttendance({
+    id: "a1",
+    school_id: "s1",
+    school_code: "CD-IN-26-001",
+    student_code: "QA-ATT-A1",
+    class_id: "c1",
+    class_code: "QA-APPEL-6A",
+    class_name: "QA-APPEL-6A",
+    attendance_date: "2026-08-23",
+    status: "present",
+  });
+  assert.strictEqual(mappedPresent.present, true);
+  const mappedJustified = repo.mapAttendance({
+    id: "a2",
+    school_id: "s1",
+    school_code: "CD-IN-26-001",
+    student_code: "QA-ATT-D1",
+    class_id: "c1",
+    class_code: "QA-APPEL-6A",
+    class_name: "QA-APPEL-6A",
+    attendance_date: "2026-08-23",
+    status: "excused",
+  });
+  assert.strictEqual(mappedJustified.status, "Justifié");
+  assert.strictEqual(mappedJustified.present, false, "Justifié = absence justifiée");
 
   console.log("presenceContract.test.js : OK");
 }

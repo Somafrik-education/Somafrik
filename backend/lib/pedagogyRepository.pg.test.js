@@ -878,6 +878,76 @@ async function main() {
     );
     assert.equal(attendance.length, 1);
 
+    const fourStatuses = [
+      { status: "Présent", present: true, pg: "present" },
+      { status: "Absent", present: false, pg: "absent" },
+      { status: "Retard", present: true, pg: "late" },
+      { status: "Justifié", present: false, pg: "excused" },
+    ];
+    for (const item of fourStatuses) {
+      const [row] = await store.upsertSchoolAttendanceBatch(
+        {
+          items: [
+            {
+              studentId: "CD-2026-0001-STU-PG-01",
+              className: "6ème A",
+              date: "2026-09-03",
+              status: item.status,
+              teacherId: "ENS-PG-001",
+            },
+          ],
+        },
+        admin,
+        auditMeta,
+      );
+      assert.equal(row.status, item.status);
+      assert.equal(row.present, item.present);
+    }
+    const sameDayCount = await pool.query(
+      `SELECT count(*)::int AS count, max(a.status) AS status
+       FROM attendance a
+       JOIN students st ON st.id = a.student_id
+       WHERE st.student_code = 'CD-2026-0001-STU-PG-01'
+         AND a.attendance_date = DATE '2026-09-03'`,
+    );
+    assert.equal(sameDayCount.rows[0].count, 1, "upsert jour = une ligne, pas de doublon");
+    assert.equal(sameDayCount.rows[0].status, "excused");
+
+    await assert.rejects(
+      () =>
+        store.upsertSchoolAttendanceBatch(
+          {
+            items: [
+              {
+                studentId: "CD-2026-0001-STU-PG-01",
+                className: "6ème A",
+                date: "2026-09-04",
+                status: "Présent",
+                teacherId: "ENS-PG-001",
+              },
+              {
+                studentId: "BI-2026-0001-STU-01",
+                className: "6ème A",
+                date: "2026-09-04",
+                status: "Absent",
+                teacherId: "ENS-PG-001",
+              },
+            ],
+          },
+          admin,
+          auditMeta,
+        ),
+      (error) => error.statusCode === 404 || error.statusCode === 403,
+    );
+    const rolledBack = await pool.query(
+      `SELECT count(*)::int AS count
+       FROM attendance a
+       JOIN students st ON st.id = a.student_id
+       WHERE st.student_code = 'CD-2026-0001-STU-PG-01'
+         AND a.attendance_date = DATE '2026-09-04'`,
+    );
+    assert.equal(rolledBack.rows[0].count, 0, "batch partiel : rollback, 0 succès silencieux");
+
     const restoreAudit = failAuditWrites(store);
     await assert.rejects(
       () =>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   ATTENDANCE_ACTIONS,
+  USABILITY_TEST_IDS,
   DEFAULT_ANDROID_KEYBOARD_HEIGHT,
   MIN_TOUCH_TARGET_DP,
   SMALL_ANDROID_VIEWPORT,
@@ -92,7 +93,18 @@ assert.equal(statusPresentation("queued").label.length > 0, true);
 
 const present = attendanceActionForStudent("stu-42", "Présent");
 assert.equal(present.studentId, "stu-42");
-assert.match(present.testID, /stu-42/);
+assert.equal(present.testID, "attendance-action-stu-42-present");
+assert.equal(attendanceActionForStudent("stu-42", "Retard").testID, "attendance-action-stu-42-late");
+assert.equal(attendanceActionForStudent("stu-42", "Justifié").testID, "attendance-action-stu-42-excused");
+assert.equal(USABILITY_TEST_IDS.attendanceCurrentStatus("QA-ATT-A1"), "attendance-current-status-QA-ATT-A1");
+assert.equal(
+  USABILITY_TEST_IDS.attendanceCurrentStatusValue("QA-ATT-A1", "Présent"),
+  "attendance-current-status-QA-ATT-A1-present",
+);
+assert.equal(
+  USABILITY_TEST_IDS.attendanceCurrentStatusValue("QA-ATT-B1", "Absent"),
+  "attendance-current-status-QA-ATT-B1-absent",
+);
 assert.match(present.accessibilityLabel, /Présent/);
 assert.deepEqual(ATTENDANCE_ACTIONS, ["Présent", "Absent", "Retard", "Justifié"]);
 

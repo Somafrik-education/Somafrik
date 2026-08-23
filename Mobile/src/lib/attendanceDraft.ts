@@ -3,12 +3,12 @@
  */
 
 export type AttendanceDraftEntry = {
-  status: string;
+  status: string | null;
   arrivalTime?: string;
   reason?: string;
   modifiedAt?: string;
   modifiedBy?: string;
-  previousStatus?: string;
+  previousStatus?: string | null;
 };
 
 export function shouldPreserveLocalAttendanceDraft(entry?: { modifiedAt?: string } | null): boolean {

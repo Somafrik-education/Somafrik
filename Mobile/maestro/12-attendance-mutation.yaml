@@ -1,0 +1,71 @@
+# Mutation Appel — uniquement si fixture QA-APPEL / QA-ATT-* fournie.
+# Sans fixture le runtime gate émet MUTATION_ATTENDANCE_BLOCKED_NO_QA_FIXTURE (pas un SUCCESS).
+appId: com.somafrik.app
+---
+- runFlow: flows/login-admin-school.yaml
+- tapOn:
+    id: "home-presence-value"
+- extendedWaitUntil:
+    visible: "Présences"
+    timeout: 20000
+- assertVisible: "Mes classes"
+- tapOn:
+    id: "attendance-class-${SOMAFRIK_E2E_ATTENDANCE_CLASS_SLUG}"
+- extendedWaitUntil:
+    visible:
+      id: "attendance-save"
+    timeout: 20000
+- assertVisible:
+    id: "attendance-student-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}"
+- assertVisible:
+    id: "attendance-student-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_B}"
+- assertVisible:
+    id: "attendance-student-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_C}"
+- assertVisible:
+    id: "attendance-student-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}"
+- tapOn:
+    id: "attendance-action-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}-present"
+- tapOn:
+    id: "attendance-action-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_B}-absent"
+- tapOn:
+    id: "attendance-action-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_C}-late"
+- tapOn:
+    id: "attendance-action-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}-excused"
+- assertVisible: "Présents 1"
+- assertVisible: "Absents 1"
+- assertVisible: "Retards 1"
+- assertVisible: "Taux 50%"
+- tapOn:
+    id: "attendance-save"
+- extendedWaitUntil:
+    visible: "Appel enregistré"
+    timeout: 30000
+- tapOn: "OK"
+- tapOn: "Changer de classe"
+- tapOn:
+    id: "attendance-class-${SOMAFRIK_E2E_ATTENDANCE_CLASS_SLUG}"
+- extendedWaitUntil:
+    visible:
+      id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_A}"
+    timeout: 20000
+- runFlow: flows/assert-attendance-qa-statuses.yaml
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "home-admin-dashboard"
+    timeout: 25000
+- tapOn:
+    id: "home-presence-value"
+- tapOn:
+    id: "attendance-class-${SOMAFRIK_E2E_ATTENDANCE_CLASS_SLUG}"
+- extendedWaitUntil:
+    visible:
+      id: "attendance-current-status-${SOMAFRIK_E2E_ATTENDANCE_STUDENT_D}"
+    timeout: 20000
+- runFlow: flows/assert-attendance-qa-statuses.yaml
+- assertVisible: "Présents 1"
+- assertVisible: "Absents 1"
+- assertVisible: "Retards 1"
+- assertVisible: "Taux 50%"
