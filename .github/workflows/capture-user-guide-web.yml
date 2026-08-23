@@ -88,15 +88,16 @@ jobs:
         run: node scripts/capture-user-guide-web.mjs
 
       - name: Upload runtime screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: user-guide-web-w01-w06
           path: capture-output/web
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Commit runtime screenshots to temporary branch
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
