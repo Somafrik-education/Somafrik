@@ -1,0 +1,124 @@
+name: Capture user guide Web W01-W06
+
+on:
+  push:
+    branches: ["cto/capture-user-guide-web-w01-w06"]
+    paths:
+      - ".github/workflows/capture-user-guide-web.yml"
+      - "backend/scripts/capture-user-guide-web.mjs"
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "22.12.0"
+
+jobs:
+  capture-web:
+    name: Runtime captures W01-W06
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+
+      - name: Install workspace, backend and web
+        run: npm ci && npm ci --prefix backend && npm ci --prefix web
+
+      - name: Start canonical backend with demo seed
+        env:
+          NODE_ENV: development
+          APP_ENV: development
+          PORT: "5000"
+          DATABASE_URL: postgresql://somafrik:somafrik123@127.0.0.1:5432/somafrik
+          JWT_SECRET: capture-user-guide-ci-secret-at-least-32-characters
+          SOMAFRIK_DB_REQUIRED: "true"
+          SOMAFRIK_SKIP_DEMO_SEED: "false"
+          SOMAFRIK_DISABLE_LOGIN_LOCKOUT: "true"
+          SOMAFRIK_API_ONLY: "true"
+        run: |
+          npm --prefix backend run start > /tmp/somafrik-backend.log 2>&1 &
+          echo $! > /tmp/somafrik-backend.pid
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:5000/api/health >/dev/null; then
+              echo "Backend ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/somafrik-backend.log
+          exit 1
+
+      - name: Build Web against local API
+        env:
+          VITE_API_URL: http://127.0.0.1:5000
+          VITE_SHOW_DEMO_ACCOUNTS: "true"
+        run: npm --prefix web run build
+
+      - name: Start Web preview
+        run: |
+          npm --prefix web run preview -- --host 127.0.0.1 --port 4173 > /tmp/somafrik-web.log 2>&1 &
+          echo $! > /tmp/somafrik-web.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4173/connexion >/dev/null; then
+              echo "Web ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/somafrik-web.log
+          exit 1
+
+      - name: Capture W01-W06 with Puppeteer
+        working-directory: backend
+        env:
+          SOMAFRIK_CAPTURE_WEB_URL: http://127.0.0.1:4173
+        run: node scripts/capture-user-guide-web.mjs
+
+      - name: Upload runtime screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-guide-web-w01-w06
+          path: capture-output/web
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit runtime screenshots to temporary branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add capture-output/web
+          git commit -m "chore(docs): runtime captures W01-W06 [skip ci]"
+          git push origin HEAD:cto/capture-user-guide-web-w01-w06
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "--- backend log ---"
+          cat /tmp/somafrik-backend.log 2>/dev/null || true
+          echo "--- web log ---"
+          cat /tmp/somafrik-web.log 2>/dev/null || true
