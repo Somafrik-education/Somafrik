@@ -65,6 +65,7 @@ export type StudentSummary = {
   publicId?: string;
   name: string;
   firstName?: string;
+  lastName?: string;
   matricule: string;
   gender?: string;
   birthDate?: string;
