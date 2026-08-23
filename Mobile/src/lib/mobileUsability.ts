@@ -14,7 +14,18 @@ export const USABILITY_TEST_IDS = {
   classesSearch: "classes-search-input",
   classesEmptySearch: "classes-empty-search",
   attendanceAction: (studentId: string, status: string) =>
-    `attendance-action-${studentId}-${slugify(status)}`,
+    `attendance-action-${studentId}-${attendanceStatusSlug(status)}`,
+  attendanceClass: (className: string) => `attendance-class-${slugify(className)}`,
+  attendanceStudent: (studentId: string) => `attendance-student-${studentId}`,
+  attendanceCurrentStatus: (studentId: string) => `attendance-current-status-${studentId}`,
+  attendanceCurrentStatusValue: (studentId: string, status: string) =>
+    `attendance-current-status-${studentId}-${attendanceStatusSlug(status)}`,
+  attendanceMarkAllPresent: "attendance-mark-all-present",
+  attendanceSave: "attendance-save",
+  attendancePresentCount: "attendance-present-count",
+  attendanceAbsentCount: "attendance-absent-count",
+  attendanceLateCount: "attendance-late-count",
+  attendanceRate: "attendance-rate",
   notesGradeInput: (studentId: string) => `notes-grade-input-${slugify(studentId)}`,
   notesSave: "evaluations-v2-save",
   messagesComposer: "messages-composer",
@@ -37,6 +48,15 @@ export function slugify(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+export function attendanceStatusSlug(status: string): string {
+  const normalized = slugify(status);
+  if (normalized === "present" || normalized === "present.") return "present";
+  if (normalized === "absent" || normalized === "absence") return "absent";
+  if (normalized === "retard" || normalized === "late") return "late";
+  if (normalized === "justifie" || normalized === "justifiee" || normalized === "excused") return "excused";
+  return normalized;
 }
 
 export function effectiveTouchSize(box: TouchBox): { width: number; height: number } {

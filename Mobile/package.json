@@ -49,7 +49,7 @@
     "verify:mobile-ui-e2e-scaffold": "node scripts/verify-mobile-ui-e2e-scaffold.js",
     "verify:mobile-ui-e2e": "node scripts/verify-mobile-ui-e2e-scaffold.js",
     "verify:mobile-ui-e2e-runtime": "node scripts/verify-mobile-ui-e2e-runtime.js",
-    "test:mobile-ui-e2e-runtime": "node --test scripts/verify-mobile-ui-e2e-runtime.test.js",
+    "test:mobile-ui-e2e-runtime": "node --test scripts/verify-mobile-ui-e2e-runtime.test.js scripts/lib/attendanceQaFixture.test.js",
     "verify:mobile-release-readiness": "node scripts/verify-mobile-release-readiness.js",
     "verify:mobile-branding": "node scripts/verify-mobile-branding.js",
     "preverify:mobile-preview-apk": "node scripts/verify-mobile-branding.js",
