@@ -6,6 +6,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { hasAttendanceQaFixture, maestroAttendanceEnvFrom } = require("./attendanceQaFixture");
 
 const ANDROID_PACKAGE = "com.somafrik.app";
 const CANONICAL_PREPROD_API = "https://somafrik-api-preprod.onrender.com";
@@ -316,17 +317,28 @@ function maestroEnvFrom(env = {}) {
     next.SOMAFRIK_E2E_PLATFORM_PASSWORD = asTrimmed(env.SOMAFRIK_E2E_PLATFORM_PASSWORD);
     next.SOMAFRIK_E2E_SCHOOL_CODE_B = asTrimmed(env.SOMAFRIK_E2E_SCHOOL_CODE_B).toUpperCase();
   }
+  Object.assign(next, maestroAttendanceEnvFrom(env));
   return next;
 }
 
-function mutationCoverageReport() {
+function mutationCoverageReport(env = {}) {
+  const attendanceReady = hasAttendanceQaFixture(env);
   return [
     {
       file: "07-attendance.yaml",
       flowExecution: "READ",
       mutationCoverage: BLOCKED.ATTENDANCE_MUTATION,
       executed: true,
-      reason: "Lecture seule. Aucune fixture QA isolée pour muter une présence Nuru.",
+      reason: "Lecture de navigation. La mutation est le flux 12, uniquement avec fixture QA-APPEL / QA-ATT-.",
+    },
+    {
+      file: "12-attendance-mutation.yaml",
+      flowExecution: attendanceReady ? "MUTATION" : "NOT_EXECUTED",
+      mutationCoverage: attendanceReady ? "MUTATION_READY" : BLOCKED.ATTENDANCE_MUTATION,
+      executed: attendanceReady,
+      reason: attendanceReady
+        ? "Fixture QA-APPEL / QA-ATT- fournie. Maestro peut muter uniquement ces 4 élèves."
+        : "Pas de fixture QA isolée (QA-APPEL + QA-ATT-A/B/C/D). Mutation non exécutée, jamais un succès artificiel.",
     },
     {
       file: "08-notes.yaml",
@@ -355,6 +367,16 @@ function blockedFlowReport(env = {}) {
       outcome: "BLOCKED",
     });
   }
+  if (!hasAttendanceQaFixture(env)) {
+    blocked.push({
+      file: "12-attendance-mutation.yaml",
+      code: BLOCKED.ATTENDANCE_MUTATION,
+      reason: "Fixture QA Appel absente ou hors préfixe QA-APPEL / QA-ATT-. Mutation non exécutée.",
+      executed: false,
+      flowExecution: "NOT_EXECUTED",
+      outcome: "BLOCKED",
+    });
+  }
   return blocked;
 }
 
@@ -362,6 +384,9 @@ function executableFlowsFor(env = {}) {
   const flows = [...EXECUTABLE_FLOWS];
   if (hasPlatformCredentials(env)) {
     flows.push("11-platform-tenant-switch.yaml");
+  }
+  if (hasAttendanceQaFixture(env)) {
+    flows.push("12-attendance-mutation.yaml");
   }
   return flows;
 }
@@ -440,7 +465,7 @@ function evaluateRuntimeGate(input = {}) {
   }
 
   const blocked = blockedFlowReport(env);
-  const mutationCoverage = mutationCoverageReport();
+  const mutationCoverage = mutationCoverageReport(env);
   const executable = executableFlowsFor(env);
 
   const base = {

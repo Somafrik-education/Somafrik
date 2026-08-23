@@ -35,9 +35,14 @@ export function normalizePresenceStatus(presence?: Pick<PresenceItem, "present" 
   return presence.present ? "Présent" : "Absent";
 }
 
-/** Statut initial pour un appel : présent par défaut si aucune saisie du jour. */
-export function rollCallInitialStatus(presence?: Pick<PresenceItem, "present" | "status">): PresenceStatus {
-  if (!presence) return "Présent";
+/**
+ * Hydratation d'un appel : aucune ligne du jour ≠ Présent confirmé.
+ * Le bouton « Tout présent » reste l'action explicite.
+ */
+export function rollCallInitialStatus(
+  presence?: Pick<PresenceItem, "present" | "status">,
+): PresenceStatus | null {
+  if (!presence) return null;
   return normalizePresenceStatus(presence);
 }
 

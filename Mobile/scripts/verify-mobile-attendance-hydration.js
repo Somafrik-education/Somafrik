@@ -10,14 +10,20 @@ const MOBILE = path.join(__dirname, "..");
 const SRC = path.join(MOBILE, "src");
 
 function main() {
-  const unit = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "attendanceDraft.test.ts")], {
-    cwd: MOBILE,
-    encoding: "utf8",
-  });
-  if (unit.status !== 0) {
-    throw new Error(unit.stderr || unit.stdout || "attendanceDraft.test.ts failed");
+  for (const file of [
+    "src/lib/attendanceDraft.test.ts",
+    "src/lib/attendanceTruth.test.ts",
+    "src/lib/attendanceStatusTheme.test.ts",
+  ]) {
+    const unit = spawnSync("npx", ["--yes", "tsx", file], {
+      cwd: MOBILE,
+      encoding: "utf8",
+    });
+    if (unit.status !== 0) {
+      throw new Error(unit.stderr || unit.stdout || `${file} failed`);
+    }
+    process.stdout.write(unit.stdout || "");
   }
-  process.stdout.write(unit.stdout || "");
 
   const attendance = fs.readFileSync(path.join(SRC, "screens", "TeacherAttendanceScreen.tsx"), "utf8");
   assert.match(attendance, /useFocusEffect/);
@@ -29,8 +35,17 @@ function main() {
   assert.match(attendance, /applyConfirmedPresences/);
   assert.match(attendance, /presencesSnapshot/);
   assert.match(attendance, /resourceScopeKey/);
+  assert.match(attendance, /findTodayPresenceForStudent/);
+  assert.match(attendance, /rollCallEntryFromPresence/);
+  assert.match(attendance, /assertRollCallReadyToSave/);
+  assert.match(attendance, /attendanceStatusTheme/);
+  assert.match(attendance, /USABILITY_TEST_IDS\.attendanceSave/);
+  assert.match(attendance, /USABILITY_TEST_IDS\.attendanceMarkAllPresent/);
+  assert.doesNotMatch(attendance, /rollCallInitialStatus/);
+  assert.doesNotMatch(attendance, /statusActionActive/);
+  assert.doesNotMatch(attendance, /attendance\[student\.id\] \?\? \{ status: "Présent"/);
   assert.doesNotMatch(attendance, /useState<Record<string, AttendanceEntry>>\(\(\) =>\s*Object\.fromEntries/);
-  console.log("OK: TeacherAttendanceScreen réhydrate le brouillon d'appel après chargement PostgreSQL et nettoie dirty après confirmation");
+  console.log("OK: TeacherAttendanceScreen réhydrate le jour courant, refuse le faux Présent et applique le thème sémantique");
 
   const studentPresences = fs.readFileSync(path.join(SRC, "screens", "StudentPresencesScreen.tsx"), "utf8");
   assert.match(studentPresences, /loadPresences/);

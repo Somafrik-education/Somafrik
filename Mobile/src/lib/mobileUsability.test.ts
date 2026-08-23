@@ -92,7 +92,9 @@ assert.equal(statusPresentation("queued").label.length > 0, true);
 
 const present = attendanceActionForStudent("stu-42", "Présent");
 assert.equal(present.studentId, "stu-42");
-assert.match(present.testID, /stu-42/);
+assert.equal(present.testID, "attendance-action-stu-42-present");
+assert.equal(attendanceActionForStudent("stu-42", "Retard").testID, "attendance-action-stu-42-late");
+assert.equal(attendanceActionForStudent("stu-42", "Justifié").testID, "attendance-action-stu-42-excused");
 assert.match(present.accessibilityLabel, /Présent/);
 assert.deepEqual(ATTENDANCE_ACTIONS, ["Présent", "Absent", "Retard", "Justifié"]);
 

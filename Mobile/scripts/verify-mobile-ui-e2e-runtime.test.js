@@ -295,14 +295,35 @@ test("scan ASCII n'identifie pas le package", () => {
   assert.equal(parseApkPackageName("package: name='com.somafrik.app'"), "com.somafrik.app");
 });
 
-test("07/08 sont exécutés en lecture, mutation BLOCKED", () => {
-  const mutation = mutationCoverageReport();
+test("07/08 sont exécutés en lecture, mutation 12 BLOCKED sans fixture QA", () => {
+  const mutation = mutationCoverageReport(qaEnv);
   assert.equal(mutation[0].executed, true);
   assert.equal(mutation[0].flowExecution, "READ");
-  assert.equal(mutation[0].mutationCoverage, BLOCKED.ATTENDANCE_MUTATION);
+  assert.equal(mutation[1].file, "12-attendance-mutation.yaml");
+  assert.equal(mutation[1].executed, false);
+  assert.equal(mutation[1].mutationCoverage, BLOCKED.ATTENDANCE_MUTATION);
   const blocked = blockedFlowReport(qaEnv);
   assert.equal(blocked.some((item) => item.file === "07-attendance.yaml"), false);
   assert.equal(blocked.some((item) => item.file === "08-notes.yaml"), false);
+  assert.equal(blocked.some((item) => item.file === "12-attendance-mutation.yaml"), true);
+  assert.equal(executableFlowsFor(qaEnv).includes("12-attendance-mutation.yaml"), false);
+});
+
+test("fixture QA-APPEL débloque 12 en MUTATION, jamais un skip-vert", () => {
+  const env = {
+    ...qaEnv,
+    SOMAFRIK_E2E_ATTENDANCE_CLASS: "QA-APPEL-6A",
+    SOMAFRIK_E2E_ATTENDANCE_STUDENT_A: "QA-ATT-A1",
+    SOMAFRIK_E2E_ATTENDANCE_STUDENT_B: "QA-ATT-B1",
+    SOMAFRIK_E2E_ATTENDANCE_STUDENT_C: "QA-ATT-C1",
+    SOMAFRIK_E2E_ATTENDANCE_STUDENT_D: "QA-ATT-D1",
+  };
+  const mutation = mutationCoverageReport(env);
+  assert.equal(mutation[1].flowExecution, "MUTATION");
+  assert.equal(mutation[1].mutationCoverage, "MUTATION_READY");
+  assert.equal(mutation[1].executed, true);
+  assert.equal(executableFlowsFor(env).includes("12-attendance-mutation.yaml"), true);
+  assert.equal(blockedFlowReport(env).some((item) => item.file === "12-attendance-mutation.yaml"), false);
 });
 
 test("JUnit contenant SOMAFRIK_E2E_PASSWORD → report.xml final ne contient pas le secret", () => {
