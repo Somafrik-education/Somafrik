@@ -18,7 +18,7 @@ Ce document fige le modèle. Il ne migre rien.
    Ce n’est **pas** une confession, un réseau scolaire, ni un régime de gestion.
 5. À la création : **Groupe facultatif**, valeur initiale **Aucun**, **jamais présélectionné**.
 6. L’unicité structurelle doit couvrir `group_id IS NULL` **avant** d’autoriser les créations sans groupe.  
-   L’index actuel `uq_classes_structural_offering` exclut précisément ces lignes (`WHERE group_id IS NOT NULL`).
+   **PR-1A** : index `NULLS NOT DISTINCT` (préflight fail-closed). L’API exige toujours `groupId`. Groupe « Aucun » toujours gelé.
 
 ---
 

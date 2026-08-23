@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS classes (
 -- level_id / stream_id / group_id / group_code : ajoutés APRÈS education_levels
 -- (boot ensureClassesStructuralOffering + migrations 20260817 / 20260826).
 -- group_id nullable jusqu'au lot E. Aucun backfill silencieux.
+-- Unicité structurelle PR-1A : NULLS NOT DISTINCT (boot ensureClassesStructuralOffering).
 
 -- Unicité métier (école + année + nom normalisé) : index créé APRÈS contrôle
 -- fail-safe dans postgresRepository.ensureClassesDomainConstraints() /

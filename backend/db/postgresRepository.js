@@ -540,8 +540,10 @@ class PostgresRepository {
       ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
       DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
       CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+      assertClassesStructuralUniquenessPreflight,
     } = require("../lib/classesUniqueness");
     await this.query(ADD_CLASSES_STRUCTURAL_COLUMNS_SQL);
+    await assertClassesStructuralUniquenessPreflight(this);
     await this.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
     await this.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
   }
