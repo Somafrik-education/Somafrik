@@ -246,7 +246,7 @@ test("publication : aucun school_code / class_code / school_name", () => {
   assert.doesNotMatch(md, /CLS-1/);
   assert.doesNotMatch(md, /Lycée Test/);
   assert.match(md, /Cible : ABSENT/);
-}
+});
 
 test("publication : cible = label env, aucun host ni nom de base", () => {
   assert.equal(publicTargetLabel("PREPROD_DATABASE_URL"), "PREPROD_DATABASE_URL");
