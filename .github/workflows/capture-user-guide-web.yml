@@ -6,6 +6,11 @@ on:
     paths:
       - ".github/workflows/capture-user-guide-web.yml"
       - "backend/scripts/capture-user-guide-web.mjs"
+  pull_request:
+    branches: [develop]
+    paths:
+      - ".github/workflows/capture-user-guide-web.yml"
+      - "backend/scripts/capture-user-guide-web.mjs"
 
 permissions:
   contents: write
@@ -108,6 +113,7 @@ jobs:
           retention-days: 7
 
       - name: Commit runtime screenshots to temporary branch
+        if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
