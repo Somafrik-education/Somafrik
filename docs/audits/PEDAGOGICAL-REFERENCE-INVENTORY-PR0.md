@@ -1,7 +1,8 @@
 # PR-0 — Inventaire live des référentiels pédagogiques
 
 **Mode :** diagnostic uniquement.  
-**Base :** `origin/develop` `@c13df0ee5857dd86933fce33bad16eefe5b562cc`  
+**Base initiale :** `origin/develop` `@c13df0ee5857dd86933fce33bad16eefe5b562cc`  
+**Rebase cible :** dernier `origin/develop` (PR-0 P1).  
 **Gouvernance :** Draft. Aucun Ready. Aucun merge. Aucun UPDATE / DELETE / migration de données.
 
 Référence d’architecture : [`PEDAGOGICAL-MODEL-V2.md`](./PEDAGOGICAL-MODEL-V2.md).
@@ -27,19 +28,21 @@ Toute valeur ambiguë → **STOP**, aucune correction automatique.
 # Tests du classificateur (sans base)
 node --test backend/lib/pedagogicalReferenceInventory.test.js
 
-# Inventaire live (transaction BEGIN READ ONLY)
+# Inventaire live — stdout SANITISÉ (pas de school_code / class_code / school_name)
 DATABASE_URL=postgresql://… npm run inventory:pedagogical-reference
 
 # Preprod
 PREPROD_DATABASE_URL=postgresql://… npm run inventory:pedagogical-reference
 
-# Preuves
-PROOF_OUT=docs/audits/evidence/pedagogical-reference-inventory.json \
-PROOF_MD=docs/audits/evidence/pedagogical-reference-inventory.md \
+# Dump brut ops : hors dépôt uniquement. Ne jamais committer.
+INVENTORY_RAW=1 PROOF_OUT=/tmp/pedagogical-reference-inventory.json \
   npm run inventory:pedagogical-reference
 ```
 
-SQL brut (équivalent, sans matrice) :
+**Interdit :** écrire ou joindre un dump live sous `docs/audits/evidence/` (ou ailleurs dans le repo).  
+Le runner refuse ces chemins. Les identifiants établissement / classe restent chez l’opérateur.
+
+SQL brut `psql` (équivalent, **sortie ops locale**, ne pas committer) :
 
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
@@ -71,17 +74,21 @@ Signalement obligatoire (toujours **ambiguë = oui — STOP**) :
 Matrice :
 
 ```text
-valeur → type actuel → nombre de classes → établissements → classification proposée → ambiguë oui/non
+valeur → pays → type actuel → nombre de classes → n établissements → classification proposée → ambiguë oui/non
 ```
 
-La colonne « classification proposée » est une **hypothèse**. Elle n’écrit rien.
+La colonne « classification proposée » est une **hypothèse conditionnée par `country_code`**.  
+Exemple : `Bio-chimie → option` ou `Scientifique → section` **uniquement si le pays est CD**. Hors CD, ou pays inconnu : signalement STOP **sans** hypothèse RDC.
+
+Elle n’écrit rien.
 
 ---
 
 ## Résultat de cette PR (agent Cloud)
 
 `DATABASE_URL` était **absent** dans l’environnement d’agent.  
-L’inventaire **live n’a pas été exécuté ici**. Relancer le runner contre preprod/prod et joindre JSON + Markdown sous `docs/audits/evidence/` avant PR-1.
+L’inventaire **live n’a pas été exécuté ici**. Relancer le runner contre preprod/prod.  
+Conserver le dump brut **hors Git**. Seul un extrait **sanitisé** (comptages + pays + noms de catalogue) peut figurer dans une revue CTO.
 
 | Contrôle | Statut |
 |---|---|

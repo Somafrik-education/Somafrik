@@ -15,6 +15,9 @@ const {
   buildMatrix,
   buildInventoryReport,
   formatMarkdownReport,
+  sanitizeInventoryForPublication,
+  containsOperationalIdentifiers,
+  assertProofPathAllowed,
   assertSelectOnlySql,
   assertInventorySqlIsSelectOnly,
   assertNoWriteFlags,
@@ -68,11 +71,32 @@ test("watchlist groupes : Confession / Catholique / Protestant / Conventionné /
 });
 
 test("classification stream signalée = toujours ambiguë / STOP", () => {
-  const row = classifyStreamRow({ name: "Bio-chimie", stream_type: "filiere" });
+  const row = classifyStreamRow({ name: "Bio-chimie", stream_type: "filiere", country_code: "CD" });
   assert.equal(row.currentType, "filiere");
   assert.equal(row.ambiguous, true);
   assert.equal(row.stop, true);
   assert.match(row.proposedClassification, /option/i);
+});
+
+test("hypothèse Bio-chimie → option uniquement si country_code=CD", () => {
+  const cd = classifyStreamRow({ name: "Bio-chimie", stream_type: "filiere", country_code: "CD" });
+  const sn = classifyStreamRow({ name: "Bio-chimie", stream_type: "filiere", country_code: "SN" });
+  const unknown = classifyStreamRow({ name: "Bio-chimie", stream_type: "filiere" });
+  assert.equal(cd.hypothesisApplies, true);
+  assert.match(cd.proposedClassification, /option/i);
+  assert.equal(sn.hypothesisApplies, false);
+  assert.doesNotMatch(sn.proposedClassification, /option/i);
+  assert.match(sn.proposedClassification, /aucune hypothèse nationale RDC/);
+  assert.equal(unknown.hypothesisApplies, false);
+  assert.match(unknown.proposedClassification, /pays inconnu/);
+});
+
+test("Scientifique → section RDC seulement pour CD, pas pour CI", () => {
+  const cd = classifyStreamRow({ name: "Scientifique", stream_type: "filiere", country_code: "CD" });
+  const ci = classifyStreamRow({ name: "Scientifique", stream_type: "serie", country_code: "CI" });
+  assert.match(cd.proposedClassification, /section/i);
+  assert.doesNotMatch(ci.proposedClassification, /section/i);
+  assert.match(ci.proposedClassification, /aucune hypothèse nationale RDC/);
 });
 
 test("Générale et Sciences restent STOP — pas de mapping silencieux", () => {
@@ -89,10 +113,15 @@ test("groupe A/B est une division locale, pas STOP", () => {
 });
 
 test("Confession catholique est STOP et hors domaine Groupe", () => {
-  const row = classifyGroupRow({ group_code: "CATH", name: "Confession catholique" });
-  assert.equal(row.stop, true);
-  assert.equal(row.ambiguous, true);
-  assert.match(row.proposedClassification, /hors Groupe/i);
+  const cd = classifyGroupRow({ group_code: "CATH", name: "Confession catholique", country_code: "CD" });
+  const sn = classifyGroupRow({ group_code: "CATH", name: "Confession catholique", country_code: "SN" });
+  assert.equal(cd.stop, true);
+  assert.equal(cd.ambiguous, true);
+  assert.match(cd.proposedClassification, /hors Groupe/i);
+  assert.match(cd.proposedClassification, /RDC/);
+  assert.equal(sn.stop, true);
+  assert.doesNotMatch(sn.proposedClassification, /\(RDC\)/);
+  assert.match(sn.proposedClassification, /Ne pas appliquer le régime de gestion RDC/);
 });
 
 test("matrice agrège classes et établissements, sans corriger le type", () => {
@@ -172,4 +201,48 @@ test("markdown contient la matrice et le mot STOP", () => {
 test("normalizeName est accent-insensible", () => {
   assert.equal(normalizeName("Générale"), normalizeName("Generale"));
   assert.equal(normalizeName("Bio-Chimie"), "bio chimie");
+});
+
+test("publication : aucun school_code / class_code / school_name", () => {
+  const report = buildInventoryReport({
+    streams: [{ id: "s1", name: "Bio-chimie", stream_type: "filiere", country_code: "CD" }],
+    groups: [{ id: "g1", group_code: "CATH", name: "Confession catholique", country_code: "CD" }],
+    classes: [{ stream_id: "s1", group_id: "g1", school_code: "CD-IN-26-001" }],
+    schoolStreams: [{ stream_id: "s1", school_code: "CD-IN-26-001", school_name: "Lycée Test" }],
+    schoolGroups: [],
+    classesWithNullGroup: 1,
+    nullGroupStructuralDuplicates: [
+      {
+        country_code: "CD",
+        school_code: "CD-IN-26-001",
+        academic_year_name: "2026-2027",
+        level_name: "3ème",
+        stream_name: "Bio-chimie",
+        duplicate_count: 2,
+        class_codes: ["CLS-1", "CLS-2"],
+      },
+    ],
+  });
+  const published = sanitizeInventoryForPublication(report);
+  assert.equal(published.identifiersRedacted, true);
+  assert.equal(containsOperationalIdentifiers(published), false);
+  assert.equal(published.matrix[0].establishmentCount, 1);
+  assert.equal(published.matrix[0].establishments, undefined);
+  const md = formatMarkdownReport(published, { generatedAt: "2026-08-23T00:00:00.000Z" });
+  assert.doesNotMatch(md, /CD-IN-26-001/);
+  assert.doesNotMatch(md, /CLS-1/);
+  assert.doesNotMatch(md, /Lycée Test/);
+});
+
+test("PROOF_OUT sous docs/audits/evidence ou dans le repo est refusé", () => {
+  const repoRoot = path.resolve(__dirname, "../..");
+  assert.throws(
+    () => assertProofPathAllowed(path.join(repoRoot, "docs/audits/evidence/pedagogical-reference-inventory.json"), repoRoot),
+    /docs\/audits\/evidence/,
+  );
+  assert.throws(
+    () => assertProofPathAllowed(path.join(repoRoot, "tmp-inventory.json"), repoRoot),
+    /dépôt Git/,
+  );
+  assert.doesNotThrow(() => assertProofPathAllowed("/tmp/pedagogical-reference-inventory.json", repoRoot));
 });

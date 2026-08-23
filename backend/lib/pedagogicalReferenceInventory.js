@@ -5,8 +5,11 @@
  *
  * Aucun INSERT / UPDATE / DELETE / migration.
  * Les classifications proposées sont des hypothèses CTO, jamais appliquées.
- * Toute valeur de la liste de signalement est AMBIGUË → STOP.
+ * Une hypothèse nationale (ex. Bio-chimie → option RDC) n'est émise que si
+ * country_code correspond. Toute valeur signalée reste AMBIGUË → STOP.
  */
+
+const path = require("node:path");
 
 const REQUIRED_TABLES = Object.freeze([
   "countries",
@@ -28,13 +31,25 @@ const WRITE_ENV_KEYS = Object.freeze([
 
 const SQL_WRITE_TOKEN = /\b(INSERT|UPDATE|DELETE|MERGE|ALTER|DROP|TRUNCATE|CREATE|GRANT|REVOKE|COPY|CALL)\b/i;
 
+const COUNTRY_CD = "CD";
+
+const OTHER_COUNTRY_STREAM_PROPOSAL =
+  "signalé par nom — aucune hypothèse nationale RDC pour ce pays. Revue locale obligatoire. STOP.";
+const UNKNOWN_COUNTRY_STREAM_PROPOSAL = "pays inconnu — aucune hypothèse nationale. STOP.";
+const OTHER_COUNTRY_GROUP_PROPOSAL =
+  "hors Groupe — pas une division A/B/C. Ne pas appliquer le régime de gestion RDC à ce pays.";
+const UNKNOWN_COUNTRY_GROUP_PROPOSAL = "pays inconnu — hors Groupe jusqu'à revue. STOP.";
+
 const STREAM_WATCHLIST = Object.freeze([
   {
     id: "biochimie",
     labels: ["bio-chimie", "biochimie", "bio chimie", "chimie-biologie", "chimie biologie"],
+    applicableCountries: [COUNTRY_CD],
     proposedClassification: "option (RDC historique, enfant de la section Scientifique)",
+    otherCountryClassification: OTHER_COUNTRY_STREAM_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_STREAM_PROPOSAL,
     reason:
-      "Vocabulaire officiel RDC = option d’une section, pas une filière. Options Biochimie / Math-Physique supprimées par arrêté MINEPSP/CABMIN/600/2019. Aucune conversion automatique.",
+      "Hypothèse RDC seulement si country_code=CD. Options Biochimie / Math-Physique supprimées par arrêté MINEPSP/CABMIN/600/2019. Aucune conversion automatique.",
   },
   {
     id: "math-physique",
@@ -45,29 +60,41 @@ const STREAM_WATCHLIST = Object.freeze([
       "mathematique physique",
       "mathématique-physique",
     ],
+    applicableCountries: [COUNTRY_CD],
     proposedClassification: "option (RDC historique, enfant de la section Scientifique)",
+    otherCountryClassification: OTHER_COUNTRY_STREAM_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_STREAM_PROPOSAL,
     reason:
-      "Même famille que Bio-chimie : option historique, pas une filière. Aucune conversion automatique.",
+      "Hypothèse RDC seulement si country_code=CD. Aucune conversion automatique.",
   },
   {
     id: "scientifique",
     labels: ["scientifique"],
-    proposedClassification: "section (RDC humanités) — à confirmer pays par pays",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "section (RDC humanités) — à confirmer sur catalogue CD",
+    otherCountryClassification: OTHER_COUNTRY_STREAM_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_STREAM_PROPOSAL,
     reason:
-      "En RDC post-2019 la section scientifique remplace les options. Ailleurs le mot peut désigner une série. STOP.",
+      "En RDC post-2019 la section scientifique remplace les options. Hors CD le même mot peut être une série. STOP.",
   },
   {
     id: "sciences",
     labels: ["sciences"],
-    proposedClassification: "ambigu — seed démo vs section/série nationale",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "ambigu CD — seed démo vs section/série nationale",
+    otherCountryClassification: "ambigu — seed démo, pas une série/section nationale connue pour ce pays. STOP.",
+    unknownCountryClassification: UNKNOWN_COUNTRY_STREAM_PROPOSAL,
     reason: "Présent dans DEMO_TRACKS, distinct de « Scientifique ». STOP, pas de mapping silencieux.",
   },
   {
     id: "generale",
     labels: ["generale", "générale"],
-    proposedClassification: "ambigu — seed démo vs humanités générales",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "ambigu CD — seed démo vs humanités générales",
+    otherCountryClassification: "ambigu — seed démo, pas une orientation nationale connue pour ce pays. STOP.",
+    unknownCountryClassification: UNKNOWN_COUNTRY_STREAM_PROPOSAL,
     reason:
-      "« Générale » n’est pas une section officielle RDC. Humanités générales est une famille, pas une orientation de classe. STOP.",
+      "« Générale » n’est pas une section officielle RDC. Hors CD : aucune hypothèse RDC. STOP.",
   },
 ]);
 
@@ -75,31 +102,46 @@ const GROUP_WATCHLIST = Object.freeze([
   {
     id: "confession",
     pattern: /\bconfession/,
-    proposedClassification: "hors Groupe — régime / réseau d’établissement",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "hors Groupe — régime / réseau d’établissement (RDC)",
+    otherCountryClassification: OTHER_COUNTRY_GROUP_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_GROUP_PROPOSAL,
     reason: "Une confession n’est pas une division A/B/C.",
   },
   {
     id: "catholique",
     pattern: /\bcatholique/,
-    proposedClassification: "hors Groupe — régime / réseau d’établissement",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "hors Groupe — régime / réseau d’établissement (RDC)",
+    otherCountryClassification: OTHER_COUNTRY_GROUP_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_GROUP_PROPOSAL,
     reason: "Écoles conventionnées catholiques = gestion d’établissement, pas un groupe de classe.",
   },
   {
     id: "protestant",
     pattern: /\bprotestant/,
-    proposedClassification: "hors Groupe — régime / réseau d’établissement",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "hors Groupe — régime / réseau d’établissement (RDC)",
+    otherCountryClassification: OTHER_COUNTRY_GROUP_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_GROUP_PROPOSAL,
     reason: "Réseau confessionnel, pas une division pédagogique.",
   },
   {
     id: "conventionne",
     pattern: /\bconventionn/,
-    proposedClassification: "hors Groupe — régime de gestion",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "hors Groupe — régime de gestion (RDC)",
+    otherCountryClassification: OTHER_COUNTRY_GROUP_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_GROUP_PROPOSAL,
     reason: "Conventionné / non conventionné décrit l’école, pas la classe.",
   },
   {
     id: "officiel",
     pattern: /\bofficiel/,
-    proposedClassification: "hors Groupe — régime de gestion (réseau officiel)",
+    applicableCountries: [COUNTRY_CD],
+    proposedClassification: "hors Groupe — régime de gestion (réseau officiel RDC)",
+    otherCountryClassification: OTHER_COUNTRY_GROUP_PROPOSAL,
+    unknownCountryClassification: UNKNOWN_COUNTRY_GROUP_PROPOSAL,
     reason: "« Officiel » est un régime de gestion RDC, pas un groupe A/B/C.",
   },
 ]);
@@ -204,7 +246,8 @@ SELECT COUNT(*)::int AS count
 `;
 
 const SELECT_NULL_GROUP_STRUCTURAL_DUPLICATES_SQL = `
-SELECT s.school_code,
+SELECT c.iso_code AS country_code,
+       s.school_code,
        ay.name AS academic_year_name,
        cl.level_id,
        el.name AS level_name,
@@ -214,14 +257,15 @@ SELECT s.school_code,
        ARRAY_AGG(cl.class_code ORDER BY cl.class_code) AS class_codes
   FROM classes cl
   JOIN schools s ON s.id = cl.school_id
+  JOIN countries c ON c.id = s.country_id
   LEFT JOIN academic_years ay ON ay.id = cl.academic_year_id
   LEFT JOIN education_levels el ON el.id = cl.level_id
   LEFT JOIN education_streams es ON es.id = cl.stream_id
  WHERE cl.group_id IS NULL
    AND cl.level_id IS NOT NULL
- GROUP BY s.school_code, ay.name, cl.level_id, el.name, cl.stream_id, es.name
+ GROUP BY c.iso_code, s.school_code, ay.name, cl.level_id, el.name, cl.stream_id, es.name
 HAVING COUNT(*) > 1
- ORDER BY s.school_code, ay.name, el.name, es.name
+ ORDER BY c.iso_code, s.school_code, ay.name, el.name, es.name
 `;
 
 const ALL_INVENTORY_SQL = Object.freeze([
@@ -293,6 +337,31 @@ function assertNoWriteFlags(argv = process.argv, env = process.env) {
   }
 }
 
+function normalizeCountryCode(value) {
+  return asTrimmed(value).toUpperCase();
+}
+
+function resolveCountryScopedProposal(watch, countryCode) {
+  const code = normalizeCountryCode(countryCode);
+  const applicable = (watch.applicableCountries || []).map((item) => String(item).toUpperCase());
+  if (!code) {
+    return {
+      proposedClassification: watch.unknownCountryClassification || UNKNOWN_COUNTRY_STREAM_PROPOSAL,
+      hypothesisApplies: false,
+    };
+  }
+  if (applicable.length > 0 && !applicable.includes(code)) {
+    return {
+      proposedClassification: watch.otherCountryClassification || OTHER_COUNTRY_STREAM_PROPOSAL,
+      hypothesisApplies: false,
+    };
+  }
+  return {
+    proposedClassification: watch.proposedClassification,
+    hypothesisApplies: true,
+  };
+}
+
 function matchStreamWatch(name) {
   const normalized = normalizeName(name);
   if (!normalized) return null;
@@ -320,13 +389,17 @@ function looksLikeClassDivision(group) {
 }
 
 function classifyStreamRow(row) {
+  const countryCode = row?.country_code ?? row?.countryCode ?? null;
   const watch = matchStreamWatch(row?.name);
   if (watch) {
+    const scoped = resolveCountryScopedProposal(watch, countryCode);
     return {
       kind: "stream",
       value: asTrimmed(row.name),
       currentType: asTrimmed(row.stream_type) || "inconnu",
-      proposedClassification: watch.proposedClassification,
+      countryCode: normalizeCountryCode(countryCode) || null,
+      proposedClassification: scoped.proposedClassification,
+      hypothesisApplies: scoped.hypothesisApplies,
       ambiguous: true,
       stop: true,
       watchId: watch.id,
@@ -337,7 +410,9 @@ function classifyStreamRow(row) {
     kind: "stream",
     value: asTrimmed(row?.name),
     currentType: asTrimmed(row?.stream_type) || "inconnu",
+    countryCode: normalizeCountryCode(countryCode) || null,
     proposedClassification: "conserver le type actuel jusqu'à revue pays",
+    hypothesisApplies: false,
     ambiguous: false,
     stop: false,
     watchId: null,
@@ -346,13 +421,17 @@ function classifyStreamRow(row) {
 }
 
 function classifyGroupRow(row) {
+  const countryCode = row?.country_code ?? row?.countryCode ?? null;
   const watch = matchGroupWatch(row?.name, row?.group_code ?? row?.code);
   if (watch) {
+    const scoped = resolveCountryScopedProposal(watch, countryCode);
     return {
       kind: "group",
       value: asTrimmed(row?.name) || asTrimmed(row?.group_code),
       currentType: "groupe",
-      proposedClassification: watch.proposedClassification,
+      countryCode: normalizeCountryCode(countryCode) || null,
+      proposedClassification: scoped.proposedClassification,
+      hypothesisApplies: scoped.hypothesisApplies,
       ambiguous: true,
       stop: true,
       watchId: watch.id,
@@ -364,7 +443,9 @@ function classifyGroupRow(row) {
       kind: "group",
       value: asTrimmed(row?.name) || asTrimmed(row?.group_code),
       currentType: "groupe",
+      countryCode: normalizeCountryCode(countryCode) || null,
       proposedClassification: "division locale de classe (A/B/C)",
+      hypothesisApplies: false,
       ambiguous: false,
       stop: false,
       watchId: null,
@@ -375,7 +456,9 @@ function classifyGroupRow(row) {
     kind: "group",
     value: asTrimmed(row?.name) || asTrimmed(row?.group_code),
     currentType: "groupe",
+    countryCode: normalizeCountryCode(countryCode) || null,
     proposedClassification: "à examiner — ne ressemble pas à une division A/B/C",
+    hypothesisApplies: false,
     ambiguous: true,
     stop: true,
     watchId: "non-division",
@@ -532,21 +615,87 @@ async function inventoryPedagogicalReference(db) {
   };
 }
 
+function establishmentCountOf(row) {
+  if (Number.isFinite(row?.establishmentCount)) return row.establishmentCount;
+  if (Array.isArray(row?.establishments)) return row.establishments.length;
+  return 0;
+}
+
 function formatMatrixMarkdown(matrix = []) {
   if (!matrix.length) {
     return "_Aucune ligne de matrice (catalogue vide ou schéma incomplet)._\n";
   }
   const lines = [
-    "| Valeur | Pays | Type actuel | Classes | Établissements | Classification proposée | Ambiguë |",
-    "| --- | --- | --- | ---: | --- | --- | --- |",
+    "| Valeur | Pays | Type actuel | Classes | Établissements (n) | Classification proposée | Ambiguë |",
+    "| --- | --- | --- | ---: | ---: | --- | --- |",
   ];
   for (const row of matrix) {
-    const establishments = row.establishments?.length ? row.establishments.join(", ") : "—";
     lines.push(
-      `| ${row.value || "—"} | ${row.countryCode || "—"} | ${row.currentType} | ${row.classCount} | ${establishments} | ${row.proposedClassification} | ${row.ambiguous ? "oui — STOP" : "non"} |`,
+      `| ${row.value || "—"} | ${row.countryCode || "—"} | ${row.currentType} | ${row.classCount} | ${establishmentCountOf(row)} | ${row.proposedClassification} | ${row.ambiguous ? "oui — STOP" : "non"} |`,
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+function sanitizeMatrixRow(row) {
+  const { establishments, id, ...rest } = row || {};
+  return {
+    ...rest,
+    establishmentCount: establishmentCountOf(row),
+  };
+}
+
+function sanitizeInventoryForPublication(report = {}) {
+  return {
+    generatedAt: report.generatedAt ?? null,
+    target: report.target
+      ? { source: report.target.source ?? null, databaseUrlRedacted: report.target.databaseUrlRedacted ?? null }
+      : undefined,
+    readOnly: true,
+    autoMutation: false,
+    identifiersRedacted: true,
+    schemaReady: report.schemaReady,
+    missingTables: report.missingTables || [],
+    classificationVerdict: report.classificationVerdict,
+    uniqueness: report.uniqueness,
+    summary: report.summary,
+    matrix: (report.matrix || []).map(sanitizeMatrixRow),
+    stopRows: (report.stopRows || []).map(sanitizeMatrixRow),
+    nullGroupStructuralDuplicates: (report.nullGroupStructuralDuplicates || []).map((row) => ({
+      country_code: row.country_code ?? null,
+      academic_year_name: row.academic_year_name ?? null,
+      level_name: row.level_name ?? null,
+      stream_name: row.stream_name ?? null,
+      duplicate_count: row.duplicate_count ?? 0,
+    })),
+    diagnostic: report.diagnostic ?? null,
+  };
+}
+
+function containsOperationalIdentifiers(value) {
+  const text = JSON.stringify(value ?? {});
+  return /"school_code"|"school_name"|"class_code"|"class_codes"|"class_name"|"establishments"/i.test(text);
+}
+
+function assertProofPathAllowed(filePath, repoRoot = process.cwd()) {
+  const resolved = path.resolve(filePath);
+  const normalized = resolved.replace(/\\/g, "/").toLowerCase();
+  if (normalized.includes("/docs/audits/evidence")) {
+    const error = new Error(
+      "Interdit : un dump live ne doit pas être écrit sous docs/audits/evidence/ (identifiants opérationnels).",
+    );
+    error.code = "PEDAGOGICAL_INVENTORY_PROOF_PATH_REFUSED";
+    throw error;
+  }
+  const root = path.resolve(repoRoot).replace(/\\/g, "/");
+  const resolvedPosix = resolved.replace(/\\/g, "/");
+  if (resolvedPosix === root || resolvedPosix.startsWith(`${root}/`)) {
+    const error = new Error(
+      "Interdit : un dump live ne doit pas être écrit dans le dépôt Git. Utiliser un chemin hors repo (ex. /tmp/...).",
+    );
+    error.code = "PEDAGOGICAL_INVENTORY_PROOF_PATH_REFUSED";
+    throw error;
+  }
 }
 
 function formatMarkdownReport(report, meta = {}) {
@@ -584,13 +733,12 @@ function formatMarkdownReport(report, meta = {}) {
     lines.push("Aucun groupe de classes identiques avec `group_id IS NULL`.", "");
   } else {
     lines.push(
-      "| Établissement | Année | Niveau | Stream | n | class_code |",
-      "| --- | --- | --- | --- | ---: | --- |",
+      "| Pays | Année | Niveau | Stream | n |",
+      "| --- | --- | --- | --- | ---: |",
     );
     for (const row of dupes) {
-      const codes = Array.isArray(row.class_codes) ? row.class_codes.join(", ") : String(row.class_codes ?? "");
       lines.push(
-        `| ${row.school_code} | ${row.academic_year_name || "—"} | ${row.level_name || row.level_id || "—"} | ${row.stream_name || "∅"} | ${row.duplicate_count} | ${codes} |`,
+        `| ${row.country_code || "—"} | ${row.academic_year_name || "—"} | ${row.level_name || "—"} | ${row.stream_name || "∅"} | ${row.duplicate_count} |`,
       );
     }
     lines.push("");
@@ -634,6 +782,11 @@ module.exports = {
   inventoryPedagogicalReference,
   formatMatrixMarkdown,
   formatMarkdownReport,
+  sanitizeInventoryForPublication,
+  containsOperationalIdentifiers,
+  assertProofPathAllowed,
+  resolveCountryScopedProposal,
+  normalizeCountryCode,
   assertSelectOnlySql,
   assertInventorySqlIsSelectOnly,
   assertNoWriteFlags,

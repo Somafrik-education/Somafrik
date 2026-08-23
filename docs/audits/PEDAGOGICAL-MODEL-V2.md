@@ -30,7 +30,8 @@ Ce document fige le modèle. Il ne migre rien.
 | **PR-1** | `groupId` facultatif + unicité NULL + API/Web/Mobile | après diagnostic live |
 | **PR-2+** | section / série / option / parent / applicabilité par niveau | après PR-1 |
 
-Aucune classification silencieuse de `Bio-chimie`, `Générale`, `Sciences`, `Confession catholique`, etc.
+Aucune classification silencieuse de `Bio-chimie`, `Générale`, `Sciences`, `Confession catholique`, etc.  
+Une hypothèse du type `Bio-chimie → option` ou `Scientifique → section` n’est **émise que si `country_code = CD`**. Hors CD : signalement STOP sans vocabulaire RDC.
 
 ---
 

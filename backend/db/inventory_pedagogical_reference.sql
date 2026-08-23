@@ -88,7 +88,9 @@ SELECT COUNT(*)::int AS classes_group_id_null
  WHERE group_id IS NULL;
 
 -- 7. doublons structurels déjà possibles hors index (group_id NULL)
-SELECT s.school_code,
+-- Sortie ops locale : ne pas committer (contient school_code / class_code).
+SELECT c.iso_code AS country_code,
+       s.school_code,
        ay.name AS academic_year_name,
        cl.level_id,
        el.name AS level_name,
@@ -98,11 +100,12 @@ SELECT s.school_code,
        ARRAY_AGG(cl.class_code ORDER BY cl.class_code) AS class_codes
   FROM classes cl
   JOIN schools s ON s.id = cl.school_id
+  JOIN countries c ON c.id = s.country_id
   LEFT JOIN academic_years ay ON ay.id = cl.academic_year_id
   LEFT JOIN education_levels el ON el.id = cl.level_id
   LEFT JOIN education_streams es ON es.id = cl.stream_id
  WHERE cl.group_id IS NULL
    AND cl.level_id IS NOT NULL
- GROUP BY s.school_code, ay.name, cl.level_id, el.name, cl.stream_id, es.name
+ GROUP BY c.iso_code, s.school_code, ay.name, cl.level_id, el.name, cl.stream_id, es.name
 HAVING COUNT(*) > 1
- ORDER BY s.school_code, ay.name, el.name, es.name;
+ ORDER BY c.iso_code, s.school_code, ay.name, el.name, es.name;
