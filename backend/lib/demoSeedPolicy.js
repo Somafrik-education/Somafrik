@@ -1,7 +1,24 @@
 /** Désactive le rechargement automatique des données de démonstration (backend/data.js). */
 
+const { reconcileDemoSubscriptions } = require("./demoSeedSubscriptions");
+
 function isProductionEnvironment(env = process.env) {
   return env.NODE_ENV === "production";
+}
+
+function prepareDemoSeedData(seedData = require("../data")) {
+  const reconciledSubscriptions = reconcileDemoSubscriptions({
+    platformSchools: seedData.platformSchools,
+    countries: seedData.countries,
+    subscriptions: seedData.subscriptions,
+  });
+
+  seedData.subscriptions.splice(
+    0,
+    seedData.subscriptions.length,
+    ...reconciledSubscriptions,
+  );
+  return seedData;
 }
 
 function shouldSeedDemoData(env = process.env) {
@@ -11,6 +28,8 @@ function shouldSeedDemoData(env = process.env) {
   if (isProductionEnvironment(env)) {
     return false;
   }
+
+  prepareDemoSeedData();
   return true;
 }
 
@@ -25,7 +44,6 @@ function assertProductionSecurityConfiguration(env = process.env) {
     );
   }
 
-  // S2.2 — aucun fallback mémoire / seed « best effort » en production.
   if (env.SOMAFRIK_DB_REQUIRED === "false") {
     throw new Error(
       "Configuration de production invalide : SOMAFRIK_DB_REQUIRED=false est interdit (PostgreSQL obligatoire, aucun fallback mémoire).",
@@ -35,6 +53,7 @@ function assertProductionSecurityConfiguration(env = process.env) {
 
 module.exports = {
   isProductionEnvironment,
+  prepareDemoSeedData,
   shouldSeedDemoData,
   assertProductionSecurityConfiguration,
 };
