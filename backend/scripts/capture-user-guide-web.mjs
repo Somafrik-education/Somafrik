@@ -3,12 +3,31 @@ import path from "node:path";
 import puppeteer from "puppeteer";
 
 const BASE = process.env.SOMAFRIK_CAPTURE_WEB_URL || "http://127.0.0.1:4173";
+const API = process.env.SOMAFRIK_CAPTURE_API_URL || "http://127.0.0.1:5000";
 const OUT = path.resolve(process.cwd(), "../capture-output/web");
-const SCHOOL_CODE = "CD-IN-26-001";
+const PUBLIC_SCHOOL_CODE = "CD-IN-26-001";
+const LEGACY_SCHOOL_CODE = "CD-2026-0001";
 const IDENTIFIER = "admin";
 const PASSWORD = "1234";
 
 await fs.mkdir(OUT, { recursive: true });
+
+async function resolveAcceptedSchoolCode() {
+  for (const schoolCode of [PUBLIC_SCHOOL_CODE, LEGACY_SCHOOL_CODE]) {
+    const response = await fetch(`${API}/api/backoffice/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ schoolCode, identifier: IDENTIFIER, password: PASSWORD }),
+    });
+    console.log(`LOGIN_PRECHECK ${schoolCode} -> ${response.status}`);
+    if (response.ok) return schoolCode;
+    const payload = await response.json().catch(() => null);
+    console.log(`LOGIN_PRECHECK_ERROR ${schoolCode}: ${payload?.code || ""} ${payload?.message || ""}`.trim());
+  }
+  throw new Error("Aucun code établissement de démonstration n'est accepté par /api/backoffice/login.");
+}
+
+const LOGIN_SCHOOL_CODE = await resolveAcceptedSchoolCode();
 
 const browser = await puppeteer.launch({
   headless: true,
@@ -21,6 +40,11 @@ page.on("console", (msg) => {
   if (msg.type() === "error") console.error("[browser]", msg.text());
 });
 page.on("pageerror", (error) => console.error("[pageerror]", error.message));
+page.on("response", (response) => {
+  if (response.status() >= 400) {
+    console.error(`[http] ${response.request().method()} ${response.url()} -> ${response.status()}`);
+  }
+});
 
 async function settle(ms = 1200) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,16 +83,13 @@ async function ensureLoggedIn() {
   await page.keyboard.press("Backspace");
   await screenshot("01-connexion-etablissement.png");
 
-  await page.type('[data-testid="login-school-code"]', SCHOOL_CODE);
+  await page.type('[data-testid="login-school-code"]', LOGIN_SCHOOL_CODE);
   await page.type('[data-testid="login-identifier"]', IDENTIFIER);
   await page.type('[data-testid="login-password"]', PASSWORD);
 
-  await Promise.all([
-    page.click('[data-testid="login-submit"]'),
-    settle(900),
-  ]);
+  await page.click('[data-testid="login-submit"]');
+  await settle(1600);
 
-  // Certains seeds peuvent imposer le renouvellement du secret temporaire.
   const dialog = await page.$('[role="dialog"]');
   if (dialog) {
     const title = await page.evaluate((node) => node.textContent || "", dialog);
@@ -84,7 +105,16 @@ async function ensureLoggedIn() {
   }
 
   if (new URL(page.url()).pathname === "/connexion") {
-    await page.waitForFunction(() => window.location.pathname !== "/connexion", { timeout: 30_000 });
+    const visibleError = await page.evaluate(() => {
+      const node = [...document.querySelectorAll("p")].find((el) => {
+        const text = (el.textContent || "").trim();
+        return text.includes("Identifiant") || text.includes("connexion") || text.includes("Accès") || text.includes("autorisé");
+      });
+      return (node?.textContent || "").trim();
+    });
+    console.error(`LOGIN_UI_STILL_ON_CONNEXION ${visibleError || "sans message détecté"}`);
+    await screenshot("login-failure-diagnostic.png");
+    throw new Error("Connexion Web non établie après soumission du formulaire.");
   }
   await settle(1000);
 }
@@ -121,8 +151,9 @@ try {
   const manifest = {
     baseSha: process.env.GITHUB_SHA || null,
     capturedAt: new Date().toISOString(),
-    source: "runtime GitHub Actions",
-    schoolCode: SCHOOL_CODE,
+    source: "Somafrik Web runtime + backend development demo-memory, GitHub Actions",
+    requestedSchoolCode: PUBLIC_SCHOOL_CODE,
+    runtimeLoginSchoolCode: LOGIN_SCHOOL_CODE,
     files: [
       "01-connexion-etablissement.png",
       "02-tableau-de-bord-etablissement.png",
