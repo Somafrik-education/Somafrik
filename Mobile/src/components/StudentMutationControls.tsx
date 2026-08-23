@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from "react";
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
 import ChoiceChips from "./ChoiceChips";
 import FormField from "./FormField";
+import OverflowActions from "./OverflowActions";
 import { resolveEntityCrudAccess } from "../lib/mobileCrudParity";
+import { STUDENT_OVERFLOW_A11Y_LABEL, studentRowOverflowActions } from "../lib/overflowActions";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   firstErrorKey,
@@ -239,34 +241,32 @@ export default function StudentMutationControls({
   );
 
   if (row) {
-    if (!access.canUpdate && !access.canDelete) return null;
+    const specs = studentRowOverflowActions(access);
+    if (!specs.length) return null;
     return (
-      <View style={styles.row}>
-        {access.canUpdate ? (
-          <TouchableOpacity
-            style={styles.small}
-            onPress={() => {
-              const parts = String(row.name ?? "").trim().split(/\s+/);
-              setFirstName(row.firstName || parts[0] || "");
-              setLastName(row.lastName || parts.slice(1).join(" "));
-              setParentPhone(row.parentPhone ?? "");
-              setError("");
-              setFieldErrors({});
-              setOpen(true);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Modifier l'élève"
-          >
-            <Text style={styles.smallText}>Modifier</Text>
-          </TouchableOpacity>
-        ) : null}
-        {access.canDelete ? (
-          <TouchableOpacity style={styles.smallDanger} onPress={remove} accessibilityRole="button" accessibilityLabel="Supprimer l'élève">
-            <Text style={styles.smallDangerText}>Supprimer</Text>
-          </TouchableOpacity>
-        ) : null}
+      <>
+        <OverflowActions
+          accessibilityLabel={STUDENT_OVERFLOW_A11Y_LABEL}
+          testID={`student-overflow-${row.id}`}
+          actions={specs.map((spec) => ({
+            ...spec,
+            accessibilityLabel: spec.key === "update" ? "Modifier l'élève" : "Supprimer l'élève",
+            onPress:
+              spec.key === "update"
+                ? () => {
+                    const parts = String(row.name ?? "").trim().split(/\s+/);
+                    setFirstName(row.firstName || parts[0] || "");
+                    setLastName(row.lastName || parts.slice(1).join(" "));
+                    setParentPhone(row.parentPhone ?? "");
+                    setError("");
+                    setFieldErrors({});
+                    setOpen(true);
+                  }
+                : remove,
+          }))}
+        />
         {fields}
-      </View>
+      </>
     );
   }
 
@@ -290,9 +290,4 @@ export default function StudentMutationControls({
 const styles = StyleSheet.create({
   create: { minHeight: MIN_TOUCH_TARGET_DP, borderRadius: 14, backgroundColor: "#2563EB", alignItems: "center", justifyContent: "center", marginBottom: 14 },
   createText: { color: "#FFFFFF", fontWeight: "900" },
-  row: { flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" },
-  small: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#E2E8F0", justifyContent: "center" },
-  smallText: { color: "#0F172A", fontWeight: "800" },
-  smallDanger: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#FEE2E2", justifyContent: "center" },
-  smallDangerText: { color: "#B91C1C", fontWeight: "800" },
 });
