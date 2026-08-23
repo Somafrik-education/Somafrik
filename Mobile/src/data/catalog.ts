@@ -3,6 +3,7 @@ export type Student = {
   publicId: string;
   name: string;
   firstName: string;
+  lastName?: string;
   matricule: string;
   gender: "Masculin" | "Féminin" | string;
   birthDate: string;

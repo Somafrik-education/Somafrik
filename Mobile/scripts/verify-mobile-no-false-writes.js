@@ -110,6 +110,7 @@ function main() {
   assert.doesNotMatch(studentControls, /persistOutbox|enqueueOutbox|AsyncStorage/);
   assert.doesNotMatch(studentControls, /marginTop:\s*8/, "pas de rangée 44 dp sous la fiche élève");
   runUnit("overflowActions.test.ts");
+  runUnit("studentDisplayName.test.ts");
 
   assert.match(payments, /PaymentMutationControls/);
   assert.doesNotMatch(payments, /AdminCrud/);
