@@ -73,6 +73,9 @@ jobs:
       - name: verify:db-config
         run: npm run verify:db-config
 
+      - name: verify:sync-contacts-removed
+        run: npm run verify:sync-contacts-removed
+
       - name: verify:mobile-security
         run: npm run verify:mobile-security
 
@@ -216,6 +219,7 @@ jobs:
           npm run verify:rbac-s1-4
           npm run verify:sanitize-user-responses
           npm run verify:db-config
+          npm run verify:sync-contacts-removed
           npm run verify:mobile-security
           npm run verify:mobile-data-truth
           npm run verify:mobile-evaluations-v2
