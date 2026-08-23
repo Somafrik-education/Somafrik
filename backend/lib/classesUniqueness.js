@@ -56,6 +56,11 @@ const DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL = `
 DROP INDEX IF EXISTS ${CLASSES_STRUCTURAL_UNIQUE_INDEX}
 `;
 
+/** Bloque INSERT/UPDATE/DELETE, laisse SELECT. */
+const LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL = `
+LOCK TABLE classes IN SHARE ROW EXCLUSIVE MODE
+`;
+
 const CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL = `
 CREATE UNIQUE INDEX IF NOT EXISTS ${CLASSES_STRUCTURAL_UNIQUE_INDEX}
   ON classes (school_id, academic_year_id, level_id, stream_id, group_id)
@@ -117,6 +122,19 @@ async function assertClassesStructuralUniquenessPreflight(db) {
   const error = new Error(formatClassesStructuralDuplicateDiagnostic(groups, duplicateGroups));
   error.code = CLASSES_STRUCTURAL_DUPLICATE_ERROR;
   throw error;
+}
+
+/**
+ * Remplacement atomique de l'index : LOCK + préflight + DROP + CREATE.
+ * Doit s'exécuter dans withTransaction() (une connexion, BEGIN/COMMIT).
+ * CREATE INDEX (pas CONCURRENTLY) pour rester transactionnel :
+ * un échec du CREATE rollback le DROP et restaure l'ancien index.
+ */
+async function replaceClassesStructuralUniqueIndex(tx) {
+  await tx.query(LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL);
+  await assertClassesStructuralUniquenessPreflight(tx);
+  await tx.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+  await tx.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
 }
 
 const ENSURE_CLASSES_STATUS_CHECK_SQL = `
@@ -216,12 +234,14 @@ module.exports = {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   ADD_CLASSES_STRUCTURAL_COLUMNS_SQL,
   DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
+  LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL,
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   ENSURE_CLASSES_STATUS_CHECK_SQL,
   NORMALIZE_CLASSES_STATUS_SQL,
   formatClassesNameDuplicateDiagnostic,
   formatClassesStructuralDuplicateDiagnostic,
   assertClassesStructuralUniquenessPreflight,
+  replaceClassesStructuralUniqueIndex,
   isClassNameUniquenessViolation,
   isClassStructuralUniquenessViolation,
   isClassCodeUniquenessViolation,

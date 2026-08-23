@@ -15,7 +15,9 @@ const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   COUNT_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL,
+  LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL,
   formatClassesStructuralDuplicateDiagnostic,
+  replaceClassesStructuralUniqueIndex,
 } = require("./classesUniqueness");
 
 describe("classesUniqueness 23505 mapping", () => {
@@ -70,7 +72,37 @@ describe("classesUniqueness V2 structural policy", () => {
     assert.match(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL, /group_id/);
     assert.doesNotMatch(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL, /group_id IS NOT NULL/);
     assert.doesNotMatch(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL, /COALESCE\(stream_id/);
+    assert.doesNotMatch(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL, /CONCURRENTLY/i);
     assert.match(COUNT_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL, /HAVING COUNT\(\*\) > 1/);
+  });
+
+  it("verrouille classes en SHARE ROW EXCLUSIVE (écritures bloquées, lectures OK)", () => {
+    assert.match(LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL, /LOCK TABLE classes IN SHARE ROW EXCLUSIVE MODE/);
+    assert.doesNotMatch(LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL, /ACCESS EXCLUSIVE/);
+  });
+
+  it("remplace l'index dans l'ordre LOCK → préflight → DROP → CREATE", async () => {
+    const calls = [];
+    const tx = {
+      async query(sql) {
+        calls.push(String(sql));
+        return { rows: [], rowCount: 0 };
+      },
+      async one(sql) {
+        calls.push(String(sql));
+        return { duplicate_groups: 0 };
+      },
+      async all() {
+        return [];
+      },
+    };
+    await replaceClassesStructuralUniqueIndex(tx);
+    assert.equal(calls.length, 4);
+    assert.match(calls[0], /LOCK TABLE classes IN SHARE ROW EXCLUSIVE MODE/);
+    assert.match(calls[1], /duplicate_groups/);
+    assert.match(calls[2], /DROP INDEX/);
+    assert.match(calls[3], /CREATE UNIQUE INDEX/);
+    assert.match(calls[3], /NULLS NOT DISTINCT/);
   });
 
   it("documente que le nom est une projection et non une clé", () => {
@@ -97,9 +129,33 @@ describe("classesUniqueness V2 structural policy", () => {
     assert.match(sql, /NULLS NOT DISTINCT/);
     assert.match(sql, /CLASSES_STRUCTURAL_NULL_DUPLICATES/);
     assert.match(sql, /Aucune correction automatique/);
+    assert.match(sql, /BEGIN;/);
+    assert.match(sql, /LOCK TABLE classes IN SHARE ROW EXCLUSIVE MODE/);
+    assert.match(sql, /COMMIT;/);
+    assert.doesNotMatch(sql, /CONCURRENTLY/i);
     const withoutComments = sql.replace(/--[^\n]*/g, "");
     assert.doesNotMatch(withoutComments, /\bUPDATE\b/i);
     assert.doesNotMatch(withoutComments, /\bDELETE\b/i);
+    const beginAt = sql.indexOf("BEGIN;");
+    const lockAt = sql.indexOf("LOCK TABLE classes IN SHARE ROW EXCLUSIVE MODE");
+    const dropAt = sql.indexOf("DROP INDEX IF EXISTS uq_classes_structural_offering");
+    const createAt = sql.indexOf("CREATE UNIQUE INDEX");
+    const commitAt = sql.indexOf("COMMIT;");
+    assert.ok(beginAt >= 0 && beginAt < lockAt && lockAt < dropAt && dropAt < createAt && createAt < commitAt);
+  });
+
+  it("câble le boot sur withTransaction + replaceClassesStructuralUniqueIndex", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, "../db/postgresRepository.js"),
+      "utf8",
+    );
+    const start = src.indexOf("async ensureClassesStructuralOffering()");
+    assert.ok(start >= 0);
+    const block = src.slice(start, src.indexOf("async ensureFinanceCanonicalSchema()", start));
+    assert.match(block, /withTransaction/);
+    assert.match(block, /replaceClassesStructuralUniqueIndex/);
+    assert.doesNotMatch(block, /this\.query\(DROP_CLASSES_STRUCTURAL/);
+    assert.doesNotMatch(block, /this\.query\(CREATE_CLASSES_STRUCTURAL/);
   });
 
   it("le diagnostic de doublons structurels interdit l'auto-fix", () => {

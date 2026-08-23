@@ -1,5 +1,11 @@
 -- PR-1A — unicité structurelle NULL-safe (PostgreSQL 16).
+-- Une seule transaction : LOCK (écritures bloquées, lectures OK) → préflight
+-- → DROP → CREATE. Un échec du CREATE rollback l'ancien index.
 -- Aucune écriture de lignes classes. Fail-closed si doublons sous la nouvelle règle.
+
+BEGIN;
+
+LOCK TABLE classes IN SHARE ROW EXCLUSIVE MODE;
 
 DO $$
 DECLARE
@@ -27,3 +33,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_classes_structural_offering
   ON classes (school_id, academic_year_id, level_id, stream_id, group_id)
   NULLS NOT DISTINCT
   WHERE level_id IS NOT NULL;
+
+COMMIT;

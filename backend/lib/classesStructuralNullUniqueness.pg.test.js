@@ -7,11 +7,14 @@
 
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
+const { createTxAdapter } = require("../db/txAdapter");
 const {
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
   COUNT_CLASSES_STRUCTURAL_DUPLICATE_GROUPS_SQL,
+  LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL,
   assertClassesStructuralUniquenessPreflight,
+  replaceClassesStructuralUniqueIndex,
   CLASSES_STRUCTURAL_DUPLICATE_ERROR,
   CLASSES_STRUCTURAL_UNIQUE_INDEX,
 } = require("./classesUniqueness");
@@ -167,10 +170,87 @@ async function insertClass(pool, ids, { classCode, streamId = null, groupId = nu
 }
 
 async function applyIndex(pool) {
-  const db = createDbAdapter(pool);
-  await assertClassesStructuralUniquenessPreflight(db);
+  const client = await pool.connect();
+  const tx = createTxAdapter(client);
+  try {
+    await client.query("BEGIN");
+    await replaceClassesStructuralUniqueIndex(tx);
+    await client.query("COMMIT");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_rollbackError) {
+      // conserve l'erreur métier d'origine
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function getStructuralIndexDef(pool) {
+  const result = await pool.query(
+    `SELECT pg_get_indexdef(c.oid) AS def
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE c.relkind = 'i'
+       AND c.relname = $1
+       AND n.nspname = current_schema()`,
+    [CLASSES_STRUCTURAL_UNIQUE_INDEX],
+  );
+  return result.rows[0]?.def ?? null;
+}
+
+const OLD_PARTIAL_STRUCTURAL_INDEX_SQL = `
+CREATE UNIQUE INDEX ${CLASSES_STRUCTURAL_UNIQUE_INDEX}
+  ON classes (school_id, academic_year_id, level_id, stream_id, group_id)
+  WHERE level_id IS NOT NULL AND group_id IS NOT NULL
+`;
+
+/**
+ * Prouve qu'un CREATE UNIQUE qui échoue après DROP restaure l'ancien index.
+ * Simule une écriture intercalée (même session, après DROP) qui fait échouer le CREATE.
+ */
+async function assertCreateFailureRollsBackOldIndex(pool) {
   await pool.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
-  await pool.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+  await pool.query(OLD_PARTIAL_STRUCTURAL_INDEX_SQL);
+  const before = await getStructuralIndexDef(pool);
+  assert.match(before, /group_id IS NOT NULL/);
+  assert.doesNotMatch(before, /NULLS NOT DISTINCT/i);
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(LOCK_CLASSES_FOR_STRUCTURAL_INDEX_SQL);
+    await assertClassesStructuralUniquenessPreflight(createTxAdapter(client));
+    await client.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
+    await client.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, level_id, stream_id, group_id)
+       SELECT school_id, academic_year_id, 'CLS-ROLLBACK-1', name, level_id, stream_id, NULL
+       FROM classes WHERE class_code = 'CLS-NULL-A'`,
+    );
+    await client.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, level_id, stream_id, group_id)
+       SELECT school_id, academic_year_id, 'CLS-ROLLBACK-2', name, level_id, stream_id, NULL
+       FROM classes WHERE class_code = 'CLS-NULL-A'`,
+    );
+    await assert.rejects(
+      () => client.query(CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL),
+      (error) => String(error.code) === "23505",
+    );
+    await client.query("ROLLBACK");
+  } finally {
+    client.release();
+  }
+
+  const after = await getStructuralIndexDef(pool);
+  assert.ok(after, "l'ancien index doit être restauré par ROLLBACK");
+  assert.match(after, /group_id IS NOT NULL/);
+  assert.doesNotMatch(after, /NULLS NOT DISTINCT/i);
+  const leaked = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM classes WHERE class_code LIKE 'CLS-ROLLBACK-%'`,
+  );
+  assert.equal(Number(leaked.rows[0].n), 0);
 }
 
 async function main() {
@@ -235,6 +315,8 @@ async function main() {
     });
     assert.ok(withA.id);
     assert.ok(withB.id);
+
+    await assertCreateFailureRollsBackOldIndex(pool);
 
     await pool.query(DROP_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL);
     await insertClass(pool, ids, { classCode: "CLS-COLLIDE-1", streamId: ids.streamLit, groupId: null });
