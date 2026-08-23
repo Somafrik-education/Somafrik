@@ -102,9 +102,14 @@ function main() {
   const studentControls = read(path.join("components", "StudentMutationControls.tsx"));
   assert.match(studentControls, /enrollClassStudent/);
   assert.match(studentControls, /deleteSchoolStudent/);
+  assert.match(studentControls, /updateSchoolStudent/);
   assert.match(studentControls, /credentials\?\.temporarySecret/);
   assert.match(studentControls, /SecretHandoffModal/);
+  assert.match(studentControls, /OverflowActions/);
+  assert.match(studentControls, /studentRowOverflowActions/);
   assert.doesNotMatch(studentControls, /persistOutbox|enqueueOutbox|AsyncStorage/);
+  assert.doesNotMatch(studentControls, /marginTop:\s*8/, "pas de rangée 44 dp sous la fiche élève");
+  runUnit("overflowActions.test.ts");
 
   assert.match(payments, /PaymentMutationControls/);
   assert.doesNotMatch(payments, /AdminCrud/);

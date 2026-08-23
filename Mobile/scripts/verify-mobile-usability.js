@@ -115,6 +115,17 @@ function main() {
   assert.doesNotMatch(messages, /refreshBackOfficeState/);
   console.log("OK: Messages — composer clavier + SectionList + pas de MSG-Date.now");
 
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "overflowActions.test.ts")], MOBILE);
+  const overflow = source(path.join("components", "OverflowActions.tsx"));
+  assert.match(overflow, /ellipsis-vertical/);
+  assert.match(overflow, /OVERFLOW_TRIGGER_DP|minWidth:\s*MIN_TOUCH_TARGET_DP/);
+  assert.match(overflow, /OVERFLOW_MENU_ITEM_DP/);
+  const studentsList = source(path.join("screens", "StudentsScreen.tsx"));
+  assert.match(studentsList, /style=\{styles\.studentMain\}/);
+  assert.match(studentsList, /StudentMutationControls/);
+  assert.match(studentsList, /MIN_TOUCH_TARGET_DP/);
+  console.log("OK: OverflowActions Élèves — ⋮ 44 dp, menu ≥44, pas de rangée sous la fiche");
+
   const iconButton = source(path.join("components", "AccessibleIconButton.tsx"));
   assert.match(iconButton, /accessibilityLabel: string/);
   assert.match(iconButton, /MIN_TOUCH_TARGET_DP/);

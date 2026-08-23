@@ -50,6 +50,8 @@ import {
 
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 
+import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+
 import StudentMutationControls from "../components/StudentMutationControls";
 import FormField from "../components/FormField";
 
@@ -277,13 +279,13 @@ export default function StudentsScreen({ route, navigation }: any) {
 
       return (
 
-        <View>
+        <View style={styles.studentRow}>
 
         <TouchableOpacity
 
           activeOpacity={0.85}
 
-          style={styles.studentRow}
+          style={styles.studentMain}
 
           testID={STUDENT_ROW_TEST_ID(student.id)}
 
@@ -947,11 +949,9 @@ const styles = StyleSheet.create({
 
   studentRow: {
 
-    minHeight: 46,
+    minHeight: MIN_TOUCH_TARGET_DP,
 
-    paddingHorizontal: 10,
-
-    paddingVertical: 7,
+    paddingLeft: 10,
 
     borderTopWidth: 1,
 
@@ -962,6 +962,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
 
     backgroundColor: "#FFFFFF",
+
+  },
+
+
+
+  studentMain: {
+
+    flex: 1,
+
+    minWidth: 0,
+
+    minHeight: MIN_TOUCH_TARGET_DP,
+
+    paddingVertical: 7,
+
+    flexDirection: "row",
+
+    alignItems: "center",
 
   },
 
