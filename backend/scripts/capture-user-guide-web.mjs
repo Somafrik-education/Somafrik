@@ -72,23 +72,58 @@ async function clickText(selector, exactText) {
   if (!clicked) throw new Error(`Élément introuvable: ${selector} / ${exactText}`);
 }
 
+async function replaceInput(selector, value) {
+  await page.waitForSelector(selector, { timeout: 10_000 });
+  await page.click(selector);
+  await page.keyboard.down("Control");
+  await page.keyboard.press("A");
+  await page.keyboard.up("Control");
+  await page.keyboard.press("Backspace");
+  if (value) await page.type(selector, value, { delay: 15 });
+  await page.evaluate((sel) => {
+    const input = document.querySelector(sel);
+    if (input instanceof HTMLElement) input.blur();
+  }, selector);
+  await settle(100);
+}
+
 async function ensureLoggedIn() {
   await goto("/connexion");
   await page.click('[data-testid="login-profile-school"]');
   await settle(250);
 
-  const school = await page.$('[data-testid="login-school-code"]');
-  if (!school) throw new Error("Champ code établissement introuvable.");
-  await school.click({ clickCount: 3 });
-  await page.keyboard.press("Backspace");
+  await replaceInput('[data-testid="login-school-code"]', "");
+  await replaceInput('[data-testid="login-identifier"]', "");
+  await replaceInput('[data-testid="login-password"]', "");
   await screenshot("01-connexion-etablissement.png");
 
-  await page.type('[data-testid="login-school-code"]', LOGIN_SCHOOL_CODE);
-  await page.type('[data-testid="login-identifier"]', IDENTIFIER);
-  await page.type('[data-testid="login-password"]', PASSWORD);
+  await replaceInput('[data-testid="login-school-code"]', LOGIN_SCHOOL_CODE);
+  await replaceInput('[data-testid="login-identifier"]', IDENTIFIER);
+  await replaceInput('[data-testid="login-password"]', PASSWORD);
+
+  const fieldState = await page.evaluate(() => {
+    const read = (selector) => {
+      const node = document.querySelector(selector);
+      return node instanceof HTMLInputElement ? node.value : "";
+    };
+    const password = read('[data-testid="login-password"]');
+    return {
+      schoolCode: read('[data-testid="login-school-code"]'),
+      identifier: read('[data-testid="login-identifier"]'),
+      passwordLength: password.length,
+    };
+  });
+  console.log(`LOGIN_UI_FIELDS ${JSON.stringify(fieldState)}`);
+  if (
+    fieldState.schoolCode !== LOGIN_SCHOOL_CODE ||
+    fieldState.identifier !== IDENTIFIER ||
+    fieldState.passwordLength !== PASSWORD.length
+  ) {
+    throw new Error(`Valeurs du formulaire login incohérentes: ${JSON.stringify(fieldState)}`);
+  }
 
   await page.click('[data-testid="login-submit"]');
-  await settle(1600);
+  await settle(1800);
 
   const dialog = await page.$('[role="dialog"]');
   if (dialog) {
@@ -106,7 +141,8 @@ async function ensureLoggedIn() {
 
   if (new URL(page.url()).pathname === "/connexion") {
     const visibleError = await page.evaluate(() => {
-      const node = [...document.querySelectorAll("p")].find((el) => {
+      const nodes = [...document.querySelectorAll("p")];
+      const node = nodes.find((el) => {
         const text = (el.textContent || "").trim();
         return text.includes("Identifiant") || text.includes("connexion") || text.includes("Accès") || text.includes("autorisé");
       });
