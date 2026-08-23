@@ -9,6 +9,7 @@ Ces guides décrivent **uniquement les interfaces Web et Mobile canoniques réel
 - [Guide utilisateur Web](./GUIDE-UTILISATEUR-WEB.md)
 - [Guide utilisateur Mobile](./GUIDE-UTILISATEUR-MOBILE.md)
 - [Registre des captures métier réelles](./CAPTURES-METIER.md)
+- [Runbook captures Web W01 à W06](./CAPTURE-RUNBOOK-WEB-W01-W06.md)
 - [Limites et points non documentés](./KNOWN-ISSUES.md)
 
 ## Principe de documentation
