@@ -20,6 +20,7 @@ import {
 } from "../lib/classesStudentJourneySpec";
 import { STUDENT_SUB_SCREENS_TEST_IDS } from "../lib/studentSubScreensSpec";
 import { metricLabelFromSnapshot } from "../lib/dataTruth";
+import { studentDisplayName } from "../lib/studentDisplayName";
 import { normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 
 type Props = NativeStackScreenProps<
@@ -77,7 +78,7 @@ export default function StudentDetailScreen({
   const notesValue = metricLabelFromSnapshot(notesSnapshot, () => String(studentNotes.length));
   const presencesValue = metricLabelFromSnapshot(presencesSnapshot, () => String(presentCount));
   const paymentsDetail = metricLabelFromSnapshot(paymentsSnapshot, () => `${studentPayments.length} opération(s)`);
-  const displayName = [student.firstName, student.name].filter(Boolean).join(" ").trim() || student.name;
+  const displayName = studentDisplayName(student);
 
   const openSubScreen = (screen: "StudentNotes" | "StudentPresences" | "StudentPayments") => {
     navigation?.navigate(screen, { studentId: student.id });

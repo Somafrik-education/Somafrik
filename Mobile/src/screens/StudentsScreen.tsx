@@ -50,6 +50,8 @@ import {
 
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 
+import { studentDisplayName } from "../lib/studentDisplayName";
+
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 
 import StudentMutationControls from "../components/StudentMutationControls";
@@ -301,7 +303,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
             <Text style={styles.studentName} numberOfLines={1} ellipsizeMode="tail">
 
-              {[student.firstName, student.name].filter(Boolean).join(" ").trim() || student.name}
+              {studentDisplayName(student)}
 
             </Text>
 
