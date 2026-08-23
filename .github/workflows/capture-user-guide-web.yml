@@ -84,6 +84,7 @@ jobs:
         working-directory: backend
         env:
           SOMAFRIK_CAPTURE_WEB_URL: http://127.0.0.1:4173
+          SOMAFRIK_CAPTURE_API_URL: http://127.0.0.1:5000
         run: node scripts/capture-user-guide-web.mjs
 
       - name: Upload runtime screenshots
