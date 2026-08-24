@@ -62,6 +62,7 @@ const admin = {
   firstName: "Admin",
   lastName: "School",
   sub: "USR-MEM-ADMIN",
+  permissions: ["Paiements:UPDATE"],
 };
 const accountant = { role: "Comptable", schoolCode: "CD-2026-0001", firstName: "Compta", lastName: "Able" };
 const otherSchool = { role: "Admin School", schoolCode: "BI-2026-0001" };
