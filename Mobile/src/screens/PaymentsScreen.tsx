@@ -29,10 +29,9 @@ export default function PaymentsScreen({ navigation }: any) {
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
 
-  const refreshFinance = useCallback(
-    () => Promise.all([loadPayments(), loadStudentFees(), loadStudents()]),
-    [loadPayments, loadStudentFees, loadStudents],
-  );
+  const refreshFinance = useCallback(async () => {
+    await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
+  }, [loadPayments, loadStudentFees, loadStudents]);
 
   useFocusEffect(
     useCallback(() => {

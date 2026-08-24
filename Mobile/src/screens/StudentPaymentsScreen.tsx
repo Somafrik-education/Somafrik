@@ -39,10 +39,9 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const studentId = route?.params?.studentId ?? selectedStudentId;
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
-  const refreshFinance = useCallback(
-    () => Promise.all([loadPayments(), loadStudentFees(), loadStudents()]),
-    [loadPayments, loadStudentFees, loadStudents],
-  );
+  const refreshFinance = useCallback(async () => {
+    await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
+  }, [loadPayments, loadStudentFees, loadStudents]);
 
   useFocusEffect(
     useCallback(() => {
