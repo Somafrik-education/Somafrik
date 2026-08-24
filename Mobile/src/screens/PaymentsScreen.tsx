@@ -8,23 +8,52 @@ import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
+import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 
 export default function PaymentsScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
-  const { paymentsData, paymentsSnapshot, loadPayments, loadStudents, studentsData } = useAdminData();
+  const {
+    paymentsData,
+    paymentsSnapshot,
+    studentFeesData,
+    studentFeesSnapshot,
+    loadPayments,
+    loadStudentFees,
+    loadStudents,
+    studentsData,
+  } = useAdminData();
   const paymentStats = getPaymentStats(paymentsData);
-  const paymentsReady =
-    paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
+  const paymentRateKpi = getPaymentRateKpi(studentFeesData);
+  const feesReady =
+    studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
+
+  const refreshFinance = useCallback(async () => {
+    await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
+  }, [loadPayments, loadStudentFees, loadStudents]);
 
   useFocusEffect(
     useCallback(() => {
-      void Promise.all([loadPayments(), loadStudents()]);
-    }, [loadPayments, loadStudents]),
+      void refreshFinance();
+    }, [refreshFinance]),
   );
 
   const showQueryState = paymentsSnapshot.status !== "success";
+  const expectedLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? `${paymentRateKpi.expectedAmount.toLocaleString("fr-FR")} FC`
+      : "—";
+  const collectedLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? `${paymentRateKpi.collectedAmount.toLocaleString("fr-FR")} FC`
+      : "—";
+  const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
+  const remainingLabel =
+    feesReady && paymentRateKpi.expectedAmount > 0
+      ? `${remaining.toLocaleString("fr-FR")} FC`
+      : "—";
+  const rateLabel = feesReady ? paymentRateKpi.value : "—";
 
   return (
     <FlatList
@@ -44,25 +73,21 @@ export default function PaymentsScreen({ navigation }: any) {
               offlineMessage={DATA_TRUTH_COPY.offlinePayments}
               emptyTestId={DATA_TRUTH_TEST_IDS.paymentsEmpty}
               errorTestId={DATA_TRUTH_TEST_IDS.paymentsError}
-              onRetry={() => void loadPayments()}
+              onRetry={() => void refreshFinance()}
             />
           ) : (
             <View testID={DATA_TRUTH_TEST_IDS.paymentsList}>
-              <PaymentMutationControls students={studentsData} onChanged={() => loadPayments()} />
+              <PaymentMutationControls students={studentsData} onChanged={() => refreshFinance()} />
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Frais de scolarité estimés</Text>
-                <Text style={styles.summaryAmount}>
-                  {(paymentStats.paidAmount + paymentStats.pendingAmount).toLocaleString("fr-FR")} FC
-                </Text>
-                <Text style={styles.summarySub}>Reste estimé : {paymentStats.pendingAmount.toLocaleString("fr-FR")} FC</Text>
+                <Text style={styles.summaryAmount}>{expectedLabel}</Text>
+                <Text style={styles.summarySub}>Reste estimé : {remainingLabel}</Text>
               </View>
 
               <View style={styles.summaryCardSecondary}>
                 <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
-                <Text style={styles.summaryAmountDark}>{paymentStats.paidAmount.toLocaleString("fr-FR")} FC</Text>
-                <Text style={styles.summarySubDark}>
-                  {paymentsReady ? `${paymentStats.rate}% des paiements réglés` : "Données non chargées"}
-                </Text>
+                <Text style={styles.summaryAmountDark}>{collectedLabel}</Text>
+                <Text style={styles.summarySubDark}>{rateLabel}</Text>
               </View>
 
               <View style={styles.row}>
@@ -92,7 +117,7 @@ export default function PaymentsScreen({ navigation }: any) {
               onPress={() => navigation.navigate("StudentPayments", { studentId: payment.studentId })}
               showItems={false}
             />
-            <PaymentCancelControls payment={payment} onChanged={() => loadPayments()} />
+            <PaymentCancelControls payment={payment} onChanged={() => refreshFinance()} />
           </>
         );
       }}

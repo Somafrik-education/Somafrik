@@ -2189,8 +2189,18 @@ app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission(
 }));
 
 app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
-  const rows = await repository.listFinanceStudentFees();
+  const rows = await repository.listFinanceStudentFees(req.principal);
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["studentName", "label", "status"]);
+}));
+
+app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/payments"), asyncHandler(async (req, res) => {
+  const { financeAuditMetaFromRequest } = require("./lib/financeManagement");
+  const result = await repository.reconcileFinancePaymentAllocations(
+    req.principal,
+    req.body ?? {},
+    financeAuditMetaFromRequest(req),
+  );
+  res.json(result);
 }));
 
 app.get("/api/finance/student-fees/:obligationId", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {

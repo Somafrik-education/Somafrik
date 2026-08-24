@@ -47,7 +47,7 @@ async function dispatchOutboxEntry(entry: OutboxEntry) {
 
 export default function OutboxRuntime() {
   const { session, permissionsBootstrap } = useAuth();
-  const { loadPresences, loadNotes, loadPayments, applyConfirmedPresences } = useAdminData();
+  const { loadPresences, loadNotes, loadPayments, loadStudentFees, applyConfirmedPresences } = useAdminData();
 
   useEffect(() => {
     // L8 : aucun replay outbox tant que les permissions live ne sont pas ready.
@@ -78,7 +78,7 @@ export default function OutboxRuntime() {
           return saved;
         });
         if (cancelled || !result.sent) return;
-        await Promise.all([loadPresences(), loadNotes(), loadPayments()]);
+        await Promise.all([loadPresences(), loadNotes(), loadPayments(), loadStudentFees()]);
       } catch {
         /* lecture outbox KO : ne pas traiter comme une file vide */
       } finally {
@@ -113,6 +113,7 @@ export default function OutboxRuntime() {
     applyConfirmedPresences,
     loadNotes,
     loadPayments,
+    loadStudentFees,
     loadPresences,
     permissionsBootstrap,
     session?.school?.code,

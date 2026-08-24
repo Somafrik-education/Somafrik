@@ -356,6 +356,74 @@ async function main() {
     assert.equal(secretaryPay.status, 201, JSON.stringify(secretaryPay.data));
     assert.match(String(secretaryPay.data.reference), /^CD-2026-0001-\d{4}-PAY-/);
 
+    const rateStudent = await request(`/classes/${encodeURIComponent(createdClass.data.classCode)}/students`, {
+      method: "POST",
+      token: adminToken,
+      body: { firstName: "Koffi", lastName: `Rate${stamp}`, gender: "Masculin", birthDate: "2012-03-01" },
+    });
+    assert.equal(rateStudent.status, 201, JSON.stringify(rateStudent.data));
+    const rateStudentCode = rateStudent.data.student?.studentCode ?? rateStudent.data.studentCode;
+    const mensualiteGrid = await request("/finance/fee-grids", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        className: createdClass.data.name,
+        academicYear: "2026-2027",
+        currency: "CDF",
+        items: [
+          {
+            feeType: "Mensualité",
+            label: "Mensualité",
+            amount: 100,
+            monthlyMonths: ["Janvier", "Février", "Mars", "Avril", "Mai"],
+            dueDate: "2026-01-01",
+            status: "Actif",
+          },
+        ],
+      },
+    });
+    assert.equal(mensualiteGrid.status, 201, JSON.stringify(mensualiteGrid.data));
+    await request(`/finance/fee-grids/${encodeURIComponent(mensualiteGrid.data.id)}/activate`, {
+      method: "POST",
+      token: adminToken,
+    });
+    const applied = await request(`/finance/fee-grids/${encodeURIComponent(mensualiteGrid.data.id)}/apply`, {
+      method: "POST",
+      token: adminToken,
+      body: { studentIds: [rateStudentCode] },
+    });
+    assert.equal(applied.status, 200, JSON.stringify(applied.data));
+    const scolaritePay = await request("/payments", {
+      method: "POST",
+      token: accountantToken,
+      body: {
+        studentId: rateStudentCode,
+        items: [{ feeType: "Scolarité", amount: 100 }],
+        method: "Espèces",
+        date: "2026-08-24",
+      },
+    });
+    assert.equal(scolaritePay.status, 201, JSON.stringify(scolaritePay.data));
+    assert.equal(Number(scolaritePay.data.overpaymentAmount || 0), 0, "Scolarité doit allouer une Mensualité");
+    const feesAfterScolarite = await request("/finance/student-fees", { token: adminToken });
+    assert.equal(feesAfterScolarite.status, 200);
+    const feeRows = Array.isArray(feesAfterScolarite.data)
+      ? feesAfterScolarite.data
+      : feesAfterScolarite.data?.items ?? [];
+    const rateFees = feeRows.filter(
+      (row) =>
+        (row.studentId === rateStudentCode || row.studentId === rateStudent.data.student?.id) &&
+        String(row.status) !== "Annulé",
+    );
+    const expectedAmount = rateFees.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.amountDue || 0) - Number(row.exemption || 0)),
+      0,
+    );
+    const collectedAmount = rateFees.reduce((sum, row) => sum + Math.max(0, Number(row.amountPaid || 0)), 0);
+    assert.equal(expectedAmount, 500, JSON.stringify(rateFees));
+    assert.equal(collectedAmount, 100, "GET /finance/student-fees.amountPaid alimenté depuis l'allocation");
+    assert.equal(Math.round((collectedAmount / expectedAmount) * 100), 20);
+
     console.log("OK http: RBAC Finance + annulation + cooldown");
   } finally {
     child.kill("SIGTERM");

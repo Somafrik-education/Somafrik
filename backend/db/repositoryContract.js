@@ -70,6 +70,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "setFinanceFeeGridStatus",
   "applyFinanceFeeGrid",
   "listFinanceStudentFees",
+  "reconcileFinancePaymentAllocations",
   "getFinanceStudentFee",
   "adjustFinanceStudentFee",
   "createFinanceReminder",

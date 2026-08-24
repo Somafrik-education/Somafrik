@@ -24,7 +24,7 @@ import { useAuth } from "../context/AuthContext";
 
 import { useAdminData } from "../context/AdminDataContext";
 
-import { getPaymentStats, getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
+import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 
 import { canReadRoute } from "../domain/security/permissions";
 
@@ -49,6 +49,7 @@ import {
 } from "../lib/classesStudentJourneySpec";
 
 import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
+import { formatPaymentRateKpi } from "../lib/paymentRateKpi";
 
 import { studentDisplayName } from "../lib/studentDisplayName";
 
@@ -83,7 +84,7 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   const { session } = useAuth();
 
-  const { studentsData, paymentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, paymentsSnapshot, resourceScopeKey } = useAdminData();
+  const { studentsData, presencesData, teachersData, assignmentsData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey } = useAdminData();
 
   const className = route?.params?.className ?? "Toutes les classes";
 
@@ -94,9 +95,10 @@ export default function StudentsScreen({ route, navigation }: any) {
       void loadStudents();
       void loadPresences();
       void loadPayments();
+      void loadStudentFees();
       void loadTeachers();
       void loadClasses();
-    }, [loadStudents, loadPresences, loadPayments, loadTeachers, loadClasses, resourceScopeKey]),
+    }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, resourceScopeKey]),
   );
 
   const teacherScopeState = { teachers: teachersData, assignments: assignmentsData, classes: classesData };
@@ -175,17 +177,16 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   );
 
-  const paymentStats = useMemo(
-
-    () => getPaymentStats(paymentsData, classStudentIds),
-
-    [paymentsData, classStudentIds],
-
-  );
-
   const studentsCountLabel = metricLabelFromSnapshot(studentsSnapshot, () => String(filteredStudents.length));
   const presenceRateLabel = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
-  const paymentRateLabel = metricLabelFromSnapshot(paymentsSnapshot, () => `${paymentStats.rate}%`, "0%");
+  const paymentRateLabel = metricLabelFromSnapshot(
+    studentFeesSnapshot,
+    (rows) =>
+      formatPaymentRateKpi(
+        rows.filter((fee) => classStudentIds.includes(String(fee.studentId ?? ""))),
+      ).value,
+    "—",
+  );
   const studentsSubtitle = isMetricReady(studentsSnapshot) ? `${filteredStudents.length} élèves inscrits` : studentsCountLabel;
 
 

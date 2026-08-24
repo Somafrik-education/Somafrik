@@ -183,11 +183,17 @@ async function main() {
   assert.match(api, /function getPayments/);
   assert.match(api, /["']\/payments["']/);
   assert.match(paymentsScreen, /loadPayments/);
+  assert.match(paymentsScreen, /loadStudentFees/);
+  assert.match(paymentsScreen, /getPaymentRateKpi/);
   assert.match(paymentsScreen, /PaymentReceiptCard/);
   assert.match(studentPayments, /showItems/);
+  assert.match(studentPayments, /loadStudentFees/);
+  assert.match(studentPayments, /getPaymentRateKpi/);
   assert.match(paymentsScreen, /PaymentMutationControls/);
   assert.doesNotMatch(paymentsScreen, /writePaymentsWebOnly/);
   assert.doesNotMatch(paymentsScreen, /AdminCrud/);
+  assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
+  assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
   const adminCrud = read(path.join(SRC, "screens", "AdminCrudScreen.tsx"));
   assert.doesNotMatch(adminCrud, /createSchoolPayment/);
   console.log("OK: finance GET canonique + reçu, POST /payments via écran canonique");

@@ -501,6 +501,111 @@ async function main() {
       (error) => error.code === FINANCE_ERROR.CLASS_TENANT_MISMATCH,
     );
 
+    const rateStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name)
+       VALUES ($1, 'CD-2026-0001-STU-RATE', 'Awa', 'Rate') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'active')`,
+      [schoolA.rows[0].id, rateStudent.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+    const monthGrid = await store.upsertFinanceFeeGrid(
+      {
+        className: "6ème A",
+        academicYear: "2025-2026",
+        currency: "CDF",
+        status: "Active",
+        periodName: "Taux",
+        items: [{ feeType: "Mensualité", label: "Mensualité", amount: 500, dueDate: "2026-01-01", status: "Actif" }],
+      },
+      admin,
+    );
+    await store.setFinanceFeeGridStatus(monthGrid.id, "Active", admin);
+    await store.applyFinanceFeeGrid(monthGrid.id, admin, { studentIds: ["CD-2026-0001-STU-RATE"] });
+
+    const histPay = await pool.query(
+      `INSERT INTO payments (
+         school_id, student_id, payment_code, amount, currency, payment_method, payment_status,
+         payment_date, fee_type, profile_payload
+       ) VALUES ($1,$2,'CD-2026-0001-2026-PAY-HIST',100,'CDF','cash','paid','2026-08-01','Scolarité',$3::jsonb)
+       RETURNING id`,
+      [
+        schoolA.rows[0].id,
+        rateStudent.rows[0].id,
+        JSON.stringify({ studentId: "CD-2026-0001-STU-RATE", status: "Payé", feeType: "Scolarité", schoolCode: "CD-2026-0001" }),
+      ],
+    );
+    const beforeRecon = (await store.listFinanceStudentFees(admin)).find(
+      (row) => row.studentId === "CD-2026-0001-STU-RATE" || row.studentId === rateStudent.rows[0].id,
+    );
+    assert.equal(Number(beforeRecon.amountPaid), 0, "GET sans réconciliation ne invente pas l'allocation");
+    const recon = await store.reconcileFinancePaymentAllocations(admin);
+    assert.ok(recon.created >= 1);
+    const allocs = await pool.query(
+      `SELECT * FROM payment_allocations WHERE payment_id = $1 AND reversed_at IS NULL`,
+      [histPay.rows[0].id],
+    );
+    assert.equal(allocs.rowCount, 1);
+    assert.equal(Number(allocs.rows[0].amount), 100);
+    const afterRecon = (await store.listFinanceStudentFees(admin)).find(
+      (row) => String(row.dbId) === String(beforeRecon.dbId) || row.studentId === "CD-2026-0001-STU-RATE",
+    );
+    assert.equal(Number(afterRecon.amountPaid), 100);
+    const recon2 = await store.reconcileFinancePaymentAllocations(admin);
+    assert.equal(recon2.created, 0);
+    const allocs2 = await pool.query(
+      `SELECT * FROM payment_allocations WHERE payment_id = $1 AND reversed_at IS NULL`,
+      [histPay.rows[0].id],
+    );
+    assert.equal(allocs2.rowCount, 1, "réconciliation idempotente");
+    const reconAudit = await pool.query(
+      `SELECT * FROM audit_logs WHERE action = 'reconcile_payment_allocation' AND entity_id = 'CD-2026-0001-2026-PAY-HIST'`,
+    );
+    assert.ok(reconAudit.rowCount >= 1);
+
+    const payOver = await store.createSchoolPayment(
+      {
+        studentId: "CD-2026-0001-STU-RATE",
+        items: [{ feeType: "Scolarité", amount: 500 }],
+        method: "Espèces",
+        date: "2026-08-24",
+      },
+      admin,
+    );
+    assert.equal(Number(payOver.overpaymentAmount), 100);
+    const paidTotal = await pool.query(
+      `SELECT COALESCE(SUM(amount),0)::numeric AS total
+       FROM payment_allocations
+       WHERE reversed_at IS NULL AND school_id = $1 AND obligation_id = $2`,
+      [schoolA.rows[0].id, afterRecon.dbId],
+    );
+    assert.equal(Number(paidTotal.rows[0].total), 500, "jamais 600 sur une dette 500");
+
+    const studentB = await pool.query(`SELECT id FROM students WHERE student_code = 'BI-2026-0001-STU-0001'`);
+    const collide = await pool.query(
+      `INSERT INTO student_fee_obligations (
+         school_id, student_id, fee_type, label, currency, initial_amount, amount_due, amount_paid, balance, status, profile_payload
+       ) VALUES ($1,$2,'Mensualité','Mensualité','CDF',500,500,0,500,'À payer',$3::jsonb)
+       RETURNING id`,
+      [
+        schoolB.rows[0].id,
+        studentB.rows[0].id,
+        JSON.stringify({ studentId: "CD-2026-0001-STU-RATE", schoolCode: "BI-2026-0001" }),
+      ],
+    );
+    const listedA = await store.listFinanceStudentFees(admin);
+    assert.equal(listedA.some((row) => String(row.dbId) === String(collide.rows[0].id)), false);
+    assert.equal(listedA.every((row) => row.schoolCode === "CD-2026-0001"), true);
+    const platform = await store.listFinanceStudentFees({
+      role: "Super Administrateur Somafrik",
+      schoolCode: "*",
+    });
+    const collided = platform.find((row) => String(row.dbId) === String(collide.rows[0].id));
+    assert.ok(collided);
+    assert.equal(Number(collided.amountPaid), 0, "allocation A jamais projetée sur B malgré identifiant collisionné");
+
     console.log("financeRepository.pg.test.js: OK");
   } finally {
     await pool.end();
