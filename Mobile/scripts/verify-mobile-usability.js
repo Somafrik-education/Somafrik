@@ -55,7 +55,9 @@ function main() {
   assert.match(classes, /USABILITY_TEST_IDS\.classesSearch/);
   assert.match(classes, /classes-empty-search|USABILITY_TEST_IDS\.classesEmptySearch/);
   assert.match(classes, /FlatList/);
-  assert.match(classes, /Présence \{presenceRateLabel\}/);
+  assert.match(classes, /presenceBadge\.badgeText/);
+  assert.match(classes, /classPresenceBadgeTestId/);
+  assert.match(classes, /resolveClassTodayPresenceBadge/);
   console.log("OK: Classes — recherche réelle nom/code + empty state + FlatList");
 
   const planning = source(path.join("screens", "TimetableScreen.tsx"));
