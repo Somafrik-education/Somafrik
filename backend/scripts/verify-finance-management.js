@@ -6,6 +6,7 @@
 
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const { canCancelPayment, cancelPayment } = require("../lib/financeService");
 
 const ROOT = require("node:path").resolve(__dirname, "../..");
 const PORT = 19574;
@@ -72,6 +73,34 @@ async function login(identifier, password, schoolCode) {
 }
 
 async function main() {
+  assert.equal(
+    canCancelPayment({ permissions: ["Paiements:CREATE"] }),
+    false,
+    "Paiements:CREATE seul ne doit jamais autoriser l'annulation",
+  );
+  assert.equal(canCancelPayment({ permissions: ["Paiements:UPDATE"] }), true);
+  assert.equal(canCancelPayment({ permissions: ["Gérer paiements"] }), true);
+  assert.equal(canCancelPayment({ permissions: ["ALL_PRIVILEGES"] }), true);
+
+  let transactionEntered = false;
+  await assert.rejects(
+    () =>
+      cancelPayment(
+        {
+          withTransaction: async () => {
+            transactionEntered = true;
+            throw new Error("la transaction ne doit pas être atteinte");
+          },
+        },
+        "PAY-TEST",
+        "Correction de saisie",
+        { permissions: ["Paiements:CREATE"], schoolCode: "CD-2026-0001" },
+        {},
+      ),
+    (error) => error?.statusCode === 403 && /Paiements:UPDATE/.test(String(error?.message ?? "")),
+  );
+  assert.equal(transactionEntered, false, "refus avant toute mutation Finance");
+
   const child = spawn("node", ["backend/scripts/dev-memory.js"], {
     cwd: ROOT,
     env: {
