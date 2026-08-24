@@ -29,6 +29,7 @@ const { createFunctionalRbacPgStore } = require("../db/functionalRbacPgStore");
 const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
 const { reconcileCanonicalPlanningGrants } = require("./planningRbacCanonical");
 const { reconcileCanonicalRoomsReplacementsGrants } = require("./planningRoomsReplacementsRbac");
+const { reconcileCanonicalCriticalParityGrants } = require("./criticalParityRbacCanonical");
 
 function rbacStore(repo) {
   if (typeof repo.getFunctionalRbacStore === "function") {
@@ -85,6 +86,7 @@ async function ensureFunctionalRbacBootstrap(repo) {
   // que depuis le catalogue établissement, souvent périmé après le 1er bootstrap.
   await reconcileCanonicalPlanningGrants(store);
   await reconcileCanonicalRoomsReplacementsGrants(store);
+  await reconcileCanonicalCriticalParityGrants(store);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
