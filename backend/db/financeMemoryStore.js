@@ -129,6 +129,12 @@ function createFinanceMemoryStore({ getSchoolByCode, findStudent, listStudentsIn
             schoolId: row.school_id,
           }));
       },
+      async lockPayment(paymentId) {
+        const row = tables.payments.find(
+          (item) => String(item.id) === String(paymentId) || item.payment_code === paymentId,
+        );
+        return row ? { id: row.id } : null;
+      },
       async insertPayment(payment) {
         if (tables.payments.some((row) => row.payment_code === payment.reference)) {
           throw createFinanceError(409, "Référence de paiement dupliquée.", FINANCE_ERROR.PAYMENT_REFERENCE_DUPLICATE);

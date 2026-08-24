@@ -138,6 +138,8 @@ function assertSourceGuards() {
   assert.match(pgStore, /listFinanceStudentFees: async \(principal\)/);
   assert.match(pgStore, /sqlSchoolPredicate/);
   assert.match(pgStore, /reconcileFinancePaymentAllocations/);
+  assert.match(pgStore, /lockPayment/);
+  assert.match(pgStore, /FOR UPDATE/);
   assert.doesNotMatch(
     pgStore.slice(pgStore.indexOf("listFinanceStudentFees")),
     /FROM payments p/,
@@ -146,6 +148,7 @@ function assertSourceGuards() {
   const memoryStore = fs.readFileSync(path.join(ROOT, "backend/db/financeMemoryStore.js"), "utf8");
   assert.match(memoryStore, /projectObligationPaidAmounts/);
   assert.match(memoryStore, /listFinanceStudentFees: async \(principal\)/);
+  assert.match(memoryStore, /lockPayment/);
   const api = fs.readFileSync(path.join(ROOT, "Mobile/src/services/api.ts"), "utf8");
   assert.match(api, /function reconcilePaymentAllocations/);
   assert.match(api, /\/finance\/reconcile-payment-allocations/);
@@ -153,8 +156,15 @@ function assertSourceGuards() {
     path.join(ROOT, "Mobile/src/lib/financeAllocationReconcile.ts"),
     "utf8",
   );
-  assert.match(reconcileClient, /reconcilePaymentAllocations/);
+  assert.match(reconcileClient, /isSoftPaymentAllocationReconcileFailure/);
+  assert.match(reconcileClient, /throw error/);
+  assert.doesNotMatch(reconcileClient, /catch\s*\{/);
   assert.doesNotMatch(reconcileClient, /paymentsData/);
+  assert.doesNotMatch(reconcileClient, /from ["']\.\.\/services\/api["']/);
+  const adminCtx = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
+  assert.match(adminCtx, /withCanonicalPaymentAllocations/);
+  assert.match(adminCtx, /reconcilePaymentAllocations/);
+  assert.match(adminCtx, /loadStudentFees/);
   const obligationPaid = fs.readFileSync(path.join(ROOT, "backend/lib/financeObligationPaid.js"), "utf8");
   assert.doesNotMatch(obligationPaid, /allocateOntoMatchingOpen/);
   assert.doesNotMatch(obligationPaid, /isPaymentCounted/);
@@ -162,6 +172,10 @@ function assertSourceGuards() {
   assert.match(service, /obligationMatchesPaymentFeeType/);
   assert.match(service, /reconcileHistoricalPaymentAllocations/);
   assert.match(service, /reconcile_payment_allocation/);
+  const reconFn = service.slice(service.indexOf("async function reconcileUnallocatedPaymentsInTx"));
+  const lockIdx = reconFn.indexOf("lockPayment");
+  const allocIdx = reconFn.indexOf("listAllocations");
+  assert.ok(lockIdx >= 0 && allocIdx > lockIdx, "lockPayment avant listAllocations");
   assert.doesNotMatch(
     service,
     /normalizeKey\(fee\.feeType\) === normalizeKey\(item\.feeType\)/,
@@ -180,7 +194,6 @@ function assertSourceGuards() {
   const paymentsScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/PaymentsScreen.tsx"), "utf8");
   assert.match(paymentsScreen, /getPaymentRateKpi|formatPaymentRateKpi/);
   assert.match(paymentsScreen, /loadStudentFees/);
-  assert.match(paymentsScreen, /ensureCanonicalPaymentAllocations/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.paidAmount/);
@@ -189,17 +202,14 @@ function assertSourceGuards() {
   const studentsScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/StudentsScreen.tsx"), "utf8");
   assert.match(studentsScreen, /formatPaymentRateKpi|getPaymentRateKpi/);
   assert.match(studentsScreen, /loadStudentFees/);
-  assert.match(studentsScreen, /ensureCanonicalPaymentAllocations/);
   assert.doesNotMatch(studentsScreen, /paymentStats\.rate/);
 
   const homeScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/HomeScreen.tsx"), "utf8");
-  assert.match(homeScreen, /ensureCanonicalPaymentAllocations/);
   assert.match(homeScreen, /loadStudentFees/);
 
   const studentPayments = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/StudentPaymentsScreen.tsx"), "utf8");
   assert.match(studentPayments, /getPaymentRateKpi|formatPaymentRateKpi/);
   assert.match(studentPayments, /loadStudentFees/);
-  assert.match(studentPayments, /ensureCanonicalPaymentAllocations/);
 
   const outbox = fs.readFileSync(path.join(ROOT, "Mobile/src/components/OutboxRuntime.tsx"), "utf8");
   assert.match(outbox, /loadStudentFees/);

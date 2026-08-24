@@ -201,6 +201,11 @@ async function reconcileUnallocatedPaymentsInTx(tx, { schoolId, schoolCode, stud
     if (!isPaymentCounted(payment)) continue;
     if (asTrimmed(payment.schoolCode).toUpperCase() !== asTrimmed(schoolCode).toUpperCase()) continue;
     const paymentDbId = payment.dbId || payment.id;
+    if (typeof tx.lockPayment !== "function") {
+      throw createFinanceError(500, "Verrou paiement indisponible pour la réconciliation.");
+    }
+    const locked = await tx.lockPayment(paymentDbId);
+    if (!locked) continue;
     const existing = await tx.listAllocations(paymentDbId);
     if (existing.some((row) => !row.reversedAt)) continue;
     const payStudentDbId = payment.studentDbId || studentDbId;

@@ -12,7 +12,6 @@ import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
-import { ensureCanonicalPaymentAllocations } from "../lib/financeAllocationReconcile";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
@@ -41,7 +40,6 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const student = studentId ? studentsData.find((item) => item.id === studentId) : undefined;
 
   const refreshFinance = useCallback(async () => {
-    await ensureCanonicalPaymentAllocations();
     await Promise.all([loadPayments(), loadStudentFees(), loadStudents()]);
   }, [loadPayments, loadStudentFees, loadStudents]);
 
